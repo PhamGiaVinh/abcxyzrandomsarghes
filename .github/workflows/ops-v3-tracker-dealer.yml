@@ -13,6 +13,8 @@ on:
       - "VinPoker/e2e/ops-v3-tracker-dealer.mock.spec.ts"
       - "VinPoker/tests/opsTrackerDealer/**"
       - "VinPoker/src/components/cashier/tournament-live/TournamentLiveView.tsx"
+      - "VinPoker/src/components/cashier/tournament-live/ClockPanel*"
+      - "VinPoker/src/lib/tournament/clockControlState*"
       - "VinPoker/src/i18n/locales/**"
       - "VinPoker/tests/viewerHub/tournamentLiveViewBlindContext.test.tsx"
       - "VinPoker/tests/viewerHub/tournamentLiveViewInitialization.test.tsx"
@@ -81,6 +83,8 @@ jobs:
           src/ops/registry/opsModuleRegistry.test.ts
           tests/viewerHub/tournamentLiveViewBlindContext.test.tsx
           tests/viewerHub/tournamentLiveViewInitialization.test.tsx
+          src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
+          src/lib/tournament/clockControlState.test.ts
           src/pages/TrackerDashboard.test.tsx
           src/hooks/useNotifications.test.tsx
           src/components/NotificationBell.test.tsx
@@ -89,6 +93,8 @@ jobs:
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
           src/pages/ops/OpsToday.readState.test.tsx
           src/pages/ops/OpsDealerSwing.readState.test.tsx
+          src/components/cashier/tournament-live/ClockPanel.tsx
+          src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
           tests/floorProduction/createdTournamentSelection.render.test.tsx
           src/components/cashier/TournamentLivePanel.summary.test.tsx
           src/hooks/useTournamentParticipationSummary.test.tsx

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -41,33 +42,76 @@ interface ClockData {
 
 export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: string; refreshTrigger?: number }) {
   const { t } = useTranslation();
-  const [clock, setClock] = useState<ClockData | null>(null);
+  const { user } = useAuth();
+  const identity = JSON.stringify([user?.id, tournamentId]);
+  const identityRef = useRef({ identity, generation: 0 });
+  if (identityRef.current.identity !== identity) {
+    identityRef.current = { identity, generation: identityRef.current.generation + 1 };
+  }
+  const scope = `${identity}:${identityRef.current.generation}`;
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const readSequence = useRef(0);
+  const mounted = useRef(false);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const [storedClock, setClock] = useState<ClockData | null>(null);
+  const clock = loadedScope === scope ? storedClock : null;
+  const [readError, setReadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [localRemaining, setLocalRemaining] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [autoNextLevel, setAutoNextLevel] = useState(true);
-  const advancingRef = useRef(false);
+  const advancingRef = useRef<{ scope: string } | null>(null);
+  const actionRef = useRef<{ scope: string } | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const loadClock = useCallback(async () => {
+    const sequence = ++readSequence.current;
+    const current = () => mounted.current && scopeRef.current === scope && sequence === readSequence.current;
+    setLoadedScope(null);
+    setReadError(false);
+    setClock(null);
+    setIsRunning(false);
     setLoading(true);
-    const { data, error } = await supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId });
-    setLoading(false);
-    if (error) { toast.error(error.message); return; }
-    const c = data as unknown as ClockData;
-    setClock(c);
-    setLocalRemaining(c.remaining_seconds);
-    setIsRunning(c.is_running);
-  }, [tournamentId]);
+    try {
+      if (!user?.id) return;
+      const { data, error } = await supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId });
+      if (!current()) return;
+      if (error) throw error;
+      const c = data as unknown as ClockData;
+      if (!c || c.tournament_id !== tournamentId || !Number.isFinite(c.remaining_seconds)
+        || typeof c.is_running !== "boolean") throw new Error("Clock context unavailable");
+      setClock(c);
+      setLoadedScope(scope);
+      setLocalRemaining(c.remaining_seconds);
+      setIsRunning(c.is_running);
+    } catch (error) {
+      if (current()) {
+        setReadError(true);
+        toast.error(error instanceof Error ? error.message : t("tournamentLive.clock.refresh"));
+      }
+    } finally {
+      if (current()) setLoading(false);
+    }
+  }, [scope, tournamentId, user?.id, t]);
 
   useEffect(() => { loadClock(); }, [loadClock, refreshTrigger]);
 
   const handleClockAction = useCallback(async (action: string, extra?: Record<string, unknown>) => {
+    if (!clock || loading || !user?.id || actionRef.current?.scope === scope || scopeRef.current !== scope) return;
+    const operation = { scope };
+    const current = () => mounted.current && scopeRef.current === scope && actionRef.current === operation;
     const expectedControlRevision = action === "start" ? null : clock?.control_revision;
     if (action !== "start" && !expectedControlRevision) {
       toast.error(t("tournamentLive.clock.refresh"));
       await loadClock();
       return;
     }
+    actionRef.current = operation;
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("tournament-live-clock", {
@@ -80,6 +124,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
             : {}),
         },
       });
+      if (!current()) return;
       if (error || data?.error) {
         toast.error(data?.error || error?.message);
         await loadClock();
@@ -88,24 +133,27 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
       toast.success("OK");
       await loadClock();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t("tournamentLive.clock.refresh"));
+      if (current()) toast.error(e instanceof Error ? e.message : t("tournamentLive.clock.refresh"));
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
+      if (actionRef.current === operation) actionRef.current = null;
     }
-  }, [clock?.control_revision, tournamentId, loadClock, t]);
+  }, [clock, loading, user?.id, scope, tournamentId, loadClock, t]);
 
   const advanceToNextLevel = useCallback(async () => {
-    if (!clock?.next_level || advancingRef.current) return;
-    advancingRef.current = true;
+    if (!clock?.next_level || advancingRef.current?.scope === scope) return;
+    const operation = { scope };
+    advancingRef.current = operation;
     try {
       await handleClockAction("next_level");
     } finally {
-      advancingRef.current = false;
+      if (advancingRef.current === operation) advancingRef.current = null;
     }
-  }, [clock, handleClockAction]);
+  }, [clock, handleClockAction, scope]);
 
+  const hasRemainingTime = localRemaining > 0;
   useEffect(() => {
-    if (!isRunning || localRemaining <= 0) return;
+    if (!clock || !isRunning || !hasRemainingTime) return;
     const interval = setInterval(() => {
       setLocalRemaining((prev) => {
         if (prev <= 1) {
@@ -116,13 +164,13 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isRunning, localRemaining > 0]);
+  }, [clock, isRunning, hasRemainingTime]);
 
   useEffect(() => {
-    if (isRunning && localRemaining === 0 && autoNextLevel && clock?.next_level && !advancingRef.current) {
+    if (!loading && isRunning && localRemaining === 0 && autoNextLevel && clock?.next_level && advancingRef.current?.scope !== scope) {
       advanceToNextLevel();
     }
-  }, [localRemaining, isRunning, autoNextLevel, clock, advanceToNextLevel]);
+  }, [loading, localRemaining, isRunning, autoNextLevel, clock, advanceToNextLevel, scope]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -157,6 +205,8 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
         </div>
       </div>
 
+      {readError && <p role="alert">{t("tv.loadError")}</p>}
+      {loading && !clock && <p role="status">{t("common.loading")}</p>}
       {clock && (
         <div className="space-y-3">
           <div className="flex items-center gap-4 flex-wrap">
