@@ -12,6 +12,17 @@ const TOUR = '5a51bec5-4da0-4dd9-861a-cc4e7678478c';
 const SESSION = '89d70c57-f141-487a-a9f4-f9dc3d76c420';
 const TABLE = '2bc31827-03c8-4cbb-b332-eab2aa38e45c';
 const REVIEWED_HANDS = new Set(['7c0ab085-641e-408c-a326-e4addbcee647', 'd469154e-e80e-4a75-8a87-237b7958671a']);
+// Captured together from the canonical hash RPC and full immutable source in one live read snapshot.
+const REVIEWED_SOURCE = {
+  '7c0ab085-641e-408c-a326-e4addbcee647': {
+    fingerprint: 'bc8ac0dd26ad4e2a56ca0b63363b1ccf',
+    hash: '67ee126694ddeffc22453a85ab6a545cbe503906e9a0115e2d5c8dd41391f65c',
+  },
+  'd469154e-e80e-4a75-8a87-237b7958671a': {
+    fingerprint: 'af3fa9884979aedb4dab82b472bcfa13',
+    hash: 'dff3598ca8b08e6b8d45f7f23f51ba38e42b7faf2b694c418a88d60255291244',
+  },
+};
 
 export function validateCanaryContext(env) {
   if (env.GITHUB_ACTIONS !== 'true' || env.GITHUB_REF !== 'refs/heads/main'
@@ -47,7 +58,10 @@ export function canaryPreflightSql(ids) {
         'players',(SELECT pg_catalog.jsonb_agg(pg_catalog.to_jsonb(hp) ORDER BY hp.id) FROM public.hand_players hp WHERE hp.hand_id=h.id),
         'actions',(SELECT pg_catalog.jsonb_agg(pg_catalog.to_jsonb(ha) ORDER BY ha.id) FROM public.hand_actions ha WHERE ha.hand_id=h.id))::text),
       'verified_outcomes',(SELECT count(*) FROM public.tournament_settlement_outcomes o WHERE o.hand_id=h.id
-        AND o.source_revision=h.source_revision AND o.verification_scope='historical_display' AND o.status='verified')))
+        AND o.source_revision=h.source_revision AND o.verification_scope='historical_display' AND o.status='verified'
+        AND o.source_chain_hash=CASE h.id ${ids.map(id => `WHEN '${id}'::uuid THEN '${REVIEWED_SOURCE[id].hash}'`).join(' ')} END
+        AND o.public_outcome->>'sourceChainHash'=o.source_chain_hash
+        AND o.public_outcome->>'sourceRevision'=h.source_revision::text)))
       FROM public.tournament_hands h JOIN public.tournaments t ON t.id=h.tournament_id
       LEFT JOIN public.tracker_historical_display_queue q ON q.hand_id=h.id AND q.source_revision=h.source_revision
       WHERE h.id IN (${ids.map(id => `'${id}'::uuid`).join(',')}))) AS preflight;`;
@@ -63,7 +77,8 @@ export function assertCanaryPreflight(rows, ids) {
       || h.tournament_name !== 'TEST — Felt UAT (compact)' || h.source_revision !== 31
       || h.status !== 'completed' || h.is_voided !== false || h.table_session_id !== SESSION
       || h.tournament_table_id !== TABLE || h.queue_status !== 'pending' || h.due !== true || h.unleased !== true
-      || !/^[a-f0-9]{32}$/.test(h.source_fingerprint ?? '') || !Number.isSafeInteger(h.verified_outcomes) || h.verified_outcomes < 0)) {
+      || h.source_fingerprint !== REVIEWED_SOURCE[h.id]?.fingerprint
+      || !Number.isSafeInteger(h.verified_outcomes) || h.verified_outcomes < 0)) {
     throw Error('history_canary_db_preflight_failed');
   }
 }

@@ -15,7 +15,7 @@ const preflight = [{ preflight: { all_rows_visible: true, active_history_jobs: 0
   id: hand, tournament_id: '5a51bec5-4da0-4dd9-861a-cc4e7678478c', tournament_name: 'TEST — Felt UAT (compact)',
   source_revision: 31, status: 'completed', is_voided: false,
   table_session_id: '89d70c57-f141-487a-a9f4-f9dc3d76c420', tournament_table_id: '2bc31827-03c8-4cbb-b332-eab2aa38e45c',
-  queue_status: 'pending', due: true, unleased: true, source_fingerprint: 'a'.repeat(32), verified_outcomes: 0 }] } }];
+  queue_status: 'pending', due: true, unleased: true, source_fingerprint: 'bc8ac0dd26ad4e2a56ca0b63363b1ccf', verified_outcomes: 0 }] } }];
 
 function fixture({ existing = false, lostResponse = false, badResult = false, failCleanup = false,
   workerOn = false, dispatcherOn = false, lostProvision = false } = {}) {
@@ -75,10 +75,13 @@ test('DB scope is exact TEST tour/session/revision and cannot hide cron rows thr
     assert.throws(() => assertCanaryPreflight([{ preflight: { ...preflight[0].preflight, ...delta } }], [hand]));
   for (const delta of [{ tournament_id: hand }, { tournament_name: 'Real tournament' },
     { source_revision: 32 }, { is_voided: true }, { table_session_id: hand },
-    { tournament_table_id: hand }, { queue_status: 'processing' }, { due: false }, { unleased: false }])
+    { tournament_table_id: hand }, { queue_status: 'processing' }, { due: false }, { unleased: false },
+    { source_fingerprint: 'a'.repeat(32) }])
     assert.throws(() => assertCanaryPreflight([{ preflight: { ...preflight[0].preflight,
       hands: [{ ...preflight[0].preflight.hands[0], ...delta }] } }], [hand]));
   assert.match(canaryPreflightSql([hand]), /cron\.job/);
+  assert.match(canaryPreflightSql([hand]), /o\.source_chain_hash=CASE h\.id/);
+  assert.match(canaryPreflightSql([hand]), /67ee126694ddeffc22453a85ab6a545cbe503906e9a0115e2d5c8dd41391f65c/);
   assert.throws(() => canaryPreflightSql(["';delete from public.tournaments;--"]));
 });
 
