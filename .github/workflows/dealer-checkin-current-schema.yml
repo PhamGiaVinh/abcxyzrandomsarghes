@@ -460,6 +460,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000060_tracker_legacy_reentry_retirement_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_REENTRY_RETIREMENT_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql
+          node --test scripts/ops/tracker-stack-61-release-plan.test.mjs scripts/ops/tracker-stack-61-protected-apply.test.mjs
+          createdb --template=vinpoker_ops_checkin vinpoker_ops_stack61_atomic_20261011
+          PGDATABASE=vinpoker_ops_stack61_atomic_20261011 STACK61_PG_TEST=1 node --test scripts/ops/tracker-stack-61-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql
