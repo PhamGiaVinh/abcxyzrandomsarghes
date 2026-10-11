@@ -278,6 +278,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   const actionWriteGuardRef = useRef(createActionWriteGuard());
   const handSubmitGuardRef = useRef(createSingleFlightGuard());
   const actionScopeRef = useRef("");
+  const loadedTableSessionRef = useRef<{ tournamentId: string; tableId: string; sessionId: string | null } | null>(null);
   const blockedActionScopeRef = useRef<string | null>(null);
   const claimedHandLockRef = useRef<string | null>(null);
   const rosterIntentRef = useRef(new Map<string, { fingerprint: string; requestId: string }>());
@@ -286,6 +287,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   const rosterGenerationRef = useRef(0);
   const rosterMountedRef = useRef(true);
   const rosterFlightRef = useRef(createSingleFlightGuard());
+  const voidFlightRef = useRef(createSingleFlightGuard());
+  const voidOwnsSubmittingRef = useRef(false);
   const rosterContext = availableTables.find((table) => table.id === tableId);
   const rosterScope = `${user?.id}:${tournamentId}:${rosterContext?.tournamentTableId}:${rosterContext?.tableSessionId}:${rosterContext?.controlEpoch}`;
   if (rosterScopeRef.current !== rosterScope) {
@@ -371,6 +374,10 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (activeTournamentRef.current === tournamentId) return;
 
     activeTournamentRef.current = tournamentId;
+    if (voidOwnsSubmittingRef.current) {
+      voidOwnsSubmittingRef.current = false;
+      setSubmitting(false);
+    }
     tableLoadGuardRef.current.begin("");
     tableListLoadGuardRef.current.begin("");
     actionScopeRef.current = "";
@@ -1009,6 +1016,10 @@ export function useStandaloneHandInput(tournamentId: string) {
   // ----- Table select -----------------------------------------------------
   const handleTableChange = useCallback(
     async (newTableId: string) => {
+      if (voidOwnsSubmittingRef.current) {
+        voidOwnsSubmittingRef.current = false;
+        setSubmitting(false);
+      }
       rosterTokensRef.current.clear();
       const loadToken = tableLoadGuardRef.current.begin(newTableId);
       const isCurrentLoad = () => tableLoadGuardRef.current.isCurrent(loadToken);
@@ -1046,6 +1057,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       if (!isCurrentLoad()) return;
       const loadedMaxSeats = tbl?.maxSeats ?? (tableMeta as any)?.max_seats ?? 9;
       const loadedSessionId = tbl?.tableSessionId ?? (tableMeta as any)?.table_session_id ?? null;
+      loadedTableSessionRef.current = { tournamentId, tableId: newTableId, sessionId: loadedSessionId };
       // Hands FK-reference the tournament-table incarnation, never the reusable
       // physical table used by the table picker. Keep the UI selection separate.
       const handTableId = tbl?.tournamentTableId ?? newTableId;
@@ -1861,20 +1873,71 @@ export function useStandaloneHandInput(tournamentId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoResumeArmed, orphanHand, players]);
 
+  // A lost Edge response is not evidence that the transaction failed. Read only
+  // the submitted hand; never retry the writer or resolve a newer "last" hand.
+  const voidHandOnServer = async (targetId: string) => {
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current
+      && generation === rosterGenerationRef.current && scope === actionScopeRef.current
+      && tableLoadGuardRef.current.isCurrent(loadToken);
+    let data: { status?: string; data?: { status?: string; error?: string } } | null = null;
+    let error: unknown = null;
+    try {
+      const response = await supabase.functions.invoke("tournament-live-update", {
+        body: buildVoidHandBody({ tournamentId, handId: targetId }),
+      });
+      data = response.data;
+      error = response.error;
+    } catch (cause) {
+      error = cause;
+    }
+    if (!current()) return "stale" as const;
+    if (!error && data?.status === "success" && data?.data?.status === "success") {
+      return "confirmed" as const;
+    }
+    let query = supabase.from("tournament_hands").select("id, is_voided")
+      .eq("id", targetId).eq("tournament_id", tournamentId)
+      .eq("table_id", tournamentTableId ?? tableId);
+    const loaded = loadedTableSessionRef.current;
+    const sessionId = rosterContext?.tableSessionId
+      ?? (loaded?.tournamentId === tournamentId && loaded.tableId === tableId ? loaded.sessionId : null);
+    if (sessionId) query = query.eq("table_session_id", sessionId);
+    let readback;
+    try {
+      readback = await query.maybeSingle();
+    } catch (cause) {
+      if (!current()) return "stale" as const;
+      throw cause;
+    }
+    if (!current()) return "stale" as const;
+    if (!readback.error && readback.data?.id === targetId && readback.data.is_voided === true) {
+      return "recovered" as const;
+    }
+    throw new Error(await readEdgeError(error, data?.data?.error ? data.data : data));
+  };
+
   const handleVoidOrphan = async () => {
     if (!orphanHand) return;
+    if (!voidFlightRef.current.begin()) return;
+    voidOwnsSubmittingRef.current = true;
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+      && scope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(loadToken);
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("tournament-live-update", {
-        body: buildVoidHandBody({ tournamentId, handId: orphanHand.id }),
-      });
-      if (error || data?.error) throw new Error(await readEdgeError(error, data));
+      if (await voidHandOnServer(orphanHand.id) === "stale") return;
       toast.success("Orphan hand voided");
       setOrphanHand(null);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      if (current()) toast.error(e instanceof Error ? e.message : "Không xác minh được kết quả void hand");
     } finally {
-      setSubmitting(false);
+      voidFlightRef.current.finish();
+      if (current() && voidOwnsSubmittingRef.current) setSubmitting(false);
+      voidOwnsSubmittingRef.current = false;
     }
   };
 
@@ -3108,23 +3171,33 @@ export function useStandaloneHandInput(tournamentId: string) {
       return;
     }
     if (!confirm("CONFIRM VOID: Toàn bộ chip sẽ hoàn về trạng thái trước hand?")) return;
+    if (!voidFlightRef.current.begin()) return;
+    voidOwnsSubmittingRef.current = true;
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+      && scope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(loadToken);
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("tournament-live-update", {
-        body: buildVoidHandBody({ tournamentId, handId: voidId }),
-      });
-      if (error || data?.error) throw new Error(await readEdgeError(error, data));
+      const outcome = await voidHandOnServer(voidId);
+      if (outcome === "stale") return;
+      setSubmitting(false);
+      voidOwnsSubmittingRef.current = false;
       toast.success("Hand VOIDED successfully");
       setLastHandId(null);
       setHandId(null);
       setHandStarted(false);
       // Void is the ONLY path that restores stacks: the server put every chip back to
       // the pre-hand state, so the felt mirrors it (see resetHand's restoreStacks note).
-      resetHand({ restoreStacks: true });
-    } catch (e: any) {
-      toast.error(e.message);
+      resetHand({ restoreStacks: outcome === "confirmed" });
+      if (outcome === "recovered") await handleTableChange(tableId);
+    } catch (e: unknown) {
+      if (current()) toast.error(e instanceof Error ? e.message : "Không xác minh được kết quả void hand");
     } finally {
-      setSubmitting(false);
+      voidFlightRef.current.finish();
+      if (current() && voidOwnsSubmittingRef.current) setSubmitting(false);
+      voidOwnsSubmittingRef.current = false;
     }
   };
 
