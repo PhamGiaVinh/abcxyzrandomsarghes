@@ -11,6 +11,8 @@ import {
   historicalWorkerFailureStatus,
   TRACKER_HISTORY_WORKER_MAX_BATCH,
   parseHistoryWorkerHandIds,
+  requireHistoryCanaryScope,
+  HISTORY_CANARY_SCOPE_ENV,
 } from "../_shared/trackerSettlement/historyWorkerPolicy.ts";
 import {
   normalizeSettlementSourceRpcResult,
@@ -32,12 +34,14 @@ Deno.serve(async (req) => {
   const options = handleOptions(req);
   if (options) return options;
   if (req.method !== "POST") return jsonResp(req, { ok: false, message: "Method not allowed" }, 405);
-  if (Deno.env.get("TRACKER_HISTORY_COMPLETION_WORKER_ENABLED") !== "true") {
-    return jsonResp(req, { ok: false, code: "worker_disabled" }, 404);
-  }
+  const workerEnabled = Deno.env.get("TRACKER_HISTORY_COMPLETION_WORKER_ENABLED") === "true";
   const url = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const authority = authorizeHistoryWorker(req, serviceKey, Deno.env.get(HISTORY_CANARY_SECRET_ENV));
+  // A dark worker admits ONLY the separate credential; service-role remains disabled.
+  if (!workerEnabled && (!authority.ok || !authority.scopedOnly)) {
+    return jsonResp(req, { ok: false, code: "worker_disabled" }, 404);
+  }
   if (!url || !serviceKey || !authority.ok) {
     return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
   }
@@ -54,6 +58,12 @@ Deno.serve(async (req) => {
     catch { return jsonResp(req, { ok: false, code: "invalid_hand_scope" }, 400); }
     if (authority.scopedOnly && !handIds) {
       return jsonResp(req, { ok: false, code: "hand_scope_required" }, 400);
+    }
+    if (authority.scopedOnly && handIds) {
+      try { requireHistoryCanaryScope(handIds, Deno.env.get(HISTORY_CANARY_SCOPE_ENV)); }
+      catch (error) {
+        return jsonResp(req, { ok: false, code: error instanceof Error ? error.message : "canary_scope_unavailable" }, 400);
+      }
     }
     const limit = body.limit === undefined ? TRACKER_HISTORY_WORKER_MAX_BATCH : Number(body.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > TRACKER_HISTORY_WORKER_MAX_BATCH) {

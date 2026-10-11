@@ -68,6 +68,7 @@ jobs:
             test -z "$active"
           done
           test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
+          test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
           echo "SOURCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Run bounded HTTP canary with memory-only temporary credential
         id: run

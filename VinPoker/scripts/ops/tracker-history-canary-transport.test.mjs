@@ -24,7 +24,7 @@ function fixture({ existing = false, lostResponse = false, badResult = false, fa
     const body = init.body ? JSON.parse(init.body) : null;
     calls.push({ url, method: init.method ?? 'GET', body, auth: init.headers?.Authorization, redirect: init.redirect });
     if (url.startsWith('https://api.supabase.com/') && url.includes('/functions/'))
-      return Response.json({ version: url.endsWith('-worker') ? 10 : 8, verify_jwt: false, status: 'ACTIVE' });
+      return Response.json({ version: url.endsWith('-worker') ? 11 : 8, verify_jwt: false, status: 'ACTIVE' });
     if (url.endsWith('/database/query/read-only')) {
       const rows = structuredClone(preflight);
       if (committed) Object.assign(rows[0].preflight.hands[0], { queue_status: 'completed', verified_outcomes: 1 });
@@ -48,7 +48,7 @@ function fixture({ existing = false, lostResponse = false, badResult = false, fa
     if (url.endsWith('-dispatcher')) return dispatcherOn
       ? Response.json({ message: 'Unauthorized' }, { status: 401 })
       : Response.json({ code: 'dispatcher_disabled' }, { status: 404 });
-    if (!enabled) return Response.json({ code: 'worker_disabled' }, { status: 404 });
+    if (!enabled && (!secret || init.headers?.Authorization !== `Bearer ${secret}`)) return Response.json({ code: 'worker_disabled' }, { status: 404 });
     if (!init.headers?.Authorization) return Response.json({ message: 'Unauthorized' }, { status: 401 });
     if (!body?.hand_ids) return Response.json({ code: 'hand_scope_required' }, { status: 400 });
     if (lostResponse) throw Error(`response lost ${secret}`);
@@ -93,6 +93,8 @@ test('memory-only credential invokes exactly selected hands and returns worker t
   assert.notEqual(scoped[0].auth, `Bearer ${env.SUPABASE_ACCESS_TOKEN}`);
   assert.equal(JSON.stringify(result).includes('fake-test-token'), false);
   assert.equal(f.calls.every(c => c.redirect === 'error'), true);
+  assert.equal(f.calls.some(c => c.body?.some?.(item => item.name === flag && item.value === 'true')), false);
+  assert.equal(f.calls.some(c => c.method === 'DELETE' && c.body.includes('TRACKER_HISTORY_CANARY_ALLOWED_HAND_IDS')), true);
 });
 
 test('an existing canary credential is never overwritten or removed', async () => {

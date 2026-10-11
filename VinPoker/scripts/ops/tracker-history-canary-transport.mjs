@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 const PROJECT = 'orlesggcjamwuknxwcpk';
 const SECRET = 'TRACKER_HISTORY_CANARY_INTERNAL_SECRET';
+const SCOPE = 'TRACKER_HISTORY_CANARY_ALLOWED_HAND_IDS';
 const ENABLE = 'TRACKER_HISTORY_COMPLETION_WORKER_ENABLED';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOUR = '5a51bec5-4da0-4dd9-861a-cc4e7678478c';
@@ -124,14 +125,14 @@ export async function runHistoryCanary(env, { fetchImpl = fetch, wait = ms => ne
   async function secretAbsent() {
     const list = await management('GET', null, 'secret_preflight_failed');
     if (!Array.isArray(list) || list.some(item => typeof item?.name !== 'string')) throw Error('history_canary_secret_preflight_failed');
-    return !list.some(item => item.name === SECRET);
+    return !list.some(item => item.name === SECRET || item.name === SCOPE);
   }
 
   try {
     requireDisabled(await call('worker'), 'worker_disabled');
     requireDisabled(await call('dispatcher'), 'dispatcher_disabled');
     if (!await secretAbsent()) throw Error('history_canary_secret_exists');
-    for (const [kind, version] of [['worker', 10], ['dispatcher', 8]]) {
+    for (const [kind, version] of [['worker', 11], ['dispatcher', 8]]) {
       const meta = await request(`https://api.supabase.com/v1/projects/${PROJECT}/functions/tournament-historical-settlement-${kind}`, {
         method: 'GET', headers: { Authorization: `Bearer ${env.SUPABASE_ACCESS_TOKEN}` } }, 'edge_preflight_failed');
       if (meta.status !== 200 || meta.body?.version !== version || meta.body?.verify_jwt !== false
@@ -147,18 +148,16 @@ export async function runHistoryCanary(env, { fetchImpl = fetch, wait = ms => ne
     // Set before the request: an unknown POST outcome still requires recovery, not a retry.
     onProvisionAttempt();
     provisionAttempted = true;
-    await management('POST', [{ name: SECRET, value: temporarySecret }], 'provision_failed');
-    await management('POST', [{ name: ENABLE, value: 'true' }], 'enable_failed');
+    await management('POST', [{ name: SECRET, value: temporarySecret }, { name: SCOPE, value: JSON.stringify(ids) }], 'provision_failed');
     let ready = false;
     for (let attempt = 0; attempt < 6; attempt++) {
-      const probe = await call('worker');
-      if (probe.status === 401) { ready = true; break; }
-      requireDisabled(probe, 'worker_disabled');
+      const probe = await call('worker', {}, true);
+      if (probe.status === 400 && probe.body?.code === 'hand_scope_required') { ready = true; break; }
+      if (probe.status !== 401) requireDisabled(probe, 'worker_disabled');
       if (attempt < 5) await wait(1000);
     }
     if (!ready) throw Error('history_canary_enable_not_observed');
-    const unscoped = await call('worker', {}, true);
-    if (unscoped.status !== 400 || unscoped.body?.code !== 'hand_scope_required') throw Error('history_canary_scope_guard_failed');
+    requireDisabled(await call('worker'), 'worker_disabled');
     requireDisabled(await call('dispatcher'), 'dispatcher_disabled');
     const response = await call('worker', { hand_ids: ids, limit: ids.length }, true);
     const stats = response.body;
@@ -178,7 +177,7 @@ export async function runHistoryCanary(env, { fetchImpl = fetch, wait = ms => ne
       try { await management('POST', [{ name: ENABLE, value: 'false' }], 'disable_failed'); }
       catch { cleanupFailed = true; }
       // Always revoke our temporary credential even when disabling failed.
-      try { await management('DELETE', [SECRET], 'revoke_failed'); }
+      try { await management('DELETE', [SECRET, SCOPE], 'revoke_failed'); }
       catch { cleanupFailed = true; }
       try {
         requireDisabled(await call('worker'), 'worker_disabled');
@@ -215,11 +214,11 @@ export async function cleanupOwnedHistoryCanary(env, marker, { fetchImpl = fetch
   }
   await send(api, { method: 'POST', headers, body: JSON.stringify([{ name: ENABLE, value: 'false' }]) }, 201);
   // Complete both recovery attempts even when the first response was lost.
-  await send(api, { method: 'DELETE', headers, body: JSON.stringify([SECRET]) }, 200);
+  await send(api, { method: 'DELETE', headers, body: JSON.stringify([SECRET, SCOPE]) }, 200);
   await send(`https://${PROJECT}.supabase.co/functions/v1/tournament-historical-settlement-worker`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 404, 'worker_disabled');
   const list = await send(api, { method: 'GET', headers }, 200);
-  if (!Array.isArray(list) || list.some(item => typeof item?.name !== 'string' || item.name === SECRET)) failed = true;
+  if (!Array.isArray(list) || list.some(item => typeof item?.name !== 'string' || item.name === SECRET || item.name === SCOPE)) failed = true;
   if (failed) throw Error('history_canary_cleanup_failed');
   return { workerOff: true, temporaryCredentialRevoked: true };
 }
