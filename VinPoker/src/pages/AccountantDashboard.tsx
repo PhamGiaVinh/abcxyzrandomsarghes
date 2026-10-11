@@ -70,7 +70,7 @@ export default function AccountantDashboard() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-2xl text-primary inline-flex items-center gap-2">
               <Calculator className="w-6 h-6" />
-              Kế toán
+              Tài chính &amp; Đối soát · nhân sự
             </h1>
             <Badge variant="outline" className="text-[10px]">
               {activeClub?.role === "accountant" ? "KẾ TOÁN CLB" : activeClub?.role === "owner" ? "CHỦ CLB" : "ADMIN"}
