@@ -348,22 +348,12 @@ Deno.serve(async (req) => {
         break;
       }
       case "update_stack": {
-        const { player_id, entry_number, chip_count } = body;
-        result = await supabase.rpc("update_stack", {
-          p_tournament_id: tournament_id,
-          p_player_id: player_id,
-          p_entry_number: entry_number,
-          p_chip_count: chip_count,
-        });
-        break;
+        return validationError("LEGACY_STACK_WRITE_RETIRED",
+          "Hãy sửa stack trong danh sách ghế Tracker để xác minh đúng phiên bàn và đồng bộ chip.");
       }
       case "bulk_update": {
-        const { updates } = body;
-        result = await supabase.rpc("bulk_update_stacks", {
-          p_tournament_id: tournament_id,
-          p_updates: updates,
-        });
-        break;
+        return validationError("LEGACY_STACK_WRITE_RETIRED",
+          "Hãy sửa stack trong danh sách ghế Tracker để xác minh đúng phiên bàn và đồng bộ chip.");
       }
       case "re_enter": {
         return validationError(

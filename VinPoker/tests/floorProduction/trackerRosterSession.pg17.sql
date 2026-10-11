@@ -511,4 +511,7 @@ RESET ROLE;
 \if :{?LEGACY_REENTRY_RETIREMENT_CASE}
 \ir legacyReentryRetirement.pg17.sql
 \endif
+\if :{?LEGACY_STACK_INTEGRITY_CASE}
+\ir legacyStackIntegrity.pg17.sql
+\endif
 ROLLBACK;
