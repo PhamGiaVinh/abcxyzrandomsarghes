@@ -14,12 +14,15 @@ on:
       - "VinPoker/tests/opsTrackerDealer/**"
       - "VinPoker/src/components/cashier/tournament-live/TournamentLiveView.tsx"
       - "VinPoker/src/components/cashier/tournament-live/ClockPanel*"
+      - "VinPoker/src/components/LiveStateEditor*"
       - "VinPoker/src/lib/tournament/clockControlState*"
       - "VinPoker/src/i18n/locales/**"
       - "VinPoker/tests/viewerHub/tournamentLiveViewBlindContext.test.tsx"
       - "VinPoker/tests/viewerHub/tournamentLiveViewInitialization.test.tsx"
       - "VinPoker/src/pages/TrackerDashboard.tsx"
       - "VinPoker/src/pages/TrackerDashboard.test.tsx"
+      - "VinPoker/src/pages/TrackerHandHistory.tsx"
+      - "VinPoker/src/pages/TrackerHandHistory.readiness.test.tsx"
       - "VinPoker/src/hooks/useNotifications.tsx"
       - "VinPoker/src/hooks/useNotifications.test.tsx"
       - "VinPoker/src/components/NotificationBell.tsx"
@@ -32,6 +35,7 @@ on:
       - "VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*"
       - "VinPoker/src/pages/ops/OpsToday*"
       - "VinPoker/src/pages/ops/OpsDealerSwing*"
+      - "VinPoker/src/pages/ops/OpsTournamentCockpit*"
       - "VinPoker/tests/floorProduction/createdTournamentSelection.render.test.tsx"
       - "VinPoker/src/components/cashier/TournamentLivePanel*"
       - "VinPoker/src/hooks/useTournamentParticipationSummary*"
@@ -85,7 +89,10 @@ jobs:
           tests/viewerHub/tournamentLiveViewInitialization.test.tsx
           src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
           src/lib/tournament/clockControlState.test.ts
+          src/pages/ops/OpsTournamentCockpit.clockScope.test.tsx
           src/pages/TrackerDashboard.test.tsx
+          src/pages/TrackerHandHistory.readiness.test.tsx
+          tests/trackerPoker/trackerHistoryAccess.test.ts
           src/hooks/useNotifications.test.tsx
           src/components/NotificationBell.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
@@ -98,6 +105,7 @@ jobs:
           tests/floorProduction/createdTournamentSelection.render.test.tsx
           src/components/cashier/TournamentLivePanel.summary.test.tsx
           src/hooks/useTournamentParticipationSummary.test.tsx
+          src/components/LiveStateEditor.test.tsx
           src/lib/tournamentParticipation.test.ts
           src/hooks/useTournamentTvDataCore.test.tsx
           src/components/chip-ops/DashboardTab.test.tsx
@@ -113,6 +121,10 @@ jobs:
         run: >-
           npx eslint
           src/OpsApp.tsx
+          src/components/LiveStateEditor.tsx
+          src/components/LiveStateEditor.test.tsx
+          src/pages/TrackerHandHistory.tsx
+          src/pages/TrackerHandHistory.readiness.test.tsx
           src/ops/coverage/trackerDealerButtonManifest.ts
           src/ops/dealer-control
           src/ops/registry/opsModuleRegistry.ts
@@ -125,12 +137,19 @@ jobs:
           src/components/NotificationBell.tsx
           src/components/NotificationBell.test.tsx
           src/pages/Notifications.tsx
+          src/pages/ops/OpsTournamentCockpit.tsx
+          src/pages/ops/OpsTournamentCockpit.clockScope.test.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
           src/components/cashier/DealerSwingTab.readState.test.tsx
           src/pages/ops/OpsToday.readState.test.tsx
           src/pages/ops/OpsDealerSwing.readState.test.tsx
+
+      # The legacy Floor/SuperAdmin summary is outside the targeted ops config.
+      - name: Type-check complete application
+        working-directory: VinPoker
+        run: npx tsc -b
 
       - name: Type-check Tracker and Dealer Control workspaces
         working-directory: VinPoker

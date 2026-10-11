@@ -1,8 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { runHistoryCanary, validateCanaryContext, canaryPreflightSql, assertCanaryPreflight, assertCanaryPostcheck, cleanupOwnedHistoryCanary } from './tracker-history-canary-transport.mjs';
 
 const hand = '7c0ab085-641e-408c-a326-e4addbcee647';
+
+test('workflow cleanup skips pre-preparation failures but preserves every attempted preparation outcome', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/tracker-history-scoped-http-canary.yml', import.meta.url), 'utf8');
+  const cleanup = workflow.split('- name: Independent owned cleanup after error or step timeout')[1];
+  const condition = cleanup?.match(/\n\s+if: ([^\r\n]+)/)?.[1];
+  assert.ok(condition, 'cleanup step must have an explicit condition');
+  const expression = condition.replaceAll('always()', 'true').replaceAll('steps.prepare.outcome', 'outcome');
+  assert.match(expression, /^[a-z '\!=&]+$/);
+  const shouldClean = new Function('outcome', `return (${expression});`);
+  for (const outcome of ['', 'skipped']) assert.equal(shouldClean(outcome), false, outcome || 'not started');
+  for (const outcome of ['success', 'failure', 'cancelled']) assert.equal(shouldClean(outcome), true, outcome);
+});
 const sha = 'a'.repeat(40);
 const env = { GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/heads/main',
   GITHUB_SHA: sha, TARGET_SHA: sha, SOURCE_CHECKOUT_SHA: sha,

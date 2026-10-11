@@ -107,7 +107,9 @@ jobs:
           OWNERSHIP_ARTIFACT_ID: '${{ steps.ownership.outputs.artifact-id }}'
         run: node scripts/ops/tracker-history-canary-transport.mjs run
       - name: Independent owned cleanup after error or step timeout
-        if: always()
+        # No resource can be provisioned before preparation starts. Preserve cleanup
+        # for failed/cancelled preparation as well as timeout in the bounded run.
+        if: always() && steps.prepare.outcome != 'skipped' && steps.prepare.outcome != ''
         working-directory: VinPoker
         timeout-minutes: 3
         env:

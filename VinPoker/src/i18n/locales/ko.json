@@ -1,4 +1,18 @@
 {
+  "liveStateSummary": {
+    "title": "실시간 상태",
+    "error": "대회 데이터를 확인할 수 없습니다. 새로고침하세요.",
+    "loading": "데이터 확인 중…",
+    "players": "남은 선수",
+    "level": "레벨",
+    "blinds": "블라인드",
+    "status": "상태",
+    "explanation": "선수 수는 참가 기록에서, 레벨과 블라인드는 서버 시계에서 가져옵니다. 운영 화면에서 조작하세요.",
+    "refresh": "새로고침",
+    "openClock": "시계 제어 열기"
+  },
+  "floorReadiness": { "unavailable": "참가자 수가 확인되지 않았습니다" },
+  "clockControl": { "loadError": "타이머 제어를 불러올 수 없습니다." },
   "stack_projection_mismatch": "좌석, 참가 및 칩 기록이 일치하지 않습니다",
   "participation": {"repairRequired":"데이터 수정 필요","repairHint":"이 기록은 확인을 위해 보존되며 현재 좌석 집계나 작업에 사용되지 않습니다.","loadError":"플레이어를 불러오지 못했습니다. 새로고침하세요.","stale":"이전 데이터가 표시되며 작업은 일시 중지됩니다.","reasons":{"missing_entry":"참가 기록 없음","entry_identity_mismatch":"참가 정보 불일치","entry_not_live":"참가 기록 비활성","missing_table_session":"테이블 또는 세션 없음","closed_session":"테이블 세션 종료","inactive_table":"테이블 비활성","table_session_mismatch":"테이블과 세션 불일치","seat_out_of_range":"좌석 정원 초과","duplicate_entry_seat":"한 참가 기록의 활성 좌석 중복","duplicate_seat_position":"좌석 위치 중복","duplicate_entry_generation":"참가 회차 중복","missing_active_seat":"착석 기록에 유효 좌석 없음"}},
   "trackerCards": { "deck": "카드 스타일", "fourColor": "4색", "classic": "클래식" },
@@ -195,6 +209,7 @@
     "randomTurn": "랜덤 턴"
   },
   "common": {
+    "archiveUnavailable": "핸드 기록을 불러올 수 없습니다. 연결을 확인하고 다시 시도하세요.",
     "participationUnavailable": "플레이어 수와 평균 스택을 확인할 수 없습니다.",
     "retry": "다시 시도",
     "loading": "불러오는 중...",

@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "owner" }, loading: false }) }));
 
 const db = vi.hoisted(() => ({ rows: [
   { id: "live", club_id: "club", deleted_at: null },
