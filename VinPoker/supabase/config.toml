@@ -12,7 +12,10 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.tournament-historical-settlement-worker]
-verify_jwt = true
+# Internal service/canary bearer credentials are checked by authorizeHistoryWorker.
+# Canary access still requires explicit hand_ids before any privileged DB call.
+verify_jwt = false
 
 [functions.tournament-historical-settlement-dispatcher]
-verify_jwt = true
+# Same constant-time handler authorization; a scoped credential stays scoped downstream.
+verify_jwt = false

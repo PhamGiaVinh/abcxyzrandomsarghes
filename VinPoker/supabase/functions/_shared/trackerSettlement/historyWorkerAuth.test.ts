@@ -5,6 +5,16 @@ const request = (token?: string) => new Request("https://example.invalid", {
   headers: token === undefined ? {} : { Authorization: token },
 });
 
+Deno.test("History deployment config permits custom bearer authentication at both handlers", async () => {
+  const config = await Deno.readTextFile(new URL("../../../config.toml", import.meta.url));
+  for (const name of ["tournament-historical-settlement-worker", "tournament-historical-settlement-dispatcher"]) {
+    const section = config.split(`[functions.${name}]`)[1]?.split("[")[0];
+    assertEquals(typeof section, "string", `${name} must have an explicit deployment policy`);
+    assertEquals(/^verify_jwt\s*=\s*false\s*$/m.test(section ?? ""), true,
+      `${name} uses constant-time handler authentication, not a user JWT`);
+  }
+});
+
 Deno.test("history canary credential is scoped while legacy service invocation stays compatible", () => {
   assertEquals(authorizeHistoryWorker(request("Bearer canary-test"), "service-test", "canary-test"), { ok: true, scopedOnly: true });
   assertEquals(authorizeHistoryWorker(request("Bearer service-test"), "service-test", "canary-test"), { ok: true, scopedOnly: false });
