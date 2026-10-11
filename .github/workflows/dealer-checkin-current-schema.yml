@@ -477,6 +477,9 @@ jobs:
           # Fresh schema-only DB excludes fixture rows committed by preceding races.
           createdb vinpoker_ops_undo_generation_20261011
           docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1
+          # identity58 above is qualified on card-overlap, not checkin. Retain
+          # checkin's Floor helpers and install its exact forward identity fence.
+          PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
           PGDATABASE=vinpoker_ops_undo_generation_20261011 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --undo
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
