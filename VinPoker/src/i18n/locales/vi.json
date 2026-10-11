@@ -12,6 +12,7 @@
     "openClock": "Mở điều khiển đồng hồ"
   },
   "floorReadiness": { "unavailable": "Chưa xác minh số người vào giải" },
+  "clockControl": { "loadError": "Không tải được quyền điều khiển đồng hồ." },
   "stack_projection_mismatch": "Chip ở ghế, entry và bảng chip không khớp",
   "participation": {"repairRequired":"Cần sửa dữ liệu","repairHint":"Các dòng này được giữ để kiểm tra lịch sử, không được tính là ghế đang chơi hoặc dùng để thao tác.","loadError":"Không tải được danh sách người chơi. Hãy làm mới.","stale":"Đang hiển thị dữ liệu cũ; thao tác tạm khóa.","reasons":{"missing_entry":"Ghế thiếu entry","entry_identity_mismatch":"Entry không khớp người chơi hoặc giải","entry_not_live":"Entry không còn hoạt động","missing_table_session":"Thiếu bàn hoặc phiên bàn","closed_session":"Phiên bàn đã đóng","inactive_table":"Bàn không hoạt động","table_session_mismatch":"Bàn và phiên không khớp","seat_out_of_range":"Ghế vượt sức chứa","duplicate_entry_seat":"Entry có nhiều ghế hoạt động","duplicate_seat_position":"Vị trí ghế bị trùng","duplicate_entry_generation":"Entry thế hệ bị trùng","missing_active_seat":"Entry đã xếp nhưng không có ghế hợp lệ"}},
   "trackerCards": { "deck": "Bộ bài", "fourColor": "4 màu", "classic": "Kiểu cũ" },

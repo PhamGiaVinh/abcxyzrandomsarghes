@@ -35,6 +35,7 @@ on:
       - "VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*"
       - "VinPoker/src/pages/ops/OpsToday*"
       - "VinPoker/src/pages/ops/OpsDealerSwing*"
+      - "VinPoker/src/pages/ops/OpsTournamentCockpit*"
       - "VinPoker/tests/floorProduction/createdTournamentSelection.render.test.tsx"
       - "VinPoker/src/components/cashier/TournamentLivePanel*"
       - "VinPoker/src/hooks/useTournamentParticipationSummary*"
@@ -88,6 +89,7 @@ jobs:
           tests/viewerHub/tournamentLiveViewInitialization.test.tsx
           src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
           src/lib/tournament/clockControlState.test.ts
+          src/pages/ops/OpsTournamentCockpit.clockScope.test.tsx
           src/pages/TrackerDashboard.test.tsx
           src/pages/TrackerHandHistory.readiness.test.tsx
           tests/trackerPoker/trackerHistoryAccess.test.ts
@@ -135,6 +137,8 @@ jobs:
           src/components/NotificationBell.tsx
           src/components/NotificationBell.test.tsx
           src/pages/Notifications.tsx
+          src/pages/ops/OpsTournamentCockpit.tsx
+          src/pages/ops/OpsTournamentCockpit.clockScope.test.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
