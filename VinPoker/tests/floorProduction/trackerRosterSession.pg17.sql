@@ -508,4 +508,7 @@ DO $$ DECLARE r jsonb; BEGIN
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 RESET ROLE;
+\if :{?LEGACY_REENTRY_RETIREMENT_CASE}
+\ir legacyReentryRetirement.pg17.sql
+\endif
 ROLLBACK;

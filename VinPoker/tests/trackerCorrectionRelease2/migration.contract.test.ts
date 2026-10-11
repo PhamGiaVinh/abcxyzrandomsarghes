@@ -10,6 +10,15 @@ const migration = readFileSync(resolve(
 const edge = readFileSync(resolve(root, "supabase/functions/tournament-live-update/index.ts"), "utf8");
 
 describe("Tracker correction Release 2 contract", () => {
+  it("rejects obsolete Tracker re-entry without invoking the participation writer", () => {
+    const retired = edge.slice(edge.indexOf('case "re_enter":'), edge.indexOf('case "start_hand":'));
+    expect(retired).toContain('return validationError(');
+    expect(retired).toContain('"LEGACY_REENTRY_RETIRED"');
+    expect(retired).not.toContain('.rpc(');
+    expect(edge).not.toContain('supabase.rpc("re_enter_tournament"');
+    const cashier = readFileSync(resolve(root, "src/components/cashier/ReentryPanel.tsx"), "utf8");
+    expect(cashier).toContain('supabase.rpc("reenter_tournament_player"');
+  });
   it("ships disabled by default and binds capabilities to an exact user/table scope", () => {
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.tracker_correction_uat_scopes");
     expect(migration).toContain("user_id uuid NOT NULL REFERENCES auth.users(id)");
