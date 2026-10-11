@@ -1,4 +1,5 @@
 {
+  "cashierOverviewRead": { "error": "統計を読み込めませんでした。更新して再試行してください。" },
   "liveStateSummary": {
     "title": "ライブ状態",
     "error": "大会データを確認できません。再読み込みしてください。",

@@ -1,4 +1,5 @@
 {
+  "cashierOverviewRead": { "error": "无法加载统计数据。请刷新重试。" },
   "liveStateSummary": {
     "title": "实时状态",
     "error": "无法验证赛事数据，请刷新重试。",

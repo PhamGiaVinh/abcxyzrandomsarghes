@@ -22,6 +22,8 @@ on:
       - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
       - "VinPoker/src/pages/SuperAdmin.tsx"
+      - "VinPoker/src/pages/CashierDashboard.tsx"
+      - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
       - "VinPoker/e2e/ops-v3-floor-cashier.mock.spec.ts"
       - "VinPoker/e2e/cashier-tour-preview.mock.spec.ts"
       - "VinPoker/tsconfig.ops-v3-floor-cashier.json"
@@ -85,6 +87,7 @@ jobs:
           src/components/floor/useFloorTournaments.test.tsx
           src/components/floor/useFloorTournaments.readScope.test.tsx
           src/components/floor/MultiDayTournamentsBoard.test.tsx
+          src/pages/CashierDashboard.tourEntry.test.tsx
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
@@ -101,6 +104,7 @@ jobs:
           npx eslint
           src/OpsApp.tsx
           src/components/TournamentRegisterModal.test.tsx
+          src/pages/CashierDashboard.tourEntry.test.tsx
           src/components/ops/OpsShell.tsx
           src/components/cashier/tournament-live/OpenTableDialog.tsx
           src/components/ops/shared/FloorPlayerActions.tsx
@@ -134,6 +138,10 @@ jobs:
       - name: Type-check unified Floor and Cashier workspaces
         working-directory: VinPoker
         run: npx tsc -p tsconfig.ops-v3-floor-cashier.json --pretty false
+
+      - name: Type-check complete project references
+        working-directory: VinPoker
+        run: npx tsc -b --pretty false
 
       - name: Build production source (flags remain default-off)
         working-directory: VinPoker
