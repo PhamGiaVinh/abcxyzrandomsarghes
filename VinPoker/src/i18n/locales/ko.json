@@ -1,4 +1,5 @@
 {
+  "clockControl": { "loadError": "타이머 제어를 불러올 수 없습니다." },
   "stack_projection_mismatch": "좌석, 참가 및 칩 기록이 일치하지 않습니다",
   "participation": {"repairRequired":"데이터 수정 필요","repairHint":"이 기록은 확인을 위해 보존되며 현재 좌석 집계나 작업에 사용되지 않습니다.","loadError":"플레이어를 불러오지 못했습니다. 새로고침하세요.","stale":"이전 데이터가 표시되며 작업은 일시 중지됩니다.","reasons":{"missing_entry":"참가 기록 없음","entry_identity_mismatch":"참가 정보 불일치","entry_not_live":"참가 기록 비활성","missing_table_session":"테이블 또는 세션 없음","closed_session":"테이블 세션 종료","inactive_table":"테이블 비활성","table_session_mismatch":"테이블과 세션 불일치","seat_out_of_range":"좌석 정원 초과","duplicate_entry_seat":"한 참가 기록의 활성 좌석 중복","duplicate_seat_position":"좌석 위치 중복","duplicate_entry_generation":"참가 회차 중복","missing_active_seat":"착석 기록에 유효 좌석 없음"}},
   "trackerCards": { "deck": "카드 스타일", "fourColor": "4색", "classic": "클래식" },

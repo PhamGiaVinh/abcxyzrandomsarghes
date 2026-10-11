@@ -1,4 +1,5 @@
 {
+  "clockControl": { "loadError": "无法加载计时器控制。" },
   "stack_projection_mismatch": "座位、参赛记录与筹码记录不一致",
   "participation": {"repairRequired":"需要修复数据","repairHint":"保留这些记录以供核查，不计入当前座位，也不可用于操作。","loadError":"无法加载玩家，请刷新。","stale":"正在显示旧数据，操作暂时禁用。","reasons":{"missing_entry":"座位缺少参赛记录","entry_identity_mismatch":"参赛身份不匹配","entry_not_live":"参赛记录已不活跃","missing_table_session":"缺少牌桌或会话","closed_session":"牌桌会话已关闭","inactive_table":"牌桌不活跃","table_session_mismatch":"牌桌与会话不匹配","seat_out_of_range":"座位超出容量","duplicate_entry_seat":"参赛记录有多个活跃座位","duplicate_seat_position":"座位位置重复","duplicate_entry_generation":"参赛次数记录重复","missing_active_seat":"已入座记录无有效座位"}},
   "trackerCards": { "deck": "牌面样式", "fourColor": "四色", "classic": "经典" },

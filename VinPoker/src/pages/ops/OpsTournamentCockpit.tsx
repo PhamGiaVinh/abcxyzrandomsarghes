@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ChevronLeft, Lock, LayoutGrid, Loader2, LogIn, Monitor, AlertTriangle, Trophy, Play, Pause, SkipForward, SkipBack, Minus, Plus, Users, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -45,11 +46,12 @@ const mmss = (s: number) => {
 
 interface LevelRow { level_number: number; small_blind: number; big_blind: number; ante: number; duration_minutes: number; is_break: boolean }
 /** Nhánh dữ liệu đồng hồ dùng cho ĐIỀU KHIỂN (from `get_tournament_clock`, giống ClockPanel). */
-interface OpsClock { status: string; is_running: boolean; remaining_seconds: number; current_level: { level_number: number } | null; next_level?: { level_number: number } | null; message?: string | null; control_revision: string }
+interface OpsClock { tournament_id: string; status: string; is_running: boolean; remaining_seconds: number; current_level: { level_number: number } | null; next_level?: { level_number: number } | null; message?: string | null; control_revision: string }
 /** Người đã bị loại — từ `tournament_entries` (status='busted') + prize join (không có ghế active). */
 interface BustedRow { entry_id: string; player_id: string; entry_number: number; player_name: string; finished_place: number | null; prize: number | null; last_chip: number | null }
 
 export default function OpsTournamentCockpit({ section }: { section: FloorTournamentSection }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams();
   const tournamentOps = useTournamentOps();
@@ -146,26 +148,64 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
   //    (Edge enforces quyền). Trạng thái nút đọc từ `get_tournament_clock` (nguồn desktop dùng);
   //    sau mỗi lệnh reload clock + tv.refetch() để đồng hồ lớn cập nhật. KHÔNG auto-advance (thủ
   //    công — auto để desktop/TV lo, tránh 2 client cùng nhảy level).
-  const [clk, setClk] = useState<OpsClock | null>(null);
+  const clockIdentity = JSON.stringify([user?.id, id, authLoading, tab]);
+  const clockIdentityRef = useRef({ identity: clockIdentity, generation: 0 });
+  if (clockIdentityRef.current.identity !== clockIdentity) {
+    clockIdentityRef.current = { identity: clockIdentity, generation: clockIdentityRef.current.generation + 1 };
+  }
+  const clockScope = `${clockIdentity}:${clockIdentityRef.current.generation}`;
+  const clockScopeRef = useRef(clockScope);
+  clockScopeRef.current = clockScope;
+  const clockReadSequence = useRef(0);
+  const clockMounted = useRef(false);
+  const clockActionRef = useRef<{ scope: string } | null>(null);
+  const [clockLoadedScope, setClockLoadedScope] = useState<string | null>(null);
+  const [storedClk, setClk] = useState<OpsClock | null>(null);
+  const clk = clockLoadedScope === clockScope ? storedClk : null;
+  const [clockReadError, setClockReadError] = useState(false);
+  useEffect(() => {
+    clockMounted.current = true;
+    return () => { clockMounted.current = false; };
+  }, []);
   const [clkBusy, setClkBusy] = useState(false);
   const primaryClockAction = clk ? getTournamentClockPrimaryAction(clk) : null;
   const canUsePostStartControls = clk
     ? canUseTournamentClockPostStartControls(clk)
     : false;
   const loadClk = useCallback(async () => {
-    if (!id) return;
-    const { data, error } = await supabase.rpc("get_tournament_clock", { p_tournament_id: id });
-    if (error) return;                       // read best-effort; đồng hồ lớn đã có từ tv.data
-    setClk(data as unknown as OpsClock);
-  }, [id, supabase]);
+    const sequence = ++clockReadSequence.current;
+    const current = () => clockMounted.current && clockScopeRef.current === clockScope && clockReadSequence.current === sequence;
+    setClockLoadedScope(null);
+    setClk(null);
+    setClockReadError(false);
+    setClkBusy(true);
+    try {
+      if (!id || !user?.id || authLoading || tab !== "status") return;
+      const { data, error } = await supabase.rpc("get_tournament_clock", { p_tournament_id: id });
+      if (!current()) return;
+      const value = data as unknown as OpsClock;
+      if (error || !value || value.tournament_id !== id || !Number.isFinite(value.remaining_seconds)
+        || typeof value.is_running !== "boolean") throw new Error("Clock context unavailable");
+      setClk(value);
+      setClockLoadedScope(clockScope);
+    } catch {
+      if (current()) setClockReadError(true);
+    } finally {
+      if (current()) setClkBusy(false);
+    }
+  }, [id, user?.id, authLoading, tab, clockScope, supabase]);
   useEffect(() => { if (tab === "status") loadClk(); }, [tab, loadClk]);
   const clockAct = useCallback(async (action: string, extra?: Record<string, unknown>) => {
-    if (!id || clkBusy) return;
+    if (!id || !clk || !user?.id || authLoading || clkBusy || clockScopeRef.current !== clockScope
+      || clockActionRef.current?.scope === clockScope) return;
+    const operation = { scope: clockScope };
+    const current = () => clockMounted.current && clockScopeRef.current === clockScope && clockActionRef.current === operation;
     const expectedControlRevision = action === "start" ? null : clk?.control_revision;
     if (action !== "start" && !expectedControlRevision) {
       await loadClk();
       return;
     }
+    clockActionRef.current = operation;
     setClkBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("tournament-live-clock", {
@@ -178,6 +218,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
             : {}),
         },
       });
+      if (!current()) return;
       const err = floorOpsResponseErrorCode(data) ?? error?.message;
       if (err) {
         toast.error(floorOpsErrorMessage(err, "Không thực hiện được"));
@@ -186,12 +227,12 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
       }
       await Promise.all([loadClk(), tv.refetch()]);   // không optimistic
     } catch (e) {
-      toast.error(e instanceof Error ? `Lỗi mạng: ${e.message}` : "Không thực hiện được");
+      if (current()) toast.error(e instanceof Error ? `Lỗi mạng: ${e.message}` : "Không thực hiện được");
     } finally {
-      setClkBusy(false);
+      if (current()) setClkBusy(false);
+      if (clockActionRef.current === operation) clockActionRef.current = null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, clkBusy, clk?.control_revision, loadClk]);
+  }, [id, clk, user?.id, authLoading, clkBusy, clockScope, supabase, loadClk, tv]);
 
   // ── Floor cockpit (cờ cockpitFloorActions): S2 sơ đồ bàn inline + S3 danh sách 3-tab thao tác ──
   const cockpitOn = FEATURES.cockpitFloorActions;
@@ -362,6 +403,10 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
           </div>
           {/* Điều khiển đồng hồ — Tạm dừng/Tiếp tục/Bắt đầu · Level trước-tiếp · Chỉnh giờ ±1 phút.
               Cả giải (không phải 1 bàn). Server tự kiểm quyền; nút disable khi đang chạy lệnh. */}
+          {clockReadError && <div role="alert" className="ios-card p-3 text-sm">
+            {t("clockControl.loadError")}
+            <button onClick={loadClk} disabled={clkBusy} className="ml-2 min-h-11 underline">{t("common.retry")}</button>
+          </div>}
           {clk && (
             <div className="ios-card space-y-2.5 p-3.5">
               <div className="flex items-center gap-2">
