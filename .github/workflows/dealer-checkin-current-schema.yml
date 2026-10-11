@@ -11,6 +11,7 @@ on:
       - 'VinPoker/scripts/ops/tracker-card-56-*'
       - 'VinPoker/supabase/migrations/20270128000056_tracker_card_batch_integrity_v1.sql'
       - 'VinPoker/tests/trackerVoice/cardBatchIntegrity*'
+      - 'VinPoker/tests/trackerCorrectionRelease2/undoGeneration.currentSchema.sql'
       - 'VinPoker/tests/trackerVoice/cardBoardIntegrity*'
       - 'VinPoker/supabase/migrations/20270128000057_dealer_pt_policy_tenant_integrity_v1.sql'
       - 'VinPoker/tests/dealerSwing/accrualTenant*'
@@ -472,6 +473,11 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql
           psql -X -v ON_ERROR_STOP=1 -v STALE_STACK_FIRST_ARRIVAL_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          # Active-hand undo: real authenticated RPC, revision/hash and retry fences.
+          # Fresh schema-only DB excludes fixture rows committed by preceding races.
+          createdb vinpoker_ops_undo_generation_20261011
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1
+          PGDATABASE=vinpoker_ops_undo_generation_20261011 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --undo
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
         run: |
