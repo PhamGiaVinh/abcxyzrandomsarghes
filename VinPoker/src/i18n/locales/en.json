@@ -11,6 +11,7 @@
     "refresh": "Refresh",
     "openClock": "Open clock controls"
   },
+  "floorReadiness": { "unavailable": "Entrant count not verified" },
   "stack_projection_mismatch": "Seat, entry and chip projection stacks disagree",
   "participation": {"repairRequired":"Data repair required","repairHint":"These records are retained for investigation, not counted as current seats or available for actions.","loadError":"Could not load players. Please refresh.","stale":"Showing stale data; actions are temporarily disabled.","reasons":{"missing_entry":"Seat has no entry","entry_identity_mismatch":"Entry identity does not match","entry_not_live":"Entry is no longer live","missing_table_session":"Missing table or session","closed_session":"Table session is closed","inactive_table":"Table is inactive","table_session_mismatch":"Table/session mismatch","seat_out_of_range":"Seat exceeds capacity","duplicate_entry_seat":"Entry has multiple active seats","duplicate_seat_position":"Duplicate seat position","duplicate_entry_generation":"Duplicate entry generation","missing_active_seat":"Seated entry has no valid active seat"}},
   "trackerCards": { "deck": "Card deck", "fourColor": "4 colors", "classic": "Classic" },
