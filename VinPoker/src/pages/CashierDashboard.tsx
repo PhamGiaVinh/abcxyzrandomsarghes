@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -253,7 +254,7 @@ export default function CashierDashboard() {
 
         {/* Main */}
         <main className="col-span-12 md:col-span-9 lg:col-span-10 min-w-0">
-          {section === "overview" && <OverviewPanel clubIds={clubIds} onJump={setSection} />}
+          {section === "overview" && <OverviewPanel key={JSON.stringify([userId, isAdmin, [...clubIds].sort()])} clubIds={clubIds} onJump={setSection} />}
           {section === "staking" && <StakingPanel clubIds={clubIds} />}
           {section === "members" && <MembersPanel clubIds={clubIds} clubs={clubs} />}
           {section === "reports" && <ReportsPanel clubIds={clubIds} clubs={clubs} />}
@@ -306,34 +307,48 @@ export default function CashierDashboard() {
 /* ============================================================== */
 
 function OverviewPanel({ clubIds, onJump }: { clubIds: string[]; onJump: (s: SectionKey) => void }) {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<{ active: number; pending: number; pendingResults: number; checkins: number } | null>(null);
+  const [readError, setReadError] = useState(false);
+  const requestSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current;
     setStats(null);
-    if (clubIds.length === 0) {
+    setReadError(false);
+    try {
       // admin – global counts
-      const [a, p, r, c] = await Promise.all([
+      const results = await (clubIds.length === 0 ? Promise.all([
         supabase.from("staking_deals").select("id", { count: "exact", head: true }).in("status", ["funded", "committed"]),
         supabase.from("staking_purchases").select("id", { count: "exact", head: true }).eq("status", "committed"),
         supabase.from("staking_deals").select("id", { count: "exact", head: true }).eq("status", "funded"),
         supabase.from("staking_deals").select("id", { count: "exact", head: true }).eq("player_checked_in", true)
           .gte("player_checkin_at", startOfDayIso()),
-      ]);
-      setStats({ active: a.count ?? 0, pending: p.count ?? 0, pendingResults: r.count ?? 0, checkins: c.count ?? 0 });
-      return;
-    }
-    const [a, p, r, c] = await Promise.all([
+      ]) : Promise.all([
       supabase.from("staking_deals").select("id", { count: "exact", head: true }).in("club_id", clubIds).in("status", ["funded", "committed"]),
       supabase.from("staking_purchases").select("id, deal:staking_deals!inner(club_id)", { count: "exact", head: true })
         .eq("status", "committed").in("deal.club_id", clubIds),
       supabase.from("staking_deals").select("id", { count: "exact", head: true }).in("club_id", clubIds).eq("status", "funded"),
       supabase.from("staking_deals").select("id", { count: "exact", head: true }).in("club_id", clubIds)
         .eq("player_checked_in", true).gte("player_checkin_at", startOfDayIso()),
-    ]);
-    setStats({ active: a.count ?? 0, pending: p.count ?? 0, pendingResults: r.count ?? 0, checkins: c.count ?? 0 });
+      ]));
+      if (request !== requestSeq.current) return;
+      const counts = results.map((result) => {
+        if (result.error || typeof result.count !== "number" || !Number.isSafeInteger(result.count) || result.count < 0) {
+          throw new Error("overview_count_unavailable");
+        }
+        return result.count;
+      });
+      setStats({ active: counts[0], pending: counts[1], pendingResults: counts[2], checkins: counts[3] });
+    } catch {
+      if (request === requestSeq.current) setReadError(true);
+    }
   }, [clubIds]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { requestSeq.current += 1; };
+  }, [load]);
 
   const cards = [
     { label: "Active Deals", value: stats?.active, icon: Coins, color: "text-primary", click: () => onJump("staking") },
@@ -344,6 +359,7 @@ function OverviewPanel({ clubIds, onJump }: { clubIds: string[]; onJump: (s: Sec
 
   return (
     <div className="space-y-4">
+      {readError && <p role="alert" className="text-sm text-destructive">{t("cashierOverviewRead.error")}</p>}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {cards.map((c) => (
           <button key={c.label} onClick={c.click}
@@ -354,7 +370,7 @@ function OverviewPanel({ clubIds, onJump }: { clubIds: string[]; onJump: (s: Sec
                 <c.icon className={"w-4 h-4 " + c.color} />
               </div>
               <div className="mt-2 text-2xl font-bold">
-                {stats == null ? <Skeleton className="h-7 w-12" /> : c.value}
+                {readError ? "—" : stats == null ? <Skeleton className="h-7 w-12" /> : c.value}
               </div>
             </Card>
           </button>

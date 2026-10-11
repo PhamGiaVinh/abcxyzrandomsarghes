@@ -8,9 +8,10 @@ const mock = vi.hoisted(() => ({
   scopeError: null as { message: string } | null,
   clubError: null as { message: string } | null,
   scopeRequest: null as ((userId: string) => Promise<{ data: string[] | null; error: { message: string } | null }>) | null,
+  countRequest: null as ((table: string) => Promise<MockQueryResult>) | null,
 }));
 
-type MockQueryResult = { data: unknown[]; count: number; error: { message: string } | null };
+type MockQueryResult = { data: unknown[]; count: number | null; error: { message: string } | null };
 type MockQuery = {
   select: () => MockQuery;
   in: () => MockQuery;
@@ -25,6 +26,9 @@ type MockQuery = {
 
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({ user: { id: mock.userId }, loading: false, isAdmin: false, isCashier: true }),
+}));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: () => "Không tải được thống kê. Hãy làm mới để thử lại." }),
 }));
 vi.mock("@/lib/featureFlags", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/featureFlags")>(),
@@ -44,7 +48,9 @@ vi.mock("@/integrations/supabase/client", () => ({
       query.eq = () => query;
       query.gte = () => query;
       query.limit = () => Promise.resolve({ data: [], count: 0, error: null });
-      query.then = (onfulfilled, onrejected) => Promise.resolve(result).then(onfulfilled, onrejected);
+      query.then = (onfulfilled, onrejected) => (table !== "clubs" && mock.countRequest
+        ? mock.countRequest(table)
+        : Promise.resolve(result)).then(onfulfilled, onrejected);
       return { select: () => query };
     },
   },
@@ -64,6 +70,81 @@ describe("Cashier tour entry", () => {
     mock.scopeError = null;
     mock.clubError = null;
     mock.scopeRequest = null;
+    mock.countRequest = null;
+  });
+
+  it("does not present an unavailable overview count as confirmed zero", async () => {
+    mock.countRequest = async (table) => table === "staking_purchases"
+      ? { data: [], count: null, error: { message: "503 backend unavailable" } }
+      : { data: [], count: 0, error: null };
+    render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+      <Route path="/cashier" element={<CashierDashboard />} />
+    </Routes></MemoryRouter>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Không tải được thống kê");
+    expect(screen.queryByRole("button", { name: "Active Deals 0" })).not.toBeInTheDocument();
+  });
+
+  it("does not let a late overview refresh replace a newer refresh", async () => {
+    mock.countRequest = async () => ({ data: [], count: 5, error: null });
+    await act(async () => {
+      render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+        <Route path="/cashier" element={<CashierDashboard />} />
+      </Routes></MemoryRouter>);
+    });
+    expect(screen.getByRole("button", { name: "Active Deals 5" })).toBeInTheDocument();
+    let resolveOld!: (result: MockQueryResult) => void;
+    const oldRead = new Promise<MockQueryResult>((resolve) => { resolveOld = resolve; });
+    mock.countRequest = () => oldRead;
+    fireEvent.click(screen.getByRole("button", { name: "Làm mới" }));
+    await act(async () => { await Promise.resolve(); });
+    mock.countRequest = async () => ({ data: [], count: 2, error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Làm mới" }));
+    expect(await screen.findByRole("button", { name: "Active Deals 2" })).toBeInTheDocument();
+    await act(async () => { resolveOld({ data: [], count: 9, error: null }); });
+    expect(screen.getByRole("button", { name: "Active Deals 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Active Deals 9" })).not.toBeInTheDocument();
+  });
+
+  it("allows a confirmed zero after retrying a failed overview read", async () => {
+    mock.countRequest = async () => ({ data: [], count: null, error: { message: "Failed to fetch" } });
+    render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+      <Route path="/cashier" element={<CashierDashboard />} />
+    </Routes></MemoryRouter>);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    mock.countRequest = async () => ({ data: [], count: 0, error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Làm mới" }));
+    expect(await screen.findByRole("button", { name: "Active Deals 0" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("treats a missing count without an error as unavailable, not zero", async () => {
+    mock.countRequest = async () => ({ data: [], count: null, error: null });
+    render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+      <Route path="/cashier" element={<CashierDashboard />} />
+    </Routes></MemoryRouter>);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Active Deals 0" })).not.toBeInTheDocument();
+  });
+
+  it("discards the old account's count response after an account switch", async () => {
+    let resolveOld!: (result: MockQueryResult) => void;
+    const oldRead = new Promise<MockQueryResult>((resolve) => { resolveOld = resolve; });
+    mock.countRequest = () => mock.userId === "cashier-a" ? oldRead
+      : Promise.resolve({ data: [], count: 3, error: null });
+    const view = render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+      <Route path="/cashier" element={<CashierDashboard />} />
+    </Routes></MemoryRouter>);
+    expect(await screen.findByText("Cashier CLB")).toBeInTheDocument();
+    await act(async () => { await Promise.resolve(); });
+    mock.userId = "cashier-b";
+    mock.clubs = [{ id: "club-b", name: "Club B" }];
+    view.rerender(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+      <Route path="/cashier" element={<CashierDashboard />} />
+    </Routes></MemoryRouter>);
+    expect(await screen.findByRole("button", { name: "Active Deals 3" })).toBeInTheDocument();
+    await act(async () => { resolveOld({ data: [], count: 9, error: null }); });
+    expect(screen.getByRole("button", { name: "Active Deals 3" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Active Deals 9" })).not.toBeInTheDocument();
   });
 
   it("sends a saved legacy buy-in link to the scoped tour counter", async () => {

@@ -1,4 +1,5 @@
 {
+  "cashierOverviewRead": { "error": "Không tải được thống kê. Hãy làm mới để thử lại." },
   "liveStateSummary": {
     "title": "Trạng thái trực tiếp",
     "error": "Không xác minh được dữ liệu giải. Hãy tải lại.",
