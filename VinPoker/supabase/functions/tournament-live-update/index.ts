@@ -366,13 +366,10 @@ Deno.serve(async (req) => {
         break;
       }
       case "re_enter": {
-        const { player_id, new_chip_count } = body;
-        result = await supabase.rpc("re_enter_tournament", {
-          p_tournament_id: tournament_id,
-          p_player_id: player_id,
-          p_new_chip_count: new_chip_count || 0,
-        });
-        break;
+        return validationError(
+          "LEGACY_REENTRY_RETIRED",
+          "Re-entry phải thực hiện trong Cashier để tạo đúng entry và ghi nhận buy-in. Không thể cấp stack qua Tracker.",
+        );
       }
       case "start_hand": {
         const { table_id, hand_number, hand_time, button_seat,
