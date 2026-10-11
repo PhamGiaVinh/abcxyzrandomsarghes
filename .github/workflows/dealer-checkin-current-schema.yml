@@ -97,6 +97,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000032_tournament_seat_display_preservation_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000033_tournament_seat_move_tuple_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql'
       - 'VinPoker/supabase/migrations/20270128000036_floor_manual_entry_roundtrip_v1.sql'
       - 'VinPoker/tests/floorProduction/manualEntryRollback.currentSchema.mjs'
       - 'VinPoker/tests/floorProduction/assignParticipation.pg17.sql'
@@ -292,7 +293,9 @@ jobs:
           node tests/floorProduction/seatMoveTupleRollback.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000034_floor_move_wrapper_receipt_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/assignParticipation.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v malformed_roster_alias_case=true -f tests/floorProduction/assignParticipation.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -v free_sit_roundtrip=true -f tests/floorProduction/assignParticipation.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -v seed_chip_projection=true -v projection_stack=20001 -f tests/floorProduction/assignParticipation.pg17.sql
           node tests/floorProduction/assignIntegrityRollback.currentSchema.mjs

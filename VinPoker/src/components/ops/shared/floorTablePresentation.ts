@@ -24,7 +24,7 @@ export interface FloorRosterSeat {
   playerName: string;
   chipsLabel: string;
   entryNumber?: number | null;
-  integrityStatus?: "valid" | "missing_entry";
+  integrityStatus?: "valid" | "missing_entry" | "invalid_participation";
   playerId?: string;
 }
 

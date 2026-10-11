@@ -1,4 +1,8 @@
 \set ON_ERROR_STOP on
+\if :{?malformed_roster_alias_case}
+\else
+\set malformed_roster_alias_case false
+\endif
 -- Optional control distinguishes tuple repair from the missing upstream chip
 -- projection. Default remains the original RED; never seed counts silently.
 \if :{?seed_chip_projection}
@@ -48,6 +52,7 @@ SELECT set_config('test.assign_free_sit_roundtrip', :'free_sit_roundtrip', true)
 SELECT set_config('test.assign_manual_entry', :'manual_entry', true);
 SELECT set_config('test.assign_table_mode', :'table_mode', true);
 SELECT set_config('test.assign_locked_seat', :'locked_seat_case', true);
+SELECT set_config('test.assign_malformed_roster_alias', :'malformed_roster_alias_case', true);
 SELECT set_config('test.assign_projection_mismatch', (:seed_chip_projection AND :projection_stack <> 20000)::text, true);
 \if :seed_chip_projection
 INSERT INTO public.tournament_chip_counts(tournament_id,player_id,entry_number,chip_count)
@@ -243,6 +248,58 @@ DO $$ DECLARE opened jsonb; result jsonb; projection jsonb; tt uuid; session_id 
     AND s->>'participation_status'='seated' AND s->>'table_id'=tt::text
     AND s->>'table_session_id'=session_id::text AND (s->>'chip_count')::bigint=20000) THEN
   RAISE EXCEPTION 'assigned entry must remain valid seated participation with exact tuple';
+ END IF;
+ IF current_setting('test.assign_malformed_roster_alias')='true' THEN
+   PERFORM set_config('role','authenticated',true);
+   IF NOT EXISTS(SELECT 1 FROM public.get_floor_tournament_table_roster_v6('f7350000-0000-4000-8000-000000000003') r
+     CROSS JOIN LATERAL jsonb_array_elements(r.seats) s
+     WHERE s->>'entry_id'='f7350000-0000-4000-8000-000000000031'
+       AND s->>'integrity_status'='valid') THEN
+     RAISE EXCEPTION 'qualified occupied seat must remain actionable';
+   END IF;
+   PERFORM set_config('role','none',true);
+   IF has_function_privilege('anon','public.get_floor_tournament_table_roster_v6(uuid)','EXECUTE')
+    OR has_function_privilege('service_role','public.get_floor_tournament_table_roster_v6(uuid)','EXECUTE')
+    OR NOT has_function_privilege('authenticated','public.get_floor_tournament_table_roster_v6(uuid)','EXECUTE') THEN
+     RAISE EXCEPTION 'roster v6 ACL mismatch';
+   END IF;
+   -- Isolated malformed legacy alias; preserve canonical tuple, entry and chips.
+   UPDATE public.tournament_seats SET table_id=NULL
+    WHERE entry_id='f7350000-0000-4000-8000-000000000031' AND is_active;
+   PERFORM set_config('role','authenticated',true);
+   projection:=public.get_tournament_participation_v1('f7350000-0000-4000-8000-000000000003');
+   IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(projection->'seats') s
+     WHERE s->>'entry_id'='f7350000-0000-4000-8000-000000000031'
+       AND s->>'participation_status'='anomaly') THEN
+     RAISE EXCEPTION 'malformed alias must remain visible invalid';
+   END IF;
+   IF EXISTS(SELECT 1 FROM public.get_floor_tournament_table_roster_v6('f7350000-0000-4000-8000-000000000003') r
+     CROSS JOIN LATERAL jsonb_array_elements(r.seats) s
+     WHERE s->>'entry_id'='f7350000-0000-4000-8000-000000000031'
+       AND s->>'integrity_status'='valid') THEN
+     RAISE EXCEPTION 'roster exposes anomalous participation as actionable valid seat';
+   END IF;
+   IF (SELECT count(*) FROM public.get_floor_tournament_table_roster_v6('f7350000-0000-4000-8000-000000000003') r
+     CROSS JOIN LATERAL jsonb_array_elements(r.seats) s
+     WHERE s->>'entry_id'='f7350000-0000-4000-8000-000000000031'
+       AND s->>'integrity_status'='invalid_participation'
+       AND (s->>'chip_count')::bigint=20000) <> 1 THEN
+     RAISE EXCEPTION 'anomalous occupied seat must remain visible once with preserved chips';
+   END IF;
+   PERFORM set_config('role','none',true);
+   IF (SELECT current_stack FROM public.tournament_entries WHERE id='f7350000-0000-4000-8000-000000000031') IS DISTINCT FROM 20000
+     OR (SELECT count(*) FROM public.tournament_seats WHERE entry_id='f7350000-0000-4000-8000-000000000031' AND is_active
+       AND table_id IS NULL AND tournament_table_id=tt AND table_session_id=session_id AND chip_count=20000) <> 1 THEN
+     RAISE EXCEPTION 'roster read changed canonical occupancy or stack';
+   END IF;
+   PERFORM set_config('request.jwt.claim.sub','f7350000-0000-4000-8000-000000000099',true);
+   PERFORM set_config('role','authenticated',true);
+   BEGIN
+     PERFORM * FROM public.get_floor_tournament_table_roster_v6('f7350000-0000-4000-8000-000000000003');
+     RAISE EXCEPTION 'foreign actor accepted by roster v6';
+   EXCEPTION WHEN insufficient_privilege THEN NULL;
+   END;
+   PERFORM set_config('role','none',true);
  END IF;
 END $$;
 ROLLBACK;
