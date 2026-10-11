@@ -6,6 +6,7 @@ on:
       - '.github/workflows/tracker-void-59-protected-apply.yml'
       - 'VinPoker/scripts/ops/tracker-void-59-*'
       - 'VinPoker/scripts/ops/tracker-reentry-60-*'
+      - '.github/workflows/tracker-reentry-60-protected-apply.yml'
       - '.github/workflows/tracker-card-56-protected-apply.yml'
       - 'VinPoker/scripts/ops/tracker-card-56-*'
       - 'VinPoker/supabase/migrations/20270128000056_tracker_card_batch_integrity_v1.sql'
@@ -445,7 +446,7 @@ jobs:
         env:
           PGDATABASE: vinpoker_ops_card56_overlap_20261011
         run: |
-          node --test scripts/ops/tracker-reentry-60-release-plan.test.mjs
+          node --test scripts/ops/tracker-reentry-60-release-plan.test.mjs scripts/ops/tracker-reentry-60-protected-apply.test.mjs
           createdb --template="$PGDATABASE" vinpoker_ops_reentry60_atomic_20261011
           PGDATABASE=vinpoker_ops_reentry60_atomic_20261011 REENTRY60_PG_TEST=1 node --test scripts/ops/tracker-reentry-60-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyReentryCanonicalSnapshot.pg17.sql
