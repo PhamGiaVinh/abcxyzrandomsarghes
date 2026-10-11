@@ -136,7 +136,11 @@ describe("historical settlement display migration contract", () => {
     expect(dispatcher).toContain('!authority.ok');
     expect(dispatcher).toContain('authority.scopedOnly && !handIds');
     expect(dispatcher).toContain('authority.scopedOnly ? canarySecret : serviceKey');
-    expect(supabaseConfig).toMatch(/\[functions\.tournament-historical-settlement-dispatcher\]\r?\nverify_jwt = true/);
+    for (const functionName of ['tournament-historical-settlement-worker', 'tournament-historical-settlement-dispatcher']) {
+      const section = supabaseConfig.split(`[functions.${functionName}]`)[1]?.split('[')[0];
+      expect(section, `${functionName} deployment policy`).toBeDefined();
+      expect(section).toMatch(/^verify_jwt\s*=\s*false\s*$/m);
+    }
     expect(dispatcher.indexOf('TRACKER_HISTORY_COMPLETION_WORKER_ENABLED')
       < dispatcher.indexOf('authorizeHistoryWorker(req, serviceKey, canarySecret)')).toBe(true);
     expect(dispatcher.indexOf('authority.scopedOnly && !handIds')

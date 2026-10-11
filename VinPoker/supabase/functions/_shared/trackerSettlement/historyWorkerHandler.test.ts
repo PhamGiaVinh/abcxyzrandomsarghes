@@ -32,8 +32,23 @@ Deno.test("actual History handlers enforce scoped canary and dispatcher preserve
     for (const entrypoint of ["tournament-historical-settlement-worker", "tournament-historical-settlement-dispatcher"]) {
       await import(new URL(`../../${entrypoint}/index.ts`, import.meta.url).href);
       assertEquals(typeof handler, "function");
-      const denied = await call("outsider-test", { hand_ids: [handId], limit: 1 });
-      assertEquals(denied.status, 401);
+      // Without gateway JWT enforcement, ordinary/malformed bearers still must
+      // fail at the handler before any service client call or forwarding.
+      for (const token of ["outsider-test", "", "eyJhbGciOiJIUzI1NiJ9.user-fixture.signature-fixture"]) {
+        const denied = await call(token, { hand_ids: [handId], limit: 1 });
+        assertEquals(denied.status, 401);
+        await denied.json();
+      }
+      const absent = await handler!(new Request("https://example.invalid", {
+        method: "POST", body: JSON.stringify({ hand_ids: [handId], limit: 1 }),
+      }));
+      assertEquals(absent.status, 401);
+      await absent.json();
+      delete environment.TRACKER_HISTORY_CANARY_INTERNAL_SECRET;
+      const unconfigured = await call("canary-test", { hand_ids: [handId], limit: 1 });
+      assertEquals(unconfigured.status, 401);
+      await unconfigured.json();
+      environment.TRACKER_HISTORY_CANARY_INTERNAL_SECRET = "canary-test";
       const unscoped = await call("canary-test", { limit: 1 });
       assertEquals(unscoped.status, 400);
       assertEquals((await unscoped.json()).code, "hand_scope_required");
