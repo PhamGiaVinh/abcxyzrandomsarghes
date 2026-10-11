@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { vi, describe, expect, it } from "vitest";
 import { FloorTableMapPanelV3 } from "@/components/cashier/tournament-live/FloorTableMapPanelV3";
 import type { Tournament } from "@/types/tournament";
+import { FEATURES } from "@/lib/featureFlags";
 
 const fixture = vi.hoisted(() => ({
   actor: "owner-a",
@@ -115,6 +116,20 @@ async function submitMode() {
 }
 
 describe("Floor roster mobile actions", () => {
+  it("allows the table toolbar to wrap inside narrow Floor cards", async () => {
+    const redrawEnabled = FEATURES.floorRedrawSeatLockV1;
+    FEATURES.floorRedrawSeatLockV1 = true;
+    const view = setup();
+    try {
+      await screen.findByRole("button", { name: "Mở Bàn 4" });
+      const open = screen.getByRole("button", { name: "Mở bàn", exact: true });
+      const toolbar = open.parentElement!;
+      expect(toolbar).toHaveClass("flex", "flex-wrap", "gap-2");
+      expect(within(toolbar).getByRole("button", { name: "Redraw", exact: true })).toBeEnabled();
+      expect(within(toolbar).getByRole("button", { name: "Làm mới", exact: true })).toBeEnabled();
+    } finally { view.unmount(); FEATURES.floorRedrawSeatLockV1 = redrawEnabled; }
+  });
+
   it("does not expose mutation controls for invalid participation even if a stale seat selection arrives", async () => {
     const view = setup();
     try {
