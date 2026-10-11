@@ -208,6 +208,7 @@
     "randomTurn": "랜덤 턴"
   },
   "common": {
+    "archiveUnavailable": "핸드 기록을 불러올 수 없습니다. 연결을 확인하고 다시 시도하세요.",
     "participationUnavailable": "플레이어 수와 평균 스택을 확인할 수 없습니다.",
     "retry": "다시 시도",
     "loading": "불러오는 중...",

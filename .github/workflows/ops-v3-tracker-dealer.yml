@@ -21,6 +21,8 @@ on:
       - "VinPoker/tests/viewerHub/tournamentLiveViewInitialization.test.tsx"
       - "VinPoker/src/pages/TrackerDashboard.tsx"
       - "VinPoker/src/pages/TrackerDashboard.test.tsx"
+      - "VinPoker/src/pages/TrackerHandHistory.tsx"
+      - "VinPoker/src/pages/TrackerHandHistory.readiness.test.tsx"
       - "VinPoker/src/hooks/useNotifications.tsx"
       - "VinPoker/src/hooks/useNotifications.test.tsx"
       - "VinPoker/src/components/NotificationBell.tsx"
@@ -87,6 +89,8 @@ jobs:
           src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
           src/lib/tournament/clockControlState.test.ts
           src/pages/TrackerDashboard.test.tsx
+          src/pages/TrackerHandHistory.readiness.test.tsx
+          tests/trackerPoker/trackerHistoryAccess.test.ts
           src/hooks/useNotifications.test.tsx
           src/components/NotificationBell.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
@@ -117,6 +121,8 @@ jobs:
           src/OpsApp.tsx
           src/components/LiveStateEditor.tsx
           src/components/LiveStateEditor.test.tsx
+          src/pages/TrackerHandHistory.tsx
+          src/pages/TrackerHandHistory.readiness.test.tsx
           src/ops/coverage/trackerDealerButtonManifest.ts
           src/ops/dealer-control
           src/ops/registry/opsModuleRegistry.ts

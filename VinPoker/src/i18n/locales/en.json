@@ -300,6 +300,7 @@
     "removeCard": "Remove card"
   },
   "common": {
+    "archiveUnavailable": "Unable to load the hand archive. Check your connection and retry.",
     "participationUnavailable": "Player count and average stack could not be verified.",
     "retry": "Retry",
     "loading": "Loading...",

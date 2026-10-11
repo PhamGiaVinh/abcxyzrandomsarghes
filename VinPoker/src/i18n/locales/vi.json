@@ -300,6 +300,7 @@
     "removeCard": "Xoá lá này"
   },
   "common": {
+    "archiveUnavailable": "Không tải được kho hand. Kiểm tra kết nối rồi thử lại.",
     "participationUnavailable": "Không xác minh được số người và stack.",
     "retry": "Thử lại",
     "loading": "Đang tải...",
