@@ -56,7 +56,7 @@ const preconditions=undo?`DO $$ BEGIN
  IF current_database()<>'vinpoker_ops_undo_generation_20261011' OR EXISTS(SELECT 1 FROM public.clubs) THEN RAISE EXCEPTION 'wrong_or_nonempty_undo_database'; END IF;
  IF md5(replace(pg_get_functiondef('public.undo_tracker_last_action_v1(uuid,uuid,uuid,uuid,bigint,uuid)'::regprocedure),chr(13),'')) IS DISTINCT FROM '273b34a53a9114af87d9d8bc940dce38'
  OR md5(replace(pg_get_functiondef('public.delete_last_action(uuid,uuid)'::regprocedure),chr(13),'')) IS DISTINCT FROM '37573f5c4a9c013bf8e7573767036d9f' THEN RAISE EXCEPTION 'undo_dependency_drift'; END IF;
- IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgname='trg_tracker_hand_source_revision' AND tgenabled='O' AND md5(replace(pg_get_functiondef(tgfoid),chr(13),''))='14f9e44a3b7847753f36efc365b5b208') THEN RAISE EXCEPTION 'revision_trigger_drift'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgname='trg_tracker_hand_source_revision' AND tgenabled='O' AND md5(replace(pg_get_functiondef(tgfoid),chr(13),''))='14f9e44a3b7847753f36efc365b5b208') THEN RAISE EXCEPTION 'revision_trigger_drift: %',(SELECT jsonb_build_object('function',tgfoid::regprocedure::text,'enabled',tgenabled,'digest',md5(replace(pg_get_functiondef(tgfoid),chr(13),''))) FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgname='trg_tracker_hand_source_revision'); END IF;
 END $$;`:'';
 const result=spawnSync('psql',['-X','-w','-v','ON_ERROR_STOP=1'],
  // Public-only capture omits managed auth schema grants. Read-only live
