@@ -26,6 +26,8 @@ const FLOOR_CLOCK_FRONTEND_FILES = [
 ];
 const FLOOR_TRACKER_FEATURE_FILE = "VinPoker/src/lib/featureFlags.ts";
 const FLOOR_TRACKER_UI_FILE = "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx";
+const FLOOR_TRACKER_DIALOG_FILE = "VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx";
+const FLOOR_TRACKER_CLIENT_FILE = "VinPoker/src/lib/floorTableControlV3.ts";
 const FLOOR_TRACKER_EDGE_FILE = "VinPoker/supabase/functions/tournament-live-update/index.ts";
 
 function marker(files, sources, predicate) {
@@ -55,7 +57,7 @@ export function selectTargetContractProfile({ targetRoot }) {
   for (const relativePath of FLOOR_CLOCK_FRONTEND_FILES) {
     if (existsSync(resolve(targetRoot, relativePath))) files.add(relativePath);
   }
-  for (const relativePath of [FLOOR_TRACKER_FEATURE_FILE, FLOOR_TRACKER_UI_FILE, FLOOR_TRACKER_EDGE_FILE]) {
+  for (const relativePath of [FLOOR_TRACKER_FEATURE_FILE, FLOOR_TRACKER_UI_FILE, FLOOR_TRACKER_DIALOG_FILE, FLOOR_TRACKER_CLIENT_FILE, FLOOR_TRACKER_EDGE_FILE]) {
     if (existsSync(resolve(targetRoot, relativePath))) files.add(relativePath);
   }
 
@@ -105,7 +107,12 @@ export function selectTargetContractProfile({ targetRoot }) {
     floorTrackerFlag: marker(orderedFiles, sources, (file, source) =>
       file === FLOOR_TRACKER_FEATURE_FILE && /floorDeferredTrackerMoveV1:\s*true\b/.test(source)),
     floorTrackerUi: marker(orderedFiles, sources, (file, source) =>
-      file === FLOOR_TRACKER_UI_FILE && source.includes("queueTrackerMove")),
+      file === FLOOR_TRACKER_UI_FILE && (source.includes("queueTrackerMove") || (
+        source.includes('from "./MovePlayerDialog"') && source.includes("<MovePlayerDialog") &&
+        (sources.get(FLOOR_TRACKER_DIALOG_FILE) ?? "").includes("canonical.movePlayerSeatOrQueueExact(frozen.intent)") &&
+        (sources.get(FLOOR_TRACKER_DIALOG_FILE) ?? "").includes("canonical.deferredTrackerMoveEnabled") &&
+        (sources.get(FLOOR_TRACKER_CLIENT_FILE) ?? "").includes('movePlayerSeatOrQueueExact: (args: FloorExactMoveIntent) => call("move_player_seat_v5"')
+      ))),
     floorTrackerEdge: marker(orderedFiles, sources, (file, source) =>
       file === FLOOR_TRACKER_EDGE_FILE && source.includes('supabase.rpc("start_tracker_hand_v3"')),
   };
