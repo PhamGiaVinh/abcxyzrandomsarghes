@@ -1,4 +1,5 @@
 {
+  "floorReadiness": { "unavailable": "参加者数は未確認です" },
   "stack_projection_mismatch": "座席・参加記録・チップ記録が一致しません",
   "participation": {"repairRequired":"データ修復が必要","repairHint":"これらの記録は確認用に保持され、現在の座席数や操作には使用されません。","loadError":"プレイヤーを読み込めません。更新してください。","stale":"古いデータを表示中です。操作は一時停止しています。","reasons":{"missing_entry":"参加記録なし","entry_identity_mismatch":"参加情報が不一致","entry_not_live":"参加記録は非アクティブ","missing_table_session":"テーブルまたはセッションなし","closed_session":"テーブルセッション終了","inactive_table":"テーブルは非アクティブ","table_session_mismatch":"テーブルとセッションが不一致","seat_out_of_range":"座席が定員外","duplicate_entry_seat":"参加記録に複数の有効座席","duplicate_seat_position":"座席位置が重複","duplicate_entry_generation":"参加回数が重複","missing_active_seat":"着席記録に有効な座席なし"}},
   "trackerCards": { "deck": "カードの種類", "fourColor": "4色", "classic": "クラシック" },

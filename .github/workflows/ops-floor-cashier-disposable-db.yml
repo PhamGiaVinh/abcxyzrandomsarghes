@@ -18,6 +18,7 @@ on:
       - "VinPoker/src/components/cashier/OfflineBuyInPanel.tsx"
       - "VinPoker/src/components/TournamentRegisterModal.test.tsx"
       - "VinPoker/src/components/floor/useFloorTournaments.ts"
+      - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/e2e/ops-v3-floor-cashier.mock.spec.ts"
@@ -80,6 +81,7 @@ jobs:
           npx vitest run
           src/ops/opsMutations.test.ts
           src/components/TournamentRegisterModal.test.tsx
+          src/components/floor/MultiDayTournamentsBoard.test.tsx
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
