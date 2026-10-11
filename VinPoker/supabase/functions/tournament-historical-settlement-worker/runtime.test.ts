@@ -60,6 +60,43 @@ Deno.test('history worker rejects unknown claims and reports lease-loss honestly
    if(scenario==='finish_lost') {assertEquals(body.ok,false);assertEquals(body.unresolved,1);}
    if(scenario==='needs_attention') assertEquals(body.needs_attention,1);
   }
+  // Model the DB's already-qualified atomic completion contract at the HTTP seam.
+  // This is not a PostgreSQL or deployed Edge integration test.
+  let committed=false, commitCalls=0, lostFinishCalls=0;
+  globalThis.fetch=(input,init)=>{
+   const url=new URL(input instanceof Request?input.url:String(input));
+   assertEquals(url.origin,'https://backend.invalid');
+   const route=url.pathname.split('/').at(-1);
+   let data: unknown;
+   if(route==='claim_tracker_historical_display_jobs_scoped_v1') {
+    const args=JSON.parse(String(init?.body));
+    assertEquals(args.p_hand_ids,[hand]);
+    data=committed?[]:[{hand_id:hand,source_revision:1,lease_token:lease}];
+   } else if(route==='get_tracker_historical_display_snapshot') data=snapshot;
+   else if(route==='tournament_settlement_outcomes') data=[];
+   else if(route==='commit_tracker_historical_display_outcome_v2') {
+    commitCalls++;
+    const args=JSON.parse(String(init?.body));
+    assertEquals(args.p_hand_id,hand); assertEquals(args.p_lease_token,lease);
+    assertEquals(args.p_expected_source_revision,1);
+    committed=true;
+    return Promise.reject(new TypeError('fixture_response_lost_after_commit'));
+   } else if(route==='finish_tracker_historical_display_job') {
+    lostFinishCalls++;
+    assertEquals(committed,true);
+    data=false; // Completed queue has no live lease for this catch-path finish.
+   } else throw new Error(`unexpected recovery route ${route}`);
+   return Promise.resolve(new Response(JSON.stringify(data),{status:200,headers:{'content-type':'application/json'}}));
+  };
+  const lost=await call({hand_ids:[hand]});
+  assertEquals(lost.status,503);
+  const lostBody=await lost.json();
+  assertEquals(lostBody.ok,false); assertEquals(lostBody.completed,0);
+  assertEquals(lostBody.unresolved,1); assertEquals(lostBody.retried,0);
+  const recovered=await call({hand_ids:[hand]});
+  assertEquals(recovered.status,200);
+  assertEquals(await recovered.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
+  assertEquals(commitCalls,1); assertEquals(lostFinishCalls,1);
  } finally {
   globalThis.fetch=oldFetch; Object.defineProperty(Deno,'serve',{configurable:true,value:oldServe});
   names.forEach((name,i)=>previous[i]===undefined?Deno.env.delete(name):Deno.env.set(name,previous[i]!));
