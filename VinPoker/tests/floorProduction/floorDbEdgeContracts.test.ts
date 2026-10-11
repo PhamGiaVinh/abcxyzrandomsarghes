@@ -14,6 +14,7 @@ const tableControlModeMigration = read("supabase/migration-archive/historical-ne
 const openTablePickerMigration = read("supabase/migrations/20270106000000_floor_open_table_picker_mode_v2.sql");
 const drawEdge = read("supabase/functions/tournament-live-draw/index.ts");
 const liveUpdateEdge = read("supabase/functions/tournament-live-update/index.ts");
+const legacyStackRetirement = read("supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql");
 const clockEdge = read("supabase/functions/tournament-live-clock/index.ts");
 const operatorClubsHook = read("src/hooks/useOperatorClubs.ts");
 const stableFloorClubIdsHook = read("src/hooks/useStableFloorClubIds.ts");
@@ -59,6 +60,17 @@ function tableControlBody(name: string, next?: string) {
 }
 
 describe("Floor V2 DB and Edge contracts", () => {
+  it("retires weak stack writes without replacing the exact-session canonical writer", () => {
+    expect(legacyStackRetirement).toContain("legacy_stack_definition_drift");
+    expect(legacyStackRetirement).toContain("canonical_stack_writer_drift");
+    expect(legacyStackRetirement).toContain("LEGACY_STACK_WRITE_RETIRED");
+    expect(legacyStackRetirement.match(/SECURITY INVOKER SET search_path = ''/g)).toHaveLength(2);
+    expect(legacyStackRetirement).not.toMatch(/CREATE OR REPLACE FUNCTION public\.set_tracker_table_roster_seat_v2/);
+    expect(legacyStackRetirement).not.toMatch(/\b(?:INSERT INTO|UPDATE|DELETE FROM) public\./);
+    expect(liveUpdateEdge).not.toContain('supabase.rpc("update_stack"');
+    expect(liveUpdateEdge).not.toContain('supabase.rpc("bulk_update_stacks"');
+    expect(liveUpdateEdge).toContain('validationError("LEGACY_STACK_WRITE_RETIRED"');
+  });
   it("replaces each audited RPC with a definer function locked to public search_path", () => {
     for (const name of [
       "floor_assign_player_to_seat",

@@ -17,6 +17,9 @@ on:
       - 'VinPoker/supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000059_tracker_completed_void_integrity_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000060_tracker_legacy_reentry_retirement_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql'
+      - 'VinPoker/tests/floorProduction/legacyStackIntegrity.pg17.sql'
+      - 'VinPoker/tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryRetirement.pg17.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryCanonicalSnapshot.pg17.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql'
@@ -457,6 +460,18 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000060_tracker_legacy_reentry_retirement_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_REENTRY_RETIREMENT_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql
+          node --test scripts/ops/tracker-stack-61-release-plan.test.mjs scripts/ops/tracker-stack-61-protected-apply.test.mjs
+          # Earlier check-in/inventory races commit fixture data in this DB.
+          # Preserve its qualified function/ACL chain, not those fixture rows.
+          set -euo pipefail
+          createdb vinpoker_ops_stack61_atomic_20261011
+          # Use the server's PG17 client; the runner's default pg_dump is PG16.
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_stack61_atomic_20261011 psql -X -v ON_ERROR_STOP=1
+          PGDATABASE=vinpoker_ops_stack61_atomic_20261011 STACK61_PG_TEST=1 node --test scripts/ops/tracker-stack-61-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql
+          psql -X -v ON_ERROR_STOP=1 -v STALE_STACK_FIRST_ARRIVAL_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
         run: |
