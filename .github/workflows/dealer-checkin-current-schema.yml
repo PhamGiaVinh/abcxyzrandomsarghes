@@ -444,7 +444,9 @@ jobs:
       - name: Retired Tracker re-entry role and projection regression
         working-directory: VinPoker
         env:
-          PGDATABASE: vinpoker_ops_card56_overlap_20261011
+          # The roster suite needs the Floor forward chain installed above.
+          # The card-only clone deliberately lacks floor_private roster helpers.
+          PGDATABASE: vinpoker_ops_checkin
         run: |
           node --test scripts/ops/tracker-reentry-60-release-plan.test.mjs scripts/ops/tracker-reentry-60-protected-apply.test.mjs
           # The overlap DB retains committed race fixtures; atomic proof requires
