@@ -133,6 +133,12 @@ export function useTournamentTvDataCore(
         : Promise.resolve({ data: null, error: null }),
     ]);
     if (seq !== requestSeqRef.current || scopeRef.current !== scopeKey) return;
+    // Unavailable levels/prizes are not confirmed empty lists. Publishing a
+    // ready display would silently hide the break schedule or prize positions.
+    if (levelsRes.error || prizesRes.error) {
+      setState("error");
+      return;
+    }
     let participation: ReturnType<typeof parseParticipationSummary>;
     try {
       if (participationRes.error) throw participationRes.error;
@@ -182,12 +188,12 @@ export function useTournamentTvDataCore(
     setRaw({
       clock,
       tournament: row,
-      levels: levelsRes.error ? [] : ((levelsRes.data ?? []) as TvLevelRow[]),
+      levels: (levelsRes.data ?? []) as TvLevelRow[],
       totalEntries: participation.counts.total_entries,
       totalChips: participation.counts.live_entry_stack,
       totalBuyIns: regs ? regs.reduce((sum, r) => sum + Number(r.buy_in ?? 0), 0) : null,
       reEntries: participation.counts.re_entries,
-      prizes: prizesRes.error ? [] : ((prizesRes.data ?? []) as TvPrizeRow[]),
+      prizes: (prizesRes.data ?? []) as TvPrizeRow[],
     });
     setRawScope(scopeKey);
     setState("ready");
