@@ -75,6 +75,23 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// The overview uses the same server-authoritative summary as the selected tour.
+function OverviewParticipation({ actorId, tournament, refresh }: {
+  actorId: string | undefined; tournament: Tournament; refresh: number;
+}) {
+  const { t } = useTranslation();
+  const summary = useTournamentParticipationSummary(actorId, tournament.club_id, tournament.id, refresh);
+  if (summary.status !== "ready" || !summary.data) {
+    return <span role="status" className="text-xs text-muted-foreground">
+      {t(summary.status === "error" ? "common.participationUnavailable" : "common.loading")}
+    </span>;
+  }
+  return <div className="flex items-center gap-4 text-xs text-muted-foreground">
+    <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{summary.data.counts.remaining}</span>
+    <span className="flex items-center gap-1"><Layers className="w-3.5 h-3.5" />{summary.data.averageStack.toLocaleString()}</span>
+  </div>;
+}
+
 // Which tabs each operator role sees. "full" preserves the original panel
 // (default, so existing call sites are unchanged); tracker = live-tracking view,
 // floor = room-management view.
@@ -298,7 +315,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {tournaments.map((t) => (
+          {tournaments.filter((tour) => clubIds.includes(tour.club_id)).map((t) => (
             <button
               key={t.id}
               onClick={() => setSelectedTournamentId(t.id)}
@@ -311,16 +328,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
               {clubNameMap[t.club_id] && (
                 <div className="text-xs text-muted-foreground">{clubNameMap[t.club_id]}</div>
               )}
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5" />
-                  {t.players_remaining != null ? t.players_remaining : "—"}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Layers className="w-3.5 h-3.5" />
-                  {t.average_stack != null ? t.average_stack.toLocaleString() : "—"}
-                </span>
-              </div>
+              <OverviewParticipation actorId={user?.id} tournament={t} refresh={refreshTrigger} />
             </button>
           ))}
         </div>

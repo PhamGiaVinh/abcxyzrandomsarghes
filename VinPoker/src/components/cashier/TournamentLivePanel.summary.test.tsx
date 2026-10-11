@@ -59,6 +59,19 @@ beforeEach(() => { db.rpc.mockReset(); db.callbacks.clear(); db.actor = "owner";
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Floor selected-tour canonical summary integration", () => {
+  it("uses canonical participation on Tracker selection cards rather than stored tournament counters", async () => {
+    render(<TournamentLivePanel {...props} mode="tracker" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Tour a.*8.*9.750.000/ })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Tour a.*99.*123/ })).not.toBeInTheDocument();
+  });
+  it("never substitutes stored counters when an overview read fails and clears cards outside the current club", async () => {
+    db.rpc.mockResolvedValue({ data: null, error: { message: "503" } });
+    const { rerender } = render(<TournamentLivePanel {...props} mode="tracker" />);
+    await waitFor(() => expect(screen.getAllByRole("status").filter((node) => node.textContent === "common.participationUnavailable")).toHaveLength(2));
+    expect(screen.queryByRole("button", { name: /Tour a.*99.*123/ })).not.toBeInTheDocument();
+    await act(async () => rerender(<TournamentLivePanel {...props} mode="tracker" clubIds={["other"]} />));
+    expect(screen.queryByRole("button", { name: /Tour a.*common.participationUnavailable/ })).not.toBeInTheDocument();
+  });
   it("renders canonical counts and never stale counters after picker/club changes", async () => {
     const { rerender } = render(<TournamentLivePanel {...props} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "select-a" })).toBeInTheDocument());
