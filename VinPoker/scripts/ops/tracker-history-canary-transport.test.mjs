@@ -11,7 +11,8 @@ const env = { GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/heads/main',
   HAND_IDS: JSON.stringify([hand]), OWNER_ACK: `RUN_SCOPED_HISTORY_CANARY_${sha}` };
 const key = 'TRACKER_HISTORY_CANARY_INTERNAL_SECRET';
 const flag = 'TRACKER_HISTORY_COMPLETION_WORKER_ENABLED';
-const preflight = [{ preflight: { all_rows_visible: true, active_history_jobs: 0, hands: [{
+const preflight = [{ preflight: { all_rows_visible: true, active_history_jobs: 0,
+  hash_function_digest: 'a94a9469b8a30efe06a12c598e3e0d4a', hands: [{
   id: hand, tournament_id: '5a51bec5-4da0-4dd9-861a-cc4e7678478c', tournament_name: 'TEST — Felt UAT (compact)',
   source_revision: 31, status: 'completed', is_voided: false,
   table_session_id: '89d70c57-f141-487a-a9f4-f9dc3d76c420', tournament_table_id: '2bc31827-03c8-4cbb-b332-eab2aa38e45c',
@@ -71,7 +72,8 @@ test('protected owner/exact main/project and finite unique scope are mandatory b
 
 test('DB scope is exact TEST tour/session/revision and cannot hide cron rows through RLS', () => {
   assertCanaryPreflight(preflight, [hand]);
-  for (const delta of [{ all_rows_visible: false }, { active_history_jobs: 1 }, { active_history_jobs: null }, { hands: [] }, { hands: [null] }])
+  for (const delta of [{ all_rows_visible: false }, { hash_function_digest: 'unknown' },
+    { active_history_jobs: 1 }, { active_history_jobs: null }, { hands: [] }, { hands: [null] }])
     assert.throws(() => assertCanaryPreflight([{ preflight: { ...preflight[0].preflight, ...delta } }], [hand]));
   for (const delta of [{ tournament_id: hand }, { tournament_name: 'Real tournament' },
     { source_revision: 32 }, { is_voided: true }, { table_session_id: hand },
@@ -198,4 +200,30 @@ test('HTTP success cannot hide a changed source, pending lease, missing outcome 
     assert.throws(() => assertCanaryPostcheck(bad, preflight, stats, [hand]), /postcheck_failed/);
   }
   assert.throws(() => assertCanaryPostcheck(good, preflight, { completed: 0, needs_attention: 1 }, [hand]), /postcheck_failed/);
+});
+
+test('independent recovery refuses credentials updated outside the original terminal run window', async () => {
+  const e = { ...env, GITHUB_RUN_ID: '123', ALLOW_PREPARED_RECOVERY: 'true',
+    RECOVERY_CREATED_AT: '2026-10-11T15:00:00Z', RECOVERY_UPDATED_AT: '2026-10-11T15:10:00Z' };
+  const marker = { runId: '123', sourceSha: sha, project: env.SUPABASE_PROJECT_REF };
+  for (const updated_at of [undefined, 'invalid', '2026-10-11T14:59:59Z', '2026-10-11T15:10:01Z']) {
+    const f = fixture({ existing: true });
+    const fetchImpl = (url, init) => !init.method || init.method === 'GET'
+      ? Response.json([{ name: key, updated_at }]) : f.fetchImpl(url, init);
+    await assert.rejects(cleanupOwnedHistoryCanary(e, marker, { fetchImpl }), /ownership_unverified/);
+    assert.equal(f.calls.length, 0);
+  }
+  const f = fixture({ existing: true }); let reads = 0;
+  const fetchImpl = (url, init) => init.method === 'GET' && reads++ === 0
+    ? Response.json([{ name: key, updated_at: '2026-10-11T15:05:00Z' }]) : f.fetchImpl(url, init);
+  assert.deepEqual(await cleanupOwnedHistoryCanary(e, marker, { fetchImpl }),
+    { workerOff: true, temporaryCredentialRevoked: true });
+});
+
+test('prepare ownership sentinel completes all preflight reads but creates no live credential or flag', async () => {
+  const f = fixture();
+  await assert.rejects(runHistoryCanary(env, { fetchImpl: f.fetchImpl,
+    onProvisionAttempt: () => { throw Error('history_canary_prepared_without_mutation'); } }), /prepared_without_mutation/);
+  assert.equal(f.calls.some(c => c.url.endsWith('/secrets') && c.method !== 'GET'), false);
+  assert.deepEqual(f.state(), { enabled: false, secret: null });
 });

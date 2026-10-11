@@ -38,6 +38,7 @@ on:
       - "VinPoker/src/lib/chipOpsMetrics*"
       - "VinPoker/scripts/ops/tracker-history-canary-transport*"
       - ".github/workflows/tracker-history-scoped-http-canary.yml"
+      - ".github/workflows/tracker-history-owned-cleanup.yml"
       - "VinPoker/tsconfig.ops-v3-tracker-dealer.json"
   workflow_dispatch:
 

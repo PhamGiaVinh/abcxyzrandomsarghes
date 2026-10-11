@@ -1,0 +1,79 @@
+name: Tracker history owned credential recovery
+on:
+  workflow_dispatch:
+    inputs:
+      canary_run_id: { description: Terminal scoped canary run with durable ownership artifact, required: true, type: string }
+      source_sha: { description: Exact original canary main SHA, required: true, type: string }
+      owner_ack: { description: 'RECOVER_SCOPED_HISTORY_CANARY_<run_id>_<source_sha>', required: true, type: string }
+permissions: { actions: read, contents: read }
+concurrency: { group: vinpoker-production-database-release, cancel-in-progress: false }
+jobs:
+  recover:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    environment: dealer-swing-production-critical
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Bind terminal owner canary and quiet recovery window
+        id: original
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          CANARY_RUN_ID: '${{ inputs.canary_run_id }}'
+          SOURCE_SHA: '${{ inputs.source_sha }}'
+          OWNER_ACK: '${{ inputs.owner_ack }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+        run: |
+          set -euo pipefail
+          test "$INITIAL_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          [[ "$CANARY_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$OWNER_ACK" = "RECOVER_SCOPED_HISTORY_CANARY_${CANARY_RUN_ID}_${SOURCE_SHA}"
+          original="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANARY_RUN_ID")"
+          test "$(jq -r .status <<<"$original")" = completed
+          test "$(jq -r .event <<<"$original")" = workflow_dispatch
+          test "$(jq -r .head_branch <<<"$original")" = main
+          test "$(jq -r .head_sha <<<"$original")" = "$SOURCE_SHA"
+          test "$(jq -r .path <<<"$original")" = .github/workflows/tracker-history-scoped-http-canary.yml
+          test "$(jq -r .actor.login <<<"$original")" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(jq -r .triggering_actor.login <<<"$original")" = "$GITHUB_REPOSITORY_OWNER"
+          for status in in_progress waiting queued; do
+            active="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?event=workflow_dispatch&status=$status&per_page=100" --jq '.workflow_runs[]|select((.id|tostring)!=env.GITHUB_RUN_ID)|select(.name|test("database|migration|recovery|production|release|history.*canary";"i"))|.id')"
+            test -z "$active"
+          done
+          echo "created_at=$(jq -r .created_at <<<"$original")" >> "$GITHUB_OUTPUT"
+          echo "updated_at=$(jq -r .updated_at <<<"$original")" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: { ref: '${{ inputs.source_sha }}', persist-credentials: false }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - name: Fetch original nonsecret ownership on an independent runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: history-canary-ownership-${{ inputs.canary_run_id }}
+          run-id: '${{ inputs.canary_run_id }}'
+          github-token: '${{ github.token }}'
+          path: '${{ runner.temp }}'
+      - name: Recover only matching ownership and secret-update window
+        working-directory: VinPoker
+        timeout-minutes: 3
+        env:
+          ORIGINAL_RUN_ID: '${{ inputs.canary_run_id }}'
+          TARGET_SHA: '${{ inputs.source_sha }}'
+          SOURCE_CHECKOUT_SHA: '${{ inputs.source_sha }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          HAND_IDS: '["7c0ab085-641e-408c-a326-e4addbcee647","d469154e-e80e-4a75-8a87-237b7958671a"]'
+          SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
+          SUPABASE_ACCESS_TOKEN: '${{ secrets.SUPABASEACCESSTOKEN }}'
+          RECOVERY_CREATED_AT: '${{ steps.original.outputs.created_at }}'
+          RECOVERY_UPDATED_AT: '${{ steps.original.outputs.updated_at }}'
+          ALLOW_PREPARED_RECOVERY: 'true'
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          export GITHUB_RUN_ID="$ORIGINAL_RUN_ID" GITHUB_SHA="$TARGET_SHA"
+          export OWNER_ACK="RUN_SCOPED_HISTORY_CANARY_$TARGET_SHA"
+          node scripts/ops/tracker-history-canary-transport.mjs cleanup

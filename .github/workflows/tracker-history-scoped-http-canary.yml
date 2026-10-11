@@ -70,8 +70,29 @@ jobs:
           test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
           test "$GITHUB_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
           echo "SOURCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Read-only preparation and nonsecret recovery ownership
+        id: prepare
+        working-directory: VinPoker
+        timeout-minutes: 2
+        env:
+          TARGET_SHA: '${{ inputs.target_sha }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          OWNER_ACK: '${{ inputs.owner_ack }}'
+          HAND_IDS: '${{ inputs.hand_ids }}'
+          SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
+          SUPABASE_ACCESS_TOKEN: '${{ secrets.SUPABASEACCESSTOKEN }}'
+        run: node scripts/ops/tracker-history-canary-transport.mjs prepare
+      - name: Persist ownership before provisioning on any runner
+        id: ownership
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: history-canary-ownership-${{ github.run_id }}
+          path: ${{ runner.temp }}/history-canary-owned-${{ github.run_id }}.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Run bounded HTTP canary with memory-only temporary credential
-        id: run
         working-directory: VinPoker
         timeout-minutes: 7
         env:
@@ -83,6 +104,7 @@ jobs:
           HAND_IDS: '${{ inputs.hand_ids }}'
           SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
           SUPABASE_ACCESS_TOKEN: '${{ secrets.SUPABASEACCESSTOKEN }}'
+          OWNERSHIP_ARTIFACT_ID: '${{ steps.ownership.outputs.artifact-id }}'
         run: node scripts/ops/tracker-history-canary-transport.mjs run
       - name: Independent owned cleanup after error or step timeout
         if: always()

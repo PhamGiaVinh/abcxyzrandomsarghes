@@ -11,6 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOUR = '5a51bec5-4da0-4dd9-861a-cc4e7678478c';
 const SESSION = '89d70c57-f141-487a-a9f4-f9dc3d76c420';
 const TABLE = '2bc31827-03c8-4cbb-b332-eab2aa38e45c';
+const HASH_FUNCTION_DIGEST = 'a94a9469b8a30efe06a12c598e3e0d4a';
 const REVIEWED_HANDS = new Set(['7c0ab085-641e-408c-a326-e4addbcee647', 'd469154e-e80e-4a75-8a87-237b7958671a']);
 // Captured together from the canonical hash RPC and full immutable source in one live read snapshot.
 const REVIEWED_SOURCE = {
@@ -47,6 +48,7 @@ export function validateCanaryContext(env) {
 export function canaryPreflightSql(ids) {
   if (!Array.isArray(ids) || !ids.length || ids.some(id => !REVIEWED_HANDS.has(id))) throw Error('history_canary_invalid_scope');
   return `SELECT pg_catalog.jsonb_build_object(
+    'hash_function_digest',pg_catalog.md5(pg_catalog.pg_get_functiondef('public.get_tournament_historical_display_source_hash(uuid)'::regprocedure)),
     'all_rows_visible', (SELECT r.rolsuper OR r.rolbypassrls FROM pg_catalog.pg_roles r WHERE r.rolname=current_user),
     'active_history_jobs', (SELECT count(*) FROM cron.job WHERE active AND
       (command ILIKE '%tournament-historical-settlement%' OR jobname ILIKE '%histor%')),
@@ -69,7 +71,7 @@ export function canaryPreflightSql(ids) {
 
 export function assertCanaryPreflight(rows, ids) {
   const p = Array.isArray(rows) && rows.length === 1 ? rows[0]?.preflight : null;
-  if (p?.all_rows_visible !== true || p.active_history_jobs !== 0
+  if (p?.all_rows_visible !== true || p.active_history_jobs !== 0 || p.hash_function_digest !== HASH_FUNCTION_DIGEST
     || !Array.isArray(p.hands) || p.hands.length !== ids.length
     || p.hands.some(h => !h || typeof h !== 'object')
     || new Set(p.hands.map(h => h.id)).size !== ids.length
@@ -86,7 +88,7 @@ export function assertCanaryPreflight(rows, ids) {
 export function assertCanaryPostcheck(rows, before, stats, ids) {
   const p = Array.isArray(rows) && rows.length === 1 ? rows[0]?.preflight : null;
   const original = before[0].preflight.hands;
-  if (p?.all_rows_visible !== true || p.active_history_jobs !== 0 || !Array.isArray(p.hands)
+  if (p?.all_rows_visible !== true || p.active_history_jobs !== 0 || p.hash_function_digest !== HASH_FUNCTION_DIGEST || !Array.isArray(p.hands)
     || p.hands.length !== ids.length || new Set(p.hands.map(h => h?.id)).size !== ids.length) {
     throw Error('history_canary_db_postcheck_failed');
   }
@@ -218,6 +220,22 @@ export async function cleanupOwnedHistoryCanary(env, marker, { fetchImpl = fetch
     || marker.sourceSha !== env.TARGET_SHA || marker.project !== PROJECT) throw Error('history_canary_invalid_cleanup_owner');
   const api = `https://api.supabase.com/v1/projects/${PROJECT}/secrets`;
   const headers = { Authorization: `Bearer ${env.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
+  if (env.ALLOW_PREPARED_RECOVERY === 'true') {
+    const start = Date.parse(env.RECOVERY_CREATED_AT ?? '');
+    const end = Date.parse(env.RECOVERY_UPDATED_AT ?? '');
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) throw Error('history_canary_invalid_recovery_window');
+    let list;
+    try {
+      const response = await fetchImpl(api, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(30_000) });
+      if (response.status !== 200) throw Error();
+      list = await response.json();
+    } catch { throw Error('history_canary_recovery_ownership_unverified'); }
+    if (!Array.isArray(list) || list.some(item => typeof item?.name !== 'string'
+      || ([SECRET, SCOPE].includes(item.name) && (!Number.isFinite(Date.parse(item.updated_at))
+        || Date.parse(item.updated_at) < start || Date.parse(item.updated_at) > end)))) {
+      throw Error('history_canary_recovery_ownership_unverified');
+    }
+  }
   let failed = false;
   async function send(url, init, status, code) {
     try {
@@ -246,7 +264,7 @@ function markerPath(env) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const mode = process.argv[2];
-    if (!['run', 'cleanup'].includes(mode)) throw Error('history_canary_invalid_mode');
+    if (!['prepare', 'run', 'cleanup'].includes(mode)) throw Error('history_canary_invalid_mode');
     validateCanaryContext(process.env);
     const path = markerPath(process.env);
     if (mode === 'cleanup') {
@@ -256,12 +274,33 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         if (error?.code === 'ENOENT') { console.log('history_canary_no_provision_attempt'); process.exit(0); }
         throw Error('history_canary_invalid_cleanup_owner');
       }
+      if (marker.attempted !== true && process.env.ALLOW_PREPARED_RECOVERY !== 'true') {
+        console.log('history_canary_no_provision_attempt'); process.exit(0);
+      }
       console.log(JSON.stringify(await cleanupOwnedHistoryCanary(process.env, marker)));
       process.exit(0);
     }
+    if (mode === 'prepare') {
+      try {
+        await runHistoryCanary(process.env, { onProvisionAttempt: () => {
+          writeFileSync(path, JSON.stringify({ runId: process.env.GITHUB_RUN_ID, sourceSha: process.env.TARGET_SHA, project: PROJECT }),
+            { flag: 'wx', mode: 0o600 });
+          throw Error('history_canary_prepared_without_mutation');
+        } });
+      } catch (error) {
+        if (error.message !== 'history_canary_prepared_without_mutation') throw error;
+        console.log('history_canary_prepared_without_mutation');
+        process.exit(0);
+      }
+      throw Error('history_canary_invalid_prepare');
+    }
     const result = await runHistoryCanary(process.env, { onProvisionAttempt: () => {
-      writeFileSync(path, JSON.stringify({ runId: process.env.GITHUB_RUN_ID, sourceSha: process.env.TARGET_SHA, project: PROJECT }),
-        { flag: 'wx', mode: 0o600 });
+      if (!/^\d+$/.test(process.env.OWNERSHIP_ARTIFACT_ID ?? '')) throw Error('history_canary_ownership_not_durable');
+      const marker = JSON.parse(readFileSync(path, 'utf8'));
+      if (marker.runId !== process.env.GITHUB_RUN_ID || marker.sourceSha !== process.env.TARGET_SHA || marker.project !== PROJECT) {
+        throw Error('history_canary_invalid_cleanup_owner');
+      }
+      writeFileSync(path, JSON.stringify({ ...marker, attempted: true }), { mode: 0o600 });
     } });
     console.log(JSON.stringify({ kind: 'scoped-history-http-canary', sourceSha: process.env.TARGET_SHA,
       handIds: JSON.parse(process.env.HAND_IDS), workerOff: true, temporaryCredentialRevoked: true, ...result }));
