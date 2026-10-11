@@ -91,6 +91,7 @@ const navigationActions = [
 ] as const;
 
 const readActions = [
+  "floor.clock.refresh",
   "floor.workspace.refresh_conflict",
   "floor.tournament.refresh",
   "floor.tables.refresh",
