@@ -292,6 +292,26 @@ DO $$ DECLARE opened jsonb; result jsonb; projection jsonb; tt uuid; session_id 
        AND table_id IS NULL AND tournament_table_id=tt AND table_session_id=session_id AND chip_count=20000) <> 1 THEN
      RAISE EXCEPTION 'roster read changed canonical occupancy or stack';
    END IF;
+   -- Independent missing-entry classification must not hide the occupied seat.
+   UPDATE public.tournament_seats SET entry_id=NULL
+     WHERE entry_id='f7350000-0000-4000-8000-000000000031' AND is_active;
+   PERFORM set_config('role','authenticated',true);
+   IF (SELECT count(*) FROM public.get_floor_tournament_table_roster_v6('f7350000-0000-4000-8000-000000000003') r
+     CROSS JOIN LATERAL jsonb_array_elements(r.seats) s
+     WHERE s->>'integrity_status'='missing_entry' AND (s->>'chip_count')::bigint=20000) <> 1 THEN
+     RAISE EXCEPTION 'missing entry occupancy classification lost';
+   END IF;
+   PERFORM set_config('role','none',true);
+   UPDATE public.tournament_seats SET entry_id='f7350000-0000-4000-8000-000000000031',table_id=tt
+     WHERE tournament_id='f7350000-0000-4000-8000-000000000003' AND is_active;
+   UPDATE public.tournament_entries SET current_stack=19999 WHERE id='f7350000-0000-4000-8000-000000000031';
+   PERFORM set_config('role','authenticated',true);
+   IF NOT EXISTS(SELECT 1 FROM public.get_floor_tournament_table_roster_v6('f7350000-0000-4000-8000-000000000003') r
+     CROSS JOIN LATERAL jsonb_array_elements(r.seats) s
+     WHERE s->>'entry_id'='f7350000-0000-4000-8000-000000000031' AND s->>'integrity_status'='invalid_participation') THEN
+     RAISE EXCEPTION 'stack mismatch must not become valid';
+   END IF;
+   PERFORM set_config('role','none',true);
    PERFORM set_config('request.jwt.claim.sub','f7350000-0000-4000-8000-000000000099',true);
    PERFORM set_config('role','authenticated',true);
    BEGIN
