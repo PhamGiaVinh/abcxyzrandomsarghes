@@ -324,7 +324,7 @@ describe("floorTableControlV3 browser boundary", () => {
       ok: true,
       data: [expect.objectContaining({ maxSeats: 8, seatLocks: [expect.objectContaining({ seatNumber: 8 })] })],
     });
-    expect(rpc).toHaveBeenCalledWith("get_floor_tournament_table_roster_v5", { p_tournament_id: "tournament-a" });
+    expect(rpc).toHaveBeenCalledWith("get_floor_tournament_table_roster_v6", { p_tournament_id: "tournament-a" });
   });
 
   it("routes seat assignment and table lifecycle writes through the lock-aware contracts", async () => {
