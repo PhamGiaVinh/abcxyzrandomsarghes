@@ -18,9 +18,10 @@ DO $$ DECLARE opened jsonb; table_id uuid; session_id uuid; hand_id uuid; legacy
  PERFORM pg_temp.assert_true((opened->>'ok')::boolean,'canonical session opens');
  table_id:=(opened->>'tournament_table_id')::uuid; session_id:=(opened->>'table_session_id')::uuid;
  UPDATE public.table_sessions SET control_mode='tracker' WHERE id=session_id;
- INSERT INTO public.tournament_seats(tournament_id,table_id,seat_number,player_name,chip_count) VALUES
- ('f7270000-0000-4000-8000-000000000003',table_id,1,'A TEST',20000),
- ('f7270000-0000-4000-8000-000000000003',table_id,2,'B TEST',20000);
+ -- Snapshot selection is scoped to the exact session returned by open.
+ INSERT INTO public.tournament_seats(tournament_id,table_id,tournament_table_id,table_session_id,seat_number,player_name,chip_count) VALUES
+ ('f7270000-0000-4000-8000-000000000003',table_id,table_id,session_id,1,'A TEST',20000),
+ ('f7270000-0000-4000-8000-000000000003',table_id,table_id,session_id,2,'B TEST',20000);
  INSERT INTO public.tournament_hands(tournament_id,table_id,table_session_id,hand_number,status,button_seat)
  VALUES('f7270000-0000-4000-8000-000000000003',table_id,session_id,1,'in_progress',1) RETURNING id INTO hand_id;
  PERFORM pg_temp.assert_true((SELECT tracker_small_blind=100 AND tracker_big_blind=100 AND tracker_sb_position=1 AND tracker_bb_position=2 FROM public.tournament_hands WHERE id=hand_id),'equal blinds frozen with heads-up positions');
