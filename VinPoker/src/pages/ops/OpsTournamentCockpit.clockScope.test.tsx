@@ -61,6 +61,22 @@ it("rejects a payload belonging to another tournament", async () => {
   expect(state.invoke).not.toHaveBeenCalled();
 });
 
+it("retries a failed read without mutating until a valid clock is verified", async () => {
+  state.rpc.mockResolvedValueOnce({ data: null, error: { message: "503" } })
+    .mockResolvedValue({ data: clock("a"), error: null });
+  state.invoke.mockResolvedValue({ data: { ok: true }, error: null });
+  const { container } = render(<OpsTournamentCockpit section="clock" />);
+  await screen.findByRole("alert");
+  expect(state.invoke).not.toHaveBeenCalled();
+  const retry = container.querySelector('[data-ops-action="floor.clock.refresh"]');
+  expect(retry).not.toBeNull();
+  await act(async () => fireEvent.click(retry!));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(state.invoke).not.toHaveBeenCalled();
+  await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Tiếp tục" })));
+  expect(state.invoke.mock.calls[0][1].body).toEqual({ tournament_id: "a", action: "resume", expected_control_revision: "revision-a" });
+});
+
 it("ignores an old actor response after the new actor loads", async () => {
   let old!: (value: unknown) => void;
   state.rpc.mockImplementationOnce(() => new Promise(resolve => { old = resolve; }))
