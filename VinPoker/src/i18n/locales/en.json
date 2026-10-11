@@ -287,6 +287,8 @@
     "removeCard": "Remove card"
   },
   "common": {
+    "participationUnavailable": "Player count and average stack could not be verified.",
+    "retry": "Retry",
     "loading": "Loading...",
     "save": "Save",
     "saving": "Saving...",

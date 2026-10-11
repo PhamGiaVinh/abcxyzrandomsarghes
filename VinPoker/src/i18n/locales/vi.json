@@ -287,6 +287,8 @@
     "removeCard": "Xoá lá này"
   },
   "common": {
+    "participationUnavailable": "Không xác minh được số người và stack.",
+    "retry": "Thử lại",
     "loading": "Đang tải...",
     "save": "Lưu",
     "saving": "Đang lưu...",

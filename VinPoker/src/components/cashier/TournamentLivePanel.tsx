@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useTournamentParticipationSummary } from "@/hooks/useTournamentParticipationSummary";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -101,6 +102,10 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
   const [listError, setListError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const summaryContext = selectedTournament?.id === selectedTournamentId
+    && clubIds.includes(selectedTournament.club_id) ? selectedTournament : null;
+  const participation = useTournamentParticipationSummary(user?.id, summaryContext?.club_id,
+    selectedTournamentId, refreshTrigger);
 
   const clubNameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -110,6 +115,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
 
   const loadTournaments = useCallback(async () => {
     setLoading(true);
+    setRefreshTrigger((previous) => previous + 1);
     let q = supabase
       .from("tournaments")
       .select("*")
@@ -164,6 +170,14 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
     }
 
     const channel = supabase.channel(`tournament-live:${selectedTournamentId}`);
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const refreshParticipation = () => {
+      if (refreshTimer !== undefined) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        setRefreshTrigger((previous) => previous + 1);
+      }, 100);
+    };
 
     // hands/chips/seats events only bump refreshTrigger for the tab panels that
     // have no realtime channel of their own (TableDraw, Clock, Leaderboard).
@@ -172,23 +186,22 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tournament_hands", filter: `tournament_id=eq.${selectedTournamentId}` },
-        () => {
-          setRefreshTrigger((prev) => prev + 1);
-        }
+        refreshParticipation
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tournament_chip_counts", filter: `tournament_id=eq.${selectedTournamentId}` },
-        () => {
-          setRefreshTrigger((prev) => prev + 1);
-        }
+        refreshParticipation
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tournament_seats", filter: `tournament_id=eq.${selectedTournamentId}` },
-        () => {
-          setRefreshTrigger((prev) => prev + 1);
-        }
+        refreshParticipation
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tournament_entries", filter: `tournament_id=eq.${selectedTournamentId}` },
+        refreshParticipation
       )
       .on(
         "postgres_changes",
@@ -202,6 +215,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
     channelRef.current = channel;
 
     return () => {
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -353,13 +367,22 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
             )}
           </div>
           {selectedTournament && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <StatusBadge status={selectedTournament.status} />
-              {selectedTournament.players_remaining != null && (
-                <span>· {t("tournamentLive.liveView.playersRemaining")}: {selectedTournament.players_remaining}</span>
+              {participation.status === "ready" && participation.data && (
+                <span>· {t("tournamentLive.liveView.playersRemaining")}: {participation.data.counts.remaining}
+                  {" · AVG: "}{participation.data.averageStack.toLocaleString()}</span>
               )}
-              {selectedTournament.average_stack != null && (
-                <span>· AVG: {selectedTournament.average_stack.toLocaleString()}</span>
+              {participation.status === "loading" && (
+                <span role="status">{t("common.loading")}</span>
+              )}
+              {participation.status === "error" && (
+                <span role="alert">{t("common.participationUnavailable")}</span>
+              )}
+              {participation.status === "error" && (
+                <Button variant="outline" size="sm" onClick={() => setRefreshTrigger((previous) => previous + 1)}>
+                  {t("common.retry")}
+                </Button>
               )}
             </div>
           )}

@@ -195,6 +195,8 @@
     "randomTurn": "랜덤 턴"
   },
   "common": {
+    "participationUnavailable": "플레이어 수와 평균 스택을 확인할 수 없습니다.",
+    "retry": "다시 시도",
     "loading": "불러오는 중...",
     "save": "저장",
     "saving": "저장 중...",
