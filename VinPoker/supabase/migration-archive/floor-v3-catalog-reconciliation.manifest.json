@@ -7612,6 +7612,7 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
+    {"version":"20270128000059","filename":"20270128000059_tracker_completed_void_integrity_v1.sql","sha256":"83c3ac2381b184627c20439276a62afe1401cb980387ff1dc2b7be7ea711794d","domain":"tracker-completed-void-integrity-campaign"},
     {"version":"20270128000058","filename":"20270128000058_tracker_hand_identity_revision_v1.sql","sha256":"48bc7cba5892c66819037ffbee796d02551436c85495e3f03d878512c112e99b","domain":"tracker-history-identity-revision-campaign"},
     {"version":"20270128000057","filename":"20270128000057_dealer_pt_policy_tenant_integrity_v1.sql","sha256":"0b5c774899b6e933049a74be985b1f72e96b2501e5daf15a087e6fc784e80d20","domain":"dealer-policy-tenant-campaign"},
     {"version":"20270128000056","filename":"20270128000056_tracker_card_batch_integrity_v1.sql","sha256":"bfdd54961f66da91b54fafa825926c9f6b362917fb8b7b315c897c676d4bf4e1","domain":"tracker-card-integrity-campaign"},

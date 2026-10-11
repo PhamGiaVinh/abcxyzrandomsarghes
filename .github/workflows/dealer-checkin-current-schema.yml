@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/dealer-checkin-current-schema.yml'
+      - '.github/workflows/tracker-void-59-protected-apply.yml'
+      - 'VinPoker/scripts/ops/tracker-void-59-*'
       - '.github/workflows/tracker-card-56-protected-apply.yml'
       - 'VinPoker/scripts/ops/tracker-card-56-*'
       - 'VinPoker/supabase/migrations/20270128000056_tracker_card_batch_integrity_v1.sql'
@@ -11,6 +13,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000057_dealer_pt_policy_tenant_integrity_v1.sql'
       - 'VinPoker/tests/dealerSwing/accrualTenant*'
       - 'VinPoker/supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000059_tracker_completed_void_integrity_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/completedVoidProjection*'
       - 'VinPoker/tests/trackerSettlement/handIdentityRevision*'
       - 'VinPoker/tests/trackerSettlement/handIdentityChainRange*'
       - 'VinPoker/tests/trackerSettlement/handIdentityCanonicalLock*'
@@ -400,6 +404,37 @@ jobs:
           PGDATABASE=vinpoker_ops_identity58_history_runtime_20261011 psql -X -v ON_ERROR_STOP=1 -c "UPDATE public.tournament_hands SET status='completed' WHERE id='86000000-0000-4000-8000-000000000001';"
           PGDATABASE=vinpoker_ops_identity58_history_runtime_20261011 psql -X -v ON_ERROR_STOP=1 -f tests/protectedNineIntegratedUat/history.pg17.sql
           PGDATABASE=vinpoker_ops_identity58_history_runtime_20261011 node tests/trackerSettlement/handIdentityPublication.concurrent.mjs
+      - name: Completed void projections, scoped denials and committed overlap on qualified schema
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_card56_overlap_20261011
+        run: |
+          node --test scripts/ops/tracker-void-59-protected-apply.test.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_void59_atomic_20261011
+          PGDATABASE=vinpoker_ops_void59_atomic_20261011 VOID59_PG_TEST=1 node --test scripts/ops/tracker-void-59-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000059_tracker_completed_void_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/completedVoidProjection.readonly-postcheck.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/completedVoidProjection.pg17.sql
+          for case in test_reentry test_closed_session test_changed_stack test_foreign_actor test_moved_seat test_busted_player test_missing_count test_capacity test_occupied_seat test_payout test_close_report; do
+            psql -X -v ON_ERROR_STOP=1 -v "$case=1" -f tests/trackerSettlement/completedVoidProjection.pg17.sql
+          done
+          psql -X -v ON_ERROR_STOP=1 -v test_busted_player=1 -v test_locked_seat=1 -f tests/trackerSettlement/completedVoidProjection.pg17.sql
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_overlap_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_overlap_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_close_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_close_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --close-session
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_move_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_move_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --move-seat
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_duplicate_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_duplicate_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --duplicate-void
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_move_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_move_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-move
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_move_reverse_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_move_reverse_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-move-void-first
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_close_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_close_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-close
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_close_rev_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_close_rev_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-close-void-first
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
         run: |
