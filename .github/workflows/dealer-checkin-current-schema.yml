@@ -97,6 +97,13 @@ on:
       - 'VinPoker/supabase/migrations/20270128000032_tournament_seat_display_preservation_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000033_tournament_seat_move_tuple_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql'
+      - '.github/workflows/floor-roster-62-protected-apply.yml'
+      - 'VinPoker/scripts/ops/floor-roster-62-release-plan.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-release-plan.test.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-protected-apply.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-protected-apply.test.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-atomic-pg.test.mjs'
       - 'VinPoker/supabase/migrations/20270128000036_floor_manual_entry_roundtrip_v1.sql'
       - 'VinPoker/tests/floorProduction/manualEntryRollback.currentSchema.mjs'
       - 'VinPoker/tests/floorProduction/assignParticipation.pg17.sql'
@@ -292,7 +299,14 @@ jobs:
           node tests/floorProduction/seatMoveTupleRollback.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000034_floor_move_wrapper_receipt_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql
+          node --test scripts/ops/floor-roster-62-release-plan.test.mjs scripts/ops/floor-roster-62-protected-apply.test.mjs
+          createdb vinpoker_ops_roster62_atomic_20261011
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1
+          PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -c 'DROP FUNCTION public.get_floor_tournament_table_roster_v6(uuid);'
+          PGDATABASE=vinpoker_ops_roster62_atomic_20261011 ROSTER62_PG_TEST=1 node --test scripts/ops/floor-roster-62-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/assignParticipation.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v malformed_roster_alias_case=true -f tests/floorProduction/assignParticipation.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -v free_sit_roundtrip=true -f tests/floorProduction/assignParticipation.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -v seed_chip_projection=true -v projection_stack=20001 -f tests/floorProduction/assignParticipation.pg17.sql
           node tests/floorProduction/assignIntegrityRollback.currentSchema.mjs

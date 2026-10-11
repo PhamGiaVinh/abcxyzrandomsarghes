@@ -144,7 +144,19 @@ describe("Floor V3 critical consistency contract", () => {
     expect(result).toEqual({ ok: true, data: [expect.objectContaining({
       seats: [expect.objectContaining({ entryId: null, integrityStatus: "missing_entry" })],
     })] });
-    expect(rpc).toHaveBeenCalledWith("get_floor_tournament_table_roster_v5", { p_tournament_id: "tour-1" });
+    expect(rpc).toHaveBeenCalledWith("get_floor_tournament_table_roster_v6", { p_tournament_id: "tour-1" });
+  });
+
+  it.each(["invalid_participation", "unknown_integrity"])("parses integrity %s without making it valid", async (status) => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ ...baseRosterRow, seats: [{
+      seat_number: 3, entry_id: "entry-4", player_id: "player-4", display_name: "Test 4",
+      entry_no: 1, chip_count: 2_400_000, is_active: true, integrity_status: status,
+    }] }], error: null });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, redrawSeatLockEnabled: true });
+    const result = await client.getTournamentTableRoster("tour-1");
+    expect(result.ok).toBe(status === "invalid_participation");
+    if (result.ok) expect(result.data[0].seats[0].integrityStatus).toBe("invalid_participation");
+    expect(rpc).toHaveBeenCalledWith("get_floor_tournament_table_roster_v6", { p_tournament_id: "tour-1" });
   });
 
   it("preserves the flag-off legacy roster parser", async () => {

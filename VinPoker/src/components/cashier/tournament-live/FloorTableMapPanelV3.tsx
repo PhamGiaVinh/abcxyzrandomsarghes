@@ -312,11 +312,13 @@ function ScopedFloorTableMapPanelV3({
 
   const seatAction = (seat: FloorTableRosterSeat | undefined) => {
     if (!seat || !selectedTable) return null;
-    if (seat.integrityStatus === "missing_entry" || !seat.entryId) {
+    if (seat.integrityStatus !== "valid" || !seat.entryId) {
       return (
         <section className="rounded-xl border border-destructive/35 bg-destructive/10 p-3" role="alert">
           <p className="font-semibold text-destructive">Cần sửa dữ liệu ghế {seat.seatNumber}</p>
-          <p className="mt-1 text-sm text-muted-foreground">Đang có người trên server nhưng thiếu hồ sơ dự giải. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người.</p>
+          <p className="mt-1 text-sm text-muted-foreground">{seat.integrityStatus === "invalid_participation"
+            ? "Dữ liệu người chơi, phiên bàn hoặc chip chưa khớp. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."
+            : "Đang có người trên server nhưng thiếu hồ sơ dự giải. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."}</p>
           <p className="mt-2 break-all font-mono text-xs text-muted-foreground">Mã người chơi: {seat.playerId}</p>
         </section>
       );

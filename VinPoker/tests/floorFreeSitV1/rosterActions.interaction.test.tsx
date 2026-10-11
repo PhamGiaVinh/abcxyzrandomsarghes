@@ -63,7 +63,7 @@ function setup(options: { pendingNetworkFailure?: boolean } = {}) {
     maxSeats: 9, tournamentTableStatus: "active", sessionClosedAt: null,
     activeDealerAssignmentId: null, seatLocks: [], seats: [{
       seatNumber: 1, entryId: "entry-1", playerId: "player-1",
-      displayName: fixture.longName, entryNo: 1, chipCount: 30_000_000, isActive: true,
+      displayName: fixture.longName, entryNo: 1, chipCount: 30_000_000, isActive: true, integrityStatus: "valid",
     }],
   }, {
     tournamentId: "tour-1", tournamentTableId: "table-2", gameTableId: "physical-2",
@@ -115,6 +115,22 @@ async function submitMode() {
 }
 
 describe("Floor roster mobile actions", () => {
+  it("does not expose mutation controls for invalid participation even if a stale seat selection arrives", async () => {
+    const view = setup();
+    try {
+      const initial = await fixture.client.getTournamentTableRoster.mock.results[0].value;
+      fixture.client.getTournamentTableRoster.mockResolvedValue({ ...initial, data: initial.data.map(
+        (table: { seats: object[] }) => ({ ...table, seats: table.seats.map((seat) => ({ ...seat, integrityStatus: "invalid_participation" })) }),
+      ) });
+      await openTableSheet();
+      fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      expect(screen.getByText(/Dữ liệu người chơi, phiên bàn hoặc chip chưa khớp/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Chuyển người" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Rời ghế" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Loại khỏi giải" })).toBeNull();
+      expect(fixture.supabase.rpc).not.toHaveBeenCalled();
+    } finally { view.unmount(); }
+  });
   it.each(["free-sit", "close", "break"])("invalidates the %s confirmation instead of adopting a newer revision", async (operation) => {
     const view = setup();
     try {

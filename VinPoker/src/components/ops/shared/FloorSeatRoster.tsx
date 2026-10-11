@@ -65,7 +65,7 @@ export function FloorSeatRoster({
       <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card/55">
         {roster.slots.map(({ seatNumber, seat }) => {
           const seatLock = lockBySeat.get(seatNumber);
-          const dataIssue = seat?.integrityStatus === "missing_entry";
+          const dataIssue = seat?.integrityStatus === "missing_entry" || seat?.integrityStatus === "invalid_participation";
           const interactive = seat
             ? Boolean(onSeatTap) && !dataIssue
             : seatLock
@@ -111,7 +111,9 @@ export function FloorSeatRoster({
                     </span>
                     {dataIssue ? (
                       <span className="mt-0.5 block text-xs font-medium text-destructive">
-                        Cần sửa dữ liệu · thiếu hồ sơ dự giải
+                        {seat.integrityStatus === "invalid_participation"
+                          ? "Cần sửa dữ liệu · thông tin chưa khớp"
+                          : "Cần sửa dữ liệu · thiếu hồ sơ dự giải"}
                       </span>
                     ) : (
                       <span className="mt-0.5 block truncate font-mono text-xs text-primary">

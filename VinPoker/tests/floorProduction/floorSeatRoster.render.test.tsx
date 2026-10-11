@@ -5,6 +5,20 @@ import { FloorSeatRoster } from "../../src/components/ops/shared/FloorSeatRoster
 afterEach(cleanup);
 
 describe("FloorSeatRoster", () => {
+  it("preserves anomalous occupancy but never opens player or empty-seat actions", () => {
+    const onSeatTap = vi.fn();
+    const onEmptySeatTap = vi.fn();
+    render(<FloorSeatRoster seats={[{ seatNumber: 3, playerName: "Test 4", chipsLabel: "2.400.000",
+      entryNumber: 1, integrityStatus: "invalid_participation" }]}
+      onSeatTap={onSeatTap} onEmptySeatTap={onEmptySeatTap} />);
+    const row = screen.getByRole("button", { name: "Ghế 3, cần sửa dữ liệu" });
+    expect(row).toBeDisabled();
+    expect(within(row).getByText("Test 4")).toBeInTheDocument();
+    expect(within(row).getByText("Cần sửa dữ liệu · thông tin chưa khớp")).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(onSeatTap).not.toHaveBeenCalled();
+    expect(onEmptySeatTap).not.toHaveBeenCalled();
+  });
   it("keeps all nine seats visible and exposes empty seats as intentional actions", () => {
     const onSeatTap = vi.fn();
     const onEmptySeatTap = vi.fn();

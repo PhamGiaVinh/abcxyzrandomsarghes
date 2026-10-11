@@ -16,6 +16,7 @@ export type FloorTableControlV3RpcName =
   | "get_floor_tournament_table_roster_v3"
   | "get_floor_tournament_table_roster_v4"
   | "get_floor_tournament_table_roster_v5"
+  | "get_floor_tournament_table_roster_v6"
   | "get_floor_restorable_entries_v3"
   | "validate_tracker_table_writer_context_v3"
   | "floor_open_tournament_table_v3"
@@ -123,7 +124,7 @@ export type FloorTableRosterSeat = {
   entryNo: number | null;
   chipCount: number;
   isActive: true;
-  integrityStatus: "valid" | "missing_entry";
+  integrityStatus: "valid" | "missing_entry" | "invalid_participation";
 };
 
 export type FloorBreakPlanMove = {
@@ -425,7 +426,7 @@ function parseRosterSeat(value: unknown, requireIntegrityStatus: boolean): Floor
     || (entryNo !== null && (typeof entryNo !== "number" || !Number.isSafeInteger(entryNo)))
     || typeof chipCount !== "number" || !Number.isSafeInteger(chipCount) || chipCount < 0
     || isActive !== true
-    || (integrityStatus !== "valid" && integrityStatus !== "missing_entry")
+    || (integrityStatus !== "valid" && integrityStatus !== "missing_entry" && integrityStatus !== "invalid_participation")
     || (integrityStatus === "valid" && (entryId === null || entryNo === null))
     || (integrityStatus === "missing_entry" && (entryId !== null || entryNo !== null))
   ) {
@@ -807,7 +808,7 @@ export function createFloorTableControlV3Client(
 
     async getTournamentTableRoster(tournamentId: string): Promise<FloorTableControlV3Result<FloorTournamentTableRoster[]>> {
       const response = redrawSeatLockEnabled
-        ? await callRedrawSeatLock("get_floor_tournament_table_roster_v5", { p_tournament_id: tournamentId })
+        ? await callRedrawSeatLock("get_floor_tournament_table_roster_v6", { p_tournament_id: tournamentId })
         : await call("get_floor_tournament_table_roster_v3", { p_tournament_id: tournamentId });
       if (response.ok === false) return { ok: false, error: response.error };
       if (!Array.isArray(response.data)) return { ok: false, error: "V3_ROSTER_RESPONSE_MALFORMED" };
