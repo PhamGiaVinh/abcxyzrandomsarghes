@@ -11,8 +11,19 @@ test("chip metrics and narrow mode panel contain long names and large values", a
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("http://127.0.0.1:54321/**", async (route) => {
-    expect(route.request().method()).toBe("GET");
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/rpc/get_tournament_participation_counts_v1")) {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().postDataJSON()).toEqual({ p_tournament_id: "responsive-test" });
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        tournament_id: "responsive-test", average_stack: 987654321000,
+        counts: { total_entries: 1, re_entries: 0, remaining: 1, seated: 1, waiting: 0,
+          busted: 0, anomaly_entries: 0, anomaly_seats: 0, live_entry_stack: 987654321000,
+          seated_stack: 987654321000, waiting_stack: 0 },
+      }) });
+      return;
+    }
+    expect(route.request().method()).toBe("GET");
     const data = path.endsWith("/tournaments")
       ? { status: "live", players_remaining: 1, current_level: 1 }
       : path.endsWith("/tournament_levels")
