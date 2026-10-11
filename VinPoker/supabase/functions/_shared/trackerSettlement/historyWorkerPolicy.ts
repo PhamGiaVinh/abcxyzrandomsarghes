@@ -1,4 +1,14 @@
 export const TRACKER_HISTORY_WORKER_MAX_BATCH = 20;
+export const HISTORY_CANARY_SCOPE_ENV = "TRACKER_HISTORY_CANARY_ALLOWED_HAND_IDS";
+
+/** The temporary credential never authorizes hands outside the server-owned canary scope. */
+export function requireHistoryCanaryScope(handIds: string[], configured: string | undefined): void {
+  let allowed: string[] | undefined;
+  try { allowed = parseHistoryWorkerHandIds(JSON.parse(configured ?? "null")); }
+  catch { throw new Error("canary_scope_unavailable"); }
+  if (!allowed || allowed.length > 3) throw new Error("canary_scope_unavailable");
+  if (handIds.some(id => !allowed.includes(id))) throw new Error("hand_out_of_scope");
+}
 
 /** Explicit canary scope. An invalid scope must never fall back to claiming the whole queue. */
 export function parseHistoryWorkerHandIds(value: unknown): string[] | undefined {

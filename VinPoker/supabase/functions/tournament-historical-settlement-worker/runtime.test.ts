@@ -2,7 +2,8 @@ import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 
 Deno.test('history worker rejects unknown claims and reports lease-loss honestly through actual handler',async()=>{
  const oldServe=Deno.serve, oldFetch=globalThis.fetch;
- const names=['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','TRACKER_HISTORY_COMPLETION_WORKER_ENABLED'];
+ const names=['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','TRACKER_HISTORY_COMPLETION_WORKER_ENABLED',
+  'TRACKER_HISTORY_CANARY_INTERNAL_SECRET','TRACKER_HISTORY_CANARY_ALLOWED_HAND_IDS'];
  const previous=names.map(name=>Deno.env.get(name));
  let handler: (req: Request)=>Promise<Response>;
  Object.defineProperty(Deno,'serve',{configurable:true,value:(fn: typeof handler)=>{handler=fn;}});
@@ -22,6 +23,23 @@ Deno.test('history worker rejects unknown claims and reports lease-loss honestly
  const call=(extra: Record<string,unknown>={})=>handler!(new Request('https://worker.invalid',{method:'POST',headers:{authorization:'Bearer history-service-fixture'},body:JSON.stringify({limit:1,...extra})}));
  try {
   await import('./index.ts');
+  globalThis.fetch=()=>{throw new Error('invalid hand scope reached backend');};
+  Deno.env.set(names[2],'false'); Deno.env.set(names[3],'canary-fixture'); Deno.env.set(names[4],JSON.stringify([hand]));
+  const canaryCall=(body: unknown)=>handler!(new Request('https://worker.invalid',{method:'POST',
+   headers:{authorization:'Bearer canary-fixture'},body:JSON.stringify(body)}));
+  const darkService=await call(); assertEquals(darkService.status,404); await darkService.json();
+  const unscoped=await canaryCall({}); assertEquals(unscoped.status,400); assertEquals((await unscoped.json()).code,'hand_scope_required');
+  const outside=await canaryCall({hand_ids:[lease]}); assertEquals(outside.status,400); assertEquals((await outside.json()).code,'hand_out_of_scope');
+  Deno.env.delete(names[4]);
+  const missing=await canaryCall({hand_ids:[hand]}); assertEquals(missing.status,400); assertEquals((await missing.json()).code,'canary_scope_unavailable');
+  Deno.env.set(names[4],JSON.stringify([hand]));
+  globalThis.fetch=(input)=>{
+   const url=new URL(input instanceof Request?input.url:String(input));
+   assertEquals(url.pathname.endsWith('/claim_tracker_historical_display_jobs_scoped_v1'),true);
+   return Promise.resolve(new Response('[]',{status:200,headers:{'content-type':'application/json'}}));
+  };
+  const bounded=await canaryCall({hand_ids:[hand],limit:1}); assertEquals(bounded.status,200); await bounded.json();
+  Deno.env.set(names[2],'true'); Deno.env.delete(names[3]); Deno.env.delete(names[4]);
   globalThis.fetch=()=>{throw new Error('invalid hand scope reached backend');};
   for(const body of ['{"hand_ids":[','[]','123','null']) {
    const response=await handler!(new Request('https://worker.invalid',{method:'POST',headers:{authorization:'Bearer history-service-fixture'},body}));
@@ -69,14 +87,14 @@ Deno.test('history worker rejects unknown claims and reports lease-loss honestly
    const route=url.pathname.split('/').at(-1);
    let data: unknown;
    if(route==='claim_tracker_historical_display_jobs_scoped_v1') {
-    const args=JSON.parse(String(init?.body));
+    const args=JSON.parse(String((init as {body?: unknown}|undefined)?.body));
     assertEquals(args.p_hand_ids,[hand]);
     data=committed?[]:[{hand_id:hand,source_revision:1,lease_token:lease}];
    } else if(route==='get_tracker_historical_display_snapshot') data=snapshot;
    else if(route==='tournament_settlement_outcomes') data=[];
    else if(route==='commit_tracker_historical_display_outcome_v2') {
     commitCalls++;
-    const args=JSON.parse(String(init?.body));
+    const args=JSON.parse(String((init as {body?: unknown}|undefined)?.body));
     assertEquals(args.p_hand_id,hand); assertEquals(args.p_lease_token,lease);
     assertEquals(args.p_expected_source_revision,1);
     committed=true;

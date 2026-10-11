@@ -1,8 +1,24 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { authorizeHistoryWorker } from "./historyWorkerAuth.ts";
+import { requireHistoryCanaryScope } from "./historyWorkerPolicy.ts";
 
 const request = (token?: string) => new Request("https://example.invalid", {
   headers: token === undefined ? {} : { Authorization: token },
+});
+
+Deno.test("server-owned canary allowlist rejects absent, malformed, broad and foreign scopes", () => {
+  const hand = "00000000-0000-4000-8000-000000000001";
+  const other = "00000000-0000-4000-8000-000000000002";
+  requireHistoryCanaryScope([hand], JSON.stringify([hand]));
+  for (const configured of [undefined, "null", "[]", "not-json", JSON.stringify([hand,hand]),
+    JSON.stringify([hand,other,"00000000-0000-4000-8000-000000000003","00000000-0000-4000-8000-000000000004"])]) {
+    let message = "";
+    try { requireHistoryCanaryScope([hand], configured); } catch (error) { message = (error as Error).message; }
+    assertEquals(message,"canary_scope_unavailable");
+  }
+  let message = "";
+  try { requireHistoryCanaryScope([other],JSON.stringify([hand])); } catch (error) { message = (error as Error).message; }
+  assertEquals(message,"hand_out_of_scope");
 });
 
 Deno.test("History deployment config permits custom bearer authentication at both handlers", async () => {
