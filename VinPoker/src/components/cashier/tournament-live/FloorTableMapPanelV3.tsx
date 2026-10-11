@@ -382,7 +382,7 @@ function ScopedFloorTableMapPanelV3({
           <h2 className="text-base font-semibold">Bàn đang sử dụng</h2>
           <p className="mt-1 text-xs text-muted-foreground">Mỗi bàn hiển thị một phiên đang hoạt động của giải này.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button data-ops-action="floor.tables.refresh" size="sm" variant="outline" className="min-h-12" disabled={loading || busy} onClick={() => void load()}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Làm mới</Button>
           <Button data-ops-action="floor.tables.open_table_dialog" size="sm" className="min-h-12" disabled={busy} onClick={() => setOpenTable(true)}><Plus className="mr-2 h-4 w-4" /> Mở bàn</Button>
           {FEATURES.floorRedrawSeatLockV1 && (
