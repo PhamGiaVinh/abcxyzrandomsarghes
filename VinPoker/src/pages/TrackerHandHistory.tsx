@@ -1,4 +1,5 @@
-import { startTransition, useCallback, useDeferredValue, useEffect, useState } from "react";
+import { startTransition, useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, CheckCircle2, History, Radio, Search, ShieldCheck, Trophy } from "lucide-react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { HandHistoryPanel, type HandHistorySelection } from "@/components/cashier/tournament-live/HandHistoryPanel";
@@ -50,10 +51,12 @@ function statusLabel(status: string): string {
 }
 
 export default function TrackerHandHistory() {
-  const { user, loading: authLoading, isTracker, isAdmin, isClubOwner } = useAuth();
+  const { user, loading: authLoading, authError, rolesLoading, rolesError, isTracker, isAdmin, isClubOwner } = useAuth();
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tournaments, setTournaments] = useState<TournamentSummary[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [tournamentResult, setTournamentResult] = useState<{
+    scope: string; data: TournamentSummary[]; error: string | null;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase("vi"));
   const selectedTournamentId = searchParams.get("t");
@@ -62,17 +65,26 @@ export default function TrackerHandHistory() {
   const selectedActionId = searchParams.get("action");
   const [showTournamentPicker, setShowTournamentPicker] = useState(!selectedTournamentId);
   const authorized = isTracker || isAdmin || isClubOwner;
+  const scopeIdentity = user && authorized && !authLoading && !rolesLoading && !authError
+    ? JSON.stringify([user.id, isAdmin, isTracker, isClubOwner]) : null;
+  const scopeOwner = useRef({ identity: scopeIdentity, generation: 0 });
+  if (scopeOwner.current.identity !== scopeIdentity) {
+    scopeOwner.current = { identity: scopeIdentity, generation: scopeOwner.current.generation + 1 };
+  }
+  const generation = scopeOwner.current.generation;
+  const readScope = scopeIdentity === null ? null : `${scopeIdentity}:${generation}`;
+  const tournaments = readScope && tournamentResult?.scope === readScope ? tournamentResult.data : null;
+  const loadError = readScope && tournamentResult?.scope === readScope ? tournamentResult.error : null;
 
   useEffect(() => {
-    if (!user || !authorized) return;
+    if (!user || !readScope) return;
     let cancelled = false;
+    const isCurrent = () => !cancelled && scopeOwner.current.generation === generation;
     void (async () => {
-      setLoadError(null);
       const { data: ids, error: idsError } = await supabase.rpc("tracker_club_ids", { _user_id: user.id });
-      if (cancelled) return;
+      if (!isCurrent()) return;
       if (idsError) {
-        setLoadError(idsError.message);
-        setTournaments([]);
+        setTournamentResult({ scope: readScope, data: [], error: idsError.message });
         return;
       }
       const clubIds = (ids ?? []).filter((clubId): clubId is string => typeof clubId === "string");
@@ -83,20 +95,22 @@ export default function TrackerHandHistory() {
         .order("created_at", { ascending: false });
       if (archiveClubScope && archiveClubScope.length > 0) query = query.in("club_id", archiveClubScope);
       else if (archiveClubScope && archiveClubScope.length === 0) {
-        setTournaments([]);
+        setTournamentResult({ scope: readScope, data: [], error: null });
         return;
       }
       const { data, error } = await query;
-      if (cancelled) return;
+      if (!isCurrent()) return;
       if (error) {
-        setLoadError(error.message);
-        setTournaments([]);
+        setTournamentResult({ scope: readScope, data: [], error: error.message });
         return;
       }
-      setTournaments((data ?? []) as TournamentSummary[]);
-    })();
+      setTournamentResult({ scope: readScope, data: (data ?? []) as TournamentSummary[], error: null });
+    })().catch((error: unknown) => {
+      if (!isCurrent()) return;
+      setTournamentResult({ scope: readScope, data: [], error: error instanceof Error ? error.message : t("common.archiveUnavailable") });
+    });
     return () => { cancelled = true; };
-  }, [authorized, isAdmin, user]);
+  }, [generation, isAdmin, readScope, t, user]);
 
   useEffect(() => {
     if (!tournaments || tournaments.length === 0 || selectedTournamentId) return;
@@ -118,9 +132,16 @@ export default function TrackerHandHistory() {
     setSearchParams(next, { replace: true });
   }, [selectedActionId, selectedHandId, selectedTournamentId, setSearchParams]);
 
-  if (authLoading) {
-    return <div className="container mx-auto space-y-4 p-3 md:p-6"><Skeleton className="h-24 rounded-2xl" /><Skeleton className="h-[620px] rounded-2xl" /></div>;
+  if (authLoading || (user && rolesLoading)) {
+    return <div aria-busy="true" className="container mx-auto space-y-4 p-3 md:p-6"><Skeleton className="h-24 rounded-2xl" /><Skeleton className="h-[620px] rounded-2xl" /></div>;
   }
+  const accessError = authError || (!authorized ? rolesError : null);
+  if (accessError) return <div className="container mx-auto p-3 md:p-6">
+    <Card role="alert" className="space-y-3 border-destructive/40 bg-destructive/10 p-4 text-sm">
+      <p>{accessError}</p>
+      <Button type="button" variant="outline" onClick={() => window.location.reload()}>{t("common.retry")}</Button>
+    </Card>
+  </div>;
   if (!user) return <Navigate to="/auth" replace />;
   if (!authorized) return <Navigate to="/" replace />;
   if (tournaments === null) {

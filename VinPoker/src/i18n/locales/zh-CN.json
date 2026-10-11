@@ -163,6 +163,7 @@
     "removeCard": "移除此牌"
   },
   "common": {
+    "archiveUnavailable": "无法加载牌局历史。请检查网络连接后重试。",
     "participationUnavailable": "无法核实玩家人数和平均筹码。",
     "retry": "重试",
     "loading": "加载中...",
