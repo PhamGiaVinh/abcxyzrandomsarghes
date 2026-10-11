@@ -405,7 +405,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
               Cả giải (không phải 1 bàn). Server tự kiểm quyền; nút disable khi đang chạy lệnh. */}
           {clockReadError && <div role="alert" className="ios-card p-3 text-sm">
             {t("clockControl.loadError")}
-            <button onClick={loadClk} disabled={clkBusy} className="ml-2 min-h-11 underline">{t("common.retry")}</button>
+            <button data-ops-action="floor.clock.refresh" onClick={loadClk} disabled={clkBusy} className="ml-2 min-h-11 underline">{t("common.retry")}</button>
           </div>}
           {clk && (
             <div className="ios-card space-y-2.5 p-3.5">
