@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import "../../src/index.css";
 import "../../src/i18n";
 import { ClockPanel } from "../../src/components/cashier/tournament-live/ClockPanel";
+import { AuthProvider } from "../../src/hooks/useAuth";
 import { PrizesPanel } from "../../src/components/cashier/tournament-live/viewer-hub/PrizesPanel";
 import { VinPokerTournamentClock } from "../../src/components/tournament-clock/VinPokerTournamentClock";
 import { TrackerReadOnlyRoster } from "../../src/components/cashier/tournament-live/handinput/unified/TrackerReadOnlyRoster";
@@ -71,7 +72,7 @@ function Fixture() {
   }} />;
   if (surface === "panels") return <main className="operations-typography mx-auto max-w-5xl space-y-6 p-4">
     <p>LOCAL TEST · Đồng hồ / Payout / Tracker</p>
-    <ClockPanel tournamentId="responsive-test" />
+    <AuthProvider><ClockPanel tournamentId="responsive-test" /></AuthProvider>
     <PrizesPanel tournamentId="responsive-test" />
     <TrackerReadOnlyRoster roster={[{ seat_id: "seat-test", entry_id: "entry-test", player_id: "player-test", entry_number: 999999, seat_number: 1, seat_stack: 987654321000, tracker_stack: 987654321000, entry_stack: 987654321000, display_name: "Nguyễn_Văn_Tên_Rất_Dài_".repeat(5), avatar_url: null }]} />
   </main>;
