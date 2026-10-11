@@ -98,6 +98,39 @@ test("partial Floor clock revision markers fail closed", () => {
   }
 });
 
+test("canonical deferred move requires a wired dialog, adapter and V3 Edge", () => {
+  const root = makeLegacyTarget();
+  const panel = "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx";
+  const dialog = "VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx";
+  const client = "VinPoker/src/lib/floorTableControlV3.ts";
+  const edge = "VinPoker/supabase/functions/tournament-live-update/index.ts";
+  const wiredPanel = 'import { MovePlayerDialog } from "./MovePlayerDialog"; <MovePlayerDialog />';
+  const wiredClient = 'movePlayerSeatOrQueueExact: (args: FloorExactMoveIntent) => call("move_player_seat_v5", args)';
+  const reject = () => assert.throws(() => selectTargetContractProfile({ targetRoot: root }),
+    error => error.code === "UNKNOWN_TARGET_CONTRACT_PROFILE");
+  try {
+    put(root, "VinPoker/src/lib/featureFlags.ts", "floorDeferredTrackerMoveV1: true");
+    put(root, panel, wiredPanel);
+    put(root, dialog, "canonical.deferredTrackerMoveEnabled; canonical.movePlayerSeatOrQueueExact(frozen.intent)");
+    put(root, client, wiredClient);
+    reject();
+    put(root, edge, 'supabase.rpc("start_tracker_hand_v3", {})');
+    assert.equal(selectTargetContractProfile({ targetRoot: root }).requirements.floorDeferredTrackerMoveV1, true);
+    put(root, panel, 'import { MovePlayerDialog } from "./MovePlayerDialog";');
+    reject();
+    put(root, panel, wiredPanel);
+    put(root, client, 'call("move_player_seat_v4", args)');
+    reject();
+    put(root, client, wiredClient);
+    put(root, dialog, "canonical.movePlayerSeatExact(frozen.intent)");
+    reject();
+    put(root, panel, "queueTrackerMove");
+    assert.equal(selectTargetContractProfile({ targetRoot: root }).requirements.floorDeferredTrackerMoveV1, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("operator cannot force current mass-open source through the legacy profile", () => {
   assert.throws(
     () => assertTargetContractProfile({ targetRoot: repositoryRoot, expectedProfile: LEGACY_PROFILE }),
