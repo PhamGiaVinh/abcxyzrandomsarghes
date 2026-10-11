@@ -1918,7 +1918,7 @@ function TournamentLiveViewContent({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-wrap items-center gap-4 text-xs text-muted-foreground">
           {canTdAi && !spectator && (
             <Button
               size="sm"

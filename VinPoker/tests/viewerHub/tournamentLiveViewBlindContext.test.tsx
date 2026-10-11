@@ -1,9 +1,9 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ hand: true }));
+const fixture = vi.hoisted(() => ({ hand: true, staff: false }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: "vi" } }) }));
-vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ isStaffOps: false, isClubAdmin: false }) }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ isStaffOps: fixture.staff, isClubAdmin: false }) }));
 vi.mock("@/components/tracker/useTournamentTableAppearance", () => ({ useTournamentTableAppearance: () => ({ data: undefined }) }));
 vi.mock("@/components/td-ai/TdAiAssistantPanel", () => ({ TdAiAssistantPanel: () => null }));
 vi.mock("@/lib/tournamentParticipation", () => ({
@@ -32,13 +32,24 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 
 import { TournamentLiveView } from "@/components/cashier/tournament-live/TournamentLiveView";
 
-beforeEach(() => vi.stubGlobal("ResizeObserver", class {
+beforeEach(() => { fixture.staff = false; vi.stubGlobal("ResizeObserver", class {
   observe() {}
   unobserve() {}
   disconnect() {}
-}));
+}); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe("TournamentLiveView clock source labels", () => {
+  it("lets the operator statistics row wrap without removing values or controls", async () => {
+    fixture.hand = true;
+    fixture.staff = true;
+    render(<TournamentLiveView tournamentId="test-tournament" />);
+    await screen.findByText("tournamentLive.liveView.currentTournamentClock");
+    const statistics = screen.getByText(/AVG:/).parentElement;
+    expect(statistics).toHaveClass("flex-wrap", "min-w-0");
+    expect(screen.getByRole("button", { name: "tdAi.entry" })).toBeInTheDocument();
+    expect(screen.getByText("Hand #16")).toBeInTheDocument();
+    expect(screen.getByText(/100k\/200k/)).toBeInTheDocument();
+  });
   it.each([true, false])("identifies current tournament clock independently of frozen hand (hand=%s)", async hand => {
     fixture.hand = hand;
     render(<TournamentLiveView tournamentId="test-tournament" />);
