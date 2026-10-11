@@ -19,6 +19,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000060_tracker_legacy_reentry_retirement_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql'
       - 'VinPoker/tests/floorProduction/legacyStackIntegrity.pg17.sql'
+      - 'VinPoker/tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryRetirement.pg17.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryCanonicalSnapshot.pg17.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql'
@@ -461,6 +462,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql
           psql -X -v ON_ERROR_STOP=1 -v STALE_STACK_FIRST_ARRIVAL_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
