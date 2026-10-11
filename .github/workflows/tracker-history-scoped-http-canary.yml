@@ -1,0 +1,99 @@
+name: Tracker history scoped HTTP canary
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha: { description: Exact current main SHA, required: true, type: string }
+      source_pr: { description: Merged reviewed transport PR, required: true, type: string }
+      hand_ids: { description: Reviewed Felt UAT Hand14/16 UUID JSON array only, required: true, type: string }
+      owner_ack: { description: RUN_SCOPED_HISTORY_CANARY_<target_sha>, required: true, type: string }
+permissions: { actions: read, contents: read, checks: read, pull-requests: read }
+concurrency: { group: vinpoker-production-database-release, cancel-in-progress: false }
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: { ref: '${{ github.sha }}', persist-credentials: false }
+      - name: Bind owner, current main, reviewed PR and exact source checks
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          TARGET_SHA: '${{ inputs.target_sha }}'
+          SOURCE_PR: '${{ inputs.source_pr }}'
+          OWNER_ACK: '${{ inputs.owner_ack }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+        run: |
+          set -euo pipefail
+          test "$INITIAL_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          [[ "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$SOURCE_PR" =~ ^[0-9]+$ ]]
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          test "$TARGET_SHA" = "$(git rev-parse HEAD)"
+          test "$TARGET_SHA" = "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          test "$OWNER_ACK" = "RUN_SCOPED_HISTORY_CANARY_$TARGET_SHA"
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR")"
+          test "$(jq -r .merged <<<"$pr")" = true
+          test "$(jq -r .merge_commit_sha <<<"$pr")" = "$TARGET_SHA"
+          test "$(jq -r .base.ref <<<"$pr")" = main
+          test "$(jq -r .head.repo.full_name <<<"$pr")" = "$GITHUB_REPOSITORY"
+          head="$(jq -r .head.sha <<<"$pr")"
+          checks="$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs?per_page=100")"
+          for name in tracker-dealer-read-only reject-sensitive-vars-context; do
+            jq -e --arg name "$name" '[.check_runs[]|select(.name==$name)]|sort_by(.id)|last|.status=="completed" and .conclusion=="success"' <<<"$checks" >/dev/null
+          done
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - name: Offline credential lifecycle tests
+        working-directory: VinPoker
+        run: node --test scripts/ops/tracker-history-canary-transport.test.mjs
+  canary:
+    needs: validate
+    environment: dealer-swing-production-critical
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: { ref: '${{ github.sha }}', persist-credentials: false }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - name: Require quiet release window
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          set -euo pipefail
+          for status in in_progress waiting queued; do
+            active="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?event=workflow_dispatch&status=$status&per_page=100" --jq '.workflow_runs[]|select((.id|tostring)!=env.GITHUB_RUN_ID)|select(.name|test("database|migration|recovery|production|release|history.*canary";"i"))|.id')"
+            test -z "$active"
+          done
+          test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
+          echo "SOURCE_CHECKOUT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Run bounded HTTP canary with memory-only temporary credential
+        id: run
+        working-directory: VinPoker
+        timeout-minutes: 7
+        env:
+          TARGET_SHA: '${{ inputs.target_sha }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          OWNER_ACK: '${{ inputs.owner_ack }}'
+          HAND_IDS: '${{ inputs.hand_ids }}'
+          SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
+          SUPABASE_ACCESS_TOKEN: '${{ secrets.SUPABASEACCESSTOKEN }}'
+        run: node scripts/ops/tracker-history-canary-transport.mjs run
+      - name: Independent owned cleanup after error or step timeout
+        if: always()
+        working-directory: VinPoker
+        timeout-minutes: 3
+        env:
+          TARGET_SHA: '${{ inputs.target_sha }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          OWNER_ACK: '${{ inputs.owner_ack }}'
+          HAND_IDS: '${{ inputs.hand_ids }}'
+          SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
+          SUPABASE_ACCESS_TOKEN: '${{ secrets.SUPABASEACCESSTOKEN }}'
+        run: node scripts/ops/tracker-history-canary-transport.mjs cleanup

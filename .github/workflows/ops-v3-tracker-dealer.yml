@@ -36,6 +36,8 @@ on:
       - "VinPoker/src/lib/tournamentParticipation*"
       - "VinPoker/src/components/chip-ops/DashboardTab*"
       - "VinPoker/src/lib/chipOpsMetrics*"
+      - "VinPoker/scripts/ops/tracker-history-canary-transport*"
+      - ".github/workflows/tracker-history-scoped-http-canary.yml"
       - "VinPoker/tsconfig.ops-v3-tracker-dealer.json"
   workflow_dispatch:
 
@@ -94,6 +96,10 @@ jobs:
           src/components/chip-ops/DashboardTab.test.tsx
           src/lib/chipOpsMetrics.test.ts
           --maxWorkers=1 --minWorkers=1
+
+      - name: Test bounded History canary release transport
+        working-directory: VinPoker
+        run: node --test scripts/ops/tracker-history-canary-transport.test.mjs
 
       - name: Lint targeted read-only source and tests
         working-directory: VinPoker
