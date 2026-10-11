@@ -465,7 +465,8 @@ jobs:
           # Preserve its qualified function/ACL chain, not those fixture rows.
           set -euo pipefail
           createdb vinpoker_ops_stack61_atomic_20261011
-          pg_dump --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_stack61_atomic_20261011 psql -X -v ON_ERROR_STOP=1
+          # Use the server's PG17 client; the runner's default pg_dump is PG16.
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_stack61_atomic_20261011 psql -X -v ON_ERROR_STOP=1
           PGDATABASE=vinpoker_ops_stack61_atomic_20261011 STACK61_PG_TEST=1 node --test scripts/ops/tracker-stack-61-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
