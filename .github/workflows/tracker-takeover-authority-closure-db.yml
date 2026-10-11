@@ -7,6 +7,8 @@ on:
       - "VinPoker/supabase/migrations/20270112000007_tracker_p0_authority_closure.sql"
       - "VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts"
       - "VinPoker/tests/trackerTakeoverAuthority/**"
+      - "VinPoker/tests/handinput/voidResponseRecovery.hook.test.tsx"
+      - "VinPoker/tests/handinput/standaloneEdge.parity.test.ts"
       - "VinPoker/tsconfig.tracker-takeover-authority-closure.json"
   workflow_dispatch:
 
@@ -86,6 +88,8 @@ jobs:
           set -euo pipefail
           node ./node_modules/vitest/vitest.mjs run \
             tests/trackerTakeoverAuthority/migration.contract.test.ts \
+            tests/handinput/voidResponseRecovery.hook.test.tsx \
+            tests/handinput/standaloneEdge.parity.test.ts \
             --maxWorkers=1 --minWorkers=1
           node ./node_modules/typescript/bin/tsc \
             -p tsconfig.tracker-takeover-authority-closure.json \
