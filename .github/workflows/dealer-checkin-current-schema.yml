@@ -25,6 +25,7 @@ on:
       - 'VinPoker/tests/floorProduction/legacyReentryCanonicalSnapshot.pg17.sql'
       - 'VinPoker/tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql'
       - 'VinPoker/tests/trackerSettlement/completedVoidProjection*'
+      - 'VinPoker/tests/trackerSettlement/historyAtomicRecovery*'
       - 'VinPoker/tests/trackerSettlement/handIdentityRevision*'
       - 'VinPoker/tests/trackerSettlement/handIdentityChainRange*'
       - 'VinPoker/tests/trackerSettlement/handIdentityCanonicalLock*'
@@ -481,6 +482,10 @@ jobs:
           # checkin's Floor helpers and install its exact forward identity fence.
           PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
           PGDATABASE=vinpoker_ops_undo_generation_20261011 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --undo
+          # Real COMMIT with discarded output, then recovery through a new connection.
+          # Synthetic outcome: transaction/lease proof, not verifier or HTTP UAT.
+          createdb --template=vinpoker_ops_undo_generation_20261011 vinpoker_ops_history_atomic_ci
+          PGDATABASE=vinpoker_ops_history_atomic_ci node tests/trackerSettlement/historyAtomicRecovery.currentSchema.mjs --committed-recovery
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
         run: |
