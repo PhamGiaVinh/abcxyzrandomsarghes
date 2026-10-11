@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, Layers, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { FEATURES } from "@/lib/featureFlags";
@@ -68,9 +69,11 @@ export function MultiDayTournamentsBoard(p: FloorBoardProps) {
 }
 
 function EventCard({ group, p }: { group: EventGroup; p: FloorBoardProps }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   const [verifiedRelease, setVerifiedRelease] = useState(false);
-  const entrants = group.flights.reduce((s, fl) => s + (p.flightMeta[fl.id]?.entrants ?? 0), 0);
+  const entrants = group.flights.every(fl => p.flightMeta[fl.id] !== undefined)
+    ? group.flights.reduce((s, fl) => s + p.flightMeta[fl.id].entrants, 0) : null;
   const cardProps = (tr: any) => ({
     tour: tr,
     flightMeta: p.flightMeta[tr.id],
@@ -92,7 +95,7 @@ function EventCard({ group, p }: { group: EventGroup; p: FloorBoardProps }) {
         <Layers className="w-4 h-4 text-primary shrink-0" />
         <span className="font-semibold truncate">{group.name}</span>
         {group.itmPercent > 0 && <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">ITM {group.itmPercent}%</span>}
-        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{group.flights.length} flight · {entrants} entrant</span>
+        <span className="ml-auto min-w-0 text-right text-[11px] text-muted-foreground">{group.flights.length} flight · {entrants === null ? t("floorReadiness.unavailable") : `${entrants} entrant`}</span>
       </button>
       {open && (
         <div className="space-y-2 border-l-2 border-primary/15 pl-2">
