@@ -301,7 +301,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql
           node --test scripts/ops/floor-roster-62-release-plan.test.mjs scripts/ops/floor-roster-62-protected-apply.test.mjs
-          createdb -T vinpoker_ops_checkin vinpoker_ops_roster62_atomic_20261011
+          createdb vinpoker_ops_roster62_atomic_20261011
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1
           PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -c 'DROP FUNCTION public.get_floor_tournament_table_roster_v6(uuid);'
           PGDATABASE=vinpoker_ops_roster62_atomic_20261011 ROSTER62_PG_TEST=1 node --test scripts/ops/floor-roster-62-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/assignParticipation.pg17.sql

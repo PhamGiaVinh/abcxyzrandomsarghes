@@ -11,10 +11,13 @@ test('PG17 roster62 receipt failure rolls back RPC; exact commit and replay fenc
  const args=['-w','-h','127.0.0.1','-p',process.env.PGPORT||'5432','-U','postgres','-d',db,'-X','-qAt','-v','ON_ERROR_STOP=1'];
  const query=sql=>spawnSync('psql',args,{input:sql,encoding:'utf8'});
  const check=sql=>{const r=query(sql);assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
- assert.equal(check(`SELECT current_database()='${db}' AND current_user='postgres' AND inet_server_addr()='127.0.0.1'::inet
- AND current_setting('server_version_num')::int BETWEEN 170000 AND 179999
- AND to_regclass('supabase_migrations.schema_migrations') IS NULL
- AND to_regprocedure('public.get_floor_tournament_table_roster_v6(uuid)') IS NULL AND (SELECT count(*)=0 FROM public.clubs);`),'t');
+ assert.deepEqual(JSON.parse(check(`SELECT json_build_object('database',current_database()='${db}',
+ 'actor',current_user='postgres','loopback',inet_server_addr()='127.0.0.1'::inet,
+ 'pg17',current_setting('server_version_num')::int BETWEEN 170000 AND 179999,
+ 'ledger_absent',to_regclass('supabase_migrations.schema_migrations') IS NULL,
+ 'rpc_absent',to_regprocedure('public.get_floor_tournament_table_roster_v6(uuid)') IS NULL,
+ 'empty_clubs',(SELECT count(*)=0 FROM public.clubs));`)),
+ {database:true,actor:true,loopback:true,pg17:true,ledger_absent:true,rpc_absent:true,empty_clubs:true});
  assert.equal(check(`SELECT ${dependencyPredicate()};`),'t');
  check(`CREATE SCHEMA supabase_migrations;CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);
  CREATE FUNCTION public.reject62_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected62_receipt_failure';END $$;
