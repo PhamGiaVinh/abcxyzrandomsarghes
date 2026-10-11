@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChipDisc } from "./ChipDisc";
 import { AlertTriangle, Crown, Users, Gauge, CheckCircle2 } from "lucide-react";
 import { deriveTournamentChipMetrics } from "@/lib/chipOpsMetrics";
+import { parseParticipationSummary } from "@/lib/tournamentParticipation";
 
 // Reads are open-SELECT tournament tables + the server-authoritative inventory (passed in).
 const sb = supabase as any;
@@ -20,6 +21,7 @@ interface Metrics {
   small_blind: number | null; big_blind: number | null; ante: number | null; is_break: boolean | null;
   leader_name: string | null; leader_chips: number | null;
   active_seat_count: number; table_chip_total: number; roster_quality: "exact" | "partial";
+  participation_stack: number;
 }
 
 /** Live "Tổng quan" dashboard — synced to the tournament. Read-only. */
@@ -43,6 +45,9 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
         .select("status,players_remaining,average_stack,current_level,current_blinds,starting_stack")
         .eq("id", tournamentId).maybeSingle();
       if (tournamentError) throw tournamentError;
+      const { data: participationData, error: participationError } = await sb.rpc("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId });
+      if (participationError) throw participationError;
+      const participation = parseParticipationSummary(participationData, tournamentId);
       let lvl: any = null;
       if (t?.current_level != null) {
         const { data: l, error: levelError } = await sb.from("tournament_levels")
@@ -63,7 +68,7 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
       ));
       const chipMetrics = deriveTournamentChipMetrics(
         seatStacks,
-        t?.players_remaining ?? null,
+        participation.counts.remaining,
       );
       const leader = normalizedSeats.reduce<null | { player_name?: string | null; chip_count?: number | null }>((best, seat) => {
         const chipCount = seat.chip_count == null ? Number.NaN : Number(seat.chip_count);
@@ -76,7 +81,8 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
       if (!active) return;
       setLoadError(false);
       setM({
-        status: t?.status ?? null, players_remaining: t?.players_remaining ?? null, average_stack: t?.average_stack ?? null,
+        status: t?.status ?? null, players_remaining: participation.counts.remaining, average_stack: participation.averageStack,
+        participation_stack: participation.counts.live_entry_stack,
         current_level: t?.current_level ?? null, current_blinds: t?.current_blinds ?? null,
         small_blind: lvl?.small_blind ?? null, big_blind: lvl?.big_blind ?? null, ante: lvl?.ante ?? null, is_break: lvl?.is_break ?? null,
         leader_name: leaderName, leader_chips: leaderChips,
@@ -117,9 +123,7 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
   const issuedInventoryValue = inv.total_value ?? 0;
   const playersLeft = m?.players_remaining ?? null;
   const tableChipTotal = m?.table_chip_total ?? 0;
-  const computedAvg = m?.roster_quality === "exact" && m.active_seat_count > 0
-    ? Math.round(tableChipTotal / m.active_seat_count)
-    : null;
+  const computedAvg = m?.average_stack ?? null;
   const bb = m?.big_blind ?? null;
   const countOf = (d: InvDenom) => d.current_count ?? d.issued_count_total;
   const currentByValue = new Map(inv.denominations.map((d) => [d.value, countOf(d)]));
@@ -137,7 +141,7 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
           sub={m ? `${m.active_seat_count} ghế đang active` : "Đang tải roster"} />
         <StatCard label="Average stack" icon={<Gauge className="h-3.5 w-3.5" />}
           value={computedAvg != null ? fmt(computedAvg) : "—"}
-          sub={m?.roster_quality === "partial" ? "Roster và số người còn lại chưa khớp" : playersLeft != null ? `${fmt(tableChipTotal)} ÷ ${playersLeft}` : ""} />
+          sub={m?.roster_quality === "partial" ? "Ghế đang active và entry hợp lệ chưa khớp; AVG dùng entry hợp lệ" : playersLeft != null ? `${fmt(m?.participation_stack ?? 0)} ÷ ${playersLeft}` : ""} />
         <StatCard label="Người còn lại" icon={<Users className="h-3.5 w-3.5" />}
           value={playersLeft != null ? fmt(playersLeft) : "—"} />
         <StatCard label="Chip leader" icon={<Crown className="h-3.5 w-3.5" />}
