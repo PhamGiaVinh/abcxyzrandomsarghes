@@ -147,7 +147,7 @@ export async function runHistoryCanary(env, { fetchImpl = fetch, wait = ms => ne
 
   try {
     requireDisabled(await call('worker'), 'worker_disabled');
-    requireDisabled(await call('dispatcher'), 'dispatcher_disabled');
+    requireDisabled(await call('dispatcher'), 'worker_disabled');
     if (!await secretAbsent()) throw Error('history_canary_secret_exists');
     for (const [kind, version] of [['worker', 11], ['dispatcher', 8]]) {
       const meta = await request(`https://api.supabase.com/v1/projects/${PROJECT}/functions/tournament-historical-settlement-${kind}`, {
@@ -175,7 +175,7 @@ export async function runHistoryCanary(env, { fetchImpl = fetch, wait = ms => ne
     }
     if (!ready) throw Error('history_canary_enable_not_observed');
     requireDisabled(await call('worker'), 'worker_disabled');
-    requireDisabled(await call('dispatcher'), 'dispatcher_disabled');
+    requireDisabled(await call('dispatcher'), 'worker_disabled');
     const response = await call('worker', { hand_ids: ids, limit: ids.length }, true);
     const stats = response.body;
     const fields = ['claimed', 'completed', 'retried', 'needs_attention', 'unresolved'];

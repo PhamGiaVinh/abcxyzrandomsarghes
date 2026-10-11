@@ -48,7 +48,7 @@ function fixture({ existing = false, lostResponse = false, badResult = false, fa
     }
     if (url.endsWith('-dispatcher')) return dispatcherOn
       ? Response.json({ message: 'Unauthorized' }, { status: 401 })
-      : Response.json({ code: 'dispatcher_disabled' }, { status: 404 });
+      : Response.json({ code: 'worker_disabled' }, { status: 404 });
     if (!enabled && (!secret || init.headers?.Authorization !== `Bearer ${secret}`)) return Response.json({ code: 'worker_disabled' }, { status: 404 });
     if (!init.headers?.Authorization) return Response.json({ message: 'Unauthorized' }, { status: 401 });
     if (!body?.hand_ids) return Response.json({ code: 'hand_scope_required' }, { status: 400 });
