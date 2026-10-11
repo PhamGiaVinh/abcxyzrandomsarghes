@@ -86,10 +86,12 @@ describe("Cashier tour entry", () => {
 
   it("does not let a late overview refresh replace a newer refresh", async () => {
     mock.countRequest = async () => ({ data: [], count: 5, error: null });
-    render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
-      <Route path="/cashier" element={<CashierDashboard />} />
-    </Routes></MemoryRouter>);
-    expect(await screen.findByRole("button", { name: "Active Deals 5" })).toBeInTheDocument();
+    await act(async () => {
+      render(<MemoryRouter initialEntries={["/cashier"]}><Routes>
+        <Route path="/cashier" element={<CashierDashboard />} />
+      </Routes></MemoryRouter>);
+    });
+    expect(screen.getByRole("button", { name: "Active Deals 5" })).toBeInTheDocument();
     let resolveOld!: (result: MockQueryResult) => void;
     const oldRead = new Promise<MockQueryResult>((resolve) => { resolveOld = resolve; });
     mock.countRequest = () => oldRead;
