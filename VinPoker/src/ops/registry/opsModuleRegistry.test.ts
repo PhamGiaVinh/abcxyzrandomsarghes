@@ -32,6 +32,18 @@ const scope = (clubs: OpsClubCapabilityRow[], isSuperAdmin = false): OpsScopeSna
 });
 
 describe("Ops module runtime registry", () => {
+  it("names the personnel finance workspace without relaxing its payroll guard", () => {
+    const accountant = getOpsModule("accountant");
+    expect(accountant.title).toBe("Tài chính & Đối soát · nhân sự");
+    expect(accountant.route).toBe("/ops/accountant");
+    expect(accountant.sideEffectClass).toBe("MONEY");
+    expect(accountant.defaultState).toBe("BLOCKED");
+    expect(accountant.disabledReasonCode).toBe("ACCOUNTANT_PAYROLL_GUARD_NOT_LIVE");
+    const allowed = { ...emptyRow("10000000-0000-4000-8000-000000000001"), can_accountant: true };
+    expect(accountant.clubCapabilityPredicate(allowed)).toBe(true);
+    expect(accountant.clubCapabilityPredicate(emptyRow(allowed.club_id))).toBe(false);
+  });
+
   it("has unique ids/routes and complete safety metadata", () => {
     expect(new Set(OPS_MODULE_REGISTRY.map((module) => module.id)).size).toBe(OPS_MODULE_REGISTRY.length);
     expect(new Set(OPS_MODULE_REGISTRY.map((module) => module.route)).size).toBe(OPS_MODULE_REGISTRY.length);

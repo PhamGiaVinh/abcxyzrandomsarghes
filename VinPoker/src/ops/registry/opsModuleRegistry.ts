@@ -197,7 +197,7 @@ export const OPS_MODULE_REGISTRY = [
   },
   {
     id: "accountant",
-    title: "Kế toán vận hành",
+    title: "Tài chính & Đối soát · nhân sự",
     description: "Payroll, chi phí và chuẩn bị thanh toán đang chờ authority review.",
     route: "/ops/accountant",
     group: "CONTROL",
