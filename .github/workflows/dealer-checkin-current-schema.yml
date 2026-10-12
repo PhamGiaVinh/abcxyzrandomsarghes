@@ -216,6 +216,10 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .conclusion)" = success
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .head_sha)" = 0463831bb9f8f142d585fd51c1b0633963b2161f
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .workflow_id)" = 322144993
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .event)" = workflow_dispatch
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .actor.login)" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .head_branch)" = main
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .head_sha)" = 09cff8a829caf3f514a615b231ab96f4ed238757
           artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN/artifacts" --jq '[.artifacts[] | select(.name=="reviewed-operations-schema" and .expired==false)] | if length==1 then .[0].id else error("exact recovered schema artifact missing") end')"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/schema.zip"
