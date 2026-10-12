@@ -29,6 +29,9 @@ rest/payroll policy change. Manual assignment policy remains unchanged.
 
 1. Use reviewed protected transport and existing owner/recovery/connection checks.
    The release-plan module intentionally contains no credentials or live transport.
+   Package64 transport is `dealer-stop-64-protected-apply.yml` and its wrapper;
+   dispatch stays manual/main-only and keeps the human protected environment.
+   It binds exact source PR/SHA and required checks before loading private DB secrets.
 2. Apply only its pinned `atomicSql()` package: new function/ACL and exact migration
    ledger receipt commit in one transaction. Preserve historical migrations13–28.
 3. Verify exact ledger receipt and `postcheckSql()` function body/owner/ACL/search

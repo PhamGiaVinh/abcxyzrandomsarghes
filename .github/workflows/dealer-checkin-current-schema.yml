@@ -40,6 +40,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql'
       - 'VinPoker/tests/dealerSwing/scopedStop.*'
       - 'VinPoker/scripts/ops/dealer-stop-64-*'
+      - '.github/workflows/dealer-stop-64-protected-apply.yml'
       - 'VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*'
       - 'VinPoker/supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql'
       - 'VinPoker/scripts/ops/dealer-checkin-51-*'
@@ -254,7 +255,7 @@ jobs:
           PGDATABASE: vinpoker_ops_stop64_ci
         run: |
           set -euo pipefail
-          node --test scripts/ops/dealer-stop-64-release-plan.test.mjs
+          node --test scripts/ops/dealer-stop-64-release-plan.test.mjs scripts/ops/dealer-stop-64-protected-apply.test.mjs
           createdb --template=vinpoker_ops_checkin "$PGDATABASE"
           createdb vinpoker_ops_stop64_atomic_ci
           docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only "$PGDATABASE" | PGDATABASE=vinpoker_ops_stop64_atomic_ci psql -X -v ON_ERROR_STOP=1
