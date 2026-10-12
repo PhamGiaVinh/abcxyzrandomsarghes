@@ -7612,6 +7612,7 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
+    {"version":"20270128000064","filename":"20270128000064_dealer_swing_scoped_stop_v1.sql","sha256":"043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17","domain":"dealer-swing-scoped-stop-campaign"},
     {"version":"20270128000062","filename":"20270128000062_floor_roster_participation_integrity_v6.sql","sha256":"45fd420f2f0f1120c085843bd2503e92dddf5b764b1076ea3d7d1c00b5ad8e31","domain":"floor-roster-participation-integrity-campaign"},
     {"version":"20270128000061","filename":"20270128000061_tracker_legacy_stack_retirement_v1.sql","sha256":"a037ef4fe53edb058e833e6605180f710875ce04a15f1770022bbf559650c9d2","domain":"tracker-legacy-stack-integrity-campaign"},
     {"version":"20270128000060","filename":"20270128000060_tracker_legacy_reentry_retirement_v1.sql","sha256":"9b366c60ecfcc20f9d51876a0cdf9ad59b7c528255277ffce889792ca921a067","domain":"tracker-legacy-reentry-integrity-campaign"},

@@ -25,6 +25,9 @@ on:
       - "VinPoker/supabase/migrations/20270128000050_floor_mode_retry_schedule_v1.sql"
       - "VinPoker/supabase/migrations/20270128000052_floor_restore_receipt_reconciliation_v1.sql"
       - "VinPoker/supabase/migrations/20270128000054_restore_pending_cancellation_v1.sql"
+      - "VinPoker/supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql"
+      - "VinPoker/tests/dealerSwing/scopedStop.*"
+      - "VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*"
       - "VinPoker/scripts/ops/floor-49-50-*.mjs"
       - ".github/workflows/floor-49-50-protected-apply.yml"
       - "VinPoker/scripts/production/repairs/repair_tracker_test_roster_entries_ban5.sql"
@@ -114,6 +117,7 @@ jobs:
           src/components/chip-ops/ChipOpsManager.test.tsx
           src/hooks/useTournamentRedrawTv.test.ts
           src/components/cashier/tournament-live/FloorRedrawDialogV1.test.tsx
+          src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
       - name: Run disposable PostgreSQL server contract
         working-directory: VinPoker
         env:
@@ -170,6 +174,17 @@ jobs:
             -f tests/floorTableControlV3/criticalConsistency.disposable.sql \
             -f tests/floorTableControlV3/tableModeRequest.disposable.sql
           node --test scripts/ops/floor-49-50-atomic-pg.test.mjs
+      - name: Verify scoped Swing OFF with real PostgreSQL overlap
+        working-directory: VinPoker
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGDATABASE: vinpoker_stop_scoped_ci
+        run: |
+          createdb "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/scopedStop.disposable.sql
+          node tests/dealerSwing/scopedStop.concurrent.mjs
       - name: Typecheck the full application
         working-directory: VinPoker
         env:
