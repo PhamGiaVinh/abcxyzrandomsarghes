@@ -1830,6 +1830,12 @@
     }
   },
   "tournamentLive": {
+    "statusLabels": {
+      "upcoming": "กำลังจะเริ่ม", "registering": "เปิดลงทะเบียน", "drawing": "จับฉลากที่นั่ง",
+      "active": "เปิดใช้งาน", "playing": "กำลังแข่งขัน", "live": "ถ่ายทอดสด", "break": "พัก",
+      "paused": "หยุดชั่วคราว", "final_table": "โต๊ะสุดท้าย", "completed": "สิ้นสุดแล้ว",
+      "cancelled": "ยกเลิกแล้ว", "unknown": "ยังไม่ทราบ"
+    },
     "selectTournament": "เลือกทัวร์นาเมนต์",
     "tabs": {
       "input": "บันทึกแฮนด์",
