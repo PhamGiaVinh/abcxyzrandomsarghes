@@ -286,9 +286,12 @@ for (const snippet of [
   }
 }
 const recoveryJobBoundary = "\n  recover-reviewed-baseline:";
+const operationsRecoveryBoundary = "\n  recover-operations-baseline:";
 const captureOnlyWorkflow = schemaCaptureWorkflow.split(recoveryJobBoundary)[0];
 const recoveryOnlyWorkflow = schemaCaptureWorkflow.includes(recoveryJobBoundary)
-  ? schemaCaptureWorkflow.split(recoveryJobBoundary).slice(1).join(recoveryJobBoundary) : "";
+  ? schemaCaptureWorkflow.split(recoveryJobBoundary).slice(1).join(recoveryJobBoundary).split(operationsRecoveryBoundary)[0] : "";
+const operationsRecoveryWorkflow = schemaCaptureWorkflow.includes(operationsRecoveryBoundary)
+  ? schemaCaptureWorkflow.split(operationsRecoveryBoundary)[1] : "";
 const secretReferences = (source) => [...new Set(
   [...source.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1]),
 )].sort();
@@ -305,6 +308,21 @@ if (recoveryOnlyWorkflow) {
       || !recoveryOnlyWorkflow.includes("environment: dealer-swing-production-critical")
       || /supabase\s+(?:link|db|functions)|secrets\.SUPABASE/i.test(recoveryOnlyWorkflow)) {
     throw new Error("immutable baseline recovery has an unexpected credential or live-access scope");
+  }
+}
+if (operationsRecoveryWorkflow) {
+  const expectedOperationsRecoverySecrets=Array.from({length:17},(_,index)=>
+    `VINPOKER_OPS_SCHEMA_RECOVERY_${String(index+1).padStart(2,"0")}`).sort();
+  if (secretReferences(operationsRecoveryWorkflow).join(",")!==expectedOperationsRecoverySecrets.join(",")
+      || !operationsRecoveryWorkflow.includes("inputs.owner_ack == 'RECOVER_OPERATIONS_SCHEMA_ONLY'")
+      || !operationsRecoveryWorkflow.includes("github.actor == github.repository_owner")
+      || !operationsRecoveryWorkflow.includes("github.triggering_actor == github.repository_owner")
+      || !operationsRecoveryWorkflow.includes("environment: dealer-swing-production-critical")
+      || !operationsRecoveryWorkflow.includes("RECOVERY_PROFILE: operations")
+      || !operationsRecoveryWorkflow.includes("37820347781")
+      || !operationsRecoveryWorkflow.includes("0463831bb9f8f142d585fd51c1b0633963b2161f")
+      || /supabase\s+(?:link|db|functions)|secrets\.SUPABASE|vercel\s+(?:deploy|--prod)/i.test(operationsRecoveryWorkflow)) {
+    throw new Error("Operations schema recovery has an unexpected credential, provenance or live-access scope");
   }
 }
 

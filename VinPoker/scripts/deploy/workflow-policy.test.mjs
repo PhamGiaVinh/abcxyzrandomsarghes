@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const workflow = readFileSync(resolve(root, ".github/workflows/vbackerworkflowmain.yml"), "utf8");
@@ -11,6 +15,71 @@ const validationWorkflow = readFileSync(
   "utf8",
 );
 const schemaCaptureWorkflow = readFileSync(resolve(root, ".github/workflows/capture-live-public-schema.yml"), "utf8");
+
+test("operations baseline recovery is owner-protected, exact, private and isolated from prior baseline", () => {
+  const recovery = schemaCaptureWorkflow.split("\n  recover-operations-baseline:")[1];
+  assert.ok(recovery,"separate reviewed operations recovery job required");
+  assert.match(recovery,/RECOVER_OPERATIONS_SCHEMA_ONLY/);
+  assert.match(recovery,/github\.actor == github\.repository_owner/);
+  assert.match(recovery,/github\.triggering_actor == github\.repository_owner/);
+  assert.match(recovery,/environment: dealer-swing-production-critical/);
+  assert.match(recovery,/37820347781/);
+  assert.match(recovery,/0463831bb9f8f142d585fd51c1b0633963b2161f/);
+  assert.match(recovery,/RECOVERY_PROFILE: operations/);
+  assert.match(recovery,/retention-days: 90/);
+  const secrets=[...new Set([...recovery.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(m=>m[1]))].sort();
+  assert.deepEqual(secrets,Array.from({length:17},(_,i)=>`VINPOKER_OPS_SCHEMA_RECOVERY_${String(i+1).padStart(2,"0")}`).sort());
+  assert.doesNotMatch(recovery,/supabase\s+(?:link|db|functions)|secrets\.SUPABASE|vercel\s+(?:deploy|--prod)/i);
+  const original=schemaCaptureWorkflow.split("\n  recover-reviewed-baseline:")[1].split("\n  recover-operations-baseline:")[0];
+  assert.match(original,/37229283609/);
+  assert.match(original,/name: reviewed-pre-release-schema-provenance/);
+  assert.doesNotMatch(recovery,/name: reviewed-pre-release-schema-provenance/);
+  assert.doesNotMatch(original,/VINPOKER_OPS_SCHEMA_RECOVERY/);
+});
+
+test("recovery refuses missing owner, unknown profile and cross-profile bytes before output", () => {
+  const run = (env={}) => spawnSync(process.execPath,[resolve(root,"VinPoker/scripts/deploy/recover-reviewed-schema-artifact.mjs")],
+    {cwd:root,env:{PATH:process.env.PATH,...env},encoding:"utf8"});
+  const owner={GITHUB_ACTOR:"synthetic-owner",GITHUB_TRIGGERING_ACTOR:"synthetic-owner",GITHUB_REPOSITORY_OWNER:"synthetic-owner"};
+  const missing=run(); assert.notEqual(missing.status,0); assert.match(missing.stderr,/owner_context_required/);
+  for (const profile of ["arbitrary","__proto__","toString"]) {
+    const unknown=run({...owner,RECOVERY_PROFILE:profile});
+    assert.notEqual(unknown.status,0); assert.match(unknown.stderr,/unknown_recovery_profile/);
+  }
+  const outsider=run({...owner,GITHUB_TRIGGERING_ACTOR:"outsider"});
+  assert.notEqual(outsider.status,0); assert.match(outsider.stderr,/owner_context_required/);
+  const encoded=gzipSync(Buffer.from("synthetic schema, never a real dump")).toString("base64");
+  const chunks=Object.fromEntries(Array.from({length:17},(_,i)=>[`BASELINE_${String(i+1).padStart(2,"0")}`,
+    encoded.slice(Math.floor(i*encoded.length/17),Math.floor((i+1)*encoded.length/17))]));
+  const mismatch=run({...owner,...chunks,RECOVERY_PROFILE:"operations"});
+  assert.notEqual(mismatch.status,0); assert.match(mismatch.stderr,/original baseline bytes must match/);
+  assert.match(mismatch.stderr,/d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a/);
+  assert.doesNotMatch(mismatch.stdout,/synthetic schema/);
+});
+
+test("Operations recovery preserves exact privately supplied reviewed bytes and provenance",
+  {skip:!process.env.OPERATIONS_RECOVERY_TEST_SCHEMA_DIR},()=>{
+    const schema=readFileSync(resolve(process.env.OPERATIONS_RECOVERY_TEST_SCHEMA_DIR,"live-public-schema.sql"));
+    const expected="d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a";
+    assert.equal(createHash("sha256").update(schema).digest("hex"),expected);
+    const encoded=gzipSync(schema).toString("base64");
+    const chunks=Object.fromEntries(Array.from({length:17},(_,i)=>[`BASELINE_${String(i+1).padStart(2,"0")}`,
+      encoded.slice(Math.floor(i*encoded.length/17),Math.floor((i+1)*encoded.length/17))]));
+    const directory=mkdtempSync(resolve(tmpdir(),"vinpoker-operations-recovery-test-"));
+    const child=spawnSync(process.execPath,[resolve(root,"VinPoker/scripts/deploy/recover-reviewed-schema-artifact.mjs")],
+      {cwd:root,env:{PATH:process.env.PATH,...chunks,RECOVERY_PROFILE:"operations",
+        GITHUB_ACTOR:"synthetic-owner",GITHUB_TRIGGERING_ACTOR:"synthetic-owner",GITHUB_REPOSITORY_OWNER:"synthetic-owner",
+        GITHUB_RUN_ID:"synthetic-local-recovery",RUNNER_TEMP:directory},encoding:"utf8"});
+    assert.equal(child.status,0,"private recovery process must validate without exposing contents");
+    assert.match(child.stdout,/EXACT_REVIEWED_TEST_BASELINE_RECOVERED_AND_VALIDATED/);
+    const restored=readFileSync(resolve(directory,"reviewed-operations-schema/live-public-schema.sql"));
+    assert.equal(createHash("sha256").update(restored).digest("hex"),expected);
+    assert.equal(restored.equals(schema),true);
+    assert.deepEqual(JSON.parse(readFileSync(resolve(directory,"reviewed-operations-schema.provenance.json"),"utf8")),{
+      originalCaptureRun:37820347781,originalCaptureSha:"0463831bb9f8f142d585fd51c1b0633963b2161f",
+      schemaSha256:expected,schemaOnly:true,recoveryRun:"synthetic-local-recovery"});
+    console.log(`OPERATIONS_EXACT_BYTES_RECOVERY_PASS privateArtifactDirectory=${directory}`);
+  });
 const payrollDisposableWorkflow = readFileSync(
   resolve(root, ".github/workflows/dealer-pt-wage-disposable-validation.yml"),
   "utf8",
