@@ -24,7 +24,7 @@ beforeEach(() => {
     query.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
     return query;
   });
-  h.rpc.mockImplementation(async (name: string) => ({ data: name === "get_current_chip_inventory" ? { denominations: [] } : name === "get_color_up_history" ? { operations: [] } : {}, error: null }));
+  h.rpc.mockImplementation(async (name: string) => ({ data: name === "get_current_chip_inventory" ? { denominations: [] } : name === "get_chip_bank" ? { coupling_enabled: false } : name === "get_color_up_history" ? { operations: [] } : {}, error: null }));
 });
 
 it("does not report missing permission while roles are loading", async () => {
@@ -96,4 +96,108 @@ it("opens the existing setup tab from the real empty Color-Up view without mutat
   fireEvent.click(await screen.findByRole("button", { name: "Mở Setup stack" }));
   await waitFor(() => expect(screen.getByRole("tab", { name: "Setup stack" })).toHaveAttribute("aria-selected", "true"));
   expect(h.rpc.mock.calls.every(([name]) => name.startsWith("get_"))).toBe(true);
+});
+
+it("shows selected-tour inventory denial instead of an empty setup workspace", async () => {
+  h.rpc.mockImplementation(async (name: string) => ({ data: name === "get_current_chip_inventory" ? { error: "Forbidden" } : {}, error: null }));
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  expect(h.rpc.mock.calls.some(([name]) => name === "get_issued_chip_inventory")).toBe(false);
+});
+
+it("does not report bank coupling OFF when its read is forbidden", async () => {
+  h.rpc.mockImplementation(async (name: string) => ({ data: name === "get_current_chip_inventory" ? { denominations: [] } : { error: "Forbidden" }, error: null }));
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+});
+
+it("retries a failed read without falling back to issued inventory or any mutation", async () => {
+  let failed = true;
+  h.rpc.mockImplementation(async (name: string) => name === "get_current_chip_inventory"
+    ? { data: failed ? null : { denominations: [] }, error: failed ? { code: "503", message: "unavailable" } : null }
+    : { data: { coupling_enabled: false }, error: null });
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await screen.findByRole("alert");
+  expect(h.rpc.mock.calls.some(([name]) => name === "get_issued_chip_inventory")).toBe(false);
+  failed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Thử tải lại" }));
+  await screen.findByRole("tab", { name: "Setup stack" });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(h.rpc.mock.calls.every(([name]) => name.startsWith("get_"))).toBe(true);
+});
+
+it("discards an old actor's late inventory denial after the new actor loads", async () => {
+  let resolveOld!: (value: unknown) => void;
+  const old = new Promise(resolve => { resolveOld = resolve; });
+  let first = true;
+  h.rpc.mockImplementation(async (name: string) => {
+    if (name === "get_current_chip_inventory") {
+      if (first) { first = false; return old; }
+      return { data: { denominations: [] }, error: null };
+    }
+    return { data: { coupling_enabled: false }, error: null };
+  });
+  const view = render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await waitFor(() => expect(first).toBe(false));
+  h.auth = { ...h.auth, user: { id: "owner-b" } };
+  view.rerender(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "Setup stack" });
+  await act(async () => { resolveOld({ data: { error: "Forbidden" }, error: null }); await old; });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Setup stack" })).toBeInTheDocument();
+});
+
+it("does not leave an inaccessible selected tournament on an endless skeleton", async () => {
+  render(<MemoryRouter initialEntries={["/chip-ops?t=not-in-scope"]}><ChipOpsManager /></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+});
+
+it("does not treat failed chip-set metadata as an absent binding", async () => {
+  const original = h.from.getMockImplementation()!;
+  h.from.mockImplementation((table: string) => {
+    const query = original(table);
+    if (table === "tournament_chip_set") query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({ data: null, error: { message: "503" } }).then(resolve);
+    return query;
+  });
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+});
+
+it.each([false, true])("exposes a failed tour-list read without a selected tour (rejected=%s)", async (rejected) => {
+  const original = h.from.getMockImplementation()!;
+  h.from.mockImplementation((table: string) => {
+    const query = original(table);
+    if (table === "tournaments") query.then = (resolve: (value: unknown) => unknown) => rejected
+      ? Promise.reject(new Error("fetch failed"))
+      : Promise.resolve({ data: null, error: { code: "503" } }).then(resolve);
+    return query;
+  });
+  render(<MemoryRouter><ChipOpsManager /></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
+  expect(screen.getByRole("button", { name: "Thử tải lại" })).toBeInTheDocument();
+  expect(screen.queryByText("Chọn một giải đấu để xem tổng quan và cài đặt chip.")).not.toBeInTheDocument();
+});
+
+it("requires a fresh snapshot after actor A to B to A", async () => {
+  let resolveA!: (value: unknown) => void;
+  const pendingA = new Promise(resolve => { resolveA = resolve; });
+  let phase = "first-a";
+  h.rpc.mockImplementation(async (name: string) => name === "get_current_chip_inventory"
+    ? phase === "second-a" ? pendingA : { data: { denominations: [] }, error: null }
+    : { data: { coupling_enabled: false }, error: null });
+  const view = render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "Setup stack" });
+  h.auth = { ...h.auth, user: { id: "owner-b" } };
+  view.rerender(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "Setup stack" });
+  phase = "second-a";
+  h.auth = { ...h.auth, user: { id: "owner-a" } };
+  view.rerender(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  await act(async () => { resolveA({ data: { denominations: [] }, error: null }); await pendingA; });
+  await screen.findByRole("tab", { name: "Setup stack" });
 });

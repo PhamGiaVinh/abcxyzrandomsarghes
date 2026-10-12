@@ -1,4 +1,5 @@
 {
+  "chipOpsRead": { "error": "チップデータを読み込めません。在庫とチップバンクの状態は未確認です。", "permission": "この大会のクラブ所有者またはチップ管理者の権限が必要です。", "retry": "再読み込み" },
   "cashierOverviewRead": { "error": "統計を読み込めませんでした。更新して再試行してください。" },
   "liveStateSummary": {
     "title": "ライブ状態",

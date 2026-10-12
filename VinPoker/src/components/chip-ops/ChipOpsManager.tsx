@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -69,12 +70,16 @@ async function callRpc(fn: string, args: Record<string, unknown>): Promise<any |
 }
 
 export function ChipOpsManager() {
-  const { isClubOwner, isChipMaster, loading: authLoading, rolesLoading, authError, rolesError } = useAuth();
+  const { t } = useTranslation();
+  const { user, isClubOwner, isChipMaster, loading: authLoading, rolesLoading, authError, rolesError } = useAuth();
   const allowed = isClubOwner || isChipMaster;
+  const authorityScope = JSON.stringify([user?.id, isClubOwner, isChipMaster, authLoading, rolesLoading, authError, rolesError]);
   const [params, setParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
 
-  const [tours, setTours] = useState<TourRow[]>([]);
+  const [toursSnapshot, setToursSnapshot] = useState<{ scope: string; rows: TourRow[] } | null>(null);
+  const tours = useMemo(() => toursSnapshot?.scope === authorityScope ? toursSnapshot.rows : [], [toursSnapshot, authorityScope]);
+  const toursReady = toursSnapshot?.scope === authorityScope;
   const [tournamentId, setTournamentId] = useState<string>(params.get("t") ?? "");
   const tour = useMemo(() => tours.find((t) => t.id === tournamentId) ?? null, [tours, tournamentId]);
 
@@ -86,73 +91,99 @@ export function ChipOpsManager() {
   const [inv, setInv] = useState<Inventory | null>(null);
   const [coupling, setCoupling] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [readError, setReadError] = useState<{ scope: { key: string }; code: string } | null>(null);
+  const [loadedScope, setLoadedScope] = useState<{ key: string } | null>(null);
+  const scopeKey = JSON.stringify([authorityScope, tournamentId, tour?.club_id]);
+  const scopeRef = useRef({ key: scopeKey });
+  if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
+  const requestRef = useRef(0);
+  useEffect(() => () => { requestRef.current += 1; }, []);
 
   // load tournaments (RLS-scoped)
   useEffect(() => {
     let active = true;
+    setToursSnapshot(null);
+    if (!user?.id || authLoading || rolesLoading || authError || rolesError || !allowed) return;
     sb.from("tournaments").select("id,name,club_id,start_time").order("start_time", { ascending: false }).limit(200)
-      .then(({ data }: any) => { if (active) setTours((data ?? []).map((t: any) => ({ id: t.id, name: t.name, club_id: t.club_id }))); });
+      .then(({ data, error }: any) => {
+        if (!active) return;
+        if (error || !Array.isArray(data)) { setReadError({ scope: scopeRef.current, code: "READ_FAILED" }); return; }
+        setToursSnapshot({ scope: authorityScope, rows: data.map((row: any) => ({ id: row.id, name: row.name, club_id: row.club_id })) });
+      }).catch(() => { if (active) setReadError({ scope: scopeRef.current, code: "READ_FAILED" }); });
     return () => { active = false; };
-  }, []);
+  }, [user?.id, allowed, authLoading, rolesLoading, authError, rolesError, authorityScope]);
 
   const reload = useCallback(async (tid: string) => {
     if (!tid) { setBoundChipSetId(null); setDenoms([]); setTemplates([]); setInv(null); setClubChipSets([]); return; }
+    if (!user?.id || !allowed || authLoading || rolesLoading || authError || rolesError || !tour?.club_id || tour.id !== tid) return;
+    const scope = scopeRef.current;
+    const request = ++requestRef.current;
+    const isCurrent = () => scopeRef.current === scope && requestRef.current === request;
     setLoading(true);
+    setReadError(null);
     try {
       const t = tours.find((x) => x.id === tid);
       const clubId = t?.club_id ?? null;
 
-      const [{ data: bindRow }, { data: setsRaw }] = await Promise.all([
+      const [binding, sets] = await Promise.all([
         sb.from("tournament_chip_set").select("chip_set_id").eq("tournament_id", tid).maybeSingle(),
         clubId ? sb.from("chip_set").select("id,name").eq("club_id", clubId).order("created_at", { ascending: true }) : Promise.resolve({ data: [] }),
       ]);
+      if (!isCurrent()) return;
+      if (binding.error || sets.error || !Array.isArray(sets.data)) throw new Error("READ_FAILED");
+      const bindRow = binding.data, setsRaw = sets.data;
       const csId: string | null = bindRow?.chip_set_id ?? null;
-      setBoundChipSetId(csId);
-      setClubChipSets((setsRaw ?? []).map((s: any) => ({ id: s.id, name: s.name })));
-
+      let nextDenoms: Denom[] = [];
       if (csId) {
-        const { data: dRaw } = await sb.from("chip_set_denomination").select("id,value,color,label,display_order").eq("chip_set_id", csId).order("value", { ascending: true });
-        setDenoms((dRaw ?? []) as Denom[]);
-      } else {
-        setDenoms([]);
+        const { data: dRaw, error } = await sb.from("chip_set_denomination").select("id,value,color,label,display_order").eq("chip_set_id", csId).order("value", { ascending: true });
+        if (error || !Array.isArray(dRaw)) throw new Error("READ_FAILED");
+        nextDenoms = dRaw;
       }
+      if (!isCurrent()) return;
 
-      const { data: tplRaw } = await sb.from("stack_template").select("id,name,stack_value").eq("tournament_id", tid).order("stack_value", { ascending: true });
+      const { data: tplRaw, error: templateError } = await sb.from("stack_template").select("id,name,stack_value").eq("tournament_id", tid).order("stack_value", { ascending: true });
+      if (templateError || !Array.isArray(tplRaw)) throw new Error("READ_FAILED");
+      if (!isCurrent()) return;
       const tplIds = (tplRaw ?? []).map((x: any) => x.id);
       let lines: any[] = [], issu: any[] = [];
       if (tplIds.length) {
-        const [{ data: l }, { data: i }] = await Promise.all([
+        const [lineRows, issueRows] = await Promise.all([
           sb.from("stack_template_line").select("stack_template_id,denomination_id,count").in("stack_template_id", tplIds),
           sb.from("stack_template_issuance").select("stack_template_id,issued_count").in("stack_template_id", tplIds),
         ]);
-        lines = l ?? []; issu = i ?? [];
+        if (lineRows.error || issueRows.error || !Array.isArray(lineRows.data) || !Array.isArray(issueRows.data)) throw new Error("READ_FAILED");
+        lines = lineRows.data; issu = issueRows.data;
       }
-      setTemplates((tplRaw ?? []).map((x: any) => ({
+      if (!isCurrent()) return;
+      const nextTemplates = tplRaw.map((x: any) => ({
         id: x.id, name: x.name, stack_value: Number(x.stack_value),
         lines: lines.filter((ln) => ln.stack_template_id === x.id).map((ln) => ({ denomination_id: ln.denomination_id, count: Number(ln.count) })),
         issued_count: Number(issu.find((s) => s.stack_template_id === x.id)?.issued_count ?? 0),
-      })));
+      }));
 
       // Prefer CURRENT inventory (issued + ledger, so color-ups reflect); fall back to issued.
-      let invData: any = null;
-      try {
-        const { data, error } = await sb.rpc("get_current_chip_inventory", { p_tournament_id: tid });
-        if (!error && data && !data.error) invData = data;
-      } catch { /* fall through */ }
-      if (!invData) invData = await callRpc("get_issued_chip_inventory", { p_tournament_id: tid });
-      setInv(invData && !invData.error ? (invData as Inventory) : null);
-
-      // két auto-coupling (Model A) state — silent if not applied on the server
-      if (clubId) {
-        try {
-          const { data: cb, error: ce } = await sb.rpc("get_chip_bank", { p_club_id: clubId });
-          setCoupling(!!(cb && !ce && !cb.error && cb.coupling_enabled));
-        } catch { setCoupling(false); }
-      } else { setCoupling(false); }
+      let inventory = await sb.rpc("get_current_chip_inventory", { p_tournament_id: tid });
+      if (inventory.error?.code === "PGRST202") {
+        inventory = await sb.rpc("get_issued_chip_inventory", { p_tournament_id: tid });
+      }
+      if (!isCurrent()) return;
+      if (inventory.error || !inventory.data || inventory.data.error || !Array.isArray(inventory.data.denominations)) throw new Error(inventory.data?.error ?? "READ_FAILED");
+      const bank = await sb.rpc("get_chip_bank", { p_club_id: clubId });
+      if (bank.error || !bank.data || bank.data.error || typeof bank.data.coupling_enabled !== "boolean") throw new Error(bank.data?.error ?? "READ_FAILED");
+      if (!isCurrent()) return;
+      setBoundChipSetId(csId);
+      setClubChipSets((setsRaw ?? []).map((s: any) => ({ id: s.id, name: s.name })));
+      setDenoms(nextDenoms);
+      setTemplates(nextTemplates);
+      setInv(inventory.data as Inventory);
+      setCoupling(bank.data.coupling_enabled);
+      setLoadedScope(scope);
+    } catch (error) {
+      if (isCurrent()) setReadError({ scope, code: error instanceof Error ? error.message : "READ_FAILED" });
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [tours]);
+  }, [tours, user?.id, allowed, authLoading, rolesLoading, authError, rolesError, tour, scopeKey]);
 
   useEffect(() => { if (tournamentId) reload(tournamentId); }, [tournamentId, reload]);
 
@@ -192,11 +223,17 @@ export function ChipOpsManager() {
         </Select>
       </div>
 
-      {!tournamentId ? (
+      {readError?.scope === scopeRef.current || (tournamentId && toursReady && !tour) ? (
+        <Card><CardContent role="alert" className="space-y-3 py-8">
+          <p>{t("chipOpsRead.error", { defaultValue: "Không đọc được dữ liệu chip. Kho và trạng thái két chưa được xác minh." })}</p>
+          {readError?.scope === scopeRef.current && readError.code === "Forbidden" && <p>{t("chipOpsRead.permission", { defaultValue: "Cần quyền Chip Master hoặc chủ CLB của giải này." })}</p>}
+          <Button variant="outline" onClick={() => { if (tour) void reload(tournamentId); else window.location.reload(); }}>{t("chipOpsRead.retry", { defaultValue: "Thử tải lại" })}</Button>
+        </CardContent></Card>
+      ) : !tournamentId ? (
         <Card className="border-border"><CardContent className="py-8 text-sm text-muted-foreground">
           Chọn một giải đấu để xem tổng quan và cài đặt chip.
         </CardContent></Card>
-      ) : (
+      ) : loading || loadedScope !== scopeRef.current ? <LoadingCard /> : (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="flex h-auto flex-wrap justify-start gap-1 [&>button]:min-h-11">
             <TabsTrigger value="overview">Tổng quan</TabsTrigger>
