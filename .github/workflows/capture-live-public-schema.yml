@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       owner_ack:
-        description: "CAPTURE_SCHEMA_ONLY for live main capture; RECOVER_REVIEWED_SCHEMA_ONLY for immutable TEST baseline recovery"
+        description: "CAPTURE_SCHEMA_ONLY for live; RECOVER_REVIEWED_SCHEMA_ONLY or RECOVER_OPERATIONS_SCHEMA_ONLY for exact immutable TEST recovery"
         required: true
         type: string
 
@@ -201,5 +201,63 @@ jobs:
         with:
           name: reviewed-pre-release-schema-provenance
           path: ${{ runner.temp }}/reviewed-pre-release-schema.provenance.json
+          if-no-files-found: error
+          retention-days: 90
+
+  recover-operations-baseline:
+    name: Recover immutable Operations TEST schema (no live database access)
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner &&
+      inputs.owner_ack == 'RECOVER_OPERATIONS_SCHEMA_ONLY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dealer-swing-production-critical
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify exact workflow revision and original Operations capture provenance
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .head_sha)" = 0463831bb9f8f142d585fd51c1b0633963b2161f
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - name: Recover privately and require exact Operations snapshot checksum
+        env:
+          RECOVERY_PROFILE: operations
+          BASELINE_01: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_01 }}
+          BASELINE_02: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_02 }}
+          BASELINE_03: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_03 }}
+          BASELINE_04: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_04 }}
+          BASELINE_05: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_05 }}
+          BASELINE_06: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_06 }}
+          BASELINE_07: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_07 }}
+          BASELINE_08: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_08 }}
+          BASELINE_09: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_09 }}
+          BASELINE_10: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_10 }}
+          BASELINE_11: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_11 }}
+          BASELINE_12: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_12 }}
+          BASELINE_13: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_13 }}
+          BASELINE_14: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_14 }}
+          BASELINE_15: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_15 }}
+          BASELINE_16: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_16 }}
+          BASELINE_17: ${{ secrets.VINPOKER_OPS_SCHEMA_RECOVERY_17 }}
+        run: node VinPoker/scripts/deploy/recover-reviewed-schema-artifact.mjs
+      - name: Retain exact original Operations snapshot for existing runtime tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-operations-schema
+          path: ${{ runner.temp }}/reviewed-operations-schema
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload metadata-only Operations recovery provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-operations-schema-provenance
+          path: ${{ runner.temp }}/reviewed-operations-schema.provenance.json
           if-no-files-found: error
           retention-days: 90
