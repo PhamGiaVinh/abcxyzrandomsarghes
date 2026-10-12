@@ -247,8 +247,8 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
   }, [selectedTournamentId, loadTournaments]);
 
   const needsAttention = useMemo(
-    () => (tournaments ?? []).filter((t) => NEEDS_ATTENTION_STATUSES.has(displayStatus(t))),
-    [tournaments]
+    () => (tournaments ?? []).filter((t) => clubIds.includes(t.club_id) && NEEDS_ATTENTION_STATUSES.has(displayStatus(t))),
+    [tournaments, clubIds]
   );
 
   const renderOverview = () => {
@@ -357,7 +357,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
                 <SelectValue placeholder={t("tournamentLive.selectTournament")} />
               </SelectTrigger>
               <SelectContent>
-                {(tournaments ?? []).map((tour) => (
+                {(tournaments ?? []).filter((tour) => clubIds.includes(tour.club_id)).map((tour) => (
                   <SelectItem key={tour.id} value={tour.id}>
                     <span className="flex items-center gap-2">
                       <span>{tour.name}</span>

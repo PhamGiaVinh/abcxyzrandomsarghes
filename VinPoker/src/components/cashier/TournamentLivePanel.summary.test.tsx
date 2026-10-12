@@ -99,6 +99,14 @@ describe("Floor selected-tour canonical summary integration", () => {
     await waitFor(() => expect(screen.getByText(/playersRemaining.*8/)).toBeInTheDocument());
     expect(screen.getAllByText(new RegExp(label!))).toHaveLength(3);
   });
+  it("does not expose an old club registering tour in the attention lane after club scope changes", async () => {
+    db.status = "active"; db.liveStatus = "registering";
+    const view = render(<TournamentLivePanel {...props} mode="tracker" />);
+    await waitFor(() => expect(screen.getByText("Cần chú ý")).toBeInTheDocument());
+    view.rerender(<TournamentLivePanel {...props} mode="tracker" clubIds={["other"]} />);
+    await waitFor(() => expect(screen.queryByText("Cần chú ý")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", {name:/Tour a.*Đang đăng ký/})).not.toBeInTheDocument();
+  });
   it("uses canonical participation on Tracker selection cards rather than stored tournament counters", async () => {
     render(<TournamentLivePanel {...props} mode="tracker" />);
     await waitFor(() => expect(screen.getByRole("button", { name: /Tour a.*8.*9.750.000/ })).toBeInTheDocument());
