@@ -1,6 +1,7 @@
 import { TableAppearanceEditor } from "@/components/tracker/TableAppearanceEditor";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTournamentParticipationSummary } from "@/hooks/useTournamentParticipationSummary";
@@ -40,37 +41,42 @@ const STATUS_STYLES: Record<string, string> = {
   registering: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   drawing: "bg-purple-500/15 text-purple-400 border-purple-500/30",
   active: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  playing: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  paused: "bg-sky-500/15 text-sky-400 border-sky-500/30",
   live: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   break: "bg-sky-500/15 text-sky-400 border-sky-500/30",
   final_table: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
 // Operator-facing labels for tournament live statuses (colors above stay per-status).
-const STATUS_LABELS: Record<string, string> = {
-  upcoming: "Sắp diễn ra",
-  registering: "Đang đăng ký",
-  drawing: "Bốc thăm chỗ",
-  active: "Đang chơi",
-  live: "LIVE",
-  break: "Giải lao",
-  final_table: "Final Table",
-};
+const LABELLED_STATUSES = new Set(["upcoming", "registering", "drawing", "active", "playing",
+  "live", "break", "paused", "final_table", "completed", "cancelled"]);
 
-function statusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+type LiveTournament = Tournament & { live_status?: string | null };
+
+// Presentation only. Keep catalog status unchanged for all existing writers.
+function displayStatus(tournament: LiveTournament): string {
+  if (tournament.status === "completed" || tournament.status === "cancelled") return tournament.status;
+  return tournament.live_status ?? tournament.status;
+}
+
+function statusLabel(status: string, t: TFunction): string {
+  return LABELLED_STATUSES.has(status) ? t(`tournamentLive.statusLabels.${status}`)
+    : status.trim() ? status.replace(/_/g, " ") : t("tournamentLive.statusLabels.unknown");
 }
 
 // Statuses where the floor still has setup work to do before play runs smoothly.
 const NEEDS_ATTENTION_STATUSES = new Set(["registering", "drawing"]);
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   return (
     <span
       className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
         STATUS_STYLES[status] || STATUS_STYLES.upcoming
       }`}
     >
-      {statusLabel(status)}
+      {statusLabel(status, t)}
     </span>
   );
 }
@@ -110,10 +116,10 @@ const MODE_TABS: Record<string, string[]> = {
 export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onSelectedTournamentChange }: { clubIds: string[]; clubs: { id: string; name: string }[]; mode?: "full" | "tracker" | "floor"; onSelectedTournamentChange?: (id: string | null) => void }) {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [tournaments, setTournaments] = useState<Tournament[] | null>(null);
+  const [tournaments, setTournaments] = useState<LiveTournament[] | null>(null);
   const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
   useEffect(() => { onSelectedTournamentChange?.(selectedTournamentId); }, [onSelectedTournamentChange, selectedTournamentId]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<LiveTournament | null>(null);
   const [closeReportOpen, setCloseReportOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -148,7 +154,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
       return;
     }
     setListError(null);
-    setTournaments((data as unknown as Tournament[]) ?? []);
+    setTournaments((data as unknown as LiveTournament[]) ?? []);
     setLoading(false);
   }, [clubIds]);
 
@@ -241,7 +247,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
   }, [selectedTournamentId, loadTournaments]);
 
   const needsAttention = useMemo(
-    () => (tournaments ?? []).filter((t) => NEEDS_ATTENTION_STATUSES.has(t.status)),
+    () => (tournaments ?? []).filter((t) => NEEDS_ATTENTION_STATUSES.has(displayStatus(t))),
     [tournaments]
   );
 
@@ -307,7 +313,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
                   className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-card border border-amber-500/30 text-xs hover:border-amber-400/60 transition-colors"
                 >
                   <span className="font-semibold">{t.name}</span>
-                  <StatusBadge status={t.status} />
+                  <StatusBadge status={displayStatus(t)} />
                 </button>
               ))}
             </div>
@@ -323,7 +329,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="font-semibold leading-tight">{t.name}</div>
-                <StatusBadge status={t.status} />
+                <StatusBadge status={displayStatus(t)} />
               </div>
               {clubNameMap[t.club_id] && (
                 <div className="text-xs text-muted-foreground">{clubNameMap[t.club_id]}</div>
@@ -356,7 +362,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
                     <span className="flex items-center gap-2">
                       <span>{tour.name}</span>
                       <span className="text-[10px] text-muted-foreground uppercase">
-                        {statusLabel(tour.status)}
+                        {statusLabel(displayStatus(tour), t)}
                         {clubNameMap[tour.club_id] ? ` · ${clubNameMap[tour.club_id]}` : ""}
                       </span>
                     </span>
@@ -376,7 +382,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
           </div>
           {selectedTournament && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <StatusBadge status={selectedTournament.status} />
+              <StatusBadge status={displayStatus(selectedTournament)} />
               {participation.status === "ready" && participation.data && (
                 <span>· {t("tournamentLive.liveView.playersRemaining")}: {participation.data.counts.remaining}
                   {" · AVG: "}{participation.data.averageStack.toLocaleString()}</span>

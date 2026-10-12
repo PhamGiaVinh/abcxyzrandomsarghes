@@ -1,9 +1,24 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 
-const db = vi.hoisted(() => ({ rpc: vi.fn(), actor: "owner", callbacks: new Map<string, () => void>() }));
+type QueryFixture = {
+  select: () => QueryFixture; is: () => QueryFixture; in: () => QueryFixture; order: () => QueryFixture;
+  then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
+};
+type ChannelFixture = {
+  on: (event: string, filter: { table: string }, callback: () => void) => ChannelFixture;
+  subscribe: () => ChannelFixture;
+};
+
+const db = vi.hoisted(() => ({ rpc: vi.fn(), actor: "owner", status: "live", liveStatus: null as string | null,
+  callbacks: new Map<string, () => void>() }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: db.actor } }) }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", async () => {
+  const { default: viLocale } = await import("@/i18n/locales/vi.json");
+  return { useTranslation: () => ({ t: (key: string) => key.startsWith("tournamentLive.statusLabels.")
+    ? viLocale.tournamentLive.statusLabels[key.split(".").at(-1) as keyof typeof viLocale.tournamentLive.statusLabels] : key }) };
+});
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: {} }));
 vi.mock("@/components/tracker/TableAppearanceEditor", () => ({ TableAppearanceEditor: () => null }));
 vi.mock("./tournament-live/ClockPanel", () => ({ ClockPanel: () => null }));
@@ -20,15 +35,15 @@ vi.mock("./tournament-live/TrackerFloorAlertLane", () => ({ TrackerFloorAlertLan
 vi.mock("./tournament-live/TvDisplaysPanel", () => ({ TvDisplaysPanel: () => null }));
 vi.mock("@/components/td-ai/TdAiTabPanel", () => ({ TdAiTabPanel: () => null }));
 vi.mock("./tournament-live/CloseReportDialog", () => ({ default: () => null }));
-vi.mock("@/components/floor/FloorTournamentsLanding", () => ({ FloorTournamentsLanding: ({ onSelect }: any) =>
+vi.mock("@/components/floor/FloorTournamentsLanding", () => ({ FloorTournamentsLanding: ({ onSelect }: { onSelect: (id: string) => void }) =>
   <button onClick={() => onSelect("a")}>select-a</button> }));
 vi.mock("@/components/ui/select", async () => {
   const React = await import("react");
   const Context = React.createContext<(id: string) => void>(() => {});
-  const Wrapper = ({ children }: any) => <div>{children}</div>;
-  return { Select: ({ children, onValueChange }: any) => <Context.Provider value={onValueChange}>{children}</Context.Provider>,
+  const Wrapper = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  return { Select: ({ children, onValueChange }: { children?: ReactNode; onValueChange: (id: string) => void }) => <Context.Provider value={onValueChange}>{children}</Context.Provider>,
     SelectContent: Wrapper, SelectTrigger: Wrapper, SelectValue: Wrapper,
-    SelectItem: ({ children, value }: any) => {
+    SelectItem: ({ children, value }: { children?: ReactNode; value: string }) => {
       const select = React.useContext(Context);
       return <button onClick={() => select(value)}>{children}</button>;
     } };
@@ -36,14 +51,14 @@ vi.mock("@/components/ui/select", async () => {
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   rpc: db.rpc,
   from: () => {
-    const query: any = { select: () => query, is: () => query, in: () => query,
+    const query: QueryFixture = { select: () => query, is: () => query, in: () => query,
       order: () => query,
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: ["a", "b"].map((id) => ({ id, name: `Tour ${id}`, club_id: "club",
-        status: "live", players_remaining: 99, average_stack: 123 })), error: null }).then(resolve) };
+        status: db.status, live_status: db.liveStatus, players_remaining: 99, average_stack: 123 })), error: null }).then(resolve) };
     return query;
   },
   channel: () => {
-    const channel: any = { on: (_event: string, filter: { table: string }, callback: () => void) => {
+    const channel: ChannelFixture = { on: (_event: string, filter: { table: string }, callback: () => void) => {
       db.callbacks.set(filter.table, callback); return channel;
     }, subscribe: () => channel };
     return channel;
@@ -54,11 +69,36 @@ const payload = (id: string, remaining = 8) => ({ tournament_id: id, average_sta
   counts: { total_entries: 11, re_entries: 0, remaining, seated: 8, waiting: 0, busted: 3,
     anomaly_entries: 0, anomaly_seats: 0, live_entry_stack: 78000000, seated_stack: 78000000, waiting_stack: 0 } });
 const props = { clubIds: ["club"], clubs: [{ id: "club", name: "Club" }], mode: "floor" as const };
-beforeEach(() => { db.rpc.mockReset(); db.callbacks.clear(); db.actor = "owner";
+beforeEach(() => { db.rpc.mockReset(); db.callbacks.clear(); db.actor = "owner"; db.status = "live"; db.liveStatus = null;
   db.rpc.mockImplementation((_name, args) => Promise.resolve({ data: payload(args.p_tournament_id), error: null })); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Floor selected-tour canonical summary integration", () => {
+  it("displays registering from the server rather than treating catalog active as playing", async () => {
+    db.status = "active"; db.liveStatus = "registering";
+    render(<TournamentLivePanel {...props} />);
+    await screen.findByRole("button", { name: /Tour a.*Đang đăng ký/ });
+    fireEvent.click(screen.getByRole("button", { name: "select-a" }));
+    await waitFor(() => expect(screen.getByText(/playersRemaining.*8/)).toBeInTheDocument());
+    expect(screen.getAllByText(/Đang đăng ký/)).toHaveLength(3);
+    expect(screen.queryByText("Đang chơi")).not.toBeInTheDocument();
+    expect(db.rpc.mock.calls.every(([name]) => name === "get_tournament_participation_counts_v1")).toBe(true);
+  });
+  it.each([
+    ["active", "playing", "Đang chơi"],
+    ["active", "paused", "Tạm dừng"],
+    ["active", null, "Đang hoạt động"],
+    ["active", "", "Chưa xác định"],
+    ["completed", "playing", "Đã kết thúc"],
+    ["cancelled", "playing", "Đã hủy"],
+  ])("renders catalog=%s/live=%s honestly", async (status, liveStatus, label) => {
+    db.status = status!; db.liveStatus = liveStatus;
+    render(<TournamentLivePanel {...props} />);
+    await screen.findByRole("button", { name: new RegExp(`Tour a.*${label}`) });
+    fireEvent.click(screen.getByRole("button", { name: "select-a" }));
+    await waitFor(() => expect(screen.getByText(/playersRemaining.*8/)).toBeInTheDocument());
+    expect(screen.getAllByText(new RegExp(label!))).toHaveLength(3);
+  });
   it("uses canonical participation on Tracker selection cards rather than stored tournament counters", async () => {
     render(<TournamentLivePanel {...props} mode="tracker" />);
     await waitFor(() => expect(screen.getByRole("button", { name: /Tour a.*8.*9.750.000/ })).toBeInTheDocument());
