@@ -37,6 +37,7 @@ on:
       - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
       - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.currentSchema.sql'
       - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs'
+      - 'VinPoker/scripts/ops/physical-asset-63-65-*'
       - 'VinPoker/supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000065_floor_physical_asset_authority_commit_fence_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql'
@@ -251,6 +252,10 @@ jobs:
       - name: Physical asset authority and receipts on retained exact schema
         working-directory: VinPoker
         run: |
+          node --test scripts/ops/physical-asset-63-65-release-plan.test.mjs
+          createdb vinpoker_ops_asset63_atomic_ci
+          PGDATABASE=vinpoker_ops_asset63_atomic_ci node scripts/ops/restore-schema-test-baseline.mjs
+          PGDATABASE=vinpoker_ops_asset63_atomic_ci node scripts/ops/physical-asset-63-65-atomic-pg.test.mjs
           createdb vinpoker_ops_asset63_ci
           PGDATABASE=vinpoker_ops_asset63_ci node scripts/ops/restore-schema-test-baseline.mjs
           PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql
