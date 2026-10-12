@@ -277,7 +277,9 @@ jobs:
           node --test scripts/ops/dealer-stop-64-release-plan.test.mjs scripts/ops/dealer-stop-64-protected-apply.test.mjs
           createdb --template=vinpoker_ops_checkin "$PGDATABASE"
           createdb vinpoker_ops_stop64_atomic_ci
-          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only "$PGDATABASE" | PGDATABASE=vinpoker_ops_stop64_atomic_ci psql -X -v ON_ERROR_STOP=1
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only "$PGDATABASE" -f /tmp/stop64-atomic-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/stop64-atomic-schema.sql "$RUNNER_TEMP/stop64-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_stop64_atomic_ci psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/stop64-atomic-schema.sql"
           PGDATABASE=vinpoker_ops_stop64_atomic_ci STOP64_PG_TEST=1 node --test scripts/ops/dealer-stop-64-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/scopedStop.currentSchema.sql
@@ -354,7 +356,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql
           node --test scripts/ops/floor-roster-62-release-plan.test.mjs scripts/ops/floor-roster-62-protected-apply.test.mjs
           createdb vinpoker_ops_roster62_atomic_20261011
-          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/roster62-atomic-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/roster62-atomic-schema.sql "$RUNNER_TEMP/roster62-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/roster62-atomic-schema.sql"
           PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -c 'DROP FUNCTION public.get_floor_tournament_table_roster_v6(uuid);'
           PGDATABASE=vinpoker_ops_roster62_atomic_20261011 ROSTER62_PG_TEST=1 node --test scripts/ops/floor-roster-62-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/assignParticipation.pg17.sql
@@ -534,7 +538,9 @@ jobs:
           set -euo pipefail
           createdb vinpoker_ops_stack61_atomic_20261011
           # Use the server's PG17 client; the runner's default pg_dump is PG16.
-          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_stack61_atomic_20261011 psql -X -v ON_ERROR_STOP=1
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/stack61-atomic-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/stack61-atomic-schema.sql "$RUNNER_TEMP/stack61-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_stack61_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/stack61-atomic-schema.sql"
           PGDATABASE=vinpoker_ops_stack61_atomic_20261011 STACK61_PG_TEST=1 node --test scripts/ops/tracker-stack-61-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
@@ -543,7 +549,11 @@ jobs:
           # Active-hand undo: real authenticated RPC, revision/hash and retry fences.
           # Fresh schema-only DB excludes fixture rows committed by preceding races.
           createdb vinpoker_ops_undo_generation_20261011
-          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin | PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1
+          # Finish the PG17 dump before copying/restoring it. Docker exec stdout
+          # streaming previously ended midway through GRANT in this clone.
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/undo-generation-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/undo-generation-schema.sql "$RUNNER_TEMP/undo-generation-schema.sql"
+          PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/undo-generation-schema.sql"
           # identity58 above is qualified on card-overlap, not checkin. Retain
           # checkin's Floor helpers and install its exact forward identity fence.
           PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
