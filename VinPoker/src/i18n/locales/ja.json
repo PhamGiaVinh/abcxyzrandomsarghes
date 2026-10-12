@@ -3200,6 +3200,11 @@
     "player": "プレイヤー",
     "playerCards": "{{name}}のカード"
   },
+  "dealerPlannerScope": {
+    "club": "シフト管理クラブ",
+    "choose": "ディーラーのシフトを作成するクラブを選択",
+    "hint": "シフトと下書きは選択したクラブ専用です。クラブを切り替えると未保存の下書きは破棄されます。"
+  },
   "tableHistory": {
     "blindUnavailable": "ブラインド —", "ante": "アンティ", "received": "獲得", "main": "メインポット", "side": "サイドポット",
     "publicCards": "{{name}}の公開カード", "net": "純増減", "pending": "結果を確認中", "replay": "ハンドを再生"

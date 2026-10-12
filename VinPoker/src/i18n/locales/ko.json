@@ -3196,6 +3196,11 @@
     "player": "플레이어",
     "playerCards": "{{name}}의 카드"
   },
+  "dealerPlannerScope": {
+    "club": "스케줄 클럽",
+    "choose": "딜러 스케줄을 만들 클럽을 선택하세요",
+    "hint": "스케줄과 초안은 선택한 클럽에만 속합니다. 클럽을 바꾸면 저장하지 않은 초안이 삭제됩니다."
+  },
   "tableHistory": {
     "blindUnavailable": "블라인드 —", "ante": "앤티", "received": "획득", "main": "메인 팟", "side": "사이드 팟",
     "publicCards": "{{name}}의 공개 카드", "net": "순변동", "pending": "결과 확인 중", "replay": "핸드 다시 보기"

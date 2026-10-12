@@ -3200,6 +3200,11 @@
     "player": "玩家",
     "playerCards": "{{name}} 的手牌"
   },
+  "dealerPlannerScope": {
+    "club": "排班俱乐部",
+    "choose": "选择俱乐部为荷官排班",
+    "hint": "排班和草稿仅属于所选俱乐部。切换俱乐部会丢弃未保存的草稿。"
+  },
   "tableHistory": {
     "blindUnavailable": "盲注 —", "ante": "前注", "received": "获得", "main": "主池", "side": "边池",
     "publicCards": "{{name}}公开的手牌", "net": "净变化", "pending": "结果核验中", "replay": "回放牌局"

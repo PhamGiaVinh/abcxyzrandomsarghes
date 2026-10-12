@@ -3559,6 +3559,11 @@
     "player": "Player",
     "playerCards": "{{name}}’s cards"
   },
+  "dealerPlannerScope": {
+    "club": "Scheduling club",
+    "choose": "Choose a club to schedule dealers",
+    "hint": "Schedules and drafts belong only to the selected club. Switching clubs discards unsaved drafts."
+  },
   "tableHistory": {
     "blindUnavailable": "Blinds —", "ante": "Ante", "received": "Received", "main": "main pot", "side": "side pot",
     "publicCards": "{{name}}'s revealed cards", "net": "Net change", "pending": "Result under review", "replay": "Replay hand"
