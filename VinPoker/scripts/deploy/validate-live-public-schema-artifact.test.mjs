@@ -4,12 +4,28 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   sanitizeSchemaArtifactSql,
   schemaArtifactProblems,
   validateArtifactDirectory,
+  validateOperationsRecoveryProvenance,
 } from "./validate-live-public-schema-artifact.mjs";
+
+test("Operations recovered snapshot is bound to original capture and exact recovery run",()=>{
+  const provenance={originalCaptureRun:37820347781,originalCaptureSha:"0463831bb9f8f142d585fd51c1b0633963b2161f",
+    schemaSha256:"d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a",schemaOnly:true,recoveryRun:"38275767630"};
+  assert.equal(validateOperationsRecoveryProvenance(provenance,"38275767630"),true);
+  for (const patch of [{originalCaptureRun:37229283609},{originalCaptureSha:"09cff8a829caf3f514a615b231ab96f4ed238757"},
+    {schemaSha256:"a".repeat(64)},{schemaOnly:false},{recoveryRun:"38275767631"},{extra:"unexpected"}]) {
+    assert.throws(()=>validateOperationsRecoveryProvenance({...provenance,...patch},"38275767630"),/operations_recovery_provenance_rejected/);
+  }
+  for (const invalid of [null,[],{},"private content"])
+    assert.throws(()=>validateOperationsRecoveryProvenance(invalid,"38275767630"),/operations_recovery_provenance_rejected/);
+  assert.throws(()=>validateOperationsRecoveryProvenance(provenance,"not-a-run"),/operations_recovery_provenance_rejected/);
+});
 
 const safeSchema = `
 -- INSERT INTO comments must not be interpreted as data.
@@ -29,6 +45,33 @@ function writeArtifact({ schema = safeSchema, checksum = null, extraFile = false
   if (extraFile) writeFileSync(join(directory, "unexpected.txt"), "x");
   return directory;
 }
+
+test("CLI cannot skip recovery verification with missing flags or relabel a safe different snapshot",()=>{
+  const directory=writeArtifact();
+  const metadataDirectory=mkdtempSync(join(tmpdir(),"vinpoker-schema-provenance-"));
+  const provenancePath=join(metadataDirectory,"provenance.json");
+  const provenance={originalCaptureRun:37820347781,originalCaptureSha:"0463831bb9f8f142d585fd51c1b0633963b2161f",
+    schemaSha256:"d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a",schemaOnly:true,recoveryRun:"38275767630"};
+  const run=args=>spawnSync(process.execPath,[fileURLToPath(new URL("./validate-live-public-schema-artifact.mjs",import.meta.url)),
+    "--artifact-directory",directory,...args],{encoding:"utf8",timeout:5000});
+  try {
+    for (const args of [["--operations-recovery-provenance"],["--recovery-run-id"],
+      ["--recovery-run-id","38275767630"]]) {
+      const missing=run(args); assert.notEqual(missing.status,0);
+      assert.match(missing.stderr,/operations_recovery_provenance_rejected/);
+    }
+    writeFileSync(provenancePath,JSON.stringify(provenance));
+    const differentBytes=run(["--operations-recovery-provenance",provenancePath,"--recovery-run-id","38275767630"]);
+    assert.notEqual(differentBytes.status,0); assert.match(differentBytes.stderr,/operations_recovery_bytes_rejected/);
+    writeFileSync(provenancePath,"untrusted private metadata must not appear in errors");
+    const malformed=run(["--operations-recovery-provenance",provenancePath,"--recovery-run-id","38275767630"]);
+    assert.notEqual(malformed.status,0); assert.match(malformed.stderr,/operations_recovery_provenance_rejected/);
+    assert.doesNotMatch(malformed.stderr,/untrusted private metadata/);
+  } finally {
+    rmSync(directory,{recursive:true,force:true});
+    rmSync(metadataDirectory,{recursive:true,force:true});
+  }
+});
 
 test("schema artifact scanner ignores comments and quoted function bodies", () => {
   assert.deepEqual(schemaArtifactProblems(safeSchema), []);
