@@ -17,6 +17,17 @@ const validationWorkflow = readFileSync(
 const schemaCaptureWorkflow = readFileSync(resolve(root, ".github/workflows/capture-live-public-schema.yml"), "utf8");
 const physicalAssetApplyWorkflow = readFileSync(resolve(root, ".github/workflows/physical-asset-63-65-protected-apply.yml"), "utf8");
 
+test("current-schema clones restore completed PG17 files rather than docker stdout streams", () => {
+  const currentSchema = readFileSync(resolve(root, ".github/workflows/dealer-checkin-current-schema.yml"), "utf8");
+  assert.doesNotMatch(currentSchema, /docker exec[^\n]*pg_dump[^\n]*\|/);
+  for (const name of ["stop64-atomic", "roster62-atomic", "stack61-atomic", "undo-generation"]) {
+    const dump = currentSchema.indexOf(`-f /tmp/${name}-schema.sql`);
+    const copy = currentSchema.indexOf(`docker cp vinpoker-current-schema-pg17:/tmp/${name}-schema.sql`);
+    const restore = currentSchema.indexOf(`psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/${name}-schema.sql"`);
+    assert.ok(dump >= 0 && copy > dump && restore > copy, `${name}: complete dump, copy, then checked restore required`);
+  }
+});
+
 test("operations baseline recovery is owner-protected, exact, private and isolated from prior baseline", () => {
   const recovery = schemaCaptureWorkflow.split("\n  recover-operations-baseline:")[1];
   assert.ok(recovery,"separate reviewed operations recovery job required");
