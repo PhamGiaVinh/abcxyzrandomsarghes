@@ -22,8 +22,11 @@ RPC signature remains `declare_club_physical_table_v1(uuid,integer,uuid,uuid)`.
   apply path. `physical-asset-63-65-protected-apply.mjs` reuses exact main/owner/
   target/SSL/libpq/fresh restore guard and bounds psql to130s. Plan is read-only;
   apply needs exact package confirmation and performs preflight before one write.
-  Protected GitHub workflow/required checks/recovery artifact provenance are not
-  wired yet; do not invoke this module manually or claim it is release-ready.
+  `physical-asset-63-65-protected-apply.yml` supplies manual main-only owner/PR/SHA
+  binding, exact GitHub Actions checks, configured human review, metadata-only
+  verified backup and competing-release gates. Workflow source must reach main
+  normally before it can be dispatched; runtime schema CI remains a prerequisite.
+  Do not invoke the module manually or bypass workflow/token/environment failures.
 - After DB postchecks, deploy matching frontend and verify canonical alias. Only
   then declare Quads21/22 through authenticated UI; if names already exist, stop
   and inspect provenance. Never adopt/delete old named assets automatically.
