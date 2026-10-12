@@ -20,6 +20,22 @@ const PHYSICAL_ASSET_RPC_CONTRACT = {
   argumentTypes: ["uuid","integer","uuid","uuid"],allowOtherOverloads:false,
   acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source",
 };
+const SCOPED_STOP_RPC_CONTRACT = {
+  type:"function",name:"public.operator_stop_dealer_swing_v1",
+  arguments:["p_club_id","p_request_id","p_expected_actor_id"],argumentTypes:["uuid","uuid","uuid"],
+  allowOtherOverloads:false,acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source",
+};
+function scopedStopFrontendEnabled(targetRoot) {
+  const tab=resolve(targetRoot,FRONTEND_CONTRACT_FILES[0]);
+  if(!existsSync(tab)||!readFileSync(tab,"utf8").includes("DealerSwingStopControl")) return false;
+  const component=resolve(targetRoot,"VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl.tsx");
+  if(!existsSync(component)) throw Error("UNKNOWN_TARGET_SCOPED_STOP_CONTRACT");
+  const source=readFileSync(component,"utf8");
+  if(/\.rpc\(\s*["']operator_stop_dealer_swing_v1["']/.test(source)) return true;
+  if(!source.includes("operator_stop_dealer_swing_v1")&&
+    /\.from\(\s*["']club_settings["']\s*\)\s*\.upsert\(\s*\{[^}]*auto_swing_enabled:\s*false\b/.test(source)) return false;
+  throw Error("UNKNOWN_TARGET_SCOPED_STOP_CONTRACT");
+}
 function physicalAssetFrontendEnabled(targetRoot) {
   const tab=resolve(targetRoot,FRONTEND_CONTRACT_FILES[0]);
   if(!existsSync(tab)||!readFileSync(tab,"utf8").includes("PhysicalTableDeclaration")) return false;
@@ -29,16 +45,23 @@ function physicalAssetFrontendEnabled(targetRoot) {
     throw Error("UNKNOWN_TARGET_PHYSICAL_ASSET_CONTRACT");
   return true;
 }
-export function assertPhysicalAssetFrontendBackend({targetRoot,catalog}) {
-  if(!physicalAssetFrontendEnabled(targetRoot)) return;
-  if(!Array.isArray(catalog?.functions)) throw Error("PHYSICAL_ASSET_FRONTEND_REQUIRES_QUALIFIED_CATALOG");
-  const matches=catalog.functions.filter(fn=>fn.schema==="public"&&fn.name==="declare_club_physical_table_v1");
+function assertFrontendFunctionBackend(catalog,contract,definitionMd5,configuration,errorPrefix) {
+  if(!Array.isArray(catalog?.functions)) throw Error(`${errorPrefix}_REQUIRES_QUALIFIED_CATALOG`);
+  const functionName=contract.name.slice("public.".length);
+  const matches=catalog.functions.filter(fn=>fn.schema==="public"&&fn.name===functionName);
   const fn=matches[0];
   if(matches.length!==1||fn?.owner!=="postgres"||fn.securityDefiner!==true
-    ||JSON.stringify(fn.configuration)!==JSON.stringify(['search_path=""'])
-    ||fn.definitionMd5!=="c4c0bab3f601386c8b4f44d849c255df"
-    ||findMissingContracts(catalog,[PHYSICAL_ASSET_RPC_CONTRACT]).length>0)
-    throw Error("PHYSICAL_ASSET_FRONTEND_BACKEND_NOT_QUALIFIED");
+    ||JSON.stringify(fn.configuration)!==JSON.stringify(configuration)
+    ||fn.definitionMd5!==definitionMd5||findMissingContracts(catalog,[contract]).length>0)
+    throw Error(`${errorPrefix}_BACKEND_NOT_QUALIFIED`);
+}
+export function assertPhysicalAssetFrontendBackend({targetRoot,catalog}) {
+  if(physicalAssetFrontendEnabled(targetRoot)) assertFrontendFunctionBackend(catalog,PHYSICAL_ASSET_RPC_CONTRACT,
+    "c4c0bab3f601386c8b4f44d849c255df",['search_path=""'],"PHYSICAL_ASSET_FRONTEND");
+}
+export function assertScopedStopFrontendBackend({targetRoot,catalog}) {
+  if(scopedStopFrontendEnabled(targetRoot)) assertFrontendFunctionBackend(catalog,SCOPED_STOP_RPC_CONTRACT,
+    "32558a200e5c94c5bfcf0687b2a97ed2",['search_path=""','lock_timeout=5s'],"SCOPED_STOP_FRONTEND");
 }
 
 function parseArgs(argv) {
@@ -572,7 +595,8 @@ export function sourceContractsForFunction({ targetRoot, config }) {
 export function sourceContractsForFrontend({ targetRoot }) {
   const files = FRONTEND_CONTRACT_FILES.filter((file) => existsSync(resolve(targetRoot, file)));
   return mergeContracts(staticDatabaseContracts(files, targetRoot, "direct_frontend_source"),
-    physicalAssetFrontendEnabled(targetRoot)?[PHYSICAL_ASSET_RPC_CONTRACT]:[]);
+    physicalAssetFrontendEnabled(targetRoot)?[PHYSICAL_ASSET_RPC_CONTRACT]:[],
+    scopedStopFrontendEnabled(targetRoot)?[SCOPED_STOP_RPC_CONTRACT]:[]);
 }
 
 export function contractsForTargets({ manifest, rawTargets, targetRoot }) {
@@ -616,8 +640,11 @@ function run() {
     process.exitCode = 1;
     return;
   }
-  if(rawTargets==="frontend") assertPhysicalAssetFrontendBackend({targetRoot,
-    catalog:catalogPath?JSON.parse(readFileSync(catalogPath,"utf8")):undefined});
+  if(rawTargets==="frontend") {
+    const catalog=catalogPath?JSON.parse(readFileSync(catalogPath,"utf8")):undefined;
+    assertPhysicalAssetFrontendBackend({targetRoot,catalog});
+    assertScopedStopFrontendBackend({targetRoot,catalog});
+  }
   console.log(
     `Live schema contract probe passed for ${selection.profile} from ${inventory.source} (${contracts.length} checks, ${selection.sourceFingerprint}).`,
   );
