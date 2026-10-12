@@ -36,7 +36,9 @@ on:
       - 'VinPoker/scripts/ops/dealer-policy-57-*'
       - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
       - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.currentSchema.sql'
+      - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs'
       - 'VinPoker/supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000065_floor_physical_asset_authority_commit_fence_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql'
       - 'VinPoker/tests/dealerSwing/checkin*'
       - 'VinPoker/supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql'
@@ -252,8 +254,11 @@ jobs:
           createdb vinpoker_ops_asset63_ci
           PGDATABASE=vinpoker_ops_asset63_ci node scripts/ops/restore-schema-test-baseline.mjs
           PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql
+          PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000065_floor_physical_asset_authority_commit_fence_v1.sql
           PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/physicalAssetProvision.currentSchema.sql
           test "$(PGDATABASE=vinpoker_ops_asset63_ci psql -X -At -v ON_ERROR_STOP=1 -c 'SELECT (SELECT count(*) FROM public.clubs)+(SELECT count(*) FROM public.game_tables)+(SELECT count(*) FROM public.table_operation_receipts);')" = 0
+          PGDATABASE=vinpoker_ops_asset63_ci node tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs
+          PGDATABASE=vinpoker_ops_asset63_ci node tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs --receipt-replay
       - name: Chip integrity on exact current schema
         working-directory: VinPoker
         run: |
