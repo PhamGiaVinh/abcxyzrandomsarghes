@@ -13,6 +13,58 @@ vi.mock("./BankAuditTab", () => ({ BankAuditTab: () => null }));
 vi.mock("./BagTagTab", () => ({ BagTagTab: () => null }));
 import { ChipOpsManager } from "./ChipOpsManager";
 
+it("starts independent inventory, bank and template reads while binding is pending", async () => {
+  let resolveBinding!: (value: unknown) => void;
+  const pending = new Promise(resolve => { resolveBinding = resolve; });
+  const original = h.from.getMockImplementation()!;
+  h.from.mockImplementation((table: string) => {
+    const query = original(table);
+    if (table === "tournament_chip_set") query.then = (resolve: (value: unknown) => unknown) => pending.then(resolve);
+    return query;
+  });
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  try {
+    await waitFor(() => {
+      expect(h.rpc).toHaveBeenCalledWith("get_current_chip_inventory", { p_tournament_id: "tour-a" });
+      expect(h.rpc).toHaveBeenCalledWith("get_chip_bank", { p_club_id: "club-a" });
+      expect(h.from).toHaveBeenCalledWith("stack_template");
+    });
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  } finally {
+    await act(async () => { resolveBinding({ data: null, error: null }); await pending; });
+  }
+  await screen.findByRole("tab", { name: "Setup stack" });
+});
+
+it("does not serialize bank reads behind template lines or publish a partial workspace", async () => {
+  let resolveLines!: (value: unknown) => void;
+  const pending = new Promise(resolve => { resolveLines = resolve; });
+  const original = h.from.getMockImplementation()!;
+  const rows: Record<string, unknown> = {
+    tournament_chip_set: { chip_set_id: "set-a" },
+    chip_set: [{ id: "set-a", name: "TEST set" }],
+    chip_set_denomination: [{ id: "denom-a", value: 100, color: "#1e88e5", label: null, display_order: 0 }],
+    stack_template: [{ id: "template-a", name: "TEST stack", stack_value: 100 }],
+  };
+  h.from.mockImplementation((table: string) => {
+    const query = original(table);
+    if (table in rows) query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows[table], error: null }).then(resolve);
+    if (table === "stack_template_line") query.then = (resolve: (value: unknown) => unknown) => pending.then(resolve);
+    return query;
+  });
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  try {
+    await waitFor(() => {
+      expect(h.from).toHaveBeenCalledWith("stack_template_line");
+      expect(h.rpc).toHaveBeenCalledWith("get_chip_bank", { p_club_id: "club-a" });
+    });
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  } finally {
+    await act(async () => { resolveLines({ data: [{ stack_template_id: "template-a", denomination_id: "denom-a", count: 1 }], error: null }); await pending; });
+  }
+  await screen.findByRole("tab", { name: "Setup stack" });
+});
+
 beforeEach(() => {
   h.auth = { isClubOwner: true, isChipMaster: false, user: { id: "owner-a" }, loading: false, rolesLoading: false, authError: null, rolesError: null };
   h.rpc.mockClear();
@@ -111,6 +163,16 @@ it("does not report bank coupling OFF when its read is forbidden", async () => {
   render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
   expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
   expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+});
+
+it("retains only the missing-current-RPC inventory fallback with concurrent reads", async () => {
+  h.rpc.mockImplementation(async (name: string) => name === "get_current_chip_inventory"
+    ? { data: null, error: { code: "PGRST202" } }
+    : { data: name === "get_issued_chip_inventory" ? { denominations: [] } : { coupling_enabled: false }, error: null });
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "Setup stack" });
+  expect(h.rpc.mock.calls.filter(([name]) => name === "get_issued_chip_inventory")).toHaveLength(1);
+  expect(h.rpc.mock.calls.every(([name]) => name.startsWith("get_"))).toBe(true);
 });
 
 it("retries a failed read without falling back to issued inventory or any mutation", async () => {

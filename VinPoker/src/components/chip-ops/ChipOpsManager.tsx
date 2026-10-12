@@ -125,52 +125,45 @@ export function ChipOpsManager() {
       const t = tours.find((x) => x.id === tid);
       const clubId = t?.club_id ?? null;
 
-      const [binding, sets] = await Promise.all([
+      // Independent, server-authorized reads share the same captured scope.
+      // Publish only after every metadata and inventory read has been verified.
+      const readInventory = async () => {
+        const current = await sb.rpc("get_current_chip_inventory", { p_tournament_id: tid });
+        return current.error?.code === "PGRST202"
+          ? sb.rpc("get_issued_chip_inventory", { p_tournament_id: tid })
+          : current;
+      };
+      const [binding, sets, templateRows, inventory, bank] = await Promise.all([
         sb.from("tournament_chip_set").select("chip_set_id").eq("tournament_id", tid).maybeSingle(),
         clubId ? sb.from("chip_set").select("id,name").eq("club_id", clubId).order("created_at", { ascending: true }) : Promise.resolve({ data: [] }),
+        sb.from("stack_template").select("id,name,stack_value").eq("tournament_id", tid).order("stack_value", { ascending: true }),
+        readInventory(),
+        sb.rpc("get_chip_bank", { p_club_id: clubId }),
       ]);
       if (!isCurrent()) return;
       if (binding.error || sets.error || !Array.isArray(sets.data)) throw new Error("READ_FAILED");
       const bindRow = binding.data, setsRaw = sets.data;
       const csId: string | null = bindRow?.chip_set_id ?? null;
-      let nextDenoms: Denom[] = [];
-      if (csId) {
-        const { data: dRaw, error } = await sb.from("chip_set_denomination").select("id,value,color,label,display_order").eq("chip_set_id", csId).order("value", { ascending: true });
-        if (error || !Array.isArray(dRaw)) throw new Error("READ_FAILED");
-        nextDenoms = dRaw;
-      }
-      if (!isCurrent()) return;
-
-      const { data: tplRaw, error: templateError } = await sb.from("stack_template").select("id,name,stack_value").eq("tournament_id", tid).order("stack_value", { ascending: true });
+      const { data: tplRaw, error: templateError } = templateRows;
       if (templateError || !Array.isArray(tplRaw)) throw new Error("READ_FAILED");
-      if (!isCurrent()) return;
+      if (inventory.error || !inventory.data || inventory.data.error || !Array.isArray(inventory.data.denominations)) throw new Error(inventory.data?.error ?? "READ_FAILED");
+      if (bank.error || !bank.data || bank.data.error || typeof bank.data.coupling_enabled !== "boolean") throw new Error(bank.data?.error ?? "READ_FAILED");
       const tplIds = (tplRaw ?? []).map((x: any) => x.id);
-      let lines: any[] = [], issu: any[] = [];
-      if (tplIds.length) {
-        const [lineRows, issueRows] = await Promise.all([
-          sb.from("stack_template_line").select("stack_template_id,denomination_id,count").in("stack_template_id", tplIds),
-          sb.from("stack_template_issuance").select("stack_template_id,issued_count").in("stack_template_id", tplIds),
-        ]);
-        if (lineRows.error || issueRows.error || !Array.isArray(lineRows.data) || !Array.isArray(issueRows.data)) throw new Error("READ_FAILED");
-        lines = lineRows.data; issu = issueRows.data;
-      }
+      const [denomRows, lineRows, issueRows] = await Promise.all([
+        csId ? sb.from("chip_set_denomination").select("id,value,color,label,display_order").eq("chip_set_id", csId).order("value", { ascending: true }) : Promise.resolve({ data: [], error: null }),
+        tplIds.length ? sb.from("stack_template_line").select("stack_template_id,denomination_id,count").in("stack_template_id", tplIds) : Promise.resolve({ data: [], error: null }),
+        tplIds.length ? sb.from("stack_template_issuance").select("stack_template_id,issued_count").in("stack_template_id", tplIds) : Promise.resolve({ data: [], error: null }),
+      ]);
       if (!isCurrent()) return;
+      if (denomRows.error || lineRows.error || issueRows.error || !Array.isArray(denomRows.data) || !Array.isArray(lineRows.data) || !Array.isArray(issueRows.data)) throw new Error("READ_FAILED");
+      const nextDenoms: Denom[] = denomRows.data;
+      const lines: any[] = lineRows.data, issu: any[] = issueRows.data;
       const nextTemplates = tplRaw.map((x: any) => ({
         id: x.id, name: x.name, stack_value: Number(x.stack_value),
         lines: lines.filter((ln) => ln.stack_template_id === x.id).map((ln) => ({ denomination_id: ln.denomination_id, count: Number(ln.count) })),
         issued_count: Number(issu.find((s) => s.stack_template_id === x.id)?.issued_count ?? 0),
       }));
 
-      // Prefer CURRENT inventory (issued + ledger, so color-ups reflect); fall back to issued.
-      let inventory = await sb.rpc("get_current_chip_inventory", { p_tournament_id: tid });
-      if (inventory.error?.code === "PGRST202") {
-        inventory = await sb.rpc("get_issued_chip_inventory", { p_tournament_id: tid });
-      }
-      if (!isCurrent()) return;
-      if (inventory.error || !inventory.data || inventory.data.error || !Array.isArray(inventory.data.denominations)) throw new Error(inventory.data?.error ?? "READ_FAILED");
-      const bank = await sb.rpc("get_chip_bank", { p_club_id: clubId });
-      if (bank.error || !bank.data || bank.data.error || typeof bank.data.coupling_enabled !== "boolean") throw new Error(bank.data?.error ?? "READ_FAILED");
-      if (!isCurrent()) return;
       setBoundChipSetId(csId);
       setClubChipSets((setsRaw ?? []).map((s: any) => ({ id: s.id, name: s.name })));
       setDenoms(nextDenoms);
