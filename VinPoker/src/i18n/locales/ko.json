@@ -1826,6 +1826,12 @@
     }
   },
   "tournamentLive": {
+    "statusLabels": {
+      "upcoming": "예정", "registering": "등록 중", "drawing": "좌석 추첨 중",
+      "active": "활성", "playing": "진행 중", "live": "라이브", "break": "휴식",
+      "paused": "일시 정지", "final_table": "파이널 테이블", "completed": "종료",
+      "cancelled": "취소", "unknown": "확인되지 않음"
+    },
     "selectTournament": "토너먼트 선택",
     "tabs": {
       "input": "핸드 입력",

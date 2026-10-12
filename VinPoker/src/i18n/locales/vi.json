@@ -2041,6 +2041,12 @@
     }
   },
   "tournamentLive": {
+    "statusLabels": {
+      "upcoming": "Sắp diễn ra", "registering": "Đang đăng ký", "drawing": "Bốc thăm chỗ",
+      "active": "Đang hoạt động", "playing": "Đang chơi", "live": "LIVE", "break": "Giải lao",
+      "paused": "Tạm dừng", "final_table": "Bàn cuối cùng", "completed": "Đã kết thúc",
+      "cancelled": "Đã hủy", "unknown": "Chưa xác định"
+    },
     "selectTournament": "Chọn giải",
     "tvDisplays": {
       "tab": "Màn hình TV",
