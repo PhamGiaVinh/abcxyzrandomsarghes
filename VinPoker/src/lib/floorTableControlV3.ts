@@ -11,6 +11,7 @@ import { FEATURES } from "@/lib/featureFlags";
  */
 export type FloorTableControlV3RpcName =
   | "get_club_table_inventory"
+  | "declare_club_physical_table_v1"
   | "get_floor_tournament_table_inventory_v1"
   | "get_floor_seatable_entries"
   | "get_floor_tournament_table_roster_v3"
@@ -849,6 +850,28 @@ export function createFloorTableControlV3Client(
         entries.push(parsed.data);
       }
       return { ok: true, data: entries };
+    },
+
+    async declarePhysicalTable(args: { actorId: string; clubId: string; tableNumber: number; requestId: string }): Promise<FloorTableControlV3Result<MutationResult>> {
+      if (!enabled) return { ok: false, error: "FLOOR_TABLE_CONTROL_V3_DISABLED" };
+      const response = await rpc("declare_club_physical_table_v1", {
+        p_club_id: args.clubId, p_table_number: args.tableNumber, p_request_id: args.requestId,
+        p_expected_actor_id: args.actorId,
+      });
+      if (response.error) {
+        const code = isRecord(response.error) ? response.error.code : null;
+        return { ok: false, error: code === "PGRST202" ? "PHYSICAL_ASSET_RPC_UNAVAILABLE"
+          : code === "42501" ? "actor_not_allowed" : "PHYSICAL_ASSET_OUTCOME_UNKNOWN" };
+      }
+      const result = parseMutation(response.data);
+      if (result.ok === false) return result;
+      const asset = result.data;
+      if (typeof asset.game_table_id !== "string" || !asset.game_table_id
+        || asset.actor_id !== args.actorId || asset.club_id !== args.clubId || asset.table_number !== args.tableNumber
+        || asset.status !== "inactive" || asset.operational_status !== "available") {
+        return { ok: false, error: "PHYSICAL_ASSET_RESPONSE_MALFORMED" };
+      }
+      return result;
     },
 
     openTournamentTable: (args: { tournamentId: string; gameTableId: string; controlMode: "manual" | "tracker"; requestId: string }) =>

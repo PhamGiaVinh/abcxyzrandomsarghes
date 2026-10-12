@@ -16,6 +16,8 @@ const EDGE_EVIDENCE_ROOTS = [
 const FRONTEND_EVIDENCE_FILES = [
   "VinPoker/src/components/cashier/DealerSwingTab.tsx",
   "VinPoker/src/lib/dealerMassOpen.ts",
+  "VinPoker/src/components/cashier/dealer-swing/PhysicalTableDeclaration.tsx",
+  "VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl.tsx",
 ];
 
 const FLOOR_CLOCK_EDGE_ENTRY =

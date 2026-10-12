@@ -3565,6 +3565,21 @@
     "player": "Player",
     "playerCards": "{{name}}’s cards"
   },
+  "physicalTableDeclaration": {
+    "action": "Declare physical table", "title": "Declare a new table", "number": "Table number (1–100)",
+    "description": "Adds a new unopened asset only. Does not rename old tables or assign dealers. Open the tournament table in Floor afterwards.",
+    "submit": "Declare", "retry": "Check original request", "busy": "Confirming…", "close": "Close",
+    "pending": "Keeping the request for Table {{number}}. Do not change its number or create a new key while the outcome is unknown.",
+    "unknown": "The server outcome is unconfirmed. Keep and check the original request; do not send a new operation.",
+    "success": "Declaration for Table {{number}} confirmed. This operation does not open a session; check its current state in Floor.",
+    "journalError": "Cannot read or save the request journal. No further operation sent; restore the journal first.",
+    "readJournal": "Read journal again", "refreshFailed": "Declared, but inventory refresh failed. Reload the screen.",
+    "errors": { "actorChanged": "Account changed. Original request retained; no write under the new account.", "denied": "Declaration requires Dealer Control or club administration. The original request is retained.",
+      "invalidRequest": "Invalid request; check the journal.", "invalidNumber": "Choose an integer from 1 to 100.",
+      "clubMissing": "Selected club not found.", "taken": "This number or name already exists. Old assets are not changed or adopted; choose another number.",
+      "conflict": "This key belongs to another request. Keep the journal for reconciliation; do not replace the key.",
+      "unavailable": "Declaration backend is not ready. Request retained; no legacy-opening fallback." }
+  },
   "dealerPlannerScope": {
     "club": "Scheduling club",
     "choose": "Choose a club to schedule dealers",

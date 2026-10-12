@@ -1,5 +1,60 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "./floorTableControlV3";
+// Test the locked SDK transport itself, with synthetic tokens and custom fetch.
+import { fetchWithAuth } from "../../node_modules/@supabase/supabase-js/src/lib/fetch";
+
+describe("numbered physical asset declaration", () => {
+  const args = { actorId: "actor-a", clubId: "club-a", tableNumber: 21, requestId: "request-a" };
+  const asset = { ok: true, game_table_id: "asset-a", club_id: "club-a", table_number: 21,
+    status: "inactive", operational_status: "available", actor_id: "actor-a" };
+  it("sends explicit club/number/key and actor fence, then validates the inactive asset", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: asset, error: null });
+    expect(await clientFrom(rpc).declarePhysicalTable(args)).toEqual({ ok: true, data: asset });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("declare_club_physical_table_v1", {
+      p_club_id: "club-a", p_table_number: 21, p_request_id: "request-a", p_expected_actor_id: "actor-a",
+    });
+  });
+  it.each([{ club_id: "club-b" }, { table_number: 22 }, { status: "active" },
+    { operational_status: "maintenance" }, { game_table_id: "" }, { actor_id: "actor-b" }])("rejects mismatched asset %j", async (patch) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ...asset, ...patch }, error: null });
+    expect(await clientFrom(rpc).declarePhysicalTable(args))
+      .toEqual({ ok: false, error: "PHYSICAL_ASSET_RESPONSE_MALFORMED" });
+  });
+  it.each([["PGRST202", "PHYSICAL_ASSET_RPC_UNAVAILABLE"], ["42501", "actor_not_allowed"],
+    ["503", "PHYSICAL_ASSET_OUTCOME_UNKNOWN"]])("classifies transport %s without inventing success", async (code, error) => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code } });
+    expect(await clientFrom(rpc).declarePhysicalTable(args)).toEqual({ ok: false, error });
+  });
+  it("keeps explicit server rejection and makes no call while V3 is OFF", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ok: false, error: "table_number_taken" }, error: null });
+    expect(await clientFrom(rpc).declarePhysicalTable(args)).toEqual({ ok: false, error: "table_number_taken" });
+    rpc.mockClear();
+    expect(await clientFrom(rpc, false).declarePhysicalTable(args)).toEqual({ ok: false, error: "FLOOR_TABLE_CONTROL_V3_DISABLED" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it("keeps actor A on the wire when the installed SDK resolves a later token B", async () => {
+    let releaseToken!: (value: string) => void;
+    const token = new Promise<string>(resolve => { releaseToken = resolve; });
+    const captured: { authorization: string | null; body: string }[] = [];
+    const send = fetchWithAuth("synthetic-anon-key", () => token, async (_input, init) => {
+      captured.push({ authorization: new Headers(init?.headers).get("Authorization"), body: String(init?.body) });
+      return new Response(JSON.stringify({ ok: false, error: "ACTOR_CHANGED" }), { status: 200 });
+    });
+    const rpc: FloorTableControlV3Rpc = async (name, body) => {
+      const response = await send(`https://capture-only.invalid/${name}`, { method: "POST", body: JSON.stringify(body) });
+      return { data: await response.json(), error: null };
+    };
+    const pending = createFloorTableControlV3Client(rpc, { enabled: true }).declarePhysicalTable(args);
+    releaseToken("synthetic-token-B");
+    expect(await pending).toEqual({ ok: false, error: "ACTOR_CHANGED" });
+    expect(captured).toHaveLength(1);
+    expect(captured[0].authorization).toBe("Bearer synthetic-token-B");
+    expect(JSON.parse(captured[0].body)).toEqual({ p_club_id: "club-a", p_table_number: 21,
+      p_request_id: "request-a", p_expected_actor_id: "actor-a" });
+    // Capture-only custom fetch makes zero network requests. DB rejection is
+    // proven separately in physicalAssetProvision.disposable.sql, not here.
+  });
+});
 
 describe("manual participation waiting contract", () => {
   const manualWaiting = { entry_id: "entry-manual", player_id: "player-manual", entry_no: 1,

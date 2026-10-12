@@ -2,6 +2,10 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ actorId: "actor", error: "503 TEST" as string | null, loading: false }));
+vi.mock("@/lib/featureFlags", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/featureFlags")>();
+  return { ...original, FEATURES: { ...original.FEATURES, floorTableControlV3: true } };
+});
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: state.actorId }, isClubAdmin: true, isAdmin: false, isClubOwner: true, isFloor: false }) }));
 vi.mock("@/hooks/useDealerSwing", () => {
   const query = () => ({ data: [], loading: false, error: null, refetch: vi.fn() });
@@ -30,9 +34,17 @@ vi.mock("@/integrations/supabase/client", () => {
   return { supabase: { from: () => query, rpc: vi.fn().mockResolvedValue({ data: null, error: null }), functions: { invoke: vi.fn() } } };
 });
 import SwingPanel from "./DealerSwingTab";
+import { supabase } from "@/integrations/supabase/client";
 
 describe("desktop Swing authoritative read state", () => {
   beforeEach(() => { state.actorId = "actor"; state.error = "503 TEST"; state.loading = false; });
+  it("exposes declaration in the verified single-club workspace without opening a session", async () => {
+    state.error = null;
+    await act(async () => { render(<SwingPanel clubIds={["club"]} clubs={[{ id: "club", name: "TEST" }]} />); });
+    fireEvent.click(screen.getByRole("button", { name: /physicalTableDeclaration.action|Khai báo bàn vật lý|Declare physical table/ }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(supabase.rpc).not.toHaveBeenCalledWith("declare_club_physical_table_v1", expect.anything());
+  });
   it("blocks operational rendering on failed inventory but retains emergency OFF", async () => {
     await act(async () => { render(<SwingPanel clubIds={["club"]} clubs={[{ id: "club", name: "TEST" }]} />); });
     expect(screen.getByRole("alert")).toHaveTextContent("Không xác minh");

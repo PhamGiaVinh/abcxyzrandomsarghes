@@ -28,6 +28,9 @@ test("catalog capture calls only the Management API read-only SQL endpoint", asy
   assert.match(CATALOG_SQL, /namespace\.nspname IN \('public', 'storage'\)/);
   assert.match(CATALOG_SQL, /FROM pg_catalog\.pg_proc[\s\S]*WHERE namespace\.nspname = 'public'/);
   assert.doesNotMatch(CATALOG_SQL, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/i);
+  assert.match(CATALOG_SQL,/md5\(replace\(replace\(pg_get_functiondef/);
+  assert.match(CATALOG_SQL,/routine\.prokind IN \('f','p'\)/);
+  assert.doesNotMatch(CATALOG_SQL,/'definition',\s*pg_get_functiondef/);
 });
 
 test("catalog capture fails closed for missing credentials and malformed payloads without printing values", async () => {

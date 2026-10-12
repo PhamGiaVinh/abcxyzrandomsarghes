@@ -3565,6 +3565,21 @@
     "player": "Người chơi",
     "playerCards": "Bài của {{name}}"
   },
+  "physicalTableDeclaration": {
+    "action": "Khai báo bàn vật lý", "title": "Khai báo bàn mới", "number": "Số bàn (1–100)",
+    "description": "Chỉ thêm bàn mới chưa mở vào kho. Không đổi tên bàn cũ, không gán dealer. Sau đó mở bàn giải trong Floor.",
+    "submit": "Khai báo", "retry": "Kiểm tra lại yêu cầu cũ", "busy": "Đang xác nhận…", "close": "Đóng",
+    "pending": "Đang giữ yêu cầu Bàn {{number}}. Không đổi số hoặc tạo key mới khi kết quả chưa rõ.",
+    "unknown": "Chưa xác nhận server đã ghi hay chưa. Giữ nguyên yêu cầu và kiểm tra lại; không tự gửi thao tác mới.",
+    "success": "Đã xác nhận khai báo Bàn {{number}}. Thao tác này không tự mở phiên; xem trạng thái hiện tại trong Floor.",
+    "journalError": "Không đọc/ghi được nhật ký yêu cầu. Chưa gửi thêm thao tác; cần khôi phục nhật ký trước.",
+    "readJournal": "Đọc lại nhật ký", "refreshFailed": "Đã khai báo nhưng chưa tải lại kho bàn được. Hãy tải lại màn hình.",
+    "errors": { "actorChanged": "Tài khoản đã đổi. Yêu cầu cũ được giữ, không ghi dưới tài khoản mới.", "denied": "Khai báo bàn cần quyền Dealer Control hoặc quản trị CLB. Yêu cầu cũ vẫn được giữ.",
+      "invalidRequest": "Yêu cầu không hợp lệ; cần kiểm tra lại nhật ký.", "invalidNumber": "Chọn số nguyên từ 1 đến 100.",
+      "clubMissing": "Không tìm thấy CLB đã chọn.", "taken": "Số hoặc tên bàn đã tồn tại. Không sửa hoặc nhận lại bàn cũ; hãy chọn số khác.",
+      "conflict": "Key đang thuộc một yêu cầu khác. Giữ nhật ký để đối soát; không tạo key mới thay thế.",
+      "unavailable": "Backend khai báo bàn chưa sẵn sàng. Giữ yêu cầu, không có fallback mở bàn cũ." }
+  },
   "dealerPlannerScope": {
     "club": "CLB xếp lịch",
     "choose": "Chọn CLB để xếp lịch dealer",
