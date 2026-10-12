@@ -252,7 +252,7 @@ jobs:
       - name: Physical asset authority and receipts on retained exact schema
         working-directory: VinPoker
         run: |
-          node --test scripts/ops/physical-asset-63-65-release-plan.test.mjs
+          node --test scripts/ops/physical-asset-63-65-release-plan.test.mjs scripts/ops/physical-asset-63-65-protected-apply.test.mjs
           createdb vinpoker_ops_asset63_atomic_ci
           PGDATABASE=vinpoker_ops_asset63_atomic_ci node scripts/ops/restore-schema-test-baseline.mjs
           PGDATABASE=vinpoker_ops_asset63_atomic_ci node scripts/ops/physical-asset-63-65-atomic-pg.test.mjs

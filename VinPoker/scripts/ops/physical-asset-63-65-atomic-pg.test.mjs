@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { atomicSql,postcheckSql,executePackage } from './physical-asset-63-65-release-plan.mjs';
+import { atomicSql,preflightSql,postcheckSql,executePackage } from './physical-asset-63-65-release-plan.mjs';
 assert.equal(process.env.PGHOST,'127.0.0.1');
 assert.match(process.env.PGDATABASE??'',/^vinpoker_ops_asset63_atomic_/);
 function result(input) {
@@ -17,6 +17,8 @@ assert.equal(sql("SELECT to_regprocedure('public.declare_club_physical_table_v1(
 sql(`CREATE SCHEMA IF NOT EXISTS supabase_migrations;
  CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);`);
 assert.equal(sql('SELECT count(*) FROM supabase_migrations.schema_migrations;'),'0');
+assert.deepEqual(json(preflightSql()),{database:process.env.PGDATABASE,actor:'postgres',pending:0,names:0,apis:0});
+console.log('ASSET63_65_READONLY_PREFLIGHT_REAL_PG_PASS');
 const combined=atomicSql();
 // Fail the second receipt: the first ledger INSERT must roll back too.
 const anchor='INSERT INTO supabase_migrations.schema_migrations(version,name,statements)';

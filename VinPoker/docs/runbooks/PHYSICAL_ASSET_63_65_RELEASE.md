@@ -19,7 +19,11 @@ RPC signature remains `declare_club_physical_table_v1(uuid,integer,uuid,uuid)`.
   preparation and verification before dispatch. `physical-asset-63-65-release-plan.mjs`
   now prepares the exact single transaction with helper pins, shared package lock,
   two source receipts and exact object/ACL postchecks; it has no direct CLI/network
-  apply path. The protected transport has not been implemented or dispatched.
+  apply path. `physical-asset-63-65-protected-apply.mjs` reuses exact main/owner/
+  target/SSL/libpq/fresh restore guard and bounds psql to130s. Plan is read-only;
+  apply needs exact package confirmation and performs preflight before one write.
+  Protected GitHub workflow/required checks/recovery artifact provenance are not
+  wired yet; do not invoke this module manually or claim it is release-ready.
 - After DB postchecks, deploy matching frontend and verify canonical alias. Only
   then declare Quads21/22 through authenticated UI; if names already exist, stop
   and inspect provenance. Never adopt/delete old named assets automatically.

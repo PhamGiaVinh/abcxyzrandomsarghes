@@ -59,6 +59,20 @@ export function atomicSql() {
     SELECT pg_advisory_xact_lock(280000,3747);
     ${guard}\n${bodies}\n${receipts}\nCOMMIT;`;
 }
+export function preflightSql() {
+  const pkg=loadPackage();
+  return `BEGIN READ ONLY; SET LOCAL statement_timeout='10s';
+    DO $asset_preflight$ BEGIN ${dependencyGuard()} END $asset_preflight$;
+    SELECT json_build_object('database',current_database(),'actor',current_user,
+    'pending',(SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version IN (${pkg.map(item=>`'${item.version}'`).join(',')})),
+    'names',(SELECT count(*) FROM supabase_migrations.schema_migrations WHERE name IN (${pkg.map(item=>`'${item.name}'`).join(',')})),
+    'apis',(SELECT count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND p.proname='declare_club_physical_table_v1'))::text; COMMIT;`;
+}
+export function classifyPreflight(row) {
+  if (row?.database!=='postgres'||row.actor!=='postgres'||row.pending!==0||row.names!==0||row.apis!==0)
+    throw Error('Asset live precondition drift; stop without apply');
+}
 export function postcheckSql() {
   const receipts = loadPackage().map(item=>`(SELECT count(*)=1 AND COALESCE(bool_and(name='${item.name}'
     AND cardinality(statements)=1 AND encode(extensions.digest(convert_to(
