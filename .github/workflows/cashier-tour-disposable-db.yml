@@ -102,26 +102,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
-            -v hold_seconds=2 -f supabase/pending-tests/cashier_tour_concurrency_cash.sql >/tmp/cash-a.log 2>&1 &
+          # Replay outputs alone also pass when both writers run sequentially.
+          # Observe the first transaction holding its lock, then prove that the
+          # second session is blocked by that exact first session before COMMIT.
+          wait_for_barrier() {
+            local label="$1" query="$2" first_pid="$3" observed deadline=$((SECONDS + 8))
+            while (( SECONDS < deadline )); do
+              kill -0 "$first_pid" 2>/dev/null || break
+              observed="$(PGOPTIONS='-c statement_timeout=2000' psql -X -Atq -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -c "$query")"
+              if [[ "$observed" == t ]]; then return; fi
+              sleep 0.1
+            done
+            echo "Cashier concurrency barrier not observed: $label" >&2
+            exit 1
+          }
+          timeout 30s env PGAPPNAME=cashier-cash-a PGOPTIONS='-c statement_timeout=20000 -c lock_timeout=15000' \
+            psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -v hold_seconds=10 -f supabase/pending-tests/cashier_tour_concurrency_cash.sql >/tmp/cash-a.log 2>&1 &
           first=$!
-          sleep 0.25
-          psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
+          wait_for_barrier cash-first "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name='cashier-cash-a' AND state='active' AND wait_event='PgSleep' AND xact_start IS NOT NULL)" "$first"
+          timeout 30s env PGAPPNAME=cashier-cash-b PGOPTIONS='-c statement_timeout=20000 -c lock_timeout=15000' \
+            psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -v hold_seconds=0 -f supabase/pending-tests/cashier_tour_concurrency_cash.sql >/tmp/cash-b.log 2>&1 &
           second=$!
+          wait_for_barrier cash-overlap "SELECT EXISTS (SELECT 1 FROM pg_stat_activity b JOIN pg_stat_activity a ON a.pid=ANY(pg_blocking_pids(b.pid)) WHERE a.application_name='cashier-cash-a' AND b.application_name='cashier-cash-b' AND a.xact_start IS NOT NULL AND b.xact_start IS NOT NULL)" "$first"
+          echo CASHIER_CASH_REAL_OVERLAP_OBSERVED
           wait "$first" || { cat /tmp/cash-a.log; exit 1; }
           wait "$second" || { cat /tmp/cash-b.log; exit 1; }
           cat /tmp/cash-a.log /tmp/cash-b.log
           grep -xq 'f' /tmp/cash-a.log
           grep -xq 't' /tmp/cash-b.log
 
-          psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
-            -v hold_seconds=2 -f supabase/pending-tests/cashier_tour_concurrency_bank.sql >/tmp/bank-a.log 2>&1 &
+          timeout 30s env PGAPPNAME=cashier-bank-a PGOPTIONS='-c statement_timeout=20000 -c lock_timeout=15000' \
+            psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -v hold_seconds=10 -f supabase/pending-tests/cashier_tour_concurrency_bank.sql >/tmp/bank-a.log 2>&1 &
           first=$!
-          sleep 0.25
-          psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
+          wait_for_barrier bank-first "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name='cashier-bank-a' AND state='active' AND wait_event='PgSleep' AND xact_start IS NOT NULL)" "$first"
+          timeout 30s env PGAPPNAME=cashier-bank-b PGOPTIONS='-c statement_timeout=20000 -c lock_timeout=15000' \
+            psql -X -At -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -v hold_seconds=0 -f supabase/pending-tests/cashier_tour_concurrency_bank.sql >/tmp/bank-b.log 2>&1 &
           second=$!
+          wait_for_barrier bank-overlap "SELECT EXISTS (SELECT 1 FROM pg_stat_activity b JOIN pg_stat_activity a ON a.pid=ANY(pg_blocking_pids(b.pid)) WHERE a.application_name='cashier-bank-a' AND b.application_name='cashier-bank-b' AND a.xact_start IS NOT NULL AND b.xact_start IS NOT NULL)" "$first"
+          echo CASHIER_BANK_REAL_OVERLAP_OBSERVED
           wait "$first" || { cat /tmp/bank-a.log; exit 1; }
           wait "$second" || { cat /tmp/bank-b.log; exit 1; }
           cat /tmp/bank-a.log /tmp/bank-b.log
