@@ -19,6 +19,8 @@ on:
       - ".github/workflows/dealer-payroll-statement-delivery-repair-hsop.yml"
       - ".github/workflows/dealer-payroll-statement-delivery-hsop-uat.yml"
       - ".github/workflows/deployment-control-plane-validation.yml"
+      - ".github/workflows/physical-asset-63-65-protected-apply.yml"
+      - "VinPoker/scripts/ops/physical-asset-63-65-*"
       - "VinPoker/scripts/floor/apply-floor-clock-control.mjs"
       - "VinPoker/scripts/floor/apply-floor-clock-control.test.mjs"
       - "VinPoker/scripts/floor/apply-floor-operator-scope-acl.mjs"
@@ -104,12 +106,16 @@ jobs:
             .github/workflows/dealer-payroll-statement-hsop-uat.yml \
             .github/workflows/dealer-payroll-statement-delivery-hsop-uat.yml \
             .github/workflows/dealer-payroll-statement-delivery-repair-hsop.yml \
-            .github/workflows/deployment-control-plane-validation.yml
+            .github/workflows/deployment-control-plane-validation.yml \
+            .github/workflows/physical-asset-63-65-protected-apply.yml
 
       - name: Setup Node.js 20 for Floor runner tests
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "20"
+
+      - name: Test exact asset63+65 release transport
+        run: node --test VinPoker/scripts/ops/physical-asset-63-65-release-plan.test.mjs VinPoker/scripts/ops/physical-asset-63-65-protected-apply.test.mjs
 
       - name: Test exact production apply runners
         run: node --test VinPoker/scripts/floor/apply-floor-clock-control.test.mjs VinPoker/scripts/floor/apply-floor-operator-scope-acl.test.mjs VinPoker/scripts/dealer-swing/apply-shortage-alert-lifecycle.test.mjs VinPoker/scripts/dealer-swing/apply-phone-completion-migrations.test.mjs VinPoker/scripts/dealer-swing/set-phone-completion-hsop-uat.test.mjs VinPoker/scripts/payroll/apply-dealer-pt-global-accrual.test.mjs VinPoker/scripts/payroll/apply-dealer-pt-wage-readiness-acl.test.mjs VinPoker/scripts/payroll/apply-dealer-payroll-statement-contract.test.mjs VinPoker/scripts/payroll/repair-dealer-payroll-statement-delivery.test.mjs VinPoker/scripts/payroll/set-dealer-payroll-statement-delivery-hsop-uat.test.mjs VinPoker/scripts/deploy/validate-live-public-schema-artifact.test.mjs VinPoker/scripts/deploy/workflow-policy.test.mjs VinPoker/scripts/deploy/test-dealer-pt-wage-disposable.test.mjs VinPoker/scripts/deploy/verify-dealer-pt-wage-migration-inventory.test.mjs VinPoker/scripts/ops/apply-sepay-scope-q0.test.mjs

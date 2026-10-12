@@ -3206,6 +3206,21 @@
     "player": "玩家",
     "playerCards": "{{name}} 的手牌"
   },
+  "physicalTableDeclaration": {
+    "action": "登记实体桌", "title": "登记新桌", "number": "桌号（1–100）",
+    "description": "仅新增尚未开放的桌子，不重命名旧桌、不分配荷官。之后在 Floor 开放比赛桌。",
+    "submit": "登记", "retry": "检查原请求", "busy": "确认中…", "close": "关闭",
+    "pending": "保留 {{number}} 号桌的请求。结果未确认时，不更改桌号或创建新密钥。",
+    "unknown": "尚未确认服务器是否已保存。保留并检查原请求，不发送新操作。",
+    "success": "已确认 {{number}} 号桌的登记。此操作不自动开启桌次，请在 Floor 查看当前状态。",
+    "journalError": "无法读取或保存请求日志。未发送其他操作，请先恢复日志。",
+    "readJournal": "重新读取日志", "refreshFailed": "已登记，但桌子列表刷新失败。请重新加载页面。",
+    "errors": { "actorChanged": "账户已更改。保留原请求，不以新账户写入。", "denied": "登记需要 Dealer Control 或俱乐部管理权限。原请求仍保留。",
+      "invalidRequest": "请求无效，请检查日志。", "invalidNumber": "请选择 1 至 100 的整数。",
+      "clubMissing": "找不到所选俱乐部。", "taken": "桌号或名称已存在。不更改或接管旧桌，请选择其他桌号。",
+      "conflict": "此密钥属于另一请求。保留日志以便核对，不替换密钥。",
+      "unavailable": "登记后端尚未就绪。请求已保留，不使用旧开放流程。" }
+  },
   "dealerPlannerScope": {
     "club": "排班俱乐部",
     "choose": "选择俱乐部为荷官排班",

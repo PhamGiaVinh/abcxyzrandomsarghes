@@ -52,6 +52,7 @@ import CorrectWrongTableDealerModal from "./CorrectWrongTableDealerModal";
 import ReconcileRoomWizard from "./ReconcileRoomWizard";
 import DealerSwingSummaryStrip from "./dealer-swing/DealerSwingSummaryStrip";
 import { DealerSwingStopControl } from "./dealer-swing/DealerSwingStopControl";
+import { PhysicalTableDeclaration } from "./dealer-swing/PhysicalTableDeclaration";
 import { TierBadge, TableTypeBadge, StatusPill } from "./dealer-swing/SwingBadges";
 import DealerSwingInfraHealth from "./dealer-swing/DealerSwingInfraHealth";
 import {
@@ -2067,6 +2068,12 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         <Button size="sm" variant="outline" onClick={() => setSwingConfigOpen(true)}>
           <Settings className="w-3.5 h-3.5 mr-1" /> Cấu hình Swing
         </Button>
+        {FEATURES.floorTableControlV3 && activeClubId && user?.id && <PhysicalTableDeclaration
+          actorId={user.id} clubId={activeClubId}
+          clubName={clubs.find(club => club.id === activeClubId)?.name ?? activeClubId}
+          declareAsset={floorV3.declarePhysicalTable}
+          onDeclared={() => { void refetchTables(); }}
+        />}
       </div>
 
       {/* Tour Filter Bar */}

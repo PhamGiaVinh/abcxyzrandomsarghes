@@ -15,6 +15,7 @@ const validationWorkflow = readFileSync(
   "utf8",
 );
 const schemaCaptureWorkflow = readFileSync(resolve(root, ".github/workflows/capture-live-public-schema.yml"), "utf8");
+const physicalAssetApplyWorkflow = readFileSync(resolve(root, ".github/workflows/physical-asset-63-65-protected-apply.yml"), "utf8");
 
 test("operations baseline recovery is owner-protected, exact, private and isolated from prior baseline", () => {
   const recovery = schemaCaptureWorkflow.split("\n  recover-operations-baseline:")[1];
@@ -105,6 +106,39 @@ const payrollStatementHsopGateWorkflow = readFileSync(
   "utf8",
 );
 
+test("asset63+65 apply remains manual, exact owner/source/checks and human protected", () => {
+  assert.match(physicalAssetApplyWorkflow, /workflow_dispatch:/);
+  assert.doesNotMatch(physicalAssetApplyWorkflow, /pull_request:|\n\s+push:/);
+  assert.match(physicalAssetApplyWorkflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(physicalAssetApplyWorkflow, /environment: dealer-swing-production-critical/);
+  assert.match(physicalAssetApplyWorkflow, /required_reviewers/);
+  assert.match(physicalAssetApplyWorkflow, /INITIAL_ACTOR.*GITHUB_REPOSITORY_OWNER/);
+  assert.match(physicalAssetApplyWorkflow, /TRIGGERING_ACTOR.*GITHUB_REPOSITORY_OWNER/);
+  assert.match(physicalAssetApplyWorkflow, /\.head\.sha.*RELEASE_SHA/);
+  assert.match(physicalAssetApplyWorkflow, /check-runs\?per_page=100/);
+  assert.match(physicalAssetApplyWorkflow, /\.app\.slug=="github-actions"/);
+  assert.match(physicalAssetApplyWorkflow, /--paginate --slurp/);
+  assert.match(physicalAssetApplyWorkflow, /Pinned actionlint on exact source revision/);
+  assert.match(physicalAssetApplyWorkflow, /concurrency: \{group: vinpoker-production-database-release, cancel-in-progress: false\}/);
+  assert.doesNotMatch(physicalAssetApplyWorkflow, /continue-on-error: true|supabase\s+(?:db\s+(?:push|reset)|migration\s+repair|functions\s+deploy)|vercel\s+(?:deploy|--prod)/i);
+});
+test("asset63+65 downloads only qualified backup metadata and checks other releases", () => {
+  assert.match(physicalAssetApplyWorkflow, /floor-v3-recovery-backup\.yml/);
+  assert.match(physicalAssetApplyWorkflow, /\.conclusion.*success/);
+  assert.match(physicalAssetApplyWorkflow, /\.head_sha.*RECOVERY_BASE_SHA/);
+  assert.match(physicalAssetApplyWorkflow, /\.expired==false/);
+  assert.match(physicalAssetApplyWorkflow, /unzip -Z1.*recovery-verification\.json/);
+  assert.match(physicalAssetApplyWorkflow, /for status in in_progress waiting queued/);
+  assert.match(physicalAssetApplyWorkflow, /test -z "\$active"/);
+  assert.match(physicalAssetApplyWorkflow, /physical-asset-63-65-protected-apply\.mjs plan/);
+  assert.match(physicalAssetApplyWorkflow, /physical-asset-63-65-protected-apply\.mjs apply/);
+  assert.doesNotMatch(physicalAssetApplyWorkflow, /PGPASSWORD:.*vars\./);
+});
+test("asset workflow and runner checks are included in pinned control-plane CI", () => {
+  assert.match(validationWorkflow, /\.github\/workflows\/physical-asset-63-65-protected-apply\.yml/);
+  assert.match(validationWorkflow, /physical-asset-63-65-protected-apply\.test\.mjs/);
+  assert.match(validationWorkflow, /physical-asset-63-65-release-plan\.test\.mjs/);
+});
 test("frontend cannot run after a required critical deployment failure", () => {
   assert.match(workflow, /needs\.plan\.outputs\.critical_functions == '\[\]' \|\| needs\.deploy-critical-edge\.result == 'success'/);
   assert.match(workflow, /needs\.target-preflight\.result == 'success'/);

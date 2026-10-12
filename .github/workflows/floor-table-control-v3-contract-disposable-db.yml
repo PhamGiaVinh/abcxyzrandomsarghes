@@ -25,6 +25,7 @@ on:
       - "VinPoker/supabase/migrations/20270128000050_floor_mode_retry_schedule_v1.sql"
       - "VinPoker/supabase/migrations/20270128000052_floor_restore_receipt_reconciliation_v1.sql"
       - "VinPoker/supabase/migrations/20270128000054_restore_pending_cancellation_v1.sql"
+      - "VinPoker/supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql"
       - "VinPoker/scripts/ops/floor-49-50-*.mjs"
       - ".github/workflows/floor-49-50-protected-apply.yml"
       - "VinPoker/scripts/production/repairs/repair_tracker_test_roster_entries_ban5.sql"
@@ -38,6 +39,9 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/PlayersGroupedPanel.tsx"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanel.tsx"
       - "VinPoker/src/components/cashier/tournament-live/OpenTableDialog.tsx"
+      - "VinPoker/src/components/cashier/DealerSwingTab.tsx"
+      - "VinPoker/src/components/cashier/DealerSwingTab.readState.test.tsx"
+      - "VinPoker/src/components/cashier/dealer-swing/PhysicalTableDeclaration*"
       - "VinPoker/src/components/cashier/tournament-live/FloorRedrawDialogV1.tsx"
       - "VinPoker/src/components/cashier/tournament-live/FloorRedrawDialogV1.test.tsx"
       - "VinPoker/src/components/tv/TvRedrawScreen.tsx"
@@ -107,6 +111,8 @@ jobs:
         run: >-
           ./node_modules/.bin/vitest run
           src/lib/floorTableControlV3.test.ts
+          src/components/cashier/dealer-swing/PhysicalTableDeclaration.test.tsx
+          src/components/cashier/DealerSwingTab.readState.test.tsx
           tests/floorFreeSitV1/rosterActions.interaction.test.tsx
           src/components/cashier/tournament-live/RestoreBustDialog.test.tsx
           src/hooks/useDealerManagement.test.tsx
@@ -148,6 +154,19 @@ jobs:
           bash tests/floorTableControlV3/runModeRetryRace.sh
           bash tests/floorTableControlV3/runModeRequestLockRace.sh
           bash tests/floorTableControlV3/runModeLockedFairness.sh
+      - name: Verify physical asset declaration and true overlap on a fresh schema
+        working-directory: VinPoker
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGDATABASE: vinpoker_ops_asset_provision_ci
+        run: |
+          createdb "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 \
+            -f tests/floorTableControlV3/disposableDb.serverContract.sql \
+            -f tests/floorTableControlV3/physicalAssetProvision.disposable.sql
+          node tests/floorTableControlV3/physicalAssetProvision.concurrent.mjs
       - name: Verify atomic49 receipt rollback on a fresh PostgreSQL schema
         working-directory: VinPoker
         env:
