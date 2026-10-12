@@ -14,6 +14,32 @@ const FRONTEND_CONTRACT_FILES = [
   "VinPoker/src/components/cashier/DealerSwingTab.tsx",
   "VinPoker/src/lib/dealerMassOpen.ts",
 ];
+const PHYSICAL_ASSET_RPC_CONTRACT = {
+  type: "function", name: "public.declare_club_physical_table_v1",
+  arguments: ["p_club_id","p_table_number","p_request_id","p_expected_actor_id"],
+  argumentTypes: ["uuid","integer","uuid","uuid"],allowOtherOverloads:false,
+  acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source",
+};
+function physicalAssetFrontendEnabled(targetRoot) {
+  const tab=resolve(targetRoot,FRONTEND_CONTRACT_FILES[0]);
+  if(!existsSync(tab)||!readFileSync(tab,"utf8").includes("PhysicalTableDeclaration")) return false;
+  const component=resolve(targetRoot,"VinPoker/src/components/cashier/dealer-swing/PhysicalTableDeclaration.tsx");
+  const client=resolve(targetRoot,"VinPoker/src/lib/floorTableControlV3.ts");
+  if(!existsSync(component)||!existsSync(client)||!readFileSync(client,"utf8").includes('rpc("declare_club_physical_table_v1"'))
+    throw Error("UNKNOWN_TARGET_PHYSICAL_ASSET_CONTRACT");
+  return true;
+}
+export function assertPhysicalAssetFrontendBackend({targetRoot,catalog}) {
+  if(!physicalAssetFrontendEnabled(targetRoot)) return;
+  if(!Array.isArray(catalog?.functions)) throw Error("PHYSICAL_ASSET_FRONTEND_REQUIRES_QUALIFIED_CATALOG");
+  const matches=catalog.functions.filter(fn=>fn.schema==="public"&&fn.name==="declare_club_physical_table_v1");
+  const fn=matches[0];
+  if(matches.length!==1||fn?.owner!=="postgres"||fn.securityDefiner!==true
+    ||JSON.stringify(fn.configuration)!==JSON.stringify(['search_path=""'])
+    ||fn.definitionMd5!=="c4c0bab3f601386c8b4f44d849c255df"
+    ||findMissingContracts(catalog,[PHYSICAL_ASSET_RPC_CONTRACT]).length>0)
+    throw Error("PHYSICAL_ASSET_FRONTEND_BACKEND_NOT_QUALIFIED");
+}
 
 function parseArgs(argv) {
   const args = new Map();
@@ -545,7 +571,8 @@ export function sourceContractsForFunction({ targetRoot, config }) {
 
 export function sourceContractsForFrontend({ targetRoot }) {
   const files = FRONTEND_CONTRACT_FILES.filter((file) => existsSync(resolve(targetRoot, file)));
-  return staticDatabaseContracts(files, targetRoot, "direct_frontend_source");
+  return mergeContracts(staticDatabaseContracts(files, targetRoot, "direct_frontend_source"),
+    physicalAssetFrontendEnabled(targetRoot)?[PHYSICAL_ASSET_RPC_CONTRACT]:[]);
 }
 
 export function contractsForTargets({ manifest, rawTargets, targetRoot }) {
@@ -589,6 +616,8 @@ function run() {
     process.exitCode = 1;
     return;
   }
+  if(rawTargets==="frontend") assertPhysicalAssetFrontendBackend({targetRoot,
+    catalog:catalogPath?JSON.parse(readFileSync(catalogPath,"utf8")):undefined});
   console.log(
     `Live schema contract probe passed for ${selection.profile} from ${inventory.source} (${contracts.length} checks, ${selection.sourceFingerprint}).`,
   );

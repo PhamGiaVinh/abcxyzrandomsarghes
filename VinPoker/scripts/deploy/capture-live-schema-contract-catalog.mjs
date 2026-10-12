@@ -95,6 +95,10 @@ WITH relation_catalog AS (
     'schema', namespace.nspname,
     'name', routine.proname,
     'owner', pg_get_userbyid(routine.proowner),
+    'securityDefiner', routine.prosecdef,
+    'configuration', COALESCE(to_jsonb(routine.proconfig), '[]'::jsonb),
+    'definitionMd5', CASE WHEN routine.prokind IN ('f','p') THEN
+      md5(replace(replace(pg_get_functiondef(routine.oid),chr(13)||chr(10),chr(10)),chr(13),chr(10))) ELSE NULL END,
     'arguments', COALESCE((
       SELECT jsonb_agg(jsonb_build_object(
         'ordinal', argument.ordinal,

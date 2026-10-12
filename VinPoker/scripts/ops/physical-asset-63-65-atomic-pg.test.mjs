@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { dirname,resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { atomicSql,preflightSql,postcheckSql,executePackage } from './physical-asset-63-65-release-plan.mjs';
+import { CATALOG_SQL } from '../deploy/capture-live-schema-contract-catalog.mjs';
+import { assertPhysicalAssetFrontendBackend } from '../deploy/probe-live-schema-contracts.mjs';
 assert.equal(process.env.PGHOST,'127.0.0.1');
 assert.match(process.env.PGDATABASE??'',/^vinpoker_ops_asset63_atomic_/);
 function result(input) {
@@ -34,6 +38,9 @@ let attempts=0;const reports=[];
 assert.throws(()=>executePackage({execute(input){attempts++;sql(input);throw Error('response discarded after commit');},json},x=>reports.push(x)),/requires review/);
 assert.equal(attempts,1);assert.match(reports[0],/committed-exact; no retry/);
 assert.deepEqual(json(postcheckSql()),{receipts:true,object:true});
+const targetRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
+assertPhysicalAssetFrontendBackend({targetRoot,catalog:JSON.parse(sql(CATALOG_SQL))});
+console.log('ASSET63_65_REAL_CATALOG_FRONTEND_GATE_PASS');
 assert.equal(sql('SELECT count(*) FROM supabase_migrations.schema_migrations;'),'2');
 console.log('ASSET63_65_COMMIT_RESPONSE_LOSS_EXACT_RECOVERY_PASS');
 const repeated=result(combined);
@@ -41,4 +48,5 @@ assert.notEqual(repeated.status,0);assert.match(repeated.stderr,/asset_package_e
 assert.deepEqual(json(postcheckSql()),{receipts:true,object:true});
 sql("ALTER FUNCTION public.declare_club_physical_table_v1(uuid,integer,uuid,uuid) SET search_path=public;");
 assert.deepEqual(json(postcheckSql()),{receipts:true,object:false});
+assert.throws(()=>assertPhysicalAssetFrontendBackend({targetRoot,catalog:JSON.parse(sql(CATALOG_SQL))}),/BACKEND_NOT_QUALIFIED/);
 console.log('ASSET63_65_REPEAT_AND_OBJECT_DRIFT_FAIL_CLOSED_PASS');
