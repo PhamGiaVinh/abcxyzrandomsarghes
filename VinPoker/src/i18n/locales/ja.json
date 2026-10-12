@@ -1830,6 +1830,12 @@
     }
   },
   "tournamentLive": {
+    "statusLabels": {
+      "upcoming": "開始前", "registering": "登録受付中", "drawing": "席抽選中",
+      "active": "有効", "playing": "進行中", "live": "ライブ", "break": "休憩",
+      "paused": "一時停止", "final_table": "ファイナルテーブル", "completed": "終了",
+      "cancelled": "中止", "unknown": "不明"
+    },
     "selectTournament": "トーナメントを選択",
     "tabs": {
       "input": "ハンド入力",

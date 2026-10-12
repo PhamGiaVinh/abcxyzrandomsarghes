@@ -2041,6 +2041,12 @@
     }
   },
   "tournamentLive": {
+    "statusLabels": {
+      "upcoming": "Upcoming", "registering": "Registration open", "drawing": "Seat draw",
+      "active": "Active", "playing": "In play", "live": "LIVE", "break": "Break",
+      "paused": "Paused", "final_table": "Final table", "completed": "Completed",
+      "cancelled": "Cancelled", "unknown": "Unknown"
+    },
     "selectTournament": "Select tournament",
     "tvDisplays": {
       "tab": "TV Displays",
