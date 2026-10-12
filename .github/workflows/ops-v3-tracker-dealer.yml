@@ -20,6 +20,7 @@ on:
       - "VinPoker/tests/viewerHub/tournamentLiveViewBlindContext.test.tsx"
       - "VinPoker/tests/viewerHub/tournamentLiveViewInitialization.test.tsx"
       - "VinPoker/src/pages/TrackerDashboard.tsx"
+      - "VinPoker/src/pages/DealerSwingDashboard*"
       - "VinPoker/src/pages/TrackerDashboard.test.tsx"
       - "VinPoker/src/pages/TrackerHandHistory.tsx"
       - "VinPoker/src/pages/TrackerHandHistory.readiness.test.tsx"
@@ -97,6 +98,9 @@ jobs:
           src/components/NotificationBell.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
           src/components/cashier/DealerSwingTab.readState.test.tsx
+          src/pages/DealerSwingDashboard.scope.test.tsx
+          src/components/cashier/shift-planner-v2/__tests__/ShiftPlannerV2Tab.smoke.test.tsx
+          src/components/cashier/shift-planner/__tests__/ShiftPlannerTab.smoke.test.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
           src/pages/ops/OpsToday.readState.test.tsx
           src/pages/ops/OpsDealerSwing.readState.test.tsx
@@ -143,6 +147,8 @@ jobs:
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
           src/components/cashier/DealerSwingTab.readState.test.tsx
+          src/pages/DealerSwingDashboard.tsx
+          src/pages/DealerSwingDashboard.scope.test.tsx
           src/pages/ops/OpsToday.readState.test.tsx
           src/pages/ops/OpsDealerSwing.readState.test.tsx
 

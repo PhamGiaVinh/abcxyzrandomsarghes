@@ -3559,6 +3559,11 @@
     "player": "Người chơi",
     "playerCards": "Bài của {{name}}"
   },
+  "dealerPlannerScope": {
+    "club": "CLB xếp lịch",
+    "choose": "Chọn CLB để xếp lịch dealer",
+    "hint": "Lịch và bản nháp chỉ thuộc CLB đã chọn. Đổi CLB sẽ bỏ bản nháp chưa lưu."
+  },
   "tableHistory": {
     "blindUnavailable": "Blind —", "ante": "Ante", "received": "Nhận", "main": "pot chính", "side": "pot phụ",
     "publicCards": "Bài đã công khai của {{name}}", "net": "Lãi ròng", "pending": "Kết quả đang được kiểm tra", "replay": "Xem lại hand"

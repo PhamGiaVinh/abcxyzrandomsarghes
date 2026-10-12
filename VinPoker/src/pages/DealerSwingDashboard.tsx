@@ -12,6 +12,34 @@ import DealerPayrollTabV2 from "@/components/cashier/DealerPayrollTabV2";
 import ShiftPlannerTab from "@/components/cashier/ShiftPlannerTab";
 import ShiftPlannerV2Tab from "@/components/cashier/shift-planner-v2/ShiftPlannerV2Tab";
 import { FEATURES } from "@/lib/featureFlags";
+import { useTranslation } from "react-i18next";
+
+// The planner owns a draft and writes to one club. Never combine multiple
+// authorized clubs into the first club's schedule or retain a draft across scopes.
+function DealerPlannerScope({ clubs, v2, autofillEnabled }: {
+  clubs: { id: string; name: string }[];
+  v2: boolean;
+  autofillEnabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [selection, setSelection] = useState("");
+  const club = clubs.find(c => c.id === selection) ?? (clubs.length === 1 ? clubs[0] : null);
+  return <div className="space-y-4">
+    <div className="space-y-2">
+      <label htmlFor="dealer-planner-club" className="text-sm font-medium">{t("dealerPlannerScope.club")}</label>
+      <select id="dealer-planner-club" value={club?.id ?? ""} onChange={e => setSelection(e.target.value)}
+        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <option value="" disabled>{t("dealerPlannerScope.choose")}</option>
+        {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <p className="text-sm text-muted-foreground">{t("dealerPlannerScope.hint")}</p>
+    </div>
+    {club ? (v2
+      ? <ShiftPlannerV2Tab key={club.id} clubIds={[club.id]} clubs={[club]} mode="live" autofillEnabled={autofillEnabled} />
+      : <ShiftPlannerTab key={club.id} clubIds={[club.id]} clubs={[club]} mode="live" />)
+      : <p role="status" className="text-sm text-muted-foreground">{t("dealerPlannerScope.choose")}</p>}
+  </div>;
+}
 
 /**
  * Dealer Swing — Dealer Swing + Bảng lương (payroll) grouped in one destination.
@@ -50,6 +78,7 @@ export default function DealerSwingDashboard() {
   }
 
   const scopedIds = dealerClubIds.length > 0 ? dealerClubIds : clubIds;
+  const plannerClubs = clubs.filter(club => scopedIds.includes(club.id));
 
   // Phase 2B preview gate: while the global flag is OFF, owner / club-admin /
   // super-admin still see the planner tab on this (already control-staff-only) page
@@ -98,9 +127,8 @@ export default function DealerSwingDashboard() {
         {showShiftPlanner && (
           <TabsContent value="shift_planner" className="mt-4">
             {/* V2 = guided 4-step flow (owner-approved redesign); non-preview roles keep V1. */}
-            {showPlannerV2
-              ? <ShiftPlannerV2Tab clubIds={scopedIds} clubs={clubs} mode="live" autofillEnabled={showAutofill} />
-              : <ShiftPlannerTab clubIds={scopedIds} clubs={clubs} mode="live" />}
+            <DealerPlannerScope key={`${user.id}:${[...scopedIds].sort().join(",")}`}
+              clubs={plannerClubs} v2={showPlannerV2} autofillEnabled={showAutofill} />
           </TabsContent>
         )}
       </Tabs>
