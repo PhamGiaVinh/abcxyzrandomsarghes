@@ -37,6 +37,9 @@ on:
       - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
       - 'VinPoker/supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql'
       - 'VinPoker/tests/dealerSwing/checkin*'
+      - 'VinPoker/supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql'
+      - 'VinPoker/tests/dealerSwing/scopedStop.*'
+      - 'VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*'
       - 'VinPoker/supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql'
       - 'VinPoker/scripts/ops/dealer-checkin-51-*'
       - 'VinPoker/scripts/ops/restore-chip-52-53-*'
@@ -244,6 +247,14 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v receipt_reconciliation_case=true -f tests/dealerSwing/checkin.pg17.sql
           node tests/dealerSwing/checkin.concurrent.mjs
+      - name: Scoped Swing OFF on exact current schema without helper or RLS doubles
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_stop64_ci
+        run: |
+          createdb --template=vinpoker_ops_checkin "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/scopedStop.currentSchema.sql
       - name: Chip integrity on exact current schema
         working-directory: VinPoker
         run: |
