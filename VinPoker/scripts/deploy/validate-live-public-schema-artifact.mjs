@@ -203,6 +203,20 @@ export function validateArtifactDirectory(directory) {
   return { schemaSha256: actualChecksum, schemaOnly: true, secretsDetected: false };
 }
 
+const OPERATIONS_SCHEMA_SHA256="d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a";
+export function validateOperationsRecoveryProvenance(provenance, expectedRun) {
+  if (!provenance || typeof provenance!=="object" || Array.isArray(provenance)
+    || Object.keys(provenance).sort().join()!=="originalCaptureRun,originalCaptureSha,recoveryRun,schemaOnly,schemaSha256"
+    || !/^\d+$/.test(expectedRun??"") || typeof expectedRun!=="string"
+    || provenance.originalCaptureRun!==37820347781
+    || provenance.originalCaptureSha!=="0463831bb9f8f142d585fd51c1b0633963b2161f"
+    || provenance.schemaSha256!==OPERATIONS_SCHEMA_SHA256
+    || provenance.schemaOnly!==true || provenance.recoveryRun!==expectedRun) {
+    throw new Error("operations_recovery_provenance_rejected");
+  }
+  return true;
+}
+
 function readArgument(argv, name) {
   const index = argv.indexOf(name);
   return index === -1 ? null : argv[index + 1] ?? null;
@@ -212,6 +226,15 @@ function run() {
   const artifactDirectory = readArgument(process.argv.slice(2), "--artifact-directory");
   if (!artifactDirectory) throw new Error("--artifact-directory is required");
   const result = validateArtifactDirectory(artifactDirectory);
+  const provenancePath=readArgument(process.argv.slice(2),"--operations-recovery-provenance");
+  const recoveryRun=readArgument(process.argv.slice(2),"--recovery-run-id");
+  if (process.argv.includes("--operations-recovery-provenance") || process.argv.includes("--recovery-run-id")) {
+    let provenance;
+    try { provenance=JSON.parse(readFileSync(provenancePath,"utf8")); }
+    catch { throw new Error("operations_recovery_provenance_rejected"); }
+    validateOperationsRecoveryProvenance(provenance,recoveryRun);
+    if (result.schemaSha256!==OPERATIONS_SCHEMA_SHA256) throw new Error("operations_recovery_bytes_rejected");
+  }
   console.log(JSON.stringify({
     artifact_name: "live-public-schema",
     schema_sha256: result.schemaSha256,
