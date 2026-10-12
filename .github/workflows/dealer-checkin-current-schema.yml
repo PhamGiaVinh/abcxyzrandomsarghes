@@ -213,15 +213,29 @@ jobs:
           node node_modules/vitest/vitest.mjs run tests/trackerSettlement/historicalDisplayMigration.contract.test.ts
           node node_modules/vitest/vitest.mjs run tests/handinput/readHandBlindLevel.test.ts tests/trackerSettlement/historicalDisplayVerification.test.ts
           node node_modules/vitest/vitest.mjs run src/lib/tournamentParticipation.test.ts
-      - name: Download exact owner-authorized current schema (not a pre-release replay baseline)
-        env: { GH_TOKEN: '${{ github.token }}' }
+      - name: Download exact recovered Operations snapshot (original bytes and provenance)
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          OPERATIONS_RECOVERY_RUN: '38275767630'
         run: |
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .conclusion)" = success
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .head_sha)" = 0463831bb9f8f142d585fd51c1b0633963b2161f
-          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781/artifacts" --jq '[.artifacts[] | select(.name=="live-public-schema" and .expired==false)] | if length==1 then .[0].id else error("exact schema artifact missing") end')"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .workflow_id)" = 322144993
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .event)" = workflow_dispatch
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .actor.login)" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .head_branch)" = main
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .head_sha)" = 09cff8a829caf3f514a615b231ab96f4ed238757
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN/artifacts" --jq '[.artifacts[] | select(.name=="reviewed-operations-schema" and .expired==false)] | if length==1 then .[0].id else error("exact recovered schema artifact missing") end')"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/schema.zip"
           unzip -q "$RUNNER_TEMP/schema.zip" -d "$SCHEMA_ARTIFACT_DIR"
-          node VinPoker/scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          provenance_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN/artifacts" --jq '[.artifacts[] | select(.name=="reviewed-operations-schema-provenance" and .expired==false)] | if length==1 then .[0].id else error("exact recovery provenance missing") end')"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$provenance_id/zip" > "$RUNNER_TEMP/schema-provenance.zip"
+          unzip -q "$RUNNER_TEMP/schema-provenance.zip" -d "$RUNNER_TEMP/schema-recovery-provenance"
+          node VinPoker/scripts/deploy/validate-live-public-schema-artifact.mjs \
+            --artifact-directory "$SCHEMA_ARTIFACT_DIR" \
+            --operations-recovery-provenance "$RUNNER_TEMP/schema-recovery-provenance/reviewed-operations-schema.provenance.json" \
+            --recovery-run-id "$OPERATIONS_RECOVERY_RUN"
       - name: Start isolated PostgreSQL 17 on actual loopback (no bridge address exception)
         run: |
           docker run --detach --name vinpoker-current-schema-pg17 --network host \

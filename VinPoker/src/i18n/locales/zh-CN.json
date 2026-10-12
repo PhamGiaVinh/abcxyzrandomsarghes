@@ -1830,6 +1830,12 @@
     }
   },
   "tournamentLive": {
+    "statusLabels": {
+      "upcoming": "即将开始", "registering": "报名中", "drawing": "抽签分座",
+      "active": "已启用", "playing": "比赛中", "live": "直播", "break": "休息",
+      "paused": "暂停", "final_table": "决赛桌", "completed": "已结束",
+      "cancelled": "已取消", "unknown": "尚未确认"
+    },
     "selectTournament": "选择比赛",
     "tabs": {
       "input": "牌局录入",
