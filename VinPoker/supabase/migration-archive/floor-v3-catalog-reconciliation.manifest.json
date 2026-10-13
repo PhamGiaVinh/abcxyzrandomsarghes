@@ -7612,6 +7612,8 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
+    {"version":"20270128000071","filename":"20270128000071_tracker_voice_finish_actor_session_fence_v1.sql","sha256":"1a747f345d56b6ff4b5c13186dd5e98f9db384e918659808b638e39be6203993","domain":"tracker-voice-finish-actor-session-campaign"},
+    {"version":"20270128000070","filename":"20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql","sha256":"5a25a790d88f06969a13ad3a801998869b260f8fb69e71cbb08691e922c9aea2","domain":"tracker-voice-card-actor-epoch-campaign"},
     {"version":"20270128000067","filename":"20270128000067_floor_manual_bust_restore_read_v1.sql","sha256":"427ec7f078b6e7c258af3dd165d2ce7400155acae144140a045472bc1c8d6597","domain":"floor-manual-bust-restore-campaign"},
     {"version":"20270128000068","filename":"20270128000068_floor_restore_canonical_tuple_v1.sql","sha256":"f7441afd63f5bbbb6c54d2b006c3e6c1d7f119003699c6594e54eb3749c4ff5c","domain":"floor-restore-canonical-tuple-campaign"},
     {"version":"20270128000069","filename":"20270128000069_chip_issuance_exact_intent_v1.sql","sha256":"c92283d9084afe9dd68c1967e80366f3af9fe55cea1589b04f67239df8374b5f","domain":"chip-issuance-exact-intent-campaign"},
