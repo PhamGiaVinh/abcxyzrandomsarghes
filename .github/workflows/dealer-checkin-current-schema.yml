@@ -9,6 +9,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql'
       - 'VinPoker/scripts/ops/floor-manual-68-*'
+      - 'VinPoker/scripts/ops/chip-issuance-69-*'
+      - '.github/workflows/chip-issuance-69-protected-apply.yml'
       - '.github/workflows/floor-manual-68-protected-apply.yml'
       - 'VinPoker/scripts/ops/floor-manual-67-*'
       - '.github/workflows/floor-manual-67-protected-apply.yml'
@@ -620,6 +622,10 @@ jobs:
           PGDATABASE=vinpoker_ops_floor66_atomic_ci MANUAL67_PG_TEST=1 node --test scripts/ops/floor-manual-67-atomic-pg.test.mjs
           node --test scripts/ops/floor-manual-68-release-plan.test.mjs scripts/ops/floor-manual-68-protected-apply.test.mjs
           PGDATABASE=vinpoker_ops_floor66_atomic_ci MANUAL68_PG_TEST=1 node --test scripts/ops/floor-manual-68-atomic-pg.test.mjs
+          node --test scripts/ops/chip-issuance-69-release-plan.test.mjs scripts/ops/chip-issuance-69-protected-apply.test.mjs
+          createdb -T vinpoker_ops_floor66_atomic_ci vinpoker_ops_chip69_atomic_ci
+          PGDATABASE=vinpoker_ops_chip69_atomic_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql
+          PGDATABASE=vinpoker_ops_chip69_atomic_ci ISSUANCE69_PG_TEST=1 node --test scripts/ops/chip-issuance-69-atomic-pg.test.mjs
           if PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql >"$RUNNER_TEMP/manual67-red.log" 2>&1; then
             echo "manual restore read counterexample unexpectedly passed" >&2
             exit 1
