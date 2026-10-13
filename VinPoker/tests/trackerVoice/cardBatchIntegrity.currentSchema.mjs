@@ -13,6 +13,8 @@ const authorityReverseRoot=process.argv.includes('--authority-reverse-root');
 const authorityAssignment72=process.argv.includes('--authority-assignment72');
 const authorityAssignment72Baseline=process.argv.includes('--authority-assignment72-baseline');
 const authorityVoiceFirst72=process.argv.includes('--authority-voice-first72');
+const authorityCloseFirst72=process.argv.includes('--authority-close-first72');
+assert.ok(!authorityCloseFirst72||(authorityAssignment72&&authorityOverlapFixture&&!authorityAssignment72Baseline&&!authorityVoiceFirst72),'close-first72 only prepares its owned overlap fixture');
 assert.ok(!authorityVoiceFirst72||(authorityAssignment72&&authorityOverlapFixture&&!authorityAssignment72Baseline),'voice-first72 only prepares its owned overlap fixture');
 assert.ok(!authorityAssignment72Baseline||(authorityAssignment72&&authorityOverlapFixture),'baseline72 comparison only prepares the owned old-helper root fixture');
 const authorityFenceEpoch=process.argv.includes('--authority-fence-epoch');
@@ -45,7 +47,7 @@ assert.ok(!authorityBaseline||authority70,'baseline comparison requires authorit
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
-const authorityDatabase=authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
+const authorityDatabase=authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');

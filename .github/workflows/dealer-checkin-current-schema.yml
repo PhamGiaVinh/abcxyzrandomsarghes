@@ -544,6 +544,9 @@ jobs:
           createdb --template="$PGDATABASE" vinpoker_voice_assignment72_voice_first_20261014
           PGDATABASE=vinpoker_voice_assignment72_voice_first_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-voice-first72
           PGDATABASE=vinpoker_voice_assignment72_voice_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalVoiceFirst.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_close_first_20261014
+          PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-close-first72
+          PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalCloseBlocked.sql
           createdb --template="$PGDATABASE" vinpoker_voice_assignment72_compensation_ci
           PGDATABASE=vinpoker_voice_assignment72_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_72_COMPENSATION_SOURCE.sql
       - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
