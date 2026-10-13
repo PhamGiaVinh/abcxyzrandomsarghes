@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -43,6 +43,37 @@ test('private dependencies use digest-matching source bodies and restricted gran
   assert.ok(sql.includes('FROM PUBLIC, anon, authenticated, service_role;'));
   assert.ok(!sql.includes('SELECT false;'));
   assert.ok(!sql.includes('ALTER TABLE'));
+});
+
+function dependencyDriftResult(transform) {
+  const root = mkdtempSync(join(tmpdir(), 'cashier-dependency-drift-'));
+  const scripts = join(root, 'scripts', 'ops');
+  const migrations = join(root, 'supabase', 'pending-migrations');
+  mkdirSync(scripts, { recursive: true });
+  mkdirSync(migrations, { recursive: true });
+  const generator = join(scripts, 'prepare-cashier-runtime-dependencies.mjs');
+  writeFileSync(generator, readFileSync(new URL('./prepare-cashier-runtime-dependencies.mjs', import.meta.url)));
+  for (const name of ['20260924165219_centerpoint_tournament_ops_release_v1.sql', '20260924065041_tv_layout_editor_v1.sql']) {
+    const source = readFileSync(new URL(`../../supabase/pending-migrations/${name}`, import.meta.url), 'utf8');
+    writeFileSync(join(migrations, name), name.includes('centerpoint_tournament') ? transform(source) : source);
+  }
+  const output = join(root, 'dependencies.sql');
+  const result = spawnSync(process.execPath, [generator, output], { encoding: 'utf8' });
+  return { result, output };
+}
+
+test('dependency header-only security drift is rejected without generating SQL', () => {
+  const { result, output } = dependencyDriftResult(source => source.replace('SECURITY DEFINER', 'SECURITY INVOKER'));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /reviewed signature\/security metadata mismatch/);
+  assert.equal(existsSync(output), false);
+});
+
+test('dependency business-body drift is rejected without generating SQL', () => {
+  const { result, output } = dependencyDriftResult(source => source.replace('SELECT r.enabled', 'SELECT true'));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /reviewed live body mismatch/);
+  assert.equal(existsSync(output), false);
 });
 
 test('historical mode remains default and requires original baseline', () => {
