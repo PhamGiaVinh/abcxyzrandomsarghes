@@ -566,6 +566,9 @@ jobs:
           PGDATABASE=vinpoker_voice_swing73_pending_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-voice-first72 --authority-lock-order73 --authority-pending-mode73
           PGDATABASE=vinpoker_voice_swing73_pending_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalVoiceFirst.sql
           PGDATABASE=vinpoker_voice_swing73_pending_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment73.replayIntegrity.sql
+          createdb --template=vinpoker_voice_swing73_base_20261014 vinpoker_voice_swing73_compensation_ci
+          PGDATABASE=vinpoker_voice_swing73_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_73_COMPENSATION_SOURCE.sql
+          PGDATABASE=vinpoker_voice_swing73_compensation_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql
           createdb --template="$PGDATABASE" vinpoker_voice_assignment72_close_first_20261014
           PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-close-first72
           PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalCloseBlocked.sql
