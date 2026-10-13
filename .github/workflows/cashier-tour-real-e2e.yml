@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/cashier-tour-real-e2e.yml"
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
+      - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
@@ -19,6 +20,12 @@ on:
       - "VinPoker/supabase/pending-tests/cashier_tour_real_refund_fixture.sql"
       - "VinPoker/src/pages/ops/TourCashierWorkbench.tsx"
   workflow_dispatch:
+    inputs:
+      schema_mode:
+        description: Historical pre03 migration proof or contemporary runtime proof
+        type: choice
+        options: [pre03, current]
+        default: pre03
 
 permissions:
   actions: read
@@ -46,12 +53,26 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
+          node --test scripts/ops/cashier-schema-mode.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker
         env:
           GH_TOKEN: ${{ github.token }}
+          CASHIER_SCHEMA_MODE: ${{ inputs.schema_mode || 'pre03' }}
         run: |
           set -euo pipefail
+          if [[ "$CASHIER_SCHEMA_MODE" == current ]]; then
+            recovery_id=38275767630
+            recovery_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$recovery_id")"
+            jq -e --arg owner "$GITHUB_REPOSITORY_OWNER" --argjson id "$recovery_id" '
+              .id == $id and .conclusion == "success" and .event == "workflow_dispatch"
+                and (.actor.login | ascii_downcase) == ($owner | ascii_downcase)
+            ' <<<"$recovery_json" >/dev/null
+            gh run download "$recovery_id" -n reviewed-operations-schema -D "${RUNNER_TEMP}/cashier-schema"
+            node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "${RUNNER_TEMP}/cashier-schema"
+            echo "Runtime-only schema: reviewed recovery $recovery_id; not pre03 migration proof"
+            exit 0
+          fi
           # This owner capture predates live Cashier 03 and is schema-only.
           # A fresh capture would already include 03, so it cannot be used as
           # the pre-03 baseline for this isolated migration chain.
@@ -70,4 +91,5 @@ jobs:
         working-directory: VinPoker
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
+          CASHIER_SCHEMA_MODE: ${{ inputs.schema_mode || 'pre03' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
