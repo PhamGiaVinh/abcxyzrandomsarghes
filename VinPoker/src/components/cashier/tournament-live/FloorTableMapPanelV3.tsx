@@ -90,7 +90,7 @@ function v3ErrorMessage(error: string): string {
  * V3-only Floor map.  It never reads a legacy table_id or invokes an Edge
  * writer: all data and mutations pass through the fixed typed V3 adapter.
  */
-type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null };
+type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null; onParticipationChanged?: () => void };
 
 // Changing actor/tournament invalidates every open writer as well as the roster.
 export function FloorTableMapPanelV3(props: FloorPanelProps) {
@@ -101,10 +101,12 @@ function ScopedFloorTableMapPanelV3({
   tournament,
   refreshTrigger,
   actorId,
+  onParticipationChanged,
 }: {
   tournament: Tournament;
   refreshTrigger: number;
   actorId: string | null;
+  onParticipationChanged?: () => void;
 }) {
   const supabase = useSupabaseClient();
   const v3 = useMemo(() => createFloorTableControlV3Client(
@@ -282,6 +284,7 @@ function ScopedFloorTableMapPanelV3({
       }
       setOperationError(null);
       toast.success(typeof successMessage === "function" ? successMessage(result.data) : successMessage);
+      onParticipationChanged?.();
       await load();
       return true;
     } catch {
@@ -424,7 +427,7 @@ function ScopedFloorTableMapPanelV3({
           playerName={moveTarget.playerName} currentTournamentTableId={moveTarget.tableId}
           currentSeatNumber={moveTarget.seatNumber} onMoved={() => void load(true)} />
       )}
-      <OpenTableDialog open={openTable} onOpenChange={setOpenTable} tournamentId={tournament.id} onDone={() => void load()} />
+      <OpenTableDialog open={openTable} onOpenChange={setOpenTable} tournamentId={tournament.id} onDone={() => { onParticipationChanged?.(); void load(); }} />
       {manualPlayerTarget && <AddPlayerDialog open={true} onOpenChange={(open) => { if (!open) setManualPlayerTarget(null); }}
           actorId={actorId} tournamentId={tournament.id} tournamentName={tournament.name} tournamentDate={null}
           tableTtId={manualPlayerTarget.tableId} tableSessionId={manualPlayerTarget.sessionId}
@@ -432,10 +435,10 @@ function ScopedFloorTableMapPanelV3({
           contextReady={!!manualPlayerTable && !loading && !loadError}
           maxSeats={manualPlayerTable?.maxSeats ?? 0} occupiedSeats={manualPlayerTable?.seats.map((s) => s.seatNumber) ?? []}
           lockedSeats={manualPlayerTable?.seatLocks.map((s) => s.seatNumber) ?? []} defaultSeatNumber={manualPlayerTarget.seat}
-          onDone={() => void load(true)} />}
+          onDone={() => { onParticipationChanged?.(); void load(true); }} />}
       <RestoreBustDialog actorId={actorId} tournamentId={tournament.id} target={restoreTarget?.scope === selectedSessionScope ? restoreTarget : null}
         onClose={() => setRestoreTarget(null)}
-        onRestored={() => { setEntrySelection(null); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
+        onRestored={() => { setEntrySelection(null); onParticipationChanged?.(); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
       {FEATURES.floorRedrawSeatLockV1 && (
         <FloorRedrawDialogV1
           open={redrawOpen}
