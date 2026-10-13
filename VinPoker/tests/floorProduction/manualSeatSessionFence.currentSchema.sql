@@ -70,6 +70,24 @@ BEGIN
  IF result->>'error' IS DISTINCT FROM 'EXACT_SESSION_REQUIRED' THEN RAISE EXCEPTION 'legacy_writer_not_retired: %',result; END IF;
  PERFORM set_config('role','none',true);
  SELECT revision,control_epoch INTO rev,epoch FROM public.table_sessions WHERE id=sess;
+ INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,current_stack,status,source)
+ VALUES('f7660000-0000-4000-8000-000000000031','f7660000-0000-4000-8000-000000000003',
+   'f7660000-0000-4000-8000-000000000032',1,20000,'registered','manual');
+ PERFORM set_config('role','authenticated',true);
+ result:=public.floor_assign_entry_to_seat('f7660000-0000-4000-8000-000000000031',tt,1,rev,gen_random_uuid());
+ IF result->>'error' IS DISTINCT FROM 'seat_locked' THEN
+   RAISE EXCEPTION 'direct_core_locked_seat_bypass: %',result; END IF;
+ PERFORM set_config('role','none',true);
+ UPDATE public.tournament_tables SET max_seats=8 WHERE id=tt;
+ PERFORM set_config('role','authenticated',true);
+ result:=public.floor_assign_entry_to_seat('f7660000-0000-4000-8000-000000000031',tt,9,rev,gen_random_uuid());
+ IF result->>'error' IS DISTINCT FROM 'invalid_seat_number' THEN RAISE EXCEPTION 'direct_core_capacity_bypass: %',result; END IF;
+ PERFORM set_config('role','none',true);
+ IF EXISTS(SELECT 1 FROM public.tournament_seats WHERE entry_id='f7660000-0000-4000-8000-000000000031')
+   OR EXISTS(SELECT 1 FROM public.tournament_chip_counts WHERE tournament_id='f7660000-0000-4000-8000-000000000003'
+     AND player_id='f7660000-0000-4000-8000-000000000032') THEN RAISE EXCEPTION 'direct_core_rejection_mutated_state'; END IF;
+ UPDATE public.tournament_tables SET max_seats=9 WHERE id=tt;
+ DELETE FROM public.tournament_entries WHERE id='f7660000-0000-4000-8000-000000000031';
  PERFORM set_config('role','authenticated',true);
  original:=public.floor_add_manual_player_v1('f7660000-0000-4000-8000-000000000003','Walk-in TEST',tt,1,sess,rev,epoch,key,
    'f7660000-0000-4000-8000-000000000001');

@@ -86,13 +86,17 @@ for (const sameKey of [true, false]) {
 assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${tour}';`), '2');
 assert.equal(sql(`SELECT sum(chip_count) FROM public.tournament_chip_counts WHERE tournament_id='${tour}';`), '40000');
 
-// Revocation while the caller is provably waiting on the receipt lock.
+// Revocation while the caller is provably waiting on receipt OR context lock.
+for (const contextWait of [false, true]) {
 const key = randomUUID(), tag = randomUUID().slice(0, 8);
+if (contextWait) sql(`INSERT INTO public.club_cashiers(club_id,user_id) VALUES ('${club}','${cashier}');`);
 const lockName = `manual66_revoke_lock_${tag}`, callName = `manual66_revoke_call_${tag}`;
 const lock = connection(lockName);
 let caller;
 try {
-  lock.child.stdin.write(`SELECT floor_private.floor_table_v3_lock_receipt('${cashier}','floor_add_manual_player_v1','${key}');\n`);
+  lock.child.stdin.write(contextWait
+    ? `SELECT 1 FROM public.tournaments WHERE id='${tour}' FOR UPDATE;\n`
+    : `SELECT floor_private.floor_table_v3_lock_receipt('${cashier}','floor_add_manual_player_v1','${key}');\n`);
   await barrier(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${lockName}' AND state='idle in transaction');`, 'receipt coordinator lock missing');
   caller = connection(callName);
   const revision = Number(sql(`SELECT revision FROM public.table_sessions WHERE id='${session}';`));
@@ -106,6 +110,8 @@ assert.equal((await lock.done).code, 0);
 assert.equal(parse(await caller.done).error, 'actor_not_allowed');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${tour}';`), '2');
 assert.equal(sql(`SELECT count(*) FROM public.table_operation_receipts WHERE actor_id='${cashier}' AND request_id='${key}';`), '0');
+console.log(`MANUAL66_AUTH_REVOKE_${contextWait ? 'CONTEXT' : 'RECEIPT'}_WAIT_PASS`);
+}
 console.log('MANUAL66_TWO_ACTOR_RECEIPT_RECOVERY_REVOKE_RUNTIME_PASS');
 
 // A direct-core caller can know the outer UUID. Holding that different
@@ -128,3 +134,40 @@ try {
 assert.equal((await coreLock.done).code, 0);
 assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${tour}';`), '3');
 console.log('MANUAL66_INTERNAL_CORE_MUTEX_ISOLATION_PASS');
+
+// Public close wins under real locks; old incarnation cannot receive a player,
+// even after the same physical asset is reopened with a new logical table.
+const closePhysical = randomUUID();
+sql(`INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+ VALUES ('${closePhysical}','${club}','Manual close TEST',79,'tournament','inactive','available');`);
+const empty = JSON.parse(sql(`SET ROLE authenticated; SET request.jwt.claim.sub='${owner}';
+ SELECT public.floor_open_tournament_table_v3('${tour}','${closePhysical}','manual','${randomUUID()}');`));
+assert.equal(empty.ok, true);
+const closeTag = randomUUID().slice(0, 8), closeName = `manual66_close_${closeTag}`, seatName = `manual66_after_close_${closeTag}`;
+const closer = connection(closeName);
+let afterClose;
+try {
+  closer.child.stdin.write(`SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub='${owner}';
+    SELECT public.close_tournament_table_v3('${empty.tournament_table_id}',1,'${randomUUID()}');\n`);
+  await barrier(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${closeName}' AND state='idle in transaction');`, 'public close not held before commit');
+  afterClose = connection(seatName);
+  afterClose.child.stdin.end(`SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub='${owner}';
+    SELECT public.floor_add_manual_player_v1('${tour}','After close TEST','${empty.tournament_table_id}',1,
+      '${empty.table_session_id}',1,1,'${randomUUID()}','${owner}'); COMMIT;\n`);
+  await barrier(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity b JOIN pg_stat_activity a ON a.application_name='${closeName}'
+    WHERE b.application_name='${seatName}' AND b.wait_event_type='Lock' AND a.pid=ANY(pg_blocking_pids(b.pid)));`, 'close versus seating overlap missing');
+} finally { closer.child.stdin.end('COMMIT;\n'); }
+assert.equal(parse(await closer.done).ok, true);
+assert.equal(parse(await afterClose.done).error, 'table_session_mismatch');
+const reopened = JSON.parse(sql(`SET ROLE authenticated; SET request.jwt.claim.sub='${owner}';
+ SELECT public.floor_open_tournament_table_v3('${tour}','${closePhysical}','manual','${randomUUID()}');`));
+assert.equal(reopened.ok, true);
+assert.notEqual(reopened.table_session_id, empty.table_session_id);
+assert.notEqual(reopened.tournament_table_id, empty.tournament_table_id);
+const stale = JSON.parse(sql(`SET ROLE authenticated; SET request.jwt.claim.sub='${owner}';
+ SELECT public.floor_add_manual_player_v1('${tour}','Reopened stale TEST','${reopened.tournament_table_id}',1,
+   '${empty.table_session_id}',1,1,'${randomUUID()}','${owner}');`));
+assert.equal(stale.error, 'table_session_mismatch');
+assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE table_session_id IN ('${empty.table_session_id}','${reopened.table_session_id}');`), '0');
+assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${tour}';`), '3');
+console.log('MANUAL66_PUBLIC_CLOSE_REOPEN_TRUE_OVERLAP_PASS');

@@ -30,6 +30,36 @@ BEGIN
  END LOOP;
 END $preflight$;
 
+-- The original core remains callable by older clients as well as the v4/new
+-- wrappers. Enforce lock/capacity/source-reservation there too; a UI flag must
+-- not select a weaker public write path. Preserve its actor/tuple/CAS/receipt.
+DO $core_fence$
+DECLARE f regprocedure:='public.floor_assign_entry_to_seat(uuid,uuid,integer,bigint,uuid)'::regprocedure;
+ body text; needle text; replacement text;
+BEGIN
+ body:=replace(pg_get_functiondef(f),chr(13),'');
+ needle:=$old$  IF p_seat_number < 1 OR p_seat_number > 9 THEN
+    RETURN pg_catalog.jsonb_build_object('ok', false, 'error', 'invalid_seat_number');
+  END IF;$old$;
+ replacement:=$new$  IF v_tournament_table.max_seats NOT IN (8,9)
+     OR p_seat_number < 1 OR p_seat_number > v_tournament_table.max_seats THEN
+    RETURN pg_catalog.jsonb_build_object('ok', false, 'error', 'invalid_seat_number');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.table_session_seat_locks l
+    WHERE l.table_session_id=v_session.id AND l.seat_number=p_seat_number AND l.unlocked_at IS NULL) THEN
+    RETURN pg_catalog.jsonb_build_object('ok',false,'error','seat_locked');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.floor_pending_tracker_moves q
+    WHERE q.tournament_id=v_tournament.id AND q.source_tournament_table_id=v_tournament_table.id
+      AND q.source_table_session_id=v_session.id AND q.status='pending') THEN
+    RETURN pg_catalog.jsonb_build_object('ok',false,'error','source_moves_pending');
+  END IF;$new$;
+ IF length(body)-length(replace(body,needle,''))<>length(needle) THEN
+   RAISE EXCEPTION 'manual_player_core_fence_patch_not_unique';
+ END IF;
+ EXECUTE replace(body,needle,replacement);
+END $core_fence$;
+
 CREATE FUNCTION public.floor_add_manual_player_v1(
  p_tournament_id uuid,p_player_name text,p_tournament_table_id uuid,p_seat_number integer,
  p_table_session_id uuid,p_expected_revision bigint,p_expected_control_epoch bigint,
