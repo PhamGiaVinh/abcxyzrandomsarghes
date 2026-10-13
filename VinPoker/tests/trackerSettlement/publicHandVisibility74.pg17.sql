@@ -19,6 +19,9 @@ BEGIN
  IF n<>2 THEN RAISE EXCEPTION 'published_guest_participants_hidden'; END IF;
  RESET ROLE;
  UPDATE public.tournament_hands SET is_voided=true WHERE id='86000000-0000-4000-8000-000000000001';
+ -- Creator access is an existing write-policy exception, not an implicit role.
+ DELETE FROM public.club_trackers WHERE user_id='81400000-0000-4000-8000-000000000001' AND club_id='81000000-0000-4000-8000-000000000001';
+ IF public.is_club_tracker('81400000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000001') THEN RAISE EXCEPTION 'creator_role_removal_fixture_invalid'; END IF;
  FOR row IN SELECT * FROM (VALUES
   ('anon',NULL::uuid,0),
   ('authenticated','89999999-0000-4000-8000-000000000001'::uuid,0),
@@ -42,6 +45,21 @@ BEGIN
   END IF;
   RESET ROLE;
  END LOOP;
+ -- Add each authority independently to the previously denied foreign-club actor.
+ INSERT INTO public.club_cashiers(club_id,user_id) VALUES ('81000000-0000-4000-8000-000000000001','81600000-0000-4000-8000-000000000001');
+ PERFORM set_config('request.jwt.claim.sub','81600000-0000-4000-8000-000000000001',true);
+ PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"81600000-0000-4000-8000-000000000001"}',true);
+ SET LOCAL ROLE authenticated;
+ SELECT count(*) INTO n FROM public.tournament_hands WHERE id='86000000-0000-4000-8000-000000000001';
+ IF n<>1 THEN RAISE EXCEPTION 'cashier_archived_visibility_regression'; END IF;
+ RESET ROLE;
+ DELETE FROM public.club_cashiers WHERE club_id='81000000-0000-4000-8000-000000000001' AND user_id='81600000-0000-4000-8000-000000000001';
+ INSERT INTO public.user_roles(user_id,role) VALUES ('81600000-0000-4000-8000-000000000001','super_admin');
+ SET LOCAL ROLE authenticated;
+ SELECT count(*) INTO n FROM public.tournament_hands WHERE id='86000000-0000-4000-8000-000000000001';
+ IF n<>1 THEN RAISE EXCEPTION 'super_admin_archived_visibility_regression'; END IF;
+ RESET ROLE;
+ DELETE FROM public.user_roles WHERE user_id='81600000-0000-4000-8000-000000000001' AND role='super_admin';
  -- Existing Owner UPDATE/RETURNING remains eligible on a voided row.
  PERFORM set_config('request.jwt.claim.sub','81100000-0000-4000-8000-000000000001',true);
  PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"81100000-0000-4000-8000-000000000001"}',true);
