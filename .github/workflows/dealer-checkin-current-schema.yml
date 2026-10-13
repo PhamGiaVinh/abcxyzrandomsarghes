@@ -39,6 +39,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql'
       - 'VinPoker/tests/trackerSettlement/publicHandVisibility74*.sql'
+      - 'VinPoker/scripts/ops/tracker-public-74*.mjs'
+      - '.github/workflows/tracker-public-74-protected-apply.yml'
       - 'VinPoker/tests/trackerVoice/floorAuthority.*'
       - 'VinPoker/tests/trackerVoice/sharedBoardAuthority.boundaries.sql'
       - 'VinPoker/tests/trackerVoice/identity28.localQualification.sql'
@@ -587,6 +589,9 @@ jobs:
       - name: Public hand visibility74 actor tenant and write compatibility
         working-directory: VinPoker
         run: |
+          node --test scripts/ops/tracker-public-74-release-plan.test.mjs scripts/ops/tracker-public-74-protected-apply.test.mjs
+          createdb --template=vinpoker_voice_swing73_pending_20261014 vinpoker_visibility74_atomic_ci
+          PGDATABASE=vinpoker_visibility74_atomic_ci VISIBILITY74_PG_TEST=1 node --test scripts/ops/tracker-public-74-atomic-pg.test.mjs
           createdb --template=vinpoker_voice_swing73_pending_20261014 vinpoker_visibility74_ci
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.baseline.pg17.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
