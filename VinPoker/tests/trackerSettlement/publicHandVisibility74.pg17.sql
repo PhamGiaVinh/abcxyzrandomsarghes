@@ -4,12 +4,14 @@ BEGIN;
 DO $test$
 DECLARE row record; n integer; changed integer; conservation text; after_conservation text;
 BEGIN
- IF current_database() NOT IN ('vinpoker_visibility74_candidate_20261014','vinpoker_visibility74_ci') OR current_user<>'postgres'
+ IF current_database() NOT IN ('vinpoker_visibility74_actions_20261014','vinpoker_visibility74_ci') OR current_user<>'postgres'
  OR inet_server_addr()<>'127.0.0.1'::inet
- OR (current_database()='vinpoker_visibility74_candidate_20261014' AND inet_server_port()<>55464)
+ OR (current_database()='vinpoker_visibility74_actions_20261014' AND inet_server_port()<>55464)
  OR (current_database()='vinpoker_visibility74_ci' AND inet_server_port()<>55441)
  OR md5(replace(pg_get_functiondef('floor_private.tracker_hand_read_scope74(uuid,boolean,uuid)'::regprocedure),chr(13),''))<>'9da991bb1262c314ded4bfd69c70749c' THEN RAISE EXCEPTION 'owned_visibility74_fixture_required'; END IF;
  SELECT md5(jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM public.tournament_entries e),'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.tournament_seats s),'chips',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.player_id,c.entry_number) FROM public.tournament_chip_counts c))::text) INTO conservation;
+ INSERT INTO public.hand_actions(hand_id,player_id,entry_number,action_type,action_amount,action_order)
+ SELECT hand_id,player_id,entry_number,'fold',0,740074 FROM public.hand_players WHERE hand_id='86000000-0000-4000-8000-000000000001' ORDER BY seat_number LIMIT 1;
  PERFORM set_config('request.jwt.claim.sub','',true);
  PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
  SET LOCAL ROLE anon;
@@ -37,6 +39,8 @@ BEGIN
   IF n<>row.expected THEN RAISE EXCEPTION 'voided_hand_actor_visibility_mismatch: %',row.actor_id; END IF;
   SELECT count(*) INTO n FROM public.hand_players WHERE hand_id='86000000-0000-4000-8000-000000000001';
   IF n<>row.expected*2 THEN RAISE EXCEPTION 'voided_participant_actor_visibility_mismatch: %',row.actor_id; END IF;
+  SELECT count(*) INTO n FROM public.hand_actions WHERE hand_id='86000000-0000-4000-8000-000000000001';
+  IF n<>row.expected THEN RAISE EXCEPTION 'voided_action_actor_visibility_mismatch: %',row.actor_id; END IF;
   IF row.role_name='authenticated' AND row.expected=0 THEN
    WITH rows AS (UPDATE public.tournament_hands SET pot_size=pot_size WHERE id='86000000-0000-4000-8000-000000000001' RETURNING id) SELECT count(*) INTO changed FROM rows;
    IF changed<>0 THEN RAISE EXCEPTION 'unrelated_actor_updated_unpublished_hand: %',row.actor_id; END IF;
@@ -68,6 +72,8 @@ BEGIN
  IF changed<>1 THEN RAISE EXCEPTION 'owner_hand_update_returning_regression'; END IF;
  WITH rows AS (UPDATE public.hand_players SET seat_number=seat_number WHERE hand_id='86000000-0000-4000-8000-000000000001' RETURNING id) SELECT count(*) INTO changed FROM rows;
  IF changed<>2 THEN RAISE EXCEPTION 'owner_participant_update_returning_regression'; END IF;
+ WITH rows AS (UPDATE public.hand_actions SET action_amount=action_amount WHERE hand_id='86000000-0000-4000-8000-000000000001' RETURNING id) SELECT count(*) INTO changed FROM rows;
+ IF changed<>1 THEN RAISE EXCEPTION 'owner_action_update_returning_regression'; END IF;
  RESET ROLE;
  UPDATE public.tournaments SET deleted_at=now() WHERE id='85000000-0000-4000-8000-000000000001';
  -- INSERT RETURNING on an unpublished row must retain the existing Owner write path.
@@ -89,6 +95,8 @@ BEGIN
  IF n<>0 THEN RAISE EXCEPTION 'deleted_raw_hand_bypass'; END IF;
  SELECT count(*) INTO n FROM public.hand_players WHERE tournament_id='85000000-0000-4000-8000-000000000001';
  IF n<>0 THEN RAISE EXCEPTION 'deleted_raw_participant_bypass'; END IF;
+ SELECT count(*) INTO n FROM public.hand_actions WHERE hand_id='86000000-0000-4000-8000-000000000001';
+ IF n<>0 THEN RAISE EXCEPTION 'deleted_raw_action_bypass'; END IF;
  RESET ROLE;
  SELECT md5(jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM public.tournament_entries e),'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.tournament_seats s),'chips',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.player_id,c.entry_number) FROM public.tournament_chip_counts c))::text) INTO after_conservation;
  IF conservation IS DISTINCT FROM after_conservation THEN RAISE EXCEPTION 'visibility_read_tests_changed_chip_entry_seat_state'; END IF;
