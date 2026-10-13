@@ -82,25 +82,29 @@ function tableStatus(occupied: number, raw: string, onBreak: boolean): StatusKey
 export function FloorTableMapPanel({
   tournament,
   refreshTrigger,
+  onParticipationChanged,
 }: {
   tournament: Tournament;
   refreshTrigger: number;
+  onParticipationChanged?: () => void;
 }) {
   const { user } = useAuth();
   if (FEATURES.floorTableControlV3) {
-    return <FloorTableMapPanelV3 actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} />;
+    return <FloorTableMapPanelV3 actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
   }
-  return <FloorTableMapPanelLegacy actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} />;
+  return <FloorTableMapPanelLegacy actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
 }
 
 function FloorTableMapPanelLegacy({
   actorId,
   tournament,
   refreshTrigger,
+  onParticipationChanged,
 }: {
   tournament: Tournament;
   actorId: string | null;
   refreshTrigger: number;
+  onParticipationChanged?: () => void;
 }) {
   const tid = tournament.id;
   const onBreak = tournament.status === "break";
@@ -504,7 +508,7 @@ function FloorTableMapPanelLegacy({
           open={openTableOpen}
           onOpenChange={setOpenTableOpen}
           tournamentId={tid}
-          onDone={load}
+          onDone={() => { onParticipationChanged?.(); void load(); }}
         />
       )}
 
@@ -513,7 +517,7 @@ function FloorTableMapPanelLegacy({
           open={redrawOpen}
           onOpenChange={setRedrawOpen}
           tournamentId={tid}
-          onDone={load}
+          onDone={() => { onParticipationChanged?.(); void load(); }}
         />
       )}
 

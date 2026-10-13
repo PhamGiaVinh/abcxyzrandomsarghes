@@ -124,11 +124,15 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [participationRefresh, setParticipationRefresh] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const summaryContext = selectedTournament?.id === selectedTournamentId
     && clubIds.includes(selectedTournament.club_id) ? selectedTournament : null;
+  const participationScope = JSON.stringify([user?.id, summaryContext?.club_id, selectedTournamentId]);
+  const participationScopeRef = useRef(participationScope);
+  participationScopeRef.current = participationScope;
   const participation = useTournamentParticipationSummary(user?.id, summaryContext?.club_id,
-    selectedTournamentId, refreshTrigger);
+    selectedTournamentId, refreshTrigger + participationRefresh);
 
   const clubNameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -420,7 +424,12 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
       {selectedTournament ? (
         (() => {
           const TAB_DEFS = [
-            { value: "table_map", icon: Grid3x3, label: "Sơ đồ bàn", render: () => <FloorTableMapPanel tournament={selectedTournament} refreshTrigger={refreshTrigger} /> },
+            { value: "table_map", icon: Grid3x3, label: "Sơ đồ bàn", render: () => <FloorTableMapPanel tournament={selectedTournament} refreshTrigger={refreshTrigger}
+              onParticipationChanged={() => {
+                if (participationScopeRef.current === participationScope) {
+                  setParticipationRefresh(previous => previous + 1);
+                }
+              }} /> },
             { value: "live_view", icon: Eye, label: t("tournamentLive.liveView.title"), render: () => <div className="space-y-3"><div className="flex justify-end"><TableAppearanceEditor tournamentId={selectedTournament.id} /></div><TournamentLiveView tournamentId={selectedTournament.id} /></div> },
             { value: "clock", icon: Clock, label: t("tournamentLive.clock.title"), render: () => <ClockPanel tournamentId={selectedTournament.id} refreshTrigger={refreshTrigger} /> },
             { value: "queue", icon: ListOrdered, label: "Hàng chờ", render: () => (
