@@ -9,6 +9,8 @@ on:
       - ".github/workflows/dealer-stop-64-protected-apply.yml"
       - ".github/workflows/floor-manual-66-protected-apply.yml"
       - ".github/workflows/floor-manual-67-protected-apply.yml"
+      - ".github/workflows/floor-manual-68-protected-apply.yml"
+      - "VinPoker/scripts/ops/floor-manual-68-*"
       - "VinPoker/scripts/ops/floor-manual-67-*"
       - "VinPoker/scripts/ops/floor-manual-66-*"
       - "VinPoker/scripts/ops/dealer-stop-64-*"

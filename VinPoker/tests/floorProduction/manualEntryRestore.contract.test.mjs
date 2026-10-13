@@ -15,3 +15,12 @@ test('runtime covers real public create, bust, display, restore, replay and conf
     'floor_restore_busted_player_to_seat_v5','MANUAL_RESTORABLE_ENTRY_MISSING','IDEMPOTENCY_CONFLICT',
     'registration_id IS NULL','chip_count=20000','ROLLBACK;']) assert.ok(testSql.includes(text),text);
 });
+test('forward68 pins the existing private writer and restores canonical backlinks and current ticket proof atomically',()=>{
+  const writer=readFileSync(new URL('../../supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql',import.meta.url),'utf8');
+  for(const text of ['c8c66b3a511399fac6e05921a8791d91','ca72a3aa2e2b1681407b6289bd8f4a2a',
+    'seat_id = v_new_seat_id','table_id = v_game_table_id','v_destination_table.id, v_busted_seat.player_name',
+    'receipt_code','chip_count_at_move','destination_session_id','restore68_postcheck_failed',
+    "'{postgres=X/postgres}'"]) assert.ok(writer.includes(text),text);
+  assert.ok(writer.indexOf('restore68_postcheck_failed')<writer.lastIndexOf('COMMIT;'));
+  assert.doesNotMatch(writer,/GRANT\s|DELETE FROM\s|TRUNCATE\s|DROP TABLE\s/i);
+});
