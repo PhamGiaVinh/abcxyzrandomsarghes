@@ -20,7 +20,13 @@ export function baselinePredicate(){
       AND md5(replace(prosrc,chr(13),''))='c8c66b3a511399fac6e05921a8791d91'
       AND proowner='postgres'::regrole AND prosecdef AND proconfig=ARRAY['search_path=""']::text[]
       AND proacl::text='{postgres=X/postgres}')
-    AND to_regprocedure('public.get_current_floor_seat_ticket_v1(uuid,uuid,uuid)') IS NOT NULL
+    AND (SELECT count(*) FROM (VALUES
+      ('public.get_current_floor_seat_ticket_v1(uuid,uuid,uuid)','e0c04b0e8a41f99620bc086467dcbef4'),
+      ('public.get_floor_seat_ticket_v1(uuid,uuid,text)','bf3f4fe3c9fff6f375037e933a5c02ce')) expected(signature,hash)
+      JOIN pg_proc p ON p.oid=to_regprocedure(expected.signature)
+      WHERE md5(replace(p.prosrc,chr(13),''))=expected.hash AND p.proowner='postgres'::regrole
+        AND p.prosecdef AND p.proconfig=ARRAY['search_path=""']::text[]
+        AND p.proacl::text='{postgres=X/postgres,authenticated=X/postgres}')=2
     AND EXISTS(SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.get_floor_restorable_entries_v3(uuid)')
       AND md5(replace(prosrc,chr(13),''))='6b2e72c175318f2f91a1a0b55966a1db'
       AND proowner='postgres'::regrole AND prosecdef AND proconfig=ARRAY['search_path=""']::text[]
