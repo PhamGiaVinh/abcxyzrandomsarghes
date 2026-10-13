@@ -1,4 +1,8 @@
 \set ON_ERROR_STOP on
+\if :{?registered_entry}
+\else
+\set registered_entry false
+\endif
 -- Isolated retained-schema PG17 only. Prove the public create→bust→read seam.
 DO $$ BEGIN
  IF inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
@@ -28,6 +32,15 @@ INSERT INTO public.tournaments(id,club_id,name,status,live_status,starting_stack
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES
  ('f7670000-0000-4000-8000-000000000011','f7670000-0000-4000-8000-000000000002','Manual restore TEST',79,'tournament','inactive','available');
 SELECT set_config('request.jwt.claim.sub','f7670000-0000-4000-8000-000000000001',true);
+SELECT set_config('vinpoker.test_restore68_registered', :'registered_entry',true);
+\if :registered_entry
+INSERT INTO public.tournament_registrations(id,tournament_id,player_id,club_id,buy_in,reference_code,status)
+ VALUES('f7670000-0000-4000-8000-000000000021','f7670000-0000-4000-8000-000000000003',
+ 'f7670000-0000-4000-8000-000000000001','f7670000-0000-4000-8000-000000000002',0,'RESTORE68-REGISTERED-TEST','confirmed');
+INSERT INTO public.tournament_entries(id,tournament_id,registration_id,player_id,entry_no,current_stack,status,source)
+ VALUES('f7670000-0000-4000-8000-000000000031','f7670000-0000-4000-8000-000000000003',
+ 'f7670000-0000-4000-8000-000000000021','f7670000-0000-4000-8000-000000000001',1,20000,'registered','online');
+\endif
 DO $$
 DECLARE opened jsonb; created jsonb; busted jsonb; restored jsonb; replayed jsonb; ticket jsonb; entry uuid; tt uuid; sess uuid; rev bigint; epoch bigint;
  restore_key uuid:=gen_random_uuid();
@@ -42,8 +55,16 @@ BEGIN
  PERFORM set_config('role','none',true);
  SELECT revision,control_epoch INTO rev,epoch FROM public.table_sessions WHERE id=sess;
  PERFORM set_config('role','authenticated',true);
- created:=public.floor_add_manual_player_v1('f7670000-0000-4000-8000-000000000003','Manual restore person TEST',
-   tt,1,sess,rev,epoch,gen_random_uuid(),'f7670000-0000-4000-8000-000000000001');
+ IF current_setting('vinpoker.test_restore68_registered')='true' THEN
+   created:=public.floor_assign_entry_to_seat('f7670000-0000-4000-8000-000000000031',tt,1,rev,gen_random_uuid());
+   created:=created||jsonb_build_object('entry_id','f7670000-0000-4000-8000-000000000031');
+   PERFORM set_config('role','none',true);
+   UPDATE public.tournament_seats SET player_name='Manual restore person TEST' WHERE id=(created->>'seat_id')::uuid;
+   PERFORM set_config('role','authenticated',true);
+ ELSE
+   created:=public.floor_add_manual_player_v1('f7670000-0000-4000-8000-000000000003','Manual restore person TEST',
+     tt,1,sess,rev,epoch,gen_random_uuid(),'f7670000-0000-4000-8000-000000000001');
+ END IF;
  IF created->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'manual_restore_create_failed: %',created; END IF;
  entry:=(created->>'entry_id')::uuid;rev:=(created->>'revision')::bigint;
  busted:=public.floor_bust_player_v3(entry,rev,epoch,20000,gen_random_uuid(),'manual_restore_TEST');
@@ -80,7 +101,10 @@ BEGIN
      AND e.table_id='f7670000-0000-4000-8000-000000000011'::uuid AND s.table_id=tt
      AND s.tournament_table_id=tt AND s.table_session_id=sess) THEN
    RAISE EXCEPTION 'RESTORE_CANONICAL_ENTRY_SEAT_TUPLE_MISMATCH'; END IF;
- IF (SELECT count(*) FROM public.tournament_entries WHERE id=entry AND registration_id IS NULL AND current_stack=20000 AND status='seated')<>1
+ IF (SELECT count(*) FROM public.tournament_entries WHERE id=entry
+     AND CASE WHEN current_setting('vinpoker.test_restore68_registered')='true' THEN
+       registration_id='f7670000-0000-4000-8000-000000000021'::uuid ELSE registration_id IS NULL END
+     AND current_stack=20000 AND status='seated')<>1
    OR (SELECT count(*) FROM public.tournament_seats WHERE entry_id=entry AND is_active AND chip_count=20000)<>1
    OR (SELECT count(*) FROM public.tournament_seats WHERE entry_id=entry AND is_active)<>1
    OR (SELECT count(*) FROM public.tournament_chip_counts c JOIN public.tournament_entries e

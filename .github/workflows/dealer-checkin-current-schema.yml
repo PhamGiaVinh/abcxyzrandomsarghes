@@ -613,6 +613,7 @@ jobs:
           PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql
           PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql
           PGDATABASE=vinpoker_ops_floor66_ci node tests/floorProduction/manualEntryRestore.concurrent.mjs
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -v registered_entry=true -f tests/floorProduction/manualEntryRestore.currentSchema.sql
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
         run: |
