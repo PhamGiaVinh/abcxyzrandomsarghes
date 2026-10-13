@@ -46,6 +46,7 @@ const navigationActions = [
   "floor.tables.open_seat",
   "floor.tables.open_table_dialog",
   "floor.tables.open_add_player",
+  "floor.tables.close_add_player",
   "floor.tables.open_close_table",
   "floor.tables.open_redraw",
   "floor.tables.filter_number_catalog",
@@ -187,6 +188,11 @@ function fixtureForAction(actionId: string): string {
 }
 
 export const FLOOR_CASHIER_BUTTON_MANIFEST: readonly FloorCashierButtonManifestEntry[] = [
+  entry("floor.tables.reconcile_add_player", "READ", {
+    backend: "get_floor_manual_player_receipt_v1 (exact actor, tournament and persisted request ID)",
+    invariant: "Reads immutable outcome only; a missing receipt stays unknown and does not issue a new request.",
+    disposition: "BLOCKED",
+  }),
   entry("floor.clock.refresh", "READ", {
     backend: "get_tournament_clock (authenticated actor and exact tournament)",
     invariant: "Refresh does not mutate rows or retain controls from a failed or stale scope.",

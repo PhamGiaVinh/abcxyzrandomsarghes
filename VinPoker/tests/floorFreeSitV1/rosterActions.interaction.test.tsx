@@ -17,6 +17,8 @@ const fixture = vi.hoisted(() => ({
     getSeatableEntries: vi.fn(),
     getRestorableEntries: vi.fn(),
     getPendingTrackerMoves: vi.fn(),
+    addManualPlayer: vi.fn(),
+    getManualPlayerReceipt: vi.fn(),
     getTableControlModeRequest: vi.fn(),
     requestTableControlMode: vi.fn(),
     cancelTableControlModeRequest: vi.fn(),
@@ -92,6 +94,21 @@ function setup(options: { pendingNetworkFailure?: boolean } = {}) {
   fixture.client.breakTournamentTable.mockResolvedValue({ ok: true, data: { ok: true, break_pending: true } });
   return render(<FloorTableMapPanelV3 actorId="owner-a" tournament={{ id: "tour-1" } as Tournament} refreshTrigger={0} />);
 }
+
+it("offers a manual participant on an empty canonical seat with the exact session tuple", async () => {
+  setup();
+  const roster = (await fixture.client.getTournamentTableRoster()).data;
+  fixture.client.getTournamentTableRoster.mockResolvedValue({ ok: true, data: [{ ...roster[0], seats: [] }, roster[1]] });
+  fixture.client.addManualPlayer.mockResolvedValue({ ok: false, error: "network" });
+  fireEvent.click(await screen.findByRole("button", { name: "Mở Bàn 4" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Mở Ghế 1" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Thêm người mới" }));
+  fireEvent.change(await screen.findByLabelText("Tên người chơi"), { target: { value: "TEST Walk-in" } });
+  fireEvent.click(screen.getByRole("button", { name: "Thêm người" }));
+  await waitFor(() => expect(fixture.client.addManualPlayer).toHaveBeenCalledWith(expect.objectContaining({
+    actorId: "owner-a", tournamentId: "tour-1", tableId: "table-1", sessionId: "session-1", seat: 1, revision: 3, epoch: 1,
+  })));
+});
 
 async function openTableSheet() {
   const open = await screen.findByRole("button", { name: "Mở Bàn 4" });

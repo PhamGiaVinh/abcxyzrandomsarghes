@@ -25,6 +25,28 @@ const SCOPED_STOP_RPC_CONTRACT = {
   arguments:["p_club_id","p_request_id","p_expected_actor_id"],argumentTypes:["uuid","uuid","uuid"],
   allowOtherOverloads:false,acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source",
 };
+const MANUAL_PLAYER_RPC_CONTRACTS = [
+  {type:"function",name:"public.floor_add_manual_player_v1",
+    arguments:["p_tournament_id","p_player_name","p_tournament_table_id","p_seat_number","p_table_session_id","p_expected_revision","p_expected_control_epoch","p_request_id","p_expected_actor_id"],
+    argumentTypes:["uuid","text","uuid","integer","uuid","bigint","bigint","uuid","uuid"],
+    allowOtherOverloads:false,acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source"},
+  {type:"function",name:"public.get_floor_manual_player_receipt_v1",
+    arguments:["p_tournament_id","p_request_id","p_expected_actor_id"],argumentTypes:["uuid","uuid","uuid"],
+    allowOtherOverloads:false,acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source"},
+];
+function manualPlayerFrontendEnabled(targetRoot) {
+  const component=resolve(targetRoot,"VinPoker/src/components/cashier/tournament-live/AddPlayerDialog.tsx");
+  if(!existsSync(component)) return false;
+  const source=readFileSync(component,"utf8");
+  if(source.includes("client.addManualPlayer(") && source.includes("client.getManualPlayerReceipt(")) {
+    const client=resolve(targetRoot,"VinPoker/src/lib/floorTableControlV3.ts");
+    if(!existsSync(client)||!MANUAL_PLAYER_RPC_CONTRACTS.every(c=>readFileSync(client,"utf8").includes(`call("${c.name.slice(7)}"`)))
+      throw Error("UNKNOWN_TARGET_MANUAL_PLAYER_CONTRACT");
+    return true;
+  }
+  if(source.includes('"floor_assign_player_to_seat"')) return false;
+  throw Error("UNKNOWN_TARGET_MANUAL_PLAYER_CONTRACT");
+}
 function scopedStopFrontendEnabled(targetRoot) {
   const tab=resolve(targetRoot,FRONTEND_CONTRACT_FILES[0]);
   if(!existsSync(tab)||!readFileSync(tab,"utf8").includes("DealerSwingStopControl")) return false;
@@ -62,6 +84,11 @@ export function assertPhysicalAssetFrontendBackend({targetRoot,catalog}) {
 export function assertScopedStopFrontendBackend({targetRoot,catalog}) {
   if(scopedStopFrontendEnabled(targetRoot)) assertFrontendFunctionBackend(catalog,SCOPED_STOP_RPC_CONTRACT,
     "32558a200e5c94c5bfcf0687b2a97ed2",['search_path=""','lock_timeout=5s'],"SCOPED_STOP_FRONTEND");
+}
+export function assertManualPlayerFrontendBackend({targetRoot,catalog}) {
+  if(manualPlayerFrontendEnabled(targetRoot)) MANUAL_PLAYER_RPC_CONTRACTS.forEach((contract,index)=>
+    assertFrontendFunctionBackend(catalog,contract,["8afb253f61ac4fa45fcd1cda00804929","be4d3310eded14b0690ef37725936781"][index],
+      ['search_path=""'],"MANUAL_PLAYER_FRONTEND"));
 }
 
 function parseArgs(argv) {
@@ -596,7 +623,8 @@ export function sourceContractsForFrontend({ targetRoot }) {
   const files = FRONTEND_CONTRACT_FILES.filter((file) => existsSync(resolve(targetRoot, file)));
   return mergeContracts(staticDatabaseContracts(files, targetRoot, "direct_frontend_source"),
     physicalAssetFrontendEnabled(targetRoot)?[PHYSICAL_ASSET_RPC_CONTRACT]:[],
-    scopedStopFrontendEnabled(targetRoot)?[SCOPED_STOP_RPC_CONTRACT]:[]);
+    scopedStopFrontendEnabled(targetRoot)?[SCOPED_STOP_RPC_CONTRACT]:[],
+    manualPlayerFrontendEnabled(targetRoot)?MANUAL_PLAYER_RPC_CONTRACTS:[]);
 }
 
 export function contractsForTargets({ manifest, rawTargets, targetRoot }) {
@@ -644,6 +672,7 @@ function run() {
     const catalog=catalogPath?JSON.parse(readFileSync(catalogPath,"utf8")):undefined;
     assertPhysicalAssetFrontendBackend({targetRoot,catalog});
     assertScopedStopFrontendBackend({targetRoot,catalog});
+    assertManualPlayerFrontendBackend({targetRoot,catalog});
   }
   console.log(
     `Live schema contract probe passed for ${selection.profile} from ${inventory.source} (${contracts.length} checks, ${selection.sourceFingerprint}).`,

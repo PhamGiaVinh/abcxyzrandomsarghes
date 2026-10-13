@@ -3,6 +3,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/dealer-checkin-current-schema.yml'
+      - 'VinPoker/supabase/migrations/20270128000066_floor_manual_seat_session_fence_v1.sql'
+      - 'VinPoker/tests/floorProduction/manualSeatSessionFence*'
+      - '.github/workflows/floor-manual-66-protected-apply.yml'
+      - 'VinPoker/scripts/ops/floor-manual-66-*'
+      - 'VinPoker/src/lib/floorManualPlayerIntent*'
+      - 'VinPoker/src/components/cashier/tournament-live/AddPlayerDialog*'
       - '.github/workflows/tracker-void-59-protected-apply.yml'
       - 'VinPoker/scripts/ops/tracker-void-59-*'
       - 'VinPoker/scripts/ops/tracker-reentry-60-*'
@@ -562,6 +568,29 @@ jobs:
           # Synthetic outcome: transaction/lease proof, not verifier or HTTP UAT.
           createdb --template=vinpoker_ops_undo_generation_20261011 vinpoker_ops_history_atomic_ci
           PGDATABASE=vinpoker_ops_history_atomic_ci node tests/trackerSettlement/historyAtomicRecovery.currentSchema.mjs --committed-recovery
+      - name: Manual participant exact-session receipt and rollback integrity on qualified schema
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          node --test tests/floorProduction/manualSeatSessionFence.contract.test.mjs
+          node --test scripts/ops/floor-manual-66-release-plan.test.mjs scripts/ops/floor-manual-66-protected-apply.test.mjs
+          node node_modules/vitest/vitest.mjs run src/lib/floorManualPlayerIntent.test.ts src/components/cashier/tournament-live/AddPlayerDialog.test.tsx --maxWorkers=1 --minWorkers=1
+          createdb vinpoker_ops_floor66_ci
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/manual66-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/manual66-schema.sql "$RUNNER_TEMP/manual66-schema.sql"
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/manual66-schema.sql"
+          # Prove the existing public legacy seam accepts a locked-seat write.
+          # The only expected failure is this exact behavioral assertion.
+          if PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -v legacy_repro=true -f tests/floorProduction/manualSeatSessionFence.currentSchema.sql >"$RUNNER_TEMP/manual66-red.log" 2>&1; then
+            echo "legacy locked-seat counterexample unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -Fq 'LEGACY_LOCKED_WALKIN_REPRO: locked seat accepted or wrong denial: {"ok": true' "$RUNNER_TEMP/manual66-red.log"
+          createdb --template=vinpoker_ops_floor66_ci vinpoker_ops_floor66_atomic_ci
+          PGDATABASE=vinpoker_ops_floor66_atomic_ci MANUAL66_PG_TEST=1 node --test scripts/ops/floor-manual-66-atomic-pg.test.mjs
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000066_floor_manual_seat_session_fence_v1.sql
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualSeatSessionFence.currentSchema.sql
+          PGDATABASE=vinpoker_ops_floor66_ci node tests/floorProduction/manualSeatSessionFence.concurrent.mjs
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker
         run: |

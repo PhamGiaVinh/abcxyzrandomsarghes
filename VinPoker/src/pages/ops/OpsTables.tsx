@@ -20,6 +20,7 @@ import { FloorTableRosterIndex } from "@/components/ops/shared/FloorTableRosterI
 import { FIXED_FLOOR_TABLE_SEATS } from "@/components/ops/shared/floorTablePresentation";
 import { CloseTableDialog } from "@/components/cashier/tournament-live/CloseTableDialog";
 import { OpenTableDialog } from "@/components/cashier/tournament-live/OpenTableDialog";
+import { AddPlayerDialog } from "@/components/cashier/tournament-live/AddPlayerDialog";
 import { FloorTableMapPanelV3 } from "@/components/cashier/tournament-live/FloorTableMapPanelV3";
 import {
   toMockTable, toMockSeat,
@@ -46,19 +47,6 @@ const LIVEISH_FALLBACK: Tournament["status"][] = ["registering", "drawing"];
 
 interface TableVM { mock: MockTable; name: string; seats: MockSeat[]; raw: MapTable }
 
-/** Copy VERBATIM từ AddPlayerDialog.mapError — phân biệt permission/validation/conflict (P1). */
-function addPlayerError(code?: string): string {
-  switch (code) {
-    case "unauthorized": return "Bạn cần đăng nhập lại.";
-    case "actor_not_allowed": return "Không có quyền thêm người cho CLB này.";
-    case "tournament_not_open": return "Giải đã kết thúc/huỷ.";
-    case "invalid_player_name": return "Tên tối thiểu 2 ký tự.";
-    case "invalid_destination_table": return "Bàn không hợp lệ hoặc đã đóng.";
-    case "invalid_seat_number": return "Số ghế không hợp lệ.";
-    case "seat_occupied": return "Ghế vừa bị lấy — chọn ghế khác.";
-    default: return code ? `Thêm người thất bại (${code})` : "Thêm người thất bại";
-  }
-}
 type CloseDrawMode = "redraw_balanced" | "fill_lowest_table";
 /** Copy VERBATIM từ RedrawLauncherDialog.mapError. */
 function redrawError(res: { error?: string; need?: number; have?: number } | null, raw?: string): string {
@@ -306,47 +294,14 @@ function OpsTablesLegacy({ tournamentId }: { tournamentId?: string }) {
   };
 
   const ADD_LIVE = FEATURES.floorTableOps && !floor.readOnlyReason;
-  const [addTable, setAddTable] = useState<TableVM | null>(null); // bàn đang thêm
-  const [addName, setAddName] = useState("");
-  const [addSeat, setAddSeat] = useState<number | null>(null);
-  const [addBusy, setAddBusy] = useState(false);
-  const addBusyRef = useRef(false);
-  const openAdd = (vm: TableVM) => {
+  const [addTable, setAddTable] = useState<{ vm: TableVM; tourId: string; actorId: string; seat?: number } | null>(null);
+  const openAdd = (vm: TableVM, seat?: number) => {
+    if (!tourId || !user?.id || floor.readOnlyReason) return;
     setOpenNo(null);
-    setAddName(""); setAddSeat(null);
-    requestAnimationFrame(() => setAddTable(vm));
+    setAddTable({ vm, tourId, actorId: user.id, seat });
   };
-  const addFreeSeats = useMemo(() => {
-    if (!addTable) return [];
-    const taken = new Set(addTable.seats.map((s) => s.seat));
-    const out: number[] = [];
-    for (let n = 1; n <= FIXED_FLOOR_TABLE_SEATS; n++) if (!taken.has(n)) out.push(n);
-    return out;
-  }, [addTable]);
-  const submitAdd = useCallback(async () => {
-    if (floor.readOnlyReason) { toast.error(floor.readOnlyReason); return; }
-    if (!addTable || !tourId || addSeat == null || addName.trim().length < 2) return;
-    if (addBusyRef.current) return;            // P0-7 synchronous double-tap guard
-    addBusyRef.current = true; setAddBusy(true);
-    try {
-      // Mirror AddPlayerDialog.submit — floor_assign_player_to_seat (mig 20260913000000)
-      const { data, error } = await supabase.rpc("floor_assign_player_to_seat", {
-        p_tournament_id: tourId,
-        p_player_name: addName.trim(),
-        p_tournament_table_id: addTable.raw.tt_id,
-        p_seat_number: addSeat,
-      });
-      const res = (data ?? null) as { ok?: boolean; error?: string; table_number?: number | null; seat_number?: number; display_name?: string } | null;
-      if (error || !res?.ok) { toast.error(addPlayerError(error ? error.message : res?.error)); return; }
-      toast.success(`Đã xếp ${res.display_name ?? addName.trim()} → ${addTable.name} · Ghế ${res.seat_number ?? addSeat}`);
-      setAddTable(null);
-      floor.reload();                          // refetch, không optimistic (P0-7)
-    } catch (e) {
-      toast.error(e instanceof Error ? `Lỗi mạng: ${e.message}` : "Thêm người thất bại");
-    } finally {
-      addBusyRef.current = false; setAddBusy(false);
-    }
-  }, [addTable, tourId, addSeat, addName, floor, supabase]);
+  const addCurrentTable = floor.tables.find((row) => row.tt_id === addTable?.vm.raw.tt_id
+    && row.table_session_id === addTable.vm.raw.table_session_id);
 
   // ── Floor-A3: Mở bàn → shared responsive picker + atomic v2 RPC ──
   const [openTableOpen, setOpenTableOpen] = useState(false);
@@ -547,13 +502,7 @@ function OpsTablesLegacy({ tournamentId }: { tournamentId?: string }) {
                 if (seat) openPlayer(seat);
               }}
               onEmptySeatTap={ADD_LIVE
-                ? (seatNumber) => {
-                  const table = openVM;
-                  setOpenNo(null);
-                  setAddName("");
-                  setAddSeat(seatNumber);
-                  requestAnimationFrame(() => setAddTable(table));
-                }
+                ? (seatNumber) => openAdd(openVM, seatNumber)
                 : undefined}
             />
           )}
@@ -604,42 +553,16 @@ function OpsTablesLegacy({ tournamentId }: { tournamentId?: string }) {
         </SheetContent>
       </Sheet>
 
-      {/* Floor-A1 — Thêm người (N4): tên + ghế trống + nhắc lại → floor_assign_player_to_seat */}
-      <Sheet open={addTable !== null && !floor.readOnlyReason} onOpenChange={(v) => { if (!v && !addBusy) setAddTable(null); }}>
-        <SheetContent side="bottom" className="rounded-t-[22px] border-none bg-[#0d0913] pb-8">
-          <div className="ios-grabber mb-3 mt-1" />
-          <SheetHeader className="text-center"><SheetTitle className="text-[#f2ece6]">Thêm người → {addTable?.name}</SheetTitle></SheetHeader>
-          <div className="mt-1 text-center text-[12px] text-[#9b8e97]">xếp khách vào ghế trống · không thu tiền (buy-in ở quầy)</div>
-          <div className="mt-3">
-            <label className="px-1 text-[12px] text-[#9b8e97]">Tên người chơi</label>
-            <input autoFocus value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="VD: Nguyễn Văn A"
-              className="ios-fill mt-1 w-full rounded-xl px-3 py-2.5 text-[15px] text-[#f2ece6] outline-none placeholder:text-[#7c7079]" />
-          </div>
-          <div className="mt-3">
-            <label className="px-1 text-[12px] text-[#9b8e97]">Ghế trống</label>
-            {addFreeSeats.length === 0 ? (
-              <div className="ios-fill mt-1 rounded-xl py-3 text-center text-[13px] text-[#9b8e97]">Bàn đã đầy — không còn ghế trống.</div>
-            ) : (
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {addFreeSeats.map((n) => (
-                  <button key={n} data-ops-action="floor.tables.select_add_seat" onClick={() => setAddSeat(n)}
-                    className={cn("ios-press-sm grid h-10 w-11 place-items-center rounded-lg text-[15px] font-semibold",
-                      addSeat === n ? "bg-[#c9a86a] text-[#241A08]" : "bg-emerald-400/15 text-emerald-300")}>{n}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            data-ops-action="floor.tables.add_player"
-            disabled={addBusy || addName.trim().length < 2 || addSeat == null}
-            onClick={submitAdd}
-            className="ios-press ios-primary mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-bold disabled:opacity-40">
-            {addBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {addBusy ? "Đang xếp…" : addSeat != null && addName.trim() ? `Xếp ${addName.trim()} vào ghế ${addSeat}` : "Chọn tên & ghế"}
-          </button>
-          <div className="mt-2 text-center text-[11px] text-[#7c7079]">nhắc lại: {addName.trim() || "—"} → {addTable?.name} · ghế {addSeat ?? "—"}</div>
-        </SheetContent>
-      </Sheet>
+      {addTable && addTable.tourId === selectedTour?.id && addTable.actorId === user?.id && (
+        <AddPlayerDialog open onOpenChange={(open) => { if (!open) setAddTable(null); }} actorId={user.id}
+          tournamentId={selectedTour.id} tournamentName={selectedTour.name} tournamentDate={null}
+          tableTtId={addTable.vm.raw.tt_id} tableSessionId={addTable.vm.raw.table_session_id ?? null}
+          expectedRevision={addCurrentTable?.floor_control_revision ?? null} expectedControlEpoch={addCurrentTable?.control_epoch ?? null}
+          contextReady={!!addCurrentTable && !floor.readOnlyReason} maxSeats={addCurrentTable?.max_seats ?? 0}
+          defaultSeatNumber={addTable.seat}
+          occupiedSeats={(addCurrentTable ? floor.seatsByTable[addCurrentTable.table_id] ?? [] : []).map((s) => s.seat_number)}
+          onDone={floor.reload} />
+      )}
 
       {tourId && !floor.readOnlyReason && (
         <OpenTableDialog

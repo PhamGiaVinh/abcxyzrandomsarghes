@@ -15,6 +15,7 @@ import {
   sourceContractsForFrontend,
   assertPhysicalAssetFrontendBackend,
   assertScopedStopFrontendBackend,
+  assertManualPlayerFrontendBackend,
 } from "./probe-live-schema-contracts.mjs";
 import { selectTargetContractProfile } from "./target-contract-profile.mjs";
 import { inspectTargetSource } from "./verify-target-source.mjs";
@@ -28,6 +29,22 @@ const productionMetricsViewFixture = readFileSync(
   resolve(repositoryRoot, "VinPoker/scripts/deploy/fixtures/dealer_shift_metrics-production-view.sql"),
   "utf8",
 );
+
+test("manual player frontend requires exact writer and receipt reader, failing closed on digest/ACL/signature drift",()=>{
+  const contracts=sourceContractsForFrontend({targetRoot:repositoryRoot}).filter(c=>c.name.includes("manual_player"));
+  assert.equal(contracts.length,2);
+  const functions=contracts.map((c,index)=>({schema:"public",name:c.name.slice(7),owner:"postgres",securityDefiner:true,
+    definitionMd5:["8afb253f61ac4fa45fcd1cda00804929","be4d3310eded14b0690ef37725936781"][index],configuration:['search_path=""'],
+    arguments:c.arguments.map((name,n)=>({name,type:c.argumentTypes[n]})),
+    executeAcl:{public:false,anon:false,authenticated:true,service_role:false}}));
+  const check=f=>assertManualPlayerFrontendBackend({targetRoot:repositoryRoot,catalog:{schemaVersion:1,relations:[],functions:f}});
+  check(functions);
+  for(const f of [[],[functions[0]], [...functions,functions[0]],
+    [{...functions[0],definitionMd5:"drift"},functions[1]],
+    [functions[0],{...functions[1],executeAcl:{public:false,anon:true,authenticated:true,service_role:false}}],
+    [{...functions[0],arguments:[]},functions[1]]]) assert.throws(()=>check(f),/NOT_QUALIFIED/);
+  assert.throws(()=>assertManualPlayerFrontendBackend({targetRoot:repositoryRoot}),/REQUIRES_QUALIFIED_CATALOG/);
+});
 
 test("physical declaration frontend requires its exact server RPC contract", () => {
   const contracts = sourceContractsForFrontend({targetRoot:repositoryRoot});
