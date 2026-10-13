@@ -5,6 +5,9 @@ on:
     paths:
       - ".github/workflows/cashier-tour-real-e2e.yml"
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
+      - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
+      - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
@@ -19,6 +22,12 @@ on:
       - "VinPoker/supabase/pending-tests/cashier_tour_real_refund_fixture.sql"
       - "VinPoker/src/pages/ops/TourCashierWorkbench.tsx"
   workflow_dispatch:
+    inputs:
+      schema_mode:
+        description: Historical pre03 migration proof or contemporary runtime proof
+        type: choice
+        options: [pre03, current]
+        default: pre03
 
 permissions:
   actions: read
@@ -30,6 +39,24 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Select the proof required by the changed source
+        id: schema-mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REQUESTED_MODE: ${{ inputs.schema_mode || 'pre03' }}
+        run: |
+          set -euo pipefail
+          mode="$REQUESTED_MODE"
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            # Runtime changes need the retained-schema real backend test.
+            # Migration changes still require the original historical baseline.
+            mode="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" |
+              node VinPoker/scripts/ops/select-cashier-schema-mode.mjs)"
+          fi
+          case "$mode" in pre03|current) ;; *) exit 1 ;; esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
       - uses: supabase/setup-cli@v2
         with:
           version: 2.101.0
@@ -46,12 +73,32 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
+          node --test scripts/ops/cashier-schema-mode.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker
         env:
           GH_TOKEN: ${{ github.token }}
+          CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
         run: |
           set -euo pipefail
+          if [[ "$CASHIER_SCHEMA_MODE" == current ]]; then
+            recovery_id=38275767630
+            recovery_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$recovery_id")"
+            jq -e --arg owner "$GITHUB_REPOSITORY_OWNER" --argjson id "$recovery_id" '
+              .id == $id and .conclusion == "success" and .event == "workflow_dispatch"
+                and .workflow_id == 322144993 and .head_branch == "main"
+                and .head_sha == "09cff8a829caf3f514a615b231ab96f4ed238757"
+                and (.actor.login | ascii_downcase) == ($owner | ascii_downcase)
+            ' <<<"$recovery_json" >/dev/null
+            gh run download "$recovery_id" -n reviewed-operations-schema -D "${RUNNER_TEMP}/cashier-schema"
+            gh run download "$recovery_id" -n reviewed-operations-schema-provenance -D "${RUNNER_TEMP}/cashier-provenance"
+            node scripts/deploy/validate-live-public-schema-artifact.mjs \
+              --artifact-directory "${RUNNER_TEMP}/cashier-schema" \
+              --operations-recovery-provenance "${RUNNER_TEMP}/cashier-provenance/reviewed-operations-schema.provenance.json" \
+              --recovery-run-id "$recovery_id"
+            echo "Runtime-only schema: reviewed recovery $recovery_id; not pre03 migration proof"
+            exit 0
+          fi
           # This owner capture predates live Cashier 03 and is schema-only.
           # A fresh capture would already include 03, so it cannot be used as
           # the pre-03 baseline for this isolated migration chain.
@@ -70,4 +117,5 @@ jobs:
         working-directory: VinPoker
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
+          CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh

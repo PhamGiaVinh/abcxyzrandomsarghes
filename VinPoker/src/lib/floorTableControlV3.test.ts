@@ -3,6 +3,31 @@ import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "./
 // Test the locked SDK transport itself, with synthetic tokens and custom fetch.
 import { fetchWithAuth } from "../../node_modules/@supabase/supabase-js/src/lib/fetch";
 
+describe("manual participant exact-session transport", () => {
+  const intent = { actorId: "actor-a", tournamentId: "tour-a", tableId: "tt-a", sessionId: "session-a",
+    name: "TEST One", seat: 1, revision: 4, epoch: 2, requestId: "request-a" };
+  it("sends the full tuple and preserves the terminal rejection envelope", async () => {
+    const rejection = { ok: false, error: "seat_locked", actor_id: "actor-a", request_id: "request-a", payload: {} };
+    const rpc = vi.fn().mockResolvedValue({ data: rejection, error: null });
+    expect(await clientFrom(rpc).addManualPlayer(intent)).toEqual({ ok: true, data: rejection });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("floor_add_manual_player_v1", {
+      p_tournament_id: "tour-a", p_player_name: "TEST One", p_tournament_table_id: "tt-a", p_seat_number: 1,
+      p_table_session_id: "session-a", p_expected_revision: 4, p_expected_control_epoch: 2,
+      p_request_id: "request-a", p_expected_actor_id: "actor-a",
+    });
+    rpc.mockClear(); await clientFrom(rpc).getManualPlayerReceipt(intent);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("get_floor_manual_player_receipt_v1", {
+      p_tournament_id: "tour-a", p_request_id: "request-a", p_expected_actor_id: "actor-a",
+    });
+  });
+  it("does not fall back to the legacy RPC on network failure or when V3 is OFF", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: "Failed to fetch" } });
+    expect((await clientFrom(rpc).addManualPlayer(intent)).ok).toBe(false);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    rpc.mockClear(); await clientFrom(rpc, false).addManualPlayer(intent); expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
 describe("numbered physical asset declaration", () => {
   const args = { actorId: "actor-a", clubId: "club-a", tableNumber: 21, requestId: "request-a" };
   const asset = { ok: true, game_table_id: "asset-a", club_id: "club-a", table_number: 21,

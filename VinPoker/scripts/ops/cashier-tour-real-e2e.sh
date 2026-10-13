@@ -2,12 +2,28 @@
 set -euo pipefail
 repo_root="$(pwd)"
 schema_dir="${SCHEMA_ARTIFACT_DIRECTORY:-}"
+schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
+case "$schema_mode" in
+  pre03) ;;
+  current)
+    # Explicit contemporary runtime qualification, not historical migration proof.
+    expected_schema_sha=d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a
+    ;;
+  *) echo "Unsupported Cashier schema mode" >&2; exit 1 ;;
+esac
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
   echo "Verified schema-only baseline artifact is required" >&2
   exit 1
 fi
 (cd "$schema_dir" && sha256sum --check --status live-public-schema.sha256)
+if [[ "$schema_mode" == current ]]; then
+  actual_schema_sha="$(sha256sum "$schema_dir/live-public-schema.sql" | cut -d ' ' -f 1)"
+  if [[ "$actual_schema_sha" != "$expected_schema_sha" ]]; then
+    echo "Contemporary Cashier runtime schema provenance mismatch" >&2
+    exit 1
+  fi
+fi
 
 # This job has no production secrets or linked project. No application SQL or
 # handler is loaded until the outbound-network proof succeeds.
@@ -283,6 +299,21 @@ elif [[ "$pg_trgm_schema" != public ]]; then
   docker exec "$db_container" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -X -q -v ON_ERROR_STOP=1 \
     -U supabase_admin -d postgres -c "ALTER EXTENSION pg_trgm SET SCHEMA public"' >/dev/null
 fi
+if [[ "$schema_mode" == current ]]; then
+  # The public snapshot omits this private namespace and its policy dependencies.
+  node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/private-dependencies.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/private-dependencies.sql"
+  # pg_dump ACL statements assume creation defaults do not add named grantees.
+  # The empty Supabase service may grant them by default to restore-created RPCs.
+  # Reset only the local dump creator defaults; the captured ACLs stay authoritative.
+  docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    'SELECT pg_get_userbyid(defaclrole), defaclnamespace::regnamespace, defaclobjtype, defaclacl FROM pg_default_acl WHERE defaclobjtype = '\''f'\'';'
+  docker exec -i "$db_container" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d postgres' <<'CREATOR_DEFAULTS'
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated, service_role;
+CREATOR_DEFAULTS
+fi
 set +e
 docker exec -i "$db_container" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -X -q -v ON_ERROR_STOP=1 \
   -U supabase_admin -d postgres' \
@@ -297,11 +328,12 @@ fi
 baseline_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "SELECT to_regclass('public.tournament_registrations') IS NOT NULL,
     to_regclass('public.cashier_buyin_movements') IS NULL")"
-if [[ "$baseline_state" != 't|t' ]]; then
+if [[ "$schema_mode" == pre03 && "$baseline_state" != 't|t' ]]; then
   echo "Captured baseline is incomplete or already has the Cashier migration" >&2
   exit 1
 fi
 cashier_migration='20270115000003_cashier_tour_money_v1.sql'
+if [[ "$schema_mode" == pre03 ]]; then
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   <"$repo_root/supabase/migrations/$cashier_migration" >"$test_root/migration.log" 2>&1
@@ -310,6 +342,10 @@ set -e
 if (( migration_rc != 0 )); then
   echo "Exact Cashier migration failed on isolated current-schema baseline (exit $migration_rc)" >&2
   tail -n 45 "$test_root/migration.log" >&2
+  exit 1
+fi
+elif [[ "$baseline_state" != 't|f' ]]; then
+  echo "Contemporary runtime baseline lacks the existing Cashier schema" >&2
   exit 1
 fi
 applied_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
@@ -326,7 +362,7 @@ if [[ "$(docker exec "$db_container" psql -X -Atq -U postgres -d postgres -c 'SH
   echo "Disposable cron guard changed during migration" >&2
   exit 1
 fi
-echo "SCHEMA_PROOF: captured current schema restored; exact Cashier SQL applied; RPC ACL and default-off verified; cron remains off"
+echo "SCHEMA_PROOF: mode=$schema_mode; captured schema restored; RPC ACL and default-off verified; cron remains off"
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   <"$repo_root/supabase/pending-tests/cashier_tour_money_v1.sql" \
@@ -341,6 +377,7 @@ fi
 echo "MONEY_PROOF: Cashier money/seat rollback-only SQL assertions passed on captured schema"
 
 refund_migration='supabase/migration-archive/remote-history/recovered-source/20270115000011_cashier_refund_without_floor_clearance.sql'
+if [[ "$schema_mode" == pre03 ]]; then
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   <"$repo_root/$refund_migration" >"$test_root/refund-migration.log" 2>&1
@@ -350,6 +387,7 @@ if (( refund_migration_rc != 0 )); then
   echo "Exact Cashier refund migration failed on isolated schema (exit $refund_migration_rc)" >&2
   tail -n 45 "$test_root/refund-migration.log" >&2
   exit 1
+fi
 fi
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 \
@@ -363,7 +401,7 @@ if (( refund_money_rc != 0 )); then
   tail -n 45 "$test_root/refund-money-test.log" >&2
   exit 1
 fi
-echo "REFUND_PROOF: exact migration 11 and rollback-only waiting-seat/historical refund assertions passed"
+echo "REFUND_PROOF: mode=$schema_mode; rollback-only waiting-seat/historical refund assertions passed"
 
 # Load the real handlers only after outbound denial, then exercise them through
 # the real local Auth, API gateway, Edge runtime and captured production schema.

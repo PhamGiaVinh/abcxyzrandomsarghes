@@ -6,6 +6,7 @@ import { SupabaseClientProvider } from "@/integrations/supabase/SupabaseClientCo
 import type { Tournament } from "@/types/tournament";
 
 const pendingResponse = new Promise<never>(() => {});
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "test-floor-actor" } }) }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {

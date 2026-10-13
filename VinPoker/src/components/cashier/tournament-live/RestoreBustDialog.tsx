@@ -4,6 +4,7 @@ import { createFloorTableControlV3Client, type FloorTableControlV3Rpc, type Floo
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { formatStack } from "@/lib/format";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
 type RestoreIntent = Parameters<ReturnType<typeof createFloorTableControlV3Client>["restoreBustedPlayer"]>[0];
 const messages: Record<string, string> = {
@@ -82,7 +83,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     setUnresolved(attempts.current.has(scope));
     if (!target || !actorId) return;
     setLoading(true);
-    void Promise.all([client.getTournamentTableRoster(tournamentId), client.getRestorableEntries(tournamentId)])
+    void waitForManualPlayerResponse(Promise.all([client.getTournamentTableRoster(tournamentId), client.getRestorableEntries(tournamentId)]))
       .then(([roster, entries]) => {
         if (disposed) return;
         if (roster.ok === false || entries.ok === false) {
@@ -140,7 +141,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     if (!intent || pending.current) return;
     pending.current = true; setBusy(true); setError(null);
     try {
-      const response = await client.getRestoreReceipt(intent);
+      const response = await waitForManualPlayerResponse(client.getRestoreReceipt(intent));
       if (!alive.current) return;
       if (response.ok === false) {
         setError(messages[response.error] ?? `Chưa đối chiếu được yêu cầu (${response.error}).`);
@@ -159,7 +160,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     if (!intent || pending.current || journalBlocked) return;
     pending.current = true; setBusy(true); setError(null);
     try {
-      const response = await client.cancelRestoreRequest(intent);
+      const response = await waitForManualPlayerResponse(client.cancelRestoreRequest(intent));
       if (!alive.current) return;
       if (response.ok === false) { setError(messages[response.error] ?? `Chưa xác nhận hủy (${response.error}).`); return; }
       const proof = response.data as Record<string, unknown> | null;
@@ -189,7 +190,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     attempts.current.set(key, intent); setUnresolved(true);
     pending.current = true; setBusy(true); setError(null);
     try {
-      const result = await client.restoreBustedPlayer(intent);
+      const result = await waitForManualPlayerResponse(client.restoreBustedPlayer(intent));
       if (!alive.current) return;
       if (result.ok === false) {
         // A rejection after an unknown attempt need not prove the original

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FloorTournamentTableRoster } from "@/lib/floorTableControlV3";
 const state = vi.hoisted(() => ({ user: { id: "owner-a" }, roster: vi.fn(), entries: vi.fn(), restore: vi.fn(), receipt: vi.fn(), cancel: vi.fn(), supabase: {} }));
@@ -35,8 +35,41 @@ beforeEach(() => {
   state.restore.mockResolvedValue({ ok: true, data: canonicalReceipt });
   state.receipt.mockResolvedValue({ ok: true, data: { status: "unknown" } });
 });
-afterEach(cleanup);
+afterEach(() => { vi.useRealTimers(); cleanup(); });
 describe("mistaken-bust restore", () => {
+  it("ends a hung evidence read without enabling mutation or accepting late roster", async () => {
+    let complete!: (value: unknown) => void;
+    state.roster.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    vi.useFakeTimers();
+    mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20001); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Không kết nối được server");
+    expect(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" })).toBeDisabled();
+    await act(async () => { complete({ ok: true, data: [table] }); });
+    expect(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" })).toBeDisabled();
+    expect(state.restore).not.toHaveBeenCalled();
+  });
+  it.each(["restore", "receipt", "cancel"] as const)("unfreezes hung %s without forgetting its intent or accepting late success", async (operation) => {
+    const view = mount(); await choose();
+    if (operation !== "restore") {
+      state.restore.mockRejectedValueOnce(new Error("unknown commit"));
+      fireEvent.click(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" }));
+      await screen.findByRole("alert");
+    }
+    let complete!: (value: unknown) => void;
+    state[operation].mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: operation === "restore" ? "Xác nhận hoàn tác bust" : operation === "receipt" ? "Đối chiếu yêu cầu" : "Hủy yêu cầu đang chờ" }));
+    const saved = sessionStorage.getItem(sessionStorage.key(0)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20001); });
+    expect(screen.getByRole("button", { name: "Đối chiếu yêu cầu" })).toBeEnabled();
+    expect(sessionStorage.getItem(sessionStorage.key(0)!)).toBe(saved);
+    expect(state.restore).toHaveBeenCalledOnce();
+    await act(async () => { complete({ ok: true, data: operation === "restore" ? canonicalReceipt : { ok: true, status: "committed", result: canonicalReceipt } }); });
+    expect(view.onRestored).not.toHaveBeenCalled();
+    expect(view.onClose).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(sessionStorage.key(0)!)).toBe(saved);
+  });
   it.each(["other-actor", "wrong-request", "unknown", "network"])("retains the frozen intent on cancellation %s", async (failure) => {
     state.restore.mockResolvedValue({ ok: false, error: "STALE_STATE" });
     state.cancel.mockImplementation(async (intent) => {

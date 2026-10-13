@@ -34,6 +34,7 @@ import type { Tournament } from "@/types/tournament";
 import { OpenTableDialog } from "./OpenTableDialog";
 import { FloorRedrawDialogV1 } from "./FloorRedrawDialogV1";
 import { RestoreBustDialog } from "./RestoreBustDialog";
+import { AddPlayerDialog } from "./AddPlayerDialog";
 import { MovePlayerDialog } from "./MovePlayerDialog";
 import { FEATURES } from "@/lib/featureFlags";
 import { parseCanonicalCloseResult } from "./closeTableResponse";
@@ -89,7 +90,7 @@ function v3ErrorMessage(error: string): string {
  * V3-only Floor map.  It never reads a legacy table_id or invokes an Edge
  * writer: all data and mutations pass through the fixed typed V3 adapter.
  */
-type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null };
+type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null; onParticipationChanged?: () => void };
 
 // Changing actor/tournament invalidates every open writer as well as the roster.
 export function FloorTableMapPanelV3(props: FloorPanelProps) {
@@ -100,10 +101,12 @@ function ScopedFloorTableMapPanelV3({
   tournament,
   refreshTrigger,
   actorId,
+  onParticipationChanged,
 }: {
   tournament: Tournament;
   refreshTrigger: number;
   actorId: string | null;
+  onParticipationChanged?: () => void;
 }) {
   const supabase = useSupabaseClient();
   const v3 = useMemo(() => createFloorTableControlV3Client(
@@ -120,6 +123,7 @@ function ScopedFloorTableMapPanelV3({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [openTable, setOpenTable] = useState(false);
+  const [manualPlayerTarget, setManualPlayerTarget] = useState<{ tableId: string; sessionId: string; seat: number } | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [selectedSeatNumber, setSelectedSeatNumber] = useState<number | null>(null);
   const [entrySelection, setEntrySelection] = useState<FloorEntrySelection | null>(null);
@@ -140,6 +144,8 @@ function ScopedFloorTableMapPanelV3({
     () => tables.find((table) => table.tournamentTableId === selectedTableId) ?? null,
     [selectedTableId, tables],
   );
+  const manualPlayerTable = tables.find((row) => row.tournamentTableId === manualPlayerTarget?.tableId
+    && row.tableSessionId === manualPlayerTarget.sessionId);
   const selectedSeat = useMemo(
     () => selectedTable?.seats.find((seat) => seat.seatNumber === selectedSeatNumber) ?? null,
     [selectedSeatNumber, selectedTable],
@@ -278,6 +284,7 @@ function ScopedFloorTableMapPanelV3({
       }
       setOperationError(null);
       toast.success(typeof successMessage === "function" ? successMessage(result.data) : successMessage);
+      onParticipationChanged?.();
       await load();
       return true;
     } catch {
@@ -420,10 +427,18 @@ function ScopedFloorTableMapPanelV3({
           playerName={moveTarget.playerName} currentTournamentTableId={moveTarget.tableId}
           currentSeatNumber={moveTarget.seatNumber} onMoved={() => void load(true)} />
       )}
-      <OpenTableDialog open={openTable} onOpenChange={setOpenTable} tournamentId={tournament.id} onDone={() => void load()} />
+      <OpenTableDialog open={openTable} onOpenChange={setOpenTable} tournamentId={tournament.id} onDone={() => { onParticipationChanged?.(); void load(); }} />
+      {manualPlayerTarget && <AddPlayerDialog open={true} onOpenChange={(open) => { if (!open) setManualPlayerTarget(null); }}
+          actorId={actorId} tournamentId={tournament.id} tournamentName={tournament.name} tournamentDate={null}
+          tableTtId={manualPlayerTarget.tableId} tableSessionId={manualPlayerTarget.sessionId}
+          expectedRevision={manualPlayerTable?.sessionRevision ?? null} expectedControlEpoch={manualPlayerTable?.controlEpoch ?? null}
+          contextReady={!!manualPlayerTable && !loading && !loadError}
+          maxSeats={manualPlayerTable?.maxSeats ?? 0} occupiedSeats={manualPlayerTable?.seats.map((s) => s.seatNumber) ?? []}
+          lockedSeats={manualPlayerTable?.seatLocks.map((s) => s.seatNumber) ?? []} defaultSeatNumber={manualPlayerTarget.seat}
+          onDone={() => { onParticipationChanged?.(); void load(true); }} />}
       <RestoreBustDialog actorId={actorId} tournamentId={tournament.id} target={restoreTarget?.scope === selectedSessionScope ? restoreTarget : null}
         onClose={() => setRestoreTarget(null)}
-        onRestored={() => { setEntrySelection(null); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
+        onRestored={() => { setEntrySelection(null); onParticipationChanged?.(); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
       {FEATURES.floorRedrawSeatLockV1 && (
         <FloorRedrawDialogV1
           open={redrawOpen}
@@ -510,6 +525,10 @@ function ScopedFloorTableMapPanelV3({
                   ) : selectedSeatNumber != null && (
                     <section className="space-y-3 rounded-xl border border-border bg-card/55 p-3">
                       <p className="text-sm font-semibold">Ghế {selectedSeatNumber} đang trống</p>
+                      <Button data-ops-action="floor.tables.open_add_player" variant="outline" className="min-h-12 w-full" disabled={busy || loading || !!loadError || !actorId}
+                        onClick={() => setManualPlayerTarget({ tableId: selectedTable.tournamentTableId, sessionId: selectedTable.tableSessionId, seat: selectedSeatNumber })}>
+                        <Plus className="mr-2 h-4 w-4" /> Thêm người mới
+                      </Button>
                       <p className="text-xs text-muted-foreground">Danh sách chỉ gồm entry hợp lệ của giải. Chọn “Đã loại” để khôi phục.</p>
                       <FloorEntryPicker
                         seatableEntries={seatableEntries}

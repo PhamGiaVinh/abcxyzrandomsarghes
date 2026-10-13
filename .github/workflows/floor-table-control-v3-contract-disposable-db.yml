@@ -34,6 +34,15 @@ on:
       - "VinPoker/scripts/production/repairs/repair_tracker_test_roster_entries_ban5.sql"
       - "VinPoker/scripts/production/repairs/repair_tracker_test_roster_tournament_table_link_ban5.sql"
       - "VinPoker/src/lib/floorTableControlV3.ts"
+      - "VinPoker/src/lib/floorManualPlayerIntent*"
+      - "VinPoker/supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql"
+      - "VinPoker/supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql"
+      - "VinPoker/scripts/ops/floor-manual-68-*"
+      - ".github/workflows/floor-manual-68-protected-apply.yml"
+      - "VinPoker/tests/floorProduction/manualEntryRestore*"
+      - "VinPoker/scripts/ops/floor-manual-67-*"
+      - ".github/workflows/floor-manual-67-protected-apply.yml"
+      - "VinPoker/src/components/cashier/tournament-live/AddPlayerDialog*"
       - "VinPoker/tests/floorTableControlV3/deferredTrackerMove.disposable.sql"
       - "VinPoker/src/lib/featureFlags.ts"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx"
@@ -114,6 +123,8 @@ jobs:
         run: >-
           ./node_modules/.bin/vitest run
           src/lib/floorTableControlV3.test.ts
+          src/lib/floorManualPlayerIntent.test.ts
+          src/components/cashier/tournament-live/AddPlayerDialog.test.tsx
           src/components/cashier/dealer-swing/PhysicalTableDeclaration.test.tsx
           src/components/cashier/DealerSwingTab.readState.test.tsx
           tests/floorFreeSitV1/rosterActions.interaction.test.tsx

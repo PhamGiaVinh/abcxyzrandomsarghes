@@ -12,7 +12,7 @@ type ChannelFixture = {
 };
 
 const db = vi.hoisted(() => ({ rpc: vi.fn(), actor: "owner", status: "live", liveStatus: null as string | null,
-  callbacks: new Map<string, () => void>() }));
+  callbacks: new Map<string, () => void>(), childCallback: undefined as (() => void) | undefined }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: db.actor } }) }));
 vi.mock("react-i18next", async () => {
   const { default: viLocale } = await import("@/i18n/locales/vi.json");
@@ -26,7 +26,10 @@ vi.mock("./tournament-live/handinput/unified/TrackerHandInputBoundary", () => ({
 vi.mock("./tournament-live/LeaderboardPanel", () => ({ LeaderboardPanel: () => null }));
 vi.mock("./tournament-live/PlayersGroupedPanel", () => ({ PlayersGroupedPanel: () => null }));
 vi.mock("./tournament-live/BlindEditorPanel", () => ({ BlindEditorPanel: () => null }));
-vi.mock("./tournament-live/FloorTableMapPanel", () => ({ FloorTableMapPanel: () => null }));
+vi.mock("./tournament-live/FloorTableMapPanel", () => ({ FloorTableMapPanel: ({ onParticipationChanged, refreshTrigger }: { onParticipationChanged?: () => void; refreshTrigger: number }) => {
+  db.childCallback = onParticipationChanged;
+  return <><button onClick={() => onParticipationChanged?.()}>confirmed-seat-change</button><span>child-refresh:{refreshTrigger}</span></>;
+} }));
 vi.mock("./tournament-live/PrizesTab", () => ({ PrizesTab: () => null }));
 vi.mock("./tournament-live/TournamentLiveView", () => ({ TournamentLiveView: () => null }));
 vi.mock("./tournament-live/HandHistoryPanel", () => ({ HandHistoryPanel: () => null }));
@@ -74,6 +77,34 @@ beforeEach(() => { db.rpc.mockReset(); db.callbacks.clear(); db.actor = "owner";
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Floor selected-tour canonical summary integration", () => {
+  it("ignores a settled child callback from the previous actor scope", async () => {
+    const view = render(<TournamentLivePanel {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: "select-a" }));
+    await waitFor(() => expect(screen.getByText(/playersRemaining\s*:\s*8\s*·\s*AVG:/)).toBeInTheDocument());
+    const oldCallback = db.childCallback!;
+    db.actor = "other-owner";
+    view.rerender(<TournamentLivePanel {...props} />);
+    await waitFor(() => expect(screen.getByText(/playersRemaining\s*:\s*8\s*·\s*AVG:/)).toBeInTheDocument());
+    const before = db.rpc.mock.calls.length;
+    await act(async () => oldCallback());
+    expect(db.rpc.mock.calls.length).toBe(before);
+    fireEvent.click(screen.getByRole("button", { name: "confirmed-seat-change" }));
+    await waitFor(() => expect(db.rpc.mock.calls.length).toBe(before + 1));
+  });
+  it("refreshes canonical header after a confirmed child mutation without waiting for Realtime", async () => {
+    render(<TournamentLivePanel {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: "select-a" }));
+    await waitFor(() => expect(screen.getByText(/playersRemaining.*8/)).toBeInTheDocument());
+    const before = db.rpc.mock.calls.length;
+    const childRefresh = screen.getByText(/child-refresh:/).textContent;
+    db.rpc.mockImplementation((_name, args) => Promise.resolve({ data: payload(args.p_tournament_id, 7), error: null }));
+    fireEvent.click(screen.getByRole("button", { name: "confirmed-seat-change" }));
+    await waitFor(() => expect(screen.getByText(/playersRemaining\s*:\s*7\s*·\s*AVG:/)).toBeInTheDocument());
+    expect(screen.queryByText(/playersRemaining.*8/)).not.toBeInTheDocument();
+    expect(db.rpc.mock.calls.length).toBe(before + 1);
+    expect(screen.getByText(/child-refresh:/).textContent).toBe(childRefresh);
+    expect(db.rpc.mock.calls.every(([name]) => name === "get_tournament_participation_counts_v1")).toBe(true);
+  });
   it("displays registering from the server rather than treating catalog active as playing", async () => {
     db.status = "active"; db.liveStatus = "registering";
     render(<TournamentLivePanel {...props} />);

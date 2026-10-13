@@ -18,6 +18,7 @@ import { DashboardTab } from "./DashboardTab";
 import { BankAuditTab } from "./BankAuditTab";
 import { ColorUpTab } from "./ColorUpTab";
 import { BagTagTab } from "./BagTagTab";
+import { IssuanceCard } from "./IssuanceCard";
 
 // The chip_ops_* tables/RPCs are applied live but not yet in the generated Database types,
 // so all reads/writes go through this loosely-typed client. Strictly additive feature.
@@ -263,6 +264,7 @@ export function ChipOpsManager() {
                 )}
                 {templates.length > 0 && (
                   <IssuanceCard
+                    actorId={user?.id ?? null} clubId={tour?.club_id ?? null} tournamentId={tournamentId}
                     templates={templates}
                     coupling={coupling}
                     opsStarted={!!(inv && (((inv as any).ledger_delta_value ?? 0) !== 0 || ((inv as any).rounding_total ?? 0) !== 0))}
@@ -469,72 +471,6 @@ function TemplatesCard({ tournamentId, denoms, templates, busy, setBusy, reload 
   );
 }
 
-// ---------- Issuance ----------
-// When két auto-coupling (Model A) is ON, editing the issued count IS a két movement (phát→xuất /
-// bớt→thu), so the card relabels + previews the delta. Even when OFF, if the tournament already has
-// chip transactions (color-up / adjust), changing issuance shifts current inventory → a warning.
-function IssuanceCard({ templates, coupling, opsStarted, busy, setBusy, reload }: {
-  templates: TemplateRow[]; coupling: boolean; opsStarted: boolean; busy: boolean; setBusy: (b: boolean) => void; reload: () => void;
-}) {
-  const [vals, setVals] = useState<Record<string, string>>({});
-  const deltaOf = (t: TemplateRow) => {
-    const raw = vals[t.id];
-    if (raw === undefined || raw === "") return 0;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n - t.issued_count : 0;
-  };
-  const save = async (templateId: string) => {
-    const raw = vals[templateId];
-    const n = raw === undefined ? NaN : Number(raw);
-    if (!Number.isFinite(n) || n < 0) { toast.error("Nhập số bộ ≥ 0."); return; }
-    setBusy(true);
-    const r = await callRpc("chip_ops_set_issuance", { p_stack_template_id: templateId, p_issued_count: n });
-    if (r?.status === "ok") {
-      toast.success(r.coupled ? "Đã lưu & cập nhật kho két." : "Đã lưu số bộ phát.");
-      reload();
-    }
-    setBusy(false);
-  };
-  return (
-    <Card className="border-border">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base text-foreground">{coupling ? "3. Phát / thu stack (tự động trừ két)" : "3. Số bộ đã phát"}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {opsStarted && (
-          <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <div>Giải đã phát sinh giao dịch chip (color-up / điều chỉnh). Sửa số bộ phát sẽ <b>thay đổi tồn kho hiện tại</b> — chỉ sửa khi thật sự phát/thu thêm.</div>
-          </div>
-        )}
-        <Table>
-          <TableHeader><TableRow><TableHead>Mẫu stack</TableHead><TableHead className="w-44">{coupling ? "Số bộ (phát/thu)" : "Số bộ đã phát"}</TableHead><TableHead className="text-right">Lưu</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {templates.map((t) => {
-              const delta = deltaOf(t);
-              return (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.name}</TableCell>
-                  <TableCell>
-                    <Input type="number" inputMode="numeric" min={0} value={vals[t.id] ?? String(t.issued_count)} onChange={(e) => setVals((v) => ({ ...v, [t.id]: e.target.value }))} className="h-9" />
-                    {coupling && delta !== 0 && (
-                      <div className={`mt-1 text-[11px] ${delta > 0 ? "text-warning" : "text-primary"}`}>
-                        {delta > 0 ? `+${delta} bộ → xuất ${delta} bộ chip khỏi két` : `${delta} bộ → thu ${-delta} bộ chip về két`}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" disabled={busy} onClick={() => save(t.id)}>{coupling && delta !== 0 ? (delta > 0 ? "Lưu & xuất" : "Lưu & thu") : "Lưu"}</Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
 
 // ---------- Read-only inventory ----------
 function InventoryCard({ inv }: { inv: Inventory | null }) {
