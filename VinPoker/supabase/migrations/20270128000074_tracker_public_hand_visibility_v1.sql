@@ -54,6 +54,8 @@ BEGIN
  OR EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE p.oid='floor_private.tracker_hand_read_scope74(uuid,boolean,uuid)'::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE') THEN RAISE EXCEPTION 'visibility74_helper_acl_postcheck'; END IF;
  IF (SELECT md5(jsonb_agg(to_jsonb(p) ORDER BY p.tablename,p.policyname)::text) FROM pg_policies p WHERE p.schemaname='public' AND p.tablename IN ('tournament_hands','hand_players') AND p.policyname NOT IN ('tournament_hands_visibility74','hand_players_visibility74')) IS DISTINCT FROM current_setting('visibility74.original_policies') THEN RAISE EXCEPTION 'visibility74_existing_policy_changed'; END IF;
  IF (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND policyname IN ('tournament_hands_visibility74','hand_players_visibility74') AND permissive='RESTRICTIVE' AND cmd='SELECT' AND roles=ARRAY['anon','authenticated']::name[])<>2 THEN RAISE EXCEPTION 'visibility74_restrictive_postcheck'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='tournament_hands' AND policyname='tournament_hands_visibility74' AND md5(qual)='cf2065eba7a9638faaa4cfa59756577f')
+ OR NOT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='hand_players' AND policyname='hand_players_visibility74' AND md5(qual)='8c08f5f437366972d6b8410701ffbf4b') THEN RAISE EXCEPTION 'visibility74_policy_expression_postcheck'; END IF;
 END;
 $postcheck$;
 COMMIT;
