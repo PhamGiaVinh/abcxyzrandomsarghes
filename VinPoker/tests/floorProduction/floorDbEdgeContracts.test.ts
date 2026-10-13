@@ -356,8 +356,11 @@ describe("Floor V2 DB and Edge contracts", () => {
     expect(opsCapabilityLoader).toContain('client.rpc("get_my_floor_operator_scope")');
     expect(opsCapabilityLoader).toContain('function isMissingUnifiedScopeRpc');
     expect(opsCapabilityLoader).toContain('error?.code === "42883" || error?.code === "PGRST202"');
-    expect(opsCapabilityProvider).toContain('getModuleClubIds(getOpsModule("floor"), scope)');
-    expect(opsCapabilityProvider).toContain('getModuleClubIds(getOpsModule("cashier"), scope)');
+    expect(opsCapabilityProvider).toContain('const ownsScope = !!user && scopeActorId === user.id');
+    expect(opsCapabilityProvider).toContain('const ownedScope = ownsScope ? scope : []');
+    expect(opsCapabilityProvider).toContain('const ownedSuperAdmin = ownsScope && isSuperAdmin');
+    expect(opsCapabilityProvider).toContain('getModuleClubIds(getOpsModule("floor"), ownedScope)');
+    expect(opsCapabilityProvider).toContain('getModuleClubIds(getOpsModule("cashier"), ownedScope)');
     expect(opsApp).toContain('<OpsModuleGate capability="floor">');
     expect(opsApp).toContain("<OpsTournamentScopeGate>");
     expect(cashierAccess).toContain("hasCashierAccess");
