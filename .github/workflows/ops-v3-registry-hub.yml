@@ -48,8 +48,13 @@ jobs:
           npx vitest run
           src/ops/auth/opsCapabilityLoader.test.ts
           src/ops/auth/opsAuthBoundary.test.ts
+          src/ops/auth/OpsAuthProvider.test.tsx
+          src/ops/auth/OpsCapabilityProvider.refocus.test.tsx
+          src/ops/auth/opsSessionValidation.test.ts
           src/ops/registry/opsModuleRegistry.test.ts
           src/ops/registry/opsRegistryRoutes.test.ts
+          tests/floorProduction/floorDbEdgeContracts.test.ts
+          --maxWorkers=1 --minWorkers=1
       - name: Lint targeted Ops V3 source
         working-directory: VinPoker
         run: >-
