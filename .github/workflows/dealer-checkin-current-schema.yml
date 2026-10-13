@@ -7,6 +7,7 @@ on:
       - 'VinPoker/tests/floorProduction/manualSeatSessionFence*'
       - 'VinPoker/tests/floorProduction/manualEntryRestore*'
       - 'VinPoker/supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql'
       - 'VinPoker/scripts/ops/floor-manual-67-*'
       - '.github/workflows/floor-manual-67-protected-apply.yml'
       - '.github/workflows/floor-manual-66-protected-apply.yml'
@@ -604,6 +605,12 @@ jobs:
           fi
           grep -Fq 'MANUAL_RESTORABLE_ENTRY_MISSING: canonical manual entry created and busted successfully' "$RUNNER_TEMP/manual67-red.log"
           PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql
+          if PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql >"$RUNNER_TEMP/manual68-red.log" 2>&1; then
+            echo "Expected old restore writer to fail current-ticket proof" >&2
+            exit 1
+          fi
+          grep -Fq 'manual_restore_current_ticket_unusable' "$RUNNER_TEMP/manual68-red.log"
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql
           PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql
       - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
         working-directory: VinPoker

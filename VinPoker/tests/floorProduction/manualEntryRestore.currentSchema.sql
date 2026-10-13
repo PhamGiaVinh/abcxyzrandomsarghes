@@ -16,7 +16,7 @@ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,sta
  ('f7670000-0000-4000-8000-000000000011','f7670000-0000-4000-8000-000000000002','Manual restore TEST',79,'tournament','inactive','available');
 SELECT set_config('request.jwt.claim.sub','f7670000-0000-4000-8000-000000000001',true);
 DO $$
-DECLARE opened jsonb; created jsonb; busted jsonb; restored jsonb; replayed jsonb; entry uuid; tt uuid; sess uuid; rev bigint; epoch bigint;
+DECLARE opened jsonb; created jsonb; busted jsonb; restored jsonb; replayed jsonb; ticket jsonb; entry uuid; tt uuid; sess uuid; rev bigint; epoch bigint;
  restore_key uuid:=gen_random_uuid();
  proof record;
 BEGIN
@@ -50,6 +50,10 @@ BEGIN
  PERFORM set_config('role','authenticated',true);
  restored:=public.floor_restore_busted_player_to_seat_v5(entry,tt,1,rev,epoch,restore_key,sess);
  IF restored->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'manual_restore_writer_failed: %',restored; END IF;
+ ticket:=public.get_current_floor_seat_ticket_v1('f7670000-0000-4000-8000-000000000003',entry,(restored->>'seat_id')::uuid);
+ IF ticket->>'ok' IS DISTINCT FROM 'true' OR ticket->>'receipt_code' IS DISTINCT FROM restored->>'receipt_code'
+   OR (ticket->>'stack_at_issue')::integer IS DISTINCT FROM 20000 THEN
+   RAISE EXCEPTION 'manual_restore_current_ticket_unusable: %',ticket; END IF;
  replayed:=public.floor_restore_busted_player_to_seat_v5(entry,tt,1,rev,epoch,restore_key,sess);
  IF replayed IS DISTINCT FROM restored THEN RAISE EXCEPTION 'manual_restore_replay_changed'; END IF;
  replayed:=public.floor_restore_busted_player_to_seat_v5(entry,tt,2,rev,epoch,restore_key,sess);
@@ -57,6 +61,11 @@ BEGIN
  IF EXISTS(SELECT 1 FROM public.get_floor_restorable_entries_v3('f7670000-0000-4000-8000-000000000003') WHERE entry_id=entry) THEN
    RAISE EXCEPTION 'manual_restore_active_entry_still_offered'; END IF;
  PERFORM set_config('role','none',true);
+ IF NOT EXISTS(SELECT 1 FROM public.tournament_entries e JOIN public.tournament_seats s ON s.id=e.seat_id AND s.entry_id=e.id
+   WHERE e.id=entry AND s.id=(restored->>'seat_id')::uuid AND s.is_active AND e.seat_number=s.seat_number
+     AND e.table_id='f7670000-0000-4000-8000-000000000011'::uuid AND s.table_id=tt
+     AND s.tournament_table_id=tt AND s.table_session_id=sess) THEN
+   RAISE EXCEPTION 'RESTORE_CANONICAL_ENTRY_SEAT_TUPLE_MISMATCH'; END IF;
  IF (SELECT count(*) FROM public.tournament_entries WHERE id=entry AND registration_id IS NULL AND current_stack=20000 AND status='seated')<>1
    OR (SELECT count(*) FROM public.tournament_seats WHERE entry_id=entry AND is_active AND chip_count=20000)<>1
    OR (SELECT count(*) FROM public.tournament_seats WHERE entry_id=entry AND is_active)<>1
