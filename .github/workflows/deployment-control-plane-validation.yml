@@ -8,6 +8,8 @@ on:
       - ".github/workflows/floor-operator-scope-acl-apply.yml"
       - ".github/workflows/dealer-stop-64-protected-apply.yml"
       - ".github/workflows/tracker-voice-70-71-protected-apply.yml"
+      - ".github/workflows/tracker-public-74-protected-apply.yml"
+      - "VinPoker/scripts/ops/tracker-public-74-*"
       - "VinPoker/scripts/ops/tracker-voice-70-71-*"
       - ".github/workflows/floor-manual-66-protected-apply.yml"
       - ".github/workflows/floor-manual-67-protected-apply.yml"
