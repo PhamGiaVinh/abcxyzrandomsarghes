@@ -7612,7 +7612,7 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
-    {"version":"20270128000066","filename":"20270128000066_floor_manual_seat_session_fence_v1.sql","sha256":"3d0892e06b5794d92f642365527e98e21bdcc7081e8ea16bd6783aedd617ec54","domain":"floor-manual-seat-session-fence-campaign"},
+    {"version":"20270128000066","filename":"20270128000066_floor_manual_seat_session_fence_v1.sql","sha256":"07d3c63abc66bad1564cf831ee96f5ef42640ed9d3c99f2fdc46c3ab7e2d3fdb","domain":"floor-manual-seat-session-fence-campaign"},
     {"version":"20270128000064","filename":"20270128000064_dealer_swing_scoped_stop_v1.sql","sha256":"043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17","domain":"dealer-swing-scoped-stop-campaign"},
     {"version":"20270128000065","filename":"20270128000065_floor_physical_asset_authority_commit_fence_v1.sql","sha256":"014718d85013b0b714afd96a300b7a80f38f45b031dc0ebef3740145f11682f6","domain":"quads-physical-asset-authority-fence-campaign"},
     {"version":"20270128000063","filename":"20270128000063_floor_physical_asset_provision_v1.sql","sha256":"8ee185c840976f58854ec006c8ab1d6d6d6f8d34077ecffd68e52a7ee62f697f","domain":"quads-physical-asset-provision-campaign"},

@@ -35,6 +35,8 @@ test('implementation preserves scoped receipt and nested rollback boundaries', (
   assert.match(sql, /sess\.revision IS DISTINCT FROM p_expected_revision/);
   assert.match(sql, /sess\.control_epoch IS DISTINCT FROM p_expected_control_epoch/);
   assert.match(sql, /table_session_id=sess\.id AND status='active'/);
+  assert.match(sql, /q\.source_table_session_id=sess\.id AND q\.status='pending'/);
+  assert.match(sql, /'source_moves_pending'/);
   assert.match(sql, /request_fingerprint IS DISTINCT FROM payload::text/);
   assert.match(sql, /RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='manual_player_core_rejected'/);
   assert.match(sql, /IF SQLERRM<>'manual_player_core_rejected' THEN RAISE/);

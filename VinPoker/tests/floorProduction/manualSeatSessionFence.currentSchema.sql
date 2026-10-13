@@ -37,13 +37,14 @@ INSERT INTO public.clubs(id,owner_id,name,region) VALUES
 INSERT INTO public.tournaments(id,club_id,name,status,live_status,starting_stack) VALUES
  ('f7660000-0000-4000-8000-000000000003','f7660000-0000-4000-8000-000000000002','Manual seat TEST','active','registering',20000);
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES
- ('f7660000-0000-4000-8000-000000000011','f7660000-0000-4000-8000-000000000002','Manual seat TEST',76,'tournament','inactive','available');
+ ('f7660000-0000-4000-8000-000000000011','f7660000-0000-4000-8000-000000000002','Manual seat TEST',76,'tournament','inactive','available'),
+ ('f7660000-0000-4000-8000-000000000012','f7660000-0000-4000-8000-000000000002','Manual destination TEST',78,'tournament','inactive','available');
 SELECT set_config('request.jwt.claim.sub','f7660000-0000-4000-8000-000000000001',true);
 SELECT set_config('test.manual_seat_legacy_repro',:'legacy_repro',true);
 DO $$
 DECLARE opened jsonb; result jsonb; tt uuid; sess uuid; rev bigint; epoch bigint;
  original jsonb; proof jsonb; key uuid:=gen_random_uuid(); entry_count bigint; hand uuid;
- receipt_count bigint; fault_key uuid;
+ receipt_count bigint; fault_key uuid; dest_tt uuid; dest_sess uuid; move_uuid uuid;
 BEGIN
  PERFORM set_config('role','authenticated',true);
  opened:=public.floor_open_tournament_table_v3('f7660000-0000-4000-8000-000000000003',
@@ -141,6 +142,29 @@ BEGIN
  IF result->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'second_participant_failed: %',result; END IF;
  PERFORM set_config('role','none',true);
  SELECT revision INTO rev FROM public.table_sessions WHERE id=sess;
+ PERFORM set_config('role','authenticated',true);
+ opened:=public.floor_open_tournament_table_v3('f7660000-0000-4000-8000-000000000003',
+   'f7660000-0000-4000-8000-000000000012','tracker',gen_random_uuid());
+ IF opened->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'fixture_destination_open_failed: %',opened; END IF;
+ dest_tt:=(opened->>'tournament_table_id')::uuid; dest_sess:=(opened->>'table_session_id')::uuid;
+ PERFORM set_config('role','none',true);
+ -- Isolated valid pending-source relation; no live queue/fixture insertion.
+ INSERT INTO public.floor_pending_tracker_moves(tournament_id,entry_id,source_seat_id,
+   source_tournament_table_id,source_table_session_id,destination_tournament_table_id,
+   destination_table_session_id,destination_seat_number,source_control_epoch,destination_control_epoch,requested_by,request_id)
+ VALUES('f7660000-0000-4000-8000-000000000003',(original->>'entry_id')::uuid,(original->>'seat_id')::uuid,
+   tt,sess,dest_tt,dest_sess,1,epoch,1,'f7660000-0000-4000-8000-000000000001',gen_random_uuid()) RETURNING id INTO move_uuid;
+ PERFORM set_config('role','authenticated',true);
+ result:=public.floor_add_manual_player_v1('f7660000-0000-4000-8000-000000000003','Pending source TEST',tt,3,sess,rev,epoch,gen_random_uuid(),
+   'f7660000-0000-4000-8000-000000000001');
+ IF result->>'error' IS DISTINCT FROM 'source_moves_pending' THEN
+   RAISE EXCEPTION 'pending_source_accepted_new_participant: %',result; END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT count(*) FROM public.tournament_entries WHERE tournament_id='f7660000-0000-4000-8000-000000000003')<>2
+   OR (SELECT revision FROM public.table_sessions WHERE id=sess)<>rev
+   OR NOT EXISTS(SELECT 1 FROM public.floor_pending_tracker_moves WHERE id=move_uuid AND status='pending') THEN
+   RAISE EXCEPTION 'pending_source_denial_mutated_state'; END IF;
+ DELETE FROM public.floor_pending_tracker_moves WHERE id=move_uuid;
  SELECT count(*) INTO receipt_count FROM public.table_operation_receipts
    WHERE actor_id='f7660000-0000-4000-8000-000000000001';
  FOR i IN 1..2 LOOP

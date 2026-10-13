@@ -105,6 +105,12 @@ BEGIN
        ELSIF EXISTS(SELECT 1 FROM public.table_session_seat_locks l
          WHERE l.table_session_id=sess.id AND l.seat_number=p_seat_number AND l.unlocked_at IS NULL) THEN
          result:=jsonb_build_object('ok',false,'error','seat_locked');
+       ELSIF EXISTS(SELECT 1 FROM public.floor_pending_tracker_moves q
+         WHERE q.tournament_id=tour.id AND q.source_tournament_table_id=tt.id
+           AND q.source_table_session_id=sess.id AND q.status='pending') THEN
+         -- A reserved source is not a fresh seating destination. Adding a new
+         -- participant would strand a committed break/close plan's source.
+         result:=jsonb_build_object('ok',false,'error','source_moves_pending');
        ELSIF floor_private.floor_table_v3_has_active_hand(tour.id,tt.id,sess.id) THEN
          result:=jsonb_build_object('ok',false,'error','table_has_active_hand');
        ELSIF tour.starting_stack IS NULL OR tour.starting_stack<=0 THEN
