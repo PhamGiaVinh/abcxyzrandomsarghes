@@ -300,10 +300,10 @@ elif [[ "$pg_trgm_schema" != public ]]; then
     -U supabase_admin -d postgres -c "ALTER EXTENSION pg_trgm SET SCHEMA public"' >/dev/null
 fi
 if [[ "$schema_mode" == current ]]; then
-  # The reviewed public dump contains references but not this namespace DDL.
-  # Create only the namespace, never replace Auth or business guard functions.
-  docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    -c 'CREATE SCHEMA IF NOT EXISTS centerpoint_private'
+  # The public snapshot omits this private namespace and its policy dependencies.
+  node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/private-dependencies.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/private-dependencies.sql"
 fi
 set +e
 docker exec -i "$db_container" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -X -q -v ON_ERROR_STOP=1 \

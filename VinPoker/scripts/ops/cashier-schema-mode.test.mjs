@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -27,6 +29,20 @@ test('current mode rejects missing schema before Docker or application loading',
   const result = rejectedPreflight('current');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Verified schema-only baseline artifact is required/);
+});
+
+test('private dependencies use digest-matching source bodies and restricted grants', () => {
+  const output = join(mkdtempSync(join(tmpdir(), 'cashier-dependency-test-')), 'dependencies.sql');
+  const generator = fileURLToPath(new URL('./prepare-cashier-runtime-dependencies.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [generator, output], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const sql = readFileSync(output, 'utf8');
+  assert.ok(sql.includes("RAISE EXCEPTION 'CENTERPOINT_TOURNAMENT_OPS_RELEASE_CLOSED'"));
+  assert.ok(sql.includes('p_club_id = ANY(r.allowed_club_ids)'));
+  assert.ok(sql.includes('storage.foldername(p_name)'));
+  assert.ok(sql.includes('FROM PUBLIC, anon, authenticated, service_role;'));
+  assert.ok(!sql.includes('SELECT false;'));
+  assert.ok(!sql.includes('ALTER TABLE'));
 });
 
 test('historical mode remains default and requires original baseline', () => {
