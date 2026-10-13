@@ -72,6 +72,8 @@ on:
       - 'VinPoker/src/components/cashier/DealerSwingTab.tsx'
       - 'VinPoker/supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql'
       - 'VinPoker/tests/chipOps/colorUpCurrentSchema.pg17.sql'
+      - 'VinPoker/tests/chipOps/issuance*'
+      - 'VinPoker/supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql'
       - 'VinPoker/tests/chipOps/colorUpIntegrity.pg17.test.mjs'
       - 'VinPoker/tests/chipOps/colorUpReceipt.pg17.sql'
       - 'VinPoker/supabase/migrations/20270128000053_chip_color_up_receipt_reconciliation_v1.sql'
@@ -319,6 +321,21 @@ jobs:
           createdb -T "$PGDATABASE" vinpoker_ops_restore_chip_atomic
           PGDATABASE=vinpoker_ops_restore_chip_atomic RESTORE_CHIP_PG_TEST=1 node --test scripts/ops/restore-chip-52-53-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/colorUpCurrentSchema.pg17.sql
+      - name: Issuance69 generation receipts and true overlap on qualified schema
+        working-directory: VinPoker
+        run: |
+          createdb -T "$PGDATABASE" vinpoker_ops_chip69_ci
+          if PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/issuanceRetry.currentSchema.sql >"$RUNNER_TEMP/issuance69-red.log" 2>&1; then
+            echo "Legacy stale retry unexpectedly preserved later count" >&2
+            exit 1
+          fi
+          grep -Fq 'ISSUANCE_STALE_RETRY_OVERWRITES_LATER_COUNT' "$RUNNER_TEMP/issuance69-red.log"
+          PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql
+          for coupling in false true; do
+            PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -v coupling_on="$coupling" -f tests/chipOps/issuanceIntent.currentSchema.sql
+          done
+          PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/issuanceIntent.fault.sql
+          PGDATABASE=vinpoker_ops_chip69_ci node tests/chipOps/issuanceIntent.concurrent.mjs
       - name: Chip concurrency in isolated minimal fixture (not schema parity evidence)
         working-directory: VinPoker
         run: |
