@@ -309,7 +309,7 @@ if [[ "$schema_mode" == current ]]; then
   # Reset only the local dump creator defaults; the captured ACLs stay authoritative.
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
     'SELECT pg_get_userbyid(defaclrole), defaclnamespace::regnamespace, defaclobjtype, defaclacl FROM pg_default_acl WHERE defaclobjtype = '\''f'\'';'
-  docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+  docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d postgres -c \
     'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated, service_role; ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated, service_role;'
 fi
 set +e
