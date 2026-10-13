@@ -2,12 +2,15 @@
 \set ON_ERROR_STOP on
 BEGIN;
 DO $test$
-DECLARE prior public.dealer_swing_operator_requests%ROWTYPE; result jsonb; before_state text; after_state text; pending_id uuid; initial_epoch bigint; initial_revision bigint;
+DECLARE prior public.dealer_swing_operator_requests%ROWTYPE; result jsonb; before_state text; after_state text; pending_id uuid; initial_epoch bigint; initial_revision bigint; current_assignment uuid; current_version integer;
 BEGIN
  IF current_database() NOT IN ('vinpoker_voice_swing73_voice_first_qualified_20261014','vinpoker_voice_swing73_pending_20261014')
  OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port() NOT IN (55441,55464) OR current_user<>'postgres'
  OR md5(replace(pg_get_functiondef('public.operator_perform_swing(uuid,uuid,uuid,integer,uuid)'::regprocedure),chr(13),''))<>'a25a91e02d6f2c0399e5aba1086e4acf' THEN RAISE EXCEPTION 'owned_qualified73_replay_required'; END IF;
  SELECT * INTO STRICT prior FROM public.dealer_swing_operator_requests WHERE request_id='89000000-0000-4000-8000-000000000073';
+ SELECT id,version INTO STRICT current_assignment,current_version FROM public.dealer_assignments WHERE table_id=prior.table_id AND status='assigned' AND released_at IS NULL;
+ -- Synthetic closed incarnation only; not proof of a real close/reopen flow.
+ INSERT INTO public.table_sessions SELECT (jsonb_populate_record(NULL::public.table_sessions,to_jsonb(s)||jsonb_build_object('id','83500000-0000-4000-8000-000000000073','closed_at',now(),'closed_by','81100000-0000-4000-8000-000000000001'))).* FROM public.table_sessions s WHERE s.id=prior.table_session_id;
  IF prior.response->>'outcome' IS DISTINCT FROM 'swung' THEN RAISE EXCEPTION 'canonical_swing_receipt_required'; END IF;
  SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a),'requests',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.request_id) FROM public.dealer_swing_operator_requests a),'voice',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.tracker_voice_events a))::text) INTO before_state;
  PERFORM set_config('request.jwt.claim.sub','81100000-0000-4000-8000-000000000001',true);
@@ -23,6 +26,12 @@ BEGIN
   PERFORM public.operator_perform_swing(prior.table_id,prior.table_session_id,prior.assignment_id,prior.expected_version,'89000000-0000-4000-8000-000000000075');
   RAISE EXCEPTION 'completed_assignment_reused';
  EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'SWING_ASSIGNMENT_CONTEXT_MISMATCH' THEN RAISE; END IF; END;
+ RESET ROLE;
+ SET LOCAL ROLE authenticated;
+ BEGIN
+  PERFORM public.operator_perform_swing(prior.table_id,'83500000-0000-4000-8000-000000000073',current_assignment,current_version,'89000000-0000-4000-8000-000000000077');
+  RAISE EXCEPTION 'closed_session_reused';
+ EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'TABLE_SESSION_STALE' THEN RAISE; END IF; END;
  RESET ROLE;
  SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a),'requests',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.request_id) FROM public.dealer_swing_operator_requests a),'voice',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.tracker_voice_events a))::text) INTO after_state;
  IF before_state IS DISTINCT FROM after_state THEN RAISE EXCEPTION 'replay_conflict_or_stale_assignment_wrote_state'; END IF;
