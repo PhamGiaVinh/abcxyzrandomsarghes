@@ -74,6 +74,12 @@ BEGIN
  IF changed<>2 THEN RAISE EXCEPTION 'owner_participant_update_returning_regression'; END IF;
  WITH rows AS (UPDATE public.hand_actions SET action_amount=action_amount WHERE hand_id='86000000-0000-4000-8000-000000000001' RETURNING id) SELECT count(*) INTO changed FROM rows;
  IF changed<>1 THEN RAISE EXCEPTION 'owner_action_update_returning_regression'; END IF;
+ WITH rows AS (
+  INSERT INTO public.hand_actions(hand_id,player_id,entry_number,action_type,action_amount,action_order)
+  SELECT hand_id,player_id,entry_number,'fold',0,740075 FROM public.hand_players WHERE hand_id='86000000-0000-4000-8000-000000000001' ORDER BY seat_number LIMIT 1
+  RETURNING id
+ ) SELECT count(*) INTO changed FROM rows;
+ IF changed<>1 THEN RAISE EXCEPTION 'owner_action_insert_returning_regression'; END IF;
  RESET ROLE;
  UPDATE public.tournaments SET deleted_at=now() WHERE id='85000000-0000-4000-8000-000000000001';
  -- INSERT RETURNING on an unpublished row must retain the existing Owner write path.
