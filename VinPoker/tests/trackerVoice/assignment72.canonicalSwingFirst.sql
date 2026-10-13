@@ -1,12 +1,17 @@
 -- Actual public Owner Swing holds its transaction while Floor Voice waits.
 \set ON_ERROR_STOP on
 DO $$ BEGIN
- IF current_database()<>'vinpoker_voice_assignment72_authority_overlap_20261014'
+ IF current_database() NOT IN ('vinpoker_voice_assignment72_authority_overlap_20261014','vinpoker_voice_swing73_swing_first_20261014','vinpoker_voice_swing73_swing_first_qualified_20261014')
  OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port() NOT IN (55441,55464) OR current_user<>'postgres'
  OR md5(replace(pg_get_functiondef('public._tracker_voice_assignment_context(uuid,uuid,uuid)'::regprocedure),chr(13),''))<>'0a9e1f4e0972015b1554d6cd10f5ee2a'
- OR md5(replace(pg_get_functiondef('public.operator_perform_swing(uuid,uuid,uuid,integer,uuid)'::regprocedure),chr(13),''))<>'3f3e35df593064562056326969364bac'
+ OR md5(replace(pg_get_functiondef('public.operator_perform_swing(uuid,uuid,uuid,integer,uuid)'::regprocedure),chr(13),''))<>(CASE WHEN current_database()='vinpoker_voice_assignment72_authority_overlap_20261014' THEN '3f3e35df593064562056326969364bac' ELSE 'a25a91e02d6f2c0399e5aba1086e4acf' END)
  OR md5(replace(pg_get_functiondef('public._dealer_swing_assert_exact_context(uuid,uuid,uuid,integer,uuid)'::regprocedure),chr(13),''))<>'f7532f6f5dfb3556a8e7ad71e494a640'
  OR md5(replace(pg_get_functiondef('public.perform_swing(uuid,integer,boolean,integer,integer,integer,uuid,integer)'::regprocedure),chr(13),''))<>'8c47fa4e511eb3d5d622667fce71b134' THEN RAISE EXCEPTION 'owned_canonical_swing72_required'; END IF;
+ IF current_database() LIKE 'vinpoker_voice_swing73_%' AND (
+ md5(replace(pg_get_functiondef('floor_private.resolve_table_mode_request_v1(uuid)'::regprocedure),chr(13),''))<>'a19c384b03b7f3256af25985125f1841'
+ OR md5(replace(pg_get_functiondef('floor_private.table_mode_boundary_v1()'::regprocedure),chr(13),''))<>'133a7d13ae6eb9edd856c107f606a0b8'
+ OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgfoid='floor_private.table_mode_boundary_v1()'::regprocedure AND tgname='trg_mode_after_hand_v1' AND tgenabled='O' AND tgdeferrable AND tginitdeferred)
+ ) THEN RAISE EXCEPTION 'qualified_deferred_mode_dependency_required'; END IF;
 END $$;
 -- Qualified synthetic preassignment, not a production repair/rest override.
 UPDATE public.game_tables SET table_number=1,operational_status='available' WHERE id='83000000-0000-4000-8000-000000000001';
