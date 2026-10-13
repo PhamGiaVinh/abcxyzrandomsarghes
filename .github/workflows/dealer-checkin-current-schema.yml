@@ -529,6 +529,8 @@ jobs:
         run: |
           set -euo pipefail
           createdb --template=vinpoker_voice_release71_20261014 "$PGDATABASE"
+          createdb --template=vinpoker_voice_release71_20261014 vinpoker_voice_atomic72_ci
+          PGDATABASE=vinpoker_voice_atomic72_ci VOICE72_PG_TEST=1 node --test scripts/ops/tracker-voice-70-71-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
