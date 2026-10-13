@@ -38,6 +38,29 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: Select the proof required by the changed source
+        id: schema-mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REQUESTED_MODE: ${{ inputs.schema_mode || 'pre03' }}
+        run: |
+          set -euo pipefail
+          mode="$REQUESTED_MODE"
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            # Runtime changes need the retained-schema real backend test.
+            # Migration changes still require the original historical baseline.
+            historical_required="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" |
+              jq -s 'add | any(.filename; startswith("VinPoker/supabase/migrations/") or startswith("VinPoker/supabase/migration-archive/") or startswith("VinPoker/supabase/pending-migrations/"))')"
+            case "$historical_required" in
+              true) mode=pre03 ;;
+              false) mode=current ;;
+              *) echo "Cannot establish required schema proof" >&2; exit 1 ;;
+            esac
+          fi
+          case "$mode" in pre03|current) ;; *) exit 1 ;; esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
       - uses: supabase/setup-cli@v2
         with:
           version: 2.101.0
@@ -59,7 +82,7 @@ jobs:
         working-directory: VinPoker
         env:
           GH_TOKEN: ${{ github.token }}
-          CASHIER_SCHEMA_MODE: ${{ inputs.schema_mode || 'pre03' }}
+          CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
         run: |
           set -euo pipefail
           if [[ "$CASHIER_SCHEMA_MODE" == current ]]; then
@@ -98,5 +121,5 @@ jobs:
         working-directory: VinPoker
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
-          CASHIER_SCHEMA_MODE: ${{ inputs.schema_mode || 'pre03' }}
+          CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh

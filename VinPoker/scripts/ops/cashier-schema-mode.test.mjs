@@ -13,8 +13,7 @@ function rejectedPreflight(mode) {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
   const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    const path = filename.replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`).replaceAll('\\', '/');
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', path], { encoding: 'utf8' });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -80,6 +79,11 @@ test('historical mode remains default and requires original baseline', () => {
   assert.ok(script.includes('CASHIER_SCHEMA_MODE:-pre03'));
   assert.ok(workflow.includes('capture_id=35982674365'));
   assert.ok(script.includes('"$schema_mode" == pre03 && "$baseline_state" != \'t|t\''));
+  for (const directory of ['migrations/', 'migration-archive/', 'pending-migrations/']) {
+    assert.ok(workflow.includes(`startswith("VinPoker/supabase/${directory}")`));
+  }
+  assert.ok(workflow.includes('true) mode=pre03'));
+  assert.ok(workflow.includes('Cannot establish required schema proof'));
 });
 
 test('current mode pins reviewed bytes and does not replay historical writers', () => {
