@@ -38,6 +38,8 @@ on:
       - "VinPoker/supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql"
       - "VinPoker/supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql"
       - "VinPoker/scripts/ops/floor-manual-68-*"
+      - "VinPoker/scripts/ops/tracker-voice-70-71-*"
+      - ".github/workflows/tracker-voice-70-71-protected-apply.yml"
       - ".github/workflows/floor-manual-68-protected-apply.yml"
       - "VinPoker/tests/floorProduction/manualEntryRestore*"
       - "VinPoker/scripts/ops/floor-manual-67-*"

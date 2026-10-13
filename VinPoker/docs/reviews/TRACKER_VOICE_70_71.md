@@ -31,6 +31,7 @@ Both source files received scoped independent read-only review. Catalog manifest
 - Real two-connection assignment lifecycle/Voice overlap in both orders. Actual blocker PID observed; stale proposal zero-write or valid prior-assignment receipt followed by one active new assignment.
 - Existing harness additionally runs epoch increment with fresh config re-enabled and Floor membership revocation after root registration; both reject old proposal with no cards/child receipt and rollback on the exact70/71 clone.
 - Compensation71 then70 rehearsed on separate clone; original normalized bodies/metadata restored, helpers removed. No data rewind.
+- Protected release runner reuses existing actor/target/SHA/recovery gates and human environment. Seven unit safety tests pass. Actual PostgreSQL17 receipt-failure rollback, wrong-order denial,70 commit,71-body-failure rollback preserving70,71 commit and replay denial pass on an owned empty clone. Synthetic ledger69 source is fixture-only protocol qualification, not proof issuance69 was applied to that clone. Two initial fault-injection adapter errors were corrected before this PASS; no production writes.
 
 Older retained clone missed deployed identity28 dependencies. Canonical-start RED from that stale trigger is not a production bug. Local qualification copies only exact current start/blind definitions into an empty owned clone, pins digests and checks enabled trigger; existing historical source is not edited or replayed live. Hand.table_id is logical/FK-bound to tournament_tables, not the physical table.
 
@@ -49,5 +50,7 @@ Existing Operations current-schema workflow now clones its exact recovered card5
 - Direct Dealer manual hole call fails RLS on both baseline and candidate; tracked separately, never silenced with a role grant or a fake full Dealer suite PASS.
 
 Rollback sources must be promoted into NEW reviewed compensating catalog versions,71 then70; restore callers before disabling helpers. They are not directly authorized production migration files.
+
+The protected package commits TWO separate transactions, not one all-or-nothing package. If71 fails after70 committed, report70 live/71 absent or unknown explicitly. Fresh package preflight deliberately refuses replay. Inspect exact receipts/objects first, then use reviewed new compensation or a separately reviewed exact71 resume; never redispatch the entire package or mark70/71 complete from the70 receipt alone.
 
 Daybreak OFF; CenterPoint legacy Auto OFF; no rest/payroll/OT/payout/rounding, role membership, notification or operational data changes in this package.

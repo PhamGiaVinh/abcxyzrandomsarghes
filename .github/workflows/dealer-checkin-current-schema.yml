@@ -10,6 +10,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql'
       - 'VinPoker/scripts/ops/floor-manual-68-*'
       - 'VinPoker/scripts/ops/chip-issuance-69-*'
+      - 'VinPoker/scripts/ops/tracker-voice-70-71-*'
+      - '.github/workflows/tracker-voice-70-71-protected-apply.yml'
       - '.github/workflows/chip-issuance-69-protected-apply.yml'
       - '.github/workflows/floor-manual-68-protected-apply.yml'
       - 'VinPoker/scripts/ops/floor-manual-67-*'
@@ -495,16 +497,19 @@ jobs:
           PGDATABASE: vinpoker_voice_release71_20261014
         run: |
           set -euo pipefail
+          createdb --template=vinpoker_ops_card56_20261011 vinpoker_voice_atomic71_ci
+          PGDATABASE=vinpoker_voice_atomic71_ci VOICE71_PG_TEST=1 node --test scripts/ops/tracker-voice-70-71-atomic-pg.test.mjs
           createdb --template=vinpoker_ops_card56_20261011 "$PGDATABASE"
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql
           # Exact deployed28 dependencies are copied only into this empty test
           # clone; existing historical migrations and frozen baselines stay intact.
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/identity28.localQualification.sql
+          node --test scripts/ops/tracker-voice-70-71-release-plan.test.mjs scripts/ops/tracker-voice-70-71-protected-apply.test.mjs
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71
-            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-action
-            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-epoch
-            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-revoked
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-action
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-epoch
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-revoked
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
           createdb --template="$PGDATABASE" vinpoker_voice_release71_overlap_20261014
