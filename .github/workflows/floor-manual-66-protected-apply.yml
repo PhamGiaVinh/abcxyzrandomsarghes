@@ -1,0 +1,127 @@
+name: Floor manual participant66 exact protected migration apply
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha: {description: Exact reviewed source SHA, required: true, type: string}
+      source_pr: {description: Exact reviewed source PR number, required: true, type: string}
+      recovery_run_id: {description: Successful fresh restore-verified recovery run, required: true, type: string}
+      recovery_base_sha: {description: Exact main SHA that created recovery, required: true, type: string}
+      confirmation: {description: APPLY_FLOOR_MANUAL_66_<release_sha>, required: true, type: string}
+permissions: {actions: read, contents: read, checks: read, pull-requests: read}
+concurrency: {group: vinpoker-production-database-release, cancel-in-progress: false}
+jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ inputs.release_sha }}', fetch-depth: 1}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Bind owner, reviewed source PR and exact-SHA checks
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          RELEASE_SHA: '${{ inputs.release_sha }}'
+          SOURCE_PR: '${{ inputs.source_pr }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          CONFIRMATION: '${{ inputs.confirmation }}'
+        run: |
+          set -euo pipefail
+          test "$INITIAL_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$SOURCE_PR" =~ ^[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$CONFIRMATION" = "APPLY_FLOOR_MANUAL_66_$RELEASE_SHA"
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR")"
+          test "$(jq -r .head.sha <<<"$pr")" = "$RELEASE_SHA"
+          if test "$(jq -r .state <<<"$pr")" != open; then
+            test "$(jq -r .state <<<"$pr")" = closed
+            test "$(jq -r .merged <<<"$pr")" = true
+            merge_sha="$(jq -r .merge_commit_sha <<<"$pr")"
+            [[ "$merge_sha" =~ ^[a-f0-9]{40}$ ]]
+            comparison="$(gh api "repos/$GITHUB_REPOSITORY/compare/$merge_sha...$GITHUB_SHA" --jq .status)"
+            [[ "$comparison" = identical || "$comparison" = ahead ]]
+          fi
+          test "$(jq -r .base.ref <<<"$pr")" = main
+          test "$(jq -r .head.repo.full_name <<<"$pr")" = "$GITHUB_REPOSITORY"
+          checks="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs?per_page=100")"
+          for name in runtime postgres-17-integrated release-runner-postgres-17 collision-guard reject-sensitive-vars-context floor-table-control-v3-server-contract 'Floor V3 catalog and promotion preflight' 'Pinned actionlint on exact source revision'; do
+            jq -e --arg name "$name" '[.[]|.check_runs[]|select(.name==$name and .app.slug=="github-actions")]|sort_by(.id)|last|.status=="completed" and .conclusion=="success"' <<<"$checks" >/dev/null
+          done
+          environment="$(gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical")"
+          jq -e '[.protection_rules[]|select(.type=="required_reviewers")|.reviewers[]]|length>0' <<<"$environment" >/dev/null
+      - name: Offline exact migration checks
+        working-directory: VinPoker
+        run: |
+          npm run check:migration-catalog
+          node --test scripts/ops/floor-manual-66-release-plan.test.mjs scripts/ops/floor-manual-66-protected-apply.test.mjs
+  apply:
+    needs: validate
+    environment: dealer-swing-production-critical
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ inputs.release_sha }}', fetch-depth: 1}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify recovery provenance and download metadata only
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          RECOVERY_RUN_ID: '${{ inputs.recovery_run_id }}'
+          RECOVERY_BASE_SHA: '${{ inputs.recovery_base_sha }}'
+        run: |
+          set -euo pipefail
+          [[ "$RECOVERY_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RECOVERY_BASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID")"
+          test "$(jq -r .workflow_id <<<"$run")" = "$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/floor-v3-recovery-backup.yml" --jq .id)"
+          test "$(jq -r .event <<<"$run")" = workflow_dispatch
+          test "$(jq -r .status <<<"$run")" = completed
+          test "$(jq -r .conclusion <<<"$run")" = success
+          test "$(jq -r .actor.login <<<"$run")" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .head_sha <<<"$run")" = "$RECOVERY_BASE_SHA"
+          artifacts="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts?per_page=100")"
+          artifact="$(jq -ce --arg name "floor-v3-restore-verification-$RECOVERY_RUN_ID" '[.[]|.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)]|if length==1 then .[0] else error("missing recovery") end' <<<"$artifacts")"
+          mkdir "$RUNNER_TEMP/manual66-recovery-receipt"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$(jq -r .id <<<"$artifact")/zip" >"$RUNNER_TEMP/manual66-recovery.zip"
+          test "$(unzip -Z1 "$RUNNER_TEMP/manual66-recovery.zip")" = recovery-verification.json
+          unzip -q "$RUNNER_TEMP/manual66-recovery.zip" -d "$RUNNER_TEMP/manual66-recovery-receipt"
+          echo "RECOVERY_RECEIPT_PATH=$RUNNER_TEMP/manual66-recovery-receipt/recovery-verification.json" >>"$GITHUB_ENV"
+          active="$(for status in in_progress waiting queued; do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?status=$status&per_page=100" --jq '.workflow_runs[]|select((.id|tostring)!=env.GITHUB_RUN_ID)|select(.event=="workflow_dispatch")|select(.name|test("database|migration|recovery|protected.*apply|release";"i"))|.id'
+          done)"
+          test -z "$active"
+      - name: Plan then exact atomic66 apply
+        working-directory: VinPoker
+        env:
+          RELEASE_SHA: '${{ inputs.release_sha }}'
+          SOURCE_CHECKOUT_SHA: '${{ inputs.release_sha }}'
+          RECOVERY_BASE_SHA: '${{ inputs.recovery_base_sha }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
+          PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+          PGPORT: '5432'
+          PGUSER: postgres.orlesggcjamwuknxwcpk
+          PGDATABASE: postgres
+          PGSSLMODE: require
+          PGPASSWORD: '${{ secrets.SUPABASE_DB_PASSWORD }}'
+          CONFIRM_FLOOR_PACKAGE: '${{ inputs.confirmation }}'
+        run: |
+          set -euo pipefail
+          node scripts/ops/floor-manual-66-protected-apply.mjs plan | tee "$RUNNER_TEMP/manual66-plan.txt"
+          node scripts/ops/floor-manual-66-protected-apply.mjs apply | tee "$RUNNER_TEMP/manual66-apply.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: manual66-receipts-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/manual66-plan.txt
+            ${{ runner.temp }}/manual66-apply.txt
+          retention-days: 30

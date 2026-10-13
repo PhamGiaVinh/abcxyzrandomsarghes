@@ -187,7 +187,11 @@ export function FloorTableDetailSheet({
             tournamentName={tournamentName}
             tournamentDate={tournamentDate}
             tableTtId={table.tt_id}
-            maxSeats={FIXED_FLOOR_TABLE_SEATS}
+            actorId={user?.id ?? null}
+            tableSessionId={table.table_session_id ?? null}
+            expectedRevision={table.floor_control_revision}
+            expectedControlEpoch={table.control_epoch ?? null}
+            maxSeats={table.max_seats}
             occupiedSeats={occupiedSeatNumbers}
             defaultSeatNumber={defaultAddSeat}
             onDone={onChanged}

@@ -1,4 +1,5 @@
 import { FEATURES } from "@/lib/featureFlags";
+import { manualPlayerPayload, type ManualPlayerIntent } from "@/lib/floorManualPlayerIntent";
 
 /**
  * Browser contract for Floor Table Control V3.
@@ -24,6 +25,8 @@ export type FloorTableControlV3RpcName =
   | "operator_open_club_tables_v2"
   | "operator_close_club_table_v2"
   | "floor_assign_entry_to_seat"
+  | "floor_add_manual_player_v1"
+  | "get_floor_manual_player_receipt_v1"
   | "floor_assign_entry_to_seat_v4"
   | "floor_set_table_seat_lock_v1"
   | "floor_set_table_control_mode_v3"
@@ -750,6 +753,15 @@ export function createFloorTableControlV3Client(
     enabled,
     redrawSeatLockEnabled,
     deferredTrackerMoveEnabled,
+
+    // Keep the exact receipt envelope, including durable business rejections.
+    addManualPlayer: (intent: ManualPlayerIntent) => call("floor_add_manual_player_v1", {
+      ...Object.fromEntries(Object.entries(manualPlayerPayload(intent)).map(([key, value]) => [`p_${key}`, value])),
+      p_request_id: intent.requestId, p_expected_actor_id: intent.actorId,
+    }),
+    getManualPlayerReceipt: (intent: ManualPlayerIntent) => call("get_floor_manual_player_receipt_v1", {
+      p_tournament_id: intent.tournamentId, p_request_id: intent.requestId, p_expected_actor_id: intent.actorId,
+    }),
 
     async getClubTableInventory(clubId: string): Promise<FloorTableControlV3Result<FloorTableInventoryItem[]>> {
       const response = await call("get_club_table_inventory", { p_club_id: clubId });
