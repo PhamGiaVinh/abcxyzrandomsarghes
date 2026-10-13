@@ -47,6 +47,21 @@ function manualPlayerFrontendEnabled(targetRoot) {
   if(source.includes('"floor_assign_player_to_seat"')) return false;
   throw Error("UNKNOWN_TARGET_MANUAL_PLAYER_CONTRACT");
 }
+const ISSUANCE_RPC_CONTRACTS = [
+  ["get_chip_issuance_state_v1",["p_stack_template_id","p_expected_actor"],["uuid","uuid"]],
+  ...["chip_ops_set_issuance_v2","get_chip_issuance_receipt_v1"].map(name=>[name,
+    ["p_stack_template_id","p_issued_count","p_expected_revision","p_request_id","p_expected_actor"],
+    ["uuid","integer","bigint","uuid","uuid"]]),
+].map(([name,arguments_,argumentTypes])=>({type:"function",name:`public.${name}`,arguments:arguments_,argumentTypes,
+  allowOtherOverloads:false,acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source"}));
+function issuanceFrontendEnabled(targetRoot) {
+  const manager=resolve(targetRoot,"VinPoker/src/components/chip-ops/ChipOpsManager.tsx");
+  if(!existsSync(manager)||!readFileSync(manager,"utf8").includes('from "./IssuanceCard"')) return false;
+  const component=resolve(targetRoot,"VinPoker/src/components/chip-ops/IssuanceCard.tsx");
+  if(!existsSync(component)||!ISSUANCE_RPC_CONTRACTS.every(c=>readFileSync(component,"utf8").includes(`"${c.name.slice(7)}"`)))
+    throw Error("UNKNOWN_TARGET_ISSUANCE_CONTRACT");
+  return true;
+}
 function scopedStopFrontendEnabled(targetRoot) {
   const tab=resolve(targetRoot,FRONTEND_CONTRACT_FILES[0]);
   if(!existsSync(tab)||!readFileSync(tab,"utf8").includes("DealerSwingStopControl")) return false;
@@ -89,6 +104,11 @@ export function assertManualPlayerFrontendBackend({targetRoot,catalog}) {
   if(manualPlayerFrontendEnabled(targetRoot)) MANUAL_PLAYER_RPC_CONTRACTS.forEach((contract,index)=>
     assertFrontendFunctionBackend(catalog,contract,["8afb253f61ac4fa45fcd1cda00804929","be4d3310eded14b0690ef37725936781"][index],
       ['search_path=""'],"MANUAL_PLAYER_FRONTEND"));
+}
+export function assertIssuanceFrontendBackend({targetRoot,catalog}) {
+  if(issuanceFrontendEnabled(targetRoot)) ISSUANCE_RPC_CONTRACTS.forEach((contract,index)=>
+    assertFrontendFunctionBackend(catalog,contract,["2f309c9d033c925afa4d0deed67e62ef","ad1862dbd8f800353f9dd9ec2d5bb0b9","b0f1e752c6e46d1d08a019e1aebc7f87"][index],
+      ['search_path=""'],"ISSUANCE_FRONTEND"));
 }
 
 function parseArgs(argv) {
@@ -624,7 +644,8 @@ export function sourceContractsForFrontend({ targetRoot }) {
   return mergeContracts(staticDatabaseContracts(files, targetRoot, "direct_frontend_source"),
     physicalAssetFrontendEnabled(targetRoot)?[PHYSICAL_ASSET_RPC_CONTRACT]:[],
     scopedStopFrontendEnabled(targetRoot)?[SCOPED_STOP_RPC_CONTRACT]:[],
-    manualPlayerFrontendEnabled(targetRoot)?MANUAL_PLAYER_RPC_CONTRACTS:[]);
+    manualPlayerFrontendEnabled(targetRoot)?MANUAL_PLAYER_RPC_CONTRACTS:[],
+    issuanceFrontendEnabled(targetRoot)?ISSUANCE_RPC_CONTRACTS:[]);
 }
 
 export function contractsForTargets({ manifest, rawTargets, targetRoot }) {
@@ -673,6 +694,7 @@ function run() {
     assertPhysicalAssetFrontendBackend({targetRoot,catalog});
     assertScopedStopFrontendBackend({targetRoot,catalog});
     assertManualPlayerFrontendBackend({targetRoot,catalog});
+    assertIssuanceFrontendBackend({targetRoot,catalog});
   }
   console.log(
     `Live schema contract probe passed for ${selection.profile} from ${inventory.source} (${contracts.length} checks, ${selection.sourceFingerprint}).`,

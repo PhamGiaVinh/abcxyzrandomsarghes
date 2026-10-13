@@ -7614,6 +7614,7 @@
   "ownerGatedActiveAllowlist": [
     {"version":"20270128000067","filename":"20270128000067_floor_manual_bust_restore_read_v1.sql","sha256":"427ec7f078b6e7c258af3dd165d2ce7400155acae144140a045472bc1c8d6597","domain":"floor-manual-bust-restore-campaign"},
     {"version":"20270128000068","filename":"20270128000068_floor_restore_canonical_tuple_v1.sql","sha256":"f7441afd63f5bbbb6c54d2b006c3e6c1d7f119003699c6594e54eb3749c4ff5c","domain":"floor-restore-canonical-tuple-campaign"},
+    {"version":"20270128000069","filename":"20270128000069_chip_issuance_exact_intent_v1.sql","sha256":"c92283d9084afe9dd68c1967e80366f3af9fe55cea1589b04f67239df8374b5f","domain":"chip-issuance-exact-intent-campaign"},
     {"version":"20270128000066","filename":"20270128000066_floor_manual_seat_session_fence_v1.sql","sha256":"2da4583e6d695ec2e36779f31dc4d784142e85e6e29888ab1ae633010490d90b","domain":"floor-manual-seat-session-fence-campaign"},
     {"version":"20270128000064","filename":"20270128000064_dealer_swing_scoped_stop_v1.sql","sha256":"043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17","domain":"dealer-swing-scoped-stop-campaign"},
     {"version":"20270128000065","filename":"20270128000065_floor_physical_asset_authority_commit_fence_v1.sql","sha256":"014718d85013b0b714afd96a300b7a80f38f45b031dc0ebef3740145f11682f6","domain":"quads-physical-asset-authority-fence-campaign"},

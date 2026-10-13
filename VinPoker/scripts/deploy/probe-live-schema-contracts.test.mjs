@@ -16,6 +16,7 @@ import {
   assertPhysicalAssetFrontendBackend,
   assertScopedStopFrontendBackend,
   assertManualPlayerFrontendBackend,
+  assertIssuanceFrontendBackend,
 } from "./probe-live-schema-contracts.mjs";
 import { selectTargetContractProfile } from "./target-contract-profile.mjs";
 import { inspectTargetSource } from "./verify-target-source.mjs";
@@ -29,6 +30,21 @@ const productionMetricsViewFixture = readFileSync(
   resolve(repositoryRoot, "VinPoker/scripts/deploy/fixtures/dealer_shift_metrics-production-view.sql"),
   "utf8",
 );
+test("issuance wrapper requires all three exact backend functions before frontend release",()=>{
+  const contracts=sourceContractsForFrontend({targetRoot:repositoryRoot}).filter(c=>/issuance_(state_v1|v2|receipt_v1)$/.test(c.name));
+  assert.equal(contracts.length,3);
+  const functions=contracts.map((c,index)=>({schema:"public",name:c.name.slice(7),owner:"postgres",securityDefiner:true,
+    definitionMd5:["2f309c9d033c925afa4d0deed67e62ef","ad1862dbd8f800353f9dd9ec2d5bb0b9","b0f1e752c6e46d1d08a019e1aebc7f87"][index],configuration:['search_path=""'],
+    arguments:c.arguments.map((name,n)=>({name,type:c.argumentTypes[n]})),
+    executeAcl:{public:false,anon:false,authenticated:true,service_role:false}}));
+  const check=f=>assertIssuanceFrontendBackend({targetRoot:repositoryRoot,catalog:{schemaVersion:1,relations:[],functions:f}});
+  check(functions);
+  for(const bad of [[],functions.slice(0,2),[...functions,functions[0]],
+    functions.map((f,n)=>n===1?{...f,definitionMd5:"drift"}:f),
+    functions.map((f,n)=>n===2?{...f,executeAcl:{...f.executeAcl,anon:true}}:f),
+    functions.map((f,n)=>n===0?{...f,arguments:[]}:f)]) assert.throws(()=>check(bad),/NOT_QUALIFIED/);
+  assert.throws(()=>assertIssuanceFrontendBackend({targetRoot:repositoryRoot}),/REQUIRES_QUALIFIED_CATALOG/);
+});
 
 test("manual player frontend requires exact writer and receipt reader, failing closed on digest/ACL/signature drift",()=>{
   const contracts=sourceContractsForFrontend({targetRoot:repositoryRoot}).filter(c=>c.name.includes("manual_player"));
