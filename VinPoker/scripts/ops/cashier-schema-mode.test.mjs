@@ -97,6 +97,7 @@ test('unverifiable PR file input fails closed', () => {
   for (const input of [null, [], [[]], [{ filename: 'x' }], [[{}]], [[{ filename: 'x', previous_filename: 7 }]]]) {
     assert.throws(() => selectCashierSchemaMode(input));
   }
+  assert.throws(() => selectCashierSchemaMode([Array.from({ length: 3000 }, (_, index) => ({ filename: `src/${index}.ts` }))]), /API cap reached/);
 });
 
 test('current mode pins reviewed bytes and does not replay historical writers', () => {

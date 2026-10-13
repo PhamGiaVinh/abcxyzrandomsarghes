@@ -8,6 +8,8 @@ export function selectCashierSchemaMode(pages) {
   assert.ok(pages.every(Array.isArray), 'PR file pages malformed');
   const files = pages.flat();
   assert.ok(files.length > 0, 'PR files required');
+  // GitHub caps PR-files responses at 3000; completeness is unproven at the cap.
+  assert.ok(files.length < 3000, 'PR files API cap reached; historical proof required');
   const prefixes = ['VinPoker/supabase/migrations/', 'VinPoker/supabase/migration-archive/', 'VinPoker/supabase/pending-migrations/'];
   let historical = false;
   for (const file of files) {
