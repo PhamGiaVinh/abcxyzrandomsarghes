@@ -588,6 +588,7 @@ jobs:
         working-directory: VinPoker
         run: |
           createdb --template=vinpoker_voice_swing73_pending_20261014 vinpoker_visibility74_ci
+          PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.baseline.pg17.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.pg17.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.compensation.pg17.sql
