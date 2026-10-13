@@ -104,7 +104,8 @@ export function ChipOpsManager() {
     let active = true;
     setToursSnapshot(null);
     if (!user?.id || authLoading || rolesLoading || authError || rolesError || !allowed) return;
-    sb.from("tournaments").select("id,name,club_id,start_time").order("start_time", { ascending: false }).limit(200)
+    sb.from("tournaments").select("id,name,club_id,start_time").is("deleted_at", null)
+      .order("start_time", { ascending: false }).limit(200)
       .then(({ data, error }: any) => {
         if (!active) return;
         if (error || !Array.isArray(data)) { setReadError({ scope: scopeRef.current, code: "READ_FAILED" }); return; }

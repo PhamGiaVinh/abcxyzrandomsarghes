@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({
   rpc: vi.fn(),
-  tours: [] as Array<{ id: string; name: string; start_time: string; status: string }>,
+  tourIs: vi.fn(),
+  tours: [] as Array<{ id: string; name: string; start_time: string; status: string; deleted_at?: string | null }>,
   refund: null as null | { id: string; amount: number; status: "requested"; reason: string },
 }));
 
@@ -12,13 +13,20 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
     rpc: mock.rpc,
     from: (table: string) => {
       let closed = false;
+      let liveToursOnly = false;
       const query = {
         select: () => query,
         eq: () => query,
-        is: () => query,
+        is: (...args: unknown[]) => {
+          if (table === "tournaments") {
+            mock.tourIs(...args);
+            liveToursOnly = args[0] === "deleted_at" && args[1] === null;
+          }
+          return query;
+        },
         not: () => { closed = true; return query; },
         order: () => query,
-        limit: () => Promise.resolve({ data: table === "tournaments" ? mock.tours : [
+        limit: () => Promise.resolve({ data: table === "tournaments" ? mock.tours.filter(tour => !liveToursOnly || !tour.deleted_at) : [
           { id: "shift-a", opened_at: "2026-09-15T08:00:00Z", closed_at: "2026-09-15T16:00:00Z", counted_cash: 100, variance_cash: 0 },
           { id: "shift-b", opened_at: "2026-09-14T08:00:00Z", closed_at: "2026-09-14T16:00:00Z", counted_cash: 200, variance_cash: 0 },
         ], error: null }),
@@ -55,6 +63,7 @@ describe("closed Cashier shift correction", () => {
     mock.refund = null;
     sessionStorage.removeItem("cashier-tour:club-a");
     mock.rpc.mockReset();
+    mock.tourIs.mockClear();
     mock.rpc.mockImplementation((name: string, args: { p_shift_id?: string }) => {
       if (name === "cashier_shift_summary_v1") return Promise.resolve({ data: {
         ok: true, shift_id: args.p_shift_id, totals: { cash_adjustments: 0 },
@@ -64,6 +73,20 @@ describe("closed Cashier shift correction", () => {
       }, error: null });
       return Promise.resolve({ data: { ok: true }, error: null });
     });
+  });
+
+  it("excludes soft-deleted tours before restoring a stored Cashier selection", async () => {
+    mock.tours = [
+      { id: "tour-a", name: "Tour A", start_time: "2026-09-15T10:00:00Z", status: "registering" },
+      { id: "deleted-tour", name: "Deleted tour", start_time: "2026-09-14T10:00:00Z", status: "active", deleted_at: "2026-09-15T09:00:00Z" },
+    ];
+    sessionStorage.setItem("cashier-tour:club-a", "deleted-tour");
+    render(<TourCashierWorkbench />);
+    await screen.findByRole("button", { name: /^Tour A ·/ });
+    expect(screen.queryByRole("button", { name: /^Deleted tour ·/ })).not.toBeInTheDocument();
+    expect(mock.tourIs).toHaveBeenCalledWith("deleted_at", null);
+    expect(mock.rpc.mock.calls.some(([name]) => name === "cashier_tour_worklist_v1")).toBe(false);
+    expect(mock.rpc.mock.calls.some(([name]) => /record|open|adjust|complete/.test(name))).toBe(false);
   });
 
   it("targets the selected historical shift, not only the latest closed shift", async () => {
