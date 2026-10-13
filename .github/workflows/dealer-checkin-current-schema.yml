@@ -26,6 +26,12 @@ on:
       - 'VinPoker/scripts/ops/tracker-card-56-*'
       - 'VinPoker/supabase/migrations/20270128000056_tracker_card_batch_integrity_v1.sql'
       - 'VinPoker/tests/trackerVoice/cardBatchIntegrity*'
+      - 'VinPoker/supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql'
+      - 'VinPoker/tests/trackerVoice/floorAuthority.*'
+      - 'VinPoker/tests/trackerVoice/sharedBoardAuthority.boundaries.sql'
+      - 'VinPoker/tests/trackerVoice/identity28.localQualification.sql'
+      - 'VinPoker/docs/runbooks/TRACKER_VOICE_7*_COMPENSATION_SOURCE.sql'
       - 'VinPoker/tests/trackerCorrectionRelease2/undoGeneration.currentSchema.sql'
       - 'VinPoker/tests/trackerVoice/cardBoardIntegrity*'
       - 'VinPoker/supabase/migrations/20270128000057_dealer_pt_policy_tenant_integrity_v1.sql'
@@ -483,6 +489,30 @@ jobs:
           node --test scripts/ops/tracker-card-56-protected-apply.test.mjs
           createdb --template="$PGDATABASE" vinpoker_ops_card56_atomic_20261011
           PGDATABASE=vinpoker_ops_card56_atomic_20261011 CARD56_PG_TEST=1 node --test scripts/ops/tracker-card-56-atomic-pg.test.mjs
+      - name: Voice70/71 delegated actor, canonical finish, actual overlap and compensation on qualified schema
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_voice_release71_20261014
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_ops_card56_20261011 "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql
+          # Exact deployed28 dependencies are copied only into this empty test
+          # clone; existing historical migrations and frozen baselines stay intact.
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/identity28.localQualification.sql
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-action
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
+          createdb --template="$PGDATABASE" vinpoker_voice_release71_overlap_20261014
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-overlap-fixture
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/floorAuthority.handoffConcurrent.sql
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-reverse-root
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/floorAuthority.voiceFirstConcurrent.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_package_compensation_ci
+          PGDATABASE=vinpoker_voice_package_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_71_COMPENSATION_SOURCE.sql
+          PGDATABASE=vinpoker_voice_package_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_70_COMPENSATION_SOURCE.sql
       - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
         working-directory: VinPoker
         run: |
