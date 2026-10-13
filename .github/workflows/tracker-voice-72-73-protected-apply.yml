@@ -115,13 +115,13 @@ jobs:
           CONFIRM_FLOOR_PACKAGE: '${{ inputs.confirmation }}'
         run: |
           set -euo pipefail
-          node scripts/ops/tracker-voice-72-73-protected-apply.mjs plan | tee "$RUNNER_TEMP/voice72-plan.txt"
-          node scripts/ops/tracker-voice-72-73-protected-apply.mjs apply | tee "$RUNNER_TEMP/voice72-apply.txt"
+          node scripts/ops/tracker-voice-72-73-protected-apply.mjs plan | tee "$RUNNER_TEMP/voice72-73-plan.txt"
+          node scripts/ops/tracker-voice-72-73-protected-apply.mjs apply | tee "$RUNNER_TEMP/voice72-73-apply.txt"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: voice72-receipts-${{ github.run_id }}
+          name: voice72-73-receipts-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/voice72-plan.txt
-            ${{ runner.temp }}/voice72-apply.txt
+            ${{ runner.temp }}/voice72-73-plan.txt
+            ${{ runner.temp }}/voice72-73-apply.txt
           retention-days: 30

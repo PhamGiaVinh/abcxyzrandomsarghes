@@ -6,6 +6,7 @@ import {validateContext,psqlEnvironment} from './floor-37-47-protected-apply.mjs
 import {classifyPreflight,preflightSql,executePackage} from './tracker-voice-72-release-plan.mjs';
 export function validateRelease(env,recovery,checkoutSha,mode){
   if(!['plan','apply'].includes(mode))throw Error('Protected plan|apply only');
+  if(mode==='apply')throw Error('Standalone72 retired; use protected atomic72/73 package');
   validateContext(env,recovery);
   if(checkoutSha!==env.RELEASE_SHA)throw Error('Checkout SHA differs');
   if(mode==='apply'&&env.CONFIRM_FLOOR_PACKAGE!==`APPLY_TRACKER_VOICE_72_${env.RELEASE_SHA}`)throw Error('Exact72 confirmation missing');

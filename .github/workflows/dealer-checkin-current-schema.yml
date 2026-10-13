@@ -557,6 +557,9 @@ jobs:
           # CI exposed the real deferred-COMMIT cycle on pre73 (retained failed
           # runs38478827493/38479344635). Same regression, forward fix only.
           createdb --template="$PGDATABASE" vinpoker_voice_swing73_base_20261014
+          # Match the live mode resolver generation; predecessor digest guards
+          # in unchanged49 must pass, never weaken the overlap dependency guard.
+          PGDATABASE=vinpoker_voice_swing73_base_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000049_floor_mode_tombstone_guard_v1.sql
           PGDATABASE=vinpoker_voice_swing73_base_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql
           createdb --template=vinpoker_voice_swing73_base_20261014 vinpoker_voice_swing73_voice_first_qualified_20261014
           PGDATABASE=vinpoker_voice_swing73_voice_first_qualified_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-voice-first72 --authority-lock-order73

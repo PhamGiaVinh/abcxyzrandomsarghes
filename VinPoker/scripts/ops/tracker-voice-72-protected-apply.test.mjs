@@ -11,18 +11,19 @@ const env = { RELEASE_SHA: sha, SOURCE_CHECKOUT_SHA: sha, GITHUB_SHA: base, GITH
 const receipt = { schemaVersion: 1, kind: 'vinpoker-restore-verification', sourceSha: base,
   isolatedRestore: 'PASS', tableCountMatch: 'PASS', productionMutation: false,
   ciphertextSha256: 'c'.repeat(64), snapshotAt: new Date(Date.now() - 1000).toISOString() };
-test('protected72 requires exact actor, target, source, recovery and intent', () => {
-  validateRelease(env, receipt, sha, 'plan'); validateRelease(env, receipt, sha, 'apply');
+test('standalone72 apply is retired; readonly plan retains actor/target/recovery guards', () => {
+  validateRelease(env, receipt, sha, 'plan');
+  assert.throws(()=>validateRelease(env,receipt,sha,'apply'),/Standalone72 retired/);
   for (const mode of ['push', 'reset', undefined]) assert.throws(() => validateRelease(env, receipt, sha, mode));
-  assert.throws(() => validateRelease(env, receipt, base, 'apply'));
+  assert.throws(() => validateRelease(env, receipt, base, 'plan'));
   for (const delta of [{ CONFIRM_FLOOR_PACKAGE: '' }, { CONFIRM_FLOOR_PACKAGE: `APPLY_FLOOR_ROSTER_62_${sha}` },
     { PGHOST: 'localhost' }, { TRIGGERING_ACTOR: 'outsider' }, { GITHUB_REF: 'refs/heads/feature' },
     { SOURCE_CHECKOUT_SHA: base }, { PGOPTIONS: 'override' }, { PGHOSTADDR: '127.0.0.1' }, { PGSERVICE: 'other' },
     { SUPABASE_PROJECT_REF: 'other' }, { PGDATABASE: 'other' }, { PGUSER: 'postgres' }]) {
-    assert.throws(() => validateRelease({ ...env, ...delta }, receipt, sha, 'apply'));
+    assert.throws(() => validateRelease({ ...env, ...delta }, receipt, sha, Object.hasOwn(delta,'CONFIRM_FLOOR_PACKAGE')?'apply':'plan'));
   }
   for (const delta of [{ isolatedRestore: 'FAIL' }, { sourceSha: sha }, { productionMutation: true },
-    { snapshotAt: new Date(Date.now() - 7200000).toISOString() }]) assert.throws(() => validateRelease(env, { ...receipt, ...delta }, sha, 'apply'));
+    { snapshotAt: new Date(Date.now() - 7200000).toISOString() }]) assert.throws(() => validateRelease(env, { ...receipt, ...delta }, sha, 'plan'));
 });
 test('workflow retains source checks, recovery and protected human environment', () => {
   const yaml = readFileSync(new URL('../../../.github/workflows/tracker-voice-72-protected-apply.yml', import.meta.url), 'utf8');
@@ -40,5 +41,7 @@ test('workflow retains source checks, recovery and protected human environment',
   for (const gate of ['--paginate --slurp', '.app.slug=="github-actions"', 'required_reviewers',
     'unzip -Z1', '= recovery-verification.json']) assert.ok(yaml.includes(gate), gate);
   const runner = readFileSync(new URL('./tracker-voice-72-protected-apply.mjs', import.meta.url), 'utf8');
+  assert.ok(yaml.indexOf('Reject retired standalone72 apply')<yaml.indexOf('actions/checkout@'));
+  assert.ok(runner.indexOf("if(mode==='apply')throw Error('Standalone72 retired")<runner.indexOf('validateContext(env,recovery)'));
   assert.ok(runner.includes('EXACT72_PENDING')); assert.ok(!runner.includes('EXACT64_PENDING'));
 });

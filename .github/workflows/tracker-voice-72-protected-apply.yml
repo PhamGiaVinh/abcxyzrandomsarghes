@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Reject retired standalone72 apply before credentials or approval
+        run: |
+          echo "Standalone72 is retired. Use the reviewed atomic72/73 workflow."
+          exit 1
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with: {ref: '${{ inputs.release_sha }}', fetch-depth: 1}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
