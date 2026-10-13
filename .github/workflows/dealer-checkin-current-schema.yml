@@ -30,6 +30,8 @@ on:
       - 'VinPoker/tests/trackerVoice/cardBatchIntegrity*'
       - 'VinPoker/supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql'
+      - 'VinPoker/tests/trackerVoice/assignment72.*'
       - 'VinPoker/tests/trackerVoice/floorAuthority.*'
       - 'VinPoker/tests/trackerVoice/sharedBoardAuthority.boundaries.sql'
       - 'VinPoker/tests/trackerVoice/identity28.localQualification.sql'
@@ -520,6 +522,30 @@ jobs:
           createdb --template="$PGDATABASE" vinpoker_voice_package_compensation_ci
           PGDATABASE=vinpoker_voice_package_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_71_COMPENSATION_SOURCE.sql
           PGDATABASE=vinpoker_voice_package_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_70_COMPENSATION_SOURCE.sql
+      - name: Voice72 assignment validity, revocation and canonical Swing ordering
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_voice_assignment72_authority_20261014
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_voice_release71_20261014 "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
+          for tuple_case in transition checkout checkedout unavailable mismatch club deleted; do
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-fence-attendance --authority-attendance-case="$tuple_case"
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --authority-finish-attendance72 --authority-attendance-case="$tuple_case"
+          done
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_authority_overlap_20261014
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.revokeDuringSessionWait.sql
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.busyLocks.sql
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalSwingFirst.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_voice_first_20261014
+          PGDATABASE=vinpoker_voice_assignment72_voice_first_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-voice-first72
+          PGDATABASE=vinpoker_voice_assignment72_voice_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalVoiceFirst.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_compensation_ci
+          PGDATABASE=vinpoker_voice_assignment72_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_72_COMPENSATION_SOURCE.sql
       - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
         working-directory: VinPoker
         run: |

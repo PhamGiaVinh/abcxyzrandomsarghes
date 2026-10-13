@@ -10,19 +10,46 @@ const authorityBaseline=process.argv.includes('--authority-baseline');
 const authorityRelease71=process.argv.includes('--authority-release71');
 const authorityOverlapFixture=process.argv.includes('--authority-overlap-fixture');
 const authorityReverseRoot=process.argv.includes('--authority-reverse-root');
+const authorityAssignment72=process.argv.includes('--authority-assignment72');
+const authorityAssignment72Baseline=process.argv.includes('--authority-assignment72-baseline');
+const authorityVoiceFirst72=process.argv.includes('--authority-voice-first72');
+assert.ok(!authorityVoiceFirst72||(authorityAssignment72&&authorityOverlapFixture&&!authorityAssignment72Baseline),'voice-first72 only prepares its owned overlap fixture');
+assert.ok(!authorityAssignment72Baseline||(authorityAssignment72&&authorityOverlapFixture),'baseline72 comparison only prepares the owned old-helper root fixture');
 const authorityFenceEpoch=process.argv.includes('--authority-fence-epoch');
 const authorityFenceRevoked=process.argv.includes('--authority-fence-revoked');
-const authorityFence=authorityFenceEpoch||authorityFenceRevoked;
-assert.ok(!(authorityFenceEpoch&&authorityFenceRevoked),'choose one lifecycle fence scenario');
+const authorityFenceAttendance=process.argv.includes('--authority-fence-attendance');
+const authorityFinishAttendance72=process.argv.includes('--authority-finish-attendance72');
+const attendanceCaseArg=process.argv.find(arg=>arg.startsWith('--authority-attendance-case='));
+const attendanceCase=attendanceCaseArg?.split('=')[1]??'checkout';
+assert.ok(!attendanceCaseArg||authorityFenceAttendance||authorityFinishAttendance72,'attendance tuple case requires isolated attendance fence');
+const attendanceMutations={
+ transition:`DO $checkout$ DECLARE result jsonb; BEGIN
+   result:=public.transition_dealer_state('87500000-0000-4000-8000-000000000001','checked_out','dealer_checkout');
+   IF result->>'ok' IS DISTINCT FROM 'true' OR result->>'from' IS DISTINCT FROM 'assigned' OR result->>'to' IS DISTINCT FROM 'checked_out' THEN RAISE EXCEPTION 'canonical_checkout_transition_failed: %',result; END IF;
+   IF NOT EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id='87500000-0000-4000-8000-000000000001' AND status='checked_in' AND check_out_time IS NULL AND current_state='checked_out') THEN RAISE EXCEPTION 'checkout_intermediate_boundary_missing'; END IF;
+ END $checkout$;`,
+ checkout:"UPDATE public.dealer_attendance SET check_out_time=now() WHERE id='87500000-0000-4000-8000-000000000001';",
+ checkedout:"UPDATE public.dealer_attendance SET status='checked_out',current_state='checked_out',check_out_time=now() WHERE id='87500000-0000-4000-8000-000000000001';",
+ unavailable:"UPDATE public.dealer_attendance SET current_state='available' WHERE id='87500000-0000-4000-8000-000000000001';",
+ mismatch:"UPDATE public.dealer_attendance SET current_state='assigned' WHERE id='87500000-0000-4000-8000-000000000003'; UPDATE public.dealer_assignments SET attendance_id='87500000-0000-4000-8000-000000000003' WHERE id='88000000-0000-4000-8000-000000000001';",
+ club:"UPDATE public.dealer_assignments SET club_id='81000000-0000-4000-8000-000000000002' WHERE id='88000000-0000-4000-8000-000000000001';",
+ deleted:"UPDATE public.dealers SET deleted_at=now() WHERE id='87000000-0000-4000-8000-000000000001';",
+};
+assert.ok(Object.hasOwn(attendanceMutations,attendanceCase),'unsupported attendance tuple case');
+const authorityFence=authorityFenceEpoch||authorityFenceRevoked||authorityFenceAttendance;
+assert.ok([authorityFenceEpoch,authorityFenceRevoked,authorityFenceAttendance].filter(Boolean).length<=1,'choose one lifecycle fence scenario');
+assert.ok(!authorityAssignment72||(authorityRelease71&&!authorityReverseRoot),'assignment72 requires exact ordered release71 clone');
+assert.ok(!authorityFenceAttendance||authorityAssignment72,'attendance fence requires assignment72');
 assert.ok(!authorityFence||authorityRelease71,'lifecycle fence requires exact release71');
 assert.ok(!authorityBaseline||authority70,'baseline comparison requires authority70 scenario');
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
-const authorityDatabase=authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
+const authorityDatabase=authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');
+assert.ok(!authorityFinishAttendance72||(authorityAssignment72&&authorityFinish&&authorityFloorFinish&&!authorityOverlapFixture),'Finish attendance negative requires qualified Floor Finish');
 const authorityCanonicalStart=process.argv.includes('--authority-canonical-start');
 assert.ok(!authorityFloorFinish||authorityFinish,'Floor finish requires existing finish fixture');
 assert.ok(!authorityAction||authority70,'action authority scenario requires authority70');
@@ -138,6 +165,38 @@ if(authorityFinish){
   SELECT public.tracker_voice_test_assert((:'finish_floor_lock_payload'::jsonb->>'ok')::boolean,'authorized Floor claims exact hand through canonical takeover');
   `+finish.slice(boundary).replaceAll(actor,floor);
  }
+ if(authorityFinishAttendance72){
+  const boundary=finish.indexOf('-- A bad digest cannot finish the hand');
+  assert.ok(boundary>0,'existing valid Finish payload boundary missing');
+  const floor='81300000-0000-4000-8000-000000000001';
+  const projection=`md5(jsonb_build_object(
+   'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM public.tournament_entries e WHERE e.tournament_id='85000000-0000-4000-8000-000000000001'),
+   'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.tournament_seats s WHERE s.tournament_id='85000000-0000-4000-8000-000000000001'),
+   'chips',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.player_id,c.entry_number) FROM public.tournament_chip_counts c WHERE c.tournament_id='85000000-0000-4000-8000-000000000001'))::text)`;
+  finish=finish.slice(0,boundary)+`
+  SELECT ${projection} AS value \\gset finish72_projection_before_
+  ${attendanceMutations[attendanceCase]}
+  SET ROLE service_role;
+  SELECT set_config('request.jwt.claim.sub','${floor}',false);
+  SELECT set_config('request.jwt.claims','{"sub":"${floor}","role":"service_role"}',false);
+  SELECT public.commit_tracker_voice_finish_v0('${floor}',
+   '85000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000001',
+   '86000000-0000-4000-8000-000000000001','gemini_live','gemini-3.5-transcribe-live','finish72-invalid-attendance',
+   'kết thúc hand',:'finish_state_value','voice-finish-attendance72-0001','trace-finish-attendance72',
+   'engine_showdown',repeat('2',64),:'finish_record_payload_value'::jsonb)::text AS payload \\gset finish72_denied_
+  RESET ROLE;
+  \\echo :finish72_denied_payload
+  SELECT public.tracker_voice_test_assert(
+   :'finish72_denied_payload'::jsonb->>'error'='dealer_assignment_invalid'
+   AND (SELECT status='in_progress' FROM public.tournament_hands WHERE id='86000000-0000-4000-8000-000000000001')
+   AND public._tracker_voice_hand_state_version('86000000-0000-4000-8000-000000000001')=:'finish_state_value'
+   AND (SELECT count(*) FROM public.tournament_entries WHERE tournament_id='85000000-0000-4000-8000-000000000001' AND current_stack=30000)=2
+   AND (SELECT count(*) FROM public.tournament_seats WHERE tournament_id='85000000-0000-4000-8000-000000000001' AND is_active AND chip_count=30000)=2
+   AND ${projection}=:'finish72_projection_before_value'
+   AND NOT EXISTS(SELECT 1 FROM public.tracker_voice_events WHERE idempotency_key='voice-finish-attendance72-0001'),
+   'Finish rejects attendance tuple ${attendanceCase}; no hand/source/entry/seat/chip/root mutation');
+  `;
+ }
  cases+='\n'+finish;
 }
 if(authorityCanonicalStart) cases=cases.replaceAll("'86000000-0000-4000-8000-000000000001'","current_setting('voice70.canonical_hand_id')::uuid");
@@ -147,15 +206,15 @@ if(authorityFence){
  assert.ok(boundary>0,'immutable root fixture boundary missing');
  cases=cases.slice(0,boundary)+`
  RESET ROLE;
- ${authorityFenceEpoch?"UPDATE public.table_sessions SET control_epoch=control_epoch+1 WHERE id='83500000-0000-4000-8000-000000000001'; UPDATE public.tracker_voice_configs SET enabled=true,correction_state='ready' WHERE tournament_table_id='84000000-0000-4000-8000-000000000001';":"DELETE FROM public.club_floors WHERE club_id='81000000-0000-4000-8000-000000000001' AND user_id='81300000-0000-4000-8000-000000000001';"}
+ ${authorityFenceAttendance?attendanceMutations[attendanceCase]:authorityFenceEpoch?"UPDATE public.table_sessions SET control_epoch=control_epoch+1 WHERE id='83500000-0000-4000-8000-000000000001'; UPDATE public.tracker_voice_configs SET enabled=true,correction_state='ready' WHERE tournament_table_id='84000000-0000-4000-8000-000000000001';":"DELETE FROM public.club_floors WHERE club_id='81000000-0000-4000-8000-000000000001' AND user_id='81300000-0000-4000-8000-000000000001';"}
  SET ROLE authenticated;
  SELECT public.commit_tracker_voice_board_v0((:'board_root_flop_payload'::jsonb->>'voice_event_id')::uuid,'voice-board-flop-0001','trace-board-fence')::text AS payload \\gset lifecycle_fence_
  RESET ROLE;
  SELECT public.tracker_voice_test_assert(
- :'lifecycle_fence_payload'::jsonb->>'error'='${authorityFenceEpoch?'stale_state_version':'dealer_assignment_missing'}'
+ :'lifecycle_fence_payload'::jsonb->>'error'='${authorityFenceAttendance?'dealer_assignment_invalid':authorityFenceEpoch?'stale_state_version':'dealer_assignment_missing'}'
  AND (SELECT community_cards='[]'::jsonb FROM public.tournament_hands WHERE id='86000000-0000-4000-8000-000000000001')
  AND NOT EXISTS(SELECT 1 FROM public.tracker_voice_events WHERE root_event_id=(:'board_root_flop_payload'::jsonb->>'voice_event_id')::uuid),
- 'old Floor proposal rejected after ${authorityFenceEpoch?'epoch change with fresh config re-enabled':'Floor authority revoked'}; no cards or child receipt');
+ 'old Floor proposal rejected after ${authorityFenceAttendance?`attendance tuple ${attendanceCase}`:authorityFenceEpoch?'epoch change with fresh config re-enabled':'Floor authority revoked'}; no cards or child receipt');
  `+readFileSync('tests/trackerVoice/sharedBoardAuthority.boundaries.sql','utf8');
 }
 if(authorityOverlapFixture){
@@ -187,6 +246,7 @@ const authorityPreconditions=authority70?`DO $$ BEGIN
  IF current_database()<>'${authorityDatabase}' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>${Number(process.env.PGPORT)} OR current_user<>'postgres' OR ${authorityReverseRoot?"(SELECT count(*) FROM public.clubs)<>2 OR (SELECT count(*) FROM public.tracker_voice_events WHERE event_kind='canonical_receipt')<>0":"EXISTS(SELECT 1 FROM public.clubs)"} THEN RAISE EXCEPTION 'wrong_authority70_fixture_database'; END IF;
  IF md5(replace(pg_get_functiondef('public._tracker_voice_hand_state_version(uuid)'::regprocedure),chr(13),''))<>'${authorityBaseline?'02fb54cede4cf42423abe72271375a8b':'f1f8d600607c96653f1ea1c0f950c119'}' THEN RAISE EXCEPTION 'authority70_state_dependency_drift'; END IF;
  ${authorityRelease71?"IF md5(replace(pg_get_functiondef('public.record_hand(uuid,uuid,integer,timestamp with time zone,jsonb,jsonb,jsonb,jsonb,integer,uuid)'::regprocedure),chr(13),''))<>'16006fec6f3b9274581de471a9dc296a' THEN RAISE EXCEPTION 'release71_finish_dependency_drift'; END IF;":''}
+ ${authorityAssignment72?`IF md5(replace(pg_get_functiondef('public._tracker_voice_assignment_context(uuid,uuid,uuid)'::regprocedure),chr(13),''))<>'${authorityAssignment72Baseline?'96ba904dfcdfaa23dba36b6862aba168':'0a9e1f4e0972015b1554d6cd10f5ee2a'}' THEN RAISE EXCEPTION 'assignment72_dependency_drift'; END IF;`:''}
  ${authorityCanonicalStart?"IF md5(replace(pg_get_functiondef('public.start_tracker_hand_v3(uuid,uuid,uuid,bigint,integer,timestamp with time zone,uuid,integer)'::regprocedure),chr(13),''))<>'6b71e798f6239b7096342ef7e17e6784' OR md5(replace(pg_get_functiondef('floor_private.snapshot_tracker_hand_blinds()'::regprocedure),chr(13),''))<>'81554940f984d3349149cdeed959626e' OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgfoid='floor_private.snapshot_tracker_hand_blinds()'::regprocedure AND tgenabled='O') THEN RAISE EXCEPTION 'canonical_start_identity_dependency_drift'; END IF;":''}
 END $$;`:'';
 const useWsl=authority70&&process.platform==='win32';
@@ -199,4 +259,4 @@ const result=spawnSync(useWsl?'wsl':'psql',args,
  // Mirror only in this rollback transaction; no public table grants or bypass.
  {input:`BEGIN;\n${preconditions}\n${authorityPreconditions}\nGRANT USAGE ON SCHEMA auth TO anon,authenticated,service_role;\nGRANT EXECUTE ON FUNCTION auth.uid(),auth.jwt() TO anon,authenticated,service_role;\n${qualified}\n${fixtureOnly?'':cases}\n${fixtureOnly||authorityOverlapFixture||authorityReverseRoot?'COMMIT':'ROLLBACK'};`.replaceAll('\r\n','\n'),encoding:'utf8'});
 assert.equal(result.status,0,result.stderr+(voiceBoard?'\n'+result.stdout:''));
-console.log(authorityFenceEpoch?'CURRENT_SCHEMA_VOICE_EPOCH_REENABLE_STALE_ZERO_WRITE_PASS':authorityFenceRevoked?'CURRENT_SCHEMA_VOICE_REVOKED_FLOOR_ZERO_WRITE_PASS':authorityReverseRoot?'CURRENT_SCHEMA_RELEASE71_REVERSE_ROOT_READY':authorityOverlapFixture?'CURRENT_SCHEMA_RELEASE71_OVERLAP_ROOT_READY':authorityFloorFinish?'CURRENT_SCHEMA_VOICE_FLOOR_FINISH_RETRY_ROLLBACK_PASS':authorityFinish?'CURRENT_SCHEMA_VOICE_OWNER_FINISH_RETRY_ROLLBACK_PASS':authorityAction?'CURRENT_SCHEMA_VOICE70_ACTION_REPLAY_BOUNDARIES_PASS':authority70?'CURRENT_SCHEMA_VOICE70_CARD_WRAPPERS_BOUNDARIES_PASS':undo?'UNDO_GENERATION_HASH_QUEUE_REPLAY_CONFLICT_PASS':fixtureOnly?'CURRENT_SCHEMA_OVERLAP_FIXTURE_READY':voiceHoles?'CURRENT_SCHEMA_VOICE_CARD_WRAPPERS_PASS':voiceBoard?'CURRENT_SCHEMA_VOICE_BOARD_WRAPPER_PASS':'CURRENT_SCHEMA_CARD_AUTHORITY_REVISION_COMPLETION_QUEUE_PASS');
+console.log(authorityFinishAttendance72?('CURRENT_SCHEMA_VOICE_FINISH_ATTENDANCE_'+attendanceCase.toUpperCase()+'_ZERO_WRITE_PASS'):authorityFenceAttendance?('CURRENT_SCHEMA_VOICE_ASSIGNMENT_TUPLE_'+attendanceCase.toUpperCase()+'_ZERO_WRITE_PASS'):authorityFenceEpoch?'CURRENT_SCHEMA_VOICE_EPOCH_REENABLE_STALE_ZERO_WRITE_PASS':authorityFenceRevoked?'CURRENT_SCHEMA_VOICE_REVOKED_FLOOR_ZERO_WRITE_PASS':authorityReverseRoot?'CURRENT_SCHEMA_RELEASE71_REVERSE_ROOT_READY':authorityOverlapFixture?'CURRENT_SCHEMA_RELEASE71_OVERLAP_ROOT_READY':authorityFloorFinish?'CURRENT_SCHEMA_VOICE_FLOOR_FINISH_RETRY_ROLLBACK_PASS':authorityFinish?'CURRENT_SCHEMA_VOICE_OWNER_FINISH_RETRY_ROLLBACK_PASS':authorityAction?'CURRENT_SCHEMA_VOICE70_ACTION_REPLAY_BOUNDARIES_PASS':authority70?'CURRENT_SCHEMA_VOICE70_CARD_WRAPPERS_BOUNDARIES_PASS':undo?'UNDO_GENERATION_HASH_QUEUE_REPLAY_CONFLICT_PASS':fixtureOnly?'CURRENT_SCHEMA_OVERLAP_FIXTURE_READY':voiceHoles?'CURRENT_SCHEMA_VOICE_CARD_WRAPPERS_PASS':voiceBoard?'CURRENT_SCHEMA_VOICE_BOARD_WRAPPER_PASS':'CURRENT_SCHEMA_CARD_AUTHORITY_REVISION_COMPLETION_QUEUE_PASS');
