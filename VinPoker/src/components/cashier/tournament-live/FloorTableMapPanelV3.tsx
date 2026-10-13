@@ -522,7 +522,7 @@ function ScopedFloorTableMapPanelV3({
                   ) : selectedSeatNumber != null && (
                     <section className="space-y-3 rounded-xl border border-border bg-card/55 p-3">
                       <p className="text-sm font-semibold">Ghế {selectedSeatNumber} đang trống</p>
-                      <Button variant="outline" className="min-h-12 w-full" disabled={busy || loading || !!loadError || !actorId}
+                      <Button data-ops-action="floor.tables.open_add_player" variant="outline" className="min-h-12 w-full" disabled={busy || loading || !!loadError || !actorId}
                         onClick={() => setManualPlayerTarget({ tableId: selectedTable.tournamentTableId, sessionId: selectedTable.tableSessionId, seat: selectedSeatNumber })}>
                         <Plus className="mr-2 h-4 w-4" /> Thêm người mới
                       </Button>

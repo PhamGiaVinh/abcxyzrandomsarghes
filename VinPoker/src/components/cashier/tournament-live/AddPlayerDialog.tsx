@@ -124,7 +124,7 @@ function ScopedAddPlayerDialog(p: Props & { scope: string }) {
           <Label htmlFor={inputId}>Tên người chơi</Label>
           <Input id={inputId} value={name} maxLength={100} disabled={frozen} onChange={(e) => setName(e.target.value)} placeholder="Nhập tên…" />
           <label className="grid gap-1">Ghế trống, không khóa
-            <select className="h-12 rounded-md border bg-background px-3" value={seat ?? ""} disabled={frozen}
+            <select data-ops-action="floor.tables.select_add_seat" className="h-12 rounded-md border bg-background px-3" value={seat ?? ""} disabled={frozen}
               onChange={(e) => setSeat(e.target.value ? Number(e.target.value) : null)}>
               <option value="">Chọn ghế</option>
               {intent && !freeSeats.includes(intent.seat) && <option value={intent.seat}>Ghế {intent.seat} · yêu cầu đã gửi</option>}
@@ -135,10 +135,10 @@ function ScopedAddPlayerDialog(p: Props & { scope: string }) {
         {!intent && !contextValid && <p role="alert">Chưa xác minh được phiên bàn. Tải lại trước khi thêm người.</p>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         {intent && <><p className="text-xs text-muted-foreground">Đang giữ yêu cầu đã gửi. Đóng cửa sổ không hủy thao tác trên server.</p>
-          <Button variant="outline" disabled={busy} onClick={() => void send(true)}>Đối chiếu yêu cầu</Button></>}
+          <Button data-ops-action="floor.tables.reconcile_add_player" variant="outline" disabled={busy} onClick={() => void send(true)}>Đối chiếu yêu cầu</Button></>}
         <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={() => p.onOpenChange(false)}>Đóng</Button>
-          <Button disabled={busy || journalBlocked || (!intent && (!contextValid || name.trim().length < 2 || seat === null || !freeSeats.includes(seat)))}
+          <Button data-ops-action="floor.tables.close_add_player" variant="outline" disabled={busy} onClick={() => p.onOpenChange(false)}>Đóng</Button>
+          <Button data-ops-action="floor.tables.add_player" disabled={busy || journalBlocked || (!intent && (!contextValid || name.trim().length < 2 || seat === null || !freeSeats.includes(seat)))}
             onClick={() => void send(false)}>{busy ? "Đang xác nhận…" : intent ? "Gửi lại nguyên yêu cầu" : "Thêm người"}</Button>
         </DialogFooter>
       </DialogContent>
