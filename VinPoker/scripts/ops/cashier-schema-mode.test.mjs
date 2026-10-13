@@ -1,9 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
+
+function rejectedPreflight(mode) {
+  const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  if (process.platform === 'win32') {
+    const path = filename.replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`).replaceAll('\\', '/');
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', path], { encoding: 'utf8' });
+  }
+  return spawnSync('bash', [filename], { encoding: 'utf8', env });
+}
+
+test('invalid mode fails before allocating a test environment', () => {
+  const result = rejectedPreflight('unsupported');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unsupported Cashier schema mode/);
+});
+
+test('current mode rejects missing schema before Docker or application loading', () => {
+  const result = rejectedPreflight('current');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Verified schema-only baseline artifact is required/);
+});
 
 test('historical mode remains default and requires original baseline', () => {
   assert.ok(script.includes('CASHIER_SCHEMA_MODE:-pre03'));
