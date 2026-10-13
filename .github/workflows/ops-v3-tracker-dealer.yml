@@ -5,6 +5,9 @@ on:
     paths:
       - ".github/workflows/ops-v3-tracker-dealer.yml"
       - "VinPoker/src/OpsApp.tsx"
+      - "VinPoker/src/ops/auth/OpsAuthProvider*"
+      - "VinPoker/src/ops/auth/OpsCapabilityProvider*"
+      - "VinPoker/src/ops/auth/opsSessionValidation*"
       - "VinPoker/src/ops/coverage/trackerDealerButtonManifest.ts"
       - "VinPoker/src/ops/dealer-control/**"
       - "VinPoker/src/ops/registry/opsModuleRegistry.ts"
@@ -86,6 +89,10 @@ jobs:
           npx vitest run
           tests/opsTrackerDealer/opsTrackerDealer.contract.test.ts
           src/ops/registry/opsModuleRegistry.test.ts
+          src/ops/auth/OpsAuthProvider.test.tsx
+          src/ops/auth/OpsCapabilityProvider.refocus.test.tsx
+          src/ops/auth/opsSessionValidation.test.ts
+          src/pages/ops/TourCashierWorkbenchShift.test.tsx
           tests/viewerHub/tournamentLiveViewBlindContext.test.tsx
           tests/viewerHub/tournamentLiveViewInitialization.test.tsx
           src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
@@ -125,6 +132,10 @@ jobs:
         run: >-
           npx eslint
           src/OpsApp.tsx
+          src/ops/auth/OpsAuthProvider.tsx
+          src/ops/auth/OpsAuthProvider.test.tsx
+          src/ops/auth/OpsCapabilityProvider.tsx
+          src/ops/auth/OpsCapabilityProvider.refocus.test.tsx
           src/components/LiveStateEditor.tsx
           src/components/LiveStateEditor.test.tsx
           src/pages/TrackerHandHistory.tsx

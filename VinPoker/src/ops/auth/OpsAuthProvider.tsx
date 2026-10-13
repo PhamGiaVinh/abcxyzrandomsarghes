@@ -16,6 +16,7 @@ type OpsAuthContextValue = {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  verificationRevision: number;
   signOutCurrentSession: () => Promise<string | null>;
 };
 
@@ -24,17 +25,34 @@ const OpsAuthContext = createContext<OpsAuthContextValue | null>(null);
 export function OpsAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verificationRevision, setVerificationRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
     let validationRevision = 0;
+    let verifiedSession: Session | null = null;
 
-    const validateCurrentSession = () => {
+    const validateCurrentSession = (incoming?: Session, repeatedSignIn = false) => {
       const revision = ++validationRevision;
-      setLoading(true);
+      const retained = repeatedSignIn && verifiedSession && incoming
+        && incoming.user.id === verifiedSession.user.id
+        && incoming.access_token === verifiedSession.access_token
+        ? verifiedSession : null;
+      // Refocusing may emit SIGNED_IN again for the already verified token.
+      // Recheck the Auth server, but do not dismantle an in-flight UI gesture.
+      // Initial acceptance, changed tokens/users and explicit updates still gate.
+      if (!retained) {
+        verifiedSession = null;
+        setLoading(true);
+      }
       void loadVerifiedOpsSession(opsClient).then((nextSession) => {
         if (!active || revision !== validationRevision) return;
-        setSession(nextSession);
+        verifiedSession = retained && nextSession
+          && nextSession.user.id === retained.user.id
+          && nextSession.access_token === retained.access_token
+          ? retained : nextSession;
+        setSession(verifiedSession);
+        setVerificationRevision(revision);
         setLoading(false);
       });
     };
@@ -49,10 +67,11 @@ export function OpsAuthProvider({ children }: { children: ReactNode }) {
       // the only path that may accept it, after an Auth server check.
       if (event === "INITIAL_SESSION") return;
       if (nextSession) {
-        validateCurrentSession();
+        validateCurrentSession(nextSession, event === "SIGNED_IN");
         return;
       }
       validationRevision += 1;
+      verifiedSession = null;
       setSession(nextSession);
       setLoading(false);
     });
@@ -79,9 +98,10 @@ export function OpsAuthProvider({ children }: { children: ReactNode }) {
       session,
       user: session?.user ?? null,
       loading,
+      verificationRevision,
       signOutCurrentSession,
     }),
-    [loading, session, signOutCurrentSession],
+    [loading, session, signOutCurrentSession, verificationRevision],
   );
 
   return (

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -67,7 +68,9 @@ const OpsCapabilityContext = createContext<OpsCapabilityContextValue | null>(nul
 export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
   const client = useSupabaseClient();
   const rpcClient = client as unknown as OpsRpcClient;
-  const { user, loading: authLoading } = useOpsAuth();
+  const { user, loading: authLoading, verificationRevision } = useOpsAuth();
+  const verifiedScopeActor = useRef<string | null>(null);
+  const [scopeActorId, setScopeActorId] = useState<string | null>(null);
   const [scope, setScope] = useState<OpsClubCapabilityRow[]>([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [capabilitySource, setCapabilitySource] = useState<OpsCapabilitySource | null>(null);
@@ -90,10 +93,13 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (authLoading) {
+      verifiedScopeActor.current = null;
       setLoading(true);
       return;
     }
     if (!user) {
+      verifiedScopeActor.current = null;
+      setScopeActorId(null);
       setScope([]);
       setIsSuperAdmin(false);
       setCapabilitySource(null);
@@ -105,23 +111,33 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    setLoading(true);
-    setScope([]);
-    setIsSuperAdmin(false);
-    setCapabilitySource(null);
-    setClubs([]);
-    setScopeError(null);
-    setMetadataError(null);
+    // A verified same-actor refocus still reloads canonical capabilities, but
+    // keeps the current workspace mounted until that result settles.
+    if (verifiedScopeActor.current !== user.id) {
+      setLoading(true);
+      setScopeActorId(null);
+      setScope([]);
+      setIsSuperAdmin(false);
+      setCapabilitySource(null);
+      setClubs([]);
+      setScopeError(null);
+      setMetadataError(null);
+    }
 
     void (async () => {
       try {
         const loaded = await loadOpsCapabilities(rpcClient);
         if (cancelled) return;
+        verifiedScopeActor.current = user.id;
+        setScopeActorId(user.id);
+        setScopeError(null);
+        setMetadataError(null);
         setScope(loaded.scope);
         setIsSuperAdmin(loaded.global.is_super_admin);
         setCapabilitySource(loaded.source);
 
         const clubIds = [...new Set(loaded.scope.map((row) => row.club_id))];
+        setClubs((current) => current.filter((club) => clubIds.includes(club.id)));
         if (!clubIds.length) {
           setLoading(false);
           return;
@@ -138,6 +154,12 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       } catch {
         if (cancelled) return;
+        verifiedScopeActor.current = null;
+        setScopeActorId(null);
+        setScope([]);
+        setIsSuperAdmin(false);
+        setCapabilitySource(null);
+        setClubs([]);
         setScopeError("Không tải được phạm vi vận hành. Hệ thống đã khóa quyền để bảo vệ CLB.");
         setLoading(false);
       }
@@ -146,29 +168,32 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, client, revision, rpcClient, user]);
+  }, [authLoading, client, revision, rpcClient, user, verificationRevision]);
 
   const value = useMemo<OpsCapabilityContextValue>(() => {
-    const operatorClubIds = [...new Set(scope.map((row) => row.club_id))];
+    const ownsScope = !!user && scopeActorId === user.id;
+    const ownedScope = ownsScope ? scope : [];
+    const ownedSuperAdmin = ownsScope && isSuperAdmin;
+    const operatorClubIds = [...new Set(ownedScope.map((row) => row.club_id))];
     const snapshot: OpsScopeSnapshot = {
-      clubs: scope,
-      global: { is_super_admin: isSuperAdmin },
+      clubs: ownedScope,
+      global: { is_super_admin: ownedSuperAdmin },
     };
-    const availableModules = getAvailableOpsModulesForSource(snapshot, capabilitySource);
-    const floorClubIds = getModuleClubIds(getOpsModule("floor"), scope);
-    const cashierClubIds = getModuleClubIds(getOpsModule("cashier"), scope);
-    const hasOwnerAccess = isSuperAdmin || scope.some((row) => row.can_owner);
-    const hasFloorAccess = isSuperAdmin || floorClubIds.length > 0;
-    const hasCashierAccess = isSuperAdmin || cashierClubIds.length > 0;
+    const availableModules = getAvailableOpsModulesForSource(snapshot, ownsScope ? capabilitySource : null);
+    const floorClubIds = getModuleClubIds(getOpsModule("floor"), ownedScope);
+    const cashierClubIds = getModuleClubIds(getOpsModule("cashier"), ownedScope);
+    const hasOwnerAccess = ownedSuperAdmin || ownedScope.some((row) => row.can_owner);
+    const hasFloorAccess = ownedSuperAdmin || floorClubIds.length > 0;
+    const hasCashierAccess = ownedSuperAdmin || cashierClubIds.length > 0;
 
     return {
-      loading: authLoading || loading,
+      loading: authLoading || loading || (!!user && !ownsScope && !scopeError),
       scopeError,
       metadataError,
-      capabilitySource,
-      scope,
+      capabilitySource: ownsScope ? capabilitySource : null,
+      scope: ownedScope,
       snapshot,
-      clubs,
+      clubs: ownsScope ? clubs : [],
       operatorClubIds,
       floorClubIds,
       cashierClubIds,
@@ -176,9 +201,9 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
       hasFloorAccess,
       hasCashierAccess,
       hasAnyAccess: availableModules.length > 0,
-      isSuperAdmin,
+      isSuperAdmin: ownedSuperAdmin,
       availableModules,
-      moduleClubIds: (moduleId) => getModuleClubIds(getOpsModule(moduleId), scope),
+      moduleClubIds: (moduleId) => getModuleClubIds(getOpsModule(moduleId), ownedScope),
       searchSuperAdminClubs,
       verifySuperAdminClub: verifySuperAdminClubById,
       refresh,
@@ -193,6 +218,8 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
     refresh,
     scope,
     scopeError,
+    scopeActorId,
+    user,
     searchSuperAdminClubs,
     verifySuperAdminClubById,
   ]);
