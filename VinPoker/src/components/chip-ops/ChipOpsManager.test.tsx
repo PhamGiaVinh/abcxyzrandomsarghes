@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), auth: {
+const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), tourIs: vi.fn(), auth: {
   isClubOwner: true, isChipMaster: false, user: { id: "owner-a" },
   loading: false, rolesLoading: false, authError: null as string | null, rolesError: null as string | null,
 } }));
@@ -69,14 +69,45 @@ beforeEach(() => {
   h.auth = { isClubOwner: true, isChipMaster: false, user: { id: "owner-a" }, loading: false, rolesLoading: false, authError: null, rolesError: null };
   h.rpc.mockClear();
   h.from.mockClear();
+  h.tourIs.mockClear();
   h.from.mockImplementation((table: string) => {
     const result = { data: table === "tournaments" ? [{ id: "tour-a", name: "TEST", club_id: "club-a" }] : [], error: null };
     const query: Record<string, unknown> = {};
     for (const method of ["select", "order", "limit", "eq", "in", "maybeSingle"]) query[method] = () => query;
+    query.is = (...args: unknown[]) => { if (table === "tournaments") h.tourIs(...args); return query; };
     query.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
     return query;
   });
   h.rpc.mockImplementation(async (name: string) => ({ data: name === "get_current_chip_inventory" ? { denominations: [] } : name === "get_chip_bank" ? { coupling_enabled: false } : name === "get_color_up_history" ? { operations: [] } : {}, error: null }));
+});
+
+it("excludes soft-deleted tournaments before publishing the Chip Ops picker", async () => {
+  render(<MemoryRouter initialEntries={["/chip-ops?t=tour-a"]}><ChipOpsManager /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "Setup stack" });
+  expect(h.tourIs).toHaveBeenCalledWith("deleted_at", null);
+  expect(h.rpc.mock.calls.every(([name]) => name.startsWith("get_"))).toBe(true);
+});
+
+it("does not load a soft-deleted tour from a bookmarked chip workspace", async () => {
+  const original = h.from.getMockImplementation()!;
+  h.from.mockImplementation((table: string) => {
+    const query = original(table);
+    if (table === "tournaments") {
+      let liveToursOnly = false;
+      query.is = (column: string, value: unknown) => {
+        liveToursOnly = column === "deleted_at" && value === null;
+        return query;
+      };
+      query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({
+        data: liveToursOnly ? [] : [{ id: "deleted-tour", name: "Deleted tour", club_id: "club-a" }], error: null,
+      }).then(resolve);
+    }
+    return query;
+  });
+  render(<MemoryRouter initialEntries={["/chip-ops?t=deleted-tour"]}><ChipOpsManager /></MemoryRouter>);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không đọc được dữ liệu chip");
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  expect(h.rpc).not.toHaveBeenCalled();
 });
 
 it("does not report missing permission while roles are loading", async () => {

@@ -113,7 +113,7 @@ export default function TourCashierWorkbench() {
     let active = true;
     void Promise.all([
       client.from("tournaments").select("id,name,start_time,status,registration_closed_at")
-        .eq("club_id", clubId).order("start_time", { ascending: false }).limit(80),
+        .eq("club_id", clubId).is("deleted_at", null).order("start_time", { ascending: false }).limit(80),
       client.from("cashier_till_shifts" as never).select("id,opening_cash,opened_at")
         .eq("club_id", clubId).is("closed_at", null).maybeSingle(),
       client.from("cashier_till_shifts" as never)
