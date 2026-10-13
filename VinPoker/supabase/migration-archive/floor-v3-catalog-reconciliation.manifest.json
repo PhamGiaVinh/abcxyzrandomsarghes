@@ -7612,7 +7612,7 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
-    {"version":"20270128000074","filename":"20270128000074_tracker_public_hand_visibility_v1.sql","sha256":"b9cc9f221b3cf17180ebc7692eb942c85f1c50257ad35f7ffd2eec10f41ddcd8","domain":"tracker-public-hand-visibility-campaign"},
+    {"version":"20270128000074","filename":"20270128000074_tracker_public_hand_visibility_v1.sql","sha256":"84fc5d7876134f05706e72b4397859eb83b0bd2c21a00ca32403c1d0049a759b","domain":"tracker-public-hand-visibility-campaign"},
     {"version":"20270128000072","filename":"20270128000072_tracker_voice_assignment_lifecycle_v1.sql","sha256":"6a0b7cb216c6eec027e4ff0b4eb7e5a7a4478ba0bf879b14a65906ce8c4edb09","domain":"tracker-voice-assignment-lifecycle-campaign"},
     {"version":"20270128000073","filename":"20270128000073_dealer_voice_swing_lock_order_v1.sql","sha256":"5b44af84a9e20627152471141bca6ca42539f1ca658bbaade89a061a7066530b","domain":"dealer-voice-swing-lock-order-campaign"},
     {"version":"20270128000071","filename":"20270128000071_tracker_voice_finish_actor_session_fence_v1.sql","sha256":"1a747f345d56b6ff4b5c13186dd5e98f9db384e918659808b638e39be6203993","domain":"tracker-voice-finish-actor-session-campaign"},

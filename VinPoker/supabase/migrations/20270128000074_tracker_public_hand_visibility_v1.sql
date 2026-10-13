@@ -17,6 +17,7 @@ BEGIN
  IF (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename IN ('tournament_hands','hand_players'))<>6
  OR (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename IN ('tournament_hands','hand_players') AND cmd='SELECT' AND permissive='PERMISSIVE' AND qual='true')<>4
  OR EXISTS(SELECT 1 FROM pg_class WHERE oid IN ('public.tournament_hands'::regclass,'public.hand_players'::regclass) AND NOT relrowsecurity) THEN RAISE EXCEPTION 'visibility74_policy_baseline_drift'; END IF;
+ IF (SELECT md5(jsonb_agg(to_jsonb(p) ORDER BY p.tablename,p.policyname)::text) FROM pg_policies p WHERE p.schemaname='public' AND p.tablename IN ('tournament_hands','hand_players')) IS DISTINCT FROM '4a5154e03cfde4e0ab73f3a178afb047' THEN RAISE EXCEPTION 'visibility74_exact_policy_baseline_drift'; END IF;
  PERFORM set_config('visibility74.original_policies',(
  SELECT md5(jsonb_agg(to_jsonb(p) ORDER BY p.tablename,p.policyname)::text) FROM pg_policies p WHERE p.schemaname='public' AND p.tablename IN ('tournament_hands','hand_players')),true);
 END;
