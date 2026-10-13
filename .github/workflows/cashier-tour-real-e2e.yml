@@ -66,10 +66,16 @@ jobs:
             recovery_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$recovery_id")"
             jq -e --arg owner "$GITHUB_REPOSITORY_OWNER" --argjson id "$recovery_id" '
               .id == $id and .conclusion == "success" and .event == "workflow_dispatch"
+                and .workflow_id == 322144993 and .head_branch == "main"
+                and .head_sha == "09cff8a829caf3f514a615b231ab96f4ed238757"
                 and (.actor.login | ascii_downcase) == ($owner | ascii_downcase)
             ' <<<"$recovery_json" >/dev/null
             gh run download "$recovery_id" -n reviewed-operations-schema -D "${RUNNER_TEMP}/cashier-schema"
-            node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "${RUNNER_TEMP}/cashier-schema"
+            gh run download "$recovery_id" -n reviewed-operations-schema-provenance -D "${RUNNER_TEMP}/cashier-provenance"
+            node scripts/deploy/validate-live-public-schema-artifact.mjs \
+              --artifact-directory "${RUNNER_TEMP}/cashier-schema" \
+              --operations-recovery-provenance "${RUNNER_TEMP}/cashier-provenance/reviewed-operations-schema.provenance.json" \
+              --recovery-run-id "$recovery_id"
             echo "Runtime-only schema: reviewed recovery $recovery_id; not pre03 migration proof"
             exit 0
           fi

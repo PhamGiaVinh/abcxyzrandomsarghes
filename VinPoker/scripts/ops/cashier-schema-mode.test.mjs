@@ -21,6 +21,9 @@ test('current mode pins reviewed bytes and does not replay historical writers', 
   assert.ok(migrationBlock.indexOf('if [[ "$schema_mode" == pre03 ]]; then') < migrationBlock.indexOf('<"$repo_root/supabase/migrations/$cashier_migration"'));
   assert.ok(workflow.includes('recovery_id=38275767630'));
   assert.ok(workflow.includes('not pre03 migration proof'));
+  assert.ok(workflow.includes('.workflow_id == 322144993 and .head_branch == "main"'));
+  assert.ok(workflow.includes('.head_sha == "09cff8a829caf3f514a615b231ab96f4ed238757"'));
+  assert.ok(workflow.includes('--operations-recovery-provenance'));
 });
 
 test('both paths retain money/refund and network/secret/cron guards', () => {
