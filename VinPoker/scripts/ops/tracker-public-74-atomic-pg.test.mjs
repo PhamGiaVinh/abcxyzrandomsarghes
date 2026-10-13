@@ -6,7 +6,7 @@ import {receiptSql} from './floor-37-47-protected-apply.mjs';
 test('PG17 visibility74 receipt failure rolls back all policies and helper; commit and replay',
  {skip:process.env.VISIBILITY74_PG_TEST!=='1'},()=>{
  assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGUSER,'postgres');
- assert.ok(['vinpoker_visibility74_atomic_ci','vinpoker_visibility74_atomic_20261014'].includes(process.env.PGDATABASE));
+ assert.ok(['vinpoker_visibility74_atomic_ci','vinpoker_visibility74_atomic_20261014','vinpoker_visibility74_atomic_final_20261014'].includes(process.env.PGDATABASE));
  assert.ok(['55464','55441'].includes(process.env.PGPORT));
  for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
  const win=process.platform==='win32';if(win)assert.match(process.env.VINPOKER_TEST_WSL_DISTRO??'',/^[A-Za-z0-9_.-]+$/);
@@ -24,8 +24,12 @@ test('PG17 visibility74 receipt failure rolls back all policies and helper; comm
  check("CREATE FUNCTION public.visibility74_reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'visibility74_injected_receipt_failure'; END $$; CREATE TRIGGER visibility74_reject BEFORE INSERT ON supabase_migrations.schema_migrations FOR EACH ROW EXECUTE FUNCTION public.visibility74_reject_receipt();");
  const failed=query(atomicSql());assert.notEqual(failed.status,0);assert.match(failed.stderr,/visibility74_injected_receipt_failure/);unchanged();
  check('DROP TRIGGER visibility74_reject ON supabase_migrations.schema_migrations; DROP FUNCTION public.visibility74_reject_receipt();');
+ const sql=atomicSql(),anchor='INSERT INTO supabase_migrations.schema_migrations';
+ assert.equal(sql.split(anchor).length,2);
+ const bodyFailure=query(sql.replace(anchor,"DO $visibility74_body_failure$ BEGIN RAISE EXCEPTION 'visibility74_injected_body_failure'; END $visibility74_body_failure$; "+anchor));
+ assert.notEqual(bodyFailure.status,0);assert.match(bodyFailure.stderr,/visibility74_injected_body_failure/);unchanged();
  check(atomicSql());check(postcheckSql());assert.deepEqual(JSON.parse(check(receiptSql(item))),{count:1,exact:true});
  const replay=query(atomicSql());assert.notEqual(replay.status,0);assert.match(replay.stderr,/visibility74_ledger_drift/);
  check(postcheckSql());assert.deepEqual(JSON.parse(check(receiptSql(item))),{count:1,exact:true});
- console.log('VISIBILITY74_ATOMIC_RECEIPT_ROLLBACK_COMMIT_REPLAY_PASS');
+ console.log('VISIBILITY74_ATOMIC_BODY_RECEIPT_ROLLBACK_COMMIT_REPLAY_PASS');
 });
