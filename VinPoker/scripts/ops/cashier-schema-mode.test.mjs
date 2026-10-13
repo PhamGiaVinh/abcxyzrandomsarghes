@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
@@ -79,11 +80,23 @@ test('historical mode remains default and requires original baseline', () => {
   assert.ok(script.includes('CASHIER_SCHEMA_MODE:-pre03'));
   assert.ok(workflow.includes('capture_id=35982674365'));
   assert.ok(script.includes('"$schema_mode" == pre03 && "$baseline_state" != \'t|t\''));
+  assert.ok(workflow.includes('gh api --paginate --slurp'));
+  assert.ok(workflow.includes('node VinPoker/scripts/ops/select-cashier-schema-mode.mjs'));
+});
+
+test('migration changes and rename out require historical proof across pages', () => {
   for (const directory of ['migrations/', 'migration-archive/', 'pending-migrations/']) {
-    assert.ok(workflow.includes(`startswith("VinPoker/supabase/${directory}")`));
+    const oldPath = `VinPoker/supabase/${directory}test.sql`;
+    assert.equal(selectCashierSchemaMode([[{ filename: oldPath, status: 'removed' }]]), 'pre03');
+    assert.equal(selectCashierSchemaMode([[{ filename: 'src/ui.ts' }], [{ filename: 'elsewhere.sql', previous_filename: oldPath, status: 'renamed' }]]), 'pre03');
   }
-  assert.ok(workflow.includes('true) mode=pre03'));
-  assert.ok(workflow.includes('Cannot establish required schema proof'));
+  assert.equal(selectCashierSchemaMode([[{ filename: 'VinPoker/src/ui.ts' }]]), 'current');
+});
+
+test('unverifiable PR file input fails closed', () => {
+  for (const input of [null, [], [[]], [{ filename: 'x' }], [[{}]], [[{ filename: 'x', previous_filename: 7 }]]]) {
+    assert.throws(() => selectCashierSchemaMode(input));
+  }
 });
 
 test('current mode pins reviewed bytes and does not replay historical writers', () => {

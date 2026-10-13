@@ -7,6 +7,7 @@ on:
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
@@ -51,13 +52,8 @@ jobs:
           if [[ "$EVENT_NAME" == pull_request ]]; then
             # Runtime changes need the retained-schema real backend test.
             # Migration changes still require the original historical baseline.
-            historical_required="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" |
-              jq -s 'add | any(.filename; startswith("VinPoker/supabase/migrations/") or startswith("VinPoker/supabase/migration-archive/") or startswith("VinPoker/supabase/pending-migrations/"))')"
-            case "$historical_required" in
-              true) mode=pre03 ;;
-              false) mode=current ;;
-              *) echo "Cannot establish required schema proof" >&2; exit 1 ;;
-            esac
+            mode="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" |
+              node VinPoker/scripts/ops/select-cashier-schema-mode.mjs)"
           fi
           case "$mode" in pre03|current) ;; *) exit 1 ;; esac
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
