@@ -10,6 +10,11 @@ const authorityBaseline=process.argv.includes('--authority-baseline');
 const authorityRelease71=process.argv.includes('--authority-release71');
 const authorityOverlapFixture=process.argv.includes('--authority-overlap-fixture');
 const authorityReverseRoot=process.argv.includes('--authority-reverse-root');
+const authorityFenceEpoch=process.argv.includes('--authority-fence-epoch');
+const authorityFenceRevoked=process.argv.includes('--authority-fence-revoked');
+const authorityFence=authorityFenceEpoch||authorityFenceRevoked;
+assert.ok(!(authorityFenceEpoch&&authorityFenceRevoked),'choose one lifecycle fence scenario');
+assert.ok(!authorityFence||authorityRelease71,'lifecycle fence requires exact release71');
 assert.ok(!authorityBaseline||authority70,'baseline comparison requires authority70 scenario');
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
@@ -136,6 +141,23 @@ if(authorityFinish){
  cases+='\n'+finish;
 }
 if(authorityCanonicalStart) cases=cases.replaceAll("'86000000-0000-4000-8000-000000000001'","current_setting('voice70.canonical_hand_id')::uuid");
+if(authorityFence){
+ assert.ok(!authorityOwner&&!authorityAction&&!authorityFinish&&!authorityCanonicalStart&&!authorityOverlapFixture&&!authorityReverseRoot,'lifecycle fence uses isolated Floor root only');
+ const boundary=cases.indexOf('SELECT public.commit_tracker_voice_board_v0(');
+ assert.ok(boundary>0,'immutable root fixture boundary missing');
+ cases=cases.slice(0,boundary)+`
+ RESET ROLE;
+ ${authorityFenceEpoch?"UPDATE public.table_sessions SET control_epoch=control_epoch+1 WHERE id='83500000-0000-4000-8000-000000000001'; UPDATE public.tracker_voice_configs SET enabled=true,correction_state='ready' WHERE tournament_table_id='84000000-0000-4000-8000-000000000001';":"DELETE FROM public.club_floors WHERE club_id='81000000-0000-4000-8000-000000000001' AND user_id='81300000-0000-4000-8000-000000000001';"}
+ SET ROLE authenticated;
+ SELECT public.commit_tracker_voice_board_v0((:'board_root_flop_payload'::jsonb->>'voice_event_id')::uuid,'voice-board-flop-0001','trace-board-fence')::text AS payload \\gset lifecycle_fence_
+ RESET ROLE;
+ SELECT public.tracker_voice_test_assert(
+ :'lifecycle_fence_payload'::jsonb->>'error'='${authorityFenceEpoch?'stale_state_version':'dealer_assignment_missing'}'
+ AND (SELECT community_cards='[]'::jsonb FROM public.tournament_hands WHERE id='86000000-0000-4000-8000-000000000001')
+ AND NOT EXISTS(SELECT 1 FROM public.tracker_voice_events WHERE root_event_id=(:'board_root_flop_payload'::jsonb->>'voice_event_id')::uuid),
+ 'old Floor proposal rejected after ${authorityFenceEpoch?'epoch change with fresh config re-enabled':'Floor authority revoked'}; no cards or child receipt');
+ `+readFileSync('tests/trackerVoice/sharedBoardAuthority.boundaries.sql','utf8');
+}
 if(authorityOverlapFixture){
  assert.ok(!authorityOwner&&!authorityAction&&!authorityFinish&&!authorityCanonicalStart,'overlap fixture uses isolated Floor root only');
  const boundary=cases.indexOf('SELECT public.commit_tracker_voice_board_v0(');
@@ -177,4 +199,4 @@ const result=spawnSync(useWsl?'wsl':'psql',args,
  // Mirror only in this rollback transaction; no public table grants or bypass.
  {input:`BEGIN;\n${preconditions}\n${authorityPreconditions}\nGRANT USAGE ON SCHEMA auth TO anon,authenticated,service_role;\nGRANT EXECUTE ON FUNCTION auth.uid(),auth.jwt() TO anon,authenticated,service_role;\n${qualified}\n${fixtureOnly?'':cases}\n${fixtureOnly||authorityOverlapFixture||authorityReverseRoot?'COMMIT':'ROLLBACK'};`.replaceAll('\r\n','\n'),encoding:'utf8'});
 assert.equal(result.status,0,result.stderr+(voiceBoard?'\n'+result.stdout:''));
-console.log(authorityReverseRoot?'CURRENT_SCHEMA_RELEASE71_REVERSE_ROOT_READY':authorityOverlapFixture?'CURRENT_SCHEMA_RELEASE71_OVERLAP_ROOT_READY':authorityFloorFinish?'CURRENT_SCHEMA_VOICE_FLOOR_FINISH_RETRY_ROLLBACK_PASS':authorityFinish?'CURRENT_SCHEMA_VOICE_OWNER_FINISH_RETRY_ROLLBACK_PASS':authorityAction?'CURRENT_SCHEMA_VOICE70_ACTION_REPLAY_BOUNDARIES_PASS':authority70?'CURRENT_SCHEMA_VOICE70_CARD_WRAPPERS_BOUNDARIES_PASS':undo?'UNDO_GENERATION_HASH_QUEUE_REPLAY_CONFLICT_PASS':fixtureOnly?'CURRENT_SCHEMA_OVERLAP_FIXTURE_READY':voiceHoles?'CURRENT_SCHEMA_VOICE_CARD_WRAPPERS_PASS':voiceBoard?'CURRENT_SCHEMA_VOICE_BOARD_WRAPPER_PASS':'CURRENT_SCHEMA_CARD_AUTHORITY_REVISION_COMPLETION_QUEUE_PASS');
+console.log(authorityFenceEpoch?'CURRENT_SCHEMA_VOICE_EPOCH_REENABLE_STALE_ZERO_WRITE_PASS':authorityFenceRevoked?'CURRENT_SCHEMA_VOICE_REVOKED_FLOOR_ZERO_WRITE_PASS':authorityReverseRoot?'CURRENT_SCHEMA_RELEASE71_REVERSE_ROOT_READY':authorityOverlapFixture?'CURRENT_SCHEMA_RELEASE71_OVERLAP_ROOT_READY':authorityFloorFinish?'CURRENT_SCHEMA_VOICE_FLOOR_FINISH_RETRY_ROLLBACK_PASS':authorityFinish?'CURRENT_SCHEMA_VOICE_OWNER_FINISH_RETRY_ROLLBACK_PASS':authorityAction?'CURRENT_SCHEMA_VOICE70_ACTION_REPLAY_BOUNDARIES_PASS':authority70?'CURRENT_SCHEMA_VOICE70_CARD_WRAPPERS_BOUNDARIES_PASS':undo?'UNDO_GENERATION_HASH_QUEUE_REPLAY_CONFLICT_PASS':fixtureOnly?'CURRENT_SCHEMA_OVERLAP_FIXTURE_READY':voiceHoles?'CURRENT_SCHEMA_VOICE_CARD_WRAPPERS_PASS':voiceBoard?'CURRENT_SCHEMA_VOICE_BOARD_WRAPPER_PASS':'CURRENT_SCHEMA_CARD_AUTHORITY_REVISION_COMPLETION_QUEUE_PASS');

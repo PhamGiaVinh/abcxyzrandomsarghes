@@ -29,6 +29,7 @@ Both source files received scoped independent read-only review. Catalog manifest
 - Existing action/register slice: Floor action, retry, cross-actor, payload/provider replay conflict.
 - Canonical start -> Owner board/hole -> authenticated Floor takeover -> Floor Finish: completion/one receipt/retry/fault rollback.
 - Real two-connection assignment lifecycle/Voice overlap in both orders. Actual blocker PID observed; stale proposal zero-write or valid prior-assignment receipt followed by one active new assignment.
+- Existing harness additionally runs epoch increment with fresh config re-enabled and Floor membership revocation after root registration; both reject old proposal with no cards/child receipt and rollback on the exact70/71 clone.
 - Compensation71 then70 rehearsed on separate clone; original normalized bodies/metadata restored, helpers removed. No data rewind.
 
 Older retained clone missed deployed identity28 dependencies. Canonical-start RED from that stale trigger is not a production bug. Local qualification copies only exact current start/blind definitions into an empty owned clone, pins digests and checks enabled trigger; existing historical source is not edited or replayed live. Hand.table_id is logical/FK-bound to tournament_tables, not the physical table.
@@ -37,7 +38,7 @@ Older retained clone missed deployed identity28 dependencies. Canonical-start RE
 
 Use only owned localhost PostgreSQL17 and the exact DB names guarded by the existing harness. Set PGHOST/PGPORT/PGUSER/PGDATABASE explicitly. On Windows, set VINPOKER_TEST_WSL_DISTRO to the owned test distro; this transport does not loosen server/DB guards.
 
-Existing Operations current-schema workflow now clones its exact recovered card56 baseline, applies70/71 and current identity dependencies, runs these source suites/actual overlap, and rehearses compensation. CI has not run for this uncommitted package yet; an artifact/digest failure must not be bypassed.
+Existing Operations current-schema workflow now clones its exact recovered card56 baseline, applies70/71 and current identity dependencies, runs these source suites/actual overlap, and rehearses compensation. Initial committed package CI is running; lifecycle negative additions require CI on their new head. Integrated baseline download returned HTTP502 on its first attempt and passed on the same-source retry; no artifact/digest check was bypassed.
 
 ## Remaining release and campaign proof
 

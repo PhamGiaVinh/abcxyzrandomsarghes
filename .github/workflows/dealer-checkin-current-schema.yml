@@ -502,7 +502,9 @@ jobs:
           # clone; existing historical migrations and frozen baselines stay intact.
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/identity28.localQualification.sql
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71
-          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-action
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-action
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-epoch
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-revoked
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish
           node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
           createdb --template="$PGDATABASE" vinpoker_voice_release71_overlap_20261014
