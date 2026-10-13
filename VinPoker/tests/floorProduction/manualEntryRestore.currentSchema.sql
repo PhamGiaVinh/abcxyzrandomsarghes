@@ -7,6 +7,19 @@ DO $$ BEGIN
    RAISE EXCEPTION 'manual_restore_isolated_runtime_required'; END IF;
 END $$;
 BEGIN;
+-- Transaction-local fault hooks, installed only after the isolated-PG guard.
+CREATE FUNCTION public.manual_restore68_test_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF current_setting('vinpoker.test_restore68_fault',true)=TG_TABLE_NAME THEN
+   RAISE EXCEPTION 'restore68_injected_%',TG_TABLE_NAME; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER manual_restore68_ticket_fault BEFORE INSERT ON public.seat_draw_receipts
+ FOR EACH ROW EXECUTE FUNCTION public.manual_restore68_test_fault();
+CREATE TRIGGER manual_restore68_audit_fault BEFORE INSERT ON public.seat_assignment_history
+ FOR EACH ROW EXECUTE FUNCTION public.manual_restore68_test_fault();
+CREATE TRIGGER manual_restore68_receipt_fault BEFORE INSERT ON public.table_operation_receipts
+ FOR EACH ROW EXECUTE FUNCTION public.manual_restore68_test_fault();
 INSERT INTO auth.users(id) VALUES('f7670000-0000-4000-8000-000000000001');
 INSERT INTO public.clubs(id,owner_id,name,region) VALUES
  ('f7670000-0000-4000-8000-000000000002','f7670000-0000-4000-8000-000000000001','Manual restore TEST','TEST');
@@ -19,6 +32,7 @@ DO $$
 DECLARE opened jsonb; created jsonb; busted jsonb; restored jsonb; replayed jsonb; ticket jsonb; entry uuid; tt uuid; sess uuid; rev bigint; epoch bigint;
  restore_key uuid:=gen_random_uuid();
  proof record;
+ fault_point text; fault_key uuid; snapshot_sql text; before_state jsonb; after_state jsonb;
 BEGIN
  PERFORM set_config('role','authenticated',true);
  opened:=public.floor_open_tournament_table_v3('f7670000-0000-4000-8000-000000000003',
@@ -73,5 +87,41 @@ BEGIN
      ON c.tournament_id=e.tournament_id AND c.player_id=e.player_id AND c.entry_number=e.entry_no
      WHERE e.id=entry AND c.chip_count=20000)<>1 THEN
    RAISE EXCEPTION 'manual_restore_entry_stack_conservation_failed'; END IF;
+ -- Bust the restored entry again; failed subsequent restores must preserve all
+ -- existing seats, ticket cancellation, audit, receipts and chip projections.
+ SELECT revision INTO rev FROM public.table_sessions WHERE id=sess;
+ PERFORM set_config('role','authenticated',true);
+ busted:=public.floor_bust_player_v3(entry,rev,epoch,20000,gen_random_uuid(),'restore68_fault_TEST');
+ IF busted->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'restore68_fault_bust_failed'; END IF;
+ PERFORM set_config('role','none',true);
+ SELECT revision INTO rev FROM public.table_sessions WHERE id=sess;
+ snapshot_sql:=format($snapshot$
+ SELECT jsonb_build_object(
+   'entry',(SELECT to_jsonb(e) FROM public.tournament_entries e WHERE e.id=%1$L::uuid),
+   'session',(SELECT to_jsonb(s) FROM public.table_sessions s WHERE s.id=%2$L::uuid),
+   'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.tournament_seats s WHERE s.entry_id=%1$L::uuid),
+   'tickets',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.seat_draw_receipts r WHERE r.entry_id=%1$L::uuid),
+   'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.seat_assignment_history a WHERE a.entry_id=%1$L::uuid),
+   'chips',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.player_id,c.entry_number) FROM public.tournament_chip_counts c
+     JOIN public.tournament_entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number WHERE e.id=%1$L::uuid),
+   'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.request_id) FROM public.table_operation_receipts r
+     WHERE r.actor_id='f7670000-0000-4000-8000-000000000001'::uuid))
+ $snapshot$,entry,sess);
+ EXECUTE snapshot_sql INTO before_state;
+ FOREACH fault_point IN ARRAY ARRAY['seat_draw_receipts','seat_assignment_history','table_operation_receipts'] LOOP
+   fault_key:=gen_random_uuid();
+   PERFORM set_config('vinpoker.test_restore68_fault',fault_point,true);
+   PERFORM set_config('role','authenticated',true);
+   BEGIN
+     restored:=public.floor_restore_busted_player_to_seat_v5(entry,tt,1,rev,epoch,fault_key,sess);
+     RAISE EXCEPTION 'restore68_fault_unexpected_success';
+   EXCEPTION WHEN SQLSTATE 'P0001' THEN
+     IF SQLERRM IS DISTINCT FROM 'restore68_injected_'||fault_point THEN RAISE; END IF;
+   END;
+   PERFORM set_config('role','none',true);
+   PERFORM set_config('vinpoker.test_restore68_fault','',true);
+   EXECUTE snapshot_sql INTO after_state;
+   IF after_state IS DISTINCT FROM before_state THEN RAISE EXCEPTION 'restore68_partial_commit_%',fault_point; END IF;
+ END LOOP;
 END $$;
 ROLLBACK;
