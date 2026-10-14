@@ -15,7 +15,9 @@ const code = ts.transpileModule(source.slice(start, end), { compilerOptions: { t
 const production = new Function("useRef", "useEffect", "useState", "context", `
   const {user,activeClubId,tours,checkinDealerIds,processing,setProcessing,
     dealerMassOpenRpc,checkinDealers,setCheckinDealers,setCheckinDealerIds,setCheckinOpen,
-    refetchDealers,refetchCheckedOut,toast,supabase}=context;
+    refetchDealers,refetchCheckedOut,toast,supabase,checkinCandidatesLoading,checkinCandidatesError,
+    setCheckinCandidatesLoading,setCheckinCandidatesError}=context;
+  const checkinReadSequence = useRef(0);
   ${code}
   return {doCheckin,setCheckinShiftId,checkinShiftId,doReCheckin,reconcileCheckin,pendingCheckinIntents};
 `);
@@ -30,7 +32,7 @@ const View = new Function("React", "Button", `${viewCode}; return View;`)(React,
 const receipt = { ok: true, outcome: "checked_in", attendance_id: "00000000-0000-4000-8000-000000000111", shift_date: "2026-10-10" };
 beforeEach(() => sessionStorage.clear());
 afterEach(cleanup);
-function setup(rpc: (...args: any[]) => Promise<any>) {
+function setup(rpc: (...args: any[]) => Promise<any>, readState = { loading: false, error: null as string | null, status: "new" }) {
   const success = vi.fn();
   const refetch = vi.fn();
   const hook = renderHook(({ actor, club }) => {
@@ -38,7 +40,9 @@ function setup(rpc: (...args: any[]) => Promise<any>) {
     const api = production(useRef, useEffect, useState, {
       user: { id: actor }, activeClubId: club, tours: [{ id: "shift", club_id: club }],
       checkinDealerIds: ["dealer"], processing, setProcessing, dealerMassOpenRpc: rpc,
-      checkinDealers: [{ id: "dealer", full_name: "TEST" }], setCheckinDealers: vi.fn(),
+      checkinDealers: [{ id: "dealer", full_name: "TEST", checkinStatus: readState.status }], setCheckinDealers: vi.fn(),
+      checkinCandidatesLoading: readState.loading, checkinCandidatesError: readState.error,
+      setCheckinCandidatesLoading: vi.fn(), setCheckinCandidatesError: vi.fn(),
       setCheckinDealerIds: vi.fn(), setCheckinOpen: vi.fn(), refetchDealers: refetch,
       refetchCheckedOut: vi.fn(), toast: { success, warning: vi.fn(), error: vi.fn() }, supabase: {},
     });
@@ -48,6 +52,18 @@ function setup(rpc: (...args: any[]) => Promise<any>) {
   return { ...hook, success, refetch };
 }
 describe("check-in production React lifecycle", () => {
+  it.each([
+    { loading: true, error: null, status: "new" },
+    { loading: false, error: "READ_FAILED", status: "new" },
+    { loading: false, error: null, status: "already_checked_in" },
+    { loading: false, error: null, status: "ambiguous" },
+  ])("does not submit a new intent from an unverified candidate: %j", async readState => {
+    const rpc = vi.fn(async () => ({ data: receipt, error: null }));
+    const h = setup(rpc, readState);
+    await act(async () => { await h.result.current.doCheckin(); });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
+  });
   it("explicit retry can complete an uncommitted intent with the same key and payload", async () => {
     const storageKey = "vp:dealer-checkin-intent:v1:" + encodeURIComponent("actor:club:dealer:shift");
     const requestId = "00000000-0000-4000-8000-000000000222";

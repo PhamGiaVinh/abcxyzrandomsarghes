@@ -26,7 +26,8 @@ function harness(rpc, stored = new Map(), overrides = {}) {
     activeClubId: 'club', eligibleCheckinShifts: [{ id: 'shift' }], checkinShiftId: 'shift',
     checkinDealerIds: ['dealer'], processing: null, checkinScope: scope, checkinKeys: keys,
     checkinSubmission: { current: null },
-    user: { id: 'actor' }, checkinDealers: [{ id: 'dealer', full_name: 'TEST' }],
+    checkinCandidatesLoading: false, checkinCandidatesError: null,
+    user: { id: 'actor' }, checkinDealers: [{ id: 'dealer', full_name: 'TEST', checkinStatus: 'new' }],
     dealerMassOpenRpc: rpc, crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++generated).padStart(12, '0')}` },
     sessionStorage: { get length() { return stored.size; }, key: index => [...stored.keys()][index] ?? null,
       getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) },
@@ -40,6 +41,22 @@ function harness(rpc, stored = new Map(), overrides = {}) {
   const run = new Function(...Object.keys(context), `${body}; return doCheckin;`)(...Object.values(context));
   return { run, effects, scope, keys, changeScope, unmount: () => unmount() };
 }
+for (const [label, overrides] of [
+  ['loading', { checkinCandidatesLoading: true }],
+  ['read failure', { checkinCandidatesError: 'READ_FAILED' }],
+  ['current attendance', { checkinDealers: [{ id: 'dealer', checkinStatus: 'already_checked_in' }] }],
+  ['ambiguous attendance', { checkinDealers: [{ id: 'dealer', checkinStatus: 'ambiguous' }] }],
+]) {
+  test(`unverified candidate ${label} cannot dispatch or create an intent`, async () => {
+    let calls = 0;
+    const stored = new Map();
+    const h = harness(async () => { calls++; return {}; }, stored, overrides);
+    await h.run();
+    assert.equal(calls, 0);
+    assert.equal(stored.size, 0);
+  });
+}
+
 test('unknown ok=true outcome must remain unresolved, not success', async () => {
   const h = harness(async () => ({ data: { ok: true, outcome: 'unexpected' }, error: null }));
   await h.run();
