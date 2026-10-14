@@ -14,6 +14,17 @@ test('unknown commit result observes one receipt but never retries',()=>{
  assert.throws(()=>executePackage({json:sql=>sql.includes("'database'")?{database:'postgres',actor:'postgres',existing:0}:(reads++,{count:0,exact:false}),execute:()=>{writes++;throw Error('response lost');}}),/requires review/);
  assert.equal(writes,1);assert.equal(reads,1);
 });
+for(const [status,result] of [['committed-exact',{count:1,exact:true}],['drift',{count:1,exact:false}],['unavailable',null]]){
+ test(`unknown response observes ${status} once and stops`,()=>{
+  let writes=0,reads=0;const reported=[];
+  assert.throws(()=>executePackage({json:sql=>{
+   if(sql.includes("'database'"))return {database:'postgres',actor:'postgres',existing:0};
+   reads++;if(result===null)throw Error('unavailable');return result;
+  },execute:()=>{writes++;throw Error('response lost');}},line=>reported.push(line)),/requires review/);
+  assert.equal(writes,1);assert.equal(reads,1);
+  assert.deepEqual(reported,[`STOP 20270128000078 ${status}; no retry or downstream deploy`]);
+ });
+}
 test('invalid preflight makes no mutation',()=>{
  let writes=0;assert.throws(()=>executePackage({json:()=>({database:'wrong',actor:'postgres',existing:0}),execute:()=>writes++}),/baseline/);assert.equal(writes,0);
 });
