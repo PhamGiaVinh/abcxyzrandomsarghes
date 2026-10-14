@@ -5,6 +5,7 @@ on:
       - 'VinPoker/supabase/functions/cashier-lookup-player/**'
       - 'VinPoker/supabase/functions/_shared/validate.ts'
       - 'VinPoker/tests/cashier/lookupPlayerScope.repro.mjs'
+      - 'VinPoker/src/components/cashier/UnifiedLookupTab*'
       - '.github/workflows/cashier-lookup-scope.yml'
   workflow_dispatch:
 permissions:
@@ -24,6 +25,16 @@ jobs:
         working-directory: VinPoker
       - run: node --test tests/cashier/lookupPlayerScope.repro.mjs
         working-directory: VinPoker
+      - run: npx vitest run src/components/cashier/UnifiedLookupTab.readIntegrity.test.tsx --maxWorkers=1 --minWorkers=1
+        working-directory: VinPoker
+      - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - run: npm run build
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.8.0

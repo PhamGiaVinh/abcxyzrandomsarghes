@@ -12,14 +12,14 @@ const body = ts.transpileModule(ts.createPrinter().printFile(withoutImports), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 
-function harness({ superAdmin = false, empty = false, crossClub = false, fail, unauthorized = false, emptyScope = false, outsider = false, withPurchases = false, malformed } = {}) {
+function harness({ superAdmin = false, empty = false, crossClub = false, fail, unauthorized = false, emptyScope = false, outsider = false, withPurchases = false, malformed, authStatus } = {}) {
   const reads = [];
   const profile = { user_id: 'player-test', display_name: 'TEST Player', phone: 'TEST_PHONE', bank_name: 'TEST_BANK', bank_account_number: 'TEST_ACCOUNT', bank_account_holder: 'TEST_HOLDER' };
   const deals = empty ? [] : [{ id: 'deal-test', club_id: crossClub ? 'club-b' : 'club-a', player_id: 'player-test', status: 'funded', buy_in_amount_vnd: 100000, percentage_sold: 50, filled_percent: 30 }];
   const client = {
     auth: {
-      getUser: async () => ({ data: { user: unauthorized ? null : { id: 'cashier-test' } }, error: unauthorized ? { message: 'invalid token' } : null }),
-      getClaims: async () => ({ data: { claims: unauthorized ? null : { sub: 'cashier-test' } }, error: unauthorized ? { message: 'invalid token' } : null }),
+      getUser: async () => ({ data: { user: unauthorized || authStatus !== undefined ? null : { id: 'cashier-test' } }, error: authStatus !== undefined ? { status: authStatus, message: 'auth read failure' } : unauthorized ? { message: 'invalid token' } : null }),
+      getClaims: async () => ({ data: { claims: unauthorized || authStatus !== undefined ? null : { sub: 'cashier-test' } }, error: authStatus !== undefined ? { status: authStatus, message: 'auth read failure' } : unauthorized ? { message: 'invalid token' } : null }),
     },
     rpc: async (name, args) => {
       assert.equal(name, 'cashier_club_ids'); assert.equal(args._user_id, 'cashier-test');
@@ -90,6 +90,13 @@ test('invalid authentication never reads a private table', async () => {
   const h = harness({ unauthorized: true }); const result = await h.run();
   assert.equal(result.status, 401); assert.equal(h.reads.length, 0);
 });
+for (const authStatus of [503, 0]) {
+  test(`authentication infrastructure failure ${authStatus} is unavailable, never permission denial or data access`, async () => {
+    const h = harness({ authStatus }); const result = await h.run();
+    assert.equal(result.status, 503); assert.equal(result.body.error, 'Authentication unavailable');
+    assert.equal(h.reads.length, 0);
+  });
+}
 test('ordinary non-cashier cannot perform a privileged player lookup', async () => {
   const h = harness({ outsider: true }); const result = await h.run();
   assert.equal(result.status, 403); assert.equal(h.reads.some(read => read.table === 'profiles'), false);

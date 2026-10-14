@@ -28,7 +28,11 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader }, fetch: retryFetch } }
     );
     const { data: userData, error: claimsErr } = await supaUser.auth.getUser(token);
-    if (claimsErr || !userData?.user?.id) return json({ error: "Unauthorized" }, 401);
+    if (claimsErr) {
+      const unavailable = claimsErr.status === 0 || (claimsErr.status ?? 0) >= 500;
+      return json({ error: unavailable ? "Authentication unavailable" : "Unauthorized" }, unavailable ? 503 : 401);
+    }
+    if (!userData?.user?.id) return json({ error: "Unauthorized" }, 401);
     const callerId = userData.user.id;
 
     const admin = createClient(
