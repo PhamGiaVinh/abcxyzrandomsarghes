@@ -37,6 +37,8 @@ on:
       - "VinPoker/src/components/cashier/DealerSwingTab.tsx"
       - "VinPoker/src/components/cashier/DealerSwingTab.readState.test.tsx"
       - "VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*"
+      - "VinPoker/src/components/cashier/dealer-swing/DealerSwingSummaryStrip*"
+      - "VinPoker/src/components/cashier/command-center/AttentionQueue*"
       - "VinPoker/src/components/cashier/dealer-swing/DealerCheckinCandidateList*"
       - "VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts"
       - "VinPoker/src/components/cashier/tournament-live/handinput/RacetrackHandInputConsole.tsx"
@@ -118,6 +120,7 @@ jobs:
           src/components/cashier/shift-planner-v2/__tests__/ShiftPlannerV2Tab.smoke.test.tsx
           src/components/cashier/shift-planner/__tests__/ShiftPlannerTab.smoke.test.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
+          src/components/cashier/command-center/AttentionQueue.test.tsx
           src/components/cashier/dealer-swing/DealerCheckinCandidateList.test.tsx
           src/lib/dealerCheckinCandidates.test.ts
           tests/dealerSwing/checkinReactLifecycle.test.tsx
