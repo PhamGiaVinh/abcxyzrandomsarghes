@@ -118,7 +118,7 @@ describe("void unknown response through the real controller", () => {
     });
     expect(invocations).toBe(1);
   });
-  it("does not let an unresolved old manual reveal block a newly loaded session", async () => {
+  it.each(["new_session", "same_session"])("preserves pending manual ownership when reloading %s", async (reload) => {
     mock.resume = true;
     const responders: Array<(value: unknown) => void> = [];
     const { result } = renderHook(() => useStandaloneHandInput("tour1"));
@@ -129,7 +129,7 @@ describe("void unknown response through the real controller", () => {
     mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
     let oldRequest!: Promise<void>;
     act(() => { oldRequest = result.current.handleShowHoleCards(); });
-    mock.metadataSession = "sessionB";
+    if (reload === "new_session") mock.metadataSession = "sessionB";
     await act(async () => { await result.current.handleTableChange("table1"); });
     await waitFor(() => expect(result.current.handId).toBe("hand1"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Jh", "Js"] }); });
@@ -152,8 +152,8 @@ describe("void unknown response through the real controller", () => {
       }
       await Promise.all([freshRequest, thirdRequest]);
     });
-    expect(countBeforeOldCompletion).toBe(2);
-    expect(freshBusyAfterOldFinally).toBe(true);
+    expect(countBeforeOldCompletion).toBe(reload === "new_session" ? 2 : 1);
+    if (reload === "new_session") expect(freshBusyAfterOldFinally).toBe(true);
     expect(staleSuccessCount).toBe(0);
     expect(countWhileFreshPending).toBe(2);
     expect(result.current.submitting).toBe(false);
