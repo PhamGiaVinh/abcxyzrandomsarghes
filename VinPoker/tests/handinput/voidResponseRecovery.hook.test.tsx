@@ -49,7 +49,11 @@ import { useStandaloneHandInput } from "@/components/cashier/tournament-live/han
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
-  it.each(["tournament", "unmount"])("discards delayed manual card success after %s changes", async (change) => {
+  it.each([
+    ["tournament", "cards", "success"], ["unmount", "cards", "success"],
+    ["tournament", "runout", "success"], ["unmount", "runout", "success"],
+    ["tournament", "cards", "error"], ["unmount", "cards", "error"],
+  ])("discards delayed manual response after %s changes through %s (%s)", async (change, handler, outcome) => {
     mock.resume = true;
     let respond!: (value: unknown) => void;
     const { result, rerender, unmount } = renderHook(({ tour }) => useStandaloneHandInput(tour),
@@ -60,14 +64,17 @@ describe("void unknown response through the real controller", () => {
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
     let pending!: Promise<void>;
-    act(() => { pending = result.current.handleShowHoleCards(); });
+    act(() => { pending = handler === "runout"
+      ? result.current.handleRevealRunout() : result.current.handleShowHoleCards(); });
     expect(mock.invoke).toHaveBeenCalledTimes(1);
     if (change === "tournament") rerender({ tour: "tour2" });
     else unmount();
     mock.successToast.mockClear();
     mock.errorToast.mockClear();
     await act(async () => {
-      respond({ data: { status: "success", data: { status: "success", entry_count: 1 } }, error: null });
+      respond(outcome === "success"
+        ? { data: { status: "success", data: { status: "success", entry_count: 1 } }, error: null }
+        : { data: null, error: new Error("late network failure") });
       await pending;
     });
     expect(mock.successToast).not.toHaveBeenCalled();
