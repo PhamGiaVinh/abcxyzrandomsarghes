@@ -77,7 +77,7 @@ BEGIN
    JOIN public.dealer_attendance attendance ON attendance.id=a.attendance_id
    WHERE a.table_id=physical AND a.table_session_id=p_session_id AND a.club_id=club
     AND a.status='assigned' AND a.released_at IS NULL AND d.club_id=club
-    AND d.user_id=actor AND d.deleted_at IS NULL AND attendance.dealer_id=d.id
+    AND d.user_id=actor AND d.status='active' AND d.deleted_at IS NULL AND attendance.dealer_id=d.id
     AND attendance.status='checked_in' AND attendance.check_out_time IS NULL
     AND attendance.current_state IN ('assigned','on_break');
   IF valid_assignment<>1 THEN RETURN jsonb_build_object('error','actor_not_allowed'); END IF;
@@ -169,7 +169,7 @@ DO $postcheck$
 DECLARE expected record; actual record;
 BEGIN
  FOR expected IN SELECT * FROM (VALUES
-  ('floor_private.tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','04f858c4e3913aaf2996e7ba8a8842da',true,'v'),
+ ('floor_private.tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','37faf2e637e06d255c0f9186d3a7e9e9',true,'v'),
   ('public.show_tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','0e43636469573f0f9722639ca283f346',false,'v'),
   ('floor_private.tracker_manual_card_receipt_v1(text,jsonb)','47b08ebea2d7909ae8e8d99864440560',true,'s'),
   ('public.get_tracker_manual_card_receipt_v1(text,jsonb)','29f9eeb5563d236d0c6de4cf8c0f98b9',false,'s')

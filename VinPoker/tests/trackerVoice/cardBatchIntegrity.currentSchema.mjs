@@ -264,7 +264,7 @@ if(manualHoleAuthority){
    ['floor_private.manual_cards_prototype','floor_private.tracker_manual_cards_v1'],
    ['floor_private.manual_card_receipt_prototype','floor_private.tracker_manual_card_receipt_v1'],
    ['floor_private.manual_card_receipts_prototype','floor_private.tracker_manual_card_receipts_v1'],
-   ['419f17a4a04937244c2519b75d4c4b96','04f858c4e3913aaf2996e7ba8a8842da'],
+   ['419f17a4a04937244c2519b75d4c4b96','37faf2e637e06d255c0f9186d3a7e9e9'],
    ['e5a5f946ed187baf910cbc7f7de8e746','0e43636469573f0f9722639ca283f346'],
    ['914e90524f7ef265c65c421dd680f05c','47b08ebea2d7909ae8e8d99864440560'],
    ['ff336d471723c238d35529f315fc2202','29f9eeb5563d236d0c6de4cf8c0f98b9'],

@@ -2998,8 +2998,9 @@ export function useStandaloneHandInput(tournamentId: string) {
           intent = { ...identity, tableSessionId: sessionId, controlEpoch: rosterContext.controlEpoch!,
             sourceRevision: Number(row.source_revision), requestId: crypto.randomUUID(), cardsFingerprint };
         }
+        try { sessionStorage.setItem(intentKey, JSON.stringify(intent)); }
+        catch { throw new Error("Không lưu được mã phục hồi của lần lật bài; chưa gửi bài. Kiểm tra quyền lưu trữ trình duyệt rồi thử lại."); }
         manualCardsIntentRef.current.set(intentKey, intent);
-        try { sessionStorage.setItem(intentKey, JSON.stringify(intent)); } catch { /* Do not store raw cards or credentials. */ }
         const clearIntent = () => {
           manualCardsIntentRef.current.delete(intentKey);
           try { sessionStorage.removeItem(intentKey); } catch { /* Server receipts are never deleted. */ }
