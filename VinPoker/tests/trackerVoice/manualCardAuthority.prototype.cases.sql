@@ -59,6 +59,41 @@ SELECT pg_temp.manual_assert(NOT has_schema_privilege('authenticated','floor_pri
  AND NOT has_function_privilege('anon','public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)','EXECUTE'),
  'compiled wrapper does not open private schema or receipts');
 \echo MANUAL_CARD_PROTOTYPE_ASSIGNED_REPLAY_CONFLICT_EPOCH_PASS
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA public;
+DO $$ DECLARE remote_locked boolean; verdict jsonb; revision_before bigint; BEGIN
+ SELECT source_revision INTO revision_before FROM public.tournament_hands
+ WHERE id='86000000-0000-4000-8000-000000000001';
+ PERFORM public.dblink_connect('manual75_key_holder','host=127.0.0.1 port='||inet_server_port()
+  ||' user=postgres dbname='||current_database()||' application_name=manual75_key_holder');
+ PERFORM public.dblink_exec('manual75_key_holder','BEGIN');
+ SELECT locked INTO remote_locked FROM public.dblink('manual75_key_holder',
+  $remote$SELECT pg_try_advisory_xact_lock(hashtextextended(
+   '81200000-0000-4000-8000-000000000001:manual-prototype-concurrent-key',75))$remote$)
+  AS held(locked boolean);
+ PERFORM pg_temp.manual_assert(remote_locked,'independent backend holds exact request lock');
+ SET LOCAL ROLE authenticated;
+ verdict:=public.show_manual_cards_prototype('86000000-0000-4000-8000-000000000001',
+  '83500000-0000-4000-8000-000000000001',1,revision_before,'manual-prototype-concurrent-key',
+  '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":1,"hole_cards":["Jh","Js"]}]'::jsonb);
+ RESET ROLE;
+ PERFORM pg_temp.manual_assert(verdict->>'error'='manual_card_request_busy'
+  AND (SELECT source_revision=revision_before FROM public.tournament_hands
+   WHERE id='86000000-0000-4000-8000-000000000001')
+  AND (SELECT hole_cards='["Qh","Qs"]'::jsonb FROM public.hand_players
+   WHERE hand_id='86000000-0000-4000-8000-000000000001' AND seat_number=2)
+  AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
+  'real two-backend request contention returns busy without cards/revision/receipt write');
+ PERFORM public.dblink_exec('manual75_key_holder','ROLLBACK');
+ PERFORM public.dblink_disconnect('manual75_key_holder');
+EXCEPTION WHEN OTHERS THEN
+ RESET ROLE;
+ IF 'manual75_key_holder'=ANY(coalesce(public.dblink_get_connections(),ARRAY[]::text[])) THEN
+  PERFORM public.dblink_exec('manual75_key_holder','ROLLBACK');
+  PERFORM public.dblink_disconnect('manual75_key_holder');
+ END IF;
+ RAISE;
+END $$;
+\echo MANUAL_CARD_PROTOTYPE_TWO_BACKEND_REQUEST_BUSY_PASS
 SET ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','81500000-0000-4000-8000-000000000001',false);
 SELECT set_config('request.jwt.claims','{"sub":"81500000-0000-4000-8000-000000000001","role":"authenticated"}',false);
