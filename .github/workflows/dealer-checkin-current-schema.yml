@@ -46,6 +46,7 @@ on:
       - '.github/workflows/tracker-manual-75-protected-apply.yml'
       - 'VinPoker/scripts/ops/tracker-manual-75-*'
       - 'VinPoker/scripts/ops/tracker-reads-76-77-*'
+      - 'VinPoker/docs/runbooks/TRACKER_READS_76_77_COMPENSATION_SOURCE.sql'
       - '.github/workflows/tracker-reads-76-77-protected-apply.yml'
       - 'VinPoker/supabase/migrations/20270128000075_tracker_manual_cards_receipts_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql'
@@ -650,6 +651,8 @@ jobs:
           createdb --template=vinpoker_manual75_atomic_ci vinpoker_reads76_77_atomic_20261014
           node tests/trackerVoice/manual76RosterScoped.prototype.mjs --setup-76-77
           node scripts/ops/tracker-reads-76-77-atomic.pg.mjs
+          createdb --template=vinpoker_reads76_77_atomic_20261014 vinpoker_reads76_77_compensation_20261014
+          node scripts/ops/tracker-reads-76-77-compensation.pg.mjs
       - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
         working-directory: VinPoker
         run: |
