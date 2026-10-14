@@ -281,6 +281,8 @@ SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_ta
 SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070' AND status IN ('predicted','announced','executing')),
  'closed incarnation cannot retain actionable rotation plan');
+SELECT pg_temp.assert_true((SELECT status='cancelled' AND assignment_id IS NULL FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000072'),'normal future forecast cancelled without fabricating assignment');
 -- Legacy reservation without a schedule, created with the real acquisition
 -- triggers enabled. Closing must still release it after Auto is switched OFF.
 SET LOCAL request.jwt.claim.role='service_role';
