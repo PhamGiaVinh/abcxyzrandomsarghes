@@ -6,6 +6,19 @@ const start = source.indexOf("            if (p15Result.errors.length > 0) {");
 const end = source.indexOf("          } catch (err: any)", start);
 if (start < 0 || end <= start) throw new Error("actual planner parent seam missing");
 const body = source.slice(start, end);
+for(const errors of [[],[{scope:"lock:table",error:"fixture SQL failure"}]]){
+ Deno.test(`actual rotation parent records ${errors.length?"failed":"healthy"} result honestly`,()=>{
+  const begin=source.indexOf("            if (passRResult.errors.length > 0) {");
+  const finish=source.indexOf("          } catch (err: any)",begin);
+  if(begin<0||finish<=begin)throw Error("actual rotation parent seam missing");
+  const recorded:DispatchSafetyOutcome[]=[];
+  new Function("passRResult","cid","recordDispatchSafetyOutcome","assessCoreQueryFailure","console",source.slice(begin,finish))(
+   {errors},"club",(_club:string,result:DispatchSafetyOutcome)=>recorded.push(result),assessCoreQueryFailure,{error(){}},
+  );
+  assertEquals(recorded.length,errors.length?1:0);
+  if(errors.length)assertEquals(recorded[0].dispatchState,"partial");
+ });
+}
 
 for (const errors of [[], [{ table_id: "", error: "assignment read unavailable" }]]) {
   Deno.test(`actual preassignment parent records ${errors.length ? "failed" : "healthy"} result honestly`, () => {

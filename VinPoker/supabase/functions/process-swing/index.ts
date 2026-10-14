@@ -2334,6 +2334,7 @@ if (tier2Count > 0) {
             metrics.total += passRResult.locked;
             metrics.success += passRResult.locked;
             if (passRResult.errors.length > 0) {
+              recordDispatchSafetyOutcome(cid, assessCoreQueryFailure("passR_rotation", passRResult.errors.map((failure) => failure.error).join("; ")));
               console.error(
                 `[Pass R] ${passRResult.errors.length} errors:`,
                 passRResult.errors.map((e) => `${e.scope}: ${e.error}`).join("; ")
@@ -2350,6 +2351,7 @@ if (tier2Count > 0) {
               continue;
             }
             console.error(`[Pass R] ❌ Unhandled error:`, err?.message ?? err);
+            recordDispatchSafetyOutcome(cid, assessCoreQueryFailure("passR_rotation", err));
           }
         }
 
