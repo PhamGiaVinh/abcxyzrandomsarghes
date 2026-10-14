@@ -298,6 +298,15 @@ export function useStandaloneHandInput(tournamentId: string) {
     rosterGenerationRef.current += 1;
   }
   useEffect(() => {
+    // A new authority/hand generation owns a new flight. Old requests retain
+    // their captured guard and cannot release this one in their finally block.
+    manualCardsFlightRef.current = createSingleFlightGuard();
+    if (manualCardsOwnsSubmittingRef.current) {
+      manualCardsOwnsSubmittingRef.current = false;
+      setSubmitting(false);
+    }
+  }, [rosterScope, tableId, handId]);
+  useEffect(() => {
     rosterMountedRef.current = true;
     return () => { rosterMountedRef.current = false; rosterGenerationRef.current += 1; };
   }, []);
@@ -376,6 +385,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (activeTournamentRef.current === tournamentId) return;
 
     activeTournamentRef.current = tournamentId;
+    manualCardsFlightRef.current = createSingleFlightGuard();
     if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
       voidOwnsSubmittingRef.current = false;
       manualCardsOwnsSubmittingRef.current = false;
@@ -1019,6 +1029,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   // ----- Table select -----------------------------------------------------
   const handleTableChange = useCallback(
     async (newTableId: string) => {
+      manualCardsFlightRef.current = createSingleFlightGuard();
       if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
         voidOwnsSubmittingRef.current = false;
         manualCardsOwnsSubmittingRef.current = false;
@@ -2916,7 +2927,8 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error("Chưa nhập bài lỗ cho ai");
       return;
     }
-    if (!manualCardsFlightRef.current.begin()) return;
+    const flight = manualCardsFlightRef.current;
+    if (!flight.begin()) return;
     manualCardsOwnsSubmittingRef.current = true;
     setSubmitting(true);
     markSync("sending", "Lật bài");
@@ -2939,8 +2951,8 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error(e.message);
       markSync("error");
     } finally {
-      manualCardsFlightRef.current.finish();
-      if (current() && manualCardsOwnsSubmittingRef.current) {
+      flight.finish();
+      if (current() && manualCardsFlightRef.current === flight && manualCardsOwnsSubmittingRef.current) {
         manualCardsOwnsSubmittingRef.current = false;
         setSubmitting(false);
       }
