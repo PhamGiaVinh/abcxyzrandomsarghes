@@ -3,6 +3,8 @@ name: Floor Table Control V3 server contract
 on:
   pull_request:
     paths:
+      - ".github/workflows/dealer-rest78-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-rest78-*"
       - "VinPoker/supabase/migrations/20270112000009_floor_table_control_v3_fixture_live_status_compat.sql"
       - "VinPoker/supabase/migrations/20270113000010_floor_table_control_v3_final_live_bridge.sql"
       - "VinPoker/supabase/migrations/20270113000011_floor_table_control_v3_final_contract.sql"
@@ -98,8 +100,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Same Docker Official Image digest; avoid Docker Hub's shared-runner pull quota.
-        image: public.ecr.aws/docker/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
+        # Exact same Official Image digest; ECR mirror currently rejects pulls.
+        image: docker.io/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: floor_table_control_v3_contract

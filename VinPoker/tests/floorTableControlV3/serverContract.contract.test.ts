@@ -260,7 +260,7 @@ describe("Floor Table Control V3 server contract", () => {
   });
 
   it("proves lifecycle, fencing, ACL, authenticated callers and real races in isolated PostgreSQL 17", () => {
-    expect(workflow).toContain("image: public.ecr.aws/docker/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3");
+    expect(workflow).toContain("image: docker.io/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3");
     expect(workflow).toContain("tests/floorFreeSitV1/rosterActions.interaction.test.tsx");
     expect(workflow).toContain("tests/floorTableControlV3/disposableDb.serverContract.sql");
     expect(workflow).toContain("disposableDb.serverContract.authenticated.sql");

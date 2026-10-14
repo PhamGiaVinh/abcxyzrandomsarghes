@@ -3,6 +3,8 @@ name: Migration control manifest
 on:
   pull_request:
     paths:
+      - ".github/workflows/dealer-rest78-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-rest78-*"
       - "VinPoker/supabase/migrations/**"
       - "VinPoker/supabase/pending-migrations/**"
       - "VinPoker/supabase/migration-control/**"

@@ -3,6 +3,8 @@ name: Ops 1359 release runner PostgreSQL 17 CI
 on:
   pull_request:
     paths:
+      - ".github/workflows/dealer-rest78-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/ops-1359-runner-ci.yml"
       - "VinPoker/scripts/ops/ops-1359-release-gate.mjs"
       - "VinPoker/scripts/ops/ops-1359-release-gate.test.mjs"

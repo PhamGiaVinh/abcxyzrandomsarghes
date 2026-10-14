@@ -3,6 +3,8 @@ name: Floor V3 migration promotion guard
 on:
   pull_request:
     paths:
+      - ".github/workflows/dealer-rest78-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-rest78-*"
       - "VinPoker/supabase/migrations/**"
       - "VinPoker/supabase/migration-archive/never-apply/**"
       - "VinPoker/supabase/migration-archive/historical-never-replay/**"
