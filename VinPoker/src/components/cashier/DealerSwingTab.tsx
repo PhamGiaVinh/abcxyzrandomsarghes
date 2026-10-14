@@ -2230,6 +2230,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
               });
             }}
             onAssign={openAssignModal}
+            onPlanNext={setChangePredictedTableId}
             onSendToBreak={(attId) => setBreakDurationOpen(attId)}
             onFocusTable={focusTable}
           />
@@ -2566,6 +2567,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       {changePredictedTableId && (() => {
         const cpTable = (tables ?? []).find((x: any) => x.id === changePredictedTableId);
         const cpAssignment = tableAssignmentMap[changePredictedTableId];
+        if (!user || !cpTable?.table_session_id || !cpAssignment
+          || cpAssignment.table_session_id !== cpTable.table_session_id
+          || cpAssignment.status !== "assigned" || cpAssignment.released_at) return null;
         const cpSlots = scheduleByTableId?.[changePredictedTableId];
         const cpNameByAtt: Record<string, string> = {};
         for (const [tid, asg] of Object.entries(tableAssignmentMap)) {
@@ -2580,6 +2584,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         );
         return (
           <ChangePredictedDealerModal
+            key={`${user.id}:${cpTable.club_id}:${cpTable.table_session_id}:${cpAssignment.id}`}
+            context={{ actorId: user.id, clubId: cpTable.club_id, sessionId: cpTable.table_session_id,
+              assignmentId: cpAssignment.id, version: cpAssignment.version, swingDueAt: cpAssignment.swing_due_at }}
             open
             onOpenChange={(o) => { if (!o) setChangePredictedTableId(null); }}
             tableName={cpTable?.table_name ?? "Bàn"}
@@ -2587,7 +2594,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             currentTableAttendanceId={cpAssignment?.attendance_id ?? null}
             dealers={freshPoolDealers}
             assignedTableNameByAttendanceId={cpNameByAtt}
-            restMinutes={cpRestMinutes}
+            restMinutes={Math.max(15, cpRestMinutes)}
             onChanged={() => { refetchAssignments(); refetchDealers(); }}
           />
         );

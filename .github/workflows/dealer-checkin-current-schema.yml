@@ -124,6 +124,7 @@ on:
       - 'VinPoker/tests/dealerSwing/closedSessionAttendance.currentSchema.mjs'
       - 'VinPoker/supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql'
       - 'VinPoker/tests/dealerSwing/massOpenSessions.pg17.sql'
+      - 'VinPoker/tests/dealerSwing/operatorNextIntent.*'
       - 'VinPoker/tests/dealerSwing/closeNextReservation.concurrent.mjs'
       - 'VinPoker/scripts/ops/dealer-close79-*.mjs'
       - '.github/workflows/dealer-close79-protected-apply.yml'
@@ -257,6 +258,16 @@ jobs:
           node node_modules/vitest/vitest.mjs run src/components/chip-ops/ColorUpTab.test.tsx src/components/cashier/tournament-live/RestoreBustDialog.test.tsx src/lib/floorTableControlV3.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
+      - name: Next dealer intent UI and full application qualification
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_SUPABASE_URL: https://example.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: CI_PLACEHOLDER_ONLY
+        run: |
+          node node_modules/vitest/vitest.mjs run src/lib/dealerNextIntent.test.ts src/components/cashier/ChangePredictedDealerModal.test.tsx src/components/cashier/command-center/AttentionItem.test.tsx src/components/cashier/command-center/AttentionQueue.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/typescript/bin/tsc -b --pretty false
+          npm run build
       - name: Backup worker rejects unauthenticated privileged execution
         working-directory: VinPoker
         run: |
@@ -412,7 +423,21 @@ jobs:
           node --test scripts/ops/dealer-close79-release-plan.test.mjs scripts/ops/dealer-close79-protected-apply.test.mjs
           PGDATABASE=vinpoker_ops_close79_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           PGDATABASE=vinpoker_ops_close79_atomic_ci CLOSE79_PG_TEST=1 node --test scripts/ops/dealer-close79-atomic-pg.test.mjs
+          # Separate clone starts at old close definition; qualify combined commit.
+          createdb -T "$PGDATABASE" vinpoker_ops_close7981_atomic_ci
+          node --test scripts/ops/dealer-close79-81-release-plan.test.mjs scripts/ops/dealer-close79-81-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_close7981_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          PGDATABASE=vinpoker_ops_close7981_atomic_ci CLOSE7981_PG_TEST=1 node --test scripts/ops/dealer-close79-81-atomic-pg.test.mjs
+          createdb -T vinpoker_ops_close7981_atomic_ci vinpoker_ops_next80_atomic_ci
+          node --test scripts/ops/dealer-next80-release-plan.test.mjs scripts/ops/dealer-next80-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_next80_atomic_ci NEXT80_PG_TEST=1 node --test scripts/ops/dealer-next80-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000081_dealer_close_forecast_slots_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_next80_ci
+          PGDATABASE=vinpoker_ops_next80_ci node tests/dealerSwing/operatorNextIntent.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_next80_overlap
+          PGDATABASE=vinpoker_ops_next80_overlap node tests/dealerSwing/operatorNextIntent.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_close79_overlap
           PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
