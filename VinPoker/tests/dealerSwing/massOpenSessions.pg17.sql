@@ -145,6 +145,15 @@ SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedul
 SELECT set_config('test.close_expected_revision',revision::text,true)
 FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023';
 SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000099';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+ current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000079')->>'error'='actor_not_allowed',
+ 'outsider cannot close session or release another clubs reservation');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'forbidden close preserves announced plan');
+SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role='authenticated';
 DO $close_rollback$
@@ -221,4 +230,19 @@ SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_assignments
  WHERE table_session_id=current_setting('test.legacy_session')::uuid
  AND (released_at IS NULL OR pre_assigned_attendance_id IS NOT NULL)),
  'closed legacy session has no live assignment or incoming reservation');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT public.operator_open_dealer_tables('e1800000-0000-4000-8000-000000000082',
+ 'e1800000-0000-4000-8000-000000000002',null,ARRAY['e1800000-0000-4000-8000-000000000013'::uuid],'cash');
+SELECT pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+ current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000083')->>'error'='table_session_not_active',
+ 'late close request for old incarnation cannot close reopened table');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.table_sessions
+ WHERE game_table_id='e1800000-0000-4000-8000-000000000013' AND closed_at IS NULL
+ AND id<>'e1800000-0000-4000-8000-000000000023'),'reopen creates distinct active incarnation');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_assignments
+ WHERE table_id='e1800000-0000-4000-8000-000000000013' AND released_at IS NULL),
+ 'reopen does not resurrect old dealer assignment');
 ROLLBACK;
