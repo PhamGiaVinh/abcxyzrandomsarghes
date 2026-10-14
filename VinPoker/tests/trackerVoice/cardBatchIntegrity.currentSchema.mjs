@@ -6,6 +6,8 @@ assert.equal(process.env.PGHOST,'127.0.0.1');
 const fixtureOnly=process.argv.includes('--fixture-only');
 const undo=process.argv.includes('--undo');
 const authority70=process.argv.includes('--authority70');
+const manualHoleAuthority=process.argv.includes('--manual-hole-authority');
+assert.ok(!manualHoleAuthority||authority70,'manual hole authority requires guarded owned schema mode');
 const authorityBaseline=process.argv.includes('--authority-baseline');
 const authorityRelease71=process.argv.includes('--authority-release71');
 const authorityOverlapFixture=process.argv.includes('--authority-overlap-fixture');
@@ -240,6 +242,11 @@ if(authorityReverseRoot){
  .replaceAll('voice-board-flop-0001','voice-board-reverse-0001')
  .replaceAll('trace-board-flop-0001','trace-board-reverse-0001')
  .replaceAll('board-flop-provider-1','board-reverse-provider-1');
+}
+if(manualHoleAuthority){
+ assert.ok(!fixtureOnly&&!authorityOverlapFixture&&!authorityOwner&&!authorityFinish,
+  'manual hole regression must use the original assigned Dealer rollback fixture');
+ cases=readFileSync('tests/trackerVoice/manualHoleAuthority.currentSchema.sql','utf8');
 }
 const preconditions=undo?`DO $$ BEGIN
  IF inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port() IS DISTINCT FROM 55441 OR current_user<>'postgres' OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999 THEN RAISE EXCEPTION 'wrong_undo_server'; END IF;

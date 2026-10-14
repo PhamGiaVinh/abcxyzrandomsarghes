@@ -49,6 +49,27 @@ import { useStandaloneHandInput } from "@/components/cashier/tournament-live/han
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it.each([
+    { status: "success", data: { error: "hand_not_found" } },
+    { status: "success", data: { error: "lock_lost" } },
+    { status: "success", data: null },
+    { status: "success", data: { status: "success", entry_count: 0 } },
+  ])("does not report manual cards revealed for an unconfirmed canonical result %j", async (payload) => {
+    mock.resume = true;
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.successToast.mockClear();
+    mock.errorToast.mockClear();
+    mock.invoke.mockResolvedValue({ data: payload, error: null });
+    await act(async () => { await result.current.handleShowHoleCards(); });
+    expect(mock.invoke).toHaveBeenCalledTimes(1);
+    expect(mock.successToast).not.toHaveBeenCalled();
+    expect(mock.errorToast).toHaveBeenCalledTimes(1);
+    expect(result.current.submitting).toBe(false);
+  });
   it("does not offer or resume a legacy orphan when the current session is unknown", async () => {
     mock.metadataSession = null;
     mock.resume = true;
