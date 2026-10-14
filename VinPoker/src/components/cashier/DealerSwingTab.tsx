@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/useAuth";
+import { mergeCheckinCandidateReads, type CheckinCandidate } from "@/lib/dealerCheckinCandidates";
+import { DealerCheckinCandidateList } from "./dealer-swing/DealerCheckinCandidateList";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -372,7 +374,10 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const [assigning, setAssigning] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [checkinDealerIds, setCheckinDealerIds] = useState<string[]>([]);
-  const [checkinDealers, setCheckinDealers] = useState<any[]>([]);
+  const [checkinDealers, setCheckinDealers] = useState<CheckinCandidate[]>([]);
+  const [checkinCandidatesLoading, setCheckinCandidatesLoading] = useState(false);
+  const [checkinCandidatesError, setCheckinCandidatesError] = useState<string | null>(null);
+  const checkinReadSequence = useRef(0);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutAttendanceId, setCheckoutAttendanceId] = useState("");
   // Pool-based table creation state
@@ -1516,14 +1521,37 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   useEffect(() => () => { checkinScope.current = { key: "" }; }, []);
   const loadCheckinDealers = async () => {
     const scope = checkinScope.current;
-    if (!activeClubId) { setCheckinDealers([]); return; }
-    const { data, error } = await supabase.from("dealers")
-      .select("id, full_name, tier, club_id")
-      .eq("club_id", activeClubId).eq("status", "active").is("deleted_at", null)
-      .order("full_name");
-    if (scope !== checkinScope.current) return;
-    if (error) { setCheckinDealers([]); toast.error("Không tải được dealer; hãy thử lại."); return; }
-    setCheckinDealers((data ?? []).map((dealer) => ({ ...dealer, wasCheckedOut: false })));
+    const sequence = ++checkinReadSequence.current;
+    const isCurrent = () => scope === checkinScope.current && sequence === checkinReadSequence.current;
+    setCheckinDealers([]);
+    setCheckinDealerIds([]);
+    setCheckinCandidatesError(null);
+    if (!activeClubId) { setCheckinCandidatesLoading(false); return; }
+    setCheckinCandidatesLoading(true);
+    try {
+      const [dealerRead, openRead] = await Promise.all([
+        supabase.from("dealers")
+          .select("id, full_name, tier, club_id, dealer_attendance(id,dealer_id,status,check_in_time,check_out_time)", { count: "exact" })
+          .eq("club_id", activeClubId).eq("status", "active").is("deleted_at", null)
+          .order("full_name").range(0, 999)
+          .order("check_in_time", { referencedTable: "dealer_attendance", ascending: false, nullsFirst: false })
+          .order("id", { referencedTable: "dealer_attendance", ascending: false })
+          .limit(1, { referencedTable: "dealer_attendance" }),
+        supabase.from("dealer_attendance")
+          .select("id,dealer_id,status,check_in_time,check_out_time,dealers!inner(club_id,status,deleted_at)", { count: "exact" })
+          .eq("dealers.club_id", activeClubId).eq("dealers.status", "active").is("dealers.deleted_at", null)
+          .or("check_out_time.is.null,status.eq.checked_in").order("id").range(0, 999),
+      ]);
+      if (!isCurrent()) return;
+      setCheckinDealers(mergeCheckinCandidateReads(activeClubId, dealerRead, openRead));
+    } catch {
+      if (isCurrent()) {
+        setCheckinDealers([]);
+        setCheckinCandidatesError("Không xác minh được trạng thái ca. Không gửi check-in mới; hãy tải lại.");
+      }
+    } finally {
+      if (isCurrent()) setCheckinCandidatesLoading(false);
+    }
   };
 
   // One server intent for initial check-in and re-check-in; preserve unknown retries.
@@ -1621,6 +1649,10 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     }
   };
   const doCheckin = async () => {
+    if (checkinCandidatesLoading || checkinCandidatesError || checkinDealerIds.some((id) => {
+      const candidate = checkinDealers.find((dealer) => dealer.id === id);
+      return !candidate || (candidate.checkinStatus !== "new" && candidate.checkinStatus !== "previously_checked_out");
+    })) return;
     if (!user?.id || !activeClubId || !checkinShiftId || !checkinDealerIds.length || processing) return;
     const scope = checkinScope.current;
     if (checkinSubmission.current?.scope === scope) return;
@@ -2610,7 +2642,17 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       })()}
 
       {/* Check-in Dialog (multi-select) với 2 section: Check-in lại + Check-in mới */}
-      <Dialog open={checkinOpen} onOpenChange={(o) => { setCheckinOpen(o); if (o) { loadCheckinDealers(); setCheckinDealerIds([]); } }}>
+      <Dialog open={checkinOpen} onOpenChange={(o) => {
+        setCheckinOpen(o);
+        if (o) { loadCheckinDealers(); setCheckinDealerIds([]); }
+        else {
+          checkinReadSequence.current += 1;
+          setCheckinCandidatesLoading(false);
+          setCheckinCandidatesError(null);
+          setCheckinDealers([]);
+          setCheckinDealerIds([]);
+        }
+      }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Check-in thủ công</DialogTitle></DialogHeader>
           {pendingCheckinIntents.length > 0 && (
@@ -2639,91 +2681,11 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
               ))}</SelectContent>
             </Select>
           )}
-          <div className="max-h-72 overflow-y-auto space-y-2 border border-border p-2 rounded">
-            {checkinDealers.length === 0 ? (
-              <div className="text-xs text-muted-foreground text-center py-4">Không có dealer phù hợp trong CLB đã chọn.</div>
-            ) : (
-              <>
-                {/* Section: Check-in lại (đã checkout) */}
-                {(() => {
-                  const reCheckins = checkinDealers.filter((d: any) => d.wasCheckedOut);
-                  if (!reCheckins.length) return null;
-                  return (
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1 sticky top-0 bg-card z-10 pb-1">
-                        <UserMinus className="w-3 h-3 text-warning" />
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-warning">Check-in lại</span>
-                        <Badge variant="outline" className="text-[10px] ml-auto">{reCheckins.length}</Badge>
-                      </div>
-                      <div className="space-y-1">
-                        {reCheckins.map((d: any) => (
-                          <label key={d.id}
-                            className={`flex items-center gap-2 p-2 text-xs rounded cursor-pointer hover:bg-muted/20 ${checkinDealerIds.includes(d.id) ? "bg-primary/10 border border-primary/30" : "border border-transparent"}`}>
-                            <Checkbox
-                              checked={checkinDealerIds.includes(d.id)}
-                              onCheckedChange={(chk) => {
-                                if (chk) setCheckinDealerIds([...checkinDealerIds, d.id]);
-                                else setCheckinDealerIds(checkinDealerIds.filter((id) => id !== d.id));
-                              }}
-                            />
-                            <span className="font-semibold">{d.full_name}</span>
-                            <Badge variant="outline" className="text-[10px]">{d.tier}</Badge>
-                            <span className="text-[10px] text-warning">(Đã kết thúc ca)</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Section: Check-in mới */}
-                {(() => {
-                  const newCheckins = checkinDealers.filter((d: any) => !d.wasCheckedOut);
-                  if (!newCheckins.length) return null;
-                  return (
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1 sticky top-0 bg-card z-10 pb-1">
-                        <UserPlus className="w-3 h-3 text-success" />
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-success">Check-in mới</span>
-                        <Badge variant="outline" className="text-[10px] ml-auto">{newCheckins.length}</Badge>
-                      </div>
-                      <div className="space-y-1">
-                        {newCheckins.map((d: any) => (
-                          <label key={d.id}
-                            className={`flex items-center gap-2 p-2 text-xs rounded cursor-pointer hover:bg-muted/20 ${checkinDealerIds.includes(d.id) ? "bg-primary/10 border border-primary/30" : "border border-transparent"}`}>
-                            <Checkbox
-                              checked={checkinDealerIds.includes(d.id)}
-                              onCheckedChange={(chk) => {
-                                if (chk) setCheckinDealerIds([...checkinDealerIds, d.id]);
-                                else setCheckinDealerIds(checkinDealerIds.filter((id) => id !== d.id));
-                              }}
-                            />
-                            <span className="font-semibold">{d.full_name}</span>
-                            <Badge variant="outline" className="text-[10px]">{d.tier}</Badge>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </>
-            )}
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">Đã chọn: {checkinDealerIds.length}</span>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" className="h-6 text-xs"
-                onClick={() => setCheckinDealerIds(checkinDealers.map((d: any) => d.id))}>
-                Chọn tất cả
-              </Button>
-              <Button variant="ghost" size="sm" className="h-6 text-xs"
-                onClick={() => setCheckinDealerIds([])}>
-                Bỏ chọn
-              </Button>
-            </div>
-          </div>
+          <DealerCheckinCandidateList candidates={checkinDealers} selectedIds={checkinDealerIds}
+            onSelection={setCheckinDealerIds} loading={checkinCandidatesLoading}
+            error={checkinCandidatesError} busy={!!processing} onRetry={loadCheckinDealers} />
           <DialogFooter>
-            <Button onClick={doCheckin} disabled={!activeClubId || !checkinShiftId || !checkinDealerIds.length || processing === "checkin"}>
+            <Button onClick={doCheckin} disabled={checkinCandidatesLoading || !!checkinCandidatesError || !activeClubId || !checkinShiftId || !checkinDealerIds.length || processing === "checkin"}>
               {processing === "checkin" ? <Loader2 className="w-3 h-3 animate-spin" />
                 : recoverableCheckinShiftIds.includes(checkinShiftId) ? "Đối chiếu yêu cầu cũ" : `Check-in (${checkinDealerIds.length})`}
             </Button>

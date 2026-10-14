@@ -37,6 +37,9 @@ on:
       - "VinPoker/src/components/cashier/DealerSwingTab.tsx"
       - "VinPoker/src/components/cashier/DealerSwingTab.readState.test.tsx"
       - "VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*"
+      - "VinPoker/src/components/cashier/dealer-swing/DealerCheckinCandidateList*"
+      - "VinPoker/src/lib/dealerCheckinCandidates*"
+      - "VinPoker/tests/dealerSwing/checkinReactLifecycle.test.tsx"
       - "VinPoker/src/pages/ops/OpsToday*"
       - "VinPoker/src/pages/ops/OpsDealerSwing*"
       - "VinPoker/src/pages/ops/OpsTournamentCockpit*"
@@ -109,6 +112,9 @@ jobs:
           src/components/cashier/shift-planner-v2/__tests__/ShiftPlannerV2Tab.smoke.test.tsx
           src/components/cashier/shift-planner/__tests__/ShiftPlannerTab.smoke.test.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
+          src/components/cashier/dealer-swing/DealerCheckinCandidateList.test.tsx
+          src/lib/dealerCheckinCandidates.test.ts
+          tests/dealerSwing/checkinReactLifecycle.test.tsx
           src/pages/ops/OpsToday.readState.test.tsx
           src/pages/ops/OpsDealerSwing.readState.test.tsx
           src/components/cashier/tournament-live/ClockPanel.tsx
@@ -156,6 +162,10 @@ jobs:
           src/pages/ops/OpsTournamentCockpit.tsx
           src/pages/ops/OpsTournamentCockpit.clockScope.test.tsx
           src/components/cashier/dealer-swing/DealerSwingStopControl.tsx
+          src/components/cashier/dealer-swing/DealerCheckinCandidateList.tsx
+          src/components/cashier/dealer-swing/DealerCheckinCandidateList.test.tsx
+          src/lib/dealerCheckinCandidates.ts
+          src/lib/dealerCheckinCandidates.test.ts
           src/components/cashier/dealer-swing/DealerSwingStopControl.test.tsx
           src/hooks/useDealerSwing.readScope.test.tsx
           src/components/cashier/DealerSwingTab.readState.test.tsx
