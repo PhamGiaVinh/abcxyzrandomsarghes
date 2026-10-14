@@ -15,7 +15,7 @@ BEGIN
  anchor:=E'  UPDATE public.dealer_assignments\n  SET released_at = COALESCE(released_at, pg_catalog.now()),';
  replacement:=$patch$  -- Lock schedule before assignment/attendance, matching rotation writers.
   -- Physical/session locks are already held by this canonical close.
-  DECLARE plan_row record; cancel_result jsonb;
+  DECLARE plan_row record; cancel_result jsonb; legacy_row record; incoming_row record;
   BEGIN
     FOR plan_row IN
       SELECT rs.id,rs.club_id,rs.table_id,rs.status
@@ -37,13 +37,41 @@ BEGIN
         RAISE EXCEPTION 'closed_session_rotation_cancel_failed';
       END IF;
     END LOOP;
-    -- Unmatched legacy reservations need their own qualified cleanup. Do not
-    -- report a successful close or strand a dealer while that evidence is absent.
-    IF EXISTS(SELECT 1 FROM public.dealer_assignments a
+    -- Legacy next-dealer reservations have no schedule. Release only the exact
+    -- live attendance whose marker and sole active reservation prove ownership.
+    FOR legacy_row IN SELECT a.id,a.club_id,a.table_id,a.pre_assigned_attendance_id
+      FROM public.dealer_assignments a
       WHERE a.table_session_id=v_session.id AND a.released_at IS NULL
-        AND a.pre_assigned_attendance_id IS NOT NULL) THEN
-      RAISE EXCEPTION 'closed_session_legacy_reservation_requires_repair';
-    END IF;
+        AND a.pre_assigned_attendance_id IS NOT NULL
+      ORDER BY a.id FOR UPDATE OF a
+    LOOP
+      IF legacy_row.club_id IS DISTINCT FROM v_session.club_id
+        OR legacy_row.table_id IS DISTINCT FROM v_session.game_table_id THEN
+        RAISE EXCEPTION 'closed_session_legacy_reservation_scope_invalid';
+      END IF;
+      SELECT da.*,d.club_id AS dealer_club_id INTO incoming_row
+      FROM public.dealer_attendance da JOIN public.dealers d ON d.id=da.dealer_id
+      WHERE da.id=legacy_row.pre_assigned_attendance_id FOR UPDATE OF da;
+      IF NOT FOUND OR incoming_row.dealer_club_id IS DISTINCT FROM v_session.club_id
+        OR incoming_row.status IS DISTINCT FROM 'checked_in'
+        OR incoming_row.check_out_time IS NOT NULL
+        OR incoming_row.current_state IS DISTINCT FROM 'pre_assigned'
+        OR incoming_row.pre_assigned_table_id IS DISTINCT FROM v_session.game_table_id THEN
+        RAISE EXCEPTION 'closed_session_legacy_reservation_identity_invalid';
+      END IF;
+      IF EXISTS(SELECT 1 FROM public.dealer_assignments other
+        WHERE other.id<>legacy_row.id AND other.released_at IS NULL
+          AND (other.attendance_id=incoming_row.id OR other.pre_assigned_attendance_id=incoming_row.id))
+        OR EXISTS(SELECT 1 FROM public.dealer_rotation_schedule other
+          WHERE other.in_attendance_id=incoming_row.id
+            AND other.status IN ('predicted','announced','executing')) THEN
+        RAISE EXCEPTION 'closed_session_legacy_reservation_conflict';
+      END IF;
+      UPDATE public.dealer_assignments SET pre_assigned_attendance_id=NULL,
+        pre_assigned_at=NULL,planned_relief_at=NULL WHERE id=legacy_row.id;
+      UPDATE public.dealer_attendance SET current_state='available',
+        pre_assigned_table_id=NULL,pre_assigned_at=NULL WHERE id=incoming_row.id;
+    END LOOP;
   END;
   UPDATE public.dealer_assignments
   SET released_at = COALESCE(released_at, pg_catalog.now()),$patch$;

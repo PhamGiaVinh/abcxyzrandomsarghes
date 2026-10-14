@@ -193,4 +193,32 @@ SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_ta
 SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070' AND status IN ('predicted','announced','executing')),
  'closed incarnation cannot retain actionable rotation plan');
+-- Legacy reservation without a schedule, created with the real acquisition
+-- triggers enabled. Closing must still release it after Auto is switched OFF.
+SET LOCAL request.jwt.claim.role='service_role';
+SELECT set_config('request.headers','{}',true);
+UPDATE public.dealer_assignments SET pre_assigned_attendance_id='e1800000-0000-4000-8000-000000000043',
+ pre_assigned_at=now() WHERE table_id='e1800000-0000-4000-8000-000000000011' AND released_at IS NULL;
+UPDATE public.dealer_attendance SET current_state='pre_assigned',
+ pre_assigned_table_id='e1800000-0000-4000-8000-000000000011',pre_assigned_at=now()
+ WHERE id='e1800000-0000-4000-8000-000000000043';
+UPDATE public.club_settings SET auto_swing_enabled=false
+ WHERE club_id='e1800000-0000-4000-8000-000000000002';
+SELECT set_config('test.legacy_session',id::text,true),set_config('test.legacy_revision',revision::text,true)
+ FROM public.table_sessions WHERE game_table_id='e1800000-0000-4000-8000-000000000011' AND closed_at IS NULL;
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true((public.operator_close_club_table_v2(current_setting('test.legacy_session')::uuid,
+ current_setting('test.legacy_revision')::bigint,'e1800000-0000-4000-8000-000000000081')->>'ok')::boolean,
+ 'canonical close releases legacy reservation even with Auto OFF');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_table_id IS NULL
+ AND last_released_at=now()-interval '15 minutes' AND check_out_time IS NULL
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'legacy close frees marker without changing rest or checkout evidence');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_assignments
+ WHERE table_session_id=current_setting('test.legacy_session')::uuid
+ AND (released_at IS NULL OR pre_assigned_attendance_id IS NOT NULL)),
+ 'closed legacy session has no live assignment or incoming reservation');
 ROLLBACK;
