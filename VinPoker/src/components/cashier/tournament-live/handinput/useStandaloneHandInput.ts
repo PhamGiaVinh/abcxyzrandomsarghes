@@ -2895,6 +2895,11 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const handleShowHoleCards = async () => {
     if (!handId || isReadOnly) return;
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+      && scope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(loadToken);
     const cardsPayload = [];
     for (const [playerId, holeCards] of Object.entries(playerHoleCards)) {
       const filtered = holeCards.filter((c): c is Card => c !== null);
@@ -2913,6 +2918,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       const { data, error } = await supabase.functions.invoke("tournament-live-update", {
         body: buildShowHoleCardsBody({ tournamentId, handId, playerHoleCards: cardsPayload }),
       });
+      if (!current()) return;
       const verdict = data?.data;
       if (error || data?.error || data?.status !== "success" || verdict?.error
         || verdict?.status !== "success" || !Number.isInteger(verdict.entry_count)
@@ -2923,10 +2929,11 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.success("Hole cards revealed");
       markSync("sent", `Đã lật ${cardsPayload.length} tay bài`);
     } catch (e: any) {
+      if (!current()) return;
       toast.error(e.message);
       markSync("error");
     } finally {
-      setSubmitting(false);
+      if (current()) setSubmitting(false);
     }
   };
 
@@ -2937,7 +2944,12 @@ export function useStandaloneHandInput(tournamentId: string) {
   // (settleShowdown) still enforces "all contenders revealed-or-mucked", so a
   // partial reveal here can never produce a phantom settlement.
   const handleRevealRunout = async () => {
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
     await handleShowHoleCards();
+    if (!rosterMountedRef.current || generation !== rosterGenerationRef.current
+      || scope !== actionScopeRef.current || !tableLoadGuardRef.current.isCurrent(loadToken)) return;
     setRevealDone(true);
   };
 
