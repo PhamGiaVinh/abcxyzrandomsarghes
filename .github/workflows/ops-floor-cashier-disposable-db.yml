@@ -141,6 +141,8 @@ jobs:
 
       - name: Type-check complete project references
         working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npx tsc -b --pretty false
 
       - name: Build production source (flags remain default-off)
