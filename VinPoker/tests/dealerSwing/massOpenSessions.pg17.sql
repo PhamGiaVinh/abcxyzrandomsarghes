@@ -204,6 +204,31 @@ SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role='authenticated';
+RESET ROLE;
+CREATE FUNCTION pg_temp.reject_close_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF NEW.operation_type='operator_close_club_table_v2'
+  AND NEW.request_id='e1800000-0000-4000-8000-000000000080' THEN
+  RAISE EXCEPTION 'injected_close_receipt_failure';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER test_reject_close_receipt BEFORE INSERT ON public.table_operation_receipts
+ FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_close_receipt();
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected('injected_close_receipt_failure');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023'),'receipt-save failure rolls session close back');
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'receipt-save failure restores cancelled plan');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000013'
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'receipt-save failure restores incoming reservation');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts WHERE request_id='e1800000-0000-4000-8000-000000000080'),
+ 'receipt-save failure leaves no false receipt');
+DROP TRIGGER test_reject_close_receipt ON public.table_operation_receipts;
+SET LOCAL ROLE authenticated;
 DO $close_rollback$
 DECLARE result jsonb;
 BEGIN
