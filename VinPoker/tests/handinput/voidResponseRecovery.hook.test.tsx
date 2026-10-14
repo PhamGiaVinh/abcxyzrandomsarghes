@@ -136,13 +136,27 @@ describe("void unknown response through the real controller", () => {
     let freshRequest!: Promise<void>;
     act(() => { freshRequest = result.current.handleShowHoleCards(); });
     const countBeforeOldCompletion = responders.length;
+    mock.successToast.mockClear();
     await act(async () => {
-      for (const respond of responders) {
+      responders[0]({ data: { status: "success", data: { status: "success", entry_count: 1 } }, error: null });
+      await oldRequest;
+    });
+    const freshBusyAfterOldFinally = result.current.submitting;
+    const staleSuccessCount = mock.successToast.mock.calls.length;
+    let thirdRequest!: Promise<void>;
+    act(() => { thirdRequest = result.current.handleShowHoleCards(); });
+    const countWhileFreshPending = responders.length;
+    await act(async () => {
+      for (const respond of responders.slice(1)) {
         respond({ data: { status: "success", data: { status: "success", entry_count: 1 } }, error: null });
       }
-      await Promise.all([oldRequest, freshRequest]);
+      await Promise.all([freshRequest, thirdRequest]);
     });
     expect(countBeforeOldCompletion).toBe(2);
+    expect(freshBusyAfterOldFinally).toBe(true);
+    expect(staleSuccessCount).toBe(0);
+    expect(countWhileFreshPending).toBe(2);
+    expect(result.current.submitting).toBe(false);
   });
   it.each([
     { status: "success", data: { error: "hand_not_found" } },
