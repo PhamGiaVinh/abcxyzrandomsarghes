@@ -92,6 +92,7 @@ const navigationActions = [
 ] as const;
 
 const readActions = [
+  "floor.tournaments.retry_read",
   "floor.workspace.refresh_conflict",
   "floor.tournament.refresh",
   "floor.tables.refresh",

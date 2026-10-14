@@ -220,7 +220,7 @@ export default function OpsTournaments() {
   if (tourLoading) return <Guard icon={<Loader2 className="h-8 w-8 animate-spin text-[#c9a86a]" />} title="Đang tải giải…" sub="Lấy danh sách giải đấu." />;
   if (tourReadError) return <div role="alert">
     <Guard icon={<AlertTriangle className="h-8 w-8 text-rose-300" />} title="Không tải được danh sách giải" sub="Chưa xác minh được dữ liệu. Không coi lỗi tải là danh sách rỗng." />
-    <div className="flex justify-center"><button type="button" onClick={() => void retryTours()} className="min-h-11 rounded-xl border border-white/15 px-4 text-sm text-[#f2ece6]">Thử lại</button></div>
+    <div className="flex justify-center"><button type="button" data-ops-action="floor.tournaments.retry_read" onClick={() => void retryTours()} className="min-h-11 rounded-xl border border-white/15 px-4 text-sm text-[#f2ece6]">Thử lại</button></div>
   </div>;
 
   const clubName = clubs.find((club) => club.id === activeClub)?.name ?? "CLB";
