@@ -66,6 +66,25 @@ beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncode
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it("does not dispatch manual cards when recovery metadata cannot persist, including after remount", async () => {
+    mock.resume = true;
+    mock.deferred = true;
+    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
+    try {
+      for (let mount = 0; mount < 2; mount++) {
+        const { result, unmount } = renderHook(() => useStandaloneHandInput("tour1"));
+        await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+        await act(async () => { await result.current.handleTableChange("table1"); });
+        await waitFor(() => expect(result.current.handId).toBe("hand1"));
+        await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+        await act(async () => { await result.current.handleShowHoleCards(); });
+        expect(mock.invoke).not.toHaveBeenCalled();
+        expect(mock.successToast).not.toHaveBeenCalled();
+        expect(mock.errorToast).toHaveBeenCalled();
+        unmount();
+      }
+    } finally { storage.mockRestore(); }
+  });
   it("reconciles an unknown manual response with the original request before another writer", async () => {
     mock.resume = true;
     mock.deferred = true;
