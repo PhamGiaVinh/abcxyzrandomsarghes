@@ -3,6 +3,8 @@ name: Floor Table Control V3 server contract
 on:
   pull_request:
     paths:
+      - ".github/workflows/dealer-rest78-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-rest78-*"
       - "VinPoker/supabase/migrations/20270112000009_floor_table_control_v3_fixture_live_status_compat.sql"
       - "VinPoker/supabase/migrations/20270113000010_floor_table_control_v3_final_live_bridge.sql"
       - "VinPoker/supabase/migrations/20270113000011_floor_table_control_v3_final_contract.sql"

@@ -3,6 +3,8 @@ name: Protected migration sequence integrated UAT
 on:
   pull_request:
     paths:
+      - ".github/workflows/dealer-rest78-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/protected-nine-integrated-uat.yml"
       - "VinPoker/scripts/ops/protected-nine-*"
       - "VinPoker/tests/protectedNineIntegratedUat/**"
