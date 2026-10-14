@@ -126,6 +126,7 @@ on:
       - 'VinPoker/tests/dealerSwing/massOpenSessions.pg17.sql'
       - 'VinPoker/tests/dealerSwing/closeNextReservation.concurrent.mjs'
       - 'VinPoker/scripts/ops/dealer-close79-*.mjs'
+      - '.github/workflows/dealer-close79-protected-apply.yml'
       - 'VinPoker/supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql'
       - 'VinPoker/supabase/functions/run-dealer-ready-backup/**'
       - 'VinPoker/supabase/functions/process-swing-on-dealer-ready/**'
@@ -408,7 +409,7 @@ jobs:
           PGDATABASE=vinpoker_ops_rest78_atomic_ci REST78_PG_TEST=1 node --test scripts/ops/dealer-rest78-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
           createdb -T "$PGDATABASE" vinpoker_ops_close79_atomic_ci
-          node --test scripts/ops/dealer-close79-release-plan.test.mjs
+          node --test scripts/ops/dealer-close79-release-plan.test.mjs scripts/ops/dealer-close79-protected-apply.test.mjs
           PGDATABASE=vinpoker_ops_close79_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           PGDATABASE=vinpoker_ops_close79_atomic_ci CLOSE79_PG_TEST=1 node --test scripts/ops/dealer-close79-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql

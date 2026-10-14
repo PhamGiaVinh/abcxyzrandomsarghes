@@ -5,6 +5,8 @@ on:
     paths:
       - ".github/workflows/dealer-rest78-protected-apply.yml"
       - "VinPoker/scripts/ops/dealer-rest78-*"
+      - ".github/workflows/dealer-close79-protected-apply.yml"
+      - "VinPoker/scripts/ops/dealer-close79-*"
       - ".github/workflows/vbackerworkflowmain.yml"
       - ".github/workflows/floor-clock-control-apply.yml"
       - ".github/workflows/floor-operator-scope-acl-apply.yml"
@@ -110,6 +112,7 @@ jobs:
           "${RUNNER_TEMP}/actionlint" \
             .github/workflows/vbackerworkflowmain.yml \
             .github/workflows/dealer-rest78-protected-apply.yml \
+            .github/workflows/dealer-close79-protected-apply.yml \
             .github/workflows/floor-clock-control-apply.yml \
             .github/workflows/floor-operator-scope-acl-apply.yml \
             .github/workflows/dealer-stop-64-protected-apply.yml \
