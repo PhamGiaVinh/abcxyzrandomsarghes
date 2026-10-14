@@ -241,6 +241,11 @@ SELECT set_config('request.jwt.claims','{"sub":"81500000-0000-4000-8000-00000000
 SELECT public.get_manual_card_receipt_prototype('manual-prototype-key-0001')::text AS payload \gset manual_reconcile_outsider_
 RESET ROLE;
 SELECT pg_temp.manual_assert(:'manual_reconcile_payload'::jsonb->>'status'='committed'
+ AND :'manual_reconcile_payload'::jsonb->>'request_hash'=
+  encode(extensions.digest(jsonb_build_array('81200000-0000-4000-8000-000000000001'::uuid,
+   '86000000-0000-4000-8000-000000000001'::uuid,'83500000-0000-4000-8000-000000000001'::uuid,
+   1::bigint,:manual_before_revision::bigint,
+   '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":1,"hole_cards":["Qh","Qs"]}]'::jsonb)::text,'sha256'),'hex')
  AND :'manual_reconcile_payload'::jsonb->>'hand_id'='86000000-0000-4000-8000-000000000001'
  AND NOT (:'manual_reconcile_payload'::jsonb ? 'hole_cards')
  AND :'manual_reconcile_outsider_payload'::jsonb->>'status'='not_found'
