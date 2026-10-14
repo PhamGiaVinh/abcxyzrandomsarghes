@@ -30,7 +30,7 @@ export function useTournaments(clubId: string | undefined) {
           *,
           tournament_tables (
             table_id,
-            game_tables (
+            game_tables!tournament_tables_table_id_fkey (
               id,
               table_name
             )
@@ -64,7 +64,7 @@ export function useActiveTournaments(clubId: string | undefined) {
           *,
           tournament_tables (
             table_id,
-            game_tables (
+            game_tables!tournament_tables_table_id_fkey (
               id,
               table_name
             )

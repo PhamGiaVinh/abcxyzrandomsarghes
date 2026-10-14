@@ -2,6 +2,8 @@ name: Operations current schema runtime
 on:
   pull_request:
     paths:
+      - 'VinPoker/src/pages/ops/OpsTournaments*'
+      - 'VinPoker/src/hooks/useTournaments*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
       - 'VinPoker/supabase/migrations/20270128000066_floor_manual_seat_session_fence_v1.sql'
       - 'VinPoker/tests/floorProduction/manualSeatSessionFence*'
@@ -234,6 +236,7 @@ jobs:
           node --test scripts/ops/dealer-checkin-51-protected-apply.test.mjs scripts/ops/dealer-checkin-51-atomic-pg.test.mjs
           node --test scripts/ops/restore-chip-52-53-release-plan.test.mjs scripts/ops/restore-chip-52-53-protected-apply.test.mjs scripts/ops/restore-chip-52-53-atomic-pg.test.mjs
           node node_modules/vitest/vitest.mjs run src/components/chip-ops/ColorUpTab.test.tsx src/components/cashier/tournament-live/RestoreBustDialog.test.tsx src/lib/floorTableControlV3.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
       - name: Backup worker rejects unauthenticated privileged execution
         working-directory: VinPoker

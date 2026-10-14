@@ -44,11 +44,12 @@ interface TVM {
 const vnd = (n: number) => n.toLocaleString("vi-VN");
 function toVM(t: Tournament): TVM {
   const a = t as unknown as Record<string, unknown>;
-  const running = t.status === "live" || t.status === "final_table";
+  const active = a.status === "active";
+  const running = active || t.status === "live" || t.status === "final_table";
   const isBreak = t.status === "break";
   const upcoming = t.status === "upcoming" || t.status === "registering" || t.status === "drawing";
   const statusKey: StatusKey = running ? "running" : isBreak ? "break" : upcoming ? "upcoming" : "closed";
-  const statusLabel = running ? "Đang chơi" : isBreak ? "Giải lao" : upcoming ? "Sắp diễn ra" : t.status === "cancelled" ? "Đã huỷ" : "Đã kết thúc";
+  const statusLabel = active ? "Đang hoạt động" : running ? "Đang chơi" : isBreak ? "Giải lao" : upcoming ? "Sắp diễn ra" : t.status === "cancelled" ? "Đã huỷ" : "Đã kết thúc";
   const time = typeof a.start_time === "string" ? new Date(a.start_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "—";
   const buyIn = typeof a.buy_in === "number" ? vnd(a.buy_in) : "—";
   const entries = t.players_remaining ?? (typeof a.current_players === "number" ? a.current_players : 0);
@@ -83,7 +84,7 @@ export default function OpsTournaments() {
   const hasOwnerAccess = isSuperAdmin || scope.some(
     (row) => row.club_id === activeClub && row.can_owner,
   );
-  const { data: tournaments, isLoading: tourLoading } = useTournaments(activeClub);
+  const { data: tournaments, isLoading: tourLoading, isError: tourReadError, refetch: retryTours } = useTournaments(activeClub);
 
   const [filter, setFilter] = useState<"live" | "today" | "all">("live");
   const [sel, setSel] = useState<TVM | null>(null);
@@ -217,6 +218,10 @@ export default function OpsTournaments() {
   if (scopeError) return <Guard icon={<AlertTriangle className="h-8 w-8 text-rose-300" />} title="Không tải được phạm vi CLB" sub="Không dùng dữ liệu thay thế. Hãy tải lại trang." />;
   if (!activeClub) return <Guard icon={<Trophy className="h-8 w-8 text-amber-300" />} title="Chưa có câu lạc bộ" sub="Chưa được phân công CLB nào để xem giải." />;
   if (tourLoading) return <Guard icon={<Loader2 className="h-8 w-8 animate-spin text-[#c9a86a]" />} title="Đang tải giải…" sub="Lấy danh sách giải đấu." />;
+  if (tourReadError) return <div role="alert">
+    <Guard icon={<AlertTriangle className="h-8 w-8 text-rose-300" />} title="Không tải được danh sách giải" sub="Chưa xác minh được dữ liệu. Không coi lỗi tải là danh sách rỗng." />
+    <div className="flex justify-center"><button type="button" data-ops-action="floor.tournaments.retry_read" onClick={() => void retryTours()} className="min-h-11 rounded-xl border border-white/15 px-4 text-sm text-[#f2ece6]">Thử lại</button></div>
+  </div>;
 
   const clubName = clubs.find((club) => club.id === activeClub)?.name ?? "CLB";
 
