@@ -75,6 +75,7 @@ describe("void unknown response through the real controller", () => {
     await act(async () => { await result.current.handleTableChange("table1"); });
     await waitFor(() => expect(result.current.handId).toBe("hand1"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.successToast.mockClear(); // Ignore the already-completed resume toast.
     mock.invoke.mockImplementation(() => new Promise(resolve => { respond = resolve; }));
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleShowHoleCards(); });
@@ -103,6 +104,7 @@ describe("void unknown response through the real controller", () => {
         await act(async () => { await result.current.handleTableChange("table1"); });
         await waitFor(() => expect(result.current.handId).toBe("hand1"));
         await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+        mock.successToast.mockClear(); // Resume is not the reveal under test.
         await act(async () => { await result.current.handleShowHoleCards(); });
         expect(mock.invoke).not.toHaveBeenCalled();
         expect(mock.successToast).not.toHaveBeenCalled();
