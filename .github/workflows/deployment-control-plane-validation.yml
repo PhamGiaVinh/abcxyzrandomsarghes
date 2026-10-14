@@ -126,12 +126,9 @@ jobs:
             .github/workflows/deployment-control-plane-validation.yml \
             .github/workflows/physical-asset-63-65-protected-apply.yml
 
-      - name: Validate manual75 protected workflow on exact revision
+      - name: Actionlint staged Tracker DB release workflows
         shell: bash
-        run: '"${RUNNER_TEMP}/actionlint" .github/workflows/tracker-manual-75-protected-apply.yml'
-      - name: Actionlint exact scoped reads76/77 apply
-        shell: bash
-        run: '"${RUNNER_TEMP}/actionlint" .github/workflows/tracker-reads-76-77-protected-apply.yml'
+        run: '"${RUNNER_TEMP}/actionlint" .github/workflows/tracker-manual-75-protected-apply.yml .github/workflows/tracker-reads-76-77-protected-apply.yml'
 
       - name: Setup Node.js 20 for Floor runner tests
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
