@@ -35,6 +35,10 @@ export default function AttentionQueue({
   });
   const [expanded, setExpanded] = useState(false);
   const { activeTables, assignedTables } = dealerTableCoverage(tables ?? [], assignments);
+  const overdueTables = (tables ?? []).filter(table => table.status === "active"
+    && !!table.table_session_id
+    && dealerTableCoverage([table], assignments).assignedTables === 1
+    && timelineByTableId[table.id]?.isOverdue);
 
   const renderItem = (item: AttentionItemData) => (
     <AttentionItem
@@ -45,6 +49,17 @@ export default function AttentionQueue({
       onSendToBreak={onSendToBreak}
       onFocusTable={onFocusTable}
     />
+  );
+
+  // Missing predictions must never turn a known overdue session into green health.
+  // Overdue is a warning, not authority to create an OT/payroll marker.
+  if (totalCount === 0 && overdueTables.length > 0) return (
+    <div role="alert" className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+      {overdueTables.length} bàn quá hạn — cần kiểm tra đổi dealer.
+      <div className="mt-1 text-xs text-muted-foreground">
+        {overdueTables.map(table => table.table_name ?? "Bàn").join(", ")}. Chưa có cảnh báo đổi người đầy đủ; không xem là sàn ổn định.
+      </div>
+    </div>
   );
 
   // ══════════════════════ LANE MODE (full-width top) ══════════════════════

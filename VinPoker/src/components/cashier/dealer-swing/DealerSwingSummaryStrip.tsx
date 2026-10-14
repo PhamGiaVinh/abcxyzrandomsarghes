@@ -77,7 +77,7 @@ export default function DealerSwingSummaryStrip({
                 {assignedTables}/{activeTables}
               </span>
               <span className="text-xs text-muted-foreground">
-                bàn có dealer{emptyTables > 0 ? ` · ${emptyTables} trống` : ""}{overdue > 0 ? ` · ${overdue} OT` : ""}
+                bàn có dealer{emptyTables > 0 ? ` · ${emptyTables} trống` : ""}{overdue > 0 ? ` · ${overdue} quá hạn` : ""}
               </span>
             </div>
             <div className="flex h-2.5 overflow-hidden rounded-full border border-border bg-muted/40">
