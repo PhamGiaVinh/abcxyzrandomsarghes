@@ -31,7 +31,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       if (mock.tableReadFails) throw new Error("table metadata unavailable");
       return { data: { ok: true, tables: [{ table_id: "table1", tournament_table_id: "table1",
         table_name: "Test", table_session_id: "session1", control_epoch: 1,
-        max_seats: 9, player_count: 1, has_live_hand: true, control_mode: "tracker" }] }, error: null };
+        max_seats: 9, player_count: 1, has_live_hand: true, control_mode: "tracker", can_manual_cards: true }] }, error: null };
     }
     return { data: name === "get_tournament_tables" ? [{ table_id: "table1", table_name: "Test" }] : name === "heartbeat_lock" ? { status: "success", locked_by: "actor1" } : null, error: null };
   },

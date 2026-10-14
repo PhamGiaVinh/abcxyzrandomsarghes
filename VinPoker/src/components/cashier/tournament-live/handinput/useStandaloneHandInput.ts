@@ -458,7 +458,7 @@ export function useStandaloneHandInput(tournamentId: string) {
             "get_tracker_hand_input_tables_v4" as any, { p_tournament_id: tournamentId },
           );
           if (!isCurrentRequest()) return;
-          const context = contextData as { ok?: boolean; tables?: unknown[] } | null;
+          const context = contextData as { ok?: boolean; tables?: unknown[]; invalid_tables?: unknown[] } | null;
           if (contextError || !context?.ok || !Array.isArray(context.tables)) {
             setTableLoadState("error");
             setTableLoadError("Không thể tải phiên bàn Tracker. Hãy thử lại.");
@@ -469,6 +469,7 @@ export function useStandaloneHandInput(tournamentId: string) {
             if (typeof row.table_id !== "string" || typeof row.tournament_table_id !== "string"
               || typeof row.table_name !== "string" || typeof row.player_count !== "number"
               || typeof row.has_live_hand !== "boolean"
+              || typeof row.can_manual_cards !== "boolean"
               || !Number.isInteger(row.max_seats)
               || (row.table_session_id !== null && typeof row.table_session_id !== "string")
               || (row.table_session_id !== null && typeof row.control_epoch !== "number")) return null;
@@ -478,6 +479,7 @@ export function useStandaloneHandInput(tournamentId: string) {
               tournamentTableId: row.tournament_table_id,
               tableSessionId: row.table_session_id,
               controlEpoch: row.control_epoch as number | null,
+              canManualCards: row.can_manual_cards,
               maxSeats: row.max_seats as number,
               name: row.table_name,
               playerCount: row.player_count,
@@ -508,6 +510,8 @@ export function useStandaloneHandInput(tournamentId: string) {
             ...lockFieldsFrom(lockByTable.get(table.id)),
           })));
           setTableLoadState("ready");
+          setTableLoadError(Array.isArray(context.invalid_tables) && context.invalid_tables.length > 0
+            ? `${context.invalid_tables.length} bàn cần sửa dữ liệu phiên. Không thể chọn các bàn này để nhập hand.` : null);
           return;
         }
 
@@ -2981,6 +2985,9 @@ export function useStandaloneHandInput(tournamentId: string) {
           }
         }
         const priorIntent = Boolean(intent);
+        if (!priorIntent && rosterContext.canManualCards !== true) {
+          throw new Error("Bạn có thể xem roster nhưng chưa có quyền lật bài thủ công tại phiên bàn này.");
+        }
         if (intent && intent.cardsFingerprint !== cardsFingerprint) {
           throw new Error("Lần lật bài trước chưa rõ kết quả. Nhập lại đúng bài đã gửi để tra receipt trước khi sửa.");
         }
@@ -3054,6 +3061,9 @@ export function useStandaloneHandInput(tournamentId: string) {
           if (intent.tableSessionId !== sessionId || intent.controlEpoch !== rosterContext.controlEpoch) {
             throw new Error("Context đã đổi; chỉ tra intent cũ, không gửi lại writer.");
           }
+        }
+        if (rosterContext.canManualCards !== true) {
+          throw new Error("Chỉ được tra receipt cũ; chưa có quyền gửi bài tại phiên bàn này.");
         }
         const response = await supabase.functions.invoke("tournament-live-update", { body });
         if (!current()) return;

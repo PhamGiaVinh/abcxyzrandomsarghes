@@ -32,7 +32,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 } }));
 import { useStandaloneHandInput } from "./useStandaloneHandInput";
 const tables = ["a", "b"].map(id => ({ table_id: id, tournament_table_id: `logical-${id}`,
- table_session_id: `session-${id}`, control_epoch: 1, max_seats: 9, table_name: id, player_count: 0, has_live_hand: false }));
+ table_session_id: `session-${id}`, control_epoch: 1, max_seats: 9, table_name: id, player_count: 0, has_live_hand: false, can_manual_cards: true }));
 const wrapper = ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 const snapshot = (args: any) => ({ data: { ok: true, tournament_table_id: args.p_tournament_table_id,
  table_session_id: args.p_table_session_id, control_epoch: args.p_expected_epoch,
