@@ -8,6 +8,8 @@ const mock = vi.hoisted(() => ({
   metadataSession: "session1" as string | null,
   readback: null as Promise<unknown> | null,
   resume: false,
+  deferred: false,
+  tableReadFails: false,
   seatStack: 30000,
   resumeRead: null as Promise<unknown> | null,
   readFilters: [] as Array<[string, unknown]>,
@@ -16,12 +18,20 @@ const mock = vi.hoisted(() => ({
   successToast: vi.fn(),
 }));
 vi.mock("sonner", () => ({ toast: { error: mock.errorToast, success: mock.successToast, warning: vi.fn(), info: vi.fn() } }));
-vi.mock("@/lib/featureFlags", () => ({ FEATURES: new Proxy({}, { get: () => false }) }));
+vi.mock("@/lib/featureFlags", () => ({ FEATURES: new Proxy({}, { get: (_, key) => key === "floorDeferredTrackerMoveV1" && mock.deferred }) }));
 vi.mock("react-router-dom", () => ({ useSearchParams: () => [new URLSearchParams(), vi.fn()] }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   auth: { getUser: async () => ({ data: { user: mock.resume ? { id: "actor1" } : null } }) },
   functions: { invoke: mock.invoke },
-  rpc: async (name: string) => ({ data: name === "get_tournament_tables" ? [{ table_id: "table1", table_name: "Test" }] : name === "heartbeat_lock" ? { status: "success", locked_by: "actor1" } : null, error: null }),
+  rpc: async (name: string) => {
+    if (name === "get_tracker_hand_input_tables_v3") {
+      if (mock.tableReadFails) throw new Error("table metadata unavailable");
+      return { data: { ok: true, tables: [{ table_id: "table1", tournament_table_id: "table1",
+        table_name: "Test", table_session_id: "session1", control_epoch: 1,
+        max_seats: 9, player_count: 1, has_live_hand: true }] }, error: null };
+    }
+    return { data: name === "get_tournament_tables" ? [{ table_id: "table1", table_name: "Test" }] : name === "heartbeat_lock" ? { status: "success", locked_by: "actor1" } : null, error: null };
+  },
   from: (table: string) => {
     let cols = "";
     const result = () => ({ data: table === "tournaments" ? { id: "tour1" }
@@ -47,8 +57,34 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.seatStack = 30000; mock.resumeRead = null; });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it("does not change pending reveal identity when verified table metadata becomes unavailable", async () => {
+    mock.resume = true;
+    mock.deferred = true;
+    const responders: Array<(value: unknown) => void> = [];
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
+    let first!: Promise<void>;
+    act(() => { first = result.current.handleShowHoleCards(); });
+    mock.tableReadFails = true;
+    act(() => { result.current.retryTableLoad(); });
+    await waitFor(() => expect(result.current.tableLoadState).toBe("error"));
+    expect(result.current.handId).toBe("hand1");
+    let second!: Promise<void>;
+    act(() => { second = result.current.handleShowHoleCards(); });
+    const callsWhileMetadataUnavailable = responders.length;
+    await act(async () => {
+      for (const respond of responders) respond({ data: { status: "success",
+        data: { status: "success", entry_count: 1 } }, error: null });
+      await Promise.all([first, second]);
+    });
+    expect(callsWhileMetadataUnavailable).toBe(1);
+  });
   it.each([
     ["tournament", "cards", "success"], ["unmount", "cards", "success"],
     ["tournament", "runout", "success"], ["unmount", "runout", "success"],
