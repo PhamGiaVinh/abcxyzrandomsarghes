@@ -396,7 +396,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
           node tests/dealerSwing/operationalInventory.concurrent.mjs
-          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
+          node --test scripts/ops/dealer-rest78-release-plan.test.mjs
+          node --input-type=module -e "import {atomicSql} from './scripts/ops/dealer-rest78-release-plan.mjs'; console.log(atomicSql());" | psql -X -v ON_ERROR_STOP=1
+          node --input-type=module -e "import {postcheckSql,loadMigration} from './scripts/ops/dealer-rest78-release-plan.mjs'; import {receiptSql} from './scripts/ops/floor-37-47-protected-apply.mjs'; console.log(postcheckSql()); console.log(receiptSql(loadMigration()));" | psql -X -v ON_ERROR_STOP=1
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs
