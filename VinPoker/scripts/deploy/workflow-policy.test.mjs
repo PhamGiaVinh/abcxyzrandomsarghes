@@ -244,6 +244,18 @@ test("frontend or tournament-only dispatch does not require selecting dealer fun
   assert.match(workflow, /Duplicate dealer Edge function/);
 });
 
+test("all dump stages preload the pinned image while keeping dumps and catalog probes", () => {
+  assert.equal([...workflow.matchAll(/preload-postgres-dump-image\.mjs/g)].length, 3);
+  assert.equal([...workflow.matchAll(/supabase db dump --linked --schema public/g)].length, 3);
+  assert.equal([...workflow.matchAll(/capture-live-schema-contract-catalog\.mjs/g)].length, 3);
+  for (const name of ['Link project and re-probe live contract', 'Re-probe frontend live contracts']) {
+    const start = workflow.indexOf(`- name: ${name}`);
+    const step = workflow.slice(start, workflow.indexOf('working-directory:', start));
+    assert.ok(step.indexOf('preload-postgres-dump-image.mjs') < step.indexOf('supabase db dump'));
+  }
+  assert.match(validationWorkflow, /PINNED_MIRROR_PG17_BINARY_RUNTIME_PASS_NO_PRODUCTION_ACCESS/);
+});
+
 test("every live probe derives its profile from the exact target checkout", () => {
   const probes = [...workflow.matchAll(/probe-live-schema-contracts\.mjs([\s\S]{0,300})/g)];
   assert.equal(probes.length, 4);

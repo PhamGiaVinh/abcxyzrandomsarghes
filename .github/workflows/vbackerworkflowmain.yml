@@ -334,6 +334,9 @@ jobs:
           set -euo pipefail
           supabase link --project-ref "${SUPABASE_PROJECT_REF}"
           if [[ "${CRITICAL_TARGETS}" != "[]" ]]; then
+            node "${GITHUB_WORKSPACE}/control-plane/VinPoker/scripts/deploy/preload-postgres-dump-image.mjs"
+          fi
+          if [[ "${CRITICAL_TARGETS}" != "[]" ]]; then
             # Critical Edge deployments retain the full schema dump as offline evidence.
             supabase db dump --linked --schema public --file "${RUNNER_TEMP}/live-schema.sql"
           fi
@@ -460,6 +463,7 @@ jobs:
         run: |
           set -euo pipefail
           supabase link --project-ref "${SUPABASE_PROJECT_REF}"
+          node "${GITHUB_WORKSPACE}/control-plane/VinPoker/scripts/deploy/preload-postgres-dump-image.mjs"
           supabase db dump --linked --schema public --file "${RUNNER_TEMP}/live-schema.sql"
           node "${GITHUB_WORKSPACE}/control-plane/VinPoker/scripts/deploy/capture-live-schema-contract-catalog.mjs" \
             --project-ref "${SUPABASE_PROJECT_REF}" \
@@ -542,6 +546,7 @@ jobs:
         run: |
           set -euo pipefail
           supabase link --project-ref "${SUPABASE_PROJECT_REF}"
+          node "${GITHUB_WORKSPACE}/control-plane/VinPoker/scripts/deploy/preload-postgres-dump-image.mjs"
           supabase db dump --linked --schema public --file "${RUNNER_TEMP}/live-schema.sql"
           node "${GITHUB_WORKSPACE}/control-plane/VinPoker/scripts/deploy/capture-live-schema-contract-catalog.mjs" \
             --project-ref "${SUPABASE_PROJECT_REF}" \
