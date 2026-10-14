@@ -26,4 +26,25 @@ describe('Floor tournament read states',()=>{
   expect(screen.getByText('TEST active tournament')).toBeInTheDocument();
   expect(screen.queryByText('Đã kết thúc')).not.toBeInTheDocument();
  });
+ it('labels registration-open tournaments without presenting them as completed',()=>{
+  read.data=[{id:'tour-test',name:'TEST registration open',status:'registration_open',start_time:'2026-10-14T10:00:00Z',buy_in:0,players_remaining:8,current_level:1,current_blinds:null}];
+  render(<OpsTournaments/>);
+  fireEvent.click(screen.getByRole('button',{name:'Tất cả (1)'}));
+  expect(screen.getByText('Đang đăng ký')).toBeInTheDocument();
+  expect(screen.queryByText('Đã kết thúc')).not.toBeInTheDocument();
+ });
+ it('shows paused tournaments in the operational list rather than hiding them as completed',()=>{
+  read.data=[{id:'tour-test',name:'TEST paused',status:'paused',start_time:'2026-10-14T10:00:00Z',buy_in:0,players_remaining:8,current_level:1,current_blinds:null}];
+  render(<OpsTournaments/>);
+  expect(screen.getByText('TEST paused')).toBeInTheDocument();
+  expect(screen.getByText('Tạm dừng')).toBeInTheDocument();
+  expect(screen.queryByText('Đã kết thúc')).not.toBeInTheDocument();
+ });
+ it('retains unknown status as text in the all list instead of claiming completion',()=>{
+  read.data=[{id:'tour-test',name:'TEST unknown',status:'future_status',start_time:'2026-10-14T10:00:00Z',buy_in:0,players_remaining:8,current_level:1,current_blinds:null}];
+  render(<OpsTournaments/>);
+  fireEvent.click(screen.getByRole('button',{name:'Tất cả (1)'}));
+  expect(screen.getByText('future status')).toBeInTheDocument();
+  expect(screen.queryByText('Đã kết thúc')).not.toBeInTheDocument();
+ });
 });

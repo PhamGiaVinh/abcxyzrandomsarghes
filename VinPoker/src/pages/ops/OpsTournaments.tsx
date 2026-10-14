@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   ChevronRight, Plus, Play, Activity, Edit, Trophy, History, Minus,
@@ -22,18 +23,20 @@ import {
 import type { Tournament } from "@/types/tournament";
 import { FloorVoiceAlertInbox } from "@/components/floor/FloorVoiceAlertInbox";
 import { FEATURES } from "@/lib/featureFlags";
+import { tournamentStatusCategory, tournamentStatusLabel, type TournamentStatusCategory } from "@/lib/tournament/statusPresentation";
 
 /**
  * Giải đấu (mobileOpsV2) — bản NỐI DỮ LIỆU THẬT (reads danh sách A1).
  * Danh sách giải đọc từ `useTournaments(clubId)` (đúng hook desktop dùng), ngữ cảnh CLB qua `useOperatorClubs()`.
  * Ghi chú: mọi thao tác ghi ở sheet đi qua RPC/RLS hiện có; không fallback mock và không tự apply migration.
  */
-type StatusKey = "running" | "break" | "upcoming" | "closed";
+type StatusKey = TournamentStatusCategory;
 const STATUS_CHIP: Record<StatusKey, string> = {
   running: "bg-emerald-400/12 text-emerald-300",
   break: "bg-amber-400/12 text-amber-300",
   upcoming: "bg-amber-400/12 text-amber-300",
   closed: "bg-white/6 text-[#9b8e97]",
+  unknown: "bg-white/6 text-[#9b8e97]",
 };
 
 interface TVM {
@@ -42,14 +45,10 @@ interface TVM {
 }
 
 const vnd = (n: number) => n.toLocaleString("vi-VN");
-function toVM(t: Tournament): TVM {
+function toVM(t: Tournament, translate: (key: string) => string): TVM {
   const a = t as unknown as Record<string, unknown>;
-  const active = a.status === "active";
-  const running = active || t.status === "live" || t.status === "final_table";
-  const isBreak = t.status === "break";
-  const upcoming = t.status === "upcoming" || t.status === "registering" || t.status === "drawing";
-  const statusKey: StatusKey = running ? "running" : isBreak ? "break" : upcoming ? "upcoming" : "closed";
-  const statusLabel = active ? "Đang hoạt động" : running ? "Đang chơi" : isBreak ? "Giải lao" : upcoming ? "Sắp diễn ra" : t.status === "cancelled" ? "Đã huỷ" : "Đã kết thúc";
+  const statusKey = tournamentStatusCategory(t.status);
+  const statusLabel = tournamentStatusLabel(t.status, translate);
   const time = typeof a.start_time === "string" ? new Date(a.start_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "—";
   const buyIn = typeof a.buy_in === "number" ? vnd(a.buy_in) : "—";
   const entries = t.players_remaining ?? (typeof a.current_players === "number" ? a.current_players : 0);
@@ -64,6 +63,7 @@ const LIVE_STATUS_OPTIONS = [
 ] as const;
 
 export default function OpsTournaments() {
+  const { t: translate } = useTranslation();
   const navigate = useNavigate();
   const client = useSupabaseClient();
   const queryClient = useQueryClient();
@@ -102,7 +102,7 @@ export default function OpsTournaments() {
     lateRegCloseLevel: "6",
   });
 
-  const allVMs = useMemo(() => (tournaments ?? []).map((t) => toVM(t as unknown as Tournament)), [tournaments]);
+  const allVMs = useMemo(() => (tournaments ?? []).map((t) => toVM(t as unknown as Tournament, translate)), [tournaments, translate]);
   const rows = useMemo(() => {
     if (filter === "live") return allVMs.filter((r) => r.statusKey === "running" || r.statusKey === "break");
     return allVMs;

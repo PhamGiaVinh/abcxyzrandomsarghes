@@ -3,6 +3,10 @@ name: Ops V3 Tracker Dealer read-only
 on:
   pull_request:
     paths:
+      - "VinPoker/src/lib/tournament/statusPresentation*"
+      - "VinPoker/src/components/floor/TournamentManagerShared.tsx"
+      - "VinPoker/src/components/floor/TournamentCard.status.test.tsx"
+      - "VinPoker/src/pages/ops/OpsTournaments*"
       - ".github/workflows/ops-v3-tracker-dealer.yml"
       - "VinPoker/src/OpsApp.tsx"
       - "VinPoker/src/ops/auth/OpsAuthProvider*"
@@ -130,6 +134,9 @@ jobs:
           src/components/cashier/tournament-live/ClockPanel.readScope.test.tsx
           tests/floorProduction/createdTournamentSelection.render.test.tsx
           src/components/cashier/TournamentLivePanel.summary.test.tsx
+          src/components/floor/TournamentCard.status.test.tsx
+          src/pages/ops/OpsTournamentsRead.test.tsx
+          src/lib/tournament/statusPresentation.test.ts
           src/hooks/useTournamentParticipationSummary.test.tsx
           src/components/LiveStateEditor.test.tsx
           src/lib/tournamentParticipation.test.ts
@@ -197,6 +204,8 @@ jobs:
       # The legacy Floor/SuperAdmin summary is outside the targeted ops config.
       - name: Type-check complete application
         working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npx tsc -b
 
       - name: Type-check Tracker and Dealer Control workspaces

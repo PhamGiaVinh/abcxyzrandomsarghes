@@ -20,6 +20,7 @@ import { BLIND_PRESETS, type BlindLevel, type BlindTemplate } from "@/lib/blindP
 import { isValidBlindDraft } from "@/lib/blindDraftSuggest";
 import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
 import { useAuth } from "@/hooks/useAuth";
+import { tournamentStatusLabel } from "@/lib/tournament/statusPresentation";
 
 // Shared building blocks for the Floor tournament boards (Daily + Multi-day) and the
 // legacy TournamentManagerPanel. Extracted verbatim so both surfaces reuse one source
@@ -744,7 +745,7 @@ export function TournamentCard({
         </div>
       </div>
       <Select value={t2.status} onValueChange={(v) => onSetStatus(t2.id, v as any)}>
-        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="h-8 text-xs"><SelectValue>{tournamentStatusLabel(t2.status, t)}</SelectValue></SelectTrigger>
         <SelectContent>
           <SelectItem value="scheduled">{t("clubAdmin.scheduled")}</SelectItem>
           <SelectItem value="live">{t("clubAdmin.live")}</SelectItem>

@@ -1,7 +1,7 @@
 import { TableAppearanceEditor } from "@/components/tracker/TableAppearanceEditor";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
+import { tournamentStatusLabel as statusLabel } from "@/lib/tournament/statusPresentation";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTournamentParticipationSummary } from "@/hooks/useTournamentParticipationSummary";
@@ -48,21 +48,12 @@ const STATUS_STYLES: Record<string, string> = {
   final_table: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
-// Operator-facing labels for tournament live statuses (colors above stay per-status).
-const LABELLED_STATUSES = new Set(["upcoming", "registering", "drawing", "active", "playing",
-  "live", "break", "paused", "final_table", "completed", "cancelled"]);
-
 type LiveTournament = Tournament & { live_status?: string | null };
 
 // Presentation only. Keep catalog status unchanged for all existing writers.
 function displayStatus(tournament: LiveTournament): string {
   if (tournament.status === "completed" || tournament.status === "cancelled") return tournament.status;
   return tournament.live_status ?? tournament.status;
-}
-
-function statusLabel(status: string, t: TFunction): string {
-  return LABELLED_STATUSES.has(status) ? t(`tournamentLive.statusLabels.${status}`)
-    : status.trim() ? status.replace(/_/g, " ") : t("tournamentLive.statusLabels.unknown");
 }
 
 // Statuses where the floor still has setup work to do before play runs smoothly.
