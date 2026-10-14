@@ -108,4 +108,15 @@ END $rest_boundary$;
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT current_state='available' FROM public.dealer_attendance
  WHERE id='e1800000-0000-4000-8000-000000000043'),'rejected rest boundary preserves attendance');
+UPDATE public.dealer_attendance SET last_released_at=now()-interval '15 minutes'
+WHERE id='e1800000-0000-4000-8000-000000000043';
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
+ 'e1800000-0000-4000-8000-000000000043','isolated_rest_boundary')->>'outcome'='changed',
+ '15-minute fully-rested dealer can be planned without shifting due time');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT planned_relief_at=now()-interval '1 minute' FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'planning does not move established relief time');
 ROLLBACK;
