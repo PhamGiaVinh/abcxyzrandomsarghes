@@ -214,9 +214,9 @@ export async function pass15RotationPlanner(
   // Step 6: Write path — verify + sequential RPC calls with timeout
   const tableIdsToVerify = result.pairs.map(p => p.tableId);
   const stillFree = await verifyStillUnassigned(admin, tableIdsToVerify, clubId);
-  const writablePairs = result.pairs
-    .filter(p => stillFree.has(p.tableId))
-    .slice(0, MAX_PAIRS_PER_RUN);
+  const eligiblePairs = result.pairs.filter(p => stillFree.has(p.tableId));
+  const writablePairs = eligiblePairs.slice(0, MAX_PAIRS_PER_RUN);
+  const deferredCount = eligiblePairs.length - writablePairs.length;
 
   if (writablePairs.length < result.pairs.length) {
     const capped = result.pairs.length - writablePairs.length;
@@ -291,13 +291,13 @@ export async function pass15RotationPlanner(
   const solverDurationMs = Date.now() - solverStart;
   console.log(
     `[Pass 1.5] solver=${result.solverVersion} assigned=${assignedCount} ` +
-    `unassigned=${result.unassignedTables.length} raceLost=${raceLostCount} ` +
+    `unassigned=${result.unassignedTables.length + deferredCount} deferred=${deferredCount} raceLost=${raceLostCount} ` +
     `durationMs=${solverDurationMs}${dryRun ? " (dryRun)" : ""}`
   );
 
   return {
     assigned: assignedCount,
-    unassigned: result.unassignedTables.length,
+    unassigned: result.unassignedTables.length + deferredCount,
     raceLost: raceLostCount,
     errors,
     missReasons,
