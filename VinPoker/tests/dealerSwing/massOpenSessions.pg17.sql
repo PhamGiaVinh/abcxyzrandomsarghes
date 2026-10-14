@@ -140,14 +140,17 @@ SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedul
  WHERE id='e1800000-0000-4000-8000-000000000070'),'stale retry does not bump plan version twice');
 -- Canonical close with an announced replacement must not strand that incoming
 -- attendance or carry the previous incarnation's plan into a reopen.
+-- Browser cannot SELECT table_sessions directly. Supply its already-loaded
+-- expected revision from fixture setup, without granting any new privilege.
+SELECT set_config('test.close_expected_revision',revision::text,true)
+FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023';
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role='authenticated';
 DO $close_with_next$
 DECLARE result jsonb; session_revision bigint;
 BEGIN
- SELECT revision INTO session_revision FROM public.table_sessions
- WHERE id='e1800000-0000-4000-8000-000000000023';
+ session_revision:=current_setting('test.close_expected_revision')::bigint;
  result:=public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',session_revision,
    'e1800000-0000-4000-8000-000000000080');
  RAISE NOTICE 'CLOSE_WITH_NEXT_RPC_OUTCOME=%',result;
