@@ -1,5 +1,5 @@
 DO $$ BEGIN
- IF current_database() NOT IN ('vinpoker_manual_card75_release_20261014','vinpoker_manual_card75_rollback_20261014')
+ IF current_database() NOT IN ('vinpoker_manual_card75_release_20261014','vinpoker_manual_card75_rollback_20261014','vinpoker_manual_card75_payload_20261014')
  OR current_user<>'postgres' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
  OR inet_server_port()<>55464 OR current_setting('manual75.fixture',true) IS DISTINCT FROM 'owned-manual-authority'
  THEN RAISE EXCEPTION 'owned_manual75_payload_harness_required'; END IF;
