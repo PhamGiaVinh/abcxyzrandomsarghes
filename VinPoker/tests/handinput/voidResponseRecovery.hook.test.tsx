@@ -66,6 +66,32 @@ beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncode
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it("does not label an edited draft revealed when the original manual payload commits", async () => {
+    mock.resume = true;
+    mock.deferred = true;
+    let respond!: (value: unknown) => void;
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.invoke.mockImplementation(() => new Promise(resolve => { respond = resolve; }));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.handleShowHoleCards(); });
+    await waitFor(() => expect(mock.invoke).toHaveBeenCalledTimes(1));
+    const body = mock.invoke.mock.calls[0][1].body;
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Jh", "Js"] }); });
+    mock.manualRevision = 14;
+    await act(async () => {
+      respond({ data: { status: "success", data: { status: "success", request_key: body.request_id,
+        hand_id: "hand1", table_session_id: "session1", control_epoch: 1, expected_source_revision: 12,
+        committed_source_revision: 14, entry_count: 1 } }, error: null });
+      await pending;
+    });
+    expect(mock.successToast).not.toHaveBeenCalled();
+    expect(result.current.playerHoleCards).toEqual({ p1: ["Jh", "Js"] });
+    expect(mock.invoke).toHaveBeenCalledTimes(1);
+  });
   it("does not dispatch manual cards when recovery metadata cannot persist, including after remount", async () => {
     mock.resume = true;
     mock.deferred = true;
