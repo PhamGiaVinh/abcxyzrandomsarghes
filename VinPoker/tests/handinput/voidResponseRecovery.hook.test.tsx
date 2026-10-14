@@ -10,6 +10,7 @@ const mock = vi.hoisted(() => ({
   resume: false,
   deferred: false,
   tableReadFails: false,
+  manualRevision: 12,
   seatStack: 30000,
   resumeRead: null as Promise<unknown> | null,
   readFilters: [] as Array<[string, unknown]>,
@@ -39,6 +40,9 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       : table === "tournament_seats" ? [{ player_id: "p1", entry_number: 1, seat_number: 1, chip_count: mock.seatStack, player_name: "TEST" }]
       : table === "hand_actions" ? []
       : table === "tournament_hands" && cols === "id, hand_number" ? { id: "hand1", hand_number: 1 }
+      : table === "tournament_hands" && cols.includes("source_revision") ? { id: "hand1", tournament_id: "tour1",
+        table_id: "table1", tournament_table_id: "table1", table_session_id: "session1",
+        source_revision: mock.manualRevision, status: "in_progress", is_voided: false }
       : table === "tournament_hands" && cols.includes("is_voided") ? { id: mock.readId, is_voided: mock.committed }
       : table === "tournament_hands" && mock.resume && cols.includes("community_cards") ? { id: "hand1", hand_number: 1, table_id: "table1", button_seat: 1, community_cards: [] }
       : table === "tournament_hands" && mock.resume && cols.includes("tracker_level_number") ? { tracker_level_number: null, tracker_small_blind: null, tracker_big_blind: null, tracker_bba: null }
@@ -59,6 +63,34 @@ import { useStandaloneHandInput } from "@/components/cashier/tournament-live/han
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it("reconciles an unknown manual response with the original request before another writer", async () => {
+    mock.resume = true;
+    mock.deferred = true;
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.invoke.mockImplementation(async (_name, { body }) => {
+      if (body.action === "get_manual_card_receipt_v1") return { data: { status: "success", data: {
+        status: "committed", request_key: body.request_id, hand_id: "hand1", table_session_id: "session1",
+        control_epoch: 1, expected_source_revision: 12, committed_source_revision: 14,
+        entry_count: 1, request_hash: "a".repeat(64),
+      } }, error: null };
+      mock.manualRevision = 14;
+      return { data: null, error: new Error("lost response after synthetic commit") };
+    });
+    await act(async () => { await result.current.handleShowHoleCards(); });
+    const first = mock.invoke.mock.calls[0][1].body;
+    expect(first).toMatchObject({ action: "show_manual_cards_v1", table_session_id: "session1",
+      control_epoch: 1, expected_source_revision: 12, request_id: expect.any(String) });
+    await act(async () => { await result.current.handleShowHoleCards(); });
+    expect(mock.invoke.mock.calls.filter(([, { body }]) => body.action === "show_manual_cards_v1")).toHaveLength(1);
+    const lookups = mock.invoke.mock.calls.filter(([, { body }]) => body.action === "get_manual_card_receipt_v1");
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0][1].body).toMatchObject({ request_id: first.request_id,
+      expected_source_revision: 12, player_hole_cards: first.player_hole_cards });
+  });
   it("does not change pending reveal identity when verified table metadata becomes unavailable", async () => {
     mock.resume = true;
     mock.deferred = true;
