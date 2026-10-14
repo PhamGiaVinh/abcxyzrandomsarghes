@@ -13,7 +13,7 @@ const guard=`DO $$ BEGIN
  IF current_database()<>'vinpoker_manual76_read_20261014' OR current_user<>'postgres'
  OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>${Number(process.env.PGPORT)}
  OR (SELECT count(*) FROM public.clubs)<>2
- OR md5(replace(pg_get_functiondef('floor_private.tracker_hand_input_context_v4(uuid)'::regprocedure),chr(13),''))<>'62a140af9a26974a2912dde48cdf1b80'
+ OR md5(replace(pg_get_functiondef('floor_private.tracker_hand_input_context_v4(uuid)'::regprocedure),chr(13),''))<>'588f4bc2f1b8ce3839bb42a635f7b6a0'
  OR md5(replace(pg_get_functiondef('public.get_tracker_hand_input_tables_v4(uuid)'::regprocedure),chr(13),''))<>'b815d03fd7b596eba689f7a788fc49fc'
  OR md5(replace(pg_get_functiondef('public.get_tracker_hand_input_tables_v3(uuid)'::regprocedure),chr(13),''))<>'f5bd425da1ca2d94367c5136de16bdc1'
  OR md5(replace(pg_get_functiondef('floor_private.tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)'::regprocedure),chr(13),''))<>'37faf2e637e06d255c0f9186d3a7e9e9'

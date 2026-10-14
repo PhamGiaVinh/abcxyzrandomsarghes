@@ -22,7 +22,7 @@ BEGIN
   SELECT tt.id AS tournament_table_id,gt.id AS table_id,gt.table_name,tt.max_seats,
    s.id AS table_session_id,s.control_epoch,s.control_mode,
    (gt.id IS NOT NULL AND s.id IS NOT NULL AND s.closed_at IS NULL AND s.club_id=club
-    AND s.tournament_id=p_tournament_id AND s.game_table_id=gt.id AND gt.club_id=club
+    AND s.tournament_id=p_tournament_id AND s.game_table_id=gt.id AND tt.game_table_id IS NOT DISTINCT FROM gt.id AND gt.club_id=club
     AND s.control_epoch IS NOT NULL AND s.control_epoch>0 AND s.control_mode IN ('manual','tracker')) AS compatible,
    (SELECT count(*)=1 FROM public.dealer_assignments a WHERE a.table_id=gt.id
     AND a.status='assigned' AND a.released_at IS NULL) AND EXISTS(
@@ -127,11 +127,30 @@ DO $$ DECLARE result jsonb; BEGIN
 END $$;
 RESET ROLE;
 UPDATE public.dealers SET status='active' WHERE id='87000000-0000-4000-8000-000000000001';
+UPDATE public.tournament_tables SET game_table_id=NULL
+ WHERE id='84000000-0000-4000-8000-000000000002';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','81300000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"sub":"81300000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+DO $$ DECLARE result jsonb; BEGIN
+ result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
+ IF result->>'ok' IS DISTINCT FROM 'true'
+ OR EXISTS(SELECT 1 FROM jsonb_array_elements(result->'tables') t
+  WHERE t->>'tournament_table_id'='84000000-0000-4000-8000-000000000002')
+ OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(result->'invalid_tables') t
+  WHERE t->>'tournament_table_id'='84000000-0000-4000-8000-000000000002' AND t->>'error'='repair_required')
+ THEN RAISE EXCEPTION 'legacy_physical_fallback_offered_unusable_roster: %',result; END IF;
+END $$;
+RESET ROLE;
+UPDATE public.tournament_tables SET game_table_id='83000000-0000-4000-8000-000000000002'
+ WHERE id='84000000-0000-4000-8000-000000000002';
 UPDATE public.tournament_tables SET table_session_id=NULL
  WHERE id='84000000-0000-4000-8000-000000000002';
 UPDATE public.dealer_assignments SET table_session_id=NULL
  WHERE id='88000000-0000-4000-8000-000000000001';
 SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','81200000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"sub":"81200000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 DO $$ DECLARE result jsonb; BEGIN
  result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
  IF result->>'error' IS DISTINCT FROM 'actor_not_allowed' THEN RAISE EXCEPTION 'missing_session_dealer_read_exposed: %',result; END IF;

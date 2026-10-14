@@ -9,7 +9,7 @@ DECLARE expected record; actual record;
 BEGIN
  IF current_user<>'postgres' THEN RAISE EXCEPTION 'reads76_77_compensation_owner_required'; END IF;
  FOR expected IN SELECT * FROM (VALUES
- ('floor_private.tracker_hand_input_context_v4(uuid)','62a140af9a26974a2912dde48cdf1b80',true,'s'),
+ ('floor_private.tracker_hand_input_context_v4(uuid)','588f4bc2f1b8ce3839bb42a635f7b6a0',true,'s'),
  ('public.get_tracker_hand_input_tables_v4(uuid)','b815d03fd7b596eba689f7a788fc49fc',false,'s'),
  ('floor_private.tracker_roster_snapshot_v2(uuid,uuid,uuid,bigint)','1e55b9ed040ac4a384265df912c2edce',true,'v'),
  ('public.get_tracker_roster_snapshot_v2(uuid,uuid,uuid,bigint)','2d58c68cc297e4df045c30a6c71444c5',false,'v')) f(signature,digest,definer,volatility) LOOP

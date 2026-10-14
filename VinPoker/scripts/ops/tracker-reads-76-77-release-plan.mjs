@@ -4,8 +4,8 @@ import {canonicalSqlText,scanMigrationSource} from './ops-1359-release-gate.mjs'
 import {loadMigration as load75,postcheckSql as postcheck75} from './tracker-manual-75-release-plan.mjs';
 import {receiptSql} from './floor-37-47-protected-apply.mjs';
 export function loadMigrations(){return [
- ['20270128000076','tracker_hand_input_scoped_read_v1','9dbdc7a37578e1b34acbb3df4343d308b8f5617907ceafc295bbc312162b0714'],
- ['20270128000077','tracker_roster_scoped_read_v2','e717a92d9a398aa77cb62300930b295bdd9e904c9dc1ccedfc4ff449058342d4'],
+ ['20270128000076','tracker_hand_input_scoped_read_v1','15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54'],
+ ['20270128000077','tracker_roster_scoped_read_v2','9ac013f3a8be2cfd2d657f223b5182a3ebe48217e1a6df6b7eb5cad0120e6062'],
 ].map(([version,name,hash])=>{const filename=`${version}_${name}.sql`;const sql=canonicalSqlText(readFileSync(new URL(`../../supabase/migrations/${filename}`,import.meta.url),'utf8'));
  if(createHash('sha256').update(sql).digest('hex')!==hash||scanMigrationSource(sql).mode!=='outer-transaction')throw Error('Exact scoped-read SQL drift');return {version,name,hash,filename,sql};});}
 function dependency(){const item=load75(),post=postcheck75();

@@ -17,7 +17,7 @@ BEGIN
  ('public.get_tracker_roster_snapshot_v1(uuid,uuid,uuid,bigint)','9fecaf3e1287fbf1a6912bb1eebbd1b3'),
  ('floor_private.tracker_roster_seat_token_v1(uuid,integer)','c45fb95991fe1f3f010455f646c75091'),
  ('floor_private.tournament_entry_display_v1(uuid,uuid,uuid,integer)','b7f94cbd3c2df431d317d6ba8180edbf'),
- ('floor_private.tracker_hand_input_context_v4(uuid)','62a140af9a26974a2912dde48cdf1b80')) f(signature,digest) LOOP
+ ('floor_private.tracker_hand_input_context_v4(uuid)','588f4bc2f1b8ce3839bb42a635f7b6a0')) f(signature,digest) LOOP
   IF md5(replace(pg_get_functiondef(signature::regprocedure),chr(13),'')) IS DISTINCT FROM digest
    OR (SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid=signature::regprocedure)<>'postgres'
   THEN RAISE EXCEPTION 'roster77_dependency_drift: %',signature; END IF;

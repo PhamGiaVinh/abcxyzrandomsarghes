@@ -31,7 +31,7 @@ BEGIN
   SELECT tt.id AS tournament_table_id,gt.id AS table_id,gt.table_name,tt.max_seats,
    s.id AS table_session_id,s.control_epoch,s.control_mode,
    (gt.id IS NOT NULL AND s.id IS NOT NULL AND s.closed_at IS NULL AND s.club_id=club
-    AND s.tournament_id=p_tournament_id AND s.game_table_id=gt.id
+    AND s.tournament_id=p_tournament_id AND s.game_table_id=gt.id AND tt.game_table_id IS NOT DISTINCT FROM gt.id
     AND s.control_epoch IS NOT NULL AND s.control_epoch>0 AND s.control_mode IN ('manual','tracker')) AS compatible,
    (SELECT count(*)=1 FROM public.dealer_assignments a WHERE a.table_id=gt.id
     AND a.status='assigned' AND a.released_at IS NULL) AND EXISTS(
@@ -72,7 +72,7 @@ DO $postcheck$
 DECLARE signature text; expected_definer boolean; expected_digest text; actual record;
 BEGIN
  FOR signature,expected_definer,expected_digest IN SELECT * FROM (VALUES
- ('floor_private.tracker_hand_input_context_v4(uuid)',true,'62a140af9a26974a2912dde48cdf1b80'),
+ ('floor_private.tracker_hand_input_context_v4(uuid)',true,'588f4bc2f1b8ce3839bb42a635f7b6a0'),
  ('public.get_tracker_hand_input_tables_v4(uuid)',false,'b815d03fd7b596eba689f7a788fc49fc')) AS functions(signature,definer,digest) LOOP
   SELECT * INTO STRICT actual FROM pg_proc WHERE oid=signature::regprocedure;
   IF md5(replace(pg_get_functiondef(actual.oid),chr(13),'')) IS DISTINCT FROM expected_digest
