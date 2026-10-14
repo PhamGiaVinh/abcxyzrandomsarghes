@@ -102,6 +102,69 @@ DO $$ DECLARE revision_before bigint; rejected boolean:=false; hand_before text;
   AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),'receipt fault rolls back cards/revision/receipt');
 END $$;
 DROP TRIGGER manual_receipt_fault ON floor_private.manual_card_receipts_prototype;
+DO $$ DECLARE bad_cards jsonb; verdict jsonb; snapshot_before text; snapshot_after text; revision_before bigint; ordinal integer:=0; BEGIN
+ SELECT source_revision INTO revision_before FROM public.tournament_hands
+ WHERE id='86000000-0000-4000-8000-000000000001';
+ SELECT md5(jsonb_build_array(to_jsonb(h),
+  (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p WHERE p.hand_id=h.id),
+  (SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY q.source_revision),'[]'::jsonb)
+   FROM public.tracker_historical_display_queue q WHERE q.hand_id=h.id))::text)
+ INTO snapshot_before FROM public.tournament_hands h WHERE id='86000000-0000-4000-8000-000000000001';
+ FOREACH bad_cards IN ARRAY ARRAY[
+  '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":1,"hole_cards":["Jh","Jh"]}]'::jsonb,
+  '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":99,"hole_cards":["Jh","Js"]}]'::jsonb
+ ] LOOP
+  ordinal:=ordinal+1;
+  SET LOCAL ROLE authenticated;
+  verdict:=public.show_manual_cards_prototype('86000000-0000-4000-8000-000000000001',
+   '83500000-0000-4000-8000-000000000001',1,
+   revision_before,
+   'manual-prototype-invalid-'||ordinal,bad_cards);
+  RESET ROLE;
+  PERFORM pg_temp.manual_assert(verdict->>'error'=CASE ordinal
+    WHEN 1 THEN 'Duplicate cards in array' WHEN 2 THEN 'player_not_in_hand' END
+   AND verdict->>'status' IS DISTINCT FROM 'success',
+   'invalid deck or entry must be denied');
+ END LOOP;
+ SELECT md5(jsonb_build_array(to_jsonb(h),
+  (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p WHERE p.hand_id=h.id),
+  (SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY q.source_revision),'[]'::jsonb)
+   FROM public.tracker_historical_display_queue q WHERE q.hand_id=h.id))::text)
+ INTO snapshot_after FROM public.tournament_hands h WHERE id='86000000-0000-4000-8000-000000000001';
+ PERFORM pg_temp.manual_assert(snapshot_before=snapshot_after
+  AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
+  'invalid deck/entry leaves full hand, players, queue and receipts unchanged');
+END $$;
+\echo MANUAL_CARD_PROTOTYPE_INVALID_DECK_ENTRY_ZERO_WRITE_PASS
+-- Controlled epoch ABA fixture: this is not a canonical mode-switch RPC test.
+UPDATE public.table_sessions SET control_epoch=control_epoch+1
+ WHERE id='83500000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SELECT public.show_manual_cards_prototype('86000000-0000-4000-8000-000000000001',
+ '83500000-0000-4000-8000-000000000001',1,:manual_before_revision,'manual-prototype-key-0001',
+ '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":1,"hole_cards":["Qh","Qs"]}]'::jsonb)::text AS payload \gset manual_epoch_replay_
+RESET ROLE;
+SELECT pg_temp.manual_assert(:'manual_epoch_replay_payload'::jsonb->>'error'='stale_manual_card_context'
+ AND (SELECT source_revision=:manual_after_revision FROM public.tournament_hands
+  WHERE id='86000000-0000-4000-8000-000000000001')
+ AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
+ 'old successful receipt does not bypass current epoch');
+UPDATE public.table_sessions SET control_epoch=control_epoch+1
+ WHERE id='83500000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SELECT public.show_manual_cards_prototype('86000000-0000-4000-8000-000000000001',
+ '83500000-0000-4000-8000-000000000001',1,:manual_after_revision,'manual-prototype-epoch-aba',
+ '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":1,"hole_cards":["Jh","Js"]}]'::jsonb)::text AS payload \gset manual_epoch_aba_
+RESET ROLE;
+SELECT pg_temp.manual_assert(:'manual_epoch_aba_payload'::jsonb->>'error'='stale_manual_card_context'
+ AND (SELECT source_revision=:manual_after_revision FROM public.tournament_hands
+  WHERE id='86000000-0000-4000-8000-000000000001')
+ AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
+ 'same tracker mode at a later generation cannot accept old epoch');
+-- Restore only the synthetic rollback fixture for the subsequent release case.
+UPDATE public.table_sessions SET control_epoch=1
+ WHERE id='83500000-0000-4000-8000-000000000001';
+\echo MANUAL_CARD_PROTOTYPE_EPOCH_REPLAY_ABA_PASS
 UPDATE public.dealer_assignments SET status='completed',released_at=now()
  WHERE id='88000000-0000-4000-8000-000000000001';
 SET ROLE authenticated;
