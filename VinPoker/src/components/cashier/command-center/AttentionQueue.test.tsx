@@ -1,10 +1,22 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import AttentionQueue from "./AttentionQueue";
-import type { DealerAssignment } from "@/hooks/useDealerSwing";
+import type { DealerAssignment, NextDealerPrediction } from "@/hooks/useDealerSwing";
 import DealerSwingSummaryStrip from "../dealer-swing/DealerSwingSummaryStrip";
 
 describe("empty live-table priority lane", () => {
+  it.each([false, true])("known replacement does not hide overdue state; healthy current session stays green (overdue=%s)", (overdue) => {
+    const onSwing = vi.fn();
+    const assignment = { id: "assignment", table_id: "physical-23", table_session_id: "session-23", status: "assigned", overtime_started_at: null } as DealerAssignment;
+    render(<AttentionQueue horizontal assignments={[assignment]} dealers={[]}
+      tables={[{ id: "physical-23", table_name: "Bàn 23", status: "active", table_session_id: "session-23" }]}
+      tableAssignmentMap={{ "physical-23": assignment }} timelineByTableId={{ "physical-23": { minutesLeft: overdue ? -10 : 10, isOverdue: overdue, showNextDealerSoon: true } }}
+      nextDealerMap={{ "physical-23": { nextDealerName: "TEST next" } as NextDealerPrediction }}
+      nowMs={1000} autoSwingEnabled={false} onAssign={vi.fn()} onSwing={onSwing} onSendToBreak={vi.fn()} />);
+    if (overdue) expect(screen.getByRole("alert")).toHaveTextContent("quá hạn");
+    else expect(screen.getByText("Sàn đang ổn định")).toBeInTheDocument();
+    expect(onSwing).not.toHaveBeenCalled();
+  });
   it.each(["old-session", "released"])("does not turn %s assignment into current overdue evidence", (kind) => {
     const assignment = { id: "assignment", table_id: "physical-23", table_session_id: kind === "old-session" ? "session-old" : "session-23",
       status: "assigned", released_at: kind === "released" ? "2026-10-14T10:00:00Z" : null, overtime_started_at: null } as DealerAssignment;
