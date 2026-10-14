@@ -616,6 +616,13 @@ jobs:
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.pg17.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.compensation.pg17.sql
+      - name: Manual75 exact release plan and atomic ledger rollback
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          node --test scripts/ops/tracker-manual-75-release-plan.test.mjs scripts/ops/tracker-manual-75-protected-apply.test.mjs
+          createdb --template=vinpoker_visibility74_atomic_ci vinpoker_manual75_atomic_ci
+          PGDATABASE=vinpoker_manual75_atomic_ci MANUAL75_PG_TEST=1 node --test scripts/ops/tracker-manual-75-atomic-pg.test.mjs
       - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
         working-directory: VinPoker
         run: |
