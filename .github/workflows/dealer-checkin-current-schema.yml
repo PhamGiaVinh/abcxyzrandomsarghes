@@ -124,6 +124,7 @@ on:
       - 'VinPoker/tests/dealerSwing/closedSessionAttendance.currentSchema.mjs'
       - 'VinPoker/supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql'
       - 'VinPoker/tests/dealerSwing/massOpenSessions.pg17.sql'
+      - 'VinPoker/tests/dealerSwing/closeNextReservation.concurrent.mjs'
       - 'VinPoker/supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql'
       - 'VinPoker/supabase/functions/run-dealer-ready-backup/**'
       - 'VinPoker/supabase/functions/process-swing-on-dealer-ready/**'
@@ -407,6 +408,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_close79_overlap
+          PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql
