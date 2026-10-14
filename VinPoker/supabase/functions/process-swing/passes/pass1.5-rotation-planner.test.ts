@@ -3,6 +3,23 @@ import { pass15RotationPlanner } from "./pass1.5-rotation-planner.ts";
 
 const CLUB_ID = "22222222-2222-2222-2222-222222222222";
 
+Deno.test("failed commit-eligibility snapshot is an error, not a clean zero backlog", async () => {
+  let reads = 0, commits = 0;
+  const row = { id: "a", table_id: "t", attendance_id: "out", version: 1, pre_assigned_attendance_id: null,
+    game_tables: { game_type: "holdem", tour_tier: "LOW" } };
+  const chain: any = {};
+  for (const method of ["select", "eq", "is", "gte", "lt", "in"]) chain[method] = () => chain;
+  chain.then = (done: (value: unknown) => unknown) => Promise.resolve(++reads === 1
+    ? { data: [row], error: null } : { data: null, error: { message: "snapshot503" } }).then(done);
+  const result = await pass15RotationPlanner({ from: () => chain, rpc: () => { commits++; } }, CLUB_ID, options(), {
+    candidateBuilder: async () => ({ candidates: [], avgBreakRatio: null, status: "ok" }),
+    solver: (() => ({ pairs: [{ tableId: "t", attendanceId: "in", score: 1 }], unassignedTables: [], solverVersion: "test" })) as any,
+  });
+  assertEquals(commits, 0);
+  assertEquals(result.errors.length, 1);
+  assertEquals(result.errors[0].error, "snapshot503");
+});
+
 Deno.test("40-table planner reports the 30 deferred tables when the run cap is 10", async () => {
   const rows = Array.from({ length: 40 }, (_, i) => ({
     id: `assignment-${i}`, table_id: `table-${i}`, attendance_id: `out-${i}`,
