@@ -436,6 +436,9 @@ async function announceDueSlots(
     }
     const outcome = (lockResult as any)?.outcome;
     if (outcome !== "locked") {
+      if (!["race_lost", "dealer_unavailable", "rest_guard"].includes(outcome)) {
+        errors.push({ scope: `lock:${row.table_id}`, error: typeof lockResult?.detail === "string" ? lockResult.detail : `Invalid lock outcome: ${String(outcome)}` });
+      }
       console.log(`[Pass R] lock_rotation_slot ${row.table_id}: ${outcome} — re-plan next tick`);
       continue;
     }
