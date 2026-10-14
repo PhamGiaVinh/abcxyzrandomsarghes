@@ -1174,7 +1174,7 @@ Deno.serve(async (req) => {
     }
     // A JSONB denial from the canonical action RPC is an authoritative failure,
     // not a successful Edge envelope. This keeps non-Voice callers fail-closed too.
-    if ((action === "record_action" || action === "commit_voice_board" || action === "commit_voice_hole_cards" || action === "commit_voice_finish") && result.data && typeof result.data === "object") {
+    if ((action === "record_action" || action === "show_hole_cards" || action === "commit_voice_board" || action === "commit_voice_hole_cards" || action === "commit_voice_finish") && result.data && typeof result.data === "object") {
       const verdict = result.data as { error?: unknown };
       if (typeof verdict.error === "string") {
         return new Response(JSON.stringify({ error: verdict.error, code: verdict.error }), {

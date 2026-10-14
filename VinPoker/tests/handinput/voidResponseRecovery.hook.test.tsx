@@ -49,6 +49,21 @@ import { useStandaloneHandInput } from "@/components/cashier/tournament-live/han
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it("reports revealed manual cards only for the full canonical batch", async () => {
+    mock.resume = true;
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.successToast.mockClear();
+    mock.errorToast.mockClear();
+    mock.invoke.mockResolvedValue({ data: { status: "success", data: { status: "success", entry_count: 1 } }, error: null });
+    await act(async () => { await result.current.handleShowHoleCards(); });
+    expect(mock.invoke).toHaveBeenCalledTimes(1);
+    expect(mock.successToast).toHaveBeenCalledWith("Hole cards revealed");
+    expect(mock.errorToast).not.toHaveBeenCalled();
+  });
   it.each([
     { status: "success", data: { error: "hand_not_found" } },
     { status: "success", data: { error: "lock_lost" } },

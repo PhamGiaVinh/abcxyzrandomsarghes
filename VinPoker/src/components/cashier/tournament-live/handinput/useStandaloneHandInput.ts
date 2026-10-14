@@ -2913,7 +2913,12 @@ export function useStandaloneHandInput(tournamentId: string) {
       const { data, error } = await supabase.functions.invoke("tournament-live-update", {
         body: buildShowHoleCardsBody({ tournamentId, handId, playerHoleCards: cardsPayload }),
       });
-      if (error || data?.error) throw new Error(await readEdgeError(error, data));
+      const verdict = data?.data;
+      if (error || data?.error || data?.status !== "success" || verdict?.error
+        || verdict?.status !== "success" || !Number.isInteger(verdict.entry_count)
+        || verdict.entry_count !== cardsPayload.length) {
+        throw new Error(typeof verdict?.error === "string" ? verdict.error : await readEdgeError(error, data));
+      }
       holeCardsBroadcastRef.current = true; // persisted server-side → undo keeps revealDone
       toast.success("Hole cards revealed");
       markSync("sent", `Đã lật ${cardsPayload.length} tay bài`);
