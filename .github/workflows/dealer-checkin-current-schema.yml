@@ -428,6 +428,9 @@ jobs:
           node --test scripts/ops/dealer-close79-81-release-plan.test.mjs
           PGDATABASE=vinpoker_ops_close7981_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           PGDATABASE=vinpoker_ops_close7981_atomic_ci CLOSE7981_PG_TEST=1 node --test scripts/ops/dealer-close79-81-atomic-pg.test.mjs
+          createdb -T vinpoker_ops_close7981_atomic_ci vinpoker_ops_next80_atomic_ci
+          node --test scripts/ops/dealer-next80-release-plan.test.mjs
+          PGDATABASE=vinpoker_ops_next80_atomic_ci NEXT80_PG_TEST=1 node --test scripts/ops/dealer-next80-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000081_dealer_close_forecast_slots_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
