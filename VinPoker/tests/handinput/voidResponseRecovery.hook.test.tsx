@@ -172,7 +172,8 @@ describe("void unknown response through the real controller", () => {
     expect(mock.invoke).toHaveBeenCalledTimes(1);
     expect(mock.invoke.mock.calls[0][1].body.hand_id).toBe("hand1");
     expect(result.current.orphanHand).toBeNull();
-    expect(mock.readFilters).toEqual([["id", "hand1"], ["tournament_id", "tour1"], ["table_id", "table1"]]);
+    expect(mock.readFilters).toEqual([["id", "hand1"], ["tournament_id", "tour1"], ["table_id", "table1"],
+      ["table_session_id", "session1"]]);
   });
   it.each(["not_committed", "read_error", "wrong_hand", "nested_denial", "unknown_success"])("does not claim success for %s", async (mode) => {
     mock.invoke.mockImplementation(async () => {
