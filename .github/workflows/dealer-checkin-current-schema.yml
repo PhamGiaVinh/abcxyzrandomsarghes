@@ -396,7 +396,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
           node tests/dealerSwing/operationalInventory.concurrent.mjs
-          node --test scripts/ops/dealer-rest78-release-plan.test.mjs
+          node --test scripts/ops/dealer-rest78-release-plan.test.mjs scripts/ops/dealer-rest78-protected-apply.test.mjs
           # The recovered public-schema baseline excludes the private migration
           # ledger. This empty isolated fixture tests atomic receipts only;
           # production ledger parity must be verified separately before apply.
