@@ -67,6 +67,7 @@ BEGIN
  END IF;
  IF plan_count=1 AND ((plan_row.status='predicted' AND assignment_row.pre_assigned_attendance_id IS NOT NULL)
   OR (plan_row.status='announced' AND (plan_row.in_attendance_id IS NULL
+    OR plan_row.in_attendance_id=assignment_row.attendance_id
     OR assignment_row.pre_assigned_attendance_id IS DISTINCT FROM plan_row.in_attendance_id))) THEN
   RETURN jsonb_build_object('outcome','plan_requires_repair');
  END IF;
