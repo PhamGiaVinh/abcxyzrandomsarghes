@@ -51,7 +51,13 @@ function parseSummary(value:unknown) {
 }
 
 /** RPC-only, read-only. A failed canonical read is not a client-calculated balance. */
-export function useClubFinanceSummary({from,to,clubFilter}:FinanceQuery) {
+export function useClubFinanceSummary({from,to,clubFilter}:FinanceQuery): {
+  loading: boolean;
+  error: string | null;
+  clubs: {id: string; name: string}[];
+  summary: ClubFinanceSummary | null;
+  reload: () => Promise<void>;
+} {
   const {user,session,isAdmin,loading:authLoading}=useAuth();
   // Local identity fences A -> B -> A and session refresh without persisting tokens.
   const scope=JSON.stringify([from,to,clubFilter,user?.id,isAdmin,financeSessionReadEpoch(session),authLoading]);
