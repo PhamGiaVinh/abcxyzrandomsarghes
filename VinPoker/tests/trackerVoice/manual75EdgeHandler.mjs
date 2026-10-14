@@ -46,9 +46,11 @@ for(const options of [{header:false},{authenticated:false}]){
 }
 const conflict=await request(intent,{data:{error:'idempotency_conflict'}});
 assert.equal(conflict.status,409);assert.equal(conflict.calls.length,1);
-const read=await request({tournament_id:intent.tournament_id,action:'get_manual_card_receipt_v1',request_id:intent.request_id},
+const read=await request({...intent,action:'get_manual_card_receipt_v1'},
  {data:{status:'not_found'}});
-assert.equal(read.status,200);assert.deepEqual(read.calls,[{name:'get_tracker_manual_card_receipt_v1',params:{p_request_key:intent.request_id}}]);
+assert.equal(read.status,200);assert.deepEqual(read.calls,[{name:'get_tracker_manual_card_receipt_v1',params:{
+ p_request_key:intent.request_id,p_expected_payload:{hand_id:intent.hand_id,table_session_id:intent.table_session_id,
+  control_epoch:1,expected_source_revision:12,player_hole_cards:intent.player_hole_cards}}}]);
 for(const data of [null,{}, {...receipt,hand_id:'another-hand'}, {...receipt,entry_count:0}]){
  const unknown=await request(intent,{data});
  assert.equal(unknown.status,502,'unknown/mismatched RPC proof must not become HTTP success');
