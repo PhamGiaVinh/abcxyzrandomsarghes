@@ -66,6 +66,43 @@ SELECT pg_temp.assert_true((SELECT planned_relief_at=now()-interval '1 minute'
  FROM public.dealer_rotation_schedule WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0),
  'prediction confirmation preserves due time and audited previous advisory choice');
 -- An announced schedule with no operational reservation is inconsistent; it
+-- Before replacing an old announced reservation, reject cross-club ownership
+-- and another active assignment claiming that old incoming attendance.
+INSERT INTO public.clubs(id,owner_id,name,region) VALUES('e1800000-0000-4000-8000-000000000003',
+ 'e1800000-0000-4000-8000-000000000099','Other operator TEST','TEST');
+INSERT INTO public.dealers(id,club_id,full_name,status) VALUES('e1800000-0000-4000-8000-000000000035',
+ 'e1800000-0000-4000-8000-000000000002','Replacement TEST','active');
+INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+VALUES('e1800000-0000-4000-8000-000000000045','e1800000-0000-4000-8000-000000000035',
+ 'e1800000-0000-4000-8000-000000000030',current_date,'checked_in',now(),'available');
+UPDATE next80_context c SET version=a.version FROM public.dealer_assignments a WHERE a.id=c.id;
+SAVEPOINT old_reservation_cross_club;
+UPDATE public.dealers SET club_id='e1800000-0000-4000-8000-000000000003'
+ WHERE id='e1800000-0000-4000-8000-000000000034';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.assert_true((SELECT public.operator_plan_next_dealer_v1(table_session_id,id,version,
+ 'e1800000-0000-4000-8000-000000000045','e1800000-0000-4000-8000-000000000093')->>'outcome'='plan_requires_repair'
+ FROM next80_context),'cross-club old reservation cannot be released by replacement');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance
+ WHERE id='e1800000-0000-4000-8000-000000000044'),'cross-club old marker untouched');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts
+ WHERE request_id='e1800000-0000-4000-8000-000000000093'),'cross-club replacement writes no receipt');
+ROLLBACK TO SAVEPOINT old_reservation_cross_club;
+SAVEPOINT old_reservation_competing_claim;
+UPDATE public.dealer_assignments SET pre_assigned_attendance_id='e1800000-0000-4000-8000-000000000044'
+ WHERE table_id='e1800000-0000-4000-8000-000000000013' AND released_at IS NULL;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.assert_true((SELECT public.operator_plan_next_dealer_v1(table_session_id,id,version,
+ 'e1800000-0000-4000-8000-000000000045','e1800000-0000-4000-8000-000000000094')->>'outcome'='plan_requires_repair'
+ FROM next80_context),'competing claim on old incoming blocks replacement');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance
+ WHERE id='e1800000-0000-4000-8000-000000000044'),'competing claim cannot free old incoming');
+SELECT pg_temp.assert_true((SELECT current_state='available' FROM public.dealer_attendance
+ WHERE id='e1800000-0000-4000-8000-000000000045'),'rejected replacement leaves new incoming available');
+ROLLBACK TO SAVEPOINT old_reservation_competing_claim;
+-- The missing assignment/attendance half of an announced triad is not a noop.
 -- must not receive a successful same-dealer no-op receipt.
 UPDATE public.dealer_assignments SET pre_assigned_attendance_id=NULL,pre_assigned_at=NULL,planned_relief_at=NULL
  WHERE id=(SELECT id FROM next80_context);
