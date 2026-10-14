@@ -6,6 +6,8 @@ import { useFinanceSummaryRpcOnly } from "@/hooks/accountant/useFinanceSummaryRp
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { financeReadErrorKey } from "@/lib/financeSummaryRead";
+import { useTranslation } from "react-i18next";
 
 function currentYM(): { year: number; month: number } {
   const d = new Date();
@@ -23,6 +25,7 @@ function shiftYM(year: number, month: number, delta: number): { year: number; mo
  * No write controls; numbers of an un-closed period are provisional by doctrine.
  */
 export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
+  const { t } = useTranslation();
   const [ym, setYM] = useState(currentYM);
   const { from, to } = useMemo(() => {
     const f = new Date(Date.UTC(ym.year, ym.month - 1, 1));
@@ -58,8 +61,8 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
           ))}
         </div>
       ) : q.isError ? (
-        <Card className="p-5 border-destructive/40 bg-destructive/10 text-[13px] text-destructive">
-          Không đọc được báo cáo — bạn chưa có quyền xem P&L CLB này (cần áp DB 20261236000000) hoặc lỗi mạng.
+        <Card role="alert" className="p-5 border-destructive/40 bg-destructive/10 text-[13px] text-destructive">
+          {t(financeReadErrorKey(q.error))}
         </Card>
       ) : s ? (
         <>

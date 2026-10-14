@@ -2040,6 +2040,13 @@
       "prF": "Coming in PR F"
     }
   },
+  "financeRead": {
+    "forbidden": "You do not have permission to view this club's financial report.",
+    "missingBackend": "The server does not have the required report version. Figures cannot be verified.",
+    "invalid": "The report data is incomplete or invalid. Figures cannot be verified.",
+    "authRequired": "Your login session must be verified again to read the report.",
+    "unavailable": "The financial report could not be loaded. Check your connection and try again."
+  },
   "tournamentLive": {
     "statusLabels": {
       "upcoming": "Upcoming", "registering": "Registration open", "drawing": "Seat draw",

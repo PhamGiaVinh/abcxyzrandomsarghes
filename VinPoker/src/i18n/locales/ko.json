@@ -1825,6 +1825,13 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "financeRead": {
+    "forbidden": "이 클럽의 재무 보고서를 볼 권한이 없습니다.",
+    "missingBackend": "서버에 필요한 보고서 버전이 없습니다. 수치를 확인할 수 없습니다.",
+    "invalid": "보고서 데이터가 불완전하거나 잘못되었습니다. 수치를 확인할 수 없습니다.",
+    "authRequired": "보고서를 읽으려면 로그인 세션을 다시 확인해야 합니다.",
+    "unavailable": "재무 보고서를 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요."
+  },
   "tournamentLive": {
     "statusLabels": {
       "upcoming": "예정", "registering": "등록 중", "drawing": "좌석 추첨 중",

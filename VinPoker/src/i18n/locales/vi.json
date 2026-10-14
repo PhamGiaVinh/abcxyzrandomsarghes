@@ -2040,6 +2040,13 @@
       "prF": "Sẽ có ở PR F"
     }
   },
+  "financeRead": {
+    "forbidden": "Bạn chưa có quyền xem báo cáo tài chính của CLB này.",
+    "missingBackend": "Máy chủ chưa có phiên bản báo cáo cần thiết. Không thể xác minh số liệu.",
+    "invalid": "Dữ liệu báo cáo không đầy đủ hoặc không hợp lệ. Không thể xác minh số liệu.",
+    "authRequired": "Cần xác minh lại phiên đăng nhập để đọc báo cáo.",
+    "unavailable": "Không tải được báo cáo tài chính. Hãy kiểm tra kết nối và thử lại."
+  },
   "tournamentLive": {
     "statusLabels": {
       "upcoming": "Sắp diễn ra", "registering": "Đang đăng ký", "drawing": "Bốc thăm chỗ",

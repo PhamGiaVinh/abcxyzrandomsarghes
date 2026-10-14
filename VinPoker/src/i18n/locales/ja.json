@@ -1829,6 +1829,13 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "financeRead": {
+    "forbidden": "このクラブの財務レポートを閲覧する権限がありません。",
+    "missingBackend": "サーバーに必要なレポートのバージョンがありません。数値を確認できません。",
+    "invalid": "レポートのデータが不完全または無効です。数値を確認できません。",
+    "authRequired": "レポートを読むにはログインセッションの再確認が必要です。",
+    "unavailable": "財務レポートを読み込めませんでした。接続を確認して再試行してください。"
+  },
   "tournamentLive": {
     "statusLabels": {
       "upcoming": "開始前", "registering": "登録受付中", "drawing": "席抽選中",
