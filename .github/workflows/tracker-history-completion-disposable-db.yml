@@ -1,0 +1,67 @@
+name: Tracker history completion disposable PostgreSQL 17
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/tracker-history-completion-disposable-db.yml"
+      - "VinPoker/tests/trackerSettlement/historyCompletion.disposableDb.*.sql"
+      - "VinPoker/tests/trackerSettlement/historyCompletion.disposableDb.contract.test.mjs"
+      - "VinPoker/tests/publicSpectatorV2/disposableDb.fixture.sql"
+      - "VinPoker/supabase/migrations/20261238000002_tracker_settlement_outcome_store.sql"
+      - "VinPoker/supabase/migrations/20270110000007_tracker_historical_settlement_display.sql"
+      - "VinPoker/supabase/migrations/20270115000019_tracker_history_completion_queue.sql"
+      - "VinPoker/supabase/migrations/20270115000022_tracker_history_completion_audit_fixes.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tracker-history-completion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisite extension dependencies and fixture
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -f tests/publicSpectatorV2/disposableDb.fixture.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyCompletion.disposableDb.dependencies.sql
+      - name: Apply exact tracker settlement prerequisites to disposable PostgreSQL only
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261238000002_tracker_settlement_outcome_store.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270110000007_tracker_historical_settlement_display.sql
+      - name: Apply exact history completion migrations to disposable PostgreSQL only
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270115000019_tracker_history_completion_queue.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270115000022_tracker_history_completion_audit_fixes.sql
+      - name: Prove queue, worker, blind correction, hash fence, and public history behavior
+        working-directory: VinPoker
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyCompletion.disposableDb.integration.sql
+      - name: Run workflow and migration source contract
+        working-directory: VinPoker
+        run: node --test tests/trackerSettlement/historyCompletion.disposableDb.contract.test.mjs
