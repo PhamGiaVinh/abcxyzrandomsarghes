@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {loadMigration,atomicSql as atomic79,preflightSql as preflight79} from './dealer-close79-release-plan.mjs';
+import {loadMigration,atomicSql as atomic79,preflightSql as preflight79,classifyPreflight} from './dealer-close79-release-plan.mjs';
 import {canonicalSqlText,scanMigrationSource} from './ops-1359-release-gate.mjs';
 export function loadPackage(){
  const first=loadMigration(),version='20270128000081',name='dealer_close_forecast_slots_v1';
@@ -35,3 +35,18 @@ export function receiptSql(){const items=loadPackage();const matches=items.map(m
 export function postcheckSql(){return `BEGIN READ ONLY;${finalObject()}
  DO $receipts7981$ DECLARE proof json;BEGIN SELECT (${receiptSql().replace(/^SELECT /,'').replace(/;$/,'')}) INTO proof;
  IF (proof->>'count')::int<>2 OR (proof->>'exact')::boolean IS DISTINCT FROM true THEN RAISE EXCEPTION 'close7981_receipt_drift';END IF;END $receipts7981$;COMMIT;`;}
+export function executePackage(transport,report=()=>{}){
+ classifyPreflight(transport.json(preflightSql()));
+ try{transport.execute(atomicSql());}catch{
+  let status='unavailable';try{const r=transport.json(receiptSql());status=r.count===2&&r.exact===true?'committed-exact':r.count===0?'not-recorded':'drift';}catch{}
+  report(`STOP close79+81 ${status}; no retry or downstream deploy`);throw Error('Close79+81 outcome requires review');
+ }
+ try{
+  const r=transport.json(receiptSql());if(r.count!==2||r.exact!==true)throw Error('Combined receipt drift');
+  transport.execute(postcheckSql());
+ }catch{
+  report('STOP close79+81 commit-acknowledged/postcheck-unverified; no retry or downstream deploy');
+  throw Error('Close79+81 postcheck requires review');
+ }
+ report('CLOSE79_81_COMMITTED_EXACT_FINAL_OBJECT_POSTCHECK_PASS');
+}
