@@ -601,6 +601,8 @@ jobs:
           createdb --template="$PGDATABASE" vinpoker_manual_card75_overlap_20261014
           PGDATABASE=vinpoker_manual_card75_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --manual-hole-authority --manual-hole-prototype --manual-hole-release75 --manual-hole-release75-payload --manual-hole-release75-ci --manual75-overlap-fixture
           PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75CommittedOverlap.pg17.sql
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual_card75_compensation_20261014
+          PGDATABASE=vinpoker_manual_card75_compensation_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75Compensation.pg17.sql
           node tests/trackerVoice/manual75IntentPolicy.mjs
           node tests/trackerVoice/manual75EdgeHandler.mjs
       - name: Public hand visibility74 actor tenant and write compatibility
