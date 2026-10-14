@@ -77,4 +77,5 @@ jobs:
           src/lib/tv/mapClockData.test.ts
           src/lib/tv/mapTvData.test.ts
           src/lib/tv/mapDisplayState.test.ts
+          src/lib/tv/displayRpc.test.ts
           src/hooks/useTournamentTvDataCore.test.tsx

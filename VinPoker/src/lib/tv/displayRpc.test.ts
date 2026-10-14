@@ -21,4 +21,11 @@ describe("paired TV participation RPC", () => {
     expect((await rpcGetTvDisplayState("test-only-token")).error).toBe("503");
     expect(state.rpc).toHaveBeenCalledOnce();
   });
+  it("returns a rejected transport as a read error so polling can recover", async () => {
+    state.rpc.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const result = await rpcGetTvDisplayState("test-only-token");
+    expect(result.data).toBeNull();
+    expect(result.error).toBe("Failed to fetch");
+    expect(state.rpc).toHaveBeenCalledOnce();
+  });
 });
