@@ -89,7 +89,8 @@ BEGIN
  IF (verdict->>'entry_count')::integer<>jsonb_array_length(p_cards) THEN
   RAISE EXCEPTION 'manual_card_writer_result_mismatch'; END IF;
  verdict:=verdict||jsonb_build_object('hand_id',p_hand_id,'table_session_id',p_session_id,
-  'control_epoch',p_epoch,'request_key',p_request_key);
+  'control_epoch',p_epoch,'request_key',p_request_key,'expected_source_revision',p_revision,
+  'committed_source_revision',(SELECT source_revision FROM public.tournament_hands WHERE id=p_hand_id));
  INSERT INTO floor_private.manual_card_receipts_prototype VALUES(actor,p_request_key,v_request_hash,verdict);
  RETURN verdict;
 EXCEPTION WHEN lock_not_available THEN RETURN jsonb_build_object('error','manual_card_context_busy');
@@ -117,7 +118,9 @@ BEGIN
  IF NOT FOUND THEN RETURN jsonb_build_object('status','not_found'); END IF;
  RETURN jsonb_build_object('status','committed','request_key',p_request_key,'request_hash',request_hash,
   'hand_id',receipt->'hand_id','table_session_id',receipt->'table_session_id',
-  'control_epoch',receipt->'control_epoch','entry_count',receipt->'entry_count');
+  'control_epoch',receipt->'control_epoch','entry_count',receipt->'entry_count',
+  'expected_source_revision',receipt->'expected_source_revision',
+  'committed_source_revision',receipt->'committed_source_revision');
 END $$;
 REVOKE ALL ON FUNCTION floor_private.manual_card_receipt_prototype(text)
  FROM PUBLIC,anon,authenticated,service_role;

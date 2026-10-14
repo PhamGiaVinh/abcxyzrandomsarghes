@@ -34,6 +34,8 @@ SELECT pg_temp.manual_assert(:'manual_first_payload'::jsonb->>'status'='success'
 SELECT source_revision AS revision FROM public.tournament_hands
  WHERE id='86000000-0000-4000-8000-000000000001' \gset manual_after_
 SELECT pg_temp.manual_assert(:manual_after_revision>:manual_before_revision
+ AND (:'manual_first_payload'::jsonb->>'expected_source_revision')::bigint=:manual_before_revision
+ AND (:'manual_first_payload'::jsonb->>'committed_source_revision')::bigint=:manual_after_revision
  AND (SELECT hole_cards='["Qh","Qs"]'::jsonb FROM public.hand_players
   WHERE hand_id='86000000-0000-4000-8000-000000000001' AND seat_number=2)
  AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),'cards/revision/receipt committed together');
@@ -241,6 +243,8 @@ SELECT set_config('request.jwt.claims','{"sub":"81500000-0000-4000-8000-00000000
 SELECT public.get_manual_card_receipt_prototype('manual-prototype-key-0001')::text AS payload \gset manual_reconcile_outsider_
 RESET ROLE;
 SELECT pg_temp.manual_assert(:'manual_reconcile_payload'::jsonb->>'status'='committed'
+ AND (:'manual_reconcile_payload'::jsonb->>'expected_source_revision')::bigint=:manual_before_revision
+ AND (:'manual_reconcile_payload'::jsonb->>'committed_source_revision')::bigint=:manual_after_revision
  AND :'manual_reconcile_payload'::jsonb->>'request_hash'=
   encode(extensions.digest(jsonb_build_array('81200000-0000-4000-8000-000000000001'::uuid,
    '86000000-0000-4000-8000-000000000001'::uuid,'83500000-0000-4000-8000-000000000001'::uuid,
