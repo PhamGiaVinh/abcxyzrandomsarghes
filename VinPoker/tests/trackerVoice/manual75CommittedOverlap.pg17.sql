@@ -33,7 +33,10 @@ BEGIN
   SELECT public.show_tracker_manual_cards_v1('86000000-0000-4000-8000-000000000001',
    '83500000-0000-4000-8000-000000000001',1,%s,'manual75-real-overlap-0001',%L::jsonb)
  $write$,before_revision,cards::text)) AS remote(result jsonb);
- IF first_result->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'canonical_remote_write_failed: %',first_result; END IF;
+ IF first_result->>'status' IS DISTINCT FROM 'success'
+ OR (first_result->>'committed_source_revision')::bigint IS NULL
+ OR (first_result->>'committed_source_revision')::bigint<=before_revision
+ THEN RAISE EXCEPTION 'canonical_remote_write_failed_or_revision_not_advanced: %',first_result; END IF;
  -- The real writer has returned but its transaction is still open, retaining
  -- its actual receipt/hand/session locks. No sleep or mocked lock holder.
  PERFORM set_config('request.jwt.claim.sub','81200000-0000-4000-8000-000000000001',true);
