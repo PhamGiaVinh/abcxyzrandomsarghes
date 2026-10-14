@@ -138,6 +138,23 @@ jobs:
       - name: Test exact asset63+65 release transport
         run: node --test VinPoker/scripts/ops/physical-asset-63-65-release-plan.test.mjs VinPoker/scripts/ops/physical-asset-63-65-protected-apply.test.mjs
 
+      - name: Test pinned dump image transport without production access
+        run: node --test VinPoker/scripts/deploy/preload-postgres-dump-image.test.mjs
+
+      - name: Verify actual pinned mirror image and pg_dump binary without production access
+        working-directory: VinPoker
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { spawnSync } from 'node:child_process';
+          import { VERSION, TARGET, preload } from './scripts/deploy/preload-postgres-dump-image.mjs';
+          preload(VERSION);
+          const result = spawnSync('docker', ['run', '--rm', '--entrypoint', 'pg_dump', TARGET, '--version'], { encoding: 'utf8', timeout: 60000 });
+          assert.equal(result.status, 0, 'Pinned pg_dump failed to execute');
+          assert.match(result.stdout, /pg_dump \(PostgreSQL\) 17\./);
+          console.log('PINNED_MIRROR_PG17_BINARY_RUNTIME_PASS_NO_PRODUCTION_ACCESS');
+          NODE
+
       - name: Test exact production apply runners
         run: node --test VinPoker/scripts/floor/apply-floor-clock-control.test.mjs VinPoker/scripts/floor/apply-floor-operator-scope-acl.test.mjs VinPoker/scripts/dealer-swing/apply-shortage-alert-lifecycle.test.mjs VinPoker/scripts/dealer-swing/apply-phone-completion-migrations.test.mjs VinPoker/scripts/dealer-swing/set-phone-completion-hsop-uat.test.mjs VinPoker/scripts/payroll/apply-dealer-pt-global-accrual.test.mjs VinPoker/scripts/payroll/apply-dealer-pt-wage-readiness-acl.test.mjs VinPoker/scripts/payroll/apply-dealer-payroll-statement-contract.test.mjs VinPoker/scripts/payroll/repair-dealer-payroll-statement-delivery.test.mjs VinPoker/scripts/payroll/set-dealer-payroll-statement-delivery-hsop-uat.test.mjs VinPoker/scripts/deploy/validate-live-public-schema-artifact.test.mjs VinPoker/scripts/deploy/workflow-policy.test.mjs VinPoker/scripts/deploy/test-dealer-pt-wage-disposable.test.mjs VinPoker/scripts/deploy/verify-dealer-pt-wage-migration-inventory.test.mjs VinPoker/scripts/ops/apply-sepay-scope-q0.test.mjs
       - name: Test scoped Stop64 protected transport
