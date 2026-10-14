@@ -235,6 +235,15 @@ test("assign-dealer deploy is an explicit protected critical selection", () => {
   assert.match(criticalJob, /environment:\s*\n\s*name: dealer-swing-production-critical/);
 });
 
+test("frontend or tournament-only dispatch does not require selecting dealer functions", () => {
+  const input = workflow.slice(workflow.indexOf("      deploy_dealer_functions:"), workflow.indexOf("      deploy_tournament_live_clock:"));
+  assert.match(input, /required: false/);
+  assert.match(input, /default: ""/);
+  assert.match(workflow, /\[\[ -z "\$function_name" \]\] && continue/);
+  assert.match(workflow, /Unsupported dealer Edge function/);
+  assert.match(workflow, /Duplicate dealer Edge function/);
+});
+
 test("every live probe derives its profile from the exact target checkout", () => {
   const probes = [...workflow.matchAll(/probe-live-schema-contracts\.mjs([\s\S]{0,300})/g)];
   assert.equal(probes.length, 4);
