@@ -289,6 +289,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   const rosterFlightRef = useRef(createSingleFlightGuard());
   const voidFlightRef = useRef(createSingleFlightGuard());
   const voidOwnsSubmittingRef = useRef(false);
+  const manualCardsFlightRef = useRef(createSingleFlightGuard());
+  const manualCardsOwnsSubmittingRef = useRef(false);
   const rosterContext = availableTables.find((table) => table.id === tableId);
   const rosterScope = `${user?.id}:${tournamentId}:${rosterContext?.tournamentTableId}:${rosterContext?.tableSessionId}:${rosterContext?.controlEpoch}`;
   if (rosterScopeRef.current !== rosterScope) {
@@ -374,8 +376,9 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (activeTournamentRef.current === tournamentId) return;
 
     activeTournamentRef.current = tournamentId;
-    if (voidOwnsSubmittingRef.current) {
+    if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
       voidOwnsSubmittingRef.current = false;
+      manualCardsOwnsSubmittingRef.current = false;
       setSubmitting(false);
     }
     tableLoadGuardRef.current.begin("");
@@ -1016,8 +1019,9 @@ export function useStandaloneHandInput(tournamentId: string) {
   // ----- Table select -----------------------------------------------------
   const handleTableChange = useCallback(
     async (newTableId: string) => {
-      if (voidOwnsSubmittingRef.current) {
+      if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
         voidOwnsSubmittingRef.current = false;
+        manualCardsOwnsSubmittingRef.current = false;
         setSubmitting(false);
       }
       rosterTokensRef.current.clear();
@@ -2912,6 +2916,8 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error("Chưa nhập bài lỗ cho ai");
       return;
     }
+    if (!manualCardsFlightRef.current.begin()) return;
+    manualCardsOwnsSubmittingRef.current = true;
     setSubmitting(true);
     markSync("sending", "Lật bài");
     try {
@@ -2933,7 +2939,11 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error(e.message);
       markSync("error");
     } finally {
-      if (current()) setSubmitting(false);
+      manualCardsFlightRef.current.finish();
+      if (current() && manualCardsOwnsSubmittingRef.current) {
+        manualCardsOwnsSubmittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   };
 
