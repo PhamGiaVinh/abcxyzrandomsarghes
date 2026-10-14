@@ -5,7 +5,7 @@ const mock = vi.hoisted(() => ({
   committed: false,
   readError: false,
   readId: "hand1",
-  metadataSession: null as string | null,
+  metadataSession: "session1" as string | null,
   readback: null as Promise<unknown> | null,
   resume: false,
   seatStack: 30000,
@@ -47,8 +47,19 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = null; mock.readback = null; mock.resume = false; mock.seatStack = 30000; mock.resumeRead = null; });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  it("does not offer or resume a legacy orphan when the current session is unknown", async () => {
+    mock.metadataSession = null;
+    mock.resume = true;
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    expect(result.current.orphanHand).toBeNull();
+    await act(async () => { expect(await result.current.handleContinueOrphan()).toBe(false); });
+    expect(result.current.handId).toBeNull();
+    expect(mock.invoke).not.toHaveBeenCalled();
+  });
   it("releases old void busy state immediately when tournament changes", async () => {
     let respond!: (value: unknown) => void;
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
@@ -161,7 +172,8 @@ describe("void unknown response through the real controller", () => {
     expect(mock.invoke).toHaveBeenCalledTimes(1);
     expect(mock.invoke.mock.calls[0][1].body.hand_id).toBe("hand1");
     expect(result.current.orphanHand).toBeNull();
-    expect(mock.readFilters).toEqual([["id", "hand1"], ["tournament_id", "tour1"], ["table_id", "table1"]]);
+    expect(mock.readFilters).toEqual([["id", "hand1"], ["tournament_id", "tour1"], ["table_id", "table1"],
+      ["table_session_id", "session1"]]);
   });
   it.each(["not_committed", "read_error", "wrong_hand", "nested_denial", "unknown_success"])("does not claim success for %s", async (mode) => {
     mock.invoke.mockImplementation(async () => {

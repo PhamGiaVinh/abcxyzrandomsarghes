@@ -3,16 +3,30 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-const mock = vi.hoisted(() => ({ rpc: vi.fn(), error: vi.fn() }));
+const mock = vi.hoisted(() => ({ rpc: vi.fn(), error: vi.fn(), staleOrphan: false, currentOrphan: false,
+ resumeReads: [] as Record<string, unknown>[] }));
 vi.mock("sonner", () => ({ toast: { error: mock.error, success: vi.fn(), info: vi.fn() } }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
  auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
  rpc: mock.rpc,
  from: (table: string) => {
   const result = { data: table === "tournaments" ? { id: "tour" } : [], error: null };
+  const filters: Record<string, unknown> = {};
   const chain: any = { then: (resolve: any) => Promise.resolve(result).then(resolve),
-   maybeSingle: async () => ({ data: table === "tournaments" ? { id: "tour" } : null, error: null }) };
+   maybeSingle: async () => ({ data: table === "tournaments" ? { id: "tour" }
+    : table === "tournament_hands" && mock.staleOrphan && filters.status === "in_progress"
+      && filters.table_session_id !== "session-a"
+      ? { id: "old-session-hand", hand_number: 99 }
+      : table === "tournament_hands" && mock.currentOrphan && filters.status === "in_progress"
+        && filters.table_session_id === "session-a" ? { id: "current-session-hand", hand_number: 2 } : null,
+    error: null }),
+   single: async () => {
+    if (table === "tournament_hands") mock.resumeReads.push({ ...filters });
+    return { data: null, error: { message: "Synthetic resume read stopped before writes" } };
+   } };
   for (const method of ["select", "eq", "filter", "order", "limit", "in", "neq", "is", "or"]) chain[method] = () => chain;
+  chain.eq = (key: string, value: unknown) => { filters[key] = value; return chain; };
+  chain.filter = (key: string, _operator: string, value: unknown) => { filters[key] = value; return chain; };
   return chain;
  },
 } }));
@@ -23,11 +37,44 @@ const wrapper = ({ children }: { children: ReactNode }) => <MemoryRouter>{childr
 const snapshot = (args: any) => ({ data: { ok: true, tournament_table_id: args.p_tournament_table_id,
  table_session_id: args.p_table_session_id, control_epoch: args.p_expected_epoch,
  seats: Array.from({ length: 9 }, (_, i) => ({ seat_number: i + 1,
-  seat: i === 0 && mock.rpc.mock.calls.filter(([name]) => name === "set_tracker_table_roster_seat_v2").length >= 2
+  seat: i === 0 && (mock.staleOrphan || mock.currentOrphan
+   || mock.rpc.mock.calls.filter(([name]) => name === "set_tracker_table_roster_seat_v2").length >= 2)
    ? { player_id: "player", entry_number: 1, seat_number: 1, chip_count: 20000, player_name: "TEST" } : null,
   token: "empty" })) }, error: null });
-afterEach(() => { cleanup(); vi.clearAllMocks(); sessionStorage.clear(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); mock.staleOrphan = false; mock.currentOrphan = false;
+ mock.resumeReads.length = 0; sessionStorage.clear(); });
 describe("actual roster hook intent", () => {
+ it("does not offer an in-progress hand from an older incarnation of the same table", async () => {
+  mock.staleOrphan = true;
+  mock.rpc.mockImplementation(async (name: string, args: any) => {
+   if (name === "get_tracker_hand_input_tables_v3") return { data: { ok: true, tables }, error: null };
+   if (name === "get_tracker_roster_snapshot_v1") return snapshot(args);
+   return { data: name === "get_next_hand_number" ? 1 : { ok: true, locks: [] }, error: null };
+  });
+  const h = renderHook(() => useStandaloneHandInput("tour"), { wrapper });
+  await waitFor(() => expect(h.result.current.availableTables).toHaveLength(2));
+  await act(async () => { await h.result.current.handleTableChange("a"); });
+  expect(h.result.current.orphanHand).toBeNull();
+ expect(mock.rpc.mock.calls.some(([name]) => name === "get_next_hand_number")).toBe(true);
+ });
+ it("retains a resumable hand from the verified current session", async () => {
+  mock.currentOrphan = true;
+  mock.rpc.mockImplementation(async (name: string, args: any) => {
+   if (name === "get_tracker_hand_input_tables_v3") return { data: { ok: true, tables }, error: null };
+   if (name === "get_tracker_roster_snapshot_v1") return snapshot(args);
+   return { data: name === "get_next_hand_number" ? 1 : { ok: true, locks: [] }, error: null };
+  });
+  const h = renderHook(() => useStandaloneHandInput("tour"), { wrapper });
+  await waitFor(() => expect(h.result.current.availableTables).toHaveLength(2));
+  await act(async () => { await h.result.current.handleTableChange("a"); });
+  expect(h.result.current.orphanHand).toEqual({ id: "current-session-hand", hand_number: 2 });
+  expect(mock.rpc.mock.calls.some(([name]) => name === "get_next_hand_number")).toBe(false);
+  mock.resumeReads.length = 0;
+  await act(async () => { expect(await h.result.current.handleContinueOrphan({ silent: true })).toBe(false); });
+  expect(mock.resumeReads).toEqual([{ id: "current-session-hand", tournament_id: "tour",
+   table_id: "logical-a", table_session_id: "session-a", status: "in_progress" }]);
+  expect(mock.rpc.mock.calls.some(([name]) => name === "heartbeat_lock" || name === "takeover_hand_lock")).toBe(false);
+ });
  it("does not merge an old confirmed receipt over a newer canonical stack", async () => {
   let snapshots = 0;
   mock.rpc.mockImplementation(async (name: string, args: any) => {
