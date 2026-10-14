@@ -239,6 +239,9 @@ export function useStandaloneHandInput(tournamentId: string) {
   const [endingStacksManuallyEdited, setEndingStacksManuallyEdited] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [playerHoleCards, setPlayerHoleCards] = useState<Record<string, (Card | null)[]>>({});
+  const holeCardsDraftSignature = JSON.stringify(Object.entries(playerHoleCards).sort(([a], [b]) => a.localeCompare(b)));
+  const holeCardsDraftSignatureRef = useRef(holeCardsDraftSignature);
+  holeCardsDraftSignatureRef.current = holeCardsDraftSignature;
   const [orphanHand, setOrphanHand] = useState<{ id: string; hand_number: number } | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
@@ -3021,6 +3024,11 @@ export function useStandaloneHandInput(tournamentId: string) {
             || table?.table_session_id !== intent!.tableSessionId || table.control_epoch !== intent!.controlEpoch
             || table.control_mode !== "tracker") {
             toast.info("Lần lật bài đã được xác nhận; dữ liệu hiện tại đã đổi hoặc chưa tải được. Hãy tải lại bàn.");
+            markSync("error");
+            return;
+          }
+          if (holeCardsDraftSignatureRef.current !== holeCardsDraftSignature) {
+            toast.info("Bài đã gửi được xác nhận, nhưng draft đã thay đổi. Hãy tải lại bài đã lưu trước khi tiếp tục.");
             markSync("error");
             return;
           }
