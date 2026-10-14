@@ -3,19 +3,20 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 
 assert.equal(process.env.PGHOST,'127.0.0.1');
-assert.equal(process.env.PGPORT,'55464');
+assert.equal(process.env.PGPORT,process.argv.includes('--owned-ci')?'55441':'55464');
 assert.equal(process.env.PGUSER,'postgres');
-const database=process.argv.includes('--inactive-contract')?'vinpoker_manual_card75_inactive_20261014':process.argv.includes('--payload-contract')?'vinpoker_manual_card75_payload_20261014':'vinpoker_manual_card75_rollback_20261014';
+const ownedCi=process.argv.includes('--owned-ci');
+const database=ownedCi?'vinpoker_manual_card75_payload_ci':process.argv.includes('--inactive-contract')?'vinpoker_manual_card75_inactive_20261014':process.argv.includes('--payload-contract')?'vinpoker_manual_card75_payload_20261014':'vinpoker_manual_card75_rollback_20261014';
 assert.equal(process.env.PGDATABASE,database);
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS']) assert.ok(!process.env[key]);
-assert.equal(process.platform,'win32','owned Windows/WSL rollback harness only');
-assert.match(process.env.VINPOKER_TEST_WSL_DISTRO??'',/^[A-Za-z0-9_.-]+$/u);
-const args=['-d',process.env.VINPOKER_TEST_WSL_DISTRO,'--','psql','-X','-w','-t','-A','-v','ON_ERROR_STOP=1',
+if(ownedCi){assert.equal(process.platform,'linux');assert.equal(process.env.CI,'true');}
+else {assert.equal(process.platform,'win32');assert.match(process.env.VINPOKER_TEST_WSL_DISTRO??'',/^[A-Za-z0-9_.-]+$/u);}
+const args=['-X','-w','-t','-A','-v','ON_ERROR_STOP=1',
  '-h',process.env.PGHOST,'-p',process.env.PGPORT,'-U',process.env.PGUSER,'-d',process.env.PGDATABASE];
-const run=sql=>spawnSync('wsl',args,{input:sql.replaceAll('\r\n','\n'),encoding:'utf8'});
+const run=sql=>spawnSync(ownedCi?'psql':'wsl',ownedCi?args:['-d',process.env.VINPOKER_TEST_WSL_DISTRO,'--','psql',...args],{input:sql.replaceAll('\r\n','\n'),encoding:'utf8'});
 const guard=`DO $$ BEGIN
  IF current_database()<>'${database}' OR current_user<>'postgres'
- OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>55464
+ OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>${ownedCi?55441:55464}
  OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
  OR EXISTS(SELECT 1 FROM public.clubs) THEN RAISE EXCEPTION 'owned_manual75_rollback_clone_required'; END IF;
 END $$;`;

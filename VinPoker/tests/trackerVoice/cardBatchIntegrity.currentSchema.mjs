@@ -11,6 +11,8 @@ const manualHolePrototype=process.argv.includes('--manual-hole-prototype');
 const manualHoleRelease75=process.argv.includes('--manual-hole-release75');
 const manualHoleRelease75Full=process.argv.includes('--manual-hole-release75-full');
 const manualHoleRelease75Payload=process.argv.includes('--manual-hole-release75-payload');
+const manualHoleRelease75Ci=process.argv.includes('--manual-hole-release75-ci');
+if(manualHoleRelease75Ci){assert.equal(process.platform,'linux');assert.equal(process.env.CI,'true');assert.equal(process.env.PGPORT,'55441');assert.ok(manualHoleRelease75Payload);}
 assert.ok(!manualHoleRelease75Payload||(manualHoleRelease75&&!manualHoleRelease75Full),'payload75 requires its own canonical clone');
 assert.ok(!manualHoleRelease75Full||manualHoleRelease75,'full75 clone requires canonical release75 matrix');
 assert.ok(!manualHoleRelease75||manualHolePrototype,'release75 reuses the guarded manual prototype matrix');
@@ -61,7 +63,7 @@ assert.ok(!authorityBaseline||authority70,'baseline comparison requires authorit
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
-const authorityDatabase=manualHoleRelease75Payload?'vinpoker_manual_card75_payload_20261014':manualHoleRelease75Full?'vinpoker_manual_card75_rollback_20261014':manualHoleRelease75?'vinpoker_manual_card75_release_20261014':manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
+const authorityDatabase=manualHoleRelease75Ci?'vinpoker_manual_card75_payload_ci':manualHoleRelease75Payload?'vinpoker_manual_card75_payload_20261014':manualHoleRelease75Full?'vinpoker_manual_card75_rollback_20261014':manualHoleRelease75?'vinpoker_manual_card75_release_20261014':manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');
@@ -275,6 +277,8 @@ if(manualHoleAuthority){
    .replaceAll("public.get_tracker_manual_card_receipt_v1('manual-prototype-key-0001')",
     "public.get_tracker_manual_card_receipt_v1('manual-prototype-key-0001',jsonb_build_object('hand_id','86000000-0000-4000-8000-000000000001','table_session_id','83500000-0000-4000-8000-000000000001','control_epoch',1,'expected_source_revision',:manual_before_revision,'player_hole_cards','[{\"player_id\":\"82000000-0000-4000-8000-000000000002\",\"entry_number\":1,\"hole_cards\":[\"Qh\",\"Qs\"]}]'::jsonb))");
   cases+='\n'+readFileSync('tests/trackerVoice/manual75ReceiptPayload.cases.sql','utf8');
+  if(manualHoleRelease75Ci) cases=cases.replaceAll('vinpoker_manual_card75_payload_20261014',authorityDatabase)
+   .replaceAll('inet_server_port()<>55464','inet_server_port()<>55441');
  }
 }
 const preconditions=undo?`DO $$ BEGIN

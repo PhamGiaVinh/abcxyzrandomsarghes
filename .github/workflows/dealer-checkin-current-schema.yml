@@ -589,6 +589,17 @@ jobs:
           PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalCloseBlocked.sql
           createdb --template="$PGDATABASE" vinpoker_voice_assignment72_compensation_ci
           PGDATABASE=vinpoker_voice_assignment72_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_72_COMPENSATION_SOURCE.sql
+      - name: Manual75 full migration rollback and actor-bound payload receipts
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_manual_card75_payload_ci
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_voice_swing73_base_20261014 "$PGDATABASE"
+          node tests/trackerVoice/manual75MigrationRollback.currentSchema.mjs --owned-ci --apply-after-rollback
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --manual-hole-authority --manual-hole-prototype --manual-hole-release75 --manual-hole-release75-payload --manual-hole-release75-ci
+          node tests/trackerVoice/manual75IntentPolicy.mjs
+          node tests/trackerVoice/manual75EdgeHandler.mjs
       - name: Public hand visibility74 actor tenant and write compatibility
         working-directory: VinPoker
         run: |
