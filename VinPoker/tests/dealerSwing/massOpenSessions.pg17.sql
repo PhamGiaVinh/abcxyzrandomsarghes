@@ -82,4 +82,60 @@ END $scale$;
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT count(*)=40 AND count(DISTINCT a.attendance_id)=40 AND count(DISTINCT a.table_session_id)=40
  FROM public.dealer_assignments a JOIN scale40 x ON x.table_id=a.table_id WHERE a.released_at IS NULL),'40 canonical assignments conserved without duplicates');
+-- Planning an already-due replacement must honor the execution floor (15 min),
+-- not reserve a dealer at minute 14 and leave execution waiting on its own plan.
+INSERT INTO public.dealers(id,club_id,full_name,status)
+VALUES('e1800000-0000-4000-8000-000000000033','e1800000-0000-4000-8000-000000000002','Rest-boundary TEST','active');
+INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state,last_released_at)
+VALUES('e1800000-0000-4000-8000-000000000043','e1800000-0000-4000-8000-000000000033',
+ 'e1800000-0000-4000-8000-000000000030',current_date,'checked_in',now()-interval '60 minutes','available',now()-interval '14 minutes');
+INSERT INTO public.dealer_rotation_schedule(id,club_id,table_id,assignment_id,slot_index,planned_relief_at,plan_run_id,solver_version)
+SELECT 'e1800000-0000-4000-8000-000000000070',club_id,table_id,id,0,now()-interval '1 minute',
+ 'e1800000-0000-4000-8000-000000000071','rest-boundary-test'
+FROM public.dealer_assignments WHERE table_id='e1800000-0000-4000-8000-000000000013' AND released_at IS NULL;
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+DO $rest_boundary$
+DECLARE result jsonb;
+BEGIN
+ result := public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
+  'e1800000-0000-4000-8000-000000000043','isolated_rest_boundary');
+ RAISE NOTICE 'REST14_RPC_OUTCOME=%', result;
+ PERFORM pg_temp.assert_true(result->>'outcome'='not_eligible',
+  '14-minute rest must not lock an already-due replacement; actual='||result::text);
+END $rest_boundary$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='available' FROM public.dealer_attendance
+ WHERE id='e1800000-0000-4000-8000-000000000043'),'rejected rest boundary preserves attendance');
+INSERT INTO auth.users(id) VALUES('e1800000-0000-4000-8000-000000000099');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000099';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
+ 'e1800000-0000-4000-8000-000000000043','isolated_cross_club')->>'outcome'='forbidden',
+ 'outsider cannot reserve next dealer');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT version=1 AND in_attendance_id IS NULL FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'denied actor leaves plan unchanged');
+UPDATE public.dealer_attendance SET last_released_at=now()-interval '15 minutes'
+WHERE id='e1800000-0000-4000-8000-000000000043';
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
+ 'e1800000-0000-4000-8000-000000000043','isolated_rest_boundary')->>'outcome'='changed',
+ '15-minute fully-rested dealer can be planned without shifting due time');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT planned_relief_at=now()-interval '1 minute' FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'planning does not move established relief time');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
+ 'e1800000-0000-4000-8000-000000000043','isolated_stale_plan')->>'outcome'='race_lost',
+ 'old plan version cannot reserve again');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'stale retry does not bump plan version twice');
 ROLLBACK;
