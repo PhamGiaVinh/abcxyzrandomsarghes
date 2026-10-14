@@ -144,4 +144,30 @@ RETURN floor_private.tracker_manual_card_receipt_v1(p_request_key);
 REVOKE ALL ON FUNCTION public.get_tracker_manual_card_receipt_v1(text)
  FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_tracker_manual_card_receipt_v1(text) TO authenticated;
+DO $postcheck$
+DECLARE expected record; actual record;
+BEGIN
+ FOR expected IN SELECT * FROM (VALUES
+  ('floor_private.tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','04f858c4e3913aaf2996e7ba8a8842da',true,'v'),
+  ('public.show_tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','0e43636469573f0f9722639ca283f346',false,'v'),
+  ('floor_private.tracker_manual_card_receipt_v1(text)','73aa55ab389503395e16d0fc1e6c23a7',true,'s'),
+  ('public.get_tracker_manual_card_receipt_v1(text)','86ae4fd1ab8f1df69f4e657808b71336',false,'s')
+ ) AS definitions(signature,digest,definer,volatility) LOOP
+  SELECT * INTO STRICT actual FROM pg_proc WHERE oid=expected.signature::regprocedure;
+  IF md5(replace(pg_get_functiondef(actual.oid),chr(13),'')) IS DISTINCT FROM expected.digest
+   OR pg_get_userbyid(actual.proowner) IS DISTINCT FROM 'postgres'
+   OR actual.prosecdef IS DISTINCT FROM expected.definer
+   OR actual.provolatile::text IS DISTINCT FROM expected.volatility
+   OR actual.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
+   OR actual.proacl::text IS DISTINCT FROM '{postgres=X/postgres,authenticated=X/postgres}'
+  THEN RAISE EXCEPTION 'manual75_function_postcheck: %',expected.signature; END IF;
+ END LOOP;
+ IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='floor_private.tracker_manual_card_receipts_v1'::regclass
+  AND relrowsecurity AND pg_get_userbyid(relowner)='postgres')
+ OR EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='floor_private' AND tablename='tracker_manual_card_receipts_v1')
+ OR EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+  WHERE c.oid='floor_private.tracker_manual_card_receipts_v1'::regclass AND a.grantee<>c.relowner)
+ THEN RAISE EXCEPTION 'manual75_receipt_table_postcheck'; END IF;
+END;
+$postcheck$;
 COMMIT;

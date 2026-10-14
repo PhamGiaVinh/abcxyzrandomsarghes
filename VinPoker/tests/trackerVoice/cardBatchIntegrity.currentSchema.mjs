@@ -8,6 +8,8 @@ const undo=process.argv.includes('--undo');
 const authority70=process.argv.includes('--authority70');
 const manualHoleAuthority=process.argv.includes('--manual-hole-authority');
 const manualHolePrototype=process.argv.includes('--manual-hole-prototype');
+const manualHoleRelease75=process.argv.includes('--manual-hole-release75');
+assert.ok(!manualHoleRelease75||manualHolePrototype,'release75 reuses the guarded manual prototype matrix');
 assert.ok(!manualHolePrototype||(manualHoleAuthority&&authority70),'manual prototype requires guarded authority fixture');
 assert.ok(!manualHoleAuthority||authority70,'manual hole authority requires guarded owned schema mode');
 const authorityBaseline=process.argv.includes('--authority-baseline');
@@ -55,7 +57,7 @@ assert.ok(!authorityBaseline||authority70,'baseline comparison requires authorit
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
-const authorityDatabase=manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
+const authorityDatabase=manualHoleRelease75?'vinpoker_manual_card75_release_20261014':manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');
@@ -250,6 +252,20 @@ if(manualHoleAuthority){
   'manual hole regression must use the original assigned Dealer rollback fixture');
  cases="SELECT set_config('manual75.fixture','owned-manual-authority',true);\n"+readFileSync(manualHolePrototype?'tests/trackerVoice/manualCardAuthority.prototype.cases.sql'
   :'tests/trackerVoice/manualHoleAuthority.currentSchema.sql','utf8');
+ if(manualHoleRelease75){
+  for(const [before,after] of [
+   ['vinpoker_manual_card75_20261014','vinpoker_manual_card75_release_20261014'],
+   ['public.show_manual_cards_prototype','public.show_tracker_manual_cards_v1'],
+   ['public.get_manual_card_receipt_prototype','public.get_tracker_manual_card_receipt_v1'],
+   ['floor_private.manual_cards_prototype','floor_private.tracker_manual_cards_v1'],
+   ['floor_private.manual_card_receipt_prototype','floor_private.tracker_manual_card_receipt_v1'],
+   ['floor_private.manual_card_receipts_prototype','floor_private.tracker_manual_card_receipts_v1'],
+   ['419f17a4a04937244c2519b75d4c4b96','04f858c4e3913aaf2996e7ba8a8842da'],
+   ['e5a5f946ed187baf910cbc7f7de8e746','0e43636469573f0f9722639ca283f346'],
+   ['914e90524f7ef265c65c421dd680f05c','73aa55ab389503395e16d0fc1e6c23a7'],
+   ['ff336d471723c238d35529f315fc2202','86ae4fd1ab8f1df69f4e657808b71336'],
+  ]) cases=cases.replaceAll(before,after);
+ }
 }
 const preconditions=undo?`DO $$ BEGIN
  IF inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port() IS DISTINCT FROM 55441 OR current_user<>'postgres' OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999 THEN RAISE EXCEPTION 'wrong_undo_server'; END IF;
@@ -276,7 +292,7 @@ const result=spawnSync(useWsl?'wsl':'psql',args,
  {input:`BEGIN;\n${preconditions}\n${authorityPreconditions}\nGRANT USAGE ON SCHEMA auth TO anon,authenticated,service_role;\nGRANT EXECUTE ON FUNCTION auth.uid(),auth.jwt() TO anon,authenticated,service_role;\n${qualified}\n${fixtureOnly?'':cases}\n${fixtureOnly||authorityOverlapFixture||authorityReverseRoot?'COMMIT':'ROLLBACK'};`.replaceAll('\r\n','\n'),encoding:'utf8'});
 assert.equal(result.status,0,result.stderr+(voiceBoard?'\n'+result.stdout:''));
 if(manualHoleAuthority){
- console.log('CURRENT_SCHEMA_MANUAL_CARD_AUTHORITY_PASS');
+ console.log(manualHoleRelease75?'CURRENT_SCHEMA_MANUAL_CARD_RELEASE75_PASS':'CURRENT_SCHEMA_MANUAL_CARD_AUTHORITY_PASS');
  process.exit(0);
 }
 console.log(authorityFinishAttendance72?('CURRENT_SCHEMA_VOICE_FINISH_ATTENDANCE_'+attendanceCase.toUpperCase()+'_ZERO_WRITE_PASS'):authorityFenceAttendance?('CURRENT_SCHEMA_VOICE_ASSIGNMENT_TUPLE_'+attendanceCase.toUpperCase()+'_ZERO_WRITE_PASS'):authorityFenceEpoch?'CURRENT_SCHEMA_VOICE_EPOCH_REENABLE_STALE_ZERO_WRITE_PASS':authorityFenceRevoked?'CURRENT_SCHEMA_VOICE_REVOKED_FLOOR_ZERO_WRITE_PASS':authorityReverseRoot?'CURRENT_SCHEMA_RELEASE71_REVERSE_ROOT_READY':authorityOverlapFixture?'CURRENT_SCHEMA_RELEASE71_OVERLAP_ROOT_READY':authorityFloorFinish?'CURRENT_SCHEMA_VOICE_FLOOR_FINISH_RETRY_ROLLBACK_PASS':authorityFinish?'CURRENT_SCHEMA_VOICE_OWNER_FINISH_RETRY_ROLLBACK_PASS':authorityAction?'CURRENT_SCHEMA_VOICE70_ACTION_REPLAY_BOUNDARIES_PASS':authority70?'CURRENT_SCHEMA_VOICE70_CARD_WRAPPERS_BOUNDARIES_PASS':undo?'UNDO_GENERATION_HASH_QUEUE_REPLAY_CONFLICT_PASS':fixtureOnly?'CURRENT_SCHEMA_OVERLAP_FIXTURE_READY':voiceHoles?'CURRENT_SCHEMA_VOICE_CARD_WRAPPERS_PASS':voiceBoard?'CURRENT_SCHEMA_VOICE_BOARD_WRAPPER_PASS':'CURRENT_SCHEMA_CARD_AUTHORITY_REVISION_COMPLETION_QUEUE_PASS');
