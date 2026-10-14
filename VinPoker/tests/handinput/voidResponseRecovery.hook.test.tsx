@@ -118,6 +118,32 @@ describe("void unknown response through the real controller", () => {
     });
     expect(invocations).toBe(1);
   });
+  it("does not let an unresolved old manual reveal block a newly loaded session", async () => {
+    mock.resume = true;
+    const responders: Array<(value: unknown) => void> = [];
+    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
+    let oldRequest!: Promise<void>;
+    act(() => { oldRequest = result.current.handleShowHoleCards(); });
+    mock.metadataSession = "sessionB";
+    await act(async () => { await result.current.handleTableChange("table1"); });
+    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { result.current.setPlayerHoleCards({ p1: ["Jh", "Js"] }); });
+    let freshRequest!: Promise<void>;
+    act(() => { freshRequest = result.current.handleShowHoleCards(); });
+    const countBeforeOldCompletion = responders.length;
+    await act(async () => {
+      for (const respond of responders) {
+        respond({ data: { status: "success", data: { status: "success", entry_count: 1 } }, error: null });
+      }
+      await Promise.all([oldRequest, freshRequest]);
+    });
+    expect(countBeforeOldCompletion).toBe(2);
+  });
   it.each([
     { status: "success", data: { error: "hand_not_found" } },
     { status: "success", data: { error: "lock_lost" } },
