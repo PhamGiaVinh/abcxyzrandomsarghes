@@ -60,6 +60,20 @@ function mkDealer(p: Partial<RotationPlanCandidate> & { attendanceId: string }):
   };
 }
 
+for (const count of [30, 40]) Deno.test(`${count} tables: actual forward solver assigns unique slot0 dealers with15minute rest`, () => {
+  const tables = Array.from({ length: count }, (_, i) => mkTable({ tableId: `SCALE${i}`, assignedAtMs: NOW - (60 + i) * MIN }));
+  const dealers = Array.from({ length: count }, (_, i) => mkDealer({ attendanceId: `RESTED${i}`, eligibleAtMs: NOW }));
+  const plan = solveRotationPlan(tables, dealers, { ...OPTS, restMs: 15 * MIN, forecastSlots: 2 });
+  const current = plan.rows.filter(r => r.slotIndex === 0);
+  assertEq(current.length, count, "every table represented");
+  assertEq(new Set(current.map(r => r.tableId)).size, count, "no repeated table");
+  assertEq(new Set(current.map(r => r.inAttendanceId)).size, count, "no duplicate incoming dealer");
+  for (const row of current) {
+    assert(row.inAttendanceId !== null && !row.isShortage, "adequate rested supply must cover slot0");
+    assert(row.plannedReliefAtMs >= NOW + 3 * MIN, "announce lead retained");
+  }
+});
+
 Deno.test("1. 3 OT tables + 2 rested dealers → 2 longest-dealt CHỐT at now+3m, third honest shortage", () => {
   const tables = [
     mkTable({ tableId: "T3", assignedAtMs: NOW - 40 * MIN, swingDueAtMs: NOW - 5 * MIN }),

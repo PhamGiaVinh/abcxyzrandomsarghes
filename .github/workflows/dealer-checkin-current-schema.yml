@@ -5,6 +5,8 @@ on:
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
+      - 'VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner*'
+      - 'VinPoker/supabase/functions/_shared/__tests__/rotationSolver.test.ts'
       - 'VinPoker/supabase/migrations/20270128000066_floor_manual_seat_session_fence_v1.sql'
       - 'VinPoker/tests/floorProduction/manualSeatSessionFence*'
       - 'VinPoker/tests/floorProduction/manualEntryRestore*'
@@ -260,6 +262,8 @@ jobs:
           deno check supabase/functions/assign-dealer/index.ts supabase/functions/mass-assign/index.ts supabase/functions/checkout-dealer/index.ts
           deno test --allow-env supabase/functions/run-dealer-ready-backup/auth.test.ts supabase/functions/_shared/__tests__/backupServiceAuth.test.ts supabase/functions/process-swing-on-dealer-ready/runtime.test.ts
           deno test supabase/functions/process-swing/executionSafety.test.ts
+          deno test --allow-env=PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS supabase/functions/process-swing/passes/pass1.5-rotation-planner.test.ts
+          deno test supabase/functions/_shared/__tests__/rotationSolver.test.ts
           deno test supabase/functions/_shared/__tests__/dealerMutationIntent.test.ts
           deno test --allow-env supabase/functions/process-swing/passes/passS2-empty-table-preassign.test.ts
           deno check supabase/functions/tournament-historical-settlement-worker/index.ts

@@ -39,9 +39,9 @@ async function verifyStillUnassigned(
   admin: any,
   tableIds: string[],
   clubId: string
-): Promise<Set<string>> {
-  if (tableIds.length === 0) return new Set();
-  const { data } = await admin
+): Promise<{ ids: Set<string>; error: string | null }> {
+  if (tableIds.length === 0) return { ids: new Set(), error: null };
+  const { data, error } = await admin
     .from("dealer_assignments")
     .select("table_id")
     .eq("club_id", clubId)
@@ -49,7 +49,9 @@ async function verifyStillUnassigned(
     .is("swing_processed_at", null)
     .is("pre_assigned_attendance_id", null)
     .in("table_id", tableIds);
-  return new Set((data ?? []).map((r: any) => r.table_id));
+  if (error) return { ids: new Set(), error: error.message ?? "eligibility_snapshot_failed" };
+  if (!Array.isArray(data)) return { ids: new Set(), error: "eligibility_snapshot_invalid" };
+  return { ids: new Set(data.map((r: any) => r.table_id)), error: null };
 }
 
 export async function pass15RotationPlanner(
@@ -183,9 +185,15 @@ export async function pass15RotationPlanner(
 
   // Step 5: dryRun path — verify DB but skip writes
   if (dryRun) {
-    const stillFree = await verifyStillUnassigned(
+    const snapshot = await verifyStillUnassigned(
       admin, result.pairs.map(p => p.tableId), clubId
     );
+    if (snapshot.error) return {
+      assigned: 0, unassigned: 0, raceLost: 0,
+      errors: [{ tableId: "eligibility_snapshot", error: snapshot.error }],
+      missReasons: {}, solverDurationMs: Date.now() - solverStart, dryRun: true, diff: [],
+    };
+    const stillFree = snapshot.ids;
     const accurateDiff = result.pairs
       .filter(p => stillFree.has(p.tableId))
       .map(p => {
@@ -213,10 +221,16 @@ export async function pass15RotationPlanner(
 
   // Step 6: Write path — verify + sequential RPC calls with timeout
   const tableIdsToVerify = result.pairs.map(p => p.tableId);
-  const stillFree = await verifyStillUnassigned(admin, tableIdsToVerify, clubId);
-  const writablePairs = result.pairs
-    .filter(p => stillFree.has(p.tableId))
-    .slice(0, MAX_PAIRS_PER_RUN);
+  const snapshot = await verifyStillUnassigned(admin, tableIdsToVerify, clubId);
+  if (snapshot.error) return {
+    assigned: 0, unassigned: 0, raceLost: 0,
+    errors: [{ tableId: "eligibility_snapshot", error: snapshot.error }],
+    missReasons: {}, solverDurationMs: Date.now() - solverStart,
+  };
+  const stillFree = snapshot.ids;
+  const eligiblePairs = result.pairs.filter(p => stillFree.has(p.tableId));
+  const writablePairs = eligiblePairs.slice(0, MAX_PAIRS_PER_RUN);
+  const deferredCount = eligiblePairs.length - writablePairs.length;
 
   if (writablePairs.length < result.pairs.length) {
     const capped = result.pairs.length - writablePairs.length;
@@ -234,7 +248,7 @@ export async function pass15RotationPlanner(
 
   for (const pair of writablePairs) {
     // Re-verify right before write
-    const { data: freshAssign } = await admin
+    const { data: freshAssign, error: freshError } = await admin
       .from("dealer_assignments")
       .select("id, version, pre_assigned_attendance_id")
       .eq("table_id", pair.tableId)
@@ -243,6 +257,11 @@ export async function pass15RotationPlanner(
       .is("swing_processed_at", null)
       .maybeSingle();
 
+    if (freshError) {
+      errors.push({ tableId: pair.tableId, error: freshError.message ?? "assignment_reread_failed" });
+      continue;
+    }
+
     if (!freshAssign || freshAssign.pre_assigned_attendance_id !== null) {
       console.warn(`[Pass 1.5] Table ${pair.tableId} already pre-assigned, skipping`);
       continue;
@@ -250,7 +269,7 @@ export async function pass15RotationPlanner(
 
     let rpcResult: any;
     try {
-      const { data } = await callWithTimeout(
+      const { data, error } = await callWithTimeout(
         admin.rpc("pre_assign_next_dealer_for_table", {
           p_assignment_id: freshAssign.id,
           p_club_id: clubId,
@@ -260,6 +279,10 @@ export async function pass15RotationPlanner(
         RPC_TIMEOUT_MS,
         `pre_assign table ${pair.tableId}`
       );
+      if (error) {
+        errors.push({ tableId: pair.tableId, error: error.message ?? "preassign_rpc_failed" });
+        continue;
+      }
       rpcResult = data;
     } catch (err: any) {
       errors.push({ tableId: pair.tableId, error: err.message });
@@ -291,13 +314,13 @@ export async function pass15RotationPlanner(
   const solverDurationMs = Date.now() - solverStart;
   console.log(
     `[Pass 1.5] solver=${result.solverVersion} assigned=${assignedCount} ` +
-    `unassigned=${result.unassignedTables.length} raceLost=${raceLostCount} ` +
+    `unassigned=${result.unassignedTables.length + deferredCount} deferred=${deferredCount} raceLost=${raceLostCount} ` +
     `durationMs=${solverDurationMs}${dryRun ? " (dryRun)" : ""}`
   );
 
   return {
     assigned: assignedCount,
-    unassigned: result.unassignedTables.length,
+    unassigned: result.unassignedTables.length + deferredCount,
     raceLost: raceLostCount,
     errors,
     missReasons,

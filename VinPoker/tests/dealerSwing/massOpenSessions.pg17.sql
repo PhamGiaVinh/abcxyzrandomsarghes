@@ -45,4 +45,41 @@ RESET ROLE;
 SELECT pg_temp.assert_true(NOT has_function_privilege('authenticated','public.worker_read_initial_assignment_receipt_v1(text,uuid,uuid,uuid,uuid)','EXECUTE'),'browser cannot read internal receipts');
 SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_assignments a JOIN public.table_sessions s ON s.id=a.table_session_id WHERE a.table_id='e1800000-0000-4000-8000-000000000011' AND s.closed_at IS NULL AND a.released_at IS NULL),'one committed assignment for opened incarnation');
 SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_sessions WHERE game_table_id='e1800000-0000-4000-8000-000000000012'),'rejected tournament does not open a session');
+-- Isolated 40-table capacity seam. All fixture data remains in this transaction.
+CREATE TEMP TABLE scale40 AS SELECT n,
+  md5('scale40-table-'||n)::uuid AS table_id,
+  md5('scale40-dealer-'||n)::uuid AS dealer_id,
+  md5('scale40-attendance-'||n)::uuid AS attendance_id
+FROM generate_series(1,40) n;
+GRANT SELECT ON scale40 TO authenticated,service_role;
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT table_id,'e1800000-0000-4000-8000-000000000002','Scale TEST '||n,n,'cash','inactive','available' FROM scale40;
+INSERT INTO public.dealers(id,club_id,full_name,status)
+SELECT dealer_id,'e1800000-0000-4000-8000-000000000002','Scale TEST dealer '||n,'active' FROM scale40;
+INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+SELECT attendance_id,dealer_id,'e1800000-0000-4000-8000-000000000030',current_date,'checked_in',now(),'available' FROM scale40;
+INSERT INTO public.club_settings(club_id,auto_swing_enabled)
+VALUES('e1800000-0000-4000-8000-000000000002',true)
+ON CONFLICT(club_id) DO UPDATE SET auto_swing_enabled=true;
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT public.operator_open_dealer_tables('e1800000-0000-4000-8000-000000000060',
+ 'e1800000-0000-4000-8000-000000000002',null,(SELECT array_agg(table_id ORDER BY n) FROM scale40),'cash');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT count(*)=40 FROM public.table_sessions s JOIN scale40 x ON x.table_id=s.game_table_id WHERE s.closed_at IS NULL),'40 distinct active sessions');
+SET LOCAL ROLE service_role;
+SET LOCAL request.jwt.claim.role='service_role';
+SELECT set_config('request.headers','{}',true);
+DO $scale$
+DECLARE r record; result jsonb;
+BEGIN
+ FOR r IN SELECT x.*,s.table_session_id FROM scale40 x JOIN public.get_dealer_operational_tables_v1('e1800000-0000-4000-8000-000000000002') s ON s.id=x.table_id ORDER BY x.n LOOP
+  result:=public.worker_assign_dealer_to_session_v1('e1800000-0000-4000-8000-000000000002',r.table_id,r.table_session_id,r.attendance_id,now()+interval '45 minutes','scale40-'||r.n);
+  PERFORM pg_temp.assert_true(result->>'outcome'='ok','40-table worker exact session commit');
+ END LOOP;
+END $scale$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT count(*)=40 AND count(DISTINCT a.attendance_id)=40 AND count(DISTINCT a.table_session_id)=40
+ FROM public.dealer_assignments a JOIN scale40 x ON x.table_id=a.table_id WHERE a.released_at IS NULL),'40 canonical assignments conserved without duplicates');
 ROLLBACK;
