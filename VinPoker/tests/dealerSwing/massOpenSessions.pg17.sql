@@ -138,4 +138,28 @@ SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070'),'stale retry does not bump plan version twice');
+-- Canonical close with an announced replacement must not strand that incoming
+-- attendance or carry the previous incarnation's plan into a reopen.
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+DO $close_with_next$
+DECLARE result jsonb; session_revision bigint;
+BEGIN
+ SELECT revision INTO session_revision FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023';
+ result:=public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',session_revision,
+   'e1800000-0000-4000-8000-000000000080');
+ RAISE NOTICE 'CLOSE_WITH_NEXT_RPC_OUTCOME=%',result;
+ PERFORM pg_temp.assert_true((result->>'ok')::boolean,'canonical close succeeds with announced replacement');
+END $close_with_next$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NOT NULL FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023'),'exact old session closed');
+SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_table_id IS NULL
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'canonical close releases incoming next-dealer reservation');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070' AND status IN ('predicted','announced','executing')),
+ 'closed incarnation cannot retain actionable rotation plan');
 ROLLBACK;
