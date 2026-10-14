@@ -53,7 +53,7 @@ CREATE TEMP TABLE scale40 AS SELECT n,
 FROM generate_series(1,40) n;
 GRANT SELECT ON scale40 TO authenticated,service_role;
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
-SELECT table_id,'e1800000-0000-4000-8000-000000000002','Scale TEST '||n,100+n,'cash','inactive','available' FROM scale40;
+SELECT table_id,'e1800000-0000-4000-8000-000000000002','Scale TEST '||n,n,'cash','inactive','available' FROM scale40;
 INSERT INTO public.dealers(id,club_id,full_name,status)
 SELECT dealer_id,'e1800000-0000-4000-8000-000000000002','Scale TEST dealer '||n,'active' FROM scale40;
 INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
