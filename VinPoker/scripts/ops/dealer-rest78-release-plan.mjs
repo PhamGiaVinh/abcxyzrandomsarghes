@@ -43,8 +43,14 @@ export function executePackage(transport,report=()=>{}){
   let status='unavailable';try{const r=transport.json(receiptSql(item));status=r.count===1&&r.exact===true?'committed-exact':r.count===0?'not-recorded':'drift';}catch{}
   report(`STOP ${item.version} ${status}; no retry or downstream deploy`);throw Error('Rest78 apply outcome requires review');
  }
- const r=transport.json(receiptSql(item));if(r.count!==1||r.exact!==true)throw Error('Exact rest78 receipt postcheck failed');
- transport.execute(postcheckSql());report('REST78_COMMITTED_EXACT_OBJECT_POSTCHECK_PASS');
+ try{
+  const r=transport.json(receiptSql(item));if(r.count!==1||r.exact!==true)throw Error('Exact rest78 receipt postcheck failed');
+  transport.execute(postcheckSql());
+ }catch{
+  report(`STOP ${item.version} commit-acknowledged/postcheck-unverified; no retry or downstream deploy`);
+  throw Error('Rest78 acknowledged commit requires postcheck review');
+ }
+ report('REST78_COMMITTED_EXACT_OBJECT_POSTCHECK_PASS');
 }
 export function classifyPreflight(baseline){
  if(baseline?.database!=='postgres'||baseline.actor!=='postgres'||baseline.existing!==0)throw Error('Exact rest78 baseline required');
