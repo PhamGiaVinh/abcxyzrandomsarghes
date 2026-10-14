@@ -9,6 +9,8 @@ on:
       - ".github/workflows/dealer-stop-64-protected-apply.yml"
       - ".github/workflows/tracker-voice-70-71-protected-apply.yml"
       - ".github/workflows/tracker-public-74-protected-apply.yml"
+      - ".github/workflows/tracker-manual-75-protected-apply.yml"
+      - ".github/workflows/tracker-reads-76-77-protected-apply.yml"
       - "VinPoker/scripts/ops/tracker-public-74-*"
       - "VinPoker/scripts/ops/tracker-voice-70-71-*"
       - ".github/workflows/floor-manual-66-protected-apply.yml"
@@ -121,6 +123,10 @@ jobs:
             .github/workflows/dealer-payroll-statement-delivery-repair-hsop.yml \
             .github/workflows/deployment-control-plane-validation.yml \
             .github/workflows/physical-asset-63-65-protected-apply.yml
+
+      - name: Actionlint staged Tracker DB release workflows
+        shell: bash
+        run: '"${RUNNER_TEMP}/actionlint" .github/workflows/tracker-manual-75-protected-apply.yml .github/workflows/tracker-reads-76-77-protected-apply.yml'
 
       - name: Setup Node.js 20 for Floor runner tests
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
