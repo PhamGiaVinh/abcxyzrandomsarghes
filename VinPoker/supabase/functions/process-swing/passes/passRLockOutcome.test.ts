@@ -11,5 +11,6 @@ for(const outcome of ["error","unknown",null,"race_lost","dealer_unavailable","r
    outcome===null?null:{outcome,detail:"fixture SQL failure"},errors,{table_id:"table"},{log(){}},
   );
   assertEquals(errors.length,["error","unknown",null].includes(outcome)?1:0);
+  if(errors.length)assertEquals(errors[0].error.includes("fixture SQL failure"),false);
  });
 }
