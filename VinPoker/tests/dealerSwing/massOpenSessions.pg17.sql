@@ -96,9 +96,15 @@ FROM public.dealer_assignments WHERE table_id='e1800000-0000-4000-8000-000000000
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role='authenticated';
-SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
- 'e1800000-0000-4000-8000-000000000043','isolated_rest_boundary')->>'outcome'='not_eligible',
- '14-minute rest must not lock an already-due replacement');
+DO $rest_boundary$
+DECLARE result jsonb;
+BEGIN
+ result := public.set_rotation_slot_dealer('e1800000-0000-4000-8000-000000000070',1,
+  'e1800000-0000-4000-8000-000000000043','isolated_rest_boundary');
+ RAISE NOTICE 'REST14_RPC_OUTCOME=%', result;
+ PERFORM pg_temp.assert_true(result->>'outcome'='not_eligible',
+  '14-minute rest must not lock an already-due replacement; actual='||result::text);
+END $rest_boundary$;
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT current_state='available' FROM public.dealer_attendance
  WHERE id='e1800000-0000-4000-8000-000000000043'),'rejected rest boundary preserves attendance');
