@@ -46,6 +46,8 @@ for(const options of [{header:false},{authenticated:false}]){
 }
 const conflict=await request(intent,{data:{error:'idempotency_conflict'}});
 assert.equal(conflict.status,409);assert.equal(conflict.calls.length,1);
+const changedActor=await request({...intent,expected_actor_id:'different-actor'});
+assert.equal(changedActor.status,422);assert.equal(changedActor.calls.length,0);
 const read=await request({...intent,action:'get_manual_card_receipt_v1'},
  {data:{status:'not_found'}});
 assert.equal(read.status,200);assert.deepEqual(read.calls,[{name:'get_tracker_manual_card_receipt_v1',params:{

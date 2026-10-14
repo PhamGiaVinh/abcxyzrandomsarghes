@@ -284,6 +284,10 @@ Deno.serve(async (req) => {
   let validationNote: any = undefined;
 
   try {
+    if ((action === "show_manual_cards_v1" || action === "get_manual_card_receipt_v1")
+      && body.expected_actor_id !== undefined && body.expected_actor_id !== user.id) {
+      return validationError("ACTOR_MISMATCH", "Tài khoản đã đổi; không áp intent của tài khoản trước.");
+    }
     switch (action) {
       case "record_hand": {
         const { table_id, hand_number, hand_time, players, actions, side_pots, community_cards, pot_size } = body;

@@ -1,5 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { webcrypto } from "node:crypto";
+import { TextEncoder } from "node:util";
 
 const mock = vi.hoisted(() => ({
   committed: false,
@@ -29,7 +31,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       if (mock.tableReadFails) throw new Error("table metadata unavailable");
       return { data: { ok: true, tables: [{ table_id: "table1", tournament_table_id: "table1",
         table_name: "Test", table_session_id: "session1", control_epoch: 1,
-        max_seats: 9, player_count: 1, has_live_hand: true }] }, error: null };
+        max_seats: 9, player_count: 1, has_live_hand: true, control_mode: "tracker" }] }, error: null };
     }
     return { data: name === "get_tournament_tables" ? [{ table_id: "table1", table_name: "Test" }] : name === "heartbeat_lock" ? { status: "success", locked_by: "actor1" } : null, error: null };
   },
@@ -60,6 +62,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   },
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
+beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder); });
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
@@ -103,6 +106,7 @@ describe("void unknown response through the real controller", () => {
     mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
     let first!: Promise<void>;
     act(() => { first = result.current.handleShowHoleCards(); });
+    await waitFor(() => expect(mock.invoke).toHaveBeenCalledTimes(1));
     mock.tableReadFails = true;
     act(() => { result.current.retryTableLoad(); });
     await waitFor(() => expect(result.current.tableLoadState).toBe("error"));
