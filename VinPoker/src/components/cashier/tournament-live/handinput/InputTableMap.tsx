@@ -15,6 +15,8 @@ export interface InputTableSummary {
   /** V3 fencing context. Null for historical legacy assignments. */
   tableSessionId?: string | null;
   controlEpoch?: number | null;
+  /** Server read capability hint; never substitutes for mutation authority. */
+  canManualCards?: boolean;
   maxSeats?: number;
   name: string;
   /** Active players currently seated at this table. */
@@ -105,13 +107,14 @@ export function InputTableMap({
   if (!tables || tables.length === 0) {
     return (
       <div className="text-sm text-muted-foreground text-center py-6">
-        Chưa có bàn nào trong giải này.
+        {loadError ? <span role="alert">{loadError}</span> : "Chưa có bàn nào trong giải này."}
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
+      {loadError && <div role="alert" className="text-sm text-destructive">{loadError}</div>}
       <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-0.5">
         Chọn bàn để nhập hand
       </div>
@@ -138,6 +141,7 @@ export function InputTableMap({
               </div>
               <div className="mt-1 truncate text-xs font-semibold text-foreground">{tbl.name}</div>
               <div className="text-[11px] text-muted-foreground">{tbl.playerCount} người chơi</div>
+              {tbl.canManualCards === false && <div className="text-[11px] text-muted-foreground">Không có quyền lật bài thủ công</div>}
               {(alertsByTable[tbl.physicalTableId] ?? 0) > 0 && (
                 <div className="mt-1 rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-200">
                   {alertsByTable[tbl.physicalTableId]} cảnh báo cần Floor xử lý

@@ -74,6 +74,8 @@ import {
   type TableLoadToken,
 } from "./trackerAsyncGuards";
 import { createSingleFlightGuard } from "@/lib/singleFlight";
+import { fingerprintManualCards, normalizeManualCards, parseManualCardIntent, isConfirmedManualCardProof,
+  type ManualCardPendingIntent } from "./manualCardIntent";
 import type { SyncPhase } from "./ViewerSyncStatus";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -237,6 +239,9 @@ export function useStandaloneHandInput(tournamentId: string) {
   const [endingStacksManuallyEdited, setEndingStacksManuallyEdited] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [playerHoleCards, setPlayerHoleCards] = useState<Record<string, (Card | null)[]>>({});
+  const holeCardsDraftSignature = JSON.stringify(Object.entries(playerHoleCards).sort(([a], [b]) => a.localeCompare(b)));
+  const holeCardsDraftSignatureRef = useRef(holeCardsDraftSignature);
+  holeCardsDraftSignatureRef.current = holeCardsDraftSignature;
   const [orphanHand, setOrphanHand] = useState<{ id: string; hand_number: number } | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
@@ -289,12 +294,23 @@ export function useStandaloneHandInput(tournamentId: string) {
   const rosterFlightRef = useRef(createSingleFlightGuard());
   const voidFlightRef = useRef(createSingleFlightGuard());
   const voidOwnsSubmittingRef = useRef(false);
+  const manualCardsFlightsRef = useRef(new Map<string, ReturnType<typeof createSingleFlightGuard>>());
+  const manualCardsOwnsSubmittingRef = useRef(false);
+  const manualCardsIntentRef = useRef(new Map<string, ManualCardPendingIntent>());
   const rosterContext = availableTables.find((table) => table.id === tableId);
   const rosterScope = `${user?.id}:${tournamentId}:${rosterContext?.tournamentTableId}:${rosterContext?.tableSessionId}:${rosterContext?.controlEpoch}`;
   if (rosterScopeRef.current !== rosterScope) {
     rosterScopeRef.current = rosterScope;
     rosterGenerationRef.current += 1;
   }
+  useEffect(() => {
+    // Render/reload may detach loading, but pending semantic-context flights
+    // survive it. A reload is not proof that an in-flight mutation finished.
+    if (manualCardsOwnsSubmittingRef.current) {
+      manualCardsOwnsSubmittingRef.current = false;
+      setSubmitting(false);
+    }
+  }, [rosterScope, tableId, handId]);
   useEffect(() => {
     rosterMountedRef.current = true;
     return () => { rosterMountedRef.current = false; rosterGenerationRef.current += 1; };
@@ -374,8 +390,9 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (activeTournamentRef.current === tournamentId) return;
 
     activeTournamentRef.current = tournamentId;
-    if (voidOwnsSubmittingRef.current) {
+    if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
       voidOwnsSubmittingRef.current = false;
+      manualCardsOwnsSubmittingRef.current = false;
       setSubmitting(false);
     }
     tableLoadGuardRef.current.begin("");
@@ -438,10 +455,10 @@ export function useStandaloneHandInput(tournamentId: string) {
 
         if (FEATURES.floorDeferredTrackerMoveV1) {
           const { data: contextData, error: contextError } = await supabase.rpc(
-            "get_tracker_hand_input_tables_v3" as any, { p_tournament_id: tournamentId },
+            "get_tracker_hand_input_tables_v4" as any, { p_tournament_id: tournamentId },
           );
           if (!isCurrentRequest()) return;
-          const context = contextData as { ok?: boolean; tables?: unknown[] } | null;
+          const context = contextData as { ok?: boolean; tables?: unknown[]; invalid_tables?: unknown[] } | null;
           if (contextError || !context?.ok || !Array.isArray(context.tables)) {
             setTableLoadState("error");
             setTableLoadError("Không thể tải phiên bàn Tracker. Hãy thử lại.");
@@ -452,6 +469,7 @@ export function useStandaloneHandInput(tournamentId: string) {
             if (typeof row.table_id !== "string" || typeof row.tournament_table_id !== "string"
               || typeof row.table_name !== "string" || typeof row.player_count !== "number"
               || typeof row.has_live_hand !== "boolean"
+              || typeof row.can_manual_cards !== "boolean"
               || !Number.isInteger(row.max_seats)
               || (row.table_session_id !== null && typeof row.table_session_id !== "string")
               || (row.table_session_id !== null && typeof row.control_epoch !== "number")) return null;
@@ -461,6 +479,7 @@ export function useStandaloneHandInput(tournamentId: string) {
               tournamentTableId: row.tournament_table_id,
               tableSessionId: row.table_session_id,
               controlEpoch: row.control_epoch as number | null,
+              canManualCards: row.can_manual_cards,
               maxSeats: row.max_seats as number,
               name: row.table_name,
               playerCount: row.player_count,
@@ -491,6 +510,8 @@ export function useStandaloneHandInput(tournamentId: string) {
             ...lockFieldsFrom(lockByTable.get(table.id)),
           })));
           setTableLoadState("ready");
+          setTableLoadError(Array.isArray(context.invalid_tables) && context.invalid_tables.length > 0
+            ? `${context.invalid_tables.length} bàn cần sửa dữ liệu phiên. Không thể chọn các bàn này để nhập hand.` : null);
           return;
         }
 
@@ -898,7 +919,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       clearIntent();
       // A replayed committed receipt may describe a stack that another writer
       // has since changed. Confirm current snapshot before applying it to UI.
-      const fresh = await Promise.resolve(supabase.rpc("get_tracker_roster_snapshot_v1" as any, {
+      const fresh = await Promise.resolve(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
         p_tournament_id: tournamentId, p_tournament_table_id: context.tournamentTableId,
         p_table_session_id: context.tableSessionId, p_expected_epoch: context.controlEpoch,
       })).then(value => value, error => ({ data: null, error }));
@@ -1016,8 +1037,9 @@ export function useStandaloneHandInput(tournamentId: string) {
   // ----- Table select -----------------------------------------------------
   const handleTableChange = useCallback(
     async (newTableId: string) => {
-      if (voidOwnsSubmittingRef.current) {
+      if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
         voidOwnsSubmittingRef.current = false;
+        manualCardsOwnsSubmittingRef.current = false;
         setSubmitting(false);
       }
       rosterTokensRef.current.clear();
@@ -1072,7 +1094,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       let loadedSeats: any[] | null = null;
       let error: any = null;
       if (wantAvatar && loadedSessionId && tbl?.tournamentTableId && Number.isInteger(tbl.controlEpoch)) {
-        const r = await supabase.rpc("get_tracker_roster_snapshot_v1" as any, {
+        const r = await supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
           p_tournament_id: tournamentId, p_tournament_table_id: tbl.tournamentTableId,
           p_table_session_id: loadedSessionId, p_expected_epoch: tbl.controlEpoch,
         });
@@ -2895,6 +2917,18 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const handleShowHoleCards = async () => {
     if (!handId || isReadOnly) return;
+    if (tableLoadState !== "ready" || loadedTablesTournamentRef.current !== tournamentId || !rosterContext
+      || (FEATURES.floorDeferredTrackerMoveV1
+        && (!rosterContext.tableSessionId || !Number.isSafeInteger(rosterContext.controlEpoch)
+          || Number(rosterContext.controlEpoch) < 1))) {
+      toast.error("Chưa xác minh được context bàn. Hãy tải lại trước khi lật bài.");
+      return;
+    }
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+      && scope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(loadToken);
     const cardsPayload = [];
     for (const [playerId, holeCards] of Object.entries(playerHoleCards)) {
       const filtered = holeCards.filter((c): c is Card => c !== null);
@@ -2907,21 +2941,178 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error("Chưa nhập bài lỗ cho ai");
       return;
     }
+    const loaded = loadedTableSessionRef.current;
+    const sessionId = rosterContext?.tableSessionId
+      ?? (loaded?.tournamentId === tournamentId && loaded.tableId === tableId ? loaded.sessionId : null);
+    if (!sessionId) {
+      toast.error("Chưa xác minh được phiên bàn để lật bài.");
+      return;
+    }
+    const flightKey = JSON.stringify([user?.id, tournamentId, tournamentTableId ?? tableId,
+      sessionId, rosterContext?.controlEpoch ?? null, handId]);
+    const flight = manualCardsFlightsRef.current.get(flightKey) ?? createSingleFlightGuard();
+    if (!flight.begin()) {
+      toast.info("Đang chờ kết quả lật bài của hand này; không gửi thêm yêu cầu.");
+      return;
+    }
+    manualCardsFlightsRef.current.set(flightKey, flight);
+    manualCardsOwnsSubmittingRef.current = true;
     setSubmitting(true);
     markSync("sending", "Lật bài");
     try {
+      if (FEATURES.floorDeferredTrackerMoveV1) {
+        if (!user?.id) throw new Error("Phiên đăng nhập chưa được xác minh.");
+        const freshActor = await supabase.auth.getUser();
+        if (!current()) return;
+        if (freshActor.error) throw new Error("Không xác minh được tài khoản do lỗi kết nối; chưa gửi bài.");
+        if (freshActor.data.user?.id !== user.id) {
+          throw new Error("Tài khoản đã thay đổi hoặc hết phiên. Hãy tải lại bàn.");
+        }
+        const normalized = normalizeManualCards(cardsPayload);
+        const cardsFingerprint = await fingerprintManualCards(normalized);
+        if (!current()) return;
+        const identity = { actorId: user.id, tournamentId, tournamentTableId: tournamentTableId ?? tableId, handId };
+        const intentKey = `vinpoker:manual-cards-pending:${user.id}:${tournamentId}:${identity.tournamentTableId}:${handId}`;
+        let intent = manualCardsIntentRef.current.get(intentKey);
+        if (!intent) {
+          let saved: string | null = null;
+          try { saved = sessionStorage.getItem(intentKey); } catch { /* In-memory intent remains authoritative locally. */ }
+          if (saved !== null) {
+            let parsed: unknown;
+            try { parsed = JSON.parse(saved); } catch { throw new Error("Pending intent không hợp lệ; không gửi mutation mới."); }
+            intent = parseManualCardIntent(parsed, identity) ?? undefined;
+            if (!intent) throw new Error("Pending intent không khớp tài khoản/hand; không gửi mutation mới.");
+          }
+        }
+        const priorIntent = Boolean(intent);
+        if (!priorIntent && rosterContext.canManualCards !== true) {
+          throw new Error("Bạn có thể xem roster nhưng chưa có quyền lật bài thủ công tại phiên bàn này.");
+        }
+        if (intent && intent.cardsFingerprint !== cardsFingerprint) {
+          throw new Error("Lần lật bài trước chưa rõ kết quả. Nhập lại đúng bài đã gửi để tra receipt trước khi sửa.");
+        }
+        const readHand = () => supabase.from("tournament_hands")
+          .select("id,tournament_id,table_id,tournament_table_id,table_session_id,source_revision,status,is_voided")
+          .eq("id", handId).eq("tournament_id", tournamentId).eq("table_id", identity.tournamentTableId)
+          .eq("table_session_id", sessionId).maybeSingle();
+        if (!intent) {
+          const snapshot = await readHand();
+          if (!current()) return;
+          const row = snapshot.data as unknown as Record<string, unknown> | null;
+          if (snapshot.error || !row || row.id !== handId || row.tournament_id !== tournamentId
+            || row.table_id !== identity.tournamentTableId || row.tournament_table_id !== identity.tournamentTableId
+            || row.table_session_id !== sessionId || row.status !== "in_progress" || row.is_voided !== false
+            || !Number.isSafeInteger(row.source_revision) || Number(row.source_revision) < 0) {
+            throw new Error("Không xác minh được revision/session của hand; không gửi bài.");
+          }
+          intent = { ...identity, tableSessionId: sessionId, controlEpoch: rosterContext.controlEpoch!,
+            sourceRevision: Number(row.source_revision), requestId: crypto.randomUUID(), cardsFingerprint };
+        }
+        try { sessionStorage.setItem(intentKey, JSON.stringify(intent)); }
+        catch { throw new Error("Không lưu được mã phục hồi của lần lật bài; chưa gửi bài. Kiểm tra quyền lưu trữ trình duyệt rồi thử lại."); }
+        manualCardsIntentRef.current.set(intentKey, intent);
+        const clearIntent = () => {
+          manualCardsIntentRef.current.delete(intentKey);
+          try { sessionStorage.removeItem(intentKey); } catch { /* Server receipts are never deleted. */ }
+        };
+        const body = buildShowHoleCardsBody({ tournamentId, handId, playerHoleCards: normalized,
+          manualContext: { tableSessionId: intent.tableSessionId, controlEpoch: intent.controlEpoch,
+            sourceRevision: intent.sourceRevision, requestId: intent.requestId, actorId: intent.actorId } });
+        const confirm = async (proof: Record<string, unknown>) => {
+          clearIntent();
+          const [hand, tables] = await Promise.all([readHand(), supabase.rpc("get_tracker_hand_input_tables_v4" as any,
+            { p_tournament_id: tournamentId })]);
+          if (!current()) return;
+          const row = hand.data as unknown as Record<string, unknown> | null;
+          const context = tables.data as { ok?: boolean; tables?: Array<Record<string, unknown>> } | null;
+          const table = context?.tables?.find(item => item.tournament_table_id === identity.tournamentTableId);
+          if (hand.error || tables.error || context?.ok !== true || row?.id !== handId
+            || row.source_revision !== proof.committed_source_revision || row.status !== "in_progress" || row.is_voided !== false
+            || table?.table_session_id !== intent!.tableSessionId || table.control_epoch !== intent!.controlEpoch
+            || table.control_mode !== "tracker") {
+            toast.info("Lần lật bài đã được xác nhận; dữ liệu hiện tại đã đổi hoặc chưa tải được. Hãy tải lại bàn.");
+            markSync("error");
+            return;
+          }
+          if (holeCardsDraftSignatureRef.current !== holeCardsDraftSignature) {
+            toast.info("Bài đã gửi được xác nhận, nhưng draft đã thay đổi. Hãy tải lại bài đã lưu trước khi tiếp tục.");
+            markSync("error");
+            return;
+          }
+          holeCardsBroadcastRef.current = true;
+          toast.success("Hole cards revealed");
+          markSync("sent", `Đã xác nhận ${normalized.length} tay bài`);
+        };
+        if (priorIntent) {
+          const lookup = await supabase.functions.invoke("tournament-live-update", {
+            body: { ...body, action: "get_manual_card_receipt_v1" },
+          });
+          if (!current()) return;
+          if (lookup.error || lookup.data?.error || lookup.data?.status !== "success") {
+            throw new Error(await readEdgeError(lookup.error, lookup.data));
+          }
+          if (isConfirmedManualCardProof(lookup.data.data, intent, normalized.length, "lookup")) {
+            await confirm(lookup.data.data);
+            return;
+          }
+          if (lookup.data.data?.status !== "not_found") throw new Error("Chưa xác minh được receipt của intent gốc.");
+          // An explicit user retry may re-send the SAME intent, never mint a new
+          // key after not_found (the first transaction may still be in flight).
+          if (intent.tableSessionId !== sessionId || intent.controlEpoch !== rosterContext.controlEpoch) {
+            throw new Error("Context đã đổi; chỉ tra intent cũ, không gửi lại writer.");
+          }
+        }
+        if (rosterContext.canManualCards !== true) {
+          throw new Error("Chỉ được tra receipt cũ; chưa có quyền gửi bài tại phiên bàn này.");
+        }
+        const response = await supabase.functions.invoke("tournament-live-update", { body });
+        if (!current()) return;
+        if (response.error || response.data?.error || response.data?.status !== "success"
+          || !isConfirmedManualCardProof(response.data.data, intent, normalized.length, "write")) {
+          // Only a first, definitively rejected request can be discarded. A
+          // denial of a retry does not prove its original attempt never committed.
+          if (!priorIntent) {
+            let code = response.data?.code ?? response.data?.data?.error;
+            const context = (response.error as unknown as { context?: unknown } | null)?.context;
+            if (!code && context instanceof Response && [409, 422].includes(context.status)) {
+              const rejection = await context.clone().json().catch(() => null);
+              code = rejection?.code;
+            }
+            if (["ACTOR_MISMATCH", "MANUAL_CARD_CONTEXT_REQUIRED", "manual_card_context_required",
+              "hand_scope_mismatch", "stale_manual_card_context", "dealer_assignment_invalid", "actor_not_allowed",
+              "lock_lost", "player_not_in_hand", "invalid_hole_cards_payload", "duplicate_hole_cards_participant",
+              "card_already_used_by_board_or_hole_cards", "Duplicate cards in array"].includes(code)) clearIntent();
+          }
+          throw new Error(await readEdgeError(response.error, response.data));
+        }
+        await confirm(response.data.data);
+        return;
+      }
       const { data, error } = await supabase.functions.invoke("tournament-live-update", {
         body: buildShowHoleCardsBody({ tournamentId, handId, playerHoleCards: cardsPayload }),
       });
-      if (error || data?.error) throw new Error(await readEdgeError(error, data));
+      if (!current()) return;
+      const verdict = data?.data;
+      if (error || data?.error || data?.status !== "success" || verdict?.error
+        || verdict?.status !== "success" || !Number.isInteger(verdict.entry_count)
+        || verdict.entry_count !== cardsPayload.length) {
+        throw new Error(typeof verdict?.error === "string" ? verdict.error : await readEdgeError(error, data));
+      }
       holeCardsBroadcastRef.current = true; // persisted server-side → undo keeps revealDone
       toast.success("Hole cards revealed");
       markSync("sent", `Đã lật ${cardsPayload.length} tay bài`);
     } catch (e: any) {
+      if (!current()) return;
       toast.error(e.message);
       markSync("error");
     } finally {
-      setSubmitting(false);
+      flight.finish();
+      const ownsFlight = manualCardsFlightsRef.current.get(flightKey) === flight;
+      if (ownsFlight) manualCardsFlightsRef.current.delete(flightKey);
+      if (current() && ownsFlight && manualCardsOwnsSubmittingRef.current) {
+        manualCardsOwnsSubmittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   };
 
@@ -2932,7 +3123,12 @@ export function useStandaloneHandInput(tournamentId: string) {
   // (settleShowdown) still enforces "all contenders revealed-or-mucked", so a
   // partial reveal here can never produce a phantom settlement.
   const handleRevealRunout = async () => {
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const loadToken = tableLoadGuardRef.current.capture(tableId);
     await handleShowHoleCards();
+    if (!rosterMountedRef.current || generation !== rosterGenerationRef.current
+      || scope !== actionScopeRef.current || !tableLoadGuardRef.current.isCurrent(loadToken)) return;
     setRevealDone(true);
   };
 

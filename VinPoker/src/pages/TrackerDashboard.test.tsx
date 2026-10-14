@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   clubs: [{ id: "club-a", name: "Club A" }] as Array<{ id: string; name: string }>,
   scopeRequest: null as ((userId: string) => Promise<{ data: string[] | null; error: unknown | null }>) | null,
   rpc: vi.fn(),
+  floorRpc: vi.fn(),
   panelScopes: [] as string[][],
 }));
 
@@ -30,7 +31,8 @@ vi.mock("@/hooks/useAuth", () => ({
 }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    rpc: (_name: string, args: { _user_id: string }) => state.scopeRequest
+    rpc: (_name: string, args: { _user_id: string }) => _name === "floor_club_ids"
+      ? state.floorRpc(args._user_id) : state.scopeRequest
       ? state.scopeRequest(args._user_id)
       : state.rpc(args._user_id),
     from: () => {
@@ -74,8 +76,63 @@ describe("TrackerDashboard club read state", () => {
     state.clubs = [{ id: "club-a", name: "Club A" }];
     state.scopeRequest = null;
     state.rpc.mockReset();
+    state.floorRpc.mockReset();
+    state.floorRpc.mockResolvedValue({ data: [], error: null });
     state.panelScopes = [];
     state.rpc.mockResolvedValue({ data: ["club-a"], error: null });
+  });
+
+  it("includes the server-verified Floor-only club without granting Tracker membership", async () => {
+    state.rpc.mockResolvedValue({ data: [], error: null });
+    state.floorRpc.mockResolvedValue({ data: ["quads"], error: null });
+    state.clubs = [{ id: "quads", name: "Quads TEST" }];
+    renderTracker();
+    await screen.findByTestId("tracker-live-panel");
+    expect(state.panelScopes.at(-1)).toEqual(["quads"]);
+    expect(state.floorRpc).toHaveBeenCalledWith("tracker-a");
+    expect(screen.queryByText("Bạn chưa được phân công CLB nào")).not.toBeInTheDocument();
+  });
+
+  it("does not claim a complete scope when Floor read fails but Tracker read succeeds", async () => {
+    state.floorRpc.mockResolvedValue({ data: null, error: { status: 403, message: "Floor scope denied" } });
+    renderTracker();
+    expect(await screen.findByText("Máy chủ chưa xác minh được danh sách CLB. Vui lòng thử lại.")).toBeInTheDocument();
+    expect(screen.queryByTestId("tracker-live-panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bạn chưa được phân công CLB nào")).not.toBeInTheDocument();
+  });
+
+  it("deduplicates Tracker and Floor read scopes", async () => {
+    state.floorRpc.mockResolvedValue({ data: ["club-a", "quads"], error: null });
+    state.clubs = [{ id: "club-a", name: "Club A" }, { id: "quads", name: "Quads TEST" }];
+    renderTracker();
+    await screen.findByTestId("tracker-live-panel");
+    expect(state.panelScopes.at(-1)).toEqual(["club-a", "quads"]);
+  });
+  it.each([null, { club: "quads" }, [null], [""]])("reports malformed Floor scope %j as error, not missing permission", async (payload) => {
+    state.floorRpc.mockResolvedValue({ data: payload, error: null });
+    renderTracker();
+    expect(await screen.findByText("Dữ liệu phạm vi CLB không hợp lệ. Hãy thử lại.")).toBeInTheDocument();
+    expect(screen.queryByTestId("tracker-live-panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bạn chưa được phân công CLB nào")).not.toBeInTheDocument();
+  });
+
+  it("ignores a delayed Floor scope from the previous account", async () => {
+    const oldFloor = deferred<{ data: string[]; error: null }>();
+    state.userId = "floor-old";
+    state.rpc.mockResolvedValue({ data: [], error: null });
+    state.floorRpc.mockImplementation((id: string) => id === "floor-old"
+      ? oldFloor.promise : Promise.resolve({ data: ["club-b"], error: null }));
+    const view = renderTracker();
+    await waitFor(() => expect(state.floorRpc).toHaveBeenCalledWith("floor-old"));
+    state.userId = "floor-new";
+    state.clubs = [{ id: "club-b", name: "Club B" }];
+    view.rerender(<MemoryRouter initialEntries={["/tracker"]}><Routes>
+      <Route path="/tracker" element={<TrackerDashboard />} />
+    </Routes></MemoryRouter>);
+    await screen.findByText("Club B");
+    await act(async () => { oldFloor.resolve({ data: ["club-a"], error: null }); });
+    expect(state.panelScopes.at(-1)).toEqual(["club-b"]);
+    expect(screen.queryByText("Club A")).not.toBeInTheDocument();
   });
 
   it("keeps the verified club scope reference stable when selecting a tournament", async () => {

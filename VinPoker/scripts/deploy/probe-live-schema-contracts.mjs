@@ -82,12 +82,12 @@ function physicalAssetFrontendEnabled(targetRoot) {
     throw Error("UNKNOWN_TARGET_PHYSICAL_ASSET_CONTRACT");
   return true;
 }
-function assertFrontendFunctionBackend(catalog,contract,definitionMd5,configuration,errorPrefix) {
+function assertFrontendFunctionBackend(catalog,contract,definitionMd5,configuration,errorPrefix,securityDefiner=true) {
   if(!Array.isArray(catalog?.functions)) throw Error(`${errorPrefix}_REQUIRES_QUALIFIED_CATALOG`);
   const functionName=contract.name.slice("public.".length);
   const matches=catalog.functions.filter(fn=>fn.schema==="public"&&fn.name===functionName);
   const fn=matches[0];
-  if(matches.length!==1||fn?.owner!=="postgres"||fn.securityDefiner!==true
+  if(matches.length!==1||fn?.owner!=="postgres"||fn.securityDefiner!==securityDefiner
     ||JSON.stringify(fn.configuration)!==JSON.stringify(configuration)
     ||fn.definitionMd5!==definitionMd5||findMissingContracts(catalog,[contract]).length>0)
     throw Error(`${errorPrefix}_BACKEND_NOT_QUALIFIED`);
@@ -109,6 +109,28 @@ export function assertIssuanceFrontendBackend({targetRoot,catalog}) {
   if(issuanceFrontendEnabled(targetRoot)) ISSUANCE_RPC_CONTRACTS.forEach((contract,index)=>
     assertFrontendFunctionBackend(catalog,contract,["2f309c9d033c925afa4d0deed67e62ef","ad1862dbd8f800353f9dd9ec2d5bb0b9","b0f1e752c6e46d1d08a019e1aebc7f87"][index],
       ['search_path=""'],"ISSUANCE_FRONTEND"));
+}
+
+const TRACKER_SCOPED_READ_CONTRACTS = [
+ ["show_tracker_manual_cards_v1",["p_hand_id","p_session_id","p_epoch","p_revision","p_request_key","p_cards"],["uuid","uuid","bigint","bigint","text","jsonb"],"0e43636469573f0f9722639ca283f346"],
+ ["get_tracker_manual_card_receipt_v1",["p_request_key","p_expected_payload"],["text","jsonb"],"29f9eeb5563d236d0c6de4cf8c0f98b9"],
+ ["get_tracker_hand_input_tables_v4",["p_tournament_id"],["uuid"],"b815d03fd7b596eba689f7a788fc49fc"],
+ ["get_tracker_roster_snapshot_v2",["p_tournament_id","p_tournament_table_id","p_table_session_id","p_expected_epoch"],["uuid","uuid","uuid","bigint"],"2d58c68cc297e4df045c30a6c71444c5"],
+].map(([name,arguments_,argumentTypes,digest])=>({type:"function",name:`public.${name}`,arguments:arguments_,argumentTypes,digest,
+ allowOtherOverloads:false,acl:{authenticated:true,anon:false,service_role:false},dependencyKind:"direct_frontend_source"}));
+function trackerScopedReadFrontendEnabled(targetRoot){
+ const path=resolve(targetRoot,"VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts");
+ if(!existsSync(path))return false;
+ const source=readFileSync(path,"utf8");
+ const table=source.includes('"get_tracker_hand_input_tables_v4"'),roster=source.includes('"get_tracker_roster_snapshot_v2"');
+ if(table!==roster)throw Error("UNKNOWN_TARGET_TRACKER_SCOPED_READ_CONTRACT");
+ return table;
+}
+// Public catalog gate verifies wrappers. Private body and immutable ledger
+// receipts remain mandatory in controlled DB apply/postcheck, not inferred here.
+export function assertTrackerScopedReadFrontendBackend({targetRoot,catalog}){
+ if(trackerScopedReadFrontendEnabled(targetRoot))TRACKER_SCOPED_READ_CONTRACTS.forEach(contract=>
+  assertFrontendFunctionBackend(catalog,contract,contract.digest,['search_path=""'],"TRACKER_SCOPED_READ_FRONTEND",false));
 }
 
 function parseArgs(argv) {
@@ -645,7 +667,8 @@ export function sourceContractsForFrontend({ targetRoot }) {
     physicalAssetFrontendEnabled(targetRoot)?[PHYSICAL_ASSET_RPC_CONTRACT]:[],
     scopedStopFrontendEnabled(targetRoot)?[SCOPED_STOP_RPC_CONTRACT]:[],
     manualPlayerFrontendEnabled(targetRoot)?MANUAL_PLAYER_RPC_CONTRACTS:[],
-    issuanceFrontendEnabled(targetRoot)?ISSUANCE_RPC_CONTRACTS:[]);
+    issuanceFrontendEnabled(targetRoot)?ISSUANCE_RPC_CONTRACTS:[],
+    trackerScopedReadFrontendEnabled(targetRoot)?TRACKER_SCOPED_READ_CONTRACTS:[]);
 }
 
 export function contractsForTargets({ manifest, rawTargets, targetRoot }) {
@@ -695,6 +718,7 @@ function run() {
     assertScopedStopFrontendBackend({targetRoot,catalog});
     assertManualPlayerFrontendBackend({targetRoot,catalog});
     assertIssuanceFrontendBackend({targetRoot,catalog});
+    assertTrackerScopedReadFrontendBackend({targetRoot,catalog});
   }
   console.log(
     `Live schema contract probe passed for ${selection.profile} from ${inventory.source} (${contracts.length} checks, ${selection.sourceFingerprint}).`,

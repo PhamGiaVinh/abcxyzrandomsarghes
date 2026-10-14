@@ -284,6 +284,10 @@ Deno.serve(async (req) => {
   let validationNote: any = undefined;
 
   try {
+    if ((action === "show_manual_cards_v1" || action === "get_manual_card_receipt_v1")
+      && body.expected_actor_id !== undefined && body.expected_actor_id !== user.id) {
+      return validationError("ACTOR_MISMATCH", "Tài khoản đã đổi; không áp intent của tài khoản trước.");
+    }
     switch (action) {
       case "record_hand": {
         const { table_id, hand_number, hand_time, players, actions, side_pots, community_cards, pot_size } = body;
@@ -1124,6 +1128,39 @@ Deno.serve(async (req) => {
         });
         break;
       }
+      case "show_manual_cards_v1": {
+        const { hand_id, player_hole_cards, table_session_id, control_epoch, expected_source_revision, request_id } = body;
+        if (typeof hand_id !== "string" || typeof table_session_id !== "string"
+          || !Number.isSafeInteger(control_epoch) || control_epoch < 1
+          || !Number.isSafeInteger(expected_source_revision) || expected_source_revision < 0
+          || typeof request_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{11,255}$/.test(request_id)
+          || !Array.isArray(player_hole_cards) || player_hole_cards.length === 0) {
+          return validationError("MANUAL_CARD_CONTEXT_REQUIRED", "Lật bài thiếu session, epoch, revision hoặc request ID hợp lệ.");
+        }
+        // Same authenticated JWT client, never service-role delegation or actor
+        // from the body. The RPC owns authority, CAS, deck, mutation and receipt.
+        result = await supabase.rpc("show_tracker_manual_cards_v1", {
+          p_hand_id: hand_id, p_session_id: table_session_id, p_epoch: control_epoch,
+          p_revision: expected_source_revision, p_request_key: request_id, p_cards: player_hole_cards,
+        });
+        break;
+      }
+      case "get_manual_card_receipt_v1": {
+        const { request_id, hand_id, table_session_id, control_epoch, expected_source_revision, player_hole_cards } = body;
+        if (typeof request_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{11,255}$/.test(request_id)
+          || typeof hand_id !== "string" || typeof table_session_id !== "string"
+          || !Number.isSafeInteger(control_epoch) || control_epoch < 1
+          || !Number.isSafeInteger(expected_source_revision) || expected_source_revision < 0
+          || !Array.isArray(player_hole_cards) || player_hole_cards.length === 0) {
+          return validationError("MANUAL_CARD_CONTEXT_REQUIRED", "Tra receipt thiếu intent gốc hợp lệ.");
+        }
+        // Read-only actor-bound proof; it does not restore current write authority.
+        result = await supabase.rpc("get_tracker_manual_card_receipt_v1", {
+          p_request_key: request_id,
+          p_expected_payload: { hand_id, table_session_id, control_epoch, expected_source_revision, player_hole_cards },
+        });
+        break;
+      }
       case "commit_voice_board": {
         const { hand_id, voice_event_id, idempotency_key, trace_id } = body;
         if (
@@ -1174,12 +1211,41 @@ Deno.serve(async (req) => {
     }
     // A JSONB denial from the canonical action RPC is an authoritative failure,
     // not a successful Edge envelope. This keeps non-Voice callers fail-closed too.
-    if ((action === "record_action" || action === "commit_voice_board" || action === "commit_voice_hole_cards" || action === "commit_voice_finish") && result.data && typeof result.data === "object") {
+    if ((action === "record_action" || action === "show_hole_cards" || action === "show_manual_cards_v1" || action === "get_manual_card_receipt_v1" || action === "commit_voice_board" || action === "commit_voice_hole_cards" || action === "commit_voice_finish") && result.data && typeof result.data === "object") {
       const verdict = result.data as { error?: unknown };
       if (typeof verdict.error === "string") {
         return new Response(JSON.stringify({ error: verdict.error, code: verdict.error }), {
           status: 409,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+    if (action === "show_manual_cards_v1") {
+      const proof = result.data;
+      if (!proof || proof.status !== "success" || proof.hand_id !== body.hand_id
+        || proof.table_session_id !== body.table_session_id || proof.control_epoch !== body.control_epoch
+        || proof.request_key !== body.request_id || proof.expected_source_revision !== body.expected_source_revision
+        || !Number.isSafeInteger(proof.committed_source_revision)
+        || proof.committed_source_revision <= body.expected_source_revision
+        || !Number.isInteger(proof.entry_count) || proof.entry_count !== body.player_hole_cards.length) {
+        return new Response(JSON.stringify({ error: "manual_card_receipt_unconfirmed", code: "manual_card_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+    if (action === "get_manual_card_receipt_v1") {
+      const proof = result.data;
+      const committed = proof?.status === "committed" && proof.request_key === body.request_id
+        && typeof proof.hand_id === "string" && typeof proof.table_session_id === "string"
+        && Number.isSafeInteger(proof.control_epoch) && proof.control_epoch > 0
+        && Number.isSafeInteger(proof.expected_source_revision) && proof.expected_source_revision >= 0
+        && Number.isSafeInteger(proof.committed_source_revision)
+        && proof.committed_source_revision > proof.expected_source_revision
+        && Number.isInteger(proof.entry_count) && proof.entry_count > 0
+        && typeof proof.request_hash === "string" && /^[a-f0-9]{64}$/.test(proof.request_hash);
+      if (proof?.status !== "not_found" && !committed) {
+        return new Response(JSON.stringify({ error: "manual_card_receipt_unconfirmed", code: "manual_card_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }

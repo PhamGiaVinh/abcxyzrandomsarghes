@@ -43,6 +43,19 @@ on:
       - 'VinPoker/tests/trackerSettlement/publicHandVisibility74*.sql'
       - 'VinPoker/scripts/ops/tracker-public-74*.mjs'
       - '.github/workflows/tracker-public-74-protected-apply.yml'
+      - '.github/workflows/tracker-manual-75-protected-apply.yml'
+      - 'VinPoker/scripts/ops/tracker-manual-75-*'
+      - 'VinPoker/scripts/ops/tracker-reads-76-77-*'
+      - 'VinPoker/docs/runbooks/TRACKER_READS_76_77_COMPENSATION_SOURCE.sql'
+      - '.github/workflows/tracker-reads-76-77-protected-apply.yml'
+      - 'VinPoker/supabase/migrations/20270128000075_tracker_manual_cards_receipts_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql'
+      - 'VinPoker/tests/trackerVoice/manual75*'
+      - 'VinPoker/tests/trackerVoice/manual76*'
+      - 'VinPoker/supabase/migrations/20270128000077_tracker_roster_scoped_read_v2.sql'
+      - 'VinPoker/tests/trackerVoice/manualCardAuthority.prototype*'
+      - 'VinPoker/src/components/cashier/tournament-live/handinput/manualCardIntent.ts'
+      - 'VinPoker/docs/runbooks/TRACKER_MANUAL_75_COMPENSATION_SOURCE.sql'
       - 'VinPoker/tests/trackerVoice/floorAuthority.*'
       - 'VinPoker/tests/trackerVoice/sharedBoardAuthority.boundaries.sql'
       - 'VinPoker/tests/trackerVoice/identity28.localQualification.sql'
@@ -589,6 +602,33 @@ jobs:
           PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalCloseBlocked.sql
           createdb --template="$PGDATABASE" vinpoker_voice_assignment72_compensation_ci
           PGDATABASE=vinpoker_voice_assignment72_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_72_COMPENSATION_SOURCE.sql
+      - name: Manual75 full migration rollback and actor-bound payload receipts
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_manual_card75_payload_ci
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_voice_swing73_base_20261014 "$PGDATABASE"
+          node tests/trackerVoice/manual75MigrationRollback.currentSchema.mjs --owned-ci --apply-after-rollback
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --manual-hole-authority --manual-hole-prototype --manual-hole-release75 --manual-hole-release75-payload --manual-hole-release75-ci
+          createdb --template="$PGDATABASE" vinpoker_manual_card75_overlap_20261014
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --manual-hole-authority --manual-hole-prototype --manual-hole-release75 --manual-hole-release75-payload --manual-hole-release75-ci --manual75-overlap-fixture
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75CommittedOverlap.pg17.sql
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75ReadContext.baseline.pg17.sql
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual76ReadContext.prototype.pg17.sql
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_read_20261014
+          PGDATABASE=vinpoker_manual76_read_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql
+          PGDATABASE=vinpoker_manual76_read_20261014 node tests/trackerVoice/manual76ReadContext.currentSchema.mjs
+          createdb --template=vinpoker_manual76_read_20261014 vinpoker_roster77_read_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --canonical77
+          createdb --template=vinpoker_manual76_read_20261014 vinpoker_roster77_race_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --canonical77-race
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_rollback_20261014
+          PGDATABASE=vinpoker_manual76_rollback_20261014 node tests/trackerVoice/manual76AtomicRollback.mjs
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual_card75_compensation_20261014
+          PGDATABASE=vinpoker_manual_card75_compensation_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75Compensation.pg17.sql
+          node tests/trackerVoice/manual75IntentPolicy.mjs
+          node tests/trackerVoice/manual75EdgeHandler.mjs
       - name: Public hand visibility74 actor tenant and write compatibility
         working-directory: VinPoker
         run: |
@@ -600,6 +640,19 @@ jobs:
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.pg17.sql
           PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.compensation.pg17.sql
+      - name: Manual75 exact release plan and atomic ledger rollback
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          node --test scripts/ops/tracker-manual-75-release-plan.test.mjs scripts/ops/tracker-manual-75-protected-apply.test.mjs
+          createdb --template=vinpoker_visibility74_atomic_ci vinpoker_manual75_atomic_ci
+          PGDATABASE=vinpoker_manual75_atomic_ci MANUAL75_PG_TEST=1 node --test scripts/ops/tracker-manual-75-atomic-pg.test.mjs
+          node --test scripts/ops/tracker-reads-76-77-release-plan.test.mjs scripts/ops/tracker-reads-76-77-protected-apply.test.mjs
+          createdb --template=vinpoker_manual75_atomic_ci vinpoker_reads76_77_atomic_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --setup-76-77
+          node scripts/ops/tracker-reads-76-77-atomic.pg.mjs
+          createdb --template=vinpoker_reads76_77_atomic_20261014 vinpoker_reads76_77_compensation_20261014
+          node scripts/ops/tracker-reads-76-77-compensation.pg.mjs
       - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
         working-directory: VinPoker
         run: |

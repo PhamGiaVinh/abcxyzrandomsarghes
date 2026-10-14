@@ -110,6 +110,19 @@ describe("handInputEdge — write-path parity", () => {
       player_hole_cards: [{ player_id: "p1", entry_number: 1, hole_cards: ["Ah", "Ad"] }],
     });
   });
+  it("manual cards carry exact session epoch revision and durable request identity", () => {
+    const intent = {
+      tournamentId: "T1", handId: "H9",
+      playerHoleCards: [{ player_id: "p1", entry_number: 1, hole_cards: ["Ah", "Ad"] }],
+      manualContext: { tableSessionId: "S9", controlEpoch: 4, sourceRevision: 12,
+        requestId: "manual-card-request-0001" },
+    };
+    expect(buildShowHoleCardsBody(intent)).toEqual({
+      tournament_id: "T1", action: "show_manual_cards_v1", hand_id: "H9",
+      player_hole_cards: intent.playerHoleCards, table_session_id: "S9",
+      control_epoch: 4, expected_source_revision: 12, request_id: "manual-card-request-0001",
+    });
+  });
 
   it("void_hand and durable undo bodies are exact", () => {
     expect(buildVoidHandBody({ tournamentId: "T1", handId: "H9" })).toEqual({
