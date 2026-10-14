@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { DealerAssignment, DealerAttendance, NextDealerPrediction } from "@/hooks/useDealerSwing";
 import type { RotationTableSlots } from "@/hooks/useRotationSchedule";
+import { dealerTableCoverage } from "@/lib/dealerTableCoverage";
 
 export type AttentionType = "ot" | "empty_table" | "break_due" | "missing_next_dealer" | "shortage";
 
@@ -62,6 +63,23 @@ export function useAttentionQueue({
 }: UseAttentionQueueProps): AttentionQueueResult {
   return useMemo(() => {
     const items: AttentionItem[] = [];
+
+    // Missing schedule/prediction is not proof of coverage. Use the same exact
+    // session coverage as the summary; never offer an action for raw inventory.
+    for (const table of tables ?? []) {
+      if (table.status !== "active" || !table.table_session_id) continue;
+      if (dealerTableCoverage([table], assignments).assignedTables !== 0) continue;
+      items.push({
+        id: `empty-${table.table_session_id}`,
+        type: "empty_table",
+        severity: "warning",
+        score: BASE_SCORE.empty_table,
+        title: `${table.table_name ?? "Bàn"} • Thiếu dealer`,
+        subtitle: "Phiên bàn đang mở chưa có phân công hiệu lực",
+        tableId: table.id,
+        tableName: table.table_name ?? undefined,
+      });
+    }
 
     // ── 1. OT — confirmed overtime_started_at ──
     for (const a of assignments) {
