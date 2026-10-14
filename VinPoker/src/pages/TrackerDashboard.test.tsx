@@ -101,6 +101,33 @@ describe("TrackerDashboard club read state", () => {
     expect(screen.queryByText("Bạn chưa được phân công CLB nào")).not.toBeInTheDocument();
   });
 
+  it("deduplicates Tracker and Floor read scopes", async () => {
+    state.floorRpc.mockResolvedValue({ data: ["club-a", "quads"], error: null });
+    state.clubs = [{ id: "club-a", name: "Club A" }, { id: "quads", name: "Quads TEST" }];
+    renderTracker();
+    await screen.findByTestId("tracker-live-panel");
+    expect(state.panelScopes.at(-1)).toEqual(["club-a", "quads"]);
+  });
+
+  it("ignores a delayed Floor scope from the previous account", async () => {
+    const oldFloor = deferred<{ data: string[]; error: null }>();
+    state.userId = "floor-old";
+    state.rpc.mockResolvedValue({ data: [], error: null });
+    state.floorRpc.mockImplementation((id: string) => id === "floor-old"
+      ? oldFloor.promise : Promise.resolve({ data: ["club-b"], error: null }));
+    const view = renderTracker();
+    await waitFor(() => expect(state.floorRpc).toHaveBeenCalledWith("floor-old"));
+    state.userId = "floor-new";
+    state.clubs = [{ id: "club-b", name: "Club B" }];
+    view.rerender(<MemoryRouter initialEntries={["/tracker"]}><Routes>
+      <Route path="/tracker" element={<TrackerDashboard />} />
+    </Routes></MemoryRouter>);
+    await screen.findByText("Club B");
+    await act(async () => { oldFloor.resolve({ data: ["club-a"], error: null }); });
+    expect(state.panelScopes.at(-1)).toEqual(["club-b"]);
+    expect(screen.queryByText("Club A")).not.toBeInTheDocument();
+  });
+
   it("keeps the verified club scope reference stable when selecting a tournament", async () => {
     renderTracker();
     await screen.findByTestId("tracker-live-panel");

@@ -71,18 +71,22 @@ export default function TrackerDashboard() {
     setClubsError(null);
     setClubsForUserId(null);
 
-    const scope = await readWithRetry(
-      () => supabase.rpc("tracker_club_ids", { _user_id: requestedUserId }),
-      isCurrentRequest,
-    );
+    // Read scopes only. Floor visibility does not grant Tracker/card writes;
+    // every operational RPC still verifies its own actor/tenant/session fence.
+    const [trackerScope, floorScope] = await Promise.all([
+      readWithRetry(() => supabase.rpc("tracker_club_ids", { _user_id: requestedUserId }), isCurrentRequest),
+      readWithRetry(() => supabase.rpc("floor_club_ids", { _user_id: requestedUserId }), isCurrentRequest),
+    ]);
     if (!isCurrentRequest()) return;
-    if (scope.error) {
-      setClubsError(trackerReadErrorMessage(scope.error));
+    const scopeError = trackerScope.error || floorScope.error;
+    if (scopeError) {
+      setClubsError(trackerReadErrorMessage(scopeError));
       setClubsForUserId(requestedUserId);
       return;
     }
 
-    const idArr = (scope.data ?? []).filter((clubId): clubId is string => typeof clubId === "string");
+    const idArr = [...new Set([...(trackerScope.data ?? []), ...(floorScope.data ?? [])]
+      .filter((clubId): clubId is string => typeof clubId === "string"))];
     if (!idArr.length) {
       setClubsError(null);
       setClubs([]);
