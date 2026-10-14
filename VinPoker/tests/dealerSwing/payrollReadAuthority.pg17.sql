@@ -20,6 +20,7 @@ DO $$ DECLARE statement text; exposed text[]:='{}';BEGIN
   'SELECT count(*) FROM public.get_shift_payroll_summary(''e1820000-0000-4000-8000-000000000002'',current_date)']) LOOP
   BEGIN EXECUTE statement; exposed:=array_append(exposed,statement);
   EXCEPTION WHEN insufficient_privilege THEN NULL;
+   WHEN OTHERS THEN exposed:=array_append(exposed,'non_authorization_error:'||SQLSTATE||':'||statement);
   END;
  END LOOP;
  IF cardinality(exposed)>0 THEN RAISE EXCEPTION 'payroll_read_authority_failed: anonymous RPC admitted: %',exposed;END IF;
