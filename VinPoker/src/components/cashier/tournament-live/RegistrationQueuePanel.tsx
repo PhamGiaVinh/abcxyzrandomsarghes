@@ -81,7 +81,14 @@ const QUEUE_BADGE: Record<QueueStatus, { label: string; cls: string }> = {
  * all SELECT-authenticated). Seating actions go through SeatDrawDialog →
  * confirm_registration_and_assign_seat; cancel reuses the cashier dialog.
  */
-export function RegistrationQueuePanel({
+export function RegistrationQueuePanel(props: Parameters<typeof ScopedRegistrationQueuePanel>[0]) {
+  const { user } = useAuth();
+  // A different actor/tournament must not inherit rows or open mutation dialogs.
+  if (!user) return <Card className="p-4" role="alert">Đăng nhập để tải hàng chờ.</Card>;
+  return <ScopedRegistrationQueuePanel key={`${user.id}:${props.tournamentId}`} {...props} />;
+}
+
+function ScopedRegistrationQueuePanel({
   tournamentId, tournamentName, tournamentDate, refreshTrigger,
 }: {
   tournamentId: string;
@@ -92,6 +99,7 @@ export function RegistrationQueuePanel({
   const { user } = useAuth();
   const [rows, setRows] = useState<QueueRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [drawRegs, setDrawRegs] = useState<DrawRegistration[] | null>(null);
   const [receipt, setReceipt] = useState<SeatReceiptData | null>(null);
@@ -102,11 +110,21 @@ export function RegistrationQueuePanel({
   const [voidBusy, setVoidBusy] = useState(false);
   const [moveRow, setMoveRow] = useState<QueueRow | null>(null);
   const seqRef = useRef(0);
+  useEffect(() => () => { ++seqRef.current; }, []);
+  useEffect(() => {
+    if (!readError) return;
+    setDrawRegs(null);
+    setCancelTarget(null);
+    setVoidTarget(null);
+    setMoveRow(null);
+    setReceiptOpen(false);
+  }, [readError]);
 
   const load = useCallback(async () => {
     const seq = ++seqRef.current;
     setLoading(true);
-    const [{ data: regs, error: regErr }, { data: entries }, { data: receipts }] = await Promise.all([
+    try {
+    const [{ data: regs, error: regErr }, { data: entries, error: entryErr }, { data: receipts, error: receiptErr }] = await Promise.all([
       supabase.from("tournament_registrations")
         .select("id, reference_code, status, total_pay, committed_at, confirmed_at, confirmed_by, player_id")
         .eq("tournament_id", tournamentId)
@@ -123,15 +141,26 @@ export function RegistrationQueuePanel({
         .order("issued_at", { ascending: false }),
     ]);
     if (seq !== seqRef.current) return; // stale response
-    setLoading(false);
-    if (regErr) { toast.error(regErr.message); return; }
+    const readFailure = regErr ?? entryErr ?? receiptErr;
+    if (readFailure) {
+      setLoading(false);
+      setReadError("Không tải được đầy đủ đăng ký, entry hoặc phiếu ghế. Hãy thử lại trước khi thao tác.");
+      toast.error(readFailure.message);
+      return;
+    }
 
     const base = (regs ?? []) as any[];
     const userIds = [...new Set(base.flatMap((r) => [r.player_id, r.confirmed_by]).filter(Boolean))];
-    const { data: profs } = userIds.length
+    const { data: profs, error: profileErr } = userIds.length
       ? await supabase.from("profiles").select("user_id, display_name, phone").in("user_id", userIds)
-      : { data: [] as any[] };
+      : { data: [] as any[], error: null };
     if (seq !== seqRef.current) return;
+    if (profileErr) {
+      setLoading(false);
+      setReadError("Không tải được hồ sơ người chơi. Hãy thử lại trước khi thao tác.");
+      toast.error(profileErr.message);
+      return;
+    }
     const pMap = new Map((profs ?? []).map((p: any) => [p.user_id, p]));
     const entryByReg = new Map((entries ?? []).map((e: any) => [e.registration_id, e]));
     // receipts are issued_at DESC — first hit per registration is the latest non-superseded
@@ -169,6 +198,14 @@ export function RegistrationQueuePanel({
       };
     }));
     setLastRefreshed(new Date());
+    setReadError(null);
+    setLoading(false);
+    } catch (error) {
+      if (seq !== seqRef.current) return;
+      setLoading(false);
+      setReadError("Không tải được hàng chờ. Hãy thử lại trước khi thao tác.");
+      toast.error(error instanceof Error ? error.message : "Lỗi kết nối khi tải hàng chờ.");
+    }
   }, [tournamentId]);
 
   // initial + realtime piggyback (tournament_seats channel bumps refreshTrigger)
@@ -198,7 +235,7 @@ export function RegistrationQueuePanel({
   };
 
   const cancel = async (reason: string) => {
-    if (!cancelTarget || !user) return;
+    if (!cancelTarget || !user || loading || readError) return;
     setCancelBusy(true);
     const { error } = await supabase
       .from("tournament_registrations")
@@ -219,7 +256,7 @@ export function RegistrationQueuePanel({
 
   // Request only: Floor clearance and actual Cashier payment remain separate server steps.
   const voidReg = async (reason: string) => {
-    if (!voidTarget) return;
+    if (!voidTarget || !user || loading || readError) return;
     setVoidBusy(true);
     const { data, error } = await supabase.rpc("cashier_request_refund_v1", {
       p_registration_id: voidTarget.id,
@@ -248,7 +285,7 @@ export function RegistrationQueuePanel({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" className="h-9" disabled={waiting.length === 0}
+          <Button size="sm" className="h-9" disabled={loading || !!readError || waiting.length === 0}
             onClick={() => setDrawRegs(waiting.map((w) => ({ id: w.id, reference_code: w.reference_code, player_name: w.player_name })))}>
             <Dices className="w-3.5 h-3.5 mr-1" /> Bốc thăm tất cả ({waiting.length})
           </Button>
@@ -261,7 +298,12 @@ export function RegistrationQueuePanel({
         Tự làm mới mỗi 15s{lastRefreshed ? ` · Cập nhật ${lastRefreshed.toLocaleTimeString("vi-VN")}` : ""} — đăng ký mới có thể trễ tối đa 15s.
       </div>
 
-      {rows === null ? (
+      {readError && (
+        <div role="alert" className="text-sm text-destructive border border-destructive/40 rounded-md p-3">
+          {readError}{rows !== null ? " Dữ liệu bên dưới là lần tải thành công trước, chưa được xác minh lại." : ""}
+        </div>
+      )}
+      {rows === null && readError ? null : rows === null ? (
         <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
       ) : rows.length === 0 ? (
         <div className="text-center text-sm text-muted-foreground py-10">Chưa có đăng ký nào cho giải này.</div>
@@ -297,7 +339,7 @@ export function RegistrationQueuePanel({
                   )}
                 </div>
 
-                <div className="flex md:flex-col gap-2 md:w-44">
+                <fieldset disabled={loading || !!readError} className="flex md:flex-col gap-2 md:w-44">
                   {r.queueStatus === "waiting" && (
                     <>
                       <Button size="sm" className="flex-1 h-9"
@@ -326,7 +368,7 @@ export function RegistrationQueuePanel({
                       <Undo2 className="w-3.5 h-3.5 mr-1" /> Yêu cầu hoàn tiền
                     </Button>
                   )}
-                </div>
+                </fieldset>
               </div>
             );
           })}
@@ -334,7 +376,7 @@ export function RegistrationQueuePanel({
       )}
 
       <SeatDrawDialog
-        open={drawRegs !== null}
+        open={drawRegs !== null && !readError}
         onOpenChange={(v) => { if (!v) setDrawRegs(null); }}
         tournamentId={tournamentId}
         tournamentName={tournamentName}
@@ -344,7 +386,7 @@ export function RegistrationQueuePanel({
       />
 
       <CancelRegistrationDialog
-        open={cancelTarget !== null}
+        open={cancelTarget !== null && !readError}
         onOpenChange={(v) => { if (!v) setCancelTarget(null); }}
         playerName={cancelTarget?.player_name ?? "Player"}
         referenceCode={cancelTarget?.reference_code ?? ""}
@@ -353,7 +395,7 @@ export function RegistrationQueuePanel({
       />
 
       <VoidRegistrationDialog
-        open={voidTarget !== null}
+        open={voidTarget !== null && !readError}
         onOpenChange={(v) => { if (!v) setVoidTarget(null); }}
         playerName={voidTarget?.player_name ?? "Player"}
         referenceCode={voidTarget?.reference_code ?? ""}
@@ -363,7 +405,7 @@ export function RegistrationQueuePanel({
         onConfirm={voidReg}
       />
 
-      {moveRow?.entry_id && (
+      {moveRow?.entry_id && !readError && (
         <MovePlayerDialog
           actorId={user?.id ?? null}
           open={moveRow !== null}
