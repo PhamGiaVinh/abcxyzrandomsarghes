@@ -119,6 +119,7 @@ jobs:
           src/components/LiveStateEditor.test.tsx
           src/lib/tournamentParticipation.test.ts
           src/hooks/useTournamentTvDataCore.test.tsx
+          src/components/cashier/tournament-live/handinput/useStandaloneRosterIntent.test.tsx
           src/components/chip-ops/DashboardTab.test.tsx
           src/lib/chipOpsMetrics.test.ts
           --maxWorkers=1 --minWorkers=1
