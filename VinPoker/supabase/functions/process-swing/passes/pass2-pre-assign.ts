@@ -137,7 +137,8 @@ export async function pass2PreAssignNext(
         result.errors.push({ table_id: "", error: `manual assignment read: ${queryErr.message}` });
         return result;
       }
-      upcomingAssignments = data ?? [];
+      if (!Array.isArray(data)) throw new Error("manual assignment read: invalid response");
+      upcomingAssignments = data;
     } else {
       // Automatic: separate queries for normal and OT emergency windows
       // Normal tables: pre-announce at default window
@@ -164,6 +165,7 @@ export async function pass2PreAssignNext(
         result.errors.push({ table_id: "", error: `normal assignment read: ${normalErr.message}` });
         return result;
       }
+      if (!Array.isArray(normalData)) throw new Error("normal assignment read: invalid response");
 
       // OT emergency: shortened pre-announce window (3 min instead of 6)
       const { data: otData, error: otErr } = await admin
@@ -189,6 +191,7 @@ export async function pass2PreAssignNext(
         result.errors.push({ table_id: "", error: `OT assignment read: ${otErr.message}` });
         return result;
       }
+      if (!Array.isArray(otData)) throw new Error("OT assignment read: invalid response");
 
       // Merge and deduplicate by assignment id
       const seen = new Set<string>();

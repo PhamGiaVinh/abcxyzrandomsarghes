@@ -49,3 +49,17 @@ for (const throws of [false, true]) {
     }
   });
 }
+
+for (const data of [null, { rows: [] }]) {
+ for (const stage of ["manual", "normal", "ot"]) {
+  Deno.test(`preassignment ${stage} malformed snapshot ${JSON.stringify(data)} is not verified empty`, async () => {
+    let reads = 0;
+    const query: any = { then(resolve: (value: unknown) => void) { reads++; resolve({ data: stage === "ot" && reads === 1 ? [] : data, error: null }); } };
+    for (const method of ["select", "eq", "is", "gte", "lt", "lte", "not"]) query[method] = () => query;
+    const result = await pass2PreAssignNext({ from: () => query }, "test-club", 5, {
+      clubZone: null, chatId: null, cycleExcludedIds: new Set(), ...(stage === "manual" ? { manualWindowMinutes: 15 } : {}),
+    });
+    if (result.errors.length !== 1) throw new Error("malformed snapshot was accepted");
+  });
+ }
+}
