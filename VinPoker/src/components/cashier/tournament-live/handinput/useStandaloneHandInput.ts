@@ -2907,6 +2907,13 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const handleShowHoleCards = async () => {
     if (!handId || isReadOnly) return;
+    if (tableLoadState !== "ready" || loadedTablesTournamentRef.current !== tournamentId || !rosterContext
+      || (FEATURES.floorDeferredTrackerMoveV1
+        && (!rosterContext.tableSessionId || !Number.isSafeInteger(rosterContext.controlEpoch)
+          || Number(rosterContext.controlEpoch) < 1))) {
+      toast.error("Chưa xác minh được context bàn. Hãy tải lại trước khi lật bài.");
+      return;
+    }
     const generation = rosterGenerationRef.current;
     const scope = actionScopeRef.current;
     const loadToken = tableLoadGuardRef.current.capture(tableId);
