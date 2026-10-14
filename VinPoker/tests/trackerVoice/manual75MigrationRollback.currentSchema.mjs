@@ -40,3 +40,13 @@ assert.match(failed.stderr,/division by zero/u);
 assert.match(failed.stdout,/CREATE FUNCTION/u,'failure must occur after actual DDL');
 assert.deepEqual(capture(),before,'failed transaction left function/ACL/catalog drift');
 console.log('MANUAL75_FULL_MIGRATION_PRECOMMIT_ROLLBACK_PASS');
+if(process.argv.includes('--apply-after-rollback')){
+ const applied=run(guard+'\n'+sql);
+ assert.equal(applied.status,0,applied.stderr);
+ const after=capture();
+ assert.equal(after.table,'floor_private.tracker_manual_card_receipts_v1');
+ assert.equal(after.writer,'show_tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)');
+ assert.equal(after.reader,'get_tracker_manual_card_receipt_v1(text)');
+ assert.notEqual(after.functions,before.functions);
+ console.log('MANUAL75_FULL_MIGRATION_WITH_POSTCHECK_COMMIT_PASS');
+}

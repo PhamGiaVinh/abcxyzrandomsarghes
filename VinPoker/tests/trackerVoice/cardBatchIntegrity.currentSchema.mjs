@@ -9,6 +9,8 @@ const authority70=process.argv.includes('--authority70');
 const manualHoleAuthority=process.argv.includes('--manual-hole-authority');
 const manualHolePrototype=process.argv.includes('--manual-hole-prototype');
 const manualHoleRelease75=process.argv.includes('--manual-hole-release75');
+const manualHoleRelease75Full=process.argv.includes('--manual-hole-release75-full');
+assert.ok(!manualHoleRelease75Full||manualHoleRelease75,'full75 clone requires canonical release75 matrix');
 assert.ok(!manualHoleRelease75||manualHolePrototype,'release75 reuses the guarded manual prototype matrix');
 assert.ok(!manualHolePrototype||(manualHoleAuthority&&authority70),'manual prototype requires guarded authority fixture');
 assert.ok(!manualHoleAuthority||authority70,'manual hole authority requires guarded owned schema mode');
@@ -57,7 +59,7 @@ assert.ok(!authorityBaseline||authority70,'baseline comparison requires authorit
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
-const authorityDatabase=manualHoleRelease75?'vinpoker_manual_card75_release_20261014':manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
+const authorityDatabase=manualHoleRelease75Full?'vinpoker_manual_card75_rollback_20261014':manualHoleRelease75?'vinpoker_manual_card75_release_20261014':manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');
@@ -254,7 +256,7 @@ if(manualHoleAuthority){
   :'tests/trackerVoice/manualHoleAuthority.currentSchema.sql','utf8');
  if(manualHoleRelease75){
   for(const [before,after] of [
-   ['vinpoker_manual_card75_20261014','vinpoker_manual_card75_release_20261014'],
+   ['vinpoker_manual_card75_20261014',authorityDatabase],
    ['public.show_manual_cards_prototype','public.show_tracker_manual_cards_v1'],
    ['public.get_manual_card_receipt_prototype','public.get_tracker_manual_card_receipt_v1'],
    ['floor_private.manual_cards_prototype','floor_private.tracker_manual_cards_v1'],
