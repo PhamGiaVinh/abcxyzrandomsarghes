@@ -2,6 +2,8 @@ name: Operations current schema runtime
 on:
   pull_request:
     paths:
+      - 'VinPoker/supabase/migrations/20270128000083_shift_payroll_return_type_v1.sql'
+      - 'VinPoker/tests/dealerSwing/shiftPayrollReturnType*'
       - 'VinPoker/supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql'
       - 'VinPoker/tests/dealerSwing/payrollReadAuthority*'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
@@ -329,6 +331,10 @@ jobs:
           PGDATABASE=vinpoker_ops_payroll82_atomic_ci PAYROLL82_PG_TEST=1 node --test tests/dealerSwing/payrollReadAuthority.atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/payrollReadAuthority.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_payroll83_atomic_ci
+          PGDATABASE=vinpoker_ops_payroll83_atomic_ci PAYROLL83_PG_TEST=1 node --test tests/dealerSwing/shiftPayrollReturnType.atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000083_shift_payroll_return_type_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/shiftPayrollReturnType.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
           createdb -T "$PGDATABASE" vinpoker_ops_dealer51_atomic_ci
