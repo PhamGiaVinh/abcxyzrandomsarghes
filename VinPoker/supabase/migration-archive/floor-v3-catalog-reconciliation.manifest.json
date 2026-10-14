@@ -7613,6 +7613,7 @@
   ],
   "ownerGatedActiveAllowlist": [
     {"version":"20270128000076","filename":"20270128000076_tracker_hand_input_scoped_read_v1.sql","sha256":"9dbdc7a37578e1b34acbb3df4343d308b8f5617907ceafc295bbc312162b0714","domain":"tracker-hand-input-scoped-read-campaign"},
+    {"version":"20270128000077","filename":"20270128000077_tracker_roster_scoped_read_v2.sql","sha256":"e717a92d9a398aa77cb62300930b295bdd9e904c9dc1ccedfc4ff449058342d4","domain":"tracker-roster-scoped-read-campaign"},
     {"version":"20270128000075","filename":"20270128000075_tracker_manual_cards_receipts_v1.sql","sha256":"4f52194e0c0721552519660abb844e3ccb5e6dba307f45203de08a2a6b6f9a4a","domain":"tracker-manual-cards-receipts-campaign"},
     {"version":"20270128000074","filename":"20270128000074_tracker_public_hand_visibility_v1.sql","sha256":"1b26b18d91807e2aa937c114810ee4e074f66e4c3af30d4ca50c51b433078163","domain":"tracker-public-hand-visibility-campaign"},
     {"version":"20270128000072","filename":"20270128000072_tracker_voice_assignment_lifecycle_v1.sql","sha256":"6a0b7cb216c6eec027e4ff0b4eb7e5a7a4478ba0bf879b14a65906ce8c4edb09","domain":"tracker-voice-assignment-lifecycle-campaign"},
