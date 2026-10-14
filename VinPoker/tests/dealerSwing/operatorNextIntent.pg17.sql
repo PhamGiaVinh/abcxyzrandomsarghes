@@ -102,6 +102,25 @@ SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.deal
 SELECT pg_temp.assert_true((SELECT current_state='available' FROM public.dealer_attendance
  WHERE id='e1800000-0000-4000-8000-000000000045'),'rejected replacement leaves new incoming available');
 ROLLBACK TO SAVEPOINT old_reservation_competing_claim;
+SAVEPOINT old_reservation_is_serving;
+UPDATE public.dealer_rotation_schedule SET in_attendance_id='e1800000-0000-4000-8000-000000000041'
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0 AND status='announced';
+UPDATE public.dealer_assignments SET pre_assigned_attendance_id=attendance_id
+ WHERE id=(SELECT id FROM next80_context);
+UPDATE public.dealer_attendance SET current_state='pre_assigned',
+ pre_assigned_table_id='e1800000-0000-4000-8000-000000000011',pre_assigned_at=now()
+ WHERE id='e1800000-0000-4000-8000-000000000041';
+UPDATE next80_context c SET version=a.version FROM public.dealer_assignments a WHERE a.id=c.id;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.assert_true((SELECT public.operator_plan_next_dealer_v1(table_session_id,id,version,
+ 'e1800000-0000-4000-8000-000000000045','e1800000-0000-4000-8000-000000000095')->>'outcome'='plan_requires_repair'
+ FROM next80_context),'self-linked announced reservation cannot free currently serving dealer');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance
+ WHERE id='e1800000-0000-4000-8000-000000000041'),'serving attendance marker untouched after rejected self-link');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts
+ WHERE request_id='e1800000-0000-4000-8000-000000000095'),'self-link writes no receipt');
+ROLLBACK TO SAVEPOINT old_reservation_is_serving;
 -- The missing assignment/attendance half of an announced triad is not a noop.
 -- must not receive a successful same-dealer no-op receipt.
 UPDATE public.dealer_assignments SET pre_assigned_attendance_id=NULL,pre_assigned_at=NULL,planned_relief_at=NULL
