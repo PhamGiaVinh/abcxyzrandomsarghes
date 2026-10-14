@@ -124,6 +124,7 @@ on:
       - 'VinPoker/tests/dealerSwing/closedSessionAttendance.currentSchema.mjs'
       - 'VinPoker/supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql'
       - 'VinPoker/tests/dealerSwing/massOpenSessions.pg17.sql'
+      - 'VinPoker/tests/dealerSwing/operatorNextIntent.*'
       - 'VinPoker/tests/dealerSwing/closeNextReservation.concurrent.mjs'
       - 'VinPoker/scripts/ops/dealer-close79-*.mjs'
       - '.github/workflows/dealer-close79-protected-apply.yml'
@@ -419,6 +420,9 @@ jobs:
           PGDATABASE=vinpoker_ops_close7981_atomic_ci CLOSE7981_PG_TEST=1 node --test scripts/ops/dealer-close79-81-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000081_dealer_close_forecast_slots_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_next80_ci
+          PGDATABASE=vinpoker_ops_next80_ci node tests/dealerSwing/operatorNextIntent.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_close79_overlap
           PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
