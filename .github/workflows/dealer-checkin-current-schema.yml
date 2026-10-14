@@ -47,6 +47,7 @@ on:
       - 'VinPoker/scripts/ops/tracker-manual-75-*'
       - 'VinPoker/supabase/migrations/20270128000075_tracker_manual_cards_receipts_v1.sql'
       - 'VinPoker/tests/trackerVoice/manual75*'
+      - 'VinPoker/tests/trackerVoice/manual76*'
       - 'VinPoker/tests/trackerVoice/manualCardAuthority.prototype*'
       - 'VinPoker/src/components/cashier/tournament-live/handinput/manualCardIntent.ts'
       - 'VinPoker/docs/runbooks/TRACKER_MANUAL_75_COMPENSATION_SOURCE.sql'

@@ -5,6 +5,7 @@ DO $$ BEGIN
  IF current_database()<>'vinpoker_manual_card75_overlap_20261014' OR current_user<>'postgres'
  OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port() NOT IN (55441,55464)
  OR (SELECT count(*) FROM public.clubs)<>2
+ OR NOT public.is_club_tracker('81600000-0000-4000-8000-000000000001','81000000-0000-4000-8000-000000000002')
  OR to_regprocedure('public.manual76_context_prototype(uuid)') IS NOT NULL
  THEN RAISE EXCEPTION 'owned_manual76_read_prototype_required'; END IF;
 END $$;
@@ -58,22 +59,29 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
 RETURN floor_private.manual76_context_prototype(p_tournament_id);
 REVOKE ALL ON FUNCTION public.manual76_context_prototype(uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.manual76_context_prototype(uuid) TO authenticated;
+DO $$ BEGIN
+ IF has_function_privilege('anon','public.manual76_context_prototype(uuid)','EXECUTE')
+ OR has_function_privilege('service_role','public.manual76_context_prototype(uuid)','EXECUTE')
+ OR has_schema_privilege('authenticated','floor_private','USAGE')
+ OR NOT has_function_privilege('authenticated','public.manual76_context_prototype(uuid)','EXECUTE')
+ THEN RAISE EXCEPTION 'prototype_read_acl_or_private_schema_exposure'; END IF;
+END $$;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','81300000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claims','{"sub":"81300000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 DO $$ DECLARE result jsonb; BEGIN
  result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
- IF result->>'ok' IS DISTINCT FROM 'true' OR jsonb_array_length(result->'tables')<>2
- OR EXISTS(SELECT 1 FROM jsonb_array_elements(result->'tables') t WHERE (t->>'can_manual_cards')::boolean)
+ IF result->>'ok' IS DISTINCT FROM 'true' OR jsonb_array_length(result->'tables') IS DISTINCT FROM 2
+ OR EXISTS(SELECT 1 FROM jsonb_array_elements(result->'tables') t WHERE (t->>'can_manual_cards')::boolean IS DISTINCT FROM false)
  THEN RAISE EXCEPTION 'floor_scoped_read_without_new_write_capability_failed: %',result; END IF;
 END $$;
 SELECT set_config('request.jwt.claim.sub','81200000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claims','{"sub":"81200000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 DO $$ DECLARE result jsonb; BEGIN
  result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
- IF result->>'ok' IS DISTINCT FROM 'true' OR jsonb_array_length(result->'tables')<>1
- OR result->'tables'->0->>'table_session_id'<>'83500000-0000-4000-8000-000000000001'
- OR result->'tables'->0->>'can_manual_cards'<>'true'
+ IF result->>'ok' IS DISTINCT FROM 'true' OR jsonb_array_length(result->'tables') IS DISTINCT FROM 1
+ OR result->'tables'->0->>'table_session_id' IS DISTINCT FROM '83500000-0000-4000-8000-000000000001'
+ OR result->'tables'->0->>'can_manual_cards' IS DISTINCT FROM 'true'
  THEN RAISE EXCEPTION 'dealer_exact_session_read_failed: %',result; END IF;
 END $$;
 SELECT set_config('request.jwt.claim.sub','81500000-0000-4000-8000-000000000001',true);
@@ -89,6 +97,26 @@ DO $$ DECLARE result jsonb; BEGIN
  IF result->>'error' IS DISTINCT FROM 'actor_not_allowed' THEN RAISE EXCEPTION 'foreign_club_owner_read_exposed: %',result; END IF;
 END $$;
 RESET ROLE;
+UPDATE public.table_sessions SET control_mode='manual' WHERE id='83500000-0000-4000-8000-000000000002';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','81100000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"sub":"81100000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+DO $$ DECLARE result jsonb; BEGIN
+ result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
+ IF result->>'ok' IS DISTINCT FROM 'true'
+ OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(result->'tables') t WHERE t->>'control_mode'='manual' AND t->>'can_manual_cards'='false')
+ OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(result->'tables') t WHERE t->>'control_mode'='tracker' AND t->>'can_manual_cards'='true')
+ THEN RAISE EXCEPTION 'owner_mode_specific_capability_failed: %',result; END IF;
+END $$;
+RESET ROLE;
+UPDATE public.tournaments SET deleted_at=now() WHERE id='85000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE result jsonb; BEGIN
+ result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
+ IF result->>'error' IS DISTINCT FROM 'actor_not_allowed' THEN RAISE EXCEPTION 'deleted_tournament_read_exposed: %',result; END IF;
+END $$;
+RESET ROLE;
+UPDATE public.tournaments SET deleted_at=NULL WHERE id='85000000-0000-4000-8000-000000000001';
 UPDATE public.dealers SET status='inactive' WHERE id='87000000-0000-4000-8000-000000000001';
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','81200000-0000-4000-8000-000000000001',true);
@@ -118,6 +146,14 @@ DO $$ DECLARE result jsonb; BEGIN
  OR EXISTS(SELECT 1 FROM jsonb_array_elements(result->'tables') t
   WHERE t->>'tournament_table_id'='84000000-0000-4000-8000-000000000002')
  THEN RAISE EXCEPTION 'floor_malformed_session_not_reported_separately: %',result; END IF;
+END $$;
+RESET ROLE;
+DELETE FROM public.club_floors WHERE club_id='81000000-0000-4000-8000-000000000001'
+ AND user_id='81300000-0000-4000-8000-000000000001';
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE result jsonb; BEGIN
+ result:=public.manual76_context_prototype('85000000-0000-4000-8000-000000000001');
+ IF result->>'error' IS DISTINCT FROM 'actor_not_allowed' THEN RAISE EXCEPTION 'revoked_floor_read_exposed: %',result; END IF;
 END $$;
 ROLLBACK;
 \echo MANUAL76_SCOPED_READ_PROTOTYPE_FLOOR_DEALER_OUTSIDER_INACTIVE_PASS_NOT_RELEASE
