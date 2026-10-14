@@ -18,19 +18,49 @@ BEGIN
   DECLARE plan_row record; cancel_result jsonb; legacy_row record; incoming_row record;
   BEGIN
     FOR plan_row IN
-      SELECT rs.id,rs.club_id,rs.table_id,rs.status
+      SELECT rs.id,rs.club_id,rs.table_id,rs.status,rs.assignment_id,rs.in_attendance_id,
+        a.club_id AS assignment_club_id,a.table_id AS assignment_table_id,
+        a.table_session_id AS assignment_session_id
       FROM public.dealer_rotation_schedule rs
-      JOIN public.dealer_assignments a ON a.id=rs.assignment_id
-      WHERE a.table_session_id=v_session.id
+      LEFT JOIN public.dealer_assignments a ON a.id=rs.assignment_id
+      WHERE (a.table_session_id=v_session.id OR rs.table_id=v_session.game_table_id)
         AND rs.status IN ('predicted','announced','executing')
       ORDER BY rs.id FOR UPDATE OF rs
     LOOP
       IF plan_row.club_id IS DISTINCT FROM v_session.club_id
-        OR plan_row.table_id IS DISTINCT FROM v_session.game_table_id THEN
+        OR plan_row.table_id IS DISTINCT FROM v_session.game_table_id
+        OR plan_row.assignment_club_id IS DISTINCT FROM v_session.club_id
+        OR plan_row.assignment_table_id IS DISTINCT FROM v_session.game_table_id
+        OR plan_row.assignment_session_id IS DISTINCT FROM v_session.id THEN
         RAISE EXCEPTION 'closed_session_rotation_scope_invalid';
       END IF;
       IF plan_row.status='executing' THEN
         RAISE EXCEPTION 'closed_session_rotation_executing';
+      END IF;
+      IF plan_row.status='announced' THEN
+        PERFORM 1 FROM public.dealer_assignments a WHERE a.id=plan_row.assignment_id
+          AND a.table_session_id=v_session.id AND a.club_id=v_session.club_id
+          AND a.table_id=v_session.game_table_id AND a.released_at IS NULL
+          AND a.pre_assigned_attendance_id=plan_row.in_attendance_id
+          AND a.attendance_id IS DISTINCT FROM plan_row.in_attendance_id FOR UPDATE;
+        IF NOT FOUND THEN RAISE EXCEPTION 'closed_session_announced_assignment_invalid'; END IF;
+        SELECT da.*,d.club_id AS dealer_club_id INTO incoming_row
+        FROM public.dealer_attendance da JOIN public.dealers d ON d.id=da.dealer_id
+        WHERE da.id=plan_row.in_attendance_id FOR UPDATE OF da;
+        IF NOT FOUND OR incoming_row.dealer_club_id IS DISTINCT FROM v_session.club_id
+          OR incoming_row.status IS DISTINCT FROM 'checked_in' OR incoming_row.check_out_time IS NOT NULL
+          OR incoming_row.current_state IS DISTINCT FROM 'pre_assigned'
+          OR incoming_row.pre_assigned_table_id IS DISTINCT FROM v_session.game_table_id THEN
+          RAISE EXCEPTION 'closed_session_announced_identity_invalid';
+        END IF;
+        IF EXISTS(SELECT 1 FROM public.dealer_assignments other
+          WHERE other.id<>plan_row.assignment_id AND other.released_at IS NULL
+            AND (other.attendance_id=incoming_row.id OR other.pre_assigned_attendance_id=incoming_row.id))
+          OR EXISTS(SELECT 1 FROM public.dealer_rotation_schedule other
+            WHERE other.id<>plan_row.id AND other.in_attendance_id=incoming_row.id
+              AND other.status IN ('announced','executing')) THEN
+          RAISE EXCEPTION 'closed_session_announced_reservation_conflict';
+        END IF;
       END IF;
       cancel_result:=public.cancel_rotation_slot(plan_row.id,'table_session_closed');
       IF cancel_result->>'outcome' IS DISTINCT FROM 'cancelled' THEN

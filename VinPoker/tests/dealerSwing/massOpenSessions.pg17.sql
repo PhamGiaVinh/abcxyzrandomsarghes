@@ -144,6 +144,38 @@ SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedul
 -- expected revision from fixture setup, without granting any new privilege.
 SELECT set_config('test.close_expected_revision',revision::text,true)
 FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023';
+CREATE FUNCTION pg_temp.expect_close_scope_rejected() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+ BEGIN
+  PERFORM public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+    current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000080');
+  RAISE EXCEPTION 'malformed_plan_close_was_not_rejected';
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM<>'closed_session_rotation_scope_invalid' THEN RAISE; END IF;
+ END;
+END $$;
+SAVEPOINT malformed_null_link;
+UPDATE public.dealer_rotation_schedule SET assignment_id=NULL WHERE id='e1800000-0000-4000-8000-000000000070';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected();
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023'),
+ 'null-linked schedule rejection preserves open session');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'null-linked schedule rejection preserves incoming marker');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts WHERE request_id='e1800000-0000-4000-8000-000000000080'),
+ 'rejected malformed close writes no receipt');
+ROLLBACK TO SAVEPOINT malformed_null_link;
+SAVEPOINT malformed_other_session;
+UPDATE public.dealer_rotation_schedule SET assignment_id=(SELECT id FROM public.dealer_assignments
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND released_at IS NULL)
+ WHERE id='e1800000-0000-4000-8000-000000000070';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected();
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023'),
+ 'other-session linked schedule rejection preserves open session');
+ROLLBACK TO SAVEPOINT malformed_other_session;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000099';
 SET LOCAL request.jwt.claim.role='authenticated';
