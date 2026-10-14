@@ -2447,7 +2447,13 @@ if (tier2Count > 0) {
               `[Pass 2] ❌ Unhandled error for club ${cid}:`,
               err instanceof Error ? err.stack : err
             );
-            pass2Result = { pre_assigned_count: 0, skipped_count: 0, errors: [] };
+            pass2Result = { pre_assigned_count: 0, skipped_count: 0, errors: [{ table_id: "", error: err instanceof Error ? err.message : String(err) }] };
+          }
+          if (pass2Result.errors.length > 0) {
+            recordDispatchSafetyOutcome(
+              cid,
+              assessCoreQueryFailure("pass2_pre_assign", pass2Result.errors.map((failure) => failure.error).join("; ")),
+            );
           }
           if (pass2Result.pre_assigned_count > 0) {
             console.log(`[Pass 2] ✅ Pre-assigned ${pass2Result.pre_assigned_count} dealers`);

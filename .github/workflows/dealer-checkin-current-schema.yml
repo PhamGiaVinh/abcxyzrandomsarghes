@@ -264,6 +264,7 @@ jobs:
           deno test --allow-env supabase/functions/run-dealer-ready-backup/auth.test.ts supabase/functions/_shared/__tests__/backupServiceAuth.test.ts supabase/functions/process-swing-on-dealer-ready/runtime.test.ts
           deno test supabase/functions/process-swing/executionSafety.test.ts
           deno test --allow-read=supabase/functions/process-swing supabase/functions/process-swing/plannerDispatchOutcome.test.ts
+          deno test tests/dealerSwing/preAssignReadErrors.test.ts
           deno test --allow-env=PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS supabase/functions/process-swing/passes/pass1.5-rotation-planner.test.ts
           deno test supabase/functions/_shared/__tests__/rotationSolver.test.ts
           deno test supabase/functions/_shared/__tests__/dealerMutationIntent.test.ts
