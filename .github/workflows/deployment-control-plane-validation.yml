@@ -9,6 +9,8 @@ on:
       - ".github/workflows/dealer-stop-64-protected-apply.yml"
       - ".github/workflows/tracker-voice-70-71-protected-apply.yml"
       - ".github/workflows/tracker-public-74-protected-apply.yml"
+      - ".github/workflows/tracker-manual-75-protected-apply.yml"
+      - "VinPoker/scripts/ops/tracker-manual-75-*"
       - "VinPoker/scripts/ops/tracker-public-74-*"
       - "VinPoker/scripts/ops/tracker-voice-70-71-*"
       - ".github/workflows/floor-manual-66-protected-apply.yml"
@@ -122,6 +124,10 @@ jobs:
             .github/workflows/deployment-control-plane-validation.yml \
             .github/workflows/physical-asset-63-65-protected-apply.yml
 
+      - name: Validate manual75 protected workflow on exact revision
+        shell: bash
+        run: '"${RUNNER_TEMP}/actionlint" .github/workflows/tracker-manual-75-protected-apply.yml'
+
       - name: Setup Node.js 20 for Floor runner tests
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -134,3 +140,5 @@ jobs:
         run: node --test VinPoker/scripts/floor/apply-floor-clock-control.test.mjs VinPoker/scripts/floor/apply-floor-operator-scope-acl.test.mjs VinPoker/scripts/dealer-swing/apply-shortage-alert-lifecycle.test.mjs VinPoker/scripts/dealer-swing/apply-phone-completion-migrations.test.mjs VinPoker/scripts/dealer-swing/set-phone-completion-hsop-uat.test.mjs VinPoker/scripts/payroll/apply-dealer-pt-global-accrual.test.mjs VinPoker/scripts/payroll/apply-dealer-pt-wage-readiness-acl.test.mjs VinPoker/scripts/payroll/apply-dealer-payroll-statement-contract.test.mjs VinPoker/scripts/payroll/repair-dealer-payroll-statement-delivery.test.mjs VinPoker/scripts/payroll/set-dealer-payroll-statement-delivery-hsop-uat.test.mjs VinPoker/scripts/deploy/validate-live-public-schema-artifact.test.mjs VinPoker/scripts/deploy/workflow-policy.test.mjs VinPoker/scripts/deploy/test-dealer-pt-wage-disposable.test.mjs VinPoker/scripts/deploy/verify-dealer-pt-wage-migration-inventory.test.mjs VinPoker/scripts/ops/apply-sepay-scope-q0.test.mjs
       - name: Test scoped Stop64 protected transport
         run: node --test VinPoker/scripts/ops/dealer-stop-64-release-plan.test.mjs VinPoker/scripts/ops/dealer-stop-64-protected-apply.test.mjs
+      - name: Test exact manual75 protected transport
+        run: node --test VinPoker/scripts/ops/tracker-manual-75-release-plan.test.mjs VinPoker/scripts/ops/tracker-manual-75-protected-apply.test.mjs
