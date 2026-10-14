@@ -9,6 +9,7 @@ test('PG17 close79 ledger failure rolls back full function; exact apply rejects 
  assert.equal(check("SELECT current_setting('server_version_num')::int BETWEEN 170000 AND 179999;"),'t');
  const fingerprint="SELECT json_build_object('definition',md5(pg_get_functiondef(p.oid)),'owner',p.proowner,'acl',p.proacl::text,'config',p.proconfig)::text FROM pg_proc p WHERE p.oid='public.operator_close_club_table_v2(uuid,bigint,uuid)'::regprocedure;";
  const before=check(fingerprint);assert.equal(JSON.parse(before).definition,'7724e5d9abd44d876f990e2521830582');
+ const priorDefinition=check("SELECT pg_get_functiondef('public.operator_close_club_table_v2(uuid,bigint,uuid)'::regprocedure);");
  check(`CREATE FUNCTION public.reject79_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version='20270128000079' THEN RAISE EXCEPTION 'injected79_receipt_failure';END IF;RETURN NEW;END $$;
  CREATE TRIGGER reject79 BEFORE INSERT ON supabase_migrations.schema_migrations FOR EACH ROW EXECUTE FUNCTION public.reject79_receipt();`);
  const failed=query(atomicSql());assert.notEqual(failed.status,0);assert.match(failed.stderr,/injected79_receipt_failure/);
@@ -16,5 +17,14 @@ test('PG17 close79 ledger failure rolls back full function; exact apply rejects 
  check('DROP TRIGGER reject79 ON supabase_migrations.schema_migrations;DROP FUNCTION public.reject79_receipt();');
  check(atomicSql());check(postcheckSql());assert.deepEqual(JSON.parse(check(receiptSql(loadMigration()))),{count:1,exact:true});
  const replay=query(atomicSql());assert.notEqual(replay.status,0);assert.match(replay.stderr,/close79_ledger_collision/);
+ // Qualify restoring only the captured prior object in this disposable clone.
+ // Roll the rehearsal back: migration79 receipt stays immutable and corrected
+ // object remains active. A real forward rollback still requires acquisition
+ // containment and reviewed release, not execution of this test script.
+ const restored=query(`BEGIN;${priorDefinition};${fingerprint}ROLLBACK;`);
+ assert.equal(restored.status,0,restored.stderr);
+ const restoredFingerprint=restored.stdout.split('\n').find(line=>line.startsWith('{'));
+ assert.equal(restoredFingerprint,before,'captured prior full object can be restored exactly');
+ check(postcheckSql());assert.deepEqual(JSON.parse(check(receiptSql(loadMigration()))),{count:1,exact:true});
  console.log('CLOSE79_ATOMIC_LEDGER_FAILURE_FULL_OBJECT_ROLLBACK_REPLAY_PASS');
 });
