@@ -28,9 +28,17 @@ export async function rpcTvPairBegin(): Promise<{ data: TvPairBeginResult | null
 export async function rpcGetTvDisplayState(
   displayToken: string,
 ): Promise<{ data: unknown; error: string | null }> {
-  const { data, error } = await rpc("get_tv_display_state_v4", {
-    p_display_token: displayToken, p_include_branding: FEATURES.tvLayoutEditorV1,
-  });
+  let response: Awaited<ReturnType<UntypedRpc>>;
+  try {
+    response = await rpc("get_tv_display_state_v4", {
+      p_display_token: displayToken, p_include_branding: FEATURES.tvLayoutEditorV1,
+    });
+  } catch (failure) {
+    // Keep the read-result contract even when fetch rejects. The display's
+    // existing bounded backoff can recover; do not retry the heartbeat here.
+    return { data: null, error: failure instanceof Error ? failure.message : "tv_display_transport_error" };
+  }
+  const { data, error } = response;
   if (!error && data && typeof data === "object") {
     const payload = data as Record<string, any>;
     if (payload.status === "paired" && payload.tournament) {

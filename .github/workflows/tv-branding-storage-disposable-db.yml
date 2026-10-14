@@ -77,4 +77,11 @@ jobs:
           src/lib/tv/mapClockData.test.ts
           src/lib/tv/mapTvData.test.ts
           src/lib/tv/mapDisplayState.test.ts
+          src/lib/tv/displayRpc.test.ts
+          src/lib/tv/useTvDisplayState.test.tsx
           src/hooks/useTournamentTvDataCore.test.tsx
+      - name: Typecheck the complete frontend contract
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: ./node_modules/.bin/tsc -b
