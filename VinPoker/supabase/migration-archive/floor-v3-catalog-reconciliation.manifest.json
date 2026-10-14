@@ -7612,7 +7612,7 @@
     }
   ],
     "ownerGatedActiveAllowlist": [
-    {"version":"20270128000080","filename":"20270128000080_dealer_operator_next_intent_v1.sql","sha256":"5b9e61373a5ccd1ba83c499505931931a7d5f4558a78f004dd87284138c584a0","domain":"dealer-operator-next-intent-campaign"},
+    {"version":"20270128000080","filename":"20270128000080_dealer_operator_next_intent_v1.sql","sha256":"195cb8ff474ef949df75a48a9dfeabbabe0328ac114415d2e9a92a02cc3b83d0","domain":"dealer-operator-next-intent-campaign"},
     {"version":"20270128000081","filename":"20270128000081_dealer_close_forecast_slots_v1.sql","sha256":"accba5a8dd0873dd4de5d3c24d42abfbb6e3c519991f76ce02bcb3a7c5c70ff8","domain":"dealer-close-forecast-slots-campaign"},
     {"version":"20270128000079","filename":"20270128000079_dealer_close_next_reservation_v1.sql","sha256":"ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66","domain":"dealer-close-next-reservation-campaign"},
     {"version":"20270128000078","filename":"20270128000078_dealer_next_plan_rest_floor_v1.sql","sha256":"fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df","domain":"dealer-next-plan-rest-floor-campaign"},

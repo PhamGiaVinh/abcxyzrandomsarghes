@@ -61,4 +61,8 @@ SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_rotation_schedu
 SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000011'
  FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000044'),
  'same predicted candidate becomes operationally reserved');
+SELECT pg_temp.assert_true((SELECT planned_relief_at=now()-interval '1 minute'
+ AND reason->'operator_confirmed_prediction'->>'attendance_id'='e1800000-0000-4000-8000-000000000044'
+ FROM public.dealer_rotation_schedule WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0),
+ 'prediction confirmation preserves due time and audited previous advisory choice');
 ROLLBACK;

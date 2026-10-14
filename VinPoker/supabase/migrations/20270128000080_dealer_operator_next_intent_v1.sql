@@ -93,6 +93,18 @@ BEGIN
    VALUES(scope_id,physical_id,p_assignment_id,0,assignment_row.swing_due_at,p_request_id,'operator_next_intent_v1')
    RETURNING * INTO plan_row;
   END IF;
+  -- An advisory predicted candidate is not a locked reservation. Canonical
+  -- set-slot treats same dealer as no-op, so clear only this advisory pointer
+  -- inside the locked subtransaction, retain its provenance and use the normal
+  -- rest15 writer to create the actual lock. Rejection rolls this change back.
+  IF plan_row.status='predicted' AND plan_row.in_attendance_id=p_next_attendance_id
+   AND assignment_row.pre_assigned_attendance_id IS NULL THEN
+   UPDATE public.dealer_rotation_schedule SET in_attendance_id=NULL,version=version+1,
+    reason=COALESCE(reason,'{}'::jsonb)||jsonb_build_object('operator_confirmed_prediction',
+      jsonb_build_object('attendance_id',p_next_attendance_id,'actor_id',actor,'request_id',p_request_id))
+   WHERE id=plan_row.id AND version=plan_row.version RETURNING * INTO plan_row;
+   IF NOT FOUND THEN RAISE EXCEPTION 'operator_next_prediction_cas_failed'; END IF;
+  END IF;
   result:=public.set_rotation_slot_dealer(plan_row.id,plan_row.version,p_next_attendance_id,'floor_manual_next');
   IF result->>'outcome' NOT IN ('changed','noop_same_dealer') OR result->>'outcome' IS NULL THEN
    RAISE EXCEPTION 'operator_next_delegate_rejected';
