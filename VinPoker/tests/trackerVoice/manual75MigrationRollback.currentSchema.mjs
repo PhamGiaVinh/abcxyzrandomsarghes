@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');
 assert.equal(process.env.PGPORT,'55464');
 assert.equal(process.env.PGUSER,'postgres');
-const database=process.argv.includes('--payload-contract')?'vinpoker_manual_card75_payload_20261014':'vinpoker_manual_card75_rollback_20261014';
+const database=process.argv.includes('--inactive-contract')?'vinpoker_manual_card75_inactive_20261014':process.argv.includes('--payload-contract')?'vinpoker_manual_card75_payload_20261014':'vinpoker_manual_card75_rollback_20261014';
 assert.equal(process.env.PGDATABASE,database);
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS']) assert.ok(!process.env[key]);
 assert.equal(process.platform,'win32','owned Windows/WSL rollback harness only');
