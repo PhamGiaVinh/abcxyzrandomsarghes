@@ -111,11 +111,24 @@ UPDATE public.dealer_attendance SET current_state='pre_assigned',
  pre_assigned_table_id='e1800000-0000-4000-8000-000000000011',pre_assigned_at=now()
  WHERE id='e1800000-0000-4000-8000-000000000041';
 UPDATE next80_context c SET version=a.version FROM public.dealer_assignments a WHERE a.id=c.id;
+CREATE TEMP TABLE self_link_before AS SELECT
+ (SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE a.id=(SELECT id FROM next80_context)) AS assignment,
+ (SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s
+  WHERE s.table_id='e1800000-0000-4000-8000-000000000011' AND s.slot_index=0 AND s.status='announced') AS schedule,
+ (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM public.dealer_attendance d
+  WHERE d.id IN('e1800000-0000-4000-8000-000000000041','e1800000-0000-4000-8000-000000000045')) AS attendance;
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.assert_true((SELECT public.operator_plan_next_dealer_v1(table_session_id,id,version,
  'e1800000-0000-4000-8000-000000000045','e1800000-0000-4000-8000-000000000095')->>'outcome'='plan_requires_repair'
  FROM next80_context),'self-linked announced reservation cannot free currently serving dealer');
 RESET ROLE;
+SELECT pg_temp.assert_true((SELECT
+ assignment IS NOT DISTINCT FROM (SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE a.id=(SELECT id FROM next80_context))
+ AND schedule IS NOT DISTINCT FROM (SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s
+  WHERE s.table_id='e1800000-0000-4000-8000-000000000011' AND s.slot_index=0 AND s.status='announced')
+ AND attendance IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM public.dealer_attendance d
+  WHERE d.id IN('e1800000-0000-4000-8000-000000000041','e1800000-0000-4000-8000-000000000045'))
+ FROM self_link_before),'rejected self-link preserves full assignment schedule and attendance rows');
 SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance
  WHERE id='e1800000-0000-4000-8000-000000000041'),'serving attendance marker untouched after rejected self-link');
 SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts
