@@ -8,6 +8,11 @@ test('next80 has one transaction, exact dependencies and objects before receipt'
   assert.ok(sql.indexOf(digest)<sql.indexOf("VALUES('20270128000080'"));assert.ok(postcheckSql().includes(digest));
  }
 });
+test('dependency guards use valid SQL and rest78 actual privilege metadata',()=>{
+ const sql=preflightSql();assert.doesNotMatch(sql,/SELECT\s*\(BEGIN/i);
+ assert.ok(sql.includes("p.proconfig=ARRAY['search_path=public']::text[]"));
+ assert.ok(sql.includes("{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"));
+});
 for(const proof of [{count:0,exact:false},{count:1,exact:true},{count:1,exact:false},null]){
  test(`unknown next80 outcome ${JSON.stringify(proof)} stops after one receipt read`,()=>{
   let writes=0,reads=0;const reports=[];

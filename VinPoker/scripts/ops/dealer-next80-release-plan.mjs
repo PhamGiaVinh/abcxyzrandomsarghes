@@ -11,17 +11,18 @@ export function loadMigration(){
  if(createHash('sha256').update(sql).digest('hex')!==hash||scanMigrationSource(sql).mode!=='outer-transaction')throw Error('Exact next80 SQL drift');
  return {version,name,filename,hash,sql};
 }
-function objectCheck(signature,digest){return `DO $next80_object$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc p
+function objectCheck(signature,digest,path='search_path=""',acl='{postgres=X/postgres,authenticated=X/postgres}'){return `DO $next80_object$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc p
  WHERE p.oid=to_regprocedure('${signature}') AND md5(pg_get_functiondef(p.oid))='${digest}'
- AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proconfig=ARRAY['search_path=""']::text[]
- AND p.proacl::text='{postgres=X/postgres,authenticated=X/postgres}')
+ AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proconfig=ARRAY['${path}']::text[]
+ AND p.proacl::text='${acl}')
  THEN RAISE EXCEPTION 'next80_object_or_privilege_drift';END IF;END $next80_object$;`;}
-function exactReceipt(item){return `DO $next80_receipt$ DECLARE proof json;BEGIN
- SELECT (${receiptSql(item).replace(/^SELECT /,'').replace(/;\s*$/,'')}) INTO proof;
- IF (proof->>'count')::int<>1 OR (proof->>'exact')::boolean IS DISTINCT FROM true
+function exactReceipt(item){return `DO $next80_receipt$ BEGIN
+ IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version='${item.version}' OR name='${item.name}')<>1
+ OR NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='${item.version}' AND name='${item.name}'
+ AND cardinality(statements)=1 AND encode(extensions.digest(convert_to(replace(replace(statements[1],E'\\r\\n',E'\\n'),E'\\r',E'\\n'),'UTF8'),'sha256'),'hex')='${item.hash}')
  THEN RAISE EXCEPTION 'next80_dependency_or_receipt_drift';END IF;END $next80_receipt$;`;}
 function dependencies(){return [rest78(),...close7981()].map(exactReceipt).join('\n')
- +objectCheck('public.set_rotation_slot_dealer(uuid,integer,uuid,text)','54fe092e15f6b90b54a51d130fec32c9')
+ +objectCheck('public.set_rotation_slot_dealer(uuid,integer,uuid,text)','54fe092e15f6b90b54a51d130fec32c9','search_path=public','{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}')
  +objectCheck('public.operator_close_club_table_v2(uuid,bigint,uuid)','cda0bd0e9eb9ee15fe3cdf5c36fcc238');}
 function absent(){const item=loadMigration();return `DO $next80_absent$ BEGIN
  IF EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='${item.version}' OR name='${item.name}')
