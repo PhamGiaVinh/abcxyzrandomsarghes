@@ -139,6 +139,12 @@ RESET ROLE;
 SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070'),'stale retry does not bump plan version twice');
 -- Canonical close with an announced replacement must not strand that incoming
+-- Normal forecast slots have no assignment yet and never lock a dealer. They
+-- must be cancelled on close, not misclassified as malformed slot0 links.
+INSERT INTO public.dealer_rotation_schedule(id,club_id,table_id,assignment_id,slot_index,planned_relief_at,plan_run_id,solver_version)
+VALUES('e1800000-0000-4000-8000-000000000072','e1800000-0000-4000-8000-000000000002',
+ 'e1800000-0000-4000-8000-000000000013',NULL,1,now()+interval '45 minutes',
+ 'e1800000-0000-4000-8000-000000000071','forecast-close TEST');
 -- attendance or carry the previous incarnation's plan into a reopen.
 -- Browser cannot SELECT table_sessions directly. Supply its already-loaded
 -- expected revision from fixture setup, without granting any new privilege.
