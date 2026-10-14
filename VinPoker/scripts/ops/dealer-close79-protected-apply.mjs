@@ -8,7 +8,7 @@ export function validateRelease(env,recovery,checkoutSha,mode){
  if(!['plan','apply'].includes(mode))throw Error('Protected plan|apply only');
  validateContext(env,recovery);
  if(checkoutSha!==env.RELEASE_SHA)throw Error('Checkout SHA differs');
- if(mode==='apply'&&env.CONFIRM_FLOOR_PACKAGE!==`APPLY_DEALER_CLOSE_79_${env.RELEASE_SHA}`)throw Error('Exact78 confirmation missing');
+ if(mode==='apply'&&env.CONFIRM_FLOOR_PACKAGE!==`APPLY_DEALER_CLOSE_79_${env.RELEASE_SHA}`)throw Error('Exact79 confirmation missing');
 }
 function main(){
  const mode=process.argv[2],head=spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8'});
@@ -20,7 +20,7 @@ function main(){
   if(r.status!==0)throw Error('psql failed; raw output withheld');return r.stdout.trim();
  };
  const transport={execute:query,json:sql=>JSON.parse(query(sql).split('\n').find(x=>x.startsWith('{')))};
- if(mode==='plan'){classifyPreflight(transport.json(preflightSql()));console.log('EXACT78_PENDING');return;}
+ if(mode==='plan'){classifyPreflight(transport.json(preflightSql()));console.log('EXACT79_PENDING');return;}
  executePackage(transport,s=>console.log(s));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
