@@ -42,4 +42,23 @@ SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_rotation_schedu
  WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0 AND status='announced'),'one committed next plan');
 SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000011'
  FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000044'),'incoming marker exactly bound');
+-- A predicted candidate is advisory, not an existing reservation. Choosing
+-- that same candidate must still CHOT it, not acknowledge a no-op without lock.
+UPDATE public.dealer_rotation_schedule SET status='predicted',version=version+1
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0;
+UPDATE public.dealer_assignments SET pre_assigned_attendance_id=NULL,pre_assigned_at=NULL,planned_relief_at=NULL
+ WHERE id=(SELECT id FROM next80_context);
+UPDATE public.dealer_attendance SET current_state='available',pre_assigned_table_id=NULL,pre_assigned_at=NULL
+ WHERE id='e1800000-0000-4000-8000-000000000044';
+UPDATE next80_context c SET version=a.version FROM public.dealer_assignments a WHERE a.id=c.id;
+SET LOCAL ROLE authenticated;
+SELECT public.operator_plan_next_dealer_v1(table_session_id,id,version,
+ 'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000091') FROM next80_context;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_rotation_schedule
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0 AND status='announced'),
+ 'choosing same predicted candidate must create real announced lock');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000011'
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000044'),
+ 'same predicted candidate becomes operationally reserved');
 ROLLBACK;
