@@ -24,6 +24,42 @@ SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_sched
  WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0),'rejected delegate rolls newly created slot back');
 UPDATE public.dealer_attendance SET last_released_at=now()-interval '15 minutes'
  WHERE id='e1800000-0000-4000-8000-000000000044';
+CREATE FUNCTION pg_temp.reject_next80_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF NEW.operation_type='operator_plan_next_dealer_v1'
+  AND NEW.request_id='e1800000-0000-4000-8000-000000000089' THEN
+  RAISE EXCEPTION 'injected_next80_receipt_failure';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER test_reject_next80_receipt BEFORE INSERT ON public.table_operation_receipts
+ FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_next80_receipt();
+CREATE TEMP TABLE next80_before_receipt_failure AS SELECT
+ (SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE a.id=(SELECT id FROM next80_context)) AS assignment,
+ (SELECT to_jsonb(d) FROM public.dealer_attendance d
+  WHERE d.id='e1800000-0000-4000-8000-000000000044') AS attendance;
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+ BEGIN
+  PERFORM public.operator_plan_next_dealer_v1(table_session_id,id,version,
+   'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000089') FROM next80_context;
+  RAISE EXCEPTION 'receipt failure was not propagated';
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM<>'injected_next80_receipt_failure' THEN RAISE; END IF;
+ END;
+END $$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT
+ assignment IS NOT DISTINCT FROM (SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE a.id=(SELECT id FROM next80_context))
+ AND attendance IS NOT DISTINCT FROM (SELECT to_jsonb(d) FROM public.dealer_attendance d
+  WHERE d.id='e1800000-0000-4000-8000-000000000044') FROM next80_before_receipt_failure),
+ 'receipt failure restores complete assignment and incoming attendance');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0),
+ 'receipt failure rolls new schedule back');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts
+ WHERE request_id='e1800000-0000-4000-8000-000000000089'),'receipt failure leaves no receipt');
+DROP TRIGGER test_reject_next80_receipt ON public.table_operation_receipts;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 DO $next80$ DECLARE c record; result jsonb; BEGIN
