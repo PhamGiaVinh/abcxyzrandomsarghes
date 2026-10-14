@@ -21,3 +21,19 @@ test('acknowledged combined commit with wrong receipt makes no postcheck mutatio
  assert.throws(()=>executePackage({json:sql=>sql.includes("'database'")?{database:'postgres',actor:'postgres',existing:0}:{count:1,exact:false},execute:()=>writes++},s=>reports.push(s)),/requires review/);
  assert.equal(writes,1);assert.deepEqual(reports,['STOP close79+81 commit-acknowledged/postcheck-unverified; no retry or downstream deploy']);
 });
+test('exact receipts require final object postcheck before success',()=>{
+ const calls=[],reports=[];
+ executePackage({json:sql=>{calls.push('read');return sql.includes("'database'")?
+  {database:'postgres',actor:'postgres',existing:0}:{count:2,exact:true};},
+ execute:sql=>calls.push(sql===atomicSql()?'apply':'postcheck')},s=>reports.push(s));
+ assert.deepEqual(calls,['read','apply','read','postcheck']);
+ assert.deepEqual(reports,['CLOSE79_81_COMMITTED_EXACT_FINAL_OBJECT_POSTCHECK_PASS']);
+});
+test('exact receipts do not hide failed final object postcheck',()=>{
+ let writes=0;const reports=[];
+ assert.throws(()=>executePackage({json:sql=>sql.includes("'database'")?
+  {database:'postgres',actor:'postgres',existing:0}:{count:2,exact:true},
+ execute:()=>{if(++writes===2)throw Error('final object drift');}},s=>reports.push(s)),/postcheck requires review/);
+ assert.equal(writes,2);
+ assert.deepEqual(reports,['STOP close79+81 commit-acknowledged/postcheck-unverified; no retry or downstream deploy']);
+});
