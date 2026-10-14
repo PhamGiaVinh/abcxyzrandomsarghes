@@ -7612,6 +7612,7 @@
     }
   ],
     "ownerGatedActiveAllowlist": [
+    {"version":"20270128000083","filename":"20270128000083_shift_payroll_return_type_v1.sql","sha256":"ab1c5a98b03c9f032a1b8367a73a04d2536fa69e642bb27261a1a3be800349a7","domain":"shift-payroll-return-type-campaign"},
     {"version":"20270128000082","filename":"20270128000082_payroll_legacy_read_club_authority_v1.sql","sha256":"04f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289","domain":"payroll-legacy-read-authority-campaign"},
     {"version":"20270128000079","filename":"20270128000079_dealer_close_next_reservation_v1.sql","sha256":"ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66","domain":"dealer-close-next-reservation-campaign"},
     {"version":"20270128000078","filename":"20270128000078_dealer_next_plan_rest_floor_v1.sql","sha256":"fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df","domain":"dealer-next-plan-rest-floor-campaign"},
