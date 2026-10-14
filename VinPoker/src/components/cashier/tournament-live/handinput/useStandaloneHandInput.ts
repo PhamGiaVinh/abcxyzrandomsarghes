@@ -244,6 +244,37 @@ export function useStandaloneHandInput(tournamentId: string) {
   holeCardsDraftSignatureRef.current = holeCardsDraftSignature;
   const [orphanHand, setOrphanHand] = useState<{ id: string; hand_number: number } | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const startScope = JSON.stringify([user?.id, tournamentId]);
+  const [startAuthority, setStartAuthority] = useState<{ scope: string; state: "allowed" | "denied" | "loading" | "error" } | null>(null);
+  const startCapability = startAuthority?.scope === startScope ? startAuthority.state : "loading";
+  useEffect(() => {
+    let alive = true;
+    let generation = 0;
+    const refresh = async () => {
+      const current = ++generation;
+      const publish = (state: "allowed" | "denied" | "loading" | "error") => {
+        if (alive && generation === current) setStartAuthority({ scope: startScope, state });
+      };
+      publish("loading");
+      if (!user?.id || !tournamentId) return;
+      try {
+        const actor = await supabase.auth.getUser();
+        if (actor.error || actor.data.user?.id !== user.id) { publish("error"); return; }
+        const tour = await supabase.from("tournaments").select("club_id").eq("id", tournamentId).maybeSingle();
+        if (tour.error || !tour.data?.club_id) { publish("error"); return; }
+        const permission = await supabase.rpc("is_club_tracker", { _user_id: user.id, _club_id: tour.data.club_id });
+        publish(permission.error || typeof permission.data !== "boolean" ? "error" : permission.data ? "allowed" : "denied");
+      } catch { publish("error"); }
+    };
+    void refresh();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id === user?.id) return;
+      generation++;
+      if (alive) { setStartAuthority(null); setUser(session?.user ?? null); }
+    });
+    window.addEventListener("focus", refresh);
+    return () => { alive = false; generation++; subscription.unsubscribe(); window.removeEventListener("focus", refresh); };
+  }, [startScope, user?.id, tournamentId, tableReloadAttempt]);
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<
     { players: PlayerState[]; actions: ActionRecord[]; currentStreet: Street; nextActionOrder: number }[]
@@ -1710,6 +1741,10 @@ export function useStandaloneHandInput(tournamentId: string) {
   const startingRef = useRef(false);
   const handleStartHand = async () => {
     if (startingRef.current) return;
+    if (startCapability !== "allowed") {
+      toast.error(startCapability === "denied" ? "Quyền Floor không bao gồm bắt đầu hand. Cần quyền Tracker của CLB." : "Chưa xác minh được quyền bắt đầu hand. Hãy tải lại trước khi gửi.");
+      return;
+    }
     if (!tableId || !handNumber || !user?.id) return;
     if (!buttonConfirmed) {
       toast.error("Chọn ghế nút chia bài (BTN) trước khi bắt đầu hand");
@@ -3578,6 +3613,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     backToTableMap,
     handleTableChange,
     handleStartHand,
+    startCapability,
     handleContinueOrphan,
     handleVoidOrphan,
     handleDockAction,

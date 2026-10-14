@@ -7,7 +7,8 @@ const mock = vi.hoisted(() => ({ rpc: vi.fn(), error: vi.fn(), staleOrphan: fals
  resumeReads: [] as Record<string, unknown>[] }));
 vi.mock("sonner", () => ({ toast: { error: mock.error, success: vi.fn(), info: vi.fn() } }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
- auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
+ auth: { getUser: async () => ({ data: { user: { id: "actor" } } }),
+  onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
  rpc: mock.rpc,
  from: (table: string) => {
   const result = { data: table === "tournaments" ? { id: "tour" } : [], error: null };

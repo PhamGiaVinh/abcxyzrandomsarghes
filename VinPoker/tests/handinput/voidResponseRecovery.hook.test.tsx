@@ -24,7 +24,8 @@ vi.mock("sonner", () => ({ toast: { error: mock.errorToast, success: mock.succes
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: new Proxy({}, { get: (_, key) => key === "floorDeferredTrackerMoveV1" && mock.deferred }) }));
 vi.mock("react-router-dom", () => ({ useSearchParams: () => [new URLSearchParams(), vi.fn()] }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
-  auth: { getUser: async () => ({ data: { user: mock.resume ? { id: "actor1" } : null } }) },
+  auth: { getUser: async () => ({ data: { user: mock.resume ? { id: "actor1" } : null } }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
   functions: { invoke: mock.invoke },
   rpc: async (name: string) => {
     if (name === "get_tracker_hand_input_tables_v4") {
