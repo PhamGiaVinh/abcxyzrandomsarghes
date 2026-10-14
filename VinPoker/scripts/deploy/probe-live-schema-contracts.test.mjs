@@ -17,6 +17,7 @@ import {
   assertScopedStopFrontendBackend,
   assertManualPlayerFrontendBackend,
   assertIssuanceFrontendBackend,
+  assertTrackerScopedReadFrontendBackend,
 } from "./probe-live-schema-contracts.mjs";
 import { selectTargetContractProfile } from "./target-contract-profile.mjs";
 import { inspectTargetSource } from "./verify-target-source.mjs";
@@ -30,6 +31,20 @@ const productionMetricsViewFixture = readFileSync(
   resolve(repositoryRoot, "VinPoker/scripts/deploy/fixtures/dealer_shift_metrics-production-view.sql"),
   "utf8",
 );
+test("scoped Tracker frontend requires all75/76/77 exact invoker API contracts",()=>{
+ const names=["show_tracker_manual_cards_v1","get_tracker_manual_card_receipt_v1","get_tracker_hand_input_tables_v4","get_tracker_roster_snapshot_v2"];
+ const contracts=sourceContractsForFrontend({targetRoot:repositoryRoot}).filter(c=>names.includes(c.name.slice(7)));
+ assert.equal(contracts.length,4);
+ const functions=contracts.map(c=>({schema:"public",name:c.name.slice(7),owner:"postgres",securityDefiner:false,
+  definitionMd5:c.digest,configuration:['search_path=""'],arguments:c.arguments.map((name,i)=>({name,type:c.argumentTypes[i]})),
+  executeAcl:{public:false,anon:false,authenticated:true,service_role:false}}));
+ const check=functions=>assertTrackerScopedReadFrontendBackend({targetRoot:repositoryRoot,catalog:{schemaVersion:1,relations:[],functions}});
+ check(functions);
+ for(const bad of [[],functions.slice(0,2),[...functions,functions[0]],
+  functions.map((f,i)=>i===2?{...f,definitionMd5:"drift"}:f),
+  functions.map((f,i)=>i===3?{...f,securityDefiner:true}:f),
+  functions.map((f,i)=>i===1?{...f,executeAcl:{...f.executeAcl,anon:true}}:f)])assert.throws(()=>check(bad),/NOT_QUALIFIED/);
+});
 test("issuance wrapper requires all three exact backend functions before frontend release",()=>{
   const contracts=sourceContractsForFrontend({targetRoot:repositoryRoot}).filter(c=>/issuance_(state_v1|v2|receipt_v1)$/.test(c.name));
   assert.equal(contracts.length,3);
