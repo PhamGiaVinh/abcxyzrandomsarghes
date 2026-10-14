@@ -1,0 +1,20 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {spawnSync} from 'node:child_process';
+import {atomicSql,loadMigration,postcheckSql} from './dealer-rest78-release-plan.mjs';
+import {receiptSql} from './floor-37-47-protected-apply.mjs';
+test('PG17 rest78 failed receipt rolls back full function; successful receipt rejects replay',{skip:process.env.REST78_PG_TEST!=='1'},()=>{
+ assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_rest78_atomic_ci');
+ for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
+ const query=sql=>spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8'});
+ const check=sql=>{const r=query(sql);assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
+ assert.equal(check("SELECT current_user='postgres' AND current_database()='vinpoker_ops_rest78_atomic_ci' AND current_setting('server_version_num')::int BETWEEN 170000 AND 179999;"),'t');
+ const fingerprint="SELECT json_build_object('definition',md5(pg_get_functiondef(p.oid)),'owner',p.proowner,'acl',p.proacl::text,'config',p.proconfig)::text FROM pg_proc p WHERE p.oid='public.set_rotation_slot_dealer(uuid,integer,uuid,text)'::regprocedure;";
+ const before=check(fingerprint);assert.equal(JSON.parse(before).definition,'d884133e9519953014d776d4af6a82ff');
+ check(`CREATE FUNCTION public.reject78_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version='20270128000078' THEN RAISE EXCEPTION 'injected78_receipt_failure';END IF;RETURN NEW;END $$;
+ CREATE TRIGGER reject78 BEFORE INSERT ON supabase_migrations.schema_migrations FOR EACH ROW EXECUTE FUNCTION public.reject78_receipt();`);
+ const failed=query(atomicSql());assert.notEqual(failed.status,0);assert.match(failed.stderr,/injected78_receipt_failure/);
+ assert.equal(check(fingerprint),before);assert.deepEqual(JSON.parse(check(receiptSql(loadMigration()))),{count:0,exact:false});
+ check('DROP TRIGGER reject78 ON supabase_migrations.schema_migrations;DROP FUNCTION public.reject78_receipt();');
+ check(atomicSql());check(postcheckSql());assert.deepEqual(JSON.parse(check(receiptSql(loadMigration()))),{count:1,exact:true});
+ const replay=query(atomicSql());assert.notEqual(replay.status,0);assert.match(replay.stderr,/rest78_ledger_collision/);
+ console.log('REST78_ATOMIC_RECEIPT_FAILURE_FULL_OBJECT_ROLLBACK_REPLAY_PASS');
+});

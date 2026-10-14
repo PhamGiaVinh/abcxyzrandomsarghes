@@ -397,6 +397,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
           node tests/dealerSwing/operationalInventory.concurrent.mjs
           node --test scripts/ops/dealer-rest78-release-plan.test.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_rest78_atomic_ci
+          PGDATABASE=vinpoker_ops_rest78_atomic_ci REST78_PG_TEST=1 node --test scripts/ops/dealer-rest78-atomic-pg.test.mjs
           node --input-type=module -e "import {atomicSql} from './scripts/ops/dealer-rest78-release-plan.mjs'; console.log(atomicSql());" | psql -X -v ON_ERROR_STOP=1
           node --input-type=module -e "import {postcheckSql,loadMigration} from './scripts/ops/dealer-rest78-release-plan.mjs'; import {receiptSql} from './scripts/ops/floor-37-47-protected-apply.mjs'; console.log(postcheckSql()); console.log(receiptSql(loadMigration()));" | psql -X -v ON_ERROR_STOP=1
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
