@@ -12,7 +12,7 @@ on:
         type: string
       deploy_dealer_functions:
         description: "Comma-separated: assign-dealer,checkout-dealer,mass-assign,process-swing"
-        required: true
+        required: false
         default: ""
         type: string
       deploy_tournament_live_clock:
