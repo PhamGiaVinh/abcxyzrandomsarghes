@@ -42,6 +42,8 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/handinput/RacetrackHandInputConsole.tsx"
       - "VinPoker/src/components/cashier/tournament-live/handinput/SetupHandPanel*"
       - "VinPoker/tests/trackerSettlement/startHandCapability.repro.mjs"
+      - "VinPoker/src/components/cashier/tournament-live/RegistrationQueuePanel*"
+      - "VinPoker/tests/floorTableControlV3/registrationQueueRead.repro.mjs"
       - "VinPoker/src/lib/dealerCheckinCandidates*"
       - "VinPoker/tests/dealerSwing/checkinReactLifecycle.test.tsx"
       - "VinPoker/src/pages/ops/OpsToday*"
@@ -131,6 +133,7 @@ jobs:
           src/hooks/useTournamentTvDataCore.test.tsx
           src/components/cashier/tournament-live/handinput/useStandaloneRosterIntent.test.tsx
           src/components/cashier/tournament-live/handinput/SetupHandPanel.startCapability.test.tsx
+          src/components/cashier/tournament-live/RegistrationQueuePanel.readState.test.tsx
           src/components/tracker/DealerTabletCockpit.test.tsx
           src/components/chip-ops/DashboardTab.test.tsx
           src/lib/chipOpsMetrics.test.ts
@@ -143,6 +146,10 @@ jobs:
       - name: Test actual start-hand capability handler and reader
         working-directory: VinPoker
         run: node --test tests/trackerSettlement/startHandCapability.repro.mjs
+
+      - name: Test actual registration queue partial-read failures
+        working-directory: VinPoker
+        run: node --test tests/floorTableControlV3/registrationQueueRead.repro.mjs
 
       - name: Lint targeted read-only source and tests
         working-directory: VinPoker
