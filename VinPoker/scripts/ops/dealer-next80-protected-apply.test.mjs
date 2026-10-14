@@ -1,0 +1,27 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {validateRelease} from './dealer-next80-protected-apply.mjs';
+test('next80 does not accept absent protected context/recovery',()=>{
+ assert.throws(()=>validateRelease({},null,'a'.repeat(40),'apply'));
+ assert.throws(()=>validateRelease({},null,'a'.repeat(40),'plan'));
+});
+test('next80 rejects reset and arbitrary execution modes',()=>{
+ for(const mode of ['reset','push','deploy','',undefined])assert.throws(()=>validateRelease({},null,'a'.repeat(40),mode),/plan\|apply/);
+});
+test('valid protected context still requires exact80 confirmation and checkout',()=>{
+ const sha='a'.repeat(40),base='b'.repeat(40);
+ const env={RELEASE_SHA:sha,SOURCE_CHECKOUT_SHA:sha,GITHUB_SHA:base,GITHUB_REF:'refs/heads/main',
+  GITHUB_ACTIONS:'true',INITIAL_ACTOR:'owner',TRIGGERING_ACTOR:'owner',REPOSITORY_OWNER:'owner',
+  SUPABASE_PROJECT_REF:'orlesggcjamwuknxwcpk',PGHOST:'aws-1-ap-southeast-2.pooler.supabase.com',
+  PGPORT:'5432',PGUSER:'postgres.orlesggcjamwuknxwcpk',PGDATABASE:'postgres',PGSSLMODE:'require',
+  PGPASSWORD:'local-test-only',RECOVERY_BASE_SHA:base};
+ const recovery={schemaVersion:1,kind:'vinpoker-restore-verification',sourceSha:base,
+  isolatedRestore:'PASS',tableCountMatch:'PASS',productionMutation:false,ciphertextSha256:'c'.repeat(64),
+  snapshotAt:new Date(Date.now()-1000).toISOString()};
+ validateRelease(env,recovery,sha,'plan');
+ assert.throws(()=>validateRelease(env,recovery,sha,'apply'),/confirmation/);
+ assert.throws(()=>validateRelease({...env,CONFIRM_FLOOR_PACKAGE:`APPLY_DEALER_CLOSE_79_${sha}`},recovery,sha,'apply'),/confirmation/);
+ const approved={...env,CONFIRM_FLOOR_PACKAGE:`APPLY_DEALER_NEXT_80_${sha}`};
+ validateRelease(approved,recovery,sha,'apply');
+ assert.throws(()=>validateRelease(approved,recovery,base,'apply'),/Checkout/);
+ assert.throws(()=>validateRelease(approved,{...recovery,isolatedRestore:'FAIL'},sha,'apply'),/recovery/);
+});

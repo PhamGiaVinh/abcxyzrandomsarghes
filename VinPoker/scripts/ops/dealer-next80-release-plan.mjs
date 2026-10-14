@@ -40,9 +40,11 @@ export function atomicSql(){const item=loadMigration(),scan=scanMigrationSource(
  INSERT INTO supabase_migrations.schema_migrations(version,name,statements)
  VALUES('${item.version}','${item.name}',ARRAY[${tag}${item.sql}${tag}]::text[]);COMMIT;`;}
 export function postcheckSql(){return `BEGIN READ ONLY;${dependencies()}${finalObjects()}${exactReceipt(loadMigration())}COMMIT;`;}
-export function executePackage(transport,report=()=>{}){
- const baseline=transport.json(preflightSql());
+export function classifyPreflight(baseline){
  if(baseline?.database!=='postgres'||baseline.actor!=='postgres'||baseline.existing!==0)throw Error('Exact next80 baseline required');
+}
+export function executePackage(transport,report=()=>{}){
+ classifyPreflight(transport.json(preflightSql()));
  const item=loadMigration();
  try{transport.execute(atomicSql());}catch{
   let status='unavailable';try{const proof=transport.json(receiptSql(item));status=proof.count===1&&proof.exact===true?'committed-exact':proof.count===0?'not-recorded':'drift';}catch{}
