@@ -258,6 +258,16 @@ jobs:
           node node_modules/vitest/vitest.mjs run src/components/chip-ops/ColorUpTab.test.tsx src/components/cashier/tournament-live/RestoreBustDialog.test.tsx src/lib/floorTableControlV3.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
+      - name: Next dealer intent UI and full application qualification
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_SUPABASE_URL: https://example.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: CI_PLACEHOLDER_ONLY
+        run: |
+          node node_modules/vitest/vitest.mjs run src/lib/dealerNextIntent.test.ts src/components/cashier/ChangePredictedDealerModal.test.tsx src/components/cashier/command-center/AttentionItem.test.tsx src/components/cashier/command-center/AttentionQueue.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/typescript/bin/tsc -b --pretty false
+          npm run build
       - name: Backup worker rejects unauthenticated privileged execution
         working-directory: VinPoker
         run: |
