@@ -423,6 +423,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
           createdb -T "$PGDATABASE" vinpoker_ops_next80_ci
           PGDATABASE=vinpoker_ops_next80_ci node tests/dealerSwing/operatorNextIntent.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_next80_overlap
+          PGDATABASE=vinpoker_ops_next80_overlap node tests/dealerSwing/operatorNextIntent.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_close79_overlap
           PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
