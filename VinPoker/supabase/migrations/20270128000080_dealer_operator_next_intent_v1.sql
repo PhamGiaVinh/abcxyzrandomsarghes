@@ -19,6 +19,7 @@ DECLARE actor uuid:=auth.uid(); session_row public.table_sessions%ROWTYPE;
  assignment_row public.dealer_assignments%ROWTYPE; plan_row public.dealer_rotation_schedule%ROWTYPE;
  physical_id uuid; scope_id uuid; fingerprint text; receipt record; result jsonb; plan_count integer;
  incoming public.dealer_attendance%ROWTYPE; incoming_club uuid;
+ old_incoming public.dealer_attendance%ROWTYPE; old_club uuid;
 BEGIN
  IF actor IS NULL OR p_table_session_id IS NULL OR p_assignment_id IS NULL
   OR p_expected_assignment_version IS NULL OR p_next_attendance_id IS NULL OR p_request_id IS NULL THEN
@@ -64,6 +65,29 @@ BEGIN
  IF plan_count=0 AND (assignment_row.pre_assigned_attendance_id IS NOT NULL OR assignment_row.swing_due_at IS NULL) THEN
   RETURN jsonb_build_object('outcome','plan_requires_repair');
  END IF;
+ IF plan_count=1 AND ((plan_row.status='predicted' AND assignment_row.pre_assigned_attendance_id IS NOT NULL)
+  OR (plan_row.status='announced' AND (plan_row.in_attendance_id IS NULL
+    OR assignment_row.pre_assigned_attendance_id IS DISTINCT FROM plan_row.in_attendance_id))) THEN
+  RETURN jsonb_build_object('outcome','plan_requires_repair');
+ END IF;
+ -- Lock outgoing, old incoming and requested incoming in deterministic order.
+ PERFORM da.id FROM public.dealer_attendance da WHERE da.id=ANY(ARRAY[
+  assignment_row.attendance_id,assignment_row.pre_assigned_attendance_id,p_next_attendance_id]::uuid[])
+ ORDER BY da.id FOR UPDATE;
+ IF plan_count=1 AND plan_row.status='announced' THEN
+  SELECT * INTO old_incoming FROM public.dealer_attendance WHERE id=plan_row.in_attendance_id;
+  IF NOT FOUND THEN RETURN jsonb_build_object('outcome','plan_requires_repair'); END IF;
+  SELECT club_id INTO old_club FROM public.dealers WHERE id=old_incoming.dealer_id;
+  IF old_club IS DISTINCT FROM scope_id OR old_incoming.status IS DISTINCT FROM 'checked_in'
+   OR old_incoming.check_out_time IS NOT NULL OR old_incoming.current_state IS DISTINCT FROM 'pre_assigned'
+   OR old_incoming.pre_assigned_table_id IS DISTINCT FROM physical_id
+   OR EXISTS(SELECT 1 FROM public.dealer_assignments other WHERE other.id<>p_assignment_id
+    AND other.released_at IS NULL AND (other.attendance_id=old_incoming.id OR other.pre_assigned_attendance_id=old_incoming.id))
+   OR EXISTS(SELECT 1 FROM public.dealer_rotation_schedule other WHERE other.id<>plan_row.id
+    AND other.in_attendance_id=old_incoming.id AND other.status IN ('announced','executing')) THEN
+   RETURN jsonb_build_object('outcome','plan_requires_repair');
+  END IF;
+ END IF;
  -- Forecast slots1..2 are advisory and never reserve attendance. Preserve them.
  -- Lock the actual incoming attendance and verify live operational identity;
  -- optional web user identity is deliberately irrelevant.
@@ -78,7 +102,7 @@ BEGIN
   RETURN jsonb_build_object('outcome','dealer_already_reserved');
  END IF;
  IF incoming.current_state IS DISTINCT FROM 'available'
-  AND NOT (plan_count=1 AND plan_row.in_attendance_id=p_next_attendance_id
+  AND NOT (plan_count=1 AND plan_row.status='announced' AND plan_row.in_attendance_id=p_next_attendance_id
     AND assignment_row.pre_assigned_attendance_id=p_next_attendance_id
     AND incoming.current_state='pre_assigned' AND incoming.pre_assigned_table_id=physical_id) THEN
   RETURN jsonb_build_object('outcome','dealer_unavailable');
