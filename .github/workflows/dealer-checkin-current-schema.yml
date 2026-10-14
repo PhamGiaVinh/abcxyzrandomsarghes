@@ -397,6 +397,10 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
           node tests/dealerSwing/operationalInventory.concurrent.mjs
           node --test scripts/ops/dealer-rest78-release-plan.test.mjs
+          # The recovered public-schema baseline excludes the private migration
+          # ledger. This empty isolated fixture tests atomic receipts only;
+          # production ledger parity must be verified separately before apply.
+          psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           createdb -T "$PGDATABASE" vinpoker_ops_rest78_atomic_ci
           PGDATABASE=vinpoker_ops_rest78_atomic_ci REST78_PG_TEST=1 node --test scripts/ops/dealer-rest78-atomic-pg.test.mjs
           node --input-type=module -e "import {atomicSql} from './scripts/ops/dealer-rest78-release-plan.mjs'; console.log(atomicSql());" | psql -X -v ON_ERROR_STOP=1
