@@ -70,9 +70,20 @@ DO $next80$ DECLARE c record; result jsonb; BEGIN
  PERFORM pg_temp.assert_true(result->>'outcome'='changed','15min no-slot intent commits');
  PERFORM pg_temp.assert_true(public.operator_plan_next_dealer_v1(c.table_session_id,c.id,c.version,
  'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000090')=result,'same key returns exact receipt');
+ PERFORM pg_temp.assert_true(public.get_dealer_next_intent_receipt_v1(c.table_session_id,c.id,c.version,
+ 'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000090')=result,'read-only receipt returns exact committed result');
+ PERFORM pg_temp.assert_true(public.get_dealer_next_intent_receipt_v1(c.table_session_id,c.id,c.version+1,
+ 'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000090')->>'outcome'='idempotency_conflict','receipt rejects altered payload');
+ PERFORM pg_temp.assert_true(public.get_dealer_next_intent_receipt_v1(c.table_session_id,c.id,c.version,
+ 'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000088')->>'outcome'='not_recorded','missing receipt is not success');
  PERFORM pg_temp.assert_true(public.operator_plan_next_dealer_v1(c.table_session_id,c.id,c.version+1,
  'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000090')->>'outcome'='idempotency_conflict','changed payload conflicts');
 END $next80$;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000099';
+SELECT pg_temp.assert_true((SELECT public.get_dealer_next_intent_receipt_v1(table_session_id,id,version,
+ 'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000090')->>'outcome'='forbidden'
+ FROM next80_context),'outsider cannot read operator receipt');
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_rotation_schedule
  WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0 AND status='announced'),'one committed next plan');

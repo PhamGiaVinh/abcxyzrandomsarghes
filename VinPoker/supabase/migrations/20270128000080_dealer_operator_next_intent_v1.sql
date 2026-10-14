@@ -145,4 +145,31 @@ END $function$;
 ALTER FUNCTION public.operator_plan_next_dealer_v1(uuid,uuid,integer,uuid,uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.operator_plan_next_dealer_v1(uuid,uuid,integer,uuid,uuid) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.operator_plan_next_dealer_v1(uuid,uuid,integer,uuid,uuid) TO authenticated;
+CREATE FUNCTION public.get_dealer_next_intent_receipt_v1(
+ p_table_session_id uuid,p_assignment_id uuid,p_expected_assignment_version integer,
+ p_next_attendance_id uuid,p_request_id uuid
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $receipt$
+DECLARE actor uuid:=auth.uid(); scope_id uuid; fingerprint text; receipt record;
+BEGIN
+ IF actor IS NULL OR p_table_session_id IS NULL OR p_assignment_id IS NULL
+  OR p_expected_assignment_version IS NULL OR p_next_attendance_id IS NULL OR p_request_id IS NULL THEN
+  RETURN jsonb_build_object('outcome','invalid_request');
+ END IF;
+ SELECT club_id INTO scope_id FROM public.table_sessions WHERE id=p_table_session_id;
+ IF NOT FOUND THEN RETURN jsonb_build_object('outcome','session_not_found'); END IF;
+ IF floor_private.floor_table_v3_actor_is_dealer_operator(actor,scope_id) IS NOT TRUE THEN
+  RETURN jsonb_build_object('outcome','forbidden');
+ END IF;
+ fingerprint:=jsonb_build_object('session',p_table_session_id,'assignment',p_assignment_id,
+  'version',p_expected_assignment_version,'next',p_next_attendance_id)::text;
+ SELECT * INTO receipt FROM floor_private.floor_table_v3_existing_receipt(actor,'operator_plan_next_dealer_v1',p_request_id);
+ IF NOT FOUND THEN RETURN jsonb_build_object('outcome','not_recorded'); END IF;
+ IF receipt.request_fingerprint IS DISTINCT FROM fingerprint THEN
+  RETURN jsonb_build_object('outcome','idempotency_conflict');
+ END IF;
+ RETURN receipt.result;
+END $receipt$;
+ALTER FUNCTION public.get_dealer_next_intent_receipt_v1(uuid,uuid,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.get_dealer_next_intent_receipt_v1(uuid,uuid,integer,uuid,uuid) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.get_dealer_next_intent_receipt_v1(uuid,uuid,integer,uuid,uuid) TO authenticated;
 COMMIT;
