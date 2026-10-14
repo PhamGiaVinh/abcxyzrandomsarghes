@@ -6,6 +6,7 @@ import { useFinanceSummaryRpcOnly } from "@/hooks/accountant/useFinanceSummaryRp
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { financeReadErrorMessage } from "@/lib/financeSummaryRead";
 
 function currentYM(): { year: number; month: number } {
   const d = new Date();
@@ -58,8 +59,8 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
           ))}
         </div>
       ) : q.isError ? (
-        <Card className="p-5 border-destructive/40 bg-destructive/10 text-[13px] text-destructive">
-          Không đọc được báo cáo — bạn chưa có quyền xem P&L CLB này (cần áp DB 20261236000000) hoặc lỗi mạng.
+        <Card role="alert" className="p-5 border-destructive/40 bg-destructive/10 text-[13px] text-destructive">
+          {financeReadErrorMessage(q.error)}
         </Card>
       ) : s ? (
         <>

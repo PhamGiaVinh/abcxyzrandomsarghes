@@ -1,0 +1,36 @@
+name: Finance read integrity
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/src/hooks/useClubFinanceSummary*'
+      - 'VinPoker/src/hooks/accountant/useFinanceSummaryRpcOnly*'
+      - 'VinPoker/src/lib/financeSummaryRead*'
+      - 'VinPoker/src/components/accountant/AccountantFinanceTab.tsx'
+      - '.github/workflows/finance-read-integrity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: VinPoker
+      - run: git diff --check
+      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts --maxWorkers=1 --minWorkers=1
+        working-directory: VinPoker
+      - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - run: npm run build
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
