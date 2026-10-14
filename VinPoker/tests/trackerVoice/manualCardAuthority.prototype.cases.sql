@@ -123,4 +123,21 @@ SELECT pg_temp.manual_assert(:'manual_released_replay_payload'::jsonb->>'error'=
   WHERE id='86000000-0000-4000-8000-000000000001')
  AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
  'released assignment cannot turn historical receipt into current mutation success');
+SET ROLE authenticated;
+SELECT public.get_manual_card_receipt_prototype('manual-prototype-key-0001')::text AS payload \gset manual_reconcile_
+SELECT set_config('request.jwt.claim.sub','81500000-0000-4000-8000-000000000001',false);
+SELECT set_config('request.jwt.claims','{"sub":"81500000-0000-4000-8000-000000000001","role":"authenticated"}',false);
+SELECT public.get_manual_card_receipt_prototype('manual-prototype-key-0001')::text AS payload \gset manual_reconcile_outsider_
+RESET ROLE;
+SELECT pg_temp.manual_assert(:'manual_reconcile_payload'::jsonb->>'status'='committed'
+ AND :'manual_reconcile_payload'::jsonb->>'hand_id'='86000000-0000-4000-8000-000000000001'
+ AND NOT (:'manual_reconcile_payload'::jsonb ? 'hole_cards')
+ AND :'manual_reconcile_outsider_payload'::jsonb->>'status'='not_found'
+ AND NOT has_function_privilege('anon','public.get_manual_card_receipt_prototype(text)','EXECUTE')
+ AND NOT has_schema_privilege('authenticated','floor_private','USAGE')
+ AND (SELECT source_revision=:manual_after_revision FROM public.tournament_hands
+  WHERE id='86000000-0000-4000-8000-000000000001')
+ AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
+ 'read-only reconciliation after release is actor-bound and does not restore mutation authority');
+\echo MANUAL_CARD_PROTOTYPE_RECONCILIATION_AFTER_RELEASE_PASS
 \echo MANUAL_CARD_PROTOTYPE_OUTSIDER_RECEIPT_FAULT_RELEASED_PASS

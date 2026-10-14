@@ -103,4 +103,28 @@ RETURN floor_private.manual_cards_prototype($1,$2,$3,$4,$5,$6);
 REVOKE ALL ON FUNCTION public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)
  FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb) TO authenticated;
+-- Reconciliation is read-only and actor-bound; it proves a past commit, not
+-- current permission to write into that hand/session.
+CREATE FUNCTION floor_private.manual_card_receipt_prototype(p_request_key text)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+DECLARE actor uuid:=auth.uid(); receipt jsonb;
+BEGIN
+ IF actor IS NULL OR coalesce(auth.jwt()->>'role','')<>'authenticated' THEN
+  RETURN jsonb_build_object('error','unauthenticated'); END IF;
+ SELECT r.response INTO receipt FROM floor_private.manual_card_receipts_prototype r
+ WHERE r.actor_id=actor AND r.request_key=p_request_key;
+ IF NOT FOUND THEN RETURN jsonb_build_object('status','not_found'); END IF;
+ RETURN jsonb_build_object('status','committed','request_key',p_request_key,
+  'hand_id',receipt->'hand_id','table_session_id',receipt->'table_session_id',
+  'control_epoch',receipt->'control_epoch','entry_count',receipt->'entry_count');
+END $$;
+REVOKE ALL ON FUNCTION floor_private.manual_card_receipt_prototype(text)
+ FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION floor_private.manual_card_receipt_prototype(text) TO authenticated;
+CREATE FUNCTION public.get_manual_card_receipt_prototype(p_request_key text)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
+RETURN floor_private.manual_card_receipt_prototype(p_request_key);
+REVOKE ALL ON FUNCTION public.get_manual_card_receipt_prototype(text)
+ FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.get_manual_card_receipt_prototype(text) TO authenticated;
 COMMIT;
