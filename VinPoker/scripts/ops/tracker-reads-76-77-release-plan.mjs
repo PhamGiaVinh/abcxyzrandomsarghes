@@ -26,10 +26,11 @@ export function atomicSql(){return `BEGIN;SET LOCAL lock_timeout='5s';SET LOCAL 
  COMMIT;`;}
 export function postcheckSql(){return `BEGIN READ ONLY;${dependency()}${loadMigrations().map(item=>{const scan=scanMigrationSource(item.sql),post=item.sql.indexOf('DO $postcheck$');if(post<0||item.sql.split('DO $postcheck$').length!==2)throw Error('Reads postcheck seam drift');return item.sql.slice(post,scan.insertBeforeCommit);}).join('\n')}COMMIT;`;}
 export function executePackage(transport,report=()=>{}){
- const baseline=transport.json(preflightSql());if(baseline?.database!=='postgres'||baseline.actor!=='postgres'||baseline.existing!==0)throw Error('Exact scoped-read baseline required');
+ const baseline=transport.json(preflightSql());classifyPreflight(baseline);
  const items=loadMigrations();try{transport.execute(atomicSql());}catch{
   for(const item of items){let status='unavailable';try{const r=transport.json(receiptSql(item));status=r.count===1&&r.exact===true?'committed-exact':r.count===0?'not-recorded':'drift';}catch{}
    report(`STOP ${item.version} ${status}; no retry or downstream deploy`);}throw Error('Scoped-read apply outcome requires review');}
  for(const item of items){const r=transport.json(receiptSql(item));if(r.count!==1||r.exact!==true)throw Error('Exact scoped-read receipt postcheck failed');}
  transport.execute(postcheckSql());report('SCOPED_READS76_77_COMMITTED_EXACT_OBJECT_POSTCHECK_PASS');
 }
+export function classifyPreflight(baseline){if(baseline?.database!=='postgres'||baseline.actor!=='postgres'||baseline.existing!==0)throw Error('Exact scoped-read baseline required');}
