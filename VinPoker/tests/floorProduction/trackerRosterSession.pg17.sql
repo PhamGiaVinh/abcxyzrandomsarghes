@@ -442,8 +442,9 @@ DO $$ DECLARE opened jsonb; old_table uuid; old_session uuid; current_table uuid
   PERFORM pg_temp.assert_true(result->>'status'='revoked' AND NOT(result ? 'participation_counts'),
     'revoked token cannot retrieve participation');
   PERFORM set_config('role','none',true);
+  INSERT INTO auth.users(id) VALUES('f7280000-0000-4000-8000-000000000007');
   INSERT INTO public.clubs(id,owner_id,name,region) VALUES
-    ('f7280000-0000-4000-8000-000000000006','f7280000-0000-4000-8000-000000000001','Foreign display TEST','TEST');
+    ('f7280000-0000-4000-8000-000000000006','f7280000-0000-4000-8000-000000000007','Foreign display TEST','TEST');
   UPDATE public.tv_displays SET status='paired',club_id='f7280000-0000-4000-8000-000000000006'
     WHERE id='f7280000-0000-4000-8000-000000000071';
   PERFORM set_config('role','anon',true);
