@@ -7,6 +7,8 @@ const fixtureOnly=process.argv.includes('--fixture-only');
 const undo=process.argv.includes('--undo');
 const authority70=process.argv.includes('--authority70');
 const manualHoleAuthority=process.argv.includes('--manual-hole-authority');
+const manualHolePrototype=process.argv.includes('--manual-hole-prototype');
+assert.ok(!manualHolePrototype||(manualHoleAuthority&&authority70),'manual prototype requires guarded authority fixture');
 assert.ok(!manualHoleAuthority||authority70,'manual hole authority requires guarded owned schema mode');
 const authorityBaseline=process.argv.includes('--authority-baseline');
 const authorityRelease71=process.argv.includes('--authority-release71');
@@ -53,7 +55,7 @@ assert.ok(!authorityBaseline||authority70,'baseline comparison requires authorit
 assert.ok(!authorityRelease71||(authority70&&!authorityBaseline),'release71 requires ordered authority package, not baseline');
 assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires exact release71');
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
-const authorityDatabase=authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
+const authorityDatabase=manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');
@@ -246,7 +248,8 @@ if(authorityReverseRoot){
 if(manualHoleAuthority){
  assert.ok(!fixtureOnly&&!authorityOverlapFixture&&!authorityOwner&&!authorityFinish,
   'manual hole regression must use the original assigned Dealer rollback fixture');
- cases=readFileSync('tests/trackerVoice/manualHoleAuthority.currentSchema.sql','utf8');
+ cases=readFileSync(manualHolePrototype?'tests/trackerVoice/manualCardAuthority.prototype.cases.sql'
+  :'tests/trackerVoice/manualHoleAuthority.currentSchema.sql','utf8');
 }
 const preconditions=undo?`DO $$ BEGIN
  IF inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port() IS DISTINCT FROM 55441 OR current_user<>'postgres' OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999 THEN RAISE EXCEPTION 'wrong_undo_server'; END IF;
