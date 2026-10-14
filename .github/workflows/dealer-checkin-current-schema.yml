@@ -49,6 +49,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql'
       - 'VinPoker/tests/trackerVoice/manual75*'
       - 'VinPoker/tests/trackerVoice/manual76*'
+      - 'VinPoker/supabase/migrations/20270128000077_tracker_roster_scoped_read_v2.sql'
       - 'VinPoker/tests/trackerVoice/manualCardAuthority.prototype*'
       - 'VinPoker/src/components/cashier/tournament-live/handinput/manualCardIntent.ts'
       - 'VinPoker/docs/runbooks/TRACKER_MANUAL_75_COMPENSATION_SOURCE.sql'
@@ -615,6 +616,10 @@ jobs:
           createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_read_20261014
           PGDATABASE=vinpoker_manual76_read_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql
           PGDATABASE=vinpoker_manual76_read_20261014 node tests/trackerVoice/manual76ReadContext.currentSchema.mjs
+          createdb --template=vinpoker_manual76_read_20261014 vinpoker_roster77_read_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --canonical77
+          createdb --template=vinpoker_manual76_read_20261014 vinpoker_roster77_race_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --canonical77-race
           createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_rollback_20261014
           PGDATABASE=vinpoker_manual76_rollback_20261014 node tests/trackerVoice/manual76AtomicRollback.mjs
           createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual_card75_compensation_20261014

@@ -3,10 +3,12 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
-assert.equal(process.platform,'win32');
+const win=process.platform==='win32';
+const port=win?'55464':'55441';
+if(!win){assert.equal(process.platform,'linux');assert.equal(process.env.CI,'true');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,port);assert.equal(process.env.PGUSER,'postgres');}
 assert.ok(process.argv.length<=3);
-const mode=process.argv[2]??'';assert.ok(['','--race','--race-red','--canonical77'].includes(mode));
-const database=mode==='--canonical77'?'vinpoker_roster77_read_20261014':mode==='--race'?'vinpoker_manual76_roster_race_verified_20261014':mode==='--race-red'?'vinpoker_manual76_roster_race_red_20261014':'vinpoker_manual76_read_20261014';
+const mode=process.argv[2]??'';assert.ok(['','--race','--race-red','--canonical77','--canonical77-race'].includes(mode));
+const database=mode==='--canonical77-race'?'vinpoker_roster77_race_20261014':mode==='--canonical77'?'vinpoker_roster77_read_20261014':mode==='--race'?'vinpoker_manual76_roster_race_verified_20261014':mode==='--race-red'?'vinpoker_manual76_roster_race_red_20261014':'vinpoker_manual76_read_20261014';
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const read=file=>readFileSync(`supabase/migrations/${file}`,'utf8').replaceAll('\r\n','\n');
 const s30=read('20270128000030_tracker_roster_intent_fence_v1.sql');
@@ -76,10 +78,10 @@ DO $$ DECLARE r jsonb; BEGIN
 END $$;
 ROLLBACK;`;
 let input=sql;
+const migration=read('20270128000077_tracker_roster_scoped_read_v2.sql');
+assert.match(migration,/\nBEGIN;\n/u);assert.match(migration,/COMMIT;\s*$/u);
+const body=migration.replace('\nBEGIN;\n','\n').replace(/COMMIT;\s*$/u,'');
 if(mode==='--canonical77'){
- const migration=read('20270128000077_tracker_roster_scoped_read_v2.sql');
- assert.match(migration,/\nBEGIN;\n/u);assert.match(migration,/COMMIT;\s*$/u);
- const body=migration.replace('\nBEGIN;\n','\n').replace(/COMMIT;\s*$/u,'');
  const start=sql.indexOf(prototype);const end=sql.indexOf('SET LOCAL ROLE authenticated;',start);
  assert.ok(start>0&&end>start);
  input=(sql.slice(0,start)+body+'\n'+sql.slice(end))
@@ -88,6 +90,7 @@ if(mode==='--canonical77'){
   .replace('ROLLBACK;',"RESET ROLE; SELECT p.oid::regprocedure,md5(replace(pg_get_functiondef(p.oid),chr(13),'')) FROM pg_proc p WHERE p.oid IN ('floor_private.tracker_roster_snapshot_v2(uuid,uuid,uuid,bigint)'::regprocedure,'public.get_tracker_roster_snapshot_v2(uuid,uuid,uuid,bigint)'::regprocedure); ROLLBACK;");
 }else if(mode){
  input=sql.slice(0,sql.indexOf('SET LOCAL ROLE authenticated;')).replace("current_database()<>'vinpoker_manual76_read_20261014'",`current_database()<>'${database}'`);
+ if(mode==='--canonical77-race')input=input.slice(0,input.indexOf(prototype))+body+'\n';
  if(mode==='--race-red')input=input.replace(finalCheck,returnBoundary);
  input+=`SET LOCAL statement_timeout='15s';
 SELECT public.dblink_connect('release76','host=127.0.0.1 port=55464 user=postgres dbname=${database}');
@@ -119,8 +122,11 @@ SELECT * FROM public.dblink_get_result('release76') AS committed(status text);
 DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE table_session_id='83500000-0000-4000-8000-000000000001' AND released_at IS NOT NULL) THEN RAISE EXCEPTION 'remote_release_commit_not_verified'; END IF; END $$;
 SELECT public.dblink_disconnect('release76');
 ROLLBACK;`;
+ if(mode==='--canonical77-race')input=input.replaceAll('public.manual76_roster_prototype','public.get_tracker_roster_snapshot_v2');
 }
-const r=spawnSync('wsl',['-d','PokerVision-P16-4C-Eval','--','psql','-X','-w','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p','55464','-U','postgres','-d',database],{input,encoding:'utf8',timeout:45000});
+input=input.replaceAll('55464',port);
+const args=['-X','-w','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',port,'-U','postgres','-d',database];
+const r=spawnSync(win?'wsl':'psql',win?['-d','PokerVision-P16-4C-Eval','--','psql',...args]:args,{input,encoding:'utf8',timeout:45000});
 assert.equal(r.status,0,r.stderr);
 if(mode==='--canonical77')console.log(r.stdout);
 console.log(mode==='--canonical77'?'ROSTER77_CANONICAL_DDL_POSTCHECK_ROLE_MATRIX_ROLLBACK_PASS':mode?'MANUAL76_ROSTER_RELEASE_DURING_OBSERVED_BACKEND_LOCK_WAIT_DENIED_PASS':'MANUAL76_SCOPED_ROSTER_PROTOTYPE_EXACT_LIVE_BODY_DEALER_STALE_SESSION_ROLLBACK_PASS_NOT_RELEASE');
