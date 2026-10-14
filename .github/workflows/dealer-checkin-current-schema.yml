@@ -325,6 +325,8 @@ jobs:
         working-directory: VinPoker
         run: |
           node scripts/ops/restore-schema-test-baseline.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_payroll82_atomic_ci
+          PGDATABASE=vinpoker_ops_payroll82_atomic_ci PAYROLL82_PG_TEST=1 node --test tests/dealerSwing/payrollReadAuthority.atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/payrollReadAuthority.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
