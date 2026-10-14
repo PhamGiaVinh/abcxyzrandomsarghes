@@ -6,6 +6,19 @@ DO $$ BEGIN
 END $$;
 CREATE FUNCTION pg_temp.manual_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS NOT TRUE THEN RAISE EXCEPTION 'manual_prototype_test: %',label; END IF; END $$;
+SELECT pg_temp.manual_assert(
+ (SELECT proargnames=ARRAY['p_hand_id','p_session_id','p_epoch','p_revision','p_request_key','p_cards']::text[]
+  AND NOT prosecdef AND proconfig=ARRAY['search_path=""']::text[]
+  FROM pg_proc WHERE oid='public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)'::regprocedure)
+ AND (SELECT NOT prosecdef AND provolatile='s' AND proargnames=ARRAY['p_request_key']::text[]
+  FROM pg_proc WHERE oid='public.get_manual_card_receipt_prototype(text)'::regprocedure)
+ AND (SELECT prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=""']::text[]
+  FROM pg_proc WHERE oid='floor_private.manual_card_receipt_prototype(text)'::regprocedure)
+ AND md5(pg_get_functiondef('public._tracker_card_hole_source_v1(uuid,jsonb,uuid,boolean)'::regprocedure))
+  ='53374e21fe6d323affa8a074402f4b85'
+ AND NOT has_function_privilege('service_role','public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)','EXECUTE')
+ AND NOT has_function_privilege('service_role','public.get_manual_card_receipt_prototype(text)','EXECUTE'),
+ 'named PostgREST arguments, invoker wrappers, stable private receipt and unchanged source writer');
 SELECT source_revision AS revision FROM public.tournament_hands
  WHERE id='86000000-0000-4000-8000-000000000001' \gset manual_before_
 SET ROLE authenticated;

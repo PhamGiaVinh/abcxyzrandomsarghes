@@ -97,7 +97,8 @@ END $$;
 REVOKE ALL ON FUNCTION floor_private.manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)
  FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION floor_private.manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb) TO authenticated;
-CREATE FUNCTION public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)
+CREATE FUNCTION public.show_manual_cards_prototype(
+ p_hand_id uuid,p_session_id uuid,p_epoch bigint,p_revision bigint,p_request_key text,p_cards jsonb)
 RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path=''
 RETURN floor_private.manual_cards_prototype($1,$2,$3,$4,$5,$6);
 REVOKE ALL ON FUNCTION public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)
