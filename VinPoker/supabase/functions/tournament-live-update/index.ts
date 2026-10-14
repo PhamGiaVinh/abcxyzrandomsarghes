@@ -1209,6 +1209,35 @@ Deno.serve(async (req) => {
         });
       }
     }
+    if (action === "show_manual_cards_v1") {
+      const proof = result.data;
+      if (!proof || proof.status !== "success" || proof.hand_id !== body.hand_id
+        || proof.table_session_id !== body.table_session_id || proof.control_epoch !== body.control_epoch
+        || proof.request_key !== body.request_id || proof.expected_source_revision !== body.expected_source_revision
+        || !Number.isSafeInteger(proof.committed_source_revision)
+        || proof.committed_source_revision <= body.expected_source_revision
+        || !Number.isInteger(proof.entry_count) || proof.entry_count !== body.player_hole_cards.length) {
+        return new Response(JSON.stringify({ error: "manual_card_receipt_unconfirmed", code: "manual_card_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+    if (action === "get_manual_card_receipt_v1") {
+      const proof = result.data;
+      const committed = proof?.status === "committed" && proof.request_key === body.request_id
+        && typeof proof.hand_id === "string" && typeof proof.table_session_id === "string"
+        && Number.isSafeInteger(proof.control_epoch) && proof.control_epoch > 0
+        && Number.isSafeInteger(proof.expected_source_revision) && proof.expected_source_revision >= 0
+        && Number.isSafeInteger(proof.committed_source_revision)
+        && proof.committed_source_revision > proof.expected_source_revision
+        && Number.isInteger(proof.entry_count) && proof.entry_count > 0
+        && typeof proof.request_hash === "string" && /^[a-f0-9]{64}$/.test(proof.request_hash);
+      if (proof?.status !== "not_found" && !committed) {
+        return new Response(JSON.stringify({ error: "manual_card_receipt_unconfirmed", code: "manual_card_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     // Echo the caller's trace_id (when present) for end-to-end correlation. The RPC
     // JSONB (in `data`) carries the authoritative verdict incl. duplicate/conflict/lock.
     return new Response(JSON.stringify({ status: "success", data: result.data, ...(body.trace_id ? { trace_id: body.trace_id } : {}), ...(validationNote ? { validation: validationNote } : {}) }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
