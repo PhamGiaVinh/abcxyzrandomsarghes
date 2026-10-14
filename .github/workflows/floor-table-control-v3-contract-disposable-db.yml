@@ -100,8 +100,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Same Docker Official Image digest; avoid Docker Hub's shared-runner pull quota.
-        image: public.ecr.aws/docker/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
+        # Exact same Official Image digest; ECR mirror currently rejects pulls.
+        image: docker.io/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: floor_table_control_v3_contract
