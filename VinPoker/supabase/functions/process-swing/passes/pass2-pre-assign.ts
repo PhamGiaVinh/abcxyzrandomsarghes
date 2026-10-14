@@ -134,6 +134,7 @@ export async function pass2PreAssignNext(
 
       if (queryErr) {
         console.error("[Pass 2] ❌ Query error:", queryErr.message);
+        result.errors.push({ table_id: "", error: `manual assignment read: ${queryErr.message}` });
         return result;
       }
       upcomingAssignments = data ?? [];
@@ -160,6 +161,8 @@ export async function pass2PreAssignNext(
 
       if (normalErr) {
         console.error("[Pass 2] ❌ Normal window query error:", normalErr.message);
+        result.errors.push({ table_id: "", error: `normal assignment read: ${normalErr.message}` });
+        return result;
       }
 
       // OT emergency: shortened pre-announce window (3 min instead of 6)
@@ -183,6 +186,8 @@ export async function pass2PreAssignNext(
 
       if (otErr) {
         console.error("[Pass 2] ❌ OT window query error:", otErr.message);
+        result.errors.push({ table_id: "", error: `OT assignment read: ${otErr.message}` });
+        return result;
       }
 
       // Merge and deduplicate by assignment id
@@ -551,6 +556,7 @@ export async function pass2PreAssignNext(
   } catch (error: any) {
     if (isCandidateSnapshotFailure(error)) throw error;
     console.error("[Pass 2] ❌ Fatal error:", error.message);
+    result.errors.push({ table_id: "", error: error instanceof Error ? error.message : String(error) });
     return result;
   }
 }
