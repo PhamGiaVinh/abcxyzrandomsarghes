@@ -21,6 +21,7 @@ interface SetupHandPanelProps {
   onResetButton?: () => void;
   onStartHand: () => void;
   submitting: boolean;
+  startDisabledReason?: string | null;
   lastHandId: string | null;
   onVoid: () => void;
   /**
@@ -49,6 +50,7 @@ export function SetupHandPanel({
   onResetButton,
   onStartHand,
   submitting,
+  startDisabledReason,
   lastHandId,
   onVoid,
   expressLabel,
@@ -94,7 +96,7 @@ export function SetupHandPanel({
       )}
       <LiquidButton
         onClick={onStartHand}
-        disabled={submitting || !handNumber || !buttonConfirmed}
+        disabled={submitting || !!startDisabledReason || !handNumber || !buttonConfirmed}
         className={
           expressLabel
             ? "bg-emerald-500 hover:bg-emerald-600 text-black font-bold shadow-lg shadow-emerald-500/20"
@@ -103,6 +105,7 @@ export function SetupHandPanel({
       >
         <Play className="w-4 h-4 mr-2" /> {expressLabel || "Bắt đầu Hand"}
       </LiquidButton>
+      {startDisabledReason && <p role="status" className="text-sm text-muted-foreground">{startDisabledReason}</p>}
       {lastHandId && (
         <div className="pt-2">
           <Button size="sm" variant="destructive" onClick={onVoid} disabled={submitting}>

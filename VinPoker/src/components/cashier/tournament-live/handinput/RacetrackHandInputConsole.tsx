@@ -140,6 +140,9 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
           onTapSeat={hook.handleSeatTap}
           onResetButton={hook.handleResetButton}
           onStartHand={hook.handleStartHand}
+          startDisabledReason={hook.startCapability === "allowed" ? null : hook.startCapability === "denied"
+            ? "Cần quyền Tracker của CLB để bắt đầu hand; quyền Floor không bao gồm thao tác này."
+            : "Chưa xác minh được quyền bắt đầu hand. Hãy tải lại."}
           submitting={disabled}
           lastHandId={hook.lastHandId}
           onVoid={hook.handleVoid}
