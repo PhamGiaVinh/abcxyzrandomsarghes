@@ -126,7 +126,14 @@ export function buildShowHoleCardsBody(p: {
   tournamentId: string;
   handId: string;
   playerHoleCards: HoleCardEntry[];
+  manualContext?: { tableSessionId: string; controlEpoch: number; sourceRevision: number; requestId: string };
 }) {
+  if (p.manualContext) return {
+    tournament_id: p.tournamentId, action: "show_manual_cards_v1", hand_id: p.handId,
+    player_hole_cards: p.playerHoleCards, table_session_id: p.manualContext.tableSessionId,
+    control_epoch: p.manualContext.controlEpoch, expected_source_revision: p.manualContext.sourceRevision,
+    request_id: p.manualContext.requestId,
+  };
   return {
     tournament_id: p.tournamentId,
     action: "show_hole_cards",

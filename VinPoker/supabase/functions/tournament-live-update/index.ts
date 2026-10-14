@@ -1124,6 +1124,32 @@ Deno.serve(async (req) => {
         });
         break;
       }
+      case "show_manual_cards_v1": {
+        const { hand_id, player_hole_cards, table_session_id, control_epoch, expected_source_revision, request_id } = body;
+        if (typeof hand_id !== "string" || typeof table_session_id !== "string"
+          || !Number.isSafeInteger(control_epoch) || control_epoch < 1
+          || !Number.isSafeInteger(expected_source_revision) || expected_source_revision < 0
+          || typeof request_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{11,255}$/.test(request_id)
+          || !Array.isArray(player_hole_cards) || player_hole_cards.length === 0) {
+          return validationError("MANUAL_CARD_CONTEXT_REQUIRED", "Lật bài thiếu session, epoch, revision hoặc request ID hợp lệ.");
+        }
+        // Same authenticated JWT client, never service-role delegation or actor
+        // from the body. The RPC owns authority, CAS, deck, mutation and receipt.
+        result = await supabase.rpc("show_tracker_manual_cards_v1", {
+          p_hand_id: hand_id, p_session_id: table_session_id, p_epoch: control_epoch,
+          p_revision: expected_source_revision, p_request_key: request_id, p_cards: player_hole_cards,
+        });
+        break;
+      }
+      case "get_manual_card_receipt_v1": {
+        const { request_id } = body;
+        if (typeof request_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{11,255}$/.test(request_id)) {
+          return validationError("MANUAL_CARD_CONTEXT_REQUIRED", "Tra receipt thiếu request ID hợp lệ.");
+        }
+        // Read-only actor-bound proof; it does not restore current write authority.
+        result = await supabase.rpc("get_tracker_manual_card_receipt_v1", { p_request_key: request_id });
+        break;
+      }
       case "commit_voice_board": {
         const { hand_id, voice_event_id, idempotency_key, trace_id } = body;
         if (
@@ -1174,7 +1200,7 @@ Deno.serve(async (req) => {
     }
     // A JSONB denial from the canonical action RPC is an authoritative failure,
     // not a successful Edge envelope. This keeps non-Voice callers fail-closed too.
-    if ((action === "record_action" || action === "show_hole_cards" || action === "commit_voice_board" || action === "commit_voice_hole_cards" || action === "commit_voice_finish") && result.data && typeof result.data === "object") {
+    if ((action === "record_action" || action === "show_hole_cards" || action === "show_manual_cards_v1" || action === "get_manual_card_receipt_v1" || action === "commit_voice_board" || action === "commit_voice_hole_cards" || action === "commit_voice_finish") && result.data && typeof result.data === "object") {
       const verdict = result.data as { error?: unknown };
       if (typeof verdict.error === "string") {
         return new Response(JSON.stringify({ error: verdict.error, code: verdict.error }), {
