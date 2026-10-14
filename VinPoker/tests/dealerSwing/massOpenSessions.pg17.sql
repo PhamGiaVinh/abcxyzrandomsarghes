@@ -147,6 +147,29 @@ FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023';
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role='authenticated';
+DO $close_rollback$
+DECLARE result jsonb;
+BEGIN
+ BEGIN
+  result:=public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+    current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000080');
+  PERFORM pg_temp.assert_true((result->>'ok')::boolean,'close rollback probe reaches successful RPC');
+  RAISE EXCEPTION 'injected_close_transaction_rollback';
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM<>'injected_close_transaction_rollback' THEN RAISE; END IF;
+ END;
+END $close_rollback$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023'),'failed transaction preserves open session');
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'failed transaction restores announced plan');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000013'
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'failed transaction restores incoming reservation');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
 DO $close_with_next$
 DECLARE result jsonb; session_revision bigint;
 BEGIN
@@ -155,6 +178,11 @@ BEGIN
    'e1800000-0000-4000-8000-000000000080');
  RAISE NOTICE 'CLOSE_WITH_NEXT_RPC_OUTCOME=%',result;
  PERFORM pg_temp.assert_true((result->>'ok')::boolean,'canonical close succeeds with announced replacement');
+ PERFORM pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+   session_revision,'e1800000-0000-4000-8000-000000000080')=result,'close replay returns exact original receipt');
+ PERFORM pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+   session_revision+1,'e1800000-0000-4000-8000-000000000080')->>'error'='IDEMPOTENCY_CONFLICT',
+   'same close key with changed revision conflicts');
 END $close_with_next$;
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT closed_at IS NOT NULL FROM public.table_sessions
