@@ -248,7 +248,7 @@ export async function pass15RotationPlanner(
 
   for (const pair of writablePairs) {
     // Re-verify right before write
-    const { data: freshAssign } = await admin
+    const { data: freshAssign, error: freshError } = await admin
       .from("dealer_assignments")
       .select("id, version, pre_assigned_attendance_id")
       .eq("table_id", pair.tableId)
@@ -257,6 +257,11 @@ export async function pass15RotationPlanner(
       .is("swing_processed_at", null)
       .maybeSingle();
 
+    if (freshError) {
+      errors.push({ tableId: pair.tableId, error: freshError.message ?? "assignment_reread_failed" });
+      continue;
+    }
+
     if (!freshAssign || freshAssign.pre_assigned_attendance_id !== null) {
       console.warn(`[Pass 1.5] Table ${pair.tableId} already pre-assigned, skipping`);
       continue;
@@ -264,7 +269,7 @@ export async function pass15RotationPlanner(
 
     let rpcResult: any;
     try {
-      const { data } = await callWithTimeout(
+      const { data, error } = await callWithTimeout(
         admin.rpc("pre_assign_next_dealer_for_table", {
           p_assignment_id: freshAssign.id,
           p_club_id: clubId,
@@ -274,6 +279,10 @@ export async function pass15RotationPlanner(
         RPC_TIMEOUT_MS,
         `pre_assign table ${pair.tableId}`
       );
+      if (error) {
+        errors.push({ tableId: pair.tableId, error: error.message ?? "preassign_rpc_failed" });
+        continue;
+      }
       rpcResult = data;
     } catch (err: any) {
       errors.push({ tableId: pair.tableId, error: err.message });

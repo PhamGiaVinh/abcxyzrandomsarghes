@@ -3,6 +3,25 @@ import { pass15RotationPlanner } from "./pass1.5-rotation-planner.ts";
 
 const CLUB_ID = "22222222-2222-2222-2222-222222222222";
 
+for (const seam of ["reread", "rpc"]) Deno.test(`planner preserves ${seam} query errors`, async () => {
+  let commits = 0;
+  const row = { id: "a", table_id: "t", attendance_id: "out", version: 1, pre_assigned_attendance_id: null,
+    game_tables: { game_type: "holdem", tour_tier: "LOW" } };
+  const chain: any = {};
+  for (const method of ["select", "eq", "is", "gte", "lt", "in"]) chain[method] = () => chain;
+  chain.then = (done: (value: unknown) => unknown) => Promise.resolve({ data: [row], error: null }).then(done);
+  chain.maybeSingle = () => Promise.resolve(seam === "reread" ? { data: null, error: { message: "reread503" } } : { data: row, error: null });
+  const result = await pass15RotationPlanner({ from: () => chain, rpc: () => {
+    commits++; return Promise.resolve({ data: { outcome: "pre_assigned" }, error: { message: "rpc503" } });
+  } }, CLUB_ID, options(), {
+    candidateBuilder: async () => ({ candidates: [], avgBreakRatio: null, status: "ok" }),
+    solver: (() => ({ pairs: [{ tableId: "t", attendanceId: "in", score: 1 }], unassignedTables: [], solverVersion: "test" })) as any,
+  });
+  assertEquals(commits, seam === "reread" ? 0 : 1);
+  assertEquals(result.assigned, 0);
+  assertEquals(result.errors[0]?.error, `${seam}503`);
+});
+
 Deno.test("failed commit-eligibility snapshot is an error, not a clean zero backlog", async () => {
   let reads = 0, commits = 0;
   const row = { id: "a", table_id: "t", attendance_id: "out", version: 1, pre_assigned_attendance_id: null,
