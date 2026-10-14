@@ -442,6 +442,31 @@ DO $$ DECLARE opened jsonb; old_table uuid; old_session uuid; current_table uuid
   PERFORM pg_temp.assert_true(result->>'status'='revoked' AND NOT(result ? 'participation_counts'),
     'revoked token cannot retrieve participation');
   PERFORM set_config('role','none',true);
+  INSERT INTO public.clubs(id,owner_id,name,region) VALUES
+    ('f7280000-0000-4000-8000-000000000006','f7280000-0000-4000-8000-000000000001','Foreign display TEST','TEST');
+  UPDATE public.tv_displays SET status='paired',club_id='f7280000-0000-4000-8000-000000000006'
+    WHERE id='f7280000-0000-4000-8000-000000000071';
+  PERFORM set_config('role','anon',true);
+  result:=public.get_tv_display_state_v4('fixture-only-participation-display-token-not-live',true);
+  PERFORM pg_temp.assert_true(result=jsonb_build_object('status','invalid'),
+    'cross-club display assignment reveals no tournament or branding');
+  PERFORM set_config('role','none',true);
+  UPDATE public.tv_displays SET club_id='f7280000-0000-4000-8000-000000000002'
+    WHERE id='f7280000-0000-4000-8000-000000000071';
+  UPDATE public.tournaments SET deleted_at=now() WHERE id='f7280000-0000-4000-8000-000000000005';
+  PERFORM set_config('role','anon',true);
+  result:=public.get_tv_display_state_v4('fixture-only-participation-display-token-not-live',false);
+  PERFORM pg_temp.assert_true(result=jsonb_build_object('status','invalid'),
+    'deleted assigned tournament reveals no aggregate or clock');
+  PERFORM set_config('role','none',true);
+  UPDATE public.tv_displays SET display_token='fixture-only-rotated-display-capability-not-live'
+    WHERE id='f7280000-0000-4000-8000-000000000071';
+  PERFORM set_config('role','anon',true);
+  result:=public.get_tv_display_state_v4('fixture-only-participation-display-token-not-live',true);
+  PERFORM pg_temp.assert_true(result=jsonb_build_object('status','invalid'),
+    'old rotated capability cannot retrieve display data');
+  RAISE NOTICE 'PARTICIPATION_TV_CAPABILITY_TENANT_DELETION_ROTATION_PASS';
+  PERFORM set_config('role','none',true);
   -- Historical seating must not mint an entry or count as a re-entry.
   INSERT INTO public.tournament_seats(tournament_id,player_id,entry_number,table_id,
     seat_number,chip_count,is_active,status,entry_id,tournament_table_id,table_session_id)
