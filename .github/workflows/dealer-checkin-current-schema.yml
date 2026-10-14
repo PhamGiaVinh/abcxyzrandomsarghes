@@ -400,11 +400,10 @@ jobs:
           # The recovered public-schema baseline excludes the private migration
           # ledger. This empty isolated fixture tests atomic receipts only;
           # production ledger parity must be verified separately before apply.
-          psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           createdb -T "$PGDATABASE" vinpoker_ops_rest78_atomic_ci
+          PGDATABASE=vinpoker_ops_rest78_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           PGDATABASE=vinpoker_ops_rest78_atomic_ci REST78_PG_TEST=1 node --test scripts/ops/dealer-rest78-atomic-pg.test.mjs
-          node --input-type=module -e "import {atomicSql} from './scripts/ops/dealer-rest78-release-plan.mjs'; console.log(atomicSql());" | psql -X -v ON_ERROR_STOP=1
-          node --input-type=module -e "import {postcheckSql,loadMigration} from './scripts/ops/dealer-rest78-release-plan.mjs'; import {receiptSql} from './scripts/ops/floor-37-47-protected-apply.mjs'; console.log(postcheckSql()); console.log(receiptSql(loadMigration()));" | psql -X -v ON_ERROR_STOP=1
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs
