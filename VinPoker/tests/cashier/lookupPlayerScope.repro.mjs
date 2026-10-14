@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 // Execute the real handler, removing only imports as in existing handler repro harnesses.
 // Fixtures exercise Edge control flow, not live PostgREST/RLS or deployed Edge proof.
-const source = readFileSync(new URL('../../supabase/functions/cashier-lookup-player/index.ts', import.meta.url), 'utf8');
+const source = readFileSync(process.env.CASHIER_LOOKUP_TEST_SOURCE || new URL('../../supabase/functions/cashier-lookup-player/index.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.ES2022, true);
 const withoutImports = ts.factory.updateSourceFile(ast, ast.statements.filter(node => !ts.isImportDeclaration(node)));
 const body = ts.transpileModule(ts.createPrinter().printFile(withoutImports), {
@@ -17,7 +17,10 @@ function harness({ superAdmin = false, empty = false, crossClub = false, fail, u
   const profile = { user_id: 'player-test', display_name: 'TEST Player', phone: 'TEST_PHONE', bank_name: 'TEST_BANK', bank_account_number: 'TEST_ACCOUNT', bank_account_holder: 'TEST_HOLDER' };
   const deals = empty ? [] : [{ id: 'deal-test', club_id: crossClub ? 'club-b' : 'club-a', player_id: 'player-test', status: 'funded', buy_in_amount_vnd: 100000, percentage_sold: 50, filled_percent: 30 }];
   const client = {
-    auth: { getUser: async () => ({ data: { user: unauthorized ? null : { id: 'cashier-test' } }, error: unauthorized ? { message: 'invalid token' } : null }) },
+    auth: {
+      getUser: async () => ({ data: { user: unauthorized ? null : { id: 'cashier-test' } }, error: unauthorized ? { message: 'invalid token' } : null }),
+      getClaims: async () => ({ data: { claims: unauthorized ? null : { sub: 'cashier-test' } }, error: unauthorized ? { message: 'invalid token' } : null }),
+    },
     rpc: async (name, args) => {
       assert.equal(name, 'cashier_club_ids'); assert.equal(args._user_id, 'cashier-test');
       return fail === 'scope' ? { data: null, error: { message: 'scope backend unavailable' } } : { data: malformed === 'scope' ? null : emptyScope ? [] : ['club-a'], error: null };
@@ -105,17 +108,19 @@ test('funded purchase and backer projection keep existing money values unchanged
 test('backer read failure does not publish a partially verified purchase projection', async () => {
   const result = await harness({ fail: 'backers', withPurchases: true }).run();
   assert.equal(result.status, 500); assert.equal(result.body.player, undefined);
+  assert.match(result.body.error, /(?:lookup|scope) unavailable/i);
 });
 for (const malformed of ['user_roles', 'scope', 'staking_deals', 'staking_purchases']) {
   test(`malformed ${malformed} success is not authoritative empty data`, async () => {
     const result = await harness({ malformed }).run();
     assert.equal(result.status, 500); assert.equal(result.body.player, undefined);
+    assert.match(result.body.error, /(?:lookup|scope) unavailable/i);
   });
 }
 for (const fail of ['user_roles', 'scope', 'staking_deals', 'profiles', 'staking_purchases']) {
   test(`${fail} failure is backend unavailable, not verified empty/zero or missing permission`, async () => {
     const result = await harness({ fail }).run();
     assert.equal(result.status, 500); assert.equal(result.body.player, undefined);
-    assert.ok(result.body.error);
+    assert.match(result.body.error, /(?:lookup|scope) unavailable/i);
   });
 }
