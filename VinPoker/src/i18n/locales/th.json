@@ -1829,6 +1829,13 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "financeRead": {
+    "forbidden": "คุณไม่มีสิทธิ์ดูรายงานการเงินของคลับนี้",
+    "missingBackend": "เซิร์ฟเวอร์ยังไม่มีรายงานเวอร์ชันที่จำเป็น จึงไม่สามารถยืนยันตัวเลขได้",
+    "invalid": "ข้อมูลรายงานไม่ครบถ้วนหรือไม่ถูกต้อง จึงไม่สามารถยืนยันตัวเลขได้",
+    "authRequired": "ต้องยืนยันเซสชันการเข้าสู่ระบบอีกครั้งเพื่ออ่านรายงาน",
+    "unavailable": "โหลดรายงานการเงินไม่สำเร็จ โปรดตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง"
+  },
   "tournamentLive": {
     "statusLabels": {
       "upcoming": "กำลังจะเริ่ม", "registering": "เปิดลงทะเบียน", "drawing": "จับฉลากที่นั่ง",

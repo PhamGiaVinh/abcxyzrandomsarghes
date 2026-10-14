@@ -1,12 +1,12 @@
 import {describe,it,expect} from 'vitest';
-import {parseFinanceCore,financeSessionReadEpoch,financeReadErrorMessage} from './financeSummaryRead';
+import {parseFinanceCore,financeSessionReadEpoch,financeReadErrorKey} from './financeSummaryRead';
 const packet=()=>({revenue:{stakingFees:1,payoutFees:2,rake:3,total:6},cost:{payrollNet:7,payrollGross:8,adjustments:-1},net:-1});
 describe('finance RPC read contract',()=>{
  it('does not describe network or invalid payload errors as missing permission',()=>{
-  expect(financeReadErrorMessage({code:'42501'})).toContain('chưa có quyền');
-  expect(financeReadErrorMessage(new TypeError('Failed to fetch'))).not.toContain('chưa có quyền');
-  expect(financeReadErrorMessage(new Error('FINANCE_SUMMARY_INVALID: net'))).toContain('không hợp lệ');
-  expect(financeReadErrorMessage({code:'PGRST202'})).toContain('phiên bản báo cáo');
+  expect(financeReadErrorKey({code:'42501'})).toBe('financeRead.forbidden');
+  expect(financeReadErrorKey(new TypeError('Failed to fetch'))).toBe('financeRead.unavailable');
+  expect(financeReadErrorKey(new Error('FINANCE_SUMMARY_INVALID: net'))).toBe('financeRead.invalid');
+  expect(financeReadErrorKey({code:'PGRST202'})).toBe('financeRead.missingBackend');
  });
  it('preserves signed server totals and documented absent legacy optional fields',()=>{
   const parsed=parseFinanceCore(packet());expect(parsed.net).toBe(-1);expect(parsed.cost.adjustments).toBe(-1);

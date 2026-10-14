@@ -1829,6 +1829,13 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "financeRead": {
+    "forbidden": "您没有权限查看此俱乐部的财务报告。",
+    "missingBackend": "服务器缺少所需的报告版本，无法核实数据。",
+    "invalid": "报告数据不完整或无效，无法核实数据。",
+    "authRequired": "需要重新验证登录会话才能读取报告。",
+    "unavailable": "无法加载财务报告。请检查网络连接后重试。"
+  },
   "tournamentLive": {
     "statusLabels": {
       "upcoming": "即将开始", "registering": "报名中", "drawing": "抽签分座",

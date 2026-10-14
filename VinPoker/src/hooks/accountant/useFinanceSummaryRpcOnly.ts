@@ -44,13 +44,13 @@ export function useFinanceSummaryRpcOnly(clubId: string | null, from: string, to
     enabled,
     staleTime: 60_000,
     retry: false,
-    queryFn: async (): Promise<FinanceSummaryRpc> => {
+    queryFn: async ({ signal }): Promise<FinanceSummaryRpc> => {
       if (!enabled || activeContext.current !== context) throw new Error("AUTH_REQUIRED");
       const { data, error } = await supabase.rpc("get_club_finance_summary", {
         p_from: from,
         p_to: to,
         p_club_id: clubId ?? undefined,
-      });
+      }).abortSignal(signal);
       if (activeContext.current !== context) throw new Error("FINANCE_READ_SUPERSEDED");
       if (error) throw error;
       const {revenue:rev,cost,net}=parseFinanceCore(data);

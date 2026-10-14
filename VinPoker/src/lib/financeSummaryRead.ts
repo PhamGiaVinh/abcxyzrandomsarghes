@@ -49,11 +49,11 @@ export function financeText(value: unknown, field: string): string {
   return value;
 }
 /** Permission denial is explicit; transport/contract errors are not evidence of lost access. */
-export function financeReadErrorMessage(error: unknown): string {
+export function financeReadErrorKey(error: unknown): string {
   const detail = error && typeof error === 'object' ? error as {code?: string; status?: number; message?: string} : {};
-  if (detail.code === '42501' || detail.status === 403) return 'Bạn chưa có quyền xem báo cáo tài chính của CLB này.';
-  if (detail.code === 'PGRST202' || detail.code === '42883') return 'Máy chủ chưa có phiên bản báo cáo cần thiết. Không thể xác minh số liệu.';
-  if (detail.message?.startsWith('FINANCE_SUMMARY_INVALID')) return 'Dữ liệu báo cáo không đầy đủ hoặc không hợp lệ. Không thể xác minh số liệu.';
-  if (detail.message === 'AUTH_REQUIRED') return 'Cần xác minh lại phiên đăng nhập để đọc báo cáo.';
-  return 'Không tải được báo cáo tài chính. Hãy kiểm tra kết nối và thử lại.';
+  if (detail.code === '42501' || detail.status === 403) return 'financeRead.forbidden';
+  if (detail.code === 'PGRST202' || detail.code === '42883') return 'financeRead.missingBackend';
+  if (detail.message?.startsWith('FINANCE_SUMMARY_INVALID')) return 'financeRead.invalid';
+  if (detail.message === 'AUTH_REQUIRED') return 'financeRead.authRequired';
+  return 'financeRead.unavailable';
 }
