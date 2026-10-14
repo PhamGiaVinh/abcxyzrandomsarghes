@@ -38,6 +38,18 @@ INSERT INTO public.club_cashiers(club_id,user_id) VALUES
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='e1820000-0000-4000-8000-000000000004';
 SET LOCAL request.jwt.claim.role='authenticated';
+SET LOCAL request.jwt.claim.sub='';
+DO $$ BEGIN
+ BEGIN
+  PERFORM * FROM public.get_dealer_payroll('e1820000-0000-4000-8000-000000000002',current_date,current_date);
+  RAISE EXCEPTION 'payroll_empty_uid_admitted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN
+  PERFORM * FROM public.get_shift_payroll_summary('e1820000-0000-4000-8000-000000000002',current_date);
+  RAISE EXCEPTION 'shift_payroll_empty_uid_admitted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+END $$;
+SET LOCAL request.jwt.claim.sub='e1820000-0000-4000-8000-000000000004';
 DO $$ DECLARE statement text;BEGIN
  FOR statement IN SELECT unnest(ARRAY[
   'SELECT count(*) FROM public.get_dealer_payroll(''e1820000-0000-4000-8000-000000000002'',current_date,current_date)',
@@ -55,6 +67,16 @@ DO $$ DECLARE actor uuid;BEGIN
  END LOOP;
 END $$;
 SET LOCAL request.jwt.claim.sub='e1820000-0000-4000-8000-000000000001';
+DO $$ BEGIN
+ BEGIN
+  PERFORM * FROM public.get_dealer_payroll(NULL,current_date,current_date);
+  RAISE EXCEPTION 'payroll_null_club_admitted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN
+  PERFORM * FROM public.get_shift_payroll_summary(NULL,current_date);
+  RAISE EXCEPTION 'shift_payroll_null_club_admitted';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+END $$;
 DO $$ BEGIN
  IF (SELECT count(*) FROM public.get_dealer_payroll('e1820000-0000-4000-8000-000000000002',current_date,current_date))<>1 THEN
   RAISE EXCEPTION 'payroll_owner_read_failed';END IF;

@@ -2,6 +2,8 @@ name: Operations current schema runtime
 on:
   pull_request:
     paths:
+      - 'VinPoker/supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql'
+      - 'VinPoker/tests/dealerSwing/payrollReadAuthority*'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
