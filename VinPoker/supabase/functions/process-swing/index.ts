@@ -2383,6 +2383,12 @@ if (tier2Count > 0) {
               `${p15Result.dryRun ? " (dryRun)" : ""}`
             );
             if (p15Result.errors.length > 0) {
+              recordDispatchSafetyOutcome(
+                cid,
+                assessCoreQueryFailure("pass15_planner", {
+                  message: p15Result.errors.map(e => `${e.tableId}: ${e.error}`).join("; "),
+                }),
+              );
               console.error(
                 `[Pass 1.5] ${p15Result.errors.length} write errors:`,
                 p15Result.errors.map(e => `${e.tableId}: ${e.error}`).join("; ")
