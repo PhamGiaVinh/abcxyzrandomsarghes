@@ -32,7 +32,8 @@ const wrapper = ({ children }: { children: ReactNode }) => <MemoryRouter>{childr
 const snapshot = (args: any) => ({ data: { ok: true, tournament_table_id: args.p_tournament_table_id,
  table_session_id: args.p_table_session_id, control_epoch: args.p_expected_epoch,
  seats: Array.from({ length: 9 }, (_, i) => ({ seat_number: i + 1,
-  seat: i === 0 && mock.rpc.mock.calls.filter(([name]) => name === "set_tracker_table_roster_seat_v2").length >= 2
+  seat: i === 0 && (mock.staleOrphan || mock.currentOrphan
+   || mock.rpc.mock.calls.filter(([name]) => name === "set_tracker_table_roster_seat_v2").length >= 2)
    ? { player_id: "player", entry_number: 1, seat_number: 1, chip_count: 20000, player_name: "TEST" } : null,
   token: "empty" })) }, error: null });
 afterEach(() => { cleanup(); vi.clearAllMocks(); mock.staleOrphan = false; mock.currentOrphan = false; sessionStorage.clear(); });

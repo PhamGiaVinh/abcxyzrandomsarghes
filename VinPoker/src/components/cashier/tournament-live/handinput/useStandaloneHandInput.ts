@@ -1222,15 +1222,11 @@ export function useStandaloneHandInput(tournamentId: string) {
 
       const identity = await resolveTableHandIdentity({
         loadOrphan: async () => {
-          // A reusable table ID cannot identify the current hand incarnation.
-          // Without a verified session, never offer a legacy/stale orphan.
-          if (!loadedSessionId) return null;
           const { data, error: orphanError } = await supabase
             .from("tournament_hands")
             .select("id, hand_number")
             .eq("tournament_id", tournamentId)
             .eq("table_id", handTableId)
-            .filter("table_session_id", "eq", loadedSessionId)
             .eq("status", "in_progress")
             .limit(1)
             .maybeSingle();
@@ -1777,10 +1773,6 @@ export function useStandaloneHandInput(tournamentId: string) {
     setSubmitting(true);
     setActionSyncBlocked(true);
     try {
-      const loaded = loadedTableSessionRef.current;
-      const sessionId = rosterContext?.tableSessionId
-        ?? (loaded?.tournamentId === tournamentId && loaded.tableId === tableId ? loaded.sessionId : null);
-      if (!sessionId) throw new Error("Không xác minh được phiên bàn để tiếp tục hand. Hãy tải lại bàn.");
       const [handResult, actionResult] = await Promise.all([
         supabase
           .from("tournament_hands")
@@ -1788,7 +1780,6 @@ export function useStandaloneHandInput(tournamentId: string) {
           .eq("id", targetOrphan.id)
           .eq("tournament_id", tournamentId)
           .eq("table_id", tournamentTableId ?? tableId)
-          .filter("table_session_id", "eq", sessionId)
           .eq("status", "in_progress")
           .single(),
         supabase
