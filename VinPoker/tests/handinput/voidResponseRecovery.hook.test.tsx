@@ -113,10 +113,10 @@ describe("void unknown response through the real controller", () => {
       }
     } finally { storage.mockRestore(); }
   });
-  it("reconciles an unknown manual response with the original request before another writer", async () => {
+  it.each(["same-instance", "remount"])("reconciles an unknown manual response with the original request before another writer after %s", async (recovery) => {
     mock.resume = true;
     mock.deferred = true;
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result, unmount } = renderHook(() => useStandaloneHandInput("tour1"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
     await act(async () => { await result.current.handleTableChange("table1"); });
     await waitFor(() => expect(result.current.handId).toBe("hand1"));
@@ -134,7 +134,16 @@ describe("void unknown response through the real controller", () => {
     const first = mock.invoke.mock.calls[0][1].body;
     expect(first).toMatchObject({ action: "show_manual_cards_v1", table_session_id: "session1",
       control_epoch: 1, expected_source_revision: 12, request_id: expect.any(String) });
-    await act(async () => { await result.current.handleShowHoleCards(); });
+    let recovered = result;
+    if (recovery === "remount") {
+      unmount();
+      recovered = renderHook(() => useStandaloneHandInput("tour1")).result;
+      await waitFor(() => expect(recovered.current.tableLoadState).toBe("ready"));
+      await act(async () => { await recovered.current.handleTableChange("table1"); });
+      await waitFor(() => expect(recovered.current.handId).toBe("hand1"));
+      await act(async () => { recovered.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
+    }
+    await act(async () => { await recovered.current.handleShowHoleCards(); });
     expect(mock.invoke.mock.calls.filter(([, { body }]) => body.action === "show_manual_cards_v1")).toHaveLength(1);
     const lookups = mock.invoke.mock.calls.filter(([, { body }]) => body.action === "get_manual_card_receipt_v1");
     expect(lookups).toHaveLength(1);
