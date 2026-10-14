@@ -28,7 +28,7 @@ describe('unified cashier lookup read integrity', () => {
     fixture.invoke.mockResolvedValue({ data: null, error: { message: '503' } });
     render(view()); search();
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Không tải đủ'));
-    expect(screen.queryByRole('button', { name: 'Check-in', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Check-in$/ })).not.toBeInTheDocument();
   });
   it('does not show a failed primary profile read as no members found', async () => {
     fixture.failProfiles = true;
