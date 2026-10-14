@@ -108,6 +108,13 @@ describe("TrackerDashboard club read state", () => {
     await screen.findByTestId("tracker-live-panel");
     expect(state.panelScopes.at(-1)).toEqual(["club-a", "quads"]);
   });
+  it.each([null, { club: "quads" }, [null], [""]])("reports malformed Floor scope %j as error, not missing permission", async (payload) => {
+    state.floorRpc.mockResolvedValue({ data: payload, error: null });
+    renderTracker();
+    expect(await screen.findByText("Dữ liệu phạm vi CLB không hợp lệ. Hãy thử lại.")).toBeInTheDocument();
+    expect(screen.queryByTestId("tracker-live-panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bạn chưa được phân công CLB nào")).not.toBeInTheDocument();
+  });
 
   it("ignores a delayed Floor scope from the previous account", async () => {
     const oldFloor = deferred<{ data: string[]; error: null }>();

@@ -85,7 +85,13 @@ export default function TrackerDashboard() {
       return;
     }
 
-    const idArr = [...new Set([...(trackerScope.data ?? []), ...(floorScope.data ?? [])]
+    if (!Array.isArray(trackerScope.data) || !Array.isArray(floorScope.data)
+      || [...trackerScope.data, ...floorScope.data].some((clubId) => typeof clubId !== "string" || !clubId.trim())) {
+      setClubsError("Dữ liệu phạm vi CLB không hợp lệ. Hãy thử lại.");
+      setClubsForUserId(requestedUserId);
+      return;
+    }
+    const idArr = [...new Set([...trackerScope.data, ...floorScope.data]
       .filter((clubId): clubId is string => typeof clubId === "string"))];
     if (!idArr.length) {
       setClubsError(null);
