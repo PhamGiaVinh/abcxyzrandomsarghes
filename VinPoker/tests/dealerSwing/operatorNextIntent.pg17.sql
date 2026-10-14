@@ -85,6 +85,21 @@ SELECT pg_temp.assert_true((SELECT public.get_dealer_next_intent_receipt_v1(tabl
  FROM next80_context),'outsider cannot read operator receipt');
 SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
 RESET ROLE;
+INSERT INTO auth.users(id) VALUES('e1800000-0000-4000-8000-000000000004');
+INSERT INTO public.club_dealer_controls(club_id,user_id)
+ VALUES('e1800000-0000-4000-8000-000000000002','e1800000-0000-4000-8000-000000000004');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000004';
+SELECT pg_temp.assert_true((SELECT public.get_dealer_next_intent_receipt_v1(table_session_id,id,version,
+ 'e1800000-0000-4000-8000-000000000044','e1800000-0000-4000-8000-000000000090')->>'outcome'='not_recorded'
+ FROM next80_context),'authorized second actor cannot inherit first actor receipt');
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+RESET ROLE;
+SELECT pg_temp.assert_true(NOT has_function_privilege('anon',
+ 'public.get_dealer_next_intent_receipt_v1(uuid,uuid,integer,uuid,uuid)','EXECUTE')
+ AND NOT has_function_privilege('service_role',
+ 'public.get_dealer_next_intent_receipt_v1(uuid,uuid,integer,uuid,uuid)','EXECUTE'),
+ 'receipt recovery not exposed to anonymous or service role');
 SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_rotation_schedule
  WHERE table_id='e1800000-0000-4000-8000-000000000011' AND slot_index=0 AND status='announced'),'one committed next plan');
 SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000011'
