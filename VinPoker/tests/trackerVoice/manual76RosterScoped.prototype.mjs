@@ -16,7 +16,12 @@ const baseline=slice(s30,'CREATE FUNCTION public.get_tracker_roster_snapshot_v1(
 const old="IF a IS NULL OR c.id IS NULL OR NOT (public.is_club_tracker(a,c.club_id) OR public.is_club_floor(a,c.club_id)) THEN";
 const scoped="IF a IS NULL OR c.id IS NULL OR coalesce(auth.jwt()->>'role','')<>'authenticated' OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(floor_private.tracker_hand_input_context_v4(p_tournament_id)->'tables') context WHERE context->>'tournament_table_id'=p_tournament_table_id::text AND context->>'table_session_id'=p_table_session_id::text AND (context->>'control_epoch')::bigint=p_expected_epoch) THEN";
 assert.equal(baseline.split(old).length,2);
-const prototype=baseline.replaceAll('public.get_tracker_roster_snapshot_v1','floor_private.manual76_roster_prototype').replace(old,scoped);
+const returnBoundary=" RETURN jsonb_build_object('ok',true,'tournament_table_id',t.id,'table_session_id',s.id,'control_epoch',s.control_epoch,'seats',rows);";
+assert.equal(baseline.split(returnBoundary).length,2);
+// Recheck after all lock waits and projection reads. A release/revoke committed
+// while this VOLATILE reader waited must not disclose roster/tokens.
+const prototype=baseline.replaceAll('public.get_tracker_roster_snapshot_v1','floor_private.manual76_roster_prototype').replace(old,scoped)
+ .replace(returnBoundary,` ${scoped}\n RETURN jsonb_build_object('ok',false,'error','actor_not_authorized'); END IF;\n${returnBoundary}`);
 const sql=`BEGIN;
 DO $$ BEGIN IF current_database()<>'vinpoker_manual76_read_20261014' OR current_user<>'postgres' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>55464 OR (SELECT count(*) FROM public.clubs)<>2 OR to_regprocedure('public.get_tracker_roster_snapshot_v1(uuid,uuid,uuid,bigint)') IS NOT NULL THEN RAISE EXCEPTION 'owned76_roster_prototype_required'; END IF; END $$;
 ${token}\n${display}\n${baseline}
