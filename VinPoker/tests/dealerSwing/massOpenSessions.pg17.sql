@@ -138,4 +138,184 @@ SELECT pg_temp.assert_true(public.set_rotation_slot_dealer('e1800000-0000-4000-8
 RESET ROLE;
 SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070'),'stale retry does not bump plan version twice');
+-- Canonical close with an announced replacement must not strand that incoming
+-- attendance or carry the previous incarnation's plan into a reopen.
+-- Browser cannot SELECT table_sessions directly. Supply its already-loaded
+-- expected revision from fixture setup, without granting any new privilege.
+SELECT set_config('test.close_expected_revision',revision::text,true)
+FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023';
+CREATE FUNCTION pg_temp.expect_close_scope_rejected(expected_error text DEFAULT 'closed_session_rotation_scope_invalid') RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+ BEGIN
+  PERFORM public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+    current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000080');
+  RAISE EXCEPTION 'malformed_plan_close_was_not_rejected';
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM<>expected_error THEN RAISE; END IF;
+ END;
+END $$;
+SAVEPOINT malformed_null_link;
+UPDATE public.dealer_rotation_schedule SET assignment_id=NULL WHERE id='e1800000-0000-4000-8000-000000000070';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected();
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023'),
+ 'null-linked schedule rejection preserves open session');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'null-linked schedule rejection preserves incoming marker');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts WHERE request_id='e1800000-0000-4000-8000-000000000080'),
+ 'rejected malformed close writes no receipt');
+ROLLBACK TO SAVEPOINT malformed_null_link;
+SAVEPOINT malformed_other_session;
+UPDATE public.dealer_rotation_schedule SET assignment_id=(SELECT id FROM public.dealer_assignments
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND released_at IS NULL)
+ WHERE id='e1800000-0000-4000-8000-000000000070';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected();
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023'),
+ 'other-session linked schedule rejection preserves open session');
+ROLLBACK TO SAVEPOINT malformed_other_session;
+SAVEPOINT conflicting_announced_claim;
+UPDATE public.dealer_assignments SET pre_assigned_attendance_id='e1800000-0000-4000-8000-000000000043'
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND released_at IS NULL;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected('closed_session_announced_reservation_conflict');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023'),
+ 'conflicting announced claim preserves open session');
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule WHERE id='e1800000-0000-4000-8000-000000000070'),
+ 'conflicting announced claim preserves plan');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000013'
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'conflicting claim cannot release incoming attendance');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts WHERE request_id='e1800000-0000-4000-8000-000000000080'),
+ 'conflicting announced claim creates no close receipt');
+ROLLBACK TO SAVEPOINT conflicting_announced_claim;
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000099';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+ current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000079')->>'error'='actor_not_allowed',
+ 'outsider cannot close session or release another clubs reservation');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'forbidden close preserves announced plan');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+RESET ROLE;
+CREATE FUNCTION pg_temp.reject_close_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF NEW.operation_type='operator_close_club_table_v2'
+  AND NEW.request_id='e1800000-0000-4000-8000-000000000080' THEN
+  RAISE EXCEPTION 'injected_close_receipt_failure';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER test_reject_close_receipt BEFORE INSERT ON public.table_operation_receipts
+ FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_close_receipt();
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected('injected_close_receipt_failure');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023'),'receipt-save failure rolls session close back');
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'receipt-save failure restores cancelled plan');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000013'
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'receipt-save failure restores incoming reservation');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts WHERE request_id='e1800000-0000-4000-8000-000000000080'),
+ 'receipt-save failure leaves no false receipt');
+DROP TRIGGER test_reject_close_receipt ON public.table_operation_receipts;
+SET LOCAL ROLE authenticated;
+DO $close_rollback$
+DECLARE result jsonb;
+BEGIN
+ BEGIN
+  result:=public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+    current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000080');
+  PERFORM pg_temp.assert_true((result->>'ok')::boolean,'close rollback probe reaches successful RPC');
+  RAISE EXCEPTION 'injected_close_transaction_rollback';
+ EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM<>'injected_close_transaction_rollback' THEN RAISE; END IF;
+ END;
+END $close_rollback$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023'),'failed transaction preserves open session');
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'failed transaction restores announced plan');
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' AND pre_assigned_table_id='e1800000-0000-4000-8000-000000000013'
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'failed transaction restores incoming reservation');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+DO $close_with_next$
+DECLARE result jsonb; session_revision bigint;
+BEGIN
+ session_revision:=current_setting('test.close_expected_revision')::bigint;
+ result:=public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',session_revision,
+   'e1800000-0000-4000-8000-000000000080');
+ RAISE NOTICE 'CLOSE_WITH_NEXT_RPC_OUTCOME=%',result;
+ PERFORM pg_temp.assert_true((result->>'ok')::boolean,'canonical close succeeds with announced replacement');
+ PERFORM pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+   session_revision,'e1800000-0000-4000-8000-000000000080')=result,'close replay returns exact original receipt');
+ PERFORM pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+   session_revision+1,'e1800000-0000-4000-8000-000000000080')->>'error'='IDEMPOTENCY_CONFLICT',
+   'same close key with changed revision conflicts');
+END $close_with_next$;
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT closed_at IS NOT NULL FROM public.table_sessions
+ WHERE id='e1800000-0000-4000-8000-000000000023'),'exact old session closed');
+SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_table_id IS NULL
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'canonical close releases incoming next-dealer reservation');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070' AND status IN ('predicted','announced','executing')),
+ 'closed incarnation cannot retain actionable rotation plan');
+-- Legacy reservation without a schedule, created with the real acquisition
+-- triggers enabled. Closing must still release it after Auto is switched OFF.
+SET LOCAL request.jwt.claim.role='service_role';
+SELECT set_config('request.headers','{}',true);
+UPDATE public.dealer_assignments SET pre_assigned_attendance_id='e1800000-0000-4000-8000-000000000043',
+ pre_assigned_at=now() WHERE table_id='e1800000-0000-4000-8000-000000000011' AND released_at IS NULL;
+UPDATE public.dealer_attendance SET current_state='pre_assigned',
+ pre_assigned_table_id='e1800000-0000-4000-8000-000000000011',pre_assigned_at=now()
+ WHERE id='e1800000-0000-4000-8000-000000000043';
+UPDATE public.club_settings SET auto_swing_enabled=false
+ WHERE club_id='e1800000-0000-4000-8000-000000000002';
+SELECT set_config('test.legacy_session',id::text,true),set_config('test.legacy_revision',revision::text,true)
+ FROM public.table_sessions WHERE game_table_id='e1800000-0000-4000-8000-000000000011' AND closed_at IS NULL;
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT pg_temp.assert_true((public.operator_close_club_table_v2(current_setting('test.legacy_session')::uuid,
+ current_setting('test.legacy_revision')::bigint,'e1800000-0000-4000-8000-000000000081')->>'ok')::boolean,
+ 'canonical close releases legacy reservation even with Auto OFF');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_table_id IS NULL
+ AND last_released_at=now()-interval '15 minutes' AND check_out_time IS NULL
+ FROM public.dealer_attendance WHERE id='e1800000-0000-4000-8000-000000000043'),
+ 'legacy close frees marker without changing rest or checkout evidence');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_assignments
+ WHERE table_session_id=current_setting('test.legacy_session')::uuid
+ AND (released_at IS NULL OR pre_assigned_attendance_id IS NOT NULL)),
+ 'closed legacy session has no live assignment or incoming reservation');
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='e1800000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.role='authenticated';
+SELECT public.operator_open_dealer_tables('e1800000-0000-4000-8000-000000000082',
+ 'e1800000-0000-4000-8000-000000000002',null,ARRAY['e1800000-0000-4000-8000-000000000013'::uuid],'cash');
+SELECT pg_temp.assert_true(public.operator_close_club_table_v2('e1800000-0000-4000-8000-000000000023',
+ current_setting('test.close_expected_revision')::bigint,'e1800000-0000-4000-8000-000000000083')->>'error'='table_session_not_active',
+ 'late close request for old incarnation cannot close reopened table');
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT count(*)=1 FROM public.table_sessions
+ WHERE game_table_id='e1800000-0000-4000-8000-000000000013' AND closed_at IS NULL
+ AND id<>'e1800000-0000-4000-8000-000000000023'),'reopen creates distinct active incarnation');
+SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_assignments
+ WHERE table_id='e1800000-0000-4000-8000-000000000013' AND released_at IS NULL),
+ 'reopen does not resurrect old dealer assignment');
 ROLLBACK;
