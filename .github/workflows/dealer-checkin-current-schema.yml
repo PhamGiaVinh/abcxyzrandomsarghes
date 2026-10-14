@@ -323,6 +323,7 @@ jobs:
         working-directory: VinPoker
         run: |
           node scripts/ops/restore-schema-test-baseline.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/payrollReadAuthority.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
