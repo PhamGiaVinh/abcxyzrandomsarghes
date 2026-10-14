@@ -37,10 +37,11 @@ Deno.serve(async (req) => {
     );
 
     // Role check
-    const { data: roles } = await admin
+    const { data: roles, error: roleError } = await admin
       .from("user_roles")
       .select("role")
       .eq("user_id", callerId);
+    if (roleError || !Array.isArray(roles)) return json({ error: "Role lookup unavailable" }, 500);
     const roleSet = new Set((roles ?? []).map((r: any) => r.role as string));
     const isSuper = roleSet.has("super_admin");
     const isCashier = roleSet.has("cashier");
@@ -53,21 +54,13 @@ Deno.serve(async (req) => {
     // Cashier scope: only assigned clubs (club_cashiers + owner fallback)
     let clubIdScope: Set<string> | null = null;
     if (!isSuper) {
-      const { data: clubIds } = await admin.rpc("cashier_club_ids", { _user_id: callerId });
+      const { data: clubIds, error: scopeError } = await admin.rpc("cashier_club_ids", { _user_id: callerId });
+      if (scopeError || !Array.isArray(clubIds)) return json({ error: "Cashier scope unavailable" }, 500);
       clubIdScope = new Set(((clubIds ?? []) as any[]).map((r: any) => (typeof r === "string" ? r : r.cashier_club_ids ?? r)).filter(Boolean));
       if (clubIdScope.size === 0) {
         return json({ player: null, deals: [], message: "Cashier chưa được gán CLB nào" });
       }
     }
-
-    // Player profile
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("user_id, display_name, phone, avatar_url, bank_name, bank_account_number, bank_account_holder")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (!profile) return json({ player: null, deals: [], message: "Không tìm thấy người chơi" });
 
     // Active deals where player is the player
     const ACTIVE = ["listing", "committing", "committed", "funded"];
@@ -79,28 +72,45 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(30);
     if (clubIdScope) dealQuery = dealQuery.in("club_id", Array.from(clubIdScope));
-    const { data: deals } = await dealQuery;
+    const { data: deals, error: dealError } = await dealQuery;
+    if (dealError || !Array.isArray(deals)) return json({ error: "Deal lookup unavailable" }, 500);
     const dealList = (deals ?? []) as any[];
+
+    // A cashier's membership in one club is not authority over every player's
+    // private contact/bank profile. Establish an active deal in the caller's
+    // exact club scope before even fetching those fields. Superadmin is global.
+    if (!isSuper && dealList.length === 0) {
+      return json({ player: null, deals: [], message: "Không có deal đang hoạt động trong phạm vi CLB" });
+    }
+    const { data: profile, error: profileError } = await admin
+      .from("profiles")
+      .select("user_id, display_name, phone, avatar_url, bank_name, bank_account_number, bank_account_holder")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (profileError) return json({ error: "Player lookup unavailable" }, 500);
+    if (!profile) return json({ player: null, deals: [], message: "Không tìm thấy người chơi" });
 
     let purchases: any[] = [];
     if (dealList.length > 0) {
       const dealIds = dealList.map((d) => d.id);
-      const { data: purs } = await admin
+      const { data: purs, error: purchaseError } = await admin
         .from("staking_purchases")
         .select("id, deal_id, backer_id, percent, amount_vnd, status, reference_code, committed_at, funded_at")
         .in("deal_id", dealIds)
         .in("status", ["committed", "funded"])
         .limit(500);
+      if (purchaseError || !Array.isArray(purs)) return json({ error: "Purchase lookup unavailable" }, 500);
       purchases = purs ?? [];
 
       // backer names
       const backerIds = Array.from(new Set(purchases.map((p) => p.backer_id))).filter(Boolean);
       let nameMap = new Map<string, string>();
       if (backerIds.length > 0) {
-        const { data: backers } = await admin
+        const { data: backers, error: backerError } = await admin
           .from("profiles")
           .select("user_id, display_name")
           .in("user_id", backerIds);
+        if (backerError || !Array.isArray(backers)) return json({ error: "Backer lookup unavailable" }, 500);
         nameMap = new Map((backers ?? []).map((b: any) => [b.user_id, b.display_name ?? "—"]));
       }
       purchases = purchases.map((p) => ({ ...p, backer_name: nameMap.get(p.backer_id) ?? "—" }));
