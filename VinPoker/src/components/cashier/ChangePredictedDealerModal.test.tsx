@@ -13,6 +13,19 @@ function props() { return { open: true, onOpenChange: vi.fn(), tableName: "TEST 
   assignedTableNameByAttendanceId: {}, restMinutes: 15, onChanged: vi.fn() }; }
 beforeEach(() => { rpc.mockReset(); sessionStorage.clear(); });
 describe("exact next-dealer intent modal", () => {
+  it("receipt read denied after lost response does not discard unresolved mutation", async () => {
+    const p = props(); rpc.mockResolvedValueOnce({ data: null, error: { message: "lost response" } });
+    render(<ChangePredictedDealerModal {...p} />);
+    fireEvent.click(screen.getByRole("button", { name: /TEST candidate/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Đổi & CHỐT" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Kiểm tra biên nhận" })).toBeEnabled());
+    const stored = sessionStorage.getItem(sessionStorage.key(0)!);
+    rpc.mockResolvedValueOnce({ data: { outcome: "forbidden" }, error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra biên nhận" }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    expect(sessionStorage.getItem(sessionStorage.key(0)!)).toBe(stored);
+    expect(p.onChanged).not.toHaveBeenCalled();
+  });
   it("late committed response after unmount cannot notify a different view", async () => {
     const p = props(); let complete!: (value: unknown) => void;
     rpc.mockImplementation(() => new Promise(resolve => { complete = resolve; }));

@@ -168,9 +168,10 @@ export default function ChangePredictedDealerModal({
     try {
       persistDealerNextIntent(sessionStorage, intent);
       setUnresolved(intent);
+      const readingReceipt = recovery || (!!unresolved && !retry);
       // Untyped RPC: not in generated types yet (same pattern as useRotationSchedule).
       const { data, error } = await (supabase as any).rpc(
-        recovery || (unresolved && !retry) ? "get_dealer_next_intent_receipt_v1" : "operator_plan_next_dealer_v1",
+        readingReceipt ? "get_dealer_next_intent_receipt_v1" : "operator_plan_next_dealer_v1",
         dealerNextIntentArgs(intent));
       if (!live.current || activeScope.current !== requestedScope) return;
       if (error) {
@@ -185,6 +186,10 @@ export default function ChangePredictedDealerModal({
         return;
       }
       if (r?.outcome === "not_recorded") { setNotRecorded(true); return; }
+      if (readingReceipt && !["changed", "noop_same_dealer"].includes(r?.outcome)) {
+        toast.error("Không xác minh được biên nhận. Giữ nguyên yêu cầu trước.");
+        return;
+      }
       const known = ["changed", "noop_same_dealer", "race_lost", "not_eligible", "dealer_already_locked",
         "dealer_already_reserved", "dealer_unavailable", "forbidden", "plan_requires_repair", "backend_not_ready",
         "session_not_active", "assignment_not_active", "current_dealer", "invalid_request", "scope_mismatch"];
