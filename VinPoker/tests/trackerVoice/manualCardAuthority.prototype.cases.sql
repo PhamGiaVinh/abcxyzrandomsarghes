@@ -6,6 +6,33 @@ DO $$ BEGIN
 END $$;
 CREATE FUNCTION pg_temp.manual_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS NOT TRUE THEN RAISE EXCEPTION 'manual_prototype_test: %',label; END IF; END $$;
+DO $$ DECLARE expected record; actual record; BEGIN
+ FOR expected IN SELECT * FROM (VALUES
+  ('floor_private.manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)','419f17a4a04937244c2519b75d4c4b96',true,'v'),
+  ('public.show_manual_cards_prototype(uuid,uuid,bigint,bigint,text,jsonb)','e5a5f946ed187baf910cbc7f7de8e746',false,'v'),
+  ('floor_private.manual_card_receipt_prototype(text)','914e90524f7ef265c65c421dd680f05c',true,'s'),
+  ('public.get_manual_card_receipt_prototype(text)','ff336d471723c238d35529f315fc2202',false,'s')
+ ) AS definitions(signature,digest,definer,volatility) LOOP
+  SELECT * INTO STRICT actual FROM pg_proc WHERE oid=expected.signature::regprocedure;
+  PERFORM pg_temp.manual_assert(
+   md5(replace(pg_get_functiondef(actual.oid),chr(13),''))=expected.digest
+   AND pg_get_userbyid(actual.proowner)='postgres'
+   AND actual.prosecdef=expected.definer AND actual.provolatile::text=expected.volatility
+   AND actual.proconfig=ARRAY['search_path=""']::text[]
+   AND actual.proacl::text='{postgres=X/postgres,authenticated=X/postgres}',
+   'exact manual prototype function body/owner/path/ACL: '||expected.signature);
+ END LOOP;
+ PERFORM pg_temp.manual_assert(
+  (SELECT relrowsecurity AND pg_get_userbyid(relowner)='postgres' FROM pg_class
+   WHERE oid='floor_private.manual_card_receipts_prototype'::regclass)
+  AND NOT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='floor_private'
+   AND tablename='manual_card_receipts_prototype')
+  AND NOT EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL
+   aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+   WHERE c.oid='floor_private.manual_card_receipts_prototype'::regclass
+    AND a.grantee<>c.relowner),
+  'receipt table owner/RLS and no non-owner direct privileges');
+END $$;
 SELECT pg_temp.manual_assert(
  (SELECT proargnames=ARRAY['p_hand_id','p_session_id','p_epoch','p_revision','p_request_key','p_cards']::text[]
   AND NOT prosecdef AND proconfig=ARRAY['search_path=""']::text[]
