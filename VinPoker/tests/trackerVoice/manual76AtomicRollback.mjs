@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
-assert.equal(process.platform,'win32');
+const win=process.platform==='win32';
 assert.equal(process.env.PGHOST,'127.0.0.1');
-assert.equal(process.env.PGPORT,'55464');
 assert.equal(process.env.PGUSER,'postgres');
 assert.equal(process.env.PGDATABASE,'vinpoker_manual76_rollback_20261014');
-assert.equal(process.env.VINPOKER_TEST_WSL_DISTRO,'PokerVision-P16-4C-Eval');
+if(win){assert.equal(process.env.PGPORT,'55464');assert.equal(process.env.VINPOKER_TEST_WSL_DISTRO,'PokerVision-P16-4C-Eval');}
+else{assert.equal(process.platform,'linux');assert.equal(process.env.CI,'true');assert.equal(process.env.PGPORT,'55441');}
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
-const run=sql=>spawnSync('wsl',['-d',process.env.VINPOKER_TEST_WSL_DISTRO,'--','psql','-X','-w','-t','-A','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p','55464','-U','postgres','-d',process.env.PGDATABASE],{input:sql,encoding:'utf8',timeout:45000});
-const guard=`DO $$ BEGIN IF current_database()<>'vinpoker_manual76_rollback_20261014' OR current_user<>'postgres' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>55464 OR (SELECT count(*) FROM public.clubs)<>2 THEN RAISE EXCEPTION 'owned76_rollback_clone_required'; END IF; END $$;`;
+const args=['-X','-w','-t','-A','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',process.env.PGPORT,'-U','postgres','-d',process.env.PGDATABASE];
+const run=sql=>spawnSync(win?'wsl':'psql',win?['-d',process.env.VINPOKER_TEST_WSL_DISTRO,'--','psql',...args]:args,{input:sql,encoding:'utf8',timeout:45000});
+const guard=`DO $$ BEGIN IF current_database()<>'vinpoker_manual76_rollback_20261014' OR current_user<>'postgres' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>${Number(process.env.PGPORT)} OR (SELECT count(*) FROM public.clubs)<>2 THEN RAISE EXCEPTION 'owned76_rollback_clone_required'; END IF; END $$;`;
 const snapshot=()=>{const r=run(`BEGIN READ ONLY;${guard} SELECT md5(jsonb_agg(jsonb_build_object('oid',p.oid,'body',pg_get_functiondef(p.oid),'owner',p.proowner,'acl',p.proacl::text,'config',p.proconfig) ORDER BY p.oid)::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','floor_private') AND p.prokind='f'; COMMIT;`);assert.equal(r.status,0,r.stderr);const value=r.stdout.split('\n').find(x=>/^[a-f0-9]{32}$/u.test(x.trim()));assert.ok(value,r.stdout);return value.trim();};
 const source=readFileSync('supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql','utf8').replaceAll('\r\n','\n');
 assert.match(source,/COMMIT;\s*$/u);

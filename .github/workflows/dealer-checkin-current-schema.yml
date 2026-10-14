@@ -615,6 +615,8 @@ jobs:
           createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_read_20261014
           PGDATABASE=vinpoker_manual76_read_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql
           PGDATABASE=vinpoker_manual76_read_20261014 node tests/trackerVoice/manual76ReadContext.currentSchema.mjs
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_rollback_20261014
+          PGDATABASE=vinpoker_manual76_rollback_20261014 node tests/trackerVoice/manual76AtomicRollback.mjs
           createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual_card75_compensation_20261014
           PGDATABASE=vinpoker_manual_card75_compensation_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75Compensation.pg17.sql
           node tests/trackerVoice/manual75IntentPolicy.mjs
