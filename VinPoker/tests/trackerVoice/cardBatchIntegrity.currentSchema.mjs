@@ -248,7 +248,7 @@ if(authorityReverseRoot){
 if(manualHoleAuthority){
  assert.ok(!fixtureOnly&&!authorityOverlapFixture&&!authorityOwner&&!authorityFinish,
   'manual hole regression must use the original assigned Dealer rollback fixture');
- cases=readFileSync(manualHolePrototype?'tests/trackerVoice/manualCardAuthority.prototype.cases.sql'
+ cases="SELECT set_config('manual75.fixture','owned-manual-authority',true);\n"+readFileSync(manualHolePrototype?'tests/trackerVoice/manualCardAuthority.prototype.cases.sql'
   :'tests/trackerVoice/manualHoleAuthority.currentSchema.sql','utf8');
 }
 const preconditions=undo?`DO $$ BEGIN

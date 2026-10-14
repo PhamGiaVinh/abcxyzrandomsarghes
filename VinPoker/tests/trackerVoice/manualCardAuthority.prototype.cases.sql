@@ -1,3 +1,9 @@
+DO $$ BEGIN
+ IF current_database()<>'vinpoker_manual_card75_20261014' OR current_user<>'postgres'
+ OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port()<>55464
+ OR current_setting('manual75.fixture',true) IS DISTINCT FROM 'owned-manual-authority'
+ THEN RAISE EXCEPTION 'owned_manual_prototype_rollback_harness_required'; END IF;
+END $$;
 CREATE FUNCTION pg_temp.manual_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS NOT TRUE THEN RAISE EXCEPTION 'manual_prototype_test: %',label; END IF; END $$;
 SELECT source_revision AS revision FROM public.tournament_hands
@@ -107,4 +113,14 @@ SELECT pg_temp.manual_assert(:'manual_released_payload'::jsonb->>'error'='dealer
  AND (SELECT source_revision=:manual_after_revision FROM public.tournament_hands
   WHERE id='86000000-0000-4000-8000-000000000001')
  AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),'released assignment cannot create a new write');
+SET ROLE authenticated;
+SELECT public.show_manual_cards_prototype('86000000-0000-4000-8000-000000000001',
+ '83500000-0000-4000-8000-000000000001',1,:manual_before_revision,'manual-prototype-key-0001',
+ '[{"player_id":"82000000-0000-4000-8000-000000000002","entry_number":1,"hole_cards":["Qh","Qs"]}]'::jsonb)::text AS payload \gset manual_released_replay_
+RESET ROLE;
+SELECT pg_temp.manual_assert(:'manual_released_replay_payload'::jsonb->>'error'='dealer_assignment_invalid'
+ AND (SELECT source_revision=:manual_after_revision FROM public.tournament_hands
+  WHERE id='86000000-0000-4000-8000-000000000001')
+ AND (SELECT count(*)=1 FROM floor_private.manual_card_receipts_prototype),
+ 'released assignment cannot turn historical receipt into current mutation success');
 \echo MANUAL_CARD_PROTOTYPE_OUTSIDER_RECEIPT_FAULT_RELEASED_PASS

@@ -33,13 +33,6 @@ BEGIN
   p_epoch,p_revision,p_cards)::text,'sha256'),'hex');
  IF NOT pg_try_advisory_xact_lock(hashtextextended(actor::text||':'||p_request_key,75)) THEN
   RETURN jsonb_build_object('error','manual_card_request_busy'); END IF;
- SELECT r.response INTO receipt FROM floor_private.manual_card_receipts_prototype r
- WHERE r.actor_id=actor AND r.request_key=p_request_key;
- IF FOUND THEN
-  IF EXISTS(SELECT 1 FROM floor_private.manual_card_receipts_prototype r WHERE r.actor_id=actor
-    AND r.request_key=p_request_key AND r.request_hash=v_request_hash) THEN RETURN receipt; END IF;
-  RETURN jsonb_build_object('error','idempotency_conflict');
- END IF;
  SELECT * INTO h FROM public.tournament_hands WHERE id=p_hand_id;
  IF NOT FOUND THEN RETURN jsonb_build_object('error','hand_scope_mismatch'); END IF;
  SELECT * INTO tt FROM public.tournament_tables WHERE id=h.table_id;
@@ -78,7 +71,18 @@ BEGIN
  IF h.tournament_id IS DISTINCT FROM tt.tournament_id
  OR h.table_session_id IS DISTINCT FROM p_session_id OR h.tournament_table_id IS DISTINCT FROM tt.id
  OR h.table_id IS DISTINCT FROM tt.id OR h.status<>'in_progress' OR h.is_voided
- OR h.source_revision IS DISTINCT FROM p_revision THEN RETURN jsonb_build_object('error','stale_manual_card_context'); END IF;
+ THEN RETURN jsonb_build_object('error','stale_manual_card_context'); END IF;
+ -- Mutation replay requires current authority and lifecycle, but precedes revision
+ -- CAS because the original successful write has already advanced that revision.
+ SELECT r.response INTO receipt FROM floor_private.manual_card_receipts_prototype r
+ WHERE r.actor_id=actor AND r.request_key=p_request_key;
+ IF FOUND THEN
+  IF EXISTS(SELECT 1 FROM floor_private.manual_card_receipts_prototype r WHERE r.actor_id=actor
+    AND r.request_key=p_request_key AND r.request_hash=v_request_hash) THEN RETURN receipt; END IF;
+  RETURN jsonb_build_object('error','idempotency_conflict');
+ END IF;
+ IF h.source_revision IS DISTINCT FROM p_revision THEN
+  RETURN jsonb_build_object('error','stale_manual_card_context'); END IF;
  -- Shared writer owns deck validation, exact entry, lock ownership and revision.
  verdict:=public._tracker_card_hole_source_v1(p_hand_id,p_cards,actor,false);
  IF verdict->>'status' IS DISTINCT FROM 'success' THEN RETURN verdict; END IF;

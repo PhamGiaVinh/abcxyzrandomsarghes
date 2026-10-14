@@ -1,6 +1,12 @@
 -- Runs only inside the existing guarded owned-schema rollback harness.
 -- Same authenticated actor transport used by tournament-live-update manual RPC.
 DO $$ BEGIN
+ IF current_database() NOT IN ('vinpoker_voice_dealer_baseline_20261014','vinpoker_voice_migration70_20261014')
+ OR current_user<>'postgres' OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port()<>55464
+ OR current_setting('manual75.fixture',true) IS DISTINCT FROM 'owned-manual-authority'
+ THEN RAISE EXCEPTION 'owned_manual_authority_rollback_harness_required'; END IF;
+END $$;
+DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM public.club_trackers WHERE user_id='81200000-0000-4000-8000-000000000001')
  OR NOT EXISTS(SELECT 1 FROM public.dealers d JOIN public.dealer_assignments a ON a.dealer_id=d.id
   WHERE d.user_id='81200000-0000-4000-8000-000000000001' AND a.status='assigned'
