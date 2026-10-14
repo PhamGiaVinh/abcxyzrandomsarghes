@@ -63,3 +63,24 @@ for (const data of [null, { rows: [] }]) {
   });
  }
 }
+
+Deno.test("OT read failure aborts a nonempty normal snapshot before any candidate or reservation write", async () => {
+  let reads = 0;
+  let mutations = 0;
+  const query: any = {
+    then(resolve: (value: unknown) => void) {
+      reads++;
+      if (reads > 2) throw new Error("candidate lookup must not run after incomplete snapshot");
+      resolve(reads === 1
+        ? { data: [{ id: "assignment", table_id: "table", swing_due_at: new Date().toISOString(), version: 1 }], error: null }
+        : { data: null, error: { message: "OT query unavailable" } });
+    },
+  };
+  for (const method of ["select", "eq", "is", "gte", "lt", "lte", "not"]) query[method] = () => query;
+  const result = await pass2PreAssignNext({
+    from: () => query, rpc() { mutations++; throw new Error("unexpected write"); },
+  }, "test-club", 5, { clubZone: null, chatId: null, cycleExcludedIds: new Set() });
+  if (reads !== 2 || mutations !== 0 || result.errors.length !== 1 || result.pre_assigned_count !== 0) {
+    throw new Error("partial snapshot must not drive preassignment");
+  }
+});
