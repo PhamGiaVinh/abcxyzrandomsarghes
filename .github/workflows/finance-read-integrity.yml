@@ -6,6 +6,7 @@ on:
       - 'VinPoker/src/hooks/accountant/useFinanceSummaryRpcOnly*'
       - 'VinPoker/src/lib/financeSummaryRead*'
       - 'VinPoker/src/components/accountant/AccountantFinanceTab.tsx'
+      - 'VinPoker/src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx'
       - '.github/workflows/finance-read-integrity.yml'
   workflow_dispatch:
 permissions:
@@ -24,7 +25,7 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: VinPoker
       - run: git diff --check
-      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts --maxWorkers=1 --minWorkers=1
+      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx --maxWorkers=1 --minWorkers=1
         working-directory: VinPoker
       - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
         working-directory: VinPoker
