@@ -73,7 +73,7 @@ describe("actual roster hook intent", () => {
   await act(async () => { expect(await h.result.current.handleContinueOrphan({ silent: true })).toBe(false); });
   expect(mock.resumeReads).toEqual([{ id: "current-session-hand", tournament_id: "tour",
    table_id: "logical-a", table_session_id: "session-a", status: "in_progress" }]);
-  expect(mock.rpc.mock.calls.some(([name]) => name === "takeover_hand_lock")).toBe(false);
+  expect(mock.rpc.mock.calls.some(([name]) => name === "heartbeat_lock" || name === "takeover_hand_lock")).toBe(false);
  });
  it("does not merge an old confirmed receipt over a newer canonical stack", async () => {
   let snapshots = 0;
