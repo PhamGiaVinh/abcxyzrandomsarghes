@@ -455,7 +455,7 @@ export function useStandaloneHandInput(tournamentId: string) {
 
         if (FEATURES.floorDeferredTrackerMoveV1) {
           const { data: contextData, error: contextError } = await supabase.rpc(
-            "get_tracker_hand_input_tables_v3" as any, { p_tournament_id: tournamentId },
+            "get_tracker_hand_input_tables_v4" as any, { p_tournament_id: tournamentId },
           );
           if (!isCurrentRequest()) return;
           const context = contextData as { ok?: boolean; tables?: unknown[] } | null;
@@ -915,7 +915,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       clearIntent();
       // A replayed committed receipt may describe a stack that another writer
       // has since changed. Confirm current snapshot before applying it to UI.
-      const fresh = await Promise.resolve(supabase.rpc("get_tracker_roster_snapshot_v1" as any, {
+      const fresh = await Promise.resolve(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
         p_tournament_id: tournamentId, p_tournament_table_id: context.tournamentTableId,
         p_table_session_id: context.tableSessionId, p_expected_epoch: context.controlEpoch,
       })).then(value => value, error => ({ data: null, error }));
@@ -1090,7 +1090,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       let loadedSeats: any[] | null = null;
       let error: any = null;
       if (wantAvatar && loadedSessionId && tbl?.tournamentTableId && Number.isInteger(tbl.controlEpoch)) {
-        const r = await supabase.rpc("get_tracker_roster_snapshot_v1" as any, {
+        const r = await supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
           p_tournament_id: tournamentId, p_tournament_table_id: tbl.tournamentTableId,
           p_table_session_id: loadedSessionId, p_expected_epoch: tbl.controlEpoch,
         });
@@ -3013,7 +3013,7 @@ export function useStandaloneHandInput(tournamentId: string) {
             sourceRevision: intent.sourceRevision, requestId: intent.requestId, actorId: intent.actorId } });
         const confirm = async (proof: Record<string, unknown>) => {
           clearIntent();
-          const [hand, tables] = await Promise.all([readHand(), supabase.rpc("get_tracker_hand_input_tables_v3" as any,
+          const [hand, tables] = await Promise.all([readHand(), supabase.rpc("get_tracker_hand_input_tables_v4" as any,
             { p_tournament_id: tournamentId })]);
           if (!current()) return;
           const row = hand.data as unknown as Record<string, unknown> | null;

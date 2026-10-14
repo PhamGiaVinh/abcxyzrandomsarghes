@@ -27,7 +27,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   auth: { getUser: async () => ({ data: { user: mock.resume ? { id: "actor1" } : null } }) },
   functions: { invoke: mock.invoke },
   rpc: async (name: string) => {
-    if (name === "get_tracker_hand_input_tables_v3") {
+    if (name === "get_tracker_hand_input_tables_v4") {
       if (mock.tableReadFails) throw new Error("table metadata unavailable");
       return { data: { ok: true, tables: [{ table_id: "table1", tournament_table_id: "table1",
         table_name: "Test", table_session_id: "session1", control_epoch: 1,

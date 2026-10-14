@@ -44,11 +44,22 @@ const snapshot = (args: any) => ({ data: { ok: true, tournament_table_id: args.p
 afterEach(() => { cleanup(); vi.clearAllMocks(); mock.staleOrphan = false; mock.currentOrphan = false;
  mock.resumeReads.length = 0; sessionStorage.clear(); });
 describe("actual roster hook intent", () => {
+ it("reports scoped API failure without falling back to legacy authority", async () => {
+  mock.rpc.mockImplementation(async (name: string) => ({
+   data: null, error: name === "get_tracker_hand_input_tables_v4" ? { message: "RPC unavailable" } : null,
+  }));
+  const h = renderHook(() => useStandaloneHandInput("tour"), { wrapper });
+  await waitFor(() => expect(h.result.current.tableLoadState).toBe("error"));
+  expect(h.result.current.availableTables).toHaveLength(0);
+  expect(h.result.current.tableLoadError).toBeTruthy();
+  expect(mock.rpc.mock.calls.some(([name]) => name === "get_tracker_hand_input_tables_v3"
+   || name === "get_tracker_roster_snapshot_v1")).toBe(false);
+ });
  it("does not offer an in-progress hand from an older incarnation of the same table", async () => {
   mock.staleOrphan = true;
   mock.rpc.mockImplementation(async (name: string, args: any) => {
-   if (name === "get_tracker_hand_input_tables_v3") return { data: { ok: true, tables }, error: null };
-   if (name === "get_tracker_roster_snapshot_v1") return snapshot(args);
+   if (name === "get_tracker_hand_input_tables_v4") return { data: { ok: true, tables }, error: null };
+   if (name === "get_tracker_roster_snapshot_v2") return snapshot(args);
    return { data: name === "get_next_hand_number" ? 1 : { ok: true, locks: [] }, error: null };
   });
   const h = renderHook(() => useStandaloneHandInput("tour"), { wrapper });
@@ -60,8 +71,8 @@ describe("actual roster hook intent", () => {
  it("retains a resumable hand from the verified current session", async () => {
   mock.currentOrphan = true;
   mock.rpc.mockImplementation(async (name: string, args: any) => {
-   if (name === "get_tracker_hand_input_tables_v3") return { data: { ok: true, tables }, error: null };
-   if (name === "get_tracker_roster_snapshot_v1") return snapshot(args);
+   if (name === "get_tracker_hand_input_tables_v4") return { data: { ok: true, tables }, error: null };
+   if (name === "get_tracker_roster_snapshot_v2") return snapshot(args);
    return { data: name === "get_next_hand_number" ? 1 : { ok: true, locks: [] }, error: null };
   });
   const h = renderHook(() => useStandaloneHandInput("tour"), { wrapper });
@@ -78,8 +89,8 @@ describe("actual roster hook intent", () => {
  it("does not merge an old confirmed receipt over a newer canonical stack", async () => {
   let snapshots = 0;
   mock.rpc.mockImplementation(async (name: string, args: any) => {
-   if (name === "get_tracker_hand_input_tables_v3") return { data: { ok: true, tables }, error: null };
-   if (name === "get_tracker_roster_snapshot_v1") {
+   if (name === "get_tracker_hand_input_tables_v4") return { data: { ok: true, tables }, error: null };
+   if (name === "get_tracker_roster_snapshot_v2") {
     const r = snapshot(args); snapshots++;
     if (snapshots > 1) r.data.seats[0] = { seat_number: 1, token: "newer25k",
      seat: { player_id: "player", entry_number: 1, seat_number: 1, chip_count: 25000, player_name: "TEST" } };
@@ -103,8 +114,8 @@ describe("actual roster hook intent", () => {
   let release!: (value: any) => void;
   let sent: any;
   mock.rpc.mockImplementation((name: string, args: any) => {
-   if (name === "get_tracker_roster_snapshot_v1") return Promise.resolve(snapshot(args));
-   if (name === "get_tracker_hand_input_tables_v3") return Promise.resolve({ data: { ok: true, tables }, error: null });
+   if (name === "get_tracker_roster_snapshot_v2") return Promise.resolve(snapshot(args));
+   if (name === "get_tracker_hand_input_tables_v4") return Promise.resolve({ data: { ok: true, tables }, error: null });
    if (name === "set_tracker_table_roster_seat_v2") {
     sent = args;
     return new Promise(resolve => { release = resolve; });
@@ -136,8 +147,8 @@ describe("actual roster hook intent", () => {
   let first = true;
   let epoch = 1;
   mock.rpc.mockImplementation(async (name: string, args: any) => {
-   if (name === "get_tracker_roster_snapshot_v1") return snapshot(args);
-   if (name === "get_tracker_hand_input_tables_v3") return { data: { ok: true, tables: tables.map(t => ({ ...t, control_epoch: epoch })) }, error: null };
+   if (name === "get_tracker_roster_snapshot_v2") return snapshot(args);
+   if (name === "get_tracker_hand_input_tables_v4") return { data: { ok: true, tables: tables.map(t => ({ ...t, control_epoch: epoch })) }, error: null };
    if (name === "set_tracker_table_roster_seat_v2") {
     if (first) { first = false; return { data: null, error: { message: "response lost" } }; }
     return { data: { ok: true, seat_token: "empty", tournament_table_id: args.p_tournament_table_id,

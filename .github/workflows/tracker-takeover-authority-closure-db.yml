@@ -90,6 +90,7 @@ jobs:
             tests/trackerTakeoverAuthority/migration.contract.test.ts \
             tests/handinput/voidResponseRecovery.hook.test.tsx \
             tests/handinput/standaloneEdge.parity.test.ts \
+            src/components/cashier/tournament-live/handinput/useStandaloneRosterIntent.test.tsx \
             --maxWorkers=1 --minWorkers=1
           node ./node_modules/typescript/bin/tsc \
             -p tsconfig.tracker-takeover-authority-closure.json \
