@@ -1142,12 +1142,19 @@ Deno.serve(async (req) => {
         break;
       }
       case "get_manual_card_receipt_v1": {
-        const { request_id } = body;
-        if (typeof request_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{11,255}$/.test(request_id)) {
-          return validationError("MANUAL_CARD_CONTEXT_REQUIRED", "Tra receipt thiếu request ID hợp lệ.");
+        const { request_id, hand_id, table_session_id, control_epoch, expected_source_revision, player_hole_cards } = body;
+        if (typeof request_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{11,255}$/.test(request_id)
+          || typeof hand_id !== "string" || typeof table_session_id !== "string"
+          || !Number.isSafeInteger(control_epoch) || control_epoch < 1
+          || !Number.isSafeInteger(expected_source_revision) || expected_source_revision < 0
+          || !Array.isArray(player_hole_cards) || player_hole_cards.length === 0) {
+          return validationError("MANUAL_CARD_CONTEXT_REQUIRED", "Tra receipt thiếu intent gốc hợp lệ.");
         }
         // Read-only actor-bound proof; it does not restore current write authority.
-        result = await supabase.rpc("get_tracker_manual_card_receipt_v1", { p_request_key: request_id });
+        result = await supabase.rpc("get_tracker_manual_card_receipt_v1", {
+          p_request_key: request_id,
+          p_expected_payload: { hand_id, table_session_id, control_epoch, expected_source_revision, player_hole_cards },
+        });
         break;
       }
       case "commit_voice_board": {

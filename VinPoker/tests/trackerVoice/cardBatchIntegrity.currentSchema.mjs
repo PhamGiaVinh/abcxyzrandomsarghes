@@ -264,9 +264,15 @@ if(manualHoleAuthority){
    ['floor_private.manual_card_receipts_prototype','floor_private.tracker_manual_card_receipts_v1'],
    ['419f17a4a04937244c2519b75d4c4b96','04f858c4e3913aaf2996e7ba8a8842da'],
    ['e5a5f946ed187baf910cbc7f7de8e746','0e43636469573f0f9722639ca283f346'],
-   ['914e90524f7ef265c65c421dd680f05c','73aa55ab389503395e16d0fc1e6c23a7'],
-   ['ff336d471723c238d35529f315fc2202','86ae4fd1ab8f1df69f4e657808b71336'],
+   ['914e90524f7ef265c65c421dd680f05c','47b08ebea2d7909ae8e8d99864440560'],
+   ['ff336d471723c238d35529f315fc2202','29f9eeb5563d236d0c6de4cf8c0f98b9'],
   ]) cases=cases.replaceAll(before,after);
+  cases=cases.replaceAll('floor_private.tracker_manual_card_receipt_v1(text)','floor_private.tracker_manual_card_receipt_v1(text,jsonb)')
+   .replaceAll('public.get_tracker_manual_card_receipt_v1(text)','public.get_tracker_manual_card_receipt_v1(text,jsonb)')
+   .replaceAll("proargnames=ARRAY['p_request_key']::text[]","proargnames=ARRAY['p_request_key','p_expected_payload']::text[]")
+   .replaceAll("public.get_tracker_manual_card_receipt_v1('manual-prototype-key-0001')",
+    "public.get_tracker_manual_card_receipt_v1('manual-prototype-key-0001',jsonb_build_object('hand_id','86000000-0000-4000-8000-000000000001','table_session_id','83500000-0000-4000-8000-000000000001','control_epoch',1,'expected_source_revision',:manual_before_revision,'player_hole_cards','[{\"player_id\":\"82000000-0000-4000-8000-000000000002\",\"entry_number\":1,\"hole_cards\":[\"Qh\",\"Qs\"]}]'::jsonb))");
+  cases+='\n'+readFileSync('tests/trackerVoice/manual75ReceiptPayload.cases.sql','utf8');
  }
 }
 const preconditions=undo?`DO $$ BEGIN

@@ -18,6 +18,8 @@ BEGIN
  OR to_regprocedure('public.show_tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)') IS NOT NULL
  OR to_regprocedure('floor_private.tracker_manual_card_receipt_v1(text)') IS NOT NULL
  OR to_regprocedure('public.get_tracker_manual_card_receipt_v1(text)') IS NOT NULL
+ OR to_regprocedure('floor_private.tracker_manual_card_receipt_v1(text,jsonb)') IS NOT NULL
+ OR to_regprocedure('public.get_tracker_manual_card_receipt_v1(text,jsonb)') IS NOT NULL
  THEN RAISE EXCEPTION 'manual75_catalog_collision'; END IF;
 END;
 $guard$;
@@ -120,38 +122,57 @@ REVOKE ALL ON FUNCTION public.show_tracker_manual_cards_v1(uuid,uuid,bigint,bigi
 GRANT EXECUTE ON FUNCTION public.show_tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb) TO authenticated;
 -- Reconciliation is read-only and actor-bound; it proves a past commit, not
 -- current permission to write into that hand/session.
-CREATE FUNCTION floor_private.tracker_manual_card_receipt_v1(p_request_key text)
+CREATE FUNCTION floor_private.tracker_manual_card_receipt_v1(p_request_key text,p_expected_payload jsonb)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
-DECLARE actor uuid:=auth.uid(); receipt jsonb; request_hash text;
+DECLARE actor uuid:=auth.uid(); receipt jsonb; request_hash text; expected_hash text;
+ expected_hand uuid; expected_session uuid; expected_epoch bigint; expected_revision bigint;
 BEGIN
  IF actor IS NULL OR coalesce(auth.jwt()->>'role','')<>'authenticated' THEN
   RETURN jsonb_build_object('error','unauthenticated'); END IF;
  SELECT r.response,r.request_hash INTO receipt,request_hash FROM floor_private.tracker_manual_card_receipts_v1 r
  WHERE r.actor_id=actor AND r.request_key=p_request_key;
  IF NOT FOUND THEN RETURN jsonb_build_object('status','not_found'); END IF;
+ IF jsonb_typeof(p_expected_payload) IS DISTINCT FROM 'object'
+ OR jsonb_typeof(p_expected_payload->'player_hole_cards') IS DISTINCT FROM 'array' THEN
+  RETURN jsonb_build_object('error','manual_card_context_required'); END IF;
+ BEGIN
+  expected_hand:=(p_expected_payload->>'hand_id')::uuid;
+  expected_session:=(p_expected_payload->>'table_session_id')::uuid;
+  expected_epoch:=(p_expected_payload->>'control_epoch')::bigint;
+  expected_revision:=(p_expected_payload->>'expected_source_revision')::bigint;
+ EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+  RETURN jsonb_build_object('error','manual_card_context_required');
+ END;
+ IF expected_hand IS NULL OR expected_session IS NULL OR expected_epoch IS NULL OR expected_epoch<1
+ OR expected_revision IS NULL OR expected_revision<0
+ OR jsonb_array_length(p_expected_payload->'player_hole_cards')=0 THEN
+  RETURN jsonb_build_object('error','manual_card_context_required'); END IF;
+ expected_hash:=encode(extensions.digest(jsonb_build_array(actor,expected_hand,expected_session,
+  expected_epoch,expected_revision,p_expected_payload->'player_hole_cards')::text,'sha256'),'hex');
+ IF request_hash IS DISTINCT FROM expected_hash THEN RETURN jsonb_build_object('error','idempotency_conflict'); END IF;
  RETURN jsonb_build_object('status','committed','request_key',p_request_key,'request_hash',request_hash,
   'hand_id',receipt->'hand_id','table_session_id',receipt->'table_session_id',
   'control_epoch',receipt->'control_epoch','entry_count',receipt->'entry_count',
   'expected_source_revision',receipt->'expected_source_revision',
   'committed_source_revision',receipt->'committed_source_revision');
 END $$;
-REVOKE ALL ON FUNCTION floor_private.tracker_manual_card_receipt_v1(text)
+REVOKE ALL ON FUNCTION floor_private.tracker_manual_card_receipt_v1(text,jsonb)
  FROM PUBLIC,anon,authenticated,service_role;
-GRANT EXECUTE ON FUNCTION floor_private.tracker_manual_card_receipt_v1(text) TO authenticated;
-CREATE FUNCTION public.get_tracker_manual_card_receipt_v1(p_request_key text)
+GRANT EXECUTE ON FUNCTION floor_private.tracker_manual_card_receipt_v1(text,jsonb) TO authenticated;
+CREATE FUNCTION public.get_tracker_manual_card_receipt_v1(p_request_key text,p_expected_payload jsonb)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
-RETURN floor_private.tracker_manual_card_receipt_v1(p_request_key);
-REVOKE ALL ON FUNCTION public.get_tracker_manual_card_receipt_v1(text)
+RETURN floor_private.tracker_manual_card_receipt_v1(p_request_key,p_expected_payload);
+REVOKE ALL ON FUNCTION public.get_tracker_manual_card_receipt_v1(text,jsonb)
  FROM PUBLIC,anon,authenticated,service_role;
-GRANT EXECUTE ON FUNCTION public.get_tracker_manual_card_receipt_v1(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_tracker_manual_card_receipt_v1(text,jsonb) TO authenticated;
 DO $postcheck$
 DECLARE expected record; actual record;
 BEGIN
  FOR expected IN SELECT * FROM (VALUES
   ('floor_private.tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','04f858c4e3913aaf2996e7ba8a8842da',true,'v'),
   ('public.show_tracker_manual_cards_v1(uuid,uuid,bigint,bigint,text,jsonb)','0e43636469573f0f9722639ca283f346',false,'v'),
-  ('floor_private.tracker_manual_card_receipt_v1(text)','73aa55ab389503395e16d0fc1e6c23a7',true,'s'),
-  ('public.get_tracker_manual_card_receipt_v1(text)','86ae4fd1ab8f1df69f4e657808b71336',false,'s')
+  ('floor_private.tracker_manual_card_receipt_v1(text,jsonb)','47b08ebea2d7909ae8e8d99864440560',true,'s'),
+  ('public.get_tracker_manual_card_receipt_v1(text,jsonb)','29f9eeb5563d236d0c6de4cf8c0f98b9',false,'s')
  ) AS definitions(signature,digest,definer,volatility) LOOP
   SELECT * INTO STRICT actual FROM pg_proc WHERE oid=expected.signature::regprocedure;
   IF md5(replace(pg_get_functiondef(actual.oid),chr(13),'')) IS DISTINCT FROM expected.digest
