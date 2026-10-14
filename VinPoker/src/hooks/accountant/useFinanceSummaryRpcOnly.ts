@@ -26,8 +26,7 @@ export interface FinanceSummaryRpc {
 
 /**
  * RPC-ONLY finance summary for the accountant workspace. Deliberately NO client-side
- * fallback: useClubFinanceSummary's fallback scans clubs by owner_id and reads broad
- * tables an accountant has no access to — it would silently render zeros (review P0).
+ * fallback: failed canonical reads must not become client-calculated balances.
  * The RPC (get_club_finance_summary, accountant scope via 20261236000000) either
  * answers or raises 42501 — the tab shows the explicit reason, never fake zeros.
  */
@@ -78,6 +77,7 @@ export function useFinanceSummaryRpcOnly(clubId: string | null, from: string, to
   return {
     ...query,
     data: enabled ? query.data : undefined,
+    isLoading: authLoading || query.isLoading,
     refetch: (...args: Parameters<typeof query.refetch>) => {
       if (!enabled || activeContext.current !== context) {
         return Promise.reject(new Error("AUTH_REQUIRED"));

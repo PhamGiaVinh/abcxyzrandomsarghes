@@ -33,6 +33,7 @@ describe('accountant finance RPC read integrity',()=>{
   const previousRefetch=result.current.refetch;
   fixture.auth={...fixture.auth,loading:true};act(()=>rerender());
   expect(result.current.data).toBeUndefined();
+  expect(result.current.isLoading).toBe(true);
   await expect(previousRefetch()).rejects.toThrow('AUTH_REQUIRED');
   await expect(result.current.refetch()).rejects.toThrow('AUTH_REQUIRED');
   expect(fixture.rpc).toHaveBeenCalledTimes(1);unmount();client.clear();
