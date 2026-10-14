@@ -28,4 +28,10 @@ describe("paired TV participation RPC", () => {
     expect(result.error).toBe("Failed to fetch");
     expect(state.rpc).toHaveBeenCalledOnce();
   });
+  it("does not leak an arbitrary rejected payload and permits the next poll", async () => {
+    state.rpc.mockRejectedValueOnce({ private: "do-not-display" });
+    expect(await rpcGetTvDisplayState("test-only-token")).toEqual({ data: null, error: "tv_display_transport_error" });
+    expect(await rpcGetTvDisplayState("test-only-token")).toEqual({ data: { status: "invalid" }, error: null });
+    expect(state.rpc).toHaveBeenCalledTimes(2);
+  });
 });
