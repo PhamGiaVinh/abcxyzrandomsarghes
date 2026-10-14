@@ -1,0 +1,20 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {spawnSync} from 'node:child_process';
+import {atomicSql,loadMigration,postcheckSql} from './dealer-close79-release-plan.mjs';
+import {receiptSql} from './floor-37-47-protected-apply.mjs';
+test('PG17 close79 ledger failure rolls back full function; exact apply rejects replay',{skip:process.env.CLOSE79_PG_TEST!=='1'},()=>{
+ assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_close79_atomic_ci');
+ for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
+ const query=sql=>spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8'});
+ const check=sql=>{const r=query(sql);assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
+ assert.equal(check("SELECT current_setting('server_version_num')::int BETWEEN 170000 AND 179999;"),'t');
+ const fingerprint="SELECT json_build_object('definition',md5(pg_get_functiondef(p.oid)),'owner',p.proowner,'acl',p.proacl::text,'config',p.proconfig)::text FROM pg_proc p WHERE p.oid='public.operator_close_club_table_v2(uuid,bigint,uuid)'::regprocedure;";
+ const before=check(fingerprint);assert.equal(JSON.parse(before).definition,'7724e5d9abd44d876f990e2521830582');
+ check(`CREATE FUNCTION public.reject79_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version='20270128000079' THEN RAISE EXCEPTION 'injected79_receipt_failure';END IF;RETURN NEW;END $$;
+ CREATE TRIGGER reject79 BEFORE INSERT ON supabase_migrations.schema_migrations FOR EACH ROW EXECUTE FUNCTION public.reject79_receipt();`);
+ const failed=query(atomicSql());assert.notEqual(failed.status,0);assert.match(failed.stderr,/injected79_receipt_failure/);
+ assert.equal(check(fingerprint),before);assert.deepEqual(JSON.parse(check(receiptSql(loadMigration()))),{count:0,exact:false});
+ check('DROP TRIGGER reject79 ON supabase_migrations.schema_migrations;DROP FUNCTION public.reject79_receipt();');
+ check(atomicSql());check(postcheckSql());assert.deepEqual(JSON.parse(check(receiptSql(loadMigration()))),{count:1,exact:true});
+ const replay=query(atomicSql());assert.notEqual(replay.status,0);assert.match(replay.stderr,/close79_ledger_collision/);
+ console.log('CLOSE79_ATOMIC_LEDGER_FAILURE_FULL_OBJECT_ROLLBACK_REPLAY_PASS');
+});
