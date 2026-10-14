@@ -197,6 +197,8 @@ jobs:
       # The legacy Floor/SuperAdmin summary is outside the targeted ops config.
       - name: Type-check complete application
         working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npx tsc -b
 
       - name: Type-check Tracker and Dealer Control workspaces
