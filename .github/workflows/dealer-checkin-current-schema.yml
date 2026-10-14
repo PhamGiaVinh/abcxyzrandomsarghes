@@ -405,6 +405,7 @@ jobs:
           PGDATABASE=vinpoker_ops_rest78_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
           PGDATABASE=vinpoker_ops_rest78_atomic_ci REST78_PG_TEST=1 node --test scripts/ops/dealer-rest78-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs

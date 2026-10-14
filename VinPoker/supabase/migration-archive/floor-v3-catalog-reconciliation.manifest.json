@@ -7611,7 +7611,8 @@
       "reason": "post-production-head Tracker Voice Board Assist migration; source-only pending owner-gated rollout"
     }
   ],
-  "ownerGatedActiveAllowlist": [
+    "ownerGatedActiveAllowlist": [
+    {"version":"20270128000079","filename":"20270128000079_dealer_close_next_reservation_v1.sql","sha256":"c66794e9758f5f0fbb9be1c9b2bdfb731541624c7deafcfa7ddb11ad95beff29","domain":"dealer-close-next-reservation-campaign"},
     {"version":"20270128000078","filename":"20270128000078_dealer_next_plan_rest_floor_v1.sql","sha256":"fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df","domain":"dealer-next-plan-rest-floor-campaign"},
     {"version":"20270128000076","filename":"20270128000076_tracker_hand_input_scoped_read_v1.sql","sha256":"15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54","domain":"tracker-hand-input-scoped-read-campaign"},
     {"version":"20270128000077","filename":"20270128000077_tracker_roster_scoped_read_v2.sql","sha256":"9ac013f3a8be2cfd2d657f223b5182a3ebe48217e1a6df6b7eb5cad0120e6062","domain":"tracker-roster-scoped-read-campaign"},
