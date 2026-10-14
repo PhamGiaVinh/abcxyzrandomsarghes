@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(
   resolve(process.cwd(), "supabase/pending-migrations/20270126000001_redraw_clock_hold_v1.sql"),
   "utf8",
-);
+).replace(/\r\n?/g, "\n");
 
 describe("redraw clock hold V1 migration contract", () => {
   it("keeps the release gate on both new redraw plans and applying redraws", () => {
