@@ -289,7 +289,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   const rosterFlightRef = useRef(createSingleFlightGuard());
   const voidFlightRef = useRef(createSingleFlightGuard());
   const voidOwnsSubmittingRef = useRef(false);
-  const manualCardsFlightRef = useRef(createSingleFlightGuard());
+  const manualCardsFlightsRef = useRef(new Map<string, ReturnType<typeof createSingleFlightGuard>>());
   const manualCardsOwnsSubmittingRef = useRef(false);
   const rosterContext = availableTables.find((table) => table.id === tableId);
   const rosterScope = `${user?.id}:${tournamentId}:${rosterContext?.tournamentTableId}:${rosterContext?.tableSessionId}:${rosterContext?.controlEpoch}`;
@@ -298,9 +298,8 @@ export function useStandaloneHandInput(tournamentId: string) {
     rosterGenerationRef.current += 1;
   }
   useEffect(() => {
-    // A new authority/hand generation owns a new flight. Old requests retain
-    // their captured guard and cannot release this one in their finally block.
-    manualCardsFlightRef.current = createSingleFlightGuard();
+    // Render/reload may detach loading, but pending semantic-context flights
+    // survive it. A reload is not proof that an in-flight mutation finished.
     if (manualCardsOwnsSubmittingRef.current) {
       manualCardsOwnsSubmittingRef.current = false;
       setSubmitting(false);
@@ -385,7 +384,6 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (activeTournamentRef.current === tournamentId) return;
 
     activeTournamentRef.current = tournamentId;
-    manualCardsFlightRef.current = createSingleFlightGuard();
     if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
       voidOwnsSubmittingRef.current = false;
       manualCardsOwnsSubmittingRef.current = false;
@@ -1029,7 +1027,6 @@ export function useStandaloneHandInput(tournamentId: string) {
   // ----- Table select -----------------------------------------------------
   const handleTableChange = useCallback(
     async (newTableId: string) => {
-      manualCardsFlightRef.current = createSingleFlightGuard();
       if (voidOwnsSubmittingRef.current || manualCardsOwnsSubmittingRef.current) {
         voidOwnsSubmittingRef.current = false;
         manualCardsOwnsSubmittingRef.current = false;
@@ -2927,8 +2924,21 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error("Chưa nhập bài lỗ cho ai");
       return;
     }
-    const flight = manualCardsFlightRef.current;
-    if (!flight.begin()) return;
+    const loaded = loadedTableSessionRef.current;
+    const sessionId = rosterContext?.tableSessionId
+      ?? (loaded?.tournamentId === tournamentId && loaded.tableId === tableId ? loaded.sessionId : null);
+    if (!sessionId) {
+      toast.error("Chưa xác minh được phiên bàn để lật bài.");
+      return;
+    }
+    const flightKey = JSON.stringify([user?.id, tournamentId, tournamentTableId ?? tableId,
+      sessionId, rosterContext?.controlEpoch ?? null, handId]);
+    const flight = manualCardsFlightsRef.current.get(flightKey) ?? createSingleFlightGuard();
+    if (!flight.begin()) {
+      toast.info("Đang chờ kết quả lật bài của hand này; không gửi thêm yêu cầu.");
+      return;
+    }
+    manualCardsFlightsRef.current.set(flightKey, flight);
     manualCardsOwnsSubmittingRef.current = true;
     setSubmitting(true);
     markSync("sending", "Lật bài");
@@ -2952,7 +2962,9 @@ export function useStandaloneHandInput(tournamentId: string) {
       markSync("error");
     } finally {
       flight.finish();
-      if (current() && manualCardsFlightRef.current === flight && manualCardsOwnsSubmittingRef.current) {
+      const ownsFlight = manualCardsFlightsRef.current.get(flightKey) === flight;
+      if (ownsFlight) manualCardsFlightsRef.current.delete(flightKey);
+      if (current() && ownsFlight && manualCardsOwnsSubmittingRef.current) {
         manualCardsOwnsSubmittingRef.current = false;
         setSubmitting(false);
       }
