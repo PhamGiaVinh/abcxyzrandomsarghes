@@ -40,6 +40,8 @@ jobs:
           deno-version: v2.8.0
       - run: deno check --frozen --lock=deno.lock supabase/functions/cashier-lookup-player/index.ts
         working-directory: VinPoker
+      - run: deno test --frozen --lock=deno.lock --allow-env --allow-read supabase/functions/cashier-lookup-player/index.test.ts
+        working-directory: VinPoker
       - run: npm run check:credential-context
         working-directory: VinPoker
       - run: git diff --check
