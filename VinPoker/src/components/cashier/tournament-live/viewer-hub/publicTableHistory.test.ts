@@ -37,6 +37,15 @@ describe("public table history parser", () => {
     expect(parsePublicTableHistoryPage({ access: "public", items: [], nextCursor: { createdAt: "same" } }, "tour", "table")).toBeNull();
   });
 
+  it.each([undefined, "bad-cursor", 0, false, []])("does not interpret malformed cursor %j as the end of history", (nextCursor) => {
+    expect(parsePublicTableHistoryPage({ access: "public", items: [], nextCursor }, "tour", "table")).toBeNull();
+  });
+
+  it("accepts only explicit null as the confirmed final page", () => {
+    expect(parsePublicTableHistoryPage({ access: "public", items: [], nextCursor: null }, "tour", "table"))
+      .toMatchObject({ items: [], nextCursor: null });
+  });
+
   it("shows verified side-pot recipients with their signed net, once per entry", () => {
     const page = parsePublicTableHistoryPage({ access: "public", items: [{
       handId: "hand", createdAt: "2026-09-17T01:00:00Z", pot: 280_000, bigBlind: 20_000,

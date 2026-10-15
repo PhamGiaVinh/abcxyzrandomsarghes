@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TableHistoryPanel } from "./TableHistoryPanel";
 
@@ -10,6 +10,130 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (_key: string, fal
 afterEach(() => rpc.mockReset());
 
 describe("table-specific public history cards", () => {
+  it("ends loading after a rejected read and can recover on focus", async () => {
+    rpc.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    expect(await screen.findByRole("status")).toHaveTextContent("Không thể tải lịch sử bàn");
+    expect(screen.queryByText("Đang tải lịch sử…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bàn này chưa có ván đã hoàn tất.")).not.toBeInTheDocument();
+    rpc.mockResolvedValue({ data: { access: "public", items: [], nextCursor: null }, error: null });
+    fireEvent.focus(window);
+    expect(await screen.findByText("Bàn này chưa có ván đã hoàn tất.")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("bounds an unresolved read and ignores its late response after recovery", async () => {
+    vi.useFakeTimers();
+    let finishLate!: (value: unknown) => void;
+    rpc.mockImplementationOnce(() => new Promise((resolve) => { finishLate = resolve; }));
+    rpc.mockResolvedValue({ data: { access: "public", items: [], nextCursor: null }, error: null });
+    const view = render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(screen.getByRole("status")).toHaveTextContent("Không thể tải lịch sử bàn");
+      expect(screen.queryByText("Đang tải lịch sử…")).not.toBeInTheDocument();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      await act(async () => { fireEvent.focus(window); });
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Bàn này chưa có ván đã hoàn tất.")).toBeInTheDocument();
+      await act(async () => finishLate({ data: { access: "public", items: [
+        { handId: "late", handNumber: 99, createdAt: "2026-09-27T01:00:00Z", result: { status: "pending" } },
+      ], nextCursor: null }, error: null }));
+      expect(screen.queryByText("Hand #99")).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the read deadline and polling timer on unmount", () => {
+    vi.useFakeTimers();
+    rpc.mockImplementationOnce(() => new Promise(() => {}));
+    const view = render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    try {
+      expect(vi.getTimerCount()).toBe(2);
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces focus refreshes during an in-flight read and then fetches fresh state once", async () => {
+    let finish!: (value: unknown) => void;
+    rpc.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    rpc.mockResolvedValue({ data: { access: "public", items: [], nextCursor: null }, error: null });
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    fireEvent.focus(window);
+    fireEvent.focus(window);
+    const callsWhilePending = rpc.mock.calls.length;
+    await act(async () => finish({ data: { access: "public", items: [], nextCursor: null }, error: null }));
+    expect(callsWhilePending).toBe(1);
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Đang tải lịch sử…")).not.toBeInTheDocument();
+  });
+
+  it("does not let a rejected old-table request clear the new table's in-flight fence", async () => {
+    let rejectOld!: (error: Error) => void;
+    let finishNew!: (value: unknown) => void;
+    rpc.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }));
+    rpc.mockImplementationOnce(() => new Promise((resolve) => { finishNew = resolve; }));
+    const empty = { data: { access: "public", items: [], nextCursor: null }, error: null };
+    rpc.mockResolvedValue(empty);
+    const props = { tournamentId: "tour", currentSessionId: "session", onSelectHand: vi.fn(), onAccessRevoked: vi.fn() };
+    const view = render(<TableHistoryPanel {...props} tableId="old" />);
+    view.rerender(<TableHistoryPanel {...props} tableId="new" />);
+    await act(async () => rejectOld(new TypeError("old transport failed")));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.focus(window);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    await act(async () => finishNew(empty));
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));
+    expect(rpc).toHaveBeenLastCalledWith("get_public_tournament_table_history_v2", expect.objectContaining({ p_tournament_table_id: "new" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("discards a queued refresh when public access is revoked", async () => {
+    let finish!: (value: unknown) => void;
+    rpc.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const revoked = vi.fn();
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={revoked} />);
+    fireEvent.focus(window);
+    await act(async () => finish({ data: { access: "revoked" }, error: null }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("không còn được công khai");
+    expect(revoked).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains same-table history after a refresh rejects instead of presenting an empty table", async () => {
+    rpc.mockResolvedValueOnce({ data: { access: "public", items: [
+      { handId: "retained", handNumber: 12, createdAt: "2026-09-27T01:00:00Z", result: { status: "pending" } },
+    ], nextCursor: null }, error: null });
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    await screen.findByText("Hand #12");
+    rpc.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    fireEvent.focus(window);
+    expect(await screen.findByRole("status")).toHaveTextContent("Dữ liệu đang hiển thị vẫn được giữ nguyên");
+    expect(screen.getByText("Hand #12")).toBeInTheDocument();
+    expect(screen.queryByText("Bàn này chưa có ván đã hoàn tất.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Đang tải lịch sử…")).not.toBeInTheDocument();
+  });
+
+  it("keeps loaded hands and pagination when a refresh has a malformed cursor", async () => {
+    rpc.mockResolvedValueOnce({ data: { access: "public", items: [
+      { handId: "retained", handNumber: 12, createdAt: "2026-09-27T01:00:00Z", result: { status: "pending" } },
+    ], nextCursor: { createdAt: "2026-09-27T01:00:00Z", id: "retained" } }, error: null });
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    await screen.findByText("Hand #12");
+    rpc.mockResolvedValueOnce({ data: { access: "public", items: [], nextCursor: 0 }, error: null });
+    fireEvent.focus(window);
+    expect(await screen.findByRole("status")).toHaveTextContent("Dữ liệu lịch sử không hợp lệ");
+    expect(screen.getByText("Hand #12")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tải thêm" })).toBeEnabled();
+    expect(screen.queryByText("Bàn này chưa có ván đã hoàn tất.")).not.toBeInTheDocument();
+  });
+
   it("formats Hand #9 from its frozen 100k/200k/25k blind snapshot", async () => {
     rpc.mockResolvedValue({ data: { access: "public", items: [
       { handId: "hand-9", tableSessionId: "session-9", handNumber: 9, createdAt: "2026-09-27T01:00:00Z", board: ["2c", "7d", "9h", "3s", "Kc"], pot: 4_800_000, smallBlind: 100_000, bigBlind: 200_000, ante: 25_000, result: { status: "verified", recipients: [
