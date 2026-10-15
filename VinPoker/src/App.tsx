@@ -7,8 +7,6 @@ import { installToastSounds } from "@/lib/toastSound";
 // Attach success/error/info/warning sound effects to every sonner toast.
 installToastSounds();
 
-// Pull GTO custom ranges from DB + listen realtime updates
-import { initRemoteRanges } from "@/lib/gto/precomputed";
 import { isTrackerVoiceUatRoute } from "@/lib/trackerVoice/previewRoute";
 const isSeriesMarketDevRoute = import.meta.env.DEV && window.location.pathname === "/__dev/series-market";
 const isTrackerUnifiedOpsDevRoute =
@@ -17,12 +15,6 @@ const isPayrollStatementDevRoute =
   import.meta.env.DEV && window.location.pathname === "/__dev/payroll-statement";
 const trackerVoiceUatEnabled = import.meta.env.VITE_TRACKER_VOICE_UAT_ENABLED === "true";
 const isTrackerVoiceUatPreviewRoute = isTrackerVoiceUatRoute(window.location.pathname, trackerVoiceUatEnabled);
-if (
-  !isSeriesMarketDevRoute &&
-  !isTrackerUnifiedOpsDevRoute &&
-  !isPayrollStatementDevRoute &&
-  !isTrackerVoiceUatPreviewRoute
-) initRemoteRanges();
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
@@ -110,7 +102,6 @@ const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const RangeEditor = lazy(() => import("./components/RangeEditor"));
 const PackageListing = lazy(() => import("./pages/PackageListing"));
 const PackageDetail = lazy(() => import("./pages/PackageDetail"));
 const Feed = lazy(() => import("./pages/Feed"));
@@ -423,7 +414,6 @@ const App = () => {
                 <Route path="/admin/money-list" element={<AdminMoneyList />} />
                 <Route path="/admin/web-vitals" element={<AdminWebVitals />} />
                 <Route path="/admin/tournament-config/:clubId" element={<TournamentConfig />} />
-                <Route path="/admin/gto-ranges" element={<div className="container mx-auto p-4"><RangeEditor /></div>} />
                 <Route path="*" element={<NotFound />} />
               </Route>
             </Routes>
