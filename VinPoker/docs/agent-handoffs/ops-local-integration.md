@@ -1,5 +1,28 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G6 actual retained-schema cleanup writer regression
+
+Currentcatalog cleanup_orphan_hands is authenticated guarded, anon/service execute false; Edge tournament-live-cleanup forwards validated caller JWT using anonclient (not service bypass), no frontendcaller found. Actual body voids stale in_progress rows then deletes actions/eliminations and clears participant terminal fields; it does NOT DELETE the hand. Clarifies maintenance row in prior provisional matrix. apply_resettle_forward/edit_completed_hand execute false for all anon/auth/service in this localcatalog (disabled legacy path, not assumed functional). Legacy record_hand overload serviceonly vs newer authenticated; further actor semantics audit remains.
+
+Added tests/trackerSettlement/orphanCleanupRevision.pg17.sql on exact retained-schema owned cardfixture (loopbackPG17/hard DBname guard/transactionROLLBACK). Completedhand snapshot unchanged; invalidwindow/outsider denied without handrevision/statusdelta; authorized staleactivehand void advancesrevision/unlocks and cancels all pending/processing generations. Actual native test PASS, no product fix needed/no RED claim. Existing workflow post58 step executes sameSQL; trigger/YAML/envwiring parsed PASS and diffcheck PASS, no remoteCI/liveproof. Privatehelper terminalexit0/PGstopped/nohandles. Source implementation remains e5ed97951; test/handoff/workflow newdelta. No production/push/deploy/flags/Auto/Daybreak change. FullG6 worker/provider/anonymousHTTP journey still incomplete, not ACCEPTED.
+
+## G6 current local writer inventory / dismissed stale-source hypothesis
+
+SourceHEAD e5ed979512890c0956bad4f5355a657bf19a8934, clean initially. Actual unifiedPG17 metadata confirms action/player row revision triggers INSERT/DELETE/UPDATE; hand BEFORE UPDATE trigger covers tournament_id/hand_number/button/board/pot/sidepots/status/void/frozenblind fields; AFTER hand write enqueues generation, statement transition trigger invalidates affected identity chain. Function inventory via direct literal DML regex identifies22 function signatures; not exhaustive (dynamicSQL/qualified variants/delegated wrappers require further tracing), no assertion every writer role/endpoint/runtime covered.
+
+|Input seam|Current concrete writers/trigger|Evidence already available / remaining|
+|---|---|---|
+|Action add/delete/undo|record_action, delete_last_action, undo_last_action; hand_actions revision trigger|Card/Voice canonical tests prior; endpoint/role matrix still incomplete|
+|Board/hole/participant|_tracker_card_board_source_v1, _tracker_card_hole_source_v1; hand_players revision trigger|56/70–75 prior runtime; new currentmetadata confirms trigger; full consumer matrix pending|
+|Blind snapshot|capture_tracker_blind_positions, correct_tracker_historical_hand_blinds|server-owned guard/current hash; prior queue/blind tests; live not verified|
+|Hand creation/completion/edit|start_hand/v2/v3, record_hand two overloads, edit_completed_hand, apply_resettle_forward|revision/enqueue/identity invalidation metadata; actual mixed canonical journey still missing|
+|Void|void_last_hand; hand status/is_voided trigger|59 prior functional/overlap proof; live not verified|
+|Result commit|commit_tournament_settlement_outcome|atomic queue/outcome failure/recovery prior proof, real verifier pipeline still missing|
+|Lock-only metadata|heartbeat_lock, takeover_hand_lock|DML inventory hits are not automatically outcome-input changes; distinguish lock fields from source proof inputs|
+|Cleanup|cleanup_orphan_hands|maintenance DELETE seam needs lifecycle/queue dependency review; no deletion executed|
+
+Investigation initially suspected old-hand revision gap from predecessor00004 COALESCE(NEW.hand_id,OLD.hand_id). Current actual function body instead handles DISTINCT OLD+NEW and canonical sorted locks from00009_tracker_history_reparent_invalidation_v1.sql. Isolated originalcardfixture authenticated reparent test PASS BEFORE any fix (old/new revision +currentpending queue). Not a new confirmed bug; no product patch/migration needed. Existing handIdentityReparent.concurrent and handIdentityCanonicalLock.concurrent tests already cover related ordering; redundant exploratory SQL removed rather than committed. Private metadata/repro helpers terminalexit0/PGstopped, fixture transaction rolled back, no activehandles. No production/push/CI/DBlive/Edge/frontend/flags/Docker. Next complete inventory of remaining writer delegates/roles and cleanup lifecycle; do not extrapolate this narrow positive to fullG6 acceptance.
+
 ## Busted read deadline and late-response fence
 
 Onf2dab31d3 new hung-read rendered regression RED(1FAIL/18PASS): no terminal error after20seconds. Candidate bounds entire entries/prizes/seats/profile pipeline to20s, sets read unavailable and fences late response; cleanup clears timer on settle/scope change/unmount. No mutation retry/new request key/permission change. Final21 rendered cockpit tests PASS: primary and fallbackprofile hang/late response, successful-read timer cleanup plus prior scope/error/canonicalrestore/clock matrix. ESLint editedtwofiles/diffcheck PASS. Not cancellation of underlying HTTP transport, fulltype/build/browser375/CI/prod proof. Local-only ownerhold, no push/deploy/DB/Edge/flags/Docker. Next93 release manifest/runner preparation and remaining integrated local evidence gaps; campaign still incomplete.

@@ -119,6 +119,7 @@ on:
       - 'VinPoker/tests/trackerSettlement/handIdentityPublication*'
       - 'VinPoker/scripts/ops/tracker-history-58-*'
       - 'VinPoker/tests/trackerSettlement/handTournamentRevision*'
+      - 'VinPoker/tests/trackerSettlement/orphanCleanupRevision*'
       - 'VinPoker/scripts/ops/dealer-policy-57-*'
       - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
       - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.currentSchema.sql'
@@ -804,6 +805,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handIdentityRevision.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handTournamentRevision.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/orphanCleanupRevision.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handIdentityChainRange.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handIdentityRevision.readonly-postcheck.sql
           createdb --template="$PGDATABASE" vinpoker_ops_identity58_overlap_20261011
