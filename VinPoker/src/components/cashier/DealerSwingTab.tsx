@@ -278,7 +278,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     error: scheduleError,
     refetch: refetchSchedule,
   } = useRotationSchedule(filteredClubIds);
-  const { data: swingConfigs, refetch: refetchSwingConfigs } = useSwingConfigs(filteredClubIds);
+  const { data: swingConfigs, loading: configsLoading, error: configsError, refetch: refetchSwingConfigs } = useSwingConfigs(filteredClubIds);
   const { data: tournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0]);
   const staleCleanupCandidateIds = useMemo(
     () => staleCleanupCandidateAttendanceIds(dealers ?? [], nowMs),
@@ -2004,7 +2004,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const { triggerSwingAnimation, isAnimating } = useSwingAnimation();
   const { focusedTableId, focusTable } = useFocusNavigation();
 
-  const loading = dealersLoading || tablesLoading || assignsLoading;
+  const loading = dealersLoading || tablesLoading || assignsLoading || configsLoading;
 
   if (clubs.length > 1 && !activeClubId) {
     return (
@@ -2032,12 +2032,12 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     );
   }
 
-  if (loading || dealersError || tablesError || assignmentsError) return (
+  if (loading || dealersError || tablesError || assignmentsError || configsError) return (
     <div className="space-y-3" role={loading ? "status" : "alert"}>
       <h2 className="text-base font-semibold">{loading ? "Đang xác minh dữ liệu Dealer Swing…" : "Không xác minh được dữ liệu Dealer Swing"}</h2>
       <p className="text-sm text-muted-foreground">Chưa thể dùng dữ liệu này để gán, xoay hoặc kết ca dealer. Dừng Swing vẫn khả dụng.</p>
       <div className="flex items-center gap-3">
-        <Button variant="outline" onClick={() => { refetchDealers(); refetchTables(); refetchAssignments(); }}>Thử lại</Button>
+        <Button variant="outline" onClick={() => { refetchDealers(); refetchTables(); refetchAssignments(); refetchSwingConfigs(); }}>Thử lại</Button>
         <DealerSwingStopControl clubId={activeClubId} onStopped={() => setAutoSwingEnabled(false)} />
       </div>
     </div>
