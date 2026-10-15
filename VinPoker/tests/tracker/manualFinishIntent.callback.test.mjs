@@ -143,3 +143,10 @@ test('storage discovery blocks a new Finish before React has displayed a prior-h
  h.stored.set(`vinpoker:manual-finish:${actor}:${tour}:${table}:${other}`,JSON.stringify(intent));
  h.calls.length=0;await h.submit();assert.equal(h.calls.length,0);assert.equal(h.stored.size,1);
 });
+test('first correction denial is zero-write, but it cannot discard an earlier unknown request',async()=>{
+ const denied={data:{code:'tracker_correction_pending',error:'Bàn đang chờ Floor xử lý báo sai hand; chưa thể Finish.'},error:null};
+ const first=harness();first.state.write=async()=>denied;await first.submit();assert.equal(first.stored.size,0);assert.equal(first.state.pending,null);
+ const retry=harness();retry.state.write=async()=>({data:null,error:new Error('lost')});await retry.submit();
+ const frozen=[...retry.stored.values()][0];retry.state.write=async()=>denied;await retry.submit();
+ assert.equal([...retry.stored.values()][0],frozen);assert.equal(retry.effects.filter(x=>x[0]==='outcome').length,0);
+});

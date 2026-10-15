@@ -3542,7 +3542,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       // Only a first definitively zero-write denial can discard its journal.
       // A rejected retry cannot establish what happened to the original request.
       if (!priorIntent && code && ["actor_not_allowed", "stale_manual_finish_context", "lock_not_held",
-        "invalid_finish_intent", "SIDE_POTS_TAMPERED", "MANUAL_FINISH_CONTEXT_REQUIRED"].includes(code)) {
+        "invalid_finish_intent", "SIDE_POTS_TAMPERED", "MANUAL_FINISH_CONTEXT_REQUIRED", "tracker_correction_pending"].includes(code)) {
         settleManualFinishJournal(sessionStorage, intentKey, intent); intent = undefined;
         setPendingFinish(null);
       }

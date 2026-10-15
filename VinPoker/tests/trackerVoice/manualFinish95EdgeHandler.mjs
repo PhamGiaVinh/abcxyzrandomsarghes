@@ -59,4 +59,8 @@ for(const action of ['record_manual_hand_v1','get_manual_finish_receipt_v1']){
  }
 }
 const rpcError=await request(body,{data:null,error:{message:'synthetic backend unavailable'}});assert.equal(rpcError.status,500);assert.equal(rpcError.calls.length,1);
+const correction=await request(body,{data:null,error:{code:'P0001',message:'tracker_correction_pending'}});
+assert.equal(correction.status,409);assert.equal(correction.payload.code,'tracker_correction_pending');assert.equal(correction.calls.length,1);
+assert.equal((await request(body,{data:null,error:{code:'P0001',message:'some other error'}})).status,500);
+assert.equal((await request(body,{data:null,error:{code:'08006',message:'tracker_correction_pending'}})).status,500);
 console.log('MANUAL_FINISH95_ACTUAL_EDGE_HANDLER_GUARDS_RPC_ROUTING_PASS');

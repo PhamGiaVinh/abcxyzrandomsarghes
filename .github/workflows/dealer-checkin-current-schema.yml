@@ -825,6 +825,7 @@ jobs:
           node tests/trackerSettlement/historyAttention.migrationRollback.mjs --apply-after-rollback
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyNeedsAttention.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v CORRECTION_CASE=true -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/viewer-hub/publicTableHistory.test.ts src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker

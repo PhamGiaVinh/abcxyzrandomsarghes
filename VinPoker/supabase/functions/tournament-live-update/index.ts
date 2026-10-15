@@ -1185,6 +1185,13 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "record_manual_hand_v1" && result.error?.code === "P0001"
+      && result.error.message === "tracker_correction_pending") {
+      // This explicit PostgreSQL exception rolls the entire RPC statement back.
+      // Other database/transport errors still have unknown outcomes.
+      return new Response(JSON.stringify({ error: "Bàn đang chờ Floor xử lý báo sai hand; chưa thể Finish.",
+        code: "tracker_correction_pending" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     if (result.error) throw result.error;
     if (action === "record_manual_hand_v1" || action === "get_manual_finish_receipt_v1" || action === "cancel_manual_finish_v1") {
       const proof = result.data;

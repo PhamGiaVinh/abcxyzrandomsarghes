@@ -1,4 +1,8 @@
 \set ON_ERROR_STOP on
+\if :{?CORRECTION_CASE}
+\else
+\set CORRECTION_CASE false
+\endif
 BEGIN;
 DO $$ BEGIN
  IF current_database() NOT IN ('vinpoker_ops_history98_rollback','vinpoker_ops_history98_ci') OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
@@ -20,6 +24,23 @@ CREATE TEMP TABLE finish_mode_intent AS
  'actions','[]'::jsonb,'side_pots','[]'::jsonb,'community_cards','[]'::jsonb,'pot_size',0)) AS intent
  FROM public.tournament_hands h JOIN public.table_sessions s ON s.id=h.table_session_id
  WHERE h.id='86000000-0000-4000-8000-000000000001';
+\if :CORRECTION_CASE
+INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled)
+ VALUES('81000000-0000-4000-8000-000000000001','85000000-0000-4000-8000-000000000001',
+ '84000000-0000-4000-8000-000000000001','81300000-0000-4000-8000-000000000001','report_wrong_action',true);
+SELECT set_config('request.jwt.claim.sub','81300000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"role":"authenticated","sub":"81300000-0000-4000-8000-000000000001"}',true);
+CREATE TEMP TABLE finish_mode_correction(alert_id uuid);
+DO $$ DECLARE intent jsonb; result jsonb; BEGIN
+ SELECT i.intent INTO STRICT intent FROM finish_mode_intent i;
+ PERFORM set_config('role','authenticated',true);
+ result:=public.report_tracker_wrong_hand_v1((intent->>'tournament_id')::uuid,(intent->>'tournament_table_id')::uuid,
+ (intent->>'hand_id')::uuid,(intent->>'source_revision')::bigint,gen_random_uuid());
+ PERFORM set_config('role','none',true);
+ IF result->>'ok' IS DISTINCT FROM 'true' OR result->>'alert_id' IS NULL THEN RAISE EXCEPTION 'mode_report_failed: %',result; END IF;
+ INSERT INTO finish_mode_correction VALUES((result->>'alert_id')::uuid);
+END $$;
+\endif
 SELECT set_config('request.jwt.claim.sub','81100000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claims','{"role":"authenticated","sub":"81100000-0000-4000-8000-000000000001"}',true);
 DO $$ DECLARE result jsonb; session public.table_sessions%ROWTYPE; BEGIN
@@ -33,6 +54,55 @@ DO $$ DECLARE result jsonb; session public.table_sessions%ROWTYPE; BEGIN
 END $$;
 SELECT set_config('request.jwt.claim.sub','81400000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claims','{"role":"authenticated","sub":"81400000-0000-4000-8000-000000000001"}',true);
+\if :CORRECTION_CASE
+DO $$ DECLARE intent jsonb; result jsonb; before_hand jsonb; before_state jsonb; after_state jsonb;
+ snapshot_sql text:=$snapshot$SELECT jsonb_build_object(
+ 'players',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.hand_id,x.player_id,x.entry_number) FROM public.hand_players x),
+ 'actions',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.hand_actions x),
+ 'seats',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.tournament_seats x),
+ 'entries',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.tournament_entries x),
+ 'chips',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.tournament_id,x.player_id,x.entry_number) FROM public.tournament_chip_counts x),
+ 'queue',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.hand_id,x.source_revision) FROM public.tracker_historical_display_queue x),
+ 'outcomes',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.tournament_settlement_outcomes x),
+ 'receipts',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.actor_id,x.operation_type,x.request_id) FROM public.table_operation_receipts x))$snapshot$;
+BEGIN
+ SELECT i.intent INTO STRICT intent FROM finish_mode_intent i;
+ SELECT to_jsonb(h) INTO before_hand FROM public.tournament_hands h WHERE h.id=(intent->>'hand_id')::uuid;
+ IF NOT EXISTS(SELECT 1 FROM floor_private.table_mode_requests_v1 WHERE table_session_id=(intent->>'table_session_id')::uuid
+ AND status='pending' AND blockers ? 'correction_pending') THEN RAISE EXCEPTION 'mode_correction_blocker_missing'; END IF;
+ EXECUTE snapshot_sql INTO before_state;
+ PERFORM set_config('role','authenticated',true);
+ BEGIN
+  result:=public.record_tracker_manual_hand_v1(intent);
+  IF result->>'error' IS DISTINCT FROM 'tracker_correction_pending' THEN RAISE EXCEPTION 'correction_finish_not_blocked: %',result; END IF;
+  RAISE NOTICE 'CANONICAL_FINISH_CORRECTION_JSONB_OBSERVED';
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM<>'tracker_correction_pending' THEN RAISE; END IF;
+ RAISE NOTICE 'CANONICAL_FINISH_CORRECTION_P0001_OBSERVED'; END;
+ IF public.get_tracker_manual_finish_receipt_v1(intent)->>'error' IS DISTINCT FROM 'receipt_not_found'
+ THEN RAISE EXCEPTION 'blocked_finish_left_receipt'; END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT to_jsonb(h) FROM public.tournament_hands h WHERE h.id=(intent->>'hand_id')::uuid) IS DISTINCT FROM before_hand
+ THEN RAISE EXCEPTION 'blocked_finish_changed_hand'; END IF;
+ EXECUTE snapshot_sql INTO after_state;
+ IF after_state IS DISTINCT FROM before_state THEN RAISE EXCEPTION 'blocked_finish_left_partial_operational_write'; END IF;
+END $$;
+SELECT set_config('request.jwt.claim.sub','81300000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"role":"authenticated","sub":"81300000-0000-4000-8000-000000000001"}',true);
+DO $$ DECLARE alert public.tracker_floor_alerts%ROWTYPE; result jsonb; BEGIN
+ SELECT a.* INTO STRICT alert FROM public.tracker_floor_alerts a JOIN finish_mode_correction c ON c.alert_id=a.id;
+ PERFORM set_config('role','authenticated',true);
+ result:=public.transition_tracker_floor_alert(alert.id,alert.version,'dismiss','Local TEST false report; preserve audit','mode-test-dismiss-'||gen_random_uuid()::text);
+ PERFORM set_config('role','none',true);
+ IF result->>'status' IS DISTINCT FROM 'dismissed' THEN RAISE EXCEPTION 'canonical_correction_dismiss_failed: %',result; END IF;
+END $$;
+SET CONSTRAINTS ALL IMMEDIATE;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.table_sessions WHERE id='83500000-0000-4000-8000-000000000001' AND control_mode='tracker')
+ THEN RAISE EXCEPTION 'mode_changed_before_active_hand_finished'; END IF;
+END $$;
+SELECT set_config('request.jwt.claim.sub','81400000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"role":"authenticated","sub":"81400000-0000-4000-8000-000000000001"}',true);
+\endif
 CREATE TEMP TABLE finish_mode_result(receipt jsonb);
 DO $$ DECLARE intent jsonb; receipt jsonb; BEGIN
  SELECT i.intent INTO STRICT intent FROM finish_mode_intent i;
