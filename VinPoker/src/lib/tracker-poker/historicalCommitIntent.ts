@@ -52,15 +52,29 @@ export function settleHistoricalCommitJournal(storage: JournalStorage, intent: H
   storage.removeItem(key);
   if (storage.getItem(key) !== null) throw new Error("HISTORICAL_COMMIT_JOURNAL_SETTLE_FAILED");
 }
+function matchesIntent(value: unknown, intent: HistoricalCommitIntent): value is Record<string, unknown> {
+  return record(value) && value.ok === true && value.actor_id === intent.expected_actor_id
+    && value.tournament_id === intent.tournament_id && value.hand_id === intent.hand_id
+    && value.idempotency_key === intent.idempotency_key && value.source_revision === intent.expected_source_revision
+    && value.source_chain_hash === intent.expected_source_chain_hash && value.outcome_hash === intent.expected_outcome_hash;
+}
 /** A past commit receipt is not proof that its outcome is still public/current. */
 export function historicalCommitReceiptState(value: unknown, intent: HistoricalCommitIntent): "found" | "not_found" | null {
-  if (!record(value) || value.ok !== true || value.actor_id !== intent.expected_actor_id
-    || value.tournament_id !== intent.tournament_id || value.hand_id !== intent.hand_id
-    || value.idempotency_key !== intent.idempotency_key || value.source_revision !== intent.expected_source_revision
-    || value.source_chain_hash !== intent.expected_source_chain_hash || value.outcome_hash !== intent.expected_outcome_hash) return null;
+  if (!matchesIntent(value, intent)) return null;
   if (value.status === "receipt_not_found" && value.receipt === null) return "not_found";
   const receipt = value.receipt;
   return value.status === "receipt_found" && record(receipt) && receipt.ok === true && receipt.idempotent === true
     && Number.isSafeInteger(receipt.settlement_revision) && Number(receipt.settlement_revision) >= 1
     && receipt.source_revision === intent.expected_source_revision && receipt.outcome_hash === intent.expected_outcome_hash ? "found" : null;
+}
+
+/** Only the serialized server resolution can prove a missing old request obsolete. */
+export function historicalCommitResolutionState(value: unknown, intent: HistoricalCommitIntent): "found" | "not_found" | "obsolete" | null {
+  if (!matchesIntent(value, intent) || !Number.isSafeInteger(value.current_source_revision)
+    || Number(value.current_source_revision) < 1) return null;
+  const receipt = historicalCommitReceiptState(value, intent);
+  if (receipt === "found") return "found";
+  if (receipt === "not_found" && Number(value.current_source_revision) <= intent.expected_source_revision) return "not_found";
+  return value.status === "intent_obsolete" && value.receipt === null
+    && Number(value.current_source_revision) > intent.expected_source_revision ? "obsolete" : null;
 }

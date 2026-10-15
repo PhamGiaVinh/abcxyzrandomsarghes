@@ -23,7 +23,7 @@ import { createSingleFlightGuard } from "@/lib/singleFlight";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { createHistoricalCommitIntent, readHistoricalCommitJournal, persistHistoricalCommitJournal,
-  settleHistoricalCommitJournal, historicalCommitReceiptState, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
+  settleHistoricalCommitJournal, historicalCommitReceiptState, historicalCommitResolutionState, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
 
 type HistoricalSettlementDisplayControlProps = {
   tournamentId: string;
@@ -218,6 +218,31 @@ export function HistoricalSettlementDisplayControl({
     } finally { commitFlightRef.current.finish(); if (current()) setBusy(false); }
   };
 
+  const resolvePending = async () => {
+    if (!pending || busy || !commitFlightRef.current.begin()) return;
+    const generation = scopeRef.current.generation;
+    const current = () => mountedRef.current && generation === scopeRef.current.generation;
+    setBusy(true);
+    try {
+      if (!readHistoricalCommitJournal(sessionStorage, pending)) throw new Error("journal_changed");
+      persistHistoricalCommitJournal(sessionStorage, pending);
+      const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-historical-settlement", {
+        body: { mode: "resolve", ...pending },
+      }));
+      if (!current()) return;
+      const state = historicalCommitResolutionState(data, pending);
+      if (error || !state) throw new Error("resolution_unconfirmed");
+      if (state === "found") { acknowledgeIntent(pending); return; }
+      if (state !== "obsolete") throw new Error("resolution_not_terminal");
+      settleHistoricalCommitJournal(sessionStorage, pending);
+      setPending(null); setPreview(null); setConfirmOpen(false);
+      toast.success("Server xác nhận yêu cầu cũ đã hết hiệu lực và không thể commit. Có thể tạo preview mới.");
+      onVerified();
+    } catch {
+      if (current()) toast.error("Chưa có bằng chứng kết thúc yêu cầu cũ. Giữ nguyên mã; không tạo preview hoặc commit mới.");
+    } finally { commitFlightRef.current.finish(); if (current()) setBusy(false); }
+  };
+
   const commit = async () => {
     if (!preview || busy || !user?.id || !commitFlightRef.current.begin()) return;
     const generation = scopeRef.current.generation;
@@ -274,6 +299,7 @@ export function HistoricalSettlementDisplayControl({
       {pending && <div role="status" className="mt-3 space-y-2 text-xs">
         <p>History đang chờ đối chiếu receipt. Chưa thể kết luận request đã ghi hay chưa.</p>
         <Button type="button" variant="outline" disabled={busy} onClick={() => void recoverPending()}>Kiểm tra receipt yêu cầu cũ</Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={() => void resolvePending()}>Đối chiếu revision yêu cầu cũ</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={() => void retryPending()}>Kiểm tra rồi gửi lại cùng mã</Button>
       </div>}
 

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { HistoricalSettlementDisplayControl } from "./HistoricalSettlementDisplayControl";
-import { persistHistoricalCommitJournal, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
+import { historicalCommitKey, persistHistoricalCommitJournal, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
 const mocks=vi.hoisted(()=>({invoke:vi.fn(),error:vi.fn(),success:vi.fn(),actor:"81100000-0000-4000-8000-000000000001"}));
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:mocks.actor}})}));
 vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>({functions:{invoke:mocks.invoke}})}));
@@ -104,6 +104,28 @@ const receiptEnvelope=(intent:HistoricalCommitIntent,found:boolean)=>({ok:true,s
  actor_id:intent.expected_actor_id,tournament_id:intent.tournament_id,hand_id:intent.hand_id,idempotency_key:intent.idempotency_key,
  source_revision:intent.expected_source_revision,source_chain_hash:intent.expected_source_chain_hash,outcome_hash:intent.expected_outcome_hash,
  receipt:found?{ok:true,idempotent:true,settlement_revision:1,source_revision:intent.expected_source_revision,outcome_hash:intent.expected_outcome_hash}:null});
+for(const state of ["obsolete","found","unknown","malformed"])it(`explicit server resolution handles ${state} without any writer`,async()=>{
+ const intent=pendingIntent();persistHistoricalCommitJournal(sessionStorage,intent);
+ const value={...receiptEnvelope(intent,state==="found"),current_source_revision:state==="unknown"||state==="malformed"?1:2,
+  status:state==="obsolete"||state==="malformed"?"intent_obsolete":state==="found"?"receipt_found":"receipt_not_found"};
+ mocks.invoke.mockResolvedValue({data:value,error:null});const onVerified=vi.fn();
+ render(<HistoricalSettlementDisplayControl tournamentId={intent.tournament_id} handId={intent.hand_id} handNumber={1} onVerified={onVerified}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Đối chiếu revision yêu cầu cũ"}));await act(async()=>{});
+ expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("tournament-historical-settlement",{body:{mode:"resolve",...intent}});
+ expect(sessionStorage.length).toBe(state==="obsolete"||state==="found"?0:1);
+ expect(onVerified).toHaveBeenCalledTimes(state==="obsolete"||state==="found"?1:0);
+});
+for(const changed of ["actor","journal"])it(`does not clear a pending request when ${changed} changes during resolution`,async()=>{
+ const intent=pendingIntent();persistHistoricalCommitJournal(sessionStorage,intent);
+ let finish!:(value:unknown)=>void;mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{finish=done;}));
+ const props={tournamentId:intent.tournament_id,handId:intent.hand_id,handNumber:1,onVerified:vi.fn()};
+ const view=render(<HistoricalSettlementDisplayControl {...props}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Đối chiếu revision yêu cầu cũ"}));
+ if(changed==="actor"){mocks.actor="other-actor";view.rerender(<HistoricalSettlementDisplayControl {...props}/>);}
+ else sessionStorage.setItem(historicalCommitKey(intent),JSON.stringify({...intent,idempotency_key:"later-different-key"}));
+ await act(async()=>finish({data:{...receiptEnvelope(intent,false),status:"intent_obsolete",current_source_revision:2},error:null}));
+ expect(sessionStorage.length).toBe(1);expect(props.onVerified).not.toHaveBeenCalled();
+});
 it("explicit retry reads first and reuses the unchanged persisted key and CAS",async()=>{
  const intent=pendingIntent();persistHistoricalCommitJournal(sessionStorage,intent);vi.spyOn(window,"confirm").mockReturnValue(true);
  const writes:unknown[]=[];const modes:string[]=[];
