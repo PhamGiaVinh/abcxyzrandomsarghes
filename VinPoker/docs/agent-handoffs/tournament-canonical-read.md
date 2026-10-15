@@ -36,6 +36,19 @@ nominal-duration consistency require a separately tested repair in this campaign
 
 ## Not repaired / release dependencies
 
+Next current-schema diagnostic prepared (NOT RUN):
+tests/dealerSwing/rotationSessionClose.currentSchema.mjs reuses operationalInventory
+transaction, canonical close exact revision + reopen same physical table, proves
+old assignment released, then tests whether old snapshot can persist a predicted
+row. Verified manual-intent exception only, NOT automatic-OFF or actual Swing
+execution proof. Exact DB/PGUSER/port/loopback/PG17 guards and forbidden libpq
+overrides; LF-normalized live function digest pinned. Reviewer approved oracle
+with guard improvements applied. Workflow runs after actual22/offCommit setup;
+no migration13–28 edits. Need terminal runtime before calling finding reproduced.
+Catalog-only suspicion: upsert/lock have no direct session checks; assignment
+session trigger is column-selective and doesn't fire preassignment-only updates.
+Other canonical close/release/commit guards may still prevent actual bad Swing.
+
 Exact7b5910f60 Ops38712278234 now confirms fulltsc/build AND isolated rotation
 fingerprint SQL step SUCCESS. Whole job still running; tested function digest
 not collected yet. Source SQL scope proof qualifies only that narrow fixture;

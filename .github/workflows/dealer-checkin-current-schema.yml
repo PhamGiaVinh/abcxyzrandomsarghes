@@ -140,6 +140,7 @@ on:
       - 'VinPoker/tests/dealerSwing/readyTrigger*.sql'
       - 'VinPoker/supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql'
       - 'VinPoker/tests/dealerSwing/offCommit*'
+      - 'VinPoker/tests/dealerSwing/rotationSessionClose.currentSchema.mjs'
       - 'VinPoker/tests/dealerSwing/emptyReservation*'
       - 'VinPoker/supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql'
       - 'VinPoker/supabase/functions/process-swing/passes/passS2-empty-table-preassign*'
@@ -418,6 +419,7 @@ jobs:
           PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs
+          node tests/dealerSwing/rotationSessionClose.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql
           node tests/dealerSwing/emptyReservation.currentSchema.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reservation_identity
