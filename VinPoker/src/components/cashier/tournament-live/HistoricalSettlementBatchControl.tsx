@@ -143,12 +143,12 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
       }));
       if (!isCurrent()) throw new Error("historical_scope_changed");
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
-        const diagnostic = await diagnoseHistoricalSettlementInvocation({
+        const diagnostic = await observeTrackerContextRead(diagnoseHistoricalSettlementInvocation({
           data,
           error,
           mode: "preview",
           handId: candidate.handId,
-        });
+        }));
         const code = diagnostic.code;
         if (code === "historical_settlement_already_exists") {
           const { data: proof, error: proofError } = await observeTrackerContextRead(supabase.rpc(

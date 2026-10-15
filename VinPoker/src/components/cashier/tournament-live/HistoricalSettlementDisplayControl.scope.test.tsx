@@ -8,6 +8,30 @@ vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:
 vi.mock("sonner",()=>({toast:{error:mocks.error,success:mocks.success}}));
 vi.mock("@/lib/tracker-poker/historicalSettlementDisplay",()=>({parseHistoricalSettlementDisplayPreview:(data:{hand_id:string},key:string)=>({handId:data.hand_id,idempotencyKey:key,sourceRevision:1,sourceChainHash:"a".repeat(64),outcomeHash:"b".repeat(64),settlement:{players:[],handRanks:[]}})}));
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.resetAllMocks();sessionStorage.clear();mocks.actor="81100000-0000-4000-8000-000000000001";});
+it("releases a stalled preview and ignores its late reply without issuing another operation",async()=>{
+ vi.useFakeTimers();let resolve!:(value:unknown)=>void;
+ mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+ try{
+  render(<HistoricalSettlementDisplayControl tournamentId="tour" handId="hand" handNumber={1} onVerified={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"Xem trước xác minh"}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
+  expect(screen.getByRole("button",{name:"Xem trước xác minh"})).not.toBeDisabled();
+  await act(async()=>resolve({data:{ok:true,hand_id:"hand"},error:null}));
+  expect(screen.queryByText("Server đã xác minh outcome, chưa ghi gì vào dữ liệu hand.")).not.toBeInTheDocument();
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
+ }finally{vi.useRealTimers();}
+});
+it("also bounds parsing a stalled Edge error body",async()=>{
+ vi.useFakeTimers();
+ mocks.invoke.mockResolvedValue({data:null,error:{context:{status:503,clone:()=>({json:()=>new Promise(()=>{})})}}});
+ try{
+  render(<HistoricalSettlementDisplayControl tournamentId="tour" handId="hand" handNumber={1} onVerified={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"Xem trước xác minh"}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(20_001);});
+  expect(screen.getByRole("button",{name:"Xem trước xác minh"})).not.toBeDisabled();
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
+ }finally{vi.useRealTimers();}
+});
 for(const returnToA of [false,true])it(`does not apply old preview after context change (ABA=${returnToA})`,async()=>{
  let resolve!:(value:unknown)=>void;mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
  const verified=vi.fn();const props={handNumber:1,onVerified:verified};

@@ -117,22 +117,24 @@ export function HistoricalSettlementDisplayControl({
   }, [scope, handId, tournamentId, user?.id]);
 
   const verify = async () => {
+    if (busy) return;
     try {
       if (journalError || (user?.id && readHistoricalCommitJournal(sessionStorage, { expected_actor_id: user.id, tournament_id: tournamentId, hand_id: handId }))) {
         toast.error("Còn yêu cầu History chưa rõ kết quả. Kiểm tra receipt trước khi tạo preview mới."); return;
       }
     } catch { toast.error("Không đọc được mã phục hồi History; chưa gửi yêu cầu mới."); return; }
+    if (!commitFlightRef.current.begin()) return;
     const generation = scopeRef.current.generation;
     const current = () => mountedRef.current && generation === scopeRef.current.generation;
     setBusy(true);
     setPreview(null);
     try {
-      const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
+      const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-historical-settlement", {
         body: { mode: "preview", tournament_id: tournamentId, hand_id: handId },
-      });
+      }));
       if (!current()) return;
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
-        const diagnostic = await diagnoseHistoricalSettlementInvocation({ data, error, mode: "preview", handId });
+        const diagnostic = await observeTrackerContextRead(diagnoseHistoricalSettlementInvocation({ data, error, mode: "preview", handId }));
         if (!current()) return;
         toast.error(diagnosticFailureMessage(diagnostic.code));
         return;
@@ -145,10 +147,12 @@ export function HistoricalSettlementDisplayControl({
       previewGenerationRef.current = generation;
       setPreview(parsed);
     } catch (error) {
-      const diagnostic = await diagnoseHistoricalSettlementInvocation({ data: null, error, mode: "preview", handId });
+      const diagnostic = await observeTrackerContextRead(diagnoseHistoricalSettlementInvocation({ data: null, error, mode: "preview", handId }))
+        .catch(() => ({ code: "historical_preview_transport_failed" }));
       if (!current()) return;
       toast.error(diagnosticFailureMessage(diagnostic.code));
     } finally {
+      commitFlightRef.current.finish();
       if (current()) setBusy(false);
     }
   };
