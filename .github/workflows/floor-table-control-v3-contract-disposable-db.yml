@@ -3,6 +3,9 @@ name: Floor Table Control V3 server contract
 on:
   pull_request:
     paths:
+      - ".github/workflows/clock-level89-protected-apply.yml"
+      - "VinPoker/scripts/ops/clock-level89-*"
+      - "VinPoker/supabase/migrations/20270128000089_clock_start_level_readiness_v1.sql"
       - ".github/workflows/dealer-rest78-protected-apply.yml"
       - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/dealer-close79-protected-apply.yml"
