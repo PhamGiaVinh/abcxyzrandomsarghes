@@ -34,9 +34,15 @@ export function TableHistoryPanel({
   const requestGenerationRef = useRef(0);
   const loadedPageCountRef = useRef(1);
   const nextCursorRef = useRef<{ createdAt: string; handId: string } | null>(null);
+  const inFlightRef = useRef<number | null>(null);
+  const refreshQueuedRef = useRef(false);
   const context = `${tournamentId}:${tableId ?? ""}`;
 
-  const load = useCallback(async (mode: "replace" | "append" | "refresh") => {
+  const load = useCallback(async (mode: "replace" | "append" | "refresh"): Promise<void> => {
+    if (mode !== "replace" && inFlightRef.current !== null) {
+      if (mode === "refresh") refreshQueuedRef.current = true;
+      return;
+    }
     const generation = ++requestGenerationRef.current;
     if (!tableId) {
       setItems([]);
@@ -45,6 +51,7 @@ export function TableHistoryPanel({
     }
     setLoading(true);
     setError(null);
+    inFlightRef.current = generation;
     const pageTarget = mode === "refresh" ? loadedPageCountRef.current : 1;
     let cursor = mode === "append" ? nextCursorRef.current : null;
     const refreshedItems: PublicTableHistoryItem[] = [];
@@ -52,6 +59,7 @@ export function TableHistoryPanel({
     let fetchedPages = 0;
     let accessRevoked = false;
     let loadError: string | null = null;
+    try {
     for (let pageIndex = 0; pageIndex < pageTarget; pageIndex += 1) {
       const { data, error: rpcError } = await supabase.rpc("get_public_tournament_table_history_v2" as never, {
         p_tournament_id: tournamentId,
@@ -60,6 +68,7 @@ export function TableHistoryPanel({
         p_before_created_at: cursor?.createdAt ?? null,
         p_before_id: cursor?.handId ?? null,
       } as never);
+      if (generation !== requestGenerationRef.current) return;
       if (rpcError) {
         loadError = "Không thể tải lịch sử bàn. Dữ liệu đang hiển thị vẫn được giữ nguyên.";
         break;
@@ -107,12 +116,27 @@ export function TableHistoryPanel({
     else if (mode === "replace") loadedPageCountRef.current = Math.max(1, fetchedPages);
     setLoadedContext(context);
     setLoading(false);
+    } catch {
+      if (generation === requestGenerationRef.current) {
+        setError("Không thể tải lịch sử bàn. Dữ liệu đang hiển thị vẫn được giữ nguyên.");
+      }
+    } finally {
+      if (generation === requestGenerationRef.current) {
+        inFlightRef.current = null;
+        setLoading(false);
+        const refreshQueued = refreshQueuedRef.current;
+        refreshQueuedRef.current = false;
+        if (refreshQueued && !accessRevoked) void load("refresh");
+      }
+    }
   }, [context, onAccessRevoked, tableId, tournamentId]);
 
   useEffect(() => {
     // Invalidate a response from the previous physical table/session before
     // rendering any loading state for the new context.
     requestGenerationRef.current += 1;
+    inFlightRef.current = null;
+    refreshQueuedRef.current = false;
     setItems([]);
     setNextCursor(null);
     nextCursorRef.current = null;
