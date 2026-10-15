@@ -5,6 +5,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
       - 'VinPoker/src/hooks/useTournaments*'
+      - 'VinPoker/src/lib/tournamentDeleteResult.ts'
       - '.github/workflows/tournament-table-write-scope.yml'
   workflow_dispatch:
 permissions:
@@ -45,8 +46,8 @@ jobs:
           PGDATABASE: postgres
           PGUSER: postgres
           PGPASSWORD: fixture-only
-      - name: Legacy config partial-write diagnosis remains open
-        run: npx vitest run src/hooks/useTournaments.atomicity.repro.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Canonical config routing and exact deletion response proof
+        run: npx vitest run src/hooks/useTournaments.atomicity.repro.test.tsx src/hooks/useTournaments.deleteIntegrity.test.tsx --maxWorkers=1 --minWorkers=1
         working-directory: VinPoker
       - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
         working-directory: VinPoker

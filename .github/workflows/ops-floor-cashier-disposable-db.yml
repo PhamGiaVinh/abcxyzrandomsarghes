@@ -45,6 +45,8 @@ on:
       - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
       - "VinPoker/src/hooks/useTournamentsRead.test.tsx"
+      - "VinPoker/src/lib/tournamentDeleteResult.ts"
+      - "VinPoker/tests/opsFloorCashier/opsMutations.contract.test.ts"
       - "VinPoker/src/types/tournament.ts"
       - "VinPoker/src/pages/TournamentConfigPage*"
       - "VinPoker/src/lib/dealerTableInventory*"
@@ -123,6 +125,7 @@ jobs:
         run: >-
           npx vitest run
           src/ops/opsMutations.test.ts
+          tests/opsFloorCashier/opsMutations.contract.test.ts
           src/components/TournamentRegisterModal.test.tsx
           src/components/floor/useFloorTournaments.test.tsx
           src/components/floor/useFloorTournaments.readScope.test.tsx

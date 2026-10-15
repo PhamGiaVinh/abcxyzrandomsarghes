@@ -7,6 +7,7 @@ import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext
 import { saveTournamentConfig, recoverTournamentConfigSave, type TournamentConfigRpc, type TournamentConfigSaveRequest } from "@/lib/tournamentConfigSave";
 import type { Tournament, TournamentWithTables } from "@/types/tournament";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from '@/lib/floorTableControlV3';
+import { assertTournamentDeleted } from '@/lib/tournamentDeleteResult';
 
 export function useTournamentConfigTableInventory(clubId: string, actorId: string | undefined) {
   const supabase = useSupabaseClient();
@@ -202,14 +203,14 @@ export function useDeleteTournament() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async ({ id, club_id }: { id: string; club_id: string }) => {
       const { data, error } = await supabase.rpc("ops_delete_tournament_safe", {
         p_tournament_id: id,
         p_reason: "tournament_hook_delete",
       });
       if (error) throw error;
-      const result = data as { ok?: boolean; error?: string } | null;
-      if (result?.ok === false) throw new Error(result.error ?? "tournament_delete_failed");
+      assertTournamentDeleted(data, id);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({

@@ -9,7 +9,7 @@ import {
   updateTournamentLive,
 } from "@/ops/opsMutations";
 
-function clientWith(result = { data: { ok: true }, error: null }) {
+function clientWith(result: { data: unknown; error: unknown } = { data: { ok: true }, error: null }) {
   return { rpc: vi.fn().mockResolvedValue(result) } as unknown as SupabaseClient<Database>;
 }
 
@@ -26,7 +26,7 @@ describe("Ops canonical mutation seams", () => {
   });
 
   it("routes live and delete actions through canonical RPCs", async () => {
-    const client = clientWith();
+    const client = clientWith({ data: { ok: true, deleted: true, tournament_id: "tour-1" }, error: null });
     await updateTournamentLive(client, { tournamentId: "tour-1", status: "break", playersRemaining: 8, level: 2 });
     await deleteTournament(client, "tour-1");
     expect(client.rpc).toHaveBeenNthCalledWith(1, "ops_update_tournament_live", expect.objectContaining({
@@ -35,6 +35,14 @@ describe("Ops canonical mutation seams", () => {
     expect(client.rpc).toHaveBeenNthCalledWith(2, "ops_delete_tournament_safe", {
       p_tournament_id: "tour-1", p_reason: "ops_floor_delete",
     });
+  });
+
+  it.each([null, {}, [], { ok: true }, { ok: true, deleted: false, tournament_id: "tour-1" },
+    { ok: true, deleted: true, tournament_id: "other-tour" },
+  ].map(data => [data]))("does not report Ops deletion success for unverified proof %j", async data => {
+    const client = clientWith({ data, error: null });
+    await expect(deleteTournament(client, "tour-1")).rejects.toThrow("tournament_delete_unverified");
+    expect(client.rpc).toHaveBeenCalledTimes(1);
   });
 
   it("keeps cashier money paths fail-closed outside explicit Preview", async () => {

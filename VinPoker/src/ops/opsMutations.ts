@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import { assertTournamentDeleted } from "@/lib/tournamentDeleteResult";
 
 export type OpsClient = SupabaseClient<Database>;
 
@@ -114,7 +115,8 @@ export async function deleteTournament(client: OpsClient, tournamentId: string):
     p_tournament_id: tournamentId,
     p_reason: "ops_floor_delete",
   });
-  return assertMutationOk(data, error);
+  if (error) throw mutationError(error, data);
+  return assertTournamentDeleted(data, tournamentId);
 }
 
 export async function confirmRegistration(client: OpsClient, input: {
