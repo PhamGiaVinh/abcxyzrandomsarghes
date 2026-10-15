@@ -55,6 +55,7 @@ export const MediaClubSchedules = () => {
     try {
       const existing = seriesByClub[clubId] ?? [];
       let pos = existing.length ? Math.max(...existing.map((x) => x.position)) + 1 : 0;
+      let published = 0;
       for (const raw of Array.from(files)) {
         if (!raw.type.startsWith("image/")) continue;
         const file = await compressImage(raw, { maxEdge: 1600, quality: 0.85 });
@@ -65,9 +66,11 @@ export const MediaClubSchedules = () => {
         const { data: pub } = supabase.storage.from("app-assets").getPublicUrl(path);
         const { error } = await (supabase as any).from("club_series_images").insert({ club_id: clubId, image_url: pub.publicUrl, position: pos });
         if (error) { toast.error(error.message); continue; }
+        published++;
         pos++;
       }
-      toast.success("Đã tải ảnh lịch series");
+      if (published === files.length && published > 0) toast.success("Đã tải ảnh lịch series");
+      else if (published > 0) toast.warning(`Đã tải ảnh lịch series (${published}/${files.length})`);
       load();
     } finally {
       setBusyId(null);
