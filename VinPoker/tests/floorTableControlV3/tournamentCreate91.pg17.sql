@@ -103,5 +103,48 @@ DO $$ DECLARE before text:=pg_temp.fingerprint91(); BEGIN
  PERFORM pg_temp.assert91(pg_temp.fingerprint91()=before,'failed receipt rollback parent and levels');
 END $$;
 DROP TRIGGER reject_receipt91 ON public.table_operation_receipts;
+
+-- Compare the existing two-statement RLS seam with the atomic RPC, rather than
+-- assuming broader Floor permissions are equivalent to tournament INSERT.
+INSERT INTO auth.users(id) VALUES
+ ('e9100000-0000-4000-8000-000000000003'),('e9100000-0000-4000-8000-000000000004'),
+ ('e9100000-0000-4000-8000-000000000005'),('e9100000-0000-4000-8000-000000000006');
+INSERT INTO public.club_cashiers(club_id,user_id) VALUES
+ ('e9100000-0000-4000-8000-000000000011','e9100000-0000-4000-8000-000000000003');
+INSERT INTO public.club_trackers(club_id,user_id,granted_by) VALUES
+ ('e9100000-0000-4000-8000-000000000011','e9100000-0000-4000-8000-000000000004','e9100000-0000-4000-8000-000000000001');
+INSERT INTO public.club_dealer_controls(club_id,user_id) VALUES
+ ('e9100000-0000-4000-8000-000000000011','e9100000-0000-4000-8000-000000000005');
+INSERT INTO public.user_roles(user_id,role) VALUES('e9100000-0000-4000-8000-000000000006','super_admin');
+DO $$ DECLARE actor uuid; old_allowed boolean; parent_id uuid; r jsonb; before text;
+BEGIN
+ FOREACH actor IN ARRAY ARRAY[
+  'e9100000-0000-4000-8000-000000000001'::uuid,'e9100000-0000-4000-8000-000000000002'::uuid,
+  'e9100000-0000-4000-8000-000000000003'::uuid,'e9100000-0000-4000-8000-000000000004'::uuid,
+  'e9100000-0000-4000-8000-000000000005'::uuid,'e9100000-0000-4000-8000-000000000006'::uuid
+ ] LOOP
+  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+  old_allowed:=false;
+  PERFORM set_config('role','authenticated',true);
+  BEGIN
+   INSERT INTO public.tournaments(club_id,name,start_time,buy_in,rake_amount,starting_stack,game_type,minutes_per_level,late_reg_close_level,live_status)
+    VALUES('e9100000-0000-4000-8000-000000000011','Role91 TEST','2026-10-20T05:00:00Z',1000000,0,20000,'nlh',20,6,'registering') RETURNING id INTO parent_id;
+   INSERT INTO public.tournament_levels(tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
+    VALUES(parent_id,1,100,200,0,20,false);
+   RAISE EXCEPTION USING ERRCODE='P9191',MESSAGE='rollback_successful_old_seam';
+  EXCEPTION WHEN SQLSTATE 'P9191' THEN old_allowed:=true;
+   WHEN insufficient_privilege THEN old_allowed:=false;
+  END;
+  PERFORM set_config('role','none',true);
+  before:=pg_temp.fingerprint91();
+  PERFORM set_config('role','authenticated',true);
+  SELECT public.create_tournament_with_levels_v1('e9100000-0000-4000-8000-000000000011',config,levels,
+   'e9100000-0000-4000-8000-000000000029',actor) INTO r FROM request91;
+  PERFORM pg_temp.assert91((r->>'ok')::boolean=old_allowed,'atomic authority equals old parent+levels authority for '||actor);
+  PERFORM set_config('role','none',true);
+  IF NOT old_allowed THEN PERFORM pg_temp.assert91(pg_temp.fingerprint91()=before,'denied role has zero business delta'); END IF;
+ END LOOP;
+END $$;
 ROLLBACK;
 \echo CREATE91_PARENT_LEVEL_RECEIPT_ROLLBACK_ACTOR_TENANT_REPLAY_AND_MONEY_PASS
+\echo CREATE91_OWNER_OUTSIDER_CASHIER_TRACKER_DEALER_CONTROL_SUPERADMIN_MATCH_EXISTING_RLS_PASS
