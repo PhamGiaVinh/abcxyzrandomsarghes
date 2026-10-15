@@ -4,6 +4,7 @@ import {spawnSync} from 'node:child_process';
 
 assert.equal(process.env.PGHOST,'127.0.0.1');
 const fixtureOnly=process.argv.includes('--fixture-only');
+const manualFinish94Fixture=process.argv.includes('--manual-finish94-lock-fixture');
 const undo=process.argv.includes('--undo');
 const authority70=process.argv.includes('--authority70');
 const manualHoleAuthority=process.argv.includes('--manual-hole-authority');
@@ -23,6 +24,7 @@ assert.ok(!manualHolePrototype||(manualHoleAuthority&&authority70),'manual proto
 assert.ok(!manualHoleAuthority||authority70,'manual hole authority requires guarded owned schema mode');
 const authorityBaseline=process.argv.includes('--authority-baseline');
 const authorityRelease71=process.argv.includes('--authority-release71');
+const manualFinish94=process.argv.includes('--manual-finish94');
 const authorityOverlapFixture=process.argv.includes('--authority-overlap-fixture');
 const authorityReverseRoot=process.argv.includes('--authority-reverse-root');
 const authorityAssignment72=process.argv.includes('--authority-assignment72');
@@ -68,7 +70,7 @@ assert.ok(!authorityOverlapFixture||authorityRelease71,'overlap fixture requires
 assert.ok(!authorityReverseRoot||(authorityRelease71&&!authorityOverlapFixture),'reverse root requires established exact overlap fixture');
 const authorityDatabase=manualHoleRelease75Ci?'vinpoker_manual_card75_payload_ci':manualHoleRelease75Payload?'vinpoker_manual_card75_payload_20261014':manualHoleRelease75Full?'vinpoker_manual_card75_rollback_20261014':manualHoleRelease75?'vinpoker_manual_card75_release_20261014':manualHolePrototype?'vinpoker_manual_card75_20261014':authorityPendingMode73?'vinpoker_voice_swing73_pending_20261014':authorityLockOrder73?(authorityVoiceFirst72?'vinpoker_voice_swing73_voice_first_qualified_20261014':'vinpoker_voice_swing73_swing_first_qualified_20261014'):authorityCloseFirst72?'vinpoker_voice_assignment72_close_first_20261014':authorityVoiceFirst72?'vinpoker_voice_assignment72_voice_first_20261014':authorityAssignment72Baseline?'vinpoker_voice_assignment72_authority_red_20261014':authorityAssignment72?(authorityOverlapFixture?'vinpoker_voice_assignment72_authority_overlap_20261014':'vinpoker_voice_assignment72_authority_20261014'):authorityOverlapFixture||authorityReverseRoot?'vinpoker_voice_release71_overlap_20261014':authorityRelease71?'vinpoker_voice_release71_20261014':authorityBaseline?'vinpoker_voice_dealer_baseline_20261014':'vinpoker_voice_migration70_20261014';
 const authorityAction=process.argv.includes('--authority-action');
-const manual75Database=manual75OverlapFixture?'vinpoker_manual_card75_overlap_20261014':authorityDatabase;
+const manual75Database=manualFinish94?'vinpoker_voice_finish94_20261016':manual75OverlapFixture?'vinpoker_manual_card75_overlap_20261014':authorityDatabase;
 const authorityFinish=process.argv.includes('--authority-finish');
 const authorityFloorFinish=process.argv.includes('--authority-floor-finish');
 assert.ok(!authorityFinishAttendance72||(authorityAssignment72&&authorityFinish&&authorityFloorFinish&&!authorityOverlapFixture),'Finish attendance negative requires qualified Floor Finish');
@@ -76,6 +78,7 @@ const authorityCanonicalStart=process.argv.includes('--authority-canonical-start
 assert.ok(!authorityFloorFinish||authorityFinish,'Floor finish requires existing finish fixture');
 assert.ok(!authorityAction||authority70,'action authority scenario requires authority70');
 const authorityOwner=process.argv.includes('--authority-owner');
+assert.ok(!manualFinish94||(authorityRelease71&&authorityAssignment72&&authorityOwner&&authorityFinish&&!manualHoleAuthority&&!authorityOverlapFixture&&!authorityReverseRoot),'Finish94 requires the exact dedicated Owner/Finish/assignment72 clone');
 assert.ok(!authorityOwner||authority70,'owner authority scenario requires authority70');
 assert.ok(!authorityCanonicalStart||(authorityRelease71&&authorityOwner),'canonical start requires qualified release71 Owner fixture without added Tracker grants');
 assert.ok(!authorityFinish||(authority70&&authorityOwner&&!authorityAction),'current-schema Finish fixture requires existing Owner path and full card suites');
@@ -92,8 +95,9 @@ if(undo){
 const voiceHoles=process.argv.includes('--voice-holes')||authority70;
 const voiceBoard=process.argv.includes('--voice-board')||voiceHoles;
 assert.ok(!(fixtureOnly&&voiceBoard));
+assert.ok(!manualFinish94Fixture||(fixtureOnly&&!authority70&&!undo),'Finish94 lock fixture only seeds its dedicated isolated database');
 assert.ok(!(undo&&(fixtureOnly||voiceBoard)));
-assert.equal(process.env.PGDATABASE,authority70?manual75Database:undo?'vinpoker_ops_undo_generation_20261011':fixtureOnly?'vinpoker_ops_card56_overlap_20261011':'vinpoker_ops_card56_20261011');
+assert.equal(process.env.PGDATABASE,authority70?manual75Database:undo?'vinpoker_ops_undo_generation_20261011':fixtureOnly?(manualFinish94Fixture?'vinpoker_ops_finish94_ci':'vinpoker_ops_card56_overlap_20261011'):'vinpoker_ops_card56_20261011');
 // Reuse existing Voice identities/session fixture, with real schema-required
 // club names. No helper replacement, trigger disable, or role elevation.
 const fixture=readFileSync('tests/trackerVoice/disposableDb.integration.sql','utf8');
@@ -296,7 +300,7 @@ END $$;`:'';
 const authorityPreconditions=authority70?`DO $$ BEGIN
  IF current_database()<>'${manual75Database}' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>${Number(process.env.PGPORT)} OR current_user<>'postgres' OR ${authorityReverseRoot?"(SELECT count(*) FROM public.clubs)<>2 OR (SELECT count(*) FROM public.tracker_voice_events WHERE event_kind='canonical_receipt')<>0":"EXISTS(SELECT 1 FROM public.clubs)"} THEN RAISE EXCEPTION 'wrong_authority70_fixture_database'; END IF;
  IF md5(replace(pg_get_functiondef('public._tracker_voice_hand_state_version(uuid)'::regprocedure),chr(13),''))<>'${authorityBaseline?'02fb54cede4cf42423abe72271375a8b':'f1f8d600607c96653f1ea1c0f950c119'}' THEN RAISE EXCEPTION 'authority70_state_dependency_drift'; END IF;
- ${authorityRelease71?"IF md5(replace(pg_get_functiondef('public.record_hand(uuid,uuid,integer,timestamp with time zone,jsonb,jsonb,jsonb,jsonb,integer,uuid)'::regprocedure),chr(13),''))<>'16006fec6f3b9274581de471a9dc296a' THEN RAISE EXCEPTION 'release71_finish_dependency_drift'; END IF;":''}
+ ${authorityRelease71?`IF md5(replace(pg_get_functiondef('public.record_hand(uuid,uuid,integer,timestamp with time zone,jsonb,jsonb,jsonb,jsonb,integer,uuid)'::regprocedure),chr(13),''))<>'${manualFinish94?'514d543b756792fcfc3277faa325d991':'16006fec6f3b9274581de471a9dc296a'}' THEN RAISE EXCEPTION 'release71_finish_dependency_drift'; END IF;`:''}
  ${authorityAssignment72?`IF md5(replace(pg_get_functiondef('public._tracker_voice_assignment_context(uuid,uuid,uuid)'::regprocedure),chr(13),''))<>'${authorityAssignment72Baseline?'96ba904dfcdfaa23dba36b6862aba168':'0a9e1f4e0972015b1554d6cd10f5ee2a'}' THEN RAISE EXCEPTION 'assignment72_dependency_drift'; END IF;`:''}
  ${authorityCanonicalStart?"IF md5(replace(pg_get_functiondef('public.start_tracker_hand_v3(uuid,uuid,uuid,bigint,integer,timestamp with time zone,uuid,integer)'::regprocedure),chr(13),''))<>'6b71e798f6239b7096342ef7e17e6784' OR md5(replace(pg_get_functiondef('floor_private.snapshot_tracker_hand_blinds()'::regprocedure),chr(13),''))<>'81554940f984d3349149cdeed959626e' OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgfoid='floor_private.snapshot_tracker_hand_blinds()'::regprocedure AND tgenabled='O') THEN RAISE EXCEPTION 'canonical_start_identity_dependency_drift'; END IF;":''}
 END $$;`:'';

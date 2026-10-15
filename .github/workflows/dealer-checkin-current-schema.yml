@@ -73,6 +73,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/recordHandLockAuthority*'
       - 'VinPoker/tests/trackerVoice/assignment72.*'
       - 'VinPoker/tests/trackerVoice/assignment73.*'
       - 'VinPoker/supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql'
@@ -732,6 +734,24 @@ jobs:
           PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalCloseBlocked.sql
           createdb --template="$PGDATABASE" vinpoker_voice_assignment72_compensation_ci
           PGDATABASE=vinpoker_voice_assignment72_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_72_COMPENSATION_SOURCE.sql
+      - name: Manual Finish94 lock authority and Voice compatibility
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_voice_assignment72_authority_20261014 vinpoker_voice_finish94_20261016
+          PGDATABASE=vinpoker_voice_finish94_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql
+          PGDATABASE=vinpoker_voice_finish94_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --manual-finish94
+          PGDATABASE=vinpoker_voice_finish94_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --manual-finish94
+          createdb -T vinpoker_voice_assignment72_authority_20261014 vinpoker_ops_finish94_ci
+          PGDATABASE=vinpoker_ops_finish94_ci node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --fixture-only --manual-finish94-lock-fixture
+          if PGDATABASE=vinpoker_ops_finish94_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/recordHandLockAuthority.pg17.sql >"$RUNNER_TEMP/finish94-red.log" 2>&1; then
+            echo "Expected manual Finish to accept another actor's lock before94" >&2
+            exit 1
+          fi
+          grep -Fq TRACKER_WITHOUT_HAND_LOCK_FINISH_ACCEPTED "$RUNNER_TEMP/finish94-red.log"
+          PGDATABASE=vinpoker_ops_finish94_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql
+          PGDATABASE=vinpoker_ops_finish94_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/recordHandLockAuthority.pg17.sql
+          PGDATABASE=vinpoker_ops_finish94_ci node tests/trackerSettlement/recordHandLockAuthority.concurrent.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
