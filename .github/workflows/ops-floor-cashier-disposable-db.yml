@@ -92,6 +92,7 @@ jobs:
           src/pages/CashierDashboard.tourEntry.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
           src/lib/feltLifecycleReadiness.test.ts
+          src/lib/feltLifecycleReadiness.rpcClient.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
