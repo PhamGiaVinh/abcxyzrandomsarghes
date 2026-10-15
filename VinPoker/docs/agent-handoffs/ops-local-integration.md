@@ -16,6 +16,8 @@ Worktree D:\wt\vinpoker-ops-local-integration, branch codex/ops-local-integratio
 | Cashier85 |07207fd130c5184b06eb03090a8b43e6643a1591 | actor-bound club helper |
 | Tenant86 |1fa4bb6cb2855501d64f73b63a6b6b312c137874 | tournament-table tenant write guard; not atomic create91 |
 | Cashier lookup |4acb51459025ca64deb0291aa961239570ce5efe | UI/Edge scope/error fix plus explicit deployment contract/selection |
+| Dealer next/close80/81 |1f6c04e6a3d68212ee79ba91d7bb8a0422cdcc03 | manual next intent/forecast UI+RPC;78/79 source already baseline,79/81 release remains atomic |
+| Dealer persist87/canonical read |56c30902f8de5384e1460e13857a4f7adea4bafb | exact-session DB commit fence, scoped canonical inventory and planner; not3 real rotations/40Edge |
 
 ## Conflict resolution and verification
 
@@ -27,7 +29,9 @@ Original evidence remains scoped: History23mock/parser testsPASS; Swing finalhoo
 
 ## Still outside this tree / next order
 
-- Dealer package78–81 and persist/session87: integrate reviewed source/dependencies next, preserving rest15 and exact-session fences. Do not infer backend from the new config UI guard.
+Dealer integration phase2 completed locally through merge1816da6ebbf3a8123e468502a0aed19c24b16ded. Resolved catalog addition conflicts by preserving80/81/87 plus82–86; Ops CI test list conflict kept both baseline UI tests and canonical/session tests. Source check confirms configsLoading/configsError/Retry config refetch survived merges. Exact SQL80/81/87 unchanged versus source branches. Catalog/control/diff checks PASS. Actual25Node protected-transport/atomic-plan tests PASS (not PostgreSQL execution); actual13Vitest next-intent/table-session tests PASS. Original56policy/plan tests above belong to phase1, not a fresh qualification of this larger candidate. No build/type/DB/browser/live rotation proof. Existing apply workflows still require native reviewer; owner approved removal, but scoped followup remains before private release.
+
+- Dealer78–81/87 now present, but isolated DB interleavings and actual3rest15 rotations/40Edge not rerun on integrated stack. Preserve rest15 and exact-session fences; do not infer backend safety from config UI guard.
 - Tournament config88, readiness89/90, create91, Tracker lineage/readiness and reorder92: integrate exact current branches, resolve additive catalog/CI conflicts without dropping entries, audit dependency and protected-apply prerequisites. Current owner waiver of native reviewer must be scoped into relevant apply workflows; no indiscriminate removal of other controls.
 - History worker/Voice/TV actual runtime/provider/anonymous multflight and legacy-data evidence remain missing; no synthetic verified outcome, copied current-seat identity, broad backfill or fabricated blind levels.
 - Remaining F1–F9 only close with required evidence. GTO/upload/disclosure merged baseline is not new live proof. Public history needs_attention is not provided by its current public projection; investigate actual intended authorized consumer before designing a contract change.
