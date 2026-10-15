@@ -404,24 +404,32 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   validate-critical-environment:
-    name: Require protected critical environment
+    name: Verify owner-authorized critical release
     if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.critical_functions != '[]'
     needs:
       - plan
       - target-preflight
     runs-on: ubuntu-latest
     steps:
-      - name: Fail closed unless required reviewers are configured
+      - name: Require owner dispatch of the preflighted release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          environment_json="$(gh api "repos/${GITHUB_REPOSITORY}/environments/${CRITICAL_ENVIRONMENT}")"
-          jq -e '
-            .protection_rules
-            | any(.type == "required_reviewers" and ((.reviewers // []) | length > 0))
-          ' <<<"$environment_json" >/dev/null
+          node --input-type=module <<'NODE'
+          const e = process.env;
+          if (e.RELEASE_EVENT !== 'workflow_dispatch' || e.RELEASE_REF !== 'refs/heads/main' ||
+              !e.REPOSITORY_OWNER || e.INITIAL_ACTOR !== e.REPOSITORY_OWNER ||
+              e.TRIGGERING_ACTOR !== e.REPOSITORY_OWNER) {
+            throw new Error('Critical release requires the repository owner on main, including reruns');
+          }
+          console.log('OWNER_AUTHORIZED_CRITICAL_RELEASE');
+          NODE
 
   deploy-critical-edge:
     name: Deploy critical Edge ${{ matrix.function }}
