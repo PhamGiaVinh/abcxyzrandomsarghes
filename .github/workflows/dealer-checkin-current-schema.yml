@@ -6,6 +6,9 @@ on:
       - 'VinPoker/tests/dealerSwing/shiftPayrollReturnType*'
       - 'VinPoker/supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql'
       - 'VinPoker/tests/dealerSwing/payrollReadAuthority*'
+      - 'VinPoker/supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000085_cashier_club_scope_authority_v1.sql'
+      - 'VinPoker/tests/cashier/authority84_85.currentSchema.sql'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
       - 'VinPoker/supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql'
@@ -373,6 +376,11 @@ jobs:
           PGDATABASE=vinpoker_ops_payroll83_atomic_ci PAYROLL83_PG_TEST=1 node --test tests/dealerSwing/shiftPayrollReturnType.atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000083_shift_payroll_return_type_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/shiftPayrollReturnType.pg17.sql
+          # Real captured schema: no replacement authorization helpers or RLS.
+          createdb -T "$PGDATABASE" vinpoker_ops_authority84_85_ci
+          PGDATABASE=vinpoker_ops_authority84_85_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql
+          PGDATABASE=vinpoker_ops_authority84_85_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000085_cashier_club_scope_authority_v1.sql
+          PGDATABASE=vinpoker_ops_authority84_85_ci psql -X -v ON_ERROR_STOP=1 -f tests/cashier/authority84_85.currentSchema.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
           # Exercise the real operational suites with tenant policies active,
