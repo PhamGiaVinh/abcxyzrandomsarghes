@@ -94,4 +94,26 @@ DO $$ BEGIN
 END $$;
 RESET ROLE;
 \echo PROFILES_ANON_CONTAINMENT_AND_PUBLIC_CLIENT_COMPATIBILITY_GAPS_CONFIRMED
+-- Test the actual forward migration, not just the candidate SQL above.
+-- Include twice to prove a safe retry does not widen the projection.
+\ir ../../supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql
+\ir ../../supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql
+SET LOCAL ROLE anon;
+DO $$ BEGIN
+  PERFORM user_id,display_name,avatar_url,verification_status FROM public.profiles;
+  PERFORM user_id,display_name,region,avatar_url FROM public.profiles;
+  BEGIN
+    PERFORM phone,bank_account_number,onesignal_external_user_id FROM public.profiles;
+    RAISE EXCEPTION 'Forward migration exposed private/internal columns';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+-- Newly added columns must not silently become anonymous-readable.
+ALTER TABLE public.profiles ADD COLUMN future_private_field text;
+DO $$ BEGIN
+  IF has_column_privilege('anon','public.profiles','future_private_field','SELECT') THEN
+    RAISE EXCEPTION 'New column inherited anonymous SELECT';
+  END IF;
+END $$;
+\echo PROFILES_ANON_ACTUAL_MIGRATION_RETRY_AND_PUBLIC_PROJECTIONS_PASS
 ROLLBACK;
