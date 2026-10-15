@@ -1,4 +1,5 @@
 import type { Tournament } from '@/types/tournament';
+import { canonicalVoiceJson } from './trackerVoice/canonicalRequest';
 
 export interface TournamentConfigSaveRequest {
   p_expected_actor_id: string;
@@ -38,6 +39,22 @@ export function readTournamentConfigJournal(raw: string, clubId: string, tournam
     throw new Error('invalid_config_journal');
   }
   return r;
+}
+
+export function persistTournamentConfigJournal(storage: Pick<Storage,'getItem'|'setItem'>, request: TournamentConfigSaveRequest): void {
+  const key=tournamentConfigJournalKey(request.p_expected_actor_id,request.p_club_id,request.p_tournament_id);
+  const prior=storage.getItem(key), serialized=canonicalVoiceJson(request);
+  if(prior!==null && canonicalVoiceJson(readTournamentConfigJournal(prior,request.p_club_id,request.p_tournament_id,request.p_expected_actor_id))!==serialized)
+    throw new Error('CONFIG_JOURNAL_CHANGED');
+  storage.setItem(key,serialized);
+  if(storage.getItem(key)!==serialized)throw new Error('CONFIG_JOURNAL_WRITE_FAILED');
+}
+export function clearTournamentConfigJournal(storage: Pick<Storage,'getItem'|'removeItem'>, request: TournamentConfigSaveRequest): void {
+  const key=tournamentConfigJournalKey(request.p_expected_actor_id,request.p_club_id,request.p_tournament_id), prior=storage.getItem(key);
+  if(prior===null || canonicalVoiceJson(readTournamentConfigJournal(prior,request.p_club_id,request.p_tournament_id,request.p_expected_actor_id))!==canonicalVoiceJson(request))
+    throw new Error('CONFIG_JOURNAL_CHANGED');
+  storage.removeItem(key);
+  if(storage.getItem(key)!==null)throw new Error('CONFIG_JOURNAL_CLEAR_FAILED');
 }
 
 export class TournamentConfigSaveError extends Error {

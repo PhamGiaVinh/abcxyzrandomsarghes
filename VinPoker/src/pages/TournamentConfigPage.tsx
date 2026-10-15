@@ -10,7 +10,8 @@ import {
 } from "@/hooks/useTournaments";
 import type { CreateTournamentInput, UpdateTournamentInput } from "@/hooks/useTournaments";
 import { configRequest } from "@/hooks/useTournaments";
-import { TournamentConfigSaveError, tournamentConfigJournalKey, readTournamentConfigJournal } from "@/lib/tournamentConfigSave";
+import { TournamentConfigSaveError, tournamentConfigJournalKey, readTournamentConfigJournal,
+  persistTournamentConfigJournal, clearTournamentConfigJournal } from "@/lib/tournamentConfigSave";
 import type { FloorTableInventoryItem } from '@/lib/floorTableControlV3';
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -333,6 +334,7 @@ export function TournamentDialog({
     } catch { return {request: null, invalid: true}; }
   });
   const recovered = journal.request;
+  const [journalBlocked,setJournalBlocked]=useState(journal.invalid);
 
   const [name, setName] = useState(recovered?.p_config.name ?? tournament?.name ?? "");
   const [description, setDescription] = useState(recovered?.p_config.description ?? tournament?.description ?? "");
@@ -369,7 +371,7 @@ export function TournamentDialog({
       && table.tableSessionId !== null && table.availabilityStatus !== 'repair_required'));
 
   const handleSubmit = async () => {
-    if (inFlight.current || journal.invalid || createMutation.isPending || updateMutation.isPending) return;
+    if (inFlight.current || journalBlocked || createMutation.isPending || updateMutation.isPending) return;
     if (!outcomeUnknown && !inventoryReady) return;
     if (!name.trim()) {
       toast.error(t("tournamentConfig.errNameRequired"));
@@ -394,7 +396,12 @@ export function TournamentDialog({
           expected_active_table_ids: tournament.tournament_tables.filter(tt => tt.status === 'active').map(tt => tt.id)} : base;
       }
       // Persist BEFORE sending. Storage failure prevents a new mutation, not a silent unsafe retry.
-      sessionStorage.setItem(journalKey, JSON.stringify(configRequest(intent.current)));
+      try { persistTournamentConfigJournal(sessionStorage,configRequest(intent.current)); }
+      catch {
+        setJournalBlocked(true);
+        setSaveError('Không xác minh được journal lưu giải. Chưa gửi thao tác; đóng và mở lại để đọc yêu cầu đang lưu.');
+        return;
+      }
       if (isEditing) {
         await updateMutation.mutateAsync({...intent.current as UpdateTournamentInput, recover_only: outcomeUnknown});
         if (!mounted.current) return;
@@ -405,18 +412,22 @@ export function TournamentDialog({
         toast.success(t("tournamentConfig.created"));
       }
       setOutcomeUnknown(false);
-      try { sessionStorage.removeItem(journalKey); } catch {
+      try { clearTournamentConfigJournal(sessionStorage,configRequest(intent.current)); } catch {
         // Confirmed receipt remains recoverable; storage cleanup must not turn success into another save.
+        setJournalBlocked(true);
+        setSaveError('Server đã xác nhận lưu nhưng journal đã thay đổi hoặc chưa dọn được. Giữ dữ liệu; đóng và mở lại để đối chiếu.');
+        return;
       }
       intent.current = null;
       onOpenChange(false);
     } catch (error) {
       if (!mounted.current) return;
-      const unknown = error instanceof TournamentConfigSaveError && error.outcomeUnknown;
+      const unknown = !(error instanceof TournamentConfigSaveError) || error.outcomeUnknown;
       setOutcomeUnknown(unknown);
       if (!unknown) {
+        try { if(intent.current)clearTournamentConfigJournal(sessionStorage,configRequest(intent.current)); }
+        catch { setJournalBlocked(true); /* preserve a newer/corrupt journal */ }
         intent.current = null;
-        try { sessionStorage.removeItem(journalKey); } catch { /* retain for receipt reconciliation */ }
       }
       const message = unknown
         ? t('tournamentConfig.unknownSave', {defaultValue: 'Chưa xác minh kết quả lưu. Giữ nguyên yêu cầu và kiểm tra kết quả; không tạo lại giải.'})
@@ -440,7 +451,7 @@ export function TournamentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => {
-      if (!next && (outcomeUnknown || createMutation.isPending || updateMutation.isPending)) return;
+      if (!next && ((!journalBlocked && outcomeUnknown) || createMutation.isPending || updateMutation.isPending)) return;
       onOpenChange(next);
     }}>
       <DialogContent className="max-w-lg">
@@ -540,21 +551,21 @@ export function TournamentDialog({
           <p className="text-xs text-muted-foreground">{t('tournamentConfig.tableLifecycleNotice', {
             defaultValue: 'Bàn mới được chọn sẽ mở ở chế độ Manual. Bỏ chọn bàn sẽ yêu cầu đóng bàn an toàn; giữ nguyên lịch sử.'})}</p>
           {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
-          {journal.invalid && <p role="alert" className="text-sm text-destructive">{t('tournamentConfig.invalidJournal', {
+          {journalBlocked && <p role="alert" className="text-sm text-destructive">{t('tournamentConfig.invalidJournal', {
             defaultValue: 'Không đọc được yêu cầu lưu trước đó. Không gửi yêu cầu mới trước khi kiểm tra trạng thái server.'})}</p>}
           <div className="flex gap-2 pt-2">
             <Button
               variant="outline"
               className="flex-1"
               onClick={() => onOpenChange(false)}
-              disabled={isPending || outcomeUnknown}
+              disabled={isPending || (outcomeUnknown && !journalBlocked)}
             >
               {t("tournamentConfig.cancel")}
             </Button>
             <Button
               className="flex-1"
               onClick={handleSubmit}
-              disabled={journal.invalid || isPending || (!outcomeUnknown && !inventoryReady)}
+              disabled={journalBlocked || isPending || (!outcomeUnknown && !inventoryReady)}
             >
               {isPending ? t("tournamentConfig.saving") : outcomeUnknown
                 ? t('tournamentConfig.checkSave', {defaultValue: 'Kiểm tra kết quả'})

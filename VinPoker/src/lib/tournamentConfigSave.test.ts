@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from 'vitest';
-import {saveTournamentConfig, recoverTournamentConfigSave, readTournamentConfigJournal, tournamentConfigJournalKey, type TournamentConfigSaveRequest} from './tournamentConfigSave';
+import {saveTournamentConfig, recoverTournamentConfigSave, readTournamentConfigJournal, tournamentConfigJournalKey,
+ persistTournamentConfigJournal,clearTournamentConfigJournal,type TournamentConfigSaveRequest} from './tournamentConfigSave';
 
 const request: TournamentConfigSaveRequest = {
  p_expected_actor_id:'actor',
@@ -8,6 +9,16 @@ const request: TournamentConfigSaveRequest = {
 };
 const success={ok:true,tournament:{id:'tour',club_id:'club',updated_at:'2026-10-15T00:00:00Z'}};
 describe('atomic config client contract',()=>{
+ it('preserves a changed request and requires durable readback before dispatch',()=>{
+  sessionStorage.clear();const intent={...request,p_request_id:'ee800000-0000-4000-8000-000000000081'};
+  const key=tournamentConfigJournalKey(intent.p_expected_actor_id,intent.p_club_id,null);
+  persistTournamentConfigJournal(sessionStorage,intent);
+  const changed={...intent,p_config:{...intent.p_config,name:'Changed TEST'}};
+  expect(()=>persistTournamentConfigJournal(sessionStorage,changed)).toThrow(/CHANGED/);
+  expect(()=>clearTournamentConfigJournal(sessionStorage,changed)).toThrow(/CHANGED/);
+  expect(readTournamentConfigJournal(sessionStorage.getItem(key)!,intent.p_club_id,null,intent.p_expected_actor_id)).toEqual(intent);
+  clearTournamentConfigJournal(sessionStorage,intent);expect(sessionStorage.getItem(key)).toBeNull();
+ });
  it('preserves unknown commit identity when receipt permission is temporarily revoked',async()=>{
   const rpc=vi.fn().mockResolvedValueOnce({error:{message:'lost'},data:null})
    .mockResolvedValueOnce({error:null,data:{ok:false,error:'actor_not_allowed'}})
