@@ -3,6 +3,7 @@
 DO $$ BEGIN
   IF current_database() <> 'vinpoker_rotation_scope_ci'
     OR current_user <> 'postgres'
+    OR inet_server_addr() IS NULL
     OR inet_server_addr() NOT IN ('127.0.0.1'::inet, '::1'::inet)
     OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
     OR EXISTS (SELECT FROM pg_tables WHERE schemaname='public') THEN
