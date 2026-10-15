@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -50,9 +50,35 @@ const preview = {
 };
 
 describe("ensureRecordedHandDisplayOutcome", () => {
+  afterEach(() => { vi.useRealTimers(); });
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.invoke.mockReset();
+  });
+
+  it.each(['initial_read','preview','commit','final_read'])('bounds %s and does not advance or retry after a late response',async(stage)=>{
+    vi.useFakeTimers();
+    let resolveLate!:(value:unknown)=>void;
+    const hanging=new Promise(resolve=>{resolveLate=resolve;});
+    mocks.rpc.mockResolvedValue({data:{},error:null});
+    mocks.invoke.mockImplementation(async(_name,{body})=>({data:body.mode==='preview'?preview:{ok:true},error:null}));
+    if(stage==='initial_read')mocks.rpc.mockReturnValueOnce(hanging);
+    if(stage==='preview')mocks.invoke.mockReturnValueOnce(hanging);
+    if(stage==='commit')mocks.invoke.mockResolvedValueOnce({data:preview,error:null}).mockReturnValueOnce(hanging);
+    if(stage==='final_read')mocks.rpc.mockResolvedValueOnce({data:{},error:null}).mockReturnValueOnce(hanging);
+    let settled=false;
+    const pending=ensureRecordedHandDisplayOutcome({tournamentId:'tour-1',handId:'hand-1'})
+      .then(value=>{settled=true;return value;});
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(settled).toBe(true);
+    expect(await pending).toEqual({ok:false,code:'verification_missing'});
+    const calls={rpc:mocks.rpc.mock.calls.length,invoke:mocks.invoke.mock.calls.length};
+    resolveLate({data:stage==='preview'?preview:publicSettlement,error:null});
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mocks.rpc).toHaveBeenCalledTimes(calls.rpc);
+    expect(mocks.invoke).toHaveBeenCalledTimes(calls.invoke);
+    expect(calls.invoke).toBe(stage==='initial_read'?0:stage==='preview'?1:2);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("does not create another outcome when the hand is already verified", async () => {

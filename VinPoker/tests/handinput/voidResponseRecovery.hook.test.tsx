@@ -97,6 +97,38 @@ describe("void unknown response through the real controller", () => {
 
   afterEach(()=>{vi.useRealTimers();});
 
+  it.each(['voice','manual'])('finalizes %s canonical Finish when the actual verification pipeline stalls',async(mode)=>{
+    const actual=await vi.importActual<typeof import('@/lib/tracker-poker/recordedHandDisplayOutcome')>('@/lib/tracker-poker/recordedHandDisplayOutcome');
+    mock.displayOutcome.mockImplementation(actual.ensureRecordedHandDisplayOutcome);
+    mock.resume=true;mock.twoPlayerFold=mode==='manual';
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    let resolvePreview!:(value:unknown)=>void;
+    const stalledPreview=new Promise(resolve=>{resolvePreview=resolve;});
+    mock.invoke.mockClear();
+    mock.invoke.mockImplementation(async(name,{body})=>{
+      if(name==='tournament-live-update'){
+        expect(body.action).toBe('record_hand');return {data:{data:{hand_id:'hand1'}},error:null};
+      }
+      expect(name).toBe('tournament-historical-settlement');expect(body.mode).toBe('preview');
+      return stalledPreview;
+    });
+    vi.useFakeTimers();let settled=false;
+    let pending!:Promise<unknown>;
+    act(()=>{pending=(mode==='voice'?result.current.applyVoiceFinishReceipt(finishReceipt):result.current.handleSubmitHand())
+      .then(value=>{settled=true;return value;});});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
+    expect(settled).toBe(true);await pending;
+    expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
+    expect(result.current.lastHandId).toBe('hand1');expect(mock.warningToast).toHaveBeenCalled();
+    const callCount=mode==='manual'?2:1;
+    expect(mock.invoke).toHaveBeenCalledTimes(callCount);
+    await act(async()=>{resolvePreview({data:{ok:true},error:null});await vi.advanceTimersByTimeAsync(20_000);});
+    expect(mock.invoke).toHaveBeenCalledTimes(callCount);
+  });
+
   it.each(['reject','timeout'])('blocks initial last-hand %s without first-hand fallback',async(mode)=>{
     const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
