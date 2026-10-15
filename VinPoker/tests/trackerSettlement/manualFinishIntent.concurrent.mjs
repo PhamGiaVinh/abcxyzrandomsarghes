@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGUSER,'postgres');
-assert.ok(['vinpoker_ops_finish95_qualified','vinpoker_ops_finish95_ci'].includes(process.env.PGDATABASE));
+assert.ok(['vinpoker_ops_finish95_qualified','vinpoker_ops_finish95_ci','vinpoker_ops_finish96_qualified','vinpoker_ops_finish96_ci'].includes(process.env.PGDATABASE));
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const hand='86000000-0000-4000-8000-000000000001',session='83500000-0000-4000-8000-000000000001',actor='81400000-0000-4000-8000-000000000001';
 function sql(query){const r=spawnSync('psql',['-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:query,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();}

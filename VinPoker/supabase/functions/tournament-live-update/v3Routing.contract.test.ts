@@ -10,7 +10,8 @@ Deno.test("V3 start-hand context is forwarded while legacy start-hand remains av
   assertStringIncludes(source, "p_table_session_id: table_session_id");
   assertStringIncludes(source, "p_control_epoch: control_epoch");
   assertStringIncludes(source, 'supabase.rpc("start_hand"');
-  assertStringIncludes(source, 'supabase.rpc("record_hand"');
+  assertStringIncludes(source, '"record_tracker_manual_hand_v1"');
+  assert(!source.includes('supabase.rpc("record_hand"'));
   assert(source.indexOf('supabase.rpc("start_tracker_hand_v3"') < source.indexOf('supabase.rpc("start_hand"'));
 });
 

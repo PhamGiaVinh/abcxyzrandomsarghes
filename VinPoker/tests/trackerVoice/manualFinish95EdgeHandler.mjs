@@ -26,6 +26,8 @@ async function request(value,{data=receipt,error=null,authenticated=true,header=
  return {status:response.status,payload:await response.json(),calls:JSON.parse(JSON.stringify(calls)),clients};
 }
 const good=await request(body);assert.equal(good.status,200);assert.deepEqual(good.payload.data,receipt);
+const legacy=await request({tournament_id:intent.tournament_id,action:'record_hand',table_id:intent.tournament_table_id,
+ hand_number:1,...intent.payload});assert.equal(legacy.status,422);assert.equal(legacy.payload.code,'MANUAL_FINISH_CONTEXT_REQUIRED');assert.equal(legacy.calls.length,0);
 assert.deepEqual(good.calls,[{name:'record_tracker_manual_hand_v1',params:{p_intent:intent}}]);
 assert.equal(good.clients.length,1);assert.equal(good.clients[0].key,'synthetic-anon');assert.equal(good.clients[0].options.global.headers.Authorization,'Bearer synthetic-test-token');
 const read=await request({...body,action:'get_manual_finish_receipt_v1'});assert.equal(read.status,200);

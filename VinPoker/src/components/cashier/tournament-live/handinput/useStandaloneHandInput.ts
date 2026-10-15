@@ -1,12 +1,12 @@
 // Controller hook for the STANDALONE operator console (`/tracker/hand-input`).
 //
-// It is the ENGINE-ONLY subset of HandInputPanel's orchestration: the console is
+// Extracted from the former HandInputPanel's engine orchestration: the console is
 // mounted only when `FEATURES.trackerEngineMode` is on (the page gates it), so the
 // manual-mode branches (advisory nextToAct, manual bet sizing, manual board/street
-// jump) are dropped here — the engine path is unconditional. The embedded
-// HandInputPanel is NOT touched. Pure libraries/payload builders are shared;
-// standalone manual Finish now adds exact intent/receipt fencing around the
-// shared record payload rather than calling the legacy bare writer.
+// jump) are dropped here — the engine path is unconditional. The current
+// HandInputConsole is shared by the embedded tab and full-screen page.
+// Pure libraries/payload builders are shared; manual Finish adds exact
+// intent/receipt fencing rather than calling the legacy bare writer.
 //
 // URL keys are DISTINCT from the panel's `hiTable`: `table` is the authoritative
 // resume key; `hand`/`street`/`actor` are write-only mirrors (never read back, so

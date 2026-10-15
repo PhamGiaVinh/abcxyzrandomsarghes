@@ -85,12 +85,12 @@ describe("Tracker hand completion projection migration", () => {
     );
   });
 
-  it("has no source consumer of the legacy seven-argument overload", () => {
-    expect(sourceFiles.join("\n").match(/rpc\(["']record_hand["']/g)).toHaveLength(1);
-    expect(edge).toContain("p_side_pots: authoritativeSidePots");
-    expect(edge).toContain("p_community_cards: community_cards || \"[]\"");
-    expect(edge).toContain("p_pot_size: pot_size || 0");
-    expect(edge).toContain("p_created_by: user.id");
+  it("has no browser source consumer of either retired bare overload", () => {
+    expect(sourceFiles.join("\n").match(/rpc\(["']record_hand["']/g)).toBeNull();
+    expect(edge).toContain('"record_tracker_manual_hand_v1"');
+    expect(edge).toContain("intent.actor_id !== user.id");
+    expect(edge).toContain("p_intent: intent");
+    expect(edge).toContain('validationError("MANUAL_FINISH_CONTEXT_REQUIRED"');
   });
 
   it("is source-only and keeps risky flags and deployment commands out", () => {

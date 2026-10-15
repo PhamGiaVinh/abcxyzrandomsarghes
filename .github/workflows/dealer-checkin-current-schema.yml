@@ -75,6 +75,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/recordHandEpochIntent*'
       - 'VinPoker/tests/trackerSettlement/recordHandLockAuthority*'
       - 'VinPoker/tests/trackerSettlement/manualFinishIntent*'
       - 'VinPoker/src/lib/trackerManualFinish.ts'
@@ -770,6 +772,25 @@ jobs:
           node tests/trackerSettlement/manualFinishIntent.concurrent.mjs
           node tests/trackerVoice/manualFinish95EdgeHandler.mjs
           node --test tests/tracker/manualFinishIntent.callback.test.mjs
+      - name: Bare Finish96 retirement preserves scoped manual and Voice consumers
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish95_ci vinpoker_ops_finish96_ci
+          if PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/recordHandEpochIntent.pg17.sql >"$RUNNER_TEMP/finish96-red.log" 2>&1; then
+            echo "Expected bare manual Finish stale-epoch acceptance before96" >&2
+            exit 1
+          fi
+          grep -Fq STALE_CONTROLLER_EPOCH_MANUAL_FINISH_ACCEPTED "$RUNNER_TEMP/finish96-red.log"
+          PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql
+          PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -v LEGACY_FINISH_RETIRED=1 -f tests/trackerSettlement/recordHandEpochIntent.pg17.sql
+          PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishIntent.pg17.sql
+          PGDATABASE=vinpoker_ops_finish96_ci node tests/trackerSettlement/manualFinishIntent.concurrent.mjs
+          createdb -T vinpoker_voice_finish94_20261016 vinpoker_voice_finish96_20261016
+          PGDATABASE=vinpoker_voice_finish96_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql
+          PGDATABASE=vinpoker_voice_finish96_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql
+          PGDATABASE=vinpoker_voice_finish96_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --manual-finish94 --manual-finish-retired96
+          PGDATABASE=vinpoker_voice_finish96_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --manual-finish94 --manual-finish-retired96
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:

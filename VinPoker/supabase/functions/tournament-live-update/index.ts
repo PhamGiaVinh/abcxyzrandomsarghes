@@ -307,35 +307,9 @@ Deno.serve(async (req) => {
         break;
       }
       case "record_hand": {
-        const { table_id, hand_number, hand_time, players, actions, side_pots, community_cards, pot_size } = body;
-
-        // Server never trusts client side_pots — recompute from the action stream.
-        let authoritativeSidePots: any = side_pots || "[]";
-        if (VALIDATION_MODE !== "off" && Array.isArray(actions)) {
-          const recon = reconcileSidePots(actions as ActionRow[], side_pots);
-          authoritativeSidePots = recon.serverSidePots; // authoritative, always
-          if (recon.tampered) {
-            logValidationReject({ validation_code: "SIDE_POTS_TAMPERED" });
-            if (VALIDATION_MODE === "enforce") {
-              return validationError("SIDE_POTS_TAMPERED", "side_pots không khớp với chuỗi hành động trên server.");
-            }
-            validationNote = { code: "SIDE_POTS_TAMPERED", overridden: true };
-          }
-        }
-
-        result = await supabase.rpc("record_hand", {
-          p_tournament_id: tournament_id,
-          p_table_id: table_id,
-          p_hand_number: hand_number,
-          p_hand_time: hand_time,
-          p_players: players,
-          p_actions: actions,
-          p_side_pots: authoritativeSidePots,
-          p_community_cards: community_cards || "[]",
-          p_pot_size: pot_size || 0,
-          p_created_by: user.id,
-        });
-        break;
+        // A stale client must not infer today's hand/session from a reusable
+        // table and hand number. Voice uses its own scoped service receipt.
+        return validationError("MANUAL_FINISH_CONTEXT_REQUIRED", "Phiên bản Finish cũ đã ngừng ghi. Tải lại bàn để dùng intent có session/epoch và request ID.");
       }
       case "void_hand": {
         const { hand_id } = body;

@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$ BEGIN
- IF current_database() NOT IN ('vinpoker_ops_finish94_unified','vinpoker_ops_finish95_unified','vinpoker_ops_finish95_qualified','vinpoker_ops_finish95_ci') OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
+ IF current_database() NOT IN ('vinpoker_ops_finish94_unified','vinpoker_ops_finish95_unified','vinpoker_ops_finish95_qualified','vinpoker_ops_finish95_ci','vinpoker_ops_finish96_qualified','vinpoker_ops_finish96_ci') OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
  OR current_setting('server_version_num')::int NOT BETWEEN 170000 AND 179999 THEN
   RAISE EXCEPTION 'finish95_isolated_fixture_required'; END IF;
 END $$;

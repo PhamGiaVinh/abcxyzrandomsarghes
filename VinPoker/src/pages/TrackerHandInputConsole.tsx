@@ -1,9 +1,8 @@
 // Standalone operator Hand Input console — route `/tracker/hand-input`.
 //
 // A full-screen floor-control surface (mockup) that REUSES the engine-mode write
-// path of the embedded HandInputPanel via `useStandaloneHandInput` (same 7
-// `tournament-live-update` Edge payloads, same trackerEngine math). The embedded
-// panel is left untouched; this is an additive second entry point.
+// path of the embedded console via HandInputConsole/useStandaloneHandInput.
+// Both entry points use the same engine math and exact manual Finish receipts.
 //
 // Gated on `FEATURES.trackerEngineMode` (OFF/dark on main): while OFF the route
 // renders a friendly notice and NEVER mounts the controller hook (so no engine
