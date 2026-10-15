@@ -5,6 +5,7 @@ for (const width of [375, 1280]) {
     await page.setViewportSize({ width, height: 850 });
     await page.clock.install();
     let running = false;
+    const publicReads: string[] = [];
     const unexpectedWrites: string[] = [];
     const pageErrors: string[] = [];
     page.on('pageerror', error => pageErrors.push(error.message));
@@ -14,6 +15,7 @@ for (const width of [375, 1280]) {
       const path = new URL(request.url()).pathname;
       const clockRead = path.endsWith('/rpc/get_public_tournament_clock_summary');
       const resultRead = path.endsWith('/rpc/get_public_tournament_results');
+      if (clockRead || resultRead) publicReads.push(path);
       if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && !clockRead && !resultRead) {
         unexpectedWrites.push(path);
       }
@@ -27,7 +29,13 @@ for (const width of [375, 1280]) {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
     await page.goto('/clock/public-clock-test');
-    await expect(page.getByText('02:05', { exact: true })).toBeVisible();
+    try {
+      await expect(page.getByText('02:05', { exact: true })).toBeVisible();
+    } catch (error) {
+      // Only local synthetic page data and RPC paths; no tokens, headers or auth storage.
+      throw new Error(`Public clock startup failed: ${JSON.stringify({publicReads,pageErrors,
+        body:await page.locator('body').innerText()})}`,{cause:error});
+    }
     await expect(page.getByText('Đồng hồ đang dừng', { exact: true })).toBeVisible();
     await page.clock.runFor(5000);
     await expect(page.getByText('02:05', { exact: true })).toBeVisible();
