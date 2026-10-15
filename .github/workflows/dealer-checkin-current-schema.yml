@@ -83,6 +83,9 @@ on:
       - 'VinPoker/tests/floorProduction/scopedFinishMoveCancel.concurrent.mjs'
       - 'VinPoker/supabase/functions/tournament-historical-settlement/index.ts'
       - 'VinPoker/tests/trackerSettlement/historicalAuthEdgeHandler.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.scope.test.tsx'
+      - 'VinPoker/tests/tracker/historicalSettlementDisplayCapability.test.ts'
       - 'VinPoker/tests/trackerSettlement/historyAttention.migrationRollback.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotTypes.ts'
@@ -786,6 +789,7 @@ jobs:
           node tests/trackerSettlement/manualFinishIntent.concurrent.mjs
           node tests/trackerVoice/manualFinish95EdgeHandler.mjs
           node tests/trackerSettlement/historicalAuthEdgeHandler.mjs
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.scope.test.tsx tests/tracker/historicalSettlementDisplayCapability.test.ts --maxWorkers=1 --minWorkers=1
           node --test tests/tracker/manualFinishIntent.callback.test.mjs
       - name: Bare Finish96 retirement preserves scoped manual and Voice consumers
         working-directory: VinPoker

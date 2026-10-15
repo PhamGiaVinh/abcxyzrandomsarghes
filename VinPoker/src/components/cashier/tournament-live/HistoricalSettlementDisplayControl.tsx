@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   type HistoricalSettlementDisplayPreview,
 } from "@/lib/tracker-poker/historicalSettlementDisplay";
 import { diagnoseHistoricalSettlementInvocation } from "@/lib/tracker-poker/historicalSettlementDiagnostics";
+import { useAuth } from "@/hooks/useAuth";
 
 type HistoricalSettlementDisplayControlProps = {
   tournamentId: string;
@@ -78,24 +79,40 @@ export function HistoricalSettlementDisplayControl({
   onVerified,
 }: HistoricalSettlementDisplayControlProps) {
   const supabase = useSupabaseClient();
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<HistoricalSettlementDisplayPreview | null>(null);
+  const [storedPreview, setPreview] = useState<HistoricalSettlementDisplayPreview | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const scope = JSON.stringify([user?.id, tournamentId, handId]);
+  const scopeRef = useRef({ key: scope, generation: 0 });
+  if (scopeRef.current.key !== scope) scopeRef.current = { key: scope, generation: scopeRef.current.generation + 1 };
+  const previewGenerationRef = useRef(-1);
+  const preview = previewGenerationRef.current === scopeRef.current.generation ? storedPreview : null;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; scopeRef.current.generation += 1; };
+  }, []);
 
   useEffect(() => {
     setPreview(null);
     setConfirmOpen(false);
-  }, [handId]);
+    setBusy(false);
+  }, [scope]);
 
   const verify = async () => {
+    const generation = scopeRef.current.generation;
+    const current = () => mountedRef.current && generation === scopeRef.current.generation;
     setBusy(true);
     setPreview(null);
     try {
       const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
         body: { mode: "preview", tournament_id: tournamentId, hand_id: handId },
       });
+      if (!current()) return;
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
         const diagnostic = await diagnoseHistoricalSettlementInvocation({ data, error, mode: "preview", handId });
+        if (!current()) return;
         toast.error(diagnosticFailureMessage(diagnostic.code));
         return;
       }
@@ -104,17 +121,21 @@ export function HistoricalSettlementDisplayControl({
         toast.error("Máy chủ trả outcome không hợp lệ. Chưa lưu dữ liệu nào.");
         return;
       }
+      previewGenerationRef.current = generation;
       setPreview(parsed);
     } catch (error) {
       const diagnostic = await diagnoseHistoricalSettlementInvocation({ data: null, error, mode: "preview", handId });
+      if (!current()) return;
       toast.error(diagnosticFailureMessage(diagnostic.code));
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   };
 
   const commit = async () => {
     if (!preview || busy) return;
+    const generation = scopeRef.current.generation;
+    const current = () => mountedRef.current && generation === scopeRef.current.generation;
     setBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
@@ -128,8 +149,10 @@ export function HistoricalSettlementDisplayControl({
           expected_outcome_hash: preview.outcomeHash,
         },
       });
+      if (!current()) return;
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
         const diagnostic = await diagnoseHistoricalSettlementInvocation({ data, error, mode: "commit", handId });
+        if (!current()) return;
         toast.error(diagnosticFailureMessage(diagnostic.code));
         return;
       }
@@ -137,7 +160,7 @@ export function HistoricalSettlementDisplayControl({
       toast.success(`Đã lưu outcome hiển thị đã xác minh cho Hand #${handNumber}.`);
       onVerified();
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   };
 

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FEATURES } from "@/lib/featureFlags";
 
-const panel = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HandHistoryPanel.tsx"), "utf8");
+const panel = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HandHistoryWorkspace.tsx"), "utf8");
 const control = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.tsx"), "utf8");
 const batchControl = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementBatchControl.tsx"), "utf8");
 

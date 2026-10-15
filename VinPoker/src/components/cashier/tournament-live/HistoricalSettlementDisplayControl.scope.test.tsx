@@ -1,0 +1,41 @@
+import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { HistoricalSettlementDisplayControl } from "./HistoricalSettlementDisplayControl";
+const mocks=vi.hoisted(()=>({invoke:vi.fn(),error:vi.fn(),success:vi.fn(),actor:"owner-test"}));
+vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:mocks.actor}})}));
+vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>({functions:{invoke:mocks.invoke}})}));
+vi.mock("sonner",()=>({toast:{error:mocks.error,success:mocks.success}}));
+vi.mock("@/lib/tracker-poker/historicalSettlementDisplay",()=>({parseHistoricalSettlementDisplayPreview:(data:{hand_id:string},key:string)=>({handId:data.hand_id,idempotencyKey:key,sourceRevision:1,sourceChainHash:"a".repeat(64),outcomeHash:"b".repeat(64),settlement:{players:[],handRanks:[]}})}));
+afterEach(()=>{cleanup();vi.resetAllMocks();mocks.actor="owner-test";});
+for(const returnToA of [false,true])it(`does not apply old preview after context change (ABA=${returnToA})`,async()=>{
+ let resolve!:(value:unknown)=>void;mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+ const verified=vi.fn();const props={handNumber:1,onVerified:verified};
+ const view=render(<HistoricalSettlementDisplayControl {...props} tournamentId="tour-a" handId="hand-a" />);
+ fireEvent.click(screen.getByRole("button",{name:"Xem trước xác minh"}));
+ view.rerender(<HistoricalSettlementDisplayControl {...props} tournamentId="tour-b" handId="hand-b" />);
+ if(returnToA)view.rerender(<HistoricalSettlementDisplayControl {...props} tournamentId="tour-a" handId="hand-a" />);
+ await act(async()=>resolve({data:{ok:true,status:"preview",hand_id:"hand-a"},error:null}));
+ expect(screen.queryByText("Server đã xác minh outcome, chưa ghi gì vào dữ liệu hand.")).not.toBeInTheDocument();
+ expect(mocks.invoke).toHaveBeenCalledTimes(1);expect(verified).not.toHaveBeenCalled();
+});
+it("ignores a preview response from the previous account",async()=>{
+ let resolve!:(value:unknown)=>void;mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+ const props={tournamentId:"tour",handId:"hand",handNumber:1,onVerified:vi.fn()};
+ const view=render(<HistoricalSettlementDisplayControl {...props} />);
+ fireEvent.click(screen.getByRole("button",{name:"Xem trước xác minh"}));
+ mocks.actor="other-owner";view.rerender(<HistoricalSettlementDisplayControl {...props} />);
+ await act(async()=>resolve({data:{ok:true,hand_id:"hand"},error:null}));
+ expect(screen.queryByText("Server đã xác minh outcome, chưa ghi gì vào dữ liệu hand.")).not.toBeInTheDocument();
+});
+it("does not publish a late commit acknowledgement into another hand",async()=>{
+ mocks.invoke.mockResolvedValueOnce({data:{ok:true,hand_id:"hand-a"},error:null});
+ let resolve!:(value:unknown)=>void;mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+ const onVerified=vi.fn();const props={tournamentId:"tour",handId:"hand-a",handNumber:1,onVerified};
+ const view=render(<HistoricalSettlementDisplayControl {...props} />);
+ fireEvent.click(screen.getByRole("button",{name:"Xem trước xác minh"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Lưu outcome hiển thị đã xác minh"}));
+ fireEvent.click(screen.getByRole("button",{name:"Xác nhận lưu hiển thị"}));
+ view.rerender(<HistoricalSettlementDisplayControl {...props} handId="hand-b" />);
+ await act(async()=>resolve({data:{ok:true},error:null}));
+ expect(onVerified).not.toHaveBeenCalled();expect(mocks.success).not.toHaveBeenCalled();
+});
