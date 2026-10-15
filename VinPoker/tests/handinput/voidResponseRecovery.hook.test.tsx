@@ -17,6 +17,7 @@ const mock = vi.hoisted(() => ({
   resumeRead: null as Promise<unknown> | null,
   lineageReadFails: false,
   seatReadFails: false,
+  seatReadThrows: false,
   twoPlayerFold: false,
   lineageReadback: null as Promise<unknown> | null,
   readFilters: [] as Array<[string, unknown]>,
@@ -67,7 +68,8 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
     const chain = () => query;
     const query = { select: (value: string) => { cols = value; return query; },
       filter: chain, in: chain, order: chain, limit: chain, maybeSingle: chain, single: chain,
-      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown): Promise<unknown> => (cols === "id, is_voided" && mock.readback ? mock.readback
+      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown): Promise<unknown> => (table==='tournament_seats' && mock.seatReadThrows
+        ? Promise.reject(new Error('seat transport rejected')) : cols === "id, is_voided" && mock.readback ? mock.readback
         : cols.includes("tracker_sb_position") && mock.lineageReadback ? mock.lineageReadback
         : cols.includes("community_cards") && mock.resumeRead ? mock.resumeRead : Promise.resolve(result())).then(resolve, reject),
       eq: (key: string, value: unknown) => {
@@ -79,7 +81,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder);
-  mock.lineageReadFails=false;mock.seatReadFails=false;mock.twoPlayerFold=false;mock.lineageReadback=null;
+  mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;mock.twoPlayerFold=false;mock.lineageReadback=null;
   mock.displayOutcome.mockResolvedValue({ok:true,status:'already_verified'}); });
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
@@ -88,13 +90,13 @@ describe("void unknown response through the real controller", () => {
     idempotency_key:'request-test',trace_id:'trace-test',settlement_origin:'engine_fold_win' as const,
     settlement_digest:'a'.repeat(64),state_version_before:'1',state_version_after:'2'};
 
-  it.each(['lineage','seats'])('keeps a committed Voice Finish final when its %s read fails, without another writer',async(read)=>{
+  it.each(['lineage','seats','seat_reject'])('keeps a committed Voice Finish final when its %s read fails, without another writer',async(read)=>{
     mock.resume=true;
     const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
     await act(async()=>{await result.current.handleTableChange('table1');});
     await waitFor(()=>expect(result.current.handId).toBe('hand1'));
-    mock.invoke.mockClear();mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';
+    mock.invoke.mockClear();mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
     await act(async()=>{expect(await result.current.applyVoiceFinishReceipt(finishReceipt)).toBe(true);});
     expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
     expect(result.current.lastHandId).toBe('hand1');expect(result.current.blindLineageUnavailable).toBe(true);
@@ -102,19 +104,19 @@ describe("void unknown response through the real controller", () => {
     expect(mock.warningToast).toHaveBeenCalledWith(expect.stringContaining('Hand đã lưu'));
     await act(async()=>{await result.current.handleStartHand();});
     expect(mock.invoke).not.toHaveBeenCalled();
-    mock.lineageReadFails=false;mock.seatReadFails=false;
+    mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;
     await act(async()=>{await result.current.handleTableChange('table1');});
     expect(result.current.blindLineageUnavailable).toBe(false);
   });
 
-  it.each(['lineage','seats'])('does not retry a committed manual Finish when the next %s read fails',async(read)=>{
+  it.each(['lineage','seats','seat_reject'])('does not retry a committed manual Finish when the next %s read fails',async(read)=>{
     mock.resume=true;mock.twoPlayerFold=true;
     const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
     await act(async()=>{await result.current.handleTableChange('table1');});
     await waitFor(()=>expect(result.current.workflowState).toBe('submit_ready'));
     mock.invoke.mockImplementation(async(_name,{body})=>{
-      expect(body.action).toBe('record_hand');mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';
+      expect(body.action).toBe('record_hand');mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
       return {data:{data:{hand_id:'hand1'}},error:null};
     });
     await act(async()=>{await result.current.handleSubmitHand();});

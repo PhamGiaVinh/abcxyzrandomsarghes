@@ -2852,12 +2852,12 @@ export function useStandaloneHandInput(tournamentId: string) {
       markSync("sent", `Voice Assist đã lưu Hand #${Number(handNumber)}`);
       return true;
     }
-    const { data: refreshedSeats, error } = await supabase
+    const { data: refreshedSeats, error } = await Promise.resolve(supabase
       .from("tournament_seats")
       .select("seat_number, player_id, is_active, chip_count")
       .eq("tournament_id", tournamentId)
       .eq("table_id", tableId)
-      .order("seat_number");
+      .order("seat_number")).catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
     if (!currentReceiptScope()) return true;
     if (error || !refreshedSeats) {
       setHandId(null);
@@ -3341,13 +3341,13 @@ export function useStandaloneHandInput(tournamentId: string) {
         setLastHandId(recordedHandId);
         return;
       }
-      const { data: refreshedSeats, error: seatReadError } = await supabase
+      const { data: refreshedSeats, error: seatReadError } = await Promise.resolve(supabase
         .from("tournament_seats")
         .select("seat_number, player_id, is_active")
         .eq("tournament_id", tournamentId)
         .eq("table_id", tableId)
         .eq("is_active", true)
-        .order("seat_number");
+        .order("seat_number")).catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
       const activeNums = (refreshedSeats ?? [])
         .filter((s) => s.player_id && s.is_active !== false)
         .map((s) => s.seat_number)
