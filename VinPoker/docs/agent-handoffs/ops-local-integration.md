@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Automatic post-Finish historical journal integration
+
+Baseline2381b2b1f clean; fetch origin/main unchanged ed3db6ac6. Re-read master plan/rules. Prior turn status-only classified no progress; this turn actual RED: existing unresolved journal still invoked preview instead of original receipt. Helper now requires captured actor/current-scope predicate from both manual/Voice Finish callers, reads pending journal before public proof/preview, persists strict shared intent before writer, adds expected_actor_id, and reconciles exact receipt after any commit response/throw/timeout. Existing pending only reads receipt; never automatic writer retry/new key. Found receipt settles CAS journal then separately reads current public proof; historical receipt alone is not current verification. Missing/corrupt/mismatched/error receipts retain journal; scope change prevents late advancement/cleanup. Every observation remains bounded10s. No extra Auth role or server policy change.
+
+Focused final16PASS (12 timeout/preview/commit/readback/storage/scope +4 pending-journal cases); manualFinish actual callback20PASS; affected helper/tests ESLint0, YAML parse and diffcheck PASS. Synthetic IO only, not real Edge/DB/Auth/browser qualification. No fulltype/build due local RAM hold. Batch historical journal and stale pending terminal resolution remain next; whole campaign incomplete. No PG/start/live handle, push/CI/DB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-only hold retained.
+
 ## Explicit historical same-intent retry with receipt-first fencing
 
 Baselinede3dd65b0 initiallyclean. Singlecontroladdsconfirmedbutton Kiểm tra rồi gửi lại cùng mã. Sharescommit/recoveryflight, capturesgeneration, validatescurrentjournal/CAS beforeandafterawait. Readsoriginalreceiptfirst; foundack/pastcommitreload/nosecondwriter; unknown/malformed/readerrorstops; onlyexplicitconfirmednot_found permitsoneboundedcommit withunchangedactor/tour/hand/key/revision/hashes thenexactreceiptread. No automaticwriterretry/newpreview/key. Nativeconfirmexistingprojectpattern; UIcomponents/tokens kept. Existingreadonlyreceiptbuttonunchanged. Alreadyissuedserverrequestnotcancelled bynavigation.

@@ -2895,6 +2895,8 @@ export function useStandaloneHandInput(tournamentId: string) {
     const displayOutcome = await ensureRecordedHandDisplayOutcome({
       tournamentId,
       handId: receipt.hand_id,
+      actorId: user?.id ?? "",
+      isCurrent: currentReceiptScope,
     });
     if (!currentReceiptScope()) return true;
     if (!displayOutcome.ok) {
@@ -3358,6 +3360,8 @@ export function useStandaloneHandInput(tournamentId: string) {
       const displayOutcome = await ensureRecordedHandDisplayOutcome({
         tournamentId,
         handId: recordedHandId,
+        actorId: user.id,
+        isCurrent: currentReceiptScope,
       });
       if (!currentReceiptScope()) return;
       toast.success(recoveredAfterError

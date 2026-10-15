@@ -12,8 +12,18 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-import { ensureRecordedHandDisplayOutcome } from "@/lib/tracker-poker/recordedHandDisplayOutcome";
+import { ensureRecordedHandDisplayOutcome as ensureOutcome } from "@/lib/tracker-poker/recordedHandDisplayOutcome";
 
+const actorId = "81000000-0000-0000-0000-000000000001";
+const ensureRecordedHandDisplayOutcome = (input: { tournamentId: string; handId: string }) =>
+  ensureOutcome({ ...input, actorId, isCurrent: () => true });
+function receipt(body: Record<string, unknown>) {
+  return { ok: true, status: "receipt_found", actor_id: actorId,
+    tournament_id: body.tournament_id, hand_id: body.hand_id, idempotency_key: body.idempotency_key,
+    source_revision: body.expected_source_revision, source_chain_hash: body.expected_source_chain_hash,
+    outcome_hash: body.expected_outcome_hash, receipt: { ok: true, idempotent: true,
+      settlement_revision: 1, source_revision: body.expected_source_revision, outcome_hash: body.expected_outcome_hash } };
+}
 const publicSettlement = {
   schemaVersion: "settlement-outcome-v1",
   status: "verified",
@@ -35,7 +45,7 @@ const publicSettlement = {
 const preview = {
   ok: true,
   status: "preview",
-  hand_id: "hand-1",
+  hand_id: "86000000-0000-0000-0000-000000000001",
   source_revision: 4,
   source_chain_hash: "a".repeat(64),
   outcome_hash: "b".repeat(64),
@@ -50,24 +60,26 @@ const preview = {
 };
 
 describe("ensureRecordedHandDisplayOutcome", () => {
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => { vi.useRealTimers(); sessionStorage.clear(); });
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.invoke.mockReset();
+    mocks.invoke.mockImplementation(async (_name, { body }) => ({ data: body.mode === "preview"
+      ? preview : body.mode === "receipt" ? receipt(body) : { ok: true }, error: null }));
   });
 
-  it.each(['initial_read','preview','commit','final_read'])('bounds %s and does not advance or retry after a late response',async(stage)=>{
+  it.each(['initial_read','preview','commit','receipt','final_read'])('bounds %s and does not advance or retry after a late response',async(stage)=>{
     vi.useFakeTimers();
     let resolveLate!:(value:unknown)=>void;
     const hanging=new Promise(resolve=>{resolveLate=resolve;});
     mocks.rpc.mockResolvedValue({data:{},error:null});
-    mocks.invoke.mockImplementation(async(_name,{body})=>({data:body.mode==='preview'?preview:{ok:true},error:null}));
     if(stage==='initial_read')mocks.rpc.mockReturnValueOnce(hanging);
     if(stage==='preview')mocks.invoke.mockReturnValueOnce(hanging);
     if(stage==='commit')mocks.invoke.mockResolvedValueOnce({data:preview,error:null}).mockReturnValueOnce(hanging);
+    if(stage==='receipt')mocks.invoke.mockResolvedValueOnce({data:preview,error:null}).mockResolvedValueOnce({data:{ok:true},error:null}).mockReturnValueOnce(hanging);
     if(stage==='final_read')mocks.rpc.mockResolvedValueOnce({data:{},error:null}).mockReturnValueOnce(hanging);
     let settled=false;
-    const pending=ensureRecordedHandDisplayOutcome({tournamentId:'tour-1',handId:'hand-1'})
+    const pending=ensureRecordedHandDisplayOutcome({tournamentId:'85000000-0000-0000-0000-000000000001',handId:'86000000-0000-0000-0000-000000000001'})
       .then(value=>{settled=true;return value;});
     await vi.advanceTimersByTimeAsync(10_001);
     expect(settled).toBe(true);
@@ -77,14 +89,14 @@ describe("ensureRecordedHandDisplayOutcome", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     expect(mocks.rpc).toHaveBeenCalledTimes(calls.rpc);
     expect(mocks.invoke).toHaveBeenCalledTimes(calls.invoke);
-    expect(calls.invoke).toBe(stage==='initial_read'?0:stage==='preview'?1:2);
+    expect(calls.invoke).toBe(stage==='initial_read'?0:stage==='preview'?1:3);
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it("does not create another outcome when the hand is already verified", async () => {
     mocks.rpc.mockResolvedValueOnce({ data: publicSettlement, error: null });
 
-    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "tour-1", handId: "hand-1" }))
+    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: "86000000-0000-0000-0000-000000000001" }))
       .resolves.toEqual({ ok: true, status: "already_verified" });
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
@@ -95,17 +107,17 @@ describe("ensureRecordedHandDisplayOutcome", () => {
       .mockResolvedValueOnce({ data: publicSettlement, error: null });
     mocks.invoke
       .mockResolvedValueOnce({ data: preview, error: null })
-      .mockResolvedValueOnce({ data: { ok: true, status: "verified", hand_id: "hand-1" }, error: null });
+      .mockResolvedValueOnce({ data: { ok: true, status: "verified", hand_id: "86000000-0000-0000-0000-000000000001" }, error: null });
 
-    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "tour-1", handId: "hand-1" }))
+    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: "86000000-0000-0000-0000-000000000001" }))
       .resolves.toEqual({ ok: true, status: "verified" });
     expect(mocks.invoke).toHaveBeenNthCalledWith(1, "tournament-historical-settlement", {
-      body: { mode: "preview", tournament_id: "tour-1", hand_id: "hand-1" },
+      body: { mode: "preview", tournament_id: "85000000-0000-0000-0000-000000000001", hand_id: "86000000-0000-0000-0000-000000000001" },
     });
     expect(mocks.invoke.mock.calls[1][1].body).toMatchObject({
       mode: "commit",
-      tournament_id: "tour-1",
-      hand_id: "hand-1",
+      tournament_id: "85000000-0000-0000-0000-000000000001",
+      hand_id: "86000000-0000-0000-0000-000000000001",
       expected_source_revision: 4,
       expected_source_chain_hash: "a".repeat(64),
       expected_outcome_hash: "b".repeat(64),
@@ -120,15 +132,15 @@ describe("ensureRecordedHandDisplayOutcome", () => {
       .mockResolvedValueOnce({ data: preview, error: null })
       .mockResolvedValueOnce({ data: null, error: { message: "network" } });
 
-    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "tour-1", handId: "hand-1" }))
-      .resolves.toEqual({ ok: true, status: "already_verified" });
+    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: "86000000-0000-0000-0000-000000000001" }))
+      .resolves.toEqual({ ok: true, status: "verified" });
   });
 
   it("fails closed when the server preview is malformed", async () => {
     mocks.rpc.mockResolvedValueOnce({ data: {}, error: null });
     mocks.invoke.mockResolvedValueOnce({ data: { ...preview, public_outcome: {} }, error: null });
 
-    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "tour-1", handId: "hand-1" }))
+    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: "86000000-0000-0000-0000-000000000001" }))
       .resolves.toEqual({ ok: false, code: "invalid_preview" });
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
@@ -136,8 +148,28 @@ describe("ensureRecordedHandDisplayOutcome", () => {
   it("never turns a completed hand into a submit failure when verification throws", async () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
 
-    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "tour-1", handId: "hand-1" }))
+    await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: "86000000-0000-0000-0000-000000000001" }))
       .resolves.toEqual({ ok: false, code: "verification_missing" });
     expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not issue a commit if intent persistence fails", async () => {
+    mocks.rpc.mockResolvedValue({ data: {}, error: null });
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    try {
+      await expect(ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: preview.hand_id }))
+        .resolves.toEqual({ ok: false, code: "verification_missing" });
+      expect(mocks.invoke.mock.calls.map(call => call[1].body.mode)).toEqual(["preview"]);
+    } finally { setItem.mockRestore(); }
+  });
+
+  it("does not advance after scope changes during preview", async () => {
+    let current = true;
+    mocks.rpc.mockResolvedValue({ data: {}, error: null });
+    mocks.invoke.mockImplementationOnce(async () => { current = false; return { data: preview, error: null }; });
+    await expect(ensureOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: preview.hand_id,
+      actorId, isCurrent: () => current })).resolves.toEqual({ ok: false, code: "verification_missing" });
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.length).toBe(0);
   });
 });
