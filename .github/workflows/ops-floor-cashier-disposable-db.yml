@@ -22,6 +22,8 @@ on:
       - "VinPoker/src/components/floor/useFloorTournaments*.test.tsx"
       - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
+      - "VinPoker/src/components/floor/TournamentManagerShared*"
+      - "VinPoker/src/lib/tournamentCreate*"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
@@ -90,6 +92,8 @@ jobs:
           src/components/floor/MultiDayTournamentsBoard.test.tsx
           src/pages/CashierDashboard.tourEntry.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
+          src/components/floor/TournamentManagerShared.createIntegrity.test.tsx
+          src/lib/tournamentCreate.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
