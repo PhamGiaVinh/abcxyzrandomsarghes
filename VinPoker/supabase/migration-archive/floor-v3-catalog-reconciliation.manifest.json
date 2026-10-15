@@ -7612,6 +7612,7 @@
     }
   ],
     "ownerGatedActiveAllowlist": [
+    {"version":"20270128000091","filename":"20270128000091_tournament_create_with_levels_atomic_v1.sql","sha256":"116a88485f116956602f9b7362bf39bb45efefe6aceaba5b7dbda03e59e56a15","domain":"tournament-create-levels-atomic-campaign"},
     {"version":"20270128000079","filename":"20270128000079_dealer_close_next_reservation_v1.sql","sha256":"ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66","domain":"dealer-close-next-reservation-campaign"},
     {"version":"20270128000078","filename":"20270128000078_dealer_next_plan_rest_floor_v1.sql","sha256":"fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df","domain":"dealer-next-plan-rest-floor-campaign"},
     {"version":"20270128000076","filename":"20270128000076_tracker_hand_input_scoped_read_v1.sql","sha256":"15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54","domain":"tracker-hand-input-scoped-read-campaign"},
