@@ -19,6 +19,11 @@ import {
 } from "@/lib/tracker-poker/historicalSettlementDisplay";
 import { diagnoseHistoricalSettlementInvocation } from "@/lib/tracker-poker/historicalSettlementDiagnostics";
 import { useAuth } from "@/hooks/useAuth";
+import { createSingleFlightGuard } from "@/lib/singleFlight";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { createHistoricalCommitIntent, readHistoricalCommitJournal, persistHistoricalCommitJournal,
+  settleHistoricalCommitJournal, historicalCommitReceiptState, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
 
 type HistoricalSettlementDisplayControlProps = {
   tournamentId: string;
@@ -83,6 +88,11 @@ export function HistoricalSettlementDisplayControl({
   const [busy, setBusy] = useState(false);
   const [storedPreview, setPreview] = useState<HistoricalSettlementDisplayPreview | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [storedPending, setPending] = useState<HistoricalCommitIntent | null>(null);
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const commitFlightRef = useRef(createSingleFlightGuard());
+  const pending = storedPending?.expected_actor_id === user?.id && storedPending?.tournament_id === tournamentId
+    && storedPending?.hand_id === handId ? storedPending : null;
   const scope = JSON.stringify([user?.id, tournamentId, handId]);
   const scopeRef = useRef({ key: scope, generation: 0 });
   if (scopeRef.current.key !== scope) scopeRef.current = { key: scope, generation: scopeRef.current.generation + 1 };
@@ -98,9 +108,20 @@ export function HistoricalSettlementDisplayControl({
     setPreview(null);
     setConfirmOpen(false);
     setBusy(false);
-  }, [scope]);
+    setPending(null);
+    setJournalError(null);
+    if (user?.id) {
+      try { setPending(readHistoricalCommitJournal(sessionStorage, { expected_actor_id: user.id, tournament_id: tournamentId, hand_id: handId })); }
+      catch { setJournalError("Không đọc được mã phục hồi History; giữ dữ liệu trình duyệt và chưa gửi yêu cầu mới."); }
+    }
+  }, [scope, handId, tournamentId, user?.id]);
 
   const verify = async () => {
+    try {
+      if (journalError || (user?.id && readHistoricalCommitJournal(sessionStorage, { expected_actor_id: user.id, tournament_id: tournamentId, hand_id: handId }))) {
+        toast.error("Còn yêu cầu History chưa rõ kết quả. Kiểm tra receipt trước khi tạo preview mới."); return;
+      }
+    } catch { toast.error("Không đọc được mã phục hồi History; chưa gửi yêu cầu mới."); return; }
     const generation = scopeRef.current.generation;
     const current = () => mountedRef.current && generation === scopeRef.current.generation;
     setBusy(true);
@@ -132,34 +153,63 @@ export function HistoricalSettlementDisplayControl({
     }
   };
 
-  const commit = async () => {
-    if (!preview || busy) return;
+  const recoverIntent = async (intent: HistoricalCommitIntent, current: () => boolean) => {
+    const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-historical-settlement", {
+      body: { mode: "receipt", ...intent },
+    }));
+    if (!current()) return;
+    if (error || historicalCommitReceiptState(data, intent) !== "found") {
+      throw new Error("Chưa xác minh được receipt History. Giữ nguyên mã yêu cầu; không tạo key mới.");
+    }
+    try { settleHistoricalCommitJournal(sessionStorage, intent); setPending(null); }
+    catch { toast.error("Máy chủ đã xác nhận commit nhưng chưa dọn được mã phục hồi. Không tạo yêu cầu mới."); }
+    setConfirmOpen(false);
+    setPreview(null);
+    toast.success("Máy chủ đã xác nhận request History đã commit. Đang tải lại kết quả hiện hành.");
+    onVerified();
+  };
+
+  const recoverPending = async () => {
+    if (!pending || busy || !commitFlightRef.current.begin()) return;
     const generation = scopeRef.current.generation;
     const current = () => mountedRef.current && generation === scopeRef.current.generation;
     setBusy(true);
+    try { await recoverIntent(pending, current); }
+    catch { if (current()) toast.error("Chưa xác minh được receipt History. Giữ nguyên mã yêu cầu để kiểm tra lại."); }
+    finally { commitFlightRef.current.finish(); if (current()) setBusy(false); }
+  };
+
+  const commit = async () => {
+    if (!preview || busy || !user?.id || !commitFlightRef.current.begin()) return;
+    const generation = scopeRef.current.generation;
+    const current = () => mountedRef.current && generation === scopeRef.current.generation;
+    setBusy(true);
+    setConfirmOpen(false);
+    let intent: HistoricalCommitIntent | null = null;
+    let journalReady = false;
     try {
-      const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
-        body: {
-          mode: "commit",
-          tournament_id: tournamentId,
-          hand_id: handId,
-          idempotency_key: preview.idempotencyKey,
-          expected_source_revision: preview.sourceRevision,
-          expected_source_chain_hash: preview.sourceChainHash,
-          expected_outcome_hash: preview.outcomeHash,
-        },
-      });
+      intent = readHistoricalCommitJournal(sessionStorage, { expected_actor_id: user.id, tournament_id: tournamentId, hand_id: handId });
+      if (intent) { journalReady = true; setPending(intent); await recoverIntent(intent, current); return; }
+      intent = createHistoricalCommitIntent(user.id, tournamentId, preview);
+      persistHistoricalCommitJournal(sessionStorage, intent);
+      journalReady = true;
+      setPending(intent);
+      // The durable intent exists before dispatch. Even a transport timeout is
+      // not permission to mint another key or overwrite this preview fingerprint.
+      try { await waitForManualPlayerResponse(supabase.functions.invoke("tournament-historical-settlement", {
+        body: { mode: "commit", ...intent },
+      })); } catch { /* Read the unchanged receipt once; never retry the writer. */ }
       if (!current()) return;
-      if (error || (data as { ok?: boolean } | null)?.ok !== true) {
-        const diagnostic = await diagnoseHistoricalSettlementInvocation({ data, error, mode: "commit", handId });
-        if (!current()) return;
-        toast.error(diagnosticFailureMessage(diagnostic.code));
-        return;
+      await recoverIntent(intent, current);
+    } catch {
+      if (current()) {
+        if (!journalReady) setJournalError("Không lưu được mã yêu cầu an toàn; chưa gửi commit History.");
+        toast.error(journalReady
+        ? "Chưa rõ kết quả History; giữ nguyên mã yêu cầu và kiểm tra receipt, không tạo key mới."
+        : "Không lưu được mã yêu cầu an toàn; chưa gửi commit History.");
       }
-      setConfirmOpen(false);
-      toast.success(`Đã lưu outcome hiển thị đã xác minh cho Hand #${handNumber}.`);
-      onVerified();
     } finally {
+      commitFlightRef.current.finish();
       if (current()) setBusy(false);
     }
   };
@@ -175,11 +225,17 @@ export function HistoricalSettlementDisplayControl({
             Chỉ tạo ranking, glow và payout hiển thị khi server chứng minh kết quả khớp đúng stack đã lưu. Không sửa hand, chip hoặc kết quả giải.
           </p>
         </div>
-        <Button type="button" size="sm" variant="outline" className="min-h-11 border-amber-500/50 text-amber-200" onClick={() => void verify()} disabled={busy}>
+        <Button type="button" size="sm" variant="outline" className="min-h-11 border-amber-500/50 text-amber-200" onClick={() => void verify()} disabled={busy || !!pending || !!journalError}>
           {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
           Xem trước xác minh
         </Button>
       </div>
+
+      {journalError && <p role="alert" className="mt-2 text-xs text-destructive">{journalError}</p>}
+      {pending && <div role="status" className="mt-3 space-y-2 text-xs">
+        <p>History đang chờ đối chiếu receipt. Chưa thể kết luận request đã ghi hay chưa.</p>
+        <Button type="button" variant="outline" disabled={busy} onClick={() => void recoverPending()}>Kiểm tra receipt yêu cầu cũ</Button>
+      </div>}
 
       {preview && (
         <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
@@ -199,7 +255,7 @@ export function HistoricalSettlementDisplayControl({
             </p>
           )}
           <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <Button type="button" size="sm" className="min-h-11 bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={() => setConfirmOpen(true)} disabled={busy}>
+            <Button type="button" size="sm" className="min-h-11 bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={() => setConfirmOpen(true)} disabled={busy || !!pending}>
               Lưu outcome hiển thị đã xác minh
             </Button>
             <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-md">
