@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { mergeCheckinCandidateReads, type CheckinCandidate } from "@/lib/dealerCheckinCandidates";
 import { DealerCheckinCandidateList } from "./dealer-swing/DealerCheckinCandidateList";
 import { useManualSwingRecovery } from "./dealer-swing/useManualSwingRecovery";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -921,25 +922,42 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   };
 
   // Confirm assignment
+  const manualAssignScopeKey = JSON.stringify([user?.id, activeClubId, modalTable,
+    tables.find((table) => table.id === modalTable)?.table_session_id]);
+  const manualAssignScope = useRef({ key: manualAssignScopeKey, generation: 0 });
+  if (manualAssignScope.current.key !== manualAssignScopeKey) manualAssignScope.current = {
+    key: manualAssignScopeKey, generation: manualAssignScope.current.generation + 1,
+  };
+  const manualAssignAlive = useRef(true);
+  useEffect(() => { manualAssignAlive.current = true; return () => { manualAssignAlive.current = false; }; }, []);
+  useEffect(() => { isSubmitting.current = false; setAssigning(false); }, [manualAssignScopeKey]);
   const confirmAssign = async (forceDealerId?: string) => {
     if (!modalTable) return;
     const assignmentTable = tables.find((table) => table.id === modalTable);
-    if (!user?.id || !forceDealerId || !assignmentTable?.table_session_id) {
+    if (!user?.id || !activeClubId || assignmentTable?.club_id !== activeClubId || !forceDealerId || !assignmentTable?.table_session_id) {
       toast.error("Chọn dealer và xác minh lại phiên bàn trước khi gán.");
       return;
     }
     if (isSubmitting.current) return;
+    const generation = manualAssignScope.current.generation;
+    const current = () => manualAssignAlive.current && manualAssignScope.current.generation === generation;
     isSubmitting.current = true;
     setAssigning(true);
     try {
       const requestScope = JSON.stringify([user.id, assignmentTable.club_id, modalTable, assignmentTable.table_session_id, forceDealerId]);
       const storageKey = `vinpoker:manual-assign:${requestScope}`;
       const stored = sessionStorage.getItem(storageKey);
+      const cached = manualAssignRequests.current.get(requestScope);
+      if (stored !== null && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(stored))
+        throw new Error("Yêu cầu gán đã lưu không hợp lệ. Không tạo yêu cầu mới.");
+      if (cached && stored !== null && cached !== stored)
+        throw new Error("Yêu cầu gán đã thay đổi. Hãy mở lại màn hình để đọc yêu cầu đã lưu.");
       const requestId = manualAssignRequests.current.get(requestScope)
         ?? (stored && /^[0-9a-f-]{36}$/i.test(stored) ? stored : crypto.randomUUID());
       manualAssignRequests.current.set(requestScope, requestId);
       sessionStorage.setItem(storageKey, requestId);
-      const { data, error } = await supabase.functions.invoke("assign-dealer", {
+      if (sessionStorage.getItem(storageKey) !== requestId) throw new Error("Chưa lưu được yêu cầu gán; chưa gửi lệnh.");
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(supabase.functions.invoke("assign-dealer", {
         body: {
           table_id: modalTable,
           table_session_id: assignmentTable.table_session_id,
@@ -948,12 +966,14 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
           idempotency_key: requestId,
           shift_id: selectedTour ?? undefined,
         },
-      });
+      })));
+      if (!current()) return;
       if (error) {
         let detail = error.message;
         let status: number | undefined;
         if (error instanceof FunctionsHttpError) {
-          const body = await error.context.json().catch(() => null);
+          const body = await waitForManualPlayerResponse(error.context.json(), 10000).catch(() => null);
+          if (!current()) return;
           status = error.context.status;
           detail = body?.error ?? body?.message ?? detail;
           console.error("[confirmAssign] edge function returned:", { status, body });
@@ -976,8 +996,11 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         toast.warning("Chưa xác minh được kết quả gán. Thử lại cùng dealer để tra kết quả cũ.");
         return;
       }
-      manualAssignRequests.current.delete(requestScope);
+      if (sessionStorage.getItem(storageKey) !== requestId || manualAssignRequests.current.get(requestScope) !== requestId)
+        throw new Error("Kết quả gán đã về nhưng yêu cầu đã lưu thay đổi. Giữ journal để đối chiếu, không đóng màn hình.");
       sessionStorage.removeItem(storageKey);
+      if (sessionStorage.getItem(storageKey) !== null) throw new Error("Đã nhận kết quả gán nhưng chưa lưu được trạng thái đối chiếu.");
+      manualAssignRequests.current.delete(requestScope);
       toast.success("Đã gán dealer");
       if (modalTable) triggerSwingAnimation(modalTable);
       // Assignment notifications belong to the server commit path, not receipt replay.
@@ -985,10 +1008,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       refetchAssignments();
       refetchDealers();
     } catch (e: any) {
-      toast.error(e.message);
+      if (current()) toast.error(e.message);
     } finally {
-      setAssigning(false);
-      isSubmitting.current = false;
+      if (current()) { setAssigning(false); isSubmitting.current = false; }
     }
   };
 
