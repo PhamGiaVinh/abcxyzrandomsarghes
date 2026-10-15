@@ -120,6 +120,20 @@ describe("table-specific public history cards", () => {
     expect(screen.queryByText("Đang tải lịch sử…")).not.toBeInTheDocument();
   });
 
+  it("keeps loaded hands and pagination when a refresh has a malformed cursor", async () => {
+    rpc.mockResolvedValueOnce({ data: { access: "public", items: [
+      { handId: "retained", handNumber: 12, createdAt: "2026-09-27T01:00:00Z", result: { status: "pending" } },
+    ], nextCursor: { createdAt: "2026-09-27T01:00:00Z", id: "retained" } }, error: null });
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    await screen.findByText("Hand #12");
+    rpc.mockResolvedValueOnce({ data: { access: "public", items: [], nextCursor: 0 }, error: null });
+    fireEvent.focus(window);
+    expect(await screen.findByRole("status")).toHaveTextContent("Dữ liệu lịch sử không hợp lệ");
+    expect(screen.getByText("Hand #12")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tải thêm" })).toBeEnabled();
+    expect(screen.queryByText("Bàn này chưa có ván đã hoàn tất.")).not.toBeInTheDocument();
+  });
+
   it("formats Hand #9 from its frozen 100k/200k/25k blind snapshot", async () => {
     rpc.mockResolvedValue({ data: { access: "public", items: [
       { handId: "hand-9", tableSessionId: "session-9", handNumber: 9, createdAt: "2026-09-27T01:00:00Z", board: ["2c", "7d", "9h", "3s", "Kc"], pot: 4_800_000, smallBlind: 100_000, bigBlind: 200_000, ante: 25_000, result: { status: "verified", recipients: [

@@ -105,6 +105,7 @@ export function parsePublicTableHistoryPage(value: unknown, tournamentId: string
     });
   }
   const rawCursor = data.nextCursor === null ? null : record(data.nextCursor);
+  if (data.nextCursor !== null && rawCursor === null) return null;
   const cursorCreatedAt = rawCursor && string(rawCursor.createdAt);
   const cursorHandId = rawCursor && string(rawCursor.id);
   if (rawCursor && (!cursorCreatedAt || !cursorHandId)) return null;
