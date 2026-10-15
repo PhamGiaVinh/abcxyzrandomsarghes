@@ -22,6 +22,8 @@ on:
       - 'VinPoker/src/hooks/useTournaments*'
       - 'VinPoker/supabase/migrations/20270128000089_clock_start_level_readiness_v1.sql'
       - 'VinPoker/tests/floorProduction/clockLevelReadiness*'
+      - 'VinPoker/supabase/migrations/20270128000090_public_clock_projection_v1.sql'
+      - 'VinPoker/tests/floorProduction/publicClockProjection*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
       - 'VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner*'
       - 'VinPoker/supabase/functions/process-swing/plannerDispatchOutcome.test.ts'
@@ -509,6 +511,9 @@ jobs:
           node tests/floorProduction/participationTv.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000032_tournament_seat_display_preservation_v1.sql
           node tests/floorProduction/seatDisplayRollback.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_public_clock90
+          PGDATABASE=vinpoker_public_clock90 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000090_public_clock_projection_v1.sql
+          PGDATABASE=vinpoker_public_clock90 node tests/floorProduction/publicClockProjection.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000033_tournament_seat_move_tuple_v1.sql
           node tests/floorProduction/seatMoveTupleRollback.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000034_floor_move_wrapper_receipt_v1.sql
