@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
 import { Palette, RotateCcw, Save } from "lucide-react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { toast } from "sonner";
@@ -71,6 +75,11 @@ function RangeControl({ label, value, min, max, onChange }: {
 }
 
 export function TvBrandingEditor({ tournamentId }: { tournamentId: string }) {
+  const { user } = useAuth();
+  return <ScopedTvBrandingEditor key={JSON.stringify([user?.id, tournamentId])} tournamentId={tournamentId} />;
+}
+
+function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
   const supabase = useSupabaseClient();
   const rpc = useMemo(
     () => supabase.rpc.bind(supabase) as UntypedRpc,
@@ -85,6 +94,9 @@ export function TvBrandingEditor({ tournamentId }: { tournamentId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [revision, setRevision] = useState(0);
+  const alive = useRef(true);
+  const saveFlight = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   useEffect(() => {
     if (!open || !FEATURES.tvLayoutEditorV1) return;
@@ -92,26 +104,31 @@ export function TvBrandingEditor({ tournamentId }: { tournamentId: string }) {
     setLoading(true);
     setLoadError(null);
     (async () => {
-      const { data, error } = await rpc("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId });
-      if (cancelled) return;
-      if (error || !data) {
-        setLoadError(error?.message ?? "Tournament TV settings were not found.");
+      try {
+        const { data, error } = await observeTrackerContextRead(rpc("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId }));
+        if (cancelled) return;
+        if (error || !data) {
+          setLoadError(error?.message ?? "Tournament TV settings were not found.");
+          setLoading(false);
+          return;
+        }
+        const row = data as unknown as {
+          logo_url: string | null;
+          brand_name: string | null;
+          background_url: string | null;
+          layout: unknown;
+          revision: number;
+        };
+        if (!Number.isSafeInteger(row.revision) || row.revision < 0) throw new Error("tv_revision_unverified");
+        setLogoUrl(row.logo_url);
+        setBgUrl(row.background_url);
+        setBrandName(row.brand_name ?? "");
+        setLayout(parseTvBrandingLayout(row.layout));
+        setRevision(row.revision);
         setLoading(false);
-        return;
+      } catch {
+        if (!cancelled) { setLoadError("Could not load current TV settings. Close and reopen to retry."); setLoading(false); }
       }
-      const row = data as unknown as {
-        logo_url: string | null;
-        brand_name: string | null;
-        background_url: string | null;
-        layout: unknown;
-        revision: number;
-      };
-      setLogoUrl(row.logo_url);
-      setBgUrl(row.background_url);
-      setBrandName(row.brand_name ?? "");
-      setLayout(parseTvBrandingLayout(row.layout));
-      setRevision(row.revision);
-      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [open, rpc, tournamentId]);
@@ -138,6 +155,8 @@ export function TvBrandingEditor({ tournamentId }: { tournamentId: string }) {
   const layoutError = validateTvBrandingLayout(layout);
 
   const save = async () => {
+    if (saveFlight.current || loading || loadError || layoutError) return;
+    saveFlight.current = true;
     const submitted = {
       brandName: brandName.trim(),
       logoUrl: logoUrl?.trim() || null,
@@ -146,50 +165,61 @@ export function TvBrandingEditor({ tournamentId }: { tournamentId: string }) {
     };
     setSaving(true);
     try {
-      const { data, error } = await rpc("save_tv_tournament_layout_v1", {
+      const { data, error } = await waitForManualPlayerResponse(rpc("save_tv_tournament_layout_v1", {
         p_tournament_id: tournamentId,
         p_expected_revision: revision,
         p_brand_name: submitted.brandName,
         p_logo_url: submitted.logoUrl ?? "",
         p_bg_url: submitted.backgroundUrl ?? "",
         p_layout: submitted.layout,
-      });
+      }));
+      if (!alive.current) return;
       if (error || !data) {
         toast.error(error?.message?.includes("tv_layout_stale_revision")
           ? "Another operator published a new layout. Reopen the editor before saving."
           : error?.message ?? "The TV layout was not saved.");
         return;
       }
+      const savedRevision = (data as { revision?: unknown }).revision;
+      if (!Number.isSafeInteger(savedRevision) || Number(savedRevision) <= revision) throw new Error("tv_publish_unconfirmed");
       toast.success("TV layout published. Screens update on their next refresh.");
       setOpen(false);
     } catch {
+      if (!alive.current) return;
       // A lost response can happen after the transaction commits. Re-read the
       // canonical head before inviting a retry, which would otherwise produce
       // a misleading revision conflict.
-      const { data } = await rpc("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId });
-      const canonical = data as null | {
-        brand_name: string | null; logo_url: string | null;
-        background_url: string | null; layout: unknown;
-      };
-      if (canonical
-        && (canonical.brand_name ?? "") === submitted.brandName
-        && canonical.logo_url === submitted.logoUrl
-        && canonical.background_url === submitted.backgroundUrl
-        && JSON.stringify(canonical.layout) === JSON.stringify(submitted.layout)) {
-        toast.success("TV layout published. Screens update on their next refresh.");
-        setOpen(false);
-      } else {
-        toast.error("The TV layout response was lost and the published state could not be confirmed. Reopen the editor before retrying.");
+      try {
+        const { data, error } = await observeTrackerContextRead(rpc("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId }));
+        if (!alive.current) return;
+        const canonical = data as null | {
+          brand_name: string | null; logo_url: string | null;
+          background_url: string | null; layout: unknown; revision: number;
+        };
+        if (!error && canonical
+          && Number.isSafeInteger(canonical.revision) && canonical.revision > revision
+          && (canonical.brand_name ?? "") === submitted.brandName
+          && canonical.logo_url === submitted.logoUrl
+          && canonical.background_url === submitted.backgroundUrl
+          && canonicalVoiceJson(canonical.layout) === canonicalVoiceJson(submitted.layout)) {
+          toast.success("TV layout published. Screens update on their next refresh.");
+          setOpen(false);
+        } else {
+          toast.error("The TV layout response was lost and the published state could not be confirmed. Reopen the editor before retrying.");
+        }
+      } catch {
+        if (alive.current) toast.error("The TV layout response was lost and the published state could not be confirmed. Reopen the editor before retrying.");
       }
     } finally {
-      setSaving(false);
+      saveFlight.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
   if (!FEATURES.tvLayoutEditorV1) return null;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => { if (!saveFlight.current) setOpen(next); }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="min-h-11 gap-1.5 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10">
           <Palette className="h-4 w-4" /> Edit TV layout
