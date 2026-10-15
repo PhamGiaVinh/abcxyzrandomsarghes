@@ -30,6 +30,7 @@ on:
       - 'VinPoker/src/components/ops/shared/FloorTableControlMode.tsx'
       - 'VinPoker/src/components/ops/shared/FloorTableControlMode.test.tsx'
       - 'VinPoker/tests/dealerSwing/tournamentConfigSave*'
+      - 'VinPoker/tests/dealerSwing/manualSwingLifecycle.test.tsx'
       - 'VinPoker/supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql'
       - 'VinPoker/scripts/ops/clock-level89-*'
       - '.github/workflows/clock-level89-protected-apply.yml'
@@ -342,6 +343,7 @@ jobs:
           node node_modules/vitest/vitest.mjs run src/components/ops/shared/FloorTableControlMode.test.tsx src/lib/floorPendingModeIntent.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingLifecycle.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Next dealer intent UI and full application qualification
         working-directory: VinPoker
         env:

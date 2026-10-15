@@ -4,6 +4,7 @@ import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/useAuth";
 import { mergeCheckinCandidateReads, type CheckinCandidate } from "@/lib/dealerCheckinCandidates";
 import { DealerCheckinCandidateList } from "./dealer-swing/DealerCheckinCandidateList";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -669,9 +670,23 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
   // Manual swing: perform swing for a single assignment only (no side effects on other tables)
   const swingingRef = useRef(false);
-  const swingRequestIdsRef = useRef(new Map<string, string>());
+  const swingRequestIdsRef = useRef(new Map<string, {
+    p_assignment_id: string; p_table_id: string; p_table_session_id: string;
+    p_expected_version: number; p_request_id: string;
+  }>());
+  const manualSwingKey = JSON.stringify([user?.id, activeClubId]);
+  const manualSwingScope = useRef({ key: manualSwingKey, generation: 0 });
+  if (manualSwingScope.current.key !== manualSwingKey) manualSwingScope.current = {
+    key: manualSwingKey, generation: manualSwingScope.current.generation + 1,
+  };
+  const manualSwingAlive = useRef(true);
+  useEffect(() => { manualSwingAlive.current = true; return () => { manualSwingAlive.current = false; }; }, []);
+  useEffect(() => { swingingRef.current = false; setSwingingTableId(null); }, [manualSwingKey]);
   const performSwingForTable = async (assignmentId: string) => {
     if (swingingRef.current) return; // prevent double-click (ref is synchronous)
+    if (!user?.id || !activeClubId) { toast.error("Chưa xác minh được tài khoản và CLB để đổi dealer."); return; }
+    const generation = manualSwingScope.current.generation;
+    const current = () => manualSwingAlive.current && manualSwingScope.current.generation === generation;
     const assignment = (assignments ?? []).find((row) => row.id === assignmentId);
     if (!assignment) {
       toast.warning("Lượt chia đã thay đổi — đang tải lại.");
@@ -682,18 +697,18 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       toast.error("Bàn chưa có liên kết phiên hợp lệ. Không thể đổi dealer.");
       return;
     }
-    const requestId = swingRequestIdsRef.current.get(assignmentId) ?? crypto.randomUUID();
-    swingRequestIdsRef.current.set(assignmentId, requestId);
+    const intentKey = JSON.stringify([user.id, activeClubId, assignmentId]);
+    const intent = swingRequestIdsRef.current.get(intentKey) ?? {
+      p_assignment_id: assignmentId, p_table_id: assignment.table_id,
+      p_table_session_id: assignment.table_session_id, p_expected_version: assignment.version,
+      p_request_id: crypto.randomUUID(),
+    };
+    swingRequestIdsRef.current.set(intentKey, intent);
     swingingRef.current = true;
     setSwingingTableId(assignmentId);
     try {
-      const { data, error } = await (supabase.rpc as any)("operator_perform_swing", {
-        p_assignment_id: assignmentId,
-        p_table_id: assignment.table_id,
-        p_table_session_id: assignment.table_session_id,
-        p_expected_version: assignment.version,
-        p_request_id: requestId,
-      });
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(dealerMassOpenRpc<unknown>("operator_perform_swing", intent)));
+      if (!current()) return;
       if (error) {
         toast.error(`Lỗi swing: ${error.message}`);
         console.error("[performSwingForTable]", error);
@@ -705,16 +720,15 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       else if (swingOutcome.kind === "info") toast.info(swingOutcome.message);
       else if (swingOutcome.kind === "error") toast.error(swingOutcome.message);
       else toast.warning(swingOutcome.message);
-      swingRequestIdsRef.current.delete(assignmentId);
+      if (swingOutcome.kind !== "unknown" && swingOutcome.kind !== "error") swingRequestIdsRef.current.delete(intentKey);
       await Promise.all([
         refetchAssignments(),
         refetchDealers(),
       ]);
     } catch (e: any) {
-      toast.error(e.message);
+      if (current()) toast.error(e.message);
     } finally {
-      setSwingingTableId(null);
-      swingingRef.current = false;
+      if (current()) { setSwingingTableId(null); swingingRef.current = false; }
     }
   };
 

@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 manual Swing frozen in-session intent and lifetime
+
+Baseline38d8b0f70. Actual callback regression previously RED: unknown outcome deleted the request key, then retry used a new key/version from refreshed assignment cache. Keep the full operator_perform_swing argument tuple by actor/club/assignment while outcome is unknown/error. Observe writes through existing20s bounded helper; no automatic retry. Actor/club generation plus mounted lifetime fences prevent stale acknowledgement/error/finally from touching current screen/flight. Synchronous ref still blocks double clicks. Known classified outcomes release the in-memory intent; backend writer, rest15 and assignment policy unchanged.
+
+Actual React source-callback seam4 tests PASS: immutable key/version after unknown, timeout and ignored late success with explicit same-tuple retry, club-switch independent flight, unmount acknowledgement/double-click. Synthetic RPC, NOT full panel/browser/DB/worker proof. Test ESLint0; source baseline105errors/3warnings versus current104errors/3warnings (removed one any; remaining102any+2no-empty and3exhaustive-deps), NOT lint PASS. YAML parsed and diffcheck PASS; workflow path and actual test command wired locally, no dispatch. Fulltype/build not run under RAM hold.
+
+Remaining G3 integrity gap: this intent is memory-only, not reload/remount durable; disappeared/released assignments have no recovery entry point. Need actor-scoped durable journal and exact read-only operator receipt reconciliation before unknown-outcome recovery is accepted. Do not claim complete manual Swing idempotency or production repair. No PG/process left running; no push/CI/DB/Edge/frontend/flag/Auto/Daybreak change. Master goal active; local-only owner hold. Next: inspect existing operator receipt schema/ACL and add narrowly scoped recovery contract with runtime tests before client durable recovery.
+
 ## G5 stale roster remains blocked after a null mode-request poll
 
 Baseline05c0c0e15 clean. Workflowinspection foundconfig/modepathtrigger!=explicitunitexecution; addedactualsequentialvitestcommands forconfigform/helper andmodecomponent/journalhelper plusmodefiletriggers. ParsedYAML/executablecommands/existingfiles checkPASS; nodispatch andnoCIclaim. Priorhandoff 'workflowpaths/testschecked' waspathinventoryonly, notprooftheseunitcommandsalreadyran.
