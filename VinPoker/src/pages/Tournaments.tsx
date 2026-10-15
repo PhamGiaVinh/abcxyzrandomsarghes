@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LegacyScheduleEvidenceNote } from "@/components/LegacyScheduleEvidenceNote";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -555,12 +556,14 @@ const Tournaments = () => {
                           <div>
                             <div className="text-[11px] uppercase tracking-wider text-primary font-bold mb-1">Lịch hàng tuần</div>
                             <img src={c.weekly_schedule_image_url} alt={`${c.name} weekly schedule`} className="w-full h-auto object-contain rounded-md border border-border" loading="lazy" />
+                            <LegacyScheduleEvidenceNote />
                           </div>
                         )}
                         {c.daily_schedule_image_url && (
                           <div>
                             <div className="text-[11px] uppercase tracking-wider text-primary font-bold mb-1">Lịch hàng ngày</div>
                             <img src={c.daily_schedule_image_url} alt={`${c.name} daily schedule`} className="w-full h-auto object-contain rounded-md border border-border" loading="lazy" />
+                            <LegacyScheduleEvidenceNote />
                           </div>
                         )}
                       </div>

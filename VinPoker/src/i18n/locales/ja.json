@@ -1,4 +1,5 @@
 {
+  "legacyScheduleEvidence": "この画像の出典・版・審査情報はここでは確認できません。最新の日程はクラブにご確認ください。",
   "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "チップデータを読み込めません。在庫とチップバンクの状態は未確認です。", "permission": "この大会のクラブ所有者またはチップ管理者の権限が必要です。", "retry": "再読み込み" },
   "cashierOverviewRead": { "error": "統計を読み込めませんでした。更新して再試行してください。" },

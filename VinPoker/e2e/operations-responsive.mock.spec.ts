@@ -1,6 +1,27 @@
 import { expect, test } from "@playwright/test";
 
 for (const width of [375, 1280]) {
+  test(`legacy schedule metadata is unavailable, not fabricated at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({width,height:850});
+    await page.addInitScript(()=>localStorage.setItem('vinpoker.lang','vi'));
+    const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+    await page.route('http://127.0.0.1:54321/**',async route=>{
+      expect(route.request().method()).toBe('GET');
+      const path=new URL(route.request().url()).pathname;
+      const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBksAAAAASUVORK5CYII=';
+      const data=path.endsWith('/clubs')?{id:'club-test',name:'Legacy Schedule TEST',region:'TEST',updated_at:'2035-12-31T23:59:59Z',daily_schedule_image_url:image,weekly_schedule_image_url:image}:[];
+      await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+    });
+    await page.goto('/e2e/fixtures/operations-responsive.html?surface=legacy-schedule');
+    await expect(page.getByRole('note')).toHaveCount(2);
+    await expect(page.getByRole('note').first()).toContainText('chưa được cung cấp tại đây');
+    await expect(page.getByText(/2035/)).toHaveCount(0);
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const width of [375, 1280]) {
   test(`series upload failure feedback stays truthful at ${width}px`, async ({ page }) => {
     await page.setViewportSize({width,height:850});
     const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
