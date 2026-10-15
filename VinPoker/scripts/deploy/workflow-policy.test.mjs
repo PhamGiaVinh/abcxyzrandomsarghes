@@ -17,6 +17,22 @@ const validationWorkflow = readFileSync(
 const schemaCaptureWorkflow = readFileSync(resolve(root, ".github/workflows/capture-live-public-schema.yml"), "utf8");
 const physicalAssetApplyWorkflow = readFileSync(resolve(root, ".github/workflows/physical-asset-63-65-protected-apply.yml"), "utf8");
 
+test("owner-approved critical release does not require a paid reviewer gate", () => {
+  const gate = workflow.slice(workflow.indexOf("  validate-critical-environment:"), workflow.indexOf("  deploy-critical-edge:"));
+  assert.doesNotMatch(gate, /required_reviewers|gh api/);
+  const script = gate.match(/node --input-type=module <<'NODE'\r?\n([\s\S]*?)\r?\n\s*NODE/);
+  assert.ok(script, "owner authorization must execute before critical deployment");
+  const valid = { RELEASE_EVENT: "workflow_dispatch", RELEASE_REF: "refs/heads/main", INITIAL_ACTOR: "owner", TRIGGERING_ACTOR: "owner", REPOSITORY_OWNER: "owner" };
+  for (const delta of [{}, { INITIAL_ACTOR: "other" }, { TRIGGERING_ACTOR: "other" }, { RELEASE_EVENT: "push" }, { RELEASE_REF: "refs/heads/other" }, { REPOSITORY_OWNER: "" }]) {
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script[1]], { env: { ...process.env, ...valid, ...delta }, encoding: "utf8" });
+    assert.equal(result.status === 0, Object.keys(delta).length === 0, JSON.stringify(delta));
+  }
+  assert.match(gate, /INITIAL_ACTOR: \$\{\{ github\.actor \}\}/);
+  assert.match(gate, /TRIGGERING_ACTOR: \$\{\{ github\.triggering_actor \}\}/);
+  assert.match(gate, /REPOSITORY_OWNER: \$\{\{ github\.repository_owner \}\}/);
+  assert.match(gate, /needs:\s*\n\s*- plan\s*\n\s*- target-preflight/);
+});
+
 test("current-schema clones restore completed PG17 files rather than docker stdout streams", () => {
   const currentSchema = readFileSync(resolve(root, ".github/workflows/dealer-checkin-current-schema.yml"), "utf8");
   assert.doesNotMatch(currentSchema, /docker exec[^\n]*pg_dump[^\n]*\|/);
