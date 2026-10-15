@@ -4,6 +4,8 @@ on:
     paths:
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
+      - 'VinPoker/supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql'
+      - 'VinPoker/tests/dealerSwing/rotationPersistSessionFence*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
       - 'VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner*'
       - 'VinPoker/supabase/functions/process-swing/plannerDispatchOutcome.test.ts'
@@ -140,6 +142,7 @@ on:
       - 'VinPoker/tests/dealerSwing/readyTrigger*.sql'
       - 'VinPoker/supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql'
       - 'VinPoker/tests/dealerSwing/offCommit*'
+      - 'VinPoker/tests/dealerSwing/rotationSessionClose.currentSchema.mjs'
       - 'VinPoker/tests/dealerSwing/emptyReservation*'
       - 'VinPoker/supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql'
       - 'VinPoker/supabase/functions/process-swing/passes/passS2-empty-table-preassign*'
@@ -418,6 +421,7 @@ jobs:
           PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs
+          node tests/dealerSwing/rotationSessionClose.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql
           node tests/dealerSwing/emptyReservation.currentSchema.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reservation_identity
@@ -847,3 +851,14 @@ jobs:
           PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyTrigger.fixture.pg17.sql
           PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000021_dealer_ready_private_trigger_v1.sql
           PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyTrigger.pg17.sql
+      - name: Rotation persistence session fence on restored schema (RED then GREEN)
+        working-directory: VinPoker
+        run: |
+          if node tests/dealerSwing/rotationPersistSessionFence.currentSchema.mjs >"$RUNNER_TEMP/persist87-red.log" 2>&1; then
+            echo "Expected stale rotation persistence regression on baseline" >&2
+            exit 1
+          fi
+          grep -Fq 'invalid table has no prediction' "$RUNNER_TEMP/persist87-red.log"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql
+          node tests/dealerSwing/rotationPersistSessionFence.currentSchema.mjs
+          node tests/dealerSwing/rotationPersistSessionFence.concurrent.mjs
