@@ -15,17 +15,28 @@ const intent={actor_id:actor,request_id:'95000000-0000-4000-8000-000000000001',t
 const receipt={ok:true,status:'success',hand_id:intent.hand_id,actor_id:actor,request_id:intent.request_id,intent,
  table_session_id:intent.table_session_id,control_epoch:1,expected_source_revision:12,committed_source_revision:13,starting_total:60000,ending_total:60000};
 const body={tournament_id:intent.tournament_id,action:'record_manual_hand_v1',finish_intent:intent};
-async function request(value,{data=receipt,error=null,authenticated=true,header=true}={}){
+async function request(value,{data=receipt,error=null,authenticated=true,header=true,authError=null,authThrows=false}={}){
  let handler;const calls=[],clients=[];
  runInNewContext(source,{Request,Response,console,isManualFinishIntent,manualFinishReceiptMatches,manualFinishCancellationMatches,reconcileSidePots,
   Deno:{env:{get:key=>({SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-anon'})[key]},serve:callback=>{handler=callback;}},
-  createClient:(url,key,options)=>{clients.push({url,key,options});return {auth:{getUser:async()=>({data:{user:authenticated?{id:actor}:null},error:null})},rpc:async(name,params)=>{calls.push({name,params});return {data,error};}};},
+  createClient:(url,key,options)=>{clients.push({url,key,options});return {auth:{getUser:async()=>{if(authThrows)throw new TypeError('synthetic auth transport failed');return {data:{user:authenticated?{id:actor}:null},error:authError};}},rpc:async(name,params)=>{calls.push({name,params});return {data,error};}};},
  });
  const response=await handler(new Request('https://synthetic.invalid/functions/v1/tournament-live-update',{method:'POST',
   headers:{'Content-Type':'application/json',...(header?{Authorization:'Bearer synthetic-test-token'}:{})},body:JSON.stringify(value)}));
  return {status:response.status,payload:await response.json(),calls:JSON.parse(JSON.stringify(calls)),clients};
 }
 const good=await request(body);assert.equal(good.status,200);assert.deepEqual(good.payload.data,receipt);
+for(const authError of [{status:503},{status:0},{status:429},{message:'unknown auth failure'}]){
+ const unavailable=await request(body,{authenticated:false,authError});
+ assert.equal(unavailable.status,503);assert.equal(unavailable.calls.length,0);
+ assert.equal(unavailable.payload.code,'authentication_unavailable');
+}
+const thrownAuth=await request(body,{authThrows:true});assert.equal(thrownAuth.status,503);assert.equal(thrownAuth.calls.length,0);
+for(const status of [400,401,403,422])assert.equal((await request(body,{authenticated:false,authError:{status}})).status,401);
+for(const action of ['start_hand','record_action','validate_voice_event','prepare_voice_finish','commit_voice_finish','commit_voice_board','commit_voice_hole_cards']){
+ const unavailable=await request({...body,action},{authError:{status:503},authenticated:true});
+ assert.equal(unavailable.status,503);assert.equal(unavailable.calls.length,0);assert.equal(unavailable.clients.length,1,'no privileged fallback client');
+}
 const cancelled={ok:true,status:'cancelled',actor_id:actor,request_id:intent.request_id,intent,hand_id:intent.hand_id,
  table_session_id:intent.table_session_id,control_epoch:1,expected_source_revision:12};
 for(const action of ['record_manual_hand_v1','get_manual_finish_receipt_v1','cancel_manual_finish_v1']){

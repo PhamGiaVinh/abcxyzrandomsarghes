@@ -216,8 +216,20 @@ Deno.serve(async (req) => {
     { global: { headers: { Authorization: authHeader } } }
   );
 
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  const authenticationUnavailable = () => new Response(JSON.stringify({
+    error: "Authentication unavailable", code: "authentication_unavailable",
+  }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  let verification: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+  try { verification = await supabase.auth.getUser(); }
+  catch { return authenticationUnavailable(); }
+  const user = verification.data?.user;
+  if (verification.error) {
+    // A failed Auth dependency is not evidence that the caller lost access.
+    // Unknown/transport/rate-limit/server errors remain fail-closed unavailable.
+    if (![400, 401, 403, 422].includes(verification.error.status ?? 0)) return authenticationUnavailable();
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   const body = await req.json();
   const { tournament_id, action } = body;

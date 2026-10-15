@@ -150,3 +150,11 @@ test('first correction denial is zero-write, but it cannot discard an earlier un
  const frozen=[...retry.stored.values()][0];retry.state.write=async()=>denied;await retry.submit();
  assert.equal([...retry.stored.values()][0],frozen);assert.equal(retry.effects.filter(x=>x[0]==='outcome').length,0);
 });
+test('Auth dependency failure prevents writes and preserves an unresolved original intent',async()=>{
+ const first=harness();first.deps.supabase.auth.getUser=async()=>({data:{user:null},error:{status:503}});
+ await first.submit();assert.equal(first.calls.length,0);assert.equal(first.stored.size,0);
+ const retry=harness();retry.state.write=async()=>({data:null,error:new Error('lost')});await retry.submit();
+ const frozen=[...retry.stored.values()][0];retry.calls.length=0;
+ retry.deps.supabase.auth.getUser=async()=>({data:{user:null},error:{status:503}});await retry.submit();
+ assert.equal(retry.calls.length,0);assert.equal([...retry.stored.values()][0],frozen);
+});

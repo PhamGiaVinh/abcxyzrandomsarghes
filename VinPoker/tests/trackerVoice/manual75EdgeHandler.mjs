@@ -21,7 +21,7 @@ async function request(body,{data=receipt,error=null,authenticated=true,header=t
   Deno:{env:{get:key=>({SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-anon'})[key]},
    serve:callback=>{handler=callback;}},
   createClient:(url,key,options)=>{clients.push({url,key,options});return {
-   auth:{getUser:async()=>({data:{user:authenticated?{id:actor}:null},error:authenticated?null:new Error('synthetic auth denied')})},
+   auth:{getUser:async()=>({data:{user:authenticated?{id:actor}:null},error:authenticated?null:{status:401,message:'synthetic auth denied'}})},
    rpc:async(name,params)=>{calls.push({name,params});return {data,error};},
   };},
  });
