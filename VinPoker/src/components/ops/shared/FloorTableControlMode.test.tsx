@@ -229,6 +229,27 @@ describe("FloorTableControlModeControl", () => {
     expect(screen.getByTestId("floor-table-control-mode-save")).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent("Phiên bàn đã thay đổi");
   });
+  it("does not let a null request poll unlock stale roster context after failed refresh", async () => {
+    let poll!: () => void;
+    const timer=vi.spyOn(window,"setInterval").mockImplementation((callback,delay)=>{
+      if(delay===4000 && typeof callback==="function")poll=callback as ()=>void;
+      return 123 as unknown as ReturnType<typeof setInterval>;
+    });
+    const rpc=vi.fn().mockImplementation(async name=>({error:null,data:name==="floor_get_table_control_mode_request_v1"
+      ?{ok:true,request:null}:{ok:false,error:"STALE_STATE"}}));
+    const client={rpc} as never;
+    const renderControl=(revision=3)=><SupabaseClientProvider client={client}><FloorTableControlModeControl actorId="actor" tournamentId="tour"
+      table={{...canonicalTable,floor_control_revision:revision}} onChanged={async()=>false}/></SupabaseClientProvider>;
+    const view=render(renderControl());
+    try{
+      await confirmTracker();await screen.findByRole("alert");
+      await act(async()=>poll());
+      expect(screen.getByTestId("floor-table-control-mode-save")).toBeDisabled();
+      expect(screen.getByRole("alert")).toHaveTextContent("Phiên bàn đã thay đổi");
+      view.rerender(renderControl(4));
+      await waitFor(()=>expect(screen.getByTestId("floor-table-control-mode-tracker")).toBeEnabled());
+    }finally{view.unmount();timer.mockRestore();}
+  });
   it("does not classify an unknown successful shape as an applied mode", async () => {
     const rpc = vi.fn().mockImplementation(async (name) => ({ error: null, data:
       name === "floor_get_table_control_mode_request_v1" ? { ok: true, request: null }

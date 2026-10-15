@@ -67,6 +67,7 @@ function ScopedFloorTableControlMode({ actorId, tournamentId, table, onChanged, 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const awaitingRoster = useRef<{ revision: number; epoch: number | undefined } | null>(null);
 
   useEffect(() => {
     setSelected(attempt.current?.scope === scope ? attempt.current.args.controlMode : table.floor_control_mode);
@@ -96,7 +97,7 @@ function ScopedFloorTableControlMode({ actorId, tournamentId, table, onChanged, 
       return;
     }
     const refresh = async () => {
-      if (running || busyRef.current || document.visibilityState === "hidden" || !navigator.onLine) return;
+      if (running || busyRef.current || awaitingRoster.current || document.visibilityState === "hidden" || !navigator.onLine) return;
       running = true;
       const generation = mutationGeneration.current;
       try {
@@ -148,6 +149,14 @@ function ScopedFloorTableControlMode({ actorId, tournamentId, table, onChanged, 
     };
   }, [client, scope, validReadContext, table.tt_id, table.table_session_id]);
 
+  useEffect(() => {
+    const stale = awaitingRoster.current;
+    if (stale && (stale.revision !== table.floor_control_revision || stale.epoch !== table.control_epoch)) {
+      awaitingRoster.current = null;
+      void refreshRequest.current?.();
+    }
+  }, [table.floor_control_revision, table.control_epoch]);
+
   const changed = selected !== table.floor_control_mode;
   const selectedSummary = selected === "tracker"
     ? "Live Tracker: Tracker quản lý chip; chỉ cho phép loại khi chip đã về 0."
@@ -174,16 +183,18 @@ function ScopedFloorTableControlMode({ actorId, tournamentId, table, onChanged, 
         // Existing receipt is checked before STALE_STATE by the reviewed RPC.
         // This definitive rejection permits a fresh intent only after refresh.
         if (result.error === "STALE_STATE") {
+          awaitingRoster.current = { revision: table.floor_control_revision, epoch: table.control_epoch };
           clearPendingFloorModeIntent(attempt.current);
           attempt.current = null;
           setRecovery(null);
           setConfirmOpen(false);
           setRequestState({ scope, loaded: false, pending: null,
             error: "Phiên bàn đã thay đổi. Đang tải lại trước khi tạo yêu cầu mới." });
-          if ((await onChanged()) === true && alive.current && scopeRef.current === scope) {
+          if ((await observeTrackerContextRead(Promise.resolve(onChanged()))) === true && alive.current && scopeRef.current === scope) {
             // The caller confirmed a fresh canonical roster; verify pending
             // state again after releasing the write guard.
             busyRef.current = false;
+            awaitingRoster.current = null;
             await refreshRequest.current?.();
           }
         }

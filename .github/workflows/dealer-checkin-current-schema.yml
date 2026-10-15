@@ -27,6 +27,8 @@ on:
       - 'VinPoker/tests/dealerSwing/rotationPersistSessionFence*'
       - 'VinPoker/src/lib/tournamentConfigSave*'
       - 'VinPoker/src/pages/TournamentConfigPage*'
+      - 'VinPoker/src/components/ops/shared/FloorTableControlMode.tsx'
+      - 'VinPoker/src/components/ops/shared/FloorTableControlMode.test.tsx'
       - 'VinPoker/tests/dealerSwing/tournamentConfigSave*'
       - 'VinPoker/supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql'
       - 'VinPoker/scripts/ops/clock-level89-*'
@@ -336,6 +338,8 @@ jobs:
           node --test scripts/ops/dealer-checkin-51-protected-apply.test.mjs scripts/ops/dealer-checkin-51-atomic-pg.test.mjs
           node --test scripts/ops/restore-chip-52-53-release-plan.test.mjs scripts/ops/restore-chip-52-53-protected-apply.test.mjs scripts/ops/restore-chip-52-53-atomic-pg.test.mjs
           node node_modules/vitest/vitest.mjs run src/components/chip-ops/ColorUpTab.test.tsx src/components/cashier/tournament-live/RestoreBustDialog.test.tsx src/lib/floorTableControlV3.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/pages/TournamentConfigPage.atomicSave.test.tsx src/lib/tournamentConfigSave.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/components/ops/shared/FloorTableControlMode.test.tsx src/lib/floorPendingModeIntent.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
       - name: Next dealer intent UI and full application qualification

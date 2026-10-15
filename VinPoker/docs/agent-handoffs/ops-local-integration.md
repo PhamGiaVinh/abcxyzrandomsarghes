@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G5 stale roster remains blocked after a null mode-request poll
+
+Baseline05c0c0e15 clean. Workflowinspection foundconfig/modepathtrigger!=explicitunitexecution; addedactualsequentialvitestcommands forconfigform/helper andmodecomponent/journalhelper plusmodefiletriggers. ParsedYAML/executablecommands/existingfiles checkPASS; nodispatch andnoCIclaim. Priorhandoff 'workflowpaths/testschecked' waspathinventoryonly, notprooftheseunitcommandsalreadyran.
+
+ActualnewmodecomponentRED: STALE_STATE -> onChangedfalse -> manualnext4spollrequestnull resetloadedtrue/enabledsave withunchangedoldrosterrevision. AddedawaitingRosterfence: capturestale revision/epoch; null/pendingpollcannotreplacefreshnessproof, skiprefreshwhileawaiting. Clearonlywhenpropsrevision/epochchanges orcallerexplicitlyreturnsfreshrostertrue; thenverifyrequestagain. StaleonChangedobservation bounded10s; unknowncallbackdoesnotunlock. Existingrequestjournal/CAS/serverpolicy unchanged, nostaleintentautomaticallyresent. Positivecontrolnewrevisionpropsunlockaftercanonicalrequestread.
+
+Actualcomponent18+journalhelper4=22PASS, editedESLint0/diffcheckPASS. NotnewDBwrite/authorization/runtimeproof; previousmode49nativebytesunchanged/notrerun. No fulltype/build/browser375/HTTP; callbackdeadlinecodeboundedbutdedicatedhangregressionnotaddedhere. No PG/nohandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyownerhold/fullmastergoalactive/incomplete.
+
 ## G4 config-save journal replacement and readback integrity
 
 Baseline0d4eda3aa clean. NULLreceipt hypothesis dismissed fromschema: actor/hash/revision fields NOTNULL andEdge suppliesvalidatedactor/CAS; no fabricatednullbug/productpatch. ThenactualTournamentDialogRED2: oldsuccessfulconfigsave removedlaterjournal; no-opstorage setItem stilldispatchedatomicwriter. Existingdurableconfigsavehelper enhancedwithcanonicalwhole-request compare/readbackpersist andexactclear; formusesboth beforewrite/receipt andcleanup. Appeared/changed/corruptjournal blocksdispatch; successcleanupfailure acknowledgesknowncommit butretainsjournal andstaysblockedratherthanunsafeclose/newsave. CancelUIcancloseblockedjournalform toremount/reread preservedcurrentjournal (doesnotcancelDBrequest). Genericunexpectederror treatedunknown, notguaranteedrollback; explicitTournamentConfigSaveError businessdenial stillclearsonlymatchingjournal.
