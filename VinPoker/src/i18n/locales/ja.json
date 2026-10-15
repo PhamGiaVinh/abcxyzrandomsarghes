@@ -1,7 +1,7 @@
 {
   "legacyScheduleEvidence": "この画像の出典・版・審査情報はここでは確認できません。最新の日程はクラブにご確認ください。",
-  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "createAtomic": { "signin": "大会を作成する前にログインしてください。", "storageError": "保留中の作成リクエストを読み取りまたは保存できません。新しいリクエストは送信されていません。", "unknown": "作成結果を確認できていません。再試行の前に前回のリクエストを確認してください。", "check": "前回のリクエストを確認", "retry": "同じリクエストを再送信", "pending": "前回の作成リクエストの結果が未確認です。別の大会を作成する前に確認してください。再送信では編集後の値ではなく、元の値を使用します。" },
+  "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "チップデータを読み込めません。在庫とチップバンクの状態は未確認です。", "permission": "この大会のクラブ所有者またはチップ管理者の権限が必要です。", "retry": "再読み込み" },
   "cashierOverviewRead": { "error": "統計を読み込めませんでした。更新して再試行してください。" },
   "liveStateSummary": {

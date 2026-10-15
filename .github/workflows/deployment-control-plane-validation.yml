@@ -7,6 +7,8 @@ on:
       - "VinPoker/scripts/ops/clock-level89-*"
       - ".github/workflows/tournament-create91-protected-apply.yml"
       - "VinPoker/scripts/ops/tournament-create91-*"
+      - ".github/workflows/series-reorder92-protected-apply.yml"
+      - "VinPoker/scripts/ops/series-reorder92-*"
       - ".github/workflows/dealer-rest78-protected-apply.yml"
       - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/dealer-close79-protected-apply.yml"
@@ -116,6 +118,7 @@ jobs:
           "${RUNNER_TEMP}/actionlint" \
             .github/workflows/vbackerworkflowmain.yml \
             .github/workflows/clock-level89-protected-apply.yml \
+            .github/workflows/series-reorder92-protected-apply.yml \
             .github/workflows/dealer-rest78-protected-apply.yml \
             .github/workflows/tournament-create91-protected-apply.yml \
             .github/workflows/dealer-close79-protected-apply.yml \
@@ -152,6 +155,8 @@ jobs:
 
       - name: Test exact clock89 protected transport
         run: node --test VinPoker/scripts/ops/clock-level89-release-plan.test.mjs VinPoker/scripts/ops/clock-level89-protected-apply.test.mjs
+      - name: Test exact series92 protected transport
+        run: node --test VinPoker/scripts/ops/series-reorder92-release-plan.test.mjs VinPoker/scripts/ops/series-reorder92-protected-apply.test.mjs
 
       - name: Test pinned dump image transport without production access
         run: node --test VinPoker/scripts/deploy/preload-postgres-dump-image.test.mjs

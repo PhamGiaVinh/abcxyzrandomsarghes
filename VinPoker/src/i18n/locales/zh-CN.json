@@ -1,7 +1,7 @@
 {
   "legacyScheduleEvidence": "此处未提供该图片的来源、版本及审核信息。请向俱乐部确认最新赛程。",
-  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "createAtomic": { "signin": "创建比赛前请先登录。", "storageError": "无法读取或保存待处理的创建请求。未发送新请求。", "unknown": "尚未确认创建结果。重试前请检查上次请求。", "check": "检查上次请求", "retry": "重发原请求", "pending": "上次创建请求的结果尚未确认。创建其他比赛前请先检查。重发将使用原始数据，而非刚编辑的内容。" },
+  "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "无法加载筹码数据。库存和筹码库状态尚未核实。", "permission": "需要本赛事所属俱乐部的筹码管理员或所有者权限。", "retry": "重新加载" },
   "cashierOverviewRead": { "error": "无法加载统计数据。请刷新重试。" },
   "liveStateSummary": {

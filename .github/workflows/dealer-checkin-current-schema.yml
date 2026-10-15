@@ -14,6 +14,10 @@ on:
       - 'VinPoker/tests/floorTableControlV3/tournamentCreate91*'
       - 'VinPoker/src/lib/tournamentCreate*'
       - 'VinPoker/src/components/floor/TournamentManagerShared*'
+      - 'VinPoker/scripts/ops/series-reorder92-*'
+      - '.github/workflows/series-reorder92-protected-apply.yml'
+      - 'VinPoker/supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql'
+      - 'VinPoker/tests/clubSchedules/**'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
       - 'VinPoker/supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql'
@@ -504,6 +508,15 @@ jobs:
           node --test scripts/ops/clock-level89-release-plan.test.mjs scripts/ops/clock-level89-protected-apply.test.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_clock89_release_v2
           node scripts/ops/clock-level89-release-plan.pg17.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_series_reorder
+          node tests/clubSchedules/seriesReorder.repro.pg17.mjs
+          psql -X -v ON_ERROR_STOP=1 -d vinpoker_ops_series_reorder -f supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -d vinpoker_ops_series_reorder -f tests/clubSchedules/seriesReorder.pg17.sql
+          createdb -T vinpoker_ops_series_reorder vinpoker_ops_series_reorder_overlap
+          node tests/clubSchedules/seriesReorder.concurrent.mjs
+          node --test scripts/ops/series-reorder92-release-plan.test.mjs scripts/ops/series-reorder92-protected-apply.test.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_series92_release
+          node scripts/ops/series-reorder92-release-plan.pg17.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000027_tracker_equal_blinds_contract_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/equalBlinds.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000028_tracker_roster_exact_session_v1.sql
