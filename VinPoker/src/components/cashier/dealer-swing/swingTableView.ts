@@ -12,6 +12,7 @@
 import type { DealerAssignment, PreAssignedInfo, SwingConfig } from "@/hooks/useDealerSwing";
 import type { RotationTableSlots } from "@/hooks/useRotationSchedule";
 import type { TournamentWithTables } from "@/types/tournament";
+import { findDealerTableTournament } from "@/lib/dealerTableInventory";
 import { getSwingTableStatus, type SwingTableStatus } from "./swingTableStatus";
 import type { DealerTableStatus } from "./dealerStatusStyle";
 
@@ -68,9 +69,7 @@ export function deriveTableSwingView(
   swingConfigs: SwingConfig[] | null | undefined,
   nowMs: number,
 ): SwingTableView {
-  const tableTournament = tournaments?.find((tr) =>
-    tr.tournament_tables.some((tt) => tt.table_id === t.id)
-  );
+  const tableTournament = findDealerTableTournament(t, a?.table_session_id, tournaments);
   const warnAt =
     tableTournament?.warn_at_minutes
     ?? swingConfigs?.find((c) => c.table_type === t.table_type)?.warn_at_minutes

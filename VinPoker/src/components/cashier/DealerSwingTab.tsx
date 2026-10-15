@@ -82,7 +82,7 @@ import CloseTourDialog, { type CloseTourPreview } from "./dealer-swing/CloseTour
 import { describeCloseBlockers, getDealerTourCloseReadiness, type CloseReadiness } from "@/lib/feltLifecycleReadiness";
 import { FEATURES } from "@/lib/featureFlags";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "@/lib/floorTableControlV3";
-import { isDealerTableAvailable } from "@/lib/dealerTableInventory";
+import { findDealerTableTournament, isDealerTableAvailable } from "@/lib/dealerTableInventory";
 import { exportToExcel } from "@/lib/exportExcel";
 import { calculateLiveWorkedMinutes } from "@/lib/dealerWorkedMinutes";
 import { classifyManualSwingOutcome, classifyProcessSwingResult } from "@/lib/dealerSwingOutcome";
@@ -150,9 +150,8 @@ function resolveTableSwingTiming(
   nowMs: number,
 ): TableTimeline {
   const tableType = table?.table_type ?? assignment.game_tables?.table_type ?? "tournament";
-  const tableTournament = tournaments?.find((tr) =>
-    tr.id === table?.tournament_id
-    || tr.tournament_tables.some((tt) => tt.table_id === assignment.table_id)
+  const tableTournament = findDealerTableTournament(
+    { ...table, id: assignment.table_id }, assignment.table_session_id, tournaments,
   );
   const swingDurationMinutes =
     tableTournament?.swing_duration_minutes

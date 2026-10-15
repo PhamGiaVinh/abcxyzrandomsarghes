@@ -1,0 +1,44 @@
+import {expect,it} from 'vitest';
+import type {DealerAssignment} from '@/hooks/useDealerSwing';
+import type {TournamentWithTables} from '@/types/tournament';
+import {deriveTableSwingView} from './swingTableView';
+import {findDealerTableTournament} from '@/lib/dealerTableInventory';
+
+const table={id:'physical-a',table_type:'tournament',table_session_id:'session-new'};
+const assignment={table_id:'physical-a',table_session_id:'session-new',
+ assigned_at:'2026-10-15T00:00:00Z',swing_due_at:'2026-10-15T00:30:00Z'} as DealerAssignment;
+function tournament(link:Record<string,unknown>){
+ return {id:'tour-a',swing_duration_minutes:37,warn_at_minutes:7,
+  tournament_tables:[link]} as unknown as TournamentWithTables;
+}
+it('resolves canonical tournament config for the exact active table session',()=>{
+ const tour=tournament({id:'logical-a',table_id:null,game_table_id:table.id,
+  table_session_id:'session-new',status:'active'});
+ const view=deriveTableSwingView(table,assignment,undefined,[tour],[],Date.parse('2026-10-15T00:10:00Z'));
+ expect(view.tableTournament).toBe(tour);
+ expect(view.swingDurationMs).toBe(37*60_000);
+ expect(view.swingDueMs).toBe(Date.parse(assignment.swing_due_at!));
+});
+it('rejects a prior session even when its legacy physical ID matches',()=>{
+ const old=tournament({id:'logical-old',table_id:table.id,game_table_id:table.id,
+  table_session_id:'session-old',status:'closed'});
+ const view=deriveTableSwingView(table,assignment,undefined,[old],[],Date.now());
+ expect(view.tableTournament).toBeUndefined();
+});
+it('rejects conflicting aliases, cross-club links, duplicate matches and stale assignments',()=>{
+ const link={id:'logical-a',table_id:null,game_table_id:table.id,table_session_id:'session-new',status:'active'};
+ const tour={...tournament(link),club_id:'club-a'};
+ const scoped={...table,club_id:'club-a'};
+ expect(findDealerTableTournament(scoped,'session-old',[tour])).toBeUndefined();
+ expect(findDealerTableTournament({...scoped,club_id:'club-b'},'session-new',[tour])).toBeUndefined();
+ expect(findDealerTableTournament(scoped,'session-new',[tour,tour])).toBeUndefined();
+ expect(findDealerTableTournament(scoped,'session-new',[
+  {...tour,tournament_tables:[{...tour.tournament_tables[0],table_id:'physical-other'}]},
+ ])).toBeUndefined();
+ expect(findDealerTableTournament({...scoped,availability_status:'repair_required'},'session-new',[tour])).toBeUndefined();
+});
+it('keeps legacy metadata only when no session is being inferred',()=>{
+ const legacy=tournament({table_id:table.id});
+ expect(findDealerTableTournament({id:table.id},null,[legacy])).toBe(legacy);
+ expect(findDealerTableTournament(table,'session-new',[legacy])).toBeUndefined();
+});
