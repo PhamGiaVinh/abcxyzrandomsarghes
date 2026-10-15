@@ -158,11 +158,8 @@ async function fetchActiveAssignments(admin: any, clubId: string): Promise<Activ
     .eq("status", "assigned")
     .is("released_at", null)
     .is("swing_processed_at", null);
-  if (error) {
-    console.error("[Pass R] active assignments query error:", error.message);
-    return [];
-  }
-  return (data ?? []) as ActiveAssignmentRow[];
+  if (error || !Array.isArray(data)) throw new Error("rotation_assignment_snapshot_unavailable");
+  return data as ActiveAssignmentRow[];
 }
 
 async function fetchLiveScheduleRows(admin: any, clubId: string): Promise<ScheduleRow[]> {
@@ -171,11 +168,8 @@ async function fetchLiveScheduleRows(admin: any, clubId: string): Promise<Schedu
     .select("id, table_id, assignment_id, slot_index, in_attendance_id, out_attendance_id, planned_relief_at, announce_at, status, version")
     .eq("club_id", clubId)
     .in("status", ["predicted", "announced", "executing"]);
-  if (error) {
-    console.error("[Pass R] schedule query error:", error.message);
-    return [];
-  }
-  return (data ?? []) as ScheduleRow[];
+  if (error || !Array.isArray(data)) throw new Error("rotation_schedule_snapshot_unavailable");
+  return data as ScheduleRow[];
 }
 
 async function fetchTournamentInfo(

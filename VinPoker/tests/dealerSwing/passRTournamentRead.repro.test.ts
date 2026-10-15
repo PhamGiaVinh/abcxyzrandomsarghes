@@ -13,6 +13,28 @@ const js=ts.transpileModule(source.slice(start,end),{
 }).outputText;
 const read=new Function('console',`${js}; return fetchTournamentInfo;`)({warn:vi.fn()});
 
+it('actual input readers distinguish dependency failure from a verified empty snapshot',async()=>{
+ const first=source.indexOf('async function fetchActiveAssignments(');
+ if(first<0||start<=first)throw Error('Actual input snapshot seams missing');
+ const input=ts.transpileModule(source.slice(first,start),{
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
+ }).outputText;
+ const readers=new Function('console',`${input};return [fetchActiveAssignments,fetchLiveScheduleRows];`)({error:vi.fn()});
+ for(const [index,reader] of readers.entries()){
+  for(const response of [{data:null,error:{message:'synthetic outage'}},{data:null,error:null},{data:[],error:null}]){
+   const query={select:vi.fn(),eq:vi.fn(),is:vi.fn(),in:vi.fn(),
+    then:(resolve:(value:unknown)=>unknown)=>Promise.resolve(response).then(resolve)};
+   for(const key of ['select','eq','is','in'] as const)query[key].mockReturnValue(query);
+   if(response.error||response.data===null){
+    await expect(reader({from:()=>query},'club-a')).rejects.toThrow(index===0?
+     'rotation_assignment_snapshot_unavailable':'rotation_schedule_snapshot_unavailable');
+   }else{
+    await expect(reader({from:()=>query},'club-a')).resolves.toEqual([]);
+   }
+  }
+ }
+});
+
 const assignment={table_id:'physical-a',table_session_id:'session-new'};
 const session={id:'session-new',club_id:'club-a',game_table_id:'physical-a',
  tournament_id:'tour-new',session_type:'tournament',closed_at:null};

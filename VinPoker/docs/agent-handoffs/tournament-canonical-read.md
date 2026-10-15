@@ -36,6 +36,25 @@ nominal-duration consistency require a separately tested repair in this campaign
 
 ## Not repaired / release dependencies
 
+Exactf312Ops38711367820: fulltsc/build PASS; SQLstep FAILED at bootstrap guard
+before fixture DDL. No SQL fingerprint proof yet. Runner forwarded Docker port
+does not establish server-side loopback; current candidate executes psql inside
+the exact CI PG17 service container with -h127.0.0.1 and prints non-sensitive
+preflight fields. Bootstrap guard is unchanged, no bridge exception. Final
+corrected-run result still required. GitHub CLI cached log download failed due
+Cdrive full; readonly job-log API streamed logs successfully, no cache deletion.
+Input-reader unavailable delta9PASS/DenoPASS/readonlyPASS remains included in
+next commit; exact priorCI cannot qualify later changes.
+
+Additional actual-source snapshot regression: fetchActiveAssignments and
+fetchLiveScheduleRows formerly returned[] on query failure. New testRED proved
+resolved[] rather than rejection. Candidate now throws coded unavailable for
+query error or non-array data, retaining verified successful[]; suite9PASS,
+Deno frozenPASS. Main Promise.all routes errors before writes; index.ts records
+passR errors through assessCoreQueryFailure rather than healthy success.
+Small delta uncommitted while current SQLCI f3128d315 is running; readonly review
+requested. No need restart old identical CI or claim it covers this later delta.
+
 SQL-scope proof candidate added to existing dealer_rotation_plan_diff.sql: snapshot
 full JSONB of one real predicted table2 row, run empty partial plan scoped to
 table3, compare full table2 fingerprint unchanged. Actual existing SQL function
