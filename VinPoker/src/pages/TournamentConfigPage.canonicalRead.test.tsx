@@ -11,6 +11,7 @@ vi.mock('@/hooks/useTournaments',()=>({
   swing_duration_minutes:30,warn_at_minutes:5,crit_at_minutes:2,
   tournament_tables:state.links,
  }]}),
+ useTournamentConfigTableInventory:()=>({data:[],isSuccess:true,isFetching:false}),
  useCreateTournament:()=>({isPending:false,mutateAsync:vi.fn()}),
  useUpdateTournament:()=>({isPending:false,mutateAsync:vi.fn()}),
  useDeleteTournament:()=>({isPending:false,mutateAsync:vi.fn()}),
