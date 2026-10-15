@@ -10,6 +10,7 @@ import type { PublicTableHistoryItem } from "./publicSnapshotTypes";
 import type { ReplayTarget } from "./replayTarget";
 
 const PAGE_SIZE = 20;
+const READ_TIMEOUT_MS = 20_000;
 
 export function TableHistoryPanel({
   tournamentId,
@@ -36,6 +37,7 @@ export function TableHistoryPanel({
   const nextCursorRef = useRef<{ createdAt: string; handId: string } | null>(null);
   const inFlightRef = useRef<number | null>(null);
   const refreshQueuedRef = useRef(false);
+  const deadlineTimerRef = useRef<number | null>(null);
   const context = `${tournamentId}:${tableId ?? ""}`;
 
   const load = useCallback(async (mode: "replace" | "append" | "refresh"): Promise<void> => {
@@ -59,15 +61,23 @@ export function TableHistoryPanel({
     let fetchedPages = 0;
     let accessRevoked = false;
     let loadError: string | null = null;
+    let timedOut = false;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      deadlineTimerRef.current = window.setTimeout(() => {
+        timedOut = true;
+        reject(new Error("TABLE_HISTORY_READ_TIMEOUT"));
+      }, READ_TIMEOUT_MS);
+    });
+    const deadlineTimer = deadlineTimerRef.current;
     try {
     for (let pageIndex = 0; pageIndex < pageTarget; pageIndex += 1) {
-      const { data, error: rpcError } = await supabase.rpc("get_public_tournament_table_history_v2" as never, {
+      const { data, error: rpcError } = await Promise.race([supabase.rpc("get_public_tournament_table_history_v2" as never, {
         p_tournament_id: tournamentId,
         p_tournament_table_id: tableId,
         p_limit: PAGE_SIZE,
         p_before_created_at: cursor?.createdAt ?? null,
         p_before_id: cursor?.handId ?? null,
-      } as never);
+      } as never), deadline]);
       if (generation !== requestGenerationRef.current) return;
       if (rpcError) {
         loadError = "Không thể tải lịch sử bàn. Dữ liệu đang hiển thị vẫn được giữ nguyên.";
@@ -121,12 +131,14 @@ export function TableHistoryPanel({
         setError("Không thể tải lịch sử bàn. Dữ liệu đang hiển thị vẫn được giữ nguyên.");
       }
     } finally {
+      if (deadlineTimer !== null) window.clearTimeout(deadlineTimer);
       if (generation === requestGenerationRef.current) {
+        deadlineTimerRef.current = null;
         inFlightRef.current = null;
         setLoading(false);
         const refreshQueued = refreshQueuedRef.current;
         refreshQueuedRef.current = false;
-        if (refreshQueued && !accessRevoked) void load("refresh");
+        if (refreshQueued && !accessRevoked && !timedOut) void load("refresh");
       }
     }
   }, [context, onAccessRevoked, tableId, tournamentId]);
@@ -145,7 +157,11 @@ export function TableHistoryPanel({
     setRevoked(false);
     setError(null);
     void load("replace");
-    return () => { requestGenerationRef.current += 1; };
+    return () => {
+      requestGenerationRef.current += 1;
+      if (deadlineTimerRef.current !== null) window.clearTimeout(deadlineTimerRef.current);
+      deadlineTimerRef.current = null;
+    };
   // The panel is remounted by its table identity. Do not reload on nextCursor.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId, tableId]);

@@ -22,6 +22,44 @@ describe("table-specific public history cards", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("bounds an unresolved read and ignores its late response after recovery", async () => {
+    vi.useFakeTimers();
+    let finishLate!: (value: unknown) => void;
+    rpc.mockImplementationOnce(() => new Promise((resolve) => { finishLate = resolve; }));
+    rpc.mockResolvedValue({ data: { access: "public", items: [], nextCursor: null }, error: null });
+    const view = render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(screen.getByRole("status")).toHaveTextContent("Không thể tải lịch sử bàn");
+      expect(screen.queryByText("Đang tải lịch sử…")).not.toBeInTheDocument();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      await act(async () => { fireEvent.focus(window); });
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Bàn này chưa có ván đã hoàn tất.")).toBeInTheDocument();
+      await act(async () => finishLate({ data: { access: "public", items: [
+        { handId: "late", handNumber: 99, createdAt: "2026-09-27T01:00:00Z", result: { status: "pending" } },
+      ], nextCursor: null }, error: null }));
+      expect(screen.queryByText("Hand #99")).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the read deadline and polling timer on unmount", () => {
+    vi.useFakeTimers();
+    rpc.mockImplementationOnce(() => new Promise(() => {}));
+    const view = render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    try {
+      expect(vi.getTimerCount()).toBe(2);
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("coalesces focus refreshes during an in-flight read and then fetches fresh state once", async () => {
     let finish!: (value: unknown) => void;
     rpc.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
