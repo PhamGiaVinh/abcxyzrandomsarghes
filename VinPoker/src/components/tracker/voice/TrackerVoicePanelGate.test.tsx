@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
@@ -44,7 +44,7 @@ function hookFixture(tournamentTableId = "table-1"): StandaloneHandInput {
   } as unknown as StandaloneHandInput;
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 beforeEach(() => loadRuntime.mockReset());
 
 describe("isTrackerVoiceUiEnabled", () => {
@@ -63,6 +63,35 @@ describe("isTrackerVoiceUiEnabled", () => {
 });
 
 describe("TrackerVoicePanelGate", () => {
+  it("unblocks a hung runtime read and ignores its late response after explicit retry", async () => {
+    vi.useFakeTimers();
+    let complete!: (value: TrackerVoiceRuntimeContext) => void;
+    loadRuntime.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }))
+      .mockResolvedValueOnce(runtimeFixture());
+    render(<TrackerVoicePanelGate hook={hookFixture()} />);
+    expect(screen.getByRole("button", { name: "Thử lại" })).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(screen.getByText("Chưa kiểm tra được quyền Voice. Hãy thử lại.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thử lại" })).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Thử lại" })); });
+    expect(screen.getByText("Voice panel ready")).toBeInTheDocument();
+    await act(async () => { complete(runtimeFixture({ read_only: true })); });
+    expect(screen.getByText("Voice panel ready")).toBeInTheDocument();
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a previous table timeout hide a newer verified Voice surface", async () => {
+    vi.useFakeTimers();
+    loadRuntime.mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce(runtimeFixture());
+    const view = render(<TrackerVoicePanelGate hook={hookFixture("table-old")} />);
+    view.rerender(<TrackerVoicePanelGate hook={hookFixture("table-new")} />);
+    await act(async () => {});
+    expect(screen.getByText("Voice panel ready")).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(screen.getByText("Voice panel ready")).toBeInTheDocument();
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
   it("shows a safe assignment reason and retries into the Voice panel", async () => {
     loadRuntime
       .mockRejectedValueOnce(new Error("dealer_assignment_missing"))

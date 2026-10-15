@@ -5,6 +5,7 @@ import type { StandaloneHandInput } from "@/components/cashier/tournament-live/h
 import { Button } from "@/components/ui/button";
 import { loadTrackerVoiceRuntimeContext, type TrackerVoiceRuntimeContext } from "@/lib/trackerVoice";
 import { isTrackerVoiceUiEnabled } from "@/lib/trackerVoice/uiGate";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
 import { TrackerVoicePanel } from "./TrackerVoicePanel";
 
@@ -30,10 +31,10 @@ export function TrackerVoicePanelGate({ hook, compact = false }: { hook: Standal
 
     setLoading(true);
     try {
-      const nextRuntime = await loadTrackerVoiceRuntimeContext(
+      const nextRuntime = await waitForManualPlayerResponse(loadTrackerVoiceRuntimeContext(
         hook.tournamentId,
         hook.tournamentTableId,
-      );
+      ));
       if (requestId !== requestSequence.current) return;
       setRuntime(nextRuntime);
     } catch (error) {
