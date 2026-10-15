@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -72,4 +72,19 @@ it("does not let an old queue response clear the new tournament hand selection",
   expect(screen.getByRole("button", { name: "Chọn hand khác" })).toBeInTheDocument();
   await act(async () => { oldQueue.resolve(ok([])); });
   expect(screen.getByRole("button", { name: "Chọn hand khác" })).toBeInTheDocument();
+});
+
+it("shows table authority errors and lets an explicit retry recover the filter", async () => {
+  backend.rpc.mockImplementation((name: string) => Promise.resolve(name === "list_tracker_tables_v2"
+    ? { data: { ok: false, error: "actor_not_allowed" }, error: null } : ok([])));
+  render(<HandHistoryWorkspace tournamentId="tour-a" />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không tải được danh sách bàn: actor_not_allowed");
+  expect(screen.getByRole("combobox", { name: "Lọc lịch sử theo bàn" })).toBeDisabled();
+  expect(backend.rpc.mock.calls.some(([name]) => name === "get_tournament_tables")).toBe(false);
+  backend.rpc.mockImplementation((name: string) => Promise.resolve(name === "list_tracker_tables_v2"
+    ? { data: { ok: true, tables: [{ tournament_table_id: "table-a", table_name: "Table A" }] }, error: null } : ok([])));
+  fireEvent.click(screen.getByRole("button", { name: "Tải lại danh sách bàn" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Lọc lịch sử theo bàn" })).toBeEnabled());
+  expect(screen.getByRole("option", { name: "Table A" })).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

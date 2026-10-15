@@ -12,9 +12,15 @@ const source = process.env.HISTORY_SOURCE_REVISION
   : readFileSync(new URL('../../src/components/cashier/tournament-live/HandHistoryWorkspace.tsx', import.meta.url), 'utf8');
 const tree = parseSync(source, { syntax: 'typescript', tsx: true });
 let callback;
+let tableEffect;
 function visit(node) {
   if (!node || typeof node !== 'object') return;
   if (node.type === 'VariableDeclarator' && node.id.value === 'loadHands') callback = node.init.arguments[0].expression;
+  if (node.type === 'CallExpression' && node.callee.value === 'useEffect') {
+    const effect = node.arguments[0].expression;
+    const text = Buffer.from(source).subarray(effect.span.start - tree.span.start, effect.span.end - tree.span.start).toString();
+    if (text.includes('"list_tracker_tables_v2"')) tableEffect = effect;
+  }
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) value.forEach(visit);
     else if (value && typeof value === 'object') visit(value);
@@ -26,6 +32,10 @@ const expression = Buffer.from(source).subarray(callback.span.start - tree.span.
 const compiled = transformSync(`const callback = ${expression};`, {
   jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
 }).code + ';return callback;';
+assert.ok(tableEffect, 'actual table-inventory effect must exist');
+const tableCompiled = transformSync(`const effect = ${Buffer.from(source).subarray(tableEffect.span.start - tree.span.start, tableEffect.span.end - tree.span.start).toString()};`, {
+  jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+}).code + ';return effect;';
 
 function deferred() {
   let resolve;
@@ -100,4 +110,62 @@ test('late queue response cannot clear newer selection or finish its loading', a
   await current;
   assert.equal(h.state.selected, 'b');
   assert.equal(h.state.loading, false);
+});
+
+async function inventory(v2, legacy = { data: [], error: null }) {
+  const state = { tables: [], error: null, loading: false, selected: 'physical' }, calls = [];
+  const deps = {
+    tournamentId: 'tour', supabase: { rpc: async name => { calls.push(name); return name === 'list_tracker_tables_v2' ? v2 : legacy; } },
+    record: value => value && typeof value === 'object' && !Array.isArray(value) ? value : null,
+    textValue: value => typeof value === 'string' && value.trim() ? value.trim() : null,
+    setTables: value => { state.tables = typeof value === 'function' ? value(state.tables) : value; }, setTablesError: value => { state.error = value; },
+    setTablesLoading: value => { state.loading = value; },
+    setSelectedTableId: fn => { state.selected = fn(state.selected); },
+  };
+  const cleanup = Function(...Object.keys(deps), tableCompiled)(...Object.values(deps))();
+  for (let turn = 0; turn < 15; turn++) await Promise.resolve();
+  return { state, calls, cleanup };
+}
+test('canonical inventory maps exact logical and physical identities', async () => {
+  const { state, calls } = await inventory({ data: { ok: true, tables: [{ tournament_table_id: 'logical', physical_table_id: 'physical', table_name: 'Table' }] }, error: null });
+  assert.equal(state.tables[0].id, 'logical');
+  assert.equal(state.selected, 'logical');
+  assert.deepEqual(calls, ['list_tracker_tables_v2']);
+});
+for (const [name, response] of [
+  ['authority denial', { data: { ok: false, error: 'actor_not_allowed' }, error: null }],
+  ['transport failure', { data: null, error: { code: '503', message: 'Unavailable' } }],
+  ['malformed success', { data: { ok: true, tables: null }, error: null }],
+]) test(`inventory ${name} is not silently downgraded to legacy empty`, async () => {
+  const { state, calls } = await inventory(response);
+  assert.ok(state.error);
+  assert.equal(state.loading, false);
+  assert.deepEqual(calls, ['list_tracker_tables_v2']);
+});
+test('only absent canonical RPC falls back to the supported legacy contract', async () => {
+  const { state, calls } = await inventory({ data: null, error: { code: 'PGRST202' } }, { data: [{ table_id: 'physical', table_name: 'Old table' }], error: null });
+  assert.equal(state.tables[0].id, 'physical');
+  assert.equal(state.error, null);
+  assert.equal(calls.length, 2);
+});
+test('legacy read failure stays an error rather than successful empty inventory', async () => {
+  const { state } = await inventory({ data: null, error: { code: '42883' } }, { data: null, error: { message: 'Legacy unavailable' } });
+  assert.ok(state.error);
+  assert.equal(state.loading, false);
+});
+test('rejected inventory promise is reported and releases its loading state', async () => {
+  const { state, calls } = await inventory(Promise.reject(new Error('network rejected')));
+  assert.equal(state.error, 'network rejected');
+  assert.equal(state.loading, false);
+  assert.deepEqual(calls, ['list_tracker_tables_v2']);
+});
+test('inventory completion after cleanup cannot repopulate the old scope', async () => {
+  const read = deferred();
+  const { state, cleanup } = await inventory(read.promise);
+  cleanup();
+  read.resolve({ data: { ok: true, tables: [{ tournament_table_id: 'old', table_name: 'Old' }] }, error: null });
+  for (let turn = 0; turn < 15; turn++) await Promise.resolve();
+  assert.deepEqual(state.tables, []);
+  assert.equal(state.error, null);
+  assert.equal(state.loading, true, 'old finally must not overwrite next scope loading');
 });

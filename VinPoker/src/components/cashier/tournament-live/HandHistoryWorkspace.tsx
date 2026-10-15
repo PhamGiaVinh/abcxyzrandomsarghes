@@ -229,6 +229,9 @@ export function HandHistoryWorkspace({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string>(initialTableId || "all");
   const [tables, setTables] = useState<TrackerTableOption[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tablesError, setTablesError] = useState<string | null>(null);
+  const [tablesReload, setTablesReload] = useState(0);
   const loadGuardRef = useRef<ReturnType<typeof createHandHistoryLoadGuard> | null>(null);
   if (!loadGuardRef.current) loadGuardRef.current = createHandHistoryLoadGuard();
   // Đợt G3 — resettle-forward (chips). resettleSupported degrades to false on a 42883
@@ -267,42 +270,59 @@ export function HandHistoryWorkspace({
   useEffect(() => {
     if (!tournamentId) return;
     let cancelled = false;
+    setTables((current) => current.length ? [] : current);
+    setTablesLoading(true);
+    setTablesError(null);
     void (async () => {
-      const { data: v2Data, error: v2Error } = await supabase.rpc(
-        "list_tracker_tables_v2" as never,
-        { p_tournament_id: tournamentId } as never,
-      );
-      if (cancelled) return;
-      const v2 = record(v2Data as unknown);
-      if (!v2Error && v2?.ok === true && Array.isArray(v2.tables)) {
-        const options = v2.tables.flatMap((item): TrackerTableOption[] => {
+      try {
+        const { data: v2Data, error: v2Error } = await supabase.rpc(
+          "list_tracker_tables_v2" as never,
+          { p_tournament_id: tournamentId } as never,
+        );
+        if (cancelled) return;
+        const v2 = record(v2Data as unknown);
+        if (!v2Error && v2?.ok === true && Array.isArray(v2.tables)) {
+          const options = v2.tables.flatMap((item): TrackerTableOption[] => {
+            const row = record(item);
+            const id = textValue(row?.tournament_table_id);
+            if (!id) return [];
+            return [{
+              id,
+              physicalId: textValue(row?.physical_table_id),
+              name: textValue(row?.table_name) ?? "Bàn chưa đặt tên",
+            }];
+          });
+          setTables(options);
+          setSelectedTableId((current) => options.find((table) => table.physicalId === current)?.id ?? current);
+          return;
+        }
+
+        // Compatibility only: a transport/authority failure is not an absent RPC.
+        if (!v2Error || !["PGRST202", "42883"].includes(v2Error.code)) {
+          throw new Error(v2Error?.message ?? textValue(v2?.error) ?? "Dữ liệu danh sách bàn không hợp lệ");
+        }
+        const { data: legacyData, error: legacyError } = await supabase.rpc("get_tournament_tables", { p_tournament_id: tournamentId });
+        if (cancelled) return;
+        if (legacyError || !Array.isArray(legacyData)) {
+          throw new Error(legacyError?.message ?? "Dữ liệu danh sách bàn không hợp lệ");
+        }
+        const options = legacyData.flatMap((item): TrackerTableOption[] => {
           const row = record(item);
-          const id = textValue(row?.tournament_table_id);
-          if (!id) return [];
-          return [{
-            id,
-            physicalId: textValue(row?.physical_table_id),
-            name: textValue(row?.table_name) ?? "Bàn chưa đặt tên",
-          }];
+          const physicalId = textValue(row?.table_id);
+          if (!physicalId) return [];
+          return [{ id: physicalId, physicalId, name: textValue(row?.table_name) ?? "Bàn chưa đặt tên" }];
         });
         setTables(options);
-        setSelectedTableId((current) => options.find((table) => table.physicalId === current)?.id ?? current);
-        return;
+      } catch (error) {
+        if (!cancelled) {
+          setTablesError(error instanceof Error ? error.message : "Không tải được danh sách bàn");
+        }
+      } finally {
+        if (!cancelled) setTablesLoading(false);
       }
-
-      // Environments without Unified Ops V2 still have the legacy read-only table RPC.
-      const { data: legacyData } = await supabase.rpc("get_tournament_tables", { p_tournament_id: tournamentId });
-      if (cancelled) return;
-      const options = (Array.isArray(legacyData) ? legacyData : []).flatMap((item): TrackerTableOption[] => {
-        const row = record(item);
-        const physicalId = textValue(row?.table_id);
-        if (!physicalId) return [];
-        return [{ id: physicalId, physicalId, name: textValue(row?.table_name) ?? "Bàn chưa đặt tên" }];
-      });
-      setTables(options);
     })();
     return () => { cancelled = true; };
-  }, [supabase, tournamentId]);
+  }, [supabase, tablesReload, tournamentId]);
 
   const loadHands = useCallback(async () => {
     if (!tournamentId) return;
@@ -921,12 +941,23 @@ export function HandHistoryWorkspace({
           value={selectedTableId}
           onChange={(event) => selectTable(event.target.value)}
           aria-label="Lọc lịch sử theo bàn"
+          disabled={tablesLoading || !!tablesError}
         >
           <option value="all">Tất cả bàn</option>
           {tables.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
+
+        {tablesLoading && <p role="status" className="text-xs text-muted-foreground">Đang tải danh sách bàn…</p>}
+        {tablesError && (
+          <div role="alert" className="space-y-2 text-xs text-destructive">
+            <p>Không tải được danh sách bàn: {tablesError}</p>
+            <Button size="sm" variant="outline" onClick={() => setTablesReload((current) => current + 1)} disabled={tablesLoading}>
+              Tải lại danh sách bàn
+            </Button>
+          </div>
+        )}
 
         {FEATURES.trackerHistoryCompletionWorker && (
           <>
