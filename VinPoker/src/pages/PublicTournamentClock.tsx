@@ -8,6 +8,7 @@ import type { PublicClockSummary, TournamentResultView } from "@/components/cash
 type RpcRow = Record<string, unknown>;
 type RpcError = { message: string; code?: string };
 type RpcResult = { data: unknown; error: RpcError | null };
+type PublicClockState = PublicClockSummary & { remainingSeconds?: number | null; isRunning?: boolean | null };
 
 function callPublicRpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResult> {
   const rpc = supabase.rpc as unknown as (rpcName: string, rpcArgs: Record<string, unknown>) => PromiseLike<RpcResult>;
@@ -36,7 +37,7 @@ function nullableText(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function mapClock(row: RpcRow): PublicClockSummary {
+function mapClock(row: RpcRow): PublicClockState {
   return {
     id: String(row.id ?? row.tournament_id),
     name: String(row.name ?? "VinPoker Tournament"),
@@ -50,6 +51,9 @@ function mapClock(row: RpcRow): PublicClockSummary {
     bigBlind: Number(row.big_blind ?? 0),
     bigBlindAnte: Number(row.big_blind_ante ?? 0),
     levelEndsAt: nullableText(row.level_ends_at),
+    remainingSeconds: typeof row.remaining_seconds === 'number' && Number.isFinite(row.remaining_seconds) && row.remaining_seconds >= 0
+      ? Math.floor(row.remaining_seconds) : null,
+    isRunning: typeof row.is_running === 'boolean' ? row.is_running : null,
     nextSmallBlind: nullableNumber(row.next_small_blind),
     nextBigBlind: nullableNumber(row.next_big_blind),
     nextBigBlindAnte: nullableNumber(row.next_big_blind_ante),
@@ -58,9 +62,16 @@ function mapClock(row: RpcRow): PublicClockSummary {
   };
 }
 
-function formatCountdown(levelEndsAt: string | null, now: number): string {
+function formatCountdown(clock: PublicClockState | null, now: number): string {
+  if (clock?.isRunning === false) {
+    if (clock.remainingSeconds == null) return '--:--';
+    return `${String(Math.floor(clock.remainingSeconds / 60)).padStart(2, '0')}:${String(clock.remainingSeconds % 60).padStart(2, '0')}`;
+  }
+  const levelEndsAt = clock?.levelEndsAt;
   if (!levelEndsAt) return "--:--";
-  const seconds = Math.max(0, Math.floor((new Date(levelEndsAt).getTime() - now) / 1000));
+  const deadline = new Date(levelEndsAt).getTime();
+  if (!Number.isFinite(deadline)) return '--:--';
+  const seconds = Math.max(0, Math.floor((deadline - now) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
@@ -72,7 +83,7 @@ export default function PublicTournamentClock() {
 function ScopedPublicTournamentClock() {
   const { tournamentId } = useParams();
   const [searchParams] = useSearchParams();
-  const [clock, setClock] = useState<PublicClockSummary | null>(null);
+  const [clock, setClock] = useState<PublicClockState | null>(null);
   const [results, setResults] = useState<TournamentResultView[]>([]);
   const [unavailable, setUnavailable] = useState(false);
   const [resultsUnavailable, setResultsUnavailable] = useState(false);
@@ -137,7 +148,7 @@ function ScopedPublicTournamentClock() {
     return () => { active = false; window.clearInterval(poll); };
   }, [searchParams, tournamentId, attempt]);
 
-  const countdown = useMemo(() => formatCountdown(clock?.levelEndsAt ?? null, now), [clock?.levelEndsAt, now]);
+  const countdown = useMemo(() => formatCountdown(clock, now), [clock, now]);
 
   if (unavailable) return <main className="grid min-h-[100dvh] place-items-center bg-background px-5 text-center"><div className="max-w-md rounded-3xl border border-border/55 bg-card/80 p-7"><Clock3 className="mx-auto h-8 w-8 text-[hsl(var(--poker-gold))]" /><h1 className="mt-4 text-xl font-black">Đồng hồ công khai chưa sẵn sàng</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không xác minh được dữ liệu đồng hồ công khai. Có thể do kết nối hoặc nguồn dữ liệu chưa sẵn sàng; trang không dùng dữ liệu nội bộ để thay thế.</p><button className="mt-4 min-h-11 rounded-xl border border-border px-4 text-sm font-bold" onClick={() => setAttempt(value => value + 1)}>Thử tải lại</button><Link to="/live" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold"><ArrowLeft className="h-4 w-4" /> Live Center</Link></div></main>;
   if (!clock) return <main className="grid min-h-[100dvh] place-items-center bg-background text-sm text-muted-foreground">Đang đồng bộ đồng hồ...</main>;
@@ -147,6 +158,7 @@ function ScopedPublicTournamentClock() {
       <div className="mx-auto flex min-h-[calc(100dvh-2rem)] max-w-[1500px] flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-border/45 pb-3"><Link to="/live" className="inline-flex min-h-11 items-center gap-2 text-xs font-bold text-muted-foreground"><ArrowLeft className="h-4 w-4" /> Live Center</Link><span className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--viewer-neon)_/_0.4)] bg-[hsl(var(--viewer-neon)_/_0.09)] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[hsl(var(--viewer-neon))]"><Radio className="h-3.5 w-3.5" /> Live</span></header>
         <section className="flex flex-1 flex-col justify-center py-6 text-center sm:py-9">
+          {clock.isRunning === false && <p className="text-sm font-bold text-muted-foreground">Đồng hồ đang dừng</p>}
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[hsl(var(--poker-gold))]">Level {clock.currentLevel ?? "--"}</p>
           <h1 className="mx-auto mt-2 max-w-5xl text-2xl font-black tracking-[-0.04em] sm:text-4xl xl:text-5xl">{clock.name}</h1>
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Level kết thúc trong</p>
