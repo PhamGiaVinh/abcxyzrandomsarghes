@@ -18,6 +18,8 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/PlayerActionSheet*"
       - "VinPoker/src/components/admin/MediaClubSchedules*"
       - "VinPoker/src/lib/seriesReorder*"
+      - "VinPoker/e2e/operations-responsive.mock.spec.ts"
+      - "VinPoker/e2e/fixtures/operations-responsive.tsx"
       - "VinPoker/src/components/LegacyScheduleEvidenceNote*"
       - "VinPoker/src/pages/ClubDetail*"
       - "VinPoker/src/pages/Tournaments.tsx"

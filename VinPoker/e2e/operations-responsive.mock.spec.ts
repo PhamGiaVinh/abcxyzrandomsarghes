@@ -1,5 +1,49 @@
 import { expect, test } from "@playwright/test";
 
+for(const width of [375,1280]){
+  test(`series reorder recovers a committed response loss without replay at ${width}px`,async({page})=>{
+    await page.setViewportSize({width,height:850});
+    const actor='ee920000-0000-4000-8000-000000000001',club='ee920000-0000-4000-8000-000000000002';
+    await page.addInitScript(({actor})=>{
+      localStorage.setItem('vinpoker.lang','vi');
+      localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6ImVlOTIwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJ9.',refresh_token:'mock-refresh-token',expires_at:4102444800,token_type:'bearer',user:{id:actor,aud:'authenticated',role:'authenticated',email:'gallery@example.test',app_metadata:{},user_metadata:{},identities:[],created_at:'2026-10-15T00:00:00Z'}}));
+    },{actor});
+    let rows=[{id:'ee920000-0000-4000-8000-000000000003',club_id:club,image_url:'http://127.0.0.1:54321/storage/v1/object/public/mock/a.png',caption:null,position:0},{id:'ee920000-0000-4000-8000-000000000004',club_id:club,image_url:'http://127.0.0.1:54321/storage/v1/object/public/mock/b.png',caption:null,position:1}];
+    const calls:Array<{name:string;payload:Record<string,unknown>}>=[],unexpected:string[]=[],errors:string[]=[];
+    page.on('pageerror',e=>errors.push(e.message));
+    await page.route('http://127.0.0.1:54321/**',async route=>{
+      const request=route.request(),path=new URL(request.url()).pathname;
+      if(path.includes('/storage/v1/object/public/')){await route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBksAAAAASUVORK5CYII=','base64')});return;}
+      if(path==='/rest/v1/profiles'&&request.method()==='PATCH'){
+        expect(new URL(request.url()).searchParams.get('user_id')).toBe(`eq.${actor}`);
+        expect(request.postDataJSON()).toEqual({onesignal_external_user_id:actor});
+        await route.fulfill({status:204});return;
+      }
+      if(path.endsWith('/rpc/reorder_club_series_images_v1')||path.endsWith('/rpc/get_club_series_reorder_receipt_v1')){
+        const payload=request.postDataJSON();calls.push({name:path.split('/').pop()!,payload});
+        if(path.endsWith('/rpc/reorder_club_series_images_v1')){
+          rows=rows.map(row=>({...row,position:payload.p_order.indexOf(row.id)}));
+          await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'TEST response lost after commit'})});return;
+        }
+        await route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,actor_id:actor,club_id:club,request_id:payload.p_request_id,order:payload.p_order})});return;
+      }
+      if(!['GET','HEAD'].includes(request.method()))unexpected.push(path);
+      const data=path.endsWith('/clubs')?[{id:club,name:'Reorder Browser TEST',region:'TEST',daily_schedule_image_url:null,weekly_schedule_image_url:null}]:path.endsWith('/club_series_images')?[...rows].sort((a,b)=>a.position-b.position):[];
+      await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
+    });
+    await page.goto('/e2e/fixtures/operations-responsive.html?surface=schedule-upload');
+    await expect(page.getByRole('button',{name:'Tiến'}).first()).toBeEnabled();
+    await page.getByRole('button',{name:'Tiến'}).first().click();
+    await expect(page.getByText('Schedule image order saved.',{exact:true})).toBeVisible();
+    await expect.poll(()=>page.locator('img').evaluateAll(images=>images.map(x=>(x as HTMLImageElement).src.split('/').pop()))).toEqual(['b.png','a.png']);
+    expect(calls.map(x=>x.name)).toEqual(['reorder_club_series_images_v1','get_club_series_reorder_receipt_v1']);
+    expect(calls[1].payload).toEqual(calls[0].payload);expect(calls[0].payload.p_expected_actor_id).toBe(actor);
+    expect(await page.evaluate(actor=>sessionStorage.getItem(`vinpoker:series-reorder:v1:${actor}`),actor)).toBeNull();
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    expect(unexpected).toEqual([]);expect(errors).toEqual([]);
+  });
+}
+
 for (const width of [375, 1280]) {
   test(`legacy schedule metadata is unavailable, not fabricated at ${width}px`, async ({ page }) => {
     await page.setViewportSize({width,height:850});

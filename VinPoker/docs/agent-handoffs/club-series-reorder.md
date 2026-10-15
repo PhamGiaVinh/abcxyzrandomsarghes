@@ -17,6 +17,7 @@ One RPC, synchronous click guard, no optimistic positions. Persist actor-keyed s
 ## Evidence and limits
 
 -17 Vitest tests PASS:6 boundary,6 component,5 existing upload.
+- Actual local Chromium375/1280 PASS with real SDK/AuthProvider and mocked loopback backend: writer returns503 after simulated commit, exact receipt read recovers once, same payload/key/actor, canonical gallery order readback, cleared journal, no unexpected writes/page errors/horizontal overflow. Profile mapping mock checks exact existing actor/payload. This is not production or real DB browser proof. Test rerun after stricter mock assertions also2PASS.
 - Owned transactional PG17 PASS: update fault and receipt fault rollback, owner/super-admin positive, cross-club/outsider negative, receipt replay/readback/payload conflict, stale snapshot denial, direct legacy position denial, caption compatibility, anon/service execute denial.
 - Actual two-connection blocking PASS: same key one receipt; different-key stale snapshot; concurrent INSERT membership fence. Not exhaustive delete/ownership/lock-timeout permutations or production proof.
 - Local source at this handoff has final catalog hash and CI wiring; exact final CI/typecheck/build/browser/review still pending. No deployment implied.
@@ -31,4 +32,4 @@ Migration LF SHA256: `fdd9624de2d86252dff8472ba66a40fc55648f85cf297028633d0a3068
 
 ## Remaining
 
-Complete final typecheck/build/desktop375 and exact CI/runtime markers. Independent critical review; prepare exact release manifest/runner, fresh restore-proven recovery and owner scope. GitHub artifact quota/private environment reviewer capability currently prevent campaign release; no bypass. Immutable schedule publication provenance/version/approval remains a separate F8 gap; this fix does not fabricate it or close all G0–G9.
+Complete final exact-SHA typecheck/build and CI/runtime markers; local fulltsc failed only2 existing missing@google/genai diagnostics. Independent critical review atdec92 found no concrete scoped finding, inspected not rerun; later deltas are responsive fixture/tests/CI paths/docs only, product/SQL unchanged. Prepare exact release manifest/runner, fresh restore-proven recovery and owner scope. GitHub artifact quota/private environment reviewer capability currently prevent campaign release; no bypass. Immutable schedule publication provenance/version/approval remains a separate F8 gap; this fix does not fabricate it or close all G0–G9.
