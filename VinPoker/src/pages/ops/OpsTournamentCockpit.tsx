@@ -270,6 +270,11 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
       return;
     }
     let alive = true;
+    const deadline = setTimeout(() => {
+      if (!alive) return;
+      alive = false;
+      setBusted({ scope: bustedScope, loading: false, error: "BUSTED_READ_TIMEOUT", rows: [] });
+    }, 20000);
     setBusted({ scope: bustedScope, loading: true, error: null, rows: [] });
     (async () => {
       try {
@@ -307,9 +312,11 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
         if (alive) setBusted({ scope: bustedScope, loading: false, error: null, rows });
       } catch (error) {
         if (alive) setBusted({ scope: bustedScope, loading: false, error: error instanceof Error ? error.message : "Không tải được người đã loại", rows: [] });
+      } finally {
+        clearTimeout(deadline);
       }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(deadline); };
   }, [cockpitOn, id, supabase, tab, user?.id, authLoading, bustedScope]);
 
   // Reuse canonical evidence, exact-session fencing and receipt recovery.

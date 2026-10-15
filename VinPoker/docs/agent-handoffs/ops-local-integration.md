@@ -1,5 +1,9 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Busted read deadline and late-response fence
+
+Onf2dab31d3 new hung-read rendered regression RED(1FAIL/18PASS): no terminal error after20seconds. Candidate bounds entire entries/prizes/seats/profile pipeline to20s, sets read unavailable and fences late response; cleanup clears timer on settle/scope change/unmount. No mutation retry/new request key/permission change. Final21 rendered cockpit tests PASS: primary and fallbackprofile hang/late response, successful-read timer cleanup plus prior scope/error/canonicalrestore/clock matrix. ESLint editedtwofiles/diffcheck PASS. Not cancellation of underlying HTTP transport, fulltype/build/browser375/CI/prod proof. Local-only ownerhold, no push/deploy/DB/Edge/flags/Docker. Next93 release manifest/runner preparation and remaining integrated local evidence gaps; campaign still incomplete.
+
 ## Cockpit busted read integrity and actor isolation repaired locally
 
 On0ee6435ab, inspection confirmed ent/prize/seat Supabase errors were ignored and busted effect did not depend on actor/auth. New rendered regressions initially3RED/13PASS; one false-positive seat-error test was caused by missing mock.in(), corrected mock then proper4RED/12PASS (three ignored read errors plus stale actor request). Candidate checks each primary read and profile lookup error, scopes stored rows to actor/auth/tournament/tab/flag and clears on unverified/logout, prevents old request response consumption and avoids follow-up profile read after scope cancellation. Successful empty still valid, no mutation/permission/business-policy changes. Existing frontend skill's explicit error/state boundaries applied without redesign.

@@ -27,7 +27,27 @@ import OpsTournamentCockpit from "./OpsTournamentCockpit";
 const clock = (id: string) => ({ tournament_id: id, status: "live", is_running: false,
   remaining_seconds: 600, current_level: { level_number: 2 }, next_level: { level_number: 3 }, control_revision: `revision-${id}` });
 beforeEach(() => { state.id = "a"; state.actor = "owner"; state.authLoading = false; state.cockpit = false; state.rpc.mockReset(); state.invoke.mockReset(); state.read.mockReset(); });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+it.each(["tournament_entries", "profiles"])("ends a hung %s read and never revives actions from its late response", async (hung) => {
+  vi.useFakeTimers();
+  state.cockpit = true;
+  let finish!: (value: unknown) => void;
+  state.read.mockImplementation((table) => table === hung ? new Promise(resolve => { finish = resolve; })
+    : hung === "profiles" && table === "tournament_seats" ? { data: [], error: null } : undefined);
+  render(<OpsTournamentCockpit section="players" />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+  expect(screen.getByText("Không tải được người đã loại")).toBeInTheDocument();
+  await act(async () => finish({ data: [{ id: "late-entry", player_id: "player", entry_no: 1 }], error: null }));
+  expect(screen.queryByRole("button", { name: "Cho vào lại" })).not.toBeInTheDocument();
+  expect(screen.getByText("Không tải được người đã loại")).toBeInTheDocument();
+});
+it("cleans up a settled busted read deadline rather than later showing an error", async () => {
+  vi.useFakeTimers(); state.cockpit = true;
+  render(<OpsTournamentCockpit section="players" />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(20001); });
+  expect(screen.getByRole("button", { name: "Cho vào lại" })).toBeEnabled();
+  expect(screen.queryByText("Không tải được người đã loại")).not.toBeInTheDocument();
+});
 it.each(["tournament_entries", "tournament_prizes", "tournament_seats"])("does not turn a failed %s read into an empty or actionable busted list", async (failed) => {
   state.cockpit = true;
   state.read.mockImplementation((table) => table === failed ? { data: null, error: { message: "503" } } : undefined);
