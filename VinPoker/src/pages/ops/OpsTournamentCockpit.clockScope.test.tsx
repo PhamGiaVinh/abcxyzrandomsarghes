@@ -1,13 +1,19 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ id: "a", actor: "owner", authLoading: false, rpc: vi.fn(), invoke: vi.fn() }));
+const state = vi.hoisted(() => ({ id: "a", actor: "owner", authLoading: false, cockpit: false, rpc: vi.fn(), invoke: vi.fn() }));
 vi.mock("react-router-dom", () => ({ useParams: () => ({ id: state.id }), useNavigate: () => vi.fn() }));
 vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: state.actor ? { id: state.actor } : null, loading: state.authLoading }) }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
-const client = { rpc: state.rpc, functions: { invoke: state.invoke }, from: () => ({ select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }) }) };
+const client = { rpc: state.rpc, functions: { invoke: state.invoke }, from: (table: string) => ({ select: () => {
+  const data = table === "tournament_entries" ? [{ id: "entry", player_id: "player", entry_no: 1, current_stack: 0 }]
+    : table === "tournament_seats" ? [{ player_id: "player", entry_number: 1, player_name: "TEST Player", is_active: false }] : [];
+  const query = { eq: () => query, order: () => Promise.resolve({ data, error: null }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
+  return query;
+} }) };
 vi.mock("@/ops/workspace/TournamentOpsProvider", () => ({ useTournamentOps: () => ({ snapshot: { clubId: "club" } }) }));
-vi.mock("@/lib/featureFlags", () => ({ FEATURES: { cockpitFloorActions: false } }));
+vi.mock("@/lib/featureFlags", () => ({ FEATURES: { get cockpitFloorActions() { return state.cockpit; } } }));
+vi.mock("@/components/cashier/tournament-live/RestoreBustDialog", () => ({ RestoreBustDialog: (props: { tournamentId: string; actorId: string | null; target: { entryId: string; name: string } | null }) => props.target ? <div role="dialog">{JSON.stringify(props)}</div> : null }));
 vi.mock("@/components/ops/shared/useFloorSeats", () => ({ useFloorSeats: () => ({ tables: [], seatsByTable: {} }) }));
 vi.mock("@/components/ops/shared/FloorPlayerActions", () => ({ FloorPlayerActions: () => null }));
 vi.mock("@/components/floor/MultiDayFloorEventPanel", () => ({ MultiDayFloorEventPanel: () => null }));
@@ -19,8 +25,34 @@ vi.mock("@/hooks/useTournamentTvDataCore", () => ({ useTournamentTvDataCore: () 
 import OpsTournamentCockpit from "./OpsTournamentCockpit";
 const clock = (id: string) => ({ tournament_id: id, status: "live", is_running: false,
   remaining_seconds: 600, current_level: { level_number: 2 }, next_level: { level_number: 3 }, control_revision: `revision-${id}` });
-beforeEach(() => { state.id = "a"; state.actor = "owner"; state.authLoading = false; state.rpc.mockReset(); state.invoke.mockReset(); });
+beforeEach(() => { state.id = "a"; state.actor = "owner"; state.authLoading = false; state.cockpit = false; state.rpc.mockReset(); state.invoke.mockReset(); });
 afterEach(cleanup);
+it("opens the canonical evidenced restore flow even before local seat inventory is available", async () => {
+  state.cockpit = true;
+  render(<OpsTournamentCockpit section="players" />);
+  const restore = await screen.findByRole("button", { name: "Cho vào lại" });
+  expect(restore).toBeEnabled();
+  fireEvent.click(restore);
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent('"tournamentId":"a"');
+  expect(dialog).toHaveTextContent('"actorId":"owner"');
+  expect(dialog).toHaveTextContent('"entryId":"entry"');
+  expect(state.rpc.mock.calls.some(([name]) => name === "restore_busted_player_to_seat")).toBe(false);
+});
+it("clears the restore selection when the actor or tournament changes", async () => {
+  state.cockpit = true;
+  const { rerender } = render(<OpsTournamentCockpit section="players" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cho vào lại" }));
+  await screen.findByRole("dialog");
+  state.actor = "other";
+  await act(async () => rerender(<OpsTournamentCockpit section="players" />));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cho vào lại" }));
+  await screen.findByRole("dialog");
+  state.id = "b";
+  await act(async () => rerender(<OpsTournamentCockpit section="players" />));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
 it("removes controls during auth verification and reloads the verified revision", async () => {
   state.rpc.mockResolvedValueOnce({ data: clock("a"), error: null })
     .mockResolvedValue({ data: { ...clock("a"), control_revision: "reverified" }, error: null });
