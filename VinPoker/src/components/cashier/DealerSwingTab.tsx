@@ -2007,6 +2007,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" disabled={!!swingingTableId} onClick={() => void manualSwingRecovery.reconcile()}>Đối chiếu kết quả Swing</Button>
             {manualSwingRecovery.retryable && <Button size="sm" disabled={!!swingingTableId} onClick={() => void manualSwingRecovery.retry()}>Gửi lại cùng yêu cầu</Button>}
+            {manualSwingRecovery.pending && <Button size="sm" variant="outline" disabled={!!swingingTableId} onClick={() => void manualSwingRecovery.cancel()}>Hủy yêu cầu chưa thực hiện</Button>}
             <Button size="sm" variant="outline" disabled={!!swingingTableId} onClick={manualSwingRecovery.reload}>Đọc lại yêu cầu đã lưu</Button>
           </div>
         </div>

@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { classifyManualSwingOutcome } from "@/lib/dealerSwingOutcome";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { assertManualSwingIntent, clearManualSwingIntent, manualSwingReaderArgs, manualSwingReceipt,
-  manualSwingWriterArgs, persistManualSwingIntent, readManualSwingIntent,
+  persistManualSwingIntent, readManualSwingIntent,
   type DealerManualSwingIntent } from "@/lib/dealerManualSwingIntent";
 
 type Options = {
@@ -35,7 +35,7 @@ export function useManualSwingRecovery(options: Options) {
     catch (e) { setState({scope: scopeKey, intent: null, error: message(e), ready: false, retryable: false}); }
   }, [actorId, clubId, scopeKey]);
 
-  async function run(assignmentId?: string, retry = false) {
+  async function run(assignmentId?: string, retry = false, cancel = false) {
     if (flight.current || !actorId || !clubId || state.scope !== scopeKey || (!state.ready && !state.intent)) return;
     const generation = lifetime.current.generation;
     const current = () => alive.current && lifetime.current.generation === generation;
@@ -52,7 +52,7 @@ export function useManualSwingRecovery(options: Options) {
         persistManualSwingIntent(sessionStorage, intent);
         setState({scope: scopeKey, intent, error: "Đang xác minh kết quả Swing.", ready: true, retryable: false});
         setSwingingTableId(intent.assignment_id);
-        const write = await waitForManualPlayerResponse(Promise.resolve(rpc("operator_perform_swing", manualSwingWriterArgs(intent))));
+        const write = await waitForManualPlayerResponse(Promise.resolve(rpc("operator_perform_swing_v2", manualSwingReaderArgs(intent))));
         if (!current()) return;
         if (write.error) throw new Error(write.error.message);
       } else {
@@ -67,11 +67,19 @@ export function useManualSwingRecovery(options: Options) {
         if (result.error) throw new Error(result.error.message);
         return manualSwingReceipt(result.data, intent!);
       };
-      let receipt = await read();
+      let receipt;
+      if (cancel) {
+        assertManualSwingIntent(sessionStorage, intent);
+        const result = await waitForManualPlayerResponse(Promise.resolve(rpc("cancel_dealer_manual_swing_v1", manualSwingReaderArgs(intent))));
+        if (!current()) return;
+        assertManualSwingIntent(sessionStorage, intent);
+        if (result.error) throw new Error(result.error.message);
+        receipt = manualSwingReceipt(result.data, intent);
+      } else receipt = await read();
       if (!current()) return;
       if (retry && receipt.status === "not_found") {
         assertManualSwingIntent(sessionStorage, intent);
-        const write = await waitForManualPlayerResponse(Promise.resolve(rpc("operator_perform_swing", manualSwingWriterArgs(intent))));
+        const write = await waitForManualPlayerResponse(Promise.resolve(rpc("operator_perform_swing_v2", manualSwingReaderArgs(intent))));
         if (!current()) return;
         if (write.error) throw new Error(write.error.message);
         receipt = await read();
@@ -81,7 +89,11 @@ export function useManualSwingRecovery(options: Options) {
         setState({scope: scopeKey, intent, error: "Chưa có kết quả được xác nhận. Giữ nguyên yêu cầu; không tự đổi dealer lần nữa.", ready: true, retryable: receipt.status === "not_found"});
         return;
       }
-      const outcome = classifyManualSwingOutcome(receipt.response);
+      const cancelled = !!receipt.response && typeof receipt.response === "object"
+        && "outcome" in receipt.response && receipt.response.outcome === "cancelled"
+        && "request_id" in receipt.response && receipt.response.request_id === intent.request_id;
+      const outcome = cancelled ? {kind: "info" as const, message: "Đã hủy yêu cầu chưa thực hiện. Không hoàn tác lượt đổi dealer đã commit."}
+        : classifyManualSwingOutcome(receipt.response);
       if (outcome.kind === "unknown" || outcome.kind === "error") throw new Error(outcome.message);
       clearManualSwingIntent(sessionStorage, intent);
       setState({scope: scopeKey, intent: null, error: "", ready: true, retryable: false});
@@ -100,5 +112,6 @@ export function useManualSwingRecovery(options: Options) {
   return { swingingTableId: visible ? swingingTableId : null,
     pending: visible ? state.intent : null, error: visible ? state.error : "",
     retryable: visible && state.ready && state.retryable,
-    performSwingForTable: (id: string) => run(id), reconcile: () => run(), retry: () => run(undefined, true), reload };
+    performSwingForTable: (id: string) => run(id), reconcile: () => run(), retry: () => run(undefined, true),
+    cancel: () => run(undefined, false, true), reload };
 }

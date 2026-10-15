@@ -39,14 +39,14 @@ it("reload with a disappeared assignment reconciles without another writer", asy
   expect(sessionStorage.getItem(key)).toBeNull();
 });
 it("retains exact request and version after unknown receipt; retry reads first", async () => {
-  const ctx=context(); ctx.rpc.mockImplementation((name:string) => Promise.resolve(name==="operator_perform_swing"
+  const ctx=context(); ctx.rpc.mockImplementation((name:string) => Promise.resolve(name==="operator_perform_swing_v2"
     ?{data:{outcome:"unexpected"},error:null}:response(pending(),"receipt_not_found")));
   const hook=renderHook(() => useManualSwingRecovery(ctx));
   await act(async () => hook.result.current.performSwingForTable(id(3)));
   const original=ctx.rpc.mock.calls[0][1]; ctx.assignments[0].version=2;
   expect(hook.result.current.retryable).toBe(true);
   await act(async () => hook.result.current.retry());
-  expect(ctx.rpc.mock.calls.map(c=>c[0])).toEqual(["operator_perform_swing","get_dealer_manual_swing_receipt_v1","get_dealer_manual_swing_receipt_v1","operator_perform_swing","get_dealer_manual_swing_receipt_v1"]);
+  expect(ctx.rpc.mock.calls.map(c=>c[0])).toEqual(["operator_perform_swing_v2","get_dealer_manual_swing_receipt_v1","get_dealer_manual_swing_receipt_v1","operator_perform_swing_v2","get_dealer_manual_swing_receipt_v1"]);
   expect(ctx.rpc.mock.calls[3][1]).toEqual(original); expect(pending().expected_version).toBe(1);
 });
 it("does not resend if the explicit retry lookup now finds the commit", async () => {
@@ -101,7 +101,7 @@ it("malformed receipt or read outage cannot unlock a retry",async()=>{
   const hook=renderHook(()=>useManualSwingRecovery(ctx));await act(async()=>hook.result.current.performSwingForTable(id(3)));
   expect(hook.result.current.retryable).toBe(false);expect(sessionStorage.getItem(key)).not.toBeNull();
   ctx.rpc.mockResolvedValue({data:null,error:{message:"unavailable"}});await act(async()=>hook.result.current.retry());
-  expect(ctx.rpc.mock.calls.filter(c=>c[0]==="operator_perform_swing")).toHaveLength(1);expect(sessionStorage.getItem(key)).not.toBeNull();
+  expect(ctx.rpc.mock.calls.filter(c=>c[0]==="operator_perform_swing_v2")).toHaveLength(1);expect(sessionStorage.getItem(key)).not.toBeNull();
 });
 it("bounds receipt reads and retains the journal after late read success",async()=>{
   vi.useFakeTimers();const ctx=context();let finish!:(v:unknown)=>void;
@@ -128,4 +128,33 @@ it("actor A-B-A lifetime cannot accept the original A response",async()=>{
   hook.rerender({value:other});hook.rerender({value:ctx});
   await act(async()=>{finish({data:{outcome:"swung"},error:null});await a;});
   expect(pending()).toEqual(intent);expect(ctx.rpc).toHaveBeenCalledTimes(1);expect(ctx.onSettled).not.toHaveBeenCalled();expect(toast.success).not.toHaveBeenCalled();
+});
+it("explicit cancellation requires exact server tombstone before clearing",async()=>{
+  const ctx=context();ctx.rpc.mockResolvedValueOnce({data:null,error:{message:"lost"}});
+  const hook=renderHook(()=>useManualSwingRecovery(ctx));await act(async()=>hook.result.current.performSwingForTable(id(3)));
+  const intent=pending();expect(ctx.rpc.mock.calls[0][1]).toMatchObject({p_actor_user_id:id(1),p_club_id:id(2)});
+  ctx.rpc.mockReset().mockResolvedValue(response(intent,"receipt_found",{outcome:"cancelled",request_id:intent.request_id}));
+  await act(async()=>hook.result.current.cancel());
+  expect(ctx.rpc.mock.calls[0][0]).toBe("cancel_dealer_manual_swing_v1");expect(sessionStorage.getItem(key)).toBeNull();
+  expect(toast.info).toHaveBeenCalledOnce();expect(toast.success).not.toHaveBeenCalled();
+});
+it("cancellation after commit reports the original result, not a fictitious undo",async()=>{
+  const ctx=context();ctx.rpc.mockResolvedValueOnce({data:null,error:{message:"lost"}});
+  const hook=renderHook(()=>useManualSwingRecovery(ctx));await act(async()=>hook.result.current.performSwingForTable(id(3)));
+  ctx.rpc.mockReset().mockResolvedValue(response(pending()));await act(async()=>hook.result.current.cancel());
+  expect(toast.success).toHaveBeenCalledOnce();expect(toast.info).not.toHaveBeenCalled();expect(sessionStorage.getItem(key)).toBeNull();
+});
+it("a hung cancellation retains its journal and ignores late cancellation success",async()=>{
+  vi.useFakeTimers();const ctx=context();ctx.rpc.mockResolvedValueOnce({data:null,error:{message:"lost"}});
+  const hook=renderHook(()=>useManualSwingRecovery(ctx));await act(async()=>hook.result.current.performSwingForTable(id(3)));
+  const intent=pending();let finish!:(v:unknown)=>void;ctx.rpc.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+  let a!:Promise<void>;act(()=>{a=hook.result.current.cancel();});await act(async()=>{await vi.advanceTimersByTimeAsync(20001);await a;});
+  await act(async()=>finish(response(intent,"receipt_found",{outcome:"cancelled",request_id:intent.request_id})));
+  expect(pending()).toEqual(intent);expect(toast.info).not.toHaveBeenCalled();expect(hook.result.current.swingingTableId).toBeNull();
+});
+it("a replaced journal prevents cancellation dispatch",async()=>{
+  const ctx=context();ctx.rpc.mockResolvedValueOnce({data:null,error:{message:"lost"}});
+  const hook=renderHook(()=>useManualSwingRecovery(ctx));await act(async()=>hook.result.current.performSwingForTable(id(3)));
+  const newer={...pending(),request_id:id(78)};sessionStorage.setItem(key,JSON.stringify(newer));ctx.rpc.mockClear();
+  await act(async()=>hook.result.current.cancel());expect(ctx.rpc).not.toHaveBeenCalled();expect(pending()).toEqual(newer);
 });

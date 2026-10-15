@@ -105,6 +105,8 @@ on:
       - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.verified.concurrent.mjs'
       - 'VinPoker/supabase/migrations/20270128000100_dealer_manual_swing_receipt_v1.sql'
       - 'VinPoker/tests/dealerSwing/manualSwingReceipt.*'
+      - 'VinPoker/supabase/migrations/20270128000101_dealer_manual_swing_cancel_actor_v1.sql'
+      - 'VinPoker/tests/dealerSwing/manualSwingCancel.currentSchema.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -894,6 +896,14 @@ jobs:
           set -euo pipefail
           createdb -T vinpoker_ops_history99_rollback "$PGDATABASE"
           node tests/dealerSwing/manualSwingReceipt.currentSchema.mjs
+      - name: Manual Swing101 actor binding and cancel versus writer overlap
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_swing101_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_swing100_ci "$PGDATABASE"
+          node tests/dealerSwing/manualSwingCancel.currentSchema.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
