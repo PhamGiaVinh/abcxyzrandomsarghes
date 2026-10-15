@@ -192,6 +192,19 @@ SELECT public.upsert_rotation_plan(
   ARRAY['a2000000-0000-4000-8000-000000000003'::uuid]
 );
 
+-- Table 2 represents a quarantined table omitted from the valid-table scope.
+CREATE TEMP TABLE quarantined_schedule_fingerprint AS
+SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) AS fingerprint
+FROM public.dealer_rotation_schedule s
+WHERE s.table_id = 'a2000000-0000-4000-8000-000000000002';
+
+SELECT pg_temp.assert_true(
+  (SELECT jsonb_array_length(fingerprint) = 1
+          AND fingerprint->0->>'status' = 'predicted'
+   FROM quarantined_schedule_fingerprint),
+  'quarantined fingerprint starts from one real predicted row, not an empty snapshot'
+);
+
 CREATE TEMP TABLE empty_partial_snapshot AS
 SELECT public.upsert_rotation_plan(
   'a1000000-0000-4000-8000-000000000001',
@@ -209,6 +222,14 @@ SELECT pg_temp.assert_true(
    WHERE table_id = 'a2000000-0000-4000-8000-000000000002'
      AND status = 'predicted'),
   'empty partial plan retires predicted rows only inside p_table_ids'
+);
+
+SELECT pg_temp.assert_true(
+  (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id)
+   FROM public.dealer_rotation_schedule s
+   WHERE s.table_id = 'a2000000-0000-4000-8000-000000000002')
+  IS NOT DISTINCT FROM (SELECT fingerprint FROM quarantined_schedule_fingerprint),
+  'quarantined table schedule full-row fingerprint remains unchanged'
 );
 
 ROLLBACK;

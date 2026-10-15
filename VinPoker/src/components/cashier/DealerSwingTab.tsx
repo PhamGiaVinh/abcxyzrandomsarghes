@@ -82,7 +82,7 @@ import CloseTourDialog, { type CloseTourPreview } from "./dealer-swing/CloseTour
 import { describeCloseBlockers, getDealerTourCloseReadiness, type CloseReadiness } from "@/lib/feltLifecycleReadiness";
 import { FEATURES } from "@/lib/featureFlags";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "@/lib/floorTableControlV3";
-import { isDealerTableAvailable } from "@/lib/dealerTableInventory";
+import { findDealerTableTournament, isDealerTableAvailable } from "@/lib/dealerTableInventory";
 import { exportToExcel } from "@/lib/exportExcel";
 import { calculateLiveWorkedMinutes } from "@/lib/dealerWorkedMinutes";
 import { classifyManualSwingOutcome, classifyProcessSwingResult } from "@/lib/dealerSwingOutcome";
@@ -150,9 +150,8 @@ function resolveTableSwingTiming(
   nowMs: number,
 ): TableTimeline {
   const tableType = table?.table_type ?? assignment.game_tables?.table_type ?? "tournament";
-  const tableTournament = tournaments?.find((tr) =>
-    tr.id === table?.tournament_id
-    || tr.tournament_tables.some((tt) => tt.table_id === assignment.table_id)
+  const tableTournament = findDealerTableTournament(
+    { ...table, id: assignment.table_id }, assignment.table_session_id, tournaments,
   );
   const swingDurationMinutes =
     tableTournament?.swing_duration_minutes
@@ -171,10 +170,10 @@ function resolveTableSwingTiming(
     ? new Date(assignment.swing_due_at).getTime()
     : nominalDueMs;
 
-  const nominalRemainingMs = nominalDueMs != null ? nominalDueMs - nowMs : 0;
   const actualRemainingMs = actualDueMs != null ? actualDueMs - nowMs : 0;
-  const minutesLeft = nominalDueMs != null ? Math.max(0, nominalRemainingMs / 60_000) : 0;
   const actualMinutesLeft = actualDueMs != null ? Math.max(0, actualRemainingMs / 60_000) : 0;
+  // Operational countdown/warnings follow the server contract, not a guessed duration.
+  const minutesLeft = actualMinutesLeft;
   // isOverdue is strictly `now > swing_due_at` (fall back to nominal due only
   // when the assignment has no swing_due_at at all).
   const swingDueMs = assignment.swing_due_at
@@ -183,7 +182,7 @@ function resolveTableSwingTiming(
 
   return {
     minutesLeft,
-    showNextDealerSoon: nominalDueMs != null ? minutesLeft <= warnAtMinutes : false,
+    showNextDealerSoon: actualDueMs != null ? minutesLeft <= warnAtMinutes : false,
     isOverdue: swingDueMs != null ? nowMs > swingDueMs : false,
     nominalDueAt: nominalDueMs != null ? new Date(nominalDueMs).toISOString() : null,
     actualDueAt: actualDueMs != null ? new Date(actualDueMs).toISOString() : null,

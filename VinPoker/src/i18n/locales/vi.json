@@ -2910,6 +2910,13 @@
     "submit": "Gửi yêu cầu"
   },
   "tournamentConfig": {
+    "unknownSave": "Chưa xác minh kết quả lưu. Giữ nguyên yêu cầu và kiểm tra kết quả; không tạo lại giải.",
+    "checkSave": "Kiểm tra kết quả",
+    "inventoryUnavailable": "Chưa xác minh được inventory bàn. Chờ tải lại trước khi lưu.",
+    "retryInventory": "Tải lại inventory",
+    "tableLifecycleNotice": "Bàn mới được chọn sẽ mở ở chế độ Manual. Bỏ chọn bàn sẽ yêu cầu đóng bàn an toàn; giữ nguyên lịch sử.",
+    "invalidJournal": "Không đọc được yêu cầu lưu trước đó. Không gửi yêu cầu mới trước khi kiểm tra trạng thái server.",
+    "atomicSaveDescription": "Lưu cấu hình và thay đổi bàn trong cùng một giao dịch; lịch sử bàn được giữ nguyên.",
     "loading": "Đang tải...",
     "noPermission": "Bạn không có quyền quản lý swing configuration.",
     "selectClubFromUrl": "Chọn CLB từ URL để quản lý tournament.",
