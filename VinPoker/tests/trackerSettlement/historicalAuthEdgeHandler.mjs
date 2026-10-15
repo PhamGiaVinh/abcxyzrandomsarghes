@@ -6,8 +6,9 @@ import {stripTypeScriptTypes} from 'node:module';
 import {runInNewContext} from 'node:vm';
 const source=stripTypeScriptTypes(readFileSync('supabase/functions/tournament-historical-settlement/index.ts','utf8').replace(/^import[\s\S]*?from\s+["'][^"']+["'];\s*/gm,''));
 const actor='81100000-0000-4000-8000-000000000001';
-const intent={mode:'commit',tournament_id:'85000000-0000-4000-8000-000000000001',hand_id:'86000000-0000-4000-8000-000000000001',idempotency_key:'historical-auth-test-0001',expected_source_revision:1,expected_source_chain_hash:'a'.repeat(64),expected_outcome_hash:'b'.repeat(64)};
-async function request({authError=null,authThrows=false,userPresent=true,authorized=true,authorizationError=null,authorizationThrows=false,header=true}={}){
+const intent={mode:'commit',expected_actor_id:actor,tournament_id:'85000000-0000-4000-8000-000000000001',hand_id:'86000000-0000-4000-8000-000000000001',idempotency_key:'historical-auth-test-0001',expected_source_revision:1,expected_source_chain_hash:'a'.repeat(64),expected_outcome_hash:'b'.repeat(64)};
+const storedReceipt={ok:true,idempotent:true,settlement_revision:1,source_revision:1,outcome_hash:'b'.repeat(64)};
+async function request({body=intent,receipt=storedReceipt,receiptError=null,authError=null,authThrows=false,userPresent=true,authorized=true,authorizationError=null,authorizationThrows=false,header=true}={}){
  let handler;const calls=[],clients=[];
  runInNewContext(source,{Request,Response,console,HistoricalDisplayVerificationError:class extends Error{},
   handleOptions:()=>null,jsonResp:(_req,value,status=200)=>new Response(JSON.stringify(value),{status}),
@@ -16,10 +17,10 @@ async function request({authError=null,authThrows=false,userPresent=true,authori
    auth:{getUser:async()=>{if(authThrows)throw Error('auth unavailable');return {data:{user:userPresent?{id:actor}:null},error:authError};}},
    rpc:async(name,params)=>{calls.push({key,name,params});if(name==='authorize_tournament_live_resettle'){
     if(authorizationThrows)throw Error('authorization unavailable');return {data:authorized,error:authorizationError};}
-    assert.equal(name,'get_tracker_historical_display_commit_receipt');return {data:{syntheticReceipt:true},error:null};},
+    assert.equal(name,'get_tracker_historical_display_commit_receipt');return {data:receipt,error:receiptError};},
   };},
  });
- const response=await handler(new Request('https://synthetic.invalid',{method:'POST',headers:{'Content-Type':'application/json',...(header?{Authorization:'Bearer synthetic-user'}:{})},body:JSON.stringify(intent)}));
+ const response=await handler(new Request('https://synthetic.invalid',{method:'POST',headers:{'Content-Type':'application/json',...(header?{Authorization:'Bearer synthetic-user'}:{})},body:JSON.stringify(body)}));
  return {status:response.status,payload:await response.json(),calls,clients};
 }
 const good=await request();assert.equal(good.status,200);assert.equal(good.clients.length,2);
@@ -37,4 +38,18 @@ for(const failure of [{authorizationError:{code:'08006'}},{authorizationThrows:t
 }
 const denied=await request({authorized:false});assert.equal(denied.status,403);assert.equal(denied.clients.length,1);
 for(const authorized of [null,0,'true',{}]){const malformed=await request({authorized});assert.equal(malformed.status,503);assert.equal(malformed.clients.length,1);}
+const readBody={...intent,mode:'receipt'};
+const recovered=await request({body:readBody});assert.equal(recovered.status,200);assert.equal(recovered.payload.status,'receipt_found');
+assert.deepEqual(recovered.payload.receipt,storedReceipt);assert.equal(recovered.payload.actor_id,actor);assert.equal(recovered.payload.idempotency_key,intent.idempotency_key);
+assert.deepEqual(recovered.calls.map(call=>call.name),['authorize_tournament_live_resettle','get_tracker_historical_display_commit_receipt']);
+const missing=await request({body:readBody,receipt:null});assert.equal(missing.status,200);assert.equal(missing.payload.status,'receipt_not_found');
+for(const patch of [{expected_actor_id:undefined},{expected_source_revision:0},{expected_source_chain_hash:'bad'},{expected_outcome_hash:'bad'},{idempotency_key:'short'}]){
+ const invalid=await request({body:{...readBody,...patch}});assert.equal(invalid.status,400);assert.equal(invalid.calls.length,0);
+}
+const actorMismatch=await request({body:{...readBody,expected_actor_id:'other-actor'}});assert.equal(actorMismatch.status,409);assert.equal(actorMismatch.calls.length,0);
+for(const receipt of [{},{...storedReceipt,source_revision:2},{...storedReceipt,outcome_hash:'c'.repeat(64)},{...storedReceipt,settlement_revision:0}]){
+ const malformed=await request({body:readBody,receipt});assert.equal(malformed.status,502);assert.equal(malformed.calls.length,2);
+}
+assert.equal((await request({body:readBody,receiptError:{message:'backend unavailable'}})).status,503);
+assert.equal((await request({body:readBody,receiptError:{message:'idempotency_mismatch'}})).status,409);
 console.log('HISTORICAL_EDGE_AUTH_AUTHORIZATION_UNAVAILABLE_FAIL_CLOSED_PASS');

@@ -8,7 +8,8 @@ import { canonicalJsonV1 } from "../_shared/trackerSettlement/outcomeV1.ts";
 import { normalizeSettlementSourceRpcResult, type SettlementDbAction, type SettlementDbHand, type SettlementDbPlayer } from "../_shared/trackerSettlement/compute.ts";
 
 type Body = {
-  mode?: "preview" | "commit" | "correct_blinds";
+  mode?: "preview" | "commit" | "correct_blinds" | "receipt";
+  expected_actor_id?: string;
   tournament_id?: string;
   hand_id?: string;
   idempotency_key?: string;
@@ -67,11 +68,18 @@ Deno.serve(async (req) => {
     const mode = body.mode;
     const tournamentId = text(body.tournament_id);
     const handId = text(body.hand_id);
-    if ((mode !== "preview" && mode !== "commit" && mode !== "correct_blinds") || !tournamentId || !handId) {
+    if ((mode !== "preview" && mode !== "commit" && mode !== "correct_blinds" && mode !== "receipt") || !tournamentId || !handId) {
       return jsonResp(req, { ok: false, message: "Invalid historical settlement intent" }, 400);
     }
-    if (mode === "commit" && text(body.idempotency_key).length < 12) {
+    if ((mode === "commit" || mode === "receipt") && text(body.idempotency_key).length < 12) {
       return publicFailure(req, "invalid_idempotency_key", 400);
+    }
+    const hasPreviewFingerprint = Number.isSafeInteger(body.expected_source_revision)
+      && (body.expected_source_revision ?? 0) >= 1
+      && /^[0-9a-f]{64}$/.test(text(body.expected_source_chain_hash))
+      && /^[0-9a-f]{64}$/.test(text(body.expected_outcome_hash));
+    if (mode === "receipt" && (!hasPreviewFingerprint || !text(body.expected_actor_id))) {
+      return publicFailure(req, "invalid_receipt_intent", 400);
     }
 
     const url = Deno.env.get("SUPABASE_URL");
@@ -90,6 +98,9 @@ Deno.serve(async (req) => {
     }
     const authData = authentication.data;
     if (!authData?.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
+    if (body.expected_actor_id !== undefined && body.expected_actor_id !== authData.user.id) {
+      return publicFailure(req, "actor_context_changed", 409);
+    }
     try {
       const { data: authorized, error: authorizationError } = await user.rpc("authorize_tournament_live_resettle", {
         p_tournament_id: tournamentId,
@@ -131,9 +142,7 @@ Deno.serve(async (req) => {
       }
       return jsonResp(req, { ok: true, status: "corrected", hand_id: handId, receipt: correction });
     }
-    if (mode === "commit" && Number.isSafeInteger(body.expected_source_revision)
-      && /^[0-9a-f]{64}$/.test(text(body.expected_source_chain_hash))
-      && /^[0-9a-f]{64}$/.test(text(body.expected_outcome_hash))) {
+    if ((mode === "commit" && hasPreviewFingerprint) || mode === "receipt") {
       const { data: priorReceipt, error: priorReceiptError } = await service.rpc(
         "get_tracker_historical_display_commit_receipt",
         {
@@ -146,7 +155,22 @@ Deno.serve(async (req) => {
           p_expected_outcome_hash: text(body.expected_outcome_hash),
         },
       );
-      if (priorReceiptError) return publicFailure(req, rpcFailureCode(priorReceiptError));
+      if (priorReceiptError) return mode === "receipt" && priorReceiptError.message !== "idempotency_mismatch"
+        ? publicFailure(req, "receipt_read_unavailable", 503) : publicFailure(req, rpcFailureCode(priorReceiptError));
+      if (mode === "receipt" && priorReceipt !== null && (!priorReceipt || typeof priorReceipt !== "object"
+        || priorReceipt.ok !== true || priorReceipt.idempotent !== true
+        || !Number.isSafeInteger(priorReceipt.settlement_revision) || priorReceipt.settlement_revision < 1
+        || priorReceipt.source_revision !== body.expected_source_revision
+        || priorReceipt.outcome_hash !== text(body.expected_outcome_hash))) {
+        return publicFailure(req, "historical_receipt_unconfirmed", 502);
+      }
+      if (mode === "receipt") return jsonResp(req, {
+        ok: true, status: priorReceipt ? "receipt_found" : "receipt_not_found",
+        actor_id: authData.user.id, tournament_id: tournamentId, hand_id: handId,
+        idempotency_key: text(body.idempotency_key), source_revision: body.expected_source_revision,
+        source_chain_hash: text(body.expected_source_chain_hash), outcome_hash: text(body.expected_outcome_hash),
+        receipt: priorReceipt,
+      });
       if (priorReceipt) return jsonResp(req, { ok: true, status: "verified", hand_id: handId, receipt: priorReceipt });
     }
     const [{ data: snapshotData, error: snapshotError }, { data: priorOutcomes, error: priorOutcomeError }] = await Promise.all([
