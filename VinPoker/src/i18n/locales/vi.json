@@ -2040,6 +2040,10 @@
       "prF": "Sẽ có ở PR F"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "Không tải được kết quả tra cứu. Chưa thể xác minh dữ liệu; hãy thử lại.",
+    "detailsUnavailable": "Không tải đủ thông tin deal hoặc lịch sử hồ sơ. Dữ liệu chưa được xác minh; hãy thử lại."
+  },
   "financeRead": {
     "forbidden": "Bạn chưa có quyền xem báo cáo tài chính của CLB này.",
     "missingBackend": "Máy chủ chưa có phiên bản báo cáo cần thiết. Không thể xác minh số liệu.",

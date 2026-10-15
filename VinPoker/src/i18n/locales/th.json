@@ -1829,6 +1829,10 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "โหลดผลการค้นหาไม่สำเร็จ ข้อมูลยังไม่ได้รับการยืนยัน โปรดลองอีกครั้ง",
+    "detailsUnavailable": "โหลดข้อมูลดีลหรือประวัติโปรไฟล์ไม่ครบถ้วน ข้อมูลยังไม่ได้รับการยืนยัน โปรดลองอีกครั้ง"
+  },
   "financeRead": {
     "forbidden": "คุณไม่มีสิทธิ์ดูรายงานการเงินของคลับนี้",
     "missingBackend": "เซิร์ฟเวอร์ยังไม่มีรายงานเวอร์ชันที่จำเป็น จึงไม่สามารถยืนยันตัวเลขได้",
