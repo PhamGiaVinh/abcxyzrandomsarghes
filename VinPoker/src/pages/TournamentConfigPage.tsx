@@ -247,11 +247,19 @@ function TournamentCard({
             {t("tournamentConfig.tablesCount", { count: tournament.tournament_tables.length })}
           </div>
           <div className="flex flex-wrap gap-1">
-              {tournament.tournament_tables.map((tt) => (
-              <Badge key={tt.table_id} variant="secondary" className="text-xs">
-                {tt.game_tables?.table_name ?? tt.table_id.slice(0, 8)}
+              {tournament.tournament_tables.map((tt, index) => {
+                const physicalId = tt.game_table_id ?? tt.table_id;
+                const conflictingIdentity = !!tt.game_table_id && !!tt.table_id
+                  && tt.game_table_id !== tt.table_id;
+                const physicalTable = tt.game_table_id ? tt.canonical_game_table : tt.game_tables;
+                const label = conflictingIdentity || !physicalId
+                  || (physicalTable && physicalTable.id !== physicalId)
+                  ? t("participation.repairRequired")
+                  : physicalTable?.table_name ?? physicalId.slice(0, 8);
+                return <Badge key={tt.id ?? `${physicalId ?? 'missing'}-${index}`} variant="secondary" className="text-xs">
+                {label}
               </Badge>
-            ))}
+              })}
             {tournament.tournament_tables.length === 0 && (
               <span className="text-xs text-muted-foreground">{t("tournamentConfig.noTables")}</span>
             )}

@@ -29,7 +29,15 @@ export function useTournaments(clubId: string | undefined) {
           `
           *,
           tournament_tables (
+            id,
             table_id,
+            game_table_id,
+            table_session_id,
+            status,
+            canonical_game_table:game_tables!tournament_tables_game_table_id_v3_fkey (
+              id,
+              table_name
+            ),
             game_tables!tournament_tables_table_id_fkey (
               id,
               table_name
@@ -63,7 +71,15 @@ export function useActiveTournaments(clubId: string | undefined) {
           `
           *,
           tournament_tables (
+            id,
             table_id,
+            game_table_id,
+            table_session_id,
+            status,
+            canonical_game_table:game_tables!tournament_tables_game_table_id_v3_fkey (
+              id,
+              table_name
+            ),
             game_tables!tournament_tables_table_id_fkey (
               id,
               table_name
