@@ -47,7 +47,7 @@ function harness() {
   const state = { loading: false, error: null, selected: 'b', hands: [], queueError: false };
   const dependencies = {
     tournamentId: 'tour', selectedTableId: 'all', tables: [],
-    loadGuardRef: { current: { begin: () => ++generation, isCurrent: request => request === generation } },
+    loadGuardRef: { current: { begin: () => ++generation, isCurrent: request => request === generation, finish: () => {} } },
     setLoading: value => { state.loading = value; }, setLoadError: value => { state.error = value; },
     setHands: value => { state.hands = value; }, setCompletionStatusByHand: () => {},
     setCompletionStatusError: value => { state.queueError = value; },
@@ -116,6 +116,7 @@ async function inventory(v2, legacy = { data: [], error: null }) {
   const state = { tables: [], error: null, loading: false, selected: 'physical' }, calls = [];
   const deps = {
     tournamentId: 'tour', supabase: { rpc: async name => { calls.push(name); return name === 'list_tracker_tables_v2' ? v2 : legacy; } },
+    tableLoadGuardRef: { current: { begin: () => 1, finish: () => {}, invalidate: () => {} } },
     record: value => value && typeof value === 'object' && !Array.isArray(value) ? value : null,
     textValue: value => typeof value === 'string' && value.trim() ? value.trim() : null,
     setTables: value => { state.tables = typeof value === 'function' ? value(state.tables) : value; }, setTablesError: value => { state.error = value; },
@@ -172,9 +173,10 @@ test('inventory completion after cleanup cannot repopulate the old scope', async
 
 test('History recovery tests are triggered and executed by the existing read-only workflow', () => {
   const workflow = readFileSync(new URL('../../../.github/workflows/ops-v3-tracker-dealer.yml', import.meta.url), 'utf8');
-  for (const path of ['VinPoker/src/components/cashier/tournament-live/HandHistoryWorkspace.tsx', 'VinPoker/tests/tracker/handHistoryReadRecovery*']) {
+  for (const path of ['VinPoker/src/components/cashier/tournament-live/HandHistoryWorkspace.tsx', 'VinPoker/tests/tracker/handHistoryReadRecovery*', 'VinPoker/src/components/cashier/tournament-live/handHistoryLoadGuard.ts', 'VinPoker/tests/tracker/handHistoryLoadGuard.test.ts']) {
     assert.ok(workflow.includes(`- "${path}"`), `trigger: ${path}`);
   }
   assert.ok(workflow.includes('          tests/tracker/handHistoryReadRecovery.test.tsx'));
+  assert.ok(workflow.includes('          tests/tracker/handHistoryLoadGuard.test.ts'));
   assert.ok(workflow.includes('run: node tests/tracker/handHistoryReadRecovery.callback.test.mjs'));
 });

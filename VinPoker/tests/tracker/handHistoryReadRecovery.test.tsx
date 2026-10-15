@@ -41,7 +41,7 @@ beforeEach(() => {
   // Keep table inventory unresolved so its independent effect does not trigger another load.
   backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? new Promise(() => {}) : Promise.resolve(ok([])));
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 it("shows a retryable read error and ends loading when a hand query rejects", async () => {
   backend.from.mockImplementation(() => query(async () => { throw new Error("network unavailable"); }));
@@ -87,4 +87,32 @@ it("shows table authority errors and lets an explicit retry recover the filter",
   await waitFor(() => expect(screen.getByRole("combobox", { name: "Lọc lịch sử theo bàn" })).toBeEnabled());
   expect(screen.getByRole("option", { name: "Table A" })).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("ends a never-settling hand read and ignores its late completion", async () => {
+  vi.useFakeTimers();
+  const read = deferred<ReturnType<typeof ok>>();
+  backend.rpc.mockResolvedValue({ data: { ok: true, tables: [] }, error: null });
+  backend.from.mockImplementation(() => query(() => read.promise));
+  render(<HandHistoryWorkspace tournamentId="tour-a" />);
+  await act(async () => {});
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+  expect(screen.getByText(/Hết thời gian tải lịch sử hand/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Thử lại" })).toBeEnabled();
+  await act(async () => { read.resolve(ok([hand("late", 999)])); });
+  expect(screen.queryByText("#999")).not.toBeInTheDocument();
+  expect(screen.getByText(/Hết thời gian tải lịch sử hand/)).toBeInTheDocument();
+});
+
+it("ends a never-settling table read and ignores its late inventory", async () => {
+  vi.useFakeTimers();
+  const read = deferred<unknown>();
+  backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? read.promise : Promise.resolve(ok([])));
+  render(<HandHistoryWorkspace tournamentId="tour-a" />);
+  await act(async () => {});
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Hết thời gian tải danh sách bàn");
+  expect(screen.getByRole("button", { name: "Tải lại danh sách bàn" })).toBeEnabled();
+  await act(async () => { read.resolve({ data: { ok: true, tables: [{ tournament_table_id: "late", table_name: "Late table" }] }, error: null }); });
+  expect(screen.queryByRole("option", { name: "Late table" })).not.toBeInTheDocument();
 });

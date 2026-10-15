@@ -234,6 +234,8 @@ export function HandHistoryWorkspace({
   const [tablesReload, setTablesReload] = useState(0);
   const loadGuardRef = useRef<ReturnType<typeof createHandHistoryLoadGuard> | null>(null);
   if (!loadGuardRef.current) loadGuardRef.current = createHandHistoryLoadGuard();
+  const tableLoadGuardRef = useRef<ReturnType<typeof createHandHistoryLoadGuard> | null>(null);
+  if (!tableLoadGuardRef.current) tableLoadGuardRef.current = createHandHistoryLoadGuard();
   // Đợt G3 — resettle-forward (chips). resettleSupported degrades to false on a 42883
   // (apply RPC not applied) so the flow shows "chưa áp dụng" instead of crashing.
   const [resettleSupported, setResettleSupported] = useState(true);
@@ -270,6 +272,11 @@ export function HandHistoryWorkspace({
   useEffect(() => {
     if (!tournamentId) return;
     let cancelled = false;
+    const request = tableLoadGuardRef.current!.begin(() => {
+      cancelled = true;
+      setTablesError("Hết thời gian tải danh sách bàn. Hãy thử lại.");
+      setTablesLoading(false);
+    });
     setTables((current) => current.length ? [] : current);
     setTablesLoading(true);
     setTablesError(null);
@@ -318,15 +325,24 @@ export function HandHistoryWorkspace({
           setTablesError(error instanceof Error ? error.message : "Không tải được danh sách bàn");
         }
       } finally {
-        if (!cancelled) setTablesLoading(false);
+        if (!cancelled) {
+          tableLoadGuardRef.current!.finish(request);
+          setTablesLoading(false);
+        }
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; tableLoadGuardRef.current?.invalidate(); };
   }, [supabase, tablesReload, tournamentId]);
 
   const loadHands = useCallback(async () => {
     if (!tournamentId) return;
-    const request = loadGuardRef.current!.begin();
+    const request = loadGuardRef.current!.begin(() => {
+      setLoadError("Hết thời gian tải lịch sử hand. Hãy thử lại.");
+      setHands([]);
+      setCompletionStatusByHand(new Map());
+      setCompletionStatusError(false);
+      setLoading(false);
+    });
     const isCurrentLoad = () => loadGuardRef.current!.isCurrent(request);
     setLoading(true);
     setLoadError(null);
@@ -500,7 +516,10 @@ export function HandHistoryWorkspace({
       setCompletionStatusByHand(new Map());
       setCompletionStatusError(false);
     } finally {
-      if (isCurrentLoad()) setLoading(false);
+      if (isCurrentLoad()) {
+        loadGuardRef.current!.finish(request);
+        setLoading(false);
+      }
     }
   }, [selectedTableId, supabase, tables, tournamentId]);
 
