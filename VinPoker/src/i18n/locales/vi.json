@@ -1,6 +1,7 @@
 {
   "legacyScheduleEvidence": "Thông tin nguồn, phiên bản và xét duyệt của ảnh chưa được cung cấp tại đây. Hãy xác nhận lịch mới nhất với CLB.",
   "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
+  "createAtomic": { "signin": "Đăng nhập trước khi tạo giải.", "storageError": "Không đọc hoặc lưu được yêu cầu tạo giải đang chờ. Chưa gửi yêu cầu mới.", "unknown": "Chưa xác minh được kết quả tạo giải. Hãy kiểm tra yêu cầu trước trước khi thử lại.", "check": "Kiểm tra yêu cầu trước", "retry": "Gửi lại đúng yêu cầu cũ", "pending": "Yêu cầu tạo giải trước chưa rõ kết quả. Hãy kiểm tra trước khi tạo giải khác. Gửi lại sẽ dùng dữ liệu ban đầu, không dùng các ô vừa chỉnh sửa." },
   "chipOpsRead": { "error": "Không đọc được dữ liệu chip. Kho và trạng thái két chưa được xác minh.", "permission": "Cần quyền Chip Master hoặc chủ CLB của giải này.", "retry": "Thử tải lại" },
   "cashierOverviewRead": { "error": "Không tải được thống kê. Hãy làm mới để thử lại." },
   "liveStateSummary": {

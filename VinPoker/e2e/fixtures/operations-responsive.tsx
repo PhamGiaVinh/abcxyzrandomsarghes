@@ -19,6 +19,17 @@ import { MediaClubSchedules } from "../../src/components/admin/MediaClubSchedule
 import { Toaster } from "sonner";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ClubDetail from "../../src/pages/ClubDetail";
+import { NewTournamentDialog } from "../../src/components/floor/TournamentManagerShared";
+
+function TournamentCreateFixture() {
+  const [created, setCreated] = React.useState(false);
+  return <AuthProvider><main className="min-h-screen bg-background p-4 text-foreground">
+    <p>LOCAL TEST · Atomic tournament creation · No production writes</p>
+    {created ? <p>Original create receipt recovered TEST</p> : <NewTournamentDialog
+      clubs={[]} defaultClubId="e9100000-0000-4000-8000-000000000011" multiClub={false}
+      lockMode="single" onCreated={() => setCreated(true)} />}
+  </main></AuthProvider>;
+}
 
 function PlayerActionFixture() {
   const [open, setOpen] = React.useState(true);
@@ -80,6 +91,7 @@ function Fixture() {
   const surface = new URLSearchParams(location.search).get("surface");
   if (surface === "legacy-schedule") return <main className="mx-auto max-w-5xl p-4"><MemoryRouter initialEntries={['/club/club-test']}><Routes><Route path="/club/:id" element={<ClubDetail />} /></Routes></MemoryRouter></main>;
   if (surface === "schedule-upload") return <main className="mx-auto max-w-5xl p-4"><MediaClubSchedules /><Toaster /></main>;
+  if (surface === "tournament-create") return <TournamentCreateFixture />;
   if (surface === "player-actions") return <PlayerActionFixture />;
   if (surface === "floor") return <FloorMobileFixture />;
   if (surface === "clock") return <VinPokerTournamentClock data={{

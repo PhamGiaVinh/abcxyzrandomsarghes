@@ -8,6 +8,12 @@ on:
       - 'VinPoker/tests/dealerSwing/payrollReadAuthority*'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
+      - 'VinPoker/supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql'
+      - 'VinPoker/scripts/ops/tournament-create91-*'
+      - '.github/workflows/tournament-create91-protected-apply.yml'
+      - 'VinPoker/tests/floorTableControlV3/tournamentCreate91*'
+      - 'VinPoker/src/lib/tournamentCreate*'
+      - 'VinPoker/src/components/floor/TournamentManagerShared*'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
       - 'VinPoker/supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql'
@@ -862,6 +868,18 @@ jobs:
           # Synthetic outcome: transaction/lease proof, not verifier or HTTP UAT.
           createdb --template=vinpoker_ops_undo_generation_20261011 vinpoker_ops_history_atomic_ci
           PGDATABASE=vinpoker_ops_history_atomic_ci node tests/trackerSettlement/historyAtomicRecovery.currentSchema.mjs --committed-recovery
+      - name: Atomic tournament create91 rollback, actor receipt and overlapping retry
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_ops_checkin vinpoker_ops_tournament_create91
+          node --test scripts/ops/tournament-create91-release-plan.test.mjs scripts/ops/tournament-create91-protected-apply.test.mjs
+          createdb --template=vinpoker_ops_checkin vinpoker_ops_create91_release_v2
+          node scripts/ops/tournament-create91-release-plan.pg17.mjs
+          PGDATABASE=vinpoker_ops_tournament_create91 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql
+          PGDATABASE=vinpoker_ops_tournament_create91 psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/tournamentCreate91.pg17.sql
+          createdb --template=vinpoker_ops_tournament_create91 vinpoker_ops_tournament_create91_overlap
+          node tests/floorTableControlV3/tournamentCreate91.concurrent.mjs
       - name: Manual participant exact-session receipt and rollback integrity on qualified schema
         working-directory: VinPoker
         run: |

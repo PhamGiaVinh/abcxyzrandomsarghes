@@ -52,6 +52,8 @@ on:
       - "VinPoker/tests/dealerSwing/rotationScope.bootstrap.sql"
       - "VinPoker/supabase/tests/dealer_rotation_plan_diff.sql"
       - "VinPoker/supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql"
+      - "VinPoker/src/components/floor/TournamentManagerShared*"
+      - "VinPoker/src/lib/tournamentCreate*"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
@@ -140,6 +142,8 @@ jobs:
           tests/handinput/readHandBlindLevel.test.ts
           tests/handinput/voidResponseRecovery.hook.test.tsx
           tests/handinput/hand4WorkflowContracts.test.ts
+          src/components/floor/TournamentManagerShared.createIntegrity.test.tsx
+          src/lib/tournamentCreate.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests

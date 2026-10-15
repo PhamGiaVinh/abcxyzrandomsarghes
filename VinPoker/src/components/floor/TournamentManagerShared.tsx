@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import { BlindDraftBuilder } from "@/components/cashier/tournament-live/BlindDra
 import { formatDateTime, formatVND } from "@/lib/format";
 import { BLIND_PRESETS, type BlindLevel, type BlindTemplate } from "@/lib/blindPresets";
 import { isValidBlindDraft } from "@/lib/blindDraftSuggest";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import { createTournament, recoverTournamentCreate, readTournamentCreateJournal, tournamentCreateJournalKey, TournamentCreateError, type TournamentCreateRequest } from "@/lib/tournamentCreate";
 import { useAuth } from "@/hooks/useAuth";
 import { tournamentStatusLabel } from "@/lib/tournament/statusPresentation";
 
@@ -321,6 +321,8 @@ export const NewTournamentDialog = ({
   clubs: ClubRow[]; defaultClubId: string; multiClub: boolean; onCreated: () => void;
   lockMode?: "single" | "multi" | "satellite";
 }) => {
+  const { user } = useAuth();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [clubId, setClubId] = useState(defaultClubId);
   const [f, setF] = useState({ name: "", start_time: "", buy_in: 1000000, rake_amount: 0, service_fee_amount: 0, guarantee_amount: "", starting_stack: 20000, location: "", description: "", game_type: "nlh", minutes_per_level: 20, late_reg_close_level: 6 });
@@ -328,6 +330,16 @@ export const NewTournamentDialog = ({
   const [draftLevels, setDraftLevels] = useState<BlindLevel[]>([]);
   const [clubTemplates, setClubTemplates] = useState<BlindTemplate[]>([]);
   const [busy, setBusy] = useState(false);
+  const createBusyRef = useRef(false);
+  const mounted = useRef(true);
+  const createScope = useRef("");
+  createScope.current = `${user?.id ?? ""}:${clubId}`;
+  const [pendingCreate, setPendingCreate] = useState(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    try { setPendingCreate(!!user && localStorage.getItem(tournamentCreateJournalKey(user.id, clubId)) !== null); }
+    catch { setPendingCreate(true); }
+  }, [open, user?.id, clubId]);
   const [mode, setMode] = useState<"single" | "multi" | "satellite">(lockMode ?? "single");
   const [itmPercent, setItmPercent] = useState("");
   const [flightCount, setFlightCount] = useState(3);
@@ -391,43 +403,71 @@ export const NewTournamentDialog = ({
     } finally { setBusy(false); }
   };
 
-  const submit = async () => {
-    if (busy) return;
-    if (FEATURES.multiDayTournaments && mode === "multi") return submitMultiDay();
-    if (!f.name || !f.start_time) return toast.error("Please fill all required fields");
+  const submit = async (retryOriginal = false) => {
+    if (busy || createBusyRef.current) return;
+    if (!user) return toast.error(t("createAtomic.signin"));
     if (!clubId) return toast.error("Chọn câu lạc bộ");
-    if (blindChoice === "draft" && !isValidBlindDraft(draftLevels)) return toast.error("Review the blind draft before creating this tournament.");
-    setBusy(true);
+    const scope = createScope.current;
+    const key = tournamentCreateJournalKey(user.id, clubId);
+    let request: TournamentCreateRequest;
+    let recovering = false;
     try {
-      const { data: created, error } = await supabase.from("tournaments").insert(withTournamentCreateLiveStatus({
-        club_id: clubId, name: f.name, start_time: new Date(f.start_time).toISOString(),
-        ...(FEATURES.satelliteAwardsV1 ? { operations_mode: mode === "satellite" ? "satellite" : "standard" } : {}),
-        buy_in: Number(f.buy_in), rake_amount: Number(f.rake_amount) || 0,
-        ...(FEATURES.tournamentServiceFee ? { service_fee_amount: Number(f.service_fee_amount) || 0 } : {}),
-        guarantee_amount: parseGtd(f.guarantee_amount),
-        starting_stack: Number(f.starting_stack),
-        location: f.location, description: f.description, game_type: f.game_type,
-        minutes_per_level: Number(f.minutes_per_level), late_reg_close_level: Number(f.late_reg_close_level),
-      })).select("id").single();
-      if (error) { toast.error(error.message); return; }
-      if (FEATURES.blindTemplates && blindChoice !== "none" && created?.id) {
-        const levels = resolveLevels(blindChoice);
-        if (levels.length) {
-          const { error: lvlErr } = await (supabase as any)
-            .from("tournament_levels")
-            .insert(levels.map((l) => ({ tournament_id: created.id, ...l })));
-          if (lvlErr) {
-            toast.error("Tournament created, but blind levels were not saved: " + lvlErr.message + ". Set them in the Blind tab before opening play.");
-            setOpen(false);
-            onCreated();
-            return;
-          }
-        }
+      const raw = localStorage.getItem(key);
+      recovering = raw !== null;
+      if (!recovering && FEATURES.multiDayTournaments && mode === "multi") return submitMultiDay();
+      if (raw !== null) request = readTournamentCreateJournal(raw, user.id, clubId);
+      else {
+        if (!f.name || !f.start_time) return toast.error("Please fill all required fields");
+        if (blindChoice === "draft" && !isValidBlindDraft(draftLevels)) return toast.error("Review the blind draft before creating this tournament.");
+        request = { p_club_id: clubId, p_expected_actor_id: user.id, p_request_id: crypto.randomUUID(),
+          p_levels: FEATURES.blindTemplates ? resolveLevels(blindChoice) : [], p_config: {
+            name: f.name, start_time: new Date(f.start_time).toISOString(),
+            ...(FEATURES.satelliteAwardsV1 ? { operations_mode: mode === "satellite" ? "satellite" : "standard" } : {}),
+            buy_in: Number(f.buy_in), rake_amount: Number(f.rake_amount) || 0,
+            ...(FEATURES.tournamentServiceFee ? { service_fee_amount: Number(f.service_fee_amount) || 0 } : {}),
+            guarantee_amount: parseGtd(f.guarantee_amount), starting_stack: Number(f.starting_stack),
+            location: f.location, description: f.description, game_type: f.game_type,
+            minutes_per_level: Number(f.minutes_per_level), late_reg_close_level: Number(f.late_reg_close_level),
+          } };
+        localStorage.setItem(key, JSON.stringify(request));
+        if (localStorage.getItem(key) !== JSON.stringify(request)) throw new Error("Pending request could not be saved");
       }
+    } catch { toast.error(t("createAtomic.storageError")); return; }
+    createBusyRef.current = true;
+    setBusy(true);
+    const rpc = (name: string, args: Record<string, unknown>) => supabase.rpc(name as never, args as never);
+    try {
+      if (recovering) {
+        try { await recoverTournamentCreate(rpc, request); }
+        catch (error) {
+          if (!retryOriginal) throw error;
+          // Explicit user retry only, after checking the original receipt.
+          // Reuse the persisted payload and key, even if form fields changed.
+          await createTournament(rpc, request);
+        }
+      } else await createTournament(rpc, request);
+      // Journal cleanup cannot turn an authoritative commit into a failed create.
+      let stillPending = true;
+      try {
+        if (localStorage.getItem(key) === JSON.stringify(request)) localStorage.removeItem(key);
+        stillPending = localStorage.getItem(key) !== null;
+      } catch { /* Keep the original identity available for later receipt recovery. */ }
+      if (!mounted.current || createScope.current !== scope) return;
+      setPendingCreate(stillPending);
       toast.success("Tournament created");
       setOpen(false);
       onCreated();
-    } finally { setBusy(false); }
+    } catch (error) {
+      let stillPending = true;
+      try {
+        if (!recovering && error instanceof TournamentCreateError && !error.unknownOutcome
+          && localStorage.getItem(key) === JSON.stringify(request)) localStorage.removeItem(key);
+        stillPending = localStorage.getItem(key) !== null;
+      } catch { /* Storage failure is not permission to create a fresh request. */ }
+      if (!mounted.current || createScope.current !== scope) return;
+      setPendingCreate(stillPending);
+      toast.error(error instanceof TournamentCreateError && !error.unknownOutcome ? error.message : t("createAtomic.unknown"));
+    } finally { createBusyRef.current = false; if (mounted.current) setBusy(false); }
   };
 
   const triggerLabel = lockMode === "satellite" ? "Create Satellite" : lockMode === "multi" ? "Create Multi-day" : lockMode === "single" ? "Tạo giải thường" : "Tạo giải";
@@ -523,7 +563,11 @@ export const NewTournamentDialog = ({
               />}
             </>
           )}
-          <Button onClick={submit} disabled={busy} className="w-full gradient-neon text-primary-foreground border-0">{busy ? "Đang tạo…" : "Create"}</Button>
+          <Button onClick={() => void submit()} disabled={busy} className="w-full gradient-neon text-primary-foreground border-0">{busy ? "Đang tạo…" : pendingCreate ? t("createAtomic.check") : "Create"}</Button>
+          {pendingCreate && <>
+            <p role="status" className="text-xs text-muted-foreground">{t("createAtomic.pending")}</p>
+            <Button variant="outline" onClick={() => void submit(true)} disabled={busy} className="w-full">{t("createAtomic.retry")}</Button>
+          </>}
         </div>
       </DialogContent>
     </Dialog>
