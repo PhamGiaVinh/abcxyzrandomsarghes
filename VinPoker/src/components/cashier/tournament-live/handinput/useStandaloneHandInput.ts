@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import type { Card } from "@/components/shared/CardSlotPicker";
 import { getSeatPositions } from "@/lib/tournament/button";
 import { nextButtonFromBlindLineage } from "@/lib/tournament/deadButton";
-import { readBlindLineage, readHandBlindLevel, type RecordedBlindLineage } from "@/lib/tournament/readBlindLineage";
+import { readBlindLineageState, readHandBlindLevel, type RecordedBlindLineage } from "@/lib/tournament/readBlindLineage";
 import {
   replayActions,
   deriveResumeStreet,
@@ -142,6 +142,7 @@ export interface ActionRecord {
 }
 
 const STREET_ORDER: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
+const LINEAGE_READ_UNAVAILABLE = "Không tải được trạng thái bàn hoặc lịch sử blind. Hãy tải lại bàn trước khi bắt đầu hand tiếp theo.";
 const STREET_LABELS: Record<Street, string> = {
   preflop: "Preflop",
   flop: "Flop",
@@ -203,6 +204,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   // Preceding hand blind positions drive only the next-hand suggestion.
   const [maxSeats, setMaxSeats] = useState<number>(9);
   const [lastBlindLineage, setLastBlindLineage] = useState<RecordedBlindLineage | null>(null);
+  const [blindLineageUnavailable, setBlindLineageUnavailable] = useState(true);
   const [buttonOverridden, setButtonOverridden] = useState(false);
   const [selectedWinners, setSelectedWinners] = useState<string[]>([]);
   const [muckedPlayerIds, setMuckedPlayerIds] = useState<Set<string>>(new Set());
@@ -1084,6 +1086,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       setHandStarted(false);
       setLastHandId(null);
       setButtonConfirmed(false);
+      setBlindLineageUnavailable(true);
       // P2-5: a fresh table load resets the dead-button anchor → the first hand has no
       // suggestion (operator sets the button); subsequent hands auto-suggest.
       setLastBlindLineage(null);
@@ -1239,7 +1242,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         .map((s) => s.seat_number)
         .sort((a, b) => a - b);
 
-      const { data: lastHand } = loadedSessionId
+      const { data: lastHand, error: lastHandReadError } = loadedSessionId
         ? await supabase.from("tournament_hands")
           .select("id, button_seat, status, is_voided")
           .eq("tournament_id", tournamentId)
@@ -1247,12 +1250,22 @@ export function useStandaloneHandInput(tournamentId: string) {
           .filter("table_session_id", "eq", loadedSessionId)
           .order("hand_number", { ascending: false })
           .limit(1).maybeSingle()
-        : { data: null };
+        : { data: null, error: null };
 
       if (!isCurrentLoad()) return;
-      const previousLineage = lastHand?.id && lastHand.status === "completed" && !lastHand.is_voided
-        ? await readBlindLineage(lastHand.id) : null;
+      const previousRead = lastHandReadError ? { available: false as const }
+        : lastHand?.id && lastHand.status === "completed" && !lastHand.is_voided
+          ? await readBlindLineageState(lastHand.id) : { available: true as const, lineage: null };
       if (!isCurrentLoad()) return;
+      if (!previousRead.available) {
+        setTableSelectionNotice(LINEAGE_READ_UNAVAILABLE);
+        setPlayers([]);
+        setTableId("");
+        toast.error(LINEAGE_READ_UNAVAILABLE);
+        return;
+      }
+      const previousLineage = previousRead.lineage;
+      setBlindLineageUnavailable(false);
       setLastBlindLineage(previousLineage);
       const restoredSuggestion = nextButtonFromBlindLineage({
         maxSeats: loadedMaxSeats,
@@ -1477,14 +1490,14 @@ export function useStandaloneHandInput(tournamentId: string) {
   // Dead-button SUGGESTION from the PREVIOUS hand's recorded blind positions. Pre-hand
   // default; stays active until the operator explicitly resets and selects a seat.
   const deadButtonSuggestion = useMemo(
-    () => nextButtonFromBlindLineage({
+    () => blindLineageUnavailable ? null : nextButtonFromBlindLineage({
       maxSeats, occupiedSeats: activeSeatNums,
       previousDealtSeats: lastBlindLineage?.previousDealtSeats ?? [],
       previousButtonSeat: lastBlindLineage?.previousButtonSeat ?? null,
       previousSbPosition: lastBlindLineage?.previousSbPosition ?? null,
       previousBbSeat: lastBlindLineage?.previousBbSeat ?? null,
     }),
-    [maxSeats, activeSeatNums, lastBlindLineage]
+    [maxSeats, activeSeatNums, lastBlindLineage, blindLineageUnavailable]
   );
   const suggestionActive = !!deadButtonSuggestion && !buttonOverridden;
   const rawBlinds = useMemo(() => blindSeats(activeSeatNums, buttonSeat), [activeSeatNums, buttonSeat]);
@@ -1741,6 +1754,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   const startingRef = useRef(false);
   const handleStartHand = async () => {
     if (startingRef.current) return;
+    if (blindLineageUnavailable) { toast.error(LINEAGE_READ_UNAVAILABLE); return; }
     if (startCapability !== "allowed") {
       toast.error(startCapability === "denied" ? "Quyền Floor không bao gồm bắt đầu hand. Cần quyền Tracker của CLB." : "Chưa xác minh được quyền bắt đầu hand. Hãy tải lại trước khi gửi.");
       return;
@@ -2824,6 +2838,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   /** Applies a completed canonical Finish receipt without sending a second record_hand request. */
   const applyVoiceFinishReceipt = useCallback(async (receipt: VoiceFinishCommitReceipt) => {
     if (!handId || receipt.hand_id !== handId) return false;
+    const receiptLoad = tableLoadGuardRef.current.capture(tableId);
+    const currentReceiptScope = () => rosterMountedRef.current && tableLoadGuardRef.current.isCurrent(receiptLoad);
     if (FEATURES.floorDeferredTrackerMoveV1
       && availableTables.find((table) => table.id === tableId)?.tableSessionId) {
       setHandId(null);
@@ -2840,11 +2856,23 @@ export function useStandaloneHandInput(tournamentId: string) {
       .eq("tournament_id", tournamentId)
       .eq("table_id", tableId)
       .order("seat_number");
-    if (error || !refreshedSeats) return false;
+    if (!currentReceiptScope()) return true;
+    if (error || !refreshedSeats) {
+      setHandId(null);
+      setHandStarted(false);
+      resetHand({ loadNextHandNumber: false });
+      setLastHandId(receipt.hand_id);
+      setPlayers([]);
+      setBlindLineageUnavailable(true);
+      setButtonConfirmed(false);
+      toast.warning(`Hand đã lưu. ${LINEAGE_READ_UNAVAILABLE}`);
+      return true;
+    }
     const displayOutcome = await ensureRecordedHandDisplayOutcome({
       tournamentId,
       handId: receipt.hand_id,
     });
+    if (!currentReceiptScope()) return true;
     if (!displayOutcome.ok) {
       toast.warning("Hand đã lưu; outcome hiển thị chưa được server xác minh. Có thể kiểm tra lại trong Lịch sử & sửa hand.");
     }
@@ -2858,14 +2886,18 @@ export function useStandaloneHandInput(tournamentId: string) {
     playTrackerSoundOnce(playedSoundsRef.current, handId, "hand_end", "pot_collect");
     markSync("sent", `Voice Assist đã lưu Hand #${Number(handNumber)}`);
     setLastHandId(receipt.hand_id);
-    const currentLineage = await readBlindLineage(receipt.hand_id);
-    const nextSuggestion = nextButtonFromBlindLineage({
+    const lineageRead = await readBlindLineageState(receipt.hand_id);
+    if (!currentReceiptScope()) return true;
+    const currentLineage = lineageRead.available ? lineageRead.lineage : null;
+    setBlindLineageUnavailable(!lineageRead.available);
+    if (!lineageRead.available) toast.warning(`Hand đã lưu. ${LINEAGE_READ_UNAVAILABLE}`);
+    const nextSuggestion = lineageRead.available ? nextButtonFromBlindLineage({
       maxSeats, occupiedSeats: activeNums,
       previousDealtSeats: currentLineage?.previousDealtSeats ?? [],
       previousButtonSeat: currentLineage?.previousButtonSeat ?? null,
       previousSbPosition: currentLineage?.previousSbPosition ?? null,
       previousBbSeat: currentLineage?.previousBbSeat ?? null,
-    });
+    }) : null;
     if (nextSuggestion) setButtonSeat(nextSuggestion.buttonSeat);
     setButtonConfirmed(Boolean(nextSuggestion));
     setLastBlindLineage(currentLineage);
@@ -3279,11 +3311,14 @@ export function useStandaloneHandInput(tournamentId: string) {
     markSync("sending", `Gửi Hand #${Number(handNumber)}`);
     const submittedHandId = handId;
     const applyRecordedHand = async (recordedHandId: string, recoveredAfterError = false) => {
+      const receiptLoad = tableLoadGuardRef.current.capture(tableId);
+      const currentReceiptScope = () => rosterMountedRef.current && tableLoadGuardRef.current.isCurrent(receiptLoad);
       markSync("sending", `Đang xác minh hiển thị Hand #${Number(handNumber)}`);
       const displayOutcome = await ensureRecordedHandDisplayOutcome({
         tournamentId,
         handId: recordedHandId,
       });
+      if (!currentReceiptScope()) return;
       toast.success(recoveredAfterError
         ? "Máy chủ đã xác nhận hand được lưu dù kết nối báo lỗi"
         : "Hand recorded successfully");
@@ -3302,7 +3337,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         setLastHandId(recordedHandId);
         return;
       }
-      const { data: refreshedSeats } = await supabase
+      const { data: refreshedSeats, error: seatReadError } = await supabase
         .from("tournament_seats")
         .select("seat_number, player_id, is_active")
         .eq("tournament_id", tournamentId)
@@ -3313,20 +3348,27 @@ export function useStandaloneHandInput(tournamentId: string) {
         .filter((s) => s.player_id && s.is_active !== false)
         .map((s) => s.seat_number)
         .sort((a, b) => a - b);
-      const currentLineage = await readBlindLineage(recordedHandId);
-      const nextSuggestion = nextButtonFromBlindLineage({
+      const lineageRead = await readBlindLineageState(recordedHandId);
+      if (!currentReceiptScope()) return;
+      const contextAvailable = !seatReadError && !!refreshedSeats && lineageRead.available;
+      const currentLineage = lineageRead.available ? lineageRead.lineage : null;
+      setBlindLineageUnavailable(!contextAvailable);
+      if (!contextAvailable) toast.warning(`Hand đã lưu. ${LINEAGE_READ_UNAVAILABLE}`);
+      const nextSuggestion = contextAvailable ? nextButtonFromBlindLineage({
         maxSeats, occupiedSeats: activeNums,
         previousDealtSeats: currentLineage?.previousDealtSeats ?? [],
         previousButtonSeat: currentLineage?.previousButtonSeat ?? null,
         previousSbPosition: currentLineage?.previousSbPosition ?? null,
         previousBbSeat: currentLineage?.previousBbSeat ?? null,
-      });
+      }) : null;
       if (nextSuggestion) setButtonSeat(nextSuggestion.buttonSeat);
       setButtonConfirmed(Boolean(nextSuggestion));
       setLastBlindLineage(currentLineage);
       setButtonOverridden(false);
-      if (refreshedSeats) {
+      if (!seatReadError && refreshedSeats) {
         setPlayers((prev) => survivorsAfterHand(prev, activeNums, endingStacks));
+      } else {
+        setPlayers([]);
       }
       setHandId(null);
       setHandStarted(false);
@@ -3518,6 +3560,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     tableLoadError,
     retryTableLoad,
     tableSelectionNotice,
+    blindLineageUnavailable,
     players,
     activePlayers,
     showdownOrderIds,
@@ -3614,6 +3657,9 @@ export function useStandaloneHandInput(tournamentId: string) {
     handleTableChange,
     handleStartHand,
     startCapability,
+    startDisabledReason: blindLineageUnavailable ? LINEAGE_READ_UNAVAILABLE : startCapability === "allowed" ? null
+      : startCapability === "denied" ? "Cần quyền Tracker của CLB để bắt đầu hand; quyền Floor không bao gồm thao tác này."
+        : "Chưa xác minh được quyền bắt đầu hand. Hãy tải lại.",
     handleContinueOrphan,
     handleVoidOrphan,
     handleDockAction,
