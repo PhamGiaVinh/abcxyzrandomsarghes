@@ -1,0 +1,58 @@
+name: Tournament table write scope
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
+      - 'VinPoker/tests/tournamentConfig/**'
+      - 'VinPoker/src/hooks/useTournaments*'
+      - '.github/workflows/tournament-table-write-scope.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres-17:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: fixture-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: VinPoker
+      - run: git diff --check
+      - run: npm run check:migration-catalog && npm run check:credential-context
+        working-directory: VinPoker
+      - name: Actual migration86 actor and tenant boundary
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/tournamentConfig/tableWriteScope.disposable.sql
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: postgres
+          PGUSER: postgres
+          PGPASSWORD: fixture-only
+      - name: Legacy config partial-write diagnosis remains open
+        run: npx vitest run src/hooks/useTournaments.atomicity.repro.test.tsx --maxWorkers=1 --minWorkers=1
+        working-directory: VinPoker
+      - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - run: npm run build
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
