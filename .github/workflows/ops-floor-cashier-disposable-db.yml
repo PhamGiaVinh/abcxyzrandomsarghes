@@ -9,6 +9,9 @@ on:
       - "VinPoker/src/ops/**"
       - "VinPoker/src/pages/ops/**"
       - "VinPoker/src/OpsApp.tsx"
+      - "VinPoker/src/App.tsx"
+      - "VinPoker/tests/gtoRetirement.source.test.mjs"
+      - "VinPoker/e2e/gto-retirement.mock.spec.ts"
       - "VinPoker/src/components/ops/shared/**"
       - "VinPoker/src/components/cashier/tournament-live/OpenTableDialog.tsx"
       - "VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx"
@@ -77,6 +80,10 @@ jobs:
           npm run check:ops-v3-shell-text
           npm run check:credential-context
           git diff --check
+
+      - name: Verify retired GTO is absent from normal application bootstrap
+        working-directory: VinPoker
+        run: node --test tests/gtoRetirement.source.test.mjs
 
       - name: Run targeted Ops mutation and UI tests
         working-directory: VinPoker
@@ -160,7 +167,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: local-publishable-key
           VITE_FLOOR_TABLE_CONTROL_V3: preview
           VITE_FLOOR_UAT_ENV: preview
-        run: npx playwright test e2e/ops-v3-floor-cashier.mock.spec.ts e2e/operations-responsive.mock.spec.ts e2e/operations-clock-payout.mock.spec.ts --workers=1
+        run: npx playwright test e2e/ops-v3-floor-cashier.mock.spec.ts e2e/operations-responsive.mock.spec.ts e2e/operations-clock-payout.mock.spec.ts e2e/gto-retirement.mock.spec.ts --workers=1
 
       - name: Verify tour Cashier gate with mocked auth and money RPCs
         working-directory: VinPoker
