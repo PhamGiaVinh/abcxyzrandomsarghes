@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { FEATURES } from "@/lib/featureFlags";
+import { useAuth } from "@/hooks/useAuth";
 import { parseHistoricalSettlementDisplayPreview } from "@/lib/tracker-poker/historicalSettlementDisplay";
 import { diagnoseHistoricalSettlementInvocation } from "@/lib/tracker-poker/historicalSettlementDiagnostics";
 import { parseReplayPublicSettlement } from "@/lib/tracker-poker/replaySettlement";
@@ -63,12 +64,24 @@ function resultLabel(result: HistoricalSettlementPreviewResult | HistoricalSettl
 
 export function HistoricalSettlementBatchControl({ tournamentId, candidates, onSelectHand, onCommitted }: Props) {
   const supabase = useSupabaseClient();
-  const [previews, setPreviews] = useState<HistoricalSettlementPreviewResult[]>([]);
-  const [commits, setCommits] = useState<HistoricalSettlementCommitResult[]>([]);
+  const { user } = useAuth();
+  const [storedPreviews, setPreviews] = useState<HistoricalSettlementPreviewResult[]>([]);
+  const [storedCommits, setCommits] = useState<HistoricalSettlementCommitResult[]>([]);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [mode, setMode] = useState<"idle" | "preview" | "commit">("idle");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const runRef = useRef<"preview" | "commit" | null>(null);
+  const runRef = useRef<{mode: "preview" | "commit"; generation: number} | null>(null);
+  const scope = JSON.stringify([user?.id, tournamentId]);
+  const scopeRef = useRef({ key: scope, generation: 0 });
+  if (scopeRef.current.key !== scope) scopeRef.current = { key: scope, generation: scopeRef.current.generation + 1 };
+  const dataGenerationRef = useRef(0);
+  const previews = dataGenerationRef.current === scopeRef.current.generation ? storedPreviews : [];
+  const commits = dataGenerationRef.current === scopeRef.current.generation ? storedCommits : [];
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; scopeRef.current.generation += 1; };
+  }, []);
 
   useEffect(() => {
     setPreviews([]);
@@ -77,14 +90,16 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
     setMode("idle");
     setConfirmOpen(false);
     runRef.current = null;
-  }, [tournamentId]);
+  }, [scope]);
 
-  const gateway: HistoricalSettlementBatchGateway = {
+  const gatewayFor = (isCurrent: () => boolean): HistoricalSettlementBatchGateway => ({
     async preview(candidate) {
+      if (!isCurrent()) throw new Error("historical_scope_changed");
       const { data: existing, error: existingError } = await supabase.rpc(
         "get_public_tournament_settlement" as never,
         { p_hand_id: candidate.handId } as never,
       );
+      if (!isCurrent()) throw new Error("historical_scope_changed");
       if (!existingError && existing && typeof existing === "object" && Object.keys(existing).length > 0) {
         return parseReplayPublicSettlement(existing)
           ? { kind: "verified", candidate }
@@ -93,6 +108,7 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
       const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
         body: { mode: "preview", tournament_id: tournamentId, hand_id: candidate.handId },
       });
+      if (!isCurrent()) throw new Error("historical_scope_changed");
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
         const diagnostic = await diagnoseHistoricalSettlementInvocation({
           data,
@@ -111,6 +127,7 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
       return { kind: "ready", candidate, preview: parsed };
     },
     async commit(result) {
+      if (!isCurrent()) throw new Error("historical_scope_changed");
       const { candidate, preview } = result;
       const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
         body: {
@@ -123,6 +140,7 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
           expected_outcome_hash: preview.outcomeHash,
         },
       });
+      if (!isCurrent()) throw new Error("historical_scope_changed");
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
         const diagnostic = await diagnoseHistoricalSettlementInvocation({
           data,
@@ -134,45 +152,51 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
       }
       return { kind: "verified", candidate };
     },
-  };
+  });
 
   const runPreview = async () => {
     if (runRef.current || candidates.length === 0) return;
-    runRef.current = "preview";
+    const run = { mode: "preview" as const, generation: scopeRef.current.generation };
+    const isCurrent = () => mountedRef.current && run.generation === scopeRef.current.generation && runRef.current === run;
+    runRef.current = run;
+    dataGenerationRef.current = run.generation;
     setMode("preview");
     setPreviews([]);
     setCommits([]);
     setProgress({ completed: 0, total: candidates.length });
     try {
-      const next = await previewHistoricalSettlementBatch(candidates, gateway, (completed, total) => {
-        setProgress({ completed, total });
-      });
+      const next = await previewHistoricalSettlementBatch(candidates, gatewayFor(isCurrent), (completed, total) => {
+        if (isCurrent()) setProgress({ completed, total });
+      }, isCurrent);
+      if (!isCurrent()) return;
       setPreviews(next);
       const ready = next.filter((result) => result.kind === "ready").length;
       const blocked = next.filter((result) => result.kind === "blocked").length;
       toast.success(`Đã kiểm tra ${next.length} hand: ${ready} đủ dữ liệu, ${blocked} cần sửa.`);
     } finally {
-      runRef.current = null;
-      setMode("idle");
+      if (runRef.current === run) { runRef.current = null; if (mountedRef.current) setMode("idle"); }
     }
   };
 
   const runCommit = async () => {
     if (runRef.current || previews.every((result) => result.kind !== "ready")) return;
-    runRef.current = "commit";
+    const run = { mode: "commit" as const, generation: scopeRef.current.generation };
+    const isCurrent = () => mountedRef.current && run.generation === scopeRef.current.generation && runRef.current === run;
+    runRef.current = run;
     setMode("commit");
     setConfirmOpen(false);
     const readyCount = previews.filter((result) => result.kind === "ready").length;
     setProgress({ completed: 0, total: readyCount });
     try {
-      const next = await commitHistoricalSettlementBatch(previews, gateway, (completed, total) => {
-        setProgress({ completed, total });
-      });
+      const next = await commitHistoricalSettlementBatch(previews, gatewayFor(isCurrent), (completed, total) => {
+        if (isCurrent()) setProgress({ completed, total });
+      }, isCurrent);
+      if (!isCurrent()) return;
       setCommits(next);
       const verified = next.filter((result) => result.kind === "verified").length;
       const blocked = next.length - verified;
       const commitByHandId = new Map(next.map((result) => [result.candidate.handId, result]));
-      setPreviews((current) => current.map((result) => {
+      setPreviews(previews.map((result) => {
         const commit = commitByHandId.get(result.candidate.handId);
         if (!commit) return result;
         if (commit.kind === "verified") return { kind: "verified", candidate: result.candidate };
@@ -182,8 +206,7 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
       else toast.success(`Đã xác minh ${verified} hand. Replay sẽ hiện ranking và winner glow.`);
       onCommitted();
     } finally {
-      runRef.current = null;
-      setMode("idle");
+      if (runRef.current === run) { runRef.current = null; if (mountedRef.current) setMode("idle"); }
     }
   };
 
