@@ -827,6 +827,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -v CORRECTION_CASE=true -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          for failure_case in CANCEL_CASE STALE_EPOCH_CASE TICKET_FAILURE_CASE; do
+            psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -v "$failure_case=true" -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          done
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/viewer-hub/publicTableHistory.test.ts src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker

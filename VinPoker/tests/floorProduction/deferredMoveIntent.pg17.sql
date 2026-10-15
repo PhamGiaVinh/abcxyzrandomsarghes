@@ -103,7 +103,7 @@ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,sta
  ('f7290000-0000-4000-8000-000000000012','f7290000-0000-4000-8000-000000000002','Destination TEST',82,'tournament','inactive','available');
 SELECT set_config('request.jwt.claim.sub','f7290000-0000-4000-8000-000000000001',true);
 DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de bigint; st uuid; dt uuid; ss uuid; ds uuid; e uuid; h uuid; ep bigint; sr bigint; dr bigint; token text; ticket_code text; operator_actor uuid;
- finish_intent jsonb; finish_receipt jsonb; finish_epoch bigint; BEGIN
+ finish_intent jsonb; finish_receipt jsonb; finish_epoch bigint; moving_entry uuid; BEGIN
  IF current_setting('test.scoped_finish_mode')='true' THEN
   PERFORM pg_temp.assert_true(current_database() IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback')
     AND current_setting('test.real_finish_case')='true' AND current_setting('test.exact_queue')='true',
@@ -239,6 +239,7 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
   PERFORM set_config('role','none',true);
   PERFORM pg_temp.assert_true(r->>'error'='ticket_not_found','unissued deferred ticket is denied');
  END IF;
+ moving_entry:=e;
  IF current_setting('test.cancel_case')='true' THEN
   SELECT id INTO e FROM public.floor_pending_tracker_moves WHERE entry_id=e;
   r:=public.floor_cancel_pending_tracker_move_v1(e);
@@ -257,7 +258,8 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
    PERFORM set_config('role','authenticated',true);
    r:=public.floor_request_table_control_mode_v4(dt,ds,'manual',dr,finish_epoch,gen_random_uuid());
    PERFORM set_config('role','none',true);
-   PERFORM pg_temp.assert_true(r->>'outcome'='pending' AND r->'blockers' ? 'active_hand' AND r->'blockers' ? 'pending_move',
+   PERFORM pg_temp.assert_true(r->>'outcome'='pending' AND r->'blockers' ? 'active_hand'
+     AND (r->'blockers' ? 'pending_move')=(current_setting('test.cancel_case')='false'),
      'mode waits for active hand and exact pending move: '||r::text);
    SELECT jsonb_build_object('actor_id','f7290000-0000-4000-8000-000000000001','request_id',gen_random_uuid(),
     'tournament_id',hh.tournament_id,'tournament_table_id',dt,'hand_id',h,'table_session_id',ds,
@@ -296,6 +298,14 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
   PERFORM pg_temp.assert_true(public.get_tracker_manual_finish_receipt_v1(finish_intent)=finish_receipt
     AND public.record_tracker_manual_hand_v1(finish_intent)=finish_receipt,'past Finish receipt survives move and mode');
   PERFORM set_config('role','none',true);
+  IF current_setting('test.cancel_case')='true' OR current_setting('test.stale_epoch_case')='true'
+    OR current_setting('test.ticket_failure')='true' THEN
+   PERFORM pg_temp.assert_true((SELECT count(*)=1 AND bool_and(table_session_id=ss AND chip_count=20000)
+     FROM public.tournament_seats WHERE entry_id=moving_entry AND is_active),
+     'failed or cancelled move retains exactly one occupied source seat and evidenced stack');
+   PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.seat_assignment_history WHERE entry_id=moving_entry),
+     'failed or cancelled move does not leave a success audit');
+  END IF;
  END IF;
  IF current_setting('test.cancel_case')='true' THEN
   PERFORM pg_temp.assert_true((SELECT status='cancelled' FROM public.floor_pending_tracker_moves WHERE id=e),'cancel remains terminal');
