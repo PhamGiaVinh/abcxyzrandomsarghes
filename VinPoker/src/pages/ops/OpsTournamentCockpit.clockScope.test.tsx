@@ -1,14 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ id: "a", actor: "owner", authLoading: false, cockpit: false, rpc: vi.fn(), invoke: vi.fn() }));
+const state = vi.hoisted(() => ({ id: "a", actor: "owner", authLoading: false, cockpit: false, rpc: vi.fn(), invoke: vi.fn(), read: vi.fn() }));
 vi.mock("react-router-dom", () => ({ useParams: () => ({ id: state.id }), useNavigate: () => vi.fn() }));
 vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: state.actor ? { id: state.actor } : null, loading: state.authLoading }) }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
 const client = { rpc: state.rpc, functions: { invoke: state.invoke }, from: (table: string) => ({ select: () => {
   const data = table === "tournament_entries" ? [{ id: "entry", player_id: "player", entry_no: 1, current_stack: 0 }]
     : table === "tournament_seats" ? [{ player_id: "player", entry_number: 1, player_name: "TEST Player", is_active: false }] : [];
-  const query = { eq: () => query, order: () => Promise.resolve({ data, error: null }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
+  const result = state.read(table, state.actor, state.id) ?? { data, error: null };
+  const query = { eq: () => query, in: () => query, order: () => Promise.resolve(result), then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject) };
   return query;
 } }) };
 vi.mock("@/ops/workspace/TournamentOpsProvider", () => ({ useTournamentOps: () => ({ snapshot: { clubId: "club" } }) }));
@@ -25,8 +26,50 @@ vi.mock("@/hooks/useTournamentTvDataCore", () => ({ useTournamentTvDataCore: () 
 import OpsTournamentCockpit from "./OpsTournamentCockpit";
 const clock = (id: string) => ({ tournament_id: id, status: "live", is_running: false,
   remaining_seconds: 600, current_level: { level_number: 2 }, next_level: { level_number: 3 }, control_revision: `revision-${id}` });
-beforeEach(() => { state.id = "a"; state.actor = "owner"; state.authLoading = false; state.cockpit = false; state.rpc.mockReset(); state.invoke.mockReset(); });
+beforeEach(() => { state.id = "a"; state.actor = "owner"; state.authLoading = false; state.cockpit = false; state.rpc.mockReset(); state.invoke.mockReset(); state.read.mockReset(); });
 afterEach(cleanup);
+it.each(["tournament_entries", "tournament_prizes", "tournament_seats"])("does not turn a failed %s read into an empty or actionable busted list", async (failed) => {
+  state.cockpit = true;
+  state.read.mockImplementation((table) => table === failed ? { data: null, error: { message: "503" } } : undefined);
+  render(<OpsTournamentCockpit section="players" />);
+  await screen.findByText("Không tải được người đã loại");
+  expect(screen.queryByRole("button", { name: "Cho vào lại" })).not.toBeInTheDocument();
+});
+it("discards the old actor's pending busted read and loads the new actor scope", async () => {
+  state.cockpit = true;
+  let finish!: (value: unknown) => void;
+  state.read.mockImplementation((table, actor) => table === "tournament_entries"
+    ? actor === "owner" ? new Promise(resolve => { finish = resolve; }) : { data: [], error: null } : undefined);
+  const { rerender } = render(<OpsTournamentCockpit section="players" />);
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  state.actor = "other";
+  await act(async () => rerender(<OpsTournamentCockpit section="players" />));
+  await act(async () => finish({ data: [{ id: "old-entry", player_id: "player", entry_no: 1 }], error: null }));
+  expect(state.read.mock.calls.some(([table, actor]) => table === "tournament_entries" && actor === "other")).toBe(true);
+  expect(screen.queryByRole("button", { name: "Cho vào lại" })).not.toBeInTheDocument();
+});
+it("does not present a partial busted list when profile lookup fails", async () => {
+  state.cockpit = true;
+  state.read.mockImplementation((table) => table === "tournament_seats" ? { data: [], error: null }
+    : table === "profiles" ? { data: null, error: { message: "503" } } : undefined);
+  render(<OpsTournamentCockpit section="players" />);
+  await screen.findByText("Không tải được người đã loại");
+  expect(screen.queryByRole("button", { name: "Cho vào lại" })).not.toBeInTheDocument();
+});
+it("retains a successful empty result and does not read busted data while auth is unverified", async () => {
+  state.cockpit = true;
+  state.read.mockReturnValue({ data: [], error: null });
+  const { rerender } = render(<OpsTournamentCockpit section="players" />);
+  await screen.findByText("Chưa có người chơi");
+  expect(screen.queryByText("Không tải được người đã loại")).not.toBeInTheDocument();
+  const reads = state.read.mock.calls.length;
+  state.authLoading = true;
+  await act(async () => rerender(<OpsTournamentCockpit section="players" />));
+  expect(state.read).toHaveBeenCalledTimes(reads);
+  state.actor = ""; state.authLoading = false;
+  await act(async () => rerender(<OpsTournamentCockpit section="players" />));
+  expect(state.read).toHaveBeenCalledTimes(reads);
+});
 it("opens the canonical evidenced restore flow even before local seat inventory is available", async () => {
   state.cockpit = true;
   render(<OpsTournamentCockpit section="players" />);

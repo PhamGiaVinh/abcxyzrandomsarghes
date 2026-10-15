@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Cockpit busted read integrity and actor isolation repaired locally
+
+On0ee6435ab, inspection confirmed ent/prize/seat Supabase errors were ignored and busted effect did not depend on actor/auth. New rendered regressions initially3RED/13PASS; one false-positive seat-error test was caused by missing mock.in(), corrected mock then proper4RED/12PASS (three ignored read errors plus stale actor request). Candidate checks each primary read and profile lookup error, scopes stored rows to actor/auth/tournament/tab/flag and clears on unverified/logout, prevents old request response consumption and avoids follow-up profile read after scope cancellation. Successful empty still valid, no mutation/permission/business-policy changes. Existing frontend skill's explicit error/state boundaries applied without redesign.
+
+Final18 cockpit rendered tests PASS including profile failure, successfulempty and no reads while authunverified/logout; editedtwofile ESLint exit0 and diffcheck PASS. Not fulltype/build/browser375/remoteCI proof. No DB/Edge/frontend deployment/flags/push/dispatch/Docker; Daybreak/Auto unchanged. Next other affected local client async seams and scope/deadline gaps;93 release manifest/runner and full integrated acceptance still pending. No activecommandhandles.
+
 ## Legacy restore93 forward containment qualified in local PG17
 
 CLI generated candidate20261015203628, moved to local source slot20270128000093_floor_legacy_restore_exact_session_required_v1.sql (not live reservation/approval). Pins old function definition digest77d5d7871bccb4a9469b6816ff77333e, postgres owner and canonicalv5 existence before replacing only legacy bare API with SECURITY INVOKER/empty path/exact_session_required; PUBLIC/anon/service revoked, authenticated explicit. No session inference, operational writes or audit changes. Consumer cockpit canonical switch already a69053c4771bd338f7c359bf0deb457170be6c99 must precede retirement on release. New exact hash registered under existing owner-gated source catalog, no catalog-check/hook relaxed. SQL hash ed747bda61c670c1422e96066722f1d5cd3c6beea29dafd85dd29d350562a569.

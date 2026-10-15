@@ -261,11 +261,16 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
   const openSeat = (s: MapSeat) => setSeatTarget({ seat: toMockSeat(s), tableNo: tableNoById.get(s.table_id) ?? 0, real: s });
 
   // Busted list — lazy khi tab Người chơi (cờ ON). Tên lấy từ ghế inactive (giữ player_name) → profiles → id.
-  const [busted, setBusted] = useState<{ loading: boolean; error: string | null; rows: BustedRow[] }>({ loading: false, error: null, rows: [] });
+  const bustedScope = JSON.stringify([user?.id, authLoading, id, tab, cockpitOn]);
+  const [bustedRead, setBusted] = useState<{ scope: string | null; loading: boolean; error: string | null; rows: BustedRow[] }>({ scope: null, loading: false, error: null, rows: [] });
+  const busted = bustedRead.scope === bustedScope ? bustedRead : { loading: true, error: null, rows: [] };
   useEffect(() => {
-    if (!cockpitOn || tab !== "players" || !id) return;
+    if (!cockpitOn || tab !== "players" || !id || !user?.id || authLoading) {
+      setBusted({ scope: bustedScope, loading: false, error: null, rows: [] });
+      return;
+    }
     let alive = true;
-    setBusted({ loading: true, error: null, rows: [] });
+    setBusted({ scope: bustedScope, loading: true, error: null, rows: [] });
     (async () => {
       try {
         const [entRes, prizeRes, seatRes] = await Promise.all([
@@ -273,6 +278,9 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
           supabase.from("tournament_prizes").select("position, amount").eq("tournament_id", id),
           supabase.from("tournament_seats").select("player_id, entry_number, player_name, is_active").eq("tournament_id", id),
         ]);
+        const readError = entRes.error ?? prizeRes.error ?? seatRes.error;
+        if (readError) throw new Error(readError.message);
+        if (!alive) return;
         const prizeByPos = new Map(((prizeRes.data ?? []) as { position: number; amount: number }[]).map((p) => [p.position, p.amount]));
         const nameBySeat = new Map<string, string>();
         for (const s of (seatRes.data ?? []) as { player_id: string; entry_number: number; player_name: string | null; is_active: boolean }[]) {
@@ -282,7 +290,8 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
         const needProfile = [...new Set(ent.filter((e) => !nameBySeat.has(`${e.player_id}:${e.entry_no ?? 1}`)).map((e) => e.player_id))];
         const profileName = new Map<string, string>();
         if (needProfile.length) {
-          const { data: profs } = await supabase.from("profiles").select("user_id, display_name").in("user_id", needProfile);
+          const { data: profs, error } = await supabase.from("profiles").select("user_id, display_name").in("user_id", needProfile);
+          if (error) throw new Error(error.message);
           for (const p of (profs ?? []) as { user_id: string; display_name: string | null }[]) if (p.display_name) profileName.set(p.user_id, p.display_name);
         }
         const rows: BustedRow[] = ent.map((e) => {
@@ -295,13 +304,13 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
             last_chip: e.current_stack ?? null,
           };
         }).sort((a, b) => (a.finished_place ?? 1e9) - (b.finished_place ?? 1e9));
-        if (alive) setBusted({ loading: false, error: null, rows });
+        if (alive) setBusted({ scope: bustedScope, loading: false, error: null, rows });
       } catch (error) {
-        if (alive) setBusted({ loading: false, error: error instanceof Error ? error.message : "Không tải được người đã loại", rows: [] });
+        if (alive) setBusted({ scope: bustedScope, loading: false, error: error instanceof Error ? error.message : "Không tải được người đã loại", rows: [] });
       }
     })();
     return () => { alive = false; };
-  }, [cockpitOn, id, supabase, tab]);
+  }, [cockpitOn, id, supabase, tab, user?.id, authLoading, bustedScope]);
 
   // Reuse canonical evidence, exact-session fencing and receipt recovery.
   const [restoreTarget, setRestoreTarget] = useState<BustedRow | null>(null);
