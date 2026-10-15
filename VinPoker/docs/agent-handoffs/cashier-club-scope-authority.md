@@ -30,6 +30,11 @@ denial, self cashier/owner, genuine empty scope, super-admin, missing actor, unk
 admin authority, trusted service, null subject and nested SECURITY DEFINER caller.
 Fixture auth helpers are local identity adapters, not real signed-token/HTTP proof.
 All fixture rows/roles roll back. No real user scopes queried in live diagnostics.
+Positive array assertions use IS DISTINCT FROM, so an empty result cannot falsely
+pass via SQL NULL. A local in-memory fault injection removed the cashier UNION
+branch: the corrected actual-migration test failed at 'Own assigned cashier scope
+changed', as required; the unmodified migration passed. No source file was mutated
+for that negative execution.
 
 Live dependent call sites (metadata): get_dealer_availability_requests,
 get_dealer_swing_health, review_availability_request use v_uid; sepay worklist uses

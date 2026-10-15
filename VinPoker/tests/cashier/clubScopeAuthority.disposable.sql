@@ -44,7 +44,7 @@ SELECT set_config('fixture.role','authenticated',true),
   set_config('fixture.actor','33333333-3333-3333-3333-333333333333',true);
 DO $$ BEGIN
   IF (SELECT array_agg(x) FROM public.cashier_club_ids('22222222-2222-2222-2222-222222222222') x)
-      <> ARRAY['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid] THEN
+      IS DISTINCT FROM ARRAY['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid] THEN
     RAISE EXCEPTION 'Expected authenticated cross-subject reproduction';
   END IF;
 END $$;
@@ -71,11 +71,11 @@ RESET ROLE;
 SET LOCAL ROLE authenticated;
 DO $$ BEGIN
   IF (SELECT array_agg(x) FROM public.cashier_club_ids('33333333-3333-3333-3333-333333333333') x)
-      <> ARRAY['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid] THEN
+      IS DISTINCT FROM ARRAY['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid] THEN
     RAISE EXCEPTION 'Own assigned cashier scope changed';
   END IF;
   IF (SELECT array_agg(x) FROM public.fixture_scoped_worklist() x)
-      <> ARRAY['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid] THEN
+      IS DISTINCT FROM ARRAY['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid] THEN
     RAISE EXCEPTION 'Nested definer changed human caller scope';
   END IF;
   BEGIN
@@ -84,7 +84,7 @@ DO $$ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
   PERFORM set_config('fixture.actor','22222222-2222-2222-2222-222222222222',true);
   IF (SELECT array_agg(x) FROM public.cashier_club_ids(auth.uid()) x)
-      <> ARRAY['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid] THEN
+      IS DISTINCT FROM ARRAY['bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid] THEN
     RAISE EXCEPTION 'Owner self-scope changed';
   END IF;
   PERFORM set_config('fixture.actor','55555555-5555-5555-5555-555555555555',true);
@@ -114,7 +114,7 @@ SET LOCAL ROLE service_role;
 SELECT set_config('fixture.role','service_role',true);
 DO $$ BEGIN
   IF (SELECT array_agg(x) FROM public.cashier_club_ids('11111111-1111-1111-1111-111111111111') x)
-      <> ARRAY['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid] THEN
+      IS DISTINCT FROM ARRAY['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid] THEN
     RAISE EXCEPTION 'Trusted Edge subject lookup changed';
   END IF;
   BEGIN
