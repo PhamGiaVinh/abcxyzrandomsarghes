@@ -15,6 +15,16 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/PlayerActionSheet*"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx"
       - "VinPoker/src/lib/floorTableControlV3.ts"
+      - "VinPoker/src/lib/tournament/readBlindLineage.ts"
+      - "VinPoker/src/lib/tournament/observeTrackerContextRead.ts"
+      - "VinPoker/src/lib/tracker-poker/recordedHandDisplayOutcome.ts"
+      - "VinPoker/tests/trackerSettlement/recordedHandDisplayOutcome.test.ts"
+      - "VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts"
+      - "VinPoker/src/components/cashier/tournament-live/handinput/StandaloneHandInputConsole.tsx"
+      - "VinPoker/src/components/cashier/tournament-live/handinput/RacetrackHandInputConsole.tsx"
+      - "VinPoker/tests/handinput/readBlindLineage*"
+      - "VinPoker/tests/handinput/voidResponseRecovery.hook.test.tsx"
+      - "VinPoker/tests/handinput/hand4WorkflowContracts.test.ts"
       - "VinPoker/src/lib/floorPendingMoveIntent.ts"
       - "VinPoker/src/components/cashier/OfflineBuyInPanel.tsx"
       - "VinPoker/src/components/TournamentRegisterModal.test.tsx"
@@ -90,6 +100,11 @@ jobs:
           src/components/floor/MultiDayTournamentsBoard.test.tsx
           src/pages/CashierDashboard.tourEntry.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
+          tests/handinput/readBlindLineage.readIntegrity.test.ts
+          tests/trackerSettlement/recordedHandDisplayOutcome.test.ts
+          tests/handinput/readHandBlindLevel.test.ts
+          tests/handinput/voidResponseRecovery.hook.test.tsx
+          tests/handinput/hand4WorkflowContracts.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
