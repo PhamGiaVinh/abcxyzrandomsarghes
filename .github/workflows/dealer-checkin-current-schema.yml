@@ -2,6 +2,8 @@ name: Operations current schema runtime
 on:
   pull_request:
     paths:
+      - 'VinPoker/supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql'
+      - 'VinPoker/tests/clubSchedules/**'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
@@ -429,6 +431,12 @@ jobs:
           node tests/dealerSwing/restHistory.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/openSessionNames.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_series_reorder
+          node tests/clubSchedules/seriesReorder.repro.pg17.mjs
+          psql -X -v ON_ERROR_STOP=1 -d vinpoker_ops_series_reorder -f supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -d vinpoker_ops_series_reorder -f tests/clubSchedules/seriesReorder.pg17.sql
+          createdb -T vinpoker_ops_series_reorder vinpoker_ops_series_reorder_overlap
+          node tests/clubSchedules/seriesReorder.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000027_tracker_equal_blinds_contract_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/equalBlinds.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000028_tracker_roster_exact_session_v1.sql

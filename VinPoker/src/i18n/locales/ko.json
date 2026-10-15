@@ -1,6 +1,6 @@
 {
   "legacyScheduleEvidence": "이 이미지의 출처, 버전 및 검토 정보는 여기에 제공되지 않습니다. 최신 일정은 클럽에 확인해 주세요.",
-  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
+  "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "칩 데이터를 불러올 수 없습니다. 재고와 칩 금고 상태가 확인되지 않았습니다.", "permission": "이 대회의 클럽 소유자 또는 칩 관리자 권한이 필요합니다.", "retry": "다시 불러오기" },
   "cashierOverviewRead": { "error": "통계를 불러오지 못했습니다. 새로고침하여 다시 시도하세요." },
   "liveStateSummary": {

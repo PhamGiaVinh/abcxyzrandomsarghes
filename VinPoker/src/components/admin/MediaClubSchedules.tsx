@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,8 @@ import { Loader2, Upload, Trash2, CalendarDays, ArrowLeft, ArrowRight, Images } 
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/featureFlags";
 import { compressImage } from "@/lib/compressImage";
+import { useAuth } from "@/hooks/useAuth";
+import {readSeriesReorderJournal,recoverSeriesReorder,seriesReorderJournalKey,SeriesReorderError,submitSeriesReorder,type SeriesReorderRequest} from "@/lib/seriesReorder";
 
 interface ClubRow {
   id: string;
@@ -21,6 +23,13 @@ type SeriesImg = { id: string; club_id: string; image_url: string; caption: stri
 
 export const MediaClubSchedules = () => {
   const { t } = useTranslation();
+  const {user}=useAuth();
+  const actorRef=useRef(user?.id);actorRef.current=user?.id;
+  const scopeRef=useRef({actor:user?.id,epoch:0});
+  if(scopeRef.current.actor!==user?.id)scopeRef.current={actor:user?.id,epoch:scopeRef.current.epoch+1};
+  const reorderBusy=useRef(false);
+  const [pendingReorder,setPendingReorder]=useState<SeriesReorderRequest|null>(null);
+  const [reorderBlocked,setReorderBlocked]=useState(false);
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [seriesByClub, setSeriesByClub] = useState<Record<string, SeriesImg[]>>({});
   const [loading, setLoading] = useState(true);
@@ -28,12 +37,15 @@ export const MediaClubSchedules = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async () => {
+    const actor=user?.id;
+    const epoch=scopeRef.current.epoch;
     setLoading(true);
     const { data, error } = await supabase
       .from("clubs")
       .select("id,name,region,daily_schedule_image_url,weekly_schedule_image_url")
       .eq("status", "approved")
       .order("name");
+    if(actorRef.current!==actor||scopeRef.current.epoch!==epoch)return;
     if (error) toast.error(error.message);
     const list = (data as any[]) ?? [];
     setClubs(list as ClubRow[]);
@@ -45,14 +57,23 @@ export const MediaClubSchedules = () => {
         .in("club_id", list.map((c) => c.id))
         .order("position");
       const grouped: Record<string, SeriesImg[]> = {};
+      if(actorRef.current!==actor||scopeRef.current.epoch!==epoch)return;
       for (const r of ((imgs ?? []) as SeriesImg[])) (grouped[r.club_id] ??= []).push(r);
       setSeriesByClub(grouped);
     }
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    reorderBusy.current=false;setPendingReorder(null);setReorderBlocked(false);
+    if(user?.id){
+      try{const raw=sessionStorage.getItem(seriesReorderJournalKey(user.id));if(raw)setPendingReorder(readSeriesReorderJournal(raw,user.id));}
+      catch{setReorderBlocked(true);}
+    }
+    void load();
+  }, [user?.id]);
 
   const uploadSeries = async (clubId: string, files: FileList) => {
+    if(reorderBusy.current||pendingReorder||reorderBlocked)return;
     setBusyId(clubId + "series");
     try {
       const existing = seriesByClub[clubId] ?? [];
@@ -83,6 +104,7 @@ export const MediaClubSchedules = () => {
   };
 
   const deleteSeries = async (id: string) => {
+    if(reorderBusy.current||pendingReorder||reorderBlocked)return;
     if (!confirm("Xoá ảnh này?")) return;
     const { error } = await (supabase as any).from("club_series_images").delete().eq("id", id);
     if (error) toast.error(error.message);
@@ -90,14 +112,40 @@ export const MediaClubSchedules = () => {
   };
 
   const moveSeries = async (clubId: string, id: string, dir: "up" | "down") => {
+    if(!user?.id||reorderBusy.current||pendingReorder||reorderBlocked)return;
     const list = [...(seriesByClub[clubId] ?? [])];
     const idx = list.findIndex((x) => x.id === id);
     const ni = dir === "up" ? idx - 1 : idx + 1;
-    if (ni < 0 || ni >= list.length) return;
+    if (idx<0||ni < 0 || ni >= list.length) return;
+    const expected=list.map(x=>({id:x.id,position:x.position}));
     [list[idx], list[ni]] = [list[ni], list[idx]];
-    const updates = list.map((x, i) => ({ id: x.id, position: i }));
-    setSeriesByClub((prev) => ({ ...prev, [clubId]: list.map((x, i) => ({ ...x, position: i })) }));
-    await Promise.all(updates.map((u) => (supabase as any).from("club_series_images").update({ position: u.position }).eq("id", u.id)));
+    const request:SeriesReorderRequest={p_club_id:clubId,p_expected:expected,p_order:list.map(x=>x.id),p_request_id:crypto.randomUUID(),p_expected_actor_id:user.id};
+    await executeReorder(request,false);
+  };
+
+  const executeReorder=async(request:SeriesReorderRequest,recoverOnly:boolean)=>{
+    const actor=user?.id;if(!actor||reorderBusy.current)return;
+    const epoch=scopeRef.current.epoch;
+    reorderBusy.current=true;setBusyId(request.p_club_id+'series');
+    try{
+      // Persist before dispatch; storage failure cannot create an untracked write.
+      sessionStorage.setItem(seriesReorderJournalKey(actor),JSON.stringify(request));
+      setPendingReorder(request);
+      const rpc=(name:string,args:Record<string,unknown>)=>(supabase as any).rpc(name,args);
+      if(recoverOnly)await recoverSeriesReorder(rpc,request,actor);
+      else await submitSeriesReorder(rpc,request,actor);
+      if(actorRef.current!==actor||scopeRef.current.epoch!==epoch)return;
+      sessionStorage.removeItem(seriesReorderJournalKey(actor));
+      setPendingReorder(null);setReorderBlocked(false);toast.success(t('admin.scheduleReorder.complete'));
+    }catch(error){
+      if(actorRef.current!==actor||scopeRef.current.epoch!==epoch)return;
+      if(error instanceof SeriesReorderError&&!error.unknownOutcome){
+        sessionStorage.removeItem(seriesReorderJournalKey(actor));setPendingReorder(null);
+        toast.error(t('admin.scheduleReorder.conflict'));
+      }else{setReorderBlocked(true);toast.error(t('admin.scheduleReorder.unknown'));}
+    }finally{
+      if(actorRef.current===actor&&scopeRef.current.epoch===epoch){reorderBusy.current=false;setBusyId(null);void load().catch(()=>toast.error(t('admin.scheduleReorder.readFailed')));}
+    }
   };
 
   const upload = async (clubId: string, kind: "daily" | "weekly", file: File) => {
@@ -139,6 +187,10 @@ export const MediaClubSchedules = () => {
         <h2 className="font-display font-bold text-lg">Lịch thi đấu CLB</h2>
       </div>
       <Input placeholder="Tìm CLB theo tên / khu vực..." value={search} onChange={e => setSearch(e.target.value)} />
+      {(pendingReorder||reorderBlocked)&&<div role="status" className="text-sm text-muted-foreground">
+        {t('admin.scheduleReorder.unknown')}
+        {pendingReorder&&<Button variant="outline" size="sm" disabled={!!busyId} onClick={()=>executeReorder(pendingReorder,true)}>{t('admin.scheduleReorder.check')}</Button>}
+      </div>}
       <div className="grid gap-3">
         {filtered.map(c => (
           <Card key={c.id} className="p-4 border border-border">
@@ -190,7 +242,7 @@ export const MediaClubSchedules = () => {
                     <Images className="w-3.5 h-3.5" /> Lịch series (nhiều ảnh)
                   </div>
                   <label>
-                    <input type="file" accept="image/*" multiple className="hidden" disabled={busyId === c.id + "series"}
+                    <input type="file" accept="image/*" multiple className="hidden" disabled={!!busyId||!!pendingReorder||reorderBlocked}
                       onChange={e => { if (e.target.files?.length) uploadSeries(c.id, e.target.files); e.currentTarget.value = ""; }} />
                     <span className="inline-flex items-center justify-center gap-1 text-xs px-2 py-1.5 rounded bg-primary/10 text-primary border border-primary/30 cursor-pointer hover:bg-primary/20">
                       {busyId === c.id + "series" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -206,13 +258,13 @@ export const MediaClubSchedules = () => {
                       <div key={img.id} className="relative shrink-0 w-28">
                         <img src={img.image_url} alt="" className="w-28 h-28 object-cover rounded border border-border bg-muted/30" />
                         <div className="mt-1 flex items-center justify-center gap-1.5">
-                          <button onClick={() => moveSeries(c.id, img.id, "up")} disabled={i === 0} className="p-1 rounded text-muted-foreground hover:text-primary disabled:opacity-30" aria-label="Lùi">
+                          <button onClick={() => moveSeries(c.id, img.id, "up")} disabled={i === 0||!!busyId||!!pendingReorder||reorderBlocked} className="p-1 rounded text-muted-foreground hover:text-primary disabled:opacity-30" aria-label="Lùi">
                             <ArrowLeft className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => deleteSeries(img.id)} className="p-1 rounded text-destructive hover:bg-destructive/10" aria-label="Xoá">
+                          <button onClick={() => deleteSeries(img.id)} disabled={!!busyId||!!pendingReorder||reorderBlocked} className="p-1 rounded text-destructive hover:bg-destructive/10" aria-label="Xoá">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => moveSeries(c.id, img.id, "down")} disabled={i === arr.length - 1} className="p-1 rounded text-muted-foreground hover:text-primary disabled:opacity-30" aria-label="Tiến">
+                          <button onClick={() => moveSeries(c.id, img.id, "down")} disabled={i === arr.length - 1||!!busyId||!!pendingReorder||reorderBlocked} className="p-1 rounded text-muted-foreground hover:text-primary disabled:opacity-30" aria-label="Tiến">
                             <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         </div>

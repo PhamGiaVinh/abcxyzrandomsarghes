@@ -1,6 +1,6 @@
 {
   "legacyScheduleEvidence": "Thông tin nguồn, phiên bản và xét duyệt của ảnh chưa được cung cấp tại đây. Hãy xác nhận lịch mới nhất với CLB.",
-  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
+  "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "Không đọc được dữ liệu chip. Kho và trạng thái két chưa được xác minh.", "permission": "Cần quyền Chip Master hoặc chủ CLB của giải này.", "retry": "Thử tải lại" },
   "cashierOverviewRead": { "error": "Không tải được thống kê. Hãy làm mới để thử lại." },
   "liveStateSummary": {

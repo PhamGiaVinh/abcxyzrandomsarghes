@@ -17,6 +17,7 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx"
       - "VinPoker/src/components/cashier/tournament-live/PlayerActionSheet*"
       - "VinPoker/src/components/admin/MediaClubSchedules*"
+      - "VinPoker/src/lib/seriesReorder*"
       - "VinPoker/src/components/LegacyScheduleEvidenceNote*"
       - "VinPoker/src/pages/ClubDetail*"
       - "VinPoker/src/pages/Tournaments.tsx"
@@ -102,6 +103,8 @@ jobs:
           src/pages/CashierDashboard.tourEntry.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
           src/components/admin/MediaClubSchedules.uploadOutcome.test.tsx
+          src/components/admin/MediaClubSchedules.reorder.test.tsx
+          src/lib/seriesReorder.test.ts
           src/components/LegacyScheduleEvidenceNote.test.tsx
           src/pages/ClubDetail.scheduleEvidence.test.tsx
           tests/opsFloorCashier
