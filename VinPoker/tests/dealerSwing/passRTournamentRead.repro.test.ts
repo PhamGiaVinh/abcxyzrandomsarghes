@@ -152,7 +152,8 @@ it('isolates a legacy row and still admits the valid table to reconciliation',as
  expect(result.errors).toContainEqual({scope:'table:physical-b',error:'rotation_assignment_session_missing'});
  expect(result.errors).toContainEqual({scope:'passR',error:'test_boundary_after_reconcile'});
 });
-it('scopes persist and announce to verified tables and excludes quarantined attendance',async()=>{
+it.each(['accepted','rejected','legacy','malformed'] as const)('handles commit receipt=%s',async(mode)=>{
+ const rejected=mode==='rejected';
  const entryStart=source.indexOf('export async function passRRotationPlanner(');
  const entryEnd=source.indexOf('// ─── replanSingleTable',entryStart);
  if(entryStart<0||entryEnd<=entryStart)throw Error('Actual planner entrypoint missing');
@@ -160,7 +161,8 @@ it('scopes persist and announce to verified tables and excludes quarantined atte
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
  }).outputText;
  const invalid={table_id:'physical-b',table_session_id:null,attendance_id:'blocked-out',pre_assigned_attendance_id:'blocked-in'};
- const rpc=vi.fn(async()=>({data:{outcome:'ok'},error:null}));
+ const rpc=vi.fn(async()=>({data:{outcome:'ok',...(mode==='legacy'?{}:
+  {rejected_table_ids:mode==='malformed'?null:rejected?['physical-a']:[]})},error:null}));
  const supply=vi.fn(async(_admin:unknown,_club:string,_options:{excludeAttendanceIds:Set<string>})=>({status:'ok',supply:[]}));
  const announce=vi.fn(async(_admin:unknown,_ctx:unknown,_assignments:unknown[])=>({locked:0,errors:[]}));
  const names=['fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo','reconcileAndAdopt',
@@ -174,12 +176,17 @@ it('scopes persist and announce to verified tables and excludes quarantined atte
  const planner=new Function(...names,`${entry};return passRRotationPlanner;`)(...values);
  const admin={...client(),rpc};
  const result=await planner(admin,{clubId:'club-a',cycleExcludedIds:new Set(['previously-excluded'])});
- expect(result.errors).toEqual([{scope:'table:physical-b',error:'rotation_assignment_session_missing'}]);
+ expect(result.errors).toEqual([
+  {scope:'table:physical-b',error:'rotation_assignment_session_missing'},
+  ...(rejected?[{scope:'table:physical-a',error:'rotation_persist_session_rejected'}]:[]),
+  ...(mode==='malformed'?[{scope:'upsert_rotation_plan',error:'rotation_persist_receipt_invalid'}]:[]),
+ ]);
  expect(rpc).toHaveBeenCalledExactlyOnceWith('upsert_rotation_plan',{
   p_club_id:'club-a',p_plan_run_id:'run-test',p_rows:[],p_table_ids:['physical-a'],
  });
  expect(supply.mock.calls[0][2].excludeAttendanceIds).toEqual(new Set(['previously-excluded','blocked-out','blocked-in']));
- expect(announce.mock.calls[0][2]).toEqual([assignment]);
+ if(mode==='malformed') expect(announce).not.toHaveBeenCalled();
+ else expect(announce.mock.calls[0][2]).toEqual(rejected?[]:[assignment]);
 });
 it('announces a retained unchanged prediction from an earlier plan run',async()=>{
  const first=source.indexOf('async function announceDueSlots(');

@@ -47,12 +47,21 @@ BEGIN
       WHERE i.game_table_id=v_table AND i.availability_status='in_use')
       OR EXISTS(
         SELECT 1 FROM jsonb_array_elements(COALESCE(p_rows,'[]'::jsonb)) r
-        WHERE (r->>'table_id')::uuid=v_table AND NOT EXISTS(
+        WHERE (r->>'table_id')::uuid=v_table AND NOT (
+          (COALESCE(NULLIF(r->>'slot_index','')::int,0)=0 AND EXISTS(
           SELECT 1 FROM public.dealer_assignments a JOIN public.table_sessions s
             ON s.id=a.table_session_id AND s.game_table_id=a.table_id AND s.club_id=a.club_id
           WHERE a.id=NULLIF(r->>'assignment_id','')::uuid AND a.table_id=v_table
             AND a.club_id=p_club_id AND a.status='assigned' AND a.released_at IS NULL
             AND a.swing_processed_at IS NULL AND s.closed_at IS NULL
+          )) OR (
+            NULLIF(r->>'slot_index','')::int BETWEEN 1 AND 4
+            AND NULLIF(r->>'assignment_id','') IS NULL
+            AND EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(p_rows,'[]'::jsonb)) anchor_row
+              WHERE (anchor_row->>'table_id')::uuid=v_table
+                AND COALESCE(NULLIF(anchor_row->>'slot_index','')::int,0)=0
+                AND NULLIF(anchor_row->>'assignment_id','') IS NOT NULL)
+          )
         )
       ) THEN
       v_rejected_scope:=array_append(v_rejected_scope,v_table);

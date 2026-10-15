@@ -12,8 +12,10 @@ semantics. Physical/session locks fence lifecycle changes; schedule locks preced
 assignment locks. Validation derives the current canonical session from server
 data. Invalid tables are excluded from both incoming rows and supersede scope,
 so a mixed valid/invalid batch preserves other predictions. The response includes
-rejected_table_ids; the Edge consumer still needs integration with PR1564 so those
-rejections appear in operational diagnostics before this package can release.
+rejected_table_ids. PR1564 was merged into this candidate branch without changing
+its worktree. Edge now reports commit rejections per table and excludes them from
+announce/lock; malformed receipts stop announcements. Absent new fields remain
+compatible with the old DB. The emergency replanner also stops on rejection.
 
 Verification performed locally on restored reviewed schema SHA256
 d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a,
@@ -32,8 +34,8 @@ receipt keys are unique per execution. It does not send network notifications;
 the restored sandbox has no net extension. No production mutation occurred.
 
 Remaining before release: required CI; independent critical review; malicious
-duplicate/NULL-session cases; lock overlap against pending close79/81; Edge
-rejection diagnostics; exact catalog/dependency/recovery/rollback manifest and
+duplicate/NULL-session cases; lock overlap against pending close79/81;
+exact catalog/dependency/recovery/rollback manifest and
 protected apply. Existing old assignment-less set-diff fixtures need canonical
 session/assignment identities if reused against87. Do not weaken87 to satisfy
 legacy fixture shapes. Prediction cancellation when persist commits BEFORE close

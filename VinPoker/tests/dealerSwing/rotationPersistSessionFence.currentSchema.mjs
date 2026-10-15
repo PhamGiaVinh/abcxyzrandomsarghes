@@ -27,6 +27,9 @@ DO $test$ DECLARE result jsonb; BEGIN
  'e1700000-0000-4000-8000-000000000063',jsonb_build_array(jsonb_build_object(
  'table_id','e1700000-0000-4000-8000-000000000011','assignment_id',(SELECT id FROM stale_rotation_assignment),
  'slot_index',0,'planned_relief_at',now()+interval '30 minutes','is_shortage',true,'solver_version','session-fence-regression'),
+ jsonb_build_object('table_id','e1700000-0000-4000-8000-000000000011',
+ 'assignment_id',null,'slot_index',1,'planned_relief_at',now()+interval '60 minutes',
+ 'is_shortage',true,'solver_version','session-fence-regression'),
  jsonb_build_object('table_id','e1700000-0000-4000-8000-000000000014',
  'assignment_id',(SELECT id FROM stale_rotation_assignment),'slot_index',0,
  'planned_relief_at',now()+interval '30 minutes','is_shortage',true,'solver_version','invalid-session')),
@@ -35,6 +38,9 @@ DO $test$ DECLARE result jsonb; BEGIN
  PERFORM pg_temp.assert_true(EXISTS(SELECT FROM public.dealer_rotation_schedule
    WHERE assignment_id=(SELECT id FROM stale_rotation_assignment) AND status='predicted'),
    'current session prediction exists despite invalid other table');
+ PERFORM pg_temp.assert_true(EXISTS(SELECT FROM public.dealer_rotation_schedule
+   WHERE table_id='e1700000-0000-4000-8000-000000000011' AND slot_index=1 AND assignment_id IS NULL
+     AND status='predicted'), 'anchored forecast remains valid');
  PERFORM pg_temp.assert_true(NOT EXISTS(SELECT FROM public.dealer_rotation_schedule
    WHERE table_id='e1700000-0000-4000-8000-000000000014'), 'invalid table has no prediction');
  PERFORM pg_temp.assert_true(result->'rejected_table_ids' @> '["e1700000-0000-4000-8000-000000000014"]'::jsonb,
@@ -42,7 +48,7 @@ DO $test$ DECLARE result jsonb; BEGIN
 END $test$;
 -- Invalid input must not supersede the valid existing prediction.
 CREATE TEMP TABLE preserved_prediction AS SELECT id,version FROM public.dealer_rotation_schedule
- WHERE assignment_id=(SELECT id FROM stale_rotation_assignment) AND status='predicted';
+ WHERE table_id='e1700000-0000-4000-8000-000000000011' AND status='predicted';
 DO $test$ DECLARE result jsonb; BEGIN
  result:=public.upsert_rotation_plan('e1700000-0000-4000-8000-000000000002',
  'e1700000-0000-4000-8000-000000000065',jsonb_build_array(jsonb_build_object(
@@ -51,6 +57,13 @@ DO $test$ DECLARE result jsonb; BEGIN
  ARRAY['e1700000-0000-4000-8000-000000000011'::uuid]);
  PERFORM pg_temp.assert_true(result->'rejected_table_ids' @> '["e1700000-0000-4000-8000-000000000011"]'::jsonb,
    'NULL assignment rejects table');
+ result:=public.upsert_rotation_plan('e1700000-0000-4000-8000-000000000002',
+ 'e1700000-0000-4000-8000-000000000068',jsonb_build_array(jsonb_build_object(
+ 'table_id','e1700000-0000-4000-8000-000000000011','assignment_id',null,
+ 'slot_index',1,'planned_relief_at',now(),'is_shortage',true)),
+ ARRAY['e1700000-0000-4000-8000-000000000011'::uuid]);
+ PERFORM pg_temp.assert_true(result->'rejected_table_ids' @> '["e1700000-0000-4000-8000-000000000011"]'::jsonb,
+   'forecast without current slot0 anchor rejects table');
  result:=public.upsert_rotation_plan('e1700000-0000-4000-8000-000000000099',
  'e1700000-0000-4000-8000-000000000066','[]'::jsonb,
  ARRAY['e1700000-0000-4000-8000-000000000011'::uuid]);
@@ -59,14 +72,14 @@ DO $test$ DECLARE result jsonb; BEGIN
  result:=public.upsert_rotation_plan('e1700000-0000-4000-8000-000000000002',
  'e1700000-0000-4000-8000-000000000067','[{"table_id":"not-a-uuid"}]'::jsonb,null);
  PERFORM pg_temp.assert_true(result->>'outcome'='error','malformed input returns explicit error');
- PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.dealer_rotation_schedule s
+ PERFORM pg_temp.assert_true((SELECT count(*)=2 FROM public.dealer_rotation_schedule s
    JOIN preserved_prediction p ON p.id=s.id AND p.version=s.version WHERE s.status='predicted'),
    'invalid input preserves valid prediction identity and version');
 END $test$;
 RESET ROLE;
 -- The baseline close does not yet cancel predictions; remove the positive control
 -- inside this rolled-back fixture so this test isolates NEW stale persistence.
-DELETE FROM public.dealer_rotation_schedule WHERE assignment_id=(SELECT id FROM stale_rotation_assignment);
+DELETE FROM public.dealer_rotation_schedule WHERE table_id='e1700000-0000-4000-8000-000000000011';
 SELECT set_config('test.rotation_revision',(SELECT revision::text FROM public.table_sessions
  WHERE id='e1700000-0000-4000-8000-000000000021'),true);
 SELECT set_config('request.jwt.claim.role','authenticated',true);

@@ -729,9 +729,20 @@ export async function passRRotationPlanner(
       return result;
     }
 
-    // Phase E — announce/lock + Telegram
+    const rejectedScope = (upsertResult as { rejected_table_ids?: unknown }).rejected_table_ids;
+    if (rejectedScope !== undefined && (!Array.isArray(rejectedScope)
+      || rejectedScope.some((id: unknown) => typeof id !== "string"))) {
+      result.errors.push({ scope: "upsert_rotation_plan", error: "rotation_persist_receipt_invalid" });
+      result.solverDurationMs = Date.now() - started;
+      return result;
+    }
+    const commitRejectedTables = new Set<string>(rejectedScope ?? []);
+    for (const tableId of commitRejectedTables) {
+      result.errors.push({ scope: `table:${tableId}`, error: "rotation_persist_session_rejected" });
+    }
+    // Phase E — announce only tables admitted by the commit-time session fence.
     const announce = await announceDueSlots(
-      admin, ctx, assignments, supplyByAttendance, tournamentInfo,
+      admin, ctx, assignments.filter((a) => !commitRejectedTables.has(a.table_id)), supplyByAttendance, tournamentInfo,
     );
     result.locked = announce.locked;
     result.errors.push(...announce.errors);
@@ -854,6 +865,14 @@ export async function replanSingleTable(
     });
     if (upsertErr || (upsertResult as any)?.outcome !== "ok") {
       return { relocked: false, detail: `upsert_failed: ${upsertErr?.message ?? "?"}` };
+    }
+    const rejectedScope = (upsertResult as { rejected_table_ids?: unknown }).rejected_table_ids;
+    if (rejectedScope !== undefined && (!Array.isArray(rejectedScope)
+      || rejectedScope.some((id: unknown) => typeof id !== "string"))) {
+      return { relocked: false, detail: "rotation_persist_receipt_invalid" };
+    }
+    if (rejectedScope?.includes(a.table_id)) {
+      return { relocked: false, detail: "rotation_persist_session_rejected" };
     }
 
     if (!slot0.inAttendanceId) {
