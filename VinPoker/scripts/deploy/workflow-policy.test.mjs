@@ -17,6 +17,24 @@ const validationWorkflow = readFileSync(
 const schemaCaptureWorkflow = readFileSync(resolve(root, ".github/workflows/capture-live-public-schema.yml"), "utf8");
 const physicalAssetApplyWorkflow = readFileSync(resolve(root, ".github/workflows/physical-asset-63-65-protected-apply.yml"), "utf8");
 
+test("campaign applies use owner authorization without native reviewer capability", () => {
+  for (const name of ["dealer-rest78", "dealer-close79-81", "dealer-next80", "clock-level89", "tournament-create91", "series-reorder92"]) {
+    const source = readFileSync(resolve(root, `.github/workflows/${name}-protected-apply.yml`), "utf8");
+    assert.doesNotMatch(source, /required_reviewers/, name);
+    for (const boundary of [
+      "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'",
+      "INITIAL_ACTOR: '${{ github.actor }}'", "TRIGGERING_ACTOR: '${{ github.triggering_actor }}'",
+      'test "$INITIAL_ACTOR" = "$GITHUB_REPOSITORY_OWNER"',
+      'test "$TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"',
+      'test "$(git rev-parse HEAD)" = "$RELEASE_SHA"',
+      '.head.sha', '.head.repo.full_name', '.merge_commit_sha', '.app.slug=="github-actions"',
+      'cancel-in-progress: false', 'environment: dealer-swing-production-critical',
+      'floor-v3-recovery-backup.yml', 'RECOVERY_BASE_SHA', 'unzip -Z1',
+      `${name}-protected-apply.mjs plan`, `${name}-protected-apply.mjs apply`,
+    ]) assert.ok(source.includes(boundary), `${name}: ${boundary}`);
+  }
+});
+
 test("owner-approved critical release does not require a paid reviewer gate", () => {
   const gate = workflow.slice(workflow.indexOf("  validate-critical-environment:"), workflow.indexOf("  deploy-critical-edge:"));
   assert.doesNotMatch(gate, /required_reviewers|gh api/);

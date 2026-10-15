@@ -27,9 +27,9 @@ test('valid protected context still requires exact79/81 confirmation and checkou
  assert.throws(()=>validateRelease(approved,recovery,base,'apply'),/Checkout/);
  assert.throws(()=>validateRelease(approved,{...recovery,isolatedRestore:'FAIL'},sha,'apply'),/recovery/);
 });
-test('close79/81 workflow retains human review, source checks and recovery provenance',()=>{
+test('close79/81 workflow retains owner authorization, source checks and recovery provenance',()=>{
  const yaml=readFileSync(new URL('../../../.github/workflows/dealer-close79-81-protected-apply.yml',import.meta.url),'utf8');
- for(const token of ['required_reviewers','dealer-swing-production-critical','cancel-in-progress: false',
+ for(const token of ['INITIAL_ACTOR','TRIGGERING_ACTOR','dealer-swing-production-critical','cancel-in-progress: false',
   'APPLY_DEALER_CLOSE_79_81_','.head.sha','.merge_commit_sha','runtime tracker-dealer-read-only postgres-17-integrated',
   'floor-v3-recovery-backup.yml','floor-v3-restore-verification-','RECOVERY_BASE_SHA','unzip -Z1',
   'dealer-close79-81-protected-apply.mjs plan','dealer-close79-81-protected-apply.mjs apply'])assert.ok(yaml.includes(token),token);

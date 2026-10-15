@@ -26,9 +26,9 @@ test('valid protected context still requires exact80 confirmation and checkout',
  assert.throws(()=>validateRelease(approved,recovery,base,'apply'),/Checkout/);
  assert.throws(()=>validateRelease(approved,{...recovery,isolatedRestore:'FAIL'},sha,'apply'),/recovery/);
 });
-test('next80 workflow retains human review, source checks and recovery provenance',()=>{
+test('next80 workflow retains owner authorization, source checks and recovery provenance',()=>{
  const yaml=readFileSync(new URL('../../../.github/workflows/dealer-next80-protected-apply.yml',import.meta.url),'utf8');
- for(const token of ['required_reviewers','dealer-swing-production-critical','cancel-in-progress: false',
+ for(const token of ['INITIAL_ACTOR','TRIGGERING_ACTOR','dealer-swing-production-critical','cancel-in-progress: false',
   'APPLY_DEALER_NEXT_80_','.head.sha','.merge_commit_sha','runtime tracker-dealer-read-only postgres-17-integrated',
   'floor-v3-recovery-backup.yml','floor-v3-restore-verification-','RECOVERY_BASE_SHA','unzip -Z1',
   'dealer-next80-protected-apply.mjs plan','dealer-next80-protected-apply.mjs apply'])assert.ok(yaml.includes(token),token);

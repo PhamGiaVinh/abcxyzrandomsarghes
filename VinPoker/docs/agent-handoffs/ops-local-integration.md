@@ -35,6 +35,12 @@ Actual integration checks: migration catalog PASS; migration control PASS10reser
 
 Original evidence remains scoped: History23mock/parser testsPASS; Swing finalhook16PASS, expandedUI7cases hitheapOOM; ownerpolicy32PASS/1SKIP beforeintegration; originalsecurity PG runtime belongs to prior qualified source, not a fresh integrated DB test. No full typecheck/build/browser/DB runtime run in this integration under current RAM/Docker limits. Do not report SOURCE_QUALIFIED or ACCEPTED for the integrated candidate.
 
+## Owner-authorized campaign apply workflows — local followup
+
+Scoped removal of native required_reviewers capability checks now covers only dealer-rest78, dealer-close79-81, dealer-next80, clock-level89, tournament-create91 and series-reorder92. Owner initial/rerun actor, manual dispatch/main, exact PR/SHA/CI, environment binding, serialization, recovery and atomic apply checks remain.79/81 exception still defaults NOT_APPROVED. Historical workflows outside this scope unchanged. No environment settings changed and no workflow dispatched.
+
+New policy regression failed on original source at dealer-rest78, then passed after removal. Six protected-apply suites:24PASS sequential; new policy test:1PASS. An initial combined invocation failed to start a thread, not a product assertion failure; sequential execution reached terminal success. These are local Node/source-validation tests, not DB execution, actionlint, full typecheck/build or live proof. Baseline fetched again unchanged at ed3db6ac600710e95fe4408c475941916c23ab19. Earlier statements below about pending native-reviewer removal describe pre-followup state and are superseded by this section.
+
 ## Still outside this tree / next order
 
 Dealer integration phase2 completed locally through merge1816da6ebbf3a8123e468502a0aed19c24b16ded. Resolved catalog addition conflicts by preserving80/81/87 plus82–86; Ops CI test list conflict kept both baseline UI tests and canonical/session tests. Source check confirms configsLoading/configsError/Retry config refetch survived merges. Exact SQL80/81/87 unchanged versus source branches. Catalog/control/diff checks PASS. Actual25Node protected-transport/atomic-plan tests PASS (not PostgreSQL execution); actual13Vitest next-intent/table-session tests PASS. Original56policy/plan tests above belong to phase1, not a fresh qualification of this larger candidate. No build/type/DB/browser/live rotation proof. Existing apply workflows still require native reviewer; owner approved removal, but scoped followup remains before private release.

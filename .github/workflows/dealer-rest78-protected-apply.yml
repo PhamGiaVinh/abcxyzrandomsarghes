@@ -51,8 +51,6 @@ jobs:
           for name in runtime postgres-17-integrated release-runner-postgres-17 collision-guard reject-sensitive-vars-context floor-table-control-v3-server-contract 'Floor V3 catalog and promotion preflight' 'Pinned actionlint on exact source revision'; do
             jq -e --arg name "$name" '[.[]|.check_runs[]|select(.name==$name and .app.slug=="github-actions")]|sort_by(.id)|last|.status=="completed" and .conclusion=="success"' <<<"$checks" >/dev/null
           done
-          environment="$(gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical")"
-          jq -e '[.protection_rules[]|select(.type=="required_reviewers")|.reviewers[]]|length>0' <<<"$environment" >/dev/null
       - name: Offline exact migration checks
         working-directory: VinPoker
         run: |
