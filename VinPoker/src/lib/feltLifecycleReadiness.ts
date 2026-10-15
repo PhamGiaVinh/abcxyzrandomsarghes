@@ -73,7 +73,7 @@ export async function getDealerTourCloseReadiness(tourId: string, clubId: string
   const rpc = supabase.rpc as unknown as (
     name: string, args: Record<string, string>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc("get_dealer_tour_close_readiness_v1", {
+  const { data, error } = await rpc.call(supabase, "get_dealer_tour_close_readiness_v1", {
     p_tour_id: tourId, p_club_id: clubId,
   });
   if (error) throw new Error(`Không kiểm tra được phiên bàn: ${error.message}`);
@@ -84,7 +84,7 @@ export async function getTournamentCloseReadiness(tournamentId: string): Promise
   const rpc = supabase.rpc as unknown as (
     name: string, args: Record<string, string>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc("get_tournament_close_readiness_v1", {
+  const { data, error } = await rpc.call(supabase, "get_tournament_close_readiness_v1", {
     p_tournament_id: tournamentId,
   });
   if (error) throw new Error(`Không kiểm tra được trạng thái giải: ${error.message}`);

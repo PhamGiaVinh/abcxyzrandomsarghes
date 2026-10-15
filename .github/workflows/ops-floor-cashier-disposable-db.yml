@@ -23,6 +23,7 @@ on:
       - "VinPoker/src/pages/Tournaments.tsx"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx"
       - "VinPoker/src/lib/floorTableControlV3.ts"
+      - "VinPoker/src/lib/feltLifecycleReadiness*"
       - "VinPoker/src/lib/floorPendingMoveIntent.ts"
       - "VinPoker/src/components/cashier/OfflineBuyInPanel.tsx"
       - "VinPoker/src/components/TournamentRegisterModal.test.tsx"
@@ -122,6 +123,8 @@ jobs:
           src/lib/dealerTableInventory.test.ts
           src/components/cashier/dealer-swing/swingTableView.session.test.ts
           tests/dealerSwing/passRTournamentRead.repro.test.ts
+          src/lib/feltLifecycleReadiness.test.ts
+          src/lib/feltLifecycleReadiness.rpcClient.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests

@@ -12,7 +12,20 @@ import {
 import { computeCloseReport } from "./closeReport";
 
 describe("server-sourced close readiness", () => {
-  beforeEach(() => rpc.mockReset());
+  beforeEach(() => { rpc.mockReset(); });
+
+  it.each(['dealer','tournament'] as const)('preserves the real client receiver for %s readiness reads',async(kind)=>{
+    rpc.mockImplementation(function(this:{rpc:unknown}|undefined){
+      if(this?.rpc!==rpc) throw new Error('Supabase RPC receiver lost');
+      return Promise.resolve({data:{ok:true,ready:false,already_closed:false,blockers:['active_hand'],
+        entry_count:0,buy_in_total:0,cash_in_total:0,prize_total:0,club_revenue:0,cashier_balance:0,
+        reconcile_delta:0,reconciled:false},error:null});
+    });
+    const result=kind==='dealer'?await getDealerTourCloseReadiness('tour-test','club-test')
+      :await getTournamentCloseReadiness('tour-test');
+    expect(result).toMatchObject({ready:false,blockers:['active_hand']});
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
 
   it("renders operational blockers in Vietnamese without inventing client authority", () => {
     expect(describeCloseBlockers(["active_hand", "pending_move"]))
