@@ -2839,7 +2839,9 @@ export function useStandaloneHandInput(tournamentId: string) {
   const applyVoiceFinishReceipt = useCallback(async (receipt: VoiceFinishCommitReceipt) => {
     if (!handId || receipt.hand_id !== handId) return false;
     const receiptLoad = tableLoadGuardRef.current.capture(tableId);
-    const currentReceiptScope = () => rosterMountedRef.current && tableLoadGuardRef.current.isCurrent(receiptLoad);
+    const receiptGeneration = rosterGenerationRef.current;
+    const currentReceiptScope = () => rosterMountedRef.current && receiptGeneration === rosterGenerationRef.current
+      && tableLoadGuardRef.current.isCurrent(receiptLoad);
     if (FEATURES.floorDeferredTrackerMoveV1
       && availableTables.find((table) => table.id === tableId)?.tableSessionId) {
       setHandId(null);
@@ -3312,7 +3314,9 @@ export function useStandaloneHandInput(tournamentId: string) {
     const submittedHandId = handId;
     const applyRecordedHand = async (recordedHandId: string, recoveredAfterError = false) => {
       const receiptLoad = tableLoadGuardRef.current.capture(tableId);
-      const currentReceiptScope = () => rosterMountedRef.current && tableLoadGuardRef.current.isCurrent(receiptLoad);
+      const receiptGeneration = rosterGenerationRef.current;
+      const currentReceiptScope = () => rosterMountedRef.current && receiptGeneration === rosterGenerationRef.current
+        && tableLoadGuardRef.current.isCurrent(receiptLoad);
       markSync("sending", `Đang xác minh hiển thị Hand #${Number(handNumber)}`);
       const displayOutcome = await ensureRecordedHandDisplayOutcome({
         tournamentId,
