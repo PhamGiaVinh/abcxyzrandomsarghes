@@ -15,7 +15,7 @@ SELECT set_config('fixture.actor','11111111-1111-1111-1111-111111111111',true);
 CREATE TABLE public.clubs(id uuid PRIMARY KEY,owner_id uuid);
 CREATE TABLE public.tournaments(id uuid PRIMARY KEY,club_id uuid REFERENCES public.clubs(id));
 CREATE TABLE public.game_tables(id uuid PRIMARY KEY,club_id uuid REFERENCES public.clubs(id));
-CREATE TABLE public.table_sessions(id uuid PRIMARY KEY,game_table_id uuid,tournament_id uuid);
+CREATE TABLE public.table_sessions(id uuid PRIMARY KEY,game_table_id uuid,tournament_id uuid,club_id uuid);
 CREATE TABLE public.club_dealer_controls(user_id uuid,club_id uuid);
 CREATE TYPE public.app_role AS ENUM('super_admin');
 CREATE FUNCTION public.has_role(actor uuid,requested public.app_role) RETURNS boolean
@@ -42,8 +42,11 @@ INSERT INTO public.game_tables VALUES
   ('aaaaaaaa-0000-0000-0000-000000000011','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
   ('bbbbbbbb-0000-0000-0000-000000000010','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 INSERT INTO public.table_sessions VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000020','aaaaaaaa-0000-0000-0000-000000000010','aaaaaaaa-0000-0000-0000-000000000001'),
-  ('bbbbbbbb-0000-0000-0000-000000000020','bbbbbbbb-0000-0000-0000-000000000010','bbbbbbbb-0000-0000-0000-000000000001');
+  ('aaaaaaaa-0000-0000-0000-000000000020','aaaaaaaa-0000-0000-0000-000000000010','aaaaaaaa-0000-0000-0000-000000000001','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+  ('bbbbbbbb-0000-0000-0000-000000000020','bbbbbbbb-0000-0000-0000-000000000010','bbbbbbbb-0000-0000-0000-000000000001','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
+  -- Malformed legacy tuples: matching own physical/tour IDs is insufficient.
+  ('aaaaaaaa-0000-0000-0000-000000000021','aaaaaaaa-0000-0000-0000-000000000010','aaaaaaaa-0000-0000-0000-000000000001','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
+  ('aaaaaaaa-0000-0000-0000-000000000022','aaaaaaaa-0000-0000-0000-000000000010','aaaaaaaa-0000-0000-0000-000000000001',NULL);
 INSERT INTO public.club_dealer_controls VALUES
   ('33333333-3333-3333-3333-333333333333','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 ALTER TABLE public.tournament_tables ENABLE ROW LEVEL SECURITY;
@@ -134,6 +137,16 @@ DO $$ DECLARE affected integer; BEGIN
     UPDATE public.tournament_tables SET game_table_id='aaaaaaaa-0000-0000-0000-000000000011'
       WHERE id='cccccccc-0000-0000-0000-000000000004';
     RAISE EXCEPTION 'Contradictory same-club physical aliases allowed';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN
+    UPDATE public.tournament_tables SET table_session_id='aaaaaaaa-0000-0000-0000-000000000021'
+      WHERE id='cccccccc-0000-0000-0000-000000000004';
+    RAISE EXCEPTION 'Session tuple carrying foreign club allowed';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN
+    UPDATE public.tournament_tables SET table_session_id='aaaaaaaa-0000-0000-0000-000000000022'
+      WHERE id='cccccccc-0000-0000-0000-000000000004';
+    RAISE EXCEPTION 'Session tuple carrying missing club allowed';
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
   PERFORM set_config('fixture.actor','33333333-3333-3333-3333-333333333333',true);
   UPDATE public.tournament_tables SET table_name='Dealer control edited'

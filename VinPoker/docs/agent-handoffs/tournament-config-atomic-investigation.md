@@ -63,7 +63,11 @@ private-session SELECT; only policy-bound function execution is required.
 
 Migration86 is a newly generated/reserved file, not historical policy replay.
 Normalized LF SHA256:
-`933e7c0c0066945cda10b4a29a382068c51fba5447f1962b2e1ef5de717b0a09`.
+`01b495928a662277f4f0def15114f8376838a7c24c29db42be0e4585c4cb3740`.
+Independent review caught a missing session.club_id equality; the predicate now
+checks session/physical/tournament/club together. Live club_id is NOT NULL; the
+fixture additionally relaxes that constraint to test fail-closed unknown identity,
+not to claim null-club sessions currently exist in production.
 Requires catalog hash pin, independent review, exact CI, captured-schema integration,
 verified recovery point, existing protected apply gate and postchecks before release.
 No automatic rollback to the confirmed broad authenticated/true policies; prefer a

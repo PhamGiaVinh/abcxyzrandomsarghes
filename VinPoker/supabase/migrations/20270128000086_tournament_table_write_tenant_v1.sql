@@ -37,7 +37,7 @@ AS $function$
         WHERE g.id=p_game_table_id AND g.club_id=t.club_id))
       AND (p_table_id IS NULL OR p_game_table_id IS NULL OR p_table_id=p_game_table_id)
       AND (p_session_id IS NULL OR EXISTS (SELECT 1 FROM public.table_sessions s
-        WHERE s.id=p_session_id AND s.tournament_id=t.id
+        WHERE s.id=p_session_id AND s.club_id=t.club_id AND s.tournament_id=t.id
           AND s.game_table_id=coalesce(p_game_table_id,p_table_id)))
   );
 $function$;
