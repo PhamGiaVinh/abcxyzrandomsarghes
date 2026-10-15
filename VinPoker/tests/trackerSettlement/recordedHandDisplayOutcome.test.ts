@@ -60,6 +60,12 @@ const preview = {
 };
 
 describe("ensureRecordedHandDisplayOutcome", () => {
+  it("does not interpret a failed proof read as permission to create another outcome", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "503 unavailable" } });
+    expect(await ensureRecordedHandDisplayOutcome({ tournamentId: "85000000-0000-0000-0000-000000000001", handId: preview.hand_id }))
+      .toEqual({ ok: false, code: "verification_missing" });
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
   afterEach(() => { vi.useRealTimers(); sessionStorage.clear(); });
   beforeEach(() => {
     mocks.rpc.mockReset();

@@ -65,6 +65,8 @@ function resultLabel(result: HistoricalSettlementPreviewResult | HistoricalSettl
     historical_commit_unresolved: "Chưa rõ kết quả; chọn hand để kiểm tra receipt",
     historical_commit_no_current_proof: "Đã lưu yêu cầu cũ; proof hiện tại chưa xác minh",
     historical_journal_invalid: "Không đọc được yêu cầu cũ; chọn hand để kiểm tra",
+    historical_public_proof_read_unavailable: "Không đọc được proof hiện tại; thử kiểm tra lại",
+    historical_existing_proof_unconfirmed: "Outcome đã tồn tại; chưa xác minh proof hiện tại",
   };
   return labels[result.code] ?? `Cần sửa hand (${result.code})`;
 }
@@ -130,6 +132,7 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
         { p_hand_id: candidate.handId } as never,
       ));
       if (!isCurrent()) throw new Error("historical_scope_changed");
+      if (existingError) return { kind: "blocked", candidate, code: "historical_public_proof_read_unavailable" };
       if (!existingError && existing && typeof existing === "object" && Object.keys(existing).length > 0) {
         return parseReplayPublicSettlement(existing)
           ? { kind: "verified", candidate }
@@ -147,7 +150,15 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
           handId: candidate.handId,
         });
         const code = diagnostic.code;
-        if (code === "historical_settlement_already_exists") return { kind: "verified", candidate };
+        if (code === "historical_settlement_already_exists") {
+          const { data: proof, error: proofError } = await observeTrackerContextRead(supabase.rpc(
+            "get_public_tournament_settlement" as never, { p_hand_id: candidate.handId } as never,
+          ));
+          if (!isCurrent()) throw new Error("historical_scope_changed");
+          if (proofError) return { kind: "blocked", candidate, code: "historical_public_proof_read_unavailable" };
+          return parseReplayPublicSettlement(proof) ? { kind: "verified", candidate }
+            : { kind: "blocked", candidate, code: "historical_existing_proof_unconfirmed" };
+        }
         return { kind: "blocked", candidate, code, diagnostic };
       }
       const parsed = parseHistoricalSettlementDisplayPreview(data, crypto.randomUUID());

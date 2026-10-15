@@ -10,6 +10,23 @@ vi.mock("sonner",()=>({toast:{success:m.success,warning:m.warning}}));
 vi.mock("@/lib/tracker-poker/historicalSettlementDisplay",()=>({parseHistoricalSettlementDisplayPreview:(data:{hand_id:string},key:string)=>({handId:data.hand_id,idempotencyKey:key,sourceRevision:1,sourceChainHash:"a".repeat(64),outcomeHash:"b".repeat(64),settlement:{players:[],handRanks:[]}})}));
 vi.mock("@/lib/tracker-poker/replaySettlement",()=>({parseReplayPublicSettlement:(data:{verified?:boolean}|null)=>data?.verified?data:null}));
 const candidates=[1,2].map(n=>({handId:`86000000-0000-0000-0000-00000000000${n}`,handNumber:n,tableId:"table"}));
+it("does not start a new preview after the canonical proof read fails",async()=>{
+ m.rpc.mockResolvedValue({data:null,error:{message:"503 unavailable"}});
+ m.invoke.mockResolvedValue({data:{ok:false},error:null});
+ render(<HistoricalSettlementBatchControl tournamentId="85000000-0000-0000-0000-000000000001" candidates={[candidates[0]]} onSelectHand={vi.fn()} onCommitted={vi.fn()}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Kiểm tra 1 hand"}));
+ await screen.findByRole("button",{name:"Hand #1 Không đọc được proof hiện tại; thử kiểm tra lại"});
+ expect(m.invoke).not.toHaveBeenCalled();
+});
+for(const proofAvailable of [false,true])it(`requires canonical proof after an already-exists diagnostic (${proofAvailable})`,async()=>{
+ m.rpc.mockResolvedValueOnce({data:null,error:null}).mockResolvedValueOnce({data:proofAvailable?{verified:true}:null,error:null});
+ m.invoke.mockResolvedValue({data:{ok:false,code:"historical_settlement_already_exists"},error:null});
+ render(<HistoricalSettlementBatchControl tournamentId="85000000-0000-0000-0000-000000000001" candidates={[candidates[0]]} onSelectHand={vi.fn()} onCommitted={vi.fn()}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Kiểm tra 1 hand"}));
+ await screen.findByRole("button",{name:proofAvailable?"Hand #1 Đã xác minh":"Hand #1 Outcome đã tồn tại; chưa xác minh proof hiện tại"});
+ expect(m.rpc).toHaveBeenCalledTimes(2);
+ expect(m.invoke).toHaveBeenCalledTimes(1);
+});
 afterEach(()=>{cleanup();sessionStorage.clear();vi.resetAllMocks();m.actor="81000000-0000-0000-0000-000000000001";});
 it("reads an unresolved original receipt instead of minting another batch preview",async()=>{
  m.actor="81000000-0000-0000-0000-000000000001";

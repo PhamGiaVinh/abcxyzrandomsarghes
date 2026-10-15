@@ -48,7 +48,8 @@ export async function ensureRecordedHandDisplayOutcome(input: {
         "get_public_tournament_settlement" as never,
         { p_hand_id: input.handId } as never,
       ));
-      return current() && !error && parseReplayPublicSettlement(data) !== null;
+      if (error) throw new Error("historical_public_proof_read_unavailable");
+      return current() && parseReplayPublicSettlement(data) !== null;
     };
 
     const recover = async (intent: HistoricalCommitIntent): Promise<RecordedHandDisplayOutcomeResult> => {
