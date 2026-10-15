@@ -79,7 +79,7 @@ function Fixture() {
   const [mode, setMode] = React.useState<"manual" | "tracker">("manual");
   const surface = new URLSearchParams(location.search).get("surface");
   if (surface === "legacy-schedule") return <main className="mx-auto max-w-5xl p-4"><MemoryRouter initialEntries={['/club/club-test']}><Routes><Route path="/club/:id" element={<ClubDetail />} /></Routes></MemoryRouter></main>;
-  if (surface === "schedule-upload") return <main className="mx-auto max-w-5xl p-4"><MediaClubSchedules /><Toaster /></main>;
+  if (surface === "schedule-upload") return <main className="mx-auto max-w-5xl p-4"><AuthProvider><MediaClubSchedules /><Toaster /></AuthProvider></main>;
   if (surface === "player-actions") return <PlayerActionFixture />;
   if (surface === "floor") return <FloorMobileFixture />;
   if (surface === "clock") return <VinPokerTournamentClock data={{
