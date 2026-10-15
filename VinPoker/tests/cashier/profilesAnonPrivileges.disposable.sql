@@ -95,16 +95,35 @@ END $$;
 RESET ROLE;
 \echo PROFILES_ANON_CONTAINMENT_AND_PUBLIC_CLIENT_COMPATIBILITY_GAPS_CONFIRMED
 -- Test the actual forward migration, not just the candidate SQL above.
+-- Restore the vulnerable live ACL first: otherwise a missing REVOKE in the
+-- migration could pass because the hand-written candidate already restricted it.
+GRANT SELECT ON public.profiles TO anon;
+SET LOCAL ROLE anon;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM public.profiles
+      WHERE phone IS NOT NULL AND bank_account_number IS NOT NULL) <> 1 THEN
+    RAISE EXCEPTION 'Actual migration must start from the vulnerable live baseline';
+  END IF;
+END $$;
+RESET ROLE;
 -- Include twice to prove a safe retry does not widen the projection.
 \ir ../../supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql
 \ir ../../supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql
 SET LOCAL ROLE anon;
-DO $$ BEGIN
+DO $$ DECLARE private_column text; BEGIN
   PERFORM user_id,display_name,avatar_url,verification_status FROM public.profiles;
   PERFORM user_id,display_name,region,avatar_url FROM public.profiles;
+  FOREACH private_column IN ARRAY ARRAY['phone','bank_name','bank_account_number',
+    'bank_account_holder','welcome_email_sent_at','verified_by_club_id',
+    'verified_at','onesignal_external_user_id'] LOOP
+    BEGIN
+      EXECUTE format('SELECT %I FROM public.profiles',private_column);
+      RAISE EXCEPTION 'Forward migration exposed column %',private_column;
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  END LOOP;
   BEGIN
-    PERFORM phone,bank_account_number,onesignal_external_user_id FROM public.profiles;
-    RAISE EXCEPTION 'Forward migration exposed private/internal columns';
+    PERFORM * FROM public.profiles;
+    RAISE EXCEPTION 'Forward migration exposed wildcard projection';
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 RESET ROLE;
