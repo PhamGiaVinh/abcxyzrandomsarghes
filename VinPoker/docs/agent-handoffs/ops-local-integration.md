@@ -43,6 +43,27 @@ New policy regression failed on original source at dealer-rest78, then passed af
 
 ## Still outside this tree / next order
 
+Archive parent bounded read followup: TrackerHandHistory now reuses20s guard across club-scope and tournament-list reads, fences expired/previous actor work, exposes explicit in-page retry while preserving URL deep link, and clears previous result before retry. Existing auth/role/server scope policy unchanged. Actual RED9PASS/2FAIL before fix, candidate11PASS in existing readiness render suite including actor A/B/A and denied/anonymous/auth-error controls. Targeted ESLint page/test/guard/test exit0. Fetch origin completed; main still ed3db6ac600710e95fe4408c475941916c23ab19. No broad parent API redesign or server grant change. Underlying HTTP not aborted; timers bound UI wait only.
+
+Resource change justified closing older Swing UI verification gap: physical free RAM1165992KB vs earlier283280KB. One isolated current-integration run DealerSwingTab.readState.test.tsx terminalSUCCESS7PASS,7.62s. This supersedes earlier expanded UI7cases OOM/UNRUN, not actual assignment/rotation or backend proof. No active handles. Full project build/typecheck still not run, owner local-only release freeze remains.
+
+Current remaining acceptance map (source/test evidence is not live acceptance):
+
+| Goal | Locally prepared/evidence | Still required to ACCEPT |
+|---|---|---|
+|G0|owned integration, fresh unchanged main, local checkpoints|refresh exact live manifest before release; do not reuse old aliases/flags as current truth|
+|G1|owner-only scoped release guards/tests and package manifests|quota/required remote checks/recovery and owner release window; no bypass|
+|G2|82–86/Cashier compatibility integrated, original scoped evidence retained|combined DB/auth/Edge and actual served actor/tenant verification|
+|G3|78–81/87 integrated, next/session13tests and Swing UI7PASS|integrated PG interleavings, actual3rest15 rotations and40tables via isolated Edge|
+|G4|88/89/91/92 prepared, lightweight logic/transport tests retained|integrated atomic DB failures/concurrency and actual create/config tour through UI|
+|G5|existing lifecycle/bust/chip implementations retained|cross-module runtime mode/move/close/restore/ledger couplingON/OFF, desktop375|
+|G6|History read callback/effect/render guards verified locally|writer matrix/realworker, canonical Voice provider receipt, TV anonymous multi-flight/runtime|
+|G7|F1–F9 routed to source packages and explicit gaps|required evidence per finding; no close by source-only inference|
+|G8|older canary identity known, not clean acceptance|isolated approved TEST payment/payroll/notification manifest and whole13checkpoint journey|
+|G9|History error/retry/deadline tests, scoped lint|fulltype/build/requiredCI, five screens20samples each, finalruntime/release review|
+
+Next move beyond this History slice: audit/test remaining integrated UI/read contracts in G2–G5 against existing suites; do not rerun unchanged completed cases. Keep backend/whole-tour acceptance open. No Docker, push, CI dispatch, production DB/Edge/frontend/flag changes in this local campaign phase.
+
 History bounded-read followup: existing handHistoryLoadGuard now supports optional20s deadline, finish cleanup, invalidation-before-timeout callback and stale-generation finish protection. Workspace hand/detail/queue load and independent table-inventory read both use it; timeout shows explicit retryable error, late completion cannot change state, unmount/superseding read clears timers. No mutation retries or HTTP cancellation claim: underlying read may remain in flight, but its response is fenced. Parent archive tournament-list read remains a separate deadline gap.
 
 Actual RED before source change:7PASS/4FAIL across new guard/render cases (timeout not reported and finish missing). After source change11PASS across5guard+6render tests, terminal exit0,6.50s. Actual callback/effect suite13PASS with updated fake guard seam; later wiring assertion1PASS after adding guard-source/test trigger and actual Vitest argument. YAML syntaxPASS, diffcheckPASS; not full typecheck/build/actionlint/CI/browser/DB. Frontend skill kept errors/retry explicit and CI/CD skill scoped trigger/test wiring. No install, Docker, push, dispatch, DB/Edge/frontend/flag changes. This supersedes only earlier no-deadline gap for the workspace and table reads, not the overall G9/no-infinite-loading acceptance for all routes.

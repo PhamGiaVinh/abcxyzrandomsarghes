@@ -1,6 +1,6 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   auth: {
@@ -16,7 +16,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: { rpc: (...args: unknown[]) => state.rpc(...args), from: (...args: unknown[]) => state.from(...args) },
 }));
 vi.mock("@/components/cashier/tournament-live/HandHistoryPanel", () => ({
-  HandHistoryPanel: ({ tournamentId }: { tournamentId: string }) => <div data-testid="history-panel">{tournamentId}</div>,
+  HandHistoryPanel: ({ tournamentId, initialHandId }: { tournamentId: string; initialHandId?: string }) => <div data-testid="history-panel" data-hand={initialHandId}>{tournamentId}</div>,
 }));
 import TrackerHandHistory from "./TrackerHandHistory";
 
@@ -30,6 +30,7 @@ function view() {
 }
 
 describe("archive permission readiness", () => {
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
   beforeEach(() => {
     Object.assign(state.auth, { user: { id: "owner-a" }, loading: false, rolesLoading: false,
       authError: null, rolesError: null, isTracker: false, isAdmin: false, isClubOwner: true });
@@ -124,5 +125,38 @@ describe("archive permission readiness", () => {
     await act(async () => resolveScope({ data: ["club-a"], error: null }));
     expect(screen.queryByTestId("history-panel")).not.toBeInTheDocument();
     expect(screen.queryByText("Home redirect")).not.toBeInTheDocument();
+  });
+
+  it("times out a hanging club read, retries without losing the deep link and ignores its late result", async () => {
+    vi.useFakeTimers();
+    let resolveOld!: (value: { data: string[]; error: null }) => void;
+    state.rpc.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    render(view());
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Hết thời gian tải danh sách giải");
+    expect(state.from).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(within(screen.getByRole("alert")).getByRole("button")); });
+    expect(screen.getByTestId("history-panel")).toHaveTextContent("tour-a");
+    expect(screen.getByTestId("history-panel")).toHaveAttribute("data-hand", "hand-a");
+    const reads = state.from.mock.calls.length;
+    await act(async () => { resolveOld({ data: ["unrelated-club"], error: null }); });
+    expect(state.from).toHaveBeenCalledTimes(reads);
+    expect(screen.getByTestId("history-panel")).toHaveTextContent("tour-a");
+  });
+
+  it("times out a hanging tournament read without later reopening stale archive data", async () => {
+    vi.useFakeTimers();
+    let resolveOld!: (value: { data: typeof tour[]; error: null }) => void;
+    const read = new Promise(resolve => { resolveOld = resolve; });
+    const query = { select: () => query, order: () => query, in: () => query,
+      then: (resolve: (value: unknown) => unknown) => read.then(resolve) };
+    state.from.mockReturnValue(query);
+    render(view());
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Hết thời gian tải danh sách giải");
+    await act(async () => { resolveOld({ data: [tour], error: null }); });
+    expect(screen.queryByTestId("history-panel")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 });

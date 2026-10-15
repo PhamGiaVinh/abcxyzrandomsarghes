@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { archiveTournamentClubScope } from "@/lib/tracker-poker/trackerHistoryAccess";
+import { createHandHistoryLoadGuard } from "@/components/cashier/tournament-live/handHistoryLoadGuard";
 
 type TournamentSummary = {
   id: string;
@@ -64,6 +65,9 @@ export default function TrackerHandHistory() {
   const selectedHandId = searchParams.get("hand");
   const selectedActionId = searchParams.get("action");
   const [showTournamentPicker, setShowTournamentPicker] = useState(!selectedTournamentId);
+  const [readReload, setReadReload] = useState(0);
+  const readGuard = useRef<ReturnType<typeof createHandHistoryLoadGuard> | null>(null);
+  if (!readGuard.current) readGuard.current = createHandHistoryLoadGuard();
   const authorized = isTracker || isAdmin || isClubOwner;
   const scopeIdentity = user && authorized && !authLoading && !rolesLoading && !authError
     ? JSON.stringify([user.id, isAdmin, isTracker, isClubOwner]) : null;
@@ -79,7 +83,12 @@ export default function TrackerHandHistory() {
   useEffect(() => {
     if (!user || !readScope) return;
     let cancelled = false;
-    const isCurrent = () => !cancelled && scopeOwner.current.generation === generation;
+    const request = readGuard.current!.begin(() => {
+      if (cancelled || scopeOwner.current.generation !== generation) return;
+      cancelled = true;
+      setTournamentResult({ scope: readScope, data: [], error: "Hết thời gian tải danh sách giải. Hãy thử lại." });
+    });
+    const isCurrent = () => !cancelled && scopeOwner.current.generation === generation && readGuard.current!.isCurrent(request);
     void (async () => {
       const { data: ids, error: idsError } = await supabase.rpc("tracker_club_ids", { _user_id: user.id });
       if (!isCurrent()) return;
@@ -108,9 +117,9 @@ export default function TrackerHandHistory() {
     })().catch((error: unknown) => {
       if (!isCurrent()) return;
       setTournamentResult({ scope: readScope, data: [], error: error instanceof Error ? error.message : t("common.archiveUnavailable") });
-    });
-    return () => { cancelled = true; };
-  }, [generation, isAdmin, readScope, t, user]);
+    }).finally(() => { readGuard.current?.finish(request); });
+    return () => { cancelled = true; readGuard.current?.invalidate(); };
+  }, [generation, isAdmin, readReload, readScope, t, user]);
 
   useEffect(() => {
     if (!tournaments || tournaments.length === 0 || selectedTournamentId) return;
@@ -179,7 +188,10 @@ export default function TrackerHandHistory() {
           </div>
         </header>
 
-        {loadError && <Card role="alert" className="border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">Không tải được kho hand: {loadError}</Card>}
+        {loadError && <Card role="alert" className="space-y-3 border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+          <p>Không tải được kho hand: {loadError}</p>
+          <Button type="button" variant="outline" onClick={() => { setTournamentResult(null); setReadReload((current) => current + 1); }}>{t("common.retry")}</Button>
+        </Card>}
 
         {selectedTournament && (
           <Button type="button" variant="outline" className="min-h-11 w-full xl:hidden" onClick={() => setShowTournamentPicker((current) => !current)}>
