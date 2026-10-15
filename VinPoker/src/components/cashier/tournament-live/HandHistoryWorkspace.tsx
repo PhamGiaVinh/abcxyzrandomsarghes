@@ -310,159 +310,178 @@ export function HandHistoryWorkspace({
     const isCurrentLoad = () => loadGuardRef.current!.isCurrent(request);
     setLoading(true);
     setLoadError(null);
+    setCompletionStatusByHand(new Map());
+    setCompletionStatusError(false);
 
-    const { data: handRows, error } = await pageAll<HandQueryRow>((from, to) => {
-      let query = supabase
-        .from("tournament_hands")
-        .select("id, hand_number, hand_time, community_cards, pot_size, status, is_voided, created_at, table_id, button_seat")
-        .eq("tournament_id", tournamentId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, to);
-      if (selectedTableId !== "all") {
-        const selectedTable = tables.find((table) => table.id === selectedTableId || table.physicalId === selectedTableId);
-        const tableIds = [...new Set([selectedTableId, selectedTable?.id, selectedTable?.physicalId].filter((id): id is string => !!id))];
-        query = tableIds.length === 1 ? query.eq("table_id", tableIds[0]) : query.in("table_id", tableIds);
-      }
-      return asPagedQuery<HandQueryRow>(query);
-    });
-    if (!isCurrentLoad()) return;
-    if (error || !handRows) {
-      setLoadError(error?.message ?? "Không tải được dữ liệu");
-      setHands([]);
-      setLoading(false);
-      return;
-    }
-
-    const handIds = handRows.map((hand) => hand.id);
-    if (handIds.length === 0) {
-      setHands([]);
-      setLoading(false);
-      return;
-    }
-
-    // E1: prefer the per-hand snapshot (hand_players.player_name) when the migration is
-    // applied; the column is selected only if present (feature-detect). Fall back to the
-    // tournament_seats roster only for old rows the snapshot didn't capture.
-    const snap = await handPlayersHasSnapshotForClient(supabase);
-    if (!isCurrentLoad()) return;
-    const baseHpCols = "id, hand_id, player_id, entry_number, seat_number, starting_stack, ending_stack, is_eliminated, hole_cards";
-    const playerRows: HandPlayerQueryRow[] = [];
-    const actionRows: HandActionQueryRow[] = [];
-    for (const handIdBatch of chunkArray(handIds, 80)) {
-      const [playersRes, actionsRes] = await Promise.all([
-        pageAll<HandPlayerQueryRow>((from, to) => asPagedQuery<HandPlayerQueryRow>(supabase
-          .from("hand_players")
-          .select(snap ? `${baseHpCols}, player_name` : baseHpCols)
-          .in("hand_id", handIdBatch)
-          .order("hand_id", { ascending: true })
-          .order("player_id", { ascending: true })
-          .order("entry_number", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to))),
-        pageAll<HandActionQueryRow>((from, to) => asPagedQuery<HandActionQueryRow>(supabase
-          .from("hand_actions")
-          .select("id, hand_id, player_id, entry_number, street, action_type, action_amount, action_order")
-          .in("hand_id", handIdBatch)
-          .order("hand_id", { ascending: true })
-          .order("action_order", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to))),
-      ]);
+    try {
+      const { data: handRows, error } = await pageAll<HandQueryRow>((from, to) => {
+        let query = supabase
+          .from("tournament_hands")
+          .select("id, hand_number, hand_time, community_cards, pot_size, status, is_voided, created_at, table_id, button_seat")
+          .eq("tournament_id", tournamentId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to);
+        if (selectedTableId !== "all") {
+          const selectedTable = tables.find((table) => table.id === selectedTableId || table.physicalId === selectedTableId);
+          const tableIds = [...new Set([selectedTableId, selectedTable?.id, selectedTable?.physicalId].filter((id): id is string => !!id))];
+          query = tableIds.length === 1 ? query.eq("table_id", tableIds[0]) : query.in("table_id", tableIds);
+        }
+        return asPagedQuery<HandQueryRow>(query);
+      });
       if (!isCurrentLoad()) return;
-      const historyError = playersRes.error || actionsRes.error;
-      if (historyError) {
-        setLoadError(historyError.message || "Không tải được chi tiết hand");
+      if (error || !handRows) {
+        setLoadError(error?.message ?? "Không tải được dữ liệu");
         setHands([]);
         setLoading(false);
         return;
       }
-      playerRows.push(...playersRes.data);
-      actionRows.push(...actionsRes.data);
-    }
 
-    const needIds = playerRows.filter((player) => !player.player_name).map((player) => player.player_id);
-    const display = await fetchHandPlayerDisplayForClient(supabase, tournamentId, needIds);
-    if (!isCurrentLoad()) return;
-    const identityMap = new Map<string, { name: string; seat: number }>();
-    const playerIdentityKey = (handId: string, playerId: string, entryNumber: number | null | undefined) => `${handId}:${playerId}:${entryNumber ?? 1}`;
-    playerRows.forEach((player) => {
-      identityMap.set(playerIdentityKey(player.hand_id, player.player_id, player.entry_number), {
-        name: player.player_name || display.get(player.player_id)?.name || `Người chơi ghế ${player.seat_number}`,
-        seat: player.seat_number,
-      });
-    });
-
-    const playerMap = new Map<string, HandRecord["players"]>();
-    playerRows.forEach((player) => {
-      if (!playerMap.has(player.hand_id)) playerMap.set(player.hand_id, []);
-      const identity = identityMap.get(playerIdentityKey(player.hand_id, player.player_id, player.entry_number));
-      playerMap.get(player.hand_id)!.push({
-        player_id: player.player_id,
-        display_name: identity?.name || `Người chơi ghế ${player.seat_number}`,
-        seat_number: player.seat_number,
-        starting_stack: player.starting_stack,
-        ending_stack: player.ending_stack ?? 0,
-        is_eliminated: !!player.is_eliminated,
-        hole_cards: stringArray(player.hole_cards),
-        entry_number: player.entry_number ?? 1,
-      });
-    });
-
-    const actionMap = new Map<string, HandRecord["actions"]>();
-    actionRows.forEach((action) => {
-      if (!actionMap.has(action.hand_id)) actionMap.set(action.hand_id, []);
-      const identity = identityMap.get(playerIdentityKey(action.hand_id, action.player_id, action.entry_number))
-        ?? [...identityMap.entries()].find(([key]) => key.startsWith(`${action.hand_id}:${action.player_id}:`))?.[1];
-      actionMap.get(action.hand_id)!.push({
-        id: action.id,
-        street: action.street || "preflop",
-        display_name: identity?.name || "Người chơi",
-        seat_number: identity?.seat ?? 0,
-        action_type: action.action_type,
-        action_amount: action.action_amount ?? 0,
-        action_order: action.action_order,
-        player_id: action.player_id,
-        entry_number: action.entry_number ?? 1,
-      });
-    });
-
-    const handRecords: HandRecord[] = handRows.map((hand) => ({
-      id: hand.id,
-      table_id: hand.table_id ?? null,
-      hand_number: hand.hand_number,
-      hand_time: hand.hand_time ?? hand.created_at,
-      community_cards: stringArray(hand.community_cards),
-      pot_size: hand.pot_size ?? null,
-      status: hand.status || "completed",
-      is_voided: hand.is_voided || false,
-      created_at: hand.created_at,
-      button_seat: hand.button_seat ?? undefined,
-      players: playerMap.get(hand.id) || [],
-      actions: actionMap.get(hand.id) || [],
-    }));
-
-    setHands(handRecords);
-    if (FEATURES.trackerHistoryCompletionWorker) {
-      const { data: queueStatus, error: queueStatusError } = await supabase.rpc(
-        "get_tracker_historical_display_queue_status" as never,
-        { p_tournament_id: tournamentId } as never,
-      );
-      if (isCurrentLoad()) {
-        const rows = Array.isArray(queueStatus) ? queueStatus as Array<Record<string, unknown>> : [];
-        const validStatuses = new Set<HistoryCompletionStatus>(["missing_blind", "missing_outcome", "stale", "pending", "needs_attention"]);
-        setCompletionStatusByHand(new Map(rows.flatMap((row) =>
-          typeof row.hand_id === "string" && validStatuses.has(row.queue_status as HistoryCompletionStatus)
-            ? [[row.hand_id, row.queue_status as HistoryCompletionStatus] as const]
-            : [])));
-        setCompletionStatusError(!!queueStatusError);
+      const handIds = handRows.map((hand) => hand.id);
+      if (handIds.length === 0) {
+        setHands([]);
+        setLoading(false);
+        return;
       }
-    } else {
+
+      // E1: prefer the per-hand snapshot (hand_players.player_name) when the migration is
+      // applied; the column is selected only if present (feature-detect). Fall back to the
+      // tournament_seats roster only for old rows the snapshot didn't capture.
+      const snap = await handPlayersHasSnapshotForClient(supabase);
+      if (!isCurrentLoad()) return;
+      const baseHpCols = "id, hand_id, player_id, entry_number, seat_number, starting_stack, ending_stack, is_eliminated, hole_cards";
+      const playerRows: HandPlayerQueryRow[] = [];
+      const actionRows: HandActionQueryRow[] = [];
+      for (const handIdBatch of chunkArray(handIds, 80)) {
+        const [playersRes, actionsRes] = await Promise.all([
+          pageAll<HandPlayerQueryRow>((from, to) => asPagedQuery<HandPlayerQueryRow>(supabase
+            .from("hand_players")
+            .select(snap ? `${baseHpCols}, player_name` : baseHpCols)
+            .in("hand_id", handIdBatch)
+            .order("hand_id", { ascending: true })
+            .order("player_id", { ascending: true })
+            .order("entry_number", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to))),
+          pageAll<HandActionQueryRow>((from, to) => asPagedQuery<HandActionQueryRow>(supabase
+            .from("hand_actions")
+            .select("id, hand_id, player_id, entry_number, street, action_type, action_amount, action_order")
+            .in("hand_id", handIdBatch)
+            .order("hand_id", { ascending: true })
+            .order("action_order", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to))),
+        ]);
+        if (!isCurrentLoad()) return;
+        const historyError = playersRes.error || actionsRes.error;
+        if (historyError) {
+          setLoadError(historyError.message || "Không tải được chi tiết hand");
+          setHands([]);
+          setLoading(false);
+          return;
+        }
+        playerRows.push(...playersRes.data);
+        actionRows.push(...actionsRes.data);
+      }
+
+      const needIds = playerRows.filter((player) => !player.player_name).map((player) => player.player_id);
+      const display = await fetchHandPlayerDisplayForClient(supabase, tournamentId, needIds);
+      if (!isCurrentLoad()) return;
+      const identityMap = new Map<string, { name: string; seat: number }>();
+      const playerIdentityKey = (handId: string, playerId: string, entryNumber: number | null | undefined) => `${handId}:${playerId}:${entryNumber ?? 1}`;
+      playerRows.forEach((player) => {
+        identityMap.set(playerIdentityKey(player.hand_id, player.player_id, player.entry_number), {
+          name: player.player_name || display.get(player.player_id)?.name || `Người chơi ghế ${player.seat_number}`,
+          seat: player.seat_number,
+        });
+      });
+
+      const playerMap = new Map<string, HandRecord["players"]>();
+      playerRows.forEach((player) => {
+        if (!playerMap.has(player.hand_id)) playerMap.set(player.hand_id, []);
+        const identity = identityMap.get(playerIdentityKey(player.hand_id, player.player_id, player.entry_number));
+        playerMap.get(player.hand_id)!.push({
+          player_id: player.player_id,
+          display_name: identity?.name || `Người chơi ghế ${player.seat_number}`,
+          seat_number: player.seat_number,
+          starting_stack: player.starting_stack,
+          ending_stack: player.ending_stack ?? 0,
+          is_eliminated: !!player.is_eliminated,
+          hole_cards: stringArray(player.hole_cards),
+          entry_number: player.entry_number ?? 1,
+        });
+      });
+
+      const actionMap = new Map<string, HandRecord["actions"]>();
+      actionRows.forEach((action) => {
+        if (!actionMap.has(action.hand_id)) actionMap.set(action.hand_id, []);
+        const identity = identityMap.get(playerIdentityKey(action.hand_id, action.player_id, action.entry_number))
+          ?? [...identityMap.entries()].find(([key]) => key.startsWith(`${action.hand_id}:${action.player_id}:`))?.[1];
+        actionMap.get(action.hand_id)!.push({
+          id: action.id,
+          street: action.street || "preflop",
+          display_name: identity?.name || "Người chơi",
+          seat_number: identity?.seat ?? 0,
+          action_type: action.action_type,
+          action_amount: action.action_amount ?? 0,
+          action_order: action.action_order,
+          player_id: action.player_id,
+          entry_number: action.entry_number ?? 1,
+        });
+      });
+
+      const handRecords: HandRecord[] = handRows.map((hand) => ({
+        id: hand.id,
+        table_id: hand.table_id ?? null,
+        hand_number: hand.hand_number,
+        hand_time: hand.hand_time ?? hand.created_at,
+        community_cards: stringArray(hand.community_cards),
+        pot_size: hand.pot_size ?? null,
+        status: hand.status || "completed",
+        is_voided: hand.is_voided || false,
+        created_at: hand.created_at,
+        button_seat: hand.button_seat ?? undefined,
+        players: playerMap.get(hand.id) || [],
+        actions: actionMap.get(hand.id) || [],
+      }));
+
+      setHands(handRecords);
+      if (FEATURES.trackerHistoryCompletionWorker) {
+        try {
+          const { data: queueStatus, error: queueStatusError } = await supabase.rpc(
+            "get_tracker_historical_display_queue_status" as never,
+            { p_tournament_id: tournamentId } as never,
+          );
+          if (isCurrentLoad()) {
+            const rows = Array.isArray(queueStatus) ? queueStatus as Array<Record<string, unknown>> : [];
+            const validStatuses = new Set<HistoryCompletionStatus>(["missing_blind", "missing_outcome", "stale", "pending", "needs_attention"]);
+            setCompletionStatusByHand(new Map(rows.flatMap((row) =>
+              typeof row.hand_id === "string" && validStatuses.has(row.queue_status as HistoryCompletionStatus)
+                ? [[row.hand_id, row.queue_status as HistoryCompletionStatus] as const]
+                : [])));
+            setCompletionStatusError(!!queueStatusError);
+          }
+        } catch {
+          if (!isCurrentLoad()) return;
+          setCompletionStatusByHand(new Map());
+          setCompletionStatusError(true);
+        }
+      } else {
+        setCompletionStatusByHand(new Map());
+        setCompletionStatusError(false);
+      }
+      // Queue status can finish after another tournament/table load has already won.
+      if (!isCurrentLoad()) return;
+      setSelectedHandId((current) => current && handRecords.some((hand) => hand.id === current) ? current : null);
+    } catch (error) {
+      if (!isCurrentLoad()) return;
+      setLoadError(error instanceof Error ? error.message : "Không tải được dữ liệu");
+      setHands([]);
       setCompletionStatusByHand(new Map());
       setCompletionStatusError(false);
+    } finally {
+      if (isCurrentLoad()) setLoading(false);
     }
-    setSelectedHandId((current) => current && handRecords.some((hand) => hand.id === current) ? current : null);
-    setLoading(false);
   }, [selectedTableId, supabase, tables, tournamentId]);
 
   useEffect(() => {
