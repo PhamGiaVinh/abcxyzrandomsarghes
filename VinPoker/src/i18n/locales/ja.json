@@ -1831,6 +1831,10 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "検索結果を読み込めませんでした。データは未確認です。再試行してください。",
+    "detailsUnavailable": "ディールまたはプロフィール履歴をすべて読み込めませんでした。データは未確認です。再試行してください。"
+  },
   "financeRead": {
     "forbidden": "このクラブの財務レポートを閲覧する権限がありません。",
     "missingBackend": "サーバーに必要なレポートのバージョンがありません。数値を確認できません。",

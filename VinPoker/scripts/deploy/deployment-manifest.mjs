@@ -19,6 +19,7 @@ const REQUIRED_CRITICAL_POSTURE = new Map([
   ["tournament-live-clock", true],
   ["tournament-live-update", true],
   ["ops-club-accounts", true],
+  ["cashier-lookup-player", true],
   ["render-payroll-statement", true],
   ["send-payroll-statement", true],
 ]);

@@ -30,6 +30,11 @@ on:
         required: true
         default: false
         type: boolean
+      deploy_cashier_lookup_player:
+        description: "Deploy critical Edge function cashier-lookup-player"
+        required: true
+        default: false
+        type: boolean
       deploy_render_payroll_statement:
         description: "Deploy critical Edge function render-payroll-statement"
         required: true
@@ -132,6 +137,7 @@ jobs:
           DEPLOY_TOURNAMENT_LIVE_CLOCK: ${{ inputs.deploy_tournament_live_clock || false }}
           DEPLOY_TOURNAMENT_LIVE_UPDATE: ${{ inputs.deploy_tournament_live_update || false }}
           DEPLOY_OPS_CLUB_ACCOUNTS: ${{ inputs.deploy_ops_club_accounts || false }}
+          DEPLOY_CASHIER_LOOKUP_PLAYER: ${{ inputs.deploy_cashier_lookup_player || false }}
           DEPLOY_RENDER_PAYROLL_STATEMENT: ${{ inputs.deploy_render_payroll_statement || false }}
           DEPLOY_SEND_PAYROLL_STATEMENT: ${{ inputs.deploy_send_payroll_statement || false }}
           DEPLOY_FRONTEND: ${{ inputs.deploy_frontend || false }}
@@ -157,6 +163,7 @@ jobs:
           [[ "$DEPLOY_TOURNAMENT_LIVE_CLOCK" == "true" ]] && selected+=("tournament-live-clock")
           [[ "$DEPLOY_TOURNAMENT_LIVE_UPDATE" == "true" ]] && selected+=("tournament-live-update")
           [[ "$DEPLOY_OPS_CLUB_ACCOUNTS" == "true" ]] && selected+=("ops-club-accounts")
+          [[ "$DEPLOY_CASHIER_LOOKUP_PLAYER" == "true" ]] && selected+=("cashier-lookup-player")
           [[ "$DEPLOY_RENDER_PAYROLL_STATEMENT" == "true" ]] && selected+=("render-payroll-statement")
           [[ "$DEPLOY_SEND_PAYROLL_STATEMENT" == "true" ]] && selected+=("send-payroll-statement")
           selected_csv="$(IFS=,; echo "${selected[*]-}")"

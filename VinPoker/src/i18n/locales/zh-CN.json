@@ -1831,6 +1831,10 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "无法加载搜索结果。数据尚未核实，请重试。",
+    "detailsUnavailable": "无法完整加载交易或资料历史。数据尚未核实，请重试。"
+  },
   "financeRead": {
     "forbidden": "您没有权限查看此俱乐部的财务报告。",
     "missingBackend": "服务器缺少所需的报告版本，无法核实数据。",
