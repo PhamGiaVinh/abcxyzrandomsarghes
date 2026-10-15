@@ -1,6 +1,34 @@
 import { expect, test } from "@playwright/test";
 
 for (const width of [375, 1280]) {
+  test(`series upload failure feedback stays truthful at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({width,height:850});
+    const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+    let storageCalls=0,publicationCalls=0;
+    await page.route('http://127.0.0.1:54321/**',async route=>{
+      const path=new URL(route.request().url()).pathname;
+      if(path.includes('/storage/v1/object/')){
+        storageCalls++;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({statusCode:'503',error:'unavailable',message:'Storage TEST unavailable'})});return;
+      }
+      if(route.request().method()==='POST')publicationCalls++;
+      const data=path.endsWith('/clubs')?[{id:'club-test',name:'Schedule TEST',region:'TEST',daily_schedule_image_url:null,weekly_schedule_image_url:null}]:[];
+      await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+    });
+    await page.goto('/e2e/fixtures/operations-responsive.html?surface=schedule-upload');
+    const input=page.locator('input[type=file][multiple]');await expect(input).toBeAttached();
+    // Valid one-pixel PNG exercises the real browser compression/upload path.
+    const buffer=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBksAAAAASUVORK5CYII=','base64');
+    await input.setInputFiles([{name:'first.png',mimeType:'image/png',buffer},{name:'second.png',mimeType:'image/png',buffer}]);
+    await expect.poll(()=>storageCalls).toBe(2);
+    await expect(page.getByText('Storage TEST unavailable').first()).toBeVisible();
+    await expect(page.getByText('Series schedule images published.',{exact:true})).toHaveCount(0);
+    await expect(page.locator('input[type=file][multiple]')).toBeEnabled();
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    expect(publicationCalls).toBe(0);expect(errors).toEqual([]);
+  });
+}
+
+for (const width of [375, 1280]) {
   test(`player action sheet explains the existing seat move at ${width}px`, async ({ page }) => {
     await page.setViewportSize({width,height:850});
     const calls:string[]=[];
