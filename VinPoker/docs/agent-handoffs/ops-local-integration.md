@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Manual Finish receipt terminal-status guard
+
+On baseline472d66c98, actual callback regression reproduced accepting a matching receipt with status cancelled as committed (11PASS/1FAIL). Shared proof guard now requires status success, including its TypeScript receipt type. Regression covers cancelled/pending/missing status, keeps unresolved journal, and never acknowledges the hand. Final callback12PASS and actual Edge handler guard/RPC-routing harness PASS; synthetic dependencies, not browser/HTTP/DB acceptance. No SQL or production change. Full typecheck/build not run under local resource hold.
+
+CLI-created empty candidate20261015213838_tracker_manual_finish_cancellation_receipt_v1.sql remains untracked, not executable/qualified97. Durable cancellation RPC/tombstone and UI resolution remain unfinished; do not clear an unknown journal without terminal server proof. Next implement cancellation using same actor/operation/request advisory lock and receipt namespace, then actual concurrency/rollback and consumer tests. No push/CI/deploy/live DB/flags/Auto; Daybreak OFF. Goal remains active and incomplete.
+
 ## Bare Finish96 retirement locally qualified; embedded inventory corrected
 
 Onfca326a28 actualsource inventory found NO current HandInputPanel.tsx: HandInputConsole owns useStandaloneHandInput and both embeddedtab/fullscreen entrypoints share it. Previoushandoff assumption "embedded not migrated" was stalecomment-derived, now superseded; no second implementation needed. Only live source bareRPC consumer was Edge case record_hand (builder action retained only as draft schema). Edge expectedretirement test RED200→422, now returns MANUAL_FINISH_CONTEXT_REQUIRED beforeanyRPC. Updatedoldcompletion/v3 sourcecontracts to assert zero bareRPC consumers and newintent/JWT scope;13 completion/startauthority tests PASS, newactualEdgehandler matrix PASS. Comments at hook/page/builder corrected, no presentation change.

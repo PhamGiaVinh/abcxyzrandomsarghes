@@ -62,6 +62,13 @@ test('late A completion after A B A does not adopt current generation or clear j
 test('mismatched proof cannot be replaced by a completed/pot readback',async()=>{
  const h=harness();h.state.write=async i=>({data:{data:{...proof(i),hand_id:'other-hand'}},error:null});await h.submit();assert.equal(h.effects.filter(x=>x[0]==='outcome').length,0);assert.equal(h.stored.size,1);assert.equal(h.calls.filter(x=>x.action==='record_manual_hand_v1').length,1);
 });
+test('a non-success receipt cannot acknowledge a committed hand even with matching fields',async()=>{
+ for (const status of ['cancelled','pending',undefined]) {
+  const h=harness();h.state.write=async i=>({data:{data:{...proof(i),status}},error:null});
+  await h.submit();assert.equal(h.effects.filter(x=>x[0]==='outcome').length,0,`${status} is not commit proof`);
+  assert.equal(h.stored.size,1);assert.equal(h.calls.filter(x=>x.action==='record_manual_hand_v1').length,1);
+ }
+});
 test('storage failure prevents mutation, while definitive first denial permits correction',async()=>{
  const h=harness();h.deps.sessionStorage.setItem=()=>{throw new Error('storage denied');};await h.submit();assert.equal(h.calls.length,0);
  const denied=harness();denied.state.write=async()=>({data:{error:'lock_not_held',code:'lock_not_held'},error:null});await denied.submit();assert.equal(denied.stored.size,0);assert.equal(denied.calls.length,1);

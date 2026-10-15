@@ -20,12 +20,12 @@ export function isManualFinishIntent(value: unknown): value is ManualFinishInten
     && Array.isArray(p.players) && p.players.length > 0 && Array.isArray(p.actions) && Array.isArray(p.side_pots)
     && Array.isArray(p.community_cards) && p.community_cards.every(c => typeof c === "string") && integer(p.pot_size, 0);
 }
-export type ManualFinishReceipt = { ok: true; hand_id: string; actor_id: string; request_id: string;
+export type ManualFinishReceipt = { ok: true; status: "success"; hand_id: string; actor_id: string; request_id: string;
   intent: ManualFinishIntent; committed_source_revision: number; starting_total: number; ending_total: number };
 /** A completed hand with the same pot is not proof that this exact intent committed. */
 export function manualFinishReceiptMatches(value: unknown, intent: ManualFinishIntent): value is ManualFinishReceipt {
   if (!record(value)) return false;
-  return value.ok === true && value.hand_id === intent.hand_id && value.actor_id === intent.actor_id
+  return value.ok === true && value.status === "success" && value.hand_id === intent.hand_id && value.actor_id === intent.actor_id
     && value.request_id === intent.request_id && value.table_session_id === intent.table_session_id
     && value.control_epoch === intent.control_epoch && value.expected_source_revision === intent.source_revision
     && integer(value.committed_source_revision, intent.source_revision + 1)
