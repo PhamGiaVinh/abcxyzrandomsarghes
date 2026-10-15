@@ -959,6 +959,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       if (sessionStorage.getItem(storageKey) !== requestId) throw new Error("Chưa lưu được yêu cầu gán; chưa gửi lệnh.");
       const { data, error } = await waitForManualPlayerResponse(Promise.resolve(supabase.functions.invoke("assign-dealer", {
         body: {
+          mode: "assign",
+          expected_actor_id: user.id,
+          expected_club_id: assignmentTable.club_id,
           table_id: modalTable,
           table_session_id: assignmentTable.table_session_id,
           force_dealer_id: forceDealerId || undefined,

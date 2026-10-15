@@ -45,6 +45,7 @@ it("bounds a hung write and preserves its key for an explicit retry",async()=>{
  vi.useFakeTimers();const ctx=context();let finish!:(v:unknown)=>void;ctx.supabase.functions.invoke.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
  const hook=renderHook(()=>actual(useRef,useEffect,ctx));let a!:Promise<void>;act(()=>{a=hook.result.current.confirmAssign(id(6));void hook.result.current.confirmAssign(id(6));});
  expect(ctx.supabase.functions.invoke).toHaveBeenCalledTimes(1);const original=ctx.supabase.functions.invoke.mock.calls[0][1];
+ expect(original.body).toMatchObject({mode:"assign",expected_actor_id:id(1),expected_club_id:id(2)});
  await act(async()=>{await vi.advanceTimersByTimeAsync(20001);await a;});expect(ctx.isSubmitting.current).toBe(false);expect(ctx.setAssigning).toHaveBeenLastCalledWith(false);
  await act(async()=>finish({data:{status:"success",assignment:{id:id(7)}},error:null}));expect(ctx.toast.success).not.toHaveBeenCalled();
  ctx.supabase.functions.invoke.mockResolvedValue({data:{status:"success",assignment:{id:id(7)}},error:null});
