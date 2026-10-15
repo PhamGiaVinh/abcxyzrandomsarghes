@@ -76,6 +76,10 @@ on:
       - 'VinPoker/supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/manualFinishCancellation.pg17.sql'
+      - 'VinPoker/tests/trackerSettlement/manualFinishCancellation.migrationRollback.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/handinput/HandInputConsole.pendingFinish.test.tsx'
       - 'VinPoker/tests/trackerSettlement/recordHandEpochIntent*'
       - 'VinPoker/tests/trackerSettlement/recordHandLockAuthority*'
       - 'VinPoker/tests/trackerSettlement/manualFinishIntent*'
@@ -791,6 +795,19 @@ jobs:
           PGDATABASE=vinpoker_voice_finish96_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql
           PGDATABASE=vinpoker_voice_finish96_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --manual-finish94 --manual-finish-retired96
           PGDATABASE=vinpoker_voice_finish96_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --manual-finish94 --manual-finish-retired96
+      - name: Manual Finish97 cancellation receipt and both-order recovery
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_finish97_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish96_ci "$PGDATABASE"
+          node tests/trackerSettlement/manualFinishCancellation.migrationRollback.mjs --apply-after-rollback
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishCancellation.pg17.sql
+          node tests/trackerSettlement/manualFinishIntent.concurrent.mjs --cancellation
+          node tests/trackerVoice/manualFinish95EdgeHandler.mjs
+          node --test tests/tracker/manualFinishIntent.callback.test.mjs
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/handinput/HandInputConsole.pendingFinish.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:

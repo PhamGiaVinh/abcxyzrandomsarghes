@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGUSER,'postgres');
-assert.ok(['vinpoker_ops_finish95_qualified','vinpoker_ops_finish95_ci','vinpoker_ops_finish96_qualified','vinpoker_ops_finish96_ci'].includes(process.env.PGDATABASE));
+const cancellation=process.argv.includes('--cancellation');
+assert.ok((cancellation?['vinpoker_ops_finish_cancel_candidate','vinpoker_ops_finish97_ci']:['vinpoker_ops_finish95_qualified','vinpoker_ops_finish95_ci','vinpoker_ops_finish96_qualified','vinpoker_ops_finish96_ci']).includes(process.env.PGDATABASE));
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const hand='86000000-0000-4000-8000-000000000001',session='83500000-0000-4000-8000-000000000001',actor='81400000-0000-4000-8000-000000000001';
 function sql(query){const r=spawnSync('psql',['-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:query,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();}
@@ -20,7 +21,28 @@ function tx(marker,query,useAuth=true,hold=false){
  if(!hold)end('COMMIT');return {result,end};
 }
 async function barrier(marker,condition){for(let i=0;i<120;i++){if(sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${marker}' AND ${condition});`)==='t')return;await new Promise(r=>setTimeout(r,25));}assert.fail(`finish95 missing overlap ${marker}`);}
-for(const kind of ['duplicate','epoch-first','finish-first']){
+if(cancellation){
+ const cancel=i=>`SELECT public.cancel_tracker_manual_finish_v1(${arg(i)});`;
+ for(const kind of ['cancel-first','commit-first']){
+  reset();const i=intent();let holder,waiter;
+  try{
+   holder=tx('finish_cancel_holder',kind==='cancel-first'?cancel(i):write(i),true,true);
+   await barrier('finish_cancel_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('finish_cancel_waiter',kind==='cancel-first'?write(i):cancel(i));
+   const busy=await waiter.result;assert.equal(busy.code,0,busy.error);
+   assert.equal(JSON.parse(busy.out).error,'manual_finish_busy');
+   assert.equal(read(i).error,'receipt_not_found');
+   holder.end('COMMIT');const first=await holder.result;assert.equal(first.code,0,first.error);
+   const result=JSON.parse(first.out);assert.equal(result.status,kind==='cancel-first'?'cancelled':'success');
+   assert.deepEqual(read(i),result);
+   assert.deepEqual(JSON.parse(sql(auth+cancel(i))),result);
+   assert.deepEqual(JSON.parse(sql(auth+write(i))),result);
+   assert.equal(sql(`SELECT count(*) FROM public.table_operation_receipts WHERE actor_id='${actor}' AND operation_type='record_tracker_manual_hand_v1' AND request_id='${i.request_id}';`),'1');
+   assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${hand}';`),kind==='cancel-first'?'in_progress':'completed');
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('MANUAL_FINISH_CANCEL_COMMIT_BOTH_ORDER_OVERLAP_RECOVERY_PASS');
+}else for(const kind of ['duplicate','epoch-first','finish-first']){
  reset();const i=intent();let holder,waiter;
  const update=`UPDATE public.table_sessions SET control_epoch=control_epoch+1 WHERE id='${session}';`;
  try{
@@ -50,4 +72,4 @@ for(const kind of ['duplicate','epoch-first','finish-first']){
   }
  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
 }
-console.log('MANUAL_FINISH95_DUPLICATE_EPOCH_BOTH_ORDER_RECOVERY_PASS');
+if(!cancellation)console.log('MANUAL_FINISH95_DUPLICATE_EPOCH_BOTH_ORDER_RECOVERY_PASS');

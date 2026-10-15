@@ -22,7 +22,7 @@ import {
 import { routeTrackerVoiceIntent } from "../../../src/lib/trackerVoice/intentRouter.ts";
 import { resolveNextVoiceHoleCardsSeatNumber } from "../../../src/lib/trackerVoice/holeCardsParser.ts";
 import { computeVoiceFinishSettlement } from "../_shared/trackerSettlement/finishAssist.ts";
-import { isManualFinishIntent, manualFinishReceiptMatches } from "../../../src/lib/trackerManualFinish.ts";
+import { isManualFinishIntent, manualFinishReceiptMatches, manualFinishCancellationMatches } from "../../../src/lib/trackerManualFinish.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -291,7 +291,8 @@ Deno.serve(async (req) => {
     }
     switch (action) {
       case "record_manual_hand_v1":
-      case "get_manual_finish_receipt_v1": {
+      case "get_manual_finish_receipt_v1":
+      case "cancel_manual_finish_v1": {
         const intent = body.finish_intent;
         if (!isManualFinishIntent(intent) || intent.actor_id !== user.id || intent.tournament_id !== tournament_id) {
           return validationError("MANUAL_FINISH_CONTEXT_REQUIRED", "Finish thiếu intent gốc hoặc tài khoản đã thay đổi.");
@@ -303,7 +304,8 @@ Deno.serve(async (req) => {
           if (recon.tampered) return validationError("SIDE_POTS_TAMPERED", "side_pots không khớp chuỗi hành động trên server.");
         }
         result = await supabase.rpc(action === "record_manual_hand_v1"
-          ? "record_tracker_manual_hand_v1" : "get_tracker_manual_finish_receipt_v1", { p_intent: intent });
+          ? "record_tracker_manual_hand_v1" : action === "cancel_manual_finish_v1"
+            ? "cancel_tracker_manual_finish_v1" : "get_tracker_manual_finish_receipt_v1", { p_intent: intent });
         break;
       }
       case "record_hand": {
@@ -1184,14 +1186,14 @@ Deno.serve(async (req) => {
     }
 
     if (result.error) throw result.error;
-    if (action === "record_manual_hand_v1" || action === "get_manual_finish_receipt_v1") {
+    if (action === "record_manual_hand_v1" || action === "get_manual_finish_receipt_v1" || action === "cancel_manual_finish_v1") {
       const proof = result.data;
       if (proof && typeof proof.error === "string") {
         return new Response(JSON.stringify({ error: proof.error, code: proof.error }), {
           status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (!manualFinishReceiptMatches(proof, body.finish_intent)) {
+      if (!manualFinishReceiptMatches(proof, body.finish_intent) && !manualFinishCancellationMatches(proof, body.finish_intent)) {
         return new Response(JSON.stringify({ error: "manual_finish_receipt_unconfirmed", code: "manual_finish_receipt_unconfirmed" }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

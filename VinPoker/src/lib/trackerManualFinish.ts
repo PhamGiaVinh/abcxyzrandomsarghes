@@ -33,6 +33,16 @@ export function manualFinishReceiptMatches(value: unknown, intent: ManualFinishI
     && canonicalVoiceJson(value.intent) === canonicalVoiceJson(intent);
 }
 
+/** Cancellation proves only that this request cannot commit, not that the hand finished. */
+export function manualFinishCancellationMatches(value: unknown, intent: ManualFinishIntent): boolean {
+  if (!record(value)) return false;
+  return value.ok === true && value.status === "cancelled" && value.actor_id === intent.actor_id
+    && value.request_id === intent.request_id && value.hand_id === intent.hand_id
+    && value.table_session_id === intent.table_session_id && value.control_epoch === intent.control_epoch
+    && value.expected_source_revision === intent.source_revision
+    && !["error", "committed_source_revision", "starting_total", "ending_total"].some(key => key in value)
+    && canonicalVoiceJson(value.intent) === canonicalVoiceJson(intent);
+}
 type FinishStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type FinishIdentity = Pick<ManualFinishIntent, "actor_id" | "tournament_id" | "tournament_table_id" | "hand_id">;
 export function readManualFinishJournal(raw: string, identity: FinishIdentity): ManualFinishIntent {
@@ -40,6 +50,22 @@ export function readManualFinishJournal(raw: string, identity: FinishIdentity): 
   if (!isManualFinishIntent(value) || (Object.keys(identity) as Array<keyof FinishIdentity>)
     .some(key => value[key] !== identity[key])) throw new Error("MANUAL_FINISH_JOURNAL_INVALID");
   return value;
+}
+/** Discovery is scoped to actor/tournament/logical table, not today's hand or epoch. */
+export function listManualFinishJournals(storage: Pick<Storage, "length" | "key" | "getItem">,
+  identity: Omit<FinishIdentity, "hand_id">): ManualFinishIntent[] {
+  const prefix = `vinpoker:manual-finish:${identity.actor_id}:${identity.tournament_id}:${identity.tournament_table_id}:`;
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (key?.startsWith(prefix)) keys.push(key);
+  }
+  return keys.sort().map(key => {
+    const hand = key.slice(prefix.length);
+    const raw = storage.getItem(key);
+    if (raw === null || !uuid(hand)) throw new Error("MANUAL_FINISH_JOURNAL_CHANGED");
+    return readManualFinishJournal(raw, { ...identity, hand_id: hand });
+  });
 }
 /** A later draft may only recover the frozen request, never silently replace it. */
 export function manualFinishDraftMatches(intent: ManualFinishIntent, payload: ManualFinishIntent["payload"]): boolean {

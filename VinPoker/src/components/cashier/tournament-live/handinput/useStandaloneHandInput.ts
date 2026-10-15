@@ -74,8 +74,9 @@ import {
 } from "./trackerAsyncGuards";
 import { createSingleFlightGuard } from "@/lib/singleFlight";
 import { isManualFinishIntent, manualFinishReceiptMatches, manualFinishDraftMatches,
-  readManualFinishJournal, persistManualFinishJournal, settleManualFinishJournal,
-  type ManualFinishIntent } from "@/lib/trackerManualFinish";
+  readManualFinishJournal, listManualFinishJournals, persistManualFinishJournal, settleManualFinishJournal,
+  manualFinishCancellationMatches, type ManualFinishIntent } from "@/lib/trackerManualFinish";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { fingerprintManualCards, normalizeManualCards, parseManualCardIntent, isConfirmedManualCardProof,
   type ManualCardPendingIntent } from "./manualCardIntent";
@@ -319,6 +320,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   const actionWriteGuardRef = useRef(createActionWriteGuard());
   const handSubmitGuardRef = useRef(createSingleFlightGuard());
   const finishOwnsSubmittingRef = useRef(false);
+  const [pendingFinish, setPendingFinish] = useState<ManualFinishIntent | null>(null);
+  const [pendingFinishError, setPendingFinishError] = useState<string | null>(null);
   const actionScopeRef = useRef("");
   const loadedTableSessionRef = useRef<{ tournamentId: string; tableId: string; sessionId: string | null } | null>(null);
   const blockedActionScopeRef = useRef<string | null>(null);
@@ -336,6 +339,17 @@ export function useStandaloneHandInput(tournamentId: string) {
   const manualCardsIntentRef = useRef(new Map<string, ManualCardPendingIntent>());
   const rosterContext = availableTables.find((table) => table.id === tableId);
   const rosterScope = `${user?.id}:${tournamentId}:${rosterContext?.tournamentTableId}:${rosterContext?.tableSessionId}:${rosterContext?.controlEpoch}`;
+  useEffect(() => {
+    setPendingFinish(null);
+    setPendingFinishError(null);
+    const logicalTable = rosterContext?.tournamentTableId ?? tableId;
+    if (!user?.id || !logicalTable) return;
+    const identity = { actor_id: user.id, tournament_id: tournamentId,
+      tournament_table_id: logicalTable };
+    try {
+      setPendingFinish(listManualFinishJournals(sessionStorage, identity)[0] ?? null);
+    } catch { setPendingFinishError("Không đọc được yêu cầu Finish đang chờ. Không gửi yêu cầu mới; giữ dữ liệu phục hồi và tải lại bàn."); }
+  }, [user?.id, tournamentId, tableId, rosterContext?.tournamentTableId, handId]);
   if (rosterScopeRef.current !== rosterScope) {
     rosterScopeRef.current = rosterScope;
     rosterGenerationRef.current += 1;
@@ -3297,6 +3311,9 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const handleSubmitHand = async () => {
     if (!tableId || !handNumber) return;
+    if (pendingFinishError || (pendingFinish && pendingFinish.hand_id !== handId)) {
+      toast.error(pendingFinishError ?? "Còn yêu cầu Finish của hand trước; xác minh hoặc hủy trước khi gửi hand mới."); return;
+    }
     // Workflow v2 HARD-GATE: only submit from submit_ready.
     if (workflowState !== "submit_ready") {
       toast.error("Chưa thể gửi hand — cần hoàn tất đúng quy trình trước.");
@@ -3415,9 +3432,16 @@ export function useStandaloneHandInput(tournamentId: string) {
       return null;
     };
     const confirmReceipt = async (proof: unknown, recovered: boolean) => {
+      if (currentReceiptScope() && intent && manualFinishCancellationMatches(proof, intent)) {
+        settleManualFinishJournal(sessionStorage, intentKey, intent);
+        setPendingFinish(null);
+        toast.info("Yêu cầu Finish cũ đã hủy; hand chưa bị void. Kiểm tra lại trước khi gửi yêu cầu mới.");
+        return true;
+      }
       if (!currentReceiptScope() || !intent || !manualFinishReceiptMatches(proof, intent)) return false;
       try { settleManualFinishJournal(sessionStorage, intentKey, intent); }
       catch { toast.warning("Máy chủ đã xác nhận Finish, nhưng chưa dọn được mã phục hồi trên trình duyệt. Không gửi một request mới."); }
+      setPendingFinish(null);
       const committedStacks: Record<string, number> = {};
       for (const value of intent.payload.players) {
         const player = value as { player_id?: unknown; ending_stack?: unknown };
@@ -3434,6 +3458,10 @@ export function useStandaloneHandInput(tournamentId: string) {
       const freshActor = await observeTrackerContextRead(supabase.auth.getUser());
       if (!currentReceiptScope()) return;
       if (freshActor.error || freshActor.data.user?.id !== user.id) throw new Error("Không xác minh được tài khoản hiện tại; chưa gửi Finish.");
+      const pendingRequests = listManualFinishJournals(sessionStorage, { actor_id: user.id,
+        tournament_id: tournamentId, tournament_table_id: logicalTableId });
+      if (pendingRequests.some(request => request.hand_id !== submittedHandId))
+        throw new Error("Còn yêu cầu Finish của hand trước; xác minh hoặc hủy trước khi gửi hand mới.");
       const saved = sessionStorage.getItem(intentKey);
       if (saved !== null) { intent = readManualFinishJournal(saved, identity); priorIntent = true; }
       const edgePlayers: EdgePlayer[] = players.map((p) => ({
@@ -3502,6 +3530,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         intent = candidate;
       }
       persistManualFinishJournal(sessionStorage, intentKey, intent);
+      setPendingFinish(intent);
       if (!currentReceiptScope()) return;
       writeAttempted = true;
       const response = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
@@ -3515,6 +3544,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       if (!priorIntent && code && ["actor_not_allowed", "stale_manual_finish_context", "lock_not_held",
         "invalid_finish_intent", "SIDE_POTS_TAMPERED", "MANUAL_FINISH_CONTEXT_REQUIRED"].includes(code)) {
         settleManualFinishJournal(sessionStorage, intentKey, intent); intent = undefined;
+        setPendingFinish(null);
       }
       throw new Error(await readEdgeError(response.error, response.data));
     } catch (e: any) {
@@ -3532,6 +3562,46 @@ export function useStandaloneHandInput(tournamentId: string) {
     } finally {
       handSubmitGuardRef.current.finish();
       if (currentReceiptScope()) { finishOwnsSubmittingRef.current = false; setSubmitting(false); }
+    }
+  };
+
+  const handleCancelPendingFinish = async () => {
+    const intent = pendingFinish;
+    if (!intent || intent.actor_id !== user?.id || intent.tournament_id !== tournamentId
+      || intent.tournament_table_id !== (rosterContext?.tournamentTableId ?? tableId) || !tableId) return;
+    if (!confirm("Hủy yêu cầu gửi Finish đang chờ? Không void hand. Nếu máy chủ đã lưu, kết quả đã lưu sẽ được giữ.")) return;
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const token = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+      && scope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(token);
+    if (!handSubmitGuardRef.current.begin()) { toast.info("Đang chờ kết quả Finish trước đó."); return; }
+    finishOwnsSubmittingRef.current = true; setSubmitting(true);
+    try {
+      const actor = await observeTrackerContextRead(supabase.auth.getUser());
+      if (!current()) return;
+      if (actor.error || actor.data.user?.id !== intent.actor_id) throw new Error("Không xác minh được tài khoản; giữ yêu cầu chờ.");
+      const key = `vinpoker:manual-finish:${intent.actor_id}:${intent.tournament_id}:${intent.tournament_table_id}:${intent.hand_id}`;
+      const saved = sessionStorage.getItem(key);
+      if (!saved || canonicalVoiceJson(JSON.parse(saved)) !== canonicalVoiceJson(intent))
+        throw new Error("Mã yêu cầu đã thay đổi; tải lại bàn.");
+      const response = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
+        body: { tournament_id: intent.tournament_id, action: "cancel_manual_finish_v1", finish_intent: intent },
+      }));
+      if (!current()) return;
+      const proof = response.data?.data;
+      const committed = manualFinishReceiptMatches(proof, intent);
+      if (!committed && !manualFinishCancellationMatches(proof, intent)) throw new Error("Chưa xác minh được kết quả hủy; giữ nguyên request ID để thử lại.");
+      settleManualFinishJournal(sessionStorage, key, intent);
+      setPendingFinish(listManualFinishJournals(sessionStorage, { actor_id: intent.actor_id,
+        tournament_id: intent.tournament_id, tournament_table_id: intent.tournament_table_id })[0] ?? null);
+      toast.info(committed ? "Finish đã được lưu trước khi hủy. Đang tải kết quả máy chủ." : "Đã hủy yêu cầu Finish; không void hand.");
+      await handleTableChange(tableId);
+    } catch (error) {
+      if (current()) toast.error(error instanceof Error ? error.message : "Chưa rõ kết quả hủy; giữ yêu cầu chờ.");
+    } finally {
+      handSubmitGuardRef.current.finish();
+      if (current()) { finishOwnsSubmittingRef.current = false; setSubmitting(false); }
     }
   };
 
@@ -3784,6 +3854,11 @@ export function useStandaloneHandInput(tournamentId: string) {
     handleConfirmShowdownResult,
     handleEndingStackChange,
     handleSubmitHand,
+    pendingFinish: pendingFinish?.actor_id === user?.id && pendingFinish?.tournament_id === tournamentId
+      && pendingFinish?.tournament_table_id === (rosterContext?.tournamentTableId ?? tableId)
+      ? pendingFinish : null,
+    pendingFinishError,
+    handleCancelPendingFinish,
     handleVoid,
     handleChipQuickEdit,
     handleSetRosterSeat,

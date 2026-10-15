@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {stripTypeScriptTypes} from 'node:module';
 import {runInNewContext} from 'node:vm';
-import {isManualFinishIntent,manualFinishReceiptMatches} from '../../src/lib/trackerManualFinish.ts';
+import {isManualFinishIntent,manualFinishReceiptMatches,manualFinishCancellationMatches} from '../../src/lib/trackerManualFinish.ts';
 import {reconcileSidePots} from '../../supabase/functions/_shared/trackerEngine/validateAction.ts';
 const source=stripTypeScriptTypes(readFileSync('supabase/functions/tournament-live-update/index.ts','utf8').replace(/^import[\s\S]*?from\s+["'][^"']+["'];\s*/gm,''));
 const actor='81400000-0000-4000-8000-000000000001';
@@ -17,7 +17,7 @@ const receipt={ok:true,status:'success',hand_id:intent.hand_id,actor_id:actor,re
 const body={tournament_id:intent.tournament_id,action:'record_manual_hand_v1',finish_intent:intent};
 async function request(value,{data=receipt,error=null,authenticated=true,header=true}={}){
  let handler;const calls=[],clients=[];
- runInNewContext(source,{Request,Response,console,isManualFinishIntent,manualFinishReceiptMatches,reconcileSidePots,
+ runInNewContext(source,{Request,Response,console,isManualFinishIntent,manualFinishReceiptMatches,manualFinishCancellationMatches,reconcileSidePots,
   Deno:{env:{get:key=>({SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-anon'})[key]},serve:callback=>{handler=callback;}},
   createClient:(url,key,options)=>{clients.push({url,key,options});return {auth:{getUser:async()=>({data:{user:authenticated?{id:actor}:null},error:null})},rpc:async(name,params)=>{calls.push({name,params});return {data,error};}};},
  });
@@ -26,6 +26,16 @@ async function request(value,{data=receipt,error=null,authenticated=true,header=
  return {status:response.status,payload:await response.json(),calls:JSON.parse(JSON.stringify(calls)),clients};
 }
 const good=await request(body);assert.equal(good.status,200);assert.deepEqual(good.payload.data,receipt);
+const cancelled={ok:true,status:'cancelled',actor_id:actor,request_id:intent.request_id,intent,hand_id:intent.hand_id,
+ table_session_id:intent.table_session_id,control_epoch:1,expected_source_revision:12};
+for(const action of ['record_manual_hand_v1','get_manual_finish_receipt_v1','cancel_manual_finish_v1']){
+ const answer=await request({...body,action},{data:cancelled});assert.equal(answer.status,200);assert.deepEqual(answer.payload.data,cancelled);
+ const mixed=await request({...body,action},{data:{...cancelled,committed_source_revision:13}});assert.equal(mixed.status,502);
+}
+const cancelRoute=await request({...body,action:'cancel_manual_finish_v1'},{data:cancelled});
+assert.deepEqual(cancelRoute.calls,[{name:'cancel_tracker_manual_finish_v1',params:{p_intent:intent}}]);
+assert.equal((await request({...body,action:'cancel_manual_finish_v1'})).status,200,'already committed proof remains success');
+assert.equal((await request({...body,action:'cancel_manual_finish_v1',finish_intent:{...intent,actor_id:'81100000-0000-4000-8000-000000000001'}})).calls.length,0);
 const legacy=await request({tournament_id:intent.tournament_id,action:'record_hand',table_id:intent.tournament_table_id,
  hand_number:1,...intent.payload});assert.equal(legacy.status,422);assert.equal(legacy.payload.code,'MANUAL_FINISH_CONTEXT_REQUIRED');assert.equal(legacy.calls.length,0);
 assert.deepEqual(good.calls,[{name:'record_tracker_manual_hand_v1',params:{p_intent:intent}}]);
