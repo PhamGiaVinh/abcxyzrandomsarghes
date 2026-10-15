@@ -77,6 +77,7 @@ export interface PassRResult {
 interface ActiveAssignmentRow {
   id: string;
   table_id: string;
+  table_session_id: string | null;
   attendance_id: string;
   assigned_at: string;
   swing_due_at: string;
@@ -148,7 +149,7 @@ async function fetchActiveAssignments(admin: any, clubId: string): Promise<Activ
   const { data, error } = await admin
     .from("dealer_assignments")
     .select(`
-      id, table_id, attendance_id, assigned_at, swing_due_at, overtime_started_at,
+      id, table_id, table_session_id, attendance_id, assigned_at, swing_due_at, overtime_started_at,
       pre_assigned_attendance_id, planned_relief_at, version,
       game_tables!inner(id, table_name, tour_tier, game_type),
       dealer_attendance!attendance_id(dealers(full_name, telegram_username, telegram_user_id))
@@ -157,11 +158,8 @@ async function fetchActiveAssignments(admin: any, clubId: string): Promise<Activ
     .eq("status", "assigned")
     .is("released_at", null)
     .is("swing_processed_at", null);
-  if (error) {
-    console.error("[Pass R] active assignments query error:", error.message);
-    return [];
-  }
-  return (data ?? []) as ActiveAssignmentRow[];
+  if (error || !Array.isArray(data)) throw new Error("rotation_assignment_snapshot_unavailable");
+  return data as ActiveAssignmentRow[];
 }
 
 async function fetchLiveScheduleRows(admin: any, clubId: string): Promise<ScheduleRow[]> {
@@ -170,37 +168,73 @@ async function fetchLiveScheduleRows(admin: any, clubId: string): Promise<Schedu
     .select("id, table_id, assignment_id, slot_index, in_attendance_id, out_attendance_id, planned_relief_at, announce_at, status, version")
     .eq("club_id", clubId)
     .in("status", ["predicted", "announced", "executing"]);
-  if (error) {
-    console.error("[Pass R] schedule query error:", error.message);
-    return [];
-  }
-  return (data ?? []) as ScheduleRow[];
+  if (error || !Array.isArray(data)) throw new Error("rotation_schedule_snapshot_unavailable");
+  return data as ScheduleRow[];
 }
 
 async function fetchTournamentInfo(
   admin: any,
-  tableIds: string[],
-): Promise<Map<string, { tournamentId: string; tournamentName: string | null; buyIn: number | null }>> {
+  clubId: string,
+  assignments: Pick<ActiveAssignmentRow, "table_id" | "table_session_id">[],
+): Promise<{
+  tournamentInfo: Map<string, { tournamentId: string; tournamentName: string | null; buyIn: number | null }>;
+  rejectedTables: Map<string, string>;
+}> {
   const result = new Map<string, { tournamentId: string; tournamentName: string | null; buyIn: number | null }>();
-  if (tableIds.length === 0) return result;
+  const rejectedTables = new Map<string, string>();
+  const snapshot = { tournamentInfo: result, rejectedTables };
+  for (const a of assignments) {
+    if (!a.table_session_id) rejectedTables.set(a.table_id, "rotation_assignment_session_missing");
+    else if (assignments.filter((other) => other.table_id === a.table_id
+      || other.table_session_id === a.table_session_id).length !== 1) {
+      rejectedTables.set(a.table_id, "rotation_assignment_session_ambiguous");
+    }
+  }
+  const sessionIds = [...new Set(assignments.filter((a) => !rejectedTables.has(a.table_id)).map((a) => a.table_session_id))];
+  if (sessionIds.length === 0) return snapshot;
+  const { data: sessions, error: sessionError } = await admin
+    .from("table_sessions")
+    .select("id, club_id, game_table_id, tournament_id, session_type, closed_at")
+    .eq("club_id", clubId)
+    .in("id", sessionIds);
+  if (sessionError || !Array.isArray(sessions)) throw new Error("rotation_session_snapshot_unavailable");
   const { data, error } = await admin
     .from("tournament_tables")
-    .select("table_id, tournament_id, tournaments(id, name, buy_in)")
-    .in("table_id", tableIds);
-  if (error) {
-    console.warn("[Pass R] tournament join error (tour_tier fallback in effect):", error.message);
-    return result;
-  }
-  for (const row of data ?? []) {
-    const t = (row as any).tournaments;
-    if (!t) continue;
-    result.set((row as any).table_id, {
+    .select("id, table_id, game_table_id, table_session_id, status, tournament_id, tournaments!inner(id, club_id, name, buy_in)")
+    .eq("tournaments.club_id", clubId)
+    .eq("status", "active")
+    .in("table_session_id", sessionIds);
+  if (error || !Array.isArray(data)) throw new Error("rotation_tournament_snapshot_unavailable");
+  for (const assignment of assignments) {
+    if (rejectedTables.has(assignment.table_id)) continue;
+    const matchingSessions = (sessions ?? []).filter((s: any) => s.id === assignment.table_session_id);
+    const session = matchingSessions[0];
+    if (matchingSessions.length !== 1 || session.club_id !== clubId
+      || session.game_table_id !== assignment.table_id || session.closed_at != null) {
+      rejectedTables.set(assignment.table_id, "rotation_assignment_session_invalid");
+      continue;
+    }
+    if ((session.session_type === "cash" || session.session_type === "vip") && !session.tournament_id) continue;
+    if (session.session_type !== "tournament" || !session.tournament_id) {
+      rejectedTables.set(assignment.table_id, "rotation_session_type_invalid");
+      continue;
+    }
+    const matches = (data ?? []).filter((row: any) => row.table_session_id === session.id);
+    const row = matches[0];
+    const t = row?.tournaments;
+    if (matches.length !== 1 || row.status !== "active" || row.game_table_id !== assignment.table_id
+      || (row.table_id && row.table_id !== row.game_table_id)
+      || row.tournament_id !== session.tournament_id || !t || t.id !== row.tournament_id || t.club_id !== clubId) {
+      rejectedTables.set(assignment.table_id, "rotation_tournament_mapping_invalid");
+      continue;
+    }
+    result.set(assignment.table_id, {
       tournamentId: t.id,
       tournamentName: t.name ?? null,
       buyIn: typeof t.buy_in === "number" ? t.buy_in : null,
     });
   }
-  return result;
+  return snapshot;
 }
 
 // ─── Phase A: reconcile announced rows + adopt legacy pre-assigns ────────────
@@ -400,7 +434,6 @@ async function announceDueSlots(
   admin: any,
   ctx: PassRContext,
   assignments: ActiveAssignmentRow[],
-  planRunId: string,
   supplyByAttendance: Map<string, RotationPlanCandidate & { telegram_username?: string | null; telegram_user_id?: string | number | null }>,
   tournamentInfo: Map<string, { tournamentId: string; tournamentName: string | null; buyIn: number | null }>,
 ): Promise<{ locked: number; errors: Array<{ scope: string; error: string }> }> {
@@ -411,13 +444,15 @@ async function announceDueSlots(
     .from("dealer_rotation_schedule")
     .select("id, table_id, assignment_id, slot_index, in_attendance_id, planned_relief_at, announce_at, status, version, is_emergency, reason")
     .eq("club_id", ctx.clubId)
-    .eq("plan_run_id", planRunId)
+    // Set-diff persist retains run IDs for unchanged predictions. Current
+    // verified table/assignment scope, not the newest run ID, controls locking.
+    .in("table_id", assignments.map((a) => a.table_id))
     .eq("slot_index", 0)
     .eq("status", "predicted")
     .not("in_attendance_id", "is", null)
     .lte("announce_at", nowIso);
-  if (error) {
-    errors.push({ scope: "announce_query", error: error.message });
+  if (error || !Array.isArray(dueRows)) {
+    errors.push({ scope: "announce_query", error: error?.message ?? "rotation_announce_snapshot_unavailable" });
     return { locked: 0, errors };
   }
 
@@ -426,6 +461,11 @@ async function announceDueSlots(
   const telegramPayloads: PreAssignNotificationPayload[] = [];
 
   for (const row of (dueRows ?? []) as Array<ScheduleRow & { is_emergency: boolean; reason: any }>) {
+    const assignment = row.assignment_id ? assignmentById.get(row.assignment_id) : undefined;
+    if (!assignment || assignment.table_id !== row.table_id) {
+      errors.push({ scope: `lock:${row.table_id}`, error: "rotation_schedule_assignment_changed" });
+      continue;
+    }
     const { data: lockResult, error: lockErr } = await admin.rpc("lock_rotation_slot", {
       p_schedule_id: row.id,
       p_schedule_version: row.version,
@@ -446,7 +486,6 @@ async function announceDueSlots(
     locked++;
     ctx.cycleExcludedIds.add(row.in_attendance_id as string);
 
-    const assignment = row.assignment_id ? assignmentById.get(row.assignment_id) : undefined;
     const inDealer = supplyByAttendance.get(row.in_attendance_id as string);
     const outDealer = assignment?.dealer_attendance?.dealers ?? null;
     const reliefAt = new Date(row.planned_relief_at);
@@ -514,17 +553,35 @@ export async function passRRotationPlanner(
 
   try {
     // Phase A inputs
-    const [assignments, scheduleRows] = await Promise.all([
+    const [assignmentSnapshot, scheduleRows] = await Promise.all([
       fetchActiveAssignments(admin, ctx.clubId),
       fetchLiveScheduleRows(admin, ctx.clubId),
     ]);
-    if (assignments.length === 0) {
+    if (assignmentSnapshot.length === 0) {
       result.solverDurationMs = Date.now() - started;
       return result;
     }
 
+    // Validate the whole snapshot before reconciliation, OT or rest-state writes.
+    const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, assignmentSnapshot);
+    for (const [tableId, error] of rejectedTables) result.errors.push({ scope: `table:${tableId}`, error });
+    const assignments = assignmentSnapshot.filter((a) => !rejectedTables.has(a.table_id));
+    if (assignments.length === 0) {
+      result.solverDurationMs = Date.now() - started;
+      return result;
+    }
+    const validTableIds = new Set(assignments.map((a) => a.table_id));
+    const excludedAttendanceIds = new Set(ctx.cycleExcludedIds);
+    for (const a of assignmentSnapshot) {
+      if (!rejectedTables.has(a.table_id)) continue;
+      excludedAttendanceIds.add(a.attendance_id);
+      if (a.pre_assigned_attendance_id) excludedAttendanceIds.add(a.pre_assigned_attendance_id);
+    }
+
     // Phase A — reconcile + adoption
-    const { adopted, cancelled } = await reconcileAndAdopt(admin, ctx, assignments, scheduleRows, planRunId);
+    const { adopted, cancelled } = await reconcileAndAdopt(
+      admin, ctx, assignments, scheduleRows.filter((row) => validTableIds.has(row.table_id)), planRunId,
+    );
     result.adopted = adopted;
     result.reconciledCancels = cancelled;
 
@@ -575,9 +632,8 @@ export async function passRRotationPlanner(
     }
 
     // Phase B — snapshot
-    const tournamentInfo = await fetchTournamentInfo(admin, assignments.map((a) => a.table_id));
     const supplyResult = await buildRotationSupply(admin, ctx.clubId, {
-      excludeAttendanceIds: ctx.cycleExcludedIds,
+      excludeAttendanceIds: excludedAttendanceIds,
       minInterSwingRestMinutes: ctx.minInterSwingRestMinutes,
       clubBreakDurationMinutes: ctx.clubBreakDurationMinutes,
       requiredGameTypes: ctx.requiredGameTypes,
@@ -662,6 +718,7 @@ export async function passRRotationPlanner(
       p_club_id: ctx.clubId,
       p_plan_run_id: planRunId,
       p_rows: plan.rows.map(rowToJson),
+      p_table_ids: [...validTableIds],
     });
     if (upsertErr || (upsertResult as any)?.outcome !== "ok") {
       result.errors.push({
@@ -674,7 +731,7 @@ export async function passRRotationPlanner(
 
     // Phase E — announce/lock + Telegram
     const announce = await announceDueSlots(
-      admin, ctx, assignments, planRunId, supplyByAttendance, tournamentInfo,
+      admin, ctx, assignments, supplyByAttendance, tournamentInfo,
     );
     result.locked = announce.locked;
     result.errors.push(...announce.errors);
@@ -712,24 +769,28 @@ export async function replanSingleTable(
       .from("dealer_rotation_schedule")
       .select("id, status")
       .eq("assignment_id", assignmentId)
+      .eq("club_id", ctx.clubId)
       .in("status", ["predicted", "announced", "executing"]);
-    for (const slot of liveSlots ?? []) {
-      await admin.rpc("cancel_rotation_slot", { p_schedule_id: slot.id, p_reason: cancelReason });
-    }
 
     // Defensive: clear legacy pre-assign fields even without a schedule row.
     const { data: a } = await admin
       .from("dealer_assignments")
       .select(`
-        id, table_id, attendance_id, assigned_at, swing_due_at, version,
+        id, table_id, table_session_id, attendance_id, assigned_at, swing_due_at, version,
         pre_assigned_attendance_id, status, released_at, swing_processed_at,
         game_tables!inner(id, table_name, tour_tier, game_type),
         dealer_attendance!attendance_id(dealers(full_name, telegram_username, telegram_user_id))
       `)
       .eq("id", assignmentId)
+      .eq("club_id", ctx.clubId)
       .maybeSingle();
     if (!a || a.status !== "assigned" || a.released_at || a.swing_processed_at) {
       return { relocked: false, detail: "assignment_no_longer_active" };
+    }
+    const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, [a]);
+    if (rejectedTables.size) return { relocked: false, detail: `error: ${rejectedTables.get(a.table_id)}` };
+    for (const slot of liveSlots ?? []) {
+      await admin.rpc("cancel_rotation_slot", { p_schedule_id: slot.id, p_reason: cancelReason });
     }
     if (a.pre_assigned_attendance_id) {
       await admin
@@ -766,7 +827,6 @@ export async function replanSingleTable(
         eligibleAtMs: s.eligible_at_ms, score: s.score ?? 0,
       }));
 
-    const tournamentInfo = await fetchTournamentInfo(admin, [a.table_id]);
     const featurePoolMap = await getFeatureTablePoolsByTable(admin, [a.table_id]); // Patch 5c
     const reservedDealerIds = [...await getReservedDealerIds(admin)]; // Patch 5d
     const plan = solveRotationPlan(
@@ -811,7 +871,7 @@ export async function replanSingleTable(
       }])
     );
     const announce = await announceDueSlots(
-      admin, ctx, [a as ActiveAssignmentRow], planRunId, supplyByAttendance, tournamentInfo,
+      admin, ctx, [a as ActiveAssignmentRow], supplyByAttendance, tournamentInfo,
     );
     return announce.locked > 0
       ? { relocked: true, detail: `relocked:${slot0.inDealerName ?? slot0.inAttendanceId}` }
