@@ -1,5 +1,5 @@
-import { beforeEach, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), actor: "owner-a" }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: h.actor } }) }));
@@ -8,6 +8,51 @@ const key = "vinpoker:color-up-pending:owner-a:club-a:tour-a";
 const intent = { fn: "chip_ops_color_up", args: { p_tournament_id: "tour-a", p_denom_removed: "low", p_denom_target: "high", p_target_added: 1, p_level_number: 2, p_idempotency_key: "original-request" } };
 const readerArgs = { p_tournament_id: "tour-a", p_operation: "color_up", p_request_key: "original-request",
   p_payload: { tournament: "tour-a", removed: "low", target: "high", added: 1, level: 2 } };
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+it("ends a hung inventory read without reporting empty setup or accepting late inventory", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: unknown) => void;
+  h.rpc.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  render(<ColorUpTab tournamentId="tour-a" clubId="club-a" onOpenSetup={vi.fn()} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+  expect(screen.getByText(/Không xác minh được tồn chip hoặc lịch sử/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Tải lại" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Mở Setup stack" })).not.toBeInTheDocument();
+  await act(async () => { finish({ data: { denominations: [] }, error: null }); });
+  expect(h.from).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Mở Setup stack" })).not.toBeInTheDocument();
+});
+
+it.each(["submit", "receipt", "cancel", "reverse"] as const)("unfreezes hung %s while retaining exact intent and ignoring late success", async (operation) => {
+  vi.useFakeTimers();
+  const saved = operation === "reverse"
+    ? { fn: "chip_ops_reverse_color_up", args: { p_operation_id: "op-a", p_idempotency_key: "reverse-request" } } : intent;
+  sessionStorage.setItem(key, JSON.stringify(saved));
+  const target = operation === "receipt" ? "get_chip_color_up_receipt_v1" : operation === "cancel" ? "cancel_chip_color_up_request_v1" : saved.fn;
+  let finish!: (value: unknown) => void;
+  h.rpc.mockImplementation((name: string) => name === target ? new Promise(resolve => { finish = resolve; })
+    : Promise.resolve({ data: name === "get_current_chip_inventory" ? { denominations: [] } : { operations: [] }, error: null }));
+  render(<ColorUpTab tournamentId="tour-a" clubId="club-a" />);
+  await act(async () => {});
+  const label = operation === "receipt" ? "Đối chiếu thao tác" : operation === "cancel" ? "Hủy yêu cầu đang chờ" : "Gửi lại cùng yêu cầu";
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: label })); });
+  expect(screen.getByRole("button", { name: label })).toBeDisabled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+  expect(screen.getByRole("button", { name: label })).toBeEnabled();
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(saved);
+  const result = operation === "cancel"
+    ? { status: "cancelled", error: "REQUEST_CANCELLED", actor_id: "owner-a", request_key: "original-request", operation: "color_up", payload: readerArgs.p_payload }
+    : { status: "ok", color_up_operation_id: "op-a", removed_count: 10, target_added: 1, reversed: true };
+  await act(async () => { finish({ data: operation === "receipt" || operation === "cancel" ? { status: "committed", result } : result, error: null }); });
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(saved);
+  expect(h.rpc.mock.calls.filter(([name]) => name === target)).toHaveLength(1);
+  h.rpc.mockImplementation(async (name: string) => ({ data: name === "get_current_chip_inventory" ? { denominations: [] }
+    : name === "get_color_up_history" ? { operations: [] } : { status: "committed", result }, error: null }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Đối chiếu thao tác" })); });
+  expect(sessionStorage.getItem(key)).toBeNull();
+  if (operation !== "receipt") expect(h.rpc.mock.calls.filter(([name]) => name === target)).toHaveLength(1);
+});
 it("explains verified empty denominations and navigates to setup without a chip mutation", async () => {
   const openSetup = vi.fn();
   render(<ColorUpTab tournamentId="tour-a" clubId="club-a" onOpenSetup={openSetup} />);

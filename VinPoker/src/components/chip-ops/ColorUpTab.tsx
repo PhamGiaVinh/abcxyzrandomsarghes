@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { chipOpsRpcErrorMessage } from "@/lib/chipOpsErrors";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,13 +35,14 @@ const ERR: Record<string, string> = {
   INVENTORY_NEGATIVE: "Chip đã được dùng bởi thao tác sau; không đủ tồn để hoàn tác.",
   BANK_NEGATIVE: "Kho không đủ chip để hoàn tác. Cần đối chiếu các thao tác sau.",
 };
-async function callRpc(fn: string, args: Record<string, unknown>): Promise<any | null> {
+async function callRpc(fn: string, args: Record<string, unknown>, isCurrent: () => boolean): Promise<any | null> {
   try {
     const { data, error } = await sb.rpc(fn, args);
+    if (!isCurrent()) return null;
     if (error) { toast.error(chipOpsRpcErrorMessage(error)); return null; }
     if (data && data.error) { toast.error(ERR[data.error] ?? data.error); return null; }
     return data ?? {};
-  } catch (error) { toast.error(chipOpsRpcErrorMessage(error)); return null; }
+  } catch (error) { if (isCurrent()) toast.error(chipOpsRpcErrorMessage(error)); return null; }
 }
 
 interface Denom { denomination_id: string; value: number; color: string | null; current_count: number }
@@ -116,34 +118,41 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
   const reload = useCallback(async () => {
     if (!tournamentId) return;
     const generation = ++readGeneration.current;
-    const current = () => alive.current && generation === readGeneration.current;
+    let accepting = true;
+    const current = () => accepting && alive.current && generation === readGeneration.current;
     setLoading(true);
     setReadError(null);
     try {
-      const inv = await callRpc("get_current_chip_inventory", { p_tournament_id: tournamentId });
-      if (!current()) return;
-      if (!inv || !Array.isArray(inv.denominations)) throw new Error("inventory_unverified");
-      const { data: t, error: tournamentError } = await sb.from("tournaments").select("current_level").eq("id", tournamentId).maybeSingle();
-      if (!current()) return;
-      if (tournamentError || !t) throw new Error("tournament_unverified");
-      let bb: number | null = null;
-      if (t.current_level != null) {
-        const { data: l, error: levelError } = await sb.from("tournament_levels").select("big_blind").eq("tournament_id", tournamentId).eq("level_number", t.current_level).maybeSingle();
+      const snapshot = await waitForManualPlayerResponse((async () => {
+        const inv = await callRpc("get_current_chip_inventory", { p_tournament_id: tournamentId }, current);
         if (!current()) return;
-        if (levelError) throw levelError;
-        bb = l?.big_blind ?? null;
-      }
-      const h = await callRpc("get_color_up_history", { p_tournament_id: tournamentId });
-      if (!current()) return;
-      if (!h || !Array.isArray(h.operations)) throw new Error("history_unverified");
-      setDenoms(inv.denominations.map((d: any) => ({ denomination_id: d.denomination_id, value: d.value, color: d.color, current_count: Number(d.current_count) })));
-      setCurrentLevel(t.current_level ?? null);
-      setBigBlind(bb);
-      setHistory(h.operations);
+        if (!inv || !Array.isArray(inv.denominations)) throw new Error("inventory_unverified");
+        const { data: t, error: tournamentError } = await sb.from("tournaments").select("current_level").eq("id", tournamentId).maybeSingle();
+        if (!current()) return;
+        if (tournamentError || !t) throw new Error("tournament_unverified");
+        let bb: number | null = null;
+        if (t.current_level != null) {
+          const { data: l, error: levelError } = await sb.from("tournament_levels").select("big_blind").eq("tournament_id", tournamentId).eq("level_number", t.current_level).maybeSingle();
+          if (!current()) return;
+          if (levelError) throw levelError;
+          bb = l?.big_blind ?? null;
+        }
+        const h = await callRpc("get_color_up_history", { p_tournament_id: tournamentId }, current);
+        if (!current()) return;
+        if (!h || !Array.isArray(h.operations)) throw new Error("history_unverified");
+        return { denoms: inv.denominations.map((d: any) => ({ denomination_id: d.denomination_id, value: d.value, color: d.color, current_count: Number(d.current_count) })),
+          currentLevel: t.current_level ?? null, bigBlind: bb, history: h.operations };
+      })());
+      if (!current() || !snapshot) return;
+      setDenoms(snapshot.denoms);
+      setCurrentLevel(snapshot.currentLevel);
+      setBigBlind(snapshot.bigBlind);
+      setHistory(snapshot.history);
     } catch {
       if (current()) setReadError("Không xác minh được tồn chip hoặc lịch sử. Chưa cho phép thao tác; hãy tải lại.");
     } finally {
       if (current()) setLoading(false);
+      accepting = false;
     }
   }, [tournamentId]);
   useEffect(() => { reload(); }, [reload]);
@@ -210,14 +219,14 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     setBusy(true);
     const args = intent.args;
     try {
-      const { data, error } = await sb.rpc(cancel ? "cancel_chip_color_up_request_v1" : "get_chip_color_up_receipt_v1", {
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(sb.rpc(cancel ? "cancel_chip_color_up_request_v1" : "get_chip_color_up_receipt_v1", {
         p_tournament_id: tournamentId,
         p_operation: intent.fn === "chip_ops_color_up" ? "color_up" : "reverse_color_up",
         p_request_key: args.p_idempotency_key,
         p_payload: intent.fn === "chip_ops_color_up"
           ? { tournament: args.p_tournament_id, removed: args.p_denom_removed, target: args.p_denom_target, added: args.p_target_added, level: args.p_level_number }
           : { operation: args.p_operation_id },
-      });
+      })));
       if (!alive.current) return;
       if (error) toast.error(chipOpsRpcErrorMessage(error));
       else if (data?.error) toast.error(ERR[data.error] ?? data.error);
@@ -248,7 +257,7 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     }
     setUncertain(intent);
     try {
-      const { data, error } = await sb.rpc(intent.fn, intent.args);
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(sb.rpc(intent.fn, intent.args)));
       if (!alive.current) return;
       if (error) {
         setUncertain(intent);
