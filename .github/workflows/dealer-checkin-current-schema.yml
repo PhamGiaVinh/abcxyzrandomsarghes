@@ -77,6 +77,12 @@ on:
       - 'VinPoker/supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000098_tracker_public_history_attention_state_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/historyNeedsAttention.pg17.sql'
+      - 'VinPoker/tests/trackerSettlement/historyAttention.migrationRollback.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotTypes.ts'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.tsx'
       - 'VinPoker/tests/trackerSettlement/manualFinishCancellation.pg17.sql'
       - 'VinPoker/tests/trackerSettlement/manualFinishCancellation.migrationRollback.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/handinput/HandInputConsole.pendingFinish.test.tsx'
@@ -808,6 +814,16 @@ jobs:
           node tests/trackerVoice/manualFinish95EdgeHandler.mjs
           node --test tests/tracker/manualFinishIntent.callback.test.mjs
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/handinput/HandInputConsole.pendingFinish.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Public History98 attention state preserves current verified projection
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_history98_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish97_ci "$PGDATABASE"
+          node tests/trackerSettlement/historyAttention.migrationRollback.mjs --apply-after-rollback
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyNeedsAttention.pg17.sql
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/viewer-hub/publicTableHistory.test.ts src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:

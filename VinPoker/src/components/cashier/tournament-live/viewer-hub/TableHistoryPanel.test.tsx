@@ -10,6 +10,13 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (_key: string, fal
 afterEach(() => rpc.mockReset());
 
 describe("table-specific public history cards", () => {
+  it("distinguishes a hand requiring intervention from a running verification", async () => {
+    rpc.mockResolvedValue({data:{access:"public",items:[{handId:"attention",handNumber:98,createdAt:"2026-10-16T00:00:00Z",
+      result:{status:"needs_attention"}}],nextCursor:null},error:null});
+    render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
+    expect(await screen.findByText("Kết quả cần kiểm tra bổ sung; chưa được xác minh")).toBeInTheDocument();
+    expect(screen.queryByText("Kết quả đang được kiểm tra")).not.toBeInTheDocument();
+  });
   it("ends loading after a rejected read and can recover on focus", async () => {
     rpc.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);

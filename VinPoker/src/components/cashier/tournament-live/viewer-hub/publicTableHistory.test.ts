@@ -18,6 +18,11 @@ describe("public current-table RPC parser", () => {
 });
 
 describe("public table history parser", () => {
+  it("keeps needs-attention distinct without exposing private diagnostic or recipients", () => {
+    const page = parsePublicTableHistoryPage({ access: "public", items: [{ handId: "hand", createdAt: "2026-09-17T01:00:00Z",
+      result: { status: "needs_attention", last_error_code: "private", recipients: [{ name: "unverified" }] } }], nextCursor: null }, "tour", "table");
+    expect(page?.items[0].result).toEqual({ status: "needs_attention" });
+  });
   it("preserves tuple cursor identity for same-timestamp pages", () => {
     const page = parsePublicTableHistoryPage({
       access: "public",

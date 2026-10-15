@@ -20,6 +20,7 @@ function cards(value: unknown): string[] {
 
 function result(value: unknown): PublicTableHistoryItem["result"] {
   const raw = record(value);
+  if (raw?.status === "needs_attention") return { status: "needs_attention" };
   if (raw?.status !== "verified" || !Array.isArray(raw.recipients) || raw.recipients.length === 0) return { status: "pending" };
   const recipients: Extract<PublicTableHistoryItem["result"], { status: "verified" }>["recipients"] = [];
   const identities = new Set<string>();

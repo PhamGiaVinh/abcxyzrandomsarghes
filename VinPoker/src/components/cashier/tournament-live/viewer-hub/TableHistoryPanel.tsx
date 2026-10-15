@@ -204,7 +204,9 @@ export function TableHistoryPanel({
               {recipient.holeCards.length > 0 && <span className="flex shrink-0 gap-1" aria-label={t("tableHistory.publicCards", "Bài đã công khai của {{name}}", { name: recipient.name })}>{recipient.holeCards.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="xs" />)}</span>}
               <span className={`tracker-num ml-auto text-sm font-bold ${recipient.netDelta > 0 ? "text-emerald-400" : recipient.netDelta < 0 ? "text-rose-400" : "text-muted-foreground"}`} aria-label={`${t("tableHistory.net", "Lãi ròng")} ${formatViewerSignedChipAndBB(recipient.netDelta, item.bigBlind)}`}>{formatViewerSignedChipAndBB(recipient.netDelta, item.bigBlind)}</span>
             </div>)}
-          </div> : <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{t("tableHistory.pending", "Kết quả đang được kiểm tra")}</p>}
+          </div> : <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{item.result.status === "needs_attention"
+            ? t("tableHistory.needsAttention", "Kết quả cần kiểm tra bổ sung; chưa được xác minh")
+            : t("tableHistory.pending", "Kết quả đang được kiểm tra")}</p>}
           {item.board.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/35 pt-3"><span className="mr-1 text-[10px] font-bold uppercase text-muted-foreground">Board</span>{item.board.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="xs" />)}</div>}
           <button type="button" onClick={() => onSelectHand({ handId: item.handId, tableId: item.tableId, handNumber: item.handNumber })} className="mt-3 min-h-11 w-full rounded-xl border border-border/65 px-3 text-xs font-bold transition hover:border-[hsl(var(--viewer-neon)_/_0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t("tableHistory.replay", "Xem lại hand")}</button>
         </article>;
