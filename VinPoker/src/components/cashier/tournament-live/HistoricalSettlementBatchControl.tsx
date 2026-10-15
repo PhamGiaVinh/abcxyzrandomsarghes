@@ -18,6 +18,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { parseHistoricalSettlementDisplayPreview } from "@/lib/tracker-poker/historicalSettlementDisplay";
 import { diagnoseHistoricalSettlementInvocation } from "@/lib/tracker-poker/historicalSettlementDiagnostics";
 import { parseReplayPublicSettlement } from "@/lib/tracker-poker/replaySettlement";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { createHistoricalCommitIntent, readHistoricalCommitJournal, persistHistoricalCommitJournal,
+  settleHistoricalCommitJournal, historicalCommitReceiptState, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
 import {
   commitHistoricalSettlementBatch,
   previewHistoricalSettlementBatch,
@@ -58,6 +62,9 @@ function resultLabel(result: HistoricalSettlementPreviewResult | HistoricalSettl
     invalid_preview_payload: "Máy chủ trả preview lỗi",
     preview_request_failed: "Không gọi được máy chủ",
     commit_request_failed: "Không lưu được outcome",
+    historical_commit_unresolved: "Chưa rõ kết quả; chọn hand để kiểm tra receipt",
+    historical_commit_no_current_proof: "Đã lưu yêu cầu cũ; proof hiện tại chưa xác minh",
+    historical_journal_invalid: "Không đọc được yêu cầu cũ; chọn hand để kiểm tra",
   };
   return labels[result.code] ?? `Cần sửa hand (${result.code})`;
 }
@@ -92,22 +99,45 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
     runRef.current = null;
   }, [scope]);
 
+  const recoverCommit = async (candidate: HistoricalSettlementBatchCandidate, intent: HistoricalCommitIntent,
+    isCurrent: () => boolean): Promise<HistoricalSettlementCommitResult> => {
+    const blocked = { kind: "blocked" as const, candidate, code: "historical_commit_unresolved" };
+    if (!isCurrent()) return blocked;
+    const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-historical-settlement", {
+      body: { mode: "receipt", ...intent },
+    }));
+    if (!isCurrent() || error || historicalCommitReceiptState(data, intent) !== "found") return blocked;
+    try { settleHistoricalCommitJournal(sessionStorage, intent); } catch { /* retain metadata for explicit recovery */ }
+    const { data: proof, error: proofError } = await observeTrackerContextRead(supabase.rpc(
+      "get_public_tournament_settlement" as never, { p_hand_id: candidate.handId } as never,
+    ));
+    if (!isCurrent()) return blocked;
+    return !proofError && parseReplayPublicSettlement(proof)
+      ? { kind: "verified", candidate }
+      : { kind: "blocked", candidate, code: "historical_commit_no_current_proof" };
+  };
+
   const gatewayFor = (isCurrent: () => boolean): HistoricalSettlementBatchGateway => ({
     async preview(candidate) {
       if (!isCurrent()) throw new Error("historical_scope_changed");
-      const { data: existing, error: existingError } = await supabase.rpc(
+      let pending: HistoricalCommitIntent | null;
+      try { pending = readHistoricalCommitJournal(sessionStorage, {
+        expected_actor_id: user?.id ?? "", tournament_id: tournamentId, hand_id: candidate.handId,
+      }); } catch { return { kind: "blocked", candidate, code: "historical_journal_invalid" }; }
+      if (pending) return recoverCommit(candidate, pending, isCurrent);
+      const { data: existing, error: existingError } = await observeTrackerContextRead(supabase.rpc(
         "get_public_tournament_settlement" as never,
         { p_hand_id: candidate.handId } as never,
-      );
+      ));
       if (!isCurrent()) throw new Error("historical_scope_changed");
       if (!existingError && existing && typeof existing === "object" && Object.keys(existing).length > 0) {
         return parseReplayPublicSettlement(existing)
           ? { kind: "verified", candidate }
           : { kind: "blocked", candidate, code: "invalid_existing_settlement" };
       }
-      const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
+      const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-historical-settlement", {
         body: { mode: "preview", tournament_id: tournamentId, hand_id: candidate.handId },
-      });
+      }));
       if (!isCurrent()) throw new Error("historical_scope_changed");
       if (error || (data as { ok?: boolean } | null)?.ok !== true) {
         const diagnostic = await diagnoseHistoricalSettlementInvocation({
@@ -129,28 +159,20 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
     async commit(result) {
       if (!isCurrent()) throw new Error("historical_scope_changed");
       const { candidate, preview } = result;
-      const { data, error } = await supabase.functions.invoke("tournament-historical-settlement", {
+      const identity = { expected_actor_id: user?.id ?? "", tournament_id: tournamentId, hand_id: candidate.handId };
+      const pending = readHistoricalCommitJournal(sessionStorage, identity);
+      if (pending) return recoverCommit(candidate, pending, isCurrent);
+      const intent = createHistoricalCommitIntent(identity.expected_actor_id, tournamentId, preview);
+      persistHistoricalCommitJournal(sessionStorage, intent);
+      if (!isCurrent()) throw new Error("historical_scope_changed");
+      try { await waitForManualPlayerResponse(supabase.functions.invoke("tournament-historical-settlement", {
         body: {
           mode: "commit",
-          tournament_id: tournamentId,
-          hand_id: candidate.handId,
-          idempotency_key: preview.idempotencyKey,
-          expected_source_revision: preview.sourceRevision,
-          expected_source_chain_hash: preview.sourceChainHash,
-          expected_outcome_hash: preview.outcomeHash,
+          ...intent,
         },
-      });
+      })); } catch { /* receipt-only reconciliation; never resend the writer */ }
       if (!isCurrent()) throw new Error("historical_scope_changed");
-      if (error || (data as { ok?: boolean } | null)?.ok !== true) {
-        const diagnostic = await diagnoseHistoricalSettlementInvocation({
-          data,
-          error,
-          mode: "commit",
-          handId: candidate.handId,
-        });
-        return { kind: "blocked", candidate, code: diagnostic.code, diagnostic };
-      }
-      return { kind: "verified", candidate };
+      return recoverCommit(candidate, intent, isCurrent);
     },
   });
 
@@ -292,7 +314,7 @@ export function HistoricalSettlementBatchControl({ tournamentId, candidates, onS
           )}
 
           {commits.some((result) => result.kind === "blocked") && (
-            <p className="text-xs text-amber-300">Một số hand đổi dữ liệu trong lúc lưu hoặc không còn hợp lệ. Hãy chạy kiểm tra lại; không có ghi dở bên trong từng hand.</p>
+            <p className="text-xs text-amber-300">Một số hand chưa xác minh được kết quả. Kiểm tra lại chỉ tra receipt của yêu cầu chưa rõ; chọn từng hand để xử lý hoặc xác nhận retry cùng mã.</p>
           )}
         </div>
       )}
