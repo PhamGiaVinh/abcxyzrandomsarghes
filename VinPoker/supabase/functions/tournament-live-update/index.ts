@@ -22,6 +22,7 @@ import {
 import { routeTrackerVoiceIntent } from "../../../src/lib/trackerVoice/intentRouter.ts";
 import { resolveNextVoiceHoleCardsSeatNumber } from "../../../src/lib/trackerVoice/holeCardsParser.ts";
 import { computeVoiceFinishSettlement } from "../_shared/trackerSettlement/finishAssist.ts";
+import { isManualFinishIntent, manualFinishReceiptMatches } from "../../../src/lib/trackerManualFinish.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -289,6 +290,22 @@ Deno.serve(async (req) => {
       return validationError("ACTOR_MISMATCH", "Tài khoản đã đổi; không áp intent của tài khoản trước.");
     }
     switch (action) {
+      case "record_manual_hand_v1":
+      case "get_manual_finish_receipt_v1": {
+        const intent = body.finish_intent;
+        if (!isManualFinishIntent(intent) || intent.actor_id !== user.id || intent.tournament_id !== tournament_id) {
+          return validationError("MANUAL_FINISH_CONTEXT_REQUIRED", "Finish thiếu intent gốc hoặc tài khoản đã thay đổi.");
+        }
+        if (action === "record_manual_hand_v1") {
+          // A receipt binds the frozen intent: never silently rewrite its pots.
+          // Use the same server reconciliation as legacy Finish, without changing rounding.
+          const recon = reconcileSidePots(intent.payload.actions as ActionRow[], intent.payload.side_pots);
+          if (recon.tampered) return validationError("SIDE_POTS_TAMPERED", "side_pots không khớp chuỗi hành động trên server.");
+        }
+        result = await supabase.rpc(action === "record_manual_hand_v1"
+          ? "record_tracker_manual_hand_v1" : "get_tracker_manual_finish_receipt_v1", { p_intent: intent });
+        break;
+      }
       case "record_hand": {
         const { table_id, hand_number, hand_time, players, actions, side_pots, community_cards, pot_size } = body;
 
@@ -1193,6 +1210,19 @@ Deno.serve(async (req) => {
     }
 
     if (result.error) throw result.error;
+    if (action === "record_manual_hand_v1" || action === "get_manual_finish_receipt_v1") {
+      const proof = result.data;
+      if (proof && typeof proof.error === "string") {
+        return new Response(JSON.stringify({ error: proof.error, code: proof.error }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!manualFinishReceiptMatches(proof, body.finish_intent)) {
+        return new Response(JSON.stringify({ error: "manual_finish_receipt_unconfirmed", code: "manual_finish_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     // `start_hand` returns a JSONB policy denial for an unclassified Manual
     // table. Do not wrap that as a successful Edge response: older callers
     // otherwise set local `handStarted=true` even though no hand was inserted.

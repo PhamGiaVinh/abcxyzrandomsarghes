@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Finish95 Edge routes / shared intent-proof boundary locally verified
+
+On2b86b699d added src/lib/trackerManualFinish.ts boundary shape +exactreceipt matching, reusing canonicalVoiceJson order-independent serialization (Deno .ts import supported by appconfig). Used actualEdge actions record_manual_hand_v1/get_manual_finish_receipt_v1, samecallerJWT anonclient only, no servicekey/delegation, actor+tour envelope mustmatch frozenintent. Write uses existing server reconcileSidePots and refuses tampered frozenpots (cannot silently rewrite a receipted intent); legacy record_hand warn/off behavior unchanged. Readreceipt doesnotrecompute historicalpayload. Routes95RPCs, JSONBdenial→409, unknown/mismatchedproof→502, RPCerror→500; no writerretry/fallback. Completeintent+hand/session/epoch/revision/actor/request/totals required, not completed+pot readback.
+
+New manualFinish95EdgeHandler.mjs executesactualhandler via existing VM/stripTS pattern with syntheticAuth/RPC, realsharedvalidators+serverreconcile. PASS validwrite/read/JWTforwarding, actor/tour/UUID/epoch/revision/payload negatives beforeRPC, tamperedpots rejection, missingheader/user, businessdenial classification, unknown/mismatchedproof/totals/revision, backenderror, no automaticretry; JSONBobject keyreorderpositive. Existing manual75EdgeHandler PASS after handlerchange. ESLint sharedmoduleexit0, workflownewmodule/testtriggers+command parsedPASS, diffcheckPASS. Not realAuth/deployedHTTP/DBcommit/browser/fulltypebuild/remoteCI proof. Existingauthbootstrap classifies getUser errors401 broadly; not changed bythisnewroute, no claim503authproof.
+
+Next UI stablefrozenintent/requestkey/journal, receipt-first reconciliation, preawaitactor/tour/sessiongenerationfence; thenoldbareAPIretirement. OldAPIepochdiagnostic remains expectedRED/uncommitted;95DBbytes unchanged/priortests preserved. No production/push/dispatch/DB/Edge/frontend/flags/Docker, ownerlocalhold/DaybreakOFF/Auto unchanged. No goalcompletion claim.
+
 ## Finish95 foundation exact bytes qualified locally; consumer still pending
 
 Final95 sourcehash bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb tested from freshcleanunified→94→minimalfixture→95 in vinpoker_ops_finish95_qualified. ExpandedactualSQL PASS ACLmetadata (authenticatedyes/anonservicePublicinheritanceno), crossclub/actor/session/revision/epoch/malformedkey/payload refusal, beforeaftersnapshotunchanged, receiptfault fullrollback, positive/exactreplay/changedpayloadconflict, receiptreadmissing/changedpayload/foreignactor denials andpastcommitread aftergenerationchange. No latermigrationbytes change.
