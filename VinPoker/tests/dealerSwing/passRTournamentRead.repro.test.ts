@@ -181,3 +181,41 @@ it('scopes persist and announce to verified tables and excludes quarantined atte
  expect(supply.mock.calls[0][2].excludeAttendanceIds).toEqual(new Set(['previously-excluded','blocked-out','blocked-in']));
  expect(announce.mock.calls[0][2]).toEqual([assignment]);
 });
+it('announces a retained unchanged prediction from an earlier plan run',async()=>{
+ const first=source.indexOf('async function announceDueSlots(');
+ const last=source.indexOf('// ─── Main entry',first);
+ if(first<0||last<=first)throw Error('Actual announce seam missing');
+ const js=ts.transpileModule(source.slice(first,last),{
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
+ }).outputText;
+ const announce=new Function('console',`${js};return announceDueSlots;`)({log:vi.fn()});
+ const row={id:'retained-slot',club_id:'club-a',table_id:'physical-a',assignment_id:'assignment-a',
+  plan_run_id:'previous-run',slot_index:0,status:'predicted',in_attendance_id:'incoming-a',
+  announce_at:'2000-01-01T00:00:00Z',planned_relief_at:'2030-01-01T00:00:00Z',version:1};
+ let rows=[row,
+  {...row,id:'quarantined-table-slot',table_id:'physical-b'},
+  {...row,id:'foreign-club-slot',club_id:'club-b'},
+  {...row,id:'stale-assignment-slot',assignment_id:'assignment-old'},
+  {...row,id:'future-announce-slot',announce_at:'2100-01-01T00:00:00Z'},
+  {...row,id:'shortage-slot',in_attendance_id:null},
+ ];
+ const query={select:vi.fn(),eq:vi.fn(),in:vi.fn(),not:vi.fn(),lte:vi.fn(),
+  then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:rows,error:null}).then(resolve)};
+ query.select.mockReturnValue(query);
+ query.not.mockImplementation((field:string,_operator:string,value:unknown)=>{rows=rows.filter(item=>item[field as keyof typeof row]!==value);return query;});
+ query.lte.mockImplementation((field:string,value:unknown)=>{rows=rows.filter(item=>String(item[field as keyof typeof row])<=String(value));return query;});
+ query.eq.mockImplementation((field:string,value:unknown)=>{rows=rows.filter(item=>item[field as keyof typeof row]===value);return query;});
+ query.in.mockImplementation((field:string,values:unknown[])=>{rows=rows.filter(item=>values.includes(item[field as keyof typeof row]));return query;});
+ const rpc=vi.fn(async()=>({data:{outcome:'locked'},error:null}));
+ const result=await announce({from:()=>query,rpc},{clubId:'club-a',cycleExcludedIds:new Set()},
+  [{...assignment,id:'assignment-a'}],new Map(),new Map());
+ expect(result.locked).toBe(1);
+ expect(result.errors).toEqual([{scope:'lock:physical-a',error:'rotation_schedule_assignment_changed'}]);
+ expect(query.in).toHaveBeenCalledWith('table_id',['physical-a']);
+ expect(rpc).toHaveBeenCalledExactlyOnceWith('lock_rotation_slot',{p_schedule_id:'retained-slot',p_schedule_version:1});
+ query.then=(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:null,error:null}).then(resolve);
+ const unavailable=await announce({from:()=>query,rpc},{clubId:'club-a',cycleExcludedIds:new Set()},
+  [{...assignment,id:'assignment-a'}],new Map(),new Map());
+ expect(unavailable).toEqual({locked:0,errors:[{scope:'announce_query',error:'rotation_announce_snapshot_unavailable'}]});
+ expect(rpc).toHaveBeenCalledTimes(1);
+});

@@ -165,3 +165,10 @@ assignment session, and distinguish mapping absence from dependency failure.
 - No migration13–28 modification, flag/Auto change, write-path change or release.
 - Full typecheck/build, final focused tests, independent critical review and
   current-contract/browser verification remain required.
+# Retained prediction announce follow-up — 2026-10-15
+
+- Reproduced actual announce function omitting retained predictions because SQL set-diff preserves their prior plan_run_id. Scope now uses validated tables and verifies assignment identity before lock. Live Edge v374 contains the old filter; historical incident attribution remains unproven.
+- A NULL successful announce read now produces rotation_announce_snapshot_unavailable instead of a false empty result. Focused actual-source suite: 10/10 PASS; Deno frozen check PASS; syntax and diff checks PASS.
+- Plain ESLint reports 21 no-explicit-any findings in the existing module; not a clean lint PASS. No lint rule weakened.
+- Exact prior HEAD 7f1d298e Ops CI 38714290198 SUCCESS. Current-schema 38714290206 failed on duplicate committed e170 fixture IDs before diagnostic assertion. This candidate uses owned e870 namespace; diagnostic runtime remains pending, not a proven stale-commit result.
+- No live writes, deploy, merge or Auto/flag changes made by this follow-up.

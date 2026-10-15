@@ -50,7 +50,9 @@ const preflight=`DO $$ BEGIN IF current_database()<>'vinpoker_ops_checkin' OR cu
  OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>55441
  OR current_setting('server_version_num')::int NOT BETWEEN 170000 AND 179999
  THEN RAISE EXCEPTION 'Exact owned loopback PG17 database required'; END IF; END $$;`;
-const sql=preflight+fixture.replace('BEGIN;',`BEGIN; ${manual}`).replace('ROLLBACK;',`${diagnostic}\nROLLBACK;`);
+// The earlier overlap harness deliberately commits e170 fixtures; use our own namespace.
+const sql=(preflight+fixture.replace('BEGIN;',`BEGIN; ${manual}`).replace('ROLLBACK;',`${diagnostic}\nROLLBACK;`))
+ .replaceAll('e1700000-','e8700000-');
 const result=spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8'});
 assert.equal(result.status,0,result.stderr);
 console.log('DIAGNOSTIC ONLY (verified manual intent): close/reopen releases old assignment but stale predicted plan persists; not automatic-OFF or Swing execution proof');

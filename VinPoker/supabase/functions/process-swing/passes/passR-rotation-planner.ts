@@ -434,7 +434,6 @@ async function announceDueSlots(
   admin: any,
   ctx: PassRContext,
   assignments: ActiveAssignmentRow[],
-  planRunId: string,
   supplyByAttendance: Map<string, RotationPlanCandidate & { telegram_username?: string | null; telegram_user_id?: string | number | null }>,
   tournamentInfo: Map<string, { tournamentId: string; tournamentName: string | null; buyIn: number | null }>,
 ): Promise<{ locked: number; errors: Array<{ scope: string; error: string }> }> {
@@ -445,13 +444,15 @@ async function announceDueSlots(
     .from("dealer_rotation_schedule")
     .select("id, table_id, assignment_id, slot_index, in_attendance_id, planned_relief_at, announce_at, status, version, is_emergency, reason")
     .eq("club_id", ctx.clubId)
-    .eq("plan_run_id", planRunId)
+    // Set-diff persist retains run IDs for unchanged predictions. Current
+    // verified table/assignment scope, not the newest run ID, controls locking.
+    .in("table_id", assignments.map((a) => a.table_id))
     .eq("slot_index", 0)
     .eq("status", "predicted")
     .not("in_attendance_id", "is", null)
     .lte("announce_at", nowIso);
-  if (error) {
-    errors.push({ scope: "announce_query", error: error.message });
+  if (error || !Array.isArray(dueRows)) {
+    errors.push({ scope: "announce_query", error: error?.message ?? "rotation_announce_snapshot_unavailable" });
     return { locked: 0, errors };
   }
 
@@ -460,6 +461,11 @@ async function announceDueSlots(
   const telegramPayloads: PreAssignNotificationPayload[] = [];
 
   for (const row of (dueRows ?? []) as Array<ScheduleRow & { is_emergency: boolean; reason: any }>) {
+    const assignment = row.assignment_id ? assignmentById.get(row.assignment_id) : undefined;
+    if (!assignment || assignment.table_id !== row.table_id) {
+      errors.push({ scope: `lock:${row.table_id}`, error: "rotation_schedule_assignment_changed" });
+      continue;
+    }
     const { data: lockResult, error: lockErr } = await admin.rpc("lock_rotation_slot", {
       p_schedule_id: row.id,
       p_schedule_version: row.version,
@@ -480,7 +486,6 @@ async function announceDueSlots(
     locked++;
     ctx.cycleExcludedIds.add(row.in_attendance_id as string);
 
-    const assignment = row.assignment_id ? assignmentById.get(row.assignment_id) : undefined;
     const inDealer = supplyByAttendance.get(row.in_attendance_id as string);
     const outDealer = assignment?.dealer_attendance?.dealers ?? null;
     const reliefAt = new Date(row.planned_relief_at);
@@ -726,7 +731,7 @@ export async function passRRotationPlanner(
 
     // Phase E — announce/lock + Telegram
     const announce = await announceDueSlots(
-      admin, ctx, assignments, planRunId, supplyByAttendance, tournamentInfo,
+      admin, ctx, assignments, supplyByAttendance, tournamentInfo,
     );
     result.locked = announce.locked;
     result.errors.push(...announce.errors);
@@ -866,7 +871,7 @@ export async function replanSingleTable(
       }])
     );
     const announce = await announceDueSlots(
-      admin, ctx, [a as ActiveAssignmentRow], planRunId, supplyByAttendance, tournamentInfo,
+      admin, ctx, [a as ActiveAssignmentRow], supplyByAttendance, tournamentInfo,
     );
     return announce.locked > 0
       ? { relocked: true, detail: `relocked:${slot0.inDealerName ?? slot0.inAttendanceId}` }
