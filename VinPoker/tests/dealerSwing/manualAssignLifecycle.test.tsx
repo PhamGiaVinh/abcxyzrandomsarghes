@@ -4,19 +4,21 @@ import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {readFileSync} from "node:fs";
 import ts from "typescript";
 import {waitForManualPlayerResponse} from "@/lib/floorManualPlayerIntent";
+import {initialAssignmentKey,listInitialAssignmentIntents} from "@/lib/dealerInitialAssignmentIntent";
 const source=readFileSync("src/components/cashier/DealerSwingTab.tsx","utf8");
 const start=source.indexOf("  // Confirm assignment"),end=source.indexOf("  // Send dealer to break",start);
 if(start<0||end<=start)throw new Error("manual assignment source seam missing");
 const code=ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const actual=new Function("useRef","useEffect","context",`
 const {modalTable,tables,user,activeClubId,selectedTour,supabase,toast,isSubmitting,manualAssignRequests,
-setAssigning,setModalTable,refetchAssignments,refetchDealers,triggerSwingAnimation,FunctionsHttpError,waitForManualPlayerResponse}=context;
+setAssigning,setModalTable,refetchAssignments,refetchDealers,triggerSwingAnimation,FunctionsHttpError,waitForManualPlayerResponse,
+initialAssignmentKey,listInitialAssignmentIntents,setManualAssignJournalRevision}=context;
 ${code}
 return {confirmAssign};`);
 const id=(n:number)=>`e1800000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 function context(){return {modalTable:id(3),tables:[{id:id(3),club_id:id(2),table_session_id:id(4)}],user:{id:id(1)},activeClubId:id(2),selectedTour:id(5),
  supabase:{functions:{invoke:vi.fn()}},toast:{error:vi.fn(),success:vi.fn(),info:vi.fn(),warning:vi.fn()},isSubmitting:{current:false},manualAssignRequests:{current:new Map<string,string>()},
- setAssigning:vi.fn(),setModalTable:vi.fn(),refetchAssignments:vi.fn(),refetchDealers:vi.fn(),triggerSwingAnimation:vi.fn(),FunctionsHttpError:class extends Error{},waitForManualPlayerResponse};}
+ setAssigning:vi.fn(),setModalTable:vi.fn(),refetchAssignments:vi.fn(),refetchDealers:vi.fn(),triggerSwingAnimation:vi.fn(),FunctionsHttpError:class extends Error{},waitForManualPlayerResponse,initialAssignmentKey,listInitialAssignmentIntents,setManualAssignJournalRevision:vi.fn()};}
 const scope=JSON.stringify([id(1),id(2),id(3),id(4),id(6)]),key=`vinpoker:manual-assign:${scope}`;
 beforeEach(()=>sessionStorage.clear());afterEach(()=>{cleanup();vi.restoreAllMocks();vi.useRealTimers();});
 it("does not send if the journal silently failed to persist",async()=>{
@@ -76,4 +78,9 @@ it("same physical table with a new session rejects the prior session acknowledge
  const hook=renderHook(({ctx})=>actual(useRef,useEffect,ctx),{initialProps:{ctx:old}});let a!:Promise<void>;act(()=>{a=hook.result.current.confirmAssign(id(6));});
  const saved=sessionStorage.getItem(key);hook.rerender({ctx:next});await act(async()=>{finish({data:{status:"success",assignment:{id:id(7)}},error:null});await a;});
  expect(sessionStorage.getItem(key)).toBe(saved);expect(old.toast.success).not.toHaveBeenCalled();expect(old.setModalTable).not.toHaveBeenCalled();
+});
+it("blocks a new session/dealer intent while another journal remains unresolved",async()=>{
+ sessionStorage.setItem(key,id(88));const ctx=context();ctx.tables[0].table_session_id=id(44);
+ const hook=renderHook(()=>actual(useRef,useEffect,ctx));await act(async()=>hook.result.current.confirmAssign(id(66)));
+ expect(ctx.supabase.functions.invoke).not.toHaveBeenCalled();expect(sessionStorage.getItem(key)).toBe(id(88));expect(ctx.toast.error).toHaveBeenCalled();
 });

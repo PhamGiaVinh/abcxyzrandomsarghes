@@ -32,6 +32,8 @@ on:
       - 'VinPoker/tests/dealerSwing/tournamentConfigSave*'
       - 'VinPoker/tests/dealerSwing/manualSwingLifecycle.test.tsx'
       - 'VinPoker/tests/dealerSwing/manualAssignLifecycle.test.tsx'
+      - 'VinPoker/src/components/cashier/dealer-swing/ManualAssignmentRecovery*'
+      - 'VinPoker/src/lib/dealerInitialAssignmentIntent.ts'
       - 'VinPoker/tests/dealerSwing/assignDealerReceiptEdgeHandler.mjs'
       - 'VinPoker/tests/dealerSwing/manualSwingRecovery.native.test.tsx'
       - 'VinPoker/src/components/cashier/dealer-swing/useManualSwingRecovery.ts'
@@ -352,7 +354,7 @@ jobs:
           node node_modules/vitest/vitest.mjs run src/components/ops/shared/FloorTableControlMode.test.tsx src/lib/floorPendingModeIntent.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
-          node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingLifecycle.test.tsx tests/dealerSwing/manualAssignLifecycle.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingLifecycle.test.tsx tests/dealerSwing/manualAssignLifecycle.test.tsx src/components/cashier/dealer-swing/ManualAssignmentRecovery.test.tsx --maxWorkers=1 --minWorkers=1
           node tests/dealerSwing/assignDealerReceiptEdgeHandler.mjs
       - name: Next dealer intent UI and full application qualification
         working-directory: VinPoker

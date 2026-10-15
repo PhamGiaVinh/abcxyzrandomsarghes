@@ -6,6 +6,8 @@ import { mergeCheckinCandidateReads, type CheckinCandidate } from "@/lib/dealerC
 import { DealerCheckinCandidateList } from "./dealer-swing/DealerCheckinCandidateList";
 import { useManualSwingRecovery } from "./dealer-swing/useManualSwingRecovery";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { ManualAssignmentRecovery } from "./dealer-swing/ManualAssignmentRecovery";
+import { initialAssignmentKey, listInitialAssignmentIntents } from "@/lib/dealerInitialAssignmentIntent";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -363,6 +365,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const [activeView, setActiveView] = useState<"roster" | "tables" | "dealers" | "payroll">("tables");
   const [modalTable, setModalTable] = useState<string | null>(null);
   const manualAssignRequests = useRef(new Map<string, string>());
+  const [manualAssignJournalRevision, setManualAssignJournalRevision] = useState(0);
   const [changePredictedTableId, setChangePredictedTableId] = useState<string | null>(null);
   const [correctWrongTableId, setCorrectWrongTableId] = useState<string | null>(null);
   const [roomReconcileOpen, setRoomReconcileOpen] = useState(false);
@@ -946,6 +949,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     try {
       const requestScope = JSON.stringify([user.id, assignmentTable.club_id, modalTable, assignmentTable.table_session_id, forceDealerId]);
       const storageKey = `vinpoker:manual-assign:${requestScope}`;
+      if (listInitialAssignmentIntents(sessionStorage, user.id, assignmentTable.club_id)
+        .some((intent) => initialAssignmentKey(intent) !== storageKey))
+        throw new Error("Còn yêu cầu gán khác chưa rõ kết quả. Đối chiếu journal trước khi gán dealer mới.");
       const stored = sessionStorage.getItem(storageKey);
       const cached = manualAssignRequests.current.get(requestScope);
       if (stored !== null && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(stored))
@@ -1013,7 +1019,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     } catch (e: any) {
       if (current()) toast.error(e.message);
     } finally {
-      if (current()) { setAssigning(false); isSubmitting.current = false; }
+      if (current()) { setAssigning(false); isSubmitting.current = false; setManualAssignJournalRevision((value) => value + 1); }
     }
   };
 
@@ -2025,6 +2031,18 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {user?.id && activeClubId && <ManualAssignmentRecovery actorId={user.id} clubId={activeClubId}
+        revision={manualAssignJournalRevision} blocked={assigning}
+        invoke={(body) => supabase.functions.invoke("assign-dealer", {body})}
+        onSettled={(intent) => {
+          const scope = JSON.stringify([intent.expected_actor_id, intent.expected_club_id, intent.table_id, intent.table_session_id, intent.force_dealer_id]);
+          if (manualAssignRequests.current.get(scope) === intent.idempotency_key) manualAssignRequests.current.delete(scope);
+          if (modalTable === intent.table_id && tables.find((table) => table.id === modalTable)?.table_session_id === intent.table_session_id) setModalTable(null);
+          setManualAssignJournalRevision((value) => value + 1);
+          toast.success("Đã đối chiếu yêu cầu gán dealer.");
+          return Promise.all([refetchAssignments(), refetchDealers()]);
+        }}
+      />}
       {(manualSwingRecovery.pending || manualSwingRecovery.error) && (
         <div role="status" className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
           <p className="text-sm">{manualSwingRecovery.error || "Còn yêu cầu đổi dealer cần đối chiếu trước khi gửi lệnh mới."}</p>
