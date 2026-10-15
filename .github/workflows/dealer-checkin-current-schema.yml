@@ -2,8 +2,12 @@ name: Operations current schema runtime
 on:
   pull_request:
     paths:
+      - 'VinPoker/scripts/ops/clock-level89-*'
+      - '.github/workflows/clock-level89-protected-apply.yml'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
+      - 'VinPoker/supabase/migrations/20270128000089_clock_start_level_readiness_v1.sql'
+      - 'VinPoker/tests/floorProduction/clockLevelReadiness*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
       - 'VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner*'
       - 'VinPoker/supabase/functions/process-swing/plannerDispatchOutcome.test.ts'
@@ -429,6 +433,12 @@ jobs:
           node tests/dealerSwing/restHistory.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/openSessionNames.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000089_clock_start_level_readiness_v1.sql
+          node tests/floorProduction/clockLevelReadiness.currentSchema.mjs
+          node tests/floorProduction/clockLevelReadiness.concurrent.mjs
+          node --test scripts/ops/clock-level89-release-plan.test.mjs scripts/ops/clock-level89-protected-apply.test.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_clock89_release_v2
+          node scripts/ops/clock-level89-release-plan.pg17.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000027_tracker_equal_blinds_contract_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/equalBlinds.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000028_tracker_roster_exact_session_v1.sql

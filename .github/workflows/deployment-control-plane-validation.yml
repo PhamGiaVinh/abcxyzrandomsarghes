@@ -3,6 +3,8 @@ name: Validate deployment control plane
 on:
   pull_request:
     paths:
+      - ".github/workflows/clock-level89-protected-apply.yml"
+      - "VinPoker/scripts/ops/clock-level89-*"
       - ".github/workflows/dealer-rest78-protected-apply.yml"
       - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/dealer-close79-protected-apply.yml"
@@ -111,6 +113,7 @@ jobs:
           set -euo pipefail
           "${RUNNER_TEMP}/actionlint" \
             .github/workflows/vbackerworkflowmain.yml \
+            .github/workflows/clock-level89-protected-apply.yml \
             .github/workflows/dealer-rest78-protected-apply.yml \
             .github/workflows/dealer-close79-protected-apply.yml \
             .github/workflows/floor-clock-control-apply.yml \
@@ -143,6 +146,9 @@ jobs:
 
       - name: Test exact asset63+65 release transport
         run: node --test VinPoker/scripts/ops/physical-asset-63-65-release-plan.test.mjs VinPoker/scripts/ops/physical-asset-63-65-protected-apply.test.mjs
+
+      - name: Test exact clock89 protected transport
+        run: node --test VinPoker/scripts/ops/clock-level89-release-plan.test.mjs VinPoker/scripts/ops/clock-level89-protected-apply.test.mjs
 
       - name: Test pinned dump image transport without production access
         run: node --test VinPoker/scripts/deploy/preload-postgres-dump-image.test.mjs
