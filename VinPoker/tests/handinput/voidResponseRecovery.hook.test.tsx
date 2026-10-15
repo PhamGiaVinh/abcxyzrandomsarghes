@@ -15,12 +15,22 @@ const mock = vi.hoisted(() => ({
   manualRevision: 12,
   seatStack: 30000,
   resumeRead: null as Promise<unknown> | null,
+  lineageReadFails: false,
+  seatReadFails: false,
+  seatReadThrows: false,
+  seatReadback: null as Promise<unknown> | null,
+  lastHandReadback: null as Promise<unknown> | null,
+  twoPlayerFold: false,
+  lineageReadback: null as Promise<unknown> | null,
   readFilters: [] as Array<[string, unknown]>,
   invoke: vi.fn(),
   errorToast: vi.fn(),
   successToast: vi.fn(),
+  warningToast: vi.fn(),
+  displayOutcome: vi.fn(),
 }));
-vi.mock("sonner", () => ({ toast: { error: mock.errorToast, success: mock.successToast, warning: vi.fn(), info: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { error: mock.errorToast, success: mock.successToast, warning: mock.warningToast, info: vi.fn() } }));
+vi.mock("@/lib/tracker-poker/recordedHandDisplayOutcome",()=>({ensureRecordedHandDisplayOutcome:mock.displayOutcome}));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: new Proxy({}, { get: (_, key) => key === "floorDeferredTrackerMoveV1" && mock.deferred }) }));
 vi.mock("react-router-dom", () => ({ useSearchParams: () => [new URLSearchParams(), vi.fn()] }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
@@ -40,8 +50,13 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
     let cols = "";
     const result = () => ({ data: table === "tournaments" ? { id: "tour1" }
       : table === "tournament_tables" ? (cols.includes("max_seats") ? { max_seats: 9, table_session_id: mock.metadataSession } : [])
-      : table === "tournament_seats" ? [{ player_id: "p1", entry_number: 1, seat_number: 1, chip_count: mock.seatStack, player_name: "TEST" }]
-      : table === "hand_actions" ? []
+      : table === "tournament_seats" ? (mock.twoPlayerFold ? [1,2].map(n=>({player_id:`p${n}`,entry_number:1,seat_number:n,chip_count:30000,player_name:`TEST ${n}`}))
+        : [{ player_id: "p1", entry_number: 1, seat_number: 1, chip_count: mock.seatStack, player_name: "TEST" }])
+      : table === "hand_actions" ? (mock.twoPlayerFold ? [
+        {player_id:'p1',action_type:'post_sb',action_amount:100,action_order:1,street:'preflop'},
+        {player_id:'p2',action_type:'post_bb',action_amount:200,action_order:2,street:'preflop'},
+        {player_id:'p1',action_type:'fold',action_amount:0,action_order:3,street:'preflop'},
+      ] : [])
       : table === "tournament_hands" && cols === "id, hand_number" ? { id: "hand1", hand_number: 1 }
       : table === "tournament_hands" && cols.includes("source_revision") ? { id: "hand1", tournament_id: "tour1",
         table_id: "table1", tournament_table_id: "table1", table_session_id: "session1",
@@ -49,11 +64,17 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       : table === "tournament_hands" && cols.includes("is_voided") ? { id: mock.readId, is_voided: mock.committed }
       : table === "tournament_hands" && mock.resume && cols.includes("community_cards") ? { id: "hand1", hand_number: 1, table_id: "table1", button_seat: 1, community_cards: [] }
       : table === "tournament_hands" && mock.resume && cols.includes("tracker_level_number") ? { tracker_level_number: null, tracker_small_blind: null, tracker_big_blind: null, tracker_bba: null }
-      : null, error: cols.includes("is_voided") && mock.readError ? new Error("read unavailable") : null });
+      : null, error: (cols.includes("is_voided") && mock.readError)
+        || (table==='tournament_seats' && mock.seatReadFails)
+        || (cols.includes("tracker_sb_position") && mock.lineageReadFails) ? new Error("read unavailable") : null });
     const chain = () => query;
     const query = { select: (value: string) => { cols = value; return query; },
       filter: chain, in: chain, order: chain, limit: chain, maybeSingle: chain, single: chain,
-      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown): Promise<unknown> => (cols === "id, is_voided" && mock.readback ? mock.readback
+      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown): Promise<unknown> => (table==='tournament_seats' && mock.seatReadThrows
+        ? Promise.reject(new Error('seat transport rejected')) : table==='tournament_seats' && mock.seatReadback ? mock.seatReadback
+        : cols === "id, button_seat, status, is_voided" && mock.lastHandReadback ? mock.lastHandReadback
+        : cols === "id, is_voided" && mock.readback ? mock.readback
+        : cols.includes("tracker_sb_position") && mock.lineageReadback ? mock.lineageReadback
         : cols.includes("community_cards") && mock.resumeRead ? mock.resumeRead : Promise.resolve(result())).then(resolve, reject),
       eq: (key: string, value: unknown) => {
       if (table === "tournament_hands" && cols === "id, is_voided") mock.readFilters.push([key, value]);
@@ -63,10 +84,170 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   },
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
-beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder); });
+beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder);
+  vi.useRealTimers();mock.seatReadback=null;mock.lastHandReadback=null;
+  mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;mock.twoPlayerFold=false;mock.lineageReadback=null;
+  mock.displayOutcome.mockResolvedValue({ok:true,status:'already_verified'}); });
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
+  const finishReceipt={ok:true as const,hand_id:'hand1',voice_event_id:'voice-test',canonical_receipt_event_id:'receipt-test',
+    idempotency_key:'request-test',trace_id:'trace-test',settlement_origin:'engine_fold_win' as const,
+    settlement_digest:'a'.repeat(64),state_version_before:'1',state_version_after:'2'};
+
+  afterEach(()=>{vi.useRealTimers();});
+
+  it.each(['voice','manual'])('finalizes %s canonical Finish when the actual verification pipeline stalls',async(mode)=>{
+    const actual=await vi.importActual<typeof import('@/lib/tracker-poker/recordedHandDisplayOutcome')>('@/lib/tracker-poker/recordedHandDisplayOutcome');
+    mock.displayOutcome.mockImplementation(actual.ensureRecordedHandDisplayOutcome);
+    mock.resume=true;mock.twoPlayerFold=mode==='manual';
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    let resolvePreview!:(value:unknown)=>void;
+    const stalledPreview=new Promise(resolve=>{resolvePreview=resolve;});
+    mock.invoke.mockClear();
+    mock.invoke.mockImplementation(async(name,{body})=>{
+      if(name==='tournament-live-update'){
+        expect(body.action).toBe('record_hand');return {data:{data:{hand_id:'hand1'}},error:null};
+      }
+      expect(name).toBe('tournament-historical-settlement');expect(body.mode).toBe('preview');
+      return stalledPreview;
+    });
+    vi.useFakeTimers();let settled=false;
+    let pending!:Promise<unknown>;
+    act(()=>{pending=(mode==='voice'?result.current.applyVoiceFinishReceipt(finishReceipt):result.current.handleSubmitHand())
+      .then(value=>{settled=true;return value;});});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
+    expect(settled).toBe(true);await pending;
+    expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
+    expect(result.current.lastHandId).toBe('hand1');expect(mock.warningToast).toHaveBeenCalled();
+    const callCount=mode==='manual'?2:1;
+    expect(mock.invoke).toHaveBeenCalledTimes(callCount);
+    await act(async()=>{resolvePreview({data:{ok:true},error:null});await vi.advanceTimersByTimeAsync(20_000);});
+    expect(mock.invoke).toHaveBeenCalledTimes(callCount);
+  });
+
+  it.each(['reject','timeout'])('blocks initial last-hand %s without first-hand fallback',async(mode)=>{
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    let resolveRead!:(value:unknown)=>void;
+    mock.lastHandReadback=mode==='reject'?Promise.reject(new Error('transport unavailable'))
+      :new Promise(resolve=>{resolveRead=resolve;});
+    vi.useFakeTimers();
+    let settled=false;
+    let pending!:Promise<unknown>;
+    act(()=>{pending=result.current.handleTableChange('table1').then(value=>{settled=true;return value;});});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
+    expect(settled).toBe(true);await pending;
+    expect(result.current.tableId).toBe('');expect(result.current.blindLineageUnavailable).toBe(true);
+    await act(async()=>{await result.current.handleStartHand();});
+    expect(mock.invoke).not.toHaveBeenCalled();
+    vi.useRealTimers();mock.lastHandReadback=null;
+    await act(async()=>{await result.current.handleTableChange('table2');});
+    if(mode==='timeout')await act(async()=>{resolveRead({data:{id:'stale-hand',status:'completed'},error:null});});
+    expect(result.current.tableId).toBe('table2');expect(result.current.lastHandId).toBeNull();
+    expect(result.current.blindLineageUnavailable).toBe(false);
+  });
+
+  it.each(['voice_seats','voice_lineage','manual_seats','manual_lineage'])('bounds %s after committed Finish and ignores its late result',async(mode)=>{
+    mock.resume=true;mock.twoPlayerFold=mode.startsWith('manual');
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    let resolveRead!:(value:unknown)=>void;
+    const suspended=new Promise(resolve=>{resolveRead=resolve;});
+    const suspend=()=>{if(mode.endsWith('seats'))mock.seatReadback=suspended;else mock.lineageReadback=suspended;};
+    mock.invoke.mockClear();
+    mock.invoke.mockImplementation(async()=>{suspend();return {data:{data:{hand_id:'hand1'}},error:null};});
+    vi.useFakeTimers();
+    let settled=false;
+    let pending!:Promise<unknown>;
+    act(()=>{
+      if(mode.startsWith('voice'))suspend();
+      pending=(mode.startsWith('voice')?result.current.applyVoiceFinishReceipt(finishReceipt):result.current.handleSubmitHand())
+        .then(value=>{settled=true;return value;});
+    });
+    await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+    expect(settled).toBe(true);
+    await pending;
+    expect(result.current.handId).toBeNull();expect(result.current.lastHandId).toBe('hand1');
+    expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(mock.invoke).toHaveBeenCalledTimes(mode.startsWith('manual')?1:0);
+    vi.useRealTimers();mock.seatReadback=null;mock.lineageReadback=null;mock.resume=false;
+    await act(async()=>{await result.current.handleTableChange('table2');});
+    await act(async()=>{resolveRead({data:[],error:null});await Promise.resolve();});
+    expect(result.current.tableId).toBe('table2');expect(result.current.lastHandId).toBeNull();
+    expect(result.current.blindLineageUnavailable).toBe(false);
+  });
+
+  it.each(['lineage','seats','seat_reject'])('keeps a committed Voice Finish final when its %s read fails, without another writer',async(read)=>{
+    mock.resume=true;
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    mock.invoke.mockClear();mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
+    await act(async()=>{expect(await result.current.applyVoiceFinishReceipt(finishReceipt)).toBe(true);});
+    expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
+    expect(result.current.lastHandId).toBe('hand1');expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(result.current.buttonConfirmed).toBe(false);
+    expect(mock.warningToast).toHaveBeenCalledWith(expect.stringContaining('Hand đã lưu'));
+    await act(async()=>{await result.current.handleStartHand();});
+    expect(mock.invoke).not.toHaveBeenCalled();
+    mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    expect(result.current.blindLineageUnavailable).toBe(false);
+  });
+
+  it.each(['lineage','seats','seat_reject'])('does not retry a committed manual Finish when the next %s read fails',async(read)=>{
+    mock.resume=true;mock.twoPlayerFold=true;
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.workflowState).toBe('submit_ready'));
+    mock.invoke.mockImplementation(async(_name,{body})=>{
+      expect(body.action).toBe('record_hand');mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
+      return {data:{data:{hand_id:'hand1'}},error:null};
+    });
+    await act(async()=>{await result.current.handleSubmitHand();});
+    expect(mock.invoke).toHaveBeenCalledTimes(1);
+    expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
+    expect(result.current.lastHandId).toBe('hand1');expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(result.current.buttonConfirmed).toBe(false);
+    await act(async()=>{await result.current.handleSubmitHand();await result.current.handleStartHand();});
+    expect(mock.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards an old committed-finish follow-up read after changing tables',async()=>{
+    mock.resume=true;
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    let resolveRead!:(value:unknown)=>void;
+    mock.lineageReadback=new Promise(resolve=>{resolveRead=resolve;});
+    let pending!:Promise<boolean>;
+    act(()=>{pending=result.current.applyVoiceFinishReceipt(finishReceipt);});
+    await waitFor(()=>expect(mock.displayOutcome).toHaveBeenCalled());
+    await act(async()=>{await result.current.handleTableChange('table2');});
+    mock.warningToast.mockClear();
+    await act(async()=>{resolveRead({data:null,error:new Error('late lineage read error')});await pending;});
+    expect(result.current.tableId).toBe('table2');expect(result.current.blindLineageUnavailable).toBe(false);
+    expect(result.current.lastHandId).toBeNull();expect(mock.warningToast).not.toHaveBeenCalled();
+  });
+
+  it('returns to table selection instead of treating a failed previous-hand query as first-hand evidence',async()=>{
+    mock.readError=true;
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    expect(result.current.tableId).toBe('');expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(result.current.tableSelectionNotice).toContain('lịch sử blind');
+    expect(result.current.orphanHand).toBeNull();expect(mock.invoke).not.toHaveBeenCalled();
+  });
   it("does not label an edited draft revealed when the original manual payload commits", async () => {
     mock.resume = true;
     mock.deferred = true;

@@ -52,7 +52,8 @@ describe("Hand #4 resume workflow contracts", () => {
     expect(tableLoad).toContain('.select("id, button_seat, status, is_voided")');
     expect(tableLoad).toContain('.filter("table_session_id", "eq", loadedSessionId)');
     expect(tableLoad).toContain('lastHand.status === "completed" && !lastHand.is_voided');
-    expect(tableLoad).toContain("readBlindLineage(lastHand.id)");
+    expect(tableLoad).toContain("readBlindLineageState(lastHand.id)");
+    expect(tableLoad).toContain("if (!previousRead.available)");
     expect(tableLoad).toContain("setLastBlindLineage(previousLineage)");
     expect(tableLoad).toContain("previousSbPosition: previousLineage?.previousSbPosition ?? null");
   });
@@ -79,7 +80,8 @@ describe("Hand #4 resume workflow contracts", () => {
     const manualFinish = source.slice(manualStart, source.indexOf("try {", manualStart));
 
     for (const finishPath of [voiceFinish, manualFinish]) {
-      expect(finishPath).toContain("await readBlindLineage(");
+      expect(finishPath).toContain("await readBlindLineageState(");
+      expect(finishPath).toContain("setBlindLineageUnavailable(");
       expect(finishPath).toContain("nextButtonFromBlindLineage({");
       expect(finishPath).toContain("setButtonConfirmed(Boolean(nextSuggestion))");
       expect(finishPath).not.toContain("setButtonSeat(nextButton(activeNums, buttonSeat))");
