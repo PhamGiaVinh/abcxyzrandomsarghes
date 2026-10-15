@@ -1,5 +1,55 @@
 import { expect, test } from "@playwright/test";
 
+for (const width of [375, 1280]) {
+  test(`public clock freezes paused server time and resumes at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.clock.install();
+    let running = false;
+    const publicReads: string[] = [];
+    const unexpectedWrites: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    // Anonymous loopback fixture only; no credentials or production API access.
+    await page.route('http://127.0.0.1:54321/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      const clockRead = path.endsWith('/rpc/get_public_tournament_clock_summary');
+      const resultRead = path.endsWith('/rpc/get_public_tournament_results');
+      if (clockRead || resultRead) publicReads.push(path);
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && !clockRead && !resultRead) {
+        unexpectedWrites.push(path);
+      }
+      const serverNow = clockRead && running ? await page.evaluate(() => Date.now()) : 0;
+      const body = clockRead ? [{ tournament_id: 'public-clock-test', name: 'Clock pause TEST',
+        current_level: 1, small_blind: 100, big_blind: 200, big_blind_ante: 200,
+        remaining_seconds: 125, is_running: running,
+        level_ends_at: running ? new Date(serverNow + 120000).toISOString() : null,
+        entries: 8, players_remaining: 8, average_stack: 20000,
+      }] : [];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    await page.goto('/clock/public-clock-test');
+    try {
+      await expect(page.getByText('02:05', { exact: true })).toBeVisible();
+    } catch (error) {
+      // Only local synthetic page data and RPC paths; no tokens, headers or auth storage.
+      throw new Error(`Public clock startup failed: ${JSON.stringify({publicReads,pageErrors,
+        body:await page.locator('body').innerText()})}`,{cause:error});
+    }
+    await expect(page.getByText('Đồng hồ đang dừng', { exact: true })).toBeVisible();
+    await page.clock.runFor(5000);
+    await expect(page.getByText('02:05', { exact: true })).toBeVisible();
+    running = true;
+    await page.clock.runFor(10000);
+    await expect(page.getByText('Đồng hồ đang dừng', { exact: true })).toHaveCount(0);
+    await page.clock.runFor(2000);
+    await expect(page.getByText('01:58', { exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(unexpectedWrites).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+}
+
 for (const surface of ["clock", "panels"]) {
   test(`${surface}: mobile and tablet content remains reachable`, async ({ page }) => {
     const writes: string[] = [];
