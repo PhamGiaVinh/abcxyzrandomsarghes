@@ -8,6 +8,39 @@ const key = "vinpoker:color-up-pending:owner-a:club-a:tour-a";
 const intent = { fn: "chip_ops_color_up", args: { p_tournament_id: "tour-a", p_denom_removed: "low", p_denom_target: "high", p_target_added: 1, p_level_number: 2, p_idempotency_key: "original-request" } };
 const readerArgs = { p_tournament_id: "tour-a", p_operation: "color_up", p_request_key: "original-request",
   p_payload: { tournament: "tour-a", removed: "low", target: "high", added: 1, level: 2 } };
+it("does not erase a later journal when the previous receipt arrives", async () => {
+  sessionStorage.setItem(key, JSON.stringify(intent));
+  let finish!: (value: unknown) => void;
+  h.rpc.mockImplementation((name: string) => name === "get_chip_color_up_receipt_v1" ? new Promise(resolve => { finish = resolve; })
+    : Promise.resolve({ data: name === "get_current_chip_inventory" ? { denominations: [] } : { operations: [] }, error: null }));
+  render(<ColorUpTab tournamentId="tour-a" clubId="club-a" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Đối chiếu thao tác" }));
+  const later = { ...intent, args: { ...intent.args, p_idempotency_key: "later-request" } };
+  sessionStorage.setItem(key, JSON.stringify(later));
+  await act(async () => finish({ data: { status: "committed", result: { status: "ok", color_up_operation_id: "op-a", removed_count: 10, target_added: 1 } }, error: null }));
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(later);
+});
+it("does not overwrite a changed journal or dispatch an old retry", async () => {
+  sessionStorage.setItem(key, JSON.stringify(intent));
+  render(<ColorUpTab tournamentId="tour-a" clubId="club-a" />);
+  const retry = await screen.findByRole("button", { name: "Gửi lại cùng yêu cầu" });
+  const later = { ...intent, args: { ...intent.args, p_target_added: 2 } };
+  sessionStorage.setItem(key, JSON.stringify(later));
+  await act(async () => fireEvent.click(retry));
+  expect(h.rpc.mock.calls.filter(([name]) => name === intent.fn)).toHaveLength(0);
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(later);
+});
+it.each(["get_chip_color_up_receipt_v1", "cancel_chip_color_up_request_v1"])("does not dispatch %s for a superseded local journal", async (operation) => {
+  sessionStorage.setItem(key, JSON.stringify(intent));
+  render(<ColorUpTab tournamentId="tour-a" clubId="club-a" />);
+  const button = await screen.findByRole("button", { name: operation.startsWith("cancel") ? "Hủy yêu cầu đang chờ" : "Đối chiếu thao tác" });
+  const later = { ...intent, args: { ...intent.args, p_idempotency_key: "later-request" } };
+  sessionStorage.setItem(key, JSON.stringify(later));
+  await act(async () => fireEvent.click(button));
+  expect(h.rpc.mock.calls.filter(([name]) => name === operation)).toHaveLength(0);
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(later);
+  expect(screen.getByRole("button", { name: "Đọc lại yêu cầu đã lưu" })).toBeEnabled();
+});
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 it("ends a hung inventory read without reporting empty setup or accepting late inventory", async () => {

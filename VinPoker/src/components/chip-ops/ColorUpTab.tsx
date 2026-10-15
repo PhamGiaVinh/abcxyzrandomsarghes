@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { chipOpsRpcErrorMessage } from "@/lib/chipOpsErrors";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -97,8 +98,13 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
   });
   const [uncertain, setUncertain] = useState<MutationIntent | null>(savedRequest.intent);
   const [journalError, setJournalError] = useState(savedRequest.error);
-  const clearIntent = () => {
+  const journalMatches = (intent: MutationIntent) => {
+    const raw = sessionStorage.getItem(storageKey);
+    return raw !== null && canonicalVoiceJson(JSON.parse(raw)) === canonicalVoiceJson(intent);
+  };
+  const clearIntent = (intent: MutationIntent) => {
     try {
+      if (!journalMatches(intent)) throw new Error("intent_journal_changed");
       sessionStorage.removeItem(storageKey);
       if (sessionStorage.getItem(storageKey) !== null) throw new Error("intent_clear_unverified");
     } catch {
@@ -196,7 +202,7 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
         || data.request_key !== args.p_idempotency_key || !data.payload
         || Object.keys(data.payload).length !== Object.keys(payload).length
         || !Object.entries(payload).every(([key, value]) => data.payload[key] === value)) return false;
-      if (!clearIntent()) return false;
+      if (!clearIntent(intent)) return false;
       toast.success("Đã hủy yêu cầu chưa chốt. Không thay đổi tồn chip.");
       void reload();
       return true;
@@ -207,7 +213,7 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
         ? Number.isSafeInteger(data.removed_count) && data.removed_count > 0
           && Number.isSafeInteger(data.target_added) && data.target_added === intent.args.p_target_added
         : data.color_up_operation_id === intent.args.p_operation_id && (data.reversed === true || data.idempotent === true))) return false;
-    if (!clearIntent()) return false;
+    if (!clearIntent(intent)) return false;
     toast.success(intent.fn === "chip_ops_color_up" ? "Đã color-up." : "Đã hoàn tác color-up.");
     setRemovedId(""); setTargetId(""); setAdded("");
     void reload();
@@ -219,6 +225,7 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     setBusy(true);
     const args = intent.args;
     try {
+      if (!journalMatches(intent)) { setJournalError(true); throw new Error("intent_journal_changed"); }
       const { data, error } = await waitForManualPlayerResponse(Promise.resolve(sb.rpc(cancel ? "cancel_chip_color_up_request_v1" : "get_chip_color_up_receipt_v1", {
         p_tournament_id: tournamentId,
         p_operation: intent.fn === "chip_ops_color_up" ? "color_up" : "reverse_color_up",
@@ -246,12 +253,15 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     setBusy(true);
     // Persist before sending: browser reload may follow an already committed mutation.
     try {
+      const prior = sessionStorage.getItem(storageKey);
+      if (prior !== null && !journalMatches(intent)) throw new Error("intent_journal_changed");
       const serialized = JSON.stringify(intent);
       sessionStorage.setItem(storageKey, serialized);
       if (sessionStorage.getItem(storageKey) !== serialized) throw new Error("intent_storage_unverified");
     } catch {
       writing.current = false;
       setBusy(false);
+      setJournalError(true);
       toast.error("Không lưu được mã yêu cầu an toàn. Chưa gửi thao tác chip; hãy kiểm tra bộ nhớ trình duyệt.");
       return;
     }
