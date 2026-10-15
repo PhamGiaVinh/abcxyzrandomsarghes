@@ -93,6 +93,10 @@ on:
       - 'VinPoker/src/lib/tracker-poker/recordedHandDisplayOutcome.ts'
       - 'VinPoker/tests/trackerSettlement/recordedHandDisplayOutcome.test.ts'
       - 'VinPoker/tests/trackerSettlement/recordedHandDisplayOutcome.journal.test.ts'
+      - 'VinPoker/supabase/migrations/20270128000099_tracker_historical_intent_resolution_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.pg17.sql'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.concurrent.mjs'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.migrationRollback.mjs'
       - 'VinPoker/tests/tracker/historicalSettlementDisplayCapability.test.ts'
       - 'VinPoker/tests/trackerSettlement/historyAttention.migrationRollback.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'
@@ -852,6 +856,17 @@ jobs:
           createdb -T "$PGDATABASE" vinpoker_ops_finish_move_ci
           PGDATABASE=vinpoker_ops_finish_move_ci node tests/floorProduction/scopedFinishMoveCancel.concurrent.mjs
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/viewer-hub/publicTableHistory.test.ts src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: History99 service-only stale intent resolution under hand lock
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_history99_rollback
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_history98_ci "$PGDATABASE"
+          node tests/trackerSettlement/historicalIntentResolution.migrationRollback.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historicalIntentResolution.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_history99_ci
+          PGDATABASE=vinpoker_ops_history99_ci node tests/trackerSettlement/historicalIntentResolution.concurrent.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
