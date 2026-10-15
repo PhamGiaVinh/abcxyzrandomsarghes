@@ -62,7 +62,9 @@ const PlayerProfile = () => {
     if (!userId) return;
     const load = async () => {
       const [{ data: p }, { data: s }, { data: r }, { data: ev }, { data: res }] = await Promise.all([
-        supabase.from("profiles").select("user_id,display_name,region,phone,avatar_url").eq("user_id", userId).maybeSingle(),
+        supabase.from("profiles").select(user?.id
+          ? "user_id,display_name,region,phone,avatar_url"
+          : "user_id,display_name,region,avatar_url").eq("user_id", userId).maybeSingle(),
         supabase.from("player_stats").select("*").eq("player_id", userId).maybeSingle(),
         supabase.from("backer_reviews").select("*").eq("player_id", userId).order("created_at", { ascending: false }),
         supabase.from("player_upcoming_events").select("*").eq("player_id", userId).gte("event_date", new Date().toISOString()).order("event_date", { ascending: true }),
@@ -146,7 +148,7 @@ const PlayerProfile = () => {
             {stats.backing_description && (
               <p className="text-sm whitespace-pre-wrap">{stats.backing_description}</p>
             )}
-            {contacted && profile.phone ? (
+            {user?.id && contacted && profile.phone ? (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 border border-success/30">
                 <Phone className="w-4 h-4 text-success" />
                 <span className="text-sm">{t("playerProfile.contactZalo")} <strong>{profile.phone}</strong></span>
