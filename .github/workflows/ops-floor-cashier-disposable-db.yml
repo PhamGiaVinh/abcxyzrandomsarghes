@@ -29,6 +29,9 @@ on:
       - "VinPoker/src/components/cashier/dealer-swing/swingTableView*"
       - "VinPoker/supabase/functions/process-swing/passes/passR-rotation-planner.ts"
       - "VinPoker/tests/dealerSwing/passRTournamentRead.repro.test.ts"
+      - "VinPoker/tests/dealerSwing/rotationScope.bootstrap.sql"
+      - "VinPoker/supabase/tests/dealer_rotation_plan_diff.sql"
+      - "VinPoker/supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
@@ -161,6 +164,15 @@ jobs:
       - name: Build production source (flags remain default-off)
         working-directory: VinPoker
         run: npm run build
+
+      - name: Verify isolated rotation persist scope and quarantined row fingerprint
+        working-directory: VinPoker
+        run: |
+          createdb -h localhost -U postgres vinpoker_rotation_scope_ci
+          psql -h localhost -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/rotationScope.bootstrap.sql
+          psql -h localhost -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql
+          psql -h localhost -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f supabase/tests/dealer_rotation_plan_diff.sql
+          psql -h localhost -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -c "SELECT md5(pg_get_functiondef('public.upsert_rotation_plan(uuid,uuid,jsonb,uuid[])'::regprocedure)) AS tested_function_md5;"
 
       - name: Install Chromium for responsive mock-session verification
         working-directory: VinPoker

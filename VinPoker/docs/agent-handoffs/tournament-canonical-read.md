@@ -36,6 +36,18 @@ nominal-duration consistency require a separately tested repair in this campaign
 
 ## Not repaired / release dependencies
 
+SQL-scope proof candidate added to existing dealer_rotation_plan_diff.sql: snapshot
+full JSONB of one real predicted table2 row, run empty partial plan scoped to
+table3, compare full table2 fingerprint unchanged. Actual existing SQL function
+migration executes on dedicated CI PG17 minimal schema; bootstrap pins exact DB,
+postgres actor, loopback, PG17 and empty schema before DDL. No production schema
+or historical migration modified. CI prints tested pg_get_functiondef MD5 for
+comparison to live cf817a62dfa1c91e109ae3a70dc8c1fe; equality not yet proven.
+Readonly reviewer approved narrow test logic; this is NOT current-schema triggers,
+RLS, HTTP or concurrency proof. Local C drive measured0free; WSL swap creation
+reported insufficient disk. No backup/data deletion or retry/build duplication;
+use existing isolated CI database service. SQL test has not run yet.
+
 Latest candidate supersedes batch-abort design: invalid mappings return explicit
 rejectedTables, main records table-scoped errors and filters assignments AND
 schedules before writes, excludes rejected current/preassigned attendance from
