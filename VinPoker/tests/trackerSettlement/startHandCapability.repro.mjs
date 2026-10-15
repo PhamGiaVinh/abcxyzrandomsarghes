@@ -10,10 +10,12 @@ assert.ok(start >= 0 && end > start);
 const body = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 for (const startCapability of ['denied', 'loading', 'error', 'allowed']) {
-  test(`start handler must not dispatch when start capability is ${startCapability}`, async () => {
+ for (const blindLineageUnavailable of [false,true]) {
+  test(`start handler checks ${startCapability} authority and lineageUnavailable=${blindLineageUnavailable}`, async () => {
     let calls = 0;
     const context = {
-      startCapability, startingRef: { current: false }, tableId: 'physical', handNumber: 1,
+      startCapability, blindLineageUnavailable, LINEAGE_READ_UNAVAILABLE:'lineage unavailable TEST',
+      startingRef: { current: false }, tableId: 'physical', handNumber: 1,
       user: { id: 'floor-actor' }, tournamentId: 'tour', buttonConfirmed: true, buttonSeat: 1,
       players: [{ is_active: true, current_stack: 20000, seat_number: 1 }],
       availableTables: [{ id: 'physical', tableSessionId: 'session', tournamentTableId: 'tt', controlEpoch: 2 }],
@@ -26,8 +28,10 @@ for (const startCapability of ['denied', 'loading', 'error', 'allowed']) {
     };
     const run = new Function(...Object.keys(context), `${body}; return handleStartHand;`)(...Object.values(context));
     await run();
-    assert.equal(calls, startCapability === 'allowed' ? 1 : 0, 'broad Floor context must not imply start-hand writer authority');
+    assert.equal(calls, startCapability === 'allowed' && !blindLineageUnavailable ? 1 : 0,
+      'only verified Tracker authority with available lineage context may reach the writer');
   });
+ }
 }
 
 const authorityStart = source.indexOf('  const startScope =');

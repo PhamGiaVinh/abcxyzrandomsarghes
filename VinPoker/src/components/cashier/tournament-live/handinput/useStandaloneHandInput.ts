@@ -21,6 +21,7 @@ import type { Card } from "@/components/shared/CardSlotPicker";
 import { getSeatPositions } from "@/lib/tournament/button";
 import { nextButtonFromBlindLineage } from "@/lib/tournament/deadButton";
 import { readBlindLineageState, readHandBlindLevel, type RecordedBlindLineage } from "@/lib/tournament/readBlindLineage";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   replayActions,
   deriveResumeStreet,
@@ -1243,13 +1244,13 @@ export function useStandaloneHandInput(tournamentId: string) {
         .sort((a, b) => a - b);
 
       const { data: lastHand, error: lastHandReadError } = loadedSessionId
-        ? await supabase.from("tournament_hands")
+        ? await observeTrackerContextRead(supabase.from("tournament_hands")
           .select("id, button_seat, status, is_voided")
           .eq("tournament_id", tournamentId)
           .eq("table_id", handTableId)
           .filter("table_session_id", "eq", loadedSessionId)
           .order("hand_number", { ascending: false })
-          .limit(1).maybeSingle()
+          .limit(1).maybeSingle()).catch(() => ({ data: null, error: new Error("last_hand_read_unavailable") }))
         : { data: null, error: null };
 
       if (!isCurrentLoad()) return;
@@ -2852,7 +2853,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       markSync("sent", `Voice Assist đã lưu Hand #${Number(handNumber)}`);
       return true;
     }
-    const { data: refreshedSeats, error } = await Promise.resolve(supabase
+    const { data: refreshedSeats, error } = await observeTrackerContextRead(supabase
       .from("tournament_seats")
       .select("seat_number, player_id, is_active, chip_count")
       .eq("tournament_id", tournamentId)
@@ -3341,7 +3342,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         setLastHandId(recordedHandId);
         return;
       }
-      const { data: refreshedSeats, error: seatReadError } = await Promise.resolve(supabase
+      const { data: refreshedSeats, error: seatReadError } = await observeTrackerContextRead(supabase
         .from("tournament_seats")
         .select("seat_number, player_id, is_active")
         .eq("tournament_id", tournamentId)

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { observeTrackerContextRead } from "./observeTrackerContextRead";
 
 export interface RecordedBlindLineage {
   previousDealtSeats: number[];
@@ -97,6 +98,6 @@ export type BlindLineageRead = { available: true; lineage: RecordedBlindLineage 
 
 /** A follow-up read cannot turn an already committed Finish into a failed writer. */
 export async function readBlindLineageState(handId: string): Promise<BlindLineageRead> {
-  try { return { available: true, lineage: await readBlindLineage(handId) }; }
+  try { return { available: true, lineage: await observeTrackerContextRead(readBlindLineage(handId)) }; }
   catch { return { available: false }; }
 }

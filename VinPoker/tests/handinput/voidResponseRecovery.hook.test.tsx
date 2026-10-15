@@ -18,6 +18,8 @@ const mock = vi.hoisted(() => ({
   lineageReadFails: false,
   seatReadFails: false,
   seatReadThrows: false,
+  seatReadback: null as Promise<unknown> | null,
+  lastHandReadback: null as Promise<unknown> | null,
   twoPlayerFold: false,
   lineageReadback: null as Promise<unknown> | null,
   readFilters: [] as Array<[string, unknown]>,
@@ -69,7 +71,9 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
     const query = { select: (value: string) => { cols = value; return query; },
       filter: chain, in: chain, order: chain, limit: chain, maybeSingle: chain, single: chain,
       then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown): Promise<unknown> => (table==='tournament_seats' && mock.seatReadThrows
-        ? Promise.reject(new Error('seat transport rejected')) : cols === "id, is_voided" && mock.readback ? mock.readback
+        ? Promise.reject(new Error('seat transport rejected')) : table==='tournament_seats' && mock.seatReadback ? mock.seatReadback
+        : cols === "id, button_seat, status, is_voided" && mock.lastHandReadback ? mock.lastHandReadback
+        : cols === "id, is_voided" && mock.readback ? mock.readback
         : cols.includes("tracker_sb_position") && mock.lineageReadback ? mock.lineageReadback
         : cols.includes("community_cards") && mock.resumeRead ? mock.resumeRead : Promise.resolve(result())).then(resolve, reject),
       eq: (key: string, value: unknown) => {
@@ -81,6 +85,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder);
+  vi.useRealTimers();mock.seatReadback=null;mock.lastHandReadback=null;
   mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;mock.twoPlayerFold=false;mock.lineageReadback=null;
   mock.displayOutcome.mockResolvedValue({ok:true,status:'already_verified'}); });
 
@@ -89,6 +94,62 @@ describe("void unknown response through the real controller", () => {
   const finishReceipt={ok:true as const,hand_id:'hand1',voice_event_id:'voice-test',canonical_receipt_event_id:'receipt-test',
     idempotency_key:'request-test',trace_id:'trace-test',settlement_origin:'engine_fold_win' as const,
     settlement_digest:'a'.repeat(64),state_version_before:'1',state_version_after:'2'};
+
+  afterEach(()=>{vi.useRealTimers();});
+
+  it.each(['reject','timeout'])('blocks initial last-hand %s without first-hand fallback',async(mode)=>{
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    let resolveRead!:(value:unknown)=>void;
+    mock.lastHandReadback=mode==='reject'?Promise.reject(new Error('transport unavailable'))
+      :new Promise(resolve=>{resolveRead=resolve;});
+    vi.useFakeTimers();
+    let settled=false;
+    let pending!:Promise<unknown>;
+    act(()=>{pending=result.current.handleTableChange('table1').then(value=>{settled=true;return value;});});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
+    expect(settled).toBe(true);await pending;
+    expect(result.current.tableId).toBe('');expect(result.current.blindLineageUnavailable).toBe(true);
+    await act(async()=>{await result.current.handleStartHand();});
+    expect(mock.invoke).not.toHaveBeenCalled();
+    vi.useRealTimers();mock.lastHandReadback=null;
+    await act(async()=>{await result.current.handleTableChange('table2');});
+    if(mode==='timeout')await act(async()=>{resolveRead({data:{id:'stale-hand',status:'completed'},error:null});});
+    expect(result.current.tableId).toBe('table2');expect(result.current.lastHandId).toBeNull();
+    expect(result.current.blindLineageUnavailable).toBe(false);
+  });
+
+  it.each(['voice_seats','voice_lineage','manual_seats','manual_lineage'])('bounds %s after committed Finish and ignores its late result',async(mode)=>{
+    mock.resume=true;mock.twoPlayerFold=mode.startsWith('manual');
+    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('table1');});
+    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    let resolveRead!:(value:unknown)=>void;
+    const suspended=new Promise(resolve=>{resolveRead=resolve;});
+    const suspend=()=>{if(mode.endsWith('seats'))mock.seatReadback=suspended;else mock.lineageReadback=suspended;};
+    mock.invoke.mockClear();
+    mock.invoke.mockImplementation(async()=>{suspend();return {data:{data:{hand_id:'hand1'}},error:null};});
+    vi.useFakeTimers();
+    let settled=false;
+    let pending!:Promise<unknown>;
+    act(()=>{
+      if(mode.startsWith('voice'))suspend();
+      pending=(mode.startsWith('voice')?result.current.applyVoiceFinishReceipt(finishReceipt):result.current.handleSubmitHand())
+        .then(value=>{settled=true;return value;});
+    });
+    await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
+    expect(settled).toBe(true);
+    await pending;
+    expect(result.current.handId).toBeNull();expect(result.current.lastHandId).toBe('hand1');
+    expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(mock.invoke).toHaveBeenCalledTimes(mode.startsWith('manual')?1:0);
+    vi.useRealTimers();mock.seatReadback=null;mock.lineageReadback=null;mock.resume=false;
+    await act(async()=>{await result.current.handleTableChange('table2');});
+    await act(async()=>{resolveRead({data:[],error:null});await Promise.resolve();});
+    expect(result.current.tableId).toBe('table2');expect(result.current.lastHandId).toBeNull();
+    expect(result.current.blindLineageUnavailable).toBe(false);
+  });
 
   it.each(['lineage','seats','seat_reject'])('keeps a committed Voice Finish final when its %s read fails, without another writer',async(read)=>{
     mock.resume=true;
