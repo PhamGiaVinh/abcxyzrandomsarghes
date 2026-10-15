@@ -57,10 +57,13 @@ helper is not a canonical mutation RPC: it does NOT provide CAS, a current-sessi
 generation/epoch check, pending-move/hand closure guards or atomic config receipts.
 Those remain required in the operational writers and following atomic repair.
 Do not claim this package completes lifecycle hardening.
+The predicate lives in existing non-exposed floor_private, not the public API.
+Fixture policy execution passes without granting browsers schema USAGE or direct
+private-session SELECT; only policy-bound function execution is required.
 
 Migration86 is a newly generated/reserved file, not historical policy replay.
 Normalized LF SHA256:
-`829e33b690df372879b011ef360627e1e9a30d31afd4cd991fd00558a6bc3642`.
+`933e7c0c0066945cda10b4a29a382068c51fba5447f1962b2e1ef5de717b0a09`.
 Requires catalog hash pin, independent review, exact CI, captured-schema integration,
 verified recovery point, existing protected apply gate and postchecks before release.
 No automatic rollback to the confirmed broad authenticated/true policies; prefer a
