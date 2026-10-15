@@ -3,6 +3,9 @@ name: Floor Table Control V3 server contract
 on:
   pull_request:
     paths:
+      - ".github/workflows/series-reorder92-protected-apply.yml"
+      - "VinPoker/scripts/ops/series-reorder92-*"
+      - "VinPoker/supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql"
       - ".github/workflows/dealer-rest78-protected-apply.yml"
       - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/dealer-close79-protected-apply.yml"

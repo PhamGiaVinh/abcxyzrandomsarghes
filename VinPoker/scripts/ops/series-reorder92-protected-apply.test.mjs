@@ -29,3 +29,10 @@ test('series92 retains protected review, exact source and fresh recovery boundar
  for(const item of ['dealer-swing-production-critical','required_reviewers','cancel-in-progress: false','APPLY_SERIES_REORDER_92_','.head.sha','.merge_commit_sha','runtime postgres-17-integrated','floor-v3-recovery-backup.yml','floor-v3-restore-verification-','RECOVERY_BASE_SHA','unzip -Z1','series-reorder92-protected-apply.mjs plan','series-reorder92-protected-apply.mjs apply'])assert.ok(yaml.includes(item),item);
  assert.ok(!yaml.includes('functions deploy'));
 });
+test('series92 changes trigger every required Floor server-contract check',()=>{
+ const release=readFileSync(new URL('../../../.github/workflows/series-reorder92-protected-apply.yml',import.meta.url),'utf8');
+ assert.ok(release.includes('floor-table-control-v3-server-contract'));
+ const contract=readFileSync(new URL('../../../.github/workflows/floor-table-control-v3-contract-disposable-db.yml',import.meta.url),'utf8');
+ const paths=contract.slice(contract.indexOf('  pull_request:'),contract.indexOf('  push:'));
+ for(const path of ['.github/workflows/series-reorder92-protected-apply.yml','VinPoker/scripts/ops/series-reorder92-*','VinPoker/supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql'])assert.ok(paths.includes(`"${path}"`),`missing required check trigger: ${path}`);
+});
