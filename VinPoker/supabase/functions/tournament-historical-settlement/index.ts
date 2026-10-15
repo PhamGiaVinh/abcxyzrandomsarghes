@@ -80,12 +80,24 @@ Deno.serve(async (req) => {
     if (!url || !anonKey || !serviceKey) throw new Error("historical_settlement_runtime_not_configured");
 
     const user = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
-    const { data: authData } = await user.auth.getUser();
-    if (!authData.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
-    const { data: authorized, error: authorizationError } = await user.rpc("authorize_tournament_live_resettle", {
-      p_tournament_id: tournamentId,
-    });
-    if (authorizationError || authorized !== true) return jsonResp(req, { ok: false, message: "Not authorized" }, 403);
+    let authentication: Awaited<ReturnType<typeof user.auth.getUser>>;
+    try { authentication = await user.auth.getUser(); }
+    catch { return jsonResp(req, { ok: false, code: "authentication_unavailable", message: "Authentication unavailable" }, 503); }
+    if (authentication.error) {
+      const unavailable = ![400, 401, 403, 422].includes(authentication.error.status ?? 0);
+      return jsonResp(req, { ok: false, code: unavailable ? "authentication_unavailable" : "unauthorized",
+        message: unavailable ? "Authentication unavailable" : "Unauthorized" }, unavailable ? 503 : 401);
+    }
+    const authData = authentication.data;
+    if (!authData?.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
+    try {
+      const { data: authorized, error: authorizationError } = await user.rpc("authorize_tournament_live_resettle", {
+        p_tournament_id: tournamentId,
+      });
+      if (authorizationError) return jsonResp(req, { ok: false, code: "authorization_unavailable", message: "Authorization unavailable" }, 503);
+      if (authorized === false) return jsonResp(req, { ok: false, message: "Not authorized" }, 403);
+      if (authorized !== true) return jsonResp(req, { ok: false, code: "authorization_unavailable", message: "Authorization unavailable" }, 503);
+    } catch { return jsonResp(req, { ok: false, code: "authorization_unavailable", message: "Authorization unavailable" }, 503); }
 
     const service = createClient(url, serviceKey);
     if (mode === "correct_blinds") {
