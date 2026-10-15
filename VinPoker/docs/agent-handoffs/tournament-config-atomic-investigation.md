@@ -72,6 +72,13 @@ Requires catalog hash pin, independent review, exact CI, captured-schema integra
 verified recovery point, existing protected apply gate and postchecks before release.
 No automatic rollback to the confirmed broad authenticated/true policies; prefer a
 reviewed forward compatibility correction preserving cross-tenant denial.
+The existing Operations current-schema workflow now applies86 immediately after
+its baseline13/14 setup, before check-in and downstream cloned operational suites.
+It retains strict artifact provenance and86 preconditions. Fresh separately
+restored databases in later steps do not automatically inherit86; qualify each
+step by its actual database lineage, not the job name. No PASS claimed until the
+new exact-head run completes; a snapshot mismatch must stop rather than be patched
+to look like live.
 
 ## Required repair contract, not yet implemented
 
