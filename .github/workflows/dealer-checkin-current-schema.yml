@@ -79,6 +79,8 @@ on:
       - 'VinPoker/tests/trackerSettlement/manualFinishIntent*'
       - 'VinPoker/src/lib/trackerManualFinish.ts'
       - 'VinPoker/tests/trackerVoice/manualFinish95EdgeHandler.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts'
+      - 'VinPoker/tests/tracker/manualFinishIntent.callback.test.mjs'
       - 'VinPoker/tests/trackerVoice/assignment72.*'
       - 'VinPoker/tests/trackerVoice/assignment73.*'
       - 'VinPoker/supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql'
@@ -767,6 +769,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishIntent.pg17.sql
           node tests/trackerSettlement/manualFinishIntent.concurrent.mjs
           node tests/trackerVoice/manualFinish95EdgeHandler.mjs
+          node --test tests/tracker/manualFinishIntent.callback.test.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:

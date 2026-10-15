@@ -32,3 +32,29 @@ export function manualFinishReceiptMatches(value: unknown, intent: ManualFinishI
     && integer(value.starting_total, 0) && value.ending_total === value.starting_total
     && canonicalVoiceJson(value.intent) === canonicalVoiceJson(intent);
 }
+
+type FinishStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type FinishIdentity = Pick<ManualFinishIntent, "actor_id" | "tournament_id" | "tournament_table_id" | "hand_id">;
+export function readManualFinishJournal(raw: string, identity: FinishIdentity): ManualFinishIntent {
+  const value: unknown = JSON.parse(raw);
+  if (!isManualFinishIntent(value) || (Object.keys(identity) as Array<keyof FinishIdentity>)
+    .some(key => value[key] !== identity[key])) throw new Error("MANUAL_FINISH_JOURNAL_INVALID");
+  return value;
+}
+/** A later draft may only recover the frozen request, never silently replace it. */
+export function manualFinishDraftMatches(intent: ManualFinishIntent, payload: ManualFinishIntent["payload"]): boolean {
+  return canonicalVoiceJson({ ...intent.payload, hand_time: null }) === canonicalVoiceJson({ ...payload, hand_time: null });
+}
+export function persistManualFinishJournal(storage: FinishStorage, key: string, intent: ManualFinishIntent): void {
+  const serialized = canonicalVoiceJson(intent);
+  const prior = storage.getItem(key);
+  if (prior !== null && canonicalVoiceJson(JSON.parse(prior)) !== serialized) throw new Error("MANUAL_FINISH_JOURNAL_CHANGED");
+  storage.setItem(key, serialized);
+  if (storage.getItem(key) !== serialized) throw new Error("MANUAL_FINISH_JOURNAL_WRITE_FAILED");
+}
+export function settleManualFinishJournal(storage: FinishStorage, key: string, intent: ManualFinishIntent): void {
+  const prior = storage.getItem(key);
+  if (prior === null || canonicalVoiceJson(JSON.parse(prior)) !== canonicalVoiceJson(intent)) throw new Error("MANUAL_FINISH_JOURNAL_CHANGED");
+  storage.removeItem(key);
+  if (storage.getItem(key) !== null) throw new Error("MANUAL_FINISH_JOURNAL_SETTLE_FAILED");
+}

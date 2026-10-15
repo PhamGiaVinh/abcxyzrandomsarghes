@@ -4,10 +4,9 @@
 // mounted only when `FEATURES.trackerEngineMode` is on (the page gates it), so the
 // manual-mode branches (advisory nextToAct, manual bet sizing, manual board/street
 // jump) are dropped here — the engine path is unconditional. The embedded
-// HandInputPanel is NOT touched; this hook reuses the SAME pure libraries
-// (trackerEngine, trackerWorkflow, button, resumeHand, potEngine, handFlow) and the
-// SAME 7 Edge payloads (built in handInputEdge.ts), so "write-path unchanged" is
-// provable, not just asserted.
+// HandInputPanel is NOT touched. Pure libraries/payload builders are shared;
+// standalone manual Finish now adds exact intent/receipt fencing around the
+// shared record payload rather than calling the legacy bare writer.
 //
 // URL keys are DISTINCT from the panel's `hiTable`: `table` is the authoritative
 // resume key; `hand`/`street`/`actor` are write-only mirrors (never read back, so
@@ -69,12 +68,15 @@ import {
   createActionWriteGuard,
   createTableLoadGuard,
   isConfirmedActionWrite,
-  isConfirmedCompletedHandReadback,
   isConfirmedRosterWrite,
   resolveTableHandIdentity,
   type TableLoadToken,
 } from "./trackerAsyncGuards";
 import { createSingleFlightGuard } from "@/lib/singleFlight";
+import { isManualFinishIntent, manualFinishReceiptMatches, manualFinishDraftMatches,
+  readManualFinishJournal, persistManualFinishJournal, settleManualFinishJournal,
+  type ManualFinishIntent } from "@/lib/trackerManualFinish";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { fingerprintManualCards, normalizeManualCards, parseManualCardIntent, isConfirmedManualCardProof,
   type ManualCardPendingIntent } from "./manualCardIntent";
 import type { SyncPhase } from "./ViewerSyncStatus";
@@ -316,6 +318,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   const tableLoadGuardRef = useRef(createTableLoadGuard());
   const actionWriteGuardRef = useRef(createActionWriteGuard());
   const handSubmitGuardRef = useRef(createSingleFlightGuard());
+  const finishOwnsSubmittingRef = useRef(false);
   const actionScopeRef = useRef("");
   const loadedTableSessionRef = useRef<{ tournamentId: string; tableId: string; sessionId: string | null } | null>(null);
   const blockedActionScopeRef = useRef<string | null>(null);
@@ -342,6 +345,10 @@ export function useStandaloneHandInput(tournamentId: string) {
     // survive it. A reload is not proof that an in-flight mutation finished.
     if (manualCardsOwnsSubmittingRef.current) {
       manualCardsOwnsSubmittingRef.current = false;
+      setSubmitting(false);
+    }
+    if (finishOwnsSubmittingRef.current) {
+      finishOwnsSubmittingRef.current = false;
       setSubmitting(false);
     }
   }, [rosterScope, tableId, handId]);
@@ -3309,15 +3316,27 @@ export function useStandaloneHandInput(tournamentId: string) {
       return;
     }
     if (endingStacksManuallyEdited && !confirm("Bạn đã chỉnh sửa stack kết thúc thủ công. Xác nhận lưu các số đã chỉnh?")) return;
-    if (!handSubmitGuardRef.current.begin()) return;
+    const sessionId = rosterContext?.tableSessionId;
+    const logicalTableId = rosterContext?.tournamentTableId;
+    if (!user?.id || !handId || tableLoadState !== "ready" || loadedTablesTournamentRef.current !== tournamentId
+      || !sessionId || !logicalTableId || !Number.isSafeInteger(rosterContext?.controlEpoch)
+      || Number(rosterContext?.controlEpoch) < 1) {
+      toast.error("Chưa xác minh được hand/session/epoch để lưu. Hãy tải lại bàn."); return;
+    }
+    // Capture before any await, including A→B→A. A late response cannot borrow
+    // the generation that happens to be current when it finally arrives.
+    const receiptLoad = tableLoadGuardRef.current.capture(tableId);
+    const receiptGeneration = rosterGenerationRef.current;
+    const receiptActionScope = actionScopeRef.current;
+    const currentReceiptScope = () => rosterMountedRef.current && receiptGeneration === rosterGenerationRef.current
+      && receiptActionScope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(receiptLoad);
+    if (!handSubmitGuardRef.current.begin()) { toast.info("Đang chờ kết quả Finish trước đó."); return; }
+    finishOwnsSubmittingRef.current = true;
     setSubmitting(true);
     markSync("sending", `Gửi Hand #${Number(handNumber)}`);
     const submittedHandId = handId;
-    const applyRecordedHand = async (recordedHandId: string, recoveredAfterError = false) => {
-      const receiptLoad = tableLoadGuardRef.current.capture(tableId);
-      const receiptGeneration = rosterGenerationRef.current;
-      const currentReceiptScope = () => rosterMountedRef.current && receiptGeneration === rosterGenerationRef.current
-        && tableLoadGuardRef.current.isCurrent(receiptLoad);
+    const applyRecordedHand = async (recordedHandId: string, recoveredAfterError = false, committedStacks = endingStacks) => {
+      if (!currentReceiptScope()) return;
       markSync("sending", `Đang xác minh hiển thị Hand #${Number(handNumber)}`);
       const displayOutcome = await ensureRecordedHandDisplayOutcome({
         tournamentId,
@@ -3371,7 +3390,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       setLastBlindLineage(currentLineage);
       setButtonOverridden(false);
       if (!seatReadError && refreshedSeats) {
-        setPlayers((prev) => survivorsAfterHand(prev, activeNums, endingStacks));
+        setPlayers((prev) => survivorsAfterHand(prev, activeNums, committedStacks));
       } else {
         setPlayers([]);
       }
@@ -3379,7 +3398,44 @@ export function useStandaloneHandInput(tournamentId: string) {
       setHandStarted(false);
       resetHand();
     };
+    const identity = { actor_id: user.id, tournament_id: tournamentId, tournament_table_id: logicalTableId, hand_id: submittedHandId };
+    const intentKey = `vinpoker:manual-finish:${user.id}:${tournamentId}:${logicalTableId}:${submittedHandId}`;
+    let intent: ManualFinishIntent | undefined;
+    let priorIntent = false;
+    let writeAttempted = false;
+    const edgeCode = async (response: { data?: unknown; error?: unknown }): Promise<string | null> => {
+      const data = response.data as { code?: unknown; error?: unknown } | null;
+      if (typeof data?.code === "string") return data.code;
+      if (typeof data?.error === "string") return data.error;
+      const context = (response.error as { context?: unknown } | null)?.context;
+      if (context instanceof Response && [409, 422].includes(context.status)) {
+        const value = await context.clone().json().catch(() => null);
+        if (typeof value?.code === "string") return value.code;
+      }
+      return null;
+    };
+    const confirmReceipt = async (proof: unknown, recovered: boolean) => {
+      if (!currentReceiptScope() || !intent || !manualFinishReceiptMatches(proof, intent)) return false;
+      try { settleManualFinishJournal(sessionStorage, intentKey, intent); }
+      catch { toast.warning("Máy chủ đã xác nhận Finish, nhưng chưa dọn được mã phục hồi trên trình duyệt. Không gửi một request mới."); }
+      const committedStacks: Record<string, number> = {};
+      for (const value of intent.payload.players) {
+        const player = value as { player_id?: unknown; ending_stack?: unknown };
+        if (typeof player?.player_id === "string" && typeof player.ending_stack === "number"
+          && Number.isSafeInteger(player.ending_stack) && player.ending_stack >= 0) committedStacks[player.player_id] = player.ending_stack;
+      }
+      await applyRecordedHand(proof.hand_id, recovered, committedStacks);
+      return true;
+    };
+    const readReceipt = () => observeTrackerContextRead(supabase.functions.invoke("tournament-live-update", {
+      body: { tournament_id: tournamentId, action: "get_manual_finish_receipt_v1", finish_intent: intent },
+    }));
     try {
+      const freshActor = await observeTrackerContextRead(supabase.auth.getUser());
+      if (!currentReceiptScope()) return;
+      if (freshActor.error || freshActor.data.user?.id !== user.id) throw new Error("Không xác minh được tài khoản hiện tại; chưa gửi Finish.");
+      const saved = sessionStorage.getItem(intentKey);
+      if (saved !== null) { intent = readManualFinishJournal(saved, identity); priorIntent = true; }
       const edgePlayers: EdgePlayer[] = players.map((p) => ({
         player_id: p.player_id,
         entry_number: p.entry_number,
@@ -3398,12 +3454,11 @@ export function useStandaloneHandInput(tournamentId: string) {
           actions.map((a) => ({ player_id: a.player_id, action_type: a.action_type, action_amount: a.amount }))
         )
       );
-      const { data, error } = await supabase.functions.invoke("tournament-live-update", {
-        body: buildRecordHandBody({
+      const draft = buildRecordHandBody({
           tournamentId,
           tableId,
           handNumber,
-          handTime: new Date().toISOString(),
+          handTime: intent?.payload.hand_time ?? new Date().toISOString(),
           communityCards: communityCards.filter((c): c is Card => c !== null),
           potSize,
           players: edgePlayers,
@@ -3417,32 +3472,66 @@ export function useStandaloneHandInput(tournamentId: string) {
             action_order: a.action_order,
             street: a.street,
           })),
-        }),
-      });
-      if (error || data?.error) throw new Error(await readEdgeError(error, data));
-      const recordedHandId = data?.data?.hand_id ?? submittedHandId;
-      if (!recordedHandId) throw new Error("Máy chủ không trả về mã hand đã lưu");
-      await applyRecordedHand(recordedHandId);
-    } catch (e: any) {
-      const { data: completedHand } = submittedHandId
-        ? await supabase
-          .from("tournament_hands")
-          .select("id, status, pot_size")
-          .eq("id", submittedHandId)
-          .eq("tournament_id", tournamentId)
-          .eq("table_id", tournamentTableId ?? tableId)
-          .eq("hand_number", Number(handNumber))
-          .maybeSingle()
-        : { data: null };
-      if (isConfirmedCompletedHandReadback(completedHand, potSize)) {
-        await applyRecordedHand(completedHand.id, true);
+        });
+      const payload: ManualFinishIntent["payload"] = { hand_time: draft.hand_time, players: draft.players,
+        actions: draft.actions, side_pots: draft.side_pots, community_cards: draft.community_cards, pot_size: draft.pot_size };
+      if (intent) {
+        const lookup = await readReceipt();
+        if (!currentReceiptScope()) return;
+        if (await confirmReceipt(lookup.data?.data, true)) return;
+        if (await edgeCode(lookup) !== "receipt_not_found") throw new Error("Chưa xác minh được receipt Finish trước đó; giữ nguyên request ID.");
+        if (intent.table_session_id !== sessionId || intent.control_epoch !== rosterContext.controlEpoch
+          || !manualFinishDraftMatches(intent, payload)) {
+          throw new Error("Context hoặc draft đã đổi; chỉ tra request Finish cũ, không gửi payload mới.");
+        }
       } else {
-        toast.error(e.message || "Failed to record hand");
-        markSync("error");
+        const snapshot = await observeTrackerContextRead(supabase.from("tournament_hands")
+          .select("id,tournament_id,table_id,tournament_table_id,table_session_id,source_revision,status,is_voided")
+          .eq("id", submittedHandId).eq("tournament_id", tournamentId).maybeSingle());
+        if (!currentReceiptScope()) return;
+        const row = snapshot.data as unknown as Record<string, unknown> | null;
+        if (snapshot.error || !row || row.id !== submittedHandId || row.tournament_id !== tournamentId
+          || row.table_id !== logicalTableId || row.tournament_table_id !== logicalTableId
+          || row.table_session_id !== sessionId || row.status !== "in_progress" || row.is_voided !== false
+          || !Number.isSafeInteger(row.source_revision) || Number(row.source_revision) < 1) {
+          throw new Error("Không xác minh được revision/session của hand; chưa gửi Finish.");
+        }
+        const candidate = { ...identity, table_session_id: sessionId, control_epoch: rosterContext.controlEpoch!,
+          source_revision: Number(row.source_revision), request_id: crypto.randomUUID(), payload };
+        if (!isManualFinishIntent(candidate)) throw new Error("Finish intent không hợp lệ; chưa gửi.");
+        intent = candidate;
       }
+      persistManualFinishJournal(sessionStorage, intentKey, intent);
+      if (!currentReceiptScope()) return;
+      writeAttempted = true;
+      const response = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
+        body: { tournament_id: tournamentId, action: "record_manual_hand_v1", finish_intent: intent },
+      }));
+      if (!currentReceiptScope()) return;
+      if (await confirmReceipt(response.data?.data, false)) return;
+      const code = await edgeCode(response);
+      // Only a first definitively zero-write denial can discard its journal.
+      // A rejected retry cannot establish what happened to the original request.
+      if (!priorIntent && code && ["actor_not_allowed", "stale_manual_finish_context", "lock_not_held",
+        "invalid_finish_intent", "SIDE_POTS_TAMPERED", "MANUAL_FINISH_CONTEXT_REQUIRED"].includes(code)) {
+        settleManualFinishJournal(sessionStorage, intentKey, intent); intent = undefined;
+      }
+      throw new Error(await readEdgeError(response.error, response.data));
+    } catch (e: any) {
+      if (!currentReceiptScope()) return;
+      if (intent && (priorIntent || writeAttempted)) {
+        try {
+          const lookup = await readReceipt();
+          if (!currentReceiptScope()) return;
+          if (await confirmReceipt(lookup.data?.data, true)) return;
+        } catch { /* Unknown remains pending. Never auto-retry the writer. */ }
+      }
+      if (!currentReceiptScope()) return;
+      toast.error(e.message || "Chưa xác minh được Finish; giữ nguyên request ID để tra lại.");
+      markSync("error");
     } finally {
       handSubmitGuardRef.current.finish();
-      setSubmitting(false);
+      if (currentReceiptScope()) { finishOwnsSubmittingRef.current = false; setSubmitting(false); }
     }
   };
 
