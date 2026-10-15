@@ -42,3 +42,17 @@ it('keeps legacy metadata only when no session is being inferred',()=>{
  expect(findDealerTableTournament({id:table.id},null,[legacy])).toBe(legacy);
  expect(findDealerTableTournament(table,'session-new',[legacy])).toBeUndefined();
 });
+it('keeps the server due time authoritative when config is missing or ambiguous',()=>{
+ const tour=tournament({id:'logical-a',table_id:null,game_table_id:table.id,
+  table_session_id:'session-new',status:'active'});
+ const beforeDue=Date.parse('2026-10-15T00:29:00Z');
+ for(const candidates of [[],[tour,tour]]){
+  const view=deriveTableSwingView(table,assignment,undefined,candidates,[],beforeDue);
+  expect(view.tableTournament).toBeUndefined();
+  expect(view.swingDueMs).toBe(Date.parse(assignment.swing_due_at!));
+  expect(view.actualDueMs).toBe(Date.parse(assignment.swing_due_at!));
+  expect(view.isPastDue).toBe(false);
+  expect(view.canSwing).toBe(false);
+  expect(view.remainingMinutes).toBe(1);
+ }
+});

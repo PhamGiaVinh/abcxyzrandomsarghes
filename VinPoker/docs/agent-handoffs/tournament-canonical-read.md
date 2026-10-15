@@ -22,6 +22,17 @@ dependencies lack @google/genai (two existing Voice imports). No typecheck PASS.
 Do not install into the shared node_modules junction. Use clean CI dependencies.
 The later focused run passed16 tests, including both reproduced Swing cases.
 Additional adversarial matcher cases require final rerun after their additions.
+Final matcher tests5/5PASS (including no-match/ambiguous mapping preserving server
+due time); targeted ESLint PASS. Existing Ops CI now explicitly includes this
+package's four suites and path triggers, retaining full tsc/build and all prior
+tests. No required checks, artifact handling or environment gate removed.
+
+Fresh live resolver metadata confirms backend priority2 still uses legacy
+table_id and tournament.status='active', LIMIT1 without session/status fencing.
+Exact body MD5 remains672141dd29dfb133ee4b5012f5049956, duration helper
+25b32a52b0365e65ae244011d8b97a3e. Its hardcoded fallback30/25/28 is not a
+license to change business defaults: both backend canonical resolution and UI
+nominal-duration consistency require a separately tested repair in this campaign.
 
 ## Not repaired / release dependencies
 
