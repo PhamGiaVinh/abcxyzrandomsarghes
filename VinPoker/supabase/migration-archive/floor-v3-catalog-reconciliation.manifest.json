@@ -7612,6 +7612,7 @@
     }
   ],
     "ownerGatedActiveAllowlist": [
+    {"version":"20270128000085","filename":"20270128000085_cashier_club_scope_authority_v1.sql","sha256":"bdf62cc23d4335fe11e93de5bb20f4fc967057425d90b44fdc63552cea413a2b","domain":"cashier-club-scope-authority-campaign"},
     {"version":"20270128000084","filename":"20270128000084_profiles_anon_public_projection_v1.sql","sha256":"4db92b6d27a80bc13ad1bc2c37404b3ba61f0387fe170f47c53e8ccb3c491059","domain":"profiles-anon-public-projection-campaign"},
     {"version":"20270128000083","filename":"20270128000083_shift_payroll_return_type_v1.sql","sha256":"ab1c5a98b03c9f032a1b8367a73a04d2536fa69e642bb27261a1a3be800349a7","domain":"shift-payroll-return-type-campaign"},
     {"version":"20270128000082","filename":"20270128000082_payroll_legacy_read_club_authority_v1.sql","sha256":"04f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289","domain":"payroll-legacy-read-authority-campaign"},
