@@ -14,6 +14,12 @@ test('create91 rejects absent recovery and non-apply mode',()=>{
  assert.throws(()=>validateRelease({},null,'a'.repeat(40),'apply'));
  assert.throws(()=>validateRelease({},null,'a'.repeat(40),'reset'));
 });
+
+test('required actionlint is triggered and actually validates create91 workflow',()=>{
+ const yaml=readFileSync(new URL('../../../.github/workflows/deployment-control-plane-validation.yml',import.meta.url),'utf8');
+ assert.ok(yaml.split('.github/workflows/tournament-create91-protected-apply.yml').length>=3,'must appear in both pull-request paths and actionlint command');
+ assert.ok(yaml.includes('VinPoker/scripts/ops/tournament-create91-*'),'runner changes must trigger required validation');
+});
 test('create91 retains protected review, exact source and fresh recovery boundaries',()=>{
  const yaml=readFileSync(new URL('../../../.github/workflows/tournament-create91-protected-apply.yml',import.meta.url),'utf8');
  for(const item of ['dealer-swing-production-critical','required_reviewers','cancel-in-progress: false','APPLY_TOURNAMENT_CREATE_91_','.head.sha','.merge_commit_sha','runtime postgres-17-integrated','floor-v3-recovery-backup.yml','floor-v3-restore-verification-','RECOVERY_BASE_SHA','unzip -Z1','tournament-create91-protected-apply.mjs plan','tournament-create91-protected-apply.mjs apply'])assert.ok(yaml.includes(item),item);
