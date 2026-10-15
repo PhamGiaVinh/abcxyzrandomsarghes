@@ -20,6 +20,7 @@ interface Props {
   horizontal?: boolean;
   onSwing: (tableId: string) => void;
   onAssign: (tableId: string) => void;
+  onPlanNext?: (tableId: string) => void;
   onSendToBreak: (attendanceId: string) => void;
   onFocusTable?: (tableId: string) => void;
 }
@@ -27,7 +28,7 @@ interface Props {
 export default function AttentionQueue({
   assignments, tables, dealers, tableAssignmentMap,
   timelineByTableId, nextDealerMap, scheduleByTableId, nowMs, autoSwingEnabled, horizontal,
-  onSwing, onAssign, onSendToBreak, onFocusTable,
+  onSwing, onAssign, onPlanNext, onSendToBreak, onFocusTable,
 }: Props) {
   const { criticalItems, warningItems, totalCount } = useAttentionQueue({
     assignments, tables, dealers, tableAssignmentMap,
@@ -46,6 +47,7 @@ export default function AttentionQueue({
       item={item}
       onSwing={onSwing}
       onAssign={onAssign}
+      onPlanNext={onPlanNext}
       onSendToBreak={onSendToBreak}
       onFocusTable={onFocusTable}
     />
