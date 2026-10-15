@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Actual scoped manual Finish -> queued mode server consumer integration
+
+Baseline2ce103123 initiallyclean. New manualFinishModeBoundary.pg17.sql extends evidence beyond prior terminalUPDATE modeconsumer tests: exactfull98localfixture activehand/ownTrackerlock -> Owner811 floor_request_table_control_mode_v4 manual pending(active_hand) -> Tracker814 record_tracker_manual_hand_v1 conserved unchangedstackpayload -> SET CONSTRAINTS ALL IMMEDIATE runs actualdeferredserverconsumer -> mode manual/epoch+1 withoutclient. Exactoriginalreceipt read/replay survivesmodechange; newrequestoldintentepoch rejectedstale, fullseatrow/chips snapshotunchanged. Finalversion explicitlysets authenticated role for Floor/Finish/receipt/replay/stalewrite calls; metadata/fixtureassertionspostgresonly. Both initialidentity-only and finalauthenticatedruntimePASS; finalone authoritative. This is singletransactionruntime/triggerproof, not browser/HTTP/two-sessionoverlap orrealhandpokerverification. AllfixturesROLLBACK; helperboundary-onlyterminalexit0/PGstopped.
+
+Workflow98step gains explicitnewSQL+triggerpath, no requiredcheckweakening. No productbug found inthisspecificintegration, noimplementationchanged/noREDclaim. Currentuncommittedtest/workflow/handoff only. No push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF/localhold. Next correctionpending/deferredmove blocker with exact95Finish and staleclient/Voice integrationmatrix; fulltype/build/webjourney/performance remainmissing. Goalactive/incomplete.
+
 ## History98 local package rollback/precedence qualification
 
 98SQL unchangedhash12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938. Freshowned vinpoker_ops_history98_rollback cloned97CI; new historyAttention.migrationRollback.mjs actualinjectedpreCOMMITfault leavesexactRPCdefinition/ACL/owner/config unchanged, thenoriginalapply preservesmetadata PASS. ExtendedhistoryNeedsAttentionSQL actualanon currentattention/privateerrornegative/stalerevisionnegative/queueACL plus syntheticstoredmatchingproofpriority andsubsequentinputrevisioninvalidatesproof PASS. SyntheticINSERTproof is projectionprecedencefixture only, notworkercommitorpokerverificationevidence; allfixturesROLLBACK. Helperterminalexit0/privatePGstopped afterpollsession27766terminal, no livehandles. No duplicatecreate/apply rerun.
