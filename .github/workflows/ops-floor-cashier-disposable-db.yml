@@ -29,6 +29,17 @@ on:
       - "VinPoker/src/components/floor/useFloorTournaments*.test.tsx"
       - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
+      - "VinPoker/src/hooks/useTournamentsRead.test.tsx"
+      - "VinPoker/src/types/tournament.ts"
+      - "VinPoker/src/pages/TournamentConfigPage*"
+      - "VinPoker/src/lib/dealerTableInventory*"
+      - "VinPoker/src/components/cashier/DealerSwingTab.tsx"
+      - "VinPoker/src/components/cashier/dealer-swing/swingTableView*"
+      - "VinPoker/supabase/functions/process-swing/passes/passR-rotation-planner.ts"
+      - "VinPoker/tests/dealerSwing/passRTournamentRead.repro.test.ts"
+      - "VinPoker/tests/dealerSwing/rotationScope.bootstrap.sql"
+      - "VinPoker/supabase/tests/dealer_rotation_plan_diff.sql"
+      - "VinPoker/supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
@@ -104,6 +115,11 @@ jobs:
           src/components/admin/MediaClubSchedules.uploadOutcome.test.tsx
           src/components/LegacyScheduleEvidenceNote.test.tsx
           src/pages/ClubDetail.scheduleEvidence.test.tsx
+          src/hooks/useTournamentsRead.test.tsx
+          src/pages/TournamentConfigPage.canonicalRead.test.tsx
+          src/lib/dealerTableInventory.test.ts
+          src/components/cashier/dealer-swing/swingTableView.session.test.ts
+          tests/dealerSwing/passRTournamentRead.repro.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
@@ -164,6 +180,18 @@ jobs:
       - name: Build production source (flags remain default-off)
         working-directory: VinPoker
         run: npm run build
+
+      - name: Verify isolated rotation persist scope and quarantined row fingerprint
+        working-directory: VinPoker
+        env:
+          ROTATION_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$ROTATION_PG_CONTAINER" createdb -h 127.0.0.1 -U postgres vinpoker_rotation_scope_ci
+          docker exec "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -c "SELECT current_database(), current_user, inet_server_addr(), current_setting('server_version_num'), (SELECT count(*) FROM pg_tables WHERE schemaname='public') AS public_table_count;"
+          docker exec -i "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f - < tests/dealerSwing/rotationScope.bootstrap.sql
+          docker exec -i "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f - < supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql
+          docker exec -i "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f - < supabase/tests/dealer_rotation_plan_diff.sql
+          docker exec "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -c "SELECT md5(pg_get_functiondef('public.upsert_rotation_plan(uuid,uuid,jsonb,uuid[])'::regprocedure)) AS tested_function_md5;"
 
       - name: Install Chromium for responsive mock-session verification
         working-directory: VinPoker
