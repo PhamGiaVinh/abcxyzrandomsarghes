@@ -388,6 +388,8 @@ jobs:
           # policies to satisfy86's strict live-shape precondition.
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql
           echo TOURNAMENT_TABLE86_APPLIED_TO_RECOVERED_OPERATIONS_SCHEMA
+          createdb -T "$PGDATABASE" vinpoker_ops_tenant86_ci
+          PGDATABASE=vinpoker_ops_tenant86_ci psql -X -v ON_ERROR_STOP=1 -f tests/tournamentConfig/tableWriteScope.currentSchema.sql
           createdb -T "$PGDATABASE" vinpoker_ops_dealer51_atomic_ci
           PGDATABASE=vinpoker_ops_dealer51_atomic_ci DEALER51_PG_TEST=1 node --test scripts/ops/dealer-checkin-51-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/checkin.pg17.sql
