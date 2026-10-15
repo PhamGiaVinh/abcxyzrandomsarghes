@@ -51,6 +51,17 @@ CREATE TEMP TABLE preserved_prediction AS SELECT id,version FROM public.dealer_r
  WHERE table_id='e1700000-0000-4000-8000-000000000011' AND status='predicted';
 DO $test$ DECLARE result jsonb; BEGIN
  result:=public.upsert_rotation_plan('e1700000-0000-4000-8000-000000000002',
+ 'e1700000-0000-4000-8000-000000000069',jsonb_build_array(
+ jsonb_build_object('table_id','e1700000-0000-4000-8000-000000000011',
+ 'assignment_id',null,'planned_relief_at',now(),'is_shortage',true),
+ jsonb_build_object('table_id','e1700000-0000-4000-8000-000000000011',
+ 'assignment_id',(SELECT id FROM stale_rotation_assignment),'slot_index',0,
+ 'planned_relief_at',now(),'is_shortage',true)),
+ ARRAY['e1700000-0000-4000-8000-000000000011'::uuid]);
+ PERFORM pg_temp.assert_true((SELECT count(*)=2 FROM public.dealer_rotation_schedule s
+   JOIN preserved_prediction p ON p.id=s.id AND p.version=s.version WHERE s.status='predicted'),
+   'missing_slot_index_must_not_replace_current_prediction');
+ result:=public.upsert_rotation_plan('e1700000-0000-4000-8000-000000000002',
  'e1700000-0000-4000-8000-000000000065',jsonb_build_array(jsonb_build_object(
  'table_id','e1700000-0000-4000-8000-000000000011','assignment_id',null,
  'slot_index',0,'planned_relief_at',now(),'is_shortage',true)),

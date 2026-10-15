@@ -47,7 +47,7 @@ BEGIN
       WHERE i.game_table_id=v_table AND i.availability_status='in_use')
       OR EXISTS(
         SELECT 1 FROM jsonb_array_elements(COALESCE(p_rows,'[]'::jsonb)) r
-        WHERE (r->>'table_id')::uuid=v_table AND NOT (
+        WHERE (r->>'table_id')::uuid=v_table AND (
           (COALESCE(NULLIF(r->>'slot_index','')::int,0)=0 AND EXISTS(
           SELECT 1 FROM public.dealer_assignments a JOIN public.table_sessions s
             ON s.id=a.table_session_id AND s.game_table_id=a.table_id AND s.club_id=a.club_id
@@ -62,7 +62,7 @@ BEGIN
                 AND COALESCE(NULLIF(anchor_row->>'slot_index','')::int,0)=0
                 AND NULLIF(anchor_row->>'assignment_id','') IS NOT NULL)
           )
-        )
+        ) IS NOT TRUE
       ) THEN
       v_rejected_scope:=array_append(v_rejected_scope,v_table);
     ELSE

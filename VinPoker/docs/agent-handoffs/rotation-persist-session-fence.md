@@ -33,8 +33,19 @@ The overlap test deliberately commits only isolated fixtures. Its namespace and
 receipt keys are unique per execution. It does not send network notifications;
 the restored sandbox has no net extension. No production mutation occurred.
 
-Remaining before release: required CI; independent critical review; malicious
-duplicate/NULL-session cases; lock overlap against pending close79/81;
+Independent read-only review found a SQL NULL predicate bypass. Runtime RED
+reproduced it; IS NOT TRUE fixes it, and malformed-first duplicate coverage now
+preserves the existing prediction IDs/versions. Reviewer rechecked the correction
+and found no additional source blocker. Current87 hash:
+a6bd06550895cac9aafed67859f80012592a50c33041717f6399ba822c2eeadf.
+
+Local79/81/87 composition and both overlap orders PASS. Windows CRLF in direct79
+execution initially differed from its LF-normalizing release runner; normalizing
+the TEST close definition produced exact81 precondition70b3e4bb3bc85973152e8ed21fae4438.
+No production guard or historical migration was changed.
+
+Remaining before release: required CI; malicious NULL-session coverage and
+lock_rotation_slot/perform_swing and multi-table overlap;
 exact catalog/dependency/recovery/rollback manifest and
 protected apply. Existing old assignment-less set-diff fixtures need canonical
 session/assignment identities if reused against87. Do not weaken87 to satisfy
