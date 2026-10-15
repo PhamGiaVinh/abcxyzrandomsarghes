@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Info, ArrowRightLeft, Coins, Receipt, Armchair, UserMinus, Loader2 } from "lucide-react";
+import { Info, ArrowRightLeft, Coins, Receipt, UserMinus, Loader2 } from "lucide-react";
 import { formatVND } from "@/lib/format";
 
 export interface ActionSeat {
@@ -18,7 +18,7 @@ export interface ActionSeat {
 /**
  * Kholdem-style player action sheet (bottom sheet). Surfaces the 4 primary floor
  * actions as a grid (Chuyển / Sửa chip / Phiếu / Loại), with Thông tin and the
- * not-yet-backed "Đổi ghế trống" as secondary rows. All actions wire to EXISTING
+ * player information as a secondary row. All actions wire to EXISTING
  * backend:
  * - Chuyển → move number-stepper (move_player_seat); disabled for non-entry seats
  *   or viewers who aren't owner/cashier.
@@ -26,7 +26,7 @@ export interface ActionSeat {
  * - Phiếu → seat receipt (view / re-print).
  * - Loại (bust) → update_seats is_active=false (seat inactive only — no fabricated
  *   elimination / hand).
- * - Đổi ghế trống → DISABLED "Sắp có" (needs tournament_waitlist backend).
+ * - Empty-seat moves use the same Chuyển bàn/ghế action, not a separate waitlist.
  *
  * onEditChips / onReceipt are optional so older callers keep compiling; a row is
  * only shown when its handler is provided.
@@ -158,20 +158,7 @@ export function PlayerActionSheet({
             </div>
           )}
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="block">
-                  <button className="flex w-full items-center gap-3 py-3.5 text-left opacity-50" disabled>
-                    <Armchair className="h-5 w-5 text-muted-foreground" />
-                    <span className="text-[15px]">Đổi ghế trống</span>
-                    <span className="ml-auto rounded-full border border-warning/40 px-2 py-0.5 text-[11px] text-warning">Sắp có</span>
-                  </button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Cần backend hàng chờ (waitlist) — sắp có</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <SheetDescription className="py-3 text-sm text-muted-foreground">Để chọn ghế trống, dùng Chuyển bàn / ghế. Hàng đợi đăng ký được quản lý riêng.</SheetDescription>
         </div>
       </SheetContent>
     </Sheet>
