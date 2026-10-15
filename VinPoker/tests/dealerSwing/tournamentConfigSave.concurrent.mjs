@@ -53,4 +53,45 @@ assert.equal(sql(`SELECT count(*) FROM public.table_operation_receipts WHERE act
 assert.equal(sql(`SELECT count(*) FROM public.table_operation_receipts WHERE actor_id='${secondActor}' AND operation_type='save_tournament_config_v1';`),'0');
 assert.deepEqual(result(sql(`${auth} ${call('winner',request1)}`)),result(a));
 console.log('Actual two-actor config CAS lock overlap, one receipt and lost-response replay PASS');
+let nextTableNumber=1;
+for(const lifecycle of ['open','close']) for(const lifecycleFirst of [true,false]) {
+ const testTour=randomUUID(), physical=randomUUID(), configKey=randomUUID(), lifecycleKey=randomUUID();
+ sql(`INSERT INTO public.tournaments(id,club_id,name,live_status) VALUES('${testTour}','${club}','Lifecycle overlap TEST','registering');
+ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+ VALUES('${physical}','${club}','Lifecycle ${physical} TEST',${nextTableNumber++},'tournament','inactive','available');`);
+ const open=`SELECT public.floor_open_tournament_table_v3('${testTour}','${physical}','manual','${lifecycleKey}');`;
+ let table=null, revision=null;
+ if(lifecycle==='close') {
+  assert.equal(result(sql(`${auth} ${open}`)).ok,true);
+  const row=JSON.parse(sql(`SELECT json_build_object('id',tt.id,'revision',s.revision)
+   FROM public.tournament_tables tt JOIN public.table_sessions s ON s.id=tt.table_session_id
+   WHERE tt.tournament_id='${testTour}' AND tt.status='active';`));
+  table=row.id; revision=row.revision;
+ }
+ const stamp=sql(`SELECT updated_at FROM public.tournaments WHERE id='${testTour}';`);
+ const active=table?`ARRAY['${table}'::uuid]`:'ARRAY[]::uuid[]';
+ const wanted=table?`ARRAY['${physical}'::uuid]`:'ARRAY[]::uuid[]';
+ // Only test-side exception adapter: candidate deliberately raises to roll back business rejection.
+ const configure=`CREATE FUNCTION pg_temp.try_config() RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN
+ RETURN public.save_tournament_config_v1('${testTour}','${club}',
+ jsonb_build_object('name','config winner','swing_duration_minutes',45,'warn_at_minutes',5,'crit_at_minutes',2),
+ ${wanted},'${stamp}'::timestamptz,${active},'${configKey}','${actor}');
+ EXCEPTION WHEN raise_exception THEN RETURN jsonb_build_object('ok',false,'error',SQLERRM); END $$;
+ SELECT pg_temp.try_config();`;
+ const operate=lifecycle==='open'?open:`SELECT public.close_tournament_table_v3('${table}',${revision},'${randomUUID()}');`;
+ const holderName=`config88_lifecycle_${configKey}`, waiterName=`config88_lifecycle_${lifecycleKey}`;
+ const first=run(`BEGIN; ${auth} ${lifecycleFirst?operate:configure} SELECT pg_sleep(2); COMMIT;`,holderName);
+ await barrier(holderName,"wait_event='PgSleep'");
+ const second=run(`${auth} ${lifecycleFirst?configure:operate}`,waiterName);
+ await barrier(waiterName,"wait_event_type='Lock'");
+ const output=await Promise.all([first,second]);
+ const configResult=result(output[lifecycleFirst?1:0]);
+ const operationResult=result(output[lifecycleFirst?0:1]);
+ assert.equal(operationResult.ok,true,JSON.stringify(operationResult));
+ if(lifecycleFirst) assert.equal(configResult.error,'STALE_TABLE_CONFIG');
+ else assert.equal(configResult.ok,true,JSON.stringify(configResult));
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_tables WHERE tournament_id='${testTour}' AND status='active';`),lifecycle==='open'?'1':'0');
+ assert.equal(sql(`SELECT count(*) FROM public.table_operation_receipts WHERE actor_id='${actor}' AND operation_type='save_tournament_config_v1' AND request_id='${configKey}';`),lifecycleFirst?'0':'1');
+ console.log(`${lifecycleFirst?`${lifecycle}→config`:`config→${lifecycle}`} actual lock overlap PASS`);
+}
 // Namespaced fixtures remain in this owned disposable database for inspection.
