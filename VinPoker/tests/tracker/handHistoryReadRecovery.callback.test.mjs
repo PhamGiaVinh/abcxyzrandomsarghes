@@ -169,3 +169,12 @@ test('inventory completion after cleanup cannot repopulate the old scope', async
   assert.equal(state.error, null);
   assert.equal(state.loading, true, 'old finally must not overwrite next scope loading');
 });
+
+test('History recovery tests are triggered and executed by the existing read-only workflow', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/ops-v3-tracker-dealer.yml', import.meta.url), 'utf8');
+  for (const path of ['VinPoker/src/components/cashier/tournament-live/HandHistoryWorkspace.tsx', 'VinPoker/tests/tracker/handHistoryReadRecovery*']) {
+    assert.ok(workflow.includes(`- "${path}"`), `trigger: ${path}`);
+  }
+  assert.ok(workflow.includes('          tests/tracker/handHistoryReadRecovery.test.tsx'));
+  assert.ok(workflow.includes('run: node tests/tracker/handHistoryReadRecovery.callback.test.mjs'));
+});
