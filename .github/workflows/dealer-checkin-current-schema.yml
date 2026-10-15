@@ -80,6 +80,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000098_tracker_public_history_attention_state_v1.sql'
       - 'VinPoker/tests/trackerSettlement/historyNeedsAttention.pg17.sql'
       - 'VinPoker/tests/trackerSettlement/manualFinishModeBoundary.pg17.sql'
+      - 'VinPoker/tests/floorProduction/scopedFinishMoveCancel.concurrent.mjs'
       - 'VinPoker/tests/trackerSettlement/historyAttention.migrationRollback.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotTypes.ts'
@@ -830,6 +831,8 @@ jobs:
           for failure_case in CANCEL_CASE STALE_EPOCH_CASE TICKET_FAILURE_CASE; do
             psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -v "$failure_case=true" -f tests/floorProduction/deferredMoveIntent.pg17.sql
           done
+          createdb -T "$PGDATABASE" vinpoker_ops_finish_move_ci
+          PGDATABASE=vinpoker_ops_finish_move_ci node tests/floorProduction/scopedFinishMoveCancel.concurrent.mjs
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/viewer-hub/publicTableHistory.test.ts src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
