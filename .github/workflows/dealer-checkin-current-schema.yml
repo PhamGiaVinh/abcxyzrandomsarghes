@@ -101,6 +101,8 @@ on:
       - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.concurrent.mjs'
       - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.migrationRollback.mjs'
       - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.verified.concurrent.mjs'
+      - 'VinPoker/supabase/migrations/20270128000100_dealer_manual_swing_receipt_v1.sql'
+      - 'VinPoker/tests/dealerSwing/manualSwingReceipt.*'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -882,6 +884,14 @@ jobs:
           PGDATABASE=vinpoker_ops_history99_ci node tests/trackerSettlement/historicalIntentResolution.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_history99_verified
           PGDATABASE=vinpoker_ops_history99_verified node tests/trackerSettlement/historicalIntentResolution.verified.concurrent.mjs
+      - name: Manual Swing100 read-only actor and payload receipt recovery
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_swing100_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_history99_rollback "$PGDATABASE"
+          node tests/dealerSwing/manualSwingReceipt.currentSchema.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
