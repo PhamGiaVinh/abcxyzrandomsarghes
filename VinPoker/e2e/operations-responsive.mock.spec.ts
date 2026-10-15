@@ -1,5 +1,47 @@
 import { expect, test } from "@playwright/test";
 
+for (const width of [375,1280]) {
+  test(`atomic create recovery keeps its original payload and fits ${width}px`,async({page})=>{
+    await page.setViewportSize({width,height:850});
+    const actor='00000000-0000-4000-8000-000000000001';
+    const request={p_expected_actor_id:actor,p_club_id:'e9100000-0000-4000-8000-000000000011',
+      p_request_id:'e9100000-0000-4000-8000-000000000021',p_config:{name:'Original TEST'},p_levels:[]};
+    const user={id:actor,aud:'authenticated',role:'authenticated',email:'create@example.test',
+      app_metadata:{},user_metadata:{},identities:[],created_at:'2026-08-09T00:00:00Z'};
+    await page.addInitScript(({user,request})=>{
+      localStorage.setItem('vinpoker.lang','vi');
+      localStorage.setItem('sb-127-auth-token',JSON.stringify({
+        access_token:'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJ9.',
+        refresh_token:'mock-refresh-token',expires_at:4102444800,expires_in:999999999,token_type:'bearer',user,
+      }));
+      localStorage.setItem(`vinpoker:tournament-create:v1:${user.id}:${request.p_club_id}`,JSON.stringify(request));
+    },{user,request});
+    const reads:unknown[]=[];const writes:string[]=[];
+    await page.route('http://127.0.0.1:54321/**',async route=>{
+      const path=new URL(route.request().url()).pathname;
+      const json=(body:unknown)=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
+      if(path.endsWith('/auth/v1/user'))return json(user);
+      if(path.endsWith('/rpc/get_tournament_create_receipt_v1')){
+        reads.push(route.request().postDataJSON());
+        return json({ok:true,tournament_id:'e9100000-0000-4000-8000-000000000031',actor_id:actor,
+          club_id:request.p_club_id,request_id:request.p_request_id,level_count:0});
+      }
+      if(path.endsWith('/rpc/create_tournament_with_levels_v1')||route.request().method()==='POST'&&!path.includes('/rpc/'))writes.push(path);
+      if(path.endsWith('/rpc/get_my_ops_global_capability'))return json([{is_super_admin:false}]);
+      return json([]);
+    });
+    await page.goto('/e2e/fixtures/operations-responsive.html?surface=tournament-create');
+    await page.getByRole('button',{name:'Tạo giải thường'}).click();
+    const check=page.getByRole('button',{name:'Kiểm tra yêu cầu trước'});
+    await expect(check).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('không dùng các ô vừa chỉnh sửa');
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await check.click();
+    await expect(page.getByText('Original create receipt recovered TEST')).toBeVisible();
+    expect(reads).toEqual([request]);expect(writes).toEqual([]);
+  });
+}
+
 for (const width of [375, 1280]) {
   test(`player action sheet explains the existing seat move at ${width}px`, async ({ page }) => {
     await page.setViewportSize({width,height:850});

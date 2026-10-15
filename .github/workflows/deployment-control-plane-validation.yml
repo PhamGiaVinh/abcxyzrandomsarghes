@@ -3,6 +3,8 @@ name: Validate deployment control plane
 on:
   pull_request:
     paths:
+      - ".github/workflows/tournament-create91-protected-apply.yml"
+      - "VinPoker/scripts/ops/tournament-create91-*"
       - ".github/workflows/dealer-rest78-protected-apply.yml"
       - "VinPoker/scripts/ops/dealer-rest78-*"
       - ".github/workflows/dealer-close79-protected-apply.yml"
@@ -112,6 +114,7 @@ jobs:
           "${RUNNER_TEMP}/actionlint" \
             .github/workflows/vbackerworkflowmain.yml \
             .github/workflows/dealer-rest78-protected-apply.yml \
+            .github/workflows/tournament-create91-protected-apply.yml \
             .github/workflows/dealer-close79-protected-apply.yml \
             .github/workflows/floor-clock-control-apply.yml \
             .github/workflows/floor-operator-scope-acl-apply.yml \
@@ -169,3 +172,5 @@ jobs:
         run: node --test VinPoker/scripts/ops/tracker-manual-75-release-plan.test.mjs VinPoker/scripts/ops/tracker-manual-75-protected-apply.test.mjs
       - name: Test exact scoped reads76/77 protected transport
         run: node --test VinPoker/scripts/ops/tracker-reads-76-77-release-plan.test.mjs VinPoker/scripts/ops/tracker-reads-76-77-protected-apply.test.mjs
+      - name: Test exact tournament create91 protected transport
+        run: node --test VinPoker/scripts/ops/tournament-create91-release-plan.test.mjs VinPoker/scripts/ops/tournament-create91-protected-apply.test.mjs

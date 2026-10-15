@@ -1,4 +1,5 @@
 {
+  "createAtomic": { "signin": "创建比赛前请先登录。", "storageError": "无法读取或保存待处理的创建请求。未发送新请求。", "unknown": "尚未确认创建结果。重试前请检查上次请求。", "check": "检查上次请求", "retry": "重发原请求", "pending": "上次创建请求的结果尚未确认。创建其他比赛前请先检查。重发将使用原始数据，而非刚编辑的内容。" },
   "chipOpsRead": { "error": "无法加载筹码数据。库存和筹码库状态尚未核实。", "permission": "需要本赛事所属俱乐部的筹码管理员或所有者权限。", "retry": "重新加载" },
   "cashierOverviewRead": { "error": "无法加载统计数据。请刷新重试。" },
   "liveStateSummary": {
