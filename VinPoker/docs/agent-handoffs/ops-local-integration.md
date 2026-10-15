@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G5 Restore-bust local journal replacement fences
+
+Baselinea8e418228 clean. ActualRestoreBustDialogRED2: lateoldsuccess removedlaterrequestjournal andcalledonRestored/onClose; stale retry overwrotechangedseatpayload andissuedsecondrestore. One initialtest usedColor-upbuttonlabel, correctedtoactualrestorelabelbeforesecondREDconfirmedRPCcount2vs1 (notproductissue). Guardwhole{actorId,tournamentId,intent} viaexistingcanonicalVoiceJson beforepersist/receipt/cancel/clear; mismatch/corruptionblocks andoffersrereadjournal, no oldsuccess callbacks or newwriter. Sharedclearcoversbothcommittedrestoreandcancellationproof. Clientlifetime/generation/deadlines unchanged; no restorestack/entry/seat/RPC/DB mathorpolicychange.
+
+Actualcomponent27PASS (prior23+4new oldack/newkey, samekeydifferentseatbefore retry, supersededreceipt/cancelzerodispatch). Editedsource/testsESLint0 anddiffcheckPASS. Existingserver66–68/93 runtimeunchanged, notrerun; no fulltype/build/browser375/newDBcommit qualification. Existingworkflowincludesexactchangedtest/path. No runningPG/processes/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Nextotherclientunknownoutcome/generation gaps andremainingintegratedgoalacceptance; fullmastergoalactive/local-onlyownerhold, notcomplete.
+
 ## G5 Color-up local journal replacement fences
 
 Baselinea77b2e3a6 clean. Widerremaininggoalreview foundColorUpTab retainedactor scope/deadlines/unknownrequests but clearIntent unconditionallydeletedcurrentstorage andsubmitIntent overwroteanysame-scopejournal. ActualrenderRED2: oldreceipt clearedlaterkey; stale retry overwrotechangedpayload anddispatchedwriter. Newwholeintentcomparison reusesexistingcanonicalVoiceJson: rejectchanged/corruptjournalbeforewrite, receiptlookup/cancellation; checkexactjournalbeforeclear. Onconflict/storagefailure explicitjournalerror andrereadrecovery; original/laterjournal notdiscarded. No RPC/math/rounding/inventory/DB policychange; doesnotclaimcross-tabdistributedCAS.

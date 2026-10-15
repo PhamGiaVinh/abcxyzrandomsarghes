@@ -37,6 +37,45 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 describe("mistaken-bust restore", () => {
+  it("does not erase a later journal when an older restore succeeds", async () => {
+    let complete!: (value: unknown) => void;
+    state.restore.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const view = mount(); await choose();
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" }));
+    const key = sessionStorage.key(0)!; const later = JSON.parse(sessionStorage.getItem(key)!);
+    later.intent.requestId = "later-request";
+    sessionStorage.setItem(key, JSON.stringify(later));
+    await act(async () => complete({ ok: true, data: canonicalReceipt }));
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(later);
+    expect(view.onRestored).not.toHaveBeenCalled(); expect(view.onClose).not.toHaveBeenCalled();
+  });
+  it("does not overwrite a changed journal when retrying an unresolved restore", async () => {
+    state.restore.mockRejectedValueOnce(new Error("unknown"));
+    mount(); await choose();
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" }));
+    await screen.findByRole("alert");
+    const key = sessionStorage.key(0)!; const later = JSON.parse(sessionStorage.getItem(key)!);
+    later.intent.toSeatNumber = 3;
+    sessionStorage.setItem(key, JSON.stringify(later));
+    fireEvent.click(screen.getByRole("button", { name: "Kiểm tra lại yêu cầu đã gửi" }));
+    await act(async () => {});
+    expect(state.restore).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(later);
+  });
+  it.each(["receipt", "cancel"] as const)("does not dispatch %s for a superseded restore journal", async (operation) => {
+    state.restore.mockRejectedValueOnce(new Error("unknown"));
+    mount(); await choose();
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" }));
+    await screen.findByRole("alert");
+    const key = sessionStorage.key(0)!; const later = JSON.parse(sessionStorage.getItem(key)!);
+    later.intent.requestId = "later-request";
+    sessionStorage.setItem(key, JSON.stringify(later));
+    fireEvent.click(screen.getByRole("button", { name: operation === "receipt" ? "Đối chiếu yêu cầu" : "Hủy yêu cầu đang chờ" }));
+    await act(async () => {});
+    expect(state[operation]).not.toHaveBeenCalled();
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(later);
+    expect(screen.getByRole("button", { name: "Đọc lại yêu cầu đã lưu" })).toBeEnabled();
+  });
   it("ends a hung evidence read without enabling mutation or accepting late roster", async () => {
     let complete!: (value: unknown) => void;
     state.roster.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));

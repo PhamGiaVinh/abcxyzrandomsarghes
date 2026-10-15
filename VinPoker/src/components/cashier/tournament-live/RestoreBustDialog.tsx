@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { formatStack } from "@/lib/format";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
 
 type RestoreIntent = Parameters<ReturnType<typeof createFloorTableControlV3Client>["restoreBustedPlayer"]>[0];
 const messages: Record<string, string> = {
@@ -104,6 +105,20 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
   const table = tables.find((row) => row.tournamentTableId === tableId);
   const emptySeats = table ? Array.from({ length: table.maxSeats }, (_, i) => i + 1)
     .filter((n) => !table.seats.some((s) => s.seatNumber === n) && !table.seatLocks.some((s) => s.seatNumber === n)) : [];
+  function journalMatches(intent: RestoreIntent) {
+    const raw = sessionStorage.getItem(storageKey);
+    return raw !== null && canonicalVoiceJson(JSON.parse(raw)) === canonicalVoiceJson({ actorId, tournamentId, intent });
+  }
+  function requireJournal(intent: RestoreIntent) {
+    try { if (journalMatches(intent)) return; } catch { /* preserve unreadable metadata */ }
+    setJournalBlocked(true);
+    throw new Error("restore_journal_changed");
+  }
+  function clearJournal(intent: RestoreIntent) {
+    requireJournal(intent);
+    sessionStorage.removeItem(storageKey);
+    if (sessionStorage.getItem(storageKey) !== null) throw new Error("restore_journal_clear_failed");
+  }
   function acceptReceipt(intent: RestoreIntent, value: unknown) {
     const receipt = value as Record<string, unknown> | null;
     if (receipt?.status === "cancelled") {
@@ -116,8 +131,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
         || payload.expected_table_session_id !== intent.expectedTableSessionId) {
         setError("Chưa xác minh được xác nhận hủy đúng yêu cầu. Giữ nguyên mã để đối chiếu."); return;
       }
-      sessionStorage.removeItem(storageKey);
-      if (sessionStorage.getItem(storageKey) !== null) throw new Error("restore_journal_clear_failed");
+      clearJournal(intent);
       attempts.current.delete(scope); setUnresolved(false); setJournalBlocked(false);
       setReloadGeneration((value) => value + 1);
       return;
@@ -132,8 +146,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
       setError("Phản hồi chưa xác minh đúng entry và phiên bàn. Đang giữ nguyên yêu cầu để đối chiếu.");
       return;
     }
-    sessionStorage.removeItem(storageKey);
-    if (sessionStorage.getItem(storageKey) !== null) throw new Error("restore_journal_clear_failed");
+    clearJournal(intent);
     attempts.current.delete(scope); setUnresolved(false); onRestored(); onClose();
   }
   async function reconcile() {
@@ -141,6 +154,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     if (!intent || pending.current) return;
     pending.current = true; setBusy(true); setError(null);
     try {
+      requireJournal(intent);
       const response = await waitForManualPlayerResponse(client.getRestoreReceipt(intent));
       if (!alive.current) return;
       if (response.ok === false) {
@@ -160,6 +174,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     if (!intent || pending.current || journalBlocked) return;
     pending.current = true; setBusy(true); setError(null);
     try {
+      requireJournal(intent);
       const response = await waitForManualPlayerResponse(client.cancelRestoreRequest(intent));
       if (!alive.current) return;
       if (response.ok === false) { setError(messages[response.error] ?? `Chưa xác nhận hủy (${response.error}).`); return; }
@@ -180,10 +195,12 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
       expectedTableSessionId: table.tableSessionId,
     };
     try {
+      if (sessionStorage.getItem(storageKey) !== null && !journalMatches(intent)) throw new Error("restore_journal_changed");
       const serialized = JSON.stringify({ actorId, tournamentId, intent });
       sessionStorage.setItem(storageKey, serialized);
       if (sessionStorage.getItem(storageKey) !== serialized) throw new Error("restore_journal_unverified");
     } catch {
+      setJournalBlocked(true);
       setError("Không lưu được mã yêu cầu an toàn. Chưa gửi hoàn tác bust; hãy kiểm tra bộ nhớ trình duyệt.");
       return;
     }
