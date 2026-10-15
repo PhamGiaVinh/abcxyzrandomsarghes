@@ -1,4 +1,9 @@
 \set ON_ERROR_STOP on
+\if :{?SCOPED_FINISH_MODE_CASE}
+SELECT set_config('test.scoped_finish_mode','true',false);
+\else
+SELECT set_config('test.scoped_finish_mode','false',false);
+\endif
 \if :{?READ_POLICY_CASE}
 \set TEST_READ_POLICY true
 \else
@@ -97,7 +102,13 @@ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,sta
  ('f7290000-0000-4000-8000-000000000011','f7290000-0000-4000-8000-000000000002','Source TEST',81,'tournament','inactive','available'),
  ('f7290000-0000-4000-8000-000000000012','f7290000-0000-4000-8000-000000000002','Destination TEST',82,'tournament','inactive','available');
 SELECT set_config('request.jwt.claim.sub','f7290000-0000-4000-8000-000000000001',true);
-DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de bigint; st uuid; dt uuid; ss uuid; ds uuid; e uuid; h uuid; ep bigint; sr bigint; dr bigint; token text; ticket_code text; operator_actor uuid; BEGIN
+DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de bigint; st uuid; dt uuid; ss uuid; ds uuid; e uuid; h uuid; ep bigint; sr bigint; dr bigint; token text; ticket_code text; operator_actor uuid;
+ finish_intent jsonb; finish_receipt jsonb; finish_epoch bigint; BEGIN
+ IF current_setting('test.scoped_finish_mode')='true' THEN
+  PERFORM pg_temp.assert_true(current_database() IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback')
+    AND current_setting('test.real_finish_case')='true' AND current_setting('test.exact_queue')='true',
+    'scoped Finish mode case requires exact owned98/current APIs and public queue');
+ END IF;
  IF current_setting('test.ticket_read')='true' THEN
   PERFORM pg_temp.assert_true(current_setting('test.deferred_seat_ticket')='true'
     AND current_setting('test.real_finish_case')='true','ticket reader proof requires seat tickets and real public finish');
@@ -199,7 +210,12 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
       'f7290000-0000-4000-8000-000000000001','floor_queue_tracker_move_v1',req)),'failed reason update leaves no child success receipt');
     RETURN;
    END IF;
+   IF current_setting('test.scoped_finish_mode')='true' THEN
+    PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"f7290000-0000-4000-8000-000000000001"}',true);
+    PERFORM set_config('role','authenticated',true);
+   END IF;
    r:=public.move_player_seat_v5(e,st,ss,dt,ds,3,sr,dr,se,de,'TEST exact reason',req);
+   IF current_setting('test.scoped_finish_mode')='true' THEN PERFORM set_config('role','none',true); END IF;
    PERFORM pg_temp.assert_true(r->>'queued'='true' AND r->>'reason'='TEST exact reason'
      AND r->>'from_table_session_id'=ss::text AND r->>'to_table_session_id'=ds::text
      AND r->>'request_id'=req::text AND NOT(r ? 'receipt_code'),'queued receipt proves exact intent without a ticket: '||r::text);
@@ -235,21 +251,52 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
  END IF;
  IF current_setting('test.real_finish_case')='true' THEN
   token:=public.get_tracker_roster_snapshot_v1('f7290000-0000-4000-8000-000000000003',dt,ds,ep)->'seats'->0->>'token';
+  IF current_setting('test.scoped_finish_mode')='true' THEN
+   PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"f7290000-0000-4000-8000-000000000001"}',true);
+   SELECT revision,control_epoch INTO dr,finish_epoch FROM public.table_sessions WHERE id=ds;
+   PERFORM set_config('role','authenticated',true);
+   r:=public.floor_request_table_control_mode_v4(dt,ds,'manual',dr,finish_epoch,gen_random_uuid());
+   PERFORM set_config('role','none',true);
+   PERFORM pg_temp.assert_true(r->>'outcome'='pending' AND r->'blockers' ? 'active_hand' AND r->'blockers' ? 'pending_move',
+     'mode waits for active hand and exact pending move: '||r::text);
+   SELECT jsonb_build_object('actor_id','f7290000-0000-4000-8000-000000000001','request_id',gen_random_uuid(),
+    'tournament_id',hh.tournament_id,'tournament_table_id',dt,'hand_id',h,'table_session_id',ds,
+    'control_epoch',finish_epoch,'source_revision',hh.source_revision,
+    'payload',jsonb_build_object('hand_time',now(),'players',(SELECT jsonb_agg(jsonb_build_object(
+     'player_id',hp.player_id,'entry_number',hp.entry_number,'seat_number',hp.seat_number,'starting_stack',hp.starting_stack,
+     'ending_stack',hp.starting_stack+CASE hp.seat_number WHEN 1 THEN 100 WHEN 2 THEN -100 ELSE 0 END,
+     'is_eliminated',false)) FROM public.hand_players hp WHERE hp.hand_id=h),
+     'actions','[]'::jsonb,'side_pots','[]'::jsonb,'community_cards','[]'::jsonb,'pot_size',0)) INTO finish_intent
+   FROM public.tournament_hands hh WHERE hh.id=h;
+   PERFORM set_config('role','authenticated',true);
+   r:=public.record_tracker_manual_hand_v1(finish_intent);
+   PERFORM set_config('role','none',true);
+   finish_receipt:=r;
+  ELSE
   r:=public.record_hand('f7290000-0000-4000-8000-000000000003',dt,1,now(),
     (SELECT jsonb_agg(jsonb_build_object('player_id',hp.player_id,
       'entry_number',hp.entry_number,'seat_number',hp.seat_number,
       'starting_stack',hp.starting_stack,'ending_stack',hp.starting_stack+CASE hp.seat_number WHEN 1 THEN 100 WHEN 2 THEN -100 ELSE 0 END,
       'is_eliminated',false)) FROM public.hand_players hp WHERE hp.hand_id=h),
     '[]'::jsonb,'[]'::jsonb,'[]'::jsonb,0,'f7290000-0000-4000-8000-000000000001');
+  END IF;
   PERFORM pg_temp.assert_true((r->>'ok')::boolean,'public record_hand finishes: '||r::text);
   r:=public.set_tracker_table_roster_seat_v2('f7290000-0000-4000-8000-000000000003',dt,ds,ep,gen_random_uuid(),1,'Destination TEST 1',20000,
    (SELECT player_id FROM public.tournament_seats WHERE table_session_id=ds AND seat_number=1 AND is_active),false,NULL,token);
-  PERFORM pg_temp.assert_true(r->>'error'='STALE_ROSTER_STATE','pre-hand roster token cannot overwrite completed-hand stack');
+  PERFORM pg_temp.assert_true(r->>'error'='STALE_ROSTER_STATE' OR (current_setting('test.scoped_finish_mode')='true' AND r->>'error'='STALE_STATE'),'pre-hand roster token cannot overwrite completed-hand stack');
   PERFORM pg_temp.assert_true((SELECT chip_count=20100 FROM public.tournament_seats WHERE table_session_id=ds AND seat_number=1 AND is_active),'hand ending stack survives delayed roster');
  ELSE
   UPDATE public.tournament_hands SET status='voided' WHERE id=h;
  END IF;
  SET CONSTRAINTS ALL IMMEDIATE;
+ IF current_setting('test.scoped_finish_mode')='true' THEN
+  PERFORM pg_temp.assert_true((SELECT control_mode='manual' AND control_epoch=finish_epoch+1 FROM public.table_sessions WHERE id=ds),
+   'server applies queued mode only after safe move boundary');
+  PERFORM set_config('role','authenticated',true);
+  PERFORM pg_temp.assert_true(public.get_tracker_manual_finish_receipt_v1(finish_intent)=finish_receipt
+    AND public.record_tracker_manual_hand_v1(finish_intent)=finish_receipt,'past Finish receipt survives move and mode');
+  PERFORM set_config('role','none',true);
+ END IF;
  IF current_setting('test.cancel_case')='true' THEN
   PERFORM pg_temp.assert_true((SELECT status='cancelled' FROM public.floor_pending_tracker_moves WHERE id=e),'cancel remains terminal');
   PERFORM pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id=ss),'cancel does not close source');
@@ -433,3 +480,6 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
  END IF;
 END $$;
 ROLLBACK;
+\if :{?SCOPED_FINISH_MODE_CASE}
+\echo MANUAL_FINISH95_DEFERRED_MOVE_MODE_RECEIPT_TICKET_PASS
+\endif
