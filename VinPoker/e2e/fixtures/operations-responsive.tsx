@@ -15,6 +15,8 @@ import { FloorEntryPicker, type FloorEntrySelection } from "../../src/components
 import { Button } from "../../src/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../src/components/ui/sheet";
 import { PlayerActionSheet } from "../../src/components/cashier/tournament-live/PlayerActionSheet";
+import { MediaClubSchedules } from "../../src/components/admin/MediaClubSchedules";
+import { Toaster } from "sonner";
 
 function PlayerActionFixture() {
   const [open, setOpen] = React.useState(true);
@@ -74,6 +76,7 @@ function FloorMobileFixture() {
 function Fixture() {
   const [mode, setMode] = React.useState<"manual" | "tracker">("manual");
   const surface = new URLSearchParams(location.search).get("surface");
+  if (surface === "schedule-upload") return <main className="mx-auto max-w-5xl p-4"><MediaClubSchedules /><Toaster /></main>;
   if (surface === "player-actions") return <PlayerActionFixture />;
   if (surface === "floor") return <FloorMobileFixture />;
   if (surface === "clock") return <VinPokerTournamentClock data={{

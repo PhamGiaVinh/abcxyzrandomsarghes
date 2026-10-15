@@ -1,4 +1,5 @@
 {
+  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "Chip data could not be loaded. Inventory and bank status are unverified.", "permission": "Chip Master or club owner access is required for this tournament.", "retry": "Retry loading" },
   "cashierOverviewRead": { "error": "Statistics could not be loaded. Refresh to retry." },
   "liveStateSummary": {

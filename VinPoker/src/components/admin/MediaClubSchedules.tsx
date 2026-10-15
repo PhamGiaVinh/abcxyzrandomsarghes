@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ interface ClubRow {
 type SeriesImg = { id: string; club_id: string; image_url: string; caption: string | null; position: number };
 
 export const MediaClubSchedules = () => {
+  const { t } = useTranslation();
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [seriesByClub, setSeriesByClub] = useState<Record<string, SeriesImg[]>>({});
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,7 @@ export const MediaClubSchedules = () => {
     try {
       const existing = seriesByClub[clubId] ?? [];
       let pos = existing.length ? Math.max(...existing.map((x) => x.position)) + 1 : 0;
+      let published = 0;
       for (const raw of Array.from(files)) {
         if (!raw.type.startsWith("image/")) continue;
         const file = await compressImage(raw, { maxEdge: 1600, quality: 0.85 });
@@ -65,10 +68,15 @@ export const MediaClubSchedules = () => {
         const { data: pub } = supabase.storage.from("app-assets").getPublicUrl(path);
         const { error } = await (supabase as any).from("club_series_images").insert({ club_id: clubId, image_url: pub.publicUrl, position: pos });
         if (error) { toast.error(error.message); continue; }
+        published++;
         pos++;
       }
-      toast.success("Đã tải ảnh lịch series");
+      if (published === files.length && published > 0) toast.success(t("admin.scheduleUpload.complete"));
+      else if (published > 0) toast.warning(t("admin.scheduleUpload.partial", { published, total: files.length }));
       load();
+    } catch {
+      // A rejected write may have committed: do not retry or delete its object.
+      toast.error(t("admin.scheduleUpload.unknown"));
     } finally {
       setBusyId(null);
     }

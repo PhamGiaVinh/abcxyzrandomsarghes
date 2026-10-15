@@ -1,4 +1,5 @@
 {
+  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "Không đọc được dữ liệu chip. Kho và trạng thái két chưa được xác minh.", "permission": "Cần quyền Chip Master hoặc chủ CLB của giải này.", "retry": "Thử tải lại" },
   "cashierOverviewRead": { "error": "Không tải được thống kê. Hãy làm mới để thử lại." },
   "liveStateSummary": {
