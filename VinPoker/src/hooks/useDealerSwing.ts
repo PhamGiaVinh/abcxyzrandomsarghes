@@ -263,6 +263,12 @@ function useRealtimeQuery<T>(
 
     refetch();
 
+    // One-shot readers reuse actor/club fencing without creating an idle
+    // channel or adding polling to screens that previously read on demand.
+    if (selectedTables.length === 0) {
+      return () => { active = false; generationRef.current += 1; };
+    }
+
     const ids = selectedClubs.join("+");
     const tables = selectedTables.join("+");
     const channel = supabase.channel(`swing:${tables}:${ids}:${instanceId}:${++subscriptionGeneration.current}`);
@@ -807,23 +813,14 @@ export interface ShiftBreakPolicy {
 }
 
 export function useSwingConfigs(clubIds: string[]) {
-  const [data, setData] = useState<SwingConfig[] | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!clubIds.length) { setData([]); return; }
-    setLoading(true);
-    const { data: d } = await supabase
+  return useRealtimeQuery<SwingConfig>({
+    queryFn: async () => supabase
       .from("swing_config")
       .select("*")
-      .in("club_id", clubIds);
-    setData(d ?? []);
-    setLoading(false);
-  }, [clubIds.join(",")]);
-
-  useEffect(() => { load(); }, [load]);
-
-  return { data, loading, refetch: load };
+      .in("club_id", clubIds),
+    realtimeTables: [],
+    clubIds,
+  });
 }
 
 export function useSwingMetrics(clubIds: string[]) {

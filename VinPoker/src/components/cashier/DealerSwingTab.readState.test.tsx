@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ actorId: "actor", error: "503 TEST" as string | null, loading: false }));
+const state = vi.hoisted(() => ({ actorId: "actor", error: "503 TEST" as string | null, loading: false, configError: null as string | null, configLoading: false, configRefetch: vi.fn() }));
 vi.mock("@/lib/featureFlags", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/featureFlags")>();
   return { ...original, FEATURES: { ...original.FEATURES, floorTableControlV3: true } };
@@ -13,7 +13,7 @@ vi.mock("@/hooks/useDealerSwing", () => {
     useCheckedInDealers: query, useTodayCheckedOutDealers: query,
     useDealerOperationalTables: () => ({ ...query(), error: state.error, loading: state.loading }),
     useActiveAssignmentsWithTimeline: () => ({ ...query(), activeRawData: [] }),
-    useSwingConfigs: query, useSwingMetrics: query, useSpecialDates: query, useBreakPool: query,
+    useSwingConfigs: () => ({ ...query(), error: state.configError, loading: state.configLoading, refetch: state.configRefetch }), useSwingMetrics: query, useSpecialDates: query, useBreakPool: query,
     useAuditLogs: () => [], useBreakPolicies: () => [], usePreAssignedDealers: () => ({}),
     useOptimisticDealerCount: () => ({ optimistic: 0, onCheckout: vi.fn() }),
     useNextDealerPredictions: () => ({ data: {} }),
@@ -37,7 +37,23 @@ import SwingPanel from "./DealerSwingTab";
 import { supabase } from "@/integrations/supabase/client";
 
 describe("desktop Swing authoritative read state", () => {
-  beforeEach(() => { state.actorId = "actor"; state.error = "503 TEST"; state.loading = false; });
+  beforeEach(() => { state.actorId = "actor"; state.error = "503 TEST"; state.loading = false; state.configError = null; state.configLoading = false; state.configRefetch.mockClear(); });
+  it("blocks operations when config is unavailable instead of using fallback timing", async () => {
+    state.error = null; state.configError = "503 config";
+    await act(async () => { render(<SwingPanel clubIds={["club"]} clubs={[{ id: "club", name: "TEST" }]} />); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Không xác minh");
+    expect(screen.getByRole("button", { name: "⏹ Dừng Swing" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /^Cấu hình Swing$/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    expect(state.configRefetch).toHaveBeenCalledOnce();
+  });
+  it("keeps emergency OFF available while config is being verified", async () => {
+    state.error = null; state.configLoading = true;
+    await act(async () => { render(<SwingPanel clubIds={["club"]} clubs={[{ id: "club", name: "TEST" }]} />); });
+    expect(screen.getByRole("status")).toHaveTextContent("Đang xác minh");
+    expect(screen.getByRole("button", { name: "⏹ Dừng Swing" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /^Cấu hình Swing$/ })).not.toBeInTheDocument();
+  });
   it("exposes declaration in the verified single-club workspace without opening a session", async () => {
     state.error = null;
     await act(async () => { render(<SwingPanel clubIds={["club"]} clubs={[{ id: "club", name: "TEST" }]} />); });
