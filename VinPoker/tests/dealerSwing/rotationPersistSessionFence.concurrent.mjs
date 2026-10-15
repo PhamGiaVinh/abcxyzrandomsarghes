@@ -71,3 +71,43 @@ for (const closeFirst of [true,false]) {
 }
 // This isolates persist fencing. Cancellation of a prediction committed BEFORE
 // close is covered by the separate close79/81 package, not claimed here.
+
+for (const lockFirst of [true,false]) {
+  const ns=randomUUID().slice(0,8);
+  const id=suffix=>`${ns}-0000-4000-8000-${suffix.toString().padStart(12,'0')}`;
+  const intent=`SET request.jwt.claim.sub='${id(1)}'; SET request.headers='{"x-vinpoker-dealer-intent":"manual","x-vinpoker-dealer-actor":"${id(1)}"}';`;
+  sql(fixture.replace('BEGIN;',`BEGIN; ${intent}`).replace('ROLLBACK;','COMMIT;')
+    .replaceAll('e1700000-',`${ns}-`)
+    .replaceAll("'exact-key'",`'${ns}-exact'`).replaceAll("'cross-club-key'",`'${ns}-cross'`)
+    .replaceAll("'closed-key'",`'${ns}-closed'`));
+  sql(`INSERT INTO public.dealers(id,club_id,full_name,status)
+    VALUES('${id(32)}','${id(2)}','Lock overlap TEST','active');
+    INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+    VALUES('${id(42)}','${id(32)}','${id(30)}',current_date,'checked_in',now(),'available');`);
+  const assignment=sql(`SELECT id FROM public.dealer_assignments WHERE table_session_id='${id(21)}' AND released_at IS NULL;`);
+  const persist=`${intent} SET ROLE service_role; SET request.jwt.claim.role='service_role';
+    SELECT public.upsert_rotation_plan('${id(2)}','${id(63)}',jsonb_build_array(jsonb_build_object(
+    'table_id','${id(11)}','assignment_id','${assignment}','slot_index',0,
+    'in_attendance_id','${id(42)}','planned_relief_at','2030-01-01T00:00:00Z',
+    'is_shortage',false,'solver_version','lock-overlap87')),ARRAY['${id(11)}'::uuid]);`;
+  assert.equal(JSON.parse(sql(persist)).outcome,'ok');
+  const schedule=JSON.parse(sql(`SELECT json_build_object('id',id,'version',version)
+    FROM public.dealer_rotation_schedule WHERE assignment_id='${assignment}' AND status='predicted';`));
+  const lock=`${intent} SET ROLE service_role; SET request.jwt.claim.role='service_role';
+    SELECT public.lock_rotation_slot('${schedule.id}',${schedule.version});`;
+  const holderMarker=`lock87_${ns}_holder`, waiterMarker=`lock87_${ns}_waiter`;
+  const holder=concurrent(`BEGIN; ${lockFirst?lock:persist} SELECT pg_sleep(2); COMMIT;`,holderMarker);
+  await barrier(holderMarker,"wait_event='PgSleep'");
+  const waiter=concurrent(lockFirst?persist:lock,waiterMarker);
+  await barrier(waiterMarker,"wait_event_type='Lock'");
+  const outputs=await Promise.all([holder,waiter]);
+  const lockResult=JSON.parse(outputs[lockFirst?0:1].split(/\r?\n/).find(line=>line.startsWith('{')));
+  assert.equal(lockResult.outcome,'locked',JSON.stringify(lockResult));
+  const persistResult=JSON.parse(outputs[lockFirst?1:0].split(/\r?\n/).find(line=>line.startsWith('{')));
+  assert.equal(persistResult.outcome,'ok');
+  assert.equal(sql(`SELECT status FROM public.dealer_rotation_schedule WHERE id='${schedule.id}';`),'announced');
+  assert.equal(sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE table_id='${id(11)}'
+    AND status IN ('predicted','announced','executing');`),'1');
+  assert.equal(sql(`SELECT pre_assigned_attendance_id FROM public.dealer_assignments WHERE id='${assignment}';`),id(42));
+  console.log(`${lockFirst?'lock→persist':'persist→lock'} true lock overlap PASS`);
+}
