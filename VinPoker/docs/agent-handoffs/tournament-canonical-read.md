@@ -36,6 +36,51 @@ nominal-duration consistency require a separately tested repair in this campaign
 
 ## Not repaired / release dependencies
 
+Latest candidate supersedes batch-abort design: invalid mappings return explicit
+rejectedTables, main records table-scoped errors and filters assignments AND
+schedules before writes, excludes rejected current/preassigned attendance from
+supply, scopes upsert p_table_ids to valid tables, and announces valid assignments
+only. Genuine query errors/non-array responses abort the tick before writes.
+Emergency invalid mapping returns before cancel/clear. Final actualsource8PASS,
+Deno check --frozen PASS, targeted ESLint/diffPASS. Reviewer caught and then
+confirmed closure of persist superseding quarantined schedules at source level.
+No new scoped P0/P1 seen; no deployment qualification. Required remaining proof:
+actual DB predicted-B fingerprint unchanged, real PostgREST relationship/RLS,
+session-change versus canonical commit, exact newhead CI. No default/rest/Auto
+policy or migrations13–28 changed. Older batch-abort notes below are history.
+
+Backend candidate (uncommitted, NOT deploy-qualified): fetchTournamentInfo now
+uses explicit club + assignment sessions, verifies active exact table_sessions
+and canonical tournament linkage, allows verified cash/vip no tournament, and
+throws coded errors on unavailable/ambiguous/invalid mappings. Both assignment
+projections and callsites updated. Actual-source desired-behavior4testsPASS,
+targeted ESLint/diffPASS. Reviewer asked to challenge batch abort vs quarantine
+and partial side effects before any commit/release; real PostgREST/RLS, Deno
+typecheck and whole-pass integration remain required. Earlier3diagnosticPASS
+described baseline defects, not this candidate's final behavior.
+Readonly review found P1 validation placement after mutations. Moved mapping
+validation immediately after main read snapshot and before reconcile/OT/rest;
+emergency path now validates active assignment before cancel slots/clear fields.
+Actual main-entrypoint transport test added for invalid mapping -> coded error
+and zero reconciliation/OT/RPC calls. Final session86279: all5testsPASS.
+Emergency entrypoint transport coverage now PASS: invalid/missing mappings or
+session/tournament dependency errors -> coded detail and zero cancel/clear RPCs.
+Final actualsource suite6/6PASS, ESLintPASS. Deno check --frozen actualPassR module
+PASS (initial --no-remote failed only because pinned2.106.2 was not cached; not
+a source diagnostic). No lockfile change. Readonly placement followup requested.
+Current-schema query execution, full pass overlap/atomicity and per-table
+quarantine/starvation handling remain open; do not deploy batch-abort candidate.
+
+Actual PassR reader diagnostic `tests/dealerSwing/passRTournamentRead.repro.test.ts`
+executes its extracted, TypeScript-transpiled source with a predicate-respecting
+transport fixture. Three diagnostic tests PASS means BUGS STILL EXIST: canonical
+row missed, closed old link overwrites current by row order, query error silently
+becomes empty map. Initial URL fixture failed before executing any test; corrected
+explicit project-root file resolution and reran3PASS. Not a runtime PostgreSQL,
+real Edge invocation or repaired-behavior acceptance test. Backend repair must
+replace these diagnostics with desired-behavior assertions, preserve exact club,
+assignment session, and distinguish mapping absence from dependency failure.
+
 - Config create/update still execute unsafe independent writes (see PR1563
   investigation). Editing canonical links must not silently drop/recreate them.
 - Assigned-table counts/picker/edit selection and backend Swing readers still use legacy

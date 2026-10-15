@@ -27,6 +27,8 @@ on:
       - "VinPoker/src/lib/dealerTableInventory*"
       - "VinPoker/src/components/cashier/DealerSwingTab.tsx"
       - "VinPoker/src/components/cashier/dealer-swing/swingTableView*"
+      - "VinPoker/supabase/functions/process-swing/passes/passR-rotation-planner.ts"
+      - "VinPoker/tests/dealerSwing/passRTournamentRead.repro.test.ts"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
@@ -98,6 +100,7 @@ jobs:
           src/pages/TournamentConfigPage.canonicalRead.test.tsx
           src/lib/dealerTableInventory.test.ts
           src/components/cashier/dealer-swing/swingTableView.session.test.ts
+          tests/dealerSwing/passRTournamentRead.repro.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
