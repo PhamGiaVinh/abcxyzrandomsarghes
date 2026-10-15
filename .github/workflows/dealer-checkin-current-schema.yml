@@ -444,6 +444,7 @@ jobs:
           fi
           grep -Fq 'ISSUANCE_STALE_RETRY_OVERWRITES_LATER_COUNT' "$RUNNER_TEMP/issuance69-red.log"
           PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql
+          PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -v EXACT_ISSUANCE_CASE=1 -f tests/chipOps/colorUpCurrentSchema.pg17.sql
           for coupling in false true; do
             PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -v coupling_on="$coupling" -f tests/chipOps/issuanceIntent.currentSchema.sql
           done
