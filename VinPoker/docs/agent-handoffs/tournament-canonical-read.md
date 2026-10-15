@@ -36,6 +36,31 @@ nominal-duration consistency require a separately tested repair in this campaign
 
 ## Not repaired / release dependencies
 
+Exact7b5910f60 Ops38712278234 now confirms fulltsc/build AND isolated rotation
+fingerprint SQL step SUCCESS. Whole job still running; tested function digest
+not collected yet. Source SQL scope proof qualifies only that narrow fixture;
+current-schema triggers/RLS, canonical commit concurrency and live/UAT remain.
+
+Additional actual UI timeline regression RED->GREEN: with serverdue00:45 and
+now00:31, old timeline minutesLeft0 contradicted card14. Changed minutesLeft and
+soon-warning to authoritative actualDueMs; nominalDueAt kept diagnostic/fallback.
+Actual timeline+backend15testsPASS; readonly scopedPASS/no rest/OT/warmup/write
+policy change. Removed stale45-backend/hasGrace comment (warmup is origin-marker
+based). 30vs45 remains when no serverdue exists; do not claim all timing unified.
+Do not infer whether backend25/28 and UI5/2 share threshold units without tracing
+callers. Uncommitted until current SQL qualification finishes, not yet deployed.
+
+Actual anonymous HTTP read-only probe succeeded against designated canary
+5540693c-5701-41e8-85d3-601d9f1a8812: both actual useTournaments SELECT
+templates returned200/1tour/2canonical links, both legacyIDsNULL, both explicit
+canonical joins match physicalID. Actual PassR !inner SELECT returned200/2links,
+each embedded tournament is an object matching tour, club present and exact
+session field present. Script logs aggregate shape only; accepts only exact
+project URL + public/anon key, GET-only and fixed TESTtour. No session tokens,
+private row contents or writes. This proves live alias/response shape under
+anonymous read ACL, NOT hook club/status filters, authenticated/service RLS,
+session-lock/commit or served UI behavior. Script uncommitted pending CI result.
+
 Exactf312Ops38711367820: fulltsc/build PASS; SQLstep FAILED at bootstrap guard
 before fixture DDL. No SQL fingerprint proof yet. Runner forwarded Docker port
 does not establish server-side loopback; current candidate executes psql inside

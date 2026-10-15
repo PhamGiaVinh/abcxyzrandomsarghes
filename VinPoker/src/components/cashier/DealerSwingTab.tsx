@@ -170,10 +170,10 @@ function resolveTableSwingTiming(
     ? new Date(assignment.swing_due_at).getTime()
     : nominalDueMs;
 
-  const nominalRemainingMs = nominalDueMs != null ? nominalDueMs - nowMs : 0;
   const actualRemainingMs = actualDueMs != null ? actualDueMs - nowMs : 0;
-  const minutesLeft = nominalDueMs != null ? Math.max(0, nominalRemainingMs / 60_000) : 0;
   const actualMinutesLeft = actualDueMs != null ? Math.max(0, actualRemainingMs / 60_000) : 0;
+  // Operational countdown/warnings follow the server contract, not a guessed duration.
+  const minutesLeft = actualMinutesLeft;
   // isOverdue is strictly `now > swing_due_at` (fall back to nominal due only
   // when the assignment has no swing_due_at at all).
   const swingDueMs = assignment.swing_due_at
@@ -182,7 +182,7 @@ function resolveTableSwingTiming(
 
   return {
     minutesLeft,
-    showNextDealerSoon: nominalDueMs != null ? minutesLeft <= warnAtMinutes : false,
+    showNextDealerSoon: actualDueMs != null ? minutesLeft <= warnAtMinutes : false,
     isOverdue: swingDueMs != null ? nowMs > swingDueMs : false,
     nominalDueAt: nominalDueMs != null ? new Date(nominalDueMs).toISOString() : null,
     actualDueAt: actualDueMs != null ? new Date(actualDueMs).toISOString() : null,

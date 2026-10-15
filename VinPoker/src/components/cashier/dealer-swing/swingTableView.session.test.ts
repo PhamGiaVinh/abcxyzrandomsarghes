@@ -1,4 +1,7 @@
 import {expect,it} from 'vitest';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import ts from 'typescript';
 import type {DealerAssignment} from '@/hooks/useDealerSwing';
 import type {TournamentWithTables} from '@/types/tournament';
 import {deriveTableSwingView} from './swingTableView';
@@ -55,4 +58,24 @@ it('keeps the server due time authoritative when config is missing or ambiguous'
   expect(view.canSwing).toBe(false);
   expect(view.remainingMinutes).toBe(1);
  }
+});
+it('actual timeline does not warn early when server due differs from duration fallback',()=>{
+ const source=readFileSync(resolve(process.cwd(),'src/components/cashier/DealerSwingTab.tsx'),'utf8');
+ const start=source.indexOf('function resolveTableSwingTiming(');
+ const end=source.indexOf('/* ==============================================================',start);
+ if(start<0||end<=start)throw Error('Actual timeline seam missing');
+ const js=ts.transpileModule(source.slice(start,end),{
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
+ }).outputText;
+ const timeline=new Function('findDealerTableTournament',`${js};return resolveTableSwingTiming;`)(findDealerTableTournament);
+ const delayed={...assignment,swing_due_at:'2026-10-15T00:45:00Z'};
+ const now=Date.parse('2026-10-15T00:31:00Z');
+ const result=timeline(delayed,table,[],[],now);
+ const card=deriveTableSwingView(table,delayed,undefined,[],[],now);
+ expect(result.actualDueAt).toBe(delayed.swing_due_at.replace('Z','.000Z'));
+ expect(result.minutesLeft).toBe(14);
+ expect(result.actualMinutesLeft).toBe(14);
+ expect(result.showNextDealerSoon).toBe(false);
+ expect(result.isOverdue).toBe(false);
+ expect(card.remainingMinutes).toBe(result.minutesLeft);
 });

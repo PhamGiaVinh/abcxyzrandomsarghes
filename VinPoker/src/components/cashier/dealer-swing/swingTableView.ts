@@ -74,13 +74,8 @@ export function deriveTableSwingView(
     tableTournament?.warn_at_minutes
     ?? swingConfigs?.find((c) => c.table_type === t.table_type)?.warn_at_minutes
     ?? 5;
-  // Fallback MUST equal the backend's canonical swing-duration fallback = 45
-  // (swing_configs DEFAULT 45, the get-config resolution's "45min hardcoded fallback",
-  // and COALESCE(swing_duration_minutes, 45) in the swing RPCs). It was 30 → for a
-  // table with no resolvable tournament/table/club config the backend set
-  // swing_due_at = assigned_at + 45 while the card expected 30, so the 15-min gap was
-  // misread as the open-table grace → a false WARMUP badge that never cleared
-  // (SwingTableCard hasGrace). Owner-reported 2026-07-07.
+  // Retain the existing presentation fallback; an explicit server due time wins.
+  // Warmup is identified separately by its origin marker, never duration differences.
   const swingDurationMs = (tableTournament?.swing_duration_minutes
     ?? swingConfigs?.find((c) => c.table_type === t.table_type)?.swing_duration_minutes
     ?? 45) * 60_000;
