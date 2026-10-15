@@ -12,7 +12,7 @@ type PublicClockState = PublicClockSummary & { remainingSeconds?: number | null;
 
 function callPublicRpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResult> {
   const rpc = supabase.rpc as unknown as (rpcName: string, rpcArgs: Record<string, unknown>) => PromiseLike<RpcResult>;
-  return rpc(name, args);
+  return rpc.call(supabase, name, args);
 }
 
 async function boundedPublicRead(response: PromiseLike<RpcResult>): Promise<RpcResult> {

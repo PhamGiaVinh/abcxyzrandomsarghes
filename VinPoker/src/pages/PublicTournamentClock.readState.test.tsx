@@ -7,6 +7,13 @@ import PublicTournamentClock from './PublicTournamentClock';
 function show(){return render(<MemoryRouter initialEntries={['/clock/tour-a']}><Link to='/clock/tour-b'>Change tournament</Link><Routes>
  <Route path='/clock/:tournamentId' element={<PublicTournamentClock/>}/></Routes></MemoryRouter>);}
 afterEach(()=>{cleanup();vi.useRealTimers();vi.resetAllMocks();});
+it('calls the public RPC with its Supabase client receiver intact',async()=>{
+ api.rpc.mockImplementation(function(this:{rpc:unknown}|undefined,name:string){
+  if(this?.rpc!==api.rpc) throw new Error('Supabase RPC receiver lost');
+  return Promise.resolve({data:name==='get_public_tournament_results'?[]:{id:'tour-a',name:'Receiver TEST'},error:null});
+ });
+ show();expect(await screen.findByText('Receiver TEST')).toBeInTheDocument();
+});
 it('freezes server remaining time while stopped and resumes from the next server deadline',async()=>{
  vi.useFakeTimers();
  let running=false;
