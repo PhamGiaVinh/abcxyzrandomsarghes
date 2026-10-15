@@ -1,6 +1,7 @@
 # Tournament config partial-write and authority investigation
 
-NOT FIXED. Diagnostics only; no live mutation or repair migration in this package.
+Legacy atomic config writes NOT FIXED. Source-only migration86 repairs the separate
+direct-table tenant write boundary. No live apply or frontend/Edge/flag mutation.
 
 ## Reproductions
 
@@ -36,9 +37,34 @@ not repair acceptance gates and must not be reported as fixed.
   constraint/default conflict; full captured-schema runtime remains required.
 - Both live table triggers are AFTER triggers, not a BEFORE name-filling seam.
 
-`tableWriteScope.repro.sql` reproduces cross-tenant writes using live-shaped RLS
-and synthetic rows only. It omits real lifecycle triggers and does not prove that
-all possible live rows can be modified; those guards are not actor authorization.
+`tableWriteScope.disposable.sql` first reproduces cross-tenant writes using
+live-shaped RLS and synthetic rows, then applies actual86 and tests owner/assigned
+Dealer Control, outsider/admin/missing actor/anon/service, reparenting, foreign and
+contradictory physical IDs, mismatched sessions and unchanged public reads. It omits
+real lifecycle triggers and does not prove all live rows are writable in the old
+state; those guards are not actor authorization. Browser roles intentionally have
+no private table_sessions SELECT in the fixture: the caller-bound definer predicate
+can verify identity without granting that data to browsers.
+
+## Source-only tenant repair86
+
+Restores existing historical Dealer Control/owner or actual super-admin authority.
+Three policies use a single caller-bound predicate with explicit physical/session/
+tournament linkage checks. No arbitrary subject user parameter. Public SELECT and
+service BYPASSRLS path remain unchanged; no new write privilege is granted. Strict
+live-policy precondition rejects unknown/additional write policies. The small new
+helper is not a canonical mutation RPC: it does NOT provide CAS, a current-session
+generation/epoch check, pending-move/hand closure guards or atomic config receipts.
+Those remain required in the operational writers and following atomic repair.
+Do not claim this package completes lifecycle hardening.
+
+Migration86 is a newly generated/reserved file, not historical policy replay.
+Normalized LF SHA256:
+`829e33b690df372879b011ef360627e1e9a30d31afd4cd991fd00558a6bc3642`.
+Requires catalog hash pin, independent review, exact CI, captured-schema integration,
+verified recovery point, existing protected apply gate and postchecks before release.
+No automatic rollback to the confirmed broad authenticated/true policies; prefer a
+reviewed forward compatibility correction preserving cross-tenant denial.
 
 ## Required repair contract, not yet implemented
 
