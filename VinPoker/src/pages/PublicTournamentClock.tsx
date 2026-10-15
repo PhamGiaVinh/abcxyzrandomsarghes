@@ -8,10 +8,20 @@ import type { PublicClockSummary, TournamentResultView } from "@/components/cash
 type RpcRow = Record<string, unknown>;
 type RpcError = { message: string; code?: string };
 type RpcResult = { data: unknown; error: RpcError | null };
+type PublicClockState = PublicClockSummary & { remainingSeconds?: number | null; isRunning?: boolean | null };
 
 function callPublicRpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResult> {
   const rpc = supabase.rpc as unknown as (rpcName: string, rpcArgs: Record<string, unknown>) => PromiseLike<RpcResult>;
-  return rpc(name, args);
+  return rpc.call(supabase, name, args);
+}
+
+async function boundedPublicRead(response: PromiseLike<RpcResult>): Promise<RpcResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([Promise.resolve(response), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('public_clock_timeout')), 10000);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 function readRpcRow(value: unknown): RpcRow | null {
@@ -27,7 +37,7 @@ function nullableText(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function mapClock(row: RpcRow): PublicClockSummary {
+function mapClock(row: RpcRow): PublicClockState {
   return {
     id: String(row.id ?? row.tournament_id),
     name: String(row.name ?? "VinPoker Tournament"),
@@ -41,6 +51,9 @@ function mapClock(row: RpcRow): PublicClockSummary {
     bigBlind: Number(row.big_blind ?? 0),
     bigBlindAnte: Number(row.big_blind_ante ?? 0),
     levelEndsAt: nullableText(row.level_ends_at),
+    remainingSeconds: typeof row.remaining_seconds === 'number' && Number.isFinite(row.remaining_seconds) && row.remaining_seconds >= 0
+      ? Math.floor(row.remaining_seconds) : null,
+    isRunning: typeof row.is_running === 'boolean' ? row.is_running : null,
     nextSmallBlind: nullableNumber(row.next_small_blind),
     nextBigBlind: nullableNumber(row.next_big_blind),
     nextBigBlindAnte: nullableNumber(row.next_big_blind_ante),
@@ -49,18 +62,32 @@ function mapClock(row: RpcRow): PublicClockSummary {
   };
 }
 
-function formatCountdown(levelEndsAt: string | null, now: number): string {
+function formatCountdown(clock: PublicClockState | null, now: number): string {
+  if (clock?.isRunning === false) {
+    if (clock.remainingSeconds == null) return '--:--';
+    return `${String(Math.floor(clock.remainingSeconds / 60)).padStart(2, '0')}:${String(clock.remainingSeconds % 60).padStart(2, '0')}`;
+  }
+  const levelEndsAt = clock?.levelEndsAt;
   if (!levelEndsAt) return "--:--";
-  const seconds = Math.max(0, Math.floor((new Date(levelEndsAt).getTime() - now) / 1000));
+  const deadline = new Date(levelEndsAt).getTime();
+  if (!Number.isFinite(deadline)) return '--:--';
+  const seconds = Math.max(0, Math.floor((deadline - now) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 export default function PublicTournamentClock() {
   const { tournamentId } = useParams();
+  return <ScopedPublicTournamentClock key={tournamentId ?? 'missing'} />;
+}
+
+function ScopedPublicTournamentClock() {
+  const { tournamentId } = useParams();
   const [searchParams] = useSearchParams();
-  const [clock, setClock] = useState<PublicClockSummary | null>(null);
+  const [clock, setClock] = useState<PublicClockState | null>(null);
   const [results, setResults] = useState<TournamentResultView[]>([]);
   const [unavailable, setUnavailable] = useState(false);
+  const [resultsUnavailable, setResultsUnavailable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -71,6 +98,8 @@ export default function PublicTournamentClock() {
   useEffect(() => {
     if (!tournamentId) return;
     let active = true;
+    let inFlight = false;
+    let failed = false;
     if (import.meta.env.DEV && searchParams.get("preview") === "mock") {
       setClock({ id: tournamentId, name: "Midnight Sakura Championship", status: "running", startsAt: null, guarantee: 3_000_000_000, buyIn: 12_000_000, playersRemaining: 23, currentLevel: 18, smallBlind: 100_000, bigBlind: 200_000, bigBlindAnte: 200_000, levelEndsAt: new Date(Date.now() + 9 * 60_000 + 25_000).toISOString(), nextSmallBlind: 150_000, nextBigBlind: 300_000, nextBigBlindAnte: 300_000, entries: 188, averageStack: 8_170_000 });
       setResults([
@@ -81,15 +110,21 @@ export default function PublicTournamentClock() {
       return () => { active = false; };
     }
     const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
       const [clockResult, resultRows] = await Promise.all([
-        callPublicRpc("get_public_tournament_clock_summary", { p_tournament_id: tournamentId }),
-        callPublicRpc("get_public_tournament_results", { p_tournament_id: tournamentId }),
+        boundedPublicRead(callPublicRpc("get_public_tournament_clock_summary", { p_tournament_id: tournamentId })),
+        boundedPublicRead(callPublicRpc("get_public_tournament_results", { p_tournament_id: tournamentId })),
       ]);
       if (!active) return;
-      const row = readRpcRow(clockResult.data);
+      const candidate = readRpcRow(clockResult.data);
+      const row = candidate && String(candidate.id ?? candidate.tournament_id) === tournamentId ? candidate : null;
+      failed = !!clockResult.error || !row || !!resultRows.error;
       setUnavailable(!!clockResult.error || !row);
       setClock(row ? mapClock(row) : null);
-      const rows = Array.isArray(resultRows.data) ? resultRows.data as RpcRow[] : [];
+      setResultsUnavailable(!!resultRows.error || !Array.isArray(resultRows.data));
+      const rows = !resultRows.error && Array.isArray(resultRows.data) ? resultRows.data as RpcRow[] : [];
       setResults(rows.map((item) => ({
         place: Number(item.place),
         prize: Number(item.prize ?? 0),
@@ -97,15 +132,25 @@ export default function PublicTournamentClock() {
         avatarUrl: nullableText(item.avatar_url),
         status: item.result_status === "official" || item.result_status === "provisional" ? item.result_status : "open",
       })));
+      } catch {
+        if (!active) return;
+        setUnavailable(true);
+        failed = true;
+        setClock(null);
+        setResults([]);
+        setResultsUnavailable(true);
+      } finally { inFlight = false; }
     };
     void load();
-    const poll = window.setInterval(() => void load(), 15_000);
+    const poll = window.setInterval(() => {
+      if (!failed && document.visibilityState === 'visible' && navigator.onLine) void load();
+    }, 15_000);
     return () => { active = false; window.clearInterval(poll); };
-  }, [searchParams, tournamentId]);
+  }, [searchParams, tournamentId, attempt]);
 
-  const countdown = useMemo(() => formatCountdown(clock?.levelEndsAt ?? null, now), [clock?.levelEndsAt, now]);
+  const countdown = useMemo(() => formatCountdown(clock, now), [clock, now]);
 
-  if (unavailable) return <main className="grid min-h-[100dvh] place-items-center bg-background px-5 text-center"><div className="max-w-md rounded-3xl border border-border/55 bg-card/80 p-7"><Clock3 className="mx-auto h-8 w-8 text-[hsl(var(--poker-gold))]" /><h1 className="mt-4 text-xl font-black">Đồng hồ công khai chưa sẵn sàng</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Nguồn đọc công khai chưa được áp dụng. Trang không dùng dữ liệu nội bộ để thay thế.</p><Link to="/live" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold"><ArrowLeft className="h-4 w-4" /> Live Center</Link></div></main>;
+  if (unavailable) return <main className="grid min-h-[100dvh] place-items-center bg-background px-5 text-center"><div className="max-w-md rounded-3xl border border-border/55 bg-card/80 p-7"><Clock3 className="mx-auto h-8 w-8 text-[hsl(var(--poker-gold))]" /><h1 className="mt-4 text-xl font-black">Đồng hồ công khai chưa sẵn sàng</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không xác minh được dữ liệu đồng hồ công khai. Có thể do kết nối hoặc nguồn dữ liệu chưa sẵn sàng; trang không dùng dữ liệu nội bộ để thay thế.</p><button className="mt-4 min-h-11 rounded-xl border border-border px-4 text-sm font-bold" onClick={() => setAttempt(value => value + 1)}>Thử tải lại</button><Link to="/live" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold"><ArrowLeft className="h-4 w-4" /> Live Center</Link></div></main>;
   if (!clock) return <main className="grid min-h-[100dvh] place-items-center bg-background text-sm text-muted-foreground">Đang đồng bộ đồng hồ...</main>;
 
   return (
@@ -113,6 +158,7 @@ export default function PublicTournamentClock() {
       <div className="mx-auto flex min-h-[calc(100dvh-2rem)] max-w-[1500px] flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-border/45 pb-3"><Link to="/live" className="inline-flex min-h-11 items-center gap-2 text-xs font-bold text-muted-foreground"><ArrowLeft className="h-4 w-4" /> Live Center</Link><span className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--viewer-neon)_/_0.4)] bg-[hsl(var(--viewer-neon)_/_0.09)] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[hsl(var(--viewer-neon))]"><Radio className="h-3.5 w-3.5" /> Live</span></header>
         <section className="flex flex-1 flex-col justify-center py-6 text-center sm:py-9">
+          {clock.isRunning === false && <p className="text-sm font-bold text-muted-foreground">Đồng hồ đang dừng</p>}
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[hsl(var(--poker-gold))]">Level {clock.currentLevel ?? "--"}</p>
           <h1 className="mx-auto mt-2 max-w-5xl text-2xl font-black tracking-[-0.04em] sm:text-4xl xl:text-5xl">{clock.name}</h1>
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Level kết thúc trong</p>
@@ -124,6 +170,7 @@ export default function PublicTournamentClock() {
           </div>
         </section>
         <section className="grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
+          {resultsUnavailable && <div role="status" className="text-sm text-destructive lg:col-span-2">Không tải được dữ liệu payout công khai. Không xác nhận danh sách kết quả đang trống. <button className="min-h-11 underline" onClick={() => setAttempt(value => value + 1)}>Thử tải lại payout</button></div>}
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-2xl border border-border/50 bg-card/65 p-3"><Users className="h-4 w-4 text-[hsl(var(--poker-gold))]" /><div className="tracker-num mt-3 text-xl font-black">{clock.playersRemaining ?? "--"}</div><div className="mt-1 text-[9px] uppercase tracking-wider text-muted-foreground">Còn lại</div></div>
             <div className="rounded-2xl border border-border/50 bg-card/65 p-3"><Trophy className="h-4 w-4 text-[hsl(var(--poker-gold))]" /><div className="tracker-num mt-3 text-xl font-black">{clock.entries}</div><div className="mt-1 text-[9px] uppercase tracking-wider text-muted-foreground">Entries</div></div>

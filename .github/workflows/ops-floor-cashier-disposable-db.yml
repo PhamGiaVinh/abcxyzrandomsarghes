@@ -9,6 +9,7 @@ on:
       - "VinPoker/src/ops/**"
       - "VinPoker/src/pages/ops/**"
       - "VinPoker/src/OpsApp.tsx"
+      - "VinPoker/src/pages/PublicTournamentClock*"
       - "VinPoker/src/components/ops/shared/**"
       - "VinPoker/src/components/cashier/tournament-live/OpenTableDialog.tsx"
       - "VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx"
@@ -89,6 +90,7 @@ jobs:
           src/components/floor/useFloorTournaments.readScope.test.tsx
           src/components/floor/MultiDayTournamentsBoard.test.tsx
           src/pages/CashierDashboard.tourEntry.test.tsx
+          src/pages/PublicTournamentClock.readState.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
           tests/opsFloorCashier
 
