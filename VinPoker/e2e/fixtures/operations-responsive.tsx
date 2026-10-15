@@ -14,6 +14,18 @@ import { FloorSeatRoster } from "../../src/components/ops/shared/FloorSeatRoster
 import { FloorEntryPicker, type FloorEntrySelection } from "../../src/components/ops/shared/FloorEntryPicker";
 import { Button } from "../../src/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../src/components/ui/sheet";
+import { PlayerActionSheet } from "../../src/components/cashier/tournament-live/PlayerActionSheet";
+
+function PlayerActionFixture() {
+  const [open, setOpen] = React.useState(true);
+  const [moved, setMoved] = React.useState(false);
+  return <main><p>{moved ? 'Move intent TEST received' : 'Local player actions TEST'}</p>
+    <PlayerActionSheet open={open} onOpenChange={setOpen} entryId="entry-test" canMove busting={false}
+      seat={{seat_id:'seat-test',player_id:'player-test',player_name:'Player TEST',entry_number:1,
+        table_id:'table-test',table_name:'Table TEST',seat_number:1,chip_count:20000}}
+      onMove={() => setMoved(true)} onBust={() => {}} />
+  </main>;
+}
 
 const FLOOR_SEATABLE = [
   { entryId: "entry-a", playerId: "player-a", entryNo: 1, displayName: "Nguyễn Văn Tên Rất Dài Tại Bàn Final", currentStack: 30_000_000, registrationId: "reg-a" },
@@ -62,6 +74,7 @@ function FloorMobileFixture() {
 function Fixture() {
   const [mode, setMode] = React.useState<"manual" | "tracker">("manual");
   const surface = new URLSearchParams(location.search).get("surface");
+  if (surface === "player-actions") return <PlayerActionFixture />;
   if (surface === "floor") return <FloorMobileFixture />;
   if (surface === "clock") return <VinPokerTournamentClock data={{
     title: "Giải vô địch câu lạc bộ · FINAL TABLE", players: 9, entries: 199, reEntries: 99,

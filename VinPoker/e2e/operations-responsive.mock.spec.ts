@@ -1,5 +1,25 @@
 import { expect, test } from "@playwright/test";
 
+for (const width of [375, 1280]) {
+  test(`player action sheet explains the existing seat move at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({width,height:850});
+    const calls:string[]=[];
+    await page.route('http://127.0.0.1:54321/**',async route=>{
+      calls.push(route.request().url());
+      await route.fulfill({status:200,contentType:'application/json',body:'[]'});
+    });
+    await page.goto('/e2e/fixtures/operations-responsive.html?surface=player-actions');
+    await expect(page.getByText(/Để chọn ghế trống/)).toBeVisible();
+    await expect(page.getByText('Sắp có',{exact:true})).toHaveCount(0);
+    const move=page.getByRole('button',{name:/Chuyển/});
+    await expect(move).toBeVisible();await expect(move).toBeEnabled();
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await move.click();
+    await expect(page.getByText('Move intent TEST received')).toBeVisible();
+    expect(calls).toEqual([]);
+  });
+}
+
 test("chip source failure is unavailable, never a fabricated zero roster", async ({ page }) => {
   await page.route("http://127.0.0.1:54321/**", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "local test unavailable" }) }));
   await page.goto("/e2e/fixtures/operations-responsive.html");
