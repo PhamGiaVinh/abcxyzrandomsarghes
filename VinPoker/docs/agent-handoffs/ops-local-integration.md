@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G5 table control-mode lifetime / bounded observation
+
+Baseline8c4e70cc1 clean. Existingmodejournal alreadybeforewrite/clearcomparespayload; no missingCASbuginferred. ActualnewcomponentRED: pendingwrite A->B->A acceptedoldresponse, calledonChanged andremovedrecoveryjournal because scopeRefstringequalsAagain. Reusekeyedactor/tour/logicaltable/exactsessionlifetime wrapper +alivefences forsave/cancel lateerrors/ack/finally. Newtablecontext getsindependentwriteflight; oldunmountedresponsecannotborrownewgeneration orclearcurrentjournal. Keepsfrozenexpectedepoch/revision/key andserverauthority. Existing10sreadobserver and20smutationobserver appliedgetrequest/save/cancel; noautomaticwriterretry. Explicitlocaljournal remainsafterunknownwrite. No DB/RPC/seat/chip/modeconsumer policychange.
+
+Actualcomponent17PASS (prior14+ABAwriteack/readhang-latepending/writehang-preservedjournal) andeditedESLint0/diffcheckPASS. Cancellationdeadlinecodewrapped butno newdedicatedcancelhangtestyet; onChangedcallback itselfnotnewlybounded. Native49/95pendingmove/correction/modebackendtestsbytesunchanged, notrerun. No browser375/fulltypebuild/actualHTTP proof; source-qualifiedscopereliabilityonly. Existingworkflowalreadytracksfile/tests. NoPGneeded/nohandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, latestlocal-onlyownerhold/fullmastergoalactive. Next remainingintegration/provider/worker/browser/finaltypebuild/performance evidence; do notclaimwholeG5accepted.
+
 ## G6 TV editor actor/tournament lifetime and bounded publish observation
 
 Baseline4207fba4c clean. Issuancecaller alreadyhasbeforewrite/settlejournalscopechecks; no samebuginferred/no patch there. TV actualnewscopeRED3 after fixingmissingResizeObserver fixture(notproductbug): latepublish afteractor/tournamentchange toastsoldsuccess; hangingread staysloadingforever. Addedkeyedactor/tournamenteditorlifetime+alivefences, bounded10ssettings/readback and20spublishobservation, sharedrefwriterflight/noautowriterretry, blockdialogclosewhilepublishobserved (scopechange stillunmounts). Async read/recoveryerrors handled; invalidreadrevision blocksediting, saveackneedsnewersaferevision. Readbackmatchingoldrevision no longerackspublish. ExistingCAS RPC/payload/layout/UIcomponents preserved; noDB/authpolicy/clockruntimechanges.

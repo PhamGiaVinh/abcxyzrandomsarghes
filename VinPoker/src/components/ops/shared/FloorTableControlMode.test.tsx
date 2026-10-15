@@ -8,7 +8,7 @@ vi.mock("@/lib/featureFlags", () => ({ FEATURES: { floorTableControlV3: true } }
 
 import { FloorTableControlModeControl } from "./FloorTableControlMode";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 beforeEach(() => sessionStorage.clear());
 
 describe("FloorTableControlModeControl", () => {
@@ -29,6 +29,53 @@ describe("FloorTableControlModeControl", () => {
     fireEvent.click(screen.getByTestId("floor-table-control-mode-save"));
     fireEvent.click(screen.getByTestId("floor-table-control-mode-confirm"));
   };
+  it("ignores an old mode acknowledgement after table A -> B -> A", async () => {
+    let finish!: (value: unknown) => void;
+    const rpc = vi.fn().mockImplementation((name) => name === "floor_request_table_control_mode_v4"
+      ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ error: null, data: { ok: true, request: null } }));
+    const client = { rpc } as never; const onChanged = vi.fn();
+    const ui = (table = canonicalTable) => <SupabaseClientProvider client={client}>
+      <FloorTableControlModeControl actorId="actor" tournamentId="tour" table={table} onChanged={onChanged} />
+    </SupabaseClientProvider>;
+    const view = render(ui()); await confirmTracker();
+    view.rerender(ui({ ...canonicalTable, tt_id: "table-b", table_session_id: "session-b" }));
+    view.rerender(ui());
+    await act(async () => finish({ error: null, data: { ok: true, outcome: "pending", request_id: "old-pending", blockers: ["active_hand"] } }));
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(screen.queryByText("Đang chờ chuyển sang Live Tracker.")).not.toBeInTheDocument();
+    expect(sessionStorage.length).toBe(1);
+  });
+  it("bounds a stalled mode read without accepting its late pending state", async () => {
+    vi.useFakeTimers(); let finish!: (value: unknown) => void;
+    const rpc = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    render(<SupabaseClientProvider client={{ rpc } as never}>
+      <FloorTableControlModeControl actorId="actor" tournamentId="tour" table={canonicalTable} onChanged={vi.fn()} />
+    </SupabaseClientProvider>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_001); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Không xác minh được yêu cầu đổi chế độ");
+    await act(async () => finish({ error: null, data: { ok: true, request: { id: "late", target_mode: "tracker", blockers: ["active_hand"] } } }));
+    expect(screen.queryByText("Đang chờ chuyển sang Live Tracker.")).not.toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+  it("bounds an unknown mode write while preserving its exact journal", async () => {
+    let finish!: (value: unknown) => void; const changed = vi.fn();
+    const rpc = vi.fn().mockImplementation((name) => name === "floor_request_table_control_mode_v4"
+      ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ error: null, data: { ok: true, request: null } }));
+    render(<SupabaseClientProvider client={{ rpc } as never}>
+      <FloorTableControlModeControl actorId="actor" tournamentId="tour" table={canonicalTable} onChanged={changed} />
+    </SupabaseClientProvider>);
+    await waitFor(() => expect(screen.getByTestId("floor-table-control-mode-tracker")).toBeEnabled());
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId("floor-table-control-mode-tracker"));
+    fireEvent.click(screen.getByTestId("floor-table-control-mode-save"));
+    fireEvent.click(screen.getByTestId("floor-table-control-mode-confirm"));
+    const key = sessionStorage.key(0)!; const saved = sessionStorage.getItem(key);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_001); });
+    expect(screen.getByTestId("floor-table-control-mode-confirm")).toBeEnabled();
+    await act(async () => finish({ error: null, data: { ok: true, outcome: "applied" } }));
+    expect(sessionStorage.getItem(key)).toBe(saved); expect(changed).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.filter(([name]) => name === "floor_request_table_control_mode_v4")).toHaveLength(1);
+  });
   it("does not let a pre-mutation null poll erase the newly accepted pending request", async () => {
     let poll!: () => void;
     const interval = vi.spyOn(window, "setInterval").mockImplementation((callback, delay) => {
