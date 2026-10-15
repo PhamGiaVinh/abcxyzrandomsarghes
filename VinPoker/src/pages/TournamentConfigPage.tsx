@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, Navigate } from "react-router-dom";
 import {
@@ -6,8 +6,12 @@ import {
   useCreateTournament,
   useUpdateTournament,
   useDeleteTournament,
+  useTournamentConfigTableInventory,
 } from "@/hooks/useTournaments";
-import { useActiveTables } from "@/hooks/useDealerSwing";
+import type { CreateTournamentInput, UpdateTournamentInput } from "@/hooks/useTournaments";
+import { configRequest } from "@/hooks/useTournaments";
+import { TournamentConfigSaveError, tournamentConfigJournalKey, readTournamentConfigJournal } from "@/lib/tournamentConfigSave";
+import type { FloorTableInventoryItem } from '@/lib/floorTableControlV3';
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +20,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Card,
@@ -45,7 +50,8 @@ export default function TournamentConfigPage() {
   const clubIdStr = clubId ?? "";
 
   const { data: tournaments, isLoading: toursLoading } = useTournaments(clubIdStr);
-  const { data: allTables } = useActiveTables(clubIdStr ? [clubIdStr] : []);
+  const inventory = useTournamentConfigTableInventory(clubIdStr, user?.id);
+  const allTables = inventory.data ?? [];
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTournament, setEditingTournament] = useState<TournamentWithTables | null>(null);
@@ -92,10 +98,7 @@ export default function TournamentConfigPage() {
   }
 
   // Tables chưa được assign vào tournament nào
-  const assignedTableIds = new Set(
-    tournaments?.flatMap((t) => t.tournament_tables.map((tt) => tt.table_id)) ?? []
-  );
-  const unassignedTables = (allTables as any[] | undefined)?.filter((t) => !assignedTableIds.has(t.id)) ?? [];
+  const unassignedTables = allTables.filter(table => table.availabilityStatus === 'available');
 
   return (
     <div className="p-6 space-y-6">
@@ -120,8 +123,8 @@ export default function TournamentConfigPage() {
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {unassignedTables.map((table) => (
-                <Badge key={table.id} variant="outline">
-                  {table.table_name ?? table.name ?? table.id.slice(0, 8)}
+                <Badge key={table.gameTableId} variant="outline">
+                  {table.tableName ?? table.gameTableId.slice(0, 8)}
                 </Badge>
               ))}
             </div>
@@ -152,22 +155,28 @@ export default function TournamentConfigPage() {
 
       {/* Create Dialog */}
       <TournamentDialog
+        key={`create-${user.id}-${clubIdStr}-${isCreateOpen}`}
+        actorId={user.id}
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
         clubId={clubIdStr}
         allTables={allTables ?? []}
-        assignedTableIds={assignedTableIds}
+        inventoryReady={inventory.isSuccess && !inventory.isFetching}
+        retryInventory={() => { void inventory.refetch(); }}
       />
 
       {/* Edit Dialog */}
       {editingTournament && (
         <TournamentDialog
+          key={`edit-${user.id}-${clubIdStr}-${editingTournament.id}`}
+          actorId={user.id}
           open={!!editingTournament}
           onOpenChange={(open) => !open && setEditingTournament(null)}
           clubId={clubIdStr}
           tournament={editingTournament}
           allTables={allTables ?? []}
-          assignedTableIds={assignedTableIds}
+          inventoryReady={inventory.isSuccess && !inventory.isFetching}
+          retryInventory={() => { void inventory.refetch(); }}
         />
       )}
     </div>
@@ -292,42 +301,76 @@ function TournamentCard({
 
 // ─── Tournament Dialog (Create / Edit) ───────────────────────────────────────
 
-function TournamentDialog({
+export function TournamentDialog({
+  actorId,
   open,
   onOpenChange,
   clubId,
   tournament,
   allTables,
-  assignedTableIds,
+  inventoryReady,
+  retryInventory,
 }: {
+  actorId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clubId: string;
   tournament?: TournamentWithTables;
-  allTables: { id: string; table_name?: string; name?: string }[];
-  assignedTableIds: Set<string>;
+  allTables: FloorTableInventoryItem[];
+  inventoryReady: boolean;
+  retryInventory?: () => void;
 }) {
   const { t } = useTranslation();
   const isEditing = !!tournament;
   const createMutation = useCreateTournament();
   const updateMutation = useUpdateTournament();
 
-  const [name, setName] = useState(tournament?.name ?? "");
-  const [description, setDescription] = useState(tournament?.description ?? "");
-  const [swingDuration, setSwingDuration] = useState(
-    tournament?.swing_duration_minutes ?? 45
-  );
-  const [warnAt, setWarnAt] = useState(tournament?.warn_at_minutes ?? 5);
-  const [critAt, setCritAt] = useState(tournament?.crit_at_minutes ?? 2);
-  const [selectedTableIds, setSelectedTableIds] = useState<string[]>(
-    tournament?.tournament_tables.map((tt) => tt.table_id) ?? []
-  );
+  const journalKey = tournamentConfigJournalKey(actorId, clubId, tournament?.id ?? null);
+  const [journal] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(journalKey);
+      return {request: raw ? readTournamentConfigJournal(raw, clubId, tournament?.id ?? null, actorId) : null, invalid: false};
+    } catch { return {request: null, invalid: true}; }
+  });
+  const recovered = journal.request;
 
-  const availableTables = allTables.filter(
-    (t) => !assignedTableIds.has(t.id) || selectedTableIds.includes(t.id)
+  const [name, setName] = useState(recovered?.p_config.name ?? tournament?.name ?? "");
+  const [description, setDescription] = useState(recovered?.p_config.description ?? tournament?.description ?? "");
+  const [swingDuration, setSwingDuration] = useState(
+    recovered?.p_config.swing_duration_minutes ?? tournament?.swing_duration_minutes ?? 45
   );
+  const [warnAt, setWarnAt] = useState(recovered?.p_config.warn_at_minutes ?? tournament?.warn_at_minutes ?? 5);
+  const [critAt, setCritAt] = useState(recovered?.p_config.crit_at_minutes ?? tournament?.crit_at_minutes ?? 2);
+  const [selectedTableIds, setSelectedTableIds] = useState<string[]>(
+    recovered?.p_table_ids ?? tournament?.tournament_tables.filter((tt) => tt.status === 'active')
+      .map((tt) => tt.game_table_id ?? tt.table_id).filter((id): id is string => !!id) ?? []
+  );
+  const intent = useRef<CreateTournamentInput | UpdateTournamentInput | null>(recovered ? {
+    expected_actor_id: actorId,
+    request_id: recovered.p_request_id, club_id: clubId, name: recovered.p_config.name,
+    description: recovered.p_config.description ?? undefined,
+    swing_duration_minutes: recovered.p_config.swing_duration_minutes,
+    warn_at_minutes: recovered.p_config.warn_at_minutes, crit_at_minutes: recovered.p_config.crit_at_minutes,
+    table_ids: recovered.p_table_ids,
+    ...(recovered.p_tournament_id ? {id: recovered.p_tournament_id,
+      expected_updated_at: recovered.p_expected_updated_at!, expected_active_table_ids: recovered.p_expected_active_table_ids} : {}),
+  } : null);
+  const [outcomeUnknown, setOutcomeUnknown] = useState(!!recovered);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  const availableTables = allTables.filter(table => table.availabilityStatus === 'available'
+    || (table.tournamentId === tournament?.id && table.tournamentTableStatus === 'active'
+      && table.tableSessionId !== null && table.availabilityStatus !== 'repair_required'));
 
   const handleSubmit = async () => {
+    if (inFlight.current || journal.invalid || createMutation.isPending || updateMutation.isPending) return;
+    if (!outcomeUnknown && !inventoryReady) return;
     if (!name.trim()) {
       toast.error(t("tournamentConfig.errNameRequired"));
       return;
@@ -336,34 +379,52 @@ function TournamentDialog({
       toast.error(t("tournamentConfig.errSwingMin"));
       return;
     }
+    inFlight.current = true;
     try {
+      setSaveError(null);
+      if (!intent.current) {
+        const base: CreateTournamentInput = {
+          expected_actor_id: actorId,
+          request_id: crypto.randomUUID(), club_id: clubId, name,
+          description: description || undefined, swing_duration_minutes: swingDuration,
+          warn_at_minutes: warnAt, crit_at_minutes: critAt, table_ids: selectedTableIds,
+        };
+        intent.current = tournament ? {...base, id: tournament.id,
+          expected_updated_at: tournament.updated_at,
+          expected_active_table_ids: tournament.tournament_tables.filter(tt => tt.status === 'active').map(tt => tt.id)} : base;
+      }
+      // Persist BEFORE sending. Storage failure prevents a new mutation, not a silent unsafe retry.
+      sessionStorage.setItem(journalKey, JSON.stringify(configRequest(intent.current)));
       if (isEditing) {
-        await updateMutation.mutateAsync({
-          id: tournament!.id,
-          club_id: clubId,
-          name,
-          description: description || undefined,
-          swing_duration_minutes: swingDuration,
-          warn_at_minutes: warnAt,
-          crit_at_minutes: critAt,
-          table_ids: selectedTableIds,
-        });
+        await updateMutation.mutateAsync({...intent.current as UpdateTournamentInput, recover_only: outcomeUnknown});
+        if (!mounted.current) return;
         toast.success(t("tournamentConfig.updated"));
       } else {
-        await createMutation.mutateAsync({
-          club_id: clubId,
-          name,
-          description: description || undefined,
-          swing_duration_minutes: swingDuration,
-          warn_at_minutes: warnAt,
-          crit_at_minutes: critAt,
-          table_ids: selectedTableIds,
-        });
+        await createMutation.mutateAsync({...intent.current, recover_only: outcomeUnknown});
+        if (!mounted.current) return;
         toast.success(t("tournamentConfig.created"));
       }
+      setOutcomeUnknown(false);
+      try { sessionStorage.removeItem(journalKey); } catch {
+        // Confirmed receipt remains recoverable; storage cleanup must not turn success into another save.
+      }
+      intent.current = null;
       onOpenChange(false);
-    } catch {
-      toast.error(isEditing ? t("tournamentConfig.updateError") : t("tournamentConfig.createError"));
+    } catch (error) {
+      if (!mounted.current) return;
+      const unknown = error instanceof TournamentConfigSaveError && error.outcomeUnknown;
+      setOutcomeUnknown(unknown);
+      if (!unknown) {
+        intent.current = null;
+        try { sessionStorage.removeItem(journalKey); } catch { /* retain for receipt reconciliation */ }
+      }
+      const message = unknown
+        ? t('tournamentConfig.unknownSave', {defaultValue: 'Chưa xác minh kết quả lưu. Giữ nguyên yêu cầu và kiểm tra kết quả; không tạo lại giải.'})
+        : `${t('tournamentConfig.updateError')}: ${error instanceof TournamentConfigSaveError ? error.code : 'save_failed'}`;
+      setSaveError(message);
+      toast.error(message);
+    } finally {
+      inFlight.current = false;
     }
   };
 
@@ -378,13 +439,19 @@ function TournamentDialog({
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!next && (outcomeUnknown || createMutation.isPending || updateMutation.isPending)) return;
+      onOpenChange(next);
+    }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEditing ? t("tournamentConfig.editTitle") : t("tournamentConfig.createTitle")}</DialogTitle>
+          <DialogDescription>{t('tournamentConfig.atomicSaveDescription', {
+            defaultValue: 'Lưu cấu hình và thay đổi bàn trong cùng một giao dịch; lịch sử bàn được giữ nguyên.'})}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          <fieldset disabled={isPending || outcomeUnknown || journal.invalid} className="space-y-4">
           <div>
             <label className="text-sm font-medium">{t("tournamentConfig.nameLabel")}</label>
             <Input
@@ -443,15 +510,15 @@ function TournamentDialog({
             <div className="mt-2 max-h-48 overflow-y-auto border rounded p-2 space-y-1">
               {availableTables.map((table) => (
                 <label
-                  key={table.id}
+                  key={table.gameTableId}
                   className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer"
                 >
                   <Checkbox
-                    checked={selectedTableIds.includes(table.id)}
-                    onCheckedChange={() => toggleTable(table.id)}
+                    checked={selectedTableIds.includes(table.gameTableId)}
+                    onCheckedChange={() => toggleTable(table.gameTableId)}
                   />
                   <span className="text-sm">
-                    {table.table_name ?? table.name ?? table.id.slice(0, 8)}
+                    {table.tableName ?? table.gameTableId.slice(0, 8)}
                   </span>
                 </label>
               ))}
@@ -463,21 +530,35 @@ function TournamentDialog({
             </div>
           </div>
 
+          </fieldset>
+          {!inventoryReady && <div role="status" className="text-sm text-muted-foreground">
+            {t('tournamentConfig.inventoryUnavailable', {defaultValue: 'Chưa xác minh được inventory bàn. Chờ tải lại trước khi lưu.'})}
+            {retryInventory && <Button type="button" variant="outline" size="sm" onClick={retryInventory}>
+              {t('tournamentConfig.retryInventory', {defaultValue: 'Tải lại inventory'})}
+            </Button>}
+          </div>}
+          <p className="text-xs text-muted-foreground">{t('tournamentConfig.tableLifecycleNotice', {
+            defaultValue: 'Bàn mới được chọn sẽ mở ở chế độ Manual. Bỏ chọn bàn sẽ yêu cầu đóng bàn an toàn; giữ nguyên lịch sử.'})}</p>
+          {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
+          {journal.invalid && <p role="alert" className="text-sm text-destructive">{t('tournamentConfig.invalidJournal', {
+            defaultValue: 'Không đọc được yêu cầu lưu trước đó. Không gửi yêu cầu mới trước khi kiểm tra trạng thái server.'})}</p>}
           <div className="flex gap-2 pt-2">
             <Button
               variant="outline"
               className="flex-1"
               onClick={() => onOpenChange(false)}
-              disabled={isPending}
+              disabled={isPending || outcomeUnknown}
             >
               {t("tournamentConfig.cancel")}
             </Button>
             <Button
               className="flex-1"
               onClick={handleSubmit}
-              disabled={isPending}
+              disabled={journal.invalid || isPending || (!outcomeUnknown && !inventoryReady)}
             >
-              {isPending ? t("tournamentConfig.saving") : isEditing ? t("tournamentConfig.update") : t("tournamentConfig.create")}
+              {isPending ? t("tournamentConfig.saving") : outcomeUnknown
+                ? t('tournamentConfig.checkSave', {defaultValue: 'Kiểm tra kết quả'})
+                : isEditing ? t("tournamentConfig.update") : t("tournamentConfig.create")}
             </Button>
           </div>
         </div>

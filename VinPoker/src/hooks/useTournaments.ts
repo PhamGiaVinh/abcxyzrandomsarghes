@@ -4,8 +4,25 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import { saveTournamentConfig, recoverTournamentConfigSave, type TournamentConfigRpc, type TournamentConfigSaveRequest } from "@/lib/tournamentConfigSave";
 import type { Tournament, TournamentWithTables } from "@/types/tournament";
+import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from '@/lib/floorTableControlV3';
+
+export function useTournamentConfigTableInventory(clubId: string, actorId: string | undefined) {
+  const supabase = useSupabaseClient();
+  return useQuery({
+    queryKey: ['tournament-config-inventory', actorId, clubId],
+    enabled: !!clubId && !!actorId,
+    queryFn: async () => {
+      const client = createFloorTableControlV3Client(supabase.rpc.bind(supabase) as unknown as FloorTableControlV3Rpc);
+      const result = await client.getClubTableInventory(clubId);
+      if (result.ok === false) throw new Error(result.error);
+      return result.data;
+    },
+    staleTime: 0,
+    retry: false,
+  });
+}
 
 // ─── Query key factory ──────────────────────────────────────────────────────
 
@@ -106,6 +123,9 @@ export function useActiveTournaments(clubId: string | undefined) {
 // ─── Create tournament ──────────────────────────────────────────────────────
 
 export interface CreateTournamentInput {
+  expected_actor_id: string;
+  request_id: string;
+  recover_only?: boolean;
   club_id: string;
   name: string;
   description?: string;
@@ -121,43 +141,10 @@ export function useCreateTournament() {
 
   return useMutation({
     mutationFn: async (input: CreateTournamentInput) => {
-      const { table_ids, ...tournamentData } = input;
-
-      // 1. Create tournament
-      const { data: tournament, error: tournamentError } = await supabase
-        .from("tournaments")
-        .insert(withTournamentCreateLiveStatus({
-          ...tournamentData,
-          warn_at_minutes: input.warn_at_minutes ?? 5,
-          crit_at_minutes: input.crit_at_minutes ?? 2,
-        }))
-        .select()
-        .single();
-
-      if (tournamentError) throw tournamentError;
-
-      // 2. Link tables
-      if (table_ids.length > 0) {
-        // Remove existing links first (table can only belong to 1 tournament)
-        await supabase
-          .from("tournament_tables")
-          .delete()
-          .in("table_id", table_ids);
-
-        // Create new links
-        const { error: linkError } = await supabase
-          .from("tournament_tables")
-          .insert(
-            table_ids.map((table_id) => ({
-              tournament_id: tournament.id,
-              table_id,
-            }))
-          );
-
-        if (linkError) throw linkError;
-      }
-
-      return tournament;
+      const request = configRequest(input);
+      // Fixed contract boundary until generated types include migration88.
+      const rpc = supabase.rpc.bind(supabase) as unknown as TournamentConfigRpc;
+      return input.recover_only ? recoverTournamentConfigSave(rpc, request) : saveTournamentConfig(rpc, request);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -169,16 +156,25 @@ export function useCreateTournament() {
 
 // ─── Update tournament ──────────────────────────────────────────────────────
 
-export interface UpdateTournamentInput {
+export interface UpdateTournamentInput extends CreateTournamentInput {
   id: string;
-  club_id: string;
-  name?: string;
-  description?: string;
-  swing_duration_minutes?: number;
-  warn_at_minutes?: number;
-  crit_at_minutes?: number;
-  status?: "active" | "completed" | "cancelled";
-  table_ids?: string[];
+  expected_updated_at: string;
+  expected_active_table_ids: string[];
+}
+
+export function configRequest(input: CreateTournamentInput | UpdateTournamentInput): TournamentConfigSaveRequest {
+  return {
+    p_expected_actor_id: input.expected_actor_id,
+    p_tournament_id: 'id' in input ? input.id : null,
+    p_club_id: input.club_id,
+    p_config: {name: input.name, description: input.description ?? null,
+      swing_duration_minutes: input.swing_duration_minutes,
+      warn_at_minutes: input.warn_at_minutes ?? 5, crit_at_minutes: input.crit_at_minutes ?? 2},
+    p_table_ids: [...input.table_ids].sort(),
+    p_expected_updated_at: 'id' in input ? input.expected_updated_at : null,
+    p_expected_active_table_ids: 'id' in input ? [...input.expected_active_table_ids].sort() : [],
+    p_request_id: input.request_id,
+  };
 }
 
 export function useUpdateTournament() {
@@ -187,50 +183,9 @@ export function useUpdateTournament() {
 
   return useMutation({
     mutationFn: async (input: UpdateTournamentInput) => {
-      const { id, club_id, table_ids, ...updateData } = input;
-
-      // 1. Update tournament
-      const { data: tournament, error: tournamentError } = await supabase
-        .from("tournaments")
-        .update({
-          ...updateData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (tournamentError) throw tournamentError;
-
-      // 2. Update table links if provided
-      if (table_ids !== undefined) {
-        // Remove all existing links
-        await supabase
-          .from("tournament_tables")
-          .delete()
-          .eq("tournament_id", id);
-
-        // Create new links
-        if (table_ids.length > 0) {
-          await supabase
-            .from("tournament_tables")
-            .delete()
-            .in("table_id", table_ids);
-
-          const { error: linkError } = await supabase
-            .from("tournament_tables")
-            .insert(
-              table_ids.map((table_id) => ({
-                tournament_id: id,
-                table_id,
-              }))
-            );
-
-          if (linkError) throw linkError;
-        }
-      }
-
-      return tournament;
+      const request = configRequest(input);
+      const rpc = supabase.rpc.bind(supabase) as unknown as TournamentConfigRpc;
+      return input.recover_only ? recoverTournamentConfigSave(rpc, request) : saveTournamentConfig(rpc, request);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({

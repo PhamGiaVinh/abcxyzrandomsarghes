@@ -4,6 +4,10 @@ on:
     paths:
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
+      - 'VinPoker/src/lib/tournamentConfigSave*'
+      - 'VinPoker/src/pages/TournamentConfigPage*'
+      - 'VinPoker/tests/dealerSwing/tournamentConfigSave*'
+      - 'VinPoker/supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql'
       - '.github/workflows/dealer-checkin-current-schema.yml'
       - 'VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner*'
       - 'VinPoker/supabase/functions/process-swing/plannerDispatchOutcome.test.ts'
@@ -431,6 +435,9 @@ jobs:
           node tests/dealerSwing/restHistory.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/openSessionNames.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql
+          node tests/dealerSwing/tournamentConfigSave.currentSchema.mjs
+          node tests/dealerSwing/tournamentConfigSave.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000027_tracker_equal_blinds_contract_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/equalBlinds.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000028_tracker_roster_exact_session_v1.sql

@@ -2910,6 +2910,13 @@
     "submit": "Send request"
   },
   "tournamentConfig": {
+    "unknownSave": "Save outcome is not confirmed. Keep this request and check its result; do not create the tournament again.",
+    "checkSave": "Check save result",
+    "inventoryUnavailable": "Table inventory is not verified. Reload it before saving.",
+    "retryInventory": "Reload inventory",
+    "tableLifecycleNotice": "Newly selected tables open in Manual mode. Deselecting requests a safe close; table history is preserved.",
+    "invalidJournal": "The previous save request cannot be read. Verify server state before sending a new request.",
+    "atomicSaveDescription": "Save configuration and table changes in one transaction while preserving table history.",
     "loading": "Loading...",
     "noPermission": "You don't have permission to manage swing configuration.",
     "selectClubFromUrl": "Select a club from the URL to manage tournaments.",
