@@ -4,7 +4,7 @@ import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/useAuth";
 import { mergeCheckinCandidateReads, type CheckinCandidate } from "@/lib/dealerCheckinCandidates";
 import { DealerCheckinCandidateList } from "./dealer-swing/DealerCheckinCandidateList";
-import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { useManualSwingRecovery } from "./dealer-swing/useManualSwingRecovery";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -86,7 +86,7 @@ import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "@/
 import { findDealerTableTournament, isDealerTableAvailable } from "@/lib/dealerTableInventory";
 import { exportToExcel } from "@/lib/exportExcel";
 import { calculateLiveWorkedMinutes } from "@/lib/dealerWorkedMinutes";
-import { classifyManualSwingOutcome, classifyProcessSwingResult } from "@/lib/dealerSwingOutcome";
+import { classifyProcessSwingResult } from "@/lib/dealerSwingOutcome";
 import {
   Users, Table2, Bell, Play, RefreshCw, UserPlus, UserMinus,
   FileSpreadsheet, Loader2, Clock, AlertTriangle, Coffee,
@@ -353,7 +353,6 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   // ── Tournament config for swing override display ─────────────────────────
   const [processing, setProcessing] = useState<string | null>(null);
   const [swingAllBusy, setSwingAllBusy] = useState(false);
-  const [swingingTableId, setSwingingTableId] = useState<string | null>(null);
   const [massAssignBusy, setMassAssignBusy] = useState(false);
   const [massOpenGate, setMassOpenGate] = useState<MassOpenGate>("checking");
   const [openOperationProgress, setOpenOperationProgress] = useState<OpenOperationProgress | null>(null);
@@ -669,68 +668,11 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   };
 
   // Manual swing: perform swing for a single assignment only (no side effects on other tables)
-  const swingingRef = useRef(false);
-  const swingRequestIdsRef = useRef(new Map<string, {
-    p_assignment_id: string; p_table_id: string; p_table_session_id: string;
-    p_expected_version: number; p_request_id: string;
-  }>());
-  const manualSwingKey = JSON.stringify([user?.id, activeClubId]);
-  const manualSwingScope = useRef({ key: manualSwingKey, generation: 0 });
-  if (manualSwingScope.current.key !== manualSwingKey) manualSwingScope.current = {
-    key: manualSwingKey, generation: manualSwingScope.current.generation + 1,
-  };
-  const manualSwingAlive = useRef(true);
-  useEffect(() => { manualSwingAlive.current = true; return () => { manualSwingAlive.current = false; }; }, []);
-  useEffect(() => { swingingRef.current = false; setSwingingTableId(null); }, [manualSwingKey]);
-  const performSwingForTable = async (assignmentId: string) => {
-    if (swingingRef.current) return; // prevent double-click (ref is synchronous)
-    if (!user?.id || !activeClubId) { toast.error("Chưa xác minh được tài khoản và CLB để đổi dealer."); return; }
-    const generation = manualSwingScope.current.generation;
-    const current = () => manualSwingAlive.current && manualSwingScope.current.generation === generation;
-    const assignment = (assignments ?? []).find((row) => row.id === assignmentId);
-    if (!assignment) {
-      toast.warning("Lượt chia đã thay đổi — đang tải lại.");
-      await refetchAssignments();
-      return;
-    }
-    if (!assignment.table_session_id) {
-      toast.error("Bàn chưa có liên kết phiên hợp lệ. Không thể đổi dealer.");
-      return;
-    }
-    const intentKey = JSON.stringify([user.id, activeClubId, assignmentId]);
-    const intent = swingRequestIdsRef.current.get(intentKey) ?? {
-      p_assignment_id: assignmentId, p_table_id: assignment.table_id,
-      p_table_session_id: assignment.table_session_id, p_expected_version: assignment.version,
-      p_request_id: crypto.randomUUID(),
-    };
-    swingRequestIdsRef.current.set(intentKey, intent);
-    swingingRef.current = true;
-    setSwingingTableId(assignmentId);
-    try {
-      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(dealerMassOpenRpc<unknown>("operator_perform_swing", intent)));
-      if (!current()) return;
-      if (error) {
-        toast.error(`Lỗi swing: ${error.message}`);
-        console.error("[performSwingForTable]", error);
-        return;
-      }
-      const swingOutcome = classifyManualSwingOutcome(data);
-      if (swingOutcome.kind === "success") toast.success(swingOutcome.message);
-      else if (swingOutcome.kind === "warning") toast.warning(swingOutcome.message);
-      else if (swingOutcome.kind === "info") toast.info(swingOutcome.message);
-      else if (swingOutcome.kind === "error") toast.error(swingOutcome.message);
-      else toast.warning(swingOutcome.message);
-      if (swingOutcome.kind !== "unknown" && swingOutcome.kind !== "error") swingRequestIdsRef.current.delete(intentKey);
-      await Promise.all([
-        refetchAssignments(),
-        refetchDealers(),
-      ]);
-    } catch (e: any) {
-      if (current()) toast.error(e.message);
-    } finally {
-      if (current()) { setSwingingTableId(null); swingingRef.current = false; }
-    }
-  };
+  const manualSwingRecovery = useManualSwingRecovery({ actorId: user?.id ?? null, clubId: activeClubId,
+    assignments: assignments ?? [], rpc: dealerMassOpenRpc,
+    onSettled: () => Promise.all([refetchAssignments(), refetchDealers()]),
+  });
+  const { swingingTableId, performSwingForTable } = manualSwingRecovery;
 
   // Mass assign: fill empty tables. Returns assigned count.
   const massAssign = async (): Promise<number> => {
@@ -2058,6 +2000,17 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {(manualSwingRecovery.pending || manualSwingRecovery.error) && (
+        <div role="status" className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+          <p className="text-sm">{manualSwingRecovery.error || "Còn yêu cầu đổi dealer cần đối chiếu trước khi gửi lệnh mới."}</p>
+          {manualSwingRecovery.pending && <p className="text-xs text-muted-foreground break-all">Mã yêu cầu: {manualSwingRecovery.pending.request_id}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={!!swingingTableId} onClick={() => void manualSwingRecovery.reconcile()}>Đối chiếu kết quả Swing</Button>
+            {manualSwingRecovery.retryable && <Button size="sm" disabled={!!swingingTableId} onClick={() => void manualSwingRecovery.retry()}>Gửi lại cùng yêu cầu</Button>}
+            <Button size="sm" variant="outline" disabled={!!swingingTableId} onClick={manualSwingRecovery.reload}>Đọc lại yêu cầu đã lưu</Button>
+          </div>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         {clubs.length > 1 && (

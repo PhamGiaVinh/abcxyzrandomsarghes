@@ -31,6 +31,8 @@ on:
       - 'VinPoker/src/components/ops/shared/FloorTableControlMode.test.tsx'
       - 'VinPoker/tests/dealerSwing/tournamentConfigSave*'
       - 'VinPoker/tests/dealerSwing/manualSwingLifecycle.test.tsx'
+      - 'VinPoker/src/components/cashier/dealer-swing/useManualSwingRecovery.ts'
+      - 'VinPoker/src/lib/dealerManualSwingIntent.ts'
       - 'VinPoker/supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql'
       - 'VinPoker/scripts/ops/clock-level89-*'
       - '.github/workflows/clock-level89-protected-apply.yml'
