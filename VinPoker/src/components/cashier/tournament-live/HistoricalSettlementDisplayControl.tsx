@@ -153,20 +153,30 @@ export function HistoricalSettlementDisplayControl({
     }
   };
 
-  const recoverIntent = async (intent: HistoricalCommitIntent, current: () => boolean) => {
+  const readIntentReceipt = async (intent: HistoricalCommitIntent, current: () => boolean) => {
     const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-historical-settlement", {
       body: { mode: "receipt", ...intent },
     }));
-    if (!current()) return;
-    if (error || historicalCommitReceiptState(data, intent) !== "found") {
+    if (!current()) return null;
+    const state = historicalCommitReceiptState(data, intent);
+    if (error || state === null) {
       throw new Error("Chưa xác minh được receipt History. Giữ nguyên mã yêu cầu; không tạo key mới.");
     }
+    return state;
+  };
+  const acknowledgeIntent = (intent: HistoricalCommitIntent) => {
     try { settleHistoricalCommitJournal(sessionStorage, intent); setPending(null); }
     catch { toast.error("Máy chủ đã xác nhận commit nhưng chưa dọn được mã phục hồi. Không tạo yêu cầu mới."); }
     setConfirmOpen(false);
     setPreview(null);
     toast.success("Máy chủ đã xác nhận request History đã commit. Đang tải lại kết quả hiện hành.");
     onVerified();
+  };
+  const recoverIntent = async (intent: HistoricalCommitIntent, current: () => boolean) => {
+    const state = await readIntentReceipt(intent, current);
+    if (!current()) return;
+    if (state !== "found") throw new Error("Chưa tìm thấy receipt History; chưa thể kết luận request đã thất bại.");
+    acknowledgeIntent(intent);
   };
 
   const recoverPending = async () => {
@@ -177,6 +187,31 @@ export function HistoricalSettlementDisplayControl({
     try { await recoverIntent(pending, current); }
     catch { if (current()) toast.error("Chưa xác minh được receipt History. Giữ nguyên mã yêu cầu để kiểm tra lại."); }
     finally { commitFlightRef.current.finish(); if (current()) setBusy(false); }
+  };
+
+  const retryPending = async () => {
+    if (!pending || busy || !confirm("Tra receipt trước; chỉ khi chưa tìm thấy mới gửi lại đúng request ID và revision/hash cũ. Không tạo preview mới. Tiếp tục?")) return;
+    if (!commitFlightRef.current.begin()) return;
+    const generation = scopeRef.current.generation;
+    const current = () => mountedRef.current && generation === scopeRef.current.generation;
+    setBusy(true);
+    try {
+      const prior = readHistoricalCommitJournal(sessionStorage, pending);
+      if (!prior || prior.idempotency_key !== pending.idempotency_key) throw new Error("journal_changed");
+      persistHistoricalCommitJournal(sessionStorage, pending);
+      const state = await readIntentReceipt(pending, current);
+      if (!current()) return;
+      if (state === "found") { acknowledgeIntent(pending); return; }
+      // The same immutable journal must still exist after the receipt await.
+      if (!readHistoricalCommitJournal(sessionStorage, pending)) throw new Error("journal_changed");
+      persistHistoricalCommitJournal(sessionStorage, pending);
+      try { await waitForManualPlayerResponse(supabase.functions.invoke("tournament-historical-settlement", {
+        body: { mode: "commit", ...pending },
+      })); } catch { /* Explicit same-key retry still needs exact receipt proof. */ }
+      if (current()) await recoverIntent(pending, current);
+    } catch {
+      if (current()) toast.error("Chưa xác minh được request History cũ; giữ nguyên mã và revision/hash, không tạo yêu cầu mới.");
+    } finally { commitFlightRef.current.finish(); if (current()) setBusy(false); }
   };
 
   const commit = async () => {
@@ -235,6 +270,7 @@ export function HistoricalSettlementDisplayControl({
       {pending && <div role="status" className="mt-3 space-y-2 text-xs">
         <p>History đang chờ đối chiếu receipt. Chưa thể kết luận request đã ghi hay chưa.</p>
         <Button type="button" variant="outline" disabled={busy} onClick={() => void recoverPending()}>Kiểm tra receipt yêu cầu cũ</Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={() => void retryPending()}>Kiểm tra rồi gửi lại cùng mã</Button>
       </div>}
 
       {preview && (

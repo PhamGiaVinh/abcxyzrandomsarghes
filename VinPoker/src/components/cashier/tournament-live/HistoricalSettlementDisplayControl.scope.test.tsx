@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { HistoricalSettlementDisplayControl } from "./HistoricalSettlementDisplayControl";
+import { persistHistoricalCommitJournal, type HistoricalCommitIntent } from "@/lib/tracker-poker/historicalCommitIntent";
 const mocks=vi.hoisted(()=>({invoke:vi.fn(),error:vi.fn(),success:vi.fn(),actor:"81100000-0000-4000-8000-000000000001"}));
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:mocks.actor}})}));
 vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>({functions:{invoke:mocks.invoke}})}));
@@ -71,4 +72,44 @@ it("does not send a commit when durable browser storage is unavailable",async()=
  vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw Error("storage denied");});
  fireEvent.click(screen.getByRole("button",{name:"Xác nhận lưu hiển thị"}));await act(async()=>{});
  expect(mocks.invoke).toHaveBeenCalledTimes(1);expect(screen.getByRole("alert")).toHaveTextContent("chưa gửi commit History");
+});
+const pendingIntent=():HistoricalCommitIntent=>({expected_actor_id:mocks.actor,tournament_id:"85000000-0000-4000-8000-000000000001",
+ hand_id:"86000000-0000-4000-8000-000000000001",idempotency_key:"history-explicit-retry-0001",expected_source_revision:1,
+ expected_source_chain_hash:"a".repeat(64),expected_outcome_hash:"b".repeat(64)});
+const receiptEnvelope=(intent:HistoricalCommitIntent,found:boolean)=>({ok:true,status:found?"receipt_found":"receipt_not_found",
+ actor_id:intent.expected_actor_id,tournament_id:intent.tournament_id,hand_id:intent.hand_id,idempotency_key:intent.idempotency_key,
+ source_revision:intent.expected_source_revision,source_chain_hash:intent.expected_source_chain_hash,outcome_hash:intent.expected_outcome_hash,
+ receipt:found?{ok:true,idempotent:true,settlement_revision:1,source_revision:intent.expected_source_revision,outcome_hash:intent.expected_outcome_hash}:null});
+it("explicit retry reads first and reuses the unchanged persisted key and CAS",async()=>{
+ const intent=pendingIntent();persistHistoricalCommitJournal(sessionStorage,intent);vi.spyOn(window,"confirm").mockReturnValue(true);
+ const writes:unknown[]=[];const modes:string[]=[];
+ mocks.invoke.mockImplementation(async(_name,{body})=>{modes.push(body.mode);
+  if(body.mode==="commit"){writes.push(body);return {data:{ok:true},error:null};}
+  return {data:receiptEnvelope(intent,writes.length>0),error:null};
+ });
+ const verified=vi.fn();render(<HistoricalSettlementDisplayControl tournamentId={intent.tournament_id} handId={intent.hand_id} handNumber={1} onVerified={verified} />);
+ const retry=screen.getByRole("button",{name:"Kiểm tra rồi gửi lại cùng mã"});fireEvent.click(retry);fireEvent.click(retry);await act(async()=>{});
+ expect(modes).toEqual(["receipt","commit","receipt"]);expect(writes).toEqual([{mode:"commit",...intent}]);
+ expect(sessionStorage.length).toBe(0);expect(verified).toHaveBeenCalledOnce();
+});
+for(const outcome of ["found","unavailable","declined"])it(`does not resend a pending commit when receipt is ${outcome}`,async()=>{
+ const intent=pendingIntent();persistHistoricalCommitJournal(sessionStorage,intent);vi.spyOn(window,"confirm").mockReturnValue(outcome!=="declined");
+ mocks.invoke.mockResolvedValue(outcome==="unavailable"?{data:null,error:Error("503")}:{data:receiptEnvelope(intent,true),error:null});
+ render(<HistoricalSettlementDisplayControl tournamentId={intent.tournament_id} handId={intent.hand_id} handNumber={1} onVerified={vi.fn()} />);
+ fireEvent.click(screen.getByRole("button",{name:"Kiểm tra rồi gửi lại cùng mã"}));await act(async()=>{});
+ expect(mocks.invoke.mock.calls.every(([,parameters])=>parameters.body.mode==="receipt")).toBe(true);
+ expect(mocks.invoke).toHaveBeenCalledTimes(outcome==="declined"?0:1);
+ expect(sessionStorage.length).toBe(outcome==="found"?0:1);
+});
+for(const change of ["account","journal"])it(`does not resend after ${change} changes during the receipt read`,async()=>{
+ const intent=pendingIntent();persistHistoricalCommitJournal(sessionStorage,intent);vi.spyOn(window,"confirm").mockReturnValue(true);
+ let resolve!:(value:unknown)=>void;mocks.invoke.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));
+ const verified=vi.fn();const props={tournamentId:intent.tournament_id,handId:intent.hand_id,handNumber:1,onVerified:verified};
+ const view=render(<HistoricalSettlementDisplayControl {...props} />);
+ fireEvent.click(screen.getByRole("button",{name:"Kiểm tra rồi gửi lại cùng mã"}));
+ if(change==="account"){mocks.actor="81300000-0000-4000-8000-000000000001";view.rerender(<HistoricalSettlementDisplayControl {...props} />);}
+ else sessionStorage.setItem(sessionStorage.key(0)!,JSON.stringify({...intent,idempotency_key:"history-replacement-request-0002"}));
+ await act(async()=>resolve({data:receiptEnvelope(intent,false),error:null}));
+ expect(mocks.invoke).toHaveBeenCalledTimes(1);expect(verified).not.toHaveBeenCalled();expect(sessionStorage.length).toBe(1);
+ if(change==="journal")expect(JSON.parse(sessionStorage.getItem(sessionStorage.key(0)!)!).idempotency_key).toBe("history-replacement-request-0002");
 });
