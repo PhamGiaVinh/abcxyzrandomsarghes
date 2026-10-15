@@ -52,7 +52,11 @@ const preflight=`DO $$ BEGIN IF current_database()<>'vinpoker_ops_checkin' OR cu
  THEN RAISE EXCEPTION 'Exact owned loopback PG17 database required'; END IF; END $$;`;
 // The earlier overlap harness deliberately commits e170 fixtures; use our own namespace.
 const sql=(preflight+fixture.replace('BEGIN;',`BEGIN; ${manual}`).replace('ROLLBACK;',`${diagnostic}\nROLLBACK;`))
- .replaceAll('e1700000-','e8700000-');
+ .replaceAll('e1700000-','e8700000-')
+ // Initial-assignment receipts are globally keyed, independently of fixture UUIDs.
+ .replaceAll("'exact-key'", "'rotation-close-exact-key'")
+ .replaceAll("'cross-club-key'", "'rotation-close-cross-club-key'")
+ .replaceAll("'closed-key'", "'rotation-close-closed-key'");
 const result=spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8'});
 assert.equal(result.status,0,result.stderr);
 console.log('DIAGNOSTIC ONLY (verified manual intent): close/reopen releases old assignment but stale predicted plan persists; not automatic-OFF or Swing execution proof');
