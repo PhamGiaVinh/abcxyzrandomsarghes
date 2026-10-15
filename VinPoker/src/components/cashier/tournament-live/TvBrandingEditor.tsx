@@ -165,14 +165,14 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
     };
     setSaving(true);
     try {
-      const { data, error } = await waitForManualPlayerResponse(rpc("save_tv_tournament_layout_v1", {
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(rpc("save_tv_tournament_layout_v1", {
         p_tournament_id: tournamentId,
         p_expected_revision: revision,
         p_brand_name: submitted.brandName,
         p_logo_url: submitted.logoUrl ?? "",
         p_bg_url: submitted.backgroundUrl ?? "",
         p_layout: submitted.layout,
-      }));
+      })));
       if (!alive.current) return;
       if (error || !data) {
         toast.error(error?.message?.includes("tv_layout_stale_revision")

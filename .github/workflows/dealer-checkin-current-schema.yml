@@ -101,6 +101,7 @@ on:
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
+      - 'VinPoker/tests/trackerSettlement/tvPublishResponse.types.mjs'
       - 'VinPoker/tests/tracker/historicalSettlementDisplayCapability.test.ts'
       - 'VinPoker/tests/trackerSettlement/historyAttention.migrationRollback.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'
@@ -808,6 +809,7 @@ jobs:
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.scope.test.tsx tests/tracker/historicalSettlementDisplayCapability.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/trackerPoker/historicalCommitIntent.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/TvBrandingEditor.test.tsx src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx --maxWorkers=1 --minWorkers=1
+          node tests/trackerSettlement/tvPublishResponse.types.mjs
           node node_modules/vitest/vitest.mjs run tests/trackerSettlement/recordedHandDisplayOutcome.test.ts tests/trackerSettlement/recordedHandDisplayOutcome.journal.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/HistoricalSettlementBatchControl.scope.test.tsx tests/trackerPoker/historicalSettlementBatch.test.ts --maxWorkers=1 --minWorkers=1
           node --test tests/tracker/manualFinishIntent.callback.test.mjs

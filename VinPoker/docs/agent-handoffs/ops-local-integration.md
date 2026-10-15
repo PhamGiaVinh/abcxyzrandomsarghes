@@ -1,5 +1,9 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## TV publish PromiseLike adapter type regression
+
+Baselinedb7b2a6bd clean. RecentTV observer caller passed declared UntypedRpc PromiseLike into helper expectingPromise; SWC/render doesnotchecktypes. Added lightweight realTypeScript noemit/nocache virtualprobe that extractsactualUntypedRpc alias andactualwaitForManualPlayerResponse call fromcomponentAST, importsrealhelper only (notwholegraph). ActualRED TS2345 missingcatch/finally/Symbol.toStringTag. NormalizeonlyTVcallwithPromise.resolve; helpercontractunchanged. ProbeGREEN, affectedTVscope7PASS, sourceESLint0/diffcheckPASS. Workflownewpath/commandwired; nofullcomponent/projecttypecheck/buildclaim. Theprobe intentionallychecksonecallcontract andfailsifnewcallsneedreview; notsyntheticreplacementtypesforactualhelper. No installs/sharednode_moduleswrites/noPG/nohandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Fullmastergoalactive/local-onlyhold; fulltype/buildstillrequiredlater.
+
 ## G5 table control-mode lifetime / bounded observation
 
 Baseline8c4e70cc1 clean. Existingmodejournal alreadybeforewrite/clearcomparespayload; no missingCASbuginferred. ActualnewcomponentRED: pendingwrite A->B->A acceptedoldresponse, calledonChanged andremovedrecoveryjournal because scopeRefstringequalsAagain. Reusekeyedactor/tour/logicaltable/exactsessionlifetime wrapper +alivefences forsave/cancel lateerrors/ack/finally. Newtablecontext getsindependentwriteflight; oldunmountedresponsecannotborrownewgeneration orclearcurrentjournal. Keepsfrozenexpectedepoch/revision/key andserverauthority. Existing10sreadobserver and20smutationobserver appliedgetrequest/save/cancel; noautomaticwriterretry. Explicitlocaljournal remainsafterunknownwrite. No DB/RPC/seat/chip/modeconsumer policychange.
