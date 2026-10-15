@@ -6,6 +6,8 @@ on:
       - 'VinPoker/tests/dealerSwing/shiftPayrollReturnType*'
       - 'VinPoker/supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql'
       - 'VinPoker/tests/dealerSwing/payrollReadAuthority*'
+      - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
+      - 'VinPoker/tests/tournamentConfig/**'
       - 'VinPoker/src/pages/ops/OpsTournaments*'
       - 'VinPoker/src/hooks/useTournaments*'
       - '.github/workflows/dealer-checkin-current-schema.yml'
@@ -337,6 +339,11 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/shiftPayrollReturnType.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
+          # Exercise the real operational suites with tenant policies active,
+          # not only the small standalone RLS fixture. Never rewrite the captured
+          # policies to satisfy86's strict live-shape precondition.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql
+          echo TOURNAMENT_TABLE86_APPLIED_TO_RECOVERED_OPERATIONS_SCHEMA
           createdb -T "$PGDATABASE" vinpoker_ops_dealer51_atomic_ci
           PGDATABASE=vinpoker_ops_dealer51_atomic_ci DEALER51_PG_TEST=1 node --test scripts/ops/dealer-checkin-51-atomic-pg.test.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/checkin.pg17.sql
