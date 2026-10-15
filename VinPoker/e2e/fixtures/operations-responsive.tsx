@@ -15,6 +15,17 @@ import { FloorEntryPicker, type FloorEntrySelection } from "../../src/components
 import { Button } from "../../src/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../src/components/ui/sheet";
 import { PlayerActionSheet } from "../../src/components/cashier/tournament-live/PlayerActionSheet";
+import { NewTournamentDialog } from "../../src/components/floor/TournamentManagerShared";
+
+function TournamentCreateFixture() {
+  const [created, setCreated] = React.useState(false);
+  return <AuthProvider><main className="min-h-screen bg-background p-4 text-foreground">
+    <p>LOCAL TEST · Atomic tournament creation · No production writes</p>
+    {created ? <p>Original create receipt recovered TEST</p> : <NewTournamentDialog
+      clubs={[]} defaultClubId="e9100000-0000-4000-8000-000000000011" multiClub={false}
+      lockMode="single" onCreated={() => setCreated(true)} />}
+  </main></AuthProvider>;
+}
 
 function PlayerActionFixture() {
   const [open, setOpen] = React.useState(true);
@@ -74,6 +85,7 @@ function FloorMobileFixture() {
 function Fixture() {
   const [mode, setMode] = React.useState<"manual" | "tracker">("manual");
   const surface = new URLSearchParams(location.search).get("surface");
+  if (surface === "tournament-create") return <TournamentCreateFixture />;
   if (surface === "player-actions") return <PlayerActionFixture />;
   if (surface === "floor") return <FloorMobileFixture />;
   if (surface === "clock") return <VinPokerTournamentClock data={{
