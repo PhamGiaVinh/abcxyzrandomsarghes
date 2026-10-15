@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ interface ClubRow {
 type SeriesImg = { id: string; club_id: string; image_url: string; caption: string | null; position: number };
 
 export const MediaClubSchedules = () => {
+  const { t } = useTranslation();
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [seriesByClub, setSeriesByClub] = useState<Record<string, SeriesImg[]>>({});
   const [loading, setLoading] = useState(true);
@@ -69,9 +71,12 @@ export const MediaClubSchedules = () => {
         published++;
         pos++;
       }
-      if (published === files.length && published > 0) toast.success("Đã tải ảnh lịch series");
-      else if (published > 0) toast.warning(`Đã tải ảnh lịch series (${published}/${files.length})`);
+      if (published === files.length && published > 0) toast.success(t("admin.scheduleUpload.complete"));
+      else if (published > 0) toast.warning(t("admin.scheduleUpload.partial", { published, total: files.length }));
       load();
+    } catch {
+      // A rejected write may have committed: do not retry or delete its object.
+      toast.error(t("admin.scheduleUpload.unknown"));
     } finally {
       setBusyId(null);
     }

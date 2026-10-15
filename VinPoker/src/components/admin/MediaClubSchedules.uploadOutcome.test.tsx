@@ -35,4 +35,9 @@ describe('series upload result matches actual publication',()=>{
  it('reports success only when both publications succeeded',async()=>{
   await uploadTwo();expect(mocks.insert).toHaveBeenCalledTimes(2);expect(mocks.success).toHaveBeenCalledOnce();expect(mocks.warning).not.toHaveBeenCalled();
  });
+ it('contains rejected publication as unknown without retry or false success',async()=>{
+  mocks.insert.mockRejectedValueOnce(new TypeError('Failed to fetch'));await uploadTwo();
+  expect(mocks.insert).toHaveBeenCalledTimes(1);expect(mocks.upload).toHaveBeenCalledTimes(1);
+  expect(mocks.success).not.toHaveBeenCalled();expect(mocks.error).toHaveBeenCalled();
+ });
 });
