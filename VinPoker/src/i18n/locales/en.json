@@ -2040,6 +2040,10 @@
       "prF": "Coming in PR F"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "Search results could not be loaded. Data is unverified; try again.",
+    "detailsUnavailable": "Deal or profile history could not be fully loaded. Data is unverified; try again."
+  },
   "financeRead": {
     "forbidden": "You do not have permission to view this club's financial report.",
     "missingBackend": "The server does not have the required report version. Figures cannot be verified.",

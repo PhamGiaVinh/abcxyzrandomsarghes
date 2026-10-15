@@ -516,6 +516,33 @@
         }
       ]
     },
+    "cashier-lookup-player": {
+      "path": "VinPoker/supabase/functions/cashier-lookup-player",
+      "critical": true,
+      "autoDeployOnPush": false,
+      "verifyJwt": true,
+      "receiptEnvironment": "receipt-vinpoker-edge-cashier-lookup-player",
+      "quality": {
+        "denoTests": ["VinPoker/supabase/functions/cashier-lookup-player/index.test.ts"]
+      },
+      "contracts": [
+        { "type": "relation", "name": "public.user_roles" },
+        { "type": "relation", "name": "public.clubs" },
+        { "type": "relation", "name": "public.club_cashiers" },
+        { "type": "relation", "name": "public.profiles" },
+        { "type": "relation", "name": "public.staking_deals" },
+        { "type": "relation", "name": "public.staking_purchases" },
+        { "type": "column", "relation": "public.staking_deals", "name": "club_id" },
+        {
+          "type": "function",
+          "name": "public.cashier_club_ids",
+          "arguments": ["_user_id"],
+          "argumentTypes": ["uuid"],
+          "allowOtherOverloads": false,
+          "acl": { "authenticated": true, "anon": false, "service_role": true }
+        }
+      ]
+    },
     "ops-club-accounts": {
       "path": "VinPoker/supabase/functions/ops-club-accounts",
       "critical": true,

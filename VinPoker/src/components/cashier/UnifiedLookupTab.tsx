@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -27,39 +29,66 @@ type MemberHit = {
 };
 
 export default function UnifiedLookupTab({ clubIds, clubs }: { clubIds: string[]; clubs: ClubRow[] }) {
+  const { t } = useTranslation();
+  const { user, session, loading: authLoading } = useAuth();
+  const clubScope = JSON.stringify([...clubIds].sort());
+  const context = useMemo(() => ({ clubScope, actorId: user?.id, hasSession: !!session?.access_token, authLoading }),
+    [clubScope, user?.id, session?.access_token, authLoading]);
+  const activeContext = useRef<object | null>(context);
+  activeContext.current = context;
+  const sequence = useRef(0);
+  const [resultContext, setResultContext] = useState<object | null>(null);
+  const [searchError, setSearchError] = useState(false);
+  const [detailErrors, setDetailErrors] = useState<Record<string, boolean>>({});
   const [term, setTerm] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<MemberHit[] | null>(null);
   const [dealsByUser, setDealsByUser] = useState<Record<string, any[]>>({});
   const [profileLogsByUser, setProfileLogsByUser] = useState<Record<string, any[]>>({});
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    activeContext.current = context;
+    return () => { if (activeContext.current === context) activeContext.current = null; };
+  }, [context]);
+  const visibleResults = resultContext === context ? results : null;
+  const visibleBusy = resultContext === context && busy;
+  const visibleError = resultContext === context && searchError;
 
   const clubName = (id?: string) => clubs.find((c) => c.id === id)?.name ?? "—";
 
   const search = async () => {
     const s = term.trim();
     if (s.length < 2) { toast.error("Nhập ít nhất 2 ký tự"); return; }
+    if (authLoading || !user?.id || !session?.access_token || activeContext.current !== context) return;
+    const request = ++sequence.current;
+    const current = () => activeContext.current === context && sequence.current === request;
+    setResultContext(context);
     setBusy(true); setResults(null); setDealsByUser({}); setProfileLogsByUser({});
+    setSearchError(false); setDetailErrors({}); setExpandedLogs(new Set());
     const like = `%${s}%`;
-
+    try {
     // 1) club_members scoped to cashier's clubs
     let cmHits: any[] = [];
     if (clubIds.length) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("club_members")
         .select("id, club_id, member_card_id, full_name, phone, cccd, player_user_id")
         .in("club_id", clubIds)
         .or(`member_card_id.ilike.${like},full_name.ilike.${like},phone.ilike.${like},cccd.ilike.${like}`)
         .limit(30);
+      if (error || !Array.isArray(data)) throw new Error("Member search unavailable");
       cmHits = data ?? [];
     }
+    if (!current()) return;
 
     // 2) profiles fallback
-    const { data: profs } = await supabase
+    const { data: profs, error: profileError } = await supabase
       .from("profiles")
       .select("user_id, display_name, phone, avatar_url, verification_status")
       .or(`display_name.ilike.${like},phone.ilike.${like}`)
       .limit(20);
+    if (profileError || !Array.isArray(profs)) throw new Error("Profile search unavailable");
+    if (!current()) return;
 
     const merged: MemberHit[] = [
       ...cmHits.map((m) => ({ source: "club_member" as const, ...m })),
@@ -69,7 +98,6 @@ export default function UnifiedLookupTab({ clubIds, clubs }: { clubIds: string[]
     const linkedUserIds = new Set(cmHits.map((m) => m.player_user_id).filter(Boolean));
     const dedup = merged.filter((h) => h.source === "club_member" || !linkedUserIds.has(h.user_id));
     setResults(dedup);
-    setBusy(false);
 
     // Fetch active deals for each linked player
     const userIds = Array.from(new Set([
@@ -78,16 +106,29 @@ export default function UnifiedLookupTab({ clubIds, clubs }: { clubIds: string[]
     ]));
     const dealMap: Record<string, any[]> = {};
     const logMap: Record<string, any[]> = {};
+    const errors: Record<string, boolean> = {};
       await Promise.all(userIds.map(async (uid) => {
+        if (!current()) return;
+        try {
         const [dealRes, logRes] = await Promise.all([
           supabase.functions.invoke("cashier-lookup-player", { body: { user_id: uid } }),
           (supabase as any).from("profile_update_log").select("*").eq("user_id", uid).order("created_at", { ascending: false }).limit(5),
         ]);
-      if (!dealRes.error && (dealRes.data as any)?.deals) dealMap[uid] = (dealRes.data as any).deals;
-      if (logRes.data) logMap[uid] = logRes.data;
+      if (dealRes.error || dealRes.data?.error || !Array.isArray(dealRes.data?.deals)) errors[uid] = true;
+      else dealMap[uid] = dealRes.data.deals;
+      if (logRes.error || !Array.isArray(logRes.data)) errors[uid] = true;
+      else logMap[uid] = logRes.data;
+        } catch { errors[uid] = true; }
     }));
+    if (!current()) return;
     setDealsByUser(dealMap);
     setProfileLogsByUser(logMap);
+    setDetailErrors(errors);
+    } catch {
+      if (current()) { setSearchError(true); setResults(null); }
+    } finally {
+      if (current()) setBusy(false);
+    }
   };
 
   const nav = useNavigate();
@@ -104,21 +145,22 @@ export default function UnifiedLookupTab({ clubIds, clubs }: { clubIds: string[]
           value={term} onChange={(e) => setTerm(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search()}
         />
-        <Button onClick={search} disabled={busy}>
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+        <Button onClick={search} disabled={visibleBusy || authLoading} aria-label={t("common.search")}>
+          {visibleBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
         </Button>
       </div>
 
-      {busy && <Skeleton className="h-32 rounded-lg" />}
+      {visibleBusy && <Skeleton className="h-32 rounded-lg" />}
+      {visibleError && <p role="alert" className="text-sm text-destructive">{t("cashierLookup.searchUnavailable")}</p>}
 
-      {!busy && results === null && <p className="text-xs text-muted-foreground">Tìm để hiển thị kết quả.</p>}
-      {!busy && results !== null && results.length === 0 && (
+      {!visibleBusy && !visibleError && visibleResults === null && <p className="text-xs text-muted-foreground">Tìm để hiển thị kết quả.</p>}
+      {!visibleBusy && visibleResults !== null && visibleResults.length === 0 && (
         <p className="text-sm text-center text-muted-foreground py-6">Không tìm thấy thành viên</p>
       )}
 
-      {!busy && results && results.length > 0 && (
+      {!visibleBusy && visibleResults && visibleResults.length > 0 && (
         <div className="space-y-2">
-          {results.map((h, i) => {
+          {visibleResults.map((h, i) => {
             const userId = h.player_user_id ?? h.user_id;
             const deals = userId ? dealsByUser[userId] ?? [] : [];
             const verified = h.verification_status === "verified";
@@ -155,6 +197,7 @@ export default function UnifiedLookupTab({ clubIds, clubs }: { clubIds: string[]
                   )}
                 </div>
 
+                {userId && detailErrors[userId] && <p role="alert" className="text-xs text-destructive">{t("cashierLookup.detailsUnavailable")}</p>}
                 {deals.length > 0 && (
                   <div className="border-t pt-2 space-y-1.5">
                     <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">

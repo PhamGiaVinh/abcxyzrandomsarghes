@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadDeploymentManifest } from "./deployment-manifest.mjs";
+import { loadDeploymentManifest, validateDeploymentManifest } from "./deployment-manifest.mjs";
 import { buildComponentDiffs, buildDeploymentPlan, isFrontendPath, renderPlanSummary, verifyCommitOnMain } from "./plan-edge-deployment.mjs";
 
 const manifest = loadDeploymentManifest();
@@ -85,6 +85,28 @@ function plan(options) {
     ...options,
   });
 }
+
+test("Cashier lookup requires explicit critical selection and exact scope helper ACL", () => {
+  const name="cashier-lookup-player";
+  const config=manifest.functions[name];
+  assert.equal(config.critical,true);
+  assert.equal(config.autoDeployOnPush,false);
+  assert.equal(config.verifyJwt,true);
+  assert.ok(config.quality.denoTests.includes("VinPoker/supabase/functions/cashier-lookup-player/index.test.ts"));
+  assert.ok(config.contracts.some(c=>c.type==="function"&&c.name==="public.cashier_club_ids"
+    &&c.allowOtherOverloads===false&&c.argumentTypes.join(",")==="uuid"
+    &&c.acl.authenticated===true&&c.acl.anon===false&&c.acl.service_role===true));
+  const result=plan({componentDiffs:diff({changed:[name]}),selected:[name]});
+  assert.deepEqual(result.criticalFunctions,[name]);
+  const push=plan({event:"push",componentDiffs:diff({changed:[name],frontend:true})});
+  assert.deepEqual(push.criticalFunctions,[]);
+  assert.equal(push.frontend,false);
+  for(const [field,value] of [["critical",false],["autoDeployOnPush",true],["verifyJwt",false]]) {
+    const invalid=structuredClone(manifest);
+    invalid.functions[name][field]=value;
+    assert.throws(()=>validateDeploymentManifest(invalid));
+  }
+});
 
 test("manual frontend-only rejects a process-swing or mass-assign hitchhike", () => {
   assert.throws(() => plan({
