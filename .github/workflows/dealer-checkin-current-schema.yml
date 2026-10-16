@@ -964,6 +964,7 @@ jobs:
             if [ -n "$failure_case" ]; then extra=(-v "$failure_case=true"); fi
             PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true "${extra[@]}" -f tests/floorProduction/deferredMoveIntent.pg17.sql
           done
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -v READ_TICKET_CASE=true -f tests/floorProduction/deferredMoveIntent.pg17.sql
           PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v EXACT_ISSUANCE_CASE=true -f tests/chipOps/colorUpCurrentSchema.pg17.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatcher-due
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatch-overlap

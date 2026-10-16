@@ -106,7 +106,8 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
  finish_intent jsonb; finish_receipt jsonb; finish_epoch bigint; moving_entry uuid; BEGIN
  IF current_setting('test.scoped_finish_mode')='true' THEN
   PERFORM pg_temp.assert_true(current_database() IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_full111_finish99')
-    AND current_setting('test.real_finish_case')='true' AND current_setting('test.exact_queue')='true',
+    AND current_setting('test.real_finish_case')='true'
+    AND (current_setting('test.exact_queue')='true' OR current_setting('test.tracker_break_case')='true'),
     'scoped Finish mode case requires exact owned current-candidate APIs and public queue');
  END IF;
  IF current_setting('test.ticket_read')='true' THEN
@@ -168,9 +169,11 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
  IF current_setting('test.tracker_break_case')='true' THEN
   UPDATE public.table_sessions SET control_mode='tracker' WHERE id=ss;
   SELECT revision INTO sr FROM public.table_sessions WHERE id=ss;
+  IF current_setting('test.scoped_finish_mode')='true' THEN PERFORM set_config('role','authenticated',true); END IF;
   s:=public.floor_plan_break_table_v1(st,sr,'fill_lowest_table');
   PERFORM pg_temp.assert_true((s->>'ok')::boolean AND (s->>'complete')::boolean,'idle Tracker break plan is complete');
   r:=public.floor_break_table_v5(st,sr,gen_random_uuid(),'fill_lowest_table',s->>'plan_hash');
+  IF current_setting('test.scoped_finish_mode')='true' THEN PERFORM set_config('role','none',true); END IF;
   PERFORM pg_temp.assert_true((r->>'ok')::boolean AND (r->>'break_pending')::boolean,'Tracker break queues');
   IF current_setting('test.deferred_seat_ticket')='true' THEN
    PERFORM pg_temp.assert_true(r->'issued_tickets'='[]'::jsonb,'queued break has no issued destination ticket yet');
@@ -486,6 +489,55 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
   PERFORM pg_temp.assert_true((SELECT chip_count=20000 AND table_session_id=(s->>'table_session_id')::uuid
     FROM public.tournament_seats WHERE entry_id=e AND is_active),'same entry stack moves into the exact newly opened source');
   PERFORM pg_temp.assert_true((SELECT sum(chip_count)=60000 FROM public.tournament_seats WHERE tournament_id='f7290000-0000-4000-8000-000000000003' AND is_active),'close/reopen does not create or lose chips');
+  IF current_setting('test.scoped_finish_mode')='true' THEN
+   PERFORM set_config('role','authenticated',true);
+   PERFORM pg_temp.assert_true(public.get_tracker_manual_finish_receipt_v1(finish_intent)=finish_receipt
+     AND public.record_tracker_manual_hand_v1(finish_intent)=finish_receipt,
+     'committed Finish remains read-only replay after both physical tables reopen');
+   req:=gen_random_uuid();
+   r:=public.record_tracker_manual_hand_v1(jsonb_set(finish_intent,'{request_id}',to_jsonb(req::text)));
+   PERFORM pg_temp.assert_true(r->>'error'='stale_manual_finish_context','new stale-session Finish is rejected: '||r::text);
+   r:=public.start_tracker_hand_v3('f7290000-0000-4000-8000-000000000003',dt,ds,ep,2,now(),'f7290000-0000-4000-8000-000000000001',1);
+   PERFORM pg_temp.assert_true(r->>'error'='STALE_TRACKER_CONTEXT','old Tracker session cannot start a hand after reopen: '||r::text);
+   PERFORM set_config('role','none',true);
+   PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.tournament_hands WHERE tournament_id='f7290000-0000-4000-8000-000000000003'),
+     'receipt replay and stale attempts do not create another hand');
+   PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE table_session_id IN (ss,ds) AND released_at IS NULL),
+     'closed session assignments cannot survive physical reopen');
+   PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM floor_private.floor_table_v3_existing_receipt(
+     'f7290000-0000-4000-8000-000000000001','record_tracker_manual_hand_v1',req)),
+     'rejected stale Finish has no committed success receipt');
+   -- Positive control: the newly opened, occupied source can still enter Tracker.
+   -- Replaying the old Finish must not finish this different current hand.
+   SELECT revision,control_epoch INTO dr,de FROM public.table_sessions WHERE id=(s->>'table_session_id')::uuid;
+   PERFORM set_config('role','authenticated',true);
+   r:=public.floor_request_table_control_mode_v4((s->>'tournament_table_id')::uuid,(s->>'table_session_id')::uuid,'tracker',dr,de,gen_random_uuid());
+   PERFORM pg_temp.assert_true(r->>'outcome'='applied','occupied reopened session enters Tracker: '||r::text);
+   PERFORM set_config('role','none',true);
+   SELECT control_epoch INTO de FROM public.table_sessions WHERE id=(s->>'table_session_id')::uuid;
+   PERFORM set_config('role','authenticated',true);
+   r:=public.start_tracker_hand_v3('f7290000-0000-4000-8000-000000000003',(s->>'tournament_table_id')::uuid,
+     (s->>'table_session_id')::uuid,de,2,now(),'f7290000-0000-4000-8000-000000000001',1);
+   PERFORM pg_temp.assert_true(r->>'status'='success','current reopened session starts normally: '||r::text);
+   PERFORM pg_temp.assert_true(public.record_tracker_manual_hand_v1(finish_intent)=finish_receipt,
+     'old receipt replay remains identical while another current hand is active');
+   PERFORM set_config('role','none',true);
+   PERFORM pg_temp.assert_true((SELECT status='in_progress' AND table_session_id=(s->>'table_session_id')::uuid
+     FROM public.tournament_hands WHERE id=(r->>'hand_id')::uuid),
+     'old receipt cannot finish or replace the reopened session hand');
+   PERFORM set_config('request.jwt.claim.sub','',true);
+   PERFORM set_config('request.jwt.claim.role','anon',true);
+   PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
+   PERFORM set_config('role','anon',true);
+   r:=public.get_public_tournament_table_history_v2('f7290000-0000-4000-8000-000000000003',dt,20,NULL,NULL);
+   PERFORM pg_temp.assert_true(jsonb_array_length(r->'items')=1 AND r->'items'->0->>'handId'=h::text
+     AND r->'items'->0->'result'->>'status'='pending',
+     'anonymous closed-table history retains completed hand without inventing verified results: '||r::text);
+   PERFORM set_config('role','none',true);
+   RAISE NOTICE 'SCOPED_FINISH_CLOSED_TABLE_ANONYMOUS_HISTORY_PENDING_PASS';
+   RAISE NOTICE 'SCOPED_FINISH_REOPEN_CURRENT_HAND_POSITIVE_PASS';
+   RAISE NOTICE 'SCOPED_FINISH_BREAK_CLOSE_REOPEN_STALE_TRACKER_RECEIPT_PASS';
+  END IF;
   RAISE NOTICE 'DEFERRED_TICKET_PUBLIC_MOVE_CLOSE_REOPEN_DENIAL_PASS';
  END IF;
 END $$;
