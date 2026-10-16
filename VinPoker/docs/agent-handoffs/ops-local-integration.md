@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 worker103 real two-session overlap qualification
+
+Baselinebbf7c06a2 clean, product/103 unchanged. Extended existing native harness --overlap, reusing two-session psql pattern from manualSwingCancel.currentSchema.mjs; Windows WSL adapter plus Linux direct. Actual held transaction/barriers observed in pg_stat_activity: holder ClientRead with live xact, waiter wait_event_type Lock before releasing holder. Both statement/idle timeouts15s; finally close/await both handles. No timing sleep masquerading as concurrency.
+
+Two competing workers, same exact assignment/version but different eligible incoming dealers: both candidate orders PASS, one swung, stale waiter actual SWING_ASSIGNMENT_CONTEXT_MISMATCH, uncommitted effects invisible, exactly one released old assignment, two active assignments for two tables, losing candidate still available, zero in_transition. Canonical operator_close_club_table_v2 (actual owner authenticated claims) vs actual worker: close-first and worker-first both overlap PASS. Close-first releases old assignment/session, stale worker rejected; worker-first commits new assignment, close waiter then releases it and closes exact session. Final zero active assignments for physical table and zero assigned/in_transition attendances. No close/reopen/new-session claim in this test.
+
+Terminal93193 exit0, PG stopped finally. Node/diff checks PASS; workflow --overlap command wired not dispatched. No fulltype/build, production, HTTP/cron/planner or realrest15 proof. Next main planner/dispatch capacity+shortage/failure, remaining G5/G6 source gaps; G8/G9 web/provider/performance/finalchecks remain. No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyhold/masterACTIVE.
+
 ## G3 worker103 shortage and injected inner-write qualification
 
 Baseline f5daf0194 clean,103 bytes unchanged. Extended opt-in native --negative only, not rerunning unchanged40positive. Actual RPC with two occupied tables and both spare attendances checked out returns no_dealer. Outgoing remains assigned/unreleased/same attendance, first OT marker set; canonical update advances assignment version1->2. Initial assertion incorrectly expected unchangedversion and failed; corrected after observing actual OT mutation (not productfix/no policychange). Repeating with CURRENT expected version returns no_dealer and preserves exact initial overtime_started_at. No forced release/new assignment. This characterizes existing OT marker semantics, not payroll amount or UI shortage behavior.

@@ -941,6 +941,7 @@ jobs:
           createdb -T vinpoker_ops_initial102_ci "$PGDATABASE"
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --negative
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker

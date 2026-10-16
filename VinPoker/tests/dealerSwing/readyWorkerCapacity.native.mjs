@@ -1,6 +1,6 @@
 // Actual ready Edge + auth/inventory helpers + actual PG17 RPC/query effects.
 // Replaces HTTP/PostgREST with guarded psql, not a deployed worker/cron proof.
-import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {randomUUID} from 'node:crypto';import {stripTypeScriptTypes} from 'node:module';import {runInNewContext} from 'node:vm';
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync,spawn} from 'node:child_process';import {randomUUID} from 'node:crypto';import {stripTypeScriptTypes} from 'node:module';import {runInNewContext} from 'node:vm';
 import {getDealerOperationalTables} from '../../supabase/functions/_shared/dealerOperationalTables.ts';
 import {authorizeInternalTrigger,authorizeSwingWorkerRequest,getIdempotencyKey,parseDealerReadyPayload} from '../../supabase/functions/_shared/internal-trigger-auth.ts';
 assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_ready_capacity_ci');
@@ -56,7 +56,7 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state) VALUES('${r.oldAttendance}','${r.oldDealer}','${shift}',current_date,'checked_in',now()-interval '90 minutes','available'),('${r.nextAttendance}','${r.nextDealer}','${shift}',current_date,'checked_in',now()-interval '90 minutes','available');`).join('\n')}
  ${service} DO $$ DECLARE result jsonb;BEGIN ${rows.map(r=>`result:=public.worker_assign_dealer_to_session_v1('${club}','${r.table}','${r.session}','${r.oldAttendance}',now()+interval '45 minutes','capacity_old_${r.oldAttendance}');IF result->>'outcome' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'capacity_seed_assignment_failed:%',result;END IF;`).join('\n')}END $$;
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
- return {club,rows};
+ return {club,owner,rows};
 }
 if(process.argv.includes('--negative')){
  const c=seed(2);
@@ -118,7 +118,63 @@ if(process.argv.includes('--negative')){
  END $$;ROLLBACK;`);
  console.log('READY_WORKER_NATIVE_NESTED_INSERT_FAULT_ROLLBACK_PASS');
 }
-const sizes=process.argv.includes('--negative')?[]:process.argv.includes('--small')?[2]:[2,10,40];
+if(process.argv.includes('--overlap')){
+ function tx(name,query,hold=false){
+  const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];
+  const child=process.platform==='win32'?spawn('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags]):spawn('psql',flags);
+  let out='',error='';child.stdin.on('error',()=>{});
+  const result=new Promise(resolve=>{child.stdout.on('data',v=>out+=v);child.stderr.on('data',v=>error+=v);child.on('error',e=>resolve({code:-1,out,error:String(e)}));child.on('close',code=>resolve({code,out,error}));});
+  const end=command=>{if(!child.stdin.writableEnded&&!child.stdin.destroyed)child.stdin.end(command+';\n');};
+  child.stdin.write(`SET application_name='${name}';BEGIN;SET LOCAL statement_timeout='15s';SET LOCAL idle_in_transaction_session_timeout='15s';${service}${query}\n`);
+  if(!hold)end('COMMIT');return {result,end};
+ }
+ async function barrier(name,condition){for(let i=0;i<60;i++){if(sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${name}' AND ${condition})`)==='t')return;await new Promise(r=>setTimeout(r,25));}assert.fail('missing actual overlap '+name);}
+ for(const first of [0,1]){
+  const c=seed(2),target=c.rows[0];
+  const a=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${target.table}' AND released_at IS NULL;`));
+  const query=n=>`SELECT public.worker_perform_swing(p_table_id:='${target.table}',p_table_session_id:='${target.session}',p_assignment_id:='${a.id}',p_expected_version:=${a.version},p_next_attendance_id:='${c.rows[n].nextAttendance}');`;
+  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${c.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${c.club}'))::text);`);
+  const before=fingerprint();let holder,waiter;
+  try{
+   holder=tx('ready103_holder',query(first),true);
+   await barrier('ready103_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('ready103_waiter',query(1-first));
+   await barrier('ready103_waiter',"wait_event_type='Lock'");
+   assert.equal(fingerprint(),before,'uncommitted swing remains invisible');
+   holder.end('COMMIT');const h=await holder.result,w=await waiter.result;
+   assert.equal(h.code,0,h.error);assert.equal(JSON.parse(h.out).outcome,'swung');
+   assert.notEqual(w.code,0,'stale competing worker cannot succeed');assert.match(w.error,/SWING_ASSIGNMENT_CONTEXT_MISMATCH/);
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${c.club}' AND released_at IS NULL AND status='assigned';`),'2');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${c.club}' AND released_at IS NOT NULL;`),'1');
+   assert.equal(sql(`SELECT current_state FROM public.dealer_attendance WHERE id='${c.rows[1-first].nextAttendance}';`),'available');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${c.club}' AND a.current_state='in_transition';`),'0');
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('READY_WORKER103_TWO_SESSION_BOTH_CANDIDATE_ORDERS_PASS');
+ for(const closeFirst of [true,false]){
+  const c=seed(1),t=c.rows[0];
+  const a=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${t.table}' AND released_at IS NULL;`));
+  const revision=sql(`SELECT revision FROM public.table_sessions WHERE id='${t.session}';`);
+  const close=`RESET ROLE;SET request.jwt.claim.role='authenticated';SET request.jwt.claim.sub='${c.owner}';SET request.jwt.claims='{"role":"authenticated","sub":"${c.owner}"}';SET ROLE authenticated;SELECT public.operator_close_club_table_v2('${t.session}',${revision},'${randomUUID()}');`;
+  const write=`SELECT public.worker_perform_swing(p_table_id:='${t.table}',p_table_session_id:='${t.session}',p_assignment_id:='${a.id}',p_expected_version:=${a.version},p_next_attendance_id:='${t.nextAttendance}');`;
+  let holder,waiter;
+  try{
+   holder=tx('ready103_close_holder',closeFirst?close:write,true);
+   await barrier('ready103_close_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('ready103_close_waiter',closeFirst?write:close);
+   await barrier('ready103_close_waiter',"wait_event_type='Lock'");
+   holder.end('COMMIT');const h=await holder.result,w=await waiter.result;
+   assert.equal(h.code,0,h.error);
+   if(closeFirst){assert.equal(JSON.parse(h.out).ok,true,h.out);assert.notEqual(w.code,0);assert.match(w.error,/SWING_ASSIGNMENT_CONTEXT_MISMATCH|TABLE_SESSION_STALE/);}
+   else{assert.equal(JSON.parse(h.out).outcome,'swung');assert.equal(w.code,0,w.error);assert.equal(JSON.parse(w.out).ok,true,w.out);}
+   assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${t.session}';`),'t');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`),'0');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${c.club}' AND a.current_state IN ('assigned','in_transition');`),'0');
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('READY_WORKER103_CANONICAL_CLOSE_BOTH_ORDER_OVERLAP_PASS');
+}
+const sizes=process.argv.includes('--negative')||process.argv.includes('--overlap')?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
