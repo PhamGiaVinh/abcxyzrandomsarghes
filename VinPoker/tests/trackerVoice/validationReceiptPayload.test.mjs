@@ -6,12 +6,15 @@ import {parseSync,transformSync} from '@swc/core';
 // Actual client API body with synthetic Edge transport, not authorization proof.
 const source=readFileSync(new URL('../../src/lib/trackerVoice/api.ts',import.meta.url),'utf8');
 const tree=parseSync(source,{syntax:'typescript'});
-const fn=tree.body.find(n=>n.type==='ExportDeclaration'&&n.declaration.identifier?.value==='validateTrackerVoiceEvent')?.declaration;
+function compileBody(name){
+const fn=tree.body.find(n=>n.type==='ExportDeclaration'&&n.declaration.identifier?.value===name)?.declaration;
 assert.ok(fn);
 const text=Buffer.from(source).subarray(fn.span.start-tree.span.start,fn.span.end-tree.span.start).toString()
  .replace('const { supabase } = await import("@/integrations/supabase/client");','const supabase = client;');
 assert.ok(!text.includes('await import('));
-const code=transformSync(text+'\nvalidateTrackerVoiceEvent;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+}
+const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard');
 const input={tournamentId:'tour',tournamentTableId:'table',handId:'hand',finalTranscript:'check',providerName:'openai_realtime',providerModel:'test',providerEventId:'event',
  executionMode:'assist',expectedStateVersion:'a'.repeat(64),idempotencyKey:'voice:key',traceId:'trace:key'};
 const valid=()=>({ok:true,voice_event_id:'voice-event',idempotency_key:input.idempotencyKey,trace_id:input.traceId,state_version:input.expectedStateVersion,
@@ -44,4 +47,33 @@ test('omitted alert identity is not accepted for action or alert-opened receipts
  const receipt=valid();delete receipt.alert_id;
  await assert.rejects(invoke(receipt),/receipt hợp lệ/);
  await assert.rejects(invoke({...receipt,execution_result:'alert_opened'},{canonicalRequest:{intentDomain:'board'}}),/receipt hợp lệ/);
+});
+
+const boardInput={tournamentId:'tour',tournamentTableId:'table',handId:'hand',voiceEventId:'root',idempotencyKey:'board:key',traceId:'board:trace',
+ canonicalRequest:{intentDomain:'board',envelope:{expectedStateVersion:'a'.repeat(64)},payload:{street:'flop',newCards:['Ah','5s','2d'],cumulativeCards:['Ah','5s','2d'],expectedExistingBoardCount:0}}};
+const validBoard=()=>({ok:true,voice_event_id:'root',canonical_receipt_event_id:'receipt',idempotency_key:'board:key',trace_id:'board:trace',
+ street:'flop',previous_board:[],community_cards:['Ah','5s','2d'],state_version_before:'a'.repeat(64),state_version_after:'b'.repeat(64)});
+async function invokeBoard(receipt,input=boardInput){
+ let calls=0;const api=runInNewContext(boardCode,{Error,client:{functions:{invoke:async()=>{calls++;return {data:{data:receipt},error:null};}}}});
+ try{return await api(input);}finally{assert.equal(calls,1,'no automatic mutation retry');}
+}
+test('canonical Board commit and duplicate original trace stay usable',async()=>{
+ for(const receipt of [validBoard(),{...validBoard(),duplicate:true,trace_id:'original:trace'}])assert.equal(await invokeBoard(receipt),receipt);
+});
+test('turn and river preserve the confirmed board prefix',async()=>{
+ for(const [street,previous,cards] of [['turn',['Ah','5s','2d'],['Ah','5s','2d','Tc']],['river',['Ah','5s','2d','Tc'],['Ah','5s','2d','Tc','Ks']]]){
+  const input={...boardInput,canonicalRequest:{...boardInput.canonicalRequest,payload:{street,newCards:cards.slice(-1),cumulativeCards:cards,expectedExistingBoardCount:previous.length}}};
+  const receipt={...validBoard(),street,previous_board:previous,community_cards:cards};
+  assert.equal(await invokeBoard(receipt,input),receipt);
+  await assert.rejects(invokeBoard({...receipt,previous_board:['Ac',...previous.slice(1)]},input),/receipt hợp lệ/);
+ }
+});
+for(const [name,patch] of [
+ ['truthy ok',{ok:'yes'}],['wrong root',{voice_event_id:'other'}],['missing receipt',{canonical_receipt_event_id:''}],
+ ['wrong key',{idempotency_key:'other'}],['wrong trace',{trace_id:'other'}],['wrong before',{state_version_before:'c'.repeat(64)}],
+ ['missing after',{state_version_after:undefined}],['unchanged proof',{state_version_after:'a'.repeat(64)}],
+ ['wrong street',{street:'turn'}],['wrong cards',{community_cards:['Ah','5s','3d']}],['wrong previous',{previous_board:['Ac']}],
+ ['duplicate marker string',{duplicate:'true'}],['duplicate wrong key',{duplicate:true,idempotency_key:'other'}],
+])test(`reject unbound Board commit receipt: ${name}`,async()=>{
+ await assert.rejects(invokeBoard({...validBoard(),...patch}),/Voice Board không trả canonical receipt hợp lệ/);
 });

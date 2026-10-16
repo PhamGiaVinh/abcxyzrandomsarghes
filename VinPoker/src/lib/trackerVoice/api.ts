@@ -132,7 +132,30 @@ export async function commitTrackerVoiceBoard(
   const envelope = data as { data?: VoiceBoardCommitReceipt; error?: string } | null;
   if (envelope?.error) throw new Error(envelope.error);
   const receipt = envelope?.data;
-  if (!receipt?.ok || !Array.isArray(receipt.community_cards)) {
+  const request = input.canonicalRequest;
+  if (request.intentDomain !== "board"
+    || receipt?.ok !== true
+    || receipt.voice_event_id !== input.voiceEventId
+    || typeof receipt.canonical_receipt_event_id !== "string" || !receipt.canonical_receipt_event_id.trim()
+    || receipt.idempotency_key !== input.idempotencyKey
+    || typeof receipt.trace_id !== "string" || !receipt.trace_id.trim()
+    || (receipt.duplicate !== undefined && typeof receipt.duplicate !== "boolean")
+    || (!receipt.duplicate && receipt.trace_id !== input.traceId)
+    || receipt.state_version_before !== request.envelope.expectedStateVersion
+    || !/^[0-9a-f]{64}$/.test(receipt.state_version_before)
+    || typeof receipt.state_version_after !== "string" || !/^[0-9a-f]{64}$/.test(receipt.state_version_after)
+    || receipt.state_version_after === receipt.state_version_before
+    || receipt.street !== request.payload.street
+    || !["flop", "turn", "river"].includes(receipt.street)
+    || !Array.isArray(receipt.community_cards)
+    || receipt.community_cards.length !== (receipt.street === "flop" ? 3 : receipt.street === "turn" ? 4 : 5)
+    || receipt.community_cards.length !== request.payload.cumulativeCards.length
+    || receipt.community_cards.some((card, index) => typeof card !== "string"
+      || !/^[2-9TJQKA][cdhs]$/.test(card) || card !== request.payload.cumulativeCards[index])
+    || new Set(receipt.community_cards).size !== receipt.community_cards.length
+    || !Array.isArray(receipt.previous_board)
+    || receipt.previous_board.length !== request.payload.expectedExistingBoardCount
+    || receipt.previous_board.some((card, index) => card !== request.payload.cumulativeCards[index])) {
     throw new Error("Voice Board không trả canonical receipt hợp lệ.");
   }
   return receipt;

@@ -17,7 +17,7 @@ const text=Buffer.from(source).subarray(declaration.span.start-tree.span.start,d
 assert.ok(!text.includes('await import('));
 return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
 }
-const code=compileApi('loadTrackerVoiceRuntimeContext'),validationCode=compileApi('validateTrackerVoiceEvent');
+const code=compileApi('loadTrackerVoiceRuntimeContext'),validationCode=compileApi('validateTrackerVoiceEvent'),boardCommitCode=compileApi('commitTrackerVoiceBoard');
 const valid=()=>({ok:true,can_mint_session:true,read_only:false,correction_pending:false,tournament_table_id:'table',
  config:{enabled:true,configured_mode:'assist',provider_model:'existing-reviewed-model',spoken_amount_unit:1,amount_unit_confirmed:false,
   provider_confidence_threshold:null,server_auto_allowed:false,correction_state:'ready'},
@@ -257,7 +257,8 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  RAISE SQLSTATE 'PZ004' USING MESSAGE='native_board_positive_case_rollback';
  EXCEPTION WHEN SQLSTATE 'PZ004' THEN NULL;
  END;
- INSERT INTO native_voice_payloads VALUES('board_workflow',jsonb_build_object('snapshot',board_snapshot,'commit',board_commit,'canonical_request',command));
+ INSERT INTO native_voice_payloads VALUES('board_workflow',jsonb_build_object('snapshot',board_snapshot,'commit',board_commit,'canonical_request',command,
+ 'commit_request',jsonb_build_object('voiceEventId',receipt->>'voice_event_id','idempotencyKey',k||'-positive-board','traceId','native-positive-commit')));
  -- Qualify only the trusted service root receipt shape, not Board workflow legality or Edge parsing.
  BEGIN
  PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
@@ -435,6 +436,15 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
   expectedStreet:snapshotRoute.command.street,payload:{street:snapshotRoute.command.street,newCards:snapshotRoute.command.newCards,
    cumulativeCards:[...payload.board_workflow.snapshot.community_cards,...snapshotRoute.command.newCards],expectedExistingBoardCount:0}});
  assert.deepEqual(payload.board_workflow.canonical_request,expectedCanonical);
+ let boardCommitCalls=0;
+ const commitBoard=runInNewContext(boardCommitCode,{Error,client:{functions:{invoke:async(name,{body})=>{
+  boardCommitCalls++;assert.equal(name,'tournament-live-update');assert.equal(body.action,'commit_voice_board');
+  assert.equal(body.voice_event_id,payload.board_workflow.commit_request.voiceEventId);assert.equal(body.hand_id,payload.hand_proof.hand_id);
+  return {data:{data:payload.board_workflow.commit},error:null};
+ }}}});
+ assert.equal(await commitBoard({...payload.board_workflow.commit_request,tournamentId:f.tour,tournamentTableId:table.id,
+  handId:payload.hand_proof.hand_id,canonicalRequest:expectedCanonical}),payload.board_workflow.commit);
+ assert.equal(boardCommitCalls,1);
  assert.equal(payload.board_workflow.snapshot.actions.length,4);
  assert.equal(payload.board_workflow.commit.ok,true);
  assert.equal(payload.board_workflow.commit.state_version_before,payload.board_workflow.snapshot.state_version);

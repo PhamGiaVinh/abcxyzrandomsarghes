@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Board commit client receipt binding RED→fix→actual SQL compatibility
+
+Baselinece7032be8 clean/previousPROGRESS. Actual client commitTrackerVoiceBoard previously accepted truthyok+any cards array. Source-executing transport test RED19PASS13FAIL reproduced wrong root/key/trace/proof/street/cards/prefix/missingreceipt/invalidduplicate acceptance. Added strict ok, exact root/key, receiptID/trace, boolean duplicate, nonduplicate trace binding, before proof matching canonical request, valid distinct afterhash, exact street/cards/prefix/count/canonical card tokens/unique cards. Duplicate retains originaltrace (SQL contract), NOT wrongroot/key/proof. No server authority/write/retry changes.
+
+Final33unitPASS incl turn/river prefix positive+negative; api ESLint0; native b896b3 terminal0/13PASS2.462s feeds actual Board SQL receipt through actual client with independent root/key/trace request metadata and canonical request, exactly1 invoke. PG stopped/outerrollback exact; old paid Chip/TV/checkin/handoff/action assertions retained. SDK transport modeled, not hostedEdge/provider/browser/fulltypebuild/durableBoardCOMMIT. No liveDB/Edge/frontend/flag/push/CI/deploy changes; localhold/AutoOFF/DaybreakOFF/masterACTIVE. Next inspect hole-card/finish receipt boundaries and scope-safe UI application; do not claim fullgoal.
+
 ## Actual Board grammar/canonical builder joined to paid SQL workflow
 
 Baseline95d6c7077 clean/previousPROGRESS. Existing native positive Board path now uses actual routeTrackerVoiceIntent + buildVoiceBoardCanonicalRequest imports, not handwritten payload. Canonical state placeholder is bound to actual SQL snapshot before registration; after rollback, independently recompute actual Edge workflow/shared engine and rebuild canonical request from actual snapshot; deep equality includes transcript/payload hashes, workflow/street/state/cards. Actual router rejects Board during preflop_action and duplicate-card transcript. Actual actionWorkflowForStreet replaces previous throw fallback. Positive RPC/replay/revision/readback and all negative/fingerprint assertions retained.
