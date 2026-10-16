@@ -96,12 +96,13 @@ try{
  // Actual Edge case with real SQL reads: recovery must not require an active hand
  // or invoke a mutation again. Auth/HTTP transport remains modeled.
  const edgeSource=readFileSync(new URL('../../supabase/functions/tournament-live-update/index.ts',import.meta.url),'utf8');
- const edgeTree=parseSync(edgeSource,{syntax:'typescript'});let finishCase;
+ const edgeTree=parseSync(edgeSource,{syntax:'typescript'});let finishCase,prepareCase;
  function visit(node){if(!node||typeof node!=='object')return;
   if(node.type==='SwitchCase'&&node.test?.value==='commit_voice_finish')finishCase=node;
+  if(node.type==='SwitchCase'&&node.test?.value==='prepare_voice_finish')prepareCase=node;
   for(const value of Object.values(node)){if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);}}
- visit(edgeTree);assert.ok(finishCase);
- const caseText=Buffer.from(edgeSource).subarray(finishCase.span.start-edgeTree.span.start,finishCase.span.end-edgeTree.span.start).toString();
+ visit(edgeTree);assert.ok(finishCase);assert.ok(prepareCase);
+ const caseText=[prepareCase,finishCase].map(node=>Buffer.from(edgeSource).subarray(node.span.start-edgeTree.span.start,node.span.end-edgeTree.span.start).toString()).join('\n');
  const branchCode=transformSync('async function retry(body){let result;const tournament_id=body.tournament_id;switch(body.action){'+caseText+'}return new Response(JSON.stringify(result),{status:200});}retry;',
   {jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
  let snapshotCalls=0,reads=0,mutations=0,readFailure=false,missingReceipt=false;const edgeUser={id:f.actor};
@@ -186,6 +187,16 @@ try{
   payload:{settlementOrigin:nextFinish.settlement.settlementOrigin,settlementDigest:nextFinish.settlement.settlementDigest}});
  const nextBody={...retryBody,hand_id:nextHand,idempotency_key:'native-new-finish-'+crypto.randomUUID(),provider_event_id:'native-new-event-'+crypto.randomUUID(),
   expected_state_version:nextSnapshot.state_version,voice_request:nextCanonical};
+ const beforePrepare=sql(`SELECT md5(to_jsonb(h)::text) FROM public.tournament_hands h WHERE id='${nextHand}';`);
+ const prepared=await retry({...nextBody,action:'prepare_voice_finish'});assert.equal(prepared.status,200);
+ const preparedReceipt=(await prepared.json()).data;assert.deepEqual(preparedReceipt.summary,nextFinish.settlement.summary);
+ const prepareNode=tree.body.find(n=>n.type==='ExportDeclaration'&&n.declaration.identifier?.value==='prepareTrackerVoiceFinish').declaration;
+ const prepareBody=Buffer.from(source).subarray(prepareNode.span.start-tree.span.start,prepareNode.span.end-tree.span.start).toString()
+  .replace('const { supabase } = await import("@/integrations/supabase/client");','const supabase = client;');
+ const prepareClient=runInNewContext(transformSync(prepareBody+'\nprepareTrackerVoiceFinish;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code,
+  {Error,client:{functions:{invoke:async()=>({data:{data:preparedReceipt},error:null})}}});
+ assert.equal(await prepareClient({tournamentId:f.tour,tournamentTableId:table.id,handId:nextHand,expectedStateVersion:nextSnapshot.state_version}),preparedReceipt);
+ assert.equal(mutations,0);assert.equal(sql(`SELECT md5(to_jsonb(h)::text) FROM public.tournament_hands h WHERE id='${nextHand}';`),beforePrepare);
  const nextResponse=await retry(nextBody),nextResult=await nextResponse.json();assert.equal(nextResponse.status,200,JSON.stringify(nextResult));assert.equal(nextResult.data.ok,true);assert.equal(mutations,1);
  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${nextHand}';`),'completed');
  assert.equal(Number(sql(`SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`)),40000);

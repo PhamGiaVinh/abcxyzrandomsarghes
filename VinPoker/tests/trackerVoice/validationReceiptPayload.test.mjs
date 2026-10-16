@@ -14,7 +14,7 @@ const text=Buffer.from(source).subarray(fn.span.start-tree.span.start,fn.span.en
 assert.ok(!text.includes('await import('));
 return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
 }
-const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard'),holeCode=compileBody('commitTrackerVoiceHoleCards'),finishCode=compileBody('commitTrackerVoiceFinish');
+const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard'),holeCode=compileBody('commitTrackerVoiceHoleCards'),finishCode=compileBody('commitTrackerVoiceFinish'),prepareCode=compileBody('prepareTrackerVoiceFinish');
 const input={tournamentId:'tour',tournamentTableId:'table',handId:'hand',finalTranscript:'check',providerName:'openai_realtime',providerModel:'test',providerEventId:'event',
  executionMode:'assist',expectedStateVersion:'a'.repeat(64),idempotencyKey:'voice:key',traceId:'trace:key'};
 const valid=()=>({ok:true,voice_event_id:'voice-event',idempotency_key:input.idempotencyKey,trace_id:input.traceId,state_version:input.expectedStateVersion,
@@ -118,4 +118,26 @@ for(const [name,patch] of [
  ['duplicate marker string',{duplicate:'true'}],['duplicate wrong hand',{duplicate:true,hand_id:'other'}],
 ])test(`reject unbound Finish receipt: ${name}`,async()=>{
  await assert.rejects(invokeFinish({...validFinish(),...patch}),/Voice Finish không trả canonical receipt hợp lệ/);
+});
+
+const validProposal=()=>({ok:true,settlement_origin:'engine_fold_win',settlement_digest:'c'.repeat(64),state_version:finishInput.expectedStateVersion,
+ summary:{winners:[{player_id:'winner',seat_number:2,player_name:null,amount:300}],pots:[{kind:'main',amount:300,winner_ids:['winner']}],
+ ending_stacks:[{player_id:'winner',seat_number:2,amount:20100},{player_id:'folded',seat_number:1,amount:19900}],conservation_total:40000}});
+async function invokePrepare(receipt){
+ let calls=0;const api=runInNewContext(prepareCode,{Error,client:{functions:{invoke:async()=>{calls++;return {data:{data:receipt},error:null};}}}});
+ try{return await api(finishInput);}finally{assert.equal(calls,1);}
+}
+test('canonical Finish summary preserves legitimate zero ending stack and nullable name',async()=>{
+ const receipt=validProposal();assert.equal(await invokePrepare(receipt),receipt);
+ receipt.summary.ending_stacks[0].amount=40000;receipt.summary.ending_stacks[1].amount=0;assert.equal(await invokePrepare(receipt),receipt);
+});
+for(const [name,change] of [
+ ['truthy ok',r=>r.ok='yes'],['wrong state',r=>r.state_version='d'.repeat(64)],['bad digest',r=>r.settlement_digest=''],
+ ['unknown origin',r=>r.settlement_origin='client_guess'],['missing summary',r=>r.summary=null],
+ ['null chip',r=>r.summary.ending_stacks[0].amount=null],['NaN chip',r=>r.summary.winners[0].amount=NaN],
+ ['negative pot',r=>r.summary.pots[0].amount=-1],['string total',r=>r.summary.conservation_total='40000'],
+ ['wrong conservation',r=>r.summary.conservation_total=39999],['duplicate participant',r=>r.summary.ending_stacks[1].player_id='winner'],
+ ['unknown winner',r=>r.summary.winners[0].player_id='outsider'],['unknown pot winner',r=>r.summary.pots[0].winner_ids=['outsider']],
+])test(`reject malformed Finish proposal: ${name}`,async()=>{
+ const receipt=validProposal();change(receipt);await assert.rejects(invokePrepare(receipt),/Voice Finish không trả proposal settlement hợp lệ/);
 });

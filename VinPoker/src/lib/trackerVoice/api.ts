@@ -239,7 +239,30 @@ export async function prepareTrackerVoiceFinish(
   const envelope = data as { data?: VoiceFinishProposalReceipt; error?: string } | null;
   if (envelope?.error) throw new Error(envelope.error);
   const receipt = envelope?.data;
-  if (!receipt?.ok || typeof receipt.settlement_digest !== "string") {
+  const summary = receipt?.summary;
+  const isChip = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  const isSeat = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+  if (receipt?.ok !== true
+    || !["engine_fold_win", "engine_showdown"].includes(receipt.settlement_origin)
+    || typeof receipt.settlement_digest !== "string" || !/^[0-9a-f]{64}$/.test(receipt.settlement_digest)
+    || receipt.state_version !== input.expectedStateVersion || !/^[0-9a-f]{64}$/.test(receipt.state_version)
+    || !summary || !isChip(summary.conservation_total)
+    || !Array.isArray(summary.ending_stacks) || !summary.ending_stacks.length
+    || summary.ending_stacks.some((row) => !row || typeof row.player_id !== "string" || !row.player_id.trim()
+      || !isSeat(row.seat_number) || !isChip(row.amount))
+    || new Set(summary.ending_stacks.map((row) => row.player_id)).size !== summary.ending_stacks.length
+    || new Set(summary.ending_stacks.map((row) => row.seat_number)).size !== summary.ending_stacks.length
+    || summary.ending_stacks.reduce((total, row) => total + row.amount, 0) !== summary.conservation_total
+    || !Array.isArray(summary.winners) || !summary.winners.length
+    || summary.winners.some((row) => !row || !isChip(row.amount)
+      || (row.player_name !== null && typeof row.player_name !== "string")
+      || !summary.ending_stacks.some((player) => player.player_id === row.player_id && player.seat_number === row.seat_number))
+    || new Set(summary.winners.map((row) => row.player_id)).size !== summary.winners.length
+    || !Array.isArray(summary.pots) || !summary.pots.length
+    || summary.pots.some((pot) => !pot || !["main", "side"].includes(pot.kind) || !isChip(pot.amount)
+      || !Array.isArray(pot.winner_ids) || !pot.winner_ids.length
+      || new Set(pot.winner_ids).size !== pot.winner_ids.length
+      || pot.winner_ids.some((id) => !summary.winners.some((winner) => winner.player_id === id)))) {
     throw new Error("Voice Finish không trả proposal settlement hợp lệ.");
   }
   return receipt;
