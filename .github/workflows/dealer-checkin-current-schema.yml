@@ -17,9 +17,12 @@ on:
       - 'VinPoker/supabase/migrations/20270128000114_cashier_canonical_reentry_seating_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000115_cashier_server_priced_reentry_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000116_floor_restore_pending_reentry_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000117_cashier_correction_alert_seating_fence_v1.sql'
       - 'VinPoker/supabase/functions/tournament-reentry/**'
       - 'VinPoker/tests/cashier/paidJourney*'
       - 'VinPoker/tests/cashier/paidSeatingClose*'
+      - 'VinPoker/tests/cashier/paidSeatLocks*'
+      - 'VinPoker/tests/cashier/paidActiveHand*'
       - 'VinPoker/tests/cashier/reentry*'
       - 'VinPoker/tests/cashier/restoreReentry*'
       - 'VinPoker/tests/cashier/seatingMigrations*'
@@ -1014,7 +1017,7 @@ jobs:
           createdb -T "$PGDATABASE" vinpoker_ops_cash112_overlap
           PGDATABASE=vinpoker_ops_cash112_overlap node tests/cashier/cashPaymentIdentity.concurrent.mjs
           node node_modules/vitest/vitest.mjs run src/lib/cashPaymentIntent.test.ts src/pages/ops/TourCashierWorkbenchShift.test.tsx --maxWorkers=1 --minWorkers=1
-      - name: Cash113-116 canonical paid seating re-entry and restore races
+      - name: Cash113-117 canonical paid seating re-entry and restore races
         working-directory: VinPoker
         env:
           PGDATABASE: vinpoker_ops_cash115_qualified_c
@@ -1023,7 +1026,12 @@ jobs:
           createdb -T vinpoker_ops_cash112_qualified "$PGDATABASE"
           node tests/cashier/seatingMigrations.pg17.mjs
           node tests/cashier/seatingMigrations.pg17.mjs --only116
+          node tests/cashier/seatingMigrations.pg17.mjs --only117
           node tests/cashier/paidJourney.runtime.mjs
+          node tests/cashier/paidJourney.runtime.mjs --seat-blockers
+          node tests/cashier/paidJourney.runtime.mjs --active-hand
+          node tests/cashier/paidJourney.runtime.mjs --active-hand --pending-move
+          node tests/cashier/paidJourney.runtime.mjs --active-hand --legacy-correction
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap
