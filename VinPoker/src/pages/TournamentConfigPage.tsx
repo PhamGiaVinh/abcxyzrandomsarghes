@@ -38,7 +38,7 @@ import type { TournamentWithTables } from "@/types/tournament";
 
 export default function TournamentConfigPage() {
   const { t } = useTranslation();
-  const { user, loading: authLoading, isAdmin, roles } = useAuth();
+  const { user, session, loading: authLoading, isAdmin, roles } = useAuth();
   const hasDealerControl = (roles as any[]).some((r) => r === "dealer_control");
   const role = isAdmin
     ? "super_admin"
@@ -50,7 +50,7 @@ export default function TournamentConfigPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const clubIdStr = clubId ?? "";
 
-  const { data: tournaments, isLoading: toursLoading } = useTournaments(clubIdStr, user?.id);
+  const { data: tournaments, isLoading: toursLoading } = useTournaments(clubIdStr, user?.id, authLoading ? null : session);
   const inventory = useTournamentConfigTableInventory(clubIdStr, user?.id);
   const allTables = inventory.data ?? [];
 

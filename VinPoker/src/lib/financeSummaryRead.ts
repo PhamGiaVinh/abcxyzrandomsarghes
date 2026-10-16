@@ -1,16 +1,5 @@
 // Read validation only: never calculate, round or repair ledger values.
-// Shared by the two finance readers to fence cache incarnations without placing
-// bearer tokens in query keys. This is not an authorization decision.
-let nextEpoch = 0;
-const sessionEpochs = new WeakMap<object, { token: string | undefined; epoch: number }>();
-export function financeSessionReadEpoch(session: { access_token?: string } | null | undefined): number {
-  if (!session) return 0;
-  const existing = sessionEpochs.get(session);
-  if (existing && existing.token === session.access_token) return existing.epoch;
-  const epoch = ++nextEpoch;
-  sessionEpochs.set(session, { token: session.access_token, epoch });
-  return epoch;
-}
+export { sessionReadEpoch as financeSessionReadEpoch } from './sessionReadEpoch';
 
 export function financeRecord(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`FINANCE_SUMMARY_INVALID: ${field}`);

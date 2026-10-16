@@ -5,6 +5,7 @@ on:
       - 'VinPoker/src/hooks/useClubFinanceSummary*'
       - 'VinPoker/src/hooks/accountant/useFinanceSummaryRpcOnly*'
       - 'VinPoker/src/lib/financeSummaryRead*'
+      - 'VinPoker/src/lib/sessionReadEpoch.ts'
       - 'VinPoker/src/components/accountant/AccountantFinanceTab.tsx'
       - 'VinPoker/src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx'
       - '.github/workflows/finance-read-integrity.yml'

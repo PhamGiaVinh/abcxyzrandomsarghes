@@ -26,6 +26,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql'
       - 'VinPoker/tests/dealerSwing/rotationPersistSessionFence*'
       - 'VinPoker/src/lib/tournamentConfigSave*'
+      - 'VinPoker/src/lib/sessionReadEpoch.ts'
       - 'VinPoker/src/pages/TournamentConfigPage*'
       - 'VinPoker/src/components/ops/shared/FloorTableControlMode.tsx'
       - 'VinPoker/src/components/ops/shared/FloorTableControlMode.test.tsx'

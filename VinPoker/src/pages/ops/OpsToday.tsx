@@ -22,12 +22,12 @@ const LIVEISH: Tournament["status"][] = ["live", "final_table", "break"];
 
 export default function OpsToday() {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, session, loading: authLoading } = useAuth();
   const { loading: clubsLoading, user, clubs, operatorClubIds, error: clubsError } = useOperatorClubs();
   const scopedIds = operatorClubIds;
   const activeClub = scopedIds[0];
 
-  const { data: tournaments } = useTournaments(activeClub, user?.id);
+  const { data: tournaments } = useTournaments(activeClub, user?.id, authLoading ? null : session);
   const tablesQ = useDealerOperationalTables(scopedIds);
   const asgQ = useActiveAssignmentsWithTimeline(scopedIds);
   const rosterQ = useCheckedInDealers(scopedIds);

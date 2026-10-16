@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G2/G9 tournament cache session incarnation fence
+
+Baseline7f35cb565 clean. New4RED/12PASS7ae79d proves same actor with a replacement session still gets previous fresh cache and a retained actor without verified session starts a read. Require explicit session in both readers, add opaque session epoch to key; no session/token or auth-loading caller means read disabled and manual-refetch scope rejected. All seven production callsites pass their existing main/ops verified session, null while auth loading. No additional auth/network subscription. Moved existing finance WeakMap epoch implementation unchanged to sessionReadEpoch.ts for real shared finance+tournament consumers, kept financeSessionReadEpoch re-export compatibility; bearer tokens never in query keys. Server authority unchanged, session object/epoch is cache isolation only, not proof of role access or token validity.
+
+8a1cba31testsPASS (16reader+15financehelper); finala459dc/fa5593 42testsPASS including18reader, financeRPC4, configUI8+5, ops5+2; d19691ClubFinance10PASS. Additional reader controls prove late prior-session response cannot replace current data and query keys contain no bearer; prior actor/logout/dedupe/invalidation controls retained. Existing finance semantics preserved via actual hook regressions. Affected9TS/TSXsyntax/YAML/diffPASS. origin/main fetcheded3db6ac unchanged. Workflow triggers include shared helper; NOT dispatched. Fulltype/build/actualbrowseraccountrefresh stillunverified under local-only/RAMhold. No DB/Edge/frontend/flags/Auto/Daybreak/push changes; no activehandles. Master/G2/G9 still IN_PROGRESS; fulltour/live/375/performance remain open. Next remaining operational read/mutation integration gaps; no claim all caches or live authorization repaired.
+
 ## G2/G9 tournament list actor-cache leak repaired locally
 
 Baselineb3fc08598 clean. App QueryClient persists across signout; both tournament readers keyed only by club. New actual React Query hook regressions7e9a85:4FAIL/4PASS before product edit: actorB sees actorA fresh rows in same club; pending actorA query is reused so B never dispatches its own read. This is a deterministic client-cache repro, not proof of a live incident or server authorization bypass.

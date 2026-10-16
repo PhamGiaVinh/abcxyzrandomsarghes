@@ -238,7 +238,7 @@ const DIAG_LABELS: Record<string, string> = {
 type SwingPanelProps = { clubIds: string[]; clubs: ClubRow[]; onOpenPayroll?: () => void };
 
 export default function SwingPanel(props: SwingPanelProps) {
-  const { user } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   // Operator changes discard every operational selection, dialog and local request lifetime.
   return <SwingPanelSession key={JSON.stringify([user?.id ?? null, [...props.clubIds].sort()])} {...props} />;
 }
@@ -282,7 +282,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     refetch: refetchSchedule,
   } = useRotationSchedule(filteredClubIds);
   const { data: swingConfigs, loading: configsLoading, error: configsError, refetch: refetchSwingConfigs } = useSwingConfigs(filteredClubIds);
-  const { data: tournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0], user?.id);
+  const { data: tournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0], user?.id, authLoading ? null : session);
   const staleCleanupCandidateIds = useMemo(
     () => staleCleanupCandidateAttendanceIds(dealers ?? [], nowMs),
     [dealers, nowMs],

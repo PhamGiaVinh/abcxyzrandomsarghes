@@ -67,7 +67,7 @@ export default function OpsTournaments() {
   const navigate = useNavigate();
   const client = useSupabaseClient();
   const queryClient = useQueryClient();
-  const { user } = useOpsAuth();
+  const { user, session, loading: authLoading } = useOpsAuth();
   const {
     loading: clubsLoading,
     clubs,
@@ -84,7 +84,7 @@ export default function OpsTournaments() {
   const hasOwnerAccess = isSuperAdmin || scope.some(
     (row) => row.club_id === activeClub && row.can_owner,
   );
-  const { data: tournaments, isLoading: tourLoading, isError: tourReadError, refetch: retryTours } = useTournaments(activeClub, user?.id);
+  const { data: tournaments, isLoading: tourLoading, isError: tourReadError, refetch: retryTours } = useTournaments(activeClub, user?.id, authLoading ? null : session);
 
   const [filter, setFilter] = useState<"live" | "today" | "all">("live");
   const [sel, setSel] = useState<TVM | null>(null);

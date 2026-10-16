@@ -44,6 +44,7 @@ on:
       - "VinPoker/src/components/floor/useFloorTournaments*.test.tsx"
       - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
+      - "VinPoker/src/lib/sessionReadEpoch.ts"
       - "VinPoker/src/hooks/useTournamentsRead.test.tsx"
       - "VinPoker/src/lib/tournamentDeleteResult.ts"
       - "VinPoker/tests/opsFloorCashier/opsMutations.contract.test.ts"

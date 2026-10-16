@@ -8,6 +8,7 @@ import { saveTournamentConfig, recoverTournamentConfigSave, type TournamentConfi
 import type { Tournament, TournamentWithTables } from "@/types/tournament";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from '@/lib/floorTableControlV3';
 import { assertTournamentDeleted } from '@/lib/tournamentDeleteResult';
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 
 export function useTournamentConfigTableInventory(clubId: string, actorId: string | undefined) {
   const supabase = useSupabaseClient();
@@ -30,18 +31,19 @@ export function useTournamentConfigTableInventory(clubId: string, actorId: strin
 const tournamentKeys = {
   // Actor isolates browser cache, not authorization; the server still enforces RLS.
   // Keep club first so existing mutation invalidation refreshes both list variants.
-  all: (clubId: string | undefined, actorId: string | undefined) => ["tournaments", clubId, actorId, "all"] as const,
-  active: (clubId: string | undefined, actorId: string | undefined) => ["tournaments", clubId, actorId, "active"] as const,
+  all: (clubId: string | undefined, actorId: string | undefined, epoch: number) => ["tournaments", clubId, actorId, epoch, "all"] as const,
+  active: (clubId: string | undefined, actorId: string | undefined, epoch: number) => ["tournaments", clubId, actorId, epoch, "active"] as const,
 };
 
 // ─── Fetch all tournaments with tables ──────────────────────────────────────
 
-export function useTournaments(clubId: string | undefined, actorId: string | undefined) {
+export function useTournaments(clubId: string | undefined, actorId: string | undefined, session: {access_token?: string} | null | undefined) {
   const supabase = useSupabaseClient();
+  const epoch = session?.access_token ? sessionReadEpoch(session) : 0;
   return useQuery({
-    queryKey: tournamentKeys.all(clubId, actorId),
+    queryKey: tournamentKeys.all(clubId, actorId, epoch),
     queryFn: async () => {
-      if (!clubId || !actorId) throw new Error('AUTH_SCOPE_REQUIRED');
+      if (!clubId || !actorId || !epoch) throw new Error('AUTH_SCOPE_REQUIRED');
 
       const { data, error } = await supabase
         .from("tournaments")
@@ -71,19 +73,20 @@ export function useTournaments(clubId: string | undefined, actorId: string | und
       if (error) throw error;
       return (data ?? []) as unknown as TournamentWithTables[];
     },
-    enabled: !!clubId && !!actorId,
+    enabled: !!clubId && !!actorId && !!epoch,
     staleTime: 5 * 60 * 1000,
   });
 }
 
 // ─── Fetch active tournaments only ──────────────────────────────────────────
 
-export function useActiveTournaments(clubId: string | undefined, actorId: string | undefined) {
+export function useActiveTournaments(clubId: string | undefined, actorId: string | undefined, session: {access_token?: string} | null | undefined) {
   const supabase = useSupabaseClient();
+  const epoch = session?.access_token ? sessionReadEpoch(session) : 0;
   return useQuery({
-    queryKey: tournamentKeys.active(clubId, actorId),
+    queryKey: tournamentKeys.active(clubId, actorId, epoch),
     queryFn: async () => {
-      if (!clubId || !actorId) throw new Error('AUTH_SCOPE_REQUIRED');
+      if (!clubId || !actorId || !epoch) throw new Error('AUTH_SCOPE_REQUIRED');
 
       const { data, error } = await supabase
         .from("tournaments")
@@ -118,7 +121,7 @@ export function useActiveTournaments(clubId: string | undefined, actorId: string
       if (error) throw error;
       return (data ?? []) as unknown as TournamentWithTables[];
     },
-    enabled: !!clubId && !!actorId,
+    enabled: !!clubId && !!actorId && !!epoch,
     staleTime: 2 * 60 * 1000,
   });
 }

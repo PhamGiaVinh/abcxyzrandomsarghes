@@ -77,7 +77,7 @@ export default function OpsTables({ tournamentId }: { tournamentId?: string }) {
 }
 
 function OpsTablesV3({ tournamentId }: { tournamentId?: string }) {
-  const { user } = useOpsAuth();
+  const { user, session, loading: authLoading } = useOpsAuth();
   const {
     loading: clubsLoading,
     clubs,
@@ -90,7 +90,7 @@ function OpsTablesV3({ tournamentId }: { tournamentId?: string }) {
   const clubId = selectedClubId && (isSuperAdmin || scopedIds.includes(selectedClubId))
     ? selectedClubId
     : null;
-  const { data: tournaments, isLoading: tournamentsLoading, error: tournamentsError } = useTournaments(clubId ?? undefined, user?.id);
+  const { data: tournaments, isLoading: tournamentsLoading, error: tournamentsError } = useTournaments(clubId ?? undefined, user?.id, authLoading ? null : session);
   const tourOptions = useMemo(() => {
     const list = (tournaments ?? []) as unknown as Tournament[];
     const primary = list.filter((tournament) => LIVEISH_PRIMARY.includes(tournament.status));
@@ -191,7 +191,7 @@ function OpsTablesV3({ tournamentId }: { tournamentId?: string }) {
 function OpsTablesLegacy({ tournamentId }: { tournamentId?: string }) {
   const navigate = useNavigate();
   const supabase = useSupabaseClient();
-  const { user } = useOpsAuth();
+  const { user, session, loading: authLoading } = useOpsAuth();
   const {
     loading: clubsLoading,
     clubs,
@@ -208,7 +208,7 @@ function OpsTablesLegacy({ tournamentId }: { tournamentId?: string }) {
     ? selectedClubId
     : null;
 
-  const { data: tournaments, isLoading: toursLoading } = useTournaments(clubId ?? undefined, user?.id);
+  const { data: tournaments, isLoading: toursLoading } = useTournaments(clubId ?? undefined, user?.id, authLoading ? null : session);
 
   // Deep-link giải: ?tour=<id> khi vào từ cockpit/Hôm nay ("Mở màn Bàn"). Đọc MỘT LẦN (ref) để
   // URL đổi về sau không tự chọn lại → không đè lựa chọn thủ công của người dùng.
