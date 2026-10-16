@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import ts from 'typescript';
 import {runPaidCorrectionEdge} from './paidCorrectionEdge.native.mjs';
-import {createPaidJourneyFixture} from '../cashier/paidJourney.fixture.mjs';
+import {createPaidCompletedHandFixture} from '../cashier/paidJourney.fixture.mjs';
 import {HistoricalDisplayVerificationError,verifyHistoricalDisplaySettlement} from '../../supabase/functions/_shared/trackerSettlement/historicalDisplayVerification.ts';
 import {canonicalJsonV1} from '../../supabase/functions/_shared/trackerSettlement/outcomeV1.ts';
 import {isUuid} from '../../supabase/functions/_shared/internal-trigger-auth.ts';
@@ -26,16 +26,7 @@ for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.o
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
 const binary=prefix.length?'wsl':'psql',flags=['-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
 const sql=q=>execFileSync(binary,[...prefix,...flags],{input:q,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
-const fixture=createPaidJourneyFixture(sql);
-let journey=readFileSync(new URL('../cashier/paidActiveHand.pg17.sql',import.meta.url),'utf8');
-assert.match(journey,/ROLLBACK;\s*SELECT 'ACTUAL_HAND_PAID_WAIT_FINISH_PENDING_MODE_THEN_SEAT_PASS';/);
-journey=journey.replace(/ROLLBACK;(\s*SELECT 'ACTUAL_HAND_PAID_WAIT_FINISH_PENDING_MODE_THEN_SEAT_PASS';)/,'COMMIT;$1');
-sql(String.raw`\set PAID_REGISTRATION ${fixture.registration}
-\set PAID_MOVE_CASE false
-\set PAID_CORRECTION_CASE false
-\set PAID_VERIFIED_HAND ${verified?'true':'false'}
-`+journey);
-const hand=sql(`SELECT id FROM public.tournament_hands WHERE tournament_id='${fixture.tour}' AND status='completed';`);assert.ok(isUuid(hand));
+const {fixture,hand}=createPaidCompletedHandFixture(sql,{verified});
 const business=()=>sql(`SELECT jsonb_build_object('hand',(SELECT to_jsonb(h) FROM public.tournament_hands h WHERE id='${hand}'),
  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${fixture.tour}'),
  'money',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}'));`);

@@ -31,6 +31,7 @@ on:
       - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionEdge*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionOverlap*'
+      - 'VinPoker/tests/trackerSettlement/paidCorrectionRecovery*'
       - 'VinPoker/tests/trackerSettlement/correctionResolution118*'
       - 'VinPoker/src/lib/tracker-poker/correctionCommitIntent*'
       - 'VinPoker/tests/trackerPoker/correctionCommitIntent*'
@@ -1056,6 +1057,7 @@ jobs:
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap --history-correction-locks --expect-history-lock-fixed
           node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
+          VINPOKER_NATIVE_CORRECTION_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidCorrectionRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap

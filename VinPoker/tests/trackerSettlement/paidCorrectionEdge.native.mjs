@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {resolve} from 'node:path';
 import ts from 'typescript';
 import {computeAuthoritativeSettlement,normalizeSettlementSourceRpcResult} from '../../supabase/functions/_shared/trackerSettlement/compute.ts';
 import {assertExpectedTargetEndingStacks,redactedTargetEndingStacks} from '../../supabase/functions/_shared/trackerSettlement/expectedEndingStacks.ts';
@@ -9,8 +10,8 @@ import {runPaidCorrectionOverlap} from './paidCorrectionOverlap.native.mjs';
 
 // Called only after paidHistoryWorker's dedicated local database guard/fixture.
 // Real Edge code, compute and SQL; getUser/HTTP/CORS transport is modeled.
-export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
- const maskReceipt=process.argv.includes('--correction-mask-receipt');
+export async function runPaidCorrectionEdge({sql,service,fixture,hand,scenario}){
+ let maskReceipt=process.argv.includes('--correction-mask-receipt');
  const quote=value=>value===null?'NULL':`'${(typeof value==='object'?JSON.stringify(value):String(value)).replaceAll("'","''")}'`;
  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('hand',(SELECT to_jsonb(h) FROM public.tournament_hands h WHERE id='${hand}'),
   'outcomes',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM public.tournament_settlement_outcomes o WHERE hand_id='${hand}'),
@@ -51,7 +52,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
   if(authorizationFailure)return {data:null,error:{message:'TEST authority unavailable'}};
   return {data:JSON.parse(sql(`SET request.jwt.claim.sub='${actor}';SET request.jwt.claims='{"role":"authenticated","sub":"${actor}"}';SET ROLE authenticated;SELECT public.${name}('${fixture.tour}','${hand}');`)),error:null};
  }};
- const file=readFileSync(new URL('../../supabase/functions/tournament-live-resettle-commit/index.ts',import.meta.url),'utf8');
+ const file=readFileSync(resolve('supabase/functions/tournament-live-resettle-commit/index.ts'),'utf8');
  const ast=ts.createSourceFile('index.ts',file,ts.ScriptTarget.ES2022,true);
  const stripped=ts.factory.updateSourceFile(ast,ast.statements.filter(n=>!ts.isImportDeclaration(n)));
  const code=ts.transpileModule(ts.createPrinter().printFile(stripped),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
@@ -64,6 +65,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  const players=JSON.parse(sql(`SELECT jsonb_agg(jsonb_build_object('player_id',player_id,'entry_number',entry_number,'ending_stack',ending_stack)) FROM public.hand_players WHERE hand_id='${hand}';`));
  const body={mode:'preview',tournament_id:fixture.tour,hand_id:hand,correction_reason:'TEST correct persisted board',edit:{communityCards:['2c','3d','4h']},expected_target_ending_stacks:players};
  const invoke=payload=>handler(new Request('https://test.invalid/correction',{method:'POST',headers:{Authorization:'Bearer TEST_USER','Content-Type':'application/json'},body:JSON.stringify(payload)}));
+ if(scenario)return await scenario({invoke,body,setMaskReceipt:value=>{maskReceipt=value;},errors});
  const before=fingerprint();
  authFailure=true;let response=await invoke(body);assert.equal(response.status,503,'auth infrastructure failure is not invalid login');assert.equal((await response.json()).code,'authentication_unavailable');
  authFailure='throw';response=await invoke(body);assert.equal(response.status,503);assert.equal((await response.json()).code,'authentication_unavailable');
