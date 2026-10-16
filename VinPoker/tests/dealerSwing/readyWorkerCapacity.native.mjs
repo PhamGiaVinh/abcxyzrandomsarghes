@@ -472,6 +472,56 @@ if(process.argv.includes('--overlap')){
   }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
  }
  console.log('LEGACY105_DUPLICATE_OFF_CLOSE_BOTH_ORDER_OVERLAP_PASS');
+ for(const order of ['duplicate','raw-first','prepare-first-raw','off-first','prepare-first-off','close-first','prepare-first-close']){
+  const c=seed(1),t=c.rows[0],id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
+  sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${t.nextAttendance}';
+   UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${t.nextAttendance}',pre_assigned_at=now() WHERE id='${id}';`);
+  const initialVersion=sql(`SELECT version FROM public.dealer_assignments WHERE id='${id}';`);
+  const adopted=JSON.parse(sql(service+`SELECT public.worker_adopt_legacy_preassignment_v1('${c.club}','${t.table}','${t.session}','${id}',${initialVersion},'${t.nextAttendance}','${randomUUID()}');`));
+  assert.equal(adopted.outcome,'adopted');
+  const version=sql(`SELECT version FROM public.dealer_assignments WHERE id='${id}';`),revision=sql(`SELECT revision FROM public.table_sessions WHERE id='${t.session}';`);
+  const prepare=`SELECT public.worker_prepare_emergency_replan_v1('${c.club}','${t.table}','${t.session}','${id}',${version},'${t.nextAttendance}',ARRAY['${adopted.schedule_id}'::uuid],'race_lost');`;
+  const raw=`SELECT public.cancel_rotation_slot('${adopted.schedule_id}','race_lost');`;
+  const off=`RESET ROLE;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';`;
+  const close=`RESET ROLE;SET request.jwt.claim.role='authenticated';SET request.jwt.claim.sub='${c.owner}';SET request.jwt.claims='{"role":"authenticated","sub":"${c.owner}"}';SET ROLE authenticated;SELECT public.operator_close_club_table_v2('${t.session}',${revision},'${randomUUID()}');`;
+  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}'),'schedule',(SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${adopted.schedule_id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
+  const before=fingerprint();let holder,waiter;
+  try{
+   const first=order==='raw-first'?`SELECT 1 FROM public.dealer_rotation_schedule WHERE id='${adopted.schedule_id}' FOR UPDATE;`:order==='off-first'?off:order==='close-first'?close:prepare;
+   holder=tx('emergency106_holder',first,true);
+   await barrier('emergency106_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('emergency106_waiter',order==='prepare-first-raw'?raw:order==='prepare-first-off'?off:order==='prepare-first-close'?close:prepare);
+   await barrier('emergency106_waiter',"wait_event_type='Lock'");
+   assert.equal(fingerprint(),before,'preparation is invisible until commit');
+   if(order==='raw-first'){
+    // While preparation waits on the raw caller's schedule lock, it MUST NOT
+    // hold assignment yet; otherwise raw cancel's next UPDATE deadlocks.
+    sql(`BEGIN;SELECT id FROM public.dealer_assignments WHERE id='${id}' FOR UPDATE NOWAIT;ROLLBACK;`);
+   }
+   holder.end(order==='raw-first'?raw+'COMMIT':'COMMIT');const h=await holder.result,w=await waiter.result;
+   assert.equal(h.code,0,h.error);
+   const lastJson=out=>JSON.parse(out.trim().split(/\r?\n/).at(-1));
+   if(order==='off-first'){
+    assert.notEqual(w.code,0);assert.match(w.error,/AUTO_SWING_OFF/);assert.equal(fingerprint(),before);
+   }else if(order==='raw-first'){
+    assert.equal(lastJson(h.out).outcome,'cancelled');assert.notEqual(w.code,0);assert.match(w.error,/EMERGENCY_REPLAN_SCHEDULE_CHANGED|EMERGENCY_REPLAN_SNAPSHOT_CHANGED/);
+   }else if(order==='close-first'){
+    assert.equal(lastJson(h.out).ok,true);assert.notEqual(w.code,0);assert.match(w.error,/EMERGENCY_REPLAN_SESSION_CHANGED/);
+   }else{
+    assert.equal(lastJson(h.out).outcome,'prepared');
+    if(order==='duplicate'){assert.notEqual(w.code,0);assert.match(w.error,/EMERGENCY_REPLAN_SCHEDULE_CHANGED|EMERGENCY_REPLAN_SNAPSHOT_CHANGED/);}
+    else{assert.equal(w.code,0,w.error);if(order==='prepare-first-raw')assert.equal(lastJson(w.out).outcome,'noop');if(order==='prepare-first-close')assert.equal(lastJson(w.out).ok,true);}
+   }
+   if(order!=='off-first'){
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE assignment_id='${id}' AND status IN ('predicted','announced','executing');`),'0');
+    assert.equal(sql(`SELECT pre_assigned_attendance_id IS NULL FROM public.dealer_assignments WHERE id='${id}';`),'t');
+    assert.equal(sql(`SELECT current_state||'|'||(pre_assigned_table_id IS NULL)::text FROM public.dealer_attendance WHERE id='${t.nextAttendance}';`),'available|true');
+   }
+   if(order.includes('close'))assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${t.session}';`),'t');
+   if(order.includes('off'))assert.equal(sql(`SELECT auto_swing_enabled FROM public.club_settings WHERE club_id='${c.club}';`),'f');
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
 }
 const sizes=['--negative','--overlap','--legacy','--adoption','--emergency-stale'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
