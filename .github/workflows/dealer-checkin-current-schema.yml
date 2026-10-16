@@ -34,6 +34,8 @@ on:
       - 'VinPoker/tests/trackerSettlement/paidCorrectionRecovery*'
       - 'VinPoker/tests/trackerSettlement/paidTvPublish*'
       - 'VinPoker/tests/trackerSettlement/tvReleaseGate.bootstrap.mjs'
+      - 'VinPoker/tests/trackerSettlement/tvStorage.bootstrap.mjs'
+      - 'VinPoker/supabase/pending-migrations/20260924065041_tv_layout_editor_v1.sql'
       - 'VinPoker/supabase/pending-migrations/20260924165219_centerpoint_tournament_ops_release_v1.sql'
       - 'VinPoker/tests/trackerSettlement/correctionResolution118*'
       - 'VinPoker/src/lib/tracker-poker/correctionCommitIntent*'
@@ -1069,7 +1071,7 @@ jobs:
           node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts tests/trackerPoker/correctionNoChipChange.render.test.tsx src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/tracker/handEditPanel.validation.render.test.tsx tests/tracker/handEditValidation.test.ts tests/tracker/handEditDiff.test.ts --maxWorkers=1 --minWorkers=1
           VINPOKER_NATIVE_CORRECTION_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidCorrectionRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
-          node tests/trackerSettlement/tvReleaseGate.bootstrap.mjs
+          node tests/trackerSettlement/tvStorage.bootstrap.mjs
           VINPOKER_NATIVE_TV_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidTvPublish.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs

@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## TV Storage metadata qualification — local PASS, not blob/API proof
+
+Restored original TV-v1 Storage consumer only after exact known closed fixture stub detection; canonical function/ACL/schema usage and existing restrictive policies/immutable-helper digest asserted. Unknown drift fails closed. CI preparation now invokes this bootstrap after its base gate; no dispatch.
+
+Native session52293 terminal exit0: one actual editor/SQL/anonymous TV integration test PASS,12.15s case/14.71s suite. Added real authenticated Storage metadata insert with gateOFF denial42501, exact allowlisted owner success, player-own-path denial42501, immutable UPDATE zero rows, directDELETE guard42501 and unchanged object. Actual save validates existing asset, immutable version retains URL; missing asset rejects specifically tv_layout_asset_missing and preserves head/version snapshots. Initial fixture failures were missing bucket and current statement-level protect_delete; added local metadata bucket only if absent/validate existing, retained delete guard (no bypass). Exact gate row restored OFF and PG stopped.
+
+Limits: SQL metadata is not blob upload/download/HTTP retention, actual Storage API DELETE or browser uploader proof. No production source/migration/flags changed, no push/deploy/build/fulltypecheck. Full campaign still ACTIVE, local-only hold/DaybreakOFF unchanged. Next Storage API bytes/Voice/provider/full-tour/rest15x3/40tables/performance/fullchecks/release remain unaccepted.
+
 ## Event-scoped editor publish → two anonymous paid flights local PASS
 
 Baseline646f05479 clean/previousPROGRESS. Existing native TV journey now creates flightB via actual create-with-levels/open/register/cash-pay RPCs (40000 stack/BB1000 versus first flight20000/BB200), same club. Event association and second display pairing are explicit local control-plane fixtures, not management/pairing UI proof. Actual editor publishes first event-scoped revision1; both anonymous v4 displays receive shared branding while tournament/clock IDs, blind levels and live-entry stacks remain flight-specific. Full stored tournament rows unchanged by branding publication; original standalone head/version history fingerprint remains intact, event head is a separate XOR-scoped row.

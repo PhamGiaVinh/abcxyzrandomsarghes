@@ -26,8 +26,17 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   for(const [key,value] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:database}))expect(process.env[key]).toBe(value);
   for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])expect(process.env[key]).toBeFalsy();
   const f=createPaidJourneyFixture(sql);h.actor=f.actor;let mask=true,commits=0;
+  const ownerSql=`SET request.jwt.claim.sub='${f.actor}';SET request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET ROLE authenticated;`;
+  const assetPath=`${f.actor}/tv/branding-logo/v1/${crypto.randomUUID()}.png`;
+  const assetUrl=`https://orlesggcjamwuknxwcpk.supabase.co/storage/v1/object/public/backing-proofs/${assetPath}`;
   gateBefore=JSON.parse(sql('SELECT to_jsonb(r) FROM public.centerpoint_tournament_ops_release r WHERE id=true;'));
   expect(gateBefore!.enabled).toBe(false);expect(gateBefore!.allowed_club_ids).toEqual([]);
+  // Metadata-only Storage seam: no blob bytes or hosted upload are modeled.
+  sql(`INSERT INTO storage.buckets(id,name,public) VALUES('backing-proofs','backing-proofs',true) ON CONFLICT(id) DO NOTHING;`);
+  expect(sql(`SELECT name||'|'||public FROM storage.buckets WHERE id='backing-proofs';`)).toBe('backing-proofs|true');
+  const denied=(statement:string)=>{try{sql(statement);throw new Error('expected_storage_denial');}catch(error){expect(String((error as {stderr?:unknown}).stderr??error)).toMatch(/42501/);}};
+  denied(ownerSql+`INSERT INTO storage.objects(bucket_id,name) VALUES('backing-proofs','${assetPath}');`);
+  expect(sql(`SELECT count(*) FROM storage.objects WHERE bucket_id='backing-proofs' AND name='${assetPath}';`)).toBe('0');
   const token='native-paid-tv-'+crypto.randomUUID();
   // Explicit local pairing fixture only; no pairing UI/Storage/network proof.
   sql(`INSERT INTO public.tv_displays(id,club_id,display_token,assigned_tournament_id,status)
@@ -51,6 +60,16 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   expect(h.error).toHaveBeenCalledWith(expect.stringContaining('CENTERPOINT_TOURNAMENT_OPS_RELEASE_CLOSED'));
   expect(commits).toBe(0);expect(sql(`SELECT count(*) FROM public.tv_tournament_layouts WHERE tournament_id='${f.tour}';`)).toBe('0');h.error.mockClear();
   sql(`UPDATE public.centerpoint_tournament_ops_release SET enabled=true,allowed_club_ids=ARRAY['${f.club}'::uuid],updated_at=clock_timestamp() WHERE id=true;`);
+  sql(ownerSql+`INSERT INTO storage.objects(bucket_id,name) VALUES('backing-proofs','${assetPath}');`);
+  const outsiderPath=`${f.player}/tv/branding-logo/v1/${crypto.randomUUID()}.png`;
+  denied(`SET request.jwt.claim.sub='${f.player}';SET request.jwt.claims='{"role":"authenticated","sub":"${f.player}"}';SET ROLE authenticated;INSERT INTO storage.objects(bucket_id,name) VALUES('backing-proofs','${outsiderPath}');`);
+  expect(sql(`SELECT count(*) FROM storage.objects WHERE bucket_id='backing-proofs' AND name='${outsiderPath}';`)).toBe('0');
+  const assetBefore=sql(`SELECT to_jsonb(o) FROM storage.objects o WHERE bucket_id='backing-proofs' AND name='${assetPath}';`);
+  expect(sql(ownerSql+`WITH changed AS (UPDATE storage.objects SET name=name||'.changed' WHERE bucket_id='backing-proofs' AND name='${assetPath}' RETURNING 1) SELECT count(*) FROM changed;`)).toBe('0');
+  // Current Storage has an additional statement-level delete guard. Keep it;
+  // this denial is not evidence of an actual Storage API DELETE/RLS journey.
+  denied(ownerSql+`DELETE FROM storage.objects WHERE bucket_id='backing-proofs' AND name='${assetPath}';`);
+  expect(sql(`SELECT to_jsonb(o) FROM storage.objects o WHERE bucket_id='backing-proofs' AND name='${assetPath}';`)).toBe(assetBefore);
   fireEvent.change(screen.getByLabelText('Brand name'),{target:{value:'Native TEST broadcast'}});
   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'}));});
   expect(h.success.mock.calls.length,JSON.stringify({notices:h.error.mock.calls,commits})).toBe(1);expect(h.error).not.toHaveBeenCalled();expect(commits).toBe(1);
@@ -116,5 +135,14 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
    expect(state.display.club_brand_name).toBe('Shared event TEST brand');expect(state.tournament.id).toBe(tournament);
    expect(state.clock.tournament_id).toBe(tournament);expect(state.participation_counts.live_entry_stack).toBe(stack);expect(state.levels[0].big_blind).toBe(bigBlind);
   }
+  const shared=JSON.parse(sql(ownerSql+`SELECT public.get_tv_tournament_branding_v1('${f.tour}');`));
+  const publishAsset=(url:string,revision:number)=>sql(ownerSql+`SELECT public.save_tv_tournament_layout_v1('${f.tour}',${revision},'Shared event TEST brand',${quote(url)},'',${quote(shared.layout)}::jsonb);`);
+  expect(JSON.parse(publishAsset(assetUrl,1)).revision).toBe(2);
+  expect(sql(`SELECT v.logo_url FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}' AND v.revision=2;`)).toBe(assetUrl);
+  const retained=sql(`SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}';`);
+  try{publishAsset(assetUrl.replace(/[^/]+$/,crypto.randomUUID()+'.png'),2);throw new Error('expected_missing_asset');}
+  catch(error){expect(String((error as {stderr?:unknown}).stderr??error)).toContain('tv_layout_asset_missing');}
+  expect(sql(`SELECT revision FROM public.tv_tournament_layouts WHERE event_id='${event}';`)).toBe('2');
+  expect(sql(`SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}';`)).toBe(retained);
  });
 });
