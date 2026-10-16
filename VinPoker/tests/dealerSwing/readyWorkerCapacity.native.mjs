@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync,spawn} from 'node:child_process';import {randomUUID} from 'node:crypto';import {stripTypeScriptTypes} from 'node:module';import {runInNewContext} from 'node:vm';
 import {getDealerOperationalTables} from '../../supabase/functions/_shared/dealerOperationalTables.ts';
 import {authorizeInternalTrigger,authorizeSwingWorkerRequest,getIdempotencyKey,parseDealerReadyPayload} from '../../supabase/functions/_shared/internal-trigger-auth.ts';
+import ts from 'typescript';
 assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_ready_capacity_ci');
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
 function sql(input){const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];const options={input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']};return (process.platform==='win32'?execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags],options):execFileSync('psql',flags,options)).trim();}
@@ -57,6 +58,35 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  ${service} DO $$ DECLARE result jsonb;BEGIN ${rows.map(r=>`result:=public.worker_assign_dealer_to_session_v1('${club}','${r.table}','${r.session}','${r.oldAttendance}',now()+interval '45 minutes','capacity_old_${r.oldAttendance}');IF result->>'outcome' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'capacity_seed_assignment_failed:%',result;END IF;`).join('\n')}END $$;
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
  return {club,owner,rows};
+}
+if(process.argv.includes('--emergency-stale')){
+ const c=seed(2),t=c.rows[0],replacement=c.rows[1].nextAttendance;
+ const id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
+ sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${t.nextAttendance}';
+ UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${t.nextAttendance}',pre_assigned_at=now() WHERE id='${id}';`);
+ const fingerprint=()=>sql(`SELECT md5(to_jsonb(a)::text) FROM public.dealer_assignments a WHERE id='${id}';`);
+ const raw=readFileSync('supabase/functions/process-swing/passes/passR-rotation-planner.ts','utf8'),entry=raw.slice(raw.indexOf('export async function replanSingleTable(')).replace('export async function','async function');
+ const definitions=readFileSync('supabase/functions/_shared/pickNextDealer.ts','utf8'),first=definitions.indexOf('export class CandidateSnapshotFailure'),last=definitions.indexOf('function requireCandidateSnapshot',first);
+ const failureCode=ts.transpileModule(definitions.slice(first,last).replaceAll('export ',''),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const failures=new Function(failureCode+';return {CandidateSnapshotFailure,isCandidateSnapshotFailure};')();
+ const replan=new Function('fetchTournamentInfo','buildRotationSupply','CandidateSnapshotFailure','isCandidateSnapshotFailure',stripTypeScriptTypes(entry)+';return replanSingleTable;')(
+  async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),async()=>{throw new Error('test_boundary_after_clear');},failures.CandidateSnapshotFailure,failures.isCandidateSnapshotFailure);
+ assert.equal(sql(`SELECT count(*) FROM public.table_sessions WHERE id='${t.session}' AND game_table_id='${t.table}' AND club_id='${c.club}' AND closed_at IS NULL AND session_type='cash';`),'1');
+ let afterConcurrentLock=null;
+ const admin={rpc:async()=>assert.fail('unexpected emergency RPC'),from(table){assert.ok(['dealer_assignments','dealer_rotation_schedule'].includes(table));let patch=null,where=[];
+  const q={select(){return q;},eq(k,v){where.push(`${column(k)}=${quote(v)}`);return q;},update(v){patch=v;return q;},
+   async in(){assert.equal(table,'dealer_rotation_schedule');return {data:JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM public.dealer_rotation_schedule s WHERE assignment_id='${id}';`)),error:null};},
+   async maybeSingle(){return {data:JSON.parse(sql(service+`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}';`)),error:null};},
+   then(resolve,reject){const perform=async()=>{assert.equal(table,'dealer_assignments');assert.ok(patch);
+    // A different writer commits a new lock AFTER the request's snapshot read.
+    sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${replacement}';
+     UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${replacement}',pre_assigned_at=now(),planned_relief_at=now()+interval '4 minutes' WHERE id='${id}';`);
+    afterConcurrentLock=fingerprint();
+    sql(service+`UPDATE public.dealer_assignments SET ${Object.entries(patch).map(([k,v])=>column(k)+'='+quote(v)).join(',')} WHERE ${where.join(' AND ')};`);
+    return {data:null,error:null};};return perform().then(resolve,reject);},
+  };return q;}};
+ await assert.rejects(replan(admin,{clubId:c.club},id,new Set(),'race_lost'),e=>failures.isCandidateSnapshotFailure(e));
+ assert.ok(afterConcurrentLock);assert.equal(fingerprint(),afterConcurrentLock,'late emergency request must not clear a newer incoming lock');
 }
 if(process.argv.includes('--adoption')){
  const c=seed(1),r=c.rows[0];
@@ -390,7 +420,7 @@ if(process.argv.includes('--overlap')){
  }
  console.log('LEGACY105_DUPLICATE_OFF_CLOSE_BOTH_ORDER_OVERLAP_PASS');
 }
-const sizes=['--negative','--overlap','--legacy','--adoption'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--legacy','--adoption','--emergency-stale'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
