@@ -1078,6 +1078,7 @@ jobs:
           VINPOKER_NATIVE_TV_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidTvPublish.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 node tests/chipOps/paidColorUpCommit.native.mjs
+          VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_COUPLED=1 node tests/chipOps/paidColorUpCommit.native.mjs
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap

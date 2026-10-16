@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Paid chip durable recovery coupled AND uncoupled local PASS
+
+Baseline782734a8b clean/previousPROGRESS. Same actualCOMMIT/freshconnection paidchip script now explicit coupled mode only for fresh localTESTclub, canonical coupling setter, restoreOFF in finally evenassertfailure. Bankmetadata seed1000low/100high; exactissuance1 consumes200low only whenON; colorup/undo preserve original2floorledger and original3bankledger rowIDs/fullJSON, appendcompensations (4floor/5banktotal), restorebank800low/100high forON (1000/100OFF). Snapshot now includes actualbankrows during receipt reads/denials. Historicalcolorupreceipt remains exact afterundo and aftercouplingrestoredOFF. No globalflag/Auto/Daybreak changes; localownedclub coupling intentionally toggled and finallyOFF, audit retained.
+
+Final615f9f coupledexit0/PASS8.33s includingPGstartup/shutdown;3cfd00 uncoupledexit0/PASS6.21s on changedtestdependency. Bothserversstopped/nohandles. CIprepares explicitbothmodes/notdispatched. This is durableSQL/readreceipt/conservation evidence, not actualHTTPresponse drop/browserhook/375/fulltour/provider/rest15x3/40worker. No productsource/schema/liveDB/Edge/frontend/flags changes. Localhold/masterACTIVE/fulltour/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
 ## Paid Chip real COMMIT → fresh connection receipt/undo recovery local PASS
 
 Baseline79cb3be73 clean/previousPROGRESS; freshfetch origin/main unchangeded3db6ac600710e95fe4408c475941916c23ab19. New exactgated native chipcase reuses canonical paid fixture, localPG17/datadir/nonetwork guards; metadata setup explicit. Coupling staysOFF/noflagwrite. Exactissuance then colorup SELECTs actually autocommit, each SQLcall fresh psql process. After committed response is withheld from recovery path, actual authenticated receipt reader returns exact stored outcome; conflict/unknown/outsider/authorizedotheractor tests zeroledgerdelta,1operation/2ledgerrows, no writerretry. Real undoCOMMIT then freshreader exactundo; originalreceipt stillsame afterundo, exactoriginalrowIDs/fullJSON unchanged,4ledgerrows compensate, original200low/0high and paidcash/entry/seat/tablefingerprintunchanged. LocalTEST data/audit intentionally retained, not cleaned/reset.
