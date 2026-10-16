@@ -59,6 +59,13 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
  return {club,owner,rows};
 }
+if(process.argv.includes('--planner')){
+ const size=Number(process.argv.find(a=>a.startsWith('--planner-size='))?.split('=')[1]??2);assert.ok([2,10,40].includes(size));
+ const fixture=seed(size);console.log('ACTUAL_PASSR_NATIVE_START '+size);
+ const output=execFileSync('deno',['run','--cached-only','--no-config','--no-lock','--node-modules-dir=none','--deny-net','--allow-read=./supabase/functions,./tests/dealerSwing','--allow-env=PGHOST,PGPORT,PGUSER,PGDATABASE,PATH,SystemRoot',`--allow-run=${process.platform==='win32'?'wsl':'psql'}`,'tests/dealerSwing/passR.native.mjs','--native'],{
+  input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:120000,stdio:['pipe','pipe','pipe'],
+ });console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_NATIVE_')).join('\n'));
+}
 if(process.argv.includes('--emergency-stale')){
  const c=seed(2),t=c.rows[0],replacement=c.rows[1].nextAttendance;
  const id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
@@ -523,7 +530,7 @@ if(process.argv.includes('--overlap')){
  }
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
 }
-const sizes=['--negative','--overlap','--legacy','--adoption','--emergency-stale'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--legacy','--adoption','--emergency-stale','--planner'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
