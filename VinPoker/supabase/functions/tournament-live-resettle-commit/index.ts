@@ -338,6 +338,14 @@ Deno.serve(async (req) => {
         p_correction_reason: correctionReason,
       });
       if (commitError) return publicFailure(req, rpcFailureCode(commitError));
+      if (!isRecord(receipt) || receipt.ok !== true || receipt.correction_reason_recorded !== true
+        || receipt.outcome_hash !== result.privateOutcome.outcomeHash
+        || !Number.isSafeInteger(receipt.settlement_revision)
+        || receipt.settlement_revision !== result.privateOutcome.settlementRevision) {
+        // The transaction may already have committed. Do not retry it or claim
+        // failure/success; the original fingerprint/key can recover its receipt.
+        return publicFailure(req, "correction_commit_response_unverified", 502);
+      }
       return jsonResp(req, {
         ok: true,
         status: "verified",

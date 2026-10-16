@@ -9,6 +9,7 @@ import {canonicalJsonV1} from '../../supabase/functions/_shared/trackerSettlemen
 // Called only after paidHistoryWorker's dedicated local database guard/fixture.
 // Real Edge code, compute and SQL; getUser/HTTP/CORS transport is modeled.
 export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
+ const maskReceipt=process.argv.includes('--correction-mask-receipt');
  const quote=value=>value===null?'NULL':`'${(typeof value==='object'?JSON.stringify(value):String(value)).replaceAll("'","''")}'`;
  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('hand',(SELECT to_jsonb(h) FROM public.tournament_hands h WHERE id='${hand}'),
   'outcomes',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM public.tournament_settlement_outcomes o WHERE hand_id='${hand}'),
@@ -19,7 +20,8 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
   assert.ok(rpcTypes[name],name);serviceReads++;
   const values=Object.values(args);assert.equal(values.length,rpcTypes[name].length);
   const params=Object.entries(args).map(([key,value],i)=>`${key}=>${quote(value)}::${rpcTypes[name][i]}`).join(',');
-  return {data:JSON.parse(sql(service+`SELECT to_jsonb(public.${name}(${params}));`)),error:null};
+  const data=JSON.parse(sql(service+`SELECT to_jsonb(public.${name}(${params}));`));
+  return {data:maskReceipt&&name==='commit_tracker_hand_correction_outcome'?null:data,error:null};
  }catch(error){errors.push(String(error));return {data:null,error:{message:String(error)}};}},
  from(table){assert.ok(['tournament_hands','hand_players','hand_actions','tournament_chip_counts','tournament_settlement_outcomes'].includes(table));
   let columns,where=[],order=[],limit;const column=value=>{assert.match(value,/^[a-z_]+$/);return value;};
@@ -74,7 +76,10 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  actor=crypto.randomUUID();response=await invoke(body);assert.equal(response.status,403);assert.equal((await response.json()).code,'actor_not_authorized');assert.equal(serviceReads,0);assert.equal(fingerprint(),before);
  actor=fixture.actor;response=await invoke(body);const preview=await response.json();assert.equal(response.status,200,JSON.stringify({preview,errors}));assert.equal(preview.status,'preview');assert.equal(fingerprint(),before);assert.deepEqual(errors,[]);
  const commit={...body,mode:'commit',idempotency_key:'native-correction-edge-'+hand,expected_source_revision:preview.source_revision,expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash};
- response=await invoke(commit);const receipt=await response.json();assert.equal(response.status,200,JSON.stringify({receipt,errors}));assert.equal(receipt.status,'verified');assert.equal(receipt.receipt.ok,true);assert.deepEqual(errors,[]);
+ response=await invoke(commit);const receipt=await response.json();
+ if(maskReceipt){assert.equal(response.status,502,JSON.stringify({receipt,errors}));assert.equal(receipt.code,'correction_commit_response_unverified');}
+ else{assert.equal(response.status,200,JSON.stringify({receipt,errors}));assert.equal(receipt.status,'verified');assert.equal(receipt.receipt.ok,true);}
+ assert.deepEqual(errors,[]);
  assert.ok(Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`))>preview.source_revision);
  assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND correction_reason='TEST correct persisted board';`),'1');
  const after=fingerprint();response=await invoke(commit);assert.equal(response.status,409);assert.equal((await response.json()).code,'stale_correction_preview');assert.equal(fingerprint(),after);
@@ -94,5 +99,5 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  actor=fixture.actor;
  sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE tournament_id='${fixture.tour}' AND user_id='${fixture.actor}';`);
  response=await invoke(receiptIntent);assert.equal(response.status,200);assert.equal((await response.json()).status,'receipt_found');assert.equal(fingerprint(),after);
- console.log('ACTUAL_PAID_CORRECTION_EDGE_SCOPE_PREVIEW_COMMIT_STALE_RETRY_PASS');
+ console.log(maskReceipt?'ACTUAL_PAID_CORRECTION_MISSING_COMMIT_RECEIPT_THEN_READ_RECOVERY_PASS':'ACTUAL_PAID_CORRECTION_EDGE_SCOPE_PREVIEW_COMMIT_STALE_RETRY_PASS');
 }
