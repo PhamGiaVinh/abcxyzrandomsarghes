@@ -20,13 +20,13 @@ const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims=
 const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
 const column=v=>(assert.match(v,/^[a-z_]+$/),v);
 const rpcArgs={get_dealer_operational_tables_v1:['p_club_id'],atomic_dealer_ready_check:['p_club_id','p_attendance_id'],worker_perform_swing:['p_assignment_id','p_table_id','p_table_session_id','p_expected_version','p_next_attendance_id','p_send_to_break','p_break_duration_minutes','p_duration_minutes','p_rest_deficit_minutes']};
-const rpcCalls=[];
+const rpcCalls=[],rpcResults=[];let failRpc=null;
 function rpc(name,args){assert.ok(rpcArgs[name],name);assert.deepEqual(Object.keys(args).sort(),[...rpcArgs[name]].sort());rpcCalls.push({name,args});
  const params=Object.entries(args).map(([k,v])=>`${column(k)}=>${quote(v)}`).join(',');
  const query=name==='get_dealer_operational_tables_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
- return JSON.parse(sql(service+query));
+ const result=JSON.parse(sql(service+query));rpcResults.push({name,result});return result;
 }
-function client(){return {rpc:async(name,args)=>{try{return {data:rpc(name,args),error:null};}catch(e){const pg=String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):\s*([^\r\n]+)/);return {data:null,error:{code:pg?.[1],message:pg?.[2]??String(e)}};}},
+function client(){return {rpc:async(name,args)=>{if(name===failRpc)return {data:null,error:{message:'synthetic transport failure before dispatch'}};try{return {data:rpc(name,args),error:null};}catch(e){const pg=String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):\s*([^\r\n]+)/);return {data:null,error:{code:pg?.[1],message:pg?.[2]??String(e)}};}},
  from(table){assert.ok(['club_settings','swing_config','dealer_assignments','cron_metrics'].includes(table));let columns=[],conditions=[],ordering='',maximum='';
   const q={select(value){columns=value.split(',').map(x=>column(x.trim()));return q;},eq(k,v){conditions.push(`${column(k)}=${quote(v)}`);return q;},
    in(k,values){assert.ok(Array.isArray(values)&&values.length<=100);conditions.push(`${column(k)} IN (${values.map(quote).join(',')})`);return q;},
@@ -58,7 +58,36 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
  return {club,rows};
 }
-const sizes=process.argv.includes('--small')?[2]:[2,10,40];
+if(process.argv.includes('--negative')){
+ const c=seed(2);
+ const initial=await dispatch(c.club,c.rows[0].nextAttendance);
+ assert.equal(initial.body.outcome,'swung',JSON.stringify(initial));
+ const incoming=sql(`SELECT attendance_id FROM public.dealer_assignments WHERE id='${initial.body.assignment_id}' AND released_at IS NOT NULL;`);
+ assert.ok(c.rows.some(r=>r.oldAttendance===incoming));
+ const before=sql(`SELECT md5(string_agg(to_jsonb(a)::text,',' ORDER BY a.id)) FROM public.dealer_assignments a WHERE club_id='${c.club}';`);
+ const attendanceBefore=sql(`SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.id),'[]') FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${c.club}';`);
+ const result=await dispatch(c.club,incoming);
+ assert.notEqual(result.body.outcome,'swung','recently released dealer must not acquire another overdue table: '+JSON.stringify(result));
+ const rejection=rpcResults.filter(r=>r.name==='worker_perform_swing').at(-1).result;
+ assert.equal(rejection.outcome,'error');assert.equal(rejection.detail,'DEALER_REST_REQUIRED');assert.equal(rejection.sqlstate,'P0001');
+ assert.equal(result.status,500,JSON.stringify(result));
+ assert.equal(result.body.error,'non_success_outcome');
+ assert.equal(sql(`SELECT md5(string_agg(to_jsonb(a)::text,',' ORDER BY a.id)) FROM public.dealer_assignments a WHERE club_id='${c.club}';`),before,'rejected insufficient-rest intent has no assignment delta');
+ assert.equal(sql(`SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.id),'[]') FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${c.club}';`),attendanceBefore,'rest rejection does not mutate attendance');
+ for(const [name,error] of [['atomic_dealer_ready_check','verify_failed'],['worker_perform_swing','swing_failed']]){
+  failRpc=name;
+  const failed=await dispatch(c.club,c.rows[1].nextAttendance);
+  failRpc=null;
+  assert.equal(failed.status,500,JSON.stringify({name,failed}));assert.equal(failed.body.error,error);
+  assert.equal(sql(`SELECT md5(string_agg(to_jsonb(a)::text,',' ORDER BY a.id)) FROM public.dealer_assignments a WHERE club_id='${c.club}';`),before,'pre-dispatch transport fault has no assignment delta');
+ }
+ sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';`);
+ const off=await dispatch(c.club,c.rows[1].nextAttendance);
+ assert.equal(off.status,200);assert.equal(off.body.skipped,'auto_swing_off');
+ assert.equal(sql(`SELECT md5(string_agg(to_jsonb(a)::text,',' ORDER BY a.id)) FROM public.dealer_assignments a WHERE club_id='${c.club}';`),before);
+ console.log('READY_EDGE_NATIVE_INSUFFICIENT_REST_PASS');
+}
+const sizes=process.argv.includes('--negative')?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
