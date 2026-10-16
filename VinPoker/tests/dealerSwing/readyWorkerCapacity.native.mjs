@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';imp
 import {getDealerOperationalTables} from '../../supabase/functions/_shared/dealerOperationalTables.ts';
 import {authorizeInternalTrigger,authorizeSwingWorkerRequest,getIdempotencyKey,parseDealerReadyPayload} from '../../supabase/functions/_shared/internal-trigger-auth.ts';
 import ts from 'typescript';
+import {resolve,dirname} from 'node:path';import {pathToFileURL} from 'node:url';
 assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_ready_capacity_ci');
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
 function sql(input){const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];const options={input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']};return (process.platform==='win32'?execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags],options):execFileSync('psql',flags,options)).trim();}
@@ -59,17 +60,31 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
  return {club,owner,rows};
 }
-if(process.argv.includes('--planner')){
+if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
  const size=Number(process.argv.find(a=>a.startsWith('--planner-size='))?.split('=')[1]??2);assert.ok([2,10,40].includes(size));
  const fixture=seed(size);fixture.shortage=process.argv.includes('--planner-shortage');
+ if(process.argv.includes('--main-worker')){
+  fixture.mainOff=process.argv.includes('--main-off');
+  if(fixture.mainOff)sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${fixture.club}';`);
+  sql(`INSERT INTO public.swing_config(club_id,table_type,rotation_planner_enabled,swing_duration_minutes,break_duration_minutes,min_inter_swing_rest_minutes) VALUES('${fixture.club}','tournament',true,45,15,15) ON CONFLICT(club_id,table_type) DO UPDATE SET rotation_planner_enabled=true,swing_duration_minutes=45,break_duration_minutes=15,min_inter_swing_rest_minutes=15;`);
+  const file=resolve('supabase/functions/process-swing/index.ts'),workerSource=readFileSync(file,'utf8'),tree=ts.createSourceFile(file,workerSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+  const imports=[];for(const statement of tree.statements){if(!ts.isImportDeclaration(statement)||statement.importClause?.isTypeOnly)continue;
+   const module=statement.moduleSpecifier.text,clause=statement.importClause;assert.ok(clause&&!clause.name&&clause.namedBindings&&ts.isNamedImports(clause.namedBindings));
+   const names=clause.namedBindings.elements.filter(e=>!e.isTypeOnly).map(e=>({local:e.name.text,exported:(e.propertyName??e.name).text}));
+   if(module==='https://esm.sh/@supabase/supabase-js@2'){assert.deepEqual(names,[{local:'createClient',exported:'createClient'}]);continue;}
+   imports.push({module:pathToFileURL(resolve(dirname(file),module)).href,names});
+  }
+  const noImports=ts.factory.updateSourceFile(tree,tree.statements.filter(s=>!ts.isImportDeclaration(s)));
+  fixture.mainWorker={source:ts.transpileModule(ts.createPrinter().printFile(noImports),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText,imports};
+ }
  fixture.adopt=process.argv.includes('--planner-adopt');assert.ok(!(fixture.adopt&&fixture.shortage));
  fixture.fault=process.argv.find(a=>a.startsWith('--planner-fault='))?.split('=')[1];assert.ok(fixture.fault===undefined||['dealer-inventory','persist','lock'].includes(fixture.fault));assert.ok(!(fixture.shortage&&fixture.fault));
  assert.ok(!(fixture.adopt&&fixture.fault));
  if(fixture.adopt)sql(service+fixture.rows.map(r=>`UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${r.table}',pre_assigned_at=now() WHERE id='${r.nextAttendance}';UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${r.nextAttendance}',pre_assigned_at=now() WHERE table_id='${r.table}' AND released_at IS NULL;`).join('\n'));
  if(fixture.shortage)sql(service+`UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now(),current_state='checked_out' WHERE id IN (${fixture.rows.map(r=>quote(r.nextAttendance)).join(',')});`);
  console.log('ACTUAL_PASSR_NATIVE_START '+size+(fixture.shortage?' shortage':''));
- let output;try{output=execFileSync('deno',['run','--cached-only','--no-config','--no-lock','--node-modules-dir=none','--deny-net','--allow-read=./supabase/functions,./tests/dealerSwing','--allow-env=PGHOST,PGPORT,PGUSER,PGDATABASE,PATH,SystemRoot',`--allow-run=${process.platform==='win32'?'wsl':'psql'}`,'tests/dealerSwing/passR.native.mjs','--native'],{
-  input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:120000,stdio:['pipe','pipe','pipe'],
+ let output;try{output=execFileSync('deno',['run','--cached-only','--no-config','--no-lock','--node-modules-dir=none','--deny-net','--allow-read=./supabase/functions,./tests/dealerSwing','--allow-env=PGHOST,PGPORT,PGUSER,PGDATABASE,PATH,SystemRoot,PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS',`--allow-run=${process.platform==='win32'?'wsl':'psql'}`,'tests/dealerSwing/passR.native.mjs','--native'],{
+  input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:120000,stdio:['pipe','pipe','pipe'],env:{...process.env,PASS15_RPC_TIMEOUT_MS:'5000',PASS15_MAX_PAIRS:'10'},
  });}catch(e){console.log(String(e.stdout??'').split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')).join('\n'));console.error(String(e.stderr??'').slice(-1400));throw new Error('actual PassR native qualification failed');}
  console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_')).join('\n'));
 }
@@ -588,7 +603,7 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
  }
 }
-const sizes=['--negative','--overlap','--anchor-overlap','--legacy','--adoption','--emergency-stale','--planner'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--anchor-overlap','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');

@@ -4587,8 +4587,10 @@ if (tier2Count > 0) {
     return new Response(
       JSON.stringify({
         ok: true,
-        status: dispatchContext ? dispatchFinalState : "completed",
-        error_code: dispatchContext ? dispatchErrorCode : null,
+        // Direct internal/manual invocations have no dispatch ledger context,
+        // but must report the same observed business failures as queued runs.
+        status: dispatchFinalState,
+        error_code: dispatchErrorCode,
         run_id: dispatchContext?.runId ?? null,
         request_id: dispatchContext?.requestId ?? null,
         execution_time_ms: totalExecutionMs,

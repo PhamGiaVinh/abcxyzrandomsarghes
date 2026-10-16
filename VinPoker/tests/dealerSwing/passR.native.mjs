@@ -26,27 +26,28 @@ else{
  const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${fixture.role};`;
  const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
- const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1']);
+ const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot']);
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
    out[key]=open<0?row[key]:row[key]===null?null:Array.isArray(row[key])?row[key].map(v=>project(v,item.slice(open+1,-1))):project(row[key],item.slice(open+1,-1));
   }return out;}
- const reads=[],rpcCalls=[],persistReceipts=[];
- const admin={async rpc(name,args){assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
+ const reads=[],rpcCalls=[],persistReceipts=[],adapterGaps=[];
+ const admin={async rpc(name,args){if(!rpcNames.has(name))adapterGaps.push('rpc:'+name);assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
   if(fixture.fault==='persist'&&name==='upsert_rotation_plan')return {data:null,error:{code:'PGRST002',message:'synthetic persist transport failure'}};
   if(fixture.fault==='lock'&&name==='lock_rotation_slot'){
    const target=await sql(service+`SELECT table_id FROM public.dealer_rotation_schedule WHERE id=${quote(args.p_schedule_id)} AND club_id='${fixture.club}';`);
    if(target===fixture.rows[0].table)return {data:null,error:{code:'PGRST002',message:'synthetic one-table lock transport failure'}};
   }
-  try{const params=Object.entries(args).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v))).join(',');
-   const query=name==='end_breaks_on_demand'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
+  try{const params=Object.entries(args??{}).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v))).join(',');
+   const query=['end_breaks_on_demand','get_dealer_operational_tables_v1'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
    const data=JSON.parse(await sql(service+query));
    if(name==='upsert_rotation_plan')persistReceipts.push({rows:structuredClone(args.p_rows),response:data});
    return {data,error:null};
   }catch(e){return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}
  },from(table){
-  assert.ok(['dealer_assignments','dealer_attendance','dealers','dealer_shift_metrics','dealer_breaks','dealer_meal_breaks','dealer_rotation_schedule','app_settings','dealer_table_profiles','dealer_table_pool','table_sessions','tournament_tables','diagnostic_logs'].includes(table),'unexpected table '+table);
+  const allowedTables=['dealer_assignments','dealer_attendance','dealers','dealer_shift_metrics','dealer_breaks','dealer_meal_breaks','dealer_rotation_schedule','app_settings','dealer_table_profiles','dealer_table_pool','table_sessions','tournament_tables','diagnostic_logs','swing_config','club_settings','clubs','swing_run_metrics'];
+  if(!allowedTables.includes(table))adapterGaps.push('table:'+table);assert.ok(allowedTables.includes(table),'unexpected table '+table);
   let filters=[],orders=[],limit='',patch=null,inserting=false,single=false,head=false,selection='*';
   let joins='',value='to_jsonb(b)';
   if(table==='dealer_assignments'){joins=' LEFT JOIN public.game_tables g ON g.id=b.table_id LEFT JOIN public.dealer_attendance da ON da.id=b.attendance_id LEFT JOIN public.dealers d ON d.id=da.dealer_id';value="to_jsonb(b)||jsonb_build_object('game_tables',to_jsonb(g),'dealer_attendance',to_jsonb(da)||jsonb_build_object('dealers',to_jsonb(d)))";}
@@ -60,7 +61,7 @@ else{
    gt(k,v){filters.push(field(k)+'>'+quote(v));return q;},gte(k,v){filters.push(field(k)+'>='+quote(v));return q;},lt(k,v){filters.push(field(k)+'<'+quote(v));return q;},lte(k,v){filters.push(field(k)+'<='+quote(v));return q;},
    or(condition){assert.equal(condition,'current_state.eq.available,current_state.eq.on_break');filters.push("b.current_state IN ('available','on_break')");return q;},
    order(k,options={}){orders.push(field(k)+(options.ascending===false?' DESC':' ASC'));return q;},limit(n){assert.ok(Number.isInteger(n)&&n<=2000);limit=' LIMIT '+n;return q;},
-   update(v){assert.equal(table,'dealer_assignments');patch=v;return q;},insert(v){assert.equal(table,'diagnostic_logs');patch=v;inserting=true;return q;},
+   update(v){assert.equal(table,'dealer_assignments');patch=v;return q;},insert(v){assert.ok(['diagnostic_logs','swing_run_metrics'].includes(table));patch=v;inserting=true;return q;},
    maybeSingle(){single=true;return execute();},single(){single=true;return execute();},then(resolve,reject){return execute().then(resolve,reject);},
   };
   async function execute(){try{
@@ -83,6 +84,35 @@ else{
   return q;
  }};
  let networkCalls=0;globalThis.fetch=()=>{networkCalls++;throw new Error('unexpected runtime network');};
+ if(fixture.mainWorker){
+  assert.equal(fixture.rows.length,2,'qualify two tables before scaling main handler');
+  const names=[],values=[];for(const dependency of fixture.mainWorker.imports){assert.ok(dependency.module.startsWith(new URL('../../supabase/functions/',import.meta.url).href));const module=await import(dependency.module);
+   for(const binding of dependency.names){assert.ok(Object.hasOwn(module,binding.exported),binding.exported);names.push(binding.local);values.push(module[binding.exported]);}}
+  let handler;
+  const runtime={env:{get:key=>({SUPABASE_URL:'https://synthetic.invalid',SUPABASE_SERVICE_ROLE_KEY:'synthetic-main-worker',PROCESS_SWING_INTERNAL_SECRET:'synthetic-main-internal'})[key]},serve:fn=>{assert.equal(handler,undefined);handler=fn;}};
+  const createClient=(url,key)=>{assert.equal(url,'https://synthetic.invalid');assert.equal(key,'synthetic-main-worker');return admin;};
+  new Function(...names,'Deno','createClient','"use strict";\n'+fixture.mainWorker.source)(...values,runtime,createClient);
+  assert.equal(typeof handler,'function');
+  const stateProof=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'))::text);`);
+  const before=await stateProof();
+  const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+  const body=await response.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-handler',status:response.status,body,reads:[...new Set(reads)],rpcCalls,adapterGaps,networkCalls}}));
+  assert.equal(response.status,200);assert.equal(networkCalls,0);assert.deepEqual(adapterGaps,[]);
+  if(fixture.mainOff){
+   assert.equal(body.status,'completed');assert.equal(body.error_code,null);assert.deepEqual(body.metrics,{});assert.deepEqual(body.diagnostics,[]);
+   assert.equal(await stateProof(),before);assert.ok(!rpcCalls.includes('upsert_rotation_plan'));assert.ok(!rpcCalls.includes('get_dealer_pool_snapshot'));
+   console.log('ACTUAL_PASSR_MAIN_HANDLER_AUTO_OFF_PASS');
+  }else if(fixture.fault==='dealer-inventory'){
+   assert.ok(Object.hasOwn(body.metrics,fixture.club));
+   assert.equal(await stateProof(),before);assert.ok(!rpcCalls.includes('upsert_rotation_plan'));assert.equal(body.status,'partial');assert.equal(body.error_code,'dealer_inventory_query_failed');
+   assert.ok(body.diagnostics.some(d=>d.stage==='dealer_inventory'&&d.code==='PGRST002'));
+   console.log('ACTUAL_PASSR_MAIN_HANDLER_INVENTORY_FAILURE_PASS');
+  }else{
+  assert.equal(body.status,'completed');assert.ok(rpcCalls.includes('upsert_rotation_plan'));
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),'2');
+  console.log('ACTUAL_PASSR_MAIN_HANDLER_NATIVE_PASS');
+  }
+ }else{
  const immutableSnapshot=()=>sql(service+`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a)-ARRAY['overtime_started_at','updated_at','version'] ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'))::text);`);
  const beforeFault=fixture.fault?await immutableSnapshot():null;
  const context={clubId:fixture.club,clubZone:null,chatId:null,botToken:null,cycleExcludedIds:new Set(),preAnnounceMinutes:3,minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,swingDurationMinutes:45,tierAMinBuyin:10000000,tierBMinBuyin:5000000,requiredGameTypes:[]};
@@ -169,4 +199,5 @@ else{
  }
  console.log('ACTUAL_PASSR_NATIVE_MODULE_PASS '+fixture.rows.length+(fixture.shortage?' shortage':fixture.adopt?' adoption':''));
  }
+}
 }

@@ -5,6 +5,20 @@ import ts from 'typescript';
 import {expect,it,vi} from 'vitest';
 
 const source=readFileSync(resolve(process.cwd(),'supabase/functions/process-swing/passes/passR-rotation-planner.ts'),'utf8');
+const workerSource=readFileSync(resolve(process.cwd(),'supabase/functions/process-swing/index.ts'),'utf8');
+it.each(['completed','partial','locked','dependency_unavailable','business_failed'])('actual worker terminal response preserves %s with and without dispatch ledger context',async(state)=>{
+ const marker=workerSource.indexOf('run_id: dispatchContext?.runId ?? null');
+ const first=workerSource.lastIndexOf('    return new Response(',marker),last=workerSource.indexOf('\n  } catch',marker);
+ if(marker<0||first<0||last<=first)throw Error('Actual worker terminal response seam missing');
+ const terminal=new Function('dispatchContext','dispatchFinalState','dispatchErrorCode','totalExecutionMs','metricsPerClub','dispatchDiagnostics','dryRun','corsHeaders',workerSource.slice(first,last));
+ for(const context of [null,{runId:'run-test',requestId:'request-test'}]){
+  const error=state==='completed'?null:'test_failure';
+  const response=terminal(context,state,error,17,{'club-test':{total:0}},[],false,{});
+  expect(response.status).toBe(200);const body=await response.json();
+  expect(body.status).toBe(state);expect(body.error_code).toBe(error);
+  expect(body.run_id).toBe(context?.runId??null);expect(body.request_id).toBe(context?.requestId??null);
+ }
+});
 const candidateSource=readFileSync(resolve(process.cwd(),'supabase/functions/_shared/pickNextDealer.ts'),'utf8');
 const failureStart=candidateSource.indexOf('export class CandidateSnapshotFailure'),failureEnd=candidateSource.indexOf('function requireCandidateSnapshot',failureStart);
 if(failureStart<0||failureEnd<=failureStart)throw Error('Actual candidate failure definitions missing');
