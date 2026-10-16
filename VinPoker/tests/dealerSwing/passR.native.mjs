@@ -17,7 +17,7 @@ else{
   const windows=Deno.build.os==='windows',args=windows?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags]:flags;
   const child=new Deno.Command(windows?'wsl':'psql',{args,clearEnv:true,env:sqlEnv,stdin:'piped',stdout:'piped',stderr:'piped'}).spawn();
   const writer=child.stdin.getWriter();await writer.write(new TextEncoder().encode(input));await writer.close();
-  const result=await child.output();if(!result.success){const error=new Error('native SQL failure');error.stderr=new TextDecoder().decode(result.stderr);throw error;}
+  const result=await child.output();if(!result.success){const stderr=new TextDecoder().decode(result.stderr);const error=new Error('native SQL failure: '+stderr.slice(0,400));error.stderr=stderr;throw error;}
   return new TextDecoder().decode(result.stdout).trim();}
  assert.equal(await sql("SELECT current_database()||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000"),'vinpoker_ops_ready_capacity_ci|55441|17');
  assert.equal(await sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net')"),'f');
@@ -26,7 +26,7 @@ else{
  const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${fixture.role};`;
  const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
- const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident']);
+ const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','complete_rotation_slot']);
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
@@ -50,7 +50,7 @@ else{
  },from(table){
   const allowedTables=['dealer_assignments','dealer_attendance','dealers','dealer_shift_metrics','dealer_breaks','dealer_meal_breaks','dealer_rotation_schedule','app_settings','dealer_table_profiles','dealer_table_pool','table_sessions','tournament_tables','diagnostic_logs','swing_config','swing_configs','club_settings','clubs','swing_run_metrics','swing_metrics','game_tables','dealer_shifts','tournaments','dealer_open_operations','dealer_open_operation_targets'];
   if(!allowedTables.includes(table))adapterGaps.push('table:'+table);assert.ok(allowedTables.includes(table),'unexpected table '+table);
-  let filters=[],orders=[],limit='',patch=null,inserting=false,upserting=false,single=false,head=false,selection='*';
+  let filters=[],orders=[],limit='',patch=null,inserting=false,upserting=false,single=false,head=false,returning=false,selection='*';
   let joins='',value='to_jsonb(b)';
   if(table==='dealer_assignments'){joins=' LEFT JOIN public.game_tables g ON g.id=b.table_id LEFT JOIN public.dealer_attendance da ON da.id=b.attendance_id LEFT JOIN public.dealers d ON d.id=da.dealer_id';value="to_jsonb(b)||jsonb_build_object('game_tables',to_jsonb(g),'dealer_attendance',to_jsonb(da)||jsonb_build_object('dealers',to_jsonb(d)))";}
   if(table==='dealer_attendance'){joins=' LEFT JOIN public.dealers d ON d.id=b.dealer_id';value="to_jsonb(b)||jsonb_build_object('dealers',to_jsonb(d))";}
@@ -58,7 +58,7 @@ else{
   if(table==='tournament_tables'){joins=' LEFT JOIN public.tournaments t ON t.id=b.tournament_id';value="to_jsonb(b)||jsonb_build_object('tournaments',to_jsonb(t))";}
   if(table==='tournaments'){joins=' LEFT JOIN LATERAL (SELECT jsonb_agg(to_jsonb(tt)) AS rows FROM public.tournament_tables tt WHERE tt.tournament_id=b.id) tt ON true';value="to_jsonb(b)||jsonb_build_object('tournament_tables',coalesce(tt.rows,'[]'::jsonb))";}
   const field=k=>{const parts=k.split('.');if(parts.length===1)return 'b.'+ident(k);assert.equal(parts.length,2);const alias={dealers:'d',dealer_assignments:'da',tournaments:'t',game_tables:'g'}[parts[0]];assert.ok(alias,k);return alias+'.'+ident(parts[1]);};
-  const q={select(columns='*',options={}){selection=columns;head=options.head===true;return q;},eq(k,v){filters.push(field(k)+'='+quote(v));return q;},
+  const q={select(columns='*',options={}){selection=columns;head=options.head===true;returning=patch!==null;return q;},eq(k,v){filters.push(field(k)+'='+quote(v));return q;},
    in(k,values){assert.ok(values.length<=1000);filters.push(values.length?field(k)+' IN ('+values.map(quote).join(',')+')':'false');return q;},
    is(k,v){assert.equal(v,null);filters.push(field(k)+' IS NULL');return q;},not(k,operator,v){assert.equal(operator,'is');assert.equal(v,null);filters.push(field(k)+' IS NOT NULL');return q;},
    gt(k,v){filters.push(field(k)+'>'+quote(v));return q;},gte(k,v){filters.push(field(k)+'>='+quote(v));return q;},lt(k,v){filters.push(field(k)+'<'+quote(v));return q;},lte(k,v){filters.push(field(k)+'<='+quote(v));return q;},
@@ -77,7 +77,12 @@ else{
    const where=filters.length?' WHERE '+filters.join(' AND '):'';
    if(patch){const keys=Object.keys(patch).map(ident);
     if(inserting)await sql(service+`INSERT INTO public.${table}(${keys.join(',')}) SELECT ${keys.map(k=>'r.'+k).join(',')} FROM jsonb_populate_record(NULL::public.${table},${quote(JSON.stringify(patch))}::jsonb) r${upserting?' ON CONFLICT(club_id,date) DO UPDATE SET '+keys.filter(k=>!['club_id','date'].includes(k)).map(k=>k+'=EXCLUDED.'+k).join(','):''};`);
-    else{assert.ok(filters.length);await sql(service+`UPDATE public.${table} b SET ${keys.map(k=>k+'='+quote(patch[k])).join(',')}${where};`);}
+    else{assert.ok(filters.length);const update=`UPDATE public.${table} b SET ${keys.map(k=>k+'='+quote(patch[k])).join(',')}${where}`;
+     if(returning){assert.ok(!selection.includes('('),'only scalar UPDATE RETURNING projections are supported');
+      const rows=JSON.parse(await sql(service+`WITH updated AS (${update} RETURNING to_jsonb(b) AS value) SELECT coalesce(jsonb_agg(value),'[]') FROM updated;`));
+      if(single&&rows.length>1)return {data:null,error:{code:'PGRST116',message:'multiple update rows'}};
+      const projected=rows.map(row=>project(row,selection));return {data:single?projected[0]??null:projected,error:null};
+     }await sql(service+update+';');}
     return {data:null,error:null};
    }
    reads.push(table);
@@ -140,6 +145,23 @@ else{
   assert.equal(repeatedResponse.status,200);assert.equal(repeated.status,'completed');assert.equal(repeated.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
   assert.equal(await lockProof(),locks);assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,true);
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NOT NULL;`),'0','announce lead has not elapsed; outgoing dealers must remain seated');
+  if(fixture.executeMain){
+   const originals=JSON.parse(await sql(`SELECT jsonb_agg(jsonb_build_object('schedule',s.id,'assignment',a.id,'table',s.table_id,'session',a.table_session_id,'incoming',s.in_attendance_id,'outgoing',a.attendance_id,'relief',s.planned_relief_at,'announce',s.announce_at) ORDER BY s.table_id) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id WHERE s.club_id='${fixture.club}' AND s.slot_index=0 AND s.status='announced';`));assert.equal(originals.length,2);
+   const relief=Math.max(...originals.map(r=>Date.parse(r.relief)));assert.ok(Number.isFinite(relief));
+   console.log(JSON.stringify({passR_actual_result:{phase:'main-execute-wait-real-lead',club:fixture.club,originals,waitMs:Math.max(0,relief+1500-Date.now())}}));
+   while(Date.now()<relief+1500)await new Promise(resolve=>setTimeout(resolve,Math.min(30000,relief+1500-Date.now())));
+   const executedResponse=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+   const executed=await executedResponse.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-executed',status:executedResponse.status,body:executed,adapterGaps,bridgeErrors,networkCalls,executions:rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing'),completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot')}}));
+   assert.equal(executedResponse.status,200);assert.equal(executed.status,'completed');assert.equal(executed.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+   const executions=rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing');assert.equal(executions.length,2);assert.ok(executions.every(r=>r.data.status==='success'));
+   const completions=rpcResponses.filter(r=>r.name==='complete_rotation_slot');assert.equal(completions.length,2);assert.ok(completions.every(r=>r.data.outcome==='executed'));
+   for(const old of originals){
+    assert.equal(await sql(`SELECT status='executed' AND (reason->>'new_assignment_id') IS NOT NULL FROM public.dealer_rotation_schedule WHERE id='${old.schedule}';`),'t');
+    assert.equal(await sql(`SELECT released_at IS NOT NULL AND swing_processed_at IS NOT NULL FROM public.dealer_assignments WHERE id='${old.assignment}';`),'t');
+    assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${old.table}' AND table_session_id='${old.session}' AND attendance_id='${old.incoming}' AND status='assigned' AND released_at IS NULL;`),'1');
+   }
+   console.log('ACTUAL_PASSR_MAIN_SCHEDULED_EXECUTION_REAL_LEAD_PASS');
+  }
   if(fixture.shortageScope){
    const {buildCanonicalShortageSnapshot,classifyShortage}=await import('../../supabase/functions/process-swing/shortageAlert.ts');
    const opts={minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,preAnnounceMinutes:3};
