@@ -75,6 +75,34 @@ it("does not let an old queue response clear the new tournament hand selection",
   expect(screen.getByRole("button", { name: "Chọn hand khác" })).toBeInTheDocument();
 });
 
+it("removes the previous tournament archive while the next scope is still loading", async () => {
+  const nextRead = deferred<ReturnType<typeof ok>>();
+  const view = render(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-a" /></MemoryRouter>);
+  await screen.findByText("#1");
+  backend.from.mockImplementation((table: string) => query(() => table === "tournament_hands" ? nextRead.promise : Promise.resolve(ok([]))));
+  view.rerender(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-b" /></MemoryRouter>);
+  expect(screen.queryByText("#1")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Đang tải" })).toBeDisabled();
+  await act(async () => { nextRead.resolve(ok([hand("hand-b", 2)])); });
+  expect(await screen.findByText("#2")).toBeInTheDocument();
+  expect(screen.queryByText("#1")).not.toBeInTheDocument();
+});
+
+it("removes the previous table archive while a new table read is pending", async () => {
+  backend.rpc.mockImplementation((name: string) => Promise.resolve(name === "list_tracker_tables_v2"
+    ? { data: { ok: true, tables: [{ tournament_table_id: "table-a", table_name: "Table A" }, { tournament_table_id: "table-b", table_name: "Table B" }] }, error: null }
+    : ok([])));
+  render(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-a" initialTableId="table-a" /></MemoryRouter>);
+  await screen.findByText("#1");
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Lọc lịch sử theo bàn" })).toBeEnabled());
+  const nextRead = deferred<ReturnType<typeof ok>>();
+  backend.from.mockImplementation((table: string) => query(() => table === "tournament_hands" ? nextRead.promise : Promise.resolve(ok([]))));
+  fireEvent.change(screen.getByRole("combobox", { name: "Lọc lịch sử theo bàn" }), { target: { value: "table-b" } });
+  expect(screen.queryByText("#1")).not.toBeInTheDocument();
+  await act(async () => { nextRead.resolve(ok([hand("hand-b", 2)])); });
+  expect(await screen.findByText("#2")).toBeInTheDocument();
+});
+
 it("shows table authority errors and lets an explicit retry recover the filter", async () => {
   backend.rpc.mockImplementation((name: string) => Promise.resolve(name === "list_tracker_tables_v2"
     ? { data: { ok: false, error: "actor_not_allowed" }, error: null } : ok([])));

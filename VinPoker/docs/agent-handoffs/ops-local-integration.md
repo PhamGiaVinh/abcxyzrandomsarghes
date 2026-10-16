@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Parent history UI retained prior tournament while loading: RED → local fix
+
+Baseline4982184e7 clean/previousPROGRESS. Actual HandHistoryWorkspace render regression e19f02 RED: rerender tour A→B with B read pending leaves #1 from A visible. Existing generation guard protects late completion but did not clear already-rendered source. loadHands now clears hand rows, editor and preview at start of each read; it never clears durable correction intent/receipt journal. This also invalidates draft preview on explicit refresh; no mutation/authority/server contract changes.
+
+a706c0 23/23 focused render/loadguard/no-chip preview tests PASS, including pending tournament switch and table filter switch, existing old queue selection/rejected reads/timeouts. Source callback harness initially1cf66d failed four because added setters were absent in extraction dependencies; updated modeled setters and asserts editor/preview clear, c10bed13/13 PASS. Not a backend or runtime failure. UI engineering skill preserved tokens/layout and explicit loading/error behavior; UI skill CLI absent, no install. No full type/build/browser375/hosted proof (local hold). Potential stale in-flight preview completion after selection/scope change remains to examine; read guard does not cover handleResettle's separate requests. No claim that all parent orchestration is qualified.
+
+No PG process started this turn. No push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master ACTIVE/G6 local-only; next preview async-scope guard regression, then remaining writer/provider/fulltour/perf/release.
+
 ## Paid active-hand manual card endpoint/receipt scope PASS
 
 Baseline85fed2123 clean/previousPROGRESS. Extended existing savepoint-isolated verified paid fixture after real action/undo: actual authenticated show_tracker_manual_cards_v1 writes 2c/3d for exact frozen participant/session/epoch/revision. Stale epoch rejected; success advances revision, stores exactly one actor/key receipt and exact cards; replay returns original receipt; same key changed cards returns idempotency_conflict. Actual get_tracker_manual_card_receipt_v1 with original fingerprint returns committed and exact expected/committed revision/hand/key, proving read-only past receipt reconciliation (not transport fault injection). Paid player cannot read owner's receipt (not_found) or mutate cards (actor_not_allowed), no extra revision/receipt. Entries/seats/counts/cash fingerprint remains unchanged; savepoint removes card receipt/cards plus previous undo fixtures before canonical Finish/actual worker verification.

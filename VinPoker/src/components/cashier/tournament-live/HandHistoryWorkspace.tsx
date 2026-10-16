@@ -352,6 +352,11 @@ export function HandHistoryWorkspace({
       setLoading(false);
     });
     const isCurrentLoad = () => loadGuardRef.current!.isCurrent(request);
+    // Never present the prior scope's hand/editor as the newly requested archive.
+    // A refresh also invalidates previews built from the previous source read.
+    setHands([]);
+    setEditMode(false);
+    setResettleView(null);
     setLoading(true);
     setLoadError(null);
     setCompletionStatusByHand(new Map());

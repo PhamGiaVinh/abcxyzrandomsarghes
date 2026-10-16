@@ -44,12 +44,13 @@ function deferred() {
 }
 function harness() {
   let generation = 0;
-  const state = { loading: false, error: null, selected: 'b', hands: [], queueError: false };
+  const state = { loading: false, error: null, selected: 'b', hands: [], queueError: false, editing: true, preview: { stale: true } };
   const dependencies = {
     tournamentId: 'tour', selectedTableId: 'all', tables: [],
     loadGuardRef: { current: { begin: () => ++generation, isCurrent: request => request === generation, finish: () => {} } },
     setLoading: value => { state.loading = value; }, setLoadError: value => { state.error = value; },
     setHands: value => { state.hands = value; }, setCompletionStatusByHand: () => {},
+    setEditMode: value => { state.editing = value; }, setResettleView: value => { state.preview = value; },
     setCompletionStatusError: value => { state.queueError = value; },
     setSelectedHandId: update => { state.selected = update(state.selected); },
     FEATURES: { trackerHistoryCompletionWorker: true },
@@ -74,6 +75,8 @@ test('successful current read keeps its selected hand and finishes loading', asy
   assert.equal(h.state.loading, false);
   assert.equal(h.state.error, null);
   assert.equal(h.state.queueError, false);
+  assert.equal(h.state.editing, false);
+  assert.equal(h.state.preview, null);
 });
 
 test('hand detail rejection becomes explicit error and releases loading', async () => {
