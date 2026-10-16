@@ -76,6 +76,9 @@ function workflowForVoiceSnapshot(snapshot: VoiceSnapshot):
   const boardCount = snapshot.community_cards.length;
   const livePlayers = runtime.players.filter((player) => !player.is_folded);
   const bettingComplete = isBettingRoundComplete(runtime);
+  // A sole survivor wins by folds without taking a gratuitous final check.
+  // The settlement engine independently validates the persisted fold-win.
+  if (livePlayers.length === 1) return "submit_ready";
   if (
     boardCount < 5
     && livePlayers.length >= 2
@@ -90,8 +93,7 @@ function workflowForVoiceSnapshot(snapshot: VoiceSnapshot):
       : null;
   }
   if (
-    livePlayers.length === 1
-    || (boardCount === 5 && livePlayers.length >= 2)
+    boardCount === 5 && livePlayers.length >= 2
   ) return "submit_ready";
   if (boardCount === 0 && runtime.street === "preflop") return "enter_flop";
   if (boardCount === 3 && runtime.street === "flop") return "enter_turn";
