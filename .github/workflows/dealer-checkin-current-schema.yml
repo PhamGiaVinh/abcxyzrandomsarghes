@@ -1035,6 +1035,7 @@ jobs:
           node tests/cashier/paidJourney.runtime.mjs --active-hand --legacy-correction
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --lost-commit-response
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap

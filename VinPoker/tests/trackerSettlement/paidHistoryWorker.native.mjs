@@ -13,7 +13,8 @@ import {normalizeSettlementSourceRpcResult} from '../../supabase/functions/_shar
 // Actual worker/verifier/SQL, modeled HTTP/PostgREST/CORS. NO hosted credentials,
 // provider, cron or outbound network. Dedicated dark canary hand scope only.
 const database='vinpoker_ops_cash115_qualified_c';
-const verified=process.argv.includes('--verified');
+const lostCommitResponse=process.argv.includes('--lost-commit-response');
+const verified=process.argv.includes('--verified')||lostCommitResponse;
 for(const [key,value] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:database}))assert.equal(process.env[key],value);
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
@@ -44,7 +45,13 @@ const client={rpc:async(name,args)=>{try{
  const schema=types[name];assert.ok(schema,'unexpected worker RPC '+name);assert.deepEqual(Object.keys(args).sort(),Object.keys(schema).sort());
  calls.push({name,args});const params=Object.entries(args).map(([k,v])=>`${k}=>${Array.isArray(v)?`ARRAY[${v.map(quote).join(',')}]`:quote(v)}::${schema[k]}`).join(',');
  const query=name==='claim_tracker_historical_display_jobs_scoped_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
- return {data:JSON.parse(sql(service+query)),error:null};
+ const data=JSON.parse(sql(service+query));
+ // Inject transport loss only AFTER the real atomic SQL commit returned.
+ // Do not roll back/requeue the committed outcome to make recovery pass.
+ if(lostCommitResponse&&name==='commit_tracker_historical_display_outcome_v2'){
+  assert.equal(data.ok,true);return {data:null,error:{message:'TEST_response_lost_after_commit'}};
+ }
+ return {data,error:null};
  }catch(error){errors.push(String(error));return {data:null,error:{message:String(error)}};}},
  from(table){assert.equal(table,'tournament_settlement_outcomes');let id;const query={select:columns=>{assert.equal(columns,'settlement_revision');return query;},
   eq:(key,value)=>{assert.equal(key,'hand_id');assert.equal(value,hand);id=value;return query;},order:(key)=>{assert.equal(key,'settlement_revision');return query;},
@@ -62,9 +69,9 @@ runInNewContext(code,{Request,Response,TextEncoder,Error,crypto:globalThis.crypt
  historicalWorkerFailureStatus,TRACKER_HISTORY_WORKER_MAX_BATCH,parseHistoryWorkerHandIds,requireHistoryCanaryScope,HISTORY_CANARY_SCOPE_ENV,normalizeSettlementSourceRpcResult,
  Deno:{serve:fn=>handler=fn,env:{get:key=>env[key]}}});
 const response=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
-const result=await response.json();assert.equal(response.status,200,JSON.stringify({result,errors}));assert.deepEqual(errors,[]);
-assert.deepEqual(result,{ok:true,claimed:1,completed:verified?1:0,retried:0,needs_attention:verified?0:1,unresolved:0});
-assert.deepEqual(calls.map(c=>c.name),['claim_tracker_historical_display_jobs_scoped_v1','get_tracker_historical_display_snapshot',verified?'commit_tracker_historical_display_outcome_v2':'finish_tracker_historical_display_job']);
+const result=await response.json();assert.equal(response.status,lostCommitResponse?503:200,JSON.stringify({result,errors}));assert.deepEqual(errors,[]);
+assert.deepEqual(result,{ok:!lostCommitResponse,claimed:1,completed:verified&&!lostCommitResponse?1:0,retried:0,needs_attention:verified?0:1,unresolved:lostCommitResponse?1:0});
+assert.deepEqual(calls.map(c=>c.name),['claim_tracker_historical_display_jobs_scoped_v1','get_tracker_historical_display_snapshot',verified?'commit_tracker_historical_display_outcome_v2':'finish_tracker_historical_display_job',...(lostCommitResponse?['finish_tracker_historical_display_job']:[])]);
 if(!verified)assert.equal(calls.at(-1).args.p_error_code,'historical_empty_or_invalid_pot');
 assert.equal(sql(`SELECT status FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' AND source_revision=(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}');`),verified?'completed':'needs_attention');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`),verified?'1':'0');
@@ -90,4 +97,5 @@ for(const [credential,body,status,expectedCode] of [
 const retry=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
 assert.equal(retry.status,200);assert.deepEqual(await retry.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
 assert.equal(calls.at(-1).name,'claim_tracker_historical_display_jobs_scoped_v1');assert.deepEqual(errors,[]);assert.equal(business(),before);
-console.log(verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
+assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`),verified?'1':'0');
+console.log(lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
