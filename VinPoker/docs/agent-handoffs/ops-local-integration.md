@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Canonical dealer handoff invalidates actual Board commit
+
+Baseline9c4852d8c clean; prior turn PROGRESS. Added trusted service-normalized Board root before actual check-in/plan/manual Swing, then actual authenticated commit_tracker_voice_board_v0 after handoff. Current migration70 already fences root assignment/dealer/physical/club and returns voice_assignment_changed. Initial f7d00e RED was WRONG TEST ORACLE (expected action's dealer_assignment_lost), not a product regression; source70 inspection resolved it, no DB fix needed. Correct exact Board rejection plus unchanged hand/actions/all events fingerprint now passes.
+
+Native a9f6bf terminal0/13PASS2.437s, outer rollback exact, PG stopped. Auto remains OFF; no rest rewrites. This proves stale Board commit rejection in actual SQL after canonical handoff, NOT positive Board workflow, provider/Edge, browser or durable COMMIT. No product/schema/live/CI/push/deploy/flag changes. Next: legitimate Board workflow positive control and revision/history invalidation; full campaign ACTIVE/local-only hold.
+
 ## Board root replay/conflict/stale/outsider native qualification
 
 Baseline14b4db387 clean; prior turn PROGRESS. Extended existing native paid journey (no product/schema change): actual Board root replay with new trace retains original receipt plus duplicate:true; same key/different transcript rejects idempotency_mismatch; wrong state with fresh key rejects stale_state_version; unknown actor rejected. Exact hand+all Voice events JSON unchanged by replay-denial sequence. Root remains subtransaction rollback before existing action assertions; final whole-journey fingerprint retained.

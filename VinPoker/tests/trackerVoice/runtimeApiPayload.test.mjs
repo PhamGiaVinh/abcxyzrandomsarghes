@@ -271,6 +271,18 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  -- A separate canonical manual handoff, with a fresh never-assigned dealer.
  -- No Auto toggle, rest timestamp rewrite, force-OT or manual intent header.
  BEGIN
+ -- Trusted service Board proposal made before the canonical dealer handoff.
+ -- This probes assignment fencing, not Edge workflow/grammar acceptance.
+ PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
+ board_receipt:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-handoff-board','Flop ace hearts five spades two diamonds',
+ jsonb_build_object('kind','board','intent_domain','board','canonical_request',jsonb_build_object('intentDomain','board',
+ 'payload',jsonb_build_object('street','flop','cumulativeCards',jsonb_build_array('Ah','5s','2d'),'expectedExistingBoardCount',0))),
+ state,'assist',k||'-handoff-board','native-handoff-board');
+ IF board_receipt->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_board_handoff_root_failed: %',board_receipt;END IF;
+ PERFORM set_config('role','none',true);
+ SELECT jsonb_build_object('hand',to_jsonb(row),'actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a WHERE a.hand_id=h.id),
+ 'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tracker_voice_events e WHERE e.hand_id=h.id)) INTO action_state FROM public.tournament_hands row WHERE id=h.id;
  IF EXISTS(SELECT 1 FROM public.club_settings WHERE club_id='${f.club}' AND auto_swing_enabled) THEN RAISE EXCEPTION 'native_voice_handoff_requires_auto_off';END IF;
  INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES(incoming_shift,'${f.club}','Native handoff TEST','00:00','23:59');
  INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES(incoming_dealer,'${f.club}',NULL,'Native standby TEST','active');
@@ -312,6 +324,8 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  r:=public.get_tracker_voice_runtime_context('${f.tour}','${table.id}');IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_voice_after_handoff_runtime_invalid: %',r;END IF;
  handoff_denial:=public.record_action(h.id,p.player_id,'check',1,p.entry_number,'preflop',0,k,'native-real-manual-handoff','${f.actor}');
  IF handoff_denial->>'error' IS DISTINCT FROM 'dealer_assignment_lost' THEN RAISE EXCEPTION 'native_voice_handoff_old_receipt_accepted: %',handoff_denial;END IF;
+ r:=public.commit_tracker_voice_board_v0((board_receipt->>'voice_event_id')::uuid,k||'-handoff-board','native-handoff-board-commit');
+ IF r->>'ok' IS DISTINCT FROM 'false' OR r->>'error' IS DISTINCT FROM 'voice_assignment_changed' THEN RAISE EXCEPTION 'native_board_handoff_old_receipt_accepted: %',r;END IF;
  PERFORM set_config('role','none',true);
  IF action_state IS DISTINCT FROM (SELECT jsonb_build_object('hand',to_jsonb(row),'actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a WHERE a.hand_id=h.id),
  'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tracker_voice_events e WHERE e.hand_id=h.id)) FROM public.tournament_hands row WHERE id=h.id) THEN RAISE EXCEPTION 'native_voice_handoff_denial_changed_source';END IF;
