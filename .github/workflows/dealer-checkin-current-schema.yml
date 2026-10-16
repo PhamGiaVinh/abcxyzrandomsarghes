@@ -30,6 +30,7 @@ on:
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/tests/cashier/paidTourRoster.native.mjs'
       - 'VinPoker/tests/dealerSwing/paidTourInitialAssign.native.mjs'
+      - 'VinPoker/tests/trackerVoice/paidTourHand.native.mjs'
       - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionEdge*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionOverlap*'

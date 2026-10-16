@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createPaidJourneyFixture} from './paidJourney.fixture.mjs';
 import {runPaidTourInitialAssignments} from '../dealerSwing/paidTourInitialAssign.native.mjs';
+import {runPaidTourHand} from '../trackerVoice/paidTourHand.native.mjs';
 assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
 for(const [k,v] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:'vinpoker_ops_cash115_qualified_c'}))assert.equal(process.env[k],v);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
@@ -96,5 +97,9 @@ assert.equal(operational()===beforeChip,false,'dealer assignment deliberately ch
 assert.equal(financialRoster(),beforeAssignment);
 assert.equal(issuedLedger(),ledgerBeforeReplay);
 assert.equal(sql(`SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'160000');
+await runPaidTourHand(sql,f,roster());
+assert.equal(issuedLedger(),ledgerBeforeReplay);
+const tvAfterHand=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
+assert.equal(tvAfterHand.tournament.id,f.tour);assert.equal(tvAfterHand.participation_counts.remaining,8);assert.equal(tvAfterHand.participation_counts.live_entry_stack,160000);
 console.log('NATIVE_TWO_TABLE_EIGHT_PAID_FOUR_CHECKIN_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

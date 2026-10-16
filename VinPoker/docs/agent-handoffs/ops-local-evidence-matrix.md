@@ -1,7 +1,7 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
 This is an execution handoff, NOT acceptance of the site. Baseline source
-`eabbc53fb`, plus the paid-tour initial-assignment extension in this package. Fresh fetch confirms
+`474c2b2ba`, plus the staffed paid-tour hand/mode extension in this package. Fresh fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
 Owner's local-only/resource hold remains: no push/CI dispatch/production apply,
@@ -21,6 +21,21 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
 
 ## New shared roster checkpoint (actual durable local commit)
+
+Latest hand extension `9e87e6`/20742→terminal0`b30be7`, PGstopped: occupied
+both tables Manual→Tracker→Manual preserve exact seats/entries/cash. First table
+Tracker start freezes4 paid participants; pending Manual request→cancel/replay→
+no pending→new request; five canonical blind/fold actions→actual settlement
+engine fold-win80000→Voice SQL Finish COMMIT→server applies Manual/increments
+epoch/no pending without client consumer. Expected per-player entry+seat endings,
+8/160000 overall, other table seats+Cashier unchanged;2 dealer assignments retained.
+Anon TV after hand still8/160000; issuance ledger unchanged. GlobalVoice local
+value restored finally. Not provider/mic/browser/manual95/rotation/correction proof.
+Latest owned tour `e2875a08-3cd6-4a34-a885-fc715d298383`, club
+`8ef5bbc1-7898-411a-8fd7-58aa659a80d1`, completed hand
+`246f5d20-045f-45ff-a2e3-e0113add6734`; sessions
+`5310a4a5-04d9-4fa7-bac5-19216296e101` and
+`12851376-4628-4e00-938a-d46697e1c8ae`. Earlier audit remains retained.
 
 Latest assignment extension `d17229`/handle29793→terminal0`1974ce`, PGstopped:
 actual complete assign-dealer handler→canonical worker RPC→audit assigns2 distinct

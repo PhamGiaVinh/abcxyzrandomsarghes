@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G8 staffed four-player hand + pending/cancelled mode + post-Finish TV
+
+Baseline474c2b2ba clean/previousPROGRESS. Added paidTourHand.native.mjs to existingtwo-table8paid4dealer/issuance/anonTV+actualinitialassignment journey. Occupiedboth tables canonical immediateManual↔Tracker preserves exactcash/entry/seatJSON, epochadvances. Firsttableactualclock/start4playerhand→Manualpendingactivehand→actualcancel+idempotentreplay/emptyrequest→newpending. Canonicalposts/folds→actualcomputeVoiceFinishSettlement foldwin80000→actualserviceVoiceFinishCOMMIT. ServerappliespendingManual/incrementsepoch/no pending withoutTracker-tabconsumer. Perparticipantseat+entry endingsengineexact; othertableseats/Cashier unchanged,8entries160000overall/2assignmentsretained; anonymousTVafterhand8/160000/issuanceledgerimmutable. GlobalVoice localvaluefinallyrestored; no assignment/action/historyrowfixture rewrites.
+
+Initial5c6e9f/14197 terminal035284e passed; extendedcancel/otherseat/entry/TVproof final9e87e6/20742 terminal0b30be7/PGstopped. Latesttour e2875a08-3cd6-4a34-a885-fc715d298383/club8ef5bbc1-7898-411a-8fd7-58aa659a80d1/completedhand246f5d20-045f-45ff-a2e3-e0113add6734 retained; evidence mapupdated. NewCIpathprepared/notdispatched, lightNode/YAML/diffchecks only. Not mic/provider/HTTP/Auth/browser375/manual95/correction/historypublication/AutoRotation/rest15x3/fulltourproof. No production/push/CI/Edge/frontend/flags/Daybreak change; localhold/masterACTIVE. Next samehand historyworker/currentpublication and correction, then bust/restore/colorup/break/close/end path; do not shrink acceptance.
+
 ## G8 actual initial-assignment Edge/RPC/audit joined to eight-paid tour
 
 Baselineeabbc53fb clean/previousPROGRESS. New paidTourInitialAssign.native.mjs executes actual whole assign-dealer handler, actual computeSwingDuration/manualDealerIntentHeaders, actual club-authority/readreceipt/workerwrite SQL and audit INSERT. Auth user discovery/PostgREST bridge modeled; noTelegramtoken/fetchforbidden. Product (not test) builds manual headers after auth; Auto staysOFF and no assignment INSERT fixture. Dedicated NOLOGIN BYPASSRLS role inherits actualservicegrants, droppedfinally, same existingreadycapacitymodel/noapplicationrole/policychange.
