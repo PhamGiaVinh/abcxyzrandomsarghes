@@ -264,6 +264,39 @@ if(process.argv.includes('--overlap')){
   }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
  }
  console.log('READY_WORKER103_CANONICAL_CLOSE_BOTH_ORDER_OVERLAP_PASS');
+ for(const order of ['duplicate','off-first','cleanup-first']){
+  const c=seed(1),t=c.rows[0];
+  const a=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${t.table}' AND released_at IS NULL;`));
+  sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${t.nextAttendance}';
+   UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${t.nextAttendance}',pre_assigned_at=now(),planned_relief_at=now()+interval '3 minutes' WHERE id='${a.id}';
+   UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now() WHERE id='${t.nextAttendance}';`);
+  const version=sql(`SELECT version FROM public.dealer_assignments WHERE id='${a.id}';`);
+  const clear=`SELECT public.worker_clear_legacy_preassignment_v1('${c.club}','${t.table}','${t.session}','${a.id}',${version},'${t.nextAttendance}');`;
+  const off=`RESET ROLE;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';`;
+  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${a.id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
+  const before=fingerprint();let holder,waiter;
+  try{
+   holder=tx('legacy104_holder',order==='off-first'?off:clear,true);
+   await barrier('legacy104_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('legacy104_waiter',order==='cleanup-first'?off:clear);
+   await barrier('legacy104_waiter',"wait_event_type='Lock'");
+   assert.equal(fingerprint(),before,'cleanup is invisible before commit');
+   holder.end('COMMIT');const h=await holder.result,w=await waiter.result;
+   assert.equal(h.code,0,h.error);
+   if(order==='off-first'){
+    assert.notEqual(w.code,0);assert.match(w.error,/AUTO_SWING_OFF/);assert.equal(fingerprint(),before);
+   }else{
+    assert.equal(JSON.parse(h.out).outcome,'cleared');
+    if(order==='duplicate'){assert.notEqual(w.code,0);assert.match(w.error,/LEGACY_PREASSIGN_SNAPSHOT_CHANGED/);}
+    else assert.equal(w.code,0,w.error);
+    assert.equal(sql(`SELECT pre_assigned_attendance_id IS NULL FROM public.dealer_assignments WHERE id='${a.id}';`),'t');
+    assert.equal(sql(`SELECT current_state||'|'||(pre_assigned_table_id IS NULL)::text FROM public.dealer_attendance WHERE id='${t.nextAttendance}';`),'checked_out|true');
+   }
+   if(order!=='duplicate')assert.equal(sql(`SELECT auto_swing_enabled FROM public.club_settings WHERE club_id='${c.club}';`),'f');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${t.table}';`),'1');
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('LEGACY104_DUPLICATE_AND_OFF_BOTH_ORDER_OVERLAP_PASS');
 }
 const sizes=['--negative','--overlap','--legacy'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
