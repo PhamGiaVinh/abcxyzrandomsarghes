@@ -87,6 +87,10 @@ export async function validateTrackerVoiceEvent(
   const envelope = data as { data?: unknown; error?: string } | null;
   if (envelope?.error) throw new Error(envelope.error);
   const receipt = envelope?.data as ValidatedVoiceEventReceipt | null;
+  // The original Board registration RPC has no alert field. Normalize only
+  // its validated no-alert case; action/alert receipts retain their contract.
+  const boardWithoutAlert = input.canonicalRequest?.intentDomain === "board"
+    && receipt?.execution_result === "validated" && receipt.alert_id === undefined;
   if (receipt?.ok !== true || Array.isArray(receipt)
     || typeof receipt.voice_event_id !== "string" || !receipt.voice_event_id.trim()
     || typeof receipt.idempotency_key !== "string" || !receipt.idempotency_key.trim()
@@ -96,14 +100,14 @@ export async function validateTrackerVoiceEvent(
     || !["validated", "alert_opened"].includes(receipt.execution_result)
     || typeof receipt.correction_pending !== "boolean"
     || (receipt.duplicate !== undefined && typeof receipt.duplicate !== "boolean")
-    || (receipt.execution_result === "validated" ? receipt.alert_id !== null
+    || (receipt.execution_result === "validated" ? receipt.alert_id !== null && !boardWithoutAlert
       : typeof receipt.alert_id !== "string" || !receipt.alert_id.trim())
     // A server-marked provider-event duplicate intentionally returns its
     // original immutable key/trace. Do not invent a new writer identity.
     || (receipt.duplicate !== true && (receipt.idempotency_key !== input.idempotencyKey || receipt.trace_id !== input.traceId))) {
     throw new Error("Voice validation không trả receipt hợp lệ.");
   }
-  return receipt;
+  return boardWithoutAlert ? { ...receipt, alert_id: null } : receipt;
 }
 
 /** Commits one already-validated Board proposal through the atomic RPC Edge seam. */

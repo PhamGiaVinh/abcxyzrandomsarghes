@@ -203,13 +203,26 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p JOIN public.tournament_hands h ON h.id=p.hand_id WHERE h.tournament_id='${f.tour}'))) THEN RAISE EXCEPTION 'native_paid_chip_ops_changed_cash_seats_or_roster';END IF;
  INSERT INTO native_voice_payloads VALUES('paid_chips',jsonb_build_object('issued',issued,'color_up',op,'undo',r,'tv_after',tv_after));
  END $$;
- DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;
+ DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;board_receipt jsonb;
  incoming_dealer uuid:=gen_random_uuid();incoming_attendance uuid;incoming_shift uuid:=gen_random_uuid();outgoing record;
  checkin_key uuid:=gen_random_uuid();checkin_receipt jsonb;
  k text:='native-voice-'||gen_random_uuid()::text;BEGIN
  SELECT * INTO STRICT h FROM public.tournament_hands WHERE tournament_id='${f.tour}' AND status='in_progress';
  SELECT * INTO STRICT p FROM public.hand_players WHERE hand_id=h.id ORDER BY seat_number LIMIT 1;
  state:=public._tracker_voice_hand_state_version(h.id);
+ -- Qualify only the trusted service root receipt shape, not Board workflow legality or Edge parsing.
+ BEGIN
+ PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
+ board_receipt:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-board','Flop ace hearts five spades two diamonds',
+ jsonb_build_object('kind','board','intent_domain','board','canonical_request',jsonb_build_object('intentDomain','board')),
+ state,'assist',k||'-board','native-board-trace');
+ IF board_receipt->>'ok' IS DISTINCT FROM 'true' OR board_receipt ? 'alert_id' THEN RAISE EXCEPTION 'native_board_receipt_shape: %',board_receipt;END IF;
+ RAISE SQLSTATE 'PZ003' USING MESSAGE='native_board_root_receipt_rollback';
+ EXCEPTION WHEN SQLSTATE 'PZ003' THEN NULL;
+ END;
+ INSERT INTO native_voice_payloads VALUES('voice_board',jsonb_build_object('receipt',board_receipt,
+ 'request_identity',jsonb_build_object('idempotencyKey',k||'-board','traceId','native-board-trace','expectedStateVersion',state,'executionMode','assist','providerEventId',k||'-board')));
  -- Trusted service-normalized fixture, NOT Edge parser/engine/provider proof.
  command:=jsonb_build_object('kind','check','canonical_action','check','actor_player_id',p.player_id,'entry_number',p.entry_number,'street','preflop','action_order',1,'action_amount',0);
  PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
@@ -335,6 +348,12 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  assert.equal(await validate({...payload.voice_action.request_identity,tournamentId:f.tour,tournamentTableId:table.id,handId:payload.hand_proof.hand_id,
   finalTranscript:'check',providerName:'openai_realtime',providerModel:'gpt-live-transcribe'}),payload.voice_action.receipt);
  assert.equal(validationCalls,1);
+ const validateBoard=runInNewContext(validationCode,{Error,client:{functions:{invoke:async()=>({data:{data:payload.voice_board.receipt},error:null})}}});
+ assert.equal(Object.hasOwn(payload.voice_board.receipt,'alert_id'),false);
+ const boardResult=await validateBoard({...payload.voice_board.request_identity,tournamentId:f.tour,tournamentTableId:table.id,handId:payload.hand_proof.hand_id,
+  finalTranscript:'Flop ace hearts five spades two diamonds',providerName:'openai_realtime',providerModel:'gpt-live-transcribe',canonicalRequest:{intentDomain:'board'}});
+ assert.equal(boardResult.alert_id,null);
+ assert.equal(JSON.stringify({...boardResult,alert_id:undefined}),JSON.stringify(payload.voice_board.receipt));
  assert.equal(payload.paid_chips.color_up.rounding_delta,0);assert.equal(payload.paid_chips.undo.bank_reversed,true);
  assert.equal(payload.outsider.ok,false);assert.equal(payload.outsider.error,'dealer_assignment_missing');
  await assert.rejects(loader(payload.outsider,null,f.tour,table.id).read(),/dealer_assignment_missing/);

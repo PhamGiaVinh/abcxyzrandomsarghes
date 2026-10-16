@@ -16,9 +16,9 @@ const input={tournamentId:'tour',tournamentTableId:'table',handId:'hand',finalTr
  executionMode:'assist',expectedStateVersion:'a'.repeat(64),idempotencyKey:'voice:key',traceId:'trace:key'};
 const valid=()=>({ok:true,voice_event_id:'voice-event',idempotency_key:input.idempotencyKey,trace_id:input.traceId,state_version:input.expectedStateVersion,
  execution_mode:'assist',execution_result:'validated',correction_pending:false,alert_id:null});
-async function invoke(receipt){
+async function invoke(receipt,overrides={}){
  const calls=[];const api=runInNewContext(code,{Error,client:{functions:{invoke:async(...args)=>{calls.push(args);return {data:{data:receipt},error:null};}}}});
- const result=await api(input);assert.equal(calls.length,1);assert.equal(calls[0][0],'tournament-live-update');return result;
+ const result=await api({...input,...overrides});assert.equal(calls.length,1);assert.equal(calls[0][0],'tournament-live-update');return result;
 }
 test('canonical validation and alert receipts remain usable',async()=>{
  for(const receipt of [valid(),{...valid(),execution_result:'alert_opened',alert_id:'alert'}])assert.equal(await invoke(receipt),receipt);
@@ -34,4 +34,14 @@ for(const [name,patch] of [
 });
 test('server-marked duplicate may retain original key/trace without changing proof or mode',async()=>{
  const receipt={...valid(),duplicate:true,idempotency_key:'original:key',trace_id:'original:trace'};assert.equal(await invoke(receipt),receipt);
+});
+test('SQL Board validation omits alert_id and is normalized to the shared no-alert shape',async()=>{
+ const receipt=valid();delete receipt.alert_id;
+ const result=await invoke(receipt,{canonicalRequest:{intentDomain:'board'}});
+ assert.deepEqual({...result},{...receipt,alert_id:null});
+});
+test('omitted alert identity is not accepted for action or alert-opened receipts',async()=>{
+ const receipt=valid();delete receipt.alert_id;
+ await assert.rejects(invoke(receipt),/receipt hợp lệ/);
+ await assert.rejects(invoke({...receipt,execution_result:'alert_opened'},{canonicalRequest:{intentDomain:'board'}}),/receipt hợp lệ/);
 });

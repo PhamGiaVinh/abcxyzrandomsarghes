@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Board receipt compatibility regression caught before release
+
+Baseline cf907b981 validation guard incorrectly required alert_id:null on Board validated receipts; original SQL deliberately omits that field. Local regression only, never released. Normalize omitted alert_id only for explicit Board validated response; action/alert-opened omissions remain rejected, all request/proof/mode fences retained. Receipt unit RED17/18 then GREEN18/18; scoped api ESLint0 and diffcheck PASS.
+
+Native 77e91f terminal0: 13/13 PASS, actual service Board registration receipt through actual extracted client validator normalizes null and preserves all other fields. Board root subtransaction rolled back before existing action/handoff assertions. This qualifies receipt compatibility, NOT Board workflow legality, Edge parser or provider. Existing paid Chip/TV/check-in/manual Swing/stale action assertions retained; outer rollback fingerprint exact, PG stopped. No production/push/CI/deploy/flags changes. Master ACTIVE; local-only hold and outstanding full tour/provider/browser/performance/release remain.
+
 ## Voice validation receipt boundary RED→local binding fix
 
 Baselinefc442945a clean/previousPROGRESS. Actual API validate body previously onlytruthyok/eventIDtype. Source-executing syntheticEdge test2PASS10FAIL reproduced missing/wrongkey/trace/state/mode/result/correction/alert accepted. Added stricttrue/nonemptyIDs+keys+trace/hash/currentexpectedstate+mode/enums/booleans/alertidentity. Exact nonduplicate receipt binds inputkey/trace; server-marked duplicate preserves originalkey/trace per existingSQL provider-eventdedup contract, but must retain proof/mode/requiredfields. No new mutationretry or serverauthorization change.
