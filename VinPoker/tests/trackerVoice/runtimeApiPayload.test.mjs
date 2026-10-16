@@ -3,6 +3,8 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
 import {parseSync,transformSync} from '@swc/core';
+import {routeTrackerVoiceIntent} from '../../src/lib/trackerVoice/intentRouter.ts';
+import {buildVoiceBoardCanonicalRequest,actionWorkflowForStreet} from '../../src/lib/trackerVoice/canonicalRequest.ts';
 
 // Actual loader body; Supabase RPC transport modeled. No Auth/DB permission proof.
 const source=readFileSync(new URL('../../src/lib/trackerVoice/api.ts',import.meta.url),'utf8');
@@ -96,6 +98,15 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'tv_displays',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tv_displays s WHERE club_id='${f.club}'),
  'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.table_operation_receipts r))::text);`);
  const before=fingerprint();
+ const boardTranscript='flop ace hearts five spades two diamonds';
+ const boardRoute=routeTrackerVoiceIntent(boardTranscript,'enter_flop');
+ assert.equal(boardRoute.ok,true);assert.equal(boardRoute.intentDomain,'board');
+ assert.equal(routeTrackerVoiceIntent(boardTranscript,'preflop_action').code,'wrong_workflow');
+ assert.equal(routeTrackerVoiceIntent('flop ace hearts ace hearts two diamonds','enter_flop').ok,false);
+ const boardCanonical=await buildVoiceBoardCanonicalRequest({rawTranscript:boardTranscript,expectedStateVersion:'0'.repeat(64),
+  expectedWorkflowState:'enter_flop',expectedStreet:boardRoute.command.street,
+  payload:{street:boardRoute.command.street,newCards:boardRoute.command.newCards,cumulativeCards:boardRoute.command.newCards,expectedExistingBoardCount:0}});
+ const boardCanonicalSql=JSON.stringify(boardCanonical).replaceAll("'","''");
  // Canonical paid/open flow above; assignment/config below are explicit local
  // control-plane fixtures inside rollback, NOT dealer check-in/rotation proof.
  const payload=JSON.parse(sql(`BEGIN;
@@ -227,10 +238,10 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  PERFORM set_config('role','none',true);
  SELECT source_revision INTO board_revision FROM public.tournament_hands WHERE id=h.id;
  PERFORM set_config('role','none',true);PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
+ command:=jsonb_set('${boardCanonicalSql}'::jsonb,'{envelope,expectedStateVersion}',to_jsonb(board_snapshot->>'state_version'));
  receipt:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
- 'openai_realtime','gpt-live-transcribe',k||'-positive-board','Flop ace hearts five spades two diamonds',
- jsonb_build_object('kind','board','intent_domain','board','canonical_request',jsonb_build_object('intentDomain','board',
- 'payload',jsonb_build_object('street','flop','cumulativeCards',jsonb_build_array('Ah','5s','2d'),'expectedExistingBoardCount',0))),
+ 'openai_realtime','gpt-live-transcribe',k||'-positive-board','${boardTranscript}',
+ jsonb_build_object('kind','board','intent_domain','board','canonical_request',command),
  board_snapshot->>'state_version','assist',k||'-positive-board','native-positive-board');
  IF receipt->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_board_positive_root_failed: %',receipt;END IF;
  PERFORM set_config('role','none',true);PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claim.role','authenticated',true);
@@ -246,7 +257,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  RAISE SQLSTATE 'PZ004' USING MESSAGE='native_board_positive_case_rollback';
  EXCEPTION WHEN SQLSTATE 'PZ004' THEN NULL;
  END;
- INSERT INTO native_voice_payloads VALUES('board_workflow',jsonb_build_object('snapshot',board_snapshot,'commit',board_commit));
+ INSERT INTO native_voice_payloads VALUES('board_workflow',jsonb_build_object('snapshot',board_snapshot,'commit',board_commit,'canonical_request',command));
  -- Qualify only the trusted service root receipt shape, not Board workflow legality or Edge parsing.
  BEGIN
  PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
@@ -415,8 +426,15 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  const workflowSource=Buffer.from(edgeSource).subarray(workflowNode.span.start-edgeTree.span.start,workflowNode.span.end-edgeTree.span.start).toString();
  const engineSource=readFileSync(new URL('../../src/lib/tracker-poker/handStateCore.ts',import.meta.url),'utf8').replace(/^export /gm,'');
  const workflowCode=transformSync(engineSource+'\n'+workflowSource+'\nworkflowForVoiceSnapshot;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
- const workflow=runInNewContext(workflowCode,{actionWorkflowForStreet:()=>{throw Error('expected a completed betting round');}});
+ const workflow=runInNewContext(workflowCode,{actionWorkflowForStreet});
  assert.equal(workflow(payload.board_workflow.snapshot),'enter_flop');
+ const snapshotRoute=routeTrackerVoiceIntent(boardTranscript,workflow(payload.board_workflow.snapshot));
+ assert.equal(snapshotRoute.ok,true);assert.equal(snapshotRoute.intentDomain,'board');
+ const expectedCanonical=await buildVoiceBoardCanonicalRequest({rawTranscript:boardTranscript,
+  expectedStateVersion:payload.board_workflow.snapshot.state_version,expectedWorkflowState:workflow(payload.board_workflow.snapshot),
+  expectedStreet:snapshotRoute.command.street,payload:{street:snapshotRoute.command.street,newCards:snapshotRoute.command.newCards,
+   cumulativeCards:[...payload.board_workflow.snapshot.community_cards,...snapshotRoute.command.newCards],expectedExistingBoardCount:0}});
+ assert.deepEqual(payload.board_workflow.canonical_request,expectedCanonical);
  assert.equal(payload.board_workflow.snapshot.actions.length,4);
  assert.equal(payload.board_workflow.commit.ok,true);
  assert.equal(payload.board_workflow.commit.state_version_before,payload.board_workflow.snapshot.state_version);

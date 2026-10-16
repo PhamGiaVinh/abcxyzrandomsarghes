@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Actual Board grammar/canonical builder joined to paid SQL workflow
+
+Baseline95d6c7077 clean/previousPROGRESS. Existing native positive Board path now uses actual routeTrackerVoiceIntent + buildVoiceBoardCanonicalRequest imports, not handwritten payload. Canonical state placeholder is bound to actual SQL snapshot before registration; after rollback, independently recompute actual Edge workflow/shared engine and rebuild canonical request from actual snapshot; deep equality includes transcript/payload hashes, workflow/street/state/cards. Actual router rejects Board during preflop_action and duplicate-card transcript. Actual actionWorkflowForStreet replaces previous throw fallback. Positive RPC/replay/revision/readback and all negative/fingerprint assertions retained.
+
+Native490e74 terminal0/13PASS2.595s/PG stopped. No product/schema change, no new dependency/install. Models PostgREST/Edge orchestration; NOT entire Edge handler/CORS/Auth HTTP, mic/provider/browser or durable Board COMMIT. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. G6/G8 IN_PROGRESS/local-only hold; full goal unchanged. Next: inspect actual Board commit client receipt boundary against real canonical receipt, then close remaining local integration gaps without re-running unchanged suites.
+
 ## Positive Board commit at actual enter_flop workflow
 
 Baseline1af2719fa clean/previousPROGRESS. Native paid hand now posts SB100/BB200, call100/check via actual record_action, reads actual Voice validation snapshot; actual Edge workflowForVoiceSnapshot with actual shared handStateCore recomputes enter_flop (fallback action-workflow callback deliberately throws if reached). Trusted service Board root then actual authenticated commit/replay produces persisted Ah/5s/2d, distinct state hash, source_revision strictly above immediate pre-Board revision, exactly one canonical receipt. Subcase rolls back before other prior assertions, full outer fingerprint exact.
