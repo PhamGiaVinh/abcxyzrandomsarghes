@@ -1037,6 +1037,57 @@ Deno.serve(async (req) => {
         ) {
           return validationError("VOICE_FINISH_REQUEST_INVALID", "Voice Finish thiếu dữ liệu chạm xác nhận.");
         }
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        if (!serviceKey || !supabaseUrl) throw new Error("tracker_voice_service_not_configured");
+        const service = createClient(supabaseUrl, serviceKey, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+        // Resolve only this authenticated actor's immutable intent before asking
+        // for an active hand: a successful Finish has already closed that hand.
+        const receiptUnavailable = () => new Response(JSON.stringify({
+          error: "Không xác minh được receipt Finish. Giữ nguyên request và thử đọc lại.",
+          code: "voice_finish_receipt_unavailable",
+        }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (voice_request?.intentDomain !== "finish_hand"
+          || voice_request.envelope?.expectedStateVersion !== expected_state_version
+          || !["engine_fold_win", "engine_showdown"].includes(voice_request.payload?.settlementOrigin)
+          || typeof voice_request.payload?.settlementDigest !== "string"
+          || !/^[0-9a-f]{64}$/.test(voice_request.payload.settlementDigest)) {
+          return validationError("IDEMPOTENCY_CONFLICT", "Request Finish thiếu intent settlement gốc.");
+        }
+        const originalRequest = await buildVoiceFinishCanonicalRequest({
+          rawTranscript: final_transcript, expectedStateVersion: expected_state_version,
+          payload: {
+            settlementOrigin: voice_request.payload.settlementOrigin,
+            settlementDigest: voice_request.payload.settlementDigest,
+          },
+        });
+        if (!voiceCanonicalRequestsMatch(voice_request, originalRequest)) {
+          return validationError("IDEMPOTENCY_CONFLICT", "Request Finish không khớp hash intent gốc.");
+        }
+        const { data: resolution, error: resolutionError } = await service.rpc("resolve_tracker_voice_finish_intent_v1", {
+          p_actor_user_id: user.id,
+          p_intent: {
+            tournament_id, tournament_table_id, hand_id, idempotency_key,
+            state_version: expected_state_version, final_transcript,
+            provider_name: providerForVoiceRequest(provider_name),
+            provider_model: typeof provider_model === "string" ? provider_model : null,
+            provider_event_id: typeof provider_event_id === "string" ? provider_event_id : null,
+            settlement_origin: voice_request.payload.settlementOrigin,
+            settlement_digest: voice_request.payload.settlementDigest,
+          },
+        });
+        if (resolutionError || !resolution || !["unknown", "conflict", "committed"].includes(resolution.status)) return receiptUnavailable();
+        if (resolution.status === "conflict") return validationError("IDEMPOTENCY_CONFLICT", "Request Finish không khớp intent đã lưu.");
+        if (resolution.status === "committed") {
+          if (resolution.receipt?.ok !== true || resolution.receipt.hand_id !== hand_id
+            || resolution.receipt.idempotency_key !== idempotency_key
+            || resolution.receipt.state_version_before !== expected_state_version
+            || resolution.receipt.settlement_digest !== voice_request.payload.settlementDigest) return receiptUnavailable();
+          result = { data: resolution.receipt, error: null };
+          break;
+        }
         const { data: rawSnapshot, error: snapshotError } = await supabase.rpc(
           "get_tracker_voice_validation_snapshot",
           {
@@ -1092,12 +1143,6 @@ Deno.serve(async (req) => {
         if (!voiceCanonicalRequestsMatch(voice_request, canonicalRequest)) {
           return validationError("finish_proposal_stale", "Đề xuất Finish không còn khớp settlement server.");
         }
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        if (!serviceKey || !supabaseUrl) throw new Error("tracker_voice_service_not_configured");
-        const service = createClient(supabaseUrl, serviceKey, {
-          auth: { persistSession: false, autoRefreshToken: false },
-        });
         result = await service.rpc("commit_tracker_voice_finish_v0", {
           p_actor_user_id: user.id,
           p_tournament_id: tournament_id,

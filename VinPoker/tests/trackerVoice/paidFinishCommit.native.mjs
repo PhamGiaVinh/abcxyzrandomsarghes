@@ -6,7 +6,7 @@ import {parseSync,transformSync} from '@swc/core';
 import {createPaidJourneyFixture} from '../cashier/paidJourney.fixture.mjs';
 import {computeVoiceFinishSettlement} from '../../supabase/functions/_shared/trackerSettlement/finishAssist.ts';
 import {reduceHand,isBettingRoundComplete} from '../../src/lib/tracker-poker/handStateCore.ts';
-import {buildVoiceFinishCanonicalRequest} from '../../src/lib/trackerVoice/canonicalRequest.ts';
+import {buildVoiceFinishCanonicalRequest,voiceCanonicalRequestsMatch} from '../../src/lib/trackerVoice/canonicalRequest.ts';
 
 // Durable isolated SQL/engine/client proof. No hosted HTTP/Auth/provider/browser.
 assert.equal(process.env.VINPOKER_NATIVE_VOICE_FINISH,'1');
@@ -17,6 +17,7 @@ const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','en
 const sql=input=>execFileSync(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
 const quote=value=>`'${(typeof value==='object'?JSON.stringify(value):String(value)).replaceAll("'","''")}'`;
 const f=createPaidJourneyFixture(sql);
+assert.equal(sql("SELECT has_function_privilege('service_role','public.resolve_tracker_voice_finish_intent_v1(uuid,jsonb)','EXECUTE') AND NOT has_function_privilege('authenticated','public.resolve_tracker_voice_finish_intent_v1(uuid,jsonb)','EXECUTE') AND NOT has_function_privilege('anon','public.resolve_tracker_voice_finish_intent_v1(uuid,jsonb)','EXECUTE') AND NOT has_table_privilege('service_role','public.tracker_voice_events','SELECT');"),'t');
 const table=JSON.parse(sql(`SELECT to_jsonb(t) FROM public.tournament_tables t JOIN public.tournament_seats s ON s.tournament_table_id=t.id WHERE s.entry_id='${f.entry}' AND s.is_active;`));
 const floorActor=crypto.randomUUID();
 const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
@@ -83,8 +84,8 @@ try{
    idempotencyKey:key,traceId:trace,canonicalRequest}),result);
  }
  assert.equal(calls,2);
- // Diagnostic, not recovery PASS: the actual Edge case currently rejects this
- // exact committed intent before it reaches SQL idempotent replay.
+ // Actual Edge case with real SQL reads: recovery must not require an active hand
+ // or invoke a mutation again. Auth/HTTP transport remains modeled.
  const edgeSource=readFileSync(new URL('../../supabase/functions/tournament-live-update/index.ts',import.meta.url),'utf8');
  const edgeTree=parseSync(edgeSource,{syntax:'typescript'});let finishCase;
  function visit(node){if(!node||typeof node!=='object')return;
@@ -94,17 +95,39 @@ try{
  const caseText=Buffer.from(edgeSource).subarray(finishCase.span.start-edgeTree.span.start,finishCase.span.end-edgeTree.span.start).toString();
  const branchCode=transformSync('async function retry(body){let result;const tournament_id=body.tournament_id;switch(body.action){'+caseText+'}return new Response(JSON.stringify(result),{status:200});}retry;',
   {jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
- let snapshotCalls=0;
- const retry=runInNewContext(branchCode,{Response,Error,validationError:(code,message)=>new Response(JSON.stringify({code,error:message}),{status:422}),
+ let snapshotCalls=0,reads=0,readFailure=false,missingReceipt=false;const edgeUser={id:f.actor};
+ const providerNode=edgeTree.body.find(n=>n.type==='FunctionDeclaration'&&n.identifier.value==='providerForVoiceRequest');
+ const providerText=Buffer.from(edgeSource).subarray(providerNode.span.start-edgeTree.span.start,providerNode.span.end-edgeTree.span.start).toString();
+ const providerForVoiceRequest=runInNewContext(transformSync(providerText+'\nproviderForVoiceRequest;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code);
+ const readClient={rpc:async(name,args)=>{assert.equal(name,'resolve_tracker_voice_finish_intent_v1');
+    reads++;assert.equal(args.p_actor_user_id,edgeUser.id);
+    if(readFailure)return {data:null,error:{message:'TEST_read_unavailable'}};
+    if(missingReceipt)return {data:{status:'unavailable'},error:null};
+    return {data:JSON.parse(sql(`BEGIN;${service}SELECT public.resolve_tracker_voice_finish_intent_v1('${args.p_actor_user_id}',${quote(args.p_intent)}::jsonb);COMMIT;`)),error:null};
+ }};
+ const retry=runInNewContext(branchCode,{Response,Error,user:edgeUser,providerForVoiceRequest,buildVoiceFinishCanonicalRequest,voiceCanonicalRequestsMatch,
+  corsHeaders:{},createClient:()=>readClient,Deno:{env:{get:()=> 'TEST_ONLY'}},
+  validationError:(code,message)=>new Response(JSON.stringify({code,error:message}),{status:422}),
   supabase:{rpc:async(name,args)=>{snapshotCalls++;assert.equal(name,'get_tracker_voice_validation_snapshot');
-   assert.equal(args.p_hand_id,hand);return {data:JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand}');COMMIT;`)),error:null};}}});
- const retryResponse=await retry({action:'commit_voice_finish',tournament_id:f.tour,tournament_table_id:table.id,hand_id:hand,
+   assert.equal(args.p_hand_id,hand);return {data:JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${edgeUser.id}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${edgeUser.id}"}';SET LOCAL ROLE authenticated;SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand}');COMMIT;`)),error:null};}}});
+ const retryBody={action:'commit_voice_finish',tournament_id:f.tour,tournament_table_id:table.id,hand_id:hand,
   final_transcript:'ket thuc hand',provider_name:'openai_realtime',provider_model:'gpt-live-transcribe',provider_event_id:key,
-  expected_state_version:snapshot.state_version,idempotency_key:key,trace_id:trace,voice_request:canonicalRequest});
- assert.equal(retryResponse.status,422,'diagnostic reproduces blocked Edge recovery, NOT desired final behavior');
- assert.equal(snapshotCalls,1);assert.equal(committedFingerprint(),committedBeforeReplay);
- const retryFailure=await retryResponse.json();assert.equal(retryFailure.code,'hand_not_in_progress');
- console.log('DIAGNOSTIC_FINISH_EDGE_RETRY_BLOCKED_AFTER_COMMIT',retryFailure.code);
+  expected_state_version:snapshot.state_version,idempotency_key:key,trace_id:trace,voice_request:canonicalRequest};
+ const retryResponse=await retry(retryBody);assert.equal(retryResponse.status,200);
+ assert.deepEqual((await retryResponse.json()).data,{...receipt,duplicate:true});assert.equal(snapshotCalls,0);assert.equal(reads,1);
+ for(const patch of [{hand_id:crypto.randomUUID()},{tournament_id:crypto.randomUUID()},{tournament_table_id:crypto.randomUUID()},
+  {expected_state_version:'a'.repeat(64)},{provider_event_id:'different-event'},{provider_model:'different-model'},
+  {final_transcript:'different speech'},{voice_request:{...canonicalRequest,payload:{...canonicalRequest.payload,settlementDigest:'d'.repeat(64)}}},
+  {voice_request:{...canonicalRequest,payload:{...canonicalRequest.payload,unexpected:'different payload'}}}]){
+  const response=await retry({...retryBody,...patch});assert.equal(response.status,422);assert.equal((await response.json()).code,'IDEMPOTENCY_CONFLICT');
+ }
+ readFailure=true;let denied=await retry(retryBody);assert.equal(denied.status,503);readFailure=false;
+ missingReceipt=true;denied=await retry(retryBody);assert.equal(denied.status,503);missingReceipt=false;
+ assert.equal(snapshotCalls,0,'known or unavailable receipt must not fall through to active snapshot');
+ edgeUser.id=f.player;denied=await retry(retryBody);assert.notEqual(denied.status,200);edgeUser.id=f.actor;
+ denied=await retry({...retryBody,idempotency_key:'native-unknown-'+crypto.randomUUID()});assert.notEqual(denied.status,200);
+ assert.equal(committedFingerprint(),committedBeforeReplay);
+ console.log('NATIVE_FINISH_EDGE_COMMITTED_RECEIPT_RECOVERY_PASS');
  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${hand}';`),'completed');
  assert.equal(sql(`SELECT count(*) FROM public.tracker_voice_events WHERE hand_id='${hand}' AND event_kind='canonical_receipt';`),'1');
  assert.equal(sql(`SELECT md5(jsonb_agg(to_jsonb(c) ORDER BY id)::text) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}';`),cashBefore);
