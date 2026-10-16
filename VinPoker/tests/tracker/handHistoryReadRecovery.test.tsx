@@ -89,6 +89,41 @@ it("keeps hand data but marks queue status unavailable when the queue read rejec
   expect(screen.getByRole("button", { name: "Làm mới" })).toBeEnabled();
 });
 
+it.each([null, {}, [null], [{ hand_id: "hand-a", queue_status: "unknown-status" }], [{ queue_status: "pending" }],
+  [{ hand_id: "hand-a", queue_status: "pending" }, { hand_id: "hand-a", queue_status: "stale" }]])(
+  "marks malformed queue payload unavailable rather than silently empty: %j", async (payload) => {
+    backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2"
+      ? new Promise(() => {}) : Promise.resolve({ data: payload, error: null }));
+    render(<HandHistoryWorkspace tournamentId="tour-a" />);
+    expect(await screen.findByText("Không tải được trạng thái hàng đợi xác minh.")).toBeInTheDocument();
+    expect(screen.getByText("#1")).toBeInTheDocument();
+    expect(screen.queryByText("Đang xác minh", { selector: "span" })).not.toBeInTheDocument();
+  });
+
+it("keeps a successful empty queue distinct from an unavailable queue", async () => {
+  render(<HandHistoryWorkspace tournamentId="tour-a" />);
+  await screen.findByText("#1");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Làm mới" })).toBeEnabled());
+  expect(screen.queryByText("Không tải được trạng thái hàng đợi xác minh.")).not.toBeInTheDocument();
+});
+
+it("renders a valid pending queue row without calling it unavailable", async () => {
+  backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? new Promise(() => {})
+    : Promise.resolve(ok([{ hand_id: "hand-a", queue_status: "pending" }])));
+  render(<HandHistoryWorkspace tournamentId="tour-a" />);
+  expect(await screen.findByText("Đang xác minh", { selector: "span" })).toBeInTheDocument();
+  expect(screen.queryByText("Không tải được trạng thái hàng đợi xác minh.")).not.toBeInTheDocument();
+});
+
+it("does not display partial queue data returned alongside an RPC error", async () => {
+  backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? new Promise(() => {})
+    : Promise.resolve({ data: [{ hand_id: "hand-a", queue_status: "pending" }], error: { message: "503 unavailable" } }));
+  render(<HandHistoryWorkspace tournamentId="tour-a" />);
+  expect(await screen.findByText("Không tải được trạng thái hàng đợi xác minh.")).toBeInTheDocument();
+  expect(screen.getByText("#1")).toBeInTheDocument();
+  expect(screen.queryByText("Đang xác minh", { selector: "span" })).not.toBeInTheDocument();
+});
+
 it("does not let an old queue response clear the new tournament hand selection", async () => {
   const oldQueue = deferred<ReturnType<typeof ok>>();
   backend.rpc.mockImplementation((name: string, args: { p_tournament_id: string }) => name === "list_tracker_tables_v2"

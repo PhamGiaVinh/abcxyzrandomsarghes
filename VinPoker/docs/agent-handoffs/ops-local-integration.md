@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## History queue malformed/partial read falsely accepted RED→local boundary fix
+
+Baselinec247a7835 clean/previousPROGRESS. Reviewed actual queue-status RPC contract: rows use missing_blind/missing_outcome/stale/pending/needs_attention; successful [] is valid.197a68 parent render RED5cases: null/object/unknown status/missing hand/duplicate hand silently empty or last-write-wins. Null row already hit catch, not a newly found failure. Parent now rejects non-array, malformed used fields, unknown status, duplicate hand IDs, and any RPC error even with partial data. Clears untrusted status map, retains successfully loaded hand rows, shows explicit queue-unavailable warning. No verified proof invented or backend writer change.
+
+5254ee33render/loadguard/nochip+17callback PASS after fix; c5d685 final19parent cases PASS adds data+503 error no pending badge. Controls successful [] and valid pending remain healthy. Input SDK responses modeled, no hosted transport/DB/browser375. UI engineering preserves existing warning/tokens, no dependency/visual overhaul. Full type/build held; unchanged DB not rerun. No PG/handles/push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; parent rendered correction flow/provider/TV/fulltour/perf/release still incomplete.
+
 ## Same-client account switch/logout history scope leak RED→local fix
 
 Baseline6ce200355 clean/previousPROGRESS.1aa1ad actual parent render RED: actor A→B with same Supabase client/tournament retains A hand and table inventory because read dependencies omit actor. Bind both table effect and hand load callback to actor ID already supplied by recovery hook; existing cleanup/generation machinery invalidates pending responses and existing load-start clears data/editor/preview. No new role grant/auth policy/journal clearing.

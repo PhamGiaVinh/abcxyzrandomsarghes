@@ -520,13 +520,18 @@ export function HandHistoryWorkspace({
             { p_tournament_id: tournamentId } as never,
           );
           if (isCurrentLoad()) {
-            const rows = Array.isArray(queueStatus) ? queueStatus as Array<Record<string, unknown>> : [];
+            const rows = Array.isArray(queueStatus) ? queueStatus as Array<Record<string, unknown>> : null;
             const validStatuses = new Set<HistoryCompletionStatus>(["missing_blind", "missing_outcome", "stale", "pending", "needs_attention"]);
-            setCompletionStatusByHand(new Map(rows.flatMap((row) =>
-              typeof row.hand_id === "string" && validStatuses.has(row.queue_status as HistoryCompletionStatus)
-                ? [[row.hand_id, row.queue_status as HistoryCompletionStatus] as const]
-                : [])));
-            setCompletionStatusError(!!queueStatusError);
+            if (queueStatusError || !rows || rows.some((row) => !row || typeof row !== "object" || Array.isArray(row)
+              || typeof row.hand_id !== "string" || !row.hand_id.trim()
+              || !validStatuses.has(row.queue_status as HistoryCompletionStatus))
+              || new Set(rows.map((row) => row.hand_id)).size !== rows.length) {
+              setCompletionStatusByHand(new Map());
+              setCompletionStatusError(true);
+            } else {
+              setCompletionStatusByHand(new Map(rows.map((row) => [row.hand_id as string, row.queue_status as HistoryCompletionStatus])));
+              setCompletionStatusError(false);
+            }
           }
         } catch {
           if (!isCurrentLoad()) return;
