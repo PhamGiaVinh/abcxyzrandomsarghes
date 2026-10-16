@@ -62,7 +62,12 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
 }
 if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
  const size=Number(process.argv.find(a=>a.startsWith('--planner-size='))?.split('=')[1]??2);assert.ok([2,10,40].includes(size));
- const fixture=seed(size);fixture.shortage=process.argv.includes('--planner-shortage');
+ const resumeClub=process.argv.find(a=>a.startsWith('--main-resume-club='))?.split('=')[1];let fixture;
+ if(resumeClub){assert.ok(process.argv.includes('--main-worker')&&process.argv.includes('--main-execute'));assert.match(resumeClub,/^[a-f0-9-]{36}$/);
+  fixture=JSON.parse(sql(`SELECT jsonb_build_object('club',c.id,'owner',c.owner_id,'rows',(SELECT jsonb_agg(jsonb_build_object('table',r.table_id,'session',r.table_session_id,'oldAttendance',r.out_attendance_id,'nextAttendance',r.in_attendance_id) ORDER BY r.table_id) FROM (SELECT DISTINCT ON(s.table_id) s.table_id,a.table_session_id,s.out_attendance_id,s.in_attendance_id FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id WHERE s.club_id=c.id AND s.slot_index=0 AND s.status IN ('announced','executing','executed') ORDER BY s.table_id,s.created_at,s.id) r),'resumeOriginals',(SELECT jsonb_agg(jsonb_build_object('schedule',r.id,'assignment',r.assignment_id,'table',r.table_id,'session',r.table_session_id,'incoming',r.in_attendance_id,'outgoing',r.out_attendance_id,'relief',r.planned_relief_at,'announce',r.announce_at) ORDER BY r.table_id) FROM (SELECT DISTINCT ON(s.table_id) s.*,a.table_session_id FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id WHERE s.club_id=c.id AND s.slot_index=0 AND s.status IN ('announced','executing','executed') ORDER BY s.table_id,s.created_at,s.id) r)) FROM public.clubs c WHERE c.id='${resumeClub}' AND c.name='Ready capacity TEST ${size}';`));
+  assert.ok(fixture);assert.equal(fixture.rows.length,size);assert.equal(fixture.resumeOriginals.length,size);
+ }else fixture=seed(size);
+ fixture.shortage=process.argv.includes('--planner-shortage');
  if(process.argv.includes('--main-worker')){
   // Schema-only bootstrap creates this matview WITH NO DATA. Initialize the
   // owned local read model so the actual concurrent refresh RPC can execute.
@@ -71,7 +76,7 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
   fixture.shortageScope=process.argv.includes('--main-shortage-scope');assert.ok(!(fixture.mainOff&&fixture.shortageScope));
   fixture.executeMain=process.argv.includes('--main-execute');assert.ok(!(fixture.executeMain&&(fixture.mainOff||fixture.shortageScope)));
   if(fixture.mainOff)sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${fixture.club}';`);
-  sql(`INSERT INTO public.swing_config(club_id,table_type,rotation_planner_enabled,swing_duration_minutes,break_duration_minutes,min_inter_swing_rest_minutes) VALUES('${fixture.club}','tournament',true,45,15,15) ON CONFLICT(club_id,table_type) DO UPDATE SET rotation_planner_enabled=true,swing_duration_minutes=45,break_duration_minutes=15,min_inter_swing_rest_minutes=15;`);
+  if(!resumeClub)sql(`INSERT INTO public.swing_config(club_id,table_type,rotation_planner_enabled,swing_duration_minutes,break_duration_minutes,min_inter_swing_rest_minutes) VALUES('${fixture.club}','tournament',true,45,15,15) ON CONFLICT(club_id,table_type) DO UPDATE SET rotation_planner_enabled=true,swing_duration_minutes=45,break_duration_minutes=15,min_inter_swing_rest_minutes=15;`);
   const file=resolve('supabase/functions/process-swing/index.ts'),workerSource=readFileSync(file,'utf8'),tree=ts.createSourceFile(file,workerSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
   const imports=[];for(const statement of tree.statements){if(!ts.isImportDeclaration(statement)||statement.importClause?.isTypeOnly)continue;
    const module=statement.moduleSpecifier.text,clause=statement.importClause;assert.ok(clause&&!clause.name&&clause.namedBindings&&ts.isNamedImports(clause.namedBindings));
@@ -85,12 +90,13 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
  fixture.adopt=process.argv.includes('--planner-adopt');assert.ok(!(fixture.adopt&&fixture.shortage));
  fixture.fault=process.argv.find(a=>a.startsWith('--planner-fault='))?.split('=')[1];assert.ok(fixture.fault===undefined||['dealer-inventory','persist','lock'].includes(fixture.fault));assert.ok(!(fixture.shortage&&fixture.fault));
  assert.ok(!(fixture.adopt&&fixture.fault));
+ assert.ok(!(fixture.executeMain&&(fixture.adopt||fixture.shortage)));
  assert.ok(!(fixture.executeMain&&fixture.fault));
  if(fixture.adopt)sql(service+fixture.rows.map(r=>`UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${r.table}',pre_assigned_at=now() WHERE id='${r.nextAttendance}';UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${r.nextAttendance}',pre_assigned_at=now() WHERE table_id='${r.table}' AND released_at IS NULL;`).join('\n'));
  if(fixture.shortage)sql(service+`UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now(),current_state='checked_out' WHERE id IN (${fixture.rows.map(r=>quote(r.nextAttendance)).join(',')});`);
  console.log('ACTUAL_PASSR_NATIVE_START '+size+(fixture.shortage?' shortage':''));
  let output;try{output=execFileSync('deno',['run','--cached-only','--no-config','--no-lock','--node-modules-dir=none','--deny-net','--allow-read=./supabase/functions,./tests/dealerSwing','--allow-env=PGHOST,PGPORT,PGUSER,PGDATABASE,PATH,SystemRoot,PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS',`--allow-run=${process.platform==='win32'?'wsl':'psql'}`,'tests/dealerSwing/passR.native.mjs','--native'],{
-  input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:fixture.executeMain?360000:120000,stdio:['pipe','pipe','pipe'],env:{...process.env,PASS15_RPC_TIMEOUT_MS:'5000',PASS15_MAX_PAIRS:'10'},
+  input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:fixture.executeMain?(size===40?600000:360000):120000,maxBuffer:4*1024*1024,stdio:['pipe','pipe','pipe'],env:{...process.env,PASS15_RPC_TIMEOUT_MS:'5000',PASS15_MAX_PAIRS:'10'},
  });}catch(e){console.log(String(e.stdout??'').split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')).join('\n'));console.error(String(e.stderr??'').slice(-1400));throw new Error('actual PassR native qualification failed');}
  console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_')).join('\n'));
 }

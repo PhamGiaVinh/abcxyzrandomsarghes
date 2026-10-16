@@ -100,7 +100,8 @@ else{
  }};
  let networkCalls=0;globalThis.fetch=()=>{networkCalls++;throw new Error('unexpected runtime network');};
  if(fixture.mainWorker){
-  assert.equal(fixture.rows.length,2,'qualify two tables before scaling main handler');
+  const tableCount=fixture.rows.length;assert.ok([2,10,40].includes(tableCount));
+  if(fixture.shortageScope)assert.equal(tableCount,2,'scope transition fixture uses exactly two tables');
   const names=[],values=[];for(const dependency of fixture.mainWorker.imports){assert.ok(dependency.module.startsWith(new URL('../../supabase/functions/',import.meta.url).href));const module=await import(dependency.module);
    for(const binding of dependency.names){assert.ok(Object.hasOwn(module,binding.exported),binding.exported);names.push(binding.local);values.push(module[binding.exported]);}}
   let handler;
@@ -108,6 +109,36 @@ else{
   const createClient=(url,key)=>{assert.equal(url,'https://synthetic.invalid');assert.equal(key,'synthetic-main-worker');return admin;};
   new Function(...names,'Deno','createClient','"use strict";\n'+fixture.mainWorker.source)(...values,runtime,createClient);
   assert.equal(typeof handler,'function');
+  async function executeScheduled(originals){
+   assert.equal(originals.length,tableCount);assert.equal(new Set(originals.map(r=>r.schedule)).size,tableCount);
+   const ids=originals.map(r=>quote(r.schedule)).join(',');
+   const executedCount=async()=>Number(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND id IN (${ids}) AND status='executed';`));
+   const initialExecuted=await executedCount(),expectedNew=tableCount-initialExecuted;
+   const relief=Math.max(...originals.map(r=>Date.parse(r.relief)));assert.ok(Number.isFinite(relief));
+   console.log(JSON.stringify({passR_actual_result:{phase:'main-execute-wait-real-lead',club:fixture.club,originals,initialExecuted,waitMs:Math.max(0,relief+1500-Date.now())}}));
+   while(Date.now()<relief+1500)await new Promise(resolve=>setTimeout(resolve,Math.min(30000,relief+1500-Date.now())));
+   let completed=initialExecuted,batches=0;
+   while(completed<tableCount){
+    assert.ok(++batches<=tableCount,'bounded drain must progress, never loop indefinitely');
+    const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+    const body=await response.json(),next=await executedCount();
+    console.log(JSON.stringify({passR_actual_result:{phase:'main-executed-batch',club:fixture.club,batch:batches,status:response.status,body,priorCompleted:completed,completed:next,adapterGaps,bridgeErrors,networkCalls,executions:rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing'),completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot')}}));
+    assert.equal(response.status,200);assert.equal(body.status,'completed');assert.equal(body.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+    assert.ok(next>completed,'scheduled backlog stalled; preserve fixture for diagnosis');completed=next;
+   }
+   const executions=rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing');assert.equal(executions.length,expectedNew);assert.ok(executions.every(r=>r.data.status==='success'));
+   const completions=rpcResponses.filter(r=>r.name==='complete_rotation_slot');assert.equal(completions.length,expectedNew);assert.ok(completions.every(r=>r.data.outcome==='executed'));
+   for(const old of originals){
+    assert.equal(await sql(`SELECT status='executed' AND (reason->>'new_assignment_id') IS NOT NULL FROM public.dealer_rotation_schedule WHERE id='${old.schedule}';`),'t');
+    assert.equal(await sql(`SELECT released_at>=${quote(old.relief)}::timestamptz AND swing_processed_at IS NOT NULL FROM public.dealer_assignments WHERE id='${old.assignment}';`),'t');
+    assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${old.table}' AND table_session_id='${old.session}' AND attendance_id='${old.incoming}' AND status='assigned' AND released_at IS NULL;`),'1');
+   }
+   assert.equal(await sql(`SELECT count(*)||'|'||count(DISTINCT attendance_id)||'|'||count(DISTINCT table_session_id) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND status='assigned' AND released_at IS NULL;`),`${tableCount}|${tableCount}|${tableCount}`);
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}' AND a.current_state='in_transition';`),'0');
+   console.log(JSON.stringify({passR_actual_result:{phase:'main-drain-postcheck',tableCount,initialExecuted,newExecutions:executions.length,batches,completed,networkCalls}}));
+   console.log('ACTUAL_PASSR_MAIN_SCHEDULED_EXECUTION_REAL_LEAD_PASS '+tableCount);
+  }
+  if(fixture.resumeOriginals){await executeScheduled(fixture.resumeOriginals);}else{
   const stateProof=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'))::text);`);
   const before=await stateProof();
   const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
@@ -124,12 +155,12 @@ else{
    console.log('ACTUAL_PASSR_MAIN_HANDLER_INVENTORY_FAILURE_PASS');
   }else{
   assert.equal(body.status,'completed');assert.ok(rpcCalls.includes('upsert_rotation_plan'));
-  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),'2');
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(tableCount));
   assert.ok(rpcResponses.some(r=>r.name==='extend_club_lock_lease'));assert.ok(rpcResponses.filter(r=>r.name==='extend_club_lock_lease').every(r=>r.data===true));
   assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,true);
   assert.equal(await sql(`SELECT count(*) FROM public.swing_run_metrics WHERE club_id='${fixture.club}';`),'1');
-  assert.equal(await sql(`SELECT total_swings||'|'||successful_swings FROM public.swing_metrics WHERE club_id='${fixture.club}';`),'2|2','current worker metrics count announcements, not executed rotations');
-  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id JOIN public.table_sessions ts ON ts.id=a.table_session_id JOIN public.dealer_attendance d ON d.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.status='announced' AND s.slot_index=0 AND s.in_attendance_id=a.pre_assigned_attendance_id AND s.out_attendance_id=a.attendance_id AND s.planned_relief_at=a.planned_relief_at AND a.released_at IS NULL AND ts.closed_at IS NULL AND ts.game_table_id=s.table_id AND ts.club_id=s.club_id AND d.current_state='pre_assigned' AND d.pre_assigned_table_id=s.table_id;`),'2');
+  assert.equal(await sql(`SELECT total_swings||'|'||successful_swings FROM public.swing_metrics WHERE club_id='${fixture.club}';`),`${tableCount}|${tableCount}`,'current worker metrics count announcements, not executed rotations');
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id JOIN public.table_sessions ts ON ts.id=a.table_session_id JOIN public.dealer_attendance d ON d.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.status='announced' AND s.slot_index=0 AND s.in_attendance_id=a.pre_assigned_attendance_id AND s.out_attendance_id=a.attendance_id AND s.planned_relief_at=a.planned_relief_at AND a.released_at IS NULL AND ts.closed_at IS NULL AND ts.game_table_id=s.table_id AND ts.club_id=s.club_id AND d.current_state='pre_assigned' AND d.pre_assigned_table_id=s.table_id;`),String(tableCount));
   if(fixture.shortageScope){
    const {buildCanonicalShortageSnapshot}=await import('../../supabase/functions/process-swing/shortageAlert.ts');
    const snapshot=await buildCanonicalShortageSnapshot(admin,fixture.club,{minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,preAnnounceMinutes:3});
@@ -146,21 +177,8 @@ else{
   assert.equal(await lockProof(),locks);assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,true);
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NOT NULL;`),'0','announce lead has not elapsed; outgoing dealers must remain seated');
   if(fixture.executeMain){
-   const originals=JSON.parse(await sql(`SELECT jsonb_agg(jsonb_build_object('schedule',s.id,'assignment',a.id,'table',s.table_id,'session',a.table_session_id,'incoming',s.in_attendance_id,'outgoing',a.attendance_id,'relief',s.planned_relief_at,'announce',s.announce_at) ORDER BY s.table_id) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id WHERE s.club_id='${fixture.club}' AND s.slot_index=0 AND s.status='announced';`));assert.equal(originals.length,2);
-   const relief=Math.max(...originals.map(r=>Date.parse(r.relief)));assert.ok(Number.isFinite(relief));
-   console.log(JSON.stringify({passR_actual_result:{phase:'main-execute-wait-real-lead',club:fixture.club,originals,waitMs:Math.max(0,relief+1500-Date.now())}}));
-   while(Date.now()<relief+1500)await new Promise(resolve=>setTimeout(resolve,Math.min(30000,relief+1500-Date.now())));
-   const executedResponse=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
-   const executed=await executedResponse.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-executed',status:executedResponse.status,body:executed,adapterGaps,bridgeErrors,networkCalls,executions:rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing'),completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot')}}));
-   assert.equal(executedResponse.status,200);assert.equal(executed.status,'completed');assert.equal(executed.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
-   const executions=rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing');assert.equal(executions.length,2);assert.ok(executions.every(r=>r.data.status==='success'));
-   const completions=rpcResponses.filter(r=>r.name==='complete_rotation_slot');assert.equal(completions.length,2);assert.ok(completions.every(r=>r.data.outcome==='executed'));
-   for(const old of originals){
-    assert.equal(await sql(`SELECT status='executed' AND (reason->>'new_assignment_id') IS NOT NULL FROM public.dealer_rotation_schedule WHERE id='${old.schedule}';`),'t');
-    assert.equal(await sql(`SELECT released_at IS NOT NULL AND swing_processed_at IS NOT NULL FROM public.dealer_assignments WHERE id='${old.assignment}';`),'t');
-    assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${old.table}' AND table_session_id='${old.session}' AND attendance_id='${old.incoming}' AND status='assigned' AND released_at IS NULL;`),'1');
-   }
-   console.log('ACTUAL_PASSR_MAIN_SCHEDULED_EXECUTION_REAL_LEAD_PASS');
+   const originals=JSON.parse(await sql(`SELECT jsonb_agg(jsonb_build_object('schedule',s.id,'assignment',a.id,'table',s.table_id,'session',a.table_session_id,'incoming',s.in_attendance_id,'outgoing',a.attendance_id,'relief',s.planned_relief_at,'announce',s.announce_at) ORDER BY s.table_id) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id WHERE s.club_id='${fixture.club}' AND s.slot_index=0 AND s.status='announced';`));assert.equal(originals.length,tableCount);
+   await executeScheduled(originals);
   }
   if(fixture.shortageScope){
    const {buildCanonicalShortageSnapshot,classifyShortage}=await import('../../supabase/functions/process-swing/shortageAlert.ts');
@@ -186,6 +204,7 @@ else{
    console.log('ACTUAL_PASSR_SHORTAGE_CANONICAL_CLOSE_REOPEN_PASS');
   }
   console.log('ACTUAL_PASSR_MAIN_HANDLER_NATIVE_PASS');
+  }
   }
  }else{
  const immutableSnapshot=()=>sql(service+`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a)-ARRAY['overtime_started_at','updated_at','version'] ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'))::text);`);
