@@ -117,6 +117,35 @@ if(process.argv.includes('--negative')){
  IF before_state IS DISTINCT FROM after_state THEN RAISE EXCEPTION 'nested_fault_partial_write';END IF;
  END $$;ROLLBACK;`);
  console.log('READY_WORKER_NATIVE_NESTED_INSERT_FAULT_ROLLBACK_PASS');
+ // Verify the cancellation contract used by PassR against the actual catalog,
+ // including its atomic response when the schedule update itself fails.
+ const cancellation=seed(1),cr=cancellation.rows[0],slot=randomUUID();
+ const ca=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${cr.table}' AND released_at IS NULL;`));
+ const cancelSetup=`UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${cr.table}',pre_assigned_at=now() WHERE id='${cr.nextAttendance}';
+ UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${cr.nextAttendance}',pre_assigned_at=now(),planned_relief_at=now()+interval '3 minutes' WHERE id='${ca.id}';
+ INSERT INTO public.dealer_rotation_schedule(id,club_id,table_id,assignment_id,slot_index,out_attendance_id,in_attendance_id,planned_relief_at,announce_at,status,is_shortage,is_emergency,plan_run_id,solver_version,reason)
+ VALUES('${slot}','${cancellation.club}','${cr.table}','${ca.id}',0,'${cr.oldAttendance}','${cr.nextAttendance}',now()+interval '3 minutes',now(),'announced',false,false,'${randomUUID()}','native-contract-test','{}');`;
+ for(const inject of [false,true]){
+  sql(`BEGIN;${service}${cancelSetup}RESET ROLE;
+  ${inject?`CREATE FUNCTION pg_temp.reject_cancel_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'native_cancel_update_fault';END $$;
+  CREATE TRIGGER native_cancel_update_fault BEFORE UPDATE ON public.dealer_rotation_schedule FOR EACH ROW WHEN (OLD.id='${slot}'::uuid) EXECUTE FUNCTION pg_temp.reject_cancel_update();`:''}
+  ${service} DO $$ DECLARE result jsonb;BEGIN
+  result:=public.cancel_rotation_slot('${slot}','reconcile_lock_lost');
+  IF ${inject?'true':'false'} THEN
+   IF result->>'outcome' IS DISTINCT FROM 'error' OR result->>'detail' IS DISTINCT FROM 'native_cancel_update_fault' THEN RAISE EXCEPTION 'wrong_cancel_fault:%',result;END IF;
+   IF NOT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE id='${ca.id}' AND pre_assigned_attendance_id='${cr.nextAttendance}')
+    OR NOT EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id='${cr.nextAttendance}' AND current_state='pre_assigned')
+    OR NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule WHERE id='${slot}' AND status='announced') THEN RAISE EXCEPTION 'cancel_fault_partial_write';END IF;
+  ELSE
+   IF result->>'outcome' IS DISTINCT FROM 'cancelled' OR result->>'schedule_id' IS DISTINCT FROM '${slot}' THEN RAISE EXCEPTION 'wrong_cancel_contract:%',result;END IF;
+   IF NOT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE id='${ca.id}' AND pre_assigned_attendance_id IS NULL)
+    OR NOT EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id='${cr.nextAttendance}' AND current_state='available' AND pre_assigned_table_id IS NULL)
+    OR NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule WHERE id='${slot}' AND status='cancelled') THEN RAISE EXCEPTION 'cancel_positive_postcondition';END IF;
+   result:=public.cancel_rotation_slot('${slot}','reconcile_lock_lost');
+   IF result->>'outcome' IS DISTINCT FROM 'noop' THEN RAISE EXCEPTION 'cancel_replay_contract';END IF;
+  END IF;END $$;ROLLBACK;`);
+ }
+ console.log('READY_NATIVE_CANCEL_CONTRACT_AND_INNER_FAULT_ATOMICITY_PASS');
 }
 if(process.argv.includes('--overlap')){
  function tx(name,query,hold=false){

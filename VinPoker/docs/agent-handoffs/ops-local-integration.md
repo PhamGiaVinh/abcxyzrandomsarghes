@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 actual native cancel contract and rollback qualified
+
+Baselinea17db4126 clean. Inspected A2 legacy cleanup/adoption: still multi-request writes, no existing canonical legacy atomic RPC found in active migrations. Do NOT declare solved by transport acknowledgement guards alone. Before designing server seam, expanded existing native negative harness with actual current cancel_rotation_slot contract. Synthetic actual assignments pre-assigned to incoming, actual announced schedule inserted within BEGIN/ROLLBACK. Service-role actual RPC returns cancelled + exact schedule_id; assignment preassign cleared, incoming available/tablemarkerNULL, schedulecancelled. Repeat actual RPC returns noop, confirming noop cannot be treated as fresh cancellation proof.
+
+Second transaction creates scoped BEFORE UPDATE schedule fault trigger then actualcancel. RPC returns error/detail native_cancel_update_fault; assignment preassign, incoming pre_assigned and scheduleannounced all remain, showing function's internal exception rollback is atomic. All fixture transitions/temptrigger/function/schedule rows ROLLBACK. These are DB-native actual-function tests, no fabricated result or live parity assumption. Full --negative also includes prior rest/OT/innerinsert/fault/OFF checks, terminal44750 exit0; PGstopped. Node/diffPASS, no new product source/migration. Existing CInegative command picks newtests up, notdispatched.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next actual-source+native proof for legacy no-schedule partialcleanup and new server atomic seam if confirmed; keep assignment/session/version and attendance/table ownership fences, no broad forced-release or policychange. Main planner/40worker integrated and G8/G9 stillunaccepted.
+
 ## G3 emergency replan read/cancel failure boundaries
 
 Baselineaf8543256 clean. Extended actual replanSingleTable source tests: schedule error/null ignored and could clear legacy intent; assignment read error misreported assignment_no_longer_active; cancel transport/noop ignored and clear continued. Initial test adapter update returnedundefined causing testTypeError; fixed chain+explicit boundary afterclear, then confirmed RED5 on actual inspected control flow. No native/live mutation claim from this mock reproduction.
