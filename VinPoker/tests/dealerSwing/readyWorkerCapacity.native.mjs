@@ -86,6 +86,37 @@ if(process.argv.includes('--negative')){
  assert.equal(off.status,200);assert.equal(off.body.skipped,'auto_swing_off');
  assert.equal(sql(`SELECT md5(string_agg(to_jsonb(a)::text,',' ORDER BY a.id)) FROM public.dealer_assignments a WHERE club_id='${c.club}';`),before);
  console.log('READY_EDGE_NATIVE_INSUFFICIENT_REST_PASS');
+ // Explicit shortage is a pre-existing OT result, not a rejected partial swing.
+ // Characterize it separately; no payroll rate or policy is changed here.
+ const shortage=seed(2),target=shortage.rows[0];
+ sql(`UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now(),current_state='checked_out' WHERE id IN (${shortage.rows.map(r=>quote(r.nextAttendance)).join(',')});`);
+ const assignment=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${target.table}' AND released_at IS NULL;`));
+ const shortageArgs={p_assignment_id:assignment.id,p_table_id:target.table,p_table_session_id:target.session,p_expected_version:assignment.version,p_next_attendance_id:null,p_send_to_break:false,p_break_duration_minutes:15,p_duration_minutes:30,p_rest_deficit_minutes:0};
+ const shortageResult=rpc('worker_perform_swing',shortageArgs);
+ assert.equal(shortageResult.outcome,'no_dealer',JSON.stringify(shortageResult));
+ const afterShortage=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${assignment.id}';`));
+ assert.ok(afterShortage.overtime_started_at);assert.equal(afterShortage.released_at,null);assert.equal(afterShortage.status,'assigned');
+ assert.equal(afterShortage.attendance_id,assignment.attendance_id);assert.equal(afterShortage.version,assignment.version+1,'existing assignment update trigger advances version for first OT marker');
+ assert.equal(sql(`SELECT current_state FROM public.dealer_attendance WHERE id='${assignment.attendance_id}';`),'assigned');
+ const repeatedShortage=rpc('worker_perform_swing',{...shortageArgs,p_expected_version:afterShortage.version});
+ assert.equal(repeatedShortage.outcome,'no_dealer');
+ assert.equal(sql(`SELECT overtime_started_at::text FROM public.dealer_assignments WHERE id='${assignment.id}';`),sql(`SELECT ${quote(afterShortage.overtime_started_at)}::timestamptz::text;`));
+ console.log('READY_WORKER_NATIVE_SHORTAGE_OT_PRESERVED_PASS');
+ const fault=seed(1),f=fault.rows[0];
+ const faultAssignment=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${f.table}' AND released_at IS NULL;`));
+ const snapshot=`SELECT jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fault.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fault.club}'),'breaks',(SELECT jsonb_agg(to_jsonb(b) ORDER BY b.id) FROM public.dealer_breaks b JOIN public.dealer_assignments a ON a.id=b.assignment_id WHERE a.club_id='${fault.club}'))`;
+ sql(`BEGIN;
+ CREATE FUNCTION pg_temp.reject_capacity_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'native_capacity_insert_fault';END $$;
+ CREATE TRIGGER native_capacity_insert_fault AFTER INSERT ON public.dealer_assignments FOR EACH ROW WHEN (NEW.club_id='${fault.club}'::uuid) EXECUTE FUNCTION pg_temp.reject_capacity_insert();
+ ${service}
+ DO $$ DECLARE before_state jsonb;after_state jsonb;result jsonb;BEGIN
+ ${snapshot} INTO before_state;
+ result:=public.worker_perform_swing(p_table_id:='${f.table}',p_table_session_id:='${f.session}',p_assignment_id:='${faultAssignment.id}',p_expected_version:=${faultAssignment.version},p_next_attendance_id:='${f.nextAttendance}');
+ IF result->>'outcome' IS DISTINCT FROM 'error' OR result->>'detail' IS DISTINCT FROM 'native_capacity_insert_fault' THEN RAISE EXCEPTION 'unexpected_nested_fault_result:%',result;END IF;
+ ${snapshot} INTO after_state;
+ IF before_state IS DISTINCT FROM after_state THEN RAISE EXCEPTION 'nested_fault_partial_write';END IF;
+ END $$;ROLLBACK;`);
+ console.log('READY_WORKER_NATIVE_NESTED_INSERT_FAULT_ROLLBACK_PASS');
 }
 const sizes=process.argv.includes('--negative')?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
