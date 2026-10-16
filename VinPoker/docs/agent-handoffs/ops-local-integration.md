@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Canonical manual Swing → old Voice receipt rejected, Auto OFF local PASS
+
+Baseline0dee7b3e8 clean/previousPROGRESS. Read actual acquisition guard: authenticated exact-club DealerControl manual path is explicitly allowed while AutoOFF. Separate subcase now seeds fresh never-assigned standby/shift metadata, calls authenticated operator_plan_next_dealer_v1 then operator_perform_swing_v2 with freshly read assignment CAS. No header spoof, service/manual bypass, Auto toggle or resttimestamp rewrite. Verifies exactlyone current exactsession assignment belongs to incoming Dealer, oldassignment released, fresh Owner runtime stillvalid, but old validated Voiceevent cannot write (dealer_assignment_lost), exact hand/action/event zeroDelta. Nested rollback restores originals before existing positive Voice action/replay/stale tests.
+
+Finala1fa3f exit0/13PASS2.236s/PGstopped/nohandles. Expanded outerrollback fingerprint includes shifts/swingrequests/rotation/Auto row along with money/lifecycle/voiceaudit. ActualSQLtransaction canonicalmanualhandoff proof, not browser/Edge/provider/realCOMMITresponse-loss, actualcheckin (standby seed is control-plane fixture), scheduledworker40 or rest15x3 evidence. This closes the previous direct-replacement-fixture gap ONLY at canonical manual SQL boundary; three real rotations/full worker/production remain. Existing CI consumes extendedtest, notdispatched. No app/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/Storagebytes/Voiceprovider/performance/fullchecks/release remain.
+
 ## Validated Voice receipt after assignment revocation — local PASS
 
 Baseline6f763df84 clean/previousPROGRESS. Existing native paid Assist journey now revokes sole exactsession assignment in a rollback subtransaction AFTER service validates immutable event but BEFORE authenticated canonical action. Runtime returns dealer_assignment_missing; record_action rejects dealer_assignment_lost. Full hand/action/event snapshot unchanged by denial; rollback restores original assignment so original positive action/replay/conflict/stale tests still execute. Outer lifecycle/money/audit fingerprint unchanged.
