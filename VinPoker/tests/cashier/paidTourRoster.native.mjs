@@ -16,6 +16,8 @@ const deferredBreak=process.env.VINPOKER_NATIVE_DEFERRED_BREAK==='1';
 assert.ok(process.env.VINPOKER_NATIVE_PAID_REENTRY===undefined||process.env.VINPOKER_NATIVE_PAID_REENTRY==='1');
 const paidReentry=process.env.VINPOKER_NATIVE_PAID_REENTRY==='1';
 if(paidReentry)assert.ok(historyEnabled&&deferredBreak,'paid re-entry integration requires member history and deferred lifecycle checks');
+assert.ok(process.env.VINPOKER_NATIVE_MIXED_BREAK===undefined||process.env.VINPOKER_NATIVE_MIXED_BREAK==='1');
+if(process.env.VINPOKER_NATIVE_MIXED_BREAK==='1')assert.ok(historyEnabled&&deferredBreak,'mixed break requires owned deferred/member journey');
 const f=createPaidJourneyFixture(sql,{playerHistoryEnabled:historyEnabled});
 const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
 sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';

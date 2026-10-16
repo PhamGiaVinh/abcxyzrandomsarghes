@@ -55,7 +55,7 @@ vi.mock("@/components/cashier/tournament-live/MovePlayerDialog", () => ({ MovePl
     <button onClick={props.onMoved}>Đặt chờ canonical</button></div> : null;
 } }));
 
-function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean } = {}) {
+function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean; staleReason?: string | null } = {}) {
   vi.clearAllMocks();
   sessionStorage.clear();
   fixture.actor = "owner-a";
@@ -81,10 +81,10 @@ function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean
   fixture.client.requestTableControlMode.mockResolvedValue({ ok: true, data: { outcome: "applied" } });
   fixture.client.cancelTableControlModeRequest.mockResolvedValue({ ok: true, data: { outcome: "cancelled" } });
   if (options.pendingNetworkFailure) fixture.client.getPendingTrackerMoves.mockRejectedValue(new Error("offline"));
-  else fixture.client.getPendingTrackerMoves.mockResolvedValue({ ok: true, data: options.pendingMove ? [{
+  else fixture.client.getPendingTrackerMoves.mockResolvedValue({ ok: true, data: options.pendingMove || options.staleReason !== undefined ? [{
     pendingMoveId: "pending-1", entryId: "entry-1", sourceTournamentTableId: "table-1",
-    destinationTournamentTableId: "table-2", destinationSeatNumber: 2, status: "pending",
-    resolutionReason: null, requestedAt: "2026-10-16T00:00:00Z",
+    destinationTournamentTableId: "table-2", destinationSeatNumber: 2, status: options.staleReason !== undefined ? "stale" : "pending",
+    resolutionReason: options.staleReason ?? null, requestedAt: "2026-10-16T00:00:00Z",
   }] : [] });
   fixture.client.planBreakTable.mockResolvedValue({ ok: true, data: {
     planHash: "plan-hash-1", complete: true,
@@ -137,6 +137,17 @@ async function submitMode() {
 }
 
 describe("Floor roster mobile actions", () => {
+  it.each(["apply_sqlstate_P0001", "control_mode_changed", null])("shows prior move reason %s without directing another seat change", async (reason) => {
+    const view = setup({ staleReason: reason });
+    try {
+      await openTableSheet();fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      expect(await screen.findByText("Yêu cầu chuyển trước không còn hợp lệ. Kiểm tra ghế hiện tại trước khi tạo yêu cầu mới.")).toBeInTheDocument();
+      if(reason)expect(screen.getByText(`Lý do: ${reason}`)).toBeInTheDocument();
+      expect(screen.queryByText(/Hãy tải lại và chọn ghế mới/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Hủy chuyển", exact: true })).toBeNull();
+      expect(fixture.client.cancelPendingTrackerMove).not.toHaveBeenCalled();expect(fixture.client.movePlayerSeat).not.toHaveBeenCalled();
+    } finally { view.unmount(); }
+  });
   it("does not announce cancellation or retry when its result cannot be verified", async () => {
     const view = setup({ pendingMove: true });
     fixture.client.cancelPendingTrackerMove.mockResolvedValue({ ok: false, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" });

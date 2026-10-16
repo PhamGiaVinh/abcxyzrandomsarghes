@@ -1106,6 +1106,7 @@ jobs:
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --finalizer-first
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --close-first
           VINPOKER_NATIVE_PAID_TOUR=1 VINPOKER_NATIVE_PAID_HISTORY=1 VINPOKER_NATIVE_DEFERRED_BREAK=1 VINPOKER_NATIVE_PAID_REENTRY=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_PAID_TOUR=1 VINPOKER_NATIVE_PAID_HISTORY=1 VINPOKER_NATIVE_DEFERRED_BREAK=1 VINPOKER_NATIVE_PAID_REENTRY=1 VINPOKER_NATIVE_MIXED_BREAK=1 node tests/cashier/paidTourRoster.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 node tests/chipOps/paidColorUpCommit.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_COUPLED=1 node tests/chipOps/paidColorUpCommit.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_CHAIN=1 node tests/chipOps/paidColorUpCommit.native.mjs

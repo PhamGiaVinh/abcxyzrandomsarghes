@@ -19,6 +19,17 @@ export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
  const table=tables.find(t=>t.id===primaryId),otherTable=tables.find(t=>t.id!==primaryId);assert.ok(table&&otherTable);
  if(breakSource)assert.equal(breakSource.table,otherTable.id,'deferred break must use the other exact staffed table');
  let breakCall,breakReceipt;
+ const mixed=Boolean(breakSource)&&process.env.VINPOKER_NATIVE_MIXED_BREAK==='1';
+ let mixedMoves,faultName=null;
+ const clearFault=()=>{
+  if(!faultName)return;
+  sql(`BEGIN;DROP TRIGGER IF EXISTS ${faultName} ON public.seat_assignment_history;DROP FUNCTION IF EXISTS floor_private.${faultName}();COMMIT;`);
+  assert.equal(sql(`SELECT to_regprocedure('floor_private.${faultName}()') IS NULL;`),'t');faultName=null;
+ };
+ const entryProof=entry=>sql(`SELECT md5(jsonb_build_object('entry',(SELECT to_jsonb(e) FROM public.tournament_entries e WHERE id='${entry}'),
+ 'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE entry_id='${entry}'),
+ 'tickets',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.seat_draw_receipts r WHERE entry_id='${entry}'),
+ 'audit',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.seat_assignment_history r WHERE entry_id='${entry}'))::text);`);
  const cash=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(c) ORDER BY id)::text) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}';`);
  const cashBefore=cash();
  const otherSeats=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(s) ORDER BY id)::text) FROM public.tournament_seats s WHERE tournament_table_id='${otherTable.id}';`);
@@ -65,6 +76,17 @@ export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
    const fresh=sql(`SELECT revision FROM public.table_sessions WHERE id='${breakSource.session}';`);
    r=JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${breakSource.table}',${fresh},'${crypto.randomUUID()}');COMMIT;`));assert.equal(r.error,'table_not_empty');
    console.log('NATIVE_EIGHT_PAID_STAFFED_BREAK_FOUR_PENDING_SOURCE_RETAINED_PASS',hand.id);
+   if(mixed){
+    mixedMoves=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}' AND status='pending';`));
+    assert.equal(mixedMoves.length,4);
+    for(const q of mixedMoves)q.beforeProof=entryProof(q.entry_id);
+    const cancelled=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_cancel_pending_tracker_move_v1('${mixedMoves[0].id}');COMMIT;`));assert.equal(cancelled.status,'cancelled');
+    faultName='native_mixed_'+crypto.randomUUID().replaceAll('-','');assert.match(faultName,/^native_mixed_[a-f0-9]{32}$/);
+    sql(`BEGIN;CREATE FUNCTION floor_private.${faultName}() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+     BEGIN IF NEW.tournament_id='${f.tour}'::uuid AND NEW.entry_id='${mixedMoves[1].entry_id}'::uuid THEN RAISE EXCEPTION 'TEST mixed deferred audit failure';END IF;RETURN NEW;END;$$;
+     REVOKE ALL ON FUNCTION floor_private.${faultName}() FROM PUBLIC,anon,authenticated,service_role;
+     CREATE TRIGGER ${faultName} BEFORE INSERT ON public.seat_assignment_history FOR EACH ROW EXECUTE FUNCTION floor_private.${faultName}();COMMIT;`);
+   }
   }
   for(const [player,type,order,amount] of [[players[1],'post_sb',1,100],[players[2],'post_bb',2,200],[players[3],'fold',3,0],[players[0],'fold',4,0],[players[1],'fold',5,0]]){
    r=JSON.parse(sql(`BEGIN;${auth}SELECT public.record_action('${hand.id}','${player.player_id}','${type}',${order},${player.entry_number},'preflop',${amount});COMMIT;`));assert.equal(r.status,'success');
@@ -87,7 +109,35 @@ export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
    assert.equal(Number(sql(`SELECT current_stack FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND player_id='${expected.player_id}' AND entry_no=${expected.entry_number};`)),expected.ending_stack);
   }
   if(breakSource){
-   assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE source_table_session_id='${breakSource.session}' AND status='applied';`),'4');
+   if(mixed){
+    const expected=['cancelled','stale','applied','applied'];
+    for(let i=0;i<mixedMoves.length;i++){
+     const q=mixedMoves[i];assert.equal(sql(`SELECT status FROM public.floor_pending_tracker_moves WHERE id='${q.id}';`),expected[i]);
+     assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE entry_id='${q.entry_id}' AND is_active AND chip_count=20000;`),'1');
+     assert.equal(sql(`SELECT table_session_id FROM public.tournament_seats WHERE entry_id='${q.entry_id}' AND is_active;`),i<2?breakSource.session:startedSession.id);
+     if(i<2)assert.equal(entryProof(q.entry_id),q.beforeProof,'cancelled/failed apply must retain original seat, entry, ticket and audit');
+    }
+    assert.equal(sql(`SELECT resolution_reason FROM public.floor_pending_tracker_moves WHERE id='${mixedMoves[1].id}';`),'apply_sqlstate_P0001');
+    assert.equal(sql(`SELECT closed_at IS NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'1');
+    assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE table_session_id='${breakSource.session}' AND is_active;`),'2|40000');
+    const fresh=session(otherTable);const rejected=JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${breakSource.table}',${fresh.revision},'${crypto.randomUUID()}');COMMIT;`));assert.equal(rejected.error,'table_not_empty');
+    const queueBeforeReplay=sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}';`);
+    assert.deepEqual(breakCall(),breakReceipt);
+    assert.equal(sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}';`),queueBeforeReplay);
+    clearFault();
+    for(const q of mixedMoves.slice(0,2)){
+     const from=session(otherTable),to=session(table),key=crypto.randomUUID();
+     const move=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.move_player_seat_v5('${q.entry_id}','${breakSource.table}','${from.id}','${table.id}','${to.id}',${q.destination_seat_number},
+      ${from.revision},${to.revision},${from.control_epoch},${to.control_epoch},'TEST explicitly recover remaining mixed break','${key}');COMMIT;`));
+     const moved=move();assert.equal(moved.ok,true);assert.notEqual(moved.queued,true);assert.deepEqual(move(),moved);
+    }
+    const source=session(otherTable),closeKey=crypto.randomUUID();
+    const close=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${breakSource.table}',${source.revision},'${closeKey}');COMMIT;`));
+    const closed=close();assert.equal(closed.ok,true);assert.deepEqual(close(),closed);
+    assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE source_table_session_id='${breakSource.session}' AND status='applied';`),'2','manual recovery preserves cancelled/stale queue audit');
+    console.log('NATIVE_EIGHT_PAID_MIXED_CANCEL_FAULT_APPLY_SOURCE_RETAIN_RECOVER_CLOSE_PASS',hand.id);
+   }else assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE source_table_session_id='${breakSource.session}' AND status='applied';`),'4');
    assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE tournament_id='${f.tour}' AND status='pending';`),'0');
    assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE table_session_id='${breakSource.session}' AND is_active;`),'0');
    assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
@@ -107,6 +157,7 @@ export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
   process.stdout.write(worker);
   assert.equal(cash(),cashBefore);if(!breakSource)assert.equal(otherSeats(),otherBefore);
  }finally{
+  clearFault();
   if(globalBefore==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
   else sql(`UPDATE public.app_settings SET value=${quote(globalBefore)}::jsonb WHERE key='tracker_voice_global_enabled';`);
   assert.equal(sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');"),globalBefore);

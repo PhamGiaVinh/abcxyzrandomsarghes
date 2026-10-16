@@ -368,7 +368,10 @@ function ScopedFloorTableMapPanelV3({
           </div>
         )}
         {staleForEntry && !pendingForEntry && (
-          <p role="status" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs">Yêu cầu chuyển trước không còn hợp lệ. Hãy tải lại và chọn ghế mới.</p>
+          <p role="status" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs">
+            Yêu cầu chuyển trước không còn hợp lệ. Kiểm tra ghế hiện tại trước khi tạo yêu cầu mới.
+            {staleForEntry.resolutionReason && <span className="mt-1 block break-words">Lý do: {staleForEntry.resolutionReason}</span>}
+          </p>
         )}
         {trackerChipBlocked && (
           <p className="rounded-xl border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs leading-5 text-amber-100/90">

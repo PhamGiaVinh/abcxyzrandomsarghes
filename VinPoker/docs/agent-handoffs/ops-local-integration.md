@@ -2262,3 +2262,52 @@ no dispatch/fulltypecheck/build/browser375/deployment/production DB/Edge/flags/U
 Resource localhold and DaybreakOFF unchanged; no Auto/payroll/rest/payout change.
 Same-hand ranking policy/release hold still open. Goal ACTIVE/PROGRESS; mixed
 multi-move cancel+per-entry apply fault in same batch remains a distinct gap.
+
+## 2026-10-16 — Mixed break partial failure retains staffed source; explicit recovery
+
+Baseline72d87b7c0; fetched main unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+Explicit VINPOKER_NATIVE_MIXED_BREAK=1 requires owned history/deferred journey.
+Same4pending staffed break: cancel one through actual RPC; inject P0001 in
+seat_assignment_history BEFORE INSERT for ONE exact owned tour/entry only.
+Native-only uniquely named floor_private trigger function SECURITY INVOKER,
+empty path/revoked PUBLIC/anon/auth/service. No auth/RLS bypass. Exact trigger/
+function removed and absence checked before supported manual recovery, also
+cleanup in finally. Not a production migration; no live DDL or broad reset.
+Actual Voice Finish completes hand and mode while moves become cancelled/stale/
+applied/applied. Fault reason apply_sqlstate_P0001. Original entry, all source-seat
+rows, tickets and assignment audit remain byte-equivalent for cancelled+faulted
+entries, each one active20000; applied entries each one destination20000. Source
+2active/40000, exact assignment unreleased/session open; fresh close denied.
+Original break receipt replay remains original pending result and changes no
+queue rows. After dropping fault, explicit canonical v5 moves each remaining
+entry with fresh exact session/epoch/revisions/new intent and receipt replay;
+then actual close_v4/replay releases source. Prior cancelled/stale queue rows
+stay as history (only2 old queue rows applied), not relabelled into success.
+Full same tour then new session/stale writer, terminal showdown/close, workers,
+anonTV and Owner/self/tenant member history;8live/160000,9paid/900000 preserved.
+No transport/provider/bank/payroll/real rotation proof; no full automatic healing
+claim: recovery deliberately requires explicit supported Floor operations.
+
+Final658475/session10470→8096be terminal0/full markers/PGstopped, first run PASS.
+Club05a81af8-6f6c-4143-accb-4df15b44a738; tour37eaef84-e62a-40b8-b246-bd55d3ebaec1;
+mixedhandbcf29a1a-2f20-4fd0-9f2b-0e550d52b93e;
+terminalhand9db9292f-3d89-450e-ad4c-c7727fd827f5. Command private helper --cash112
+--portable115 --paid-tour-roster --paid-history-roster --existing with native
+DEFERRED_BREAK/PAID_REENTRY/MIXED_BREAK=1. Fault objects cleaned; metadata/audit retained.
+Native mjs syntax/YAML/diffPASS9bc201. CI positive all-applied command retained;
+separate mixed command prepared only. Existing10min CI suite budget/Node22/full
+typecheck/build unverified; no timeout/required-check weakening or dispatch.
+
+Display follow-up: old stale move warning unconditionally told operator to choose
+another seat, even though the old failed intent is historical and may already
+have been recovered by a later canonical move. It also omitted resolutionReason.
+3render regressions RED64cd81; minimal copy now says inspect current seat before
+new intent and shows exact server reason (or no fabricated reason for legacyNULL).
+No move/cancel automatically invoked. Final45/45component testsPASS25b51c;
+ESLint0errors/1previously verified readSequence warning. UI skill applied explicit
+error context only; existing tokens/ARIA status retained, no redesign/CLI install.
+This does NOT prove a browser375 recovery journey. No product SQL/Edge changes,
+no liveDB/frontend/flags/Auto/push/deploy/UAT. DaybreakOFF/local resource hold stays.
+Same-hand ranking policy release hold still open (19800→place6 vs20000→place8).
+Goal ACTIVE/PROGRESS, original hosted/real rotations/provider/Storage/performance/
+fullchecks/review/recovery/livecatalog/release evidence still required.

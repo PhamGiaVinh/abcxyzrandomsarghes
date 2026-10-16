@@ -1,5 +1,18 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
+Latest after72d87b7c0: SAME8player/9paid-entry tour now covers one cancelled,
+one injected per-entry audit fault→stale,2applied in SAME4move break. Source2seats/
+40000 and dealer retained, early close denied; cancelled/failed original entry/
+seat/ticket/audit byte-equivalent, successful2 remain committed. Remove exact
+fault trigger/function, explicitly move remaining2 via canonical v5/replay,
+close source/replay; cancelled/stale queue audit preserved. Full downstream
+showdown/close/workers/TV/member checks PASS8096be/session10470, PGstopped.
+Tour37eaef84-e62a-40b8-b246-bd55d3ebaec1. No DB product change/real payroll claim.
+Stale Floor warning now exposes server reason and requests current-seat review,
+not unconditional choose-another-seat; 3RED→45component testsPASS25b51c. ESLint
+0errors/1existing warning; native syntax/YAML/diffPASS. No fulltype/build/CI/web
+proof; positive all-applied CI case retained, mixed case added (budget unverified).
+
 Latest afterf1eb45521: actual two-connection canonical manual Finish/cancel race
 now covered both orders on owned4paid fixtures. Cancel holds tournament lock:
 Finish NOWAIT returns manual_finish_busy/no delta/no receipt, explicit same-key
@@ -62,7 +75,7 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G2 | Native payroll82/83, profiles84, actor85, tenant86; Cashier paid/re-entry/recovery; Finance read fixes | Served UI, hosted Auth/Data API, live ACL/overloads and actor/club-switch UAT. |
 | G3 | Earlier actual main source/PG ramps2/10/40, shortage/overlap/fault/response-loss; check-in/manual Swing/Voice coupling | Hosted dispatcher/Edge/cron receipts; three real rest15 rotations; tournament canary and desktop/375 evidence. Existing 40-local proof is NOT a new missing test to rerun blindly. |
 | G4 | Atomic create/config88/91, clock89, receipts/true CAS and lifecycle overlaps | Exact deployed revision and real two-table creation/config journey in browser. |
-| G5 | Same8player/9paid-entry tour mode/hand/correction/bust-restore/paid re-entry and restore fence/chip-undo/immediate and staffed deferred break/reopen/close; actual Finish/cancel both lock orders; truthful cancellation UI; restore history fix122; separate concurrency/couplingON/OFF proofs | Mixed multi-move cancel/fault batch, hosted re-entry/browser375 contracts and current legacy-data disposition. |
+| G5 | Same8player/9paid-entry tour mode/hand/correction/bust-restore/paid re-entry and restore fence/chip-undo/immediate/staffed deferred and mixed cancel+fault+apply break/recovery/reopen/close; actual Finish/cancel both lock orders; truthful cancellation/error UI; restore history fix122; separate concurrency/couplingON/OFF proofs | Hosted re-entry/browser375 contracts and current legacy-data disposition; production/required full checks and policy gates remain. |
 | G6 | Actual fold/showdown Finish→workers→anonymous current proofs; official close123/readiness/immutable ranks; two-actor close+legacy-finalizer both barrier orders; Owner/self/member/tenant history SQL reads; TV event isolation/Storage metadata; Voice/client generation/recovery121 | Same-hand ranking policy is OPEN/release hold; actual mic/provider/HTTP/Auth/CORS, Storage bytes/retention, hosted schedules, anonymous browser multi-flight/reconnect, mid-statement locks and full checks. |
 | G7 | Earlier source triage records GTO retirement, queue meanings and schedule provenance disclosure | Verify F1–F9 on served revision; financial/security claims need live proof, performance belongsG9. Do not rewrite retired GTO or invent schedule approval. |
 | G8 | Same durable2table/8players/9paidentries/4dealer native journey through closed tour, paid re-entry, staffed deferred break, three hands/workers/public history/anonTV; historyON8member links/both bullet histories and unique1–8 current ranks | Hosted desktop+375 same-tour receipts; setup-first UI order (native metadata setup follows registration), Auto assignment/three real rotations and simultaneous-elimination policy. Mechanical local success cannot close master goal. |
