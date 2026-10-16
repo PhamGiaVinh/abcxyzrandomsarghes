@@ -184,12 +184,7 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
     'entries',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_entries x WHERE tournament_id='${fixture.tour}'),
     'counts',(SELECT jsonb_agg(to_jsonb(x) ORDER BY player_id,entry_number) FROM public.tournament_chip_counts x WHERE tournament_id='${fixture.tour}'),
     'seats',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_seats x WHERE tournament_id='${fixture.tour}'))::text);`);
-   const after=fingerprint();first.unmount();render(<MemoryRouter><HandHistoryWorkspace {...props}/></MemoryRouter>);
-   expect(screen.getByText(/Có yêu cầu sửa hand chưa rõ/)).toBeInTheDocument();
-   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Kiểm tra receipt sửa hand'}));});
-   await waitFor(()=>expect(readCorrectionIntent(localStorage,intent!)).toBeNull(),{timeout:10_000});
-   expect(commits).toBe(1);expect(fingerprint()).toBe(after);expect(money()).toBe(beforeMoney);expect(errors).toEqual([]);
-   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${intent!.idempotency_key}';`)).toBe('1');
+   const beforeWorker=fingerprint();
    const correctedRevision=sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`);
    for(const [deniedEnv,reason] of [[{VINPOKER_NATIVE_CORRECTION_UI:'0',VINPOKER_HISTORY_PARENT_HAND:hand},'owned_parent_ui_gate_required'],
     [{VINPOKER_NATIVE_CORRECTION_UI:'1',VINPOKER_HISTORY_PARENT_HAND:crypto.randomUUID()},'owned_parent_correction_required']] as const){
@@ -198,7 +193,7 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
      {cwd:process.cwd(),encoding:'utf8',timeout:10_000,maxBuffer:1_000_000,stdio:['pipe','pipe','pipe'],env:{...process.env,...deniedEnv}});}
     catch(error){rejection=error as {stderr?:unknown};}
     expect(rejection).toBeDefined();expect(String(rejection?.stderr)).toContain(reason);
-    expect(fingerprint()).toBe(after);
+    expect(fingerprint()).toBe(beforeWorker);
    }
    const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],
     {cwd:process.cwd(),encoding:'utf8',timeout:30_000,maxBuffer:1_000_000,env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand}});
@@ -207,6 +202,15 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    const published=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
    expect(published.items[0].handId).toBe(hand);expect(published.items[0].result.status).toBe('verified');
    expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified' AND source_revision=${correctedRevision};`)).toBe('1');
+   // Publication may finish while the browser still holds an unknown commit.
+   // Resolve the original correction receipt, not the newer publication proof.
+   expect(readCorrectionIntent(localStorage,intent!)).toEqual(intent);
+   const after=fingerprint();first.unmount();render(<MemoryRouter><HandHistoryWorkspace {...props}/></MemoryRouter>);
+   expect(screen.getByText(/Có yêu cầu sửa hand chưa rõ/)).toBeInTheDocument();
+   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Kiểm tra receipt sửa hand'}));});
+   await waitFor(()=>expect(readCorrectionIntent(localStorage,intent!)).toBeNull(),{timeout:10_000});
+   expect(commits).toBe(1);expect(fingerprint()).toBe(after);expect(money()).toBe(beforeMoney);expect(errors).toEqual([]);
+   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${intent!.idempotency_key}';`)).toBe('1');
   }});
  // Two real worker processes plus WSL-backed UI/SQL exceeded the former 30s
  // case budget (31.3s observed). Application/read/workflow deadlines unchanged.

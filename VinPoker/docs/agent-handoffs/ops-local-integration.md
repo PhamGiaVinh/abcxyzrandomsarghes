@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Worker republishes BEFORE parent receipt recovery local PASS
+
+Baselined72032c08 clean/previousPROGRESS. Reordered existing full native scenario: initial real historical publication→parent correction/lost receipt→current worker publication WHILE browser journal still unknown→parent unmount/remount→original correction receipt resolution. Persisted intent remains exact until read resolution; full post-worker hand/player/action/entry/seat/count/proof/queue fingerprint and cash unchanged by recovery, one correction key/outcome, no second commit. This tests past mutation receipt independent of newer publication proof, not sequential requests being falsely called concurrent overlap.
+
+0c8710 final2/2 nativePASS parent27639ms/suite42.01s; existing45s integration case bound unchanged, PG stopped/no handle. Test-only change. Prior opposite ordering remains actual evidence on unchanged application source from e9f176; not rerun needlessly. No app/DB/Edge/flag modifications, no push/PR/CI/live frontend/UAT/Auto/Daybreak. SDK/Auth/CORS/WebLocks/browser375 still modeled. Master G6 ACTIVE/local-only; next TV resolved transport-error publish reconciliation (source currently only catch reconciles, SDK can resolve error object—needs repro before bug claim), then Voice/provider/fulltour/rest15×3/40/perf/fullchecks/release.
+
 ## Published old proof→parent correction→current proof transition local PASS
 
 Baselinea47ed34dc clean/previousPROGRESS. Added native worker baseline phase pinned to canonical paid fixture actor/tour/club/player/entry/registration relationships, exact TEST club/tour names, positive actual cash movement, frozen hand participant, no existing outcomes; shared exact localPG/datadir/no-network/native UI guards retained. Initial real worker publishes historical proof on SAME hand before parent opens. Parent correction then advances revision, old historical_display proof becomes stale, and a fresh chain proof matches current source revision/hash. Subsequent actual worker publishes current historical proof; anonymous result remains valid throughout supported chain fallback.
