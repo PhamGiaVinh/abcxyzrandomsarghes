@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Headphones, Loader2, Mic, MicOff, PhoneCall, Radio, RotateCcw, ShieldCheck } from "lucide-react";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { FEATURES } from "@/lib/featureFlags";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   loadTrackerVoiceRuntimeContext,
   buildVoiceActionCanonicalRequest,
@@ -456,14 +457,16 @@ export function TrackerVoicePanel({
       return runtimeOverride;
     }
     try {
-      const next = await loadRuntimeOverride(hook.tournamentId, hook.tournamentTableId);
+      const next = await observeTrackerContextRead(loadRuntimeOverride(hook.tournamentId, hook.tournamentTableId));
       if (!isCurrent()) return null;
       setRuntime(next);
       setRuntimeError(null);
       return next;
     } catch (error) {
       if (!isCurrent()) return null;
-      const message = error instanceof Error ? error.message : "Không tải được quyền Voice.";
+      const message = error instanceof Error && error.message === "tracker_context_read_timeout"
+        ? "Hết thời gian tải quyền Voice. Hãy kết nối lại để thử lại."
+        : error instanceof Error ? error.message : "Không tải được quyền Voice.";
       setRuntime(null);
       setRuntimeError(message);
       return null;
@@ -928,7 +931,7 @@ export function TrackerVoicePanel({
     if (!isCurrent()) return;
     if (!currentRuntime?.can_mint_session) {
       setStatus("error");
-      setStatusMessage(runtimeError ?? "Dealer chưa có đúng một assignment hoặc Voice chưa được bật.");
+      setStatusMessage(currentRuntime?.error ?? "Không xác minh được quyền Voice cho bàn này. Hãy kết nối lại.");
       return;
     }
     const expectedProviderKind = import.meta.env.VITE_TRACKER_VOICE_PROVIDER === "mock"

@@ -24,14 +24,24 @@ visit(tree);assert.ok(callback);assert.ok(effect);
 const expression=Buffer.from(source).subarray(callback.span.start-tree.span.start,callback.span.end-tree.span.start).toString();
 const code=transformSync('const refresh='+expression+';refresh;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+const observerSource=readFileSync(new URL('../../src/lib/tournament/observeTrackerContextRead.ts',import.meta.url),'utf8');
+const observerCode=transformSync(observerSource.replace('export async function','async function')+'\nobserveTrackerContextRead;',{
+ jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+function observation(){
+ const timers=new Map();let id=0;
+ const observeTrackerContextRead=runInNewContext(observerCode,{Error,
+  setTimeout:(callback,delay)=>{const token=++id;timers.set(token,{callback,delay});return token;},clearTimeout:token=>timers.delete(token)});
+ return {observeTrackerContextRead,timers,expire:()=>{assert.equal(timers.size,1,'actual read observer must schedule a deadline');const timer=[...timers.values()][0];assert.equal(timer.delay,10_000);timer.callback();}};
+}
 function fixture(){
  const first=deferred(),second=deferred(),queue=[first,second],writes=[];
  const runtimeReadGenerationRef={current:0},runtimeScopeRef={current:'scope'};
- const read=runInNewContext(code,{Error,hook:{tournamentId:'tour',tournamentTableId:'table'},runtimeOverride:null,
+ const clock=observation();
+ const read=runInNewContext(code,{Error,observeTrackerContextRead:clock.observeTrackerContextRead,hook:{tournamentId:'tour',tournamentTableId:'table'},runtimeOverride:null,
   loadRuntimeOverride:()=>queue.shift().promise,runtimeReadGenerationRef,
   runtimeScopeKey:'scope',runtimeScopeRef,
   setRuntime:value=>writes.push(['runtime',value]),setRuntimeError:value=>writes.push(['error',value])});
- return {first,second,read,writes,runtimeReadGenerationRef,runtimeScopeRef,queue};
+ return {first,second,read,writes,runtimeReadGenerationRef,runtimeScopeRef,queue,clock};
 }
 test('old runtime success cannot overwrite a newer verified read',async()=>{
  const f=fixture(),old=f.read(),next=f.read();f.second.resolve({version:2});await next;
@@ -64,6 +74,13 @@ test('actual runtime effect cleanup invalidates its unfinished request',async()=
  const run=runInNewContext(effectCode,{runtimeReadGenerationRef:f.runtimeReadGenerationRef,refreshRuntime:()=>{pending=f.read();return pending;}});
  const cleanup=run();assert.equal(typeof cleanup,'function');cleanup();f.first.resolve({version:1});
  assert.equal(await pending,null);assert.deepEqual(f.writes,[]);
+});
+test('hanging runtime read times out, clears stale authority and permits explicit retry only',async()=>{
+ const f=fixture(),pending=f.read();f.clock.expire();assert.equal(await pending,null);
+ assert.equal(f.queue.length,1);assert.equal(f.writes.at(-2)[1],null);
+ assert.match(f.writes.at(-1)[1],/Hết thời gian tải quyền Voice/);assert.equal(f.clock.timers.size,0);
+ const writes=f.writes.length;f.first.resolve({version:'late'});await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+ const retry=f.read();const current={version:2};f.second.resolve(current);assert.equal(await retry,current);assert.equal(f.clock.timers.size,0);
 });
 
 function connectionFixture(){
@@ -135,4 +152,11 @@ test('offline during the initial context lookup cancels connection before microp
  const f=connectionFixture();f.sandbox.statusRef.current='idle';f.wait();const cleanup=f.mountDevices();
  const pending=f.connect();f.events.offline();f.pending.resolve(f.sandbox.runtime);await pending;
  assert.equal(f.connections(),0);assert.equal(f.sandbox.statusRef.current,'offline');cleanup();
+});
+test('actual runtime timeout releases connecting without falsely claiming an assignment failure',async()=>{
+ const runtime=fixture(),panel=connectionFixture();panel.sandbox.refreshRuntimeRef.current=runtime.read;
+ const pending=panel.connect();runtime.clock.expire();await pending;
+ assert.equal(panel.connections(),0);assert.equal(panel.writes.at(-2)[1],'error');
+ assert.match(panel.writes.at(-1)[1],/Không xác minh được quyền Voice/);
+ assert.doesNotMatch(panel.writes.at(-1)[1],/assignment/);
 });

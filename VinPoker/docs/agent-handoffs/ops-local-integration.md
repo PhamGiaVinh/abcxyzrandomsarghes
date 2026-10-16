@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Voice runtime read deadline — local RED→GREEN
+
+Baseline05a1d61d4 clean/previousPROGRESS. Actual runtime read had no bound; existing sourcecallback test16PASS1FAIL proves no timer scheduled for hanging loader. Reused unchanged observeTrackerContextRead10s, explicit Vietnamese timeout state, late result cannot publish, no automatic read/mutation retry. Connect now uses current-runtime error or neutral unavailable message, not captured runtimeError/dealer-assignment claim for a failed read.
+
+Final18/18PASS68.42ms/sourceESLint0/diffcheckPASS. Tests execute actual observer with controlled timer asserting10000ms, actual runtime callback and actual panelconnect: timeout clears runtime/error, releases connecting without starting mic, late read ignored, explicit retry succeeds and timers clear. Simulated clock/state/provider, NOT real elapsed/network/React/browser/provider/receipt. Workflow adds actual observer dependency path; existing node invocation unchanged/nodispatch. Underlying HTTP not aborted, only observation bounded. Credential/provider connection awaits beyond context read still not globally deadline-qualified. No production DB/Edge/frontend/flags/Auto/Daybreak change/no processes; localhold/masterACTIVE, fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release remain.
+
 ## Voice offline/device-change actually stops capture — local RED→GREEN
 
 Baseline49fa18f36 clean/previousPROGRESS. Actual mounted device effect previously only changed labels; new effect+connect source tests baseline11PASS2FAIL confirmed no provider disconnect on offline/devicechange. Effect now invalidates connection/runtime-read generations, clears split amount, cancels pending countdown via existing cancel hook, stops mic test/level and disconnects provider; synchronous status ref prevents same-tick countdown using old listening state. Connect marks connecting before initial runtime await so offline there also cancels before permission. No auto reconnect/retry and no claim to cancel already committed canonical writes.

@@ -48,6 +48,7 @@ on:
       - "VinPoker/supabase/functions/tracker-voice-session/**"
       - "VinPoker/supabase/functions/tournament-live-update/index.ts"
       - "VinPoker/src/lib/trackerVoice/**"
+      - "VinPoker/src/lib/tournament/observeTrackerContextRead.ts"
       - "VinPoker/src/components/tracker/voice/**"
       - "VinPoker/src/components/tracker/DealerTabletCockpit*"
       - "VinPoker/src/components/tracker/DealerShotClock*"
