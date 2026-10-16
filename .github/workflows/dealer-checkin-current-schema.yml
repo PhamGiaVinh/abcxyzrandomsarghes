@@ -957,6 +957,14 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql
+          # Cross-module compatibility on the same final candidate, not web acceptance.
+          createdb -T "$PGDATABASE" vinpoker_ops_full111_finish99
+          for failure_case in '' TICKET_FAILURE_CASE; do
+            extra=()
+            if [ -n "$failure_case" ]; then extra=(-v "$failure_case=true"); fi
+            PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true "${extra[@]}" -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          done
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v EXACT_ISSUANCE_CASE=true -f tests/chipOps/colorUpCurrentSchema.pg17.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatcher-due
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatch-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
