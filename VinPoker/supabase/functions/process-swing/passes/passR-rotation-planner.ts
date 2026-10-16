@@ -792,23 +792,27 @@ export async function replanSingleTable(
     }
     const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, [a]);
     if (rejectedTables.size) throw new CandidateSnapshotFailure("query_failed", "rotation_emergency_replan_unverified");
-    for (const slot of liveSlots) {
-      const { data: cancelled, error: cancelError } = await admin.rpc("cancel_rotation_slot", { p_schedule_id: slot.id, p_reason: cancelReason });
-      if (cancelError || cancelled?.outcome !== "cancelled" || cancelled?.schedule_id !== slot.id) {
-        throw new Error("rotation_cancel_unverified");
+    if (liveSlots.length > 0 || a.pre_assigned_attendance_id) {
+      const scheduleIds = liveSlots.map((slot: { id: string }) => slot.id).sort();
+      const { data: prepared, error: prepareError } = await admin.rpc("worker_prepare_emergency_replan_v1", {
+        p_club_id: ctx.clubId, p_table_id: a.table_id, p_table_session_id: a.table_session_id,
+        p_assignment_id: a.id, p_expected_version: a.version,
+        p_incoming_attendance_id: a.pre_assigned_attendance_id, p_schedule_ids: scheduleIds,
+        p_cancel_reason: cancelReason,
+      });
+      if (prepareError || prepared?.outcome !== "prepared" || prepared?.club_id !== ctx.clubId
+        || prepared?.table_id !== a.table_id || prepared?.table_session_id !== a.table_session_id
+        || prepared?.assignment_id !== a.id || prepared?.expected_version !== a.version
+        || prepared?.incoming_attendance_id !== a.pre_assigned_attendance_id
+        || !Array.isArray(prepared?.schedule_ids) || prepared.schedule_ids.length !== scheduleIds.length
+        || !prepared.schedule_ids.every((id: unknown, i: number) => id === scheduleIds[i])
+        || prepared?.cancelled_count !== scheduleIds.length
+        || !Number.isInteger(prepared?.assignment_version) || prepared.assignment_version < a.version) {
+        throw new Error("rotation_emergency_prepare_unverified");
       }
-    }
-    if (a.pre_assigned_attendance_id) {
-      await admin
-        .from("dealer_assignments")
-        .update({
-          pre_assigned_attendance_id: null,
-          pre_assigned_at: null,
-          planned_relief_at: null,
-          is_emergency_pre_assign: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", assignmentId);
+      a.version = prepared.assignment_version;
+      a.pre_assigned_attendance_id = null;
+      a.planned_relief_at = null;
     }
 
     // 2. Pick the replacement with full planner semantics (single-table solve).

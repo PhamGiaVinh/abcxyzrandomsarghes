@@ -221,19 +221,21 @@ it('actual emergency replanner validates before canceling slots or clearing prea
 it.each(['schedule-error','schedule-null','assignment-error','cancel-error','cancel-noop','inactive','verified'] as const)('emergency replan handles snapshot/cancel state %s',async(mode)=>{
  const entryStart=source.indexOf('export async function replanSingleTable(');
  const entry=ts.transpileModule(source.slice(entryStart).replace('export async function','async function'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
- const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','buildRotationSupply','CandidateSnapshotFailure',`${entry};return replanSingleTable;`)(async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),isCandidateSnapshotFailure,async()=>{throw new Error('test_boundary_after_clear');},CandidateSnapshotFailure);
+ const supply=vi.fn(async()=>{throw new Error('test_boundary_after_clear');});
+ const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','buildRotationSupply','CandidateSnapshotFailure',`${entry};return replanSingleTable;`)(async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),isCandidateSnapshotFailure,supply,CandidateSnapshotFailure);
  const update=vi.fn();
- const rpc=vi.fn(async()=>mode==='cancel-error'?{data:null,error:{message:'synthetic outage'}}:{data:mode==='verified'?{outcome:'cancelled',schedule_id:'slot-a'}:{outcome:'noop'},error:null});
+ const rpc=vi.fn(async()=>mode==='cancel-error'?{data:null,error:{message:'synthetic outage'}}:{data:mode==='verified'?{outcome:'prepared',club_id:'club-a',table_id:assignment.table_id,table_session_id:assignment.table_session_id,assignment_id:'assignment-a',expected_version:7,incoming_attendance_id:'incoming-a',assignment_version:8,schedule_ids:['slot-a'],cancelled_count:1}:{outcome:'noop'},error:null});
  const admin={rpc,from:vi.fn(()=>{
   const q={select:vi.fn(),eq:vi.fn(),update,
    in:vi.fn(async()=>({data:mode.startsWith('schedule-')?null:[{id:'slot-a',status:'announced'}],error:mode==='schedule-error'?{message:'synthetic outage'}:null})),
-   maybeSingle:vi.fn(async()=>({data:mode==='assignment-error'||mode==='inactive'?null:{...assignment,id:'assignment-a',status:'assigned',released_at:null,swing_processed_at:null,pre_assigned_attendance_id:'incoming-a'},error:mode==='assignment-error'?{message:'synthetic outage'}:null})),
+   maybeSingle:vi.fn(async()=>({data:mode==='assignment-error'||mode==='inactive'?null:{...assignment,id:'assignment-a',version:7,status:'assigned',released_at:null,swing_processed_at:null,pre_assigned_attendance_id:'incoming-a'},error:mode==='assignment-error'?{message:'synthetic outage'}:null})),
   };q.select.mockReturnValue(q);q.eq.mockReturnValue(q);update.mockReturnValue(q);return q;
  })};
  const result=replan(admin,{clubId:'club-a'},'assignment-a',new Set(),'test');
  if(mode==='inactive')await expect(result).resolves.toEqual({relocked:false,detail:'assignment_no_longer_active'});
  else await expect(result).rejects.toMatchObject({status:'query_failed',errorCode:'rotation_emergency_replan_unverified'});
- expect(update).toHaveBeenCalledTimes(mode==='verified'?1:0);
+ expect(update).not.toHaveBeenCalled();
+ expect(supply).toHaveBeenCalledTimes(mode==='verified'?1:0);
  expect(rpc).toHaveBeenCalledTimes(mode.startsWith('cancel-')||mode==='verified'?1:0);
 });
 it.each(['announce-error','locked-error','persist-error','persist-malformed','persist-rejected','pending','locked'] as const)('emergency dispatch distinguishes failure from business state: %s',async(mode)=>{

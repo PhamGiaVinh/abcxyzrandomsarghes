@@ -73,20 +73,73 @@ if(process.argv.includes('--emergency-stale')){
   async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),async()=>{throw new Error('test_boundary_after_clear');},failures.CandidateSnapshotFailure,failures.isCandidateSnapshotFailure);
  assert.equal(sql(`SELECT count(*) FROM public.table_sessions WHERE id='${t.session}' AND game_table_id='${t.table}' AND club_id='${c.club}' AND closed_at IS NULL AND session_type='cash';`),'1');
  let afterConcurrentLock=null;
- const admin={rpc:async()=>assert.fail('unexpected emergency RPC'),from(table){assert.ok(['dealer_assignments','dealer_rotation_schedule'].includes(table));let patch=null,where=[];
-  const q={select(){return q;},eq(k,v){where.push(`${column(k)}=${quote(v)}`);return q;},update(v){patch=v;return q;},
+ const admin={rpc:async(name,args)=>{
+  assert.equal(name,'worker_prepare_emergency_replan_v1');
+  // A different writer commits AFTER the snapshot and before RPC dispatch.
+  sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${replacement}';
+   UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${replacement}',pre_assigned_at=now(),planned_relief_at=now()+interval '4 minutes' WHERE id='${id}';`);
+  afterConcurrentLock=fingerprint();
+  try{
+   sql(service+`SELECT public.worker_prepare_emergency_replan_v1(${Object.entries(args).map(([k,v])=>column(k)+'=>'+(k==='p_schedule_ids'?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v))).join(',')});`);
+   assert.fail('stale RPC unexpectedly accepted');
+  }catch(e){assert.match(String(e.stderr),/EMERGENCY_REPLAN_SNAPSHOT_CHANGED/);return {data:null,error:{message:'EMERGENCY_REPLAN_SNAPSHOT_CHANGED'}};}
+ },from(table){assert.ok(['dealer_assignments','dealer_rotation_schedule'].includes(table));
+  const q={select(){return q;},eq(){return q;},update(){assert.fail('split assignment write');},
    async in(){assert.equal(table,'dealer_rotation_schedule');return {data:JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM public.dealer_rotation_schedule s WHERE assignment_id='${id}';`)),error:null};},
    async maybeSingle(){return {data:JSON.parse(sql(service+`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}';`)),error:null};},
-   then(resolve,reject){const perform=async()=>{assert.equal(table,'dealer_assignments');assert.ok(patch);
-    // A different writer commits a new lock AFTER the request's snapshot read.
-    sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${replacement}';
-     UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${replacement}',pre_assigned_at=now(),planned_relief_at=now()+interval '4 minutes' WHERE id='${id}';`);
-    afterConcurrentLock=fingerprint();
-    sql(service+`UPDATE public.dealer_assignments SET ${Object.entries(patch).map(([k,v])=>column(k)+'='+quote(v)).join(',')} WHERE ${where.join(' AND ')};`);
-    return {data:null,error:null};};return perform().then(resolve,reject);},
   };return q;}};
  await assert.rejects(replan(admin,{clubId:c.club},id,new Set(),'race_lost'),e=>failures.isCandidateSnapshotFailure(e));
  assert.ok(afterConcurrentLock);assert.equal(fingerprint(),afterConcurrentLock,'late emergency request must not clear a newer incoming lock');
+ console.log('EMERGENCY106_ACTUAL_PLANNER_NATIVE_STALE_LOCK_ZERO_DELTA_PASS');
+ for(const mode of ['legacy','legacy-checked-out','scheduled','no_show','fault']){
+  const f=seed(1),r=f.rows[0],assignment=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${r.table}' AND released_at IS NULL;`);
+  sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${r.table}',pre_assigned_at=now() WHERE id='${r.nextAttendance}';
+   UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${r.nextAttendance}',pre_assigned_at=now() WHERE id='${assignment}';`);
+  if(mode==='legacy-checked-out')sql(service+`UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now() WHERE id='${r.nextAttendance}';`);
+  const slots=[];
+  if(['scheduled','no_show','fault'].includes(mode)){
+   const v=sql(`SELECT version FROM public.dealer_assignments WHERE id='${assignment}';`);
+   const adopted=JSON.parse(sql(service+`SELECT public.worker_adopt_legacy_preassignment_v1('${f.club}','${r.table}','${r.session}','${assignment}',${v},'${r.nextAttendance}','${randomUUID()}');`));
+   assert.equal(adopted.outcome,'adopted');slots.push(adopted.schedule_id);
+  }
+  let faultSlot=null;
+  if(mode==='fault'){
+   faultSlot='ffffffff-ffff-4fff-8fff-'+randomUUID().slice(-12);assert.ok(faultSlot>slots[0]);slots.push(faultSlot);
+   sql(service+`INSERT INTO public.dealer_rotation_schedule(id,club_id,table_id,assignment_id,slot_index,out_attendance_id,in_attendance_id,planned_relief_at,status,is_shortage,plan_run_id,solver_version,reason)
+    VALUES('${faultSlot}','${f.club}','${r.table}','${assignment}',1,'${r.oldAttendance}',NULL,now()+interval '30 minutes','predicted',true,'${randomUUID()}','native-emergency-test','{}');`);
+  }
+  const version=sql(`SELECT version FROM public.dealer_assignments WHERE id='${assignment}';`);
+  const call=`SELECT public.worker_prepare_emergency_replan_v1('${f.club}','${r.table}','${r.session}','${assignment}',${version},'${r.nextAttendance}',${quote('{'+slots.sort().join(',')+'}')}::uuid[],'${mode==='no_show'?'no_show':'race_lost'}');`;
+  const snapshot=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${assignment}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${r.nextAttendance}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE assignment_id='${assignment}'))::text);`);
+  if(mode==='legacy'){
+   const signature='public.worker_prepare_emergency_replan_v1(uuid,uuid,uuid,uuid,integer,uuid,uuid[],text)';
+   assert.equal(sql(`SELECT has_function_privilege('anon','${signature}','EXECUTE') OR has_function_privilege('authenticated','${signature}','EXECUTE');`),'f');
+   assert.equal(sql(`SELECT has_function_privilege('service_role','${signature}','EXECUTE');`),'t');
+   const before=snapshot(),intent=[f.club,r.table,r.session,assignment,Number(version),r.nextAttendance,[],'race_lost'];
+   const serialize=values=>values.map((v,i)=>i===6?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v)).join(',');
+   const repeatedId=randomUUID();
+   for(const [index,value] of [[0,c.club],[1,t.table],[2,t.session],[3,id],[4,Number(version)+1],[5,replacement],[6,[randomUUID()]],[6,[repeatedId,repeatedId]],[7,'unsupported'],[2,null]]){
+    const bad=[...intent];bad[index]=value;
+    sql(service+`DO $$ BEGIN BEGIN PERFORM public.worker_prepare_emergency_replan_v1(${serialize(bad)});RAISE EXCEPTION 'negative accepted';EXCEPTION WHEN invalid_parameter_value THEN NULL;END;END $$;`);
+    assert.equal(snapshot(),before);
+   }
+   sql(service+`SET request.jwt.claim.role='authenticated';SET request.jwt.claims='{"role":"authenticated"}';DO $$ BEGIN BEGIN PERFORM public.worker_prepare_emergency_replan_v1(${serialize(intent)});RAISE EXCEPTION 'role accepted';EXCEPTION WHEN insufficient_privilege THEN NULL;END;END $$;`);
+   assert.equal(snapshot(),before);
+  }
+  if(mode==='fault'){
+   const before=snapshot();
+   assert.throws(()=>sql(`BEGIN;CREATE FUNCTION pg_temp.reject_second_cancel() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'native_second_cancel_fault';END $$;
+    CREATE TRIGGER native_second_cancel_fault BEFORE UPDATE ON public.dealer_rotation_schedule FOR EACH ROW WHEN (OLD.id='${faultSlot}'::uuid) EXECUTE FUNCTION pg_temp.reject_second_cancel();${service}${call}ROLLBACK;`),e=>/EMERGENCY_REPLAN_CANCEL_FAILED/.test(String(e.stderr)));
+   assert.equal(snapshot(),before,'second cancellation error rolls back FIRST cancellation and both marker releases');
+  }else{
+   const result=JSON.parse(sql(service+call));assert.equal(result.outcome,'prepared');assert.deepEqual(result.schedule_ids,slots);assert.equal(result.cancelled_count,slots.length);
+   assert.equal(result.expected_version,Number(version));assert.ok(result.assignment_version>=Number(version));
+   assert.equal(sql(`SELECT pre_assigned_attendance_id IS NULL AND planned_relief_at IS NULL FROM public.dealer_assignments WHERE id='${assignment}';`),'t');
+   assert.equal(sql(`SELECT current_state||'|'||(pre_assigned_table_id IS NULL)::text FROM public.dealer_attendance WHERE id='${r.nextAttendance}';`),`${mode==='legacy-checked-out'?'checked_out':'available'}|true`);
+   if(slots.length)assert.equal(sql(`SELECT status FROM public.dealer_rotation_schedule WHERE id='${slots[0]}';`),mode==='no_show'?'no_show':'cancelled');
+  }
+ }
+ console.log('EMERGENCY106_NATIVE_LEGACY_SCHEDULE_NO_SHOW_AND_MULTI_CANCEL_ROLLBACK_PASS');
 }
 if(process.argv.includes('--adoption')){
  const c=seed(1),r=c.rows[0];
