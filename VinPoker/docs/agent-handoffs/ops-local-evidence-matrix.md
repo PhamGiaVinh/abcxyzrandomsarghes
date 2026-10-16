@@ -113,3 +113,13 @@ or hosted release. Earlier harness assumed issuance occupied conversion ledger;
 corrected to assert initial zero, then preserve actual conversion rows. No data
 reset. Remaining same-tour steps: rotations, break/close/reopen/end; original
 full checks, hosted/375/provider and20×5 performance gates still open.
+# Latest extension — 2026-10-16 same-tour break and reopen
+
+Run19cf5b terminal0/PG stopped, tour50bddf40-6807-4b04-8a80-630f29c25fc6:
+actual hashed4-entry break/replay/conflict, released source assignment/closed
+session,8entries160000 on remaining table, no pending moves. Same physical table
+reopened with a new session/no inherited dealer; old Tracker context rejected;
+new empty session closed/replayed. Cashier/hands/proofs/ledger/anonTV unchanged.
+Native ordinary break only, not deferred same-tour hand-boundary break or final
+tournament close. Still8players. Hosted/375/realrotation/provider/performance and
+required checks/release remain outstanding; Daybreak/Auto unchanged.

@@ -168,5 +168,41 @@ assert.equal(sql(`SELECT count(*) FROM public.color_up_operation WHERE tournamen
 assert.equal(sql(`SELECT count(*) FROM public.chip_bank_ledger WHERE club_id='${f.club}';`),'0');
 assert.equal(operational(),rosterBeforeColor);assert.equal(protectedState(),proofBeforeColor);
 console.log('NATIVE_EIGHT_PAID_SAME_TOUR_COLORUP_RECEIPT_UNDO_CONSERVATION_PASS');
+const breakSource=JSON.parse(sql(`SELECT jsonb_build_object('table',t.id,'physical',t.game_table_id,'session',x.id,'revision',x.revision,'epoch',x.control_epoch)
+ FROM public.tournament_tables t JOIN public.table_sessions x ON x.id=t.table_session_id WHERE t.tournament_id='${f.tour}' AND t.status='active'
+ AND NOT EXISTS(SELECT 1 FROM public.tournament_hands h WHERE h.tournament_table_id=t.id) ORDER BY t.id LIMIT 1;`));
+assert.ok(breakSource.table);
+const cashProof=()=>sql(`SELECT md5(jsonb_build_object('cash',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}'),
+ 'hands',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_hands r WHERE tournament_id='${f.tour}'),
+ 'outcomes',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.tournament_settlement_outcomes r JOIN public.tournament_hands h ON h.id=r.hand_id WHERE h.tournament_id='${f.tour}'))::text);`);
+const cashProofBefore=cashProof();
+const plan=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_plan_break_table_v1('${breakSource.table}',${breakSource.revision},'fill_lowest_table');COMMIT;`));
+assert.equal(plan.ok,true);assert.equal(plan.complete,true);assert.equal(plan.moves.length,4);assert.ok(plan.plan_hash);
+const breakKey=crypto.randomUUID();
+const breakCall=hash=>JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_break_table_v5('${breakSource.table}',${breakSource.revision},'${breakKey}','fill_lowest_table','${hash}');COMMIT;`));
+const broken=breakCall(plan.plan_hash);assert.equal(broken.ok,true);assert.equal(broken.closed,true);assert.equal(broken.moved_count,4);
+const afterBreak=operational(),assignmentAfterBreak=protectedState();
+assert.deepEqual(breakCall(plan.plan_hash),broken);assert.equal(breakCall('different-plan').error,'IDEMPOTENCY_CONFLICT');
+assert.equal(operational(),afterBreak);assert.equal(protectedState(),assignmentAfterBreak);
+assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE table_session_id='${breakSource.session}' AND is_active;`),'0');
+assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
+assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'0');
+assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE tournament_id='${f.tour}' AND status='pending';`),'0');
+assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count)||'|'||count(DISTINCT tournament_table_id) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'8|160000|1');
+const reopened=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_open_tournament_table_v3('${f.tour}','${breakSource.physical}','manual','${crypto.randomUUID()}');COMMIT;`));
+assert.equal(reopened.ok,true);assert.notEqual(reopened.table_session_id,breakSource.session);
+assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${reopened.table_session_id}' AND released_at IS NULL;`),'0','reopened session cannot inherit old dealer');
+const oldContext=JSON.parse(sql(`BEGIN;${auth}SELECT public.validate_tracker_table_writer_context_v3('${f.tour}','${breakSource.table}','${breakSource.session}',${breakSource.epoch});COMMIT;`));
+assert.equal(oldContext.ok,false);assert.equal(oldContext.error,'STALE_TRACKER_CONTEXT');
+const reopenedRevision=sql(`SELECT revision FROM public.table_sessions WHERE id='${reopened.table_session_id}';`);
+const closeKey=crypto.randomUUID();
+const closeEmpty=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${reopened.tournament_table_id}',${reopenedRevision},'${closeKey}');COMMIT;`));
+const closed=closeEmpty();assert.equal(closed.ok,true);assert.deepEqual(closeEmpty(),closed);
+assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${reopened.table_session_id}';`),'t');
+assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`),entryCount);
+assert.equal(cashProof(),cashProofBefore);assert.equal(issuedLedger(),afterUndoLedger);
+const tvAfterBreak=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
+assert.equal(tvAfterBreak.participation_counts.remaining,8);assert.equal(tvAfterBreak.participation_counts.live_entry_stack,160000);
+console.log('NATIVE_EIGHT_PAID_SAME_TOUR_BREAK_CLOSE_REOPEN_SESSION_FENCE_PASS');
 console.log('NATIVE_TWO_TABLE_EIGHT_PAID_FOUR_CHECKIN_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

@@ -1790,3 +1790,29 @@ Local hold remains. Same-tour couplingON is not proven (separate dedicated nativ
 coverage exists). Next: canonical break/close/reopen/end with audit and receipts;
 real rest15 rotations, hosted/browser375/provider/performance/full checks/release
 still required for master completion. No command remains running.
+# 2026-10-16 — Same paid-tour break, close/reopen and stale-session fence
+
+G5/G8 IN_PROGRESS, baseline029814820. Extended canonical same-tour journey:
+complete4-move hashed break preview → actual v5 break → replay identical receipt
+and wrong-hash conflict/no delta. Eight entries/160000 now on one table; source
+has no seats/pending moves, session closed and dealer assignment released.
+Reopen same physical table via canonical RPC creates a new session with no
+inherited assignment. Old Tracker context returns STALE_TRACKER_CONTEXT.
+Canonical empty v4 close/replay closes the new session. Cashier/hands/proofs,
+chip ledger and anonymous TV8/160000 unchanged. No direct seat/session writes.
+
+Native command unchanged: `node candidate111-integration-native.mjs --cash112 --portable115 --paid-tour-roster --existing`.
+Run3dcf0b/29019→19cf5b terminal0, PG stopped. Retained club
+`3ef8b56b-f206-471a-b455-02afa4d0c954`, tour
+`50bddf40-6807-4b04-8a80-630f29c25fc6`, hand
+`9a0ff4a1-3eae-4f87-87c2-7987bb29d027`; remaining active table
+`bd596cd1-771f-4105-afca-00481bd97225`, session
+`33b55171-fb54-4e53-ae4c-7dbe09ad72ed`. Syntax/diff checks pass.
+
+No product edits, live DB/Edge/frontend/flags/UAT/push/CI/deploy changes.
+Local-only resource hold and DaybreakOFF/AutoOFF retained. No running command.
+This is ordinary immediate break, not same-tour deferred active-hand break.
+Still8players: final supported tournament completion is NOT proven. Next inspect
+actual terminal-hand/finish and close readiness, without fabricating eliminations
+or bypassing payout/payroll blockers. Real rotations/hosted/browser375/provider,
+full checks/build/release/performance also remain open. Master ACTIVE.
