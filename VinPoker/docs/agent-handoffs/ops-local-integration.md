@@ -1,5 +1,9 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G4 late config-response recovery contract qualified
+
+Baseline68f060fc9, clean. Existing atomic config implementation inspected rather than rewritten. Two new focused transport regressions PASS BEFORE any product change: after mutation deadline a verified receipt wins over contradictory late writer rejection; after both mutation/read deadlines, a late success does not settle the already-unknown call or cause another mutation, and explicit recovery uses the original actor/request. Full affected file13 tests PASS36a8e1 exit0 (single worker, 1.97s); no new product bug claimed. This proves client Promise/timer/receipt behavior with mocked transport, NOT real HTTP response loss, DB commit or web UAT. Existing native atomic/concurrency proofs remain separate. No full build/typecheck under RAM hold, no push/CI/DBlive/Edge/frontend/flags/UAT change. Master active; G4 web acceptance and G8/G9 still outstanding.
+
 ## G3 canonical empty-table dispatcher selector: local RED → GREEN
 
 Baseline 85097cae4. Actual authenticated open-table RPC created a valid cash session with zero attendance/assignments; canonical inventory returned one table but old get_process_swing_due_club_ids omitted its approved AutoON club (RED b8ae09). Forward-only migration 20270128000111 adds canonical in_use exact-session inventory as an OR branch, preserving prior attendance/assignment/rotation predicates, approved/AutoON gates, signature, owner, config and worker-only ACL. Pins prior selector digest 8657d9e571259baf98634a01038a9705 and inventory 8d75ddb69e4639aabaa9b3347b3cc921; new selector digest 2acb0165e3e05a000cde66a857597b72. No assignment, rest, payroll or flag change. Local catalog111 absent from origin/main tree; live collision/dependency checks remain release requirements.

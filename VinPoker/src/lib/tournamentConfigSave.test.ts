@@ -9,6 +9,40 @@ const request: TournamentConfigSaveRequest = {
 };
 const success={ok:true,tournament:{id:'tour',club_id:'club',updated_at:'2026-10-15T00:00:00Z'}};
 describe('atomic config client contract',()=>{
+ it('uses the verified receipt after timeout and ignores a contradictory late writer response',async()=>{
+  vi.useFakeTimers();
+  try {
+   let respond!:(value:{data:unknown;error:unknown})=>void;
+   const rpc=vi.fn().mockReturnValueOnce(new Promise(resolve=>{respond=resolve;}))
+    .mockResolvedValueOnce({data:success,error:null});
+   const pending=saveTournamentConfig(rpc,request);
+   await vi.advanceTimersByTimeAsync(20001);
+   expect(await pending).toEqual(success.tournament);
+   respond({data:{ok:false,error:'STALE_CONFIG'},error:null});
+   await vi.advanceTimersByTimeAsync(20001);
+   expect(await pending).toEqual(success.tournament);
+   expect(rpc.mock.calls.map(c=>c[0])).toEqual(['save_tournament_config_v1','get_tournament_config_save_receipt_v1']);
+   expect(rpc.mock.calls[1][1]).toEqual({p_request_id:request.p_request_id,p_expected_actor_id:request.p_expected_actor_id});
+   expect(vi.getTimerCount()).toBe(0);
+  } finally {vi.useRealTimers();}
+ });
+ it('keeps an unknown outcome after both deadlines until explicit receipt reconciliation',async()=>{
+  vi.useFakeTimers();
+  try {
+   let respond!:(value:{data:unknown;error:unknown})=>void;
+   const rpc=vi.fn().mockReturnValueOnce(new Promise(resolve=>{respond=resolve;}))
+    .mockReturnValueOnce(new Promise(()=>{})).mockResolvedValueOnce({data:success,error:null});
+   const pending=saveTournamentConfig(rpc,request);
+   const rejected=expect(pending).rejects.toMatchObject({outcomeUnknown:true});
+   await vi.advanceTimersByTimeAsync(40001);await rejected;
+   respond({data:success,error:null});await vi.advanceTimersByTimeAsync(1);
+   expect(rpc).toHaveBeenCalledTimes(2);
+   expect(await recoverTournamentConfigSave(rpc,request)).toEqual(success.tournament);
+   expect(rpc.mock.calls.filter(c=>c[0]==='save_tournament_config_v1')).toHaveLength(1);
+   expect(rpc.mock.calls[2][1]).toEqual(rpc.mock.calls[1][1]);
+   expect(vi.getTimerCount()).toBe(0);
+  } finally {vi.useRealTimers();}
+ });
  it('preserves a changed request and requires durable readback before dispatch',()=>{
   sessionStorage.clear();const intent={...request,p_request_id:'ee800000-0000-4000-8000-000000000081'};
   const key=tournamentConfigJournalKey(intent.p_expected_actor_id,intent.p_club_id,null);
