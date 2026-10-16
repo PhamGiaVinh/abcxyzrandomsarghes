@@ -70,6 +70,7 @@ function v3ErrorMessage(error: string): string {
     case "destination_table_has_active_hand": return "Bàn đích đang có ván chạy nên chưa thể chuyển người.";
     case "destination_hand_not_active": return "Ván Tracker vừa kết thúc. Hãy tải lại và chuyển người ngay.";
     case "pending_move_conflict": return "Người chơi hoặc ghế này đã có yêu cầu chuyển chờ xử lý. Hãy tải lại.";
+    case "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED": return "Chưa xác nhận được kết quả hủy chuyển. Hãy kiểm tra trạng thái ghế sau khi tải lại; không tự gửi lại yêu cầu.";
     case "source_table_busy": return "Bàn nguồn đang có ván hoặc không ở chế độ Manual. Hãy kết thúc ván nguồn trước.";
     case "chip_state_mismatch": return "Chip ở ghế và hồ sơ giải chưa khớp. Hãy làm mới rồi kiểm tra trước khi chuyển.";
     case "seat_reserved_pending_move": return "Ghế đích đang được giữ cho một người chờ hết ván.";
@@ -359,7 +360,11 @@ function ScopedFloorTableMapPanelV3({
           <div className="min-w-0 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm">
             <p className="font-medium">Chờ hết ván · Bàn {pendingDestination?.tableNumber ?? "—"} · Ghế {pendingForEntry.destinationSeatNumber}</p>
             <p className="mt-1 text-xs text-muted-foreground">Người chơi vẫn ở ghế hiện tại. Hệ thống sẽ chuyển sau ván Tracker.</p>
-            <Button data-ops-action="floor.player.cancel_pending_move" variant="outline" className="mt-3 min-h-12 w-full" disabled={busy} onClick={() => void run("Đã hủy chuyển sau ván.", () => v3.cancelPendingTrackerMove(pendingForEntry.pendingMoveId))}>Hủy chuyển</Button>
+            <Button data-ops-action="floor.player.cancel_pending_move" variant="outline" className="mt-3 min-h-12 w-full" disabled={busy} onClick={() => void run((data) => data.status === "cancelled"
+              ? "Đã hủy chuyển sau ván."
+              : data.status === "applied" ? "Người chơi đã chuyển ghế trước khi hủy. Không có thao tác hủy mới."
+                : "Yêu cầu chuyển đã hết hiệu lực. Không có thao tác hủy mới.",
+            () => v3.cancelPendingTrackerMove(pendingForEntry.pendingMoveId))}>Hủy chuyển</Button>
           </div>
         )}
         {staleForEntry && !pendingForEntry && (

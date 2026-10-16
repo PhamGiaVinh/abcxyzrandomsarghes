@@ -2214,3 +2214,51 @@ flags/Auto/push/deploy/UAT; DaybreakOFF/localhold unchanged. Goal ACTIVE/PROGRES
 Remaining original gaps include mixed deferred cancellation/failure/concurrency,
 setup-first UI, realrotations/hosted40/provider/Storage/performance/fullchecks and
 review/recovery/livecatalog/release. Do not rerun this passing local tour blindly.
+
+## 2026-10-16 — Canonical Finish/cancel real overlap and truthful Floor result
+
+Baselinef1eb45521; origin/main fetched unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+Audit found prior deferred suite already covered apply+cancel and separate ticket
+failure, and producer/start overlap, but not canonical Finish vs cancel overlap.
+Added paidDeferredCancel.concurrent.mjs reusing paidJourney+paidActiveHand SQL
+canonical setup. Captures exact generated Finish intent in pg_temp before writer,
+commits owned local fixture; no direct hand/entry/seat/payment insert. Four paid
+registrations,3active entries/60000 chips, one paid waiting registration; two
+actual hand players, one queued outsider, pending Manual request. Not staffed or
+actual poker provider/settlement proof (manual no-op Finish, original fixture).
+Cancel-first: holder idle with real uncommitted tournament lock; Finish uses
+NOWAIT by contract, returns manual_finish_busy without changing hand/players/
+actions/entries/seats/sessions/queue/cash or creating receipt. Then holder commits
+and explicit caller retry SAME intent/key completes; move cancelled/source retained.
+Finish-first: real writer and immediate constraint consumer execute while holder
+transaction stays open; cancel blocks on real Lock barrier until commit, then
+reports already_resolved/applied. Exact seat/stack/entry IDs/frozen2-player hand/
+Manual epoch advance/no pending mode/cash unchanged; Finish and cancel retries
+no second effect. Outsider cancel denied/no delta; cancelled occupied source
+cannot close. Both connections roll back/close in finally, bounded timeouts.
+Initial1723db/31190→4d83c1 barrier expectation failed; diagnostics4bdadb/30418→d3f825
+confirmed deliberate NOWAIT/manual_finish_busy, NOT product deadlock. Corrected
+expectation based on reviewed95 contract, not removing overlap assertion. First
+both-orderPASSa5a6d8; final strengthened full fingerprint b4a7da/98722→243792,
+terminal0/PGstopped. Tours779e3414-1415-4e9d-a3f2-dace81e8562f and
+6e589c7c-02fe-4b14-bef0-983d82b5e0ac, retained audit. No DB function/ACL change.
+
+Actual source finding FLOOR-DEFERRED-CANCEL-UI-01: Floor cancellation button used
+unconditional success copy even for DB's applied/stale terminal return. SDK generic
+mutation parser also accepted unknown status. Added actual component regressions
+plus SDK cases: before fix7RED/7PASS/74SKIP (f27c6d terminal1). Candidate method
+accepts only cancelled/applied/stale, unknown successful status becomes explicit
+malformed error. Existing run success callback now displays actual terminal fact;
+unknown outcome shows Vietnamese verification error, read refresh/no automatic retry.
+Same RPC/ID/count/actor/server authorization/seat/chip write path unchanged.
+Final affected two files88/88PASS3c0c4f; added unknown-result UI case afterward,
+focused6PASS/36SKIP2f673b. No claim full89test rerun on final test-only extension.
+ESLint four affected files0errors/1warning4a5d64; exact HEAD stdin baseline proves
+same readSequence cleanup warning8d554d, not introduced by this diff. Syntax/YAML/
+diff pass. UI skill used explicit result/error states only; no layout redesign.
+UI-root CLI absent, existing frontend-ui-engineering fallback, no install.
+CI native race command/path prepared and existing UI suites already included;
+no dispatch/fulltypecheck/build/browser375/deployment/production DB/Edge/flags/UAT.
+Resource localhold and DaybreakOFF unchanged; no Auto/payroll/rest/payout change.
+Same-hand ranking policy/release hold still open. Goal ACTIVE/PROGRESS; mixed
+multi-move cancel+per-entry apply fault in same batch remains a distinct gap.

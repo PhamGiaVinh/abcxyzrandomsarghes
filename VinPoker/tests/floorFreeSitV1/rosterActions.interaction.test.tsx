@@ -55,7 +55,7 @@ vi.mock("@/components/cashier/tournament-live/MovePlayerDialog", () => ({ MovePl
     <button onClick={props.onMoved}>Đặt chờ canonical</button></div> : null;
 } }));
 
-function setup(options: { pendingNetworkFailure?: boolean } = {}) {
+function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean } = {}) {
   vi.clearAllMocks();
   sessionStorage.clear();
   fixture.actor = "owner-a";
@@ -81,7 +81,11 @@ function setup(options: { pendingNetworkFailure?: boolean } = {}) {
   fixture.client.requestTableControlMode.mockResolvedValue({ ok: true, data: { outcome: "applied" } });
   fixture.client.cancelTableControlModeRequest.mockResolvedValue({ ok: true, data: { outcome: "cancelled" } });
   if (options.pendingNetworkFailure) fixture.client.getPendingTrackerMoves.mockRejectedValue(new Error("offline"));
-  else fixture.client.getPendingTrackerMoves.mockResolvedValue({ ok: true, data: [] });
+  else fixture.client.getPendingTrackerMoves.mockResolvedValue({ ok: true, data: options.pendingMove ? [{
+    pendingMoveId: "pending-1", entryId: "entry-1", sourceTournamentTableId: "table-1",
+    destinationTournamentTableId: "table-2", destinationSeatNumber: 2, status: "pending",
+    resolutionReason: null, requestedAt: "2026-10-16T00:00:00Z",
+  }] : [] });
   fixture.client.planBreakTable.mockResolvedValue({ ok: true, data: {
     planHash: "plan-hash-1", complete: true,
     sourceTournamentTableId: "table-1", sourceTableNumber: 4, expectedRevision: 3,
@@ -133,6 +137,31 @@ async function submitMode() {
 }
 
 describe("Floor roster mobile actions", () => {
+  it("does not announce cancellation or retry when its result cannot be verified", async () => {
+    const view = setup({ pendingMove: true });
+    fixture.client.cancelPendingTrackerMove.mockResolvedValue({ ok: false, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" });
+    try {
+      await openTableSheet();fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Hủy chuyển", exact: true }));
+      await waitFor(() => expect(fixture.errorToast).toHaveBeenCalledWith("Chưa xác nhận được kết quả hủy chuyển. Hãy kiểm tra trạng thái ghế sau khi tải lại; không tự gửi lại yêu cầu."));
+      expect(fixture.successToast).not.toHaveBeenCalled();expect(fixture.client.cancelPendingTrackerMove).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); }
+  });
+  it.each([
+    ["cancelled", "Đã hủy chuyển sau ván."],
+    ["applied", "Người chơi đã chuyển ghế trước khi hủy. Không có thao tác hủy mới."],
+    ["stale", "Yêu cầu chuyển đã hết hiệu lực. Không có thao tác hủy mới."],
+  ])("reports the actual %s cancellation outcome instead of inventing a cancellation", async (status, message) => {
+    const view = setup({ pendingMove: true });
+    fixture.client.cancelPendingTrackerMove.mockResolvedValue({ ok: true, data: { ok: true, status, already_resolved: status !== "cancelled" } });
+    try {
+      await openTableSheet();fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Hủy chuyển", exact: true }));
+      await waitFor(() => expect(fixture.successToast).toHaveBeenCalledWith(message));
+      expect(fixture.client.cancelPendingTrackerMove).toHaveBeenCalledExactlyOnceWith("pending-1");
+      expect(fixture.client.movePlayerSeat).not.toHaveBeenCalled();expect(fixture.client.queueTrackerMove).not.toHaveBeenCalled();
+    } finally { view.unmount(); }
+  });
   it("allows the table toolbar to wrap inside narrow Floor cards", async () => {
     const redrawEnabled = FEATURES.floorRedrawSeatLockV1;
     FEATURES.floorRedrawSeatLockV1 = true;

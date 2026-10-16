@@ -1015,7 +1015,15 @@ export function createFloorTableControlV3Client(
 
     cancelPendingTrackerMove: (pendingMoveId: string) =>
       deferredTrackerMoveEnabled
-        ? call("floor_cancel_pending_tracker_move_v1", { p_pending_move_id: pendingMoveId }).then(mutationFromResponse)
+        ? call("floor_cancel_pending_tracker_move_v1", { p_pending_move_id: pendingMoveId }).then((response) => {
+          const result = mutationFromResponse(response);
+          if (result.ok === false) return result;
+          const status = result.data.status;
+          if (status !== "cancelled" && status !== "applied" && status !== "stale") {
+            return { ok: false as const, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" };
+          }
+          return result;
+        })
         : Promise.resolve({ ok: false as const, error: "FLOOR_DEFERRED_TRACKER_MOVE_V1_DISABLED" }),
 
     closeTournamentTable: (args: { tournamentTableId: string; expectedRevision: number; requestId: string }) =>

@@ -3,6 +3,22 @@ import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "./
 // Test the locked SDK transport itself, with synthetic tokens and custom fetch.
 import { fetchWithAuth } from "../../node_modules/@supabase/supabase-js/src/lib/fetch";
 
+describe("deferred move cancellation terminal outcomes", () => {
+  it.each(["cancelled", "applied", "stale"])("retains the server %s outcome", async (status) => {
+    const data = { ok: true, status, already_resolved: status !== "cancelled" };
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, deferredTrackerMoveEnabled: true });
+    expect(await client.cancelPendingTrackerMove("pending-a")).toEqual({ ok: true, data });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("floor_cancel_pending_tracker_move_v1", { p_pending_move_id: "pending-a" });
+  });
+  it.each([undefined, null, "pending", "unknown", 1])("does not accept unknown successful cancellation status %s", async (status) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ok: true, status }, error: null });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, deferredTrackerMoveEnabled: true });
+    expect(await client.cancelPendingTrackerMove("pending-a")).toEqual({ ok: false, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("manual participant exact-session transport", () => {
   const intent = { actorId: "actor-a", tournamentId: "tour-a", tableId: "tt-a", sessionId: "session-a",
     name: "TEST One", seat: 1, revision: 4, epoch: 2, requestId: "request-a" };

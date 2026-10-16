@@ -21,6 +21,7 @@ on:
       - 'VinPoker/supabase/functions/tournament-reentry/**'
       - 'VinPoker/tests/cashier/paidJourney*'
       - 'VinPoker/tests/cashier/paidSeatingClose*'
+      - 'VinPoker/tests/cashier/paidDeferredCancel.concurrent.mjs'
       - 'VinPoker/tests/cashier/paidSeatLocks*'
       - 'VinPoker/tests/cashier/paidActiveHand*'
       - 'VinPoker/tests/cashier/reentry*'
@@ -1110,6 +1111,7 @@ jobs:
           VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_CHAIN=1 node tests/chipOps/paidColorUpCommit.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_COUPLED=1 VINPOKER_CHIP_COMMIT_CHAIN=1 node tests/chipOps/paidColorUpCommit.native.mjs
           node tests/cashier/paidSeatingClose.concurrent.mjs
+          VINPOKER_NATIVE_DEFERRED_CANCEL=1 node tests/cashier/paidDeferredCancel.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap
           PGDATABASE=vinpoker_ops_reentry115_overlap node tests/cashier/reentryRegistration.concurrent.mjs
