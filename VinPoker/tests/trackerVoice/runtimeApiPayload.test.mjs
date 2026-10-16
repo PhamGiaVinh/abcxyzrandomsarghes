@@ -218,6 +218,26 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  jsonb_build_object('kind','board','intent_domain','board','canonical_request',jsonb_build_object('intentDomain','board')),
  state,'assist',k||'-board','native-board-trace');
  IF board_receipt->>'ok' IS DISTINCT FROM 'true' OR board_receipt ? 'alert_id' THEN RAISE EXCEPTION 'native_board_receipt_shape: %',board_receipt;END IF;
+ command:=jsonb_build_object('kind','board','intent_domain','board','canonical_request',jsonb_build_object('intentDomain','board'));
+ replay:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-board','Flop ace hearts five spades two diamonds',command,state,'assist',k||'-board','native-board-retry');
+ IF replay IS DISTINCT FROM board_receipt||jsonb_build_object('duplicate',true) THEN RAISE EXCEPTION 'native_board_replay_changed_receipt: %',replay;END IF;
+ PERFORM set_config('role','none',true);
+ SELECT jsonb_build_object('hand',to_jsonb(row),'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tracker_voice_events e WHERE e.hand_id=h.id)) INTO action_state FROM public.tournament_hands row WHERE id=h.id;
+ PERFORM set_config('role','service_role',true);
+ replay:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-board','Different transcript',command,state,'assist',k||'-board','native-board-conflict');
+ IF replay->>'error' IS DISTINCT FROM 'idempotency_mismatch' THEN RAISE EXCEPTION 'native_board_conflict_accepted: %',replay;END IF;
+ replay:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-board-stale','Flop ace hearts five spades two diamonds',command,
+ CASE WHEN state=repeat('a',64) THEN repeat('b',64) ELSE repeat('a',64) END,'assist',k||'-board-stale','native-board-stale');
+ IF replay->>'error' IS DISTINCT FROM 'stale_state_version' THEN RAISE EXCEPTION 'native_board_stale_accepted: %',replay;END IF;
+ replay:=public._tracker_voice_register_validated_board_event(gen_random_uuid(),'${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-board-outsider','Flop ace hearts five spades two diamonds',command,state,'assist',k||'-board-outsider','native-board-outsider');
+ IF replay->>'ok' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'native_board_outsider_accepted: %',replay;END IF;
+ PERFORM set_config('role','none',true);
+ IF action_state IS DISTINCT FROM (SELECT jsonb_build_object('hand',to_jsonb(row),'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tracker_voice_events e WHERE e.hand_id=h.id)) FROM public.tournament_hands row WHERE id=h.id)
+ THEN RAISE EXCEPTION 'native_board_denial_changed_hand_or_events';END IF;
  RAISE SQLSTATE 'PZ003' USING MESSAGE='native_board_root_receipt_rollback';
  EXCEPTION WHEN SQLSTATE 'PZ003' THEN NULL;
  END;

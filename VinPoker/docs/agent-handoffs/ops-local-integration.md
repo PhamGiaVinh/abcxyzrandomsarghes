@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Board root replay/conflict/stale/outsider native qualification
+
+Baseline14b4db387 clean; prior turn PROGRESS. Extended existing native paid journey (no product/schema change): actual Board root replay with new trace retains original receipt plus duplicate:true; same key/different transcript rejects idempotency_mismatch; wrong state with fresh key rejects stale_state_version; unknown actor rejected. Exact hand+all Voice events JSON unchanged by replay-denial sequence. Root remains subtransaction rollback before existing action assertions; final whole-journey fingerprint retained.
+
+Native dfc156 terminal0/13PASS2.493s, PG stopped. SQL service-normalized fixture only, not Edge grammar/workflow, microphone, real HTTP loss or durable Board COMMIT proof. Supabase skill read; changelog fetched using PowerShell after web markdown transport unsupported; no Supabase API/library/schema change. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. G6/G8 IN_PROGRESS; local-only hold persists. Next: qualify Board canonical commit through a legitimate workflow state, including assignment/session invalidation, without substituting root registration for commit evidence.
+
 ## Board receipt compatibility regression caught before release
 
 Baseline cf907b981 validation guard incorrectly required alert_id:null on Board validated receipts; original SQL deliberately omits that field. Local regression only, never released. Normalize omitted alert_id only for explicit Board validated response; action/alert-opened omissions remain rejected, all request/proof/mode fences retained. Receipt unit RED17/18 then GREEN18/18; scoped api ESLint0 and diffcheck PASS.
