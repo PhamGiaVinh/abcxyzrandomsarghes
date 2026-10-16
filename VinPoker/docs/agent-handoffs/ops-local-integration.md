@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Actual action INSERT/replay/conflict and completed void endpoint local PASS
+
+Baselinebb42c5e23 clean; previous turn PROGRESS, goal API active. Expanded verified paid fixture before canonical Finish with savepoint-isolated authenticated record_action: first INSERT success and revision advance; same key/payload duplicate without revision/count delta; changed amount same key idempotency_key_conflict; spoofed p_user_id actor_mismatch. Savepoint restores original empty actions/revision, then existing canonical Finish/worker computes verified result. No application changes or alternate hand/outcome insert.
+
+Extended actual verified-hand test to call void_last_hand as paid player (not operational role) and owner. Final0dfe81 exit0 PASS after tightening oracle: denied player's full hand/actions/players/tour/entries/seats/cash/counts/proofs/queue fingerprint unchanged INSIDE transaction before rollback. Owner success advances revision, removes verified proof/public winner and restores hand participants' entry/seat/count stacks to starting_stack. Every probe rollback restores full business/source/projection fingerprint. Earlier44cad9 and5bc4c9 passed prior assertions; final strengthens zero-delta proof. Syntax/diff PASS, PG stopped; no live handle.
+
+These are real authenticated DB RPC tests, not hosted Edge/Auth HTTP/browser proof; no concurrent action race/undo capability proof yet. CI existing verified command consumes expanded fixture/test, not dispatched. No push/live DB/Edge/frontend/flags/Auto/Daybreak; local-only remains. Next actual undo/card endpoint scope and parent client read orchestration; full provider/fulltour/performance/release still required, master incomplete.
+
 ## Source trigger matrix on genuinely verified paid hand PASS
 
 Baseline36012524e; prior turn PROGRESS. Expanded existing --identity-revision native worker case, no application/schema change. Seven independent rollback-only privileged source probes: hand_actions amount UPDATE and DELETE; hand_players hole_cards and ending_stack UPDATE; tournament_hands board, big blind and void UPDATE. 3ccba8 exit0 PAID_VERIFIED_SOURCE_TRIGGER_MUTATION_MATRIX_PASS: every vector advances revision, removes verified proof and prevents old verified public output; nonvoid vectors also require one queue row for current generation. Each rollback compares original hand/seats/cash plus full action/player rows. Reuses real paid registration/Finish and actual worker/verifier proof, not inserted synthetic outcome. Syntax/diff checks PASS, PG stopped.

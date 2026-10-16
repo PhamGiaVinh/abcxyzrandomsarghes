@@ -72,6 +72,38 @@ BEGIN
  IF (SELECT count(*)=2 AND sum(starting_stack)=40000 FROM public.hand_players WHERE hand_id=hand) IS NOT TRUE THEN
   RAISE EXCEPTION 'paid_roster_not_frozen_correctly';END IF;
  -- Third player pays during the actual in-progress hand.
+ IF current_setting('test.paid_verified_hand')='true' THEN
+  -- Actual authenticated action endpoint, isolated savepoint: the canonical
+  -- Finish below still receives its original clean action list.
+  DECLARE action_player record; action_revision bigint; inserted_revision bigint;
+   action_key text:='paid-action-endpoint-'||gen_random_uuid(); action_reply jsonb;
+  BEGIN
+   SELECT player_id,entry_number INTO STRICT action_player FROM public.hand_players WHERE hand_id=hand ORDER BY seat_number LIMIT 1;
+   SELECT source_revision INTO action_revision FROM public.tournament_hands WHERE id=hand;
+   BEGIN
+    PERFORM set_config('role','authenticated',true);
+    action_reply:=public.record_action(hand,action_player.player_id,'check',1,action_player.entry_number,'preflop',0,action_key,NULL,actor);
+    IF action_reply->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'paid_action_endpoint_failed: %',action_reply;END IF;
+    PERFORM set_config('role','none',true);
+    SELECT source_revision INTO inserted_revision FROM public.tournament_hands WHERE id=hand;
+    IF inserted_revision<=action_revision OR (SELECT count(*) FROM public.hand_actions WHERE hand_id=hand AND idempotency_key=action_key)<>1 THEN
+     RAISE EXCEPTION 'paid_action_revision_or_count_failed';END IF;
+    PERFORM set_config('role','authenticated',true);
+    action_reply:=public.record_action(hand,action_player.player_id,'check',1,action_player.entry_number,'preflop',0,action_key,NULL,actor);
+    IF action_reply->>'duplicate' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_action_replay_failed: %',action_reply;END IF;
+    action_reply:=public.record_action(hand,action_player.player_id,'check',1,action_player.entry_number,'preflop',1,action_key,NULL,actor);
+    IF action_reply->>'error' IS DISTINCT FROM 'idempotency_key_conflict' THEN RAISE EXCEPTION 'paid_action_payload_conflict_missing: %',action_reply;END IF;
+    action_reply:=public.record_action(hand,action_player.player_id,'check',2,action_player.entry_number,'preflop',0,action_key||'-spoof',NULL,action_player.player_id);
+    IF action_reply->>'error' IS DISTINCT FROM 'actor_mismatch' THEN RAISE EXCEPTION 'paid_action_actor_binding_missing: %',action_reply;END IF;
+    PERFORM set_config('role','none',true);
+    IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>inserted_revision
+     OR (SELECT count(*) FROM public.hand_actions WHERE hand_id=hand)<>1 THEN RAISE EXCEPTION 'paid_action_retry_mutated_source';END IF;
+    RAISE SQLSTATE 'PZ002';
+   EXCEPTION WHEN SQLSTATE 'PZ002' THEN NULL;END;
+   IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>action_revision
+    OR EXISTS(SELECT 1 FROM public.hand_actions WHERE hand_id=hand) THEN RAISE EXCEPTION 'paid_action_probe_not_rolled_back';END IF;
+  END;
+ END IF;
  player:=gen_random_uuid();INSERT INTO auth.users(id) VALUES(player);
  PERFORM set_config('request.jwt.claim.role','service_role',true);
  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);

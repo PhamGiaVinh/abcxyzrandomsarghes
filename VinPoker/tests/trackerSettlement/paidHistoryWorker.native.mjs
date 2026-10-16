@@ -197,6 +197,40 @@ if(process.argv.includes('--identity-revision')){
   assert.equal(business(),before,name+' business rollback');assert.equal(sourceRows(),originalRows,name+' source rollback');
  }
  console.log('PAID_VERIFIED_SOURCE_TRIGGER_MUTATION_MATRIX_PASS');
+ const projectionQuery=`SELECT jsonb_build_object('tour',(SELECT to_jsonb(t) FROM public.tournaments t WHERE id='${fixture.tour}'),
+  'hand',(SELECT to_jsonb(h) FROM public.tournament_hands h WHERE id='${hand}'),
+  'actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a WHERE hand_id='${hand}'),
+  'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.hand_players p WHERE hand_id='${hand}'),
+  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${fixture.tour}'),
+  'money',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}'),
+  'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id='${fixture.tour}'),
+  'counts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.tournament_chip_counts c WHERE tournament_id='${fixture.tour}'),
+  'proofs',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM public.tournament_settlement_outcomes o WHERE hand_id='${hand}'),
+  'queue',(SELECT jsonb_agg(to_jsonb(q) ORDER BY source_revision) FROM public.tracker_historical_display_queue q WHERE hand_id='${hand}'))`;
+ const projection=()=>sql(projectionQuery);
+ const originalProjection=projection();
+ for(const actor of [fixture.player,fixture.actor]){
+  const probe=JSON.parse(sql(`BEGIN;CREATE TEMP TABLE void_before AS SELECT (${projectionQuery}) snapshot;
+   SET LOCAL request.jwt.claim.sub='${actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${actor}"}';SET LOCAL ROLE authenticated;
+   CREATE TEMP TABLE void_probe AS SELECT public.void_last_hand('${hand}') receipt;RESET ROLE;
+   SELECT jsonb_build_object('receipt',(SELECT receipt FROM void_probe),'unchanged',(SELECT snapshot=(${projectionQuery}) FROM void_before),
+    'revision',(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}'),
+    'voided',(SELECT is_voided FROM public.tournament_hands WHERE id='${hand}'),
+    'verified',(SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified'),
+    'restored',(SELECT bool_and(e.current_stack=hp.starting_stack AND s.chip_count=hp.starting_stack AND c.chip_count=hp.starting_stack)
+      FROM public.hand_players hp JOIN public.tournament_entries e ON e.tournament_id='${fixture.tour}' AND e.player_id=hp.player_id AND e.entry_no=hp.entry_number
+      JOIN public.tournament_seats s ON s.entry_id=e.id AND s.is_active
+      JOIN public.tournament_chip_counts c ON c.tournament_id=e.tournament_id AND c.player_id=e.player_id AND c.entry_number=e.entry_no WHERE hp.hand_id='${hand}'),
+    'public',(SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL)));ROLLBACK;`));
+  if(actor===fixture.actor){
+   assert.equal(probe.receipt.status,'success',JSON.stringify(probe));assert.equal(probe.voided,true);
+   assert.ok(probe.revision>revision);assert.equal(probe.verified,0);assert.equal(probe.restored,true);
+   assert.ok(!probe.public.items.some(item=>item.result?.status==='verified'));
+  }else{assert.equal(probe.receipt.error,'actor_not_allowed');assert.equal(probe.unchanged,true,'denied void must have zero delta before rollback');assert.equal(probe.revision,revision);assert.equal(probe.voided,false);assert.equal(probe.verified,1);}
+  assert.equal(business(),before,'void endpoint rollback business');assert.equal(sourceRows(),originalRows,'void endpoint rollback source');
+  assert.equal(projection(),originalProjection,'void endpoint rollback projections/proofs/queue');
+ }
+ console.log('PAID_VERIFIED_VOID_ENDPOINT_OWNER_PLAYER_AUTH_PROJECTIONS_PASS');
 }
 const observed=calls.length;
 for(const [credential,body,status,expectedCode] of [
