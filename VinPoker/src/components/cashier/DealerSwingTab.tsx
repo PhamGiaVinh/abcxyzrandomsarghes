@@ -2034,12 +2034,13 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       {user?.id && activeClubId && <ManualAssignmentRecovery actorId={user.id} clubId={activeClubId}
         revision={manualAssignJournalRevision} blocked={assigning}
         invoke={(body) => supabase.functions.invoke("assign-dealer", {body})}
-        onSettled={(intent) => {
+        onSettled={(intent, result) => {
           const scope = JSON.stringify([intent.expected_actor_id, intent.expected_club_id, intent.table_id, intent.table_session_id, intent.force_dealer_id]);
           if (manualAssignRequests.current.get(scope) === intent.idempotency_key) manualAssignRequests.current.delete(scope);
           if (modalTable === intent.table_id && tables.find((table) => table.id === modalTable)?.table_session_id === intent.table_session_id) setModalTable(null);
           setManualAssignJournalRevision((value) => value + 1);
-          toast.success("Đã đối chiếu yêu cầu gán dealer.");
+          if (result === "obsolete") toast.info("Yêu cầu cũ đã hết hiệu lực, không có gán dealer được xác nhận cho request này.");
+          else toast.success("Đã đối chiếu yêu cầu gán dealer.");
           return Promise.all([refetchAssignments(), refetchDealers()]);
         }}
       />}

@@ -13,8 +13,8 @@ it("restores an old journal without table cache or automatic writes",async()=>{
  const p=props();p.invoke.mockResolvedValue(receipt());render(<ManualAssignmentRecovery {...p}/>);
  expect(screen.getByText(/Phiên/)).toHaveTextContent(intent.table_session_id);expect(p.invoke).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Đối chiếu yêu cầu gán"}));
- await waitFor(()=>expect(p.onSettled).toHaveBeenCalledWith(intent));expect(sessionStorage.getItem(key)).toBeNull();
- expect(p.invoke.mock.calls.map(c=>c[0])).toEqual([{...intent,mode:"receipt"}]);
+ await waitFor(()=>expect(p.onSettled).toHaveBeenCalledWith(intent,"committed"));expect(sessionStorage.getItem(key)).toBeNull();
+ expect(p.invoke.mock.calls.map(c=>c[0])).toEqual([{mode:"receipt",assignment_intent:intent}]);
 });
 it("only an explicit retry after a second missing lookup sends the original intent",async()=>{
  const p=props();p.invoke.mockResolvedValueOnce(receipt(intent,"receipt_not_found")).mockResolvedValueOnce(receipt(intent,"receipt_not_found"))
@@ -22,8 +22,8 @@ it("only an explicit retry after a second missing lookup sends the original inte
  render(<ManualAssignmentRecovery {...p}/>);fireEvent.click(screen.getByRole("button",{name:"Đối chiếu yêu cầu gán"}));
  const retry=await screen.findByRole("button",{name:"Gửi lại đúng yêu cầu gán"});expect(p.invoke).toHaveBeenCalledTimes(1);
  fireEvent.click(retry);fireEvent.click(retry);await waitFor(()=>expect(p.onSettled).toHaveBeenCalledOnce());
- expect(p.invoke.mock.calls.map(c=>c[0])).toEqual([{...intent,mode:"receipt"},{...intent,mode:"receipt"},
-  {...intent,mode:"assign",requested_by:intent.expected_actor_id},{...intent,mode:"receipt"}]);
+ expect(p.invoke.mock.calls.map(c=>c[0])).toEqual([{mode:"receipt",assignment_intent:intent},{mode:"receipt",assignment_intent:intent},
+  {...intent,mode:"assign",requested_by:intent.expected_actor_id},{mode:"receipt",assignment_intent:intent}]);
 });
 it("retains malformed receipts and read outages without exposing retry",async()=>{
  const p=props();p.invoke.mockResolvedValueOnce(receipt({...intent,table_session_id:id(44)})).mockResolvedValueOnce({data:null,error:{message:"read unavailable"}});
@@ -75,5 +75,35 @@ it("uses the latest settlement callback if the modal context changed during look
  const p=props(),latest=vi.fn();let finish!:(v:unknown)=>void;p.invoke.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
  const view=render(<ManualAssignmentRecovery {...p}/>);fireEvent.click(screen.getByRole("button",{name:"Đối chiếu yêu cầu gán"}));
  view.rerender(<ManualAssignmentRecovery {...p} onSettled={latest}/>);await act(async()=>finish(receipt()));
- expect(latest).toHaveBeenCalledWith(intent);expect(p.onSettled).not.toHaveBeenCalled();
+ expect(latest).toHaveBeenCalledWith(intent,"committed");expect(p.onSettled).not.toHaveBeenCalled();
+});
+it("clears a stale request only after explicit serialized obsolete proof",async()=>{
+ const p=props();p.invoke.mockResolvedValue({data:{...intent,mode:"resolve",status:"intent_obsolete",assignment:null},error:null});
+ render(<ManualAssignmentRecovery {...p}/>);fireEvent.click(screen.getByRole("button",{name:"Kiểm tra hiệu lực phiên cũ"}));
+ await waitFor(()=>expect(p.onSettled).toHaveBeenCalledWith(intent,"obsolete"));expect(sessionStorage.getItem(key)).toBeNull();
+ expect(p.invoke.mock.calls.map(c=>c[0])).toEqual([{mode:"resolve",assignment_intent:intent}]);
+});
+it("receipt-only obsolete or malformed resolve metadata cannot clear a journal",async()=>{
+ const p=props();p.invoke.mockResolvedValueOnce({data:{...intent,mode:"receipt",status:"intent_obsolete",assignment:null},error:null})
+  .mockResolvedValueOnce({data:{...intent,table_session_id:id(44),mode:"resolve",status:"intent_obsolete",assignment:null},error:null});
+ render(<ManualAssignmentRecovery {...p}/>);fireEvent.click(screen.getByRole("button",{name:"Đối chiếu yêu cầu gán"}));await screen.findByText(/Chưa có kết quả xác nhận/);
+ fireEvent.click(screen.getByRole("button",{name:"Kiểm tra hiệu lực phiên cũ"}));await waitFor(()=>expect(p.invoke).toHaveBeenCalledTimes(2));
+ expect(sessionStorage.getItem(key)).toBe(intent.idempotency_key);expect(p.onSettled).not.toHaveBeenCalled();
+});
+it("legacy attention and resolver outages preserve intent without enabling retry",async()=>{
+ const p=props();p.invoke.mockResolvedValueOnce({data:{...intent,mode:"resolve",status:"legacy_receipt_review_required",assignment:null},error:null})
+  .mockResolvedValueOnce({data:null,error:{message:"resolution unavailable"}});
+ render(<ManualAssignmentRecovery {...p}/>);fireEvent.click(screen.getByRole("button",{name:"Kiểm tra hiệu lực phiên cũ"}));await screen.findByText(/Có dấu gán legacy/);
+ expect(screen.queryByRole("button",{name:"Gửi lại đúng yêu cầu gán"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Kiểm tra hiệu lực phiên cũ"}));
+ await screen.findByText("resolution unavailable");expect(sessionStorage.getItem(key)).toBe(intent.idempotency_key);expect(p.onSettled).not.toHaveBeenCalled();
+});
+it("resolver receipt wins as committed rather than obsolete",async()=>{
+ const p=props();p.invoke.mockResolvedValue({data:{...receipt().data,mode:"resolve"},error:null});render(<ManualAssignmentRecovery {...p}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Kiểm tra hiệu lực phiên cũ"}));await waitFor(()=>expect(p.onSettled).toHaveBeenCalledWith(intent,"committed"));
+});
+it("late obsolete proof cannot delete a replaced journal",async()=>{
+ const p=props();let finish!:(v:unknown)=>void;p.invoke.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ render(<ManualAssignmentRecovery {...p}/>);fireEvent.click(screen.getByRole("button",{name:"Kiểm tra hiệu lực phiên cũ"}));sessionStorage.setItem(key,id(88));
+ await act(async()=>finish({data:{...intent,mode:"resolve",status:"intent_obsolete",assignment:null},error:null}));
+ expect(sessionStorage.getItem(key)).toBe(id(88));expect(p.onSettled).not.toHaveBeenCalled();
 });

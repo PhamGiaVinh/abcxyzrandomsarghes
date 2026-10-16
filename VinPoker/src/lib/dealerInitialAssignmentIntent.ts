@@ -36,3 +36,12 @@ export function initialAssignmentReceipt(value:unknown,i:InitialAssignmentIntent
   return v.status==="receipt_found"&&!!a&&typeof a==="object"&&"id" in a&&uuid(a.id)
     &&"status" in a&&a.status==="success"?"found":"unknown";
 }
+/** Only the serialized server route can make a missing closed-session intent terminal. */
+export function initialAssignmentResolution(value:unknown,i:InitialAssignmentIntent):"found"|"not_found"|"obsolete"|"attention"|"unknown" {
+  if(!value||typeof value!=="object"||Array.isArray(value))return "unknown";
+  const v=value as Record<string,unknown>;
+  if(v.mode!=="resolve"||Object.entries(i).some(([k,x])=>v[k]!==x))return "unknown";
+  if(v.status==="intent_obsolete"&&v.assignment===null)return "obsolete";
+  if(v.status==="legacy_receipt_review_required"&&v.assignment===null)return "attention";
+  return initialAssignmentReceipt({...v,mode:"receipt"},i);
+}

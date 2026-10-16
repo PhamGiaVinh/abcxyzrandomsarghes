@@ -1,12 +1,12 @@
 import {useEffect,useRef,useState} from "react";
 import {Button} from "@/components/ui/button";
 import {waitForManualPlayerResponse} from "@/lib/floorManualPlayerIntent";
-import {assertInitialAssignmentIntent,clearInitialAssignmentIntent,initialAssignmentKey,initialAssignmentReceipt,listInitialAssignmentIntents,
+import {assertInitialAssignmentIntent,clearInitialAssignmentIntent,initialAssignmentKey,initialAssignmentReceipt,initialAssignmentResolution,listInitialAssignmentIntents,
   type InitialAssignmentIntent} from "@/lib/dealerInitialAssignmentIntent";
 
 type Props={actorId:string;clubId:string;revision:number;blocked:boolean;
   invoke:(body:Record<string,unknown>)=>PromiseLike<{data:unknown;error:{message:string}|null}>;
-  onSettled:(intent:InitialAssignmentIntent)=>unknown;};
+  onSettled:(intent:InitialAssignmentIntent,result:"committed"|"obsolete")=>unknown;};
 export function ManualAssignmentRecovery(props:Props){
   return <RecoverySession key={JSON.stringify([props.actorId,props.clubId])} {...props}/>;
 }
@@ -23,19 +23,19 @@ function RecoverySession({actorId,clubId,revision,blocked,invoke,onSettled}:Prop
     try{setIntents(listInitialAssignmentIntents(sessionStorage,actorId,clubId));setError("");setRetryKey(null);}
     catch(e){setError(e instanceof Error?e.message:"Không đọc được journal gán dealer.");setRetryKey(null);}
   },[actorId,clubId,revision]);
-  const reconcile=async(i:InitialAssignmentIntent,retry=false)=>{
+  const reconcile=async(i:InitialAssignmentIntent,retry=false,resolve=false)=>{
     if(flight.current||latest.current.blocked)return;
     flight.current=true;setBusy(true);setRetryKey(null);
     try{
-      const read=async()=>{
+      const read=async(serialized=false)=>{
         assertInitialAssignmentIntent(sessionStorage,i);
-        const r=await waitForManualPlayerResponse(Promise.resolve(invoke({...i,mode:"receipt"})),10000);
+        const r=await waitForManualPlayerResponse(Promise.resolve(invoke({mode:serialized?"resolve":"receipt",assignment_intent:i})),10000);
         if(!alive.current)return "unknown" as const;
         assertInitialAssignmentIntent(sessionStorage,i);
         if(r.error)throw new Error(r.error.message);
-        return initialAssignmentReceipt(r.data,i);
+        return serialized?initialAssignmentResolution(r.data,i):initialAssignmentReceipt(r.data,i);
       };
-      let status=await read();if(!alive.current)return;
+      let status=await read(resolve);if(!alive.current)return;
       if(retry&&status==="not_found"){
         assertInitialAssignmentIntent(sessionStorage,i);
         const r=await waitForManualPlayerResponse(Promise.resolve(invoke({...i,mode:"assign",requested_by:i.expected_actor_id})));
@@ -43,13 +43,14 @@ function RecoverySession({actorId,clubId,revision,blocked,invoke,onSettled}:Prop
         if(r.error)throw new Error(r.error.message);
         status=await read();if(!alive.current)return;
       }
-      if(status!=="found"){
-        setError("Chưa có kết quả xác nhận. Giữ nguyên request; không tự gán lại hoặc bỏ journal.");
+      if(status!=="found"&&status!=="obsolete"){
+        setError(status==="attention"?"Có dấu gán legacy nhưng thiếu receipt đầy đủ. Giữ journal để kiểm tra; chưa gửi lại."
+          :"Chưa có kết quả xác nhận. Giữ nguyên request; không tự gán lại hoặc bỏ journal.");
         if(status==="not_found")setRetryKey(initialAssignmentKey(i));
         return;
       }
       clearInitialAssignmentIntent(sessionStorage,i);reload();
-      try{await waitForManualPlayerResponse(Promise.resolve(latest.current.onSettled(i)),10000);}
+      try{await waitForManualPlayerResponse(Promise.resolve(latest.current.onSettled(i,status==="obsolete"?"obsolete":"committed")),10000);}
       catch{if(alive.current)setError("Đã đối chiếu thành công nhưng chưa tải lại được danh sách bàn.");}
     }catch(e){if(alive.current)setError(e instanceof Error?e.message:"Không xác minh được kết quả gán.");}
     finally{if(alive.current){flight.current=false;setBusy(false);}}
@@ -62,6 +63,7 @@ function RecoverySession({actorId,clubId,revision,blocked,invoke,onSettled}:Prop
       <p className="text-xs text-muted-foreground break-all">Bàn {i.table_id} · Phiên {i.table_session_id} · Request {i.idempotency_key}</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" disabled={busy||blocked} onClick={()=>void reconcile(i)}>Đối chiếu yêu cầu gán</Button>
+        <Button size="sm" variant="outline" disabled={busy||blocked} onClick={()=>void reconcile(i,false,true)}>Kiểm tra hiệu lực phiên cũ</Button>
         {retryKey===initialAssignmentKey(i)&&<Button size="sm" disabled={busy||blocked} onClick={()=>void reconcile(i,true)}>Gửi lại đúng yêu cầu gán</Button>}
       </div>
     </div>)}
