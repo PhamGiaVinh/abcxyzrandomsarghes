@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Private-hole and Finish UI scope fences RED→fix
+
+Baseline87a872832 clean/previousPROGRESS. Actual extracted hole/finish callback tests reproduced stale receipt apply, mutation after cancelled hashing, stale rejection restoring old UI and clearing newer promise/queue; positive same-scope paths retained. Existing Board fixture generalized only to execute additional actual callbacks. Fix binds both paths to current render scope plus validation/connection generations before entry/send/apply/readback/finalstate; hole queue stops processing after invalidation. Finally clears own settled guard only, old failures cannot resurrect prior attempts. No server effects rolled back or retried by client.
+
+Final921129 terminal0/32lifecyclePASS/101ms + scopedPanelESLint0; diffcheckPASS. Synthetic transport/callback state seams, not actual React/browser/provider or SQL authorization proof. DB/API unchanged, no redundant native rerun. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next inspect action confirmAssist async scope similarly, then remaining hole/finish canonical receipt API validation; full web journey/type/build/perf/release outstanding.
+
 ## Board UI async scope and single-flight RED→fix
 
 Baseline6d00337fa clean/previousPROGRESS. Actual extracted confirmBoardAssist callback RED18PASS3FAIL reproduced two mutations during async canonical hashing, old receipt applying to replacement hand, and old hashing continuing into mutation after scope changed. Moved hashing inside single-flight promise; bind Board callback to render scope + validation/connection generations before send/apply/readback/state writes. Finally clears only its own promise; old rejection cannot revive proposal/error after disconnect/scope replacement. No cancellation of already committed server effect, no automatic mutationretry.

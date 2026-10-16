@@ -6,7 +6,7 @@ import {parseSync,transformSync} from '@swc/core';
 
 // Executes actual panel callback, with modeled state/read seams, not React/Auth/HTTP.
 const source=readFileSync(new URL('../../src/components/tracker/voice/TrackerVoicePanel.tsx',import.meta.url),'utf8');
-const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback,deviceEffect,boardCallback;
+const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback,deviceEffect,boardCallback,holeCallback,finishCallback;
 const slice=node=>Buffer.from(source).subarray(node.span.start-tree.span.start,node.span.end-tree.span.start).toString();
 function visit(node){
  if(!node||typeof node!=='object')return;
@@ -14,6 +14,8 @@ function visit(node){
  if(node.type==='VariableDeclarator'&&node.id.value==='connect')connectCallback=node.init;
  if(node.type==='VariableDeclarator'&&node.id.value==='disconnect')disconnectCallback=node.init;
  if(node.type==='VariableDeclarator'&&node.id.value==='confirmBoardAssist')boardCallback=node.init;
+ if(node.type==='VariableDeclarator'&&node.id.value==='confirmHoleCardsAssist')holeCallback=node.init;
+ if(node.type==='VariableDeclarator'&&node.id.value==='confirmFinishAssist')finishCallback=node.init;
  if(node.type==='CallExpression'&&node.callee.value==='useEffect'){
   const candidate=node.arguments[0]?.expression;
   if(candidate&&slice(candidate).includes('void refreshRuntime();'))effect=candidate;
@@ -162,8 +164,8 @@ test('actual runtime timeout releases connecting without falsely claiming an ass
  assert.doesNotMatch(panel.writes.at(-1)[1],/assignment/);
 });
 
-function boardFixture(){
- assert.ok(boardCallback);
+function boardFixture(candidate=boardCallback){
+ assert.ok(candidate);
  const build=deferred(),commit=deferred(),writes=[];let calls=0,applied=0;
  const sandbox={Error,runtimeScopeKey:'scope',runtimeScopeRef:{current:'scope'},validationGenerationRef:{current:1},connectionGenerationRef:{current:1},
   assistCommitRef:{current:null},validationState:'validated',validatedReceipt:{voice_event_id:'root',state_version:'before',idempotency_key:'key',trace_id:'trace'},
@@ -172,7 +174,7 @@ function boardFixture(){
   buildVoiceBoardCanonicalRequest:()=>build.promise,commitBoardOverride:()=>{calls++;return commit.promise;},
   refreshRuntime:async()=>({active_hand:{hand_id:'hand',state_version:'after'}}),runtimeOverride:null};
  for(const name of ['setValidationState','setValidationError','setProposal','setValidatedProposal','setValidatedReceipt'])sandbox[name]=value=>writes.push([name,value]);
- const run=runInNewContext(transformSync('const confirm='+slice(boardCallback)+';confirm;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code,sandbox);
+ const run=runInNewContext(transformSync('const confirm='+slice(candidate)+';confirm;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code,sandbox);
  return {run,build,commit,writes,sandbox,calls:()=>calls,applied:()=>applied};
 }
 test('Board double-click while canonical hashing is pending sends one mutation',async()=>{
@@ -207,3 +209,41 @@ test('current Board hashing failure releases guard and preserves a visible retry
  assert.equal(f.calls(),0);assert.equal(f.sandbox.assistCommitRef.current,null);
  assert.deepEqual(f.writes.slice(-2),[['setValidationState','validated'],['setValidationError','hash unavailable']]);
 });
+
+function privateCommitFixture(kind){
+ const f=boardFixture(kind==='hole'?holeCallback:finishCallback),s=f.sandbox;
+ s.crypto=globalThis.crypto;s.mode='assist';s.providerRef={current:null};s.requestIdentitiesRef={current:new Map()};
+ const attempt={event:{providerEventId:'event',transcript:'test speech'},runtimeSnapshot:{config:{provider_model:'test'}},
+  proposal:{expectedStateVersion:'before',command:{cards:['Ah','Kd']},player:{seatNumber:1,playerId:'player',entryNumber:1}},receipt:{settlement_origin:'test',settlement_digest:'digest'}};
+ s.privateHoleCardsAttemptsRef={current:[attempt]};s.finishAttempt=attempt;
+ for(const name of ['setPrivateHoleCardsAttempts','setConfirmedHoleSeat','setFinishAttempt','setFinalTranscript'])s[name]=value=>f.writes.push([name,value]);
+ s.buildVoiceHoleCardsCanonicalRequest=s.buildVoiceFinishCanonicalRequest=()=>f.build.promise;
+ let calls=0,applied=0;
+ s.commitHoleCardsOverride=s.commitFinishOverride=()=>{calls++;return f.commit.promise;};
+ s.hook.applyVoiceHoleCardsReceipt=s.hook.applyVoiceFinishReceipt=()=>{applied++;return true;};
+ s.refreshRuntime=async()=>kind==='hole'?{active_hand:{hand_id:'hand',state_version:'after'}}:{active_hand:null};
+ return {...f,calls:()=>calls,applied:()=>applied};
+}
+for(const kind of ['hole','finish']){
+ test(`${kind} current-scope commit remains usable`,async()=>{
+  const f=privateCommitFixture(kind),pending=f.run();f.build.resolve({});await new Promise(resolve=>setImmediate(resolve));
+  f.commit.resolve({hand_id:'hand',seat_number:1,state_version_after:'after'});await pending;assert.equal(f.applied(),1);assert.equal(f.calls(),1);
+ });
+ test(`${kind} late receipt cannot apply or restore state after hand replacement`,async()=>{
+  const f=privateCommitFixture(kind),pending=f.run();f.build.resolve({});await new Promise(resolve=>setImmediate(resolve));
+  f.sandbox.runtimeScopeRef.current='new-hand';const writes=f.writes.length;
+  f.commit.resolve({hand_id:'hand',seat_number:1,state_version_after:'after'});await pending;assert.equal(f.applied(),0);assert.equal(f.writes.length,writes);
+ });
+ test(`${kind} cancelled hashing cannot send old mutation`,async()=>{
+  const f=privateCommitFixture(kind),pending=f.run();await new Promise(resolve=>setImmediate(resolve));
+  ++f.sandbox.connectionGenerationRef.current;f.build.resolve({});f.commit.resolve({hand_id:'hand',seat_number:1,state_version_after:'after'});
+  await pending;assert.equal(f.calls(),0);assert.equal(f.applied(),0);
+ });
+ test(`${kind} late failure leaves the new queue and promise guard intact`,async()=>{
+  const f=privateCommitFixture(kind),pending=f.run();f.build.resolve({});await new Promise(resolve=>setImmediate(resolve));
+  f.sandbox.runtimeScopeRef.current='new-hand';const queue=[];f.sandbox.privateHoleCardsAttemptsRef.current=queue;
+  const guard=Promise.resolve(true);f.sandbox.assistCommitRef.current=guard;const writes=f.writes.length;
+  f.commit.reject(new Error('late failure'));await pending;assert.equal(f.writes.length,writes);
+  assert.equal(f.sandbox.privateHoleCardsAttemptsRef.current,queue);assert.equal(f.sandbox.assistCommitRef.current,guard);
+ });
+}

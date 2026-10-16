@@ -1417,9 +1417,15 @@ export function TrackerVoicePanel({
   }, [handsFreeAssistEnabled, validationState, validatedProposal, validatedReceipt]);
 
   const confirmHoleCardsAssist = async (): Promise<boolean> => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     const attempts = [...privateHoleCardsAttemptsRef.current];
     if (
-      attempts.length === 0
+      !isCurrent()
+      || attempts.length === 0
       || !hook.tournamentTableId
       || mode !== "assist"
       || assistCommitRef.current
@@ -1434,6 +1440,7 @@ export function TrackerVoicePanel({
     const committedProviderEventIds = new Set<string>();
     const commit = (async () => {
       let currentRuntime = await refreshRuntime();
+      if (!isCurrent()) return null;
       if (!currentRuntime?.active_hand || currentRuntime.active_hand.hand_id !== hook.handId) {
         throw new Error("Không đọc lại được hand trước khi xác nhận bài tẩy.");
       }
@@ -1458,6 +1465,7 @@ export function TrackerVoicePanel({
             cards: privateAttempt.proposal.command.cards,
           },
         });
+        if (!isCurrent()) return null;
         const receipt = await commitHoleCardsOverride({
           tournamentId: hook.tournamentId,
           tournamentTableId: hook.tournamentTableId,
@@ -1470,6 +1478,7 @@ export function TrackerVoicePanel({
           ...identity,
           canonicalRequest,
         });
+        if (!isCurrent()) return null;
         if (!hook.applyVoiceHoleCardsReceipt({
           receipt,
           playerId: privateAttempt.proposal.player.playerId,
@@ -1487,6 +1496,7 @@ export function TrackerVoicePanel({
           };
         } else {
           const readBack = await refreshRuntime();
+          if (!isCurrent()) return null;
           if (!readBack?.active_hand || readBack.active_hand.hand_id !== hook.handId
             || readBack.active_hand.state_version !== receipt.state_version_after) {
             throw new Error("Bài tẩy đã gửi nhưng không đọc lại được trạng thái server. Hãy tải lại trước khi tiếp tục.");
@@ -1498,9 +1508,11 @@ export function TrackerVoicePanel({
     })();
     // Keep the single-flight guard settled even when the receipt request fails.
     // The original promise below still preserves the proposal and idempotency key for retry.
-    assistCommitRef.current = commit.then(() => true, () => false);
+    const guard = commit.then(() => true, () => false);
+    assistCommitRef.current = guard;
     try {
       const lastSeat = await commit;
+      if (!isCurrent()) return false;
       privateHoleCardsAttemptsRef.current = [];
       setPrivateHoleCardsAttempts([]);
       setConfirmedHoleSeat(lastSeat);
@@ -1510,6 +1522,7 @@ export function TrackerVoicePanel({
       setValidationState("committed");
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       const remaining = attempts.filter((attempt) => !committedProviderEventIds.has(attempt.event.providerEventId));
       privateHoleCardsAttemptsRef.current = remaining;
       setPrivateHoleCardsAttempts(remaining);
@@ -1517,7 +1530,7 @@ export function TrackerVoicePanel({
       setValidationError(error instanceof Error ? error.message : "Không thể xác nhận bài tẩy Voice.");
       return false;
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === guard) assistCommitRef.current = null;
     }
   };
 
@@ -1536,10 +1549,16 @@ export function TrackerVoicePanel({
   });
 
   const confirmFinishAssist = async () => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     const attempt = finishAttempt;
     const expectedStateVersion = attempt?.proposal.expectedStateVersion;
     if (
-      !attempt
+      !isCurrent()
+      || !attempt
       || !expectedStateVersion
       || !hook.tournamentTableId
       || mode !== "assist"
@@ -1564,6 +1583,7 @@ export function TrackerVoicePanel({
           settlementDigest: attempt.receipt.settlement_digest,
         },
       });
+      if (!isCurrent()) return null;
       const receipt = await commitFinishOverride({
         tournamentId: hook.tournamentId,
         tournamentTableId: hook.tournamentTableId,
@@ -1576,7 +1596,9 @@ export function TrackerVoicePanel({
         ...identity,
         canonicalRequest,
       });
+      if (!isCurrent()) return null;
       const readBack = await refreshRuntime();
+      if (!isCurrent()) return null;
       if (!readBack || readBack.active_hand?.hand_id === receipt.hand_id) {
         throw new Error("Hand đã gửi nhưng chưa đọc lại được trạng thái canonical. Hãy tải lại bàn.");
       }
@@ -1585,17 +1607,20 @@ export function TrackerVoicePanel({
       }
       return receipt;
     })();
-    assistCommitRef.current = commit.then(() => true, () => false);
+    const guard = commit.then(() => true, () => false);
+    assistCommitRef.current = guard;
     try {
-      await commit;
+      const receipt = await commit;
+      if (!isCurrent() || !receipt) return;
       setFinishAttempt(null);
       setFinalTranscript("");
       setValidationState("committed");
     } catch (error) {
+      if (!isCurrent()) return;
       setValidationState("validated");
       setValidationError(error instanceof Error ? error.message : "Không thể xác nhận lưu Hand bằng Voice.");
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === guard) assistCommitRef.current = null;
     }
   };
 
