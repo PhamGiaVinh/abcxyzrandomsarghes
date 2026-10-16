@@ -124,6 +124,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -950,7 +951,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql
-          node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --adoption
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --legacy

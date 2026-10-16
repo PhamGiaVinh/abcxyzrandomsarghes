@@ -134,6 +134,12 @@ if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.i
  }
  const before=fingerprint();
  const positive=sql(`BEGIN;${service}SELECT ${call};${action==='lock'?'':`SELECT ${call};`}ROLLBACK;`).split(/\r?\n/).map(line=>JSON.parse(line));assert.equal(positive[0].outcome,{complete:'executed',cancel:'cancelled',lock:'locked'}[action]);if(action!=='lock')assert.equal(positive[1].outcome,'noop');assert.equal(fingerprint(),before);
+ if(action==='cancel'){
+  const claims=JSON.stringify({role:'authenticated',sub:c.owner});
+  const off=sql(`BEGIN;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';SET LOCAL request.jwt.claim.role='authenticated';SET LOCAL request.jwt.claim.sub='${c.owner}';SET LOCAL request.jwt.claims='${claims}';SET LOCAL ROLE authenticated;SELECT ${call};RESET ROLE;SELECT status FROM public.dealer_rotation_schedule WHERE id='${scheduleId}';ROLLBACK;`).split(/\r?\n/);
+  assert.equal(JSON.parse(off[0]).outcome,'cancelled');assert.equal(off[1],'cancelled');assert.equal(fingerprint(),before);
+  console.log('ROTATION_OWNER_CANCEL_AUTO_OFF_PASS');
+ }
  }
  assert.deepEqual(failures,[],'unscoped browser actors must not mutate rotations; complete is worker-only');
  console.log('ROTATION_BROWSER_DENY_SERVICE_POSITIVE_PASS');
