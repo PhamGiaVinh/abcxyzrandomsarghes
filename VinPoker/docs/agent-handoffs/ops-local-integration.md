@@ -1816,3 +1816,41 @@ Still8players: final supported tournament completion is NOT proven. Next inspect
 actual terminal-hand/finish and close readiness, without fabricating eliminations
 or bypassing payout/payroll blockers. Real rotations/hosted/browser375/provider,
 full checks/build/release/performance also remain open. Master ACTIVE.
+# 2026-10-16 — Same paid tour reaches canonical close after actual showdown
+
+G5/G6/G8 IN_PROGRESS, baselineb47fc825f. Added `runPaidTourShowdown` to existing
+hand harness, called after same8-paid/staffed/hand-correction/chip/break journey.
+Eight genuine frozen players post blinds/all-in via record_action; hole cards
+are committed in all-in runout BEFORE river (existing muck guard unchanged).
+Manual canonical board writer persists flop/turn/river. Actual settlement engine
+computes royal-flush winner,7zero stacks and160000 conservation; actual Finish
+commits7eliminations and replay is duplicate. Premature close returns
+active_players_remaining1/no report. Existing Floor free-sit preserves winner
+stack160000 (registered, NOT busted/no payout); empty v4 table close releases
+assignment. Readiness then has no blockers. Actual close_tournament + replay
+produce one immutable report, completed status, no sessions/seats/assignments,
+no prize payments, unchanged Cashier; reconciled=false explicitly retained.
+
+Finald0dcec/46580→4229d8 terminal0/PGstopped. Retained club
+`e7003c8a-2577-4452-aa12-470cb84daeed`, tournament
+`d9b1fd8f-b276-4750-882d-8c7e906292f8`, fold hand
+`7bba8bdf-f522-4556-a6e3-24f993b49146`, showdown hand
+`a972a7f6-4069-4e65-94c0-3697215f2b1f`. Syntax/diff checks pass.
+
+Failures were not discarded/reset: first native manual board hit missing auth
+schema USAGE. Read-only49ff53 proves all3reconstructed roles lack it; official
+[Supabase bootstrap](https://github.com/supabase/postgres/blob/develop/migrations/db/init-scripts/00000000000001-auth-schema.sql)
+grants it. Harness models only authenticated USAGE within each board transaction,
+revokes before COMMIT and asserts original privilege restored; no RLS/table grants
+changed. Next reveal-after-river hit intended muck guard; corrected test order.
+Then close succeeded but final roster JSON assumed nonempty; SQL aggregate now
+explicitly returns[] for successful zero rows (SQL errors still throw).
+
+NOT master acceptance: this local fixture does not enable player-history or prove
+official final places/tied-elimination policy. No payout/reconciliation performed.
+Showdown History worker/projection, anonymous post-close TV, real rest15rotations,
+hosted/375/provider/fulltypechecks/build/performance/release remain. Next verify
+same terminal hand via worker and projections, then inspect existing supported
+history-enabled result path without inventing ranks or replaying archives.
+No product SQL/Edge/UI changes; no productionDB/Edge/frontend/flags/UAT/push/CI/
+deploy. Local-only hold, DaybreakOFF/AutoOFF and masterACTIVE retained. No live job.

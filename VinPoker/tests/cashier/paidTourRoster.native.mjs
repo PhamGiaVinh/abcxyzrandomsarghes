@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createPaidJourneyFixture} from './paidJourney.fixture.mjs';
 import {runPaidTourInitialAssignments} from '../dealerSwing/paidTourInitialAssign.native.mjs';
-import {runPaidTourHand} from '../trackerVoice/paidTourHand.native.mjs';
+import {runPaidTourHand,runPaidTourShowdown} from '../trackerVoice/paidTourHand.native.mjs';
 assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
 for(const [k,v] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:'vinpoker_ops_cash115_qualified_c'}))assert.equal(process.env[k],v);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
@@ -35,7 +35,7 @@ DO $$ DECLARE player uuid;reg uuid;dealer uuid;shift uuid:=gen_random_uuid();key
   PERFORM set_config('role','none',true);
  END LOOP;
 END $$;COMMIT;`);
-const roster=()=>JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM (SELECT t.id,t.table_session_id,s.revision,s.control_epoch,
+const roster=()=>JSON.parse(sql(`SELECT coalesce(jsonb_agg(to_jsonb(x) ORDER BY id),'[]'::jsonb) FROM (SELECT t.id,t.table_session_id,s.revision,s.control_epoch,
  (SELECT count(*) FROM public.tournament_seats p WHERE p.tournament_table_id=t.id AND p.is_active) players
  FROM public.tournament_tables t JOIN public.table_sessions s ON s.id=t.table_session_id WHERE t.tournament_id='${f.tour}' AND t.status='active' AND s.closed_at IS NULL) x;`));
 // Explicit Floor balance intent when Cashier's legitimate seating policy fills
@@ -204,5 +204,7 @@ assert.equal(cashProof(),cashProofBefore);assert.equal(issuedLedger(),afterUndoL
 const tvAfterBreak=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
 assert.equal(tvAfterBreak.participation_counts.remaining,8);assert.equal(tvAfterBreak.participation_counts.live_entry_stack,160000);
 console.log('NATIVE_EIGHT_PAID_SAME_TOUR_BREAK_CLOSE_REOPEN_SESSION_FENCE_PASS');
-console.log('NATIVE_TWO_TABLE_EIGHT_PAID_FOUR_CHECKIN_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
+await runPaidTourShowdown(sql,f,roster()[0]);
+assert.deepEqual(roster(),[],'completed tour has no active table sessions');
+console.log('NATIVE_PAID_TOUR_INTEGRATED_LIFECYCLE_CURRENT_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

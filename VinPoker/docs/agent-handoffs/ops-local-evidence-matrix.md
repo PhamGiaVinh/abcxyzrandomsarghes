@@ -123,3 +123,16 @@ new empty session closed/replayed. Cashier/hands/proofs/ledger/anonTV unchanged.
 Native ordinary break only, not deferred same-tour hand-boundary break or final
 tournament close. Still8players. Hosted/375/realrotation/provider/performance and
 required checks/release remain outstanding; Daybreak/Auto unchanged.
+# Latest extension — 2026-10-16 same-tour showdown and canonical close
+
+4229d8 terminal0/PGstopped: same8paid tourd9b1fd8f-b276-4750-882d-8c7e906292f8
+has actual8player all-in runout/cards/engine showdown →7eliminations,1winner160000,
+Finish duplicate replay. Premature close blocked. Canonical Floor leave-seat
+preserves winner stack (registered, notbusted), table close/releases assignment,
+readiness clear, actual tournament close/replay yields1report/completed and no
+active sessions/seats/assignments; no prize payments/Cashier changes, notreconciled.
+Finalhand a972a7f6-4069-4e65-94c0-3697215f2b1f. Missing managed auth USAGE modeled
+transaction-locally per official bootstrap, restored; no RLS/table-grant changes.
+Not official ranking/payout proof (player-history not enabled), not terminal-hand
+worker/public projection proof, hosted/UI375/realrotation/provider/performance or
+fullchecks/release. Goal stillIN_PROGRESS, Daybreak/Auto/live state unchanged.
