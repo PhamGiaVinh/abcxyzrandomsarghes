@@ -4,7 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
 const backend = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
-vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: null }) }));
+const auth = vi.hoisted(() => ({ user: null as { id: string } | null }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => auth }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => backend }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { trackerHistoryCompletionWorker: true }, isTrackerAtomicResettleAvailable: () => false }));
 vi.mock("@/lib/tracker-poker/handPlayerNamesClient", () => ({
@@ -38,9 +39,36 @@ function hand(id: string, number: number) {
   return { id, hand_number: number, table_id: null, created_at: "2026-10-16T00:00:00Z", status: "completed", community_cards: [], is_voided: false };
 }
 beforeEach(() => {
+  auth.user = null;
   backend.from.mockImplementation((table: string) => query(async () => ok(table === "tournament_hands" ? [hand("hand-a", 1)] : [])));
   // Keep table inventory unresolved so its independent effect does not trigger another load.
   backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? new Promise(() => {}) : Promise.resolve(ok([])));
+});
+
+it.each(["actor-b", null])("invalidates hand/table reads on the same client and tournament after account becomes %s", async (nextActor) => {
+  auth.user = { id: "actor-a" };
+  const oldQueue = deferred<ReturnType<typeof ok>>();
+  backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2"
+    ? Promise.resolve({ data: { ok: true, tables: [{ tournament_table_id: "table-a", table_name: "Actor A table" }] }, error: null })
+    : oldQueue.promise);
+  const view = render(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-a" /></MemoryRouter>);
+  await screen.findByText("#1");
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Lọc lịch sử theo bàn" })).toBeEnabled());
+  const nextRead = deferred<ReturnType<typeof ok>>(), nextTables = deferred<unknown>();
+  backend.from.mockImplementation(() => query(() => nextRead.promise));
+  backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? nextTables.promise : Promise.resolve(ok([])));
+  auth.user = nextActor ? { id: nextActor } : null;
+  view.rerender(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-a" /></MemoryRouter>);
+  expect(screen.queryByText("#1")).not.toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Actor A table" })).not.toBeInTheDocument();
+  await act(async () => { oldQueue.resolve(ok([])); });
+  expect(screen.getByRole("button", { name: "Đang tải" })).toBeDisabled();
+  await act(async () => {
+    nextRead.resolve(ok([]));
+    nextTables.resolve({ data: { ok: false, error: "actor_not_allowed" }, error: null });
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent("actor_not_allowed");
+  expect(screen.queryByText("#1")).not.toBeInTheDocument();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
 

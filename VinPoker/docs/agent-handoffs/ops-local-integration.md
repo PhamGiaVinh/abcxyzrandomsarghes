@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Same-client account switch/logout history scope leak RED→local fix
+
+Baseline6ce200355 clean/previousPROGRESS.1aa1ad actual parent render RED: actor A→B with same Supabase client/tournament retains A hand and table inventory because read dependencies omit actor. Bind both table effect and hand load callback to actor ID already supplied by recovery hook; existing cleanup/generation machinery invalidates pending responses and existing load-start clears data/editor/preview. No new role grant/auth policy/journal clearing.
+
+ce3695 24render/loadguard/nochip +17callback PASS after application change. Extended rendered account case to logout as well: bf9dd4 final10/10 parent read cases PASS. Both actor switch and null user remove old hand/options before new reads resolve, ignore A queue completion while B pending, and surface B inventory authority denial explicitly. Modeled SDK/auth hook, not live sign-out/JWT/RLS proof. UI skills scope/loading conventions retained, no redesign/dependency install. Full build/type/browser375 held; no unchanged DB tests rerun. No PG/process handle, push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; parent preview rendered flow, queue payload validation, broader writer/provider/TV/fulltour/performance/release still remain.
+
 ## Correction preview late-response scope race RED → local fence
 
 Baseline6baa4d907 clean/previousPROGRESS. e7e255 actual handleResettle callback extraction RED: delayed server preview repopulates old hand preview after invalidation; old finally also clears busy. Added separate preview generation + current tournament/table/hand/actor scope. Every awaited chain/detail/server response checks current token/scope before state or further work; finally cannot change new request busy. Scope change/unmount, load/refresh, editor cancel/edit and preview close invalidate. Preview state only: durable correction intent and mutation receipt recovery unchanged; no backend/flag changes.

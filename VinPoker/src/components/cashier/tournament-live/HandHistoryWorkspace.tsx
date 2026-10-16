@@ -274,7 +274,8 @@ export function HandHistoryWorkspace({
     if (status === "found") toast.success("Đã tìm thấy receipt sửa hand. Đang tải lại trạng thái hiện tại.");
     else toast.info("Máy chủ xác nhận yêu cầu cũ đã lỗi thời và không commit. Hãy xem trước lại dữ liệu mới.");
   });
-  const previewScope = JSON.stringify([tournamentId, selectedTableId, selectedHandId, correctionRecovery.actorId]);
+  const historyActorId = correctionRecovery.actorId;
+  const previewScope = JSON.stringify([tournamentId, selectedTableId, selectedHandId, historyActorId]);
   const previewScopeRef = useRef(previewScope);
   if (previewScopeRef.current !== previewScope) {
     previewScopeRef.current = previewScope;
@@ -357,7 +358,7 @@ export function HandHistoryWorkspace({
       }
     })();
     return () => { cancelled = true; tableLoadGuardRef.current?.invalidate(); };
-  }, [supabase, tablesReload, tournamentId]);
+  }, [supabase, tablesReload, tournamentId, historyActorId]);
 
   const loadHands = useCallback(async () => {
     if (!tournamentId) return;
@@ -551,7 +552,7 @@ export function HandHistoryWorkspace({
         setLoading(false);
       }
     }
-  }, [selectedTableId, supabase, tables, tournamentId, invalidateResettlePreview]);
+  }, [selectedTableId, supabase, tables, tournamentId, historyActorId, invalidateResettlePreview]);
 
   useEffect(() => {
     void loadHands();
