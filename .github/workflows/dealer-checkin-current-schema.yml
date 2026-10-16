@@ -123,6 +123,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000105_dealer_legacy_adoption_atomic_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -935,7 +936,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
           PGDATABASE=vinpoker_ops_initial102_ui VINPOKER_NATIVE_INITIAL_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/initialAssignmentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
-      - name: Ready worker103 and replan104-107 atomic rejection and isolated capacity
+      - name: Ready worker103, replan104-107 and completion108 isolated authority/capacity
         working-directory: VinPoker
         env:
           PGDATABASE: vinpoker_ops_ready_capacity_ci
@@ -948,6 +949,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000105_dealer_legacy_adoption_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --adoption
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --legacy
