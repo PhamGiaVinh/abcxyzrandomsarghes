@@ -277,6 +277,25 @@ const retry=await handler(new Request('https://test.invalid/history-worker',{met
 assert.equal(retry.status,200);assert.deepEqual(await retry.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
 assert.equal(calls.at(-1).name,'claim_tracker_historical_display_jobs_scoped_v1');assert.deepEqual(errors,[]);assert.equal(business(),before);
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
+if(baselineParent&&process.env.VINPOKER_NATIVE_PAID_TOUR==='1'){
+ const oldRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
+ await runPaidCorrectionEdge({sql,service,fixture,hand});
+ const newRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
+ assert.ok(newRevision>oldRevision);assert.equal(nonHandBusiness(),beforeNonHand);
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND source_revision=${oldRevision} AND status='verified';`),'0');
+ assert.equal(sql(`SELECT count(*) FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' AND source_revision=${newRevision} AND status='pending';`),'1');
+ const republished=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
+ assert.equal(republished.status,200);assert.deepEqual(await republished.json(),{ok:true,claimed:1,completed:1,retried:0,needs_attention:0,unresolved:0});
+ assert.deepEqual(errors,[]);assert.equal(nonHandBusiness(),beforeNonHand);
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND source_revision=${newRevision} AND status='verified';`),'1');
+ const currentHistory=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
+ assert.equal(currentHistory.items[0].result.status,'verified');
+ const afterCorrection=business();
+ const replay=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
+ assert.equal(replay.status,200);assert.deepEqual(await replay.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
+ assert.equal(business(),afterCorrection);
+ console.log('ACTUAL_PAID_EIGHT_SAME_HAND_CORRECTION_INVALIDATION_REPUBLICATION_PASS');
+}
 if(parentHand)console.log(baselineParent?'ACTUAL_PAID_PARENT_BASELINE_HISTORY_WORKER_PUBLIC_PASS':'ACTUAL_PARENT_CORRECTION_SAME_HAND_CURRENT_REVISION_WORKER_PUBLIC_PASS');
 console.log(lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
 }

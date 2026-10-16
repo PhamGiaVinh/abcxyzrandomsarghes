@@ -92,3 +92,12 @@ Next: extend this same scoped journey with Chip setup/issuance and projection
 checks, then supported assignment and hand lifecycle. Preserve all audit and
 unknown outcomes; do not reset the tour to mask failures. Keep rest/payroll/
 payout/rounding unchanged. Full completion still requires the original plan.
+# Latest extension — 2026-10-16 correction on the integrated hand
+
+Native run `09ec23` exit0/PG stopped: same eight-paid staffed tour hand
+`47a21e20-5a9f-45aa-b893-e868af468158` passes actual correction Edge scope,
+preview, commit and receipt recovery, invalidates old historical proof, queues
+new revision, republishes via actual worker and reads verified anonymously.
+Worker replay claims zero; Cashier and seats unchanged. Retained tournament
+`9ac980bf-46d7-4694-a416-228647c667e8`. Local only, transport modeled;
+this does not close the full tour or hosted/browser release gates.

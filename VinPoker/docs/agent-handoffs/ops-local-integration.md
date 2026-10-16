@@ -1746,3 +1746,22 @@ Phase3 now integrated through mergec4a0e39ff7bbe8e12128e24f7e6d2f9d8924ad7c. All
 - When memory allows, run final Swing UI once; full typecheck/build and actual integrated runtime before release. Do not rerun known identical tests just for counters. Continue light source integration/audit meanwhile.
 
 After quotas/resources and owner release scope are ready, run required checks on ONE final candidate, then compatibility-ordered DB/Edge/frontend/flags and actual web/RPC/DB tour. Do not push this accumulated tree unreviewed or merge into main automatically. No claim that a local merge equals completion.
+# 2026-10-16 — Same staffed paid-tour hand correction and republication
+
+Extended the existing eight-paid/two-table/four-dealer journey, not a separate
+correction fixture. After actual History worker verification, the existing actual
+correction Edge handler runs scope/actor/preview/commit/stale-retry/receipt tests.
+The old historical-display proof is invalidated, the new source generation queues,
+and the actual worker republishes one current verified proof. Anonymous history
+returns verified; a second worker run claims zero. Seats and Cashier fingerprint
+stay unchanged. No product SQL/Edge edits in this increment.
+
+Native command: `node candidate111-integration-native.mjs --cash112 --portable115 --paid-tour-roster --existing`.
+Terminal result `09ec23`: exit0, PG stopped. Club
+`2ad25813-9229-424e-be60-9947416bb97b`, tournament
+`9ac980bf-46d7-4694-a416-228647c667e8`, hand
+`47a21e20-5a9f-45aa-b893-e868af468158`. Fixtures/audit retained.
+Node syntax and diff whitespace checks pass. Local-only: no push, CI dispatch,
+deployment, production apply or flag changes. HTTP/Auth/CORS remain modeled.
+Next is the remaining same-tour bust/restore, color-up/undo, break/close/end;
+hosted/browser, real rotations, full typechecks/build and performance remain open.
