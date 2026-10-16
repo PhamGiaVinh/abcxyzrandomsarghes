@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Paid active-hand canonical undo scope/replay/projections PASS
+
+Baseline179a9725b clean/previousPROGRESS. Existing verified paid fixture now calls real authenticated undo_tracker_last_action_v1 against action inserted via actual record_action on canonical start. No scope→uat_capability_disabled; enabled exact owner scope without Dealer assignment→dealer_assignment_not_unique (whole-hand report authority must NOT expand to undo). Explicit local control-plane-only Dealer/attendance/exact-session assignment fixture then allows undo. Wrong logical table→stale_tracker_context; stale expected revision→stale_source_revision; success deletes one action/increases revision/stores one receipt; same key replay duplicate matches receipt without new revision/effect, changed revision same key request_key_conflict. Active hand has no pending/processing publication job. Full entries/seats/chip counts/cash fingerprint unchanged through action+undo. Savepoint rolls back action, scopes, assignment/attendance/Dealer and correction receipt before normal Finish. Not evidence of check-in or assignment workflow.
+
+Final03a9fe exit0 (after adding wrong-table/stale and projection/fixture cleanup assertions); initial001a88 passed earlier core case. Existing actual worker verified/scope/source/void cases still pass on expanded fixture. git diff --check PASS, PG stopped/no handle. Test-only edit, no migration/application change; existing CI verified invocation consumes it, CI not dispatched. No push/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only. Next manual card endpoint on same paid hand and parent/browser/provider/fulltour/perf/release gaps; no completion claim.
+
 ## Actual action INSERT/replay/conflict and completed void endpoint local PASS
 
 Baselinebb42c5e23 clean; previous turn PROGRESS, goal API active. Expanded verified paid fixture before canonical Finish with savepoint-isolated authenticated record_action: first INSERT success and revision advance; same key/payload duplicate without revision/count delta; changed amount same key idempotency_key_conflict; spoofed p_user_id actor_mismatch. Savepoint restores original empty actions/revision, then existing canonical Finish/worker computes verified result. No application changes or alternate hand/outcome insert.

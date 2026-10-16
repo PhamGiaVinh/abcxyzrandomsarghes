@@ -77,9 +77,15 @@ BEGIN
   -- Finish below still receives its original clean action list.
   DECLARE action_player record; action_revision bigint; inserted_revision bigint;
    action_key text:='paid-action-endpoint-'||gen_random_uuid(); action_reply jsonb;
+   action_id uuid; undo_key uuid:=gen_random_uuid(); undo_reply jsonb; undone_revision bigint;
+   test_dealer uuid:=gen_random_uuid(); test_attendance uuid:=gen_random_uuid(); projection_before jsonb; projection_after jsonb;
   BEGIN
    SELECT player_id,entry_number INTO STRICT action_player FROM public.hand_players WHERE hand_id=hand ORDER BY seat_number LIMIT 1;
    SELECT source_revision INTO action_revision FROM public.tournament_hands WHERE id=hand;
+   SELECT jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id=original.tournament_id),
+    'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id=original.tournament_id),
+    'counts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.tournament_chip_counts c WHERE tournament_id=original.tournament_id),
+    'cash',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id=original.tournament_id)) INTO projection_before;
    BEGIN
     PERFORM set_config('role','authenticated',true);
     action_reply:=public.record_action(hand,action_player.player_id,'check',1,action_player.entry_number,'preflop',0,action_key,NULL,actor);
@@ -98,10 +104,62 @@ BEGIN
     PERFORM set_config('role','none',true);
     IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>inserted_revision
      OR (SELECT count(*) FROM public.hand_actions WHERE hand_id=hand)<>1 THEN RAISE EXCEPTION 'paid_action_retry_mutated_source';END IF;
+    SELECT id INTO STRICT action_id FROM public.hand_actions WHERE hand_id=hand AND idempotency_key=action_key;
+    PERFORM set_config('role','authenticated',true);
+    undo_reply:=public.undo_tracker_last_action_v1(original.tournament_id,dest.id,hand,action_id,inserted_revision,undo_key);
+    IF undo_reply->>'error' IS DISTINCT FROM 'uat_capability_disabled' THEN RAISE EXCEPTION 'paid_undo_without_scope_accepted: %',undo_reply;END IF;
+    PERFORM set_config('role','none',true);
+    INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled)
+     VALUES(original.club_id,original.tournament_id,dest.id,actor,'undo_open_hand',true);
+    PERFORM set_config('role','authenticated',true);
+    undo_reply:=public.undo_tracker_last_action_v1(original.tournament_id,dest.id,hand,action_id,inserted_revision,undo_key);
+    IF undo_reply->>'error' IS DISTINCT FROM 'dealer_assignment_not_unique' THEN RAISE EXCEPTION 'paid_owner_undo_authority_expanded: %',undo_reply;END IF;
+    PERFORM set_config('role','none',true);
+    IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>inserted_revision
+     OR (SELECT count(*) FROM public.hand_actions WHERE hand_id=hand)<>1
+     OR EXISTS(SELECT 1 FROM public.tracker_correction_operations WHERE hand_id=hand) THEN RAISE EXCEPTION 'paid_undo_denial_delta';END IF;
+    -- Explicit isolated control-plane fixture, not dealer check-in/assignment proof.
+    INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES(test_dealer,original.club_id,actor,'Paid undo TEST','active');
+    INSERT INTO public.dealer_attendance(id,dealer_id,current_state,status) VALUES(test_attendance,test_dealer,'assigned','checked_in');
+    INSERT INTO public.dealer_assignments(dealer_id,attendance_id,table_id,table_session_id,club_id,assigned_at,status)
+     SELECT test_dealer,test_attendance,game_table_id,dest.table_session_id,original.club_id,now(),'assigned' FROM public.tournament_tables WHERE id=dest.id;
+    PERFORM set_config('role','authenticated',true);
+    undo_reply:=public.undo_tracker_last_action_v1(original.tournament_id,empty_table.id,hand,action_id,inserted_revision,undo_key);
+    IF undo_reply->>'error' IS DISTINCT FROM 'stale_tracker_context' THEN RAISE EXCEPTION 'paid_undo_wrong_table_accepted: %',undo_reply;END IF;
+    undo_reply:=public.undo_tracker_last_action_v1(original.tournament_id,dest.id,hand,action_id,inserted_revision+1,undo_key);
+    IF undo_reply->>'error' IS DISTINCT FROM 'stale_source_revision' THEN RAISE EXCEPTION 'paid_undo_stale_revision_accepted: %',undo_reply;END IF;
+    undo_reply:=public.undo_tracker_last_action_v1(original.tournament_id,dest.id,hand,action_id,inserted_revision,undo_key);
+    IF undo_reply->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_scoped_assigned_undo_failed: %',undo_reply;END IF;
+    PERFORM set_config('role','none',true);
+    SELECT source_revision INTO undone_revision FROM public.tournament_hands WHERE id=hand;
+    IF undone_revision<=inserted_revision OR EXISTS(SELECT 1 FROM public.hand_actions WHERE hand_id=hand)
+     OR (SELECT count(*) FROM public.tracker_correction_operations WHERE hand_id=hand AND idempotency_key=undo_key)<>1 THEN RAISE EXCEPTION 'paid_undo_revision_or_receipt_failed';END IF;
+    PERFORM set_config('role','authenticated',true);
+    action_reply:=public.undo_tracker_last_action_v1(original.tournament_id,dest.id,hand,action_id,inserted_revision,undo_key);
+    IF action_reply->>'duplicate' IS DISTINCT FROM 'true' OR action_reply-'duplicate' IS DISTINCT FROM undo_reply-'duplicate' THEN
+     RAISE EXCEPTION 'paid_undo_replay_failed: %',action_reply;END IF;
+    action_reply:=public.undo_tracker_last_action_v1(original.tournament_id,dest.id,hand,action_id,inserted_revision+1,undo_key);
+    IF action_reply->>'error' IS DISTINCT FROM 'request_key_conflict' THEN RAISE EXCEPTION 'paid_undo_key_conflict_missing: %',action_reply;END IF;
+    PERFORM set_config('role','none',true);
+    IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>undone_revision
+     OR EXISTS(SELECT 1 FROM public.hand_actions WHERE hand_id=hand)
+     OR (SELECT count(*) FROM public.tracker_correction_operations WHERE hand_id=hand AND idempotency_key=undo_key)<>1 THEN RAISE EXCEPTION 'paid_undo_retry_delta';END IF;
+    IF EXISTS(SELECT 1 FROM public.tracker_historical_display_queue WHERE hand_id=hand AND status IN ('pending','processing')) THEN
+     RAISE EXCEPTION 'paid_active_undo_became_publishable';END IF;
+    SELECT jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id=original.tournament_id),
+     'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id=original.tournament_id),
+     'counts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.tournament_chip_counts c WHERE tournament_id=original.tournament_id),
+     'cash',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id=original.tournament_id)) INTO projection_after;
+    IF projection_after IS DISTINCT FROM projection_before THEN RAISE EXCEPTION 'paid_action_undo_changed_cash_or_chip_projections';END IF;
     RAISE SQLSTATE 'PZ002';
    EXCEPTION WHEN SQLSTATE 'PZ002' THEN NULL;END;
    IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>action_revision
-    OR EXISTS(SELECT 1 FROM public.hand_actions WHERE hand_id=hand) THEN RAISE EXCEPTION 'paid_action_probe_not_rolled_back';END IF;
+    OR EXISTS(SELECT 1 FROM public.hand_actions WHERE hand_id=hand)
+    OR EXISTS(SELECT 1 FROM public.tracker_correction_operations WHERE hand_id=hand)
+    OR EXISTS(SELECT 1 FROM public.dealers WHERE id=test_dealer)
+    OR EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id=test_attendance)
+    OR EXISTS(SELECT 1 FROM public.tracker_correction_uat_scopes WHERE tournament_id=original.tournament_id AND user_id=actor)
+    THEN RAISE EXCEPTION 'paid_action_probe_not_rolled_back';END IF;
   END;
  END IF;
  player:=gen_random_uuid();INSERT INTO auth.users(id) VALUES(player);
