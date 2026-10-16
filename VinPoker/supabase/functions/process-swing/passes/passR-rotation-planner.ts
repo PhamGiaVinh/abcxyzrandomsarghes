@@ -260,11 +260,12 @@ async function reconcileAndAdopt(
   }
   const dealerState = new Map<string, { current_state: string; status: string }>();
   if (lockDealerIds.size > 0) {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("dealer_attendance")
       .select("id, current_state, status")
       .in("id", [...lockDealerIds]);
-    for (const row of data ?? []) {
+    if (error || !Array.isArray(data)) throw new Error("rotation_lock_dealer_snapshot_unavailable");
+    for (const row of data) {
       dealerState.set(row.id, { current_state: row.current_state, status: row.status });
     }
   }
@@ -280,10 +281,13 @@ async function reconcileAndAdopt(
       dealer?.current_state === "pre_assigned" &&
       dealer?.status !== "checked_out";
     if (!lockReal) {
-      const { data } = await admin.rpc("cancel_rotation_slot", {
+      const { data, error } = await admin.rpc("cancel_rotation_slot", {
         p_schedule_id: s.id,
         p_reason: "reconcile_lock_lost",
       });
+      if (error || data?.outcome !== "cancelled" || data?.schedule_id !== s.id) {
+        throw new Error("rotation_cancel_unverified");
+      }
       // cancel_rotation_slot cleared the assignment's pre-assign fields in
       // the DB (WHERE pre_assigned_attendance_id = in_attendance_id). Mirror
       // that in the in-memory snapshot — phase C consumes this same array,

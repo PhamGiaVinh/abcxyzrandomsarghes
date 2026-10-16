@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 PassR reconciliation read/cancel acknowledgement guards
+
+Baseline5cf15e36e clean. Actual reconcileAndAdopt extraction RED2: dealer_attendance read outage/null converted empty map, cancelled announced slot and cleared snapshot. Added error/Array.isArray guard before any reconciliation mutation. Positive verified dealerpre_assigned preserves lock; successful empty dealer rows still cancel stale schedule.
+
+Then actual-source RED5: cancel RPC transport error/null/error/noop/wrong schedule ID all previously counted cancelled and cleared assignment snapshot. Now requires successful {outcome:cancelled,schedule_id:exactrequested} before snapshot mutation/count. Noop is not proof lock was cleared; abort current planner phase so next tick refetches authoritative state. Existing main catches errors/degrades dispatch. Contract source reviewed in archived original cancel_rotation_slot and current close79 requires cancelled; no live parity claim. No server authorization or RPC write semantics changed.
+
+31 actual-source transport testsPASS, focused DenoPassRcheckPASS/diffPASS. Fixtures/queryRPC synthetic, not native planner/runtime/production evidence. Native worker103 tests not rerun because unchanged. Legacy A2 multi-request cleanup/adoption updates and emergency replan still need separate acknowledgement/atomicity review; not claiming entire planner fixed. No push/CI/live DB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyhold/masterACTIVE. Next exact native cancel definition/contract and remaining planner seams/fullcapacity, then G5/G6/G8/G9 acceptance.
+
 ## G3 PassR early-break supply read failure no longer becomes zero
 
 Baseline8f57955af clean. Inspected main PassR: count_available_dealers RPC error ignored; non-number coerced0, negative accepted, causing end_breaks_on_demand with manufactured shortage. Actual-source entrypoint extraction tests RED6 on oldsource (null/error/null/-1/string0 invoked release; NaN/Infinity hid invalid input without diagnostic). Not a live/PG mutation reproduction: transports and upstream seams synthetic, actual phase control flow executed.

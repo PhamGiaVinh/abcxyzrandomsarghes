@@ -36,6 +36,41 @@ it('actual input readers distinguish dependency failure from a verified empty sn
 });
 
 const assignment={table_id:'physical-a',table_session_id:'session-new'};
+it.each([{data:null,error:{message:'synthetic outage'}},{data:null,error:null}])('reconciliation does not cancel a real lock after failed dealer-state read: %j',async(response)=>{
+ const first=source.indexOf('async function reconcileAndAdopt('),last=source.indexOf('// ─── Build solver inputs',first);
+ const entry=ts.transpileModule(source.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const reconcile=new Function('console',`${entry};return reconcileAndAdopt;`)({warn:vi.fn()});
+ const rpc=vi.fn(async()=>({data:{outcome:'cancelled',schedule_id:'slot-a'},error:null}));
+ const a={...assignment,id:'assignment-a',pre_assigned_attendance_id:'incoming-a',planned_relief_at:'2026-10-16T01:00:00Z'};
+ const before={...a};const query={select:vi.fn(),in:vi.fn(async()=>response)};query.select.mockReturnValue(query);
+ await expect(reconcile({from:()=>query,rpc},{clubId:'club-a'},[a],[{id:'slot-a',assignment_id:a.id,table_id:a.table_id,status:'announced',in_attendance_id:'incoming-a'}],'run-a')).rejects.toThrow('rotation_lock_dealer_snapshot_unavailable');
+ expect(rpc).not.toHaveBeenCalled();expect(a).toEqual(before);
+});
+it.each([true,false])('reconciliation preserves a verified real lock or cancels verified missing dealer: present=%s',async(present)=>{
+ const first=source.indexOf('async function reconcileAndAdopt('),last=source.indexOf('// ─── Build solver inputs',first);
+ const entry=ts.transpileModule(source.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const reconcile=new Function('console',`${entry};return reconcileAndAdopt;`)({warn:vi.fn()});
+ const rpc=vi.fn(async()=>({data:{outcome:'cancelled',schedule_id:'slot-a'},error:null}));
+ const a={...assignment,id:'assignment-a',pre_assigned_attendance_id:'incoming-a' as string|null,planned_relief_at:'2026-10-16T01:00:00Z' as string|null};
+ const query={select:vi.fn(),in:vi.fn(async()=>({data:present?[{id:'incoming-a',current_state:'pre_assigned',status:'checked_in'}]:[],error:null}))};query.select.mockReturnValue(query);
+ const result=await reconcile({from:()=>query,rpc},{clubId:'club-a'},[a],[{id:'slot-a',assignment_id:a.id,table_id:a.table_id,status:'announced',in_attendance_id:'incoming-a'}],'run-a');
+ expect(result).toEqual({adopted:0,cancelled:present?0:1});expect(rpc).toHaveBeenCalledTimes(present?0:1);
+ expect(a.pre_assigned_attendance_id).toBe(present?'incoming-a':null);
+});
+it.each([
+ {data:null,error:{message:'synthetic cancel outage'}},
+ {data:null,error:null},{data:{outcome:'error'},error:null},
+ {data:{outcome:'noop'},error:null},{data:{outcome:'cancelled',schedule_id:'other-slot'},error:null},
+])('does not clear its snapshot after unverified cancellation: %j',async(response)=>{
+ const first=source.indexOf('async function reconcileAndAdopt('),last=source.indexOf('// ─── Build solver inputs',first);
+ const entry=ts.transpileModule(source.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const reconcile=new Function('console',`${entry};return reconcileAndAdopt;`)({warn:vi.fn()});
+ const a={...assignment,id:'assignment-a',pre_assigned_attendance_id:'incoming-a',planned_relief_at:'2026-10-16T01:00:00Z'},before={...a};
+ const query={select:vi.fn(),in:vi.fn(async()=>({data:[],error:null}))};query.select.mockReturnValue(query);
+ const rpc=vi.fn(async()=>response);
+ await expect(reconcile({from:()=>query,rpc},{clubId:'club-a'},[a],[{id:'slot-a',assignment_id:a.id,table_id:a.table_id,status:'announced',in_attendance_id:'incoming-a'}],'run-a')).rejects.toThrow('rotation_cancel_unverified');
+ expect(a).toEqual(before);
+});
 it.each([
  {data:null,error:{message:'synthetic outage'}},
  {data:null,error:null}, {data:-1,error:null}, {data:NaN,error:null},
