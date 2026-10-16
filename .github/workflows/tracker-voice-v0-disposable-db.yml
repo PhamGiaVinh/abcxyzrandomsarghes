@@ -640,6 +640,7 @@ jobs:
           set -euo pipefail
           node tests/trackerVoice/openAiProviderLifecycle.test.mjs
           node tests/trackerVoice/runtimeReadLifecycle.test.mjs
+          node tests/trackerVoice/runtimeApiPayload.test.mjs
           node ./node_modules/vitest/vitest.mjs run \
             src/lib/trackerVoice/trackerVoice.test.ts \
             src/lib/trackerVoice/boardParser.test.ts \

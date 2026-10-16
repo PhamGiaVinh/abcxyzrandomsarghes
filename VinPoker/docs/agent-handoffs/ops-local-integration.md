@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Voice runtime API payload boundary RED→local validation
+
+Baselinef6eccb3bc clean/previousPROGRESS. Read actual runtime RPC SQL20270114000004 return and original config constraints: boolean flags, modes shadow/assist/auto, amount1/1000, nullable0..1confidence, active hand null or in_progress/hash. Source loader previously only truthy.ok and cast: actual extracted loader with fake RPC gives2PASS10FAIL for malformed/truthy/missing/wrongtable payloads. Now validates these consumed fields at SDK boundary, preserves explicit server denial/network message, rejects malformed with tracker_voice_runtime_malformed; optional canonicaltable if present must match requested. No server permission/API write/model changes or claim of client authorization.
+
+Final12/12PASS21.23ms plus scopedapiESLint0/diffcheckPASS. Positives enabled/disabled/nohand/1000unit/confidence0and1, exact RPC args, canonical object unchanged; negatives assert exact malformed/denial message, not any TypeError. Actual functionbody/SWC with fakeSupabase transport; NOT wholemodule/type/build/realRPC/ACL/browser/provider. Existing Voice workflow invokes new test, no dispatch. Optional missing table field remains compatible per existing type; no proof of full actor/session/epoch response binding. No process/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Localhold/masterACTIVE/fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release remain.
+
 ## Voice runtime read deadline — local RED→GREEN
 
 Baseline05a1d61d4 clean/previousPROGRESS. Actual runtime read had no bound; existing sourcecallback test16PASS1FAIL proves no timer scheduled for hanging loader. Reused unchanged observeTrackerContextRead10s, explicit Vietnamese timeout state, late result cannot publish, no automatic read/mutation retry. Connect now uses current-runtime error or neutral unavailable message, not captured runtimeError/dealer-assignment claim for a failed read.

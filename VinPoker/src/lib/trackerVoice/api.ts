@@ -35,7 +35,27 @@ export async function loadTrackerVoiceRuntimeContext(
   } as never);
   if (error) throw new Error(error.message);
   const result = data as unknown as TrackerVoiceRuntimeContext | null;
-  if (!result?.ok) throw new Error(result?.error ?? "Không tải được quyền Voice cho bàn này.");
+  if (result?.ok !== true) throw new Error(typeof result?.error === "string" ? result.error : "Không tải được quyền Voice cho bàn này.");
+  const config = result.config;
+  const hand = result.active_hand;
+  if (Array.isArray(result)
+    || typeof result.can_mint_session !== "boolean" || typeof result.read_only !== "boolean"
+    || typeof result.correction_pending !== "boolean"
+    || (result.tournament_table_id !== undefined && result.tournament_table_id !== tournamentTableId)
+    || !config || typeof config !== "object" || Array.isArray(config)
+    || typeof config.enabled !== "boolean" || !["shadow", "assist", "auto"].includes(config.configured_mode)
+    || typeof config.provider_model !== "string" || !config.provider_model.trim()
+    || ![1, 1000].includes(config.spoken_amount_unit)
+    || typeof config.amount_unit_confirmed !== "boolean" || typeof config.server_auto_allowed !== "boolean"
+    || !["ready", "correction_pending"].includes(config.correction_state)
+    || (config.provider_confidence_threshold !== null && (typeof config.provider_confidence_threshold !== "number"
+      || !Number.isFinite(config.provider_confidence_threshold) || config.provider_confidence_threshold < 0 || config.provider_confidence_threshold > 1))
+    || (hand !== null && (!hand || typeof hand !== "object" || Array.isArray(hand)
+      || typeof hand.hand_id !== "string" || !hand.hand_id.trim()
+      || !Number.isInteger(hand.hand_number) || hand.hand_number < 1 || hand.status !== "in_progress"
+      || typeof hand.state_version !== "string" || !/^[0-9a-f]{64}$/i.test(hand.state_version)))) {
+    throw new Error("tracker_voice_runtime_malformed");
+  }
   return result;
 }
 
