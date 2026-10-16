@@ -27,7 +27,7 @@ import { tournamentStatusCategory, tournamentStatusLabel, type TournamentStatusC
 
 /**
  * Giải đấu (mobileOpsV2) — bản NỐI DỮ LIỆU THẬT (reads danh sách A1).
- * Danh sách giải đọc từ `useTournaments(clubId)` (đúng hook desktop dùng), ngữ cảnh CLB qua `useOperatorClubs()`.
+ * Danh sách giải đọc từ `useTournaments(clubId, actorId)` (đúng hook desktop dùng).
  * Ghi chú: mọi thao tác ghi ở sheet đi qua RPC/RLS hiện có; không fallback mock và không tự apply migration.
  */
 type StatusKey = TournamentStatusCategory;
@@ -84,7 +84,7 @@ export default function OpsTournaments() {
   const hasOwnerAccess = isSuperAdmin || scope.some(
     (row) => row.club_id === activeClub && row.can_owner,
   );
-  const { data: tournaments, isLoading: tourLoading, isError: tourReadError, refetch: retryTours } = useTournaments(activeClub);
+  const { data: tournaments, isLoading: tourLoading, isError: tourReadError, refetch: retryTours } = useTournaments(activeClub, user?.id);
 
   const [filter, setFilter] = useState<"live" | "today" | "all">("live");
   const [sel, setSel] = useState<TVM | null>(null);

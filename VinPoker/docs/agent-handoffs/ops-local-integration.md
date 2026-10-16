@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G2/G9 tournament list actor-cache leak repaired locally
+
+Baselineb3fc08598 clean. App QueryClient persists across signout; both tournament readers keyed only by club. New actual React Query hook regressions7e9a85:4FAIL/4PASS before product edit: actorB sees actorA fresh rows in same club; pending actorA query is reused so B never dispatches its own read. This is a deterministic client-cache repro, not proof of a live incident or server authorization bypass.
+
+Require explicit actorId in both readers, separate keys [tournaments,club,actor,all|active], disable reads without actor/club and reject manual refetch missing scope. Updated all seven production call sites (OpsTables has two) using existing main/ops actor context; no new auth provider, request, dependency or permission. Preserve club-prefix mutation invalidation. Added logout/manual-refetch denial and same-actor dedupe/invalidation controls.44tests/5filesPASS4391f1+33039b; OpsTournaments/OpsToday7renderPASS5ad0f6; affected7TS/TSX SWC syntaxPASS, all caller inventory/diff checks reviewed. Full build/typecheck NOT RUN under RAM hold; same-user session refresh/revocation and wider non-tournament caches are not proved by this actor-only fix. Existing workflow already executes reader regressions; no CI dispatch.
+
+Skills frontend-ui-engineering and post-edit React checklist used for scoped server-state identity, no visual redesign. UI Skills CLI absent locally; no installation under hold. No push/liveDB/Edge/frontend/flags/Auto/Daybreak change. Master active, G2/G9 not ACCEPTED; actual web/account-switch/performance and integrated tour remain outstanding. Next inspect remaining read contracts/actor-session scopes without extrapolating this slice to all app auth.
+
 ## G4 late config-response recovery contract qualified
 
 Baseline68f060fc9, clean. Existing atomic config implementation inspected rather than rewritten. Two new focused transport regressions PASS BEFORE any product change: after mutation deadline a verified receipt wins over contradictory late writer rejection; after both mutation/read deadlines, a late success does not settle the already-unknown call or cause another mutation, and explicit recovery uses the original actor/request. Full affected file13 tests PASS36a8e1 exit0 (single worker, 1.97s); no new product bug claimed. This proves client Promise/timer/receipt behavior with mocked transport, NOT real HTTP response loss, DB commit or web UAT. Existing native atomic/concurrency proofs remain separate. No full build/typecheck under RAM hold, no push/CI/DBlive/Edge/frontend/flags/UAT change. Master active; G4 web acceptance and G8/G9 still outstanding.

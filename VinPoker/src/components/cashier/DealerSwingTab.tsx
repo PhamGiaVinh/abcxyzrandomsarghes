@@ -282,7 +282,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     refetch: refetchSchedule,
   } = useRotationSchedule(filteredClubIds);
   const { data: swingConfigs, loading: configsLoading, error: configsError, refetch: refetchSwingConfigs } = useSwingConfigs(filteredClubIds);
-  const { data: tournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0]);
+  const { data: tournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0], user?.id);
   const staleCleanupCandidateIds = useMemo(
     () => staleCleanupCandidateAttendanceIds(dealers ?? [], nowMs),
     [dealers, nowMs],

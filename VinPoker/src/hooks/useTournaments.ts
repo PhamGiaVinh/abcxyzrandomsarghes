@@ -28,18 +28,20 @@ export function useTournamentConfigTableInventory(clubId: string, actorId: strin
 // ─── Query key factory ──────────────────────────────────────────────────────
 
 const tournamentKeys = {
-  all: (clubId?: string) => ["tournaments", clubId] as const,
-  active: (clubId?: string) => ["tournaments", clubId, "active"] as const,
+  // Actor isolates browser cache, not authorization; the server still enforces RLS.
+  // Keep club first so existing mutation invalidation refreshes both list variants.
+  all: (clubId: string | undefined, actorId: string | undefined) => ["tournaments", clubId, actorId, "all"] as const,
+  active: (clubId: string | undefined, actorId: string | undefined) => ["tournaments", clubId, actorId, "active"] as const,
 };
 
 // ─── Fetch all tournaments with tables ──────────────────────────────────────
 
-export function useTournaments(clubId: string | undefined) {
+export function useTournaments(clubId: string | undefined, actorId: string | undefined) {
   const supabase = useSupabaseClient();
   return useQuery({
-    queryKey: tournamentKeys.all(clubId),
+    queryKey: tournamentKeys.all(clubId, actorId),
     queryFn: async () => {
-      if (!clubId) return [];
+      if (!clubId || !actorId) throw new Error('AUTH_SCOPE_REQUIRED');
 
       const { data, error } = await supabase
         .from("tournaments")
@@ -69,19 +71,19 @@ export function useTournaments(clubId: string | undefined) {
       if (error) throw error;
       return (data ?? []) as unknown as TournamentWithTables[];
     },
-    enabled: !!clubId,
+    enabled: !!clubId && !!actorId,
     staleTime: 5 * 60 * 1000,
   });
 }
 
 // ─── Fetch active tournaments only ──────────────────────────────────────────
 
-export function useActiveTournaments(clubId: string | undefined) {
+export function useActiveTournaments(clubId: string | undefined, actorId: string | undefined) {
   const supabase = useSupabaseClient();
   return useQuery({
-    queryKey: tournamentKeys.active(clubId),
+    queryKey: tournamentKeys.active(clubId, actorId),
     queryFn: async () => {
-      if (!clubId) return [];
+      if (!clubId || !actorId) throw new Error('AUTH_SCOPE_REQUIRED');
 
       const { data, error } = await supabase
         .from("tournaments")
@@ -116,7 +118,7 @@ export function useActiveTournaments(clubId: string | undefined) {
       if (error) throw error;
       return (data ?? []) as unknown as TournamentWithTables[];
     },
-    enabled: !!clubId,
+    enabled: !!clubId && !!actorId,
     staleTime: 2 * 60 * 1000,
   });
 }

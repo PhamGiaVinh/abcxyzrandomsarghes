@@ -27,7 +27,7 @@ export default function OpsToday() {
   const scopedIds = operatorClubIds;
   const activeClub = scopedIds[0];
 
-  const { data: tournaments } = useTournaments(activeClub);
+  const { data: tournaments } = useTournaments(activeClub, user?.id);
   const tablesQ = useDealerOperationalTables(scopedIds);
   const asgQ = useActiveAssignmentsWithTimeline(scopedIds);
   const rosterQ = useCheckedInDealers(scopedIds);

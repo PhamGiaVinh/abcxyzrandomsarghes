@@ -50,7 +50,7 @@ export default function TournamentConfigPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const clubIdStr = clubId ?? "";
 
-  const { data: tournaments, isLoading: toursLoading } = useTournaments(clubIdStr);
+  const { data: tournaments, isLoading: toursLoading } = useTournaments(clubIdStr, user?.id);
   const inventory = useTournamentConfigTableInventory(clubIdStr, user?.id);
   const allTables = inventory.data ?? [];
 
