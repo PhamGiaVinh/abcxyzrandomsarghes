@@ -167,6 +167,9 @@ export async function runPaidTourShowdown(sql,f,table){
   assert.equal(sql(`SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='${f.tour}';`),'0');
   assert.equal(sql(`SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'1');assert.equal(cash(),cashBefore);
   console.log('NATIVE_EIGHT_PAID_WINNER_STACK_PRESERVED_CANONICAL_TABLE_TOUR_CLOSE_REPLAY_PASS',f.tour);
+  const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{encoding:'utf8',timeout:120000,
+   env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(f),VINPOKER_HISTORY_PARENT_SHOWDOWN:'1'}});
+  assert.match(worker,/ACTUAL_PAID_TERMINAL_SHOWDOWN_HISTORY_WORKER_PUBLIC_VERIFIED_PASS/);process.stdout.write(worker);assert.equal(cash(),cashBefore);
  }finally{
   if(globalBefore==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
   else sql(`UPDATE public.app_settings SET value=${quote(globalBefore)}::jsonb WHERE key='tracker_voice_global_enabled';`);

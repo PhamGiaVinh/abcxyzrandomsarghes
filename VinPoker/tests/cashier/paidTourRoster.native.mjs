@@ -206,5 +206,9 @@ assert.equal(tvAfterBreak.participation_counts.remaining,8);assert.equal(tvAfter
 console.log('NATIVE_EIGHT_PAID_SAME_TOUR_BREAK_CLOSE_REOPEN_SESSION_FENCE_PASS');
 await runPaidTourShowdown(sql,f,roster()[0]);
 assert.deepEqual(roster(),[],'completed tour has no active table sessions');
+const tvClosed=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
+assert.equal(tvClosed.status,'paired');assert.equal(tvClosed.tournament.id,f.tour);assert.equal(tvClosed.tournament.status,'completed');
+assert.equal(tvClosed.participation_counts.remaining,1);assert.equal(tvClosed.participation_counts.live_entry_stack,160000);
+console.log('NATIVE_PAID_TOUR_POST_CLOSE_ANONYMOUS_TV_COUNTS_PASS');
 console.log('NATIVE_PAID_TOUR_INTEGRATED_LIFECYCLE_CURRENT_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

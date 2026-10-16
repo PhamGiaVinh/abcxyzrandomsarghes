@@ -28,7 +28,10 @@ const binary=prefix.length?'wsl':'psql',flags=['-w','-X','-qAt','-v','ON_ERROR_S
 const sql=q=>execFileSync(binary,[...prefix,...flags],{input:q,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
 const parentHand=process.env.VINPOKER_HISTORY_PARENT_HAND;
 const baselineParent=process.env.VINPOKER_HISTORY_PARENT_BASELINE;
+const parentShowdown=process.env.VINPOKER_HISTORY_PARENT_SHOWDOWN==='1';
 assert.ok(!baselineParent||parentHand,'parent_hand_required');
+assert.ok(process.env.VINPOKER_HISTORY_PARENT_SHOWDOWN===undefined||parentShowdown);
+if(parentShowdown)assert.ok(parentHand&&baselineParent&&process.env.VINPOKER_NATIVE_PAID_TOUR==='1','owned_paid_showdown_parent_required');
 let fixture,hand;
 if(parentHand){
  assert.ok(process.env.VINPOKER_NATIVE_CORRECTION_UI==='1'||process.env.VINPOKER_NATIVE_PAID_TOUR==='1','owned_parent_gate_required');assert.ok(isUuid(parentHand));
@@ -169,10 +172,21 @@ if(!verified)assert.equal(calls.at(-1).args.p_error_code,'historical_empty_or_in
 assert.equal(sql(`SELECT status FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' AND source_revision=(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}');`),verified?'completed':'needs_attention');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
 if(verified){const outcome=JSON.parse(sql(`SELECT public_outcome FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`));
+ if(parentShowdown){
+  const board=JSON.parse(sql(`SELECT community_cards FROM public.tournament_hands WHERE id='${hand}';`));assert.deepEqual(board,['Tc','Jc','Qc','2d','3h']);
+  const royalWinner=sql(`SELECT player_id FROM public.hand_players WHERE hand_id='${hand}' AND hole_cards @> '["Ac","Kc"]'::jsonb;`);assert.ok(isUuid(royalWinner));
+  assert.equal(outcome.players.length,8);assert.deepEqual(outcome.players.map(p=>p.netDelta).sort((a,b)=>a-b),expectedNets);
+  assert.deepEqual(outcome.pots.map(p=>p.amount).sort((a,b)=>a-b),[700,159200]);
+  for(const pot of outcome.pots){assert.equal(pot.allocations.length,1);assert.equal(pot.allocations[0].winnerId,royalWinner);assert.equal(pot.allocations[0].amount,pot.amount);}
+  assert.equal(outcome.refunds.length,1);assert.equal(outcome.refunds[0].playerId,royalWinner);assert.equal(outcome.refunds[0].amount,100);
+  assert.equal(outcome.handRanks.length,1,'public proof must not add losing hand ranks');assert.equal(outcome.handRanks[0].playerId,royalWinner);
+  assert.equal(outcome.players.find(p=>p.playerId===royalWinner).endingStack,160000);
+ }else{
  const winner=sql(`SELECT hp.player_id FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id WHERE h.id='${hand}' AND hp.seat_number=h.tracker_bb_position;`);
  assert.deepEqual(outcome.players.map(p=>p.netDelta).sort((a,b)=>a-b),expectedNets);
  assert.equal(outcome.pots[0].allocations[0].winnerId,winner);assert.equal(outcome.pots[0].allocations[0].amount,200);
  assert.equal(outcome.refunds[0].playerId,winner);assert.equal(outcome.refunds[0].amount,100);assert.deepEqual(outcome.handRanks,[]);
+ }
  assert.equal(Object.hasOwn(outcome,'privateEvidence'),false);
 }
 const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
@@ -277,7 +291,7 @@ const retry=await handler(new Request('https://test.invalid/history-worker',{met
 assert.equal(retry.status,200);assert.deepEqual(await retry.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
 assert.equal(calls.at(-1).name,'claim_tracker_historical_display_jobs_scoped_v1');assert.deepEqual(errors,[]);assert.equal(business(),before);
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
-if(baselineParent&&process.env.VINPOKER_NATIVE_PAID_TOUR==='1'){
+if(baselineParent&&!parentShowdown&&process.env.VINPOKER_NATIVE_PAID_TOUR==='1'){
  const oldRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
  await runPaidCorrectionEdge({sql,service,fixture,hand});
  const newRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
@@ -297,5 +311,5 @@ if(baselineParent&&process.env.VINPOKER_NATIVE_PAID_TOUR==='1'){
  console.log('ACTUAL_PAID_EIGHT_SAME_HAND_CORRECTION_INVALIDATION_REPUBLICATION_PASS');
 }
 if(parentHand)console.log(baselineParent?'ACTUAL_PAID_PARENT_BASELINE_HISTORY_WORKER_PUBLIC_PASS':'ACTUAL_PARENT_CORRECTION_SAME_HAND_CURRENT_REVISION_WORKER_PUBLIC_PASS');
-console.log(lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
+console.log(parentShowdown?'ACTUAL_PAID_TERMINAL_SHOWDOWN_HISTORY_WORKER_PUBLIC_VERIFIED_PASS':lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
 }

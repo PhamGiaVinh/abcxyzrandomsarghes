@@ -136,3 +136,15 @@ transaction-locally per official bootstrap, restored; no RLS/table-grant changes
 Not official ranking/payout proof (player-history not enabled), not terminal-hand
 worker/public projection proof, hosted/UI375/realrotation/provider/performance or
 fullchecks/release. Goal stillIN_PROGRESS, Daybreak/Auto/live state unchanged.
+# Latest extension — 2026-10-16 post-close History and anonymous TV
+
+0342d8 terminal0/PGstopped: SAME closed paid tour1491afed-131a-4d39-99c7-170c0adf8a55
+terminalhand cbc8092f-7ace-4ff0-8e4f-a68cced14623 actualworker/verifier/SQL→current
+verified public proof (main159200/side700/refund100/royalwinner160000). Public
+rank count1/no losing ranks or private evidence; retryclaims0. Anonhistoryverified,
+anonTVcompleted/1survivor160000,active-roster[]. Explicit parent-showdown gate;
+existing fold/correction oracles preserved. No product/live/flag/release change.
+Official final places still unqualified: fixture player-history disabled and
+registration not closed beforeplay. Inspect exact finalization dependencies next.
+Other original gaps (realrotations,hosted40,375/provider/Storage/fullchecks/perf/
+release) remain; this is NOT master acceptance.

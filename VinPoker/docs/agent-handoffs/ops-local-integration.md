@@ -1854,3 +1854,35 @@ same terminal hand via worker and projections, then inspect existing supported
 history-enabled result path without inventing ranks or replaying archives.
 No product SQL/Edge/UI changes; no productionDB/Edge/frontend/flags/UAT/push/CI/
 deploy. Local-only hold, DaybreakOFF/AutoOFF and masterACTIVE retained. No live job.
+# 2026-10-16 — Closed tour terminal hand History worker and anonymous TV
+
+G6/G8 IN_PROGRESS, baseline2336be5da. Same eight-paid terminal showdown now goes
+through actual worker/verifier/SQL AFTER canonical tournament close. Explicit
+native paid-parent/showdown gate retains all exact loopback/datadir/no-net/paid
+entry/owner/hand identity checks; no outcome exists before initial claim.
+Fixture-specific royal-flush oracle asserts main159200+side700 to AcKc winner,
+refund100,8nets/current generation, winner160000. Public proof has one winning
+rank, not losing-player ranks/private evidence. Anonymous table history verified;
+worker retry claims0/no second proof. Closed-tour path does NOT run another
+correction against an already closed tournament. Existing fold/correction and
+nonparent standalone oracles unchanged.
+
+After close + worker, actual anon TV RPC returns paired/correcttour/completed,
+1remaining registered survivor/160000 live-entry stack; active roster is[].
+Finaled8e22/64033→0342d8 terminal0/PGstopped. Retained club
+`2e7532be-74f0-4473-9369-1f64910f74e3`, tour
+`1491afed-131a-4d39-99c7-170c0adf8a55`, fold hand
+`c9a6193b-4bc2-4792-b8bf-122b14905ce2`, terminal showdown
+`cbc8092f-7ace-4ff0-8e4f-a68cced14623`. Syntax/diff checks pass.
+
+No product/runtime definitions, production DB/Edge/frontend/flags/UAT/push/CI/
+deployment changes. Local resource hold, DaybreakOFF/AutoOFF remain. No live job.
+Master still ACTIVE: official final-place/history-enabled path NOT qualified;
+read-only source trace finds auto-finalize gated by player_history_enabled and
+registration_closed_at. Current native fixture has neither enabled/closed before
+play. Only producer located for registration_closed_at is payout-generation
+(archive READ ONLY); no direct frontend setter found. Verify exact runtime
+definitions/caller before classifying or fixing this gap, never replay archive
+or generate a payout merely to force a close. Same-tour deferred break, real
+rest15rotations, hosted40,375/mic/provider/Storage/fullchecks/performance/release
+are still required. Next: runtime audit of official finalization dependencies.
