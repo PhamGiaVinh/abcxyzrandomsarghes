@@ -13,6 +13,9 @@ assert.ok(process.env.VINPOKER_NATIVE_PAID_HISTORY===undefined||process.env.VINP
 const historyEnabled=process.env.VINPOKER_NATIVE_PAID_HISTORY==='1';
 assert.ok(process.env.VINPOKER_NATIVE_DEFERRED_BREAK===undefined||process.env.VINPOKER_NATIVE_DEFERRED_BREAK==='1');
 const deferredBreak=process.env.VINPOKER_NATIVE_DEFERRED_BREAK==='1';
+assert.ok(process.env.VINPOKER_NATIVE_PAID_REENTRY===undefined||process.env.VINPOKER_NATIVE_PAID_REENTRY==='1');
+const paidReentry=process.env.VINPOKER_NATIVE_PAID_REENTRY==='1';
+if(paidReentry)assert.ok(historyEnabled&&deferredBreak,'paid re-entry integration requires member history and deferred lifecycle checks');
 const f=createPaidJourneyFixture(sql,{playerHistoryEnabled:historyEnabled});
 const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
 sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
@@ -124,7 +127,7 @@ const protectedState=()=>sql(`SELECT md5(jsonb_build_object(
  'outcomes',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.tournament_settlement_outcomes r JOIN public.tournament_hands h ON h.id=r.hand_id WHERE h.tournament_id='${f.tour}'),
  'assignments',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.dealer_assignments r WHERE club_id='${f.club}'))::text);`);
 const protectedBefore=protectedState();
-const entryCount=sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`);
+let entryCount=sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`);
 const bustKey=crypto.randomUUID();
 const bust=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_bust_player_v3('${restoreTarget.entry}',${restoreTarget.revision},${restoreTarget.epoch},${restoreTarget.stack},'${bustKey}','eight_paid_mistaken_bust_TEST');COMMIT;`));
 const busted=bust();assert.equal(busted.ok,true);assert.deepEqual(bust(),busted);
@@ -149,6 +152,42 @@ assert.equal(protectedState(),protectedBefore);assert.equal(issuedLedger(),ledge
 const tvRestored=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
 assert.equal(tvRestored.participation_counts.remaining,8);assert.equal(tvRestored.participation_counts.live_entry_stack,160000);
 console.log('NATIVE_EIGHT_PAID_SAME_TOUR_BUST_REENTRY_FENCE_RESTORE_RECEIPT_TV_PASS');
+if(paidReentry){
+ const oldCash=sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}';`);
+ const oldCashIds=JSON.parse(sql(`SELECT jsonb_agg(id ORDER BY id) FROM public.cashier_buyin_movements WHERE tournament_id='${f.tour}';`));
+ const current=JSON.parse(sql(`SELECT jsonb_build_object('revision',x.revision,'epoch',x.control_epoch) FROM public.table_sessions x WHERE id='${restoreTarget.session}';`));
+ const realBust=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_bust_player_v3('${restoreTarget.entry}',${current.revision},${current.epoch},20000,'${crypto.randomUUID()}','eight_paid_reentry_TEST');COMMIT;`));assert.equal(realBust.ok,true);
+ assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'7|140000');
+ const register=()=>JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"service_role"}';SET LOCAL ROLE service_role;SELECT public.cashier_create_app_reentry_v1('${f.tour}','${restoreTarget.player}');COMMIT;`));
+ const registration=register();assert.equal(registration.ok,true);assert.equal(registration.total_pay,100000);assert.ok(registration.price_snapshot);
+ const repeated=register();assert.equal(repeated.registration_id,registration.registration_id);assert.deepEqual(repeated.price_snapshot,registration.price_snapshot);
+ const intent={actor_id:f.actor,club_id:f.club,tournament_id:f.tour,registration_id:registration.registration_id,amount:registration.total_pay,request_id:crypto.randomUUID()};
+ const pay=payload=>JSON.parse(sql(`BEGIN;${auth}SELECT public.resolve_cashier_cash_buyin_intent_v1('${JSON.stringify(payload)}'::jsonb,'record');COMMIT;`));
+ const receipt=pay(intent);assert.equal(receipt.status,'recorded');assert.equal(receipt.result.seating_state,'seated');assert.equal(receipt.result.entry_no,2);
+ assert.notEqual(receipt.result.entry_id,restoreTarget.entry);assert.deepEqual(pay(intent),receipt);
+ const afterPayment=financialRoster();assert.equal(pay({...intent,amount:intent.amount+1}).error,'IDEMPOTENCY_CONFLICT');assert.equal(financialRoster(),afterPayment);
+ assert.equal(sql(`SELECT count(*)||'|'||sum(amount) FROM public.cashier_buyin_movements WHERE registration_id='${registration.registration_id}';`),'1|100000');
+ assert.equal(sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE id IN (${oldCashIds.map(id=>`'${id}'::uuid`).join(',')});`),oldCash);
+ const newEntry=JSON.parse(sql(`SELECT to_jsonb(e) FROM public.tournament_entries e WHERE id='${receipt.result.entry_id}';`));
+ assert.equal(newEntry.player_id,restoreTarget.player);assert.equal(newEntry.entry_no,2);assert.equal(newEntry.current_stack,20000);
+ assert.equal(sql(`SELECT source_entry_id FROM public.tournament_registrations WHERE id='${registration.registration_id}';`),restoreTarget.entry);
+ assert.equal(sql(`SELECT status||'|'||current_stack FROM public.tournament_entries WHERE id='${restoreTarget.entry}';`),'busted|0');
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE entry_id='${restoreTarget.entry}' AND is_active;`),'0');
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE entry_id='${newEntry.id}' AND player_id='${restoreTarget.player}' AND entry_number=2 AND chip_count=20000 AND is_active;`),'1');
+ const destination=JSON.parse(sql(`SELECT jsonb_build_object('table',s.tournament_table_id,'session',x.id,'revision',x.revision,'epoch',x.control_epoch,'seat',s.seat_number)
+ FROM public.tournament_seats s JOIN public.table_sessions x ON x.id=s.table_session_id WHERE s.entry_id='${newEntry.id}' AND s.is_active;`));
+ const denied=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_restore_busted_player_to_seat_v5('${restoreTarget.entry}','${destination.table}',${destination.seat},${destination.revision},${destination.epoch},'${crypto.randomUUID()}','${destination.session}');COMMIT;`));
+ assert.equal(denied.error,'restore_reentry_dependency');assert.equal(financialRoster(),afterPayment);
+ assert.deepEqual(restore(),restored,'old successful restore receipt replays without reversing the later re-entry');assert.equal(financialRoster(),afterPayment);
+ entryCount=sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`);assert.equal(entryCount,'9');
+ assert.ok(roster().every(t=>t.players===4));
+ assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count)||'|'||count(DISTINCT player_id) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'8|160000|8');
+ assert.equal(sql(`SELECT count(*)||'|'||sum(amount) FROM public.cashier_buyin_movements WHERE tournament_id='${f.tour}';`),'9|900000');
+ assert.equal(issuedLedger(),ledgerBeforeReplay,'re-entry must not rewrite historical chip issuance/conversion rows');
+ const tv=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
+ assert.equal(tv.participation_counts.remaining,8);assert.equal(tv.participation_counts.live_entry_stack,160000);assert.equal(tv.entries.total_confirmed,9);
+ console.log('NATIVE_EIGHT_PLAYERS_NINE_PAID_ENTRIES_CANONICAL_REENTRY_REPLAY_RESTORE_FENCE_TV_PASS',JSON.stringify({old:restoreTarget.entry,current:newEntry.id,player:restoreTarget.player}));
+}
 const colorKey=crypto.randomUUID(),undoKey=crypto.randomUUID();
 const rosterBeforeColor=operational(),proofBeforeColor=protectedState();
 assert.equal(sql(`SELECT count(*) FROM public.chip_inventory_ledger WHERE tournament_id='${f.tour}';`),'0','issuance is tracked separately from conversion ledger');

@@ -171,7 +171,9 @@ export async function runPaidTourShowdown(sql,f,table){
    'openai_realtime','gpt-live-transcribe','${key}','ket thuc hand','${snapshot.state_version}','${key}','native-eight-showdown-finish','${settlement.settlementOrigin}','${settlement.settlementDigest}',${quote(record)}::jsonb);COMMIT;`));
   r=finish();assert.equal(r.ok,true,JSON.stringify(r));assert.equal(finish().duplicate,true);
   assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'1|160000');
-  assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND status='busted';`),'7');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND status='busted';`),process.env.VINPOKER_NATIVE_PAID_REENTRY==='1'?'8':'7');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_entries e JOIN public.hand_players p ON p.player_id=e.player_id AND p.entry_number=e.entry_no
+   WHERE p.hand_id='${hand.id}' AND e.tournament_id='${f.tour}' AND e.status='busted';`),'7','terminal hand eliminates seven exact entry generations, excluding the earlier bullet');
   assert.equal(sql(`SELECT count(*) FROM public.tournament_eliminations WHERE hand_id='${hand.id}';`),'7');assert.equal(cash(),cashBefore);
   const readiness=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tournament_close_readiness_v1('${f.tour}');COMMIT;`));
   assert.equal(readiness.ok,true);assert.equal(readiness.ready,false);assert.ok(readiness.blockers.includes('active_seats'));
@@ -203,8 +205,13 @@ export async function runPaidTourShowdown(sql,f,table){
   assert.equal(sql(`SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'1');assert.equal(cash(),cashBefore);
   console.log('NATIVE_EIGHT_PAID_WINNER_STACK_PRESERVED_CANONICAL_TABLE_TOUR_CLOSE_REPLAY_PASS',f.tour);
   if(process.env.VINPOKER_NATIVE_PAID_HISTORY==='1'){
-   const places=JSON.parse(sql(`SELECT jsonb_agg(finished_place ORDER BY finished_place) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`));
+   const places=JSON.parse(sql(`SELECT jsonb_agg(e.finished_place ORDER BY e.finished_place) FROM public.tournament_entries e WHERE e.tournament_id='${f.tour}'
+    AND NOT EXISTS(SELECT 1 FROM public.tournament_entries newer WHERE newer.tournament_id=e.tournament_id AND newer.player_id=e.player_id AND newer.entry_no>e.entry_no);`));
    assert.deepEqual(places,[1,2,3,4,5,6,7,8]);
+   if(process.env.VINPOKER_NATIVE_PAID_REENTRY==='1'){
+    assert.equal(sql(`SELECT count(*) FROM public.tournament_entries e WHERE e.tournament_id='${f.tour}' AND e.finished_place IS NULL AND e.status='busted'
+     AND EXISTS(SELECT 1 FROM public.tournament_entries newer WHERE newer.tournament_id=e.tournament_id AND newer.player_id=e.player_id AND newer.entry_no>e.entry_no);`),'1');
+   }
    assert.equal(sql(`SELECT finished_place FROM public.tournament_entries WHERE id='${survivor.id}';`),'1');
    assert.equal(sql(`SELECT detail->'official_results'->>'status' FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'finalized');
    assert.equal(sql(`SELECT count(*) FROM public.player_history_link_errors WHERE club_id='${f.club}';`),'0');

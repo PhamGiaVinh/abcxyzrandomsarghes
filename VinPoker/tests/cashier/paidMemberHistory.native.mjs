@@ -19,7 +19,13 @@ export function verifyPaidMemberHistory(sql,tour){
   FROM public.tournament_entries e JOIN public.tournament_registrations r ON r.id=e.registration_id AND r.tournament_id=e.tournament_id
   JOIN public.club_members m ON m.id=e.member_id AND m.club_id='${scope.club}' AND m.player_user_id=e.player_id
   WHERE e.tournament_id='${tour}' AND EXISTS(SELECT 1 FROM public.cashier_buyin_movements p WHERE p.registration_id=r.id AND p.amount>0);`));
- assert.equal(rows.length,8);assert.deepEqual(rows.map(r=>r.place),[1,2,3,4,5,6,7,8]);assert.equal(new Set(rows.map(r=>r.member)).size,8);
+ const reentry=process.env.VINPOKER_NATIVE_PAID_REENTRY==='1';
+ assert.equal(rows.length,reentry?9:8);assert.deepEqual(rows.filter(r=>r.place!==null).map(r=>r.place),[1,2,3,4,5,6,7,8]);assert.equal(new Set(rows.map(r=>r.member)).size,8);
+ if(reentry){
+  assert.equal(rows.filter(r=>r.place===null).length,1,'prior bullet must not acquire a second official finishing place');
+  const counts=new Map();for(const r of rows)counts.set(r.member,(counts.get(r.member)??0)+1);
+  assert.deepEqual([...counts.values()].sort(),[1,1,1,1,1,1,1,2]);
+ }
  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id='${tour}'),
   'cash',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${tour}'),
   'hands',(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM public.tournament_hands h WHERE tournament_id='${tour}'),
@@ -35,7 +41,8 @@ export function verifyPaidMemberHistory(sql,tour){
    assert.equal(entry.tournament_id,tour);assert.equal(entry.finished_place,expected.place);assert.equal(entry.buy_in,expected.buy_in);assert.equal(entry.total_paid,expected.total_paid);
    assert.equal(entry.prize,expected.prize,'missing official prize must not be invented as zero');
   }
-  const denied=read(expected.player,rows[(i+1)%rows.length].member);assert.equal(denied.ok,false);assert.equal(denied.error,'actor_not_allowed');
+  const other=rows.find(r=>r.member!==expected.member);assert.ok(other);
+  const denied=read(expected.player,other.member);assert.equal(denied.ok,false);assert.equal(denied.error,'actor_not_allowed');
  }
  // Foreign club fixture must exist; do not silently omit the tenant negative.
  const foreignRaw=sql(`SELECT jsonb_build_object('member',m.id,'club',c.id) FROM public.club_members m JOIN public.clubs c ON c.id=m.club_id

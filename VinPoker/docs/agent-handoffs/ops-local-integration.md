@@ -2169,3 +2169,48 @@ Unique ranks remain mechanical evidence, NOT house-policy/payout acceptance;
 frontend/flags/UAT/push/Auto/deploy, DaybreakOFF/local resource hold unchanged.
 Goal ACTIVE/PROGRESS; next independent gap is same-tour canonical paid re-entry
 and dependent chip/entry identity, not rerun this successful deferred path blindly.
+
+## 2026-10-16 — Same-tour paid re-entry/current versus historical bullet proof
+
+Baselinee05896591; fetch main unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+New explicit native-only VINPOKER_NATIVE_PAID_REENTRY=1 requires historyON and
+deferred lifecycle variant. After mistaken bust/restore, actual second bust then
+service-only cashier_create_app_reentry_v1 creates server-priced registration;
+repeat keeps same registration/price. Actual cash intent100000 COMMIT/replay and
+changed-amount conflict prove exactly1 new movement and old8cash rows unchanged.
+New entry_no2 differs from old entry; same player/member, registration source_entry
+bound to old bullet, canonical seat entry_number2/stack20000, old bullet busted0/
+no active seat. Fresh restore of old bullet denied restore_reentry_dependency;
+replay of prior successful restore receipt does not reverse later re-entry.
+9entries/900000 cash vs8active distinctplayers/160000 live chips. Issuance and
+conversion ledger not rewritten. AnonTV remaining8/confirmed9/live160000.
+Not actual bank transport/new issuance or couplingON evidence; existing variant
+couplingOFF and internal app registration modeled Auth remain explicit limitations.
+
+Same tour then color-up/undo, staffed deferred break/Finish/assignment release,
+correction workers/new session/stale writer fence, final8player showdown/close,
+anonTV and member history. Native reader proves9 exact paid participations for
+8members, both old+new bullets visible to Owner/self; unrelated member/club denied.
+Old bullet keeps NULL official place/prize, latest participation only gets rank;
+exact terminal hand joins entry_no and eliminates7 current bullets. Total8busted
+entries includes the earlier bullet and must not be mistaken for8current losers.
+Prior runtime d4db61/96743→3ab4ae failed only stale harness count7allbusted vs8;
+retained fixture, no product/data reset. Revised oracle asserts BOTH total8 and
+exact hand's7 generation-bound eliminations, not a relaxed lower bound.
+Current results use existing algorithm; simultaneous-hand house-policy hold still
+open, e.g19800stack→place5 vs20000→place8. Do not release123 on this observation.
+
+Final command envVINPOKER_NATIVE_DEFERRED_BREAK=1 VINPOKER_NATIVE_PAID_REENTRY=1
+node candidate111-integration-native.mjs --cash112 --portable115 --paid-tour-roster
+--paid-history-roster --existing.35c313/session62104→a1af81 terminal0/full success
+markers/PGstopped. Club4c4bc2ac-4ccb-4b0a-ac08-813c6a074b0a;
+tour230d1ab0-54d5-48ad-80c9-7afcab25ed70; oldentry44b973e8-b07d-41de-b65d-329ffd088450;
+newentryad5d38d4-7b82-4259-ab86-812f462c5e73; terminalhand6112f016-26a8-4959-9fd2-56a824df54d8.
+Node syntax3files/YAML/diff PASSbb5703. Existing CI historyON/deferred command
+now opts re-entry; default immediate/no-reentry coverage retained. No CI dispatch,
+fulltypecheck/build/Node22/10min CI suite budget acceptance or browser proof.
+Test-only source, no product SQL/migration/Edge/UI changed. No liveDB/Edge/frontend/
+flags/Auto/push/deploy/UAT; DaybreakOFF/localhold unchanged. Goal ACTIVE/PROGRESS.
+Remaining original gaps include mixed deferred cancellation/failure/concurrency,
+setup-first UI, realrotations/hosted40/provider/Storage/performance/fullchecks and
+review/recovery/livecatalog/release. Do not rerun this passing local tour blindly.
