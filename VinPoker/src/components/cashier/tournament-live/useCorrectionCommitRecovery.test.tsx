@@ -11,7 +11,7 @@ const intent:CorrectionCommitIntent={expected_actor_id:'81100000-0000-4000-8000-
  expected_source_chain_hash:'a'.repeat(64),expected_outcome_hash:'b'.repeat(64),expected_request_hash:'c'.repeat(64)};
 const receipt=()=>({data:{ok:true,status:'receipt_found',actor_id:intent.expected_actor_id,tournament_id:intent.tournament_id,hand_id:intent.hand_id,
  idempotency_key:intent.idempotency_key,source_revision:9,source_chain_hash:intent.expected_source_chain_hash,outcome_hash:intent.expected_outcome_hash,
- request_hash:intent.expected_request_hash,receipt:{ok:true,idempotent:true,settlement_revision:1,outcome_hash:intent.expected_outcome_hash}},error:null});
+ request_hash:intent.expected_request_hash,current_source_revision:10,receipt:{ok:true,idempotent:true,settlement_revision:1,outcome_hash:intent.expected_outcome_hash}},error:null});
 describe('correction recovery scope and mutation boundary',()=>{
  beforeEach(()=>{vi.useRealTimers();localStorage.clear();mock.actor=intent.expected_actor_id;mock.invoke.mockReset();
   Object.defineProperty(navigator,'locks',{configurable:true,value:{request:vi.fn(async(_key:unknown,_options:unknown,fn:()=>unknown)=>await fn())}});
@@ -29,7 +29,7 @@ describe('correction recovery scope and mutation boundary',()=>{
   const second=renderHook(()=>useCorrectionCommitRecovery(intent.tournament_id,intent.hand_id,resolved));
   expect(second.result.current.message).toMatch(/chưa rõ/);
   await act(async()=>{await second.result.current.recover();});
-  expect(mock.invoke).toHaveBeenCalledWith('tournament-live-resettle-commit',{body:{mode:'receipt',...intent}});
+  expect(mock.invoke).toHaveBeenCalledWith('tournament-live-resettle-commit',{body:{mode:'resolve',...intent}});
   expect(resolved).toHaveBeenCalledTimes(1);expect(readCorrectionIntent(localStorage,intent)).toBeNull();expect(mutation).toHaveBeenCalledTimes(1);
  });
  it('keeps not-found or malformed response unknown and never starts a replacement',async()=>{
@@ -57,5 +57,10 @@ describe('correction recovery scope and mutation boundary',()=>{
   await act(async()=>{request=hook.result.current.commit(intent,mutation);await Promise.resolve();});
   await act(async()=>{await vi.advanceTimersByTimeAsync(20_001);expect(await request).toBe(false);});
   expect(hook.result.current.busy).toBe(false);expect(readCorrectionIntent(localStorage,intent)).toEqual(intent);expect(mutation).toHaveBeenCalledTimes(1);vi.useRealTimers();
+ });
+ it('clears only an exact serialized obsolete proof, not a missing receipt',async()=>{
+  persistCorrectionIntent(localStorage,intent);mock.invoke.mockResolvedValue({data:{...receipt().data,status:'intent_obsolete',receipt:null},error:null});
+  const resolved=vi.fn(),hook=renderHook(()=>useCorrectionCommitRecovery(intent.tournament_id,intent.hand_id,resolved));
+  await act(async()=>{await hook.result.current.recover();});expect(resolved).toHaveBeenCalledWith('obsolete');expect(readCorrectionIntent(localStorage,intent)).toBeNull();
  });
 });

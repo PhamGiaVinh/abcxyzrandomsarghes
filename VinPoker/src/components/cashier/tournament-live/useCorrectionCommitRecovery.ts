@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
-import { correctionCommitKey, correctionReceiptState, correctionCommitConfirmed, persistCorrectionIntent,
+import { correctionCommitKey, correctionResolutionState, correctionCommitConfirmed, persistCorrectionIntent,
   readCorrectionIntent, settleCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
-export function useCorrectionCommitRecovery(tournamentId: string, handId: string | null, onResolved: () => void) {
+export function useCorrectionCommitRecovery(tournamentId: string, handId: string | null, onResolved: (status: "found" | "obsolete") => void) {
   const { user } = useAuth(), supabase = useSupabaseClient();
   const identity = useMemo(() => user?.id && handId ? { expected_actor_id: user.id, tournament_id: tournamentId, hand_id: handId } : null,
     [user?.id, tournamentId, handId]);
@@ -41,12 +41,13 @@ export function useCorrectionCommitRecovery(tournamentId: string, handId: string
     try {
       const intent = readCorrectionIntent(localStorage, identity);
       if (!intent) { if (current()) setMessage(null); return; }
-      const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-live-resettle-commit", { body: { mode: "receipt", ...intent } }));
+      const { data, error } = await observeTrackerContextRead(supabase.functions.invoke("tournament-live-resettle-commit", { body: { mode: "resolve", ...intent } }));
       if (!current()) return;
-      if (error || correctionReceiptState(data, intent) !== "found") {
+      const status = correctionResolutionState(data, intent);
+      if (error || (status !== "found" && status !== "obsolete")) {
         setMessage("Chưa xác nhận được receipt. Giữ nguyên mã yêu cầu; không tự gửi lại hoặc tạo mã mới."); return;
       }
-      settleCorrectionIntent(localStorage, intent); setMessage(null); onResolved();
+      settleCorrectionIntent(localStorage, intent); setMessage(null); onResolved(status);
     } catch { if (current()) setMessage("Không kiểm tra được receipt. Mã yêu cầu vẫn được giữ để phục hồi."); }
     finally { flight.current = false; if (current()) setBusy(false); }
   };

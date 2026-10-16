@@ -263,9 +263,10 @@ export function HandHistoryWorkspace({
     };
     idempotencyKey: string;
   } | null>(null);
-  const correctionRecovery = useCorrectionCommitRecovery(tournamentId, selectedHandId, () => {
+  const correctionRecovery = useCorrectionCommitRecovery(tournamentId, selectedHandId, (status) => {
     setResettleView(null); setEditMode(false); void loadHands();
-    toast.success("Đã tìm thấy receipt sửa hand. Đang tải lại trạng thái hiện tại.");
+    if (status === "found") toast.success("Đã tìm thấy receipt sửa hand. Đang tải lại trạng thái hiện tại.");
+    else toast.info("Máy chủ xác nhận yêu cầu cũ đã lỗi thời và không commit. Hãy xem trước lại dữ liệu mới.");
   });
 
   useEffect(() => {

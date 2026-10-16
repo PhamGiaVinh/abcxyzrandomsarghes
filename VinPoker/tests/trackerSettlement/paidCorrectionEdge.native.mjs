@@ -15,14 +15,14 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
   'outcomes',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM public.tournament_settlement_outcomes o WHERE hand_id='${hand}'),
   'queue',(SELECT jsonb_agg(to_jsonb(q) ORDER BY source_revision) FROM public.tracker_historical_display_queue q WHERE hand_id='${hand}'))::text);`);
  let actor=fixture.actor,serviceReads=0,authFailure=false,authorizationFailure=false;const errors=[];
- const rpcTypes={get_tournament_settlement_source_hash:['uuid'],commit_tracker_hand_correction_outcome:['uuid','uuid','bigint','text','bigint','text','text','text','jsonb','jsonb','jsonb','jsonb','text']};
+ const rpcTypes={resolve_tracker_correction_intent_v1:['uuid','uuid','uuid','text','bigint','text','text','text'],get_tournament_settlement_source_hash:['uuid'],commit_tracker_hand_correction_outcome:['uuid','uuid','bigint','text','bigint','text','text','text','jsonb','jsonb','jsonb','jsonb','text']};
  const client={rpc:async(name,args)=>{try{
   assert.ok(rpcTypes[name],name);serviceReads++;
   const values=Object.values(args);assert.equal(values.length,rpcTypes[name].length);
   const params=Object.entries(args).map(([key,value],i)=>`${key}=>${quote(value)}::${rpcTypes[name][i]}`).join(',');
   const data=JSON.parse(sql(service+`SELECT to_jsonb(public.${name}(${params}));`));
   return {data:maskReceipt&&name==='commit_tracker_hand_correction_outcome'?null:data,error:null};
- }catch(error){errors.push(String(error));return {data:null,error:{message:String(error)}};}},
+ }catch(error){errors.push(String(error));return {data:null,error:{message:name==='resolve_tracker_correction_intent_v1'&&String(error).includes('idempotency_mismatch')?'idempotency_mismatch':String(error)}};}},
  from(table){assert.ok(['tournament_hands','hand_players','hand_actions','tournament_chip_counts','tournament_settlement_outcomes'].includes(table));
   let columns,where=[],order=[],limit;const column=value=>{assert.match(value,/^[a-z_]+$/);return value;};
   const query={select:value=>{assert.match(value,/^[a-z_,]+$/);columns=value;return query;},
@@ -100,5 +100,9 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  actor=fixture.actor;
  sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE tournament_id='${fixture.tour}' AND user_id='${fixture.actor}';`);
  response=await invoke(receiptIntent);assert.equal(response.status,200);assert.equal((await response.json()).status,'receipt_found');assert.equal(fingerprint(),after);
+ response=await invoke({...receiptIntent,mode:'resolve'});const resolved=await response.json();assert.equal(response.status,200,JSON.stringify({resolved,errors}));assert.equal(resolved.status,'receipt_found');assert.ok(resolved.current_source_revision>preview.source_revision);
+ response=await invoke({...receiptIntent,mode:'resolve',idempotency_key:'native-never-sent-'+hand});const obsolete=await response.json();assert.equal(response.status,200);assert.equal(obsolete.status,'intent_obsolete');assert.equal(obsolete.receipt,null);
+ response=await invoke({...receiptIntent,mode:'resolve',idempotency_key:'native-current-unsent-'+hand,expected_source_revision:resolved.current_source_revision});const unknown=await response.json();assert.equal(response.status,200);assert.equal(unknown.status,'receipt_not_found');assert.equal(unknown.receipt,null);
+ response=await invoke({...receiptIntent,mode:'resolve',expected_request_hash:'f'.repeat(64)});assert.equal(response.status,409);assert.equal((await response.json()).code,'idempotency_mismatch');assert.equal(fingerprint(),after);
  console.log(maskReceipt?'ACTUAL_PAID_CORRECTION_MISSING_COMMIT_RECEIPT_THEN_READ_RECOVERY_PASS':'ACTUAL_PAID_CORRECTION_EDGE_SCOPE_PREVIEW_COMMIT_STALE_RETRY_PASS');
 }

@@ -33,6 +33,7 @@ on:
       - 'VinPoker/src/lib/tracker-poker/correctionCommitIntent*'
       - 'VinPoker/tests/trackerPoker/correctionCommitIntent*'
       - 'VinPoker/src/components/cashier/tournament-live/useCorrectionCommitRecovery*'
+      - 'VinPoker/supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql'
       - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
@@ -1033,6 +1034,7 @@ jobs:
           node tests/cashier/seatingMigrations.pg17.mjs
           node tests/cashier/seatingMigrations.pg17.mjs --only116
           node tests/cashier/seatingMigrations.pg17.mjs --only117
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql
           node tests/cashier/paidJourney.runtime.mjs
           node tests/cashier/paidJourney.runtime.mjs --seat-blockers
           node tests/cashier/paidJourney.runtime.mjs --active-hand

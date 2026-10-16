@@ -176,12 +176,13 @@ Deno.serve(async (req) => {
     const correctionReason = text(body.correction_reason);
     const edit = parseEdit(body.edit);
     const expectedEndingStacks = parseExpectedTargetEndingStacks(body.expected_target_ending_stacks);
-    if ((mode !== "preview" && mode !== "commit" && mode !== "receipt") || !tournamentId || !handId
-      || ((mode === "commit" || mode === "receipt") && (idempotencyKey.length < 12 || idempotencyKey.length > 255))
-      || (mode !== "receipt" && (correctionReason.length < 8 || correctionReason.length > 500 || !edit || !expectedEndingStacks))) {
+    const receiptMode = mode === "receipt" || mode === "resolve";
+    if ((mode !== "preview" && mode !== "commit" && !receiptMode) || !tournamentId || !handId
+      || ((mode === "commit" || receiptMode) && (idempotencyKey.length < 12 || idempotencyKey.length > 255))
+      || (!receiptMode && (correctionReason.length < 8 || correctionReason.length > 500 || !edit || !expectedEndingStacks))) {
       return publicFailure(req, "invalid_hand_correction_intent", 400);
     }
-    if (mode === "receipt" && (!text(body.expected_actor_id)
+    if (receiptMode && (!text(body.expected_actor_id)
       || !Number.isSafeInteger(body.expected_source_revision) || Number(body.expected_source_revision) < 1
       || ![body.expected_source_chain_hash, body.expected_outcome_hash, body.expected_request_hash]
         .every(value => /^[0-9a-f]{64}$/.test(text(value))))) {
@@ -206,7 +207,7 @@ Deno.serve(async (req) => {
     if (body.expected_actor_id !== undefined && body.expected_actor_id !== authData.user.id) {
       return publicFailure(req, "actor_context_changed", 409);
     }
-    if (mode === "receipt") {
+    if (receiptMode) {
       if (body.expected_actor_id !== authData.user.id) return publicFailure(req, "actor_context_changed", 409);
       try {
         const { data, error } = await user.rpc("authorize_tournament_live_resettle", { p_tournament_id: tournamentId });
@@ -217,6 +218,30 @@ Deno.serve(async (req) => {
       // correction capability and does not claim that its proof is still current.
       const service = createClient(url, serviceKey);
       try {
+        if (mode === "resolve") {
+          const { data: resolution, error } = await service.rpc("resolve_tracker_correction_intent_v1", {
+            p_hand_id: handId, p_tournament_id: tournamentId, p_actor_user_id: authData.user.id, p_idempotency_key: idempotencyKey,
+            p_expected_source_revision: body.expected_source_revision, p_expected_source_chain_hash: text(body.expected_source_chain_hash),
+            p_expected_outcome_hash: text(body.expected_outcome_hash), p_expected_request_hash: text(body.expected_request_hash),
+          });
+          if (error) return publicFailure(req, error.message === "idempotency_mismatch" ? error.message : "correction_resolution_unavailable", error.message === "idempotency_mismatch" ? 409 : 503);
+          const r = isRecord(resolution) ? resolution : null;
+          const receipt = r && isRecord(r.receipt) ? r.receipt : null;
+          const found = r?.status === "receipt_found" && receipt?.ok === true && receipt.idempotent === true
+            && Number.isSafeInteger(receipt.settlement_revision) && Number(receipt.settlement_revision) >= 1 && receipt.outcome_hash === body.expected_outcome_hash;
+          const missing = r?.receipt === null && ((r.status === "intent_obsolete" && Number(r.current_source_revision) > Number(body.expected_source_revision))
+            || (r.status === "receipt_not_found" && Number(r.current_source_revision) <= Number(body.expected_source_revision)));
+          if (!r || r.ok !== true || r.actor_id !== authData.user.id || r.tournament_id !== tournamentId || r.hand_id !== handId
+            || r.idempotency_key !== idempotencyKey || r.source_revision !== body.expected_source_revision
+            || r.source_chain_hash !== body.expected_source_chain_hash || r.outcome_hash !== body.expected_outcome_hash || r.request_hash !== body.expected_request_hash
+            || !Number.isSafeInteger(r.current_source_revision) || Number(r.current_source_revision) < 1 || (!found && !missing)) {
+            return publicFailure(req, "correction_resolution_unconfirmed", 502);
+          }
+          return jsonResp(req, { ok: true, status: r.status, actor_id: authData.user.id, tournament_id: tournamentId, hand_id: handId,
+            idempotency_key: idempotencyKey, source_revision: body.expected_source_revision, source_chain_hash: body.expected_source_chain_hash,
+            outcome_hash: body.expected_outcome_hash, request_hash: body.expected_request_hash, current_source_revision: r.current_source_revision,
+            receipt: found && receipt ? { ok: true, idempotent: true, settlement_revision: receipt.settlement_revision, outcome_hash: receipt.outcome_hash } : null });
+        }
         const { data, error } = await service.from("tournament_settlement_outcomes")
           .select("hand_id,actor_user_id,request_hash,outcome_hash,public_outcome,settlement_revision,correction_reason,verification_scope")
           .eq("tournament_id", tournamentId).eq("idempotency_key", idempotencyKey).limit(2);

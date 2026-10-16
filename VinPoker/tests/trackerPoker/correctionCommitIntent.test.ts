@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { correctionCommitKey, correctionCommitConfirmed, correctionReceiptState, persistCorrectionIntent,
+import { correctionCommitKey, correctionCommitConfirmed, correctionReceiptState, correctionResolutionState, persistCorrectionIntent,
   readCorrectionIntent, settleCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 const intent: CorrectionCommitIntent = { expected_actor_id:"81100000-0000-4000-8000-000000000001", tournament_id:"85000000-0000-4000-8000-000000000001",
  hand_id:"86000000-0000-4000-8000-000000000001", idempotency_key:"correction-request-0001", expected_source_revision:9,
@@ -34,5 +34,13 @@ describe("correction intent durability",()=>{
  });
  it("fails closed if durable storage cannot retain the intent",()=>{
   const s=storage();expect(()=>persistCorrectionIntent({...s,setItem:()=>{}},intent)).toThrow(/WRITE_FAILED/);expect(s.map.size).toBe(0);
+ });
+ it("requires a newer revision and exact envelope before accepting obsolete resolution",()=>{
+  const proof={ok:true,status:'intent_obsolete',actor_id:intent.expected_actor_id,tournament_id:intent.tournament_id,hand_id:intent.hand_id,
+   idempotency_key:intent.idempotency_key,source_revision:9,source_chain_hash:intent.expected_source_chain_hash,outcome_hash:intent.expected_outcome_hash,
+   request_hash:intent.expected_request_hash,current_source_revision:10,receipt:null};
+  expect(correctionResolutionState(proof,intent)).toBe('obsolete');
+  for(const patch of [{actor_id:'other'},{request_hash:'f'.repeat(64)},{current_source_revision:9},{current_source_revision:10.5},{receipt:{}},{status:'receipt_not_found'}])
+   expect(correctionResolutionState({...proof,...patch},intent)).toBeNull();
  });
 });

@@ -46,6 +46,17 @@ export function correctionReceiptState(v: unknown, intent: CorrectionCommitInten
     && Number.isSafeInteger(r.settlement_revision) && Number(r.settlement_revision) >= 1
     && r.outcome_hash === intent.expected_outcome_hash ? "found" : null;
 }
+export function correctionResolutionState(v: unknown, intent: CorrectionCommitIntent): "found" | "not_found" | "obsolete" | null {
+  if (!record(v) || !Number.isSafeInteger(v.current_source_revision) || Number(v.current_source_revision) < 1) return null;
+  const state = correctionReceiptState(v, intent);
+  if (state === "found") return state;
+  if (state === "not_found" && Number(v.current_source_revision) <= intent.expected_source_revision) return state;
+  // Reuse exact envelope validation; only serialized server resolution, never a
+  // separate client read of revision, can make a missing old request terminal.
+  if (v.status === "intent_obsolete" && v.receipt === null && Number(v.current_source_revision) > intent.expected_source_revision
+    && correctionReceiptState({ ...v, status: "receipt_not_found" }, intent) === "not_found") return "obsolete";
+  return null;
+}
 export function correctionCommitConfirmed(v: unknown, intent: CorrectionCommitIntent): boolean {
   if (!record(v) || v.ok !== true || v.status !== "verified" || v.hand_id !== intent.hand_id || !record(v.receipt)) return false;
   const r = v.receipt;
