@@ -1,7 +1,7 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
 This is an execution handoff, NOT acceptance of the site. Baseline source
-`7c79ebd7a`, plus the paid-tour roster test in this package. Fresh fetch confirms
+`1767d3165`, plus the paid-tour chip/TV extension in this package. Fresh fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
 Owner's local-only/resource hold remains: no push/CI dispatch/production apply,
@@ -21,6 +21,18 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
 
 ## New shared roster checkpoint (actual durable local commit)
+
+Latest extended run `396326`, terminal0/PGstopped: one fresh owned tour includes
+all roster/check-in checkpoints PLUS actual issuance8/replay (1600×100 floor
+chips), immutable issuance ledger on replay, unchanged Cashier/entries/seats/
+attendance fingerprint, couplingOFF/bank untouched, anonymous TV8/160000.
+No setup UI proof: chipset/template/bank are explicit local metadata, created
+after registrations in this test. This does NOT satisfy the requested setup-first
+browser journey or replace couplingON/concurrent color-up evidence.
+Latest retained club `d18ff7bc-af9b-4ab8-af00-6e32847b903c`, tour
+`17799ae3-fd1c-4eb3-ab53-19e10b4f6e79`; sessions
+`ed6ef0e7-7fd5-443b-900c-a1d7a95e337c` and
+`e2b7781b-50ce-470d-a9b5-777561c0233a`. Earlier roster audit below remains retained.
 
 Test: `tests/cashier/paidTourRoster.native.mjs`, explicit gated exact loopbackPG17
 via existing `createPaidJourneyFixture`. No fixture INSERT of payments/entries/seats.

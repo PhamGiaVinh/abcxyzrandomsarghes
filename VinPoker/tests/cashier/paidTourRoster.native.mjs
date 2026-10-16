@@ -54,5 +54,37 @@ assert.equal(sql(`SELECT count(*) FROM public.cashier_buyin_movements WHERE tour
 assert.equal(sql(`SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${f.club}' AND a.status='checked_in';`),'4');
 assert.equal(sql(`SELECT count(*) FROM public.club_settings WHERE club_id='${f.club}' AND auto_swing_enabled;`),'0');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_hands WHERE tournament_id='${f.tour}';`),'0');
+const operational=()=>sql(`SELECT md5(jsonb_build_object(
+ 'cash',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}'),
+ 'seats',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_seats r WHERE tournament_id='${f.tour}'),
+ 'entries',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_entries r WHERE tournament_id='${f.tour}'),
+ 'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${f.club}'))::text);`);
+const beforeChip=operational(),set=crypto.randomUUID(),low=crypto.randomUUID(),high=crypto.randomUUID(),template=crypto.randomUUID(),issueKey=crypto.randomUUID();
+assert.equal(sql(`SELECT public.chip_ops_coupling_on('${f.club}');`),'f');
+// Setup metadata is an explicit local fixture, not Setup UI acceptance.
+sql(`BEGIN;
+ INSERT INTO public.chip_set(id,club_id,name) VALUES('${set}','${f.club}','Eight paid tour chip TEST');
+ INSERT INTO public.chip_set_denomination(id,chip_set_id,club_id,value) VALUES('${low}','${set}','${f.club}',100),('${high}','${set}','${f.club}',1000);
+ INSERT INTO public.tournament_chip_set(tournament_id,chip_set_id,club_id) VALUES('${f.tour}','${set}','${f.club}');
+ INSERT INTO public.stack_template(id,tournament_id,club_id,chip_set_id,name,stack_value) VALUES('${template}','${f.tour}','${f.club}','${set}','Eight paid stack TEST',20000);
+ INSERT INTO public.stack_template_line(stack_template_id,denomination_id,count) VALUES('${template}','${low}',200);
+ INSERT INTO public.chip_bank(club_id,denomination_id,on_hand_count) VALUES('${f.club}','${low}',3000),('${f.club}','${high}',500);
+ COMMIT;`);
+const issue=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.chip_ops_set_issuance_v2('${template}',8,0,'${issueKey}','${f.actor}');COMMIT;`));
+const issued=issue();assert.equal(issued.status,'ok');
+const issuedLedger=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(r) ORDER BY id)::text) FROM public.chip_inventory_ledger r WHERE tournament_id='${f.tour}';`);
+const ledgerBeforeReplay=issuedLedger();assert.deepEqual(issue(),issued);assert.equal(issuedLedger(),ledgerBeforeReplay);
+const counts=JSON.parse(sql(`BEGIN;${auth}SELECT jsonb_object_agg(denomination_id,current_count) FROM public.chip_ops_current_denom_counts('${f.tour}');COMMIT;`));
+assert.equal(counts[low],1600);assert.equal(Object.hasOwn(counts,high),false,'unissued denomination has no floor ledger projection yet');assert.equal(counts[low]*100,160000);
+assert.equal(sql(`SELECT count(*) FROM public.chip_inventory_ledger WHERE tournament_id='${f.tour}' AND denomination_id='${high}';`),'0');
+assert.equal(sql(`SELECT on_hand_count FROM public.chip_bank WHERE club_id='${f.club}' AND denomination_id='${low}';`),'3000');
+assert.equal(sql(`SELECT count(*) FROM public.chip_bank_ledger WHERE club_id='${f.club}';`),'0');
+assert.equal(operational(),beforeChip,'issuance cannot alter Cashier/entry/seat/dealer truth');
+const tvToken='native-eight-paid-tv-'+crypto.randomUUID();
+sql(`INSERT INTO public.tv_displays(id,club_id,display_token,assigned_tournament_id,status) VALUES('${crypto.randomUUID()}','${f.club}','${tvToken}','${f.tour}','paired');`);
+const tv=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
+assert.equal(tv.status,'paired');assert.equal(tv.tournament.id,f.tour);assert.equal(tv.participation_counts.remaining,8);assert.equal(tv.participation_counts.live_entry_stack,160000);
+assert.equal(operational(),beforeChip);assert.equal(issuedLedger(),ledgerBeforeReplay);
+console.log('NATIVE_EIGHT_PAID_CHIP_ISSUANCE_REPLAY_ANON_TV_PASS');
 console.log('NATIVE_TWO_TABLE_EIGHT_PAID_FOUR_CHECKIN_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

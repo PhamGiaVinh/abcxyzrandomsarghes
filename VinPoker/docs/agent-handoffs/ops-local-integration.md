@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G8 same-tour eight-stack issuance/replay and anonymous TV consistency
+
+Baseline1767d3165 clean/previousPROGRESS. Extended existing8paid/2tables/4checkins script with localchipset/template/bank metadata, actual chip_ops_set_issuance_v2 quantity8COMMIT/replay and actual currentdenom projection. 1600×100=160000floorchips matches8seatedentries; replay exactreceipt/ledgerfingerprintunchanged. Cash/entries/seats/attendance entireJSON fingerprintunchanged; couplingOFF/bank3000low untouched/0bankledger. Actualanonrole TVv4 paired correcttour/8remaining/160000liveentrystack, zerooperational/ledgerdelta. No color-up here (already dedicatedruntime), no sourcebusinesschange.
+
+Initiala95f10 was ORACLEerror: neverissued highdenom is absent from ledger-derived counts, not explicit0. Corrected to assert absentprojection AND zeroledgerrows; no genericmissing→0 fallback/productchange. Final396326 exit0/PGstopped, ownedfreshclubd18ff7bc-af9b-4ab8-af00-6e32847b903c/tour17799ae3-fd1c-4eb3-ab53-19e10b4f6e79 retained; prior/failedfixtureaudit also retained, notreset. Updated evidence map. Metadata setup occurs afterregistration in this localtest, not SetupUI or requiredsetup-first browserjourney proof. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next supported initialassignment on same fixture then hands/projection lifecycle; fulltour/rest15x3/375/perf/release stillrequired.
+
 ## G0 evidence refresh + G8 two-table/eight-paid/four-check-in foundation
 
 Baseline7c79ebd7a clean/previousPROGRESS; get_goalACTIVE, actualfetch3114 terminal0 mainunchangeded3db6ac600710e95fe4408c475941916c23ab19. Read priorG3 proof: main2/10/40 already localqualified (not hosted/rest15x3), no redundant rerun. Added ops-local-evidence-matrix.md distinguishes G0–G9 source/local versus all outstanding hosted/browser/fulltour/performance/release gates.
