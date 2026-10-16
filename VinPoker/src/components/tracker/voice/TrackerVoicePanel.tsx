@@ -248,6 +248,13 @@ export function TrackerVoicePanel({
   const micTestActiveRef = useRef(false);
   const statusRef = useRef<VoiceProviderStatus>("idle");
   const runtimeRef = useRef<TrackerVoiceRuntimeContext | null>(runtimeOverride ?? null);
+  const runtimeReadGenerationRef = useRef(0);
+  const runtimeScopeKey = JSON.stringify([hook.tournamentId, hook.tournamentTableId, hook.handId]);
+  const runtimeScopeRef = useRef(runtimeScopeKey);
+  if (runtimeScopeRef.current !== runtimeScopeKey) {
+    runtimeScopeRef.current = runtimeScopeKey;
+    ++runtimeReadGenerationRef.current;
+  }
   const processedAttemptIdsRef = useRef(new Set<string>());
   const finalReceivedAtRef = useRef(new Map<string, number>());
   const pendingAmountPrefixRef = useRef<PendingAmountPrefix | null>(null);
@@ -427,6 +434,10 @@ export function TrackerVoicePanel({
   }), [hook.actions, hook.buttonSeat, hook.playerHoleCards, hook.players, privateHoleCardsAttempts]);
 
   const refreshRuntime = useCallback(async () => {
+    if (runtimeScopeRef.current !== runtimeScopeKey) return null;
+    const generation = ++runtimeReadGenerationRef.current;
+    const isCurrent = () => generation === runtimeReadGenerationRef.current
+      && runtimeScopeRef.current === runtimeScopeKey;
     if (!hook.tournamentTableId && !runtimeOverride) {
       setRuntime(null);
       setRuntimeError("KhÃ´ng xÃ¡c minh Ä‘Æ°á»£c bÃ n canonical cho Voice.");
@@ -439,19 +450,23 @@ export function TrackerVoicePanel({
     }
     try {
       const next = await loadRuntimeOverride(hook.tournamentId, hook.tournamentTableId);
+      if (!isCurrent()) return null;
       setRuntime(next);
       setRuntimeError(null);
       return next;
     } catch (error) {
+      if (!isCurrent()) return null;
       const message = error instanceof Error ? error.message : "Không tải được quyền Voice.";
       setRuntime(null);
       setRuntimeError(message);
       return null;
     }
-  }, [hook.tournamentId, hook.tournamentTableId, loadRuntimeOverride, runtimeOverride]);
+  }, [hook.tournamentId, hook.tournamentTableId, loadRuntimeOverride, runtimeOverride, runtimeScopeKey]);
 
   useEffect(() => {
+    const reads = runtimeReadGenerationRef;
     void refreshRuntime();
+    return () => { ++reads.current; };
   }, [hook.handId, refreshRuntime]);
 
   useEffect(() => {

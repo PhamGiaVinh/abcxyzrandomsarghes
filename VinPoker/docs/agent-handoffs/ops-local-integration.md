@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Voice panel overlapping runtime reads RED → local fence
+
+Baseline802ffe2e5 clean/previousPROGRESS. Actual refreshRuntime callback unconditionally published late success/rejection: new source-executing Node/SWC tests3/3FAIL reproduced stale success overriding current runtime, stale error clearing it, invalidated request still publishing. Added request generation, render-time tournament/canonicaltable/hand scope generation invalidation, captured callback old-scope refusal and effect cleanup invalidation. Current success/errors still publish; no server authorization/writer/model change, no retry added.
+
+Final6/6PASS13.57ms executes actual callback and actual refresh effect cleanup with modeled state/reads; sourceESLint0/diffcheckPASS. Positive error test initially hit VM Error realm difference; supplied host Error explicitly, no app workaround. Existing Voice workflow invokes new test; no dispatch. Not React render/fulltype/build/HTTP/Auth/provider/browser375 evidence; shared missing @google/genai remains previous collection blocker, no installs. Runtime state may remain previously loaded until new read completes; transcript/connect callback continuations after disconnect and full actor/session/epoch UI scoping remain to audit, not closed by request-order fence. No liveDB/Edge/frontend/flags/Auto/Daybreak changes, no active handles. MasterACTIVE/localonly/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/perf/release still unaccepted.
+
 ## OpenAI provider cancel/reconnect lifecycle RED → local fix
 
 Baseline26e9e1ada clean/previousPROGRESS. Actual OpenAI class had no generation fence across permission/credentials/offer/SDP awaits or callbacks; disconnect could be followed by late stream/peer creation. New generation checks stop late permission tracks before credential mint, suppress stale continuations/events, abort pending SDP, and clear owned resources/handlers synchronously before awaiting AudioContext.close. Meter callbacks also generation-fenced. No model/API/authorization/hand writer change. Official WebRTC guidance fetched https://developers.openai.com/api/docs/guides/voice-webrtc; this is cancellation, NOT graceful final-usage/session.closed proof.
