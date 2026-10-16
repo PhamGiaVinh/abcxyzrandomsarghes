@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import ts from 'typescript';
+import {runPaidCorrectionEdge} from './paidCorrectionEdge.native.mjs';
 import {createPaidJourneyFixture} from '../cashier/paidJourney.fixture.mjs';
 import {HistoricalDisplayVerificationError,verifyHistoricalDisplaySettlement} from '../../supabase/functions/_shared/trackerSettlement/historicalDisplayVerification.ts';
 import {canonicalJsonV1} from '../../supabase/functions/_shared/trackerSettlement/outcomeV1.ts';
@@ -16,7 +17,8 @@ const database='vinpoker_ops_cash115_qualified_c';
 const lostCommitResponse=process.argv.includes('--lost-commit-response');
 const expiredLease=process.argv.includes('--expired-lease');
 const correctionDuringCommit=process.argv.includes('--correct-during-commit');
-const verified=process.argv.includes('--verified')||lostCommitResponse||expiredLease||correctionDuringCommit;
+const correctionEdge=process.argv.includes('--correction-edge');
+const verified=process.argv.includes('--verified')||lostCommitResponse||expiredLease||correctionDuringCommit||correctionEdge;
 let expiredOnce=false;
 let correctionRevision;
 for(const [key,value] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:database}))assert.equal(process.env[key],value);
@@ -46,6 +48,7 @@ const serviceTestRole='history_worker_'+crypto.randomUUID().replaceAll('-','');
 sql(`CREATE ROLE ${serviceTestRole} NOLOGIN INHERIT BYPASSRLS;GRANT service_role TO ${serviceTestRole};`);
 process.on('exit',()=>sql(`DROP ROLE ${serviceTestRole};`));
 const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${serviceTestRole};`;
+if(correctionEdge){await runPaidCorrectionEdge({sql,service,fixture,hand});process.exit(0);}
 const types={claim_tracker_historical_display_jobs_scoped_v1:{p_limit:'integer',p_hand_ids:'uuid[]'},
  get_tracker_historical_display_snapshot:{p_hand_id:'uuid',p_tournament_id:'uuid'},
  finish_tracker_historical_display_job:{p_hand_id:'uuid',p_source_revision:'bigint',p_lease_token:'uuid',p_status:'text',p_error_code:'text'},
