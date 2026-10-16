@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Voice validation receipt boundary RED→local binding fix
+
+Baselinefc442945a clean/previousPROGRESS. Actual API validate body previously onlytruthyok/eventIDtype. Source-executing syntheticEdge test2PASS10FAIL reproduced missing/wrongkey/trace/state/mode/result/correction/alert accepted. Added stricttrue/nonemptyIDs+keys+trace/hash/currentexpectedstate+mode/enums/booleans/alertidentity. Exact nonduplicate receipt binds inputkey/trace; server-marked duplicate preserves originalkey/trace per existingSQL provider-eventdedup contract, but must retain proof/mode/requiredfields. No new mutationretry or serverauthorization change.
+
+Final16receiptcasesPASS; sourceapiESLint0/session84065 terminal0, diffcheckPASS. New duplicateproof/mode/missingkey/stringmarker negatives ensure duplicate isn't broadbypass. Extended existing native paidjourney compiles actualvalidate API, consumes realSQLservice receipt with separate requestidentity, verifies SDKrequesthand/state andoneinvoke. Native76a019 exit0/13PASS2.428s/PGstopped/nohandles, all chip/TV/checkin/manualSwing/replay/stalefences retained. SDKEdge transport modeled, NOT actualEdgeparser/HTTP/provider/mic/browser/fulltypebuild. CIunitinvocationprepared/nodispatch. No schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
 ## Durable two-color-up dependency/reverse order coupled+OFF local PASS
 
 Baselinedbb7e8fdb clean/previousPROGRESS. Existing committedpaidchip script adds explicitCHAIN mode: secondactualcolorupCOMMIT1000→10000, freshreceipt matches; firstundo whilelateroperationactive rejectsUNDO_DEPENDENCY/exactoperation+ledger+bank+receiptfingerprintunchanged, rejection hasunknown(no committedreceipt). Undo secondactualCOMMIT/freshreceipt, then firstsameundoKey allowed; final200low/0middle/0high, initialpaidcash/seat/table/entryunchanged, immutableoriginalfloor/bankrowIDs retained, compensation8floor/9bankON (OFF0bank). Localcoupling restoredOFF/finalhistoricalreceipt exact, no timestamp/rounding changes.

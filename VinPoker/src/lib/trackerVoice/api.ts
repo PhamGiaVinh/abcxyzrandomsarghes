@@ -87,7 +87,20 @@ export async function validateTrackerVoiceEvent(
   const envelope = data as { data?: unknown; error?: string } | null;
   if (envelope?.error) throw new Error(envelope.error);
   const receipt = envelope?.data as ValidatedVoiceEventReceipt | null;
-  if (!receipt?.ok || typeof receipt.voice_event_id !== "string") {
+  if (receipt?.ok !== true || Array.isArray(receipt)
+    || typeof receipt.voice_event_id !== "string" || !receipt.voice_event_id.trim()
+    || typeof receipt.idempotency_key !== "string" || !receipt.idempotency_key.trim()
+    || typeof receipt.trace_id !== "string" || !receipt.trace_id.trim()
+    || typeof receipt.state_version !== "string" || !/^[0-9a-f]{64}$/i.test(receipt.state_version)
+    || receipt.state_version !== input.expectedStateVersion || receipt.execution_mode !== input.executionMode
+    || !["validated", "alert_opened"].includes(receipt.execution_result)
+    || typeof receipt.correction_pending !== "boolean"
+    || (receipt.duplicate !== undefined && typeof receipt.duplicate !== "boolean")
+    || (receipt.execution_result === "validated" ? receipt.alert_id !== null
+      : typeof receipt.alert_id !== "string" || !receipt.alert_id.trim())
+    // A server-marked provider-event duplicate intentionally returns its
+    // original immutable key/trace. Do not invent a new writer identity.
+    || (receipt.duplicate !== true && (receipt.idempotency_key !== input.idempotencyKey || receipt.trace_id !== input.traceId))) {
     throw new Error("Voice validation không trả receipt hợp lệ.");
   }
   return receipt;

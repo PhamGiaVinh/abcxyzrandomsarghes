@@ -7,12 +7,15 @@ import {parseSync,transformSync} from '@swc/core';
 // Actual loader body; Supabase RPC transport modeled. No Auth/DB permission proof.
 const source=readFileSync(new URL('../../src/lib/trackerVoice/api.ts',import.meta.url),'utf8');
 const tree=parseSync(source,{syntax:'typescript'});
-const declaration=tree.body.find(node=>node.type==='ExportDeclaration'&&node.declaration.identifier?.value==='loadTrackerVoiceRuntimeContext')?.declaration;
+function compileApi(name){
+const declaration=tree.body.find(node=>node.type==='ExportDeclaration'&&node.declaration.identifier?.value===name)?.declaration;
 assert.ok(declaration);
 const text=Buffer.from(source).subarray(declaration.span.start-tree.span.start,declaration.span.end-tree.span.start).toString()
  .replace('const { supabase } = await import("@/integrations/supabase/client");','const supabase = client;');
 assert.ok(!text.includes('await import('));
-const code=transformSync(text+'\nloadTrackerVoiceRuntimeContext;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+}
+const code=compileApi('loadTrackerVoiceRuntimeContext'),validationCode=compileApi('validateTrackerVoiceEvent');
 const valid=()=>({ok:true,can_mint_session:true,read_only:false,correction_pending:false,tournament_table_id:'table',
  config:{enabled:true,configured_mode:'assist',provider_model:'existing-reviewed-model',spoken_amount_unit:1,amount_unit_confirmed:false,
   provider_confidence_threshold:null,server_auto_allowed:false,correction_state:'ready'},
@@ -304,7 +307,8 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  PERFORM set_config('role','none',true);
  IF (SELECT count(*) FROM public.hand_actions WHERE hand_id=h.id)<>1 OR (SELECT count(*) FROM public.tracker_voice_events WHERE hand_id=h.id AND event_kind='final_transcript')<>1 THEN RAISE EXCEPTION 'native_voice_duplicate_or_stale_delta';END IF;
  IF public._tracker_voice_hand_state_version(h.id)=state OR (SELECT source_revision FROM public.tournament_hands WHERE id=h.id)<=h.source_revision THEN RAISE EXCEPTION 'native_voice_action_revision_not_invalidated';END IF;
- INSERT INTO native_voice_payloads VALUES('voice_action',jsonb_build_object('receipt',receipt,'action',r,'stale',replay,'assignment_denial',assignment_denial,'handoff_denial',handoff_denial));
+ INSERT INTO native_voice_payloads VALUES('voice_action',jsonb_build_object('receipt',receipt,'action',r,'stale',replay,'assignment_denial',assignment_denial,'handoff_denial',handoff_denial,
+ 'request_identity',jsonb_build_object('idempotencyKey',k,'traceId','native-voice-trace','expectedStateVersion',state,'executionMode','assist','providerEventId',k)));
  END $$;
  SELECT jsonb_object_agg(k,v) FROM native_voice_payloads;
  ROLLBACK;`));
@@ -323,6 +327,14 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  assert.equal(payload.voice_action.stale.error,'stale_state_version');
  assert.equal(payload.voice_action.assignment_denial.error,'dealer_assignment_lost');
  assert.equal(payload.voice_action.handoff_denial.error,'dealer_assignment_lost');
+ let validationCalls=0;
+ const validate=runInNewContext(validationCode,{Error,client:{functions:{invoke:async(name,{body})=>{
+  validationCalls++;assert.equal(name,'tournament-live-update');assert.equal(body.expected_state_version,payload.voice_action.request_identity.expectedStateVersion);
+  assert.equal(body.hand_id,payload.hand_proof.hand_id);return {data:{data:payload.voice_action.receipt},error:null};
+ }}}});
+ assert.equal(await validate({...payload.voice_action.request_identity,tournamentId:f.tour,tournamentTableId:table.id,handId:payload.hand_proof.hand_id,
+  finalTranscript:'check',providerName:'openai_realtime',providerModel:'gpt-live-transcribe'}),payload.voice_action.receipt);
+ assert.equal(validationCalls,1);
  assert.equal(payload.paid_chips.color_up.rounding_delta,0);assert.equal(payload.paid_chips.undo.bank_reversed,true);
  assert.equal(payload.outsider.ok,false);assert.equal(payload.outsider.error,'dealer_assignment_missing');
  await assert.rejects(loader(payload.outsider,null,f.tour,table.id).read(),/dealer_assignment_missing/);
