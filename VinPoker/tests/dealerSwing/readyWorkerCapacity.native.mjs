@@ -58,6 +58,59 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
  return {club,owner,rows};
 }
+if(process.argv.includes('--adoption')){
+ const c=seed(1),r=c.rows[0];
+ const id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${r.table}' AND released_at IS NULL;`);
+ sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${r.table}',pre_assigned_at=now() WHERE id='${r.nextAttendance}';
+ UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${r.nextAttendance}',pre_assigned_at=now() WHERE id='${id}';`);
+ const a=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}';`));
+ const snapshot=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${c.club}'))::text);`);
+ const before=snapshot(),raw=readFileSync('supabase/functions/process-swing/passes/passR-rotation-planner.ts','utf8');
+ const signature='public.worker_adopt_legacy_preassignment_v1(uuid,uuid,uuid,uuid,integer,uuid,uuid)';
+ assert.equal(sql(`SELECT has_function_privilege('anon','${signature}','EXECUTE') OR has_function_privilege('authenticated','${signature}','EXECUTE');`),'f');
+ assert.equal(sql(`SELECT has_function_privilege('service_role','${signature}','EXECUTE');`),'t');
+ const foreign=seed(1),intent=[c.club,r.table,r.session,id,a.version,r.nextAttendance,randomUUID()];
+ for(const [index,value] of [[0,foreign.club],[1,foreign.rows[0].table],[2,foreign.rows[0].session],[3,randomUUID()],[4,a.version+1],[2,null],[6,null]]){
+  const bad=[...intent];bad[index]=value;
+  sql(service+`DO $$ BEGIN BEGIN PERFORM public.worker_adopt_legacy_preassignment_v1(${bad.map(quote).join(',')});RAISE EXCEPTION 'negative accepted';EXCEPTION WHEN invalid_parameter_value THEN NULL;END;END $$;`);
+  assert.equal(snapshot(),before);
+ }
+ sql(service+`SET request.jwt.claim.role='authenticated';SET request.jwt.claims='{"role":"authenticated"}';DO $$ BEGIN BEGIN PERFORM public.worker_adopt_legacy_preassignment_v1(${intent.map(quote).join(',')});RAISE EXCEPTION 'role accepted';EXCEPTION WHEN insufficient_privilege THEN NULL;END;END $$;`);
+ assert.equal(snapshot(),before);
+ const first=raw.indexOf('async function reconcileAndAdopt('),last=raw.indexOf('// ─── Build solver inputs',first);
+ const reconcile=new Function('console','ANNOUNCE_LEAD_MS',stripTypeScriptTypes(raw.slice(first,last))+';return reconcileAndAdopt;')(console,180000);
+ const writes=[];let faultAdoption=true;
+ const admin={rpc:async(name,args)=>{
+  assert.equal(name,'worker_adopt_legacy_preassignment_v1');
+  assert.deepEqual({...args,p_plan_run_id:undefined},{p_club_id:c.club,p_table_id:r.table,p_table_session_id:r.session,p_assignment_id:id,p_expected_version:a.version,p_incoming_attendance_id:r.nextAttendance,p_plan_run_id:undefined});
+  const call=`SELECT public.worker_adopt_legacy_preassignment_v1(${Object.entries(args).map(([k,v])=>column(k)+'=>'+quote(v)).join(',')});`;
+  try{
+   const output=sql((faultAdoption?`BEGIN;CREATE FUNCTION pg_temp.reject_adoption_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'native_adoption_second_write_fault';END $$;
+   CREATE TRIGGER native_adoption_second_write_fault BEFORE UPDATE ON public.dealer_assignments FOR EACH ROW WHEN (OLD.id='${id}'::uuid) EXECUTE FUNCTION pg_temp.reject_adoption_update();`:'')+service+call+(faultAdoption?'ROLLBACK;':''));
+   return {data:JSON.parse(output),error:null};
+  }catch(e){assert.match(String(e.stderr),/native_adoption_second_write_fault/);return {data:null,error:{message:'native_adoption_second_write_fault'}};}
+ },from(table){
+  assert.ok(['dealer_attendance','dealer_assignments','dealer_rotation_schedule'].includes(table));
+  const q={select(){return q;},eq(){return q;},update(){writes.push(table);return q;},
+   async in(k,values){assert.equal(table,'dealer_attendance');assert.equal(k,'id');return {data:JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(d)),'[]') FROM public.dealer_attendance d WHERE id IN (${values.map(quote).join(',')});`)),error:null};},
+   async insert(row){assert.equal(table,'dealer_rotation_schedule');writes.push(table);const keys=Object.keys(row).map(column);
+    sql(service+`INSERT INTO public.dealer_rotation_schedule(${keys.join(',')}) SELECT ${keys.map(k=>'r.'+k).join(',')} FROM jsonb_populate_record(NULL::public.dealer_rotation_schedule,${quote(JSON.stringify(row))}::jsonb) r;`);return {data:null,error:null};},
+   then(resolve,reject){return Promise.resolve({data:null,error:{message:'synthetic assignment-update transport failure'}}).then(resolve,reject);},
+  };return q;}};
+ await assert.rejects(reconcile(admin,{clubId:c.club},[a],[],randomUUID()),/rotation_legacy_adoption_unverified/);
+ assert.equal(snapshot(),before,'second-write SQL fault rolls back inserted schedule');assert.deepEqual(writes,[]);
+ faultAdoption=false;
+ const result=await reconcile(admin,{clubId:c.club},[a],[],randomUUID());
+ assert.equal(result.adopted,1);assert.equal(result.cancelled,0);
+ assert.equal(sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id WHERE a.id='${id}' AND s.status='announced' AND s.planned_relief_at=a.planned_relief_at;`),'1');
+ const committed=snapshot();
+ const replay=await reconcile(admin,{clubId:c.club},[a],[],randomUUID());
+ assert.equal(replay.adopted,0);assert.equal(snapshot(),committed,'response-loss retry does not create another schedule or shift relief');
+ const wrongVersion=[...intent];wrongVersion[4]=a.version+99;
+ assert.equal(JSON.parse(sql(service+`SELECT public.worker_adopt_legacy_preassignment_v1(${wrongVersion.map(quote).join(',')});`)).outcome,'repair_required');
+ assert.equal(snapshot(),committed,'different source version is not the committed adoption proof');
+ console.log('LEGACY105_ACTUAL_PLANNER_NATIVE_ATOMIC_FAULT_POSITIVE_REPLAY_PASS');
+}
 if(process.argv.includes('--legacy')){
  const c=seed(1),r=c.rows[0];
  const a=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${r.table}' AND released_at IS NULL;`));
@@ -298,7 +351,7 @@ if(process.argv.includes('--overlap')){
  }
  console.log('LEGACY104_DUPLICATE_AND_OFF_BOTH_ORDER_OVERLAP_PASS');
 }
-const sizes=['--negative','--overlap','--legacy'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--legacy','--adoption'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');

@@ -337,35 +337,21 @@ async function reconcileAndAdopt(
 
     // Valid legacy pre-assign → adopt as an announced row (the lock already
     // exists; this is the adoption arm of the single-writer rule).
-    const reliefIso = new Date(
-      Math.max(new Date(a.swing_due_at).getTime(), Date.now() + ANNOUNCE_LEAD_MS)
-    ).toISOString();
-    const { error: insErr } = await admin.from("dealer_rotation_schedule").insert({
-      club_id: ctx.clubId,
-      table_id: a.table_id,
-      assignment_id: a.id,
-      slot_index: 0,
-      out_attendance_id: a.attendance_id,
-      in_attendance_id: a.pre_assigned_attendance_id,
-      planned_relief_at: reliefIso,
-      announce_at: new Date().toISOString(),
-      status: "announced",
-      is_shortage: false,
-      is_emergency: new Date(a.swing_due_at).getTime() <= Date.now(),
-      plan_run_id: planRunId,
-      solver_version: "adopted-legacy",
-      reason: { adopted_from: "pre_assigned_attendance_id" },
+    const { data: adoption, error: adoptionError } = await admin.rpc("worker_adopt_legacy_preassignment_v1", {
+      p_club_id: ctx.clubId, p_table_id: a.table_id, p_table_session_id: a.table_session_id,
+      p_assignment_id: a.id, p_expected_version: a.version,
+      p_incoming_attendance_id: a.pre_assigned_attendance_id, p_plan_run_id: planRunId,
     });
-    if (!insErr) {
-      await admin
-        .from("dealer_assignments")
-        .update({ planned_relief_at: reliefIso, updated_at: new Date().toISOString() })
-        .eq("id", a.id);
-      a.planned_relief_at = reliefIso;
-      adopted++;
-    } else if (!String(insErr.message ?? "").includes("uq_rotation")) {
-      console.warn("[Pass R] adoption insert failed:", insErr.message);
+    if (adoptionError || !["adopted", "already_adopted"].includes(adoption?.outcome)
+      || adoption?.club_id !== ctx.clubId || adoption?.table_id !== a.table_id
+      || adoption?.table_session_id !== a.table_session_id || adoption?.assignment_id !== a.id
+      || adoption?.expected_version !== a.version || adoption?.incoming_attendance_id !== a.pre_assigned_attendance_id
+      || typeof adoption?.schedule_id !== "string" || adoption.schedule_id.length === 0
+      || typeof adoption?.planned_relief_at !== "string" || !Number.isFinite(Date.parse(adoption.planned_relief_at))) {
+      throw new Error("rotation_legacy_adoption_unverified");
     }
+    a.planned_relief_at = adoption.planned_relief_at;
+    if (adoption.outcome === "adopted") adopted++;
   }
 
   return { adopted, cancelled };

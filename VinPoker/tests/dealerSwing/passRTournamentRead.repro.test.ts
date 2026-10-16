@@ -57,6 +57,19 @@ it.each([true,false])('reconciliation preserves a verified real lock or cancels 
  expect(result).toEqual({adopted:0,cancelled:present?0:1});expect(rpc).toHaveBeenCalledTimes(present?0:1);
  expect(a.pre_assigned_attendance_id).toBe(present?'incoming-a':null);
 });
+it.each(['adopted','already_adopted','transport','repair','wrong-version','invalid-time'] as const)('legacy adoption mirrors only exact atomic proof: %s',async(mode)=>{
+ const first=source.indexOf('async function reconcileAndAdopt('),last=source.indexOf('// ─── Build solver inputs',first);
+ const entry=ts.transpileModule(source.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const reconcile=new Function('console',`${entry};return reconcileAndAdopt;`)({warn:vi.fn()});
+ const a={...assignment,id:'assignment-a',version:7,pre_assigned_attendance_id:'incoming-a',planned_relief_at:null as string|null},before={...a};
+ const proof={outcome:mode==='already_adopted'?'already_adopted':mode==='repair'?'repair_required':'adopted',club_id:'club-a',table_id:a.table_id,table_session_id:a.table_session_id,assignment_id:a.id,expected_version:mode==='wrong-version'?8:7,incoming_attendance_id:'incoming-a',schedule_id:'slot-a',planned_relief_at:mode==='invalid-time'?'bad-time':'2026-10-16T02:00:00Z'};
+ const rpc=vi.fn(async()=>({data:mode==='transport'?null:proof,error:mode==='transport'?{message:'synthetic outage'}:null}));
+ const q={select:vi.fn(),in:vi.fn(async()=>({data:[{id:'incoming-a',current_state:'pre_assigned',status:'checked_in'}],error:null}))};q.select.mockReturnValue(q);
+ const promise=reconcile({from:(table:string)=>{expect(table).toBe('dealer_attendance');return q;},rpc},{clubId:'club-a'},[a],[],'run-a');
+ if(mode==='adopted'||mode==='already_adopted'){await expect(promise).resolves.toEqual({adopted:mode==='adopted'?1:0,cancelled:0});expect(a.planned_relief_at).toBe(proof.planned_relief_at);}
+ else{await expect(promise).rejects.toThrow('rotation_legacy_adoption_unverified');expect(a).toEqual(before);}
+ expect(rpc).toHaveBeenCalledWith('worker_adopt_legacy_preassignment_v1',{p_club_id:'club-a',p_table_id:before.table_id,p_table_session_id:before.table_session_id,p_assignment_id:before.id,p_expected_version:7,p_incoming_attendance_id:'incoming-a',p_plan_run_id:'run-a'});
+});
 it.each([
  {data:null,error:{message:'synthetic cancel outage'}},
  {data:null,error:null},{data:{outcome:'error'},error:null},
