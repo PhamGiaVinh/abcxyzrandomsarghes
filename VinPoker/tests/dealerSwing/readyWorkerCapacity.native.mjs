@@ -100,28 +100,43 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
  });}catch(e){console.log(String(e.stdout??'').split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')).join('\n'));console.error(String(e.stderr??'').slice(-1400));throw new Error('actual PassR native qualification failed');}
  console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_')).join('\n'));
 }
-if(process.argv.includes('--completion-auth')){
+if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.includes(flag))){
+ const failures=[];
+ for(const action of ['complete','cancel','lock'].filter(action=>process.argv.includes(action==='complete'?'--completion-auth':`--${action}-auth`))){
  const c=seed(1),t=c.rows[0],outsider=randomUUID();sql(`INSERT INTO auth.users(id) VALUES('${outsider}');`);
  const id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
+ let scheduleId;
+ if(action==='lock'){
+  const planned=JSON.parse(sql(service+`SELECT public.upsert_rotation_plan('${c.club}','${randomUUID()}',jsonb_build_array(jsonb_build_object('table_id','${t.table}','assignment_id','${id}','slot_index',0,'out_attendance_id','${t.oldAttendance}','in_attendance_id','${t.nextAttendance}','planned_relief_at',now()+interval '3 minutes','announce_at',now(),'is_shortage',false,'is_emergency',false,'solver_version','native-auth-test')),ARRAY['${t.table}'::uuid]);`));assert.equal(planned.outcome,'ok');assert.equal(planned.inserted,1);
+  scheduleId=sql(`SELECT id FROM public.dealer_rotation_schedule WHERE club_id='${c.club}' AND slot_index=0 AND status='predicted';`);
+ }else{
  sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${t.nextAttendance}';UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${t.nextAttendance}',pre_assigned_at=now() WHERE id='${id}';`);
  const version=sql(`SELECT version FROM public.dealer_assignments WHERE id='${id}';`);
  const adopted=JSON.parse(sql(service+`SELECT public.worker_adopt_legacy_preassignment_v1('${c.club}','${t.table}','${t.session}','${id}',${version},'${t.nextAttendance}','${randomUUID()}');`));assert.equal(adopted.outcome,'adopted');
- const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}'),'schedule',(SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${adopted.schedule_id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
+  scheduleId=adopted.schedule_id;
+ }
+ const scheduleVersion=sql(`SELECT version FROM public.dealer_rotation_schedule WHERE id='${scheduleId}';`);
+ const call=action==='complete'?`public.complete_rotation_slot('${scheduleId}',NULL)`:action==='cancel'?`public.cancel_rotation_slot('${scheduleId}','reconcile_lock_lost')`:`public.lock_rotation_slot('${scheduleId}',${scheduleVersion})`;
+ const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}'),'schedule',(SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${scheduleId}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
  for(const actor of [{role:'anon',uid:null},{role:'authenticated',uid:outsider},{role:'authenticated',uid:c.owner},{role:'authenticated',uid:outsider,jwtRole:'service_role'}]){
   const before=fingerprint();let denied=false,receipt=null,insideStatus=null;
   try{
    const claims=JSON.stringify({role:actor.jwtRole??actor.role,...(actor.uid?{sub:actor.uid}:{})});
    const actorCheck=actor.uid?`DO $$ BEGIN IF auth.uid() IS DISTINCT FROM '${actor.uid}'::uuid THEN RAISE EXCEPTION 'completion_probe_actor_claim_missing';END IF;END $$;`:'';
-   const output=sql(`BEGIN;SET LOCAL request.jwt.claim.role='${actor.jwtRole??actor.role}';SET LOCAL request.jwt.claim.sub='${actor.uid??''}';SET LOCAL request.jwt.claims='${claims}';SET LOCAL ROLE ${actor.role};${actorCheck}SELECT public.complete_rotation_slot('${adopted.schedule_id}',NULL);RESET ROLE;SELECT status FROM public.dealer_rotation_schedule WHERE id='${adopted.schedule_id}';ROLLBACK;`).split(/\r?\n/);
-   receipt=JSON.parse(output[0]);insideStatus=output[1];denied=receipt.sqlstate==='42501';
-  }catch(e){if(/ERROR:\s+42501:/.test(String(e.stderr??e)))denied=true;else throw e;}
+   const output=sql(`BEGIN;SET LOCAL request.jwt.claim.role='${actor.jwtRole??actor.role}';SET LOCAL request.jwt.claim.sub='${actor.uid??''}';SET LOCAL request.jwt.claims='${claims}';${actorCheck}SET LOCAL ROLE ${actor.role};SELECT ${call};RESET ROLE;SELECT status FROM public.dealer_rotation_schedule WHERE id='${scheduleId}';ROLLBACK;`).split(/\r?\n/);
+   receipt=JSON.parse(output[0]);insideStatus=output[1];denied=receipt.sqlstate==='42501'||action==='lock'&&receipt.outcome==='error'&&receipt.detail==='DEALER_MANUAL_ACQUISITION_FORBIDDEN'&&insideStatus==='predicted';
+  }catch(e){const error=String(e.stderr??e);if(/ERROR:\s+42501:/.test(error)&&!/permission denied for schema auth/.test(error))denied=true;else throw e;}
   assert.equal(fingerprint(),before,'actor probe is fully rolled back');
-  console.log(JSON.stringify({completion_auth:{role:actor.role,claimedRole:actor.jwtRole??actor.role,actor:actor.uid===c.owner?'owner':actor.uid?'outsider':'anonymous',denied,receipt,insideStatus,rolledBack:true}}));
-  assert.equal(denied,true,'browser actors must not directly complete worker-owned rotation schedules');
+  console.log(JSON.stringify({rotation_auth:{action,role:actor.role,claimedRole:actor.jwtRole??actor.role,actor:actor.uid===c.owner?'owner':actor.uid?'outsider':'anonymous',denied,receipt,insideStatus,rolledBack:true}}));
+  const manualOwner=actor.uid===c.owner&&action!=='complete';
+  if(manualOwner){assert.equal(denied,false);assert.equal(receipt?.outcome,action==='cancel'?'cancelled':'locked');}
+  else if(!denied)failures.push({action,role:actor.role,actor:actor.uid===c.owner?'owner':'outsider',receipt});
  }
  const before=fingerprint();
- const positive=sql(`BEGIN;${service}SELECT public.complete_rotation_slot('${adopted.schedule_id}',NULL);SELECT public.complete_rotation_slot('${adopted.schedule_id}',NULL);ROLLBACK;`).split(/\r?\n/).map(line=>JSON.parse(line));assert.equal(positive[0].outcome,'executed');assert.equal(positive[1].outcome,'noop');assert.equal(fingerprint(),before);
- console.log('ROTATION_COMPLETION_BROWSER_DENY_SERVICE_POSITIVE_PASS');
+ const positive=sql(`BEGIN;${service}SELECT ${call};${action==='lock'?'':`SELECT ${call};`}ROLLBACK;`).split(/\r?\n/).map(line=>JSON.parse(line));assert.equal(positive[0].outcome,{complete:'executed',cancel:'cancelled',lock:'locked'}[action]);if(action!=='lock')assert.equal(positive[1].outcome,'noop');assert.equal(fingerprint(),before);
+ }
+ assert.deepEqual(failures,[],'unscoped browser actors must not mutate rotations; complete is worker-only');
+ console.log('ROTATION_BROWSER_DENY_SERVICE_POSITIVE_PASS');
 }
 if(process.argv.includes('--emergency-stale')){
  const c=seed(2),t=c.rows[0],replacement=c.rows[1].nextAttendance;
@@ -638,7 +653,7 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
  }
 }
-const sizes=['--negative','--overlap','--anchor-overlap','--completion-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--anchor-overlap','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
