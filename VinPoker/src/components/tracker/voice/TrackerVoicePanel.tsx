@@ -886,13 +886,27 @@ export function TrackerVoicePanel({
   }, [micTestStartedAt]);
 
   useEffect(() => {
+    const stopCapture = () => {
+      ++connectionGenerationRef.current;
+      ++runtimeReadGenerationRef.current;
+      pendingAmountPrefixRef.current = null;
+      cancelPendingActionRef.current?.();
+      micTestActiveRef.current = false;
+      setMicTestStartedAt(null);
+      setAudioLevel(0);
+      void providerRef.current?.disconnect().catch(() => undefined);
+    };
     const handleOffline = () => {
       if (statusRef.current === "idle") return;
+      stopCapture();
+      statusRef.current = "offline";
       setStatus("offline");
       setStatusMessage("Thiết bị mất mạng. Voice đã dừng ghi action.");
     };
     const handleDeviceChange = () => {
       if (statusRef.current === "idle") return;
+      stopCapture();
+      statusRef.current = "recovering";
       setStatus("recovering");
       setStatusMessage("Danh sách microphone vừa thay đổi. Hãy kết nối lại để xác nhận đúng thiết bị.");
     };
@@ -908,6 +922,8 @@ export function TrackerVoicePanel({
     const generation = ++connectionGenerationRef.current;
     const isCurrent = () => generation === connectionGenerationRef.current
       && connectionScopeRef.current === connectionScopeKey;
+    statusRef.current = "connecting";
+    setStatus("connecting");
     const currentRuntime = await refreshRuntimeRef.current();
     if (!isCurrent()) return;
     if (!currentRuntime?.can_mint_session) {

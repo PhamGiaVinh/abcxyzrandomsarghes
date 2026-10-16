@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Voice offline/device-change actually stops capture — local RED→GREEN
+
+Baseline49fa18f36 clean/previousPROGRESS. Actual mounted device effect previously only changed labels; new effect+connect source tests baseline11PASS2FAIL confirmed no provider disconnect on offline/devicechange. Effect now invalidates connection/runtime-read generations, clears split amount, cancels pending countdown via existing cancel hook, stops mic test/level and disconnects provider; synchronous status ref prevents same-tick countdown using old listening state. Connect marks connecting before initial runtime await so offline there also cancels before permission. No auto reconnect/retry and no claim to cancel already committed canonical writes.
+
+Final16/16 sourcecallback/effect testsPASS53.52ms, sourceESLint0/diffcheckPASS. Tests cover both interruptions, pending runtime result and retained callbacks ignored, cancel invoked, no additional connection, idle no-op, initial context interruption and previous current/next-hand positives. Modeled state/provider/browser events, NOT React/network/microphone/realprovider/receipt/375 proof. Existing CI invocation consumes tests, no dispatch. Full runtime/actor/session/epoch UI boundary and real credentials/provider remain unaccepted. No processes or production DB/Edge/frontend/flags/Auto/Daybreak changes; localonly/masterACTIVE, fulltour/rest15x3/40worker/Storagebytes/performance/fullchecks/release outstanding.
+
 ## Voice panel transcript/disconnect continuation RED → local fence
 
 Baselinefbe9e5fc7 clean/previousPROGRESS. Extended existing source-executing runtime lifecycle tests: actual connect/disconnect callbacks baseline6PASS2FAIL show pending final-transcript refresh creates setFinalAttempt after disconnect, and retained provider callback still publishes after stop. Connection generation now invalidated synchronously at disconnect/table render change/unmount; connect freshly loads runtime before microphone, all provider callbacks and post-refresh/post-disconnect continuations fenced. Event captures exact hand scope and cannot cross hand transition while awaiting refresh. Latest refreshRuntime ref permits continuing microphone across successive hands instead of using the prior hand's captured loader (important compatibility with previous read fence).

@@ -6,7 +6,7 @@ import {parseSync,transformSync} from '@swc/core';
 
 // Executes actual panel callback, with modeled state/read seams, not React/Auth/HTTP.
 const source=readFileSync(new URL('../../src/components/tracker/voice/TrackerVoicePanel.tsx',import.meta.url),'utf8');
-const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback;
+const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback,deviceEffect;
 const slice=node=>Buffer.from(source).subarray(node.span.start-tree.span.start,node.span.end-tree.span.start).toString();
 function visit(node){
  if(!node||typeof node!=='object')return;
@@ -16,6 +16,7 @@ function visit(node){
  if(node.type==='CallExpression'&&node.callee.value==='useEffect'){
   const candidate=node.arguments[0]?.expression;
   if(candidate&&slice(candidate).includes('void refreshRuntime();'))effect=candidate;
+  if(candidate&&slice(candidate).includes('const handleOffline'))deviceEffect=candidate;
  }
  for(const value of Object.values(node)){if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);}
 }
@@ -68,21 +69,27 @@ test('actual runtime effect cleanup invalidates its unfinished request',async()=
 function connectionFixture(){
  assert.ok(connectCallback);assert.ok(disconnectCallback);
  const pending=deferred(),writes=[],runtime={can_mint_session:true,config:{provider_model:'test'},correction_pending:false};
- let callbacks,waiting=false,connections=0;
+ let callbacks,waiting=false,connections=0,disconnects=0;
  const refreshRuntime=()=>waiting?pending.promise:Promise.resolve(runtime);
- const provider={kind:'openai_realtime',connect:async handlers=>{connections++;callbacks=handlers;},disconnect:async()=>{}};
+ const provider={kind:'openai_realtime',connect:async handlers=>{connections++;callbacks=handlers;},disconnect:async()=>{disconnects++;}};
  const sandbox={Error,performance:{now:()=>1},runtime,runtimeError:null,refreshRuntime,refreshRuntimeRef:{current:refreshRuntime},
   providerOverride:provider,providerRef:{current:provider},hook:{tournamentId:'tour',tournamentTableId:'table',handId:'hand'},
   connectionGenerationRef:{current:0},connectionScopeKey:'scope',connectionScopeRef:{current:'scope'},runtimeScopeRef:{current:'hand-scope'},
+  runtimeReadGenerationRef:{current:0},
   pendingAmountPrefixRef:{current:null},micTestActiveRef:{current:false},micTestFinalCountRef:{current:0},micTestMaxLevelRef:{current:0},
   runtimeRef:{current:runtime},finalReceivedAtRef:{current:new Map()},handsFreeActionCommitRef:{current:null},
+  statusRef:{current:'listening'},cancelPendingActionRef:{current:null},
   isTrackerVoiceGeminiLiveModel:()=>false,isIncompleteAmountCommand:()=>false,combineSplitAmountFinal:()=>null,
  };
- for(const name of new Set((slice(connectCallback)+slice(disconnectCallback)).match(/\bset[A-Z]\w+/g)))sandbox[name]=value=>writes.push([name,value]);
+ for(const name of new Set((slice(connectCallback)+slice(disconnectCallback)+slice(deviceEffect)).match(/\bset[A-Z]\w+/g)))sandbox[name]=value=>writes.push([name,value]);
  const compiled=transformSync('const connect='+slice(connectCallback).replaceAll('import.meta.env.VITE_TRACKER_VOICE_PROVIDER','undefined')+';const disconnect='+slice(disconnectCallback)+';({connect,disconnect});',{
   jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
  const functions=runInNewContext(compiled,sandbox);
- return {...functions,pending,writes,sandbox,connections:()=>connections,wait:()=>{waiting=true;},emit:()=>callbacks.onTranscript({isFinal:true,providerEventId:'event',transcript:'call',capturedAt:'test'})};
+ const events={};sandbox.window={addEventListener:(name,cb)=>{events[name]=cb;},removeEventListener:(name)=>{delete events[name];}};
+ sandbox.navigator={mediaDevices:sandbox.window};
+ const effectCode=transformSync('const effect='+slice(deviceEffect)+';effect;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+ const mountDevices=()=>runInNewContext(effectCode,sandbox)();
+ return {...functions,pending,writes,sandbox,events,mountDevices,disconnects:()=>disconnects,connections:()=>connections,wait:()=>{waiting=true;},emit:()=>callbacks.onTranscript({isFinal:true,providerEventId:'event',transcript:'call',capturedAt:'test'})};
 }
 test('disconnect prevents pending transcript runtime refresh from creating a late attempt',async()=>{
  const f=connectionFixture();await f.connect();f.wait();f.emit();await f.disconnect();
@@ -111,4 +118,21 @@ test('ongoing microphone uses latest runtime reader for the next hand without re
  assert.equal(reads,1);assert.equal(f.connections(),1);
  const attempt=f.writes.find(([name])=>name==='setFinalAttempt');assert.ok(attempt);assert.equal(attempt[1].runtimeSnapshot,fresh);
  await f.disconnect();
+});
+for(const event of ['offline','devicechange'])test(`${event} stops capture and invalidates pending transcript`,async()=>{
+ const f=connectionFixture();let cancelled=0;f.sandbox.cancelPendingActionRef.current=()=>cancelled++;
+ await f.connect();const cleanup=f.mountDevices();f.wait();f.emit();
+ f.events[event]();assert.equal(f.disconnects(),1);const writes=f.writes.length;
+ assert.equal(cancelled,1);assert.equal(f.connections(),1);
+ f.pending.resolve(f.sandbox.runtime);await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+ f.emit();assert.equal(f.writes.length,writes);cleanup();assert.deepEqual(Object.keys(f.events),[]);
+});
+for(const event of ['offline','devicechange'])test(`${event} while idle does not start or stop a provider`,()=>{
+ const f=connectionFixture();f.sandbox.statusRef.current='idle';const cleanup=f.mountDevices();
+ f.events[event]();assert.equal(f.disconnects(),0);assert.equal(f.connections(),0);assert.deepEqual(f.writes,[]);cleanup();
+});
+test('offline during the initial context lookup cancels connection before microphone starts',async()=>{
+ const f=connectionFixture();f.sandbox.statusRef.current='idle';f.wait();const cleanup=f.mountDevices();
+ const pending=f.connect();f.events.offline();f.pending.resolve(f.sandbox.runtime);await pending;
+ assert.equal(f.connections(),0);assert.equal(f.sandbox.statusRef.current,'offline');cleanup();
 });
