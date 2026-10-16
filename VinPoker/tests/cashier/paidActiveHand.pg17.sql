@@ -21,6 +21,8 @@ DO $$ DECLARE original public.tournament_registrations%ROWTYPE; actor uuid; dest
  player uuid; reg uuid; r jsonb; intent jsonb; hand uuid; rev bigint; epoch bigint; button integer;
  finish_intent jsonb; finish_receipt jsonb; money_before jsonb; mode_request uuid;
  moving_player uuid; moving_reg uuid; moving_entry uuid; opened jsonb; src record; target_seat integer;
+ move_key uuid:=gen_random_uuid(); move_result jsonb; move_dest_revision bigint; move_dest_epoch bigint;
+ close_key uuid:=gen_random_uuid(); close_result jsonb; source_before jsonb;
  correction_alert uuid; alert_status text; correction_unknown_session boolean;
  expected_public_roster jsonb; public_hand jsonb; public_history jsonb;
  tv_token text:='fixture-only-paid-tv-'||gen_random_uuid()::text; tv_payload jsonb; branding boolean; expected_remaining integer;
@@ -240,15 +242,29 @@ BEGIN
    FROM public.tournament_seats s JOIN public.table_sessions t ON t.id=s.table_session_id WHERE s.entry_id=moving_entry AND s.is_active;
   IF src.table_session_id=dest.table_session_id THEN RAISE EXCEPTION 'moving_player_joined_hand_early';END IF;
   SELECT revision,control_epoch INTO rev,epoch FROM public.table_sessions WHERE id=dest.table_session_id;
+  move_dest_revision:=rev;move_dest_epoch:=epoch;
   SELECT n INTO target_seat FROM generate_series(1,9) n WHERE NOT EXISTS(
    SELECT 1 FROM public.tournament_seats s WHERE s.table_session_id=dest.table_session_id AND s.is_active AND s.seat_number=n) ORDER BY n LIMIT 1;
   PERFORM set_config('role','authenticated',true);
   r:=public.move_player_seat_v5(moving_entry,src.tournament_table_id,src.table_session_id,dest.id,dest.table_session_id,
-   target_seat,src.revision,rev,src.control_epoch,epoch,'Paid source safe-boundary TEST',gen_random_uuid());
+   target_seat,src.revision,rev,src.control_epoch,epoch,'Paid source safe-boundary TEST',move_key);
   IF r->>'queued' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_source_move_not_queued: %',r;END IF;
+  move_result:=r;
+  r:=public.move_player_seat_v5(moving_entry,src.tournament_table_id,src.table_session_id,dest.id,dest.table_session_id,
+   target_seat,src.revision,move_dest_revision,src.control_epoch,move_dest_epoch,'Paid source safe-boundary TEST',move_key);
+  IF r IS DISTINCT FROM move_result THEN RAISE EXCEPTION 'queued_move_receipt_replay_changed: %',r;END IF;
   PERFORM set_config('role','none',true);
   IF (SELECT count(*) FROM public.tournament_seats WHERE entry_id=moving_entry AND is_active AND table_session_id=src.table_session_id AND chip_count=20000)<>1 THEN
    RAISE EXCEPTION 'queued_move_removed_paid_source_early';END IF;
+  SELECT to_jsonb(s) INTO source_before FROM public.table_sessions s WHERE id=src.table_session_id;
+  SELECT revision INTO rev FROM public.table_sessions WHERE id=src.table_session_id;
+  PERFORM set_config('role','authenticated',true);
+  r:=public.close_tournament_table_v4(src.tournament_table_id,rev,gen_random_uuid());
+  IF r->>'error' IS DISTINCT FROM 'table_not_empty' THEN RAISE EXCEPTION 'queued_source_close_not_blocked: %',r;END IF;
+  PERFORM set_config('role','none',true);
+  IF (SELECT to_jsonb(s) FROM public.table_sessions s WHERE id=src.table_session_id) IS DISTINCT FROM source_before
+   OR (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE entry_id=moving_entry AND status='pending')<>1 THEN
+   RAISE EXCEPTION 'denied_close_changed_queued_source';END IF;
  END IF;
  SELECT jsonb_agg(to_jsonb(m) ORDER BY id) INTO money_before FROM public.cashier_buyin_movements m WHERE registration_id=reg;
  SELECT revision,control_epoch INTO rev,epoch FROM public.table_sessions WHERE id=dest.table_session_id;
@@ -309,6 +325,40 @@ BEGIN
    WHERE entry_id=moving_entry AND status IN ('issued','printed') AND cancelled_at IS NULL ORDER BY issued_at DESC LIMIT 1));
   IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_moved_ticket_proof_failed: %',r;END IF;
   PERFORM set_config('role','none',true);
+  -- Lost-response retry keeps the original intent/epoch even after the hand
+  -- boundary changed control mode. It must replay, never move a second time.
+  PERFORM set_config('role','authenticated',true);
+  r:=public.move_player_seat_v5(moving_entry,src.tournament_table_id,src.table_session_id,dest.id,dest.table_session_id,
+   target_seat,src.revision,move_dest_revision,src.control_epoch,move_dest_epoch,'Paid source safe-boundary TEST',move_key);
+  IF r IS DISTINCT FROM move_result THEN RAISE EXCEPTION 'applied_move_receipt_replay_changed: %',r;END IF;
+  r:=public.move_player_seat_v5(moving_entry,src.tournament_table_id,src.table_session_id,dest.id,dest.table_session_id,
+   target_seat,src.revision,move_dest_revision,src.control_epoch,move_dest_epoch,'Changed move payload TEST',move_key);
+  IF r->>'error' IS DISTINCT FROM 'IDEMPOTENCY_CONFLICT' THEN RAISE EXCEPTION 'applied_move_payload_conflict_missing: %',r;END IF;
+  PERFORM set_config('role','none',true);
+  IF (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE entry_id=moving_entry)<>1
+   OR (SELECT count(*) FROM public.tournament_seats WHERE entry_id=moving_entry AND is_active)<>1 THEN
+   RAISE EXCEPTION 'move_retry_duplicated_queue_or_seat';END IF;
+  -- Exercise the real close writer/replay in a savepoint, then restore the
+  -- empty source for the later paid-waiter allocation scenario below.
+  SELECT to_jsonb(s) INTO source_before FROM public.table_sessions s WHERE id=src.table_session_id;
+  BEGIN
+   SELECT revision INTO rev FROM public.table_sessions WHERE id=src.table_session_id;
+   PERFORM set_config('role','authenticated',true);
+   close_result:=public.close_tournament_table_v4(src.tournament_table_id,rev,close_key);
+   IF close_result->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'applied_move_source_close_failed: %',close_result;END IF;
+   IF public.close_tournament_table_v4(src.tournament_table_id,rev,close_key) IS DISTINCT FROM close_result THEN
+    RAISE EXCEPTION 'applied_move_source_close_replay_changed';END IF;
+   PERFORM set_config('role','none',true);
+   IF NOT EXISTS(SELECT 1 FROM public.table_sessions WHERE id=src.table_session_id AND closed_at IS NOT NULL)
+    OR EXISTS(SELECT 1 FROM public.tournament_seats WHERE table_session_id=src.table_session_id AND is_active)
+    OR EXISTS(SELECT 1 FROM public.floor_pending_tracker_moves WHERE source_table_session_id=src.table_session_id AND status='pending')
+    OR EXISTS(SELECT 1 FROM public.dealer_assignments WHERE table_session_id=src.table_session_id AND released_at IS NULL) THEN
+    RAISE EXCEPTION 'applied_move_source_close_postcondition_failed';END IF;
+   RAISE SQLSTATE 'PZ002';
+  EXCEPTION WHEN SQLSTATE 'PZ002' THEN NULL;END;
+  IF (SELECT to_jsonb(s) FROM public.table_sessions s WHERE id=src.table_session_id) IS DISTINCT FROM source_before THEN
+   RAISE EXCEPTION 'source_close_probe_not_rolled_back';END IF;
+  RAISE NOTICE 'PAID_DEFERRED_MOVE_SOURCE_CLOSE_REPLAY_CONFLICT_ROLLBACK_PASS';
  END IF;
  IF (SELECT status FROM public.tournament_hands WHERE id=hand)<>'completed'
  OR NOT EXISTS(SELECT 1 FROM public.table_sessions WHERE id=dest.table_session_id AND control_mode='manual' AND control_epoch=epoch+1) THEN

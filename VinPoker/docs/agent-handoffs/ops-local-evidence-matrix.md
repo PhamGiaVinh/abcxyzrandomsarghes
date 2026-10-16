@@ -1,5 +1,13 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
+Latest follow-up after d73a512dc: 4-paid native active-hand deferred move now
+checks pending/applied receipt replay, changed-payload conflict, source close
+denied while occupied, successful empty-source close/replay after Finish in a
+rollback-only savepoint, and pending queue rollback fingerprint. Final a0dff5
+terminal0/PG stopped; syntax/diff pass. No product/runtime release change. Source
+was unstaffed: no new claim of staffed deferred release or durable8player/concurrent
+consumer/browser proof. Same-hand ranking policy hold and original gaps remain.
+
 This is an execution handoff, NOT acceptance of the site. Baseline source
 `f58124289`, plus the history-enabled eight-player and legacy-finalizer overlap extension. Latest fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.

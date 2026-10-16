@@ -2098,3 +2098,24 @@ no live commands. Next get house decision for this subproblem; continue safe
 independent original gaps (same-tour deferred move/re-entry, realrotations/hosted40,
 375/provider/Storage/performance/fullchecks/criticalreview/livecatalog/recovery/
 release) without silently changing money/result policy or marking goal complete.
+
+## 2026-10-16 — Paid deferred move/source close regression
+
+Continued d73a512dc; fetch confirms origin/main unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+Test-only extension of paidActiveHand.pg17.sql: pending receipt replay; fresh
+source close denied table_not_empty/no session or queue delta; after canonical
+Finish and mode/epoch advance, original move replay unchanged, changed reason
+returns IDEMPOTENCY_CONFLICT, one applied queue/one active seat. Empty source
+actual close_v4/replay and closed/no active seats/pending moves/unreleased
+assignments verified in a rollback-only savepoint. No dealer assigned on that
+source, so this does NOT establish release of a previously staffed deferred source.
+paidJourney.runtime.mjs rollback fingerprint now includes floor_pending_tracker_moves.
+Native helper: --cash112 --portable115 --active-hand --pending-move --existing.
+Final run a0dff5 terminal0, PG stopped; both CANONICAL_PAID_MOVE_FINISH_MODE_WAITING_SEAT_ROLLBACK_PASS
+and PAID_DEFERRED_MOVE_SOURCE_CLOSE_REPLAY_CONFLICT_ROLLBACK_PASS. Node syntax/diff
+checks pass. Earlier d931a1 passed before added fingerprint; final rerun verifies it.
+No product SQL/Edge/UI change. Four-paid rollback fixture, NOT durable same8player
+staffed deferred break, concurrent consumer, browser/Auth/HTTP or hosted evidence.
+No push/CI/build/fulltypecheck/production DB/Edge/frontend/flags/Auto/UAT; Daybreak
+OFF/local resource hold unchanged. Same-hand ranking business/release hold stays;
+no answer inferred from continuation. Goal ACTIVE, original acceptance gaps remain.
