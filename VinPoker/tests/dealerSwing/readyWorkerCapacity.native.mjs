@@ -61,10 +61,14 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
 }
 if(process.argv.includes('--planner')){
  const size=Number(process.argv.find(a=>a.startsWith('--planner-size='))?.split('=')[1]??2);assert.ok([2,10,40].includes(size));
- const fixture=seed(size);console.log('ACTUAL_PASSR_NATIVE_START '+size);
- const output=execFileSync('deno',['run','--cached-only','--no-config','--no-lock','--node-modules-dir=none','--deny-net','--allow-read=./supabase/functions,./tests/dealerSwing','--allow-env=PGHOST,PGPORT,PGUSER,PGDATABASE,PATH,SystemRoot',`--allow-run=${process.platform==='win32'?'wsl':'psql'}`,'tests/dealerSwing/passR.native.mjs','--native'],{
+ const fixture=seed(size);fixture.shortage=process.argv.includes('--planner-shortage');
+ fixture.fault=process.argv.find(a=>a.startsWith('--planner-fault='))?.split('=')[1];assert.ok(fixture.fault===undefined||['dealer-inventory','persist','lock'].includes(fixture.fault));assert.ok(!(fixture.shortage&&fixture.fault));
+ if(fixture.shortage)sql(service+`UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now(),current_state='checked_out' WHERE id IN (${fixture.rows.map(r=>quote(r.nextAttendance)).join(',')});`);
+ console.log('ACTUAL_PASSR_NATIVE_START '+size+(fixture.shortage?' shortage':''));
+ let output;try{output=execFileSync('deno',['run','--cached-only','--no-config','--no-lock','--node-modules-dir=none','--deny-net','--allow-read=./supabase/functions,./tests/dealerSwing','--allow-env=PGHOST,PGPORT,PGUSER,PGDATABASE,PATH,SystemRoot',`--allow-run=${process.platform==='win32'?'wsl':'psql'}`,'tests/dealerSwing/passR.native.mjs','--native'],{
   input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:120000,stdio:['pipe','pipe','pipe'],
- });console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_NATIVE_')).join('\n'));
+ });}catch(e){console.log(String(e.stdout??'').split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')).join('\n'));console.error(String(e.stderr??'').slice(-1400));throw new Error('actual PassR native qualification failed');}
+ console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_NATIVE_')).join('\n'));
 }
 if(process.argv.includes('--emergency-stale')){
  const c=seed(2),t=c.rows[0],replacement=c.rows[1].nextAttendance;

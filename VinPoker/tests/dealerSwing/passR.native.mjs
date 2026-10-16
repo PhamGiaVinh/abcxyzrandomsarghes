@@ -32,10 +32,18 @@ else{
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
    out[key]=open<0?row[key]:row[key]===null?null:Array.isArray(row[key])?row[key].map(v=>project(v,item.slice(open+1,-1))):project(row[key],item.slice(open+1,-1));
   }return out;}
- const reads=[],rpcCalls=[];
+ const reads=[],rpcCalls=[],persistReceipts=[];
  const admin={async rpc(name,args){assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
+  if(fixture.fault==='persist'&&name==='upsert_rotation_plan')return {data:null,error:{code:'PGRST002',message:'synthetic persist transport failure'}};
+  if(fixture.fault==='lock'&&name==='lock_rotation_slot'){
+   const target=await sql(service+`SELECT table_id FROM public.dealer_rotation_schedule WHERE id=${quote(args.p_schedule_id)} AND club_id='${fixture.club}';`);
+   if(target===fixture.rows[0].table)return {data:null,error:{code:'PGRST002',message:'synthetic one-table lock transport failure'}};
+  }
   try{const params=Object.entries(args).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v))).join(',');
-   return {data:JSON.parse(await sql(service+`SELECT to_jsonb(public.${name}(${params}));`)),error:null};
+   const query=name==='end_breaks_on_demand'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
+   const data=JSON.parse(await sql(service+query));
+   if(name==='upsert_rotation_plan')persistReceipts.push({rows:args.p_rows.map(r=>({table_id:r.table_id,slot_index:r.slot_index,assignment_id:r.assignment_id})),response:data});
+   return {data,error:null};
   }catch(e){return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}
  },from(table){
   assert.ok(['dealer_assignments','dealer_attendance','dealers','dealer_shift_metrics','dealer_breaks','dealer_meal_breaks','dealer_rotation_schedule','app_settings','dealer_table_profiles','dealer_table_pool','table_sessions','tournament_tables','diagnostic_logs'].includes(table),'unexpected table '+table);
@@ -63,6 +71,7 @@ else{
     return {data:null,error:null};
    }
    reads.push(table);
+   if(fixture.fault==='dealer-inventory'&&table==='dealers')return {data:null,error:{code:'PGRST002',message:'synthetic inventory transport failure'},status:503};
    for(const [relation,alias] of [['game_tables','g'],['dealers','d'],['dealer_assignments','da'],['tournaments','t']]){
     if(selection.includes(relation+'!inner('))joins=joins.replace('LEFT JOIN public.'+relation+' '+alias,'INNER JOIN public.'+relation+' '+alias);
    }
@@ -74,11 +83,45 @@ else{
   return q;
  }};
  let networkCalls=0;globalThis.fetch=()=>{networkCalls++;throw new Error('unexpected runtime network');};
- const result=await planner.passRRotationPlanner(admin,{clubId:fixture.club,clubZone:null,chatId:null,botToken:null,cycleExcludedIds:new Set(),preAnnounceMinutes:3,minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,swingDurationMinutes:45,tierAMinBuyin:10000000,tierBMinBuyin:5000000,requiredGameTypes:[]});
+ const immutableSnapshot=()=>sql(service+`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a)-ARRAY['overtime_started_at','updated_at','version'] ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'))::text);`);
+ const beforeFault=fixture.fault?await immutableSnapshot():null;
+ const context={clubId:fixture.club,clubZone:null,chatId:null,botToken:null,cycleExcludedIds:new Set(),preAnnounceMinutes:3,minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,swingDurationMinutes:45,tierAMinBuyin:10000000,tierBMinBuyin:5000000,requiredGameTypes:[]};
+ const result=await planner.passRRotationPlanner(admin,context);
  console.log(JSON.stringify({passR_actual_result:result,reads:[...new Set(reads)],rpcCalls,networkCalls}));
- assert.deepEqual(result.errors,[]);assert.equal(result.candidateStatus,undefined);assert.ok(result.planned>=fixture.rows.length);assert.equal(result.locked,fixture.rows.length);assert.equal(result.shortageTables,0);assert.equal(networkCalls,0);
+ if(fixture.fault){
+  assert.ok(result.errors.length>0);assert.equal(result.shortageTables,0);assert.equal(networkCalls,0);
+  if(fixture.fault==='dealer-inventory'){assert.equal(result.candidateStatus,'query_failed');assert.equal(result.candidateErrorCode,'candidate_club_dealers_query_failed');}
+  if(fixture.fault==='lock'){
+   assert.equal(result.locked,fixture.rows.length-1);
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_attendance d ON d.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.table_id='${fixture.rows[0].table}' AND s.slot_index=0 AND s.status='predicted' AND d.current_state='available' AND d.pre_assigned_table_id IS NULL;`),'1');
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(fixture.rows.length-1));
+  }else{
+   assert.equal(result.locked,0);assert.equal(await immutableSnapshot(),beforeFault,'failed supply/persist must not reserve or release any dealer; independent OT marker excluded');
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}';`),'0');
+  }
+  const fault=fixture.fault;fixture.fault=undefined;
+  const recovered=await planner.passRRotationPlanner(admin,{...context,cycleExcludedIds:new Set()});
+  assert.deepEqual(recovered.errors,[]);assert.equal(recovered.shortageTables,0);assert.equal(recovered.locked,fixture.rows.length-result.locked);
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(fixture.rows.length));
+  const lockedProof=()=>sql(`SELECT jsonb_agg(jsonb_build_object('id',id,'table_id',table_id,'incoming',in_attendance_id,'relief',planned_relief_at) ORDER BY table_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`);
+  const committed=await lockedProof();
+  const repeated=await planner.passRRotationPlanner(admin,{...context,cycleExcludedIds:new Set()});
+  console.log(JSON.stringify({passR_actual_result:{phase:'repeat-recovery-diagnostic',fault,recovered,repeated,lastPersist:persistReceipts.at(-1),liveSessions:Number(await sql(`SELECT count(*) FROM public.table_sessions WHERE club_id='${fixture.club}' AND closed_at IS NULL;`)),announced:Number(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`))}}));
+  assert.equal(await lockedProof(),committed,'healthy subsequent tick preserves committed lock IDs and relief times');
+  assert.equal(networkCalls,0);assert.deepEqual(repeated.errors,[]);assert.equal(repeated.locked,0);
+  console.log(JSON.stringify({passR_actual_result:{fault,recovered,repeated,lockedProofStable:true}}));
+  console.log('ACTUAL_PASSR_NATIVE_MODULE_FAULT_PASS '+fault);
+ }else{
+ assert.deepEqual(result.errors,[]);assert.equal(result.candidateStatus,undefined);assert.ok(result.planned>=fixture.rows.length);assert.equal(result.locked,fixture.shortage?0:fixture.rows.length);assert.equal(result.shortageTables,fixture.shortage?fixture.rows.length:0);assert.equal(networkCalls,0);
  assert.equal(await sql(`SELECT count(DISTINCT table_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status IN ('predicted','announced');`),String(fixture.rows.length));
- assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id JOIN public.table_sessions ts ON ts.id=a.table_session_id JOIN public.dealer_attendance dat ON dat.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.slot_index=0 AND s.status='announced' AND s.table_id=a.table_id AND a.club_id=s.club_id AND a.released_at IS NULL AND a.pre_assigned_attendance_id=s.in_attendance_id AND ts.game_table_id=a.table_id AND ts.club_id=a.club_id AND ts.closed_at IS NULL AND dat.current_state='pre_assigned' AND dat.pre_assigned_table_id=a.table_id;`),String(fixture.rows.length));
- assert.equal(await sql(`SELECT count(DISTINCT in_attendance_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(fixture.rows.length));
- console.log('ACTUAL_PASSR_NATIVE_MODULE_PASS '+fixture.rows.length);
+ if(fixture.shortage){
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='predicted' AND is_shortage AND in_attendance_id IS NULL;`),String(fixture.rows.length));
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments a JOIN public.dealer_attendance d ON d.id=a.attendance_id WHERE a.club_id='${fixture.club}' AND a.status='assigned' AND a.released_at IS NULL AND a.pre_assigned_attendance_id IS NULL AND a.overtime_started_at IS NOT NULL AND d.current_state='assigned';`),String(fixture.rows.length));
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NOT NULL;`),'0');
+ }else{
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id JOIN public.table_sessions ts ON ts.id=a.table_session_id JOIN public.dealer_attendance dat ON dat.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.slot_index=0 AND s.status='announced' AND s.table_id=a.table_id AND a.club_id=s.club_id AND a.released_at IS NULL AND a.pre_assigned_attendance_id=s.in_attendance_id AND ts.game_table_id=a.table_id AND ts.club_id=a.club_id AND ts.closed_at IS NULL AND dat.current_state='pre_assigned' AND dat.pre_assigned_table_id=a.table_id;`),String(fixture.rows.length));
+  assert.equal(await sql(`SELECT count(DISTINCT in_attendance_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(fixture.rows.length));
+ }
+ console.log('ACTUAL_PASSR_NATIVE_MODULE_PASS '+fixture.rows.length+(fixture.shortage?' shortage':''));
+ }
 }
