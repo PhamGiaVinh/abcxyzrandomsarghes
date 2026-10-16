@@ -1,5 +1,15 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 ready Edge native capacity 2 / 10 / 40
+
+Baseline 03489bbf1; added opt-in readyWorkerCapacity.native.mjs executing the actual ready handler, actual internal-auth/inventory helpers, and actual PG17 queries/RPCs. HTTP/PostgREST replaced with a guarded psql adapter; no fabricated mutation outcomes. Exact owned DB vinpoker_ops_ready_capacity_ci, loopback55441, PG17/data-directory and no-pg_net guards. Synthetic clubs/dealers without contacts; fallback ready path (planner disabled in fixture), not main process-swing planner/dispatcher. Fixtures set overdue/check-in timestamps: NOT evidence of real rest15 rotations.
+
+Initial 2-table attempt failed before rotation: fixture service_role is NOBYPASSRLS, owner sees settings ON while service sees no rows. Confirmed bootstrap creates NOLOGIN service role without hosted bypass attribute. No product bug/Auto fix inferred. Harness now creates a uniquely named disposable NOLOGIN/non-superuser BYPASSRLS role inheriting existing service_role grants, retaining service JWT claims; drops it on exit. Original service role, grants and RLS policies unchanged. Matches server-only admin RLS semantics, not user authorization proof.
+
+Small smoke PASS 2 swings/2 replays, then full phase run PASS: 2=3571ms,10=15868ms,40=62290ms. Each incoming actual handler outcome swung has an exact persisted club/table/attendance assignment; replay skips state_changed. Final active counts, distinct attendance/session counts, released counts and success metrics each equal phase size. This is sequential event processing/capacity, NOT 40 concurrent Edge instances, HTTP latency, true auth server, cron, shortage proof or three rest15 rotations. Private runner stopped PG finally; terminal session25035 exit0. Node syntax and git diff checks PASS. No CI dispatch or workflow integration yet (must adapt CI connection guard explicitly before wiring).
+
+No push/production DB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-only hold remains. Next: shortage/insufficient-rest and dispatch failures on actual path, then main planner/worker capacity; full G3/G8/G9 and release acceptance remain outstanding.
+
 ## G3 ready-worker released-history starvation
 
 Baseline5413960f2 clean. Broadercapacityaudit inspectedactualreadyEdge vsoperationalinventory. Genericactivewrong-sessionhypothesis dismissed: inventoryalreadyquarantinesunreleasedinvalidassignmentrows, so nonewselectorRPC/migration added. Actualremainingcandidate: readyquery statusassigned omittedreleased_atNULL, allowingreleasedbutmislabelledhistoricalrow ononeoperationalphysicaltable tooutrankanotherlegitimateoverdueassignment. ActualhandlerwithrealAuth/inventoryhelpers+synthtransport RED picksreleasedhistoryid8notcurrentid9; fixedsinglequery .is('released_at',null). Positivecurrent-only andhistorypresentbothGREEN; no rest/OT/duration/auth/policy changes.
