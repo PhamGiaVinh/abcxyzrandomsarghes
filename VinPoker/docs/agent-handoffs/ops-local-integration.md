@@ -2492,3 +2492,79 @@ unchanged vs exact HEAD: viewer21 errors/3 warnings, controller63/4, replay2/0.
 Not a full lint/typecheck/build, native DB rerun, browser375 or production PASS.
 Frontend skill preserved existing UI; Supabase guidance kept subscriptions scoped
 and server/RLS authoritative. No ranking/payout/rest/flags/Daybreak changes.
+
+## 17 Oct — cross-flow local investigation requested by owner
+
+Scope: verify sequential ITM out/payout; Multi-day bag/Chip Master/flight merge;
+online SePay buy-in seating/receipt; dealer closure while working/resting/payroll.
+No production access/write, provider/email delivery, CI/push/build or policy edit.
+Owned source baseline a37d1000c clean. Only focused native regression/diagnostic
+tests added. Test fixtures remain synthetic local history, never production data.
+
+Native transport: existing private candidate111-integration-native.mjs helper,
+--cash112 --portable115 --existing, exact local PG17/datadir/127.0.0.1:55441.
+Added allowlisted --cross-domain-itm/bank/multiday/dealer entry points; each starts
+the exact cluster and stops in finally. Native configuration remains low memory.
+
+ITM final runtime72818c exit0 / PG stopped: FOUR canonical paid entries,3 prize
+slots; actual Floor bust/replay. First out4 is not-in-money; second out3 is ITM
+while TWO survivors remain: finalize and immediate payment are refused until
+the tournament reaches its winner. This is an explicit operational limitation,
+not a passed live-ITM payout feature. Final ranks4/3/2/1; place3 pays100000 to
+the EXACT out3 player's recipient_ref once, replay already_paid. Fixture
+tournament298e13c3-f3e0-4039-a8b6-3cd967da6bac. Earlier three-entry smoke d70f85
+was strengthened rather than used to claim in-money payout during ongoing play.
+This is sequential Manual/Floor out, not simultaneous Tracker-hand ranking or
+bank transfer proof. No automatic money payment upon bust. Discovered native
+qualified schema lacks get_tournament_payout_recipients(uuid), although the UI
+calls it and its old SQL is in archive. Did not replay archive or infer live
+absence: UI payout read integration remains a GAP, not PASS.
+
+Multi-day runtime52904 exit0 is an EXPLICIT DIAGNOSTIC, not feature success.
+Two policies, each with two flights for the SAME canonical paid player. Rules
+configured before flight registrations; actual Cashier payment + Floor opening/
+mode + tokenized Tracker roster initialization provide real entry/session/chips.
+Dealer assignment is a synthetic fixture precondition, not Auto evidence.
+Actual End Flight→record bag/retry→Chip Master seal→lock day→qualification lock
+produces20000 SELECT_LARGEST and40000 SUM_STACKS. Bagging doesn't add payments.
+Both Final Day seating calls FAIL with multi_day_final_table_unavailable:
+canonical Floor tables have game_table_id,legacy table_idNULL; existing RPC
+still requires table_id and compares session.game_table_id against it. No Final
+entry written. Repro events efd35107-c5b5-4ab4-8d56-7bb45534cd5b and
+d47509a8-2467-466a-aed9-35013d10e4eb. Default test remains a failing regression;
+only explicit --diagnose-canonical-id-gap accepts/prints REPRO_..._NOT_PASS.
+Global Multi-day test release configuration restored in finally; no business
+rows deleted. Native fixture corrections (status/flight label/real roster setup/
+manual Dealer actor claims) were made instead of weakening runtime guards.
+No production SQL or historical migration was changed. This requires a NEW
+reviewed canonical-session-compatible migration, not backfilling table_id by hand.
+
+Bank final runtime6322ca exit0 / PG stopped (also checks service-only EXECUTE): actual server-priced app registration,
+unverified transfer refused; Auto argument OFF refused; verified40000 partial
+does not seat; verified60000 completes100000 → current canonical session/entry,
+one receipt and one receipt-linked in-app notification; repeated transfers do
+not double money/entry. Entire bank case/global SePay settings roll back. Local
+auth.uid baseline initially caused an artificial actor_not_allowed: it reads
+only legacy request.jwt.claim.sub. Test now uses official Supabase Auth
+20220224000811 JSON-claims fallback inside the same rollback transaction,
+without injecting a human JWT into a service request. Model restored on rollback.
+Reference https://github.com/supabase/auth/blob/master/migrations/20220224000811_update_auth_functions.up.sql
+This proves DB money/seating/receipt path, NOT bank API/webhook/reconcile HTTP,
+email delivery or a fiscal invoice. Traced path inserts notifications with
+receipt_code; no invoice-email dispatch identified in that path.
+
+Dealer runtime94ddae exit0 / PG stopped: actual operator_close_club_table_v2
+on assigned and on_break fixtures. Exact time facts/checkout/worked/OT preserved,
+assignment released, assigned→available, resting stays on_break; payroll read
+before/after identical. Separate closed23:30→00:30+07 attendance spanning month
+end allocates0.5hours to each date and60000 gross total at fixture60000/hour,
+not duplicated. Both cases fully roll back. This is not a real15-minute Auto
+rotation, payroll statement finalization/payment or every employment policy.
+Open-shift payroll remains its existing standard-shift estimate, not proven
+actual elapsed labor; no rest/wage/OT/rounding changes made.
+
+Additional Tracker findings from prior turn remain in a37d1000c (167 focused
+tests): gap-seat replay labels, action events, post-Finish seat-read bounding.
+No new claim of exhaustive bug freedom. Same-hand elimination policy is still
+unresolved. Master goal remains blocked for release/full acceptance; owner now
+authorized these additional local investigations, not production rollout.
