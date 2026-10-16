@@ -49,9 +49,9 @@ try{
   side_pots:settlement.sidePots,community_cards:snapshot.community_cards,pot_size:settlement.potSize};
  const key='native-finish-'+crypto.randomUUID(),trace='native-finish-trace';
  const cashBefore=sql(`SELECT md5(jsonb_agg(to_jsonb(c) ORDER BY id)::text) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}';`);
- const invoke=traceId=>sql(`BEGIN;${service}SELECT public.commit_tracker_voice_finish_v0('${f.actor}','${f.tour}','${table.id}','${hand}',
- 'openai_realtime','gpt-live-transcribe','${key}','ket thuc hand','${snapshot.state_version}','${key}','${traceId}',
- '${settlement.settlementOrigin}','${settlement.settlementDigest}',${quote(record)}::jsonb);COMMIT;`);
+ const invoke=(traceId,{actor=f.actor,requestKey=key,digest=settlement.settlementDigest,payload=record}={})=>sql(`BEGIN;${service}SELECT public.commit_tracker_voice_finish_v0('${actor}','${f.tour}','${table.id}','${hand}',
+ 'openai_realtime','gpt-live-transcribe','${key}','ket thuc hand','${snapshot.state_version}','${requestKey}','${traceId}',
+ '${settlement.settlementOrigin}','${digest}',${quote(payload)}::jsonb);COMMIT;`);
  const receipt=JSON.parse(invoke(trace));assert.equal(receipt.ok,true);
  const committedFingerprint=()=>sql(`SELECT md5(jsonb_build_object('hand',(SELECT to_jsonb(h) FROM public.tournament_hands h WHERE id='${hand}'),
  'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.hand_players p WHERE hand_id='${hand}'),
@@ -63,6 +63,12 @@ try{
  const replay=JSON.parse(invoke('native-finish-retry'));
  assert.deepEqual(replay,{...receipt,duplicate:true});
  assert.equal(committedFingerprint(),committedBeforeReplay);
+ for(const options of [{digest:'d'.repeat(64)},{payload:{...record,pot_size:record.pot_size+1}}]){
+  assert.equal(JSON.parse(invoke('native-finish-conflict',options)).error,'idempotency_mismatch');
+  assert.equal(committedFingerprint(),committedBeforeReplay);
+ }
+ const outsider=JSON.parse(invoke('native-finish-outsider',{actor:f.player}));
+ assert.equal(outsider.ok,false);assert.equal(committedFingerprint(),committedBeforeReplay);
  const canonicalRequest=await buildVoiceFinishCanonicalRequest({rawTranscript:'ket thuc hand',expectedStateVersion:snapshot.state_version,
   payload:{settlementOrigin:settlement.settlementOrigin,settlementDigest:settlement.settlementDigest}});
  const source=readFileSync(new URL('../../src/lib/trackerVoice/api.ts',import.meta.url),'utf8'),tree=parseSync(source,{syntax:'typescript'});
@@ -77,6 +83,28 @@ try{
    idempotencyKey:key,traceId:trace,canonicalRequest}),result);
  }
  assert.equal(calls,2);
+ // Diagnostic, not recovery PASS: the actual Edge case currently rejects this
+ // exact committed intent before it reaches SQL idempotent replay.
+ const edgeSource=readFileSync(new URL('../../supabase/functions/tournament-live-update/index.ts',import.meta.url),'utf8');
+ const edgeTree=parseSync(edgeSource,{syntax:'typescript'});let finishCase;
+ function visit(node){if(!node||typeof node!=='object')return;
+  if(node.type==='SwitchCase'&&node.test?.value==='commit_voice_finish')finishCase=node;
+  for(const value of Object.values(node)){if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);}}
+ visit(edgeTree);assert.ok(finishCase);
+ const caseText=Buffer.from(edgeSource).subarray(finishCase.span.start-edgeTree.span.start,finishCase.span.end-edgeTree.span.start).toString();
+ const branchCode=transformSync('async function retry(body){let result;const tournament_id=body.tournament_id;switch(body.action){'+caseText+'}return new Response(JSON.stringify(result),{status:200});}retry;',
+  {jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+ let snapshotCalls=0;
+ const retry=runInNewContext(branchCode,{Response,Error,validationError:(code,message)=>new Response(JSON.stringify({code,error:message}),{status:422}),
+  supabase:{rpc:async(name,args)=>{snapshotCalls++;assert.equal(name,'get_tracker_voice_validation_snapshot');
+   assert.equal(args.p_hand_id,hand);return {data:JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand}');COMMIT;`)),error:null};}}});
+ const retryResponse=await retry({action:'commit_voice_finish',tournament_id:f.tour,tournament_table_id:table.id,hand_id:hand,
+  final_transcript:'ket thuc hand',provider_name:'openai_realtime',provider_model:'gpt-live-transcribe',provider_event_id:key,
+  expected_state_version:snapshot.state_version,idempotency_key:key,trace_id:trace,voice_request:canonicalRequest});
+ assert.equal(retryResponse.status,422,'diagnostic reproduces blocked Edge recovery, NOT desired final behavior');
+ assert.equal(snapshotCalls,1);assert.equal(committedFingerprint(),committedBeforeReplay);
+ const retryFailure=await retryResponse.json();assert.equal(retryFailure.code,'hand_not_in_progress');
+ console.log('DIAGNOSTIC_FINISH_EDGE_RETRY_BLOCKED_AFTER_COMMIT',retryFailure.code);
  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${hand}';`),'completed');
  assert.equal(sql(`SELECT count(*) FROM public.tracker_voice_events WHERE hand_id='${hand}' AND event_kind='canonical_receipt';`),'1');
  assert.equal(sql(`SELECT md5(jsonb_agg(to_jsonb(c) ORDER BY id)::text) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}';`),cashBefore);
