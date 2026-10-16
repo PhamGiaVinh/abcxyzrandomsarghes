@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Same paid tour: anonymous TV before/after color-up/undo local PASS
+
+Baseline19e2039fb clean/previousPROGRESS. Extended existing integratedSQL chipcase with explicit local displaypairing metadata and actual SETROLEanon/JWTanon get_tv_display_state_v4 reads afterissuance, aftercolorup and afterundo. Allthree assert paired/exacttournamentID/exactclocktourID/remaining2/live_entry_stack40000, independently of physicaldenominationcount changes. No admin read substituted for anonymous caller. Cash/seats/handroster zeroDelta, coupledbank/ledger and Voice/checkin/manualSwing assertions retained. Outerrollback fingerprint adds TVdisplay rows.
+
+Native9aa79b exit0/13PASS2.460s/PGstopped/nohandles. Test-only/firstgreen neworacle, no productbugclaimed. SQLanonymous role is NOT hostedHTTP/anonymousbrowser/renderer375/pairingUI/Storagebytes proof; existing separate twoflight tests remain separate. ExistingCI consumes extendednativecase/notdispatched. No source/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes, localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
 ## Same paid active tour: actual issuance → coupled color-up → undo PASS
 
 Baseline485e15dd4 clean/previousPROGRESS. Existing standalone chip/concurrency suites already had evidence; added missing cross-module oracle to same real paid2players/activehand/Voice/Swing transaction instead of rerunning unchanged suites. Chipset/denoms/template/bank are explicit local setup metadata fixtures (notSetupUI); actual chip_ops_set_bank_coupling, exactissuancev2(count2/rev0), colorup/replay/undo operate on same tournament. 2x20000 inventory=40000 before/after colorup, rounding0; undo restores400low/0high, bank600low/100high afterissuance, reconciled=true. Exact seats/cash/handplayersJSON unchanged by chipops; active seats still40000. No rounding/payout/payroll policy change.
