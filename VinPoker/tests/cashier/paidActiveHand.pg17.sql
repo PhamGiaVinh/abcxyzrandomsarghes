@@ -79,6 +79,8 @@ BEGIN
    action_key text:='paid-action-endpoint-'||gen_random_uuid(); action_reply jsonb;
    action_id uuid; undo_key uuid:=gen_random_uuid(); undo_reply jsonb; undone_revision bigint;
    test_dealer uuid:=gen_random_uuid(); test_attendance uuid:=gen_random_uuid(); projection_before jsonb; projection_after jsonb;
+   card_key text:='paid-manual-card-'||gen_random_uuid(); card_payload jsonb; card_expected jsonb;
+   card_reply jsonb; card_receipt jsonb; card_revision bigint;
   BEGIN
    SELECT player_id,entry_number INTO STRICT action_player FROM public.hand_players WHERE hand_id=hand ORDER BY seat_number LIMIT 1;
    SELECT source_revision INTO action_revision FROM public.tournament_hands WHERE id=hand;
@@ -146,6 +148,42 @@ BEGIN
      OR (SELECT count(*) FROM public.tracker_correction_operations WHERE hand_id=hand AND idempotency_key=undo_key)<>1 THEN RAISE EXCEPTION 'paid_undo_retry_delta';END IF;
     IF EXISTS(SELECT 1 FROM public.tracker_historical_display_queue WHERE hand_id=hand AND status IN ('pending','processing')) THEN
      RAISE EXCEPTION 'paid_active_undo_became_publishable';END IF;
+    card_payload:=jsonb_build_array(jsonb_build_object('player_id',action_player.player_id,'entry_number',action_player.entry_number,'hole_cards',jsonb_build_array('2c','3d')));
+    card_expected:=jsonb_build_object('hand_id',hand,'table_session_id',dest.table_session_id,'control_epoch',epoch,
+     'expected_source_revision',undone_revision,'player_hole_cards',card_payload);
+    PERFORM set_config('role','authenticated',true);
+    card_reply:=public.show_tracker_manual_cards_v1(hand,dest.table_session_id,epoch+1,undone_revision,card_key,card_payload);
+    IF card_reply->>'error' IS DISTINCT FROM 'stale_manual_card_context' THEN RAISE EXCEPTION 'paid_cards_stale_epoch_accepted: %',card_reply;END IF;
+    card_receipt:=public.show_tracker_manual_cards_v1(hand,dest.table_session_id,epoch,undone_revision,card_key,card_payload);
+    IF card_receipt->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'paid_cards_write_failed: %',card_receipt;END IF;
+    card_reply:=public.show_tracker_manual_cards_v1(hand,dest.table_session_id,epoch,undone_revision,card_key,card_payload);
+    IF card_reply IS DISTINCT FROM card_receipt THEN RAISE EXCEPTION 'paid_cards_replay_changed_receipt';END IF;
+    card_reply:=public.show_tracker_manual_cards_v1(hand,dest.table_session_id,epoch,undone_revision,card_key,
+     jsonb_set(card_payload,'{0,hole_cards}','["4c","5d"]'));
+    IF card_reply->>'error' IS DISTINCT FROM 'idempotency_conflict' THEN RAISE EXCEPTION 'paid_cards_conflict_missing: %',card_reply;END IF;
+    card_reply:=public.get_tracker_manual_card_receipt_v1(card_key,card_expected);
+    IF card_reply->>'status' IS DISTINCT FROM 'committed' OR card_reply->>'request_key' IS DISTINCT FROM card_key
+     OR (card_reply->>'expected_source_revision')::bigint IS DISTINCT FROM undone_revision
+     OR card_reply->>'hand_id' IS DISTINCT FROM hand::text THEN RAISE EXCEPTION 'paid_cards_receipt_recovery_failed: %',card_reply;END IF;
+    PERFORM set_config('role','none',true);
+    SELECT source_revision INTO card_revision FROM public.tournament_hands WHERE id=hand;
+    IF card_revision<=undone_revision OR (card_reply->>'committed_source_revision')::bigint IS DISTINCT FROM card_revision
+     OR (SELECT hole_cards FROM public.hand_players WHERE hand_id=hand AND player_id=action_player.player_id AND entry_number=action_player.entry_number) IS DISTINCT FROM '["2c","3d"]'::jsonb
+     OR (SELECT count(*) FROM floor_private.tracker_manual_card_receipts_v1 WHERE actor_id=actor AND request_key=card_key)<>1 THEN
+     RAISE EXCEPTION 'paid_cards_revision_or_rows_mismatch';END IF;
+    PERFORM set_config('request.jwt.claim.sub',action_player.player_id::text,true);
+    PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',action_player.player_id,'role','authenticated')::text,true);
+    PERFORM set_config('role','authenticated',true);
+    card_reply:=public.get_tracker_manual_card_receipt_v1(card_key,card_expected);
+    IF card_reply->>'status' IS DISTINCT FROM 'not_found' THEN RAISE EXCEPTION 'paid_cards_receipt_leaked_other_actor: %',card_reply;END IF;
+    card_reply:=public.show_tracker_manual_cards_v1(hand,dest.table_session_id,epoch,card_revision,card_key||'-outsider',card_payload);
+    IF card_reply->>'error' IS DISTINCT FROM 'actor_not_allowed' THEN RAISE EXCEPTION 'paid_cards_outsider_write_accepted: %',card_reply;END IF;
+    PERFORM set_config('role','none',true);
+    PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+    PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
+    IF (SELECT source_revision FROM public.tournament_hands WHERE id=hand)<>card_revision
+     OR (SELECT count(*) FROM floor_private.tracker_manual_card_receipts_v1 WHERE request_key LIKE card_key||'%')<>1 THEN
+     RAISE EXCEPTION 'paid_cards_replay_or_denial_delta';END IF;
     SELECT jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id=original.tournament_id),
      'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id=original.tournament_id),
      'counts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.tournament_chip_counts c WHERE tournament_id=original.tournament_id),
@@ -158,6 +196,7 @@ BEGIN
     OR EXISTS(SELECT 1 FROM public.tracker_correction_operations WHERE hand_id=hand)
     OR EXISTS(SELECT 1 FROM public.dealers WHERE id=test_dealer)
     OR EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id=test_attendance)
+    OR EXISTS(SELECT 1 FROM floor_private.tracker_manual_card_receipts_v1 WHERE actor_id=actor AND request_key=card_key)
     OR EXISTS(SELECT 1 FROM public.tracker_correction_uat_scopes WHERE tournament_id=original.tournament_id AND user_id=actor)
     THEN RAISE EXCEPTION 'paid_action_probe_not_rolled_back';END IF;
   END;
