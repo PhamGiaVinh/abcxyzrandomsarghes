@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Durable two-color-up dependency/reverse order coupled+OFF local PASS
+
+Baselinedbb7e8fdb clean/previousPROGRESS. Existing committedpaidchip script adds explicitCHAIN mode: secondactualcolorupCOMMIT1000→10000, freshreceipt matches; firstundo whilelateroperationactive rejectsUNDO_DEPENDENCY/exactoperation+ledger+bank+receiptfingerprintunchanged, rejection hasunknown(no committedreceipt). Undo secondactualCOMMIT/freshreceipt, then firstsameundoKey allowed; final200low/0middle/0high, initialpaidcash/seat/table/entryunchanged, immutableoriginalfloor/bankrowIDs retained, compensation8floor/9bankON (OFF0bank). Localcoupling restoredOFF/finalhistoricalreceipt exact, no timestamp/rounding changes.
+
+Coupledexecsession52689 polledterminalexit0/PASS; uncoupled7daf8c exit0/PASS7.17s. No repeat unchanged singlecases; existing CI retains2single and adds2chaininvocations, notdispatched/wholejobduration unknown. AllPGstopped/nohandles, localTESTauditretained. This is multiCOMMITSQL proof, not actualHTTP/browserunknownresult/recoveryUI/fulltour/provider. No productsource/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
 ## Paid chip durable recovery coupled AND uncoupled local PASS
 
 Baseline782734a8b clean/previousPROGRESS. Same actualCOMMIT/freshconnection paidchip script now explicit coupled mode only for fresh localTESTclub, canonical coupling setter, restoreOFF in finally evenassertfailure. Bankmetadata seed1000low/100high; exactissuance1 consumes200low only whenON; colorup/undo preserve original2floorledger and original3bankledger rowIDs/fullJSON, appendcompensations (4floor/5banktotal), restorebank800low/100high forON (1000/100OFF). Snapshot now includes actualbankrows during receipt reads/denials. Historicalcolorupreceipt remains exact afterundo and aftercouplingrestoredOFF. No globalflag/Auto/Daybreak changes; localownedclub coupling intentionally toggled and finallyOFF, audit retained.
