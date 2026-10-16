@@ -1930,3 +1930,55 @@ and owner scope under runbook. Existing restored legacy orders are NOT backfille
 require evidence-led disposition. Next official finalization/registration-close
 flow, simultaneous-elimination policy evidence, and remaining original gaps
 (realrotations/hosted40/375/provider/Storage/fullchecks/performance/release).
+# 2026-10-16 — Confirmed/fixed local canonical-close missing official places (123)
+
+G5/G6 local SOURCE_QUALIFIED; master IN_PROGRESS, baseline2200f5e73. Canonical
+paid2entry/history-enabled repro80ec0b: captured bust_order1, one survivor leaves
+seat with stack preserved, all sessions closed, close_tournament succeeds/status
+completed but both finished_placeNULL. Original auto-finalizer waits for
+registration_closed_at, and canonical close had no finalization caller. No payout
+was generated to bypass that dependency. Exact final regression also fails the
+recorded pre123 catalog (6c5801 marker), not merely a static/mocked test.
+
+New forward123 (CLI generated20261016152408; source/local slot only) adds an
+internal read-only official-results classifier shared by readiness and a BEFORE
+INSERT close-report trigger. Trigger rechecks owner/Cashier/exactclub/actor and
+locks tournament→entries. Captured complete field is finalized through EXISTING
+public.finalize_tournament_results, same transaction as report/status; existing
+complete official places are preserved without recomputation. Partial/range/
+duplicate/survivor/evidence problems fail closed, not auto-repaired. Disabled
+history/empty field retain existing close behavior. New detail.official_results
+records finalized/preserved; no new browser/service helper grants.
+Original financial close function and ranking algorithm definitions unchanged.
+Precondition digests: close5b007d2e26b9e735db6c88fb58034982,
+finalizer05f8be81b2c5414bf35d745c54133cdb,
+blocker1c77052afa745bcbe1e3496c5779c024. FileSHA256
+8a5ce9fca6af9793ef5a8b91a224fffbf00d182f4b0728a072c3df7e546c33c8.
+
+Final migration/suite6c5801/47626→31b1bb terminal0/PGstopped:3dependency drift
+denials, full DDL rollback, original ABI/owner/ACL/path metadata preserved,
+compensation restores recorded blocker + drops only new objects then rollback.
+Six runtime cases: new places1/2; preserve complete official rows byte-for-byte;
+missing order/readinessblocked+zero delta; partial legacy result/readinessblocked
+inside rollback-only fault fixture; error AFTER ranking before report completion
+rolls back places/report/tour; actual two-session close overlap yields1report.
+Stronger Owner+different Cashier overlap e26553 terminal0/PGstopped, tour
+ef06b133-7fb1-40ea-a150-9892522ba767. Outsider denied/no state delta; all3external
+roles lack EXECUTE on both new helpers. Cashier/payment history unchanged/no prize
+payments. These are2player manual-bust result tests, not tied-showdown policy proof.
+
+Full8paid integration under123:2863ee/33883→ee093f terminal0/PGstopped, club
+20cac0a0-66c9-4e90-9bb2-0c7720e4d74b, tourda252af6-0f92-4726-abbc-9d58e28cd049,
+terminalhand72459d0b-5fba-4b7d-8041-7472982a8f29; fold correction, restore, chip
+undo, break/reopen, actual showdown/close, both workers/public history/anonTV pass.
+This8player fixture has history flag OFF, NOT8player official-ranking acceptance.
+Syntax/YAML/diff pass; CI order123 after122 +6scenarios prepared NOTdispatched.
+Fetch origin/main unchangeded3db6ac600710e95fe4408c475941916c23ab19.
+
+No liveDB/Edge/frontend/flags/UAT/push/deploy; local resource hold/DaybreakOFF/
+AutoOFF/masterACTIVE. No live commands. Independent critical review, livecatalog/
+recovery/required checks/release remain. Source-only123 has NOT repaired prior
+completed reports with missing places. Remaining: Vietnamese labels for new
+readiness codes; history-enabled8player/re-entry/tied elimination evidence;
+legacy-finalizer vs close interleaving (only close-vs-close tested); original real
+rest15rotations/hosted40/browser375/provider/Storage/performance/fullchecks/web.

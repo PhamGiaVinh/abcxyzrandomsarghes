@@ -159,3 +159,16 @@ canonical finalizedplace2 cannot restore. DDL drift/rollback/ABI/ACL metadata pa
 40a290 (tour52c474d0-7d31-4c70-8d99-a52b8d07d941). Local source qualified ONLY,
 not live/deployed/CI/web evidence. Existing legacy rows not backfilled; critical
 review/livecatalog/recovery/release gates and original remaining gaps still open.
+# Latest finding/fix — 2026-10-16 canonical close omitted official places (123)
+
+Confirmed80ec0b/exactbaseline6c5801: history-enabled paid2-entry tour closes with
+captured bust_order but both official placesNULL. Forward123 adds atomic close
+finalization through EXISTING algorithm plus shared readiness classifier; keeps
+complete ranks immutable, blocks missing/partial evidence. No payout/rounding/
+financial-function change.6runtime scenarios+3DDL drift checks/rollback/metadata/
+compensation PASS31b1bb; Owner+Cashier true overlap PASSe26553,1report/replay.
+Full8paid tour under123 PASS ee093f (tourda252af6-0f92-4726-abbc-9d58e28cd049),
+but8player history flagOFF, not official-ranking acceptance. Local ONLY; no live
+apply/release/flags/UAT. New codes still need Vietnamese labels; legacy-finalizer
+overlap, history-enabled fulltour/re-entry/tie evidence and original hosted/real
+rotation/375/provider/Storage/performance/fullchecks/release gates remain.
