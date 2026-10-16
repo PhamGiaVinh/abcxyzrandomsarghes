@@ -53,7 +53,7 @@ const BRANDING_PREVIEW_DATA: TournamentClockData = {
 
 type UntypedRpc = (fn: string, args?: Record<string, unknown>) => PromiseLike<{
   data: unknown;
-  error: { message: string } | null;
+  error: { message: string; code?: string } | null;
 }>;
 
 function RangeControl({ label, value, min, max, onChange }: {
@@ -174,12 +174,17 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
         p_layout: submitted.layout,
       })));
       if (!alive.current) return;
-      if (error || !data) {
+      // SQL validation/constraint/serialization/authority exceptions abort the
+      // RPC transaction. Transport errors (including resolved SDK errors) do
+      // not prove rollback and must use the same canonical readback as a throw.
+      if (error && (/^(22|23|40|42|P0)[0-9A-Z]{3}$/.test(error.code ?? "")
+        || error.message.includes("tv_layout_stale_revision"))) {
         toast.error(error?.message?.includes("tv_layout_stale_revision")
           ? "Another operator published a new layout. Reopen the editor before saving."
           : error?.message ?? "The TV layout was not saved.");
         return;
       }
+      if (error || !data) throw new Error("tv_publish_unconfirmed");
       const savedRevision = (data as { revision?: unknown }).revision;
       if (!Number.isSafeInteger(savedRevision) || Number(savedRevision) <= revision) throw new Error("tv_publish_unconfirmed");
       toast.success("TV layout published. Screens update on their next refresh.");

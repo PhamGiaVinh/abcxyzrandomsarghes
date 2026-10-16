@@ -84,3 +84,36 @@ it("reconciles identical JSONB content even when object key order differs", asyn
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Publish TV layout" })));
   expect(m.success).toHaveBeenCalledOnce(); expect(m.error).not.toHaveBeenCalled();
 });
+
+it.each(["transport-error", "empty-response"])("reconciles a committed publish returned as %s by the SDK", async (kind) => {
+  let submitted: Record<string, unknown> | null = null;
+  m.rpc.mockImplementation(async (name, args) => {
+    if (name === "save_tv_tournament_layout_v1") {
+      submitted = args;
+      return { data: null, error: kind === "transport-error" ? { code: "", message: "TypeError: Failed to fetch" } : null };
+    }
+    return { data: submitted ? { brand_name: submitted.p_brand_name, logo_url: submitted.p_logo_url || null,
+      background_url: submitted.p_bg_url || null, layout: submitted.p_layout, revision: 8 } : branding, error: null };
+  });
+  render(<TvBrandingEditor tournamentId="tour-a" />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit TV layout" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Publish TV layout" })).toBeEnabled());
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Publish TV layout" })));
+  expect(m.success).toHaveBeenCalledOnce();expect(m.error).not.toHaveBeenCalled();
+  expect(m.rpc.mock.calls.filter(([name]) => name === "save_tv_tournament_layout_v1")).toHaveLength(1);
+  expect(m.rpc.mock.calls.filter(([name]) => name === "get_tv_tournament_branding_v1")).toHaveLength(2);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it.each(["42501", "22023", "23514", "40001", "P0001"])("does not mask a definite SQL rejection %s with canonical state", async (code) => {
+  m.rpc.mockImplementation(async name => name === "save_tv_tournament_layout_v1"
+    ? { data: null, error: { code, message: "TEST definite rejection" } } : { data: branding, error: null });
+  render(<TvBrandingEditor tournamentId="tour-a" />);
+  fireEvent.click(screen.getByRole("button", { name: "Edit TV layout" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Publish TV layout" })).toBeEnabled());
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Publish TV layout" })));
+  expect(m.error).toHaveBeenCalledWith("TEST definite rejection");expect(m.success).not.toHaveBeenCalled();
+  expect(m.rpc.mock.calls.filter(([name]) => name === "save_tv_tournament_layout_v1")).toHaveLength(1);
+  expect(m.rpc.mock.calls.filter(([name]) => name === "get_tv_tournament_branding_v1")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Publish TV layout" })).toBeEnabled();
+});
