@@ -1982,3 +1982,27 @@ completed reports with missing places. Remaining: Vietnamese labels for new
 readiness codes; history-enabled8player/re-entry/tied elimination evidence;
 legacy-finalizer vs close interleaving (only close-vs-close tested); original real
 rest15rotations/hosted40/browser375/provider/Storage/performance/fullchecks/web.
+# 2026-10-16 — Vietnamese official-result blockers and real dialog gate tests
+
+G5/G6 IN_PROGRESS, baseline691a6cf63, previous turnPROGRESS. Display-only labels
+for the five official-result readiness codes from123 now explain unfinished
+winner, incomplete/conflicting places, missing bust history, failed verification
+and missing tournament. No permission/read/mutation/state/subscription changes.
+Unknown codes stay visible instead of silently meaning ready. UI skills used
+for actionable error copy; ui-skills CLI absent, no install/design rewrite.
+
+Local2a2af6/21477→ef19de terminal0:12readiness+3actualSDK transport tests PASS.
+27be6c terminal0:4real CloseReportDialog/jsdom tests PASS with mocked read hook:
+three server result blockers display Vietnamese status and disable continuation;
+previously typed CHOT GIAI cannot submit after readiness becomes blocked.
+No close mutation invoked in blocked cases. Not hosted/browser/mobile proof.
+ESLint575fcb exit0, YAMLparsed4fb00 exit0, diffcheckPASS. Existing workflow
+paths/targeted3file command prepared, not dispatched. No rerun of native tour
+because production change is labels only and123 backend is unchanged.
+
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; local resource hold and
+Daybreak/Auto policy unchanged. Full project typecheck/build/browser375 remain
+unrun under resource hold; no claim of frontend release or full UI acceptance.
+No running command. Next legacy-finalizer vs close interleaving and history-
+enabled full-tour/re-entry/tied-elimination evidence, then original hosted40,
+real rotations, provider/Storage/performance/required checks/release gaps.

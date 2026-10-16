@@ -32,6 +32,21 @@ describe("server-sourced close readiness", () => {
       .toBe("Còn hand chưa kết thúc; Còn lệnh chuyển ghế đang chờ Tracker");
   });
 
+  it.each([
+    ["official_results_not_finished", "Chưa xác định được duy nhất một người thắng"],
+    ["official_results_incomplete", "Thứ hạng đã ghi chưa đầy đủ hoặc không nhất quán; cần kiểm tra trước khi chốt"],
+    ["official_results_evidence_missing", "Thiếu lịch sử thứ tự bust; cần kiểm tra trước khi chốt thứ hạng"],
+    ["official_results_finalization_failed", "Chưa xác minh được thứ hạng cuối; hãy tải lại trạng thái giải"],
+    ["official_results_tournament_missing", "Không tìm thấy giải để kiểm tra thứ hạng"],
+  ])("explains server result blocker %s without suggesting fabricated data", (code, label) => {
+    expect(describeCloseBlockers([code])).toBe(label);
+  });
+
+  it("keeps unknown server blockers visible instead of treating them as ready", () => {
+    expect(describeCloseBlockers(["future_result_blocker"]))
+      .toBe("Trạng thái cần kiểm tra: future_result_blocker");
+  });
+
   it("keeps a tour blocked while a Floor session is open", async () => {
     rpc.mockResolvedValue({ data: {
       ok: true, ready: false, already_closed: false, blockers: ["open_table_session"],

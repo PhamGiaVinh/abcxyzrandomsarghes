@@ -27,6 +27,8 @@ on:
       - 'VinPoker/tests/cashier/restoreReentry*'
       - 'VinPoker/tests/cashier/restoreHistoryOrder.native.mjs'
       - 'VinPoker/tests/cashier/officialResultsClose.native.mjs'
+      - 'VinPoker/src/lib/feltLifecycleReadiness*'
+      - 'VinPoker/src/components/cashier/tournament-live/CloseReportDialog.readiness.test.tsx'
       - 'VinPoker/tests/cashier/seatingMigrations*'
       - 'VinPoker/tests/cashier/canonicalPaidSeating*'
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
@@ -1067,6 +1069,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000121_tracker_voice_finish_receipt_resolution_v1.sql
           node tests/cashier/seatingMigrations.pg17.mjs --only122
           node tests/cashier/seatingMigrations.pg17.mjs --only123
+          node node_modules/vitest/vitest.mjs run src/lib/feltLifecycleReadiness.test.ts src/lib/feltLifecycleReadiness.rpcClient.test.ts src/components/cashier/tournament-live/CloseReportDialog.readiness.test.tsx --maxWorkers=1 --minWorkers=1
           node tests/trackerSettlement/correctionResolution118.migration.mjs --scope120
           node tests/cashier/paidJourney.runtime.mjs
           node tests/cashier/paidJourney.runtime.mjs --seat-blockers

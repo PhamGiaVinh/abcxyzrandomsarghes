@@ -29,6 +29,11 @@ const blockerLabels: Record<string, string> = {
   pending_move: "Còn lệnh chuyển ghế đang chờ Tracker",
   active_dealer_assignment: "Còn Dealer chưa được giải phóng",
   legacy_dealer_assignment: "Có assignment Dealer cũ chưa rõ phiên bàn",
+  official_results_not_finished: "Chưa xác định được duy nhất một người thắng",
+  official_results_incomplete: "Thứ hạng đã ghi chưa đầy đủ hoặc không nhất quán; cần kiểm tra trước khi chốt",
+  official_results_evidence_missing: "Thiếu lịch sử thứ tự bust; cần kiểm tra trước khi chốt thứ hạng",
+  official_results_finalization_failed: "Chưa xác minh được thứ hạng cuối; hãy tải lại trạng thái giải",
+  official_results_tournament_missing: "Không tìm thấy giải để kiểm tra thứ hạng",
 };
 
 export function describeCloseBlockers(blockers: readonly string[]): string {

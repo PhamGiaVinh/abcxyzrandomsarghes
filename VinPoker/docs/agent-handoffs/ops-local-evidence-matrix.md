@@ -172,3 +172,11 @@ but8player history flagOFF, not official-ranking acceptance. Local ONLY; no live
 apply/release/flags/UAT. New codes still need Vietnamese labels; legacy-finalizer
 overlap, history-enabled fulltour/re-entry/tie evidence and original hosted/real
 rotation/375/provider/Storage/performance/fullchecks/release gates remain.
+# Latest display follow-up — 2026-10-16 result blocker labels/gates
+
+Official-result readiness codes now have actionable Vietnamese labels; unknown
+codes remain visible.12formatter/readiness+3SDK tests PASSef19de;4actual dialog
+jsdom/mock-read tests PASS27be6c prove displayed blockers/disabled continuation
+and no mutation after a previously typed phrase becomes blocked. ESLint/YAML/
+diff pass, CI command prepared only. No DB/Edge/flags/live/frontend release;
+not browser375/fulltypecheck/build proof. Backend123 unchanged; no native rerun.
