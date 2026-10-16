@@ -117,6 +117,8 @@ on:
       - 'VinPoker/tests/dealerSwing/initialAssignmentRecovery.native.test.tsx'
       - 'VinPoker/tests/dealerSwing/readyWorkerAssignmentSelection.mjs'
       - 'VinPoker/tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql'
+      - 'VinPoker/tests/dealerSwing/readyWorkerCapacity.native.mjs'
+      - 'VinPoker/supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -929,6 +931,17 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
           PGDATABASE=vinpoker_ops_initial102_ui VINPOKER_NATIVE_INITIAL_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/initialAssignmentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Ready worker103 atomic rejection and isolated capacity
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_ready_capacity_ci
+          VINPOKER_NATIVE_READY_CAPACITY: '1'
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_initial102_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --negative
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
