@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Canonical check-in → manual Swing → Voice fence local PASS
+
+Baseline57e983290 clean/previousPROGRESS. Removed incoming standby attendanceINSERT from integrated handoff subcase. Actual authenticated operator_check_in_dealer_v1 creates attendance/dateUTC+7; samekey replay exactreceipt, get_dealer_checkin_receipt_v1 returns committed/exactresult, changedshift samekey conflicts, independent secondcheckin returns already_checked_in/sameattendance. Actual outsider actor_not_allowed/zeroattendance before positive. Assert exactly1row/available/currentserverday/checkintime/NULLlastrelease (fresh neverassigned, no fake rest markers). That actual attendance passes canonicalnext→manualSwing→oldVoicereceiptdenial from prior slice. Dealer/shift metadata and original outgoing assignment remain explicit control-plane fixtures.
+
+Final282b77 exit0/13PASS2.374s/PGstopped/nohandles. Outerrollback fingerprint now includes localnotification sink count; no outboundnetwork/provider/publication. This adds current-day sequential/replay/negative checkin integration, NOT midnight/parallel checkin/rest15x3/40worker/fullUI/COMMITlostresponse proof. Original pure unit cases unchanged but included in native script for integration dependency qualification. ExistingCI consumes extension/notdispatched. Test-only/noapp/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes, localhold/masterACTIVE/fulltour/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
 ## Canonical manual Swing → old Voice receipt rejected, Auto OFF local PASS
 
 Baseline0dee7b3e8 clean/previousPROGRESS. Read actual acquisition guard: authenticated exact-club DealerControl manual path is explicitly allowed while AutoOFF. Separate subcase now seeds fresh never-assigned standby/shift metadata, calls authenticated operator_plan_next_dealer_v1 then operator_perform_swing_v2 with freshly read assignment CAS. No header spoof, service/manual bypass, Auto toggle or resttimestamp rewrite. Verifies exactlyone current exactsession assignment belongs to incoming Dealer, oldassignment released, fresh Owner runtime stillvalid, but old validated Voiceevent cannot write (dealer_assignment_lost), exact hand/action/event zeroDelta. Nested rollback restores originals before existing positive Voice action/replay/stale tests.

@@ -79,6 +79,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'swing_requests',(SELECT jsonb_agg(to_jsonb(s) ORDER BY request_id) FROM public.dealer_swing_operator_requests s WHERE club_id='${f.club}'),
  'rotation',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.dealer_rotation_schedule s WHERE club_id='${f.club}'),
  'auto',(SELECT to_jsonb(s) FROM public.club_settings s WHERE club_id='${f.club}'),
+ 'notification_sink_count',(SELECT count(*) FROM net.cash_ui_http_sink),
  'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.table_operation_receipts r))::text);`);
  const before=fingerprint();
  // Canonical paid/open flow above; assignment/config below are explicit local
@@ -136,7 +137,8 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'players',(SELECT count(*) FROM public.hand_players p WHERE p.hand_id=h.id),'starting_stack',(SELECT sum(starting_stack) FROM public.hand_players p WHERE p.hand_id=h.id))
  FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';
  DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;
- incoming_dealer uuid:=gen_random_uuid();incoming_attendance uuid:=gen_random_uuid();incoming_shift uuid:=gen_random_uuid();outgoing record;
+ incoming_dealer uuid:=gen_random_uuid();incoming_attendance uuid;incoming_shift uuid:=gen_random_uuid();outgoing record;
+ checkin_key uuid:=gen_random_uuid();checkin_receipt jsonb;
  k text:='native-voice-'||gen_random_uuid()::text;BEGIN
  SELECT * INTO STRICT h FROM public.tournament_hands WHERE tournament_id='${f.tour}' AND status='in_progress';
  SELECT * INTO STRICT p FROM public.hand_players WHERE hand_id=h.id ORDER BY seat_number LIMIT 1;
@@ -172,11 +174,30 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  IF EXISTS(SELECT 1 FROM public.club_settings WHERE club_id='${f.club}' AND auto_swing_enabled) THEN RAISE EXCEPTION 'native_voice_handoff_requires_auto_off';END IF;
  INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES(incoming_shift,'${f.club}','Native handoff TEST','00:00','23:59');
  INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES(incoming_dealer,'${f.club}',NULL,'Native standby TEST','active');
- INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
- VALUES(incoming_attendance,incoming_dealer,incoming_shift,(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,'checked_in',now(),'available');
  SELECT * INTO STRICT outgoing FROM public.dealer_assignments WHERE table_session_id=h.table_session_id AND status='assigned' AND released_at IS NULL;
  PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claim.role','authenticated',true);
  PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
+ PERFORM set_config('request.jwt.claim.sub','${f.player}',true);PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.player}"}',true);
+ r:=public.operator_check_in_dealer_v1(incoming_dealer,'${f.club}',incoming_shift,checkin_key);
+ IF r->>'error' IS DISTINCT FROM 'actor_not_allowed' THEN RAISE EXCEPTION 'native_voice_checkin_outsider_accepted: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ IF EXISTS(SELECT 1 FROM public.dealer_attendance WHERE dealer_id=incoming_dealer) THEN RAISE EXCEPTION 'native_voice_checkin_outsider_created_attendance';END IF;
+ PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
+ checkin_receipt:=public.operator_check_in_dealer_v1(incoming_dealer,'${f.club}',incoming_shift,checkin_key);
+ IF checkin_receipt->>'ok' IS DISTINCT FROM 'true' OR checkin_receipt->>'outcome' IS DISTINCT FROM 'checked_in' THEN RAISE EXCEPTION 'native_voice_standby_checkin_failed: %',checkin_receipt;END IF;
+ incoming_attendance:=(checkin_receipt->>'attendance_id')::uuid;
+ IF public.operator_check_in_dealer_v1(incoming_dealer,'${f.club}',incoming_shift,checkin_key) IS DISTINCT FROM checkin_receipt THEN RAISE EXCEPTION 'native_voice_checkin_replay_changed_receipt';END IF;
+ r:=public.get_dealer_checkin_receipt_v1(incoming_dealer,'${f.club}',incoming_shift,checkin_key);
+ IF r->>'status' IS DISTINCT FROM 'committed' OR r->'result' IS DISTINCT FROM checkin_receipt THEN RAISE EXCEPTION 'native_voice_checkin_readback_failed: %',r;END IF;
+ r:=public.operator_check_in_dealer_v1(incoming_dealer,'${f.club}',gen_random_uuid(),checkin_key);
+ IF r->>'error' IS DISTINCT FROM 'IDEMPOTENCY_CONFLICT' THEN RAISE EXCEPTION 'native_voice_checkin_payload_conflict_missing: %',r;END IF;
+ r:=public.operator_check_in_dealer_v1(incoming_dealer,'${f.club}',incoming_shift,gen_random_uuid());
+ IF r->>'outcome' IS DISTINCT FROM 'already_checked_in' OR (r->>'attendance_id')::uuid IS DISTINCT FROM incoming_attendance THEN RAISE EXCEPTION 'native_voice_checkin_second_request_duplicated: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id=incoming_dealer)<>1
+ OR NOT EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id=incoming_attendance AND current_state='available' AND status='checked_in'
+  AND shift_date=(statement_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND check_in_time IS NOT NULL AND last_released_at IS NULL) THEN RAISE EXCEPTION 'native_voice_checkin_server_day_or_single_attendance_failed';END IF;
+ PERFORM set_config('role','authenticated',true);
  r:=public.operator_plan_next_dealer_v1(h.table_session_id,outgoing.id,outgoing.version,incoming_attendance,gen_random_uuid());
  IF r->>'outcome' NOT IN ('changed','noop_same_dealer') OR r->>'outcome' IS NULL THEN RAISE EXCEPTION 'native_voice_manual_next_failed: %',r;END IF;
  PERFORM set_config('role','none',true);
