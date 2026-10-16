@@ -27,6 +27,7 @@ else{
  const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
  const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','complete_dealer_shortage_alert_notification','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','worker_execute_rotation_slot_v1','complete_rotation_slot']);
+ rpcNames.add('claim_process_swing_dispatch');rpcNames.add('finish_process_swing_dispatch');rpcNames.add('release_club_lock');
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
@@ -34,16 +35,30 @@ else{
   }return out;}
  const reads=[],rpcCalls=[],rpcResponses=[],persistReceipts=[],adapterGaps=[],bridgeErrors=[];
  const lostExecutionResponses=[];let dropExecutionResponse=false;
+ const dispatchFinalizations=[];
+ let successorLease=null;
  const admin={rpc(name,args){const task=(async()=>{if(!rpcNames.has(name))adapterGaps.push('rpc:'+name);assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
+  if(name==='finish_process_swing_dispatch')dispatchFinalizations.push(structuredClone(args));
   if(fixture.fault==='persist'&&name==='upsert_rotation_plan')return {data:null,error:{code:'PGRST002',message:'synthetic persist transport failure'}};
   if(fixture.fault==='lock'&&name==='lock_rotation_slot'){
    const target=await sql(service+`SELECT table_id FROM public.dealer_rotation_schedule WHERE id=${quote(args.p_schedule_id)} AND club_id='${fixture.club}';`);
    if(target===fixture.rows[0].table)return {data:null,error:{code:'PGRST002',message:'synthetic one-table lock transport failure'}};
   }
+  if(!successorLease&&(name==='try_acquire_club_lock_fenced'&&fixture.lockFault==='held'||name==='extend_club_lock_lease'&&fixture.lockFault==='reclaimed')){
+   assert.equal(args.p_club_id,fixture.club);
+   if(fixture.lockFault==='reclaimed'){
+    // Explicit control-plane expiry injection, NOT a dealer rest/time proof.
+    assert.equal(await sql(`UPDATE public.club_processing_locks SET expires_at=clock_timestamp()-interval '1 second' WHERE club_id='${fixture.club}' AND lock_token=${quote(args.p_lock_token)} RETURNING club_id;`),fixture.club);
+   }
+   successorLease=JSON.parse(await sql(service+`SELECT public.try_acquire_club_lock_fenced('${fixture.club}',120,'native-successor');`));assert.equal(successorLease.acquired,true);assert.notEqual(successorLease.lock_token,args.p_lock_token);
+  }
   try{const params=Object.entries(args??{}).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'||v!==null&&typeof v==='object'&&!Array.isArray(v)?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v)+(k==='p_severity'?'::smallint':''))).join(',');
    const query=['end_breaks_on_demand','get_dealer_operational_tables_v1','detect_stuck_breaks','end_expired_breaks','get_escalation_config'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
    const data=JSON.parse(await sql(service+query));
    rpcResponses.push({name,data});
+   if(name==='try_acquire_club_lock_fenced'&&fixture.lockFault==='missing-token')return {data:{...data,lock_token:null},error:null};
+   if(name==='try_acquire_club_lock_fenced'&&fixture.lockFault==='malformed-token')return {data:{...data,lock_token:'not-a-uuid'},error:null};
+   if(name==='try_acquire_club_lock_fenced'&&fixture.lockFault==='wrong-acquired')return {data:{...data,acquired:'true'},error:null};
    if(dropExecutionResponse&&name==='worker_execute_rotation_slot_v1'){
     assert.equal(data.status,'success');
     lostExecutionResponses.push({args:structuredClone(args),result:data});
@@ -115,6 +130,64 @@ else{
   const createClient=(url,key)=>{assert.equal(url,'https://synthetic.invalid');assert.equal(key,'synthetic-main-worker');return admin;};
   new Function(...names,'Deno','createClient','"use strict";\n'+fixture.mainWorker.source)(...values,runtime,createClient);
   assert.equal(typeof handler,'function');
+  const stateProof=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'))::text);`);
+  async function qualifyDispatch(){
+   async function envelope(expired=false){
+    const run=crypto.randomUUID(),request=crypto.randomUUID(),tick=new Date().toISOString();
+    // Explicit test ledger fixture; no pg_net transport/cron is invoked.
+    await sql(`INSERT INTO public.process_swing_dispatch_runs(run_id,request_id,club_id,tick_at,request_fingerprint,lease_token,lease_expires_at,enqueue_state,enqueued_at) VALUES('${run}','${request}','${fixture.club}','${tick}','native-dispatch:${run}','${crypto.randomUUID()}',now()+interval '${expired?'-1 second':'115 seconds'}','enqueued',now());`);
+    return {run_id:run,request_id:request,club_id:fixture.club,tick_at:tick};
+   }
+   const dispatch=async body=>{const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify(body)}));return {status:response.status,body:await response.json()};};
+   const active=await envelope(),before=await stateProof();
+   const mismatch=await dispatch({...active,request_id:crypto.randomUUID()});assert.equal(mismatch.status,409);assert.equal(mismatch.body.error_code,'dispatch_scope_mismatch');assert.equal(await stateProof(),before);
+   const missing=await dispatch({...active,run_id:crypto.randomUUID()});assert.equal(missing.status,409);assert.equal(missing.body.error_code,'dispatch_unknown_request');assert.equal(await stateProof(),before);
+   const first=await dispatch(active);assert.equal(first.status,200);assert.equal(first.body.status,'completed');assert.equal(first.body.run_id,active.run_id);assert.equal(first.body.request_id,active.request_id);assert.equal(first.body.error_code,null);
+   assert.equal(await sql(`SELECT business_state||'|'||(business_error_code IS NULL)::text FROM public.process_swing_dispatch_runs WHERE run_id='${active.run_id}';`),'completed|true');
+   assert.deepEqual(JSON.parse(await sql(`SELECT jsonb_agg(state ORDER BY state) FROM public.process_swing_dispatch_events WHERE run_id='${active.run_id}';`)),['completed','received','started']);
+   const committed=await stateProof(),calls=rpcCalls.length;
+   const duplicate=await dispatch(active);assert.equal(duplicate.status,200);assert.equal(duplicate.body.status,'duplicate');assert.equal(duplicate.body.business_state,'completed');assert.deepEqual(rpcCalls.slice(calls),['claim_process_swing_dispatch']);assert.equal(await stateProof(),committed);
+   const runProof=await sql(`SELECT to_jsonb(r) FROM public.process_swing_dispatch_runs r WHERE run_id='${active.run_id}';`);
+   const finish={p_run_id:active.run_id,p_request_id:active.request_id,p_club_id:fixture.club,p_business_state:'completed',p_error_code:null,p_diagnostics:{native_replay:true}};
+   const replay=await admin.rpc('finish_process_swing_dispatch',finish);assert.equal(replay.error,null);assert.equal(replay.data.outcome,'idempotent_replay');
+   const conflict=await admin.rpc('finish_process_swing_dispatch',{...finish,p_business_state:'partial'});assert.equal(conflict.error,null);assert.equal(conflict.data.outcome,'idempotency_conflict');assert.equal(await stateProof(),committed);
+   assert.equal(await sql(`SELECT to_jsonb(r) FROM public.process_swing_dispatch_runs r WHERE run_id='${active.run_id}';`),runProof,'finish replay/conflict cannot rewrite recorded diagnostics');
+   for(const role of ['anon','authenticated'])for(const [name,call] of [
+    ['claim_process_swing_dispatch',`public.claim_process_swing_dispatch('${active.run_id}','${active.request_id}','${fixture.club}')`],
+    ['finish_process_swing_dispatch',`public.finish_process_swing_dispatch('${active.run_id}','${active.request_id}','${fixture.club}','completed',NULL,NULL)`],
+   ]){
+    let denied=false;try{await sql(`BEGIN;SET request.jwt.claim.role='${role}';SET request.jwt.claims='{"role":"${role}","sub":"${fixture.owner}"}';SET ROLE ${role};SELECT ${call};ROLLBACK;`);}catch(e){assert.ok(String(e.stderr??e).includes('permission denied for function '+name));denied=true;}assert.ok(denied,'dispatch control plane must not be browser callable');
+   }
+   const expired=await envelope(true),expiredBefore=await stateProof();
+   const rejected=await dispatch(expired);assert.equal(rejected.status,409);assert.equal(rejected.body.error_code,'dispatch_lease_expired');assert.equal(await stateProof(),expiredBefore);
+   assert.equal(await sql(`SELECT business_state||'|'||business_error_code FROM public.process_swing_dispatch_runs WHERE run_id='${expired.run_id}';`),'business_failed|dispatch_lease_expired');
+   const expiredReplay=await dispatch(expired);assert.equal(expiredReplay.body.status,'duplicate');assert.equal(expiredReplay.body.business_state,'business_failed');assert.equal(await stateProof(),expiredBefore);
+   for(const stage of ['claim','finish']){
+    const target=await envelope(),name='native_dispatch_'+target.run_id.replaceAll('-','');
+    const condition=stage==='claim'?"NEW.business_state='started'":"NEW.business_state IN ('completed','partial','locked','dependency_unavailable','business_failed')";
+    const beforeFault=await stateProof();
+    await sql(`CREATE FUNCTION floor_private.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.run_id='${target.run_id}'::uuid AND (${condition}) THEN RAISE EXCEPTION 'NATIVE_DISPATCH_${stage.toUpperCase()}_FAULT';END IF;RETURN NEW;END $$;CREATE TRIGGER ${name} BEFORE UPDATE ON public.process_swing_dispatch_runs FOR EACH ROW EXECUTE FUNCTION floor_private.${name}();`);
+    let failed;try{failed=await dispatch(target);}finally{await sql(`DROP TRIGGER ${name} ON public.process_swing_dispatch_runs;DROP FUNCTION floor_private.${name}();`);}
+    assert.equal(failed.status,503);assert.equal(failed.body.status,'dependency_unavailable');assert.equal(failed.body.error_code,stage==='claim'?'dispatch_claim_unavailable':'dispatch_finalize_unavailable');
+    assert.equal(bridgeErrors.length,1);assert.equal(bridgeErrors[0].scope,'rpc:'+(stage==='claim'?'claim_process_swing_dispatch':'finish_process_swing_dispatch'));assert.ok(bridgeErrors[0].error.includes('NATIVE_DISPATCH_'+stage.toUpperCase()+'_FAULT'));bridgeErrors.length=0;
+    assert.equal(await stateProof(),beforeFault,'stable operational locks cannot be replayed on dispatch faults');
+    if(stage==='claim'){
+     assert.equal(await sql(`SELECT business_state IS NULL FROM public.process_swing_dispatch_runs WHERE run_id='${target.run_id}';`),'t');
+     assert.equal(await sql(`SELECT count(*) FROM public.process_swing_dispatch_events WHERE run_id='${target.run_id}';`),'0');
+     const recovered=await dispatch(target);assert.equal(recovered.body.status,'completed');
+    }else{
+     assert.equal(await sql(`SELECT business_state FROM public.process_swing_dispatch_runs WHERE run_id='${target.run_id}';`),'started');
+     const replayed=await dispatch(target);assert.equal(replayed.body.status,'duplicate');assert.equal(replayed.body.business_state,'started','unknown finalization must not be presented as completed');
+     const original=dispatchFinalizations.find(a=>a.p_run_id===target.run_id);assert.ok(original);assert.equal(original.p_business_state,'completed');
+     const recorded=await admin.rpc('finish_process_swing_dispatch',original);assert.equal(recorded.error,null);assert.equal(recorded.data.outcome,'recorded');
+     const confirmed=await dispatch(target);assert.equal(confirmed.body.status,'duplicate');assert.equal(confirmed.body.business_state,'completed');
+    }
+    console.log(JSON.stringify({passR_actual_result:{phase:'dispatch-'+stage+'-sql-fault',club:fixture.club,run:target.run_id,response:failed,operationalStateStable:true}}));
+   }
+   assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+   console.log(JSON.stringify({passR_actual_result:{phase:'main-dispatch-context',club:fixture.club,run:active.run_id,request:active.request_id,first,duplicate,expired:rejected,finishReplay:replay.data,finishConflict:conflict.data,networkCalls}}));
+   console.log('ACTUAL_PASSR_MAIN_DISPATCH_CLAIM_FINALIZE_DUPLICATE_SCOPE_EXPIRED_PASS');
+  }
   async function executeScheduled(originals){
    assert.equal(originals.length,tableCount);assert.equal(new Set(originals.map(r=>r.schedule)).size,tableCount);
    const ids=originals.map(r=>quote(r.schedule)).join(',');
@@ -199,13 +272,24 @@ else{
    console.log(JSON.stringify({passR_actual_result:{phase:'main-drain-postcheck',tableCount,initialExecuted,newExecutions:executions.length,batches,completed,networkCalls}}));
    console.log('ACTUAL_PASSR_MAIN_SCHEDULED_EXECUTION_REAL_LEAD_PASS '+tableCount);
   }
-  if(fixture.resumeOriginals){await executeScheduled(fixture.resumeOriginals);}else{
-  const stateProof=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'))::text);`);
+  if(fixture.dispatch){await qualifyDispatch();}else if(fixture.resumeOriginals){await executeScheduled(fixture.resumeOriginals);}else{
   const before=await stateProof();
   const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
   const body=await response.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-handler',status:response.status,body,reads:[...new Set(reads)],rpcCalls,adapterGaps,bridgeErrors,networkCalls}}));
   assert.equal(response.status,200);assert.equal(networkCalls,0);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);
-  if(fixture.mainOff){
+  if(fixture.lockFault){
+   const operationalStateChanged=(await stateProof())!==before;
+   console.log(JSON.stringify({passR_actual_result:{phase:'main-lock-fault',mode:fixture.lockFault,body,operationalStateChanged,rpcCalls,networkCalls}}));
+   const lost=fixture.lockFault==='reclaimed',held=fixture.lockFault==='held';
+   assert.equal(body.status,lost||held?'locked':'business_failed');assert.equal(body.error_code,lost?'club_lock_ownership_lost':held?'club_lock_held':'club_lock_invalid_response');assert.equal(operationalStateChanged,false);
+   assert.ok(!rpcCalls.includes('upsert_rotation_plan'));assert.ok(!rpcCalls.includes('release_club_lock'));
+   const acquired=rpcResponses.find(r=>r.name==='try_acquire_club_lock_fenced');assert.equal(acquired.data.acquired,!held);
+   const token=successorLease?.lock_token??acquired.data.lock_token;
+   assert.equal(await sql(`SELECT lock_token=${quote(token)}::uuid FROM public.club_processing_locks WHERE club_id='${fixture.club}';`),'t','old worker must not remove a valid or successor lease');
+   if(lost){assert.ok(rpcResponses.some(r=>r.name==='extend_club_lock_lease'&&r.data===false));assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,false);}
+   const cleanup=await admin.rpc('release_club_lock_if_owner',{p_club_id:fixture.club,p_lock_token:token});assert.equal(cleanup.error,null);assert.equal(cleanup.data,true,'test knows the real SQL lease token for fixture cleanup');
+   console.log('ACTUAL_PASSR_MAIN_FENCED_LEASE_FAILURE_NO_BUSINESS_WRITE_PASS '+fixture.lockFault);
+  }else if(fixture.mainOff){
    assert.equal(body.status,'completed');assert.equal(body.error_code,null);assert.deepEqual(body.metrics,{});assert.deepEqual(body.diagnostics,[]);
    assert.equal(await stateProof(),before);assert.ok(!rpcCalls.includes('upsert_rotation_plan'));assert.ok(!rpcCalls.includes('get_dealer_pool_snapshot'));
    console.log('ACTUAL_PASSR_MAIN_HANDLER_AUTO_OFF_PASS');

@@ -956,6 +956,11 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --rotation-auth-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --lock-authority
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --main-dispatch --planner-size=2
+          for fault in missing-token malformed-token wrong-acquired held reclaimed; do
+            node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --planner-size=2 --main-lock-fault="$fault"
+          done
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --execution-negative
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --execution-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale

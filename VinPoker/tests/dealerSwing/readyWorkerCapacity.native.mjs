@@ -77,6 +77,8 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
   fixture.executeMain=process.argv.includes('--main-execute');assert.ok(!(fixture.executeMain&&(fixture.mainOff||fixture.shortageScope)));
   fixture.completionFault=process.argv.includes('--main-completion-fault');assert.ok(!fixture.completionFault||fixture.executeMain&&size===2);
   fixture.executionResponseLoss=process.argv.includes('--main-response-loss');assert.ok(!fixture.executionResponseLoss||fixture.executeMain&&size===2);
+  fixture.dispatch=process.argv.includes('--main-dispatch');assert.ok(!fixture.dispatch||size===2&&!fixture.executeMain&&!fixture.mainOff&&!fixture.shortageScope);
+  fixture.lockFault=process.argv.find(a=>a.startsWith('--main-lock-fault='))?.split('=')[1];assert.ok(fixture.lockFault===undefined||['missing-token','malformed-token','wrong-acquired','held','reclaimed'].includes(fixture.lockFault));assert.ok(!fixture.lockFault||size===2&&!fixture.executeMain&&!fixture.dispatch&&!fixture.mainOff&&!fixture.shortageScope&&!fixture.shortage);
   if(fixture.mainOff)sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${fixture.club}';`);
   if(!resumeClub)sql(`INSERT INTO public.swing_config(club_id,table_type,rotation_planner_enabled,swing_duration_minutes,break_duration_minutes,min_inter_swing_rest_minutes) VALUES('${fixture.club}','tournament',true,45,15,15) ON CONFLICT(club_id,table_type) DO UPDATE SET rotation_planner_enabled=true,swing_duration_minutes=45,break_duration_minutes=15,min_inter_swing_rest_minutes=15;`);
   const file=resolve('supabase/functions/process-swing/index.ts'),workerSource=readFileSync(file,'utf8'),tree=ts.createSourceFile(file,workerSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
@@ -101,6 +103,24 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
   input:JSON.stringify({...fixture,role:testRole}),encoding:'utf8',timeout:fixture.executeMain?(size===40?600000:360000):120000,maxBuffer:4*1024*1024,stdio:['pipe','pipe','pipe'],env:{...process.env,PASS15_RPC_TIMEOUT_MS:'5000',PASS15_MAX_PAIRS:'10'},
  });}catch(e){console.log(String(e.stdout??'').split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')).join('\n'));console.error(String(e.stderr??'').slice(-1400));throw new Error('actual PassR native qualification failed');}
  console.log(output.split(/\r?\n/).filter(line=>line.startsWith('{"passR_actual_result"')||line.startsWith('ACTUAL_PASSR_')).join('\n'));
+}
+if(process.argv.includes('--lock-authority')){
+ const c=seed(1),other=seed(1),outsider=randomUUID();sql(`INSERT INTO auth.users(id) VALUES('${outsider}');`);
+ const metadata=JSON.parse(sql(`SELECT jsonb_agg(jsonb_build_object('name',p.proname,'args',pg_get_function_identity_arguments(p.oid),'digest',md5(replace(pg_get_functiondef(p.oid),chr(13),'')),'acl',p.proacl::text) ORDER BY p.proname,p.oid) FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('try_acquire_club_lock','release_club_lock','cleanup_expired_club_locks');`));console.log(JSON.stringify({legacy_lock_catalog:metadata}));
+ const acquired=JSON.parse(sql(service+`SELECT public.try_acquire_club_lock_fenced('${c.club}',120,'native-authority');`));assert.equal(acquired.acquired,true);
+ sql(`INSERT INTO public.club_processing_locks(club_id,locked_by,expires_at,lock_token,owner_id) VALUES('${other.club}','native-expired',now()-interval '1 minute','${randomUUID()}','native-expired');`);
+ const fingerprint=()=>sql(`SELECT md5(coalesce(jsonb_agg(to_jsonb(l) ORDER BY club_id),'[]')::text) FROM public.club_processing_locks l;`);
+ const failures=[];
+ for(const [name,call,club] of [['release',`public.release_club_lock('${c.club}')`,c.club],['cleanup','public.cleanup_expired_club_locks()',other.club]]){
+  for(const role of ['anon','authenticated']){
+   const before=fingerprint();let denied=false,inside=null;
+   try{inside=sql(`BEGIN;SET request.jwt.claim.role='${role}';SET request.jwt.claim.sub='${outsider}';SET request.jwt.claims='{"role":"${role}","sub":"${outsider}"}';SET LOCAL ROLE ${role};SELECT coalesce(to_jsonb(${call}),'null'::jsonb);RESET ROLE;SELECT count(*) FROM public.club_processing_locks WHERE club_id='${club}';ROLLBACK;`).split(/\r?\n/).at(-1);}catch(e){const error=String(e.stderr??e);assert.match(error,/permission denied for function (release_club_lock|cleanup_expired_club_locks)/);denied=true;}
+   assert.equal(fingerprint(),before,'browser lock probe is fully rolled back');console.log(JSON.stringify({legacy_lock_authority:{name,role,denied,insideLockCount:inside,rolledBack:true}}));if(!denied)failures.push({name,role,inside});
+  }
+ }
+ assert.deepEqual(failures,[],'legacy lock maintenance must be worker-only');
+ assert.equal(sql(service+`SELECT public.release_club_lock_if_owner('${c.club}','${acquired.lock_token}');`),'t');
+ console.log('LEGACY_LOCK_BROWSER_DENIAL_WORKER_POSITIVE_PASS');
 }
 if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.includes(flag))){
  const failures=[];
@@ -787,7 +807,7 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
  }
 }
-const sizes=['--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--execution-overlap','--execution-negative','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--execution-overlap','--execution-negative','--lock-authority','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');

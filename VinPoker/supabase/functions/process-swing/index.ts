@@ -15,6 +15,7 @@ import {
 } from "../_shared/pickNextDealer.ts";
 import { getFeatureTablePoolIds } from "../_shared/featureTableGate.ts"; // Patch 5b: feature/final pool gate
 import { scaleLockTimeoutSeconds } from "../_shared/lockTimeout.ts";
+import { isUuid } from "../_shared/internal-trigger-auth.ts";
 import {
   sendTelegramNotification,
   getClubTelegramChatId,
@@ -370,6 +371,7 @@ interface StalePreAssignRow {
 
 interface LockAcquisitionResult {
   acquired: boolean;
+  lock_token?: unknown;
 }
 
 interface DealerAttendanceState {
@@ -839,8 +841,8 @@ Deno.serve(async (req: Request) => {
       // Worst-case runs (80–200s) can exceed the old hardcoded 120s lease, which the
       // 60s cron then reclaims → two concurrent runners (FM-1). Best-effort table
       // count; on ANY error fall back to BASE (today's behavior), never shorter.
-      // NOTE: this only shrinks the FM-1 overrun window — it does NOT fix the
-      // unconditional release_club_lock (FM-2). Fencing/tokens = B2.2.
+      // Lease sizing does not replace ownership checks. An acquired lease
+      // must have a valid token, and release must use that exact token.
       let lockTimeoutSec: number = SWING_THRESHOLDS.BASE_LOCK_TIMEOUT_SECONDS;
       try {
         const activeTableCount = (await getTableIdsForClub(admin, cid)).length;
@@ -869,14 +871,17 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        if (!lockResult || typeof lockResult !== "object" || !("acquired" in lockResult)) {
-          console.error(`[process-swing] \u274C Invalid lock result for ${cid}:`, JSON.stringify(lockResult));
+        const lockResponse = lockResult as Partial<LockAcquisitionResult> | null;
+        if (!lockResponse || typeof lockResult !== "object" || Array.isArray(lockResult)
+          || typeof lockResponse.acquired !== "boolean"
+          || (lockResponse.acquired && !isUuid(lockResponse.lock_token))) {
+          console.error(`[process-swing] Invalid fenced lock result for ${cid}`);
           markDispatchOutcome("business_failed", "club_lock_invalid_response");
           clubsSkippedError++;
           continue;
         }
 
-        const acquired = (lockResult as LockAcquisitionResult).acquired === true;
+        const acquired = lockResponse.acquired;
         if (!acquired) {
           console.log(`[process-swing] \U0001F512 Club ${cid} locked by another instance`);
           markDispatchOutcome("locked", "club_lock_held");
@@ -884,7 +889,7 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        lockToken = (lockResult as { lock_token?: string | null }).lock_token ?? null;
+        lockToken = lockResponse.lock_token as string; // UUID validated before accepting acquired=true.
         lockAcquired = true;
       } catch (err) {
         console.error(`[process-swing] \u274C Lock acquisition exception for ${cid}:`, err);
@@ -4526,16 +4531,10 @@ if (tier2Count > 0) {
           console.warn(`[process-swing] run_metrics insert skipped (non-fatal) club=${cid}:`, metricsErr);
         }
 
-        if (lockAcquired) {
+        if (lockAcquired && lockToken) {
           try {
-            // B2.2b: token-scoped release \u2014 only deletes OUR lock (fixes FM-2: an overran
-            // worker can no longer delete a successor's lock). Falls back to the legacy
-            // unconditional release only if somehow no token (defensive; should not happen).
-            if (lockToken) {
-              await admin.rpc("release_club_lock_if_owner", { p_club_id: cid, p_lock_token: lockToken });
-            } else {
-              await admin.rpc("release_club_lock", { p_club_id: cid });
-            }
+            // A stale invocation must never delete a successor's lease.
+            await admin.rpc("release_club_lock_if_owner", { p_club_id: cid, p_lock_token: lockToken });
           } catch (releaseErr) {
             console.error(`[process-swing] \u274C Lock release failed for ${cid}:`, releaseErr);
           }
