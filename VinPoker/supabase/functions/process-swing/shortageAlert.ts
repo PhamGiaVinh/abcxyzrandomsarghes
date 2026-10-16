@@ -13,6 +13,7 @@ import { solveRotationPlan } from "../_shared/rotationSolver.ts";
 import { type DealerTier, type RotationPlanCandidate, type RotationPlanTable } from "../_shared/rotationTypes.ts";
 import { SWING_POLICY } from "../_shared/swingPolicy.ts";
 import { sendTelegramNotification } from "../_shared/telegram.ts";
+import { getDealerOperationalTables } from "../_shared/dealerOperationalTables.ts";
 
 export type ShortageSnapshotStatus = "ok" | "dependency_unavailable" | "query_failed";
 export type ShortageClassification =
@@ -86,8 +87,6 @@ export interface ShortageAlertDecision {
 interface TableRow {
   id: string;
   table_name: string | null;
-  status: string;
-  shift_id: string | null;
   game_type: string | null;
   tour_tier: string | null;
 }
@@ -95,6 +94,8 @@ interface TableRow {
 interface AssignmentRow {
   id: string;
   table_id: string;
+  table_session_id: string | null;
+  club_id: string;
   attendance_id: string | null;
   pre_assigned_attendance_id: string | null;
   status: string;
@@ -254,20 +255,18 @@ export async function buildCanonicalShortageSnapshot(
 ): Promise<CanonicalShortageSnapshot> {
   const capturedAt = new Date().toISOString();
   const nowMs = Date.now();
-  const [tablesResult, shiftsResult, tournamentsResult, operationsResult, attendanceResult] = await Promise.all([
-    admin.from("game_tables")
-      .select("id, table_name, status, shift_id, game_type, tour_tier")
+  let operationalTables;
+  try {
+    operationalTables = await getDealerOperationalTables(admin, clubId);
+  } catch (error) {
+    return snapshotFailure("operational_inventory", error);
+  }
+  const sessionsByTable = new Map(operationalTables.map((table) => [table.id, table.table_session_id]));
+  const [tablesResult, operationsResult, attendanceResult] = await Promise.all([
+    operationalTables.length > 0 ? admin.from("game_tables")
+      .select("id, table_name, game_type, tour_tier")
       .eq("club_id", clubId)
-      .eq("status", "active"),
-    admin.from("dealer_shifts")
-      .select("id")
-      .eq("club_id", clubId)
-      .is("closed_at", null)
-      .is("archived_at", null),
-    admin.from("tournaments")
-      .select("id, tournament_tables!inner(table_id)")
-      .eq("club_id", clubId)
-      .eq("status", "live"),
+      .in("id", [...sessionsByTable.keys()]) : Promise.resolve({ data: [], error: null }),
     admin.from("dealer_open_operations")
       .select("id")
       .eq("club_id", clubId)
@@ -283,21 +282,18 @@ export async function buildCanonicalShortageSnapshot(
   ]);
   for (const [stage, result] of [
     ["active_tables", tablesResult],
-    ["active_shifts", shiftsResult],
-    ["live_tournaments", tournamentsResult],
     ["open_operations", operationsResult],
     ["active_attendance", attendanceResult],
-  ] as Array<[string, { error: unknown | null }]>) {
+  ] as Array<[string, { data: unknown; error: unknown | null }]>) {
     if (result.error) return snapshotFailure(stage, result.error);
+    if (!Array.isArray(result.data)) return snapshotFailure(stage, new Error("unverified response"));
   }
 
-  const tables = (tablesResult.data ?? []) as TableRow[];
-  const activeShiftIds = new Set((shiftsResult.data ?? []).map((row: { id: string }) => row.id));
-  const liveTournamentTableIds = new Set<string>();
-  for (const tournament of tournamentsResult.data ?? []) {
-    for (const row of (tournament as { tournament_tables?: Array<{ table_id: string }> }).tournament_tables ?? []) {
-      liveTournamentTableIds.add(row.table_id);
-    }
+  const tables = tablesResult.data as TableRow[];
+  if (tables.some((table) => !table || typeof table.id !== "string")
+    || tables.length !== operationalTables.length || new Set(tables.map((table) => table.id)).size !== tables.length
+    || tables.some((table) => !sessionsByTable.has(table.id))) {
+    return snapshotFailure("table_metadata", new Error("operational table metadata changed"));
   }
   const operationIds = (operationsResult.data ?? []).map((row: { id: string }) => row.id);
   let pendingOperationTableIds = new Set<string>();
@@ -307,32 +303,31 @@ export async function buildCanonicalShortageSnapshot(
       .in("operation_id", operationIds)
       .eq("target_state", "pending");
     if (targetsResult.error) return snapshotFailure("open_operation_targets", targetsResult.error);
+    if (!Array.isArray(targetsResult.data)) return snapshotFailure("open_operation_targets", new Error("unverified response"));
     pendingOperationTableIds = new Set((targetsResult.data ?? []).map((row: { table_id: string }) => row.table_id));
   }
 
   const allTableIds = tables.map((table) => table.id);
-  if (allTableIds.length === 0) return { ...emptySnapshot("ok", null), captured_at: capturedAt };
-  const assignmentsResult = await admin.from("dealer_assignments")
-    .select("id, table_id, attendance_id, pre_assigned_attendance_id, status, assigned_at, swing_due_at, overtime_started_at, released_at")
+  const assignmentsResult = allTableIds.length > 0 ? await admin.from("dealer_assignments")
+    .select("id, club_id, table_id, table_session_id, attendance_id, pre_assigned_attendance_id, status, assigned_at, swing_due_at, overtime_started_at, released_at")
+    .eq("club_id", clubId)
     .in("table_id", allTableIds)
     .in("status", ["assigned", "pre_assigned", "on_break", "reserved"])
-    .is("released_at", null);
+    .is("released_at", null) : { data: [], error: null };
   if (assignmentsResult.error) return snapshotFailure("active_assignments", assignmentsResult.error);
-  const activeAssignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  if (!Array.isArray(assignmentsResult.data)) return snapshotFailure("active_assignments", new Error("unverified response"));
+  const activeAssignments = assignmentsResult.data as AssignmentRow[];
   const assignmentByTable = new Map<string, AssignmentRow>();
   for (const assignment of activeAssignments) {
-    const current = assignmentByTable.get(assignment.table_id);
-    if (!current || (assignment.assigned_at ?? "") > (current.assigned_at ?? "")) {
-      assignmentByTable.set(assignment.table_id, assignment);
+    if (!assignment || assignment.club_id !== clubId || !sessionsByTable.has(assignment.table_id)
+      || assignment.table_session_id !== sessionsByTable.get(assignment.table_id)
+      || assignmentByTable.has(assignment.table_id)) {
+      return snapshotFailure("assignment_scope", new Error("ambiguous or stale session assignment"));
     }
+    assignmentByTable.set(assignment.table_id, assignment);
   }
 
-  const scopedTables = tables.filter((table) =>
-    liveTournamentTableIds.has(table.id)
-    || activeShiftIds.has(table.shift_id ?? "")
-    || pendingOperationTableIds.has(table.id)
-    || assignmentByTable.has(table.id)
-  );
+  const scopedTables = tables;
   const emptyTables = scopedTables.filter((table) => !assignmentByTable.has(table.id));
   const heldTableIds = new Set(
     activeAssignments
@@ -442,6 +437,18 @@ export async function buildCanonicalShortageSnapshot(
       .filter((id): id is string => Boolean(id)),
   );
   const reservedDealerCount = attendance.filter((row) => reservedDealerIds.has(row.dealer_id)).length;
+
+  // Multi-query read: a close/reopen observed during collection invalidates the
+  // snapshot; never publish old-session counts as a healthy current scope.
+  try {
+    const currentTables = await getDealerOperationalTables(admin, clubId);
+    if (currentTables.length !== sessionsByTable.size
+      || currentTables.some((table) => sessionsByTable.get(table.id) !== table.table_session_id)) {
+      return snapshotFailure("operational_scope_changed", new Error("table session changed during snapshot"));
+    }
+  } catch (error) {
+    return snapshotFailure("operational_inventory", error);
+  }
 
   return {
     status: "ok",

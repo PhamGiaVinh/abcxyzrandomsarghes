@@ -140,6 +140,29 @@ else{
   assert.equal(repeatedResponse.status,200);assert.equal(repeated.status,'completed');assert.equal(repeated.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
   assert.equal(await lockProof(),locks);assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,true);
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NOT NULL;`),'0','announce lead has not elapsed; outgoing dealers must remain seated');
+  if(fixture.shortageScope){
+   const {buildCanonicalShortageSnapshot,classifyShortage}=await import('../../supabase/functions/process-swing/shortageAlert.ts');
+   const opts={minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,preAnnounceMinutes:3};
+   const operator=`SET request.jwt.claim.role='authenticated';SET request.jwt.claim.sub='${fixture.owner}';SET request.jwt.claims='{"role":"authenticated","sub":"${fixture.owner}"}';SET ROLE authenticated;`;
+   async function closeSession(id){const revision=Number(await sql(`SELECT revision FROM public.table_sessions WHERE id='${id}';`));const result=JSON.parse(await sql(operator+`SELECT public.operator_close_club_table_v2('${id}',${revision},'${crypto.randomUUID()}');`));assert.equal(result.ok,true);}
+   // Real close between initial and final canonical reads, not a fabricated
+   // inventory response. Preserve the failed snapshot and inspect new scope.
+   let canonicalReads=0;
+   const changingAdmin={from:admin.from,rpc:async(name,args)=>{if(name==='get_dealer_operational_tables_v1'&&++canonicalReads===2)await closeSession(fixture.rows[0].session);return admin.rpc(name,args);}};
+   const changed=await buildCanonicalShortageSnapshot(changingAdmin,fixture.club,opts);
+   assert.equal(changed.status,'query_failed');assert.equal(changed.error_code,'shortage_snapshot_operational_scope_changed_query_failed');assert.equal(classifyShortage(changed),'snapshot_invalid');
+   const phantom=crypto.randomUUID();await sql(`INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES('${phantom}','${fixture.club}','Closed legacy TEST',3,'cash','active','available');`);
+   const reopened=JSON.parse(await sql(operator+`SELECT public.operator_open_club_tables_v2(ARRAY['${fixture.rows[0].table}'::uuid],'cash','${crypto.randomUUID()}');`));assert.equal(reopened.ok,true);
+   const freshSession=await sql(`SELECT id FROM public.table_sessions WHERE game_table_id='${fixture.rows[0].table}' AND closed_at IS NULL;`);assert.notEqual(freshSession,fixture.rows[0].session);
+   const fresh=await buildCanonicalShortageSnapshot(admin,fixture.club,opts);
+   assert.equal(fresh.status,'ok');assert.equal(fresh.active_staffed_tables,1);assert.equal(fresh.active_empty_tables,1);assert.ok(fresh.tables_without_replacement_total>=1,'empty live table must remain visible without legacy shift/open markers');
+   await closeSession(freshSession);await closeSession(fixture.rows[1].session);
+   const empty=await buildCanonicalShortageSnapshot(admin,fixture.club,opts);
+   assert.equal(empty.status,'ok');assert.equal(empty.active_staffed_tables,0);assert.equal(empty.active_empty_tables,0);assert.equal(classifyShortage(empty),'healthy');
+   assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+   console.log(JSON.stringify({passR_actual_result:{phase:'shortage-close-reopen',changedStatus:changed.status,freshStaffed:fresh.active_staffed_tables,freshEmpty:fresh.active_empty_tables,closedScopeTables:empty.active_staffed_tables+empty.active_empty_tables,legacyActivePhantomExcluded:true}}));
+   console.log('ACTUAL_PASSR_SHORTAGE_CANONICAL_CLOSE_REOPEN_PASS');
+  }
   console.log('ACTUAL_PASSR_MAIN_HANDLER_NATIVE_PASS');
   }
  }else{
