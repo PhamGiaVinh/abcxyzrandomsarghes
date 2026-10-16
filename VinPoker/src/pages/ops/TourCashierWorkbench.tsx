@@ -8,6 +8,10 @@ import { OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
 import { SeatReceiptDialog } from "@/components/tournament/seat/SeatReceiptDialog";
 import type { SeatReceiptData } from "@/components/tournament/seat/SeatReceipt";
 import { normalizeCashierScan } from "./cashierScan";
+import { useOpsAuth } from '@/ops/auth/OpsAuthProvider';
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
+import { cashPaymentJournalKey,readCashPaymentJournal,persistCashPaymentIntent,settleCashPaymentIntent,
+  resolveCashPaymentIntent,type CashPaymentIntent } from '@/lib/cashPaymentIntent';
 
 type Tour = { id: string; name: string; start_time: string | null; status: string; registration_closed_at?: string | null };
 type Bucket = "counter" | "completed" | "waiting_seat" | "needs_review" | "all";
@@ -37,6 +41,7 @@ const safeNumber = (value: unknown) => typeof value === "number" && Number.isFin
 
 export default function TourCashierWorkbench() {
   const client = useSupabaseClient();
+  const { user,session,loading:authLoading } = useOpsAuth();
   const capabilities = useOpsCapabilities();
   const { selectedClubId } = useOpsWorkspace();
   const clubId = selectedClubId && (capabilities.isSuperAdmin || capabilities.cashierClubIds.includes(selectedClubId))
@@ -83,7 +88,27 @@ export default function TourCashierWorkbench() {
   const requestVersion = useRef(0);
   const lookupSelectionVersion = useRef(0);
   const mutationLock = useRef(false);
-  const cashAttempt = useRef<string | null>(null);
+  const cashScope=JSON.stringify([user?.id,clubId,sessionReadEpoch(session),authLoading,capabilities.loading]);
+  const activeCashScope=useRef(cashScope);activeCashScope.current=cashScope;
+  const [cashJournal,setCashJournal]=useState<{scope:string;pending:CashPaymentIntent|null;error:string|null}|null>(null);
+  const currentCashJournal=cashJournal?.scope===cashScope?cashJournal:null;
+  const cashReady=!!user?.id&&!!session?.access_token&&!authLoading&&!capabilities.loading&&!!clubId;
+  useEffect(()=>{
+    activeCashScope.current=cashScope;
+    const load=()=>{
+      if(activeCashScope.current!==cashScope)return;
+      if(!cashReady||!user?.id||!clubId){setCashJournal(null);return;}
+      try{const saved=readCashPaymentJournal(localStorage,user.id,clubId);
+        setCashJournal({scope:cashScope,pending:saved?.state==='pending'?saved.intent:null,error:null});
+      }catch{setCashJournal({scope:cashScope,pending:null,error:'Không đọc được journal khoản thu. Chưa thể thu thêm; giữ nguyên dữ liệu để đối chiếu.'});}
+    };
+    load();
+    const changed=(event:StorageEvent)=>{if(event.key===null||event.key===cashPaymentJournalKey(user?.id??'',clubId??''))load();};
+    window.addEventListener('storage',changed);return()=>{
+      window.removeEventListener('storage',changed);
+      if(activeCashScope.current===cashScope)activeCashScope.current='';
+    };
+  },[cashScope,cashReady,user?.id,clubId]);
   const scanPending = useRef(false);
   const scanner = useRef<HTMLInputElement>(null);
   const cashInput = useRef<HTMLInputElement>(null);
@@ -293,7 +318,7 @@ export default function TourCashierWorkbench() {
     setSelected(null); setCashAmount(""); setQuery(""); setLookup([]); setLookupError(null); setBucket("counter"); setIssuesView(false); setPage(0);
     setRefundRead(null); setRefundReason(""); setRefundCash(""); setRefundBank("");
     setRefundBankRef(""); setRefundEvidence("");
-    cashAttempt.current = null; setWorklist(null);
+    setWorklist(null);
     setIssues(null); setIssuesError(null);
     scanPending.current = false;
     window.setTimeout(() => scanner.current?.focus(), 0);
@@ -303,7 +328,6 @@ export default function TourCashierWorkbench() {
   const selectRow = (row: Row) => {
     if (mutationLock.current) return;
     lookupSelectionVersion.current++;
-    cashAttempt.current = null;
     setSelected(row);
     setCashAmount(row.bucket === "counter" ? String(Math.max(0, row.total_pay-row.received)) : "");
     setRefundRead(null); setRefundReason(""); setRefundCash(""); setRefundBank("");
@@ -350,6 +374,51 @@ export default function TourCashierWorkbench() {
     }
   };
 
+  const runCashIntent=async(action:'record'|'read'|'cancel',amount?:number)=>{
+    if(mutationLock.current||!cashReady||!user?.id||!clubId||!currentCashJournal||currentCashJournal.error)return;
+    if(!navigator.locks){setError('Trình duyệt chưa hỗ trợ khóa journal giữa các tab; chưa thể ghi nhận khoản thu.');return;}
+    const scope=cashScope,actor=user.id,club=clubId,key=cashPaymentJournalKey(actor,club);
+    mutationLock.current=true;setBusy(true);setError(null);setNotice(null);
+    try{
+      const intent=await navigator.locks.request(key,()=>{
+        if(activeCashScope.current!==scope)throw new Error('CASH_SCOPE_CHANGED');
+        const saved=readCashPaymentJournal(localStorage,actor,club);
+        if(action!=='record'){
+          if(saved?.state!=='pending')throw new Error('CASH_JOURNAL_CHANGED');
+          return saved.intent;
+        }
+        if(saved?.state==='pending')throw new Error('CASH_INTENT_UNRESOLVED');
+        if(!selected||!tourId||!amount)throw new Error('CASH_SCOPE_CHANGED');
+        const next:CashPaymentIntent={actor_id:actor,club_id:club,tournament_id:tourId,
+          registration_id:selected.id,amount,request_id:crypto.randomUUID()};
+        persistCashPaymentIntent(localStorage,next);return next;
+      });
+      if(activeCashScope.current!==scope)return;
+      setCashJournal({scope,pending:intent,error:null});
+      const result=await resolveCashPaymentIntent(client.rpc.bind(client) as unknown as Parameters<typeof resolveCashPaymentIntent>[0],intent,action);
+      if(activeCashScope.current!==scope)return;
+      if(result.status==='unknown'){
+        setError('Chưa xác minh được khoản thu trước. Không thu lại; kiểm tra hoặc đóng yêu cầu chưa ghi nhận bằng nút bên trên.');return;
+      }
+      await navigator.locks.request(key,()=>{
+        if(activeCashScope.current!==scope)throw new Error('CASH_SCOPE_CHANGED');
+        settleCashPaymentIntent(localStorage,intent);
+      });
+      if(activeCashScope.current!==scope)return;
+      setCashJournal({scope,pending:null,error:null});
+      if(result.status==='rejected')setError(`Khoản thu bị từ chối: ${String(result.result.error)}`);
+      else setNotice(result.status==='cancelled'
+        ? 'Đã đóng yêu cầu chưa ghi nhận. Không xóa hoặc hoàn khoản tiền đã thu.'
+        : `Đã xác minh khoản thu ${formatMoney(intent.amount)}. Trạng thái ghế được tải lại từ máy chủ.`);
+      requestVersion.current++;setSelected(null);setCashAmount('');setWorklist(null);refresh();
+    }catch{
+      if(activeCashScope.current===scope){
+        try{const saved=readCashPaymentJournal(localStorage,actor,club);setCashJournal({scope,pending:saved?.state==='pending'?saved.intent:null,error:null});}
+        catch{setCashJournal({scope,pending:null,error:'Không đọc được journal khoản thu. Chưa thể thu thêm.'});}
+        setError('Không thể xác minh journal khoản thu. Không tạo yêu cầu mới khi khoản trước chưa được xử lý.');
+      }
+    }finally{mutationLock.current=false;setBusy(false);}
+  };
   const recordCash = () => {
     if (!selected || !tourId || !shift || selected.legacy_detail_missing) return;
     const amount = Number(cashAmount);
@@ -357,25 +426,20 @@ export default function TourCashierWorkbench() {
     if (!Number.isSafeInteger(amount) || amount < 1 || amount > remaining) {
       setError(`Số tiền mặt phải từ 1 đến ${formatMoney(remaining)}.`); return;
     }
-    const player = selected.player_name;
-    cashAttempt.current ??= crypto.randomUUID();
-    void mutate("cashier_record_cash_buyin_v1", {
-      p_registration_id: selected.id, p_amount: amount, p_request_id: cashAttempt.current,
-    }, (result) => {
-      setNotice(result.seating_state === "seated" ? `${player}: đã xếp ghế và cấp phiếu.`
-        : result.seating_state === "waiting" ? `${player}: đã đủ tiền, đang chờ ghế.`
-          : result.seating_state === "needs_review" ? `${player}: đã ghi nhận tiền nhưng chưa xếp ghế; cần xử lý (${String(result.reason ?? "lỗi xếp ghế")}).`
-            : `${player}: đã ghi nhận ${formatMoney(amount)}.`);
-      cashAttempt.current = null;
-      requestVersion.current++;
-      setSelected(null); setCashAmount(""); setQuery(""); setBucket("counter"); setIssuesView(false); setPage(0); setWorklist(null);
-      window.setTimeout(() => scanner.current?.focus(), 0);
-    });
+    void runCashIntent('record',amount);
   };
 
   if (capabilities.loading) return <p className="p-6 text-white">Đang kiểm tra quyền Cashier…</p>;
   if (capabilities.scopeError || !clubId) return <p className="p-6 text-amber-200">Không có quyền Cashier tại CLB đã chọn.</p>;
   return <div className="min-w-0 space-y-4 pb-8 text-[#eef5ef]">
+    {currentCashJournal?.error&&<p role="alert" className="rounded-xl border border-amber-300/40 p-4 text-sm text-amber-200">{currentCashJournal.error}</p>}
+    {currentCashJournal?.pending&&<section role="status" className="space-y-2 rounded-xl border border-amber-300/40 p-4 text-sm text-amber-200">
+      <p>Khoản thu {formatMoney(currentCashJournal.pending.amount)} đang chờ xác minh. Không thu lại, kể cả khi đổi khách hoặc tải lại trang.</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={()=>void runCashIntent('read')} className="min-h-11 rounded-lg border border-amber-300/40 px-3">Kiểm tra khoản thu trước</button>
+        <button type="button" disabled={busy} onClick={()=>void runCashIntent('cancel')} className="min-h-11 rounded-lg border border-amber-300/40 px-3">Đóng yêu cầu chưa ghi nhận</button>
+      </div>
+    </section>}
     <header className="rounded-2xl border border-emerald-300/20 bg-[#0a1813] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -481,7 +545,7 @@ export default function TourCashierWorkbench() {
         <input ref={scanner} autoFocus disabled={busy} value={query} onChange={(event) => {
           requestVersion.current++; lookupSelectionVersion.current++;
           setQuery(event.target.value); setPage(0); setWorklist(null); setSelected(null);
-          setCashAmount(""); cashAttempt.current = null; scanPending.current = false;
+          setCashAmount(""); scanPending.current = false;
         }}
           onKeyDown={(event) => { if (event.key === "Enter" && !mutationLock.current) {
             requestVersion.current++; lookupSelectionVersion.current++;
@@ -533,7 +597,7 @@ export default function TourCashierWorkbench() {
             <span className="self-center">Trang {page+1}</span><button type="button" disabled={busy || !worklist || worklist.rows.length<50} onClick={() => { requestVersion.current++; setPage((value) => value+1); setSelected(null); setWorklist(null); }} className="min-h-11 rounded-lg border border-white/15 px-3 disabled:opacity-40">Tiếp</button></div>
         </section>
         {selected && <aside role="dialog" aria-label={`Chi tiết buy-in ${selected.player_name}`} className="fixed inset-0 z-50 min-w-0 overflow-y-auto bg-[#09120e] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] lg:static lg:z-auto lg:rounded-2xl lg:border lg:border-white/10 lg:bg-[#101c17] lg:p-5">
-          <button ref={closeDetail} type="button" disabled={busy} onClick={() => { cashAttempt.current = null; setSelected(null); scanner.current?.focus(); }} className="mb-4 flex min-h-11 items-center gap-2 text-sm text-[#b7c9bc]"><ArrowLeft className="h-4 w-4" /> Đóng · khách tiếp theo</button>
+          <button ref={closeDetail} type="button" disabled={busy} onClick={() => { setSelected(null); scanner.current?.focus(); }} className="mb-4 flex min-h-11 items-center gap-2 text-sm text-[#b7c9bc]"><ArrowLeft className="h-4 w-4" /> Đóng · khách tiếp theo</button>
           <h2 className="break-words text-xl font-bold">{selected.player_name}</h2>
           <p className="mt-1 text-sm text-amber-200">Tour của lượt này: {selectedTourName}</p>
           <p className="mt-1 break-all font-mono text-xs text-[#a9baae]">{selected.reference_code}</p>
@@ -556,9 +620,9 @@ export default function TourCashierWorkbench() {
             : selected.bucket === "needs_review" ? <p className="mt-5 text-sm text-amber-200">Đã nhận đủ tiền nhưng không xếp ghế được: {selected.cashier_seating_error ?? "cần kiểm tra"}. Không thu lại tiền; báo Floor kiểm tra.</p>
             : selected.bucket === "waiting_seat" ? <p className="mt-5 text-sm text-amber-200">Đã đủ tiền, chưa có ghế. Không thu lại tiền; hệ thống sẽ thử xếp khi có chỗ.</p>
               : <div className="mt-5 space-y-3"><label className="block text-sm">Nhận tiền mặt (VND)
-                <input ref={cashInput} inputMode="numeric" disabled={busy} value={cashAmount} onChange={(event) => { cashAttempt.current = null; setCashAmount(event.target.value); }}
+                <input ref={cashInput} inputMode="numeric" disabled={busy||!!currentCashJournal?.pending} value={cashAmount} onChange={(event) => { setCashAmount(event.target.value); }}
                   className="mt-1 min-h-12 w-full rounded-xl border border-white/15 bg-[#08120d] p-3 text-lg text-white" /></label>
-                <button type="button" disabled={!shift || busy || selected.legacy_detail_missing || !OPS_TOUR_CASHIER_ENABLED || !worklist?.enabled} onClick={recordCash}
+                <button type="button" disabled={!shift || busy || !cashReady || !currentCashJournal || !!currentCashJournal.pending || !!currentCashJournal.error || selected.legacy_detail_missing || !OPS_TOUR_CASHIER_ENABLED || !worklist?.enabled} onClick={recordCash}
                   className="min-h-12 w-full rounded-xl bg-[#89ef9e] px-4 font-bold text-[#092014] disabled:opacity-40">{busy ? "Đang ghi nhận…" : "Ghi nhận tiền mặt"}</button>
                 {!shift && <p className="text-xs text-amber-200">Mở ca chung trước khi nhận tiền mặt.</p>}
                 {selected.legacy_detail_missing && <p className="text-xs text-amber-200">Đăng ký cũ chưa có giá server đã chốt. Không thu qua quầy mới; đối soát hoặc tạo lại đăng ký hợp lệ sau khi xử lý bản cũ.</p>}

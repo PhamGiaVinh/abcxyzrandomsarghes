@@ -10,6 +10,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000085_cashier_club_scope_authority_v1.sql'
       - 'VinPoker/tests/cashier/authority84_85.currentSchema.sql'
       - 'VinPoker/tests/cashier/cashPaymentIdentity*'
+      - 'VinPoker/src/lib/cashPaymentIntent*'
+      - 'VinPoker/src/pages/ops/TourCashierWorkbench*'
       - 'VinPoker/supabase/migrations/20270128000112_cashier_cash_intent_receipts_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
@@ -999,6 +1001,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -v CASH112_CASE=true -f tests/cashier/cashPaymentIdentity.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_cash112_overlap
           PGDATABASE=vinpoker_ops_cash112_overlap node tests/cashier/cashPaymentIdentity.concurrent.mjs
+          node node_modules/vitest/vitest.mjs run src/lib/cashPaymentIntent.test.ts src/pages/ops/TourCashierWorkbenchShift.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:

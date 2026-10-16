@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({
@@ -6,6 +6,9 @@ const mock = vi.hoisted(() => ({
   tourIs: vi.fn(),
   tours: [] as Array<{ id: string; name: string; start_time: string; status: string; deleted_at?: string | null }>,
   refund: null as null | { id: string; amount: number; status: "requested"; reason: string },
+  openShift: null as null | {id:string;opening_cash:number;opened_at:string},
+  clubId:'club-a',
+  auth:{user:{id:'e1120000-0000-4000-8000-000000000001'},session:{access_token:'TEST-only-cash-token'},loading:false},
 }));
 
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
@@ -30,7 +33,7 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
           { id: "shift-a", opened_at: "2026-09-15T08:00:00Z", closed_at: "2026-09-15T16:00:00Z", counted_cash: 100, variance_cash: 0 },
           { id: "shift-b", opened_at: "2026-09-14T08:00:00Z", closed_at: "2026-09-14T16:00:00Z", counted_cash: 200, variance_cash: 0 },
         ], error: null }),
-        maybeSingle: () => Promise.resolve({ data: table === "cashier_refund_requests" ? mock.refund : null, error: null }),
+        maybeSingle: () => Promise.resolve({ data: table === "cashier_refund_requests" ? mock.refund : table === "cashier_till_shifts" ? mock.openShift : null, error: null }),
       };
       return query;
     },
@@ -40,12 +43,13 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
 vi.mock("@/ops/auth/OpsCapabilityProvider", () => ({
   useOpsCapabilities: () => ({
     loading: false, scopeError: null, isSuperAdmin: false,
-    cashierClubIds: ["club-a"], clubs: [{ id: "club-a", name: "Club A" }],
+    cashierClubIds: [mock.clubId], clubs: [{ id: mock.clubId, name: "Club A" }],
   }),
 }));
 vi.mock("@/ops/workspace/OpsWorkspaceProvider", () => ({
-  useOpsWorkspace: () => ({ selectedClubId: "club-a" }),
+  useOpsWorkspace: () => ({ selectedClubId: mock.clubId }),
 }));
+vi.mock('@/ops/auth/OpsAuthProvider',()=>({useOpsAuth:()=>mock.auth}));
 vi.mock("@/ops/opsMutations", () => ({
   assertMutationOk: (data: unknown) => data,
 }));
@@ -56,11 +60,35 @@ vi.mock("@/lib/featureFlags", async (importOriginal) => ({
 vi.mock("@/components/tournament/seat/SeatReceiptDialog", () => ({ SeatReceiptDialog: () => null }));
 
 import TourCashierWorkbench from "./TourCashierWorkbench";
+const cashClub='e1120000-0000-4000-8000-000000000002',cashTour='e1120000-0000-4000-8000-000000000003',cashRegistration='e1120000-0000-4000-8000-000000000004';
+function prepareCash(reply:(args:Record<string,unknown>)=>Promise<{data:unknown;error:unknown}>){
+  mock.clubId=cashClub;mock.tours=[{id:cashTour,name:'Tour A',start_time:'2026-10-16T10:00:00Z',status:'registering'}];
+  mock.openShift={id:'shift-open',opening_cash:0,opened_at:'2026-10-16T08:00:00Z'};
+  sessionStorage.setItem(`cashier-tour:${cashClub}`,cashTour);
+  const fallback=mock.rpc.getMockImplementation()!;
+  mock.rpc.mockImplementation((name:string,args:unknown)=>{
+    if(name==='resolve_cashier_cash_buyin_intent_v1')return reply(args as Record<string,unknown>);
+    if(name==='cashier_tour_worklist_v1')return Promise.resolve({error:null,data:{ok:true,enabled:true,
+      counts:{counter:1,completed:0,waiting_seat:0,needs_review:0,total:1},rows:[{
+        id:cashRegistration,tournament_id:cashTour,status:'pending',player_name:'TEST-CASH-PLAYER',
+        reference_code:'TEST-CASH-REF',total_pay:100000,received:0,bucket:'counter',legacy_detail_missing:false,
+        receipt_code:null,table_number:null,seat_number:null,
+      }]}});
+    return fallback(name,args);
+  });
+}
 
 describe("closed Cashier shift correction", () => {
   beforeEach(() => {
     mock.tours = [];
     mock.refund = null;
+    mock.openShift = null;
+    mock.clubId='club-a';mock.auth={user:{id:'e1120000-0000-4000-8000-000000000001'},session:{access_token:'TEST-only-cash-token'},loading:false};
+    localStorage.clear();
+    const tails=new Map<string,Promise<unknown>>();
+    Object.defineProperty(navigator,'locks',{configurable:true,value:{request:(name:string,callback:()=>unknown)=>{
+      const next=(tails.get(name)??Promise.resolve()).catch(()=>{}).then(callback);tails.set(name,next);return next;
+    }}});
     sessionStorage.removeItem("cashier-tour:club-a");
     mock.rpc.mockReset();
     mock.tourIs.mockClear();
@@ -73,6 +101,124 @@ describe("closed Cashier shift correction", () => {
       }, error: null });
       return Promise.resolve({ data: { ok: true }, error: null });
     });
+  });
+
+  it('coordinates two instances through one shared journal before either payment settles',async()=>{
+    let finish!:(value:{data:unknown;error:unknown})=>void;
+    prepareCash(()=>new Promise(resolve=>{finish=resolve;}));
+    const lock=vi.spyOn(navigator.locks,'request');
+    const first=render(<TourCashierWorkbench/>),second=render(<TourCashierWorkbench/>);
+    const a=within(first.container),b=within(second.container);
+    fireEvent.click(await a.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+    fireEvent.click(await b.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+    fireEvent.change(a.getByRole('textbox',{name:'Nhận tiền mặt (VND)'}),{target:{value:'10000'}});
+    fireEvent.change(b.getByRole('textbox',{name:'Nhận tiền mặt (VND)'}),{target:{value:'10000'}});
+    await act(async()=>{
+      fireEvent.click(a.getByRole('button',{name:'Ghi nhận tiền mặt'}));
+      fireEvent.click(b.getByRole('button',{name:'Ghi nhận tiền mặt'}));
+    });
+    const calls=mock.rpc.mock.calls.filter(([name])=>name==='resolve_cashier_cash_buyin_intent_v1');
+    expect(calls).toHaveLength(1);expect(lock).toHaveBeenCalledTimes(2);
+    expect(lock.mock.calls[0][0]).toBe(lock.mock.calls[1][0]);
+    await act(async()=>{finish({data:{ok:true,status:'unknown',intent:calls[0][1].p_intent},error:null});});
+    expect(a.getByRole('button',{name:'Ghi nhận tiền mặt'})).toBeDisabled();
+    expect(b.getByRole('button',{name:'Ghi nhận tiền mặt'})).toBeDisabled();
+  });
+
+  it('ignores late payment success from the previous authenticated actor',async()=>{
+    let finish!:(value:{data:unknown;error:unknown})=>void;
+    prepareCash(()=>new Promise(resolve=>{finish=resolve;}));
+    const view=render(<TourCashierWorkbench/>);
+    fireEvent.click(await screen.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+    fireEvent.click(screen.getByRole('button',{name:'Ghi nhận tiền mặt'}));
+    await waitFor(()=>expect(mock.rpc.mock.calls.filter(([name])=>name==='resolve_cashier_cash_buyin_intent_v1')).toHaveLength(1));
+    const intent=mock.rpc.mock.calls.find(([name])=>name==='resolve_cashier_cash_buyin_intent_v1')![1].p_intent;
+    mock.auth={user:{id:'e1120000-0000-4000-8000-000000000091'},session:{access_token:'TEST-only-other-cash-token'},loading:false};
+    view.rerender(<TourCashierWorkbench/>);
+    await act(async()=>{finish({data:{ok:true,status:'recorded',intent,result:{ok:true,payment_state:'paid'}},error:null});});
+    expect(screen.queryByText(/Đã xác minh khoản thu/)).not.toBeInTheDocument();
+    const pending=JSON.parse(localStorage.getItem(`vp:cash-payment:v1:${intent.actor_id}:${intent.club_id}`)!);
+    expect(pending.state).toBe('pending');
+    expect(localStorage.getItem(`vp:cash-payment:v1:${mock.auth.user.id}:${cashClub}`)).toBeNull();
+  });
+
+  it('does not dispatch cash if durable journal storage cannot be read',async()=>{
+    prepareCash(()=>Promise.reject(new Error('must not dispatch')));
+    const original=Storage.prototype.getItem;
+    const read=vi.spyOn(Storage.prototype,'getItem').mockImplementation(function(key){
+      if(key.startsWith('vp:cash-payment:'))throw new Error('TEST storage unavailable');
+      return original.call(this,key);
+    });
+    try{
+      const view=render(<TourCashierWorkbench/>);
+      await screen.findByText(/Không đọc được journal khoản thu/);
+      fireEvent.click(await screen.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+      expect(screen.getByRole('button',{name:'Ghi nhận tiền mặt'})).toBeDisabled();
+      expect(mock.rpc.mock.calls.some(([name])=>name==='resolve_cashier_cash_buyin_intent_v1')).toBe(false);
+      await act(async()=>{view.unmount();});
+    }finally{read.mockRestore();}
+  });
+
+  it('fails closed without an origin-wide Web Lock instead of pretending localStorage is atomic',async()=>{
+    prepareCash(()=>Promise.reject(new Error('must not dispatch')));
+    Object.defineProperty(navigator,'locks',{configurable:true,value:undefined});
+    render(<TourCashierWorkbench/>);
+    fireEvent.click(await screen.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+    fireEvent.click(screen.getByRole('button',{name:'Ghi nhận tiền mặt'}));
+    await screen.findByText(/chưa hỗ trợ khóa journal giữa các tab/);
+    expect(mock.rpc.mock.calls.some(([name])=>name==='resolve_cashier_cash_buyin_intent_v1')).toBe(false);
+    expect(localStorage.getItem(`vp:cash-payment:v1:${mock.auth.user.id}:${cashClub}`)).toBeNull();
+  });
+
+  it('never replaces an unknown cash-payment request key after closing and reopening its detail',async()=>{
+    const tour='e1120000-0000-4000-8000-000000000003',registration='e1120000-0000-4000-8000-000000000004';
+    mock.clubId='e1120000-0000-4000-8000-000000000002';
+    mock.tours=[{id:tour,name:'Tour A',start_time:'2026-10-16T10:00:00Z',status:'registering'}];
+    mock.openShift={id:'shift-open',opening_cash:0,opened_at:'2026-10-16T08:00:00Z'};
+    sessionStorage.setItem(`cashier-tour:${mock.clubId}`,tour);
+    const fallback=mock.rpc.getMockImplementation()!;
+    let cashReply:((args:Record<string,unknown>)=>Promise<{data:unknown;error:unknown}>)=()=>Promise.reject(new TypeError('TEST response lost after possible commit'));
+    mock.rpc.mockImplementation((name:string,args:unknown)=>{
+      if(name==='resolve_cashier_cash_buyin_intent_v1')return cashReply(args as Record<string,unknown>);
+      if(name==='cashier_tour_worklist_v1')return Promise.resolve({error:null,data:{ok:true,enabled:true,
+        counts:{counter:1,completed:0,waiting_seat:0,needs_review:0,total:1},rows:[{
+          id:registration,tournament_id:tour,status:'pending',player_name:'TEST-CASH-PLAYER',
+          reference_code:'TEST-CASH-REF',total_pay:100000,received:0,bucket:'counter',legacy_detail_missing:false,
+          receipt_code:null,table_number:null,seat_number:null,
+        }]}});
+      return fallback(name,args);
+    });
+    const view=render(<TourCashierWorkbench/>);
+    fireEvent.click(await screen.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Nhận tiền mặt (VND)'}),{target:{value:'10000'}});
+    fireEvent.click(screen.getByRole('button',{name:'Ghi nhận tiền mặt'}));
+    await screen.findByText(/Chưa xác minh được khoản thu trước/);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Đóng · khách tiếp theo'})).toBeEnabled());
+    await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Đóng · khách tiếp theo'}));});
+    expect(screen.queryByRole('button',{name:'Đóng · khách tiếp theo'})).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:/TEST-CASH-PLAYER/}));
+    fireEvent.change(screen.getByRole('textbox',{name:'Nhận tiền mặt (VND)'}),{target:{value:'10000'}});
+    fireEvent.click(screen.getByRole('button',{name:'Ghi nhận tiền mặt'}));
+    expect(screen.getByRole('button',{name:'Ghi nhận tiền mặt'})).toBeDisabled();
+    const attempts=mock.rpc.mock.calls.filter(([name])=>name==='resolve_cashier_cash_buyin_intent_v1');
+    expect(attempts).toHaveLength(1);expect(attempts[0][1].p_action).toBe('record');
+    expect(attempts[0][1].p_intent).toMatchObject({registration_id:registration,amount:10000});
+    expect(mock.rpc.mock.calls.some(([name])=>name==='cashier_record_cash_buyin_v1')).toBe(false);
+    view.unmount();render(<TourCashierWorkbench/>);
+    fireEvent.click(await screen.findByRole('button',{name:/TEST-CASH-PLAYER/}));
+    expect(screen.getByRole('button',{name:'Ghi nhận tiền mặt'})).toBeDisabled();
+    cashReply=args=>Promise.resolve({data:{ok:true,status:'unknown',intent:args.p_intent},error:null});
+    fireEvent.click(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'}));
+    await screen.findByText(/Chưa xác minh được khoản thu trước/);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'})).toBeEnabled());
+    expect(mock.rpc.mock.calls.filter(([name,args])=>name==='resolve_cashier_cash_buyin_intent_v1'&&args.p_action==='record')).toHaveLength(1);
+    cashReply=args=>Promise.resolve({data:{ok:true,status:'cancelled',intent:args.p_intent,result:{ok:false,error:'cash_intent_cancelled'}},error:null});
+    fireEvent.click(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'}));
+    await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);
+    expect(screen.queryByRole('button',{name:'Kiểm tra khoản thu trước'})).not.toBeInTheDocument();
+    const reconciliations=mock.rpc.mock.calls.filter(([name])=>name==='resolve_cashier_cash_buyin_intent_v1');
+    expect(reconciliations.map(([,args])=>args.p_action)).toEqual(['record','read','cancel']);
+    for(const [,args] of reconciliations)expect(args.p_intent).toEqual(attempts[0][1].p_intent);
   });
 
   it("excludes soft-deleted tours before restoring a stored Cashier selection", async () => {
