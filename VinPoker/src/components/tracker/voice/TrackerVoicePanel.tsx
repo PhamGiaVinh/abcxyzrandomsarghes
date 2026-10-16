@@ -1276,8 +1276,14 @@ export function TrackerVoicePanel({
   };
 
   const confirmBoardAssist = async () => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     if (
-      !hook.tournamentTableId
+      !isCurrent()
+      || !hook.tournamentTableId
       || validationState !== "validated"
       || !validatedReceipt
       || !validatedProposal?.ok
@@ -1287,19 +1293,20 @@ export function TrackerVoicePanel({
     setValidationState("committing");
     setValidationError(null);
     const boardProposal = validatedProposal as VoiceBoardProposal;
-    const canonicalRequest = await buildVoiceBoardCanonicalRequest({
-      rawTranscript: boardProposal.command.rawTranscript,
-      expectedStateVersion: validatedReceipt.state_version,
-      expectedWorkflowState: boardProposal.expectedWorkflowState,
-      expectedStreet: boardProposal.expectedStreet,
-      payload: {
-        street: boardProposal.expectedStreet,
-        newCards: boardProposal.command.newCards,
-        cumulativeCards: boardProposal.cumulativeCards,
-        expectedExistingBoardCount: boardProposal.expectedExistingBoardCount,
-      },
-    });
     const commit = (async () => {
+      const canonicalRequest = await buildVoiceBoardCanonicalRequest({
+        rawTranscript: boardProposal.command.rawTranscript,
+        expectedStateVersion: validatedReceipt.state_version,
+        expectedWorkflowState: boardProposal.expectedWorkflowState,
+        expectedStreet: boardProposal.expectedStreet,
+        payload: {
+          street: boardProposal.expectedStreet,
+          newCards: boardProposal.command.newCards,
+          cumulativeCards: boardProposal.cumulativeCards,
+          expectedExistingBoardCount: boardProposal.expectedExistingBoardCount,
+        },
+      });
+      if (!isCurrent()) return false;
       const receipt = await commitBoardOverride({
         tournamentId: hook.tournamentId,
         tournamentTableId: hook.tournamentTableId!,
@@ -1309,10 +1316,12 @@ export function TrackerVoicePanel({
         traceId: validatedReceipt.trace_id,
         canonicalRequest,
       });
+      if (!isCurrent()) return false;
       if (!hook.applyVoiceBoardReceipt(receipt)) {
         throw new Error("Receipt Board không khớp hand đang mở. Hãy tải lại bàn.");
       }
       const readBack = await refreshRuntime();
+      if (!isCurrent()) return false;
       if (!readBack || readBack.active_hand?.hand_id !== hook.handId
         || (!runtimeOverride && readBack.active_hand.state_version !== receipt.state_version_after)) {
         throw new Error("Board đã gửi nhưng không đọc lại được trạng thái server. Hãy tải lại trước khi tiếp tục.");
@@ -1321,18 +1330,20 @@ export function TrackerVoicePanel({
     })();
     assistCommitRef.current = commit;
     try {
-      await commit;
+      const committed = await commit;
+      if (!isCurrent() || !committed) return;
       setProposal(null);
       setValidatedProposal(null);
       setValidatedReceipt(null);
       setValidationState("committed");
     } catch (error) {
+      if (!isCurrent()) return;
       // Preserve the immutable event/idempotency key. A retry uses the same
       // key, and the transactional RPC returns its receipt instead of writing twice.
       setValidationState("validated");
       setValidationError(error instanceof Error ? error.message : "Không thể xác nhận Board Voice.");
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === commit) assistCommitRef.current = null;
     }
   };
 

@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Board UI async scope and single-flight RED→fix
+
+Baseline6d00337fa clean/previousPROGRESS. Actual extracted confirmBoardAssist callback RED18PASS3FAIL reproduced two mutations during async canonical hashing, old receipt applying to replacement hand, and old hashing continuing into mutation after scope changed. Moved hashing inside single-flight promise; bind Board callback to render scope + validation/connection generations before send/apply/readback/state writes. Finally clears only its own promise; old rejection cannot revive proposal/error after disconnect/scope replacement. No cancellation of already committed server effect, no automatic mutationretry.
+
+Final lifecycle24/24PASS incl positive same-scope commit, stale hash/receipt/failure/readback, newer guard preservation and hashing failure retryable state. Scoped panelESLint0 before indentation-only cleanup; diffcheck PASS. Source-executing callback seams, NOT full React/browser/Auth/provider/375/typebuild. Full React import still limited by missing @google/genai (no install); native SQL/API source unchanged, no redundant rerun. UI skills read; CLI unavailable retained noinstall, no redesign. No production/push/CI/DB/Edge/frontend/flags changes; AutoOFF/DaybreakOFF/localhold/masterACTIVE. Next apply equivalent proven scope-fence analysis to private-hole/finish paths (not yet fixed/qualified).
+
 ## Board commit client receipt binding RED→fix→actual SQL compatibility
 
 Baselinece7032be8 clean/previousPROGRESS. Actual client commitTrackerVoiceBoard previously accepted truthyok+any cards array. Source-executing transport test RED19PASS13FAIL reproduced wrong root/key/trace/proof/street/cards/prefix/missingreceipt/invalidduplicate acceptance. Added strict ok, exact root/key, receiptID/trace, boolean duplicate, nonduplicate trace binding, before proof matching canonical request, valid distinct afterhash, exact street/cards/prefix/count/canonical card tokens/unique cards. Duplicate retains originaltrace (SQL contract), NOT wrongroot/key/proof. No server authority/write/retry changes.
