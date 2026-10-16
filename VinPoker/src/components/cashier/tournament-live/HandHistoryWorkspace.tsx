@@ -19,6 +19,7 @@ import {
   handPlayersHasSnapshotForClient,
 } from "@/lib/tracker-poker/handPlayerNamesClient";
 import { createHandHistoryLoadGuard } from "./handHistoryLoadGuard";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   runClientResettle,
   buildServerSettlementEdit,
@@ -619,7 +620,7 @@ export function HandHistoryWorkspace({
       // equal the live chip counts (conservation) for players it doesn't move. All three
       // reads are PAGED with unique total orders — a silently-truncated chain would corrupt
       // the replay + the all-in-cap divergence guard and let conserved-but-wrong chips slip.
-      const handsRes = await pageAll<any>((from, to) =>
+      const handsRes = await observeTrackerContextRead(pageAll<any>((from, to) =>
         supabase
           .from("tournament_hands")
           .select("id, hand_number, table_id, button_seat, created_at")
@@ -630,7 +631,7 @@ export function HandHistoryWorkspace({
           .order("created_at", { ascending: true })
           .order("id", { ascending: true })
           .range(from, to),
-      );
+      ));
       if (!isCurrentPreview()) return;
       if (handsRes.error) {
         toast.error("Không tải được chuỗi ván để tính lại: " + (handsRes.error.message ?? ""));
@@ -642,7 +643,7 @@ export function HandHistoryWorkspace({
         toast.error("Không tìm thấy ván nào để tính lại.");
         return;
       }
-      const [pRes, aRes] = await Promise.all([
+      const [pRes, aRes] = await observeTrackerContextRead(Promise.all([
         pageAll<any>((from, to) =>
           supabase
             .from("hand_players")
@@ -662,7 +663,7 @@ export function HandHistoryWorkspace({
             .order("action_order", { ascending: true })
             .range(from, to),
         ),
-      ]);
+      ]));
       if (!isCurrentPreview()) return;
       if (pRes.error || aRes.error) {
         toast.error("Không tải được chi tiết ván để tính lại: " + ((pRes.error || aRes.error)?.message ?? ""));
@@ -734,7 +735,7 @@ export function HandHistoryWorkspace({
         toast.error("Chưa có action, Board hoặc bài để máy chủ xem trước.");
         return;
       }
-      const { data: previewData, error: previewError } = await supabase.functions.invoke("tournament-live-resettle-commit", {
+      const { data: previewData, error: previewError } = await observeTrackerContextRead(supabase.functions.invoke("tournament-live-resettle-commit", {
         body: {
           mode: "preview",
           tournament_id: tournamentId,
@@ -744,7 +745,7 @@ export function HandHistoryWorkspace({
           edit: serverEdit,
           expected_target_ending_stacks: expectedEndingStacks,
         },
-      });
+      }));
       if (!isCurrentPreview()) return;
       const preview = record(previewData);
       if (previewError || preview?.ok !== true || preview.status !== "preview"
@@ -776,6 +777,11 @@ export function HandHistoryWorkspace({
         },
         idempotencyKey: crypto.randomUUID(),
       });
+    } catch (error) {
+      if (!isCurrentPreview()) return;
+      toast.error(error instanceof Error && error.message === "tracker_context_read_timeout"
+        ? "Hết thời gian xem trước. Chưa gửi thay đổi; hãy thử lại khi kết nối ổn định."
+        : "Không thể xem trước. Chưa gửi thay đổi: " + (error instanceof Error ? error.message : "Lỗi kết nối"));
     } finally {
       if (isCurrentPreview()) setResettleBusy(false);
     }

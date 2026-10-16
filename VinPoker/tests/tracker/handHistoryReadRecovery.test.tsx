@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 
 const backend = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), functions: { invoke: vi.fn() } }));
 const editor = vi.hoisted(() => ({ enabled: false }));
+const notices = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }));
+vi.mock("sonner", () => ({ toast: notices }));
 const auth = vi.hoisted(() => ({ user: null as { id: string } | null }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => auth }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => backend }));
@@ -16,8 +18,8 @@ vi.mock("@/lib/tracker-poker/handPlayerNamesClient", () => ({
 // This seam supplies a draft; the actual parent orchestration/preview is rendered.
 // Real editor/cardpicker and SQL are covered by the separate native journey.
 vi.mock("@/components/cashier/tournament-live/HandEditPanel", () => ({
-  HandEditPanel: ({ onResettle, onCancel }: { onResettle: (...args: unknown[]) => unknown; onCancel: () => void }) => editor.enabled
-    ? <><button onClick={() => { void onResettle({}, { community_cards: ["2c", "3d", "4h"] }, "TEST correction", [], []); }}>Preview draft TEST</button>
+  HandEditPanel: ({ onResettle, onCancel, saving }: { onResettle: (...args: unknown[]) => unknown; onCancel: () => void; saving: boolean }) => editor.enabled
+    ? <><button disabled={saving} onClick={() => { void onResettle({}, { community_cards: ["2c", "3d", "4h"] }, "TEST correction", [], []); }}>Preview draft TEST</button>
       <button onClick={onCancel}>Cancel draft TEST</button></> : null,
 }));
 vi.mock("@/components/cashier/tournament-live/FloorHandActionReview", () => ({ FloorHandActionReview: () => null }));
@@ -82,6 +84,30 @@ it.each(["hand", "cancel", "refresh"])("does not restore a canceled preview in t
   expect(await screen.findByText("Xem trước — tính lại chip")).toBeInTheDocument();
   expect(backend.functions.invoke.mock.calls[1][1].body.hand_id).toBe(change === "hand" ? "hand-b" : "hand-a");
   expect(backend.functions.invoke.mock.calls.every(([, args]) => args.body.mode === "preview")).toBe(true);
+});
+
+it.each(["server", "chain", "detail"])("releases a hung %s preview read with a timeout and ignores its late response", async (phase) => {
+  auth.user = { id: "81100000-0000-4000-8000-000000000001" };editor.enabled = true;
+  backend.from.mockImplementation((table: string) => query(async () => ok(table === "tournament_hands" ? [hand("hand-a", 1)]
+    : table === "hand_players" ? [{ id: "hp-a", hand_id: "hand-a", player_id: "player", entry_number: 1, seat_number: 1, starting_stack: 100, ending_stack: 100 }] : [])));
+  const latePreview = deferred<unknown>();backend.functions.invoke.mockReturnValue(latePreview.promise);
+  render(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-a" /></MemoryRouter>);
+  fireEvent.click(await screen.findByText("#1"));
+  fireEvent.click(screen.getByRole("button", { name: "Xem bản nháp sửa hand" }));
+  if (phase === "chain") backend.from.mockImplementation(() => query(() => latePreview.promise));
+  if (phase === "detail") backend.from.mockImplementation((table: string) => query(() => table === "hand_players" ? latePreview.promise
+    : Promise.resolve(ok(table === "tournament_hands" ? [hand("hand-a", 1)] : []))));
+  vi.useFakeTimers();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Preview draft TEST" })); });
+  expect(backend.functions.invoke).toHaveBeenCalledTimes(phase === "server" ? 1 : 0);
+  expect(screen.getByRole("button", { name: "Preview draft TEST" })).toBeDisabled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect(notices.error).toHaveBeenCalledWith("Hết thời gian xem trước. Chưa gửi thay đổi; hãy thử lại khi kết nối ổn định.");
+  expect(screen.getByRole("button", { name: "Preview draft TEST" })).toBeEnabled();
+  await act(async () => { latePreview.resolve({ data: { ok: true, status: "preview", draft_status: "READY_TO_APPLY", source_revision: 9,
+    source_chain_hash: "a".repeat(64), outcome_hash: "b".repeat(64), request_hash: "c".repeat(64) }, error: null }); });
+  expect(screen.queryByText("Xem trước — tính lại chip")).not.toBeInTheDocument();
+  expect(backend.functions.invoke).toHaveBeenCalledTimes(phase === "server" ? 1 : 0);
 });
 
 it.each(["actor-b", null])("invalidates hand/table reads on the same client and tournament after account becomes %s", async (nextActor) => {

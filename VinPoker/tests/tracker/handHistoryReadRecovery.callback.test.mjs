@@ -63,6 +63,7 @@ function previewHarness() {
     pageAll: async () => ({ data: [], error: null }),
     runClientResettle: () => ({ result: { ok: true }, entryByPlayer: new Map(), entryByHandPlayer: new Map() }),
     buildServerSettlementEdit: () => ({ community_cards: ['2c','3d','4h'] }),
+    observeTrackerContextRead: response => Promise.resolve(response),
   };
   let page = 0;
   dependencies.pageAll = async () => ({ data: page++ === 0 ? [target] : page === 2 ? [{ hand_id: target.id, player_id: 'player', starting_stack: 100, ending_stack: 100 }] : [], error: null });

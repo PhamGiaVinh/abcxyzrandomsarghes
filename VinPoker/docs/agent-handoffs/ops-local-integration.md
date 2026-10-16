@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Correction preview hung read RED→bounded local observation
+
+Baseline38cd9d582 clean/previousPROGRESS. e3bdf2 actual rendered parent RED: never-settling server preview keeps editor busy indefinitely with no error. Reuse existing observeTrackerContextRead (10s) around whole paged chain read, detail Promise.all and Edge preview read; catch read errors with explicit no-mutation message, release current busy only, no retry or automatic commit. Deadline is per phase (up to three sequential phases), not a claimed 10s whole workflow; underlying SDK request is not aborted, late result cannot continue settled observation.
+
+e44002 33parent/nochip+17source-callback PASS after fix; c618f9 final25parent cases PASS expands fake-timer fault independently to chain/detail/server, each unlocks editor after10s, displays explicit timeout, ignores released late response, no additional invoke/commit. Test supplies modeled draft/math/SDK; actual parent and shared timeout execute. Extraction harness injects resolved observation only for existing scope tests, not timeout proof. No heavy build/type/browser375/hosted proof. No PG/handle/push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; provider/TV/fulltour/performance/release and full parent SQL integration remain incomplete.
+
 ## Rendered parent correction preview cancellation wiring PASS
 
 Baseline0d25e5683 clean/previousPROGRESS. Expanded existing HandHistoryWorkspace render suite with controlled draft editor seam and modeled read/client-calculation/Edge preview. Actual parent handlers and actual ResettlePreview render execute. Start preview→wait server response→select another hand, cancel editor, or click actual Làm mới→reopen editor→release old response: no stale preview appears. Fresh preview then succeeds, Edge body targets current selected hand; every invocation remains preview, never commit. This verifies actual event→generation invalidation wiring beyond prior callback extraction.
