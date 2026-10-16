@@ -34,6 +34,7 @@ on:
       - 'VinPoker/tests/trackerSettlement/paidCorrectionRecovery*'
       - 'VinPoker/tests/trackerSettlement/paidTvPublish*'
       - 'VinPoker/tests/trackerVoice/runtimeApiPayload.test.mjs'
+      - 'VinPoker/tests/chipOps/paidColorUpCommit.native.mjs'
       - 'VinPoker/src/lib/trackerVoice/api.ts'
       - 'VinPoker/tests/trackerSettlement/tvReleaseGate.bootstrap.mjs'
       - 'VinPoker/tests/trackerSettlement/tvStorage.bootstrap.mjs'
@@ -1076,6 +1077,7 @@ jobs:
           node tests/trackerSettlement/tvStorage.bootstrap.mjs
           VINPOKER_NATIVE_TV_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidTvPublish.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
+          VINPOKER_NATIVE_CHIP_COMMIT=1 node tests/chipOps/paidColorUpCommit.native.mjs
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap
