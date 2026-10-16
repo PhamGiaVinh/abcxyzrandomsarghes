@@ -953,6 +953,7 @@ jobs:
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --legacy
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --negative
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --anchor-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker

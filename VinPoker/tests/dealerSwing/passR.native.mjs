@@ -151,7 +151,7 @@ else{
   console.log(JSON.stringify({passR_actual_result:{fault,recovered,repeated,lockedProofStable:true}}));
   console.log('ACTUAL_PASSR_NATIVE_MODULE_FAULT_PASS '+fault);
  }else{
- assert.deepEqual(result.errors,[]);assert.equal(result.candidateStatus,undefined);assert.ok(result.planned>=fixture.rows.length);assert.equal(result.locked,fixture.shortage?0:fixture.rows.length);assert.equal(result.shortageTables,fixture.shortage?fixture.rows.length:0);assert.equal(networkCalls,0);
+ assert.deepEqual(result.errors,[]);assert.equal(result.candidateStatus,undefined);assert.ok(result.planned>=fixture.rows.length);assert.equal(result.locked,fixture.shortage||fixture.adopt?0:fixture.rows.length);assert.equal(result.adopted,fixture.adopt?fixture.rows.length:0);assert.equal(result.shortageTables,fixture.shortage?fixture.rows.length:0);assert.equal(networkCalls,0);
  assert.equal(await sql(`SELECT count(DISTINCT table_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status IN ('predicted','announced');`),String(fixture.rows.length));
  if(fixture.shortage){
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='predicted' AND is_shortage AND in_attendance_id IS NULL;`),String(fixture.rows.length));
@@ -161,6 +161,12 @@ else{
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id JOIN public.table_sessions ts ON ts.id=a.table_session_id JOIN public.dealer_attendance dat ON dat.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.slot_index=0 AND s.status='announced' AND s.table_id=a.table_id AND a.club_id=s.club_id AND a.released_at IS NULL AND a.pre_assigned_attendance_id=s.in_attendance_id AND ts.game_table_id=a.table_id AND ts.club_id=a.club_id AND ts.closed_at IS NULL AND dat.current_state='pre_assigned' AND dat.pre_assigned_table_id=a.table_id;`),String(fixture.rows.length));
   assert.equal(await sql(`SELECT count(DISTINCT in_attendance_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(fixture.rows.length));
  }
- console.log('ACTUAL_PASSR_NATIVE_MODULE_PASS '+fixture.rows.length+(fixture.shortage?' shortage':''));
+ if(fixture.adopt){
+  const adoptionProof=()=>sql(`SELECT jsonb_agg(jsonb_build_object('id',id,'assignment',assignment_id,'incoming',in_attendance_id,'relief',planned_relief_at,'version',version) ORDER BY table_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`);
+  const adopted=await adoptionProof(),repeat=await planner.passRRotationPlanner(admin,{...context,cycleExcludedIds:new Set()});
+  assert.deepEqual(repeat.errors,[]);assert.equal(repeat.adopted,0);assert.equal(repeat.locked,0);assert.equal(await adoptionProof(),adopted);assert.equal(networkCalls,0);
+  console.log(JSON.stringify({passR_actual_result:{phase:'post-adoption-repeat',repeat,adoptionProofStable:true}}));
+ }
+ console.log('ACTUAL_PASSR_NATIVE_MODULE_PASS '+fixture.rows.length+(fixture.shortage?' shortage':fixture.adopt?' adoption':''));
  }
 }
