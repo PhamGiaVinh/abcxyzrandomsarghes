@@ -26,7 +26,23 @@ for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.o
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
 const binary=prefix.length?'wsl':'psql',flags=['-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
 const sql=q=>execFileSync(binary,[...prefix,...flags],{input:q,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
-const {fixture,hand}=createPaidCompletedHandFixture(sql,{verified});
+const parentHand=process.env.VINPOKER_HISTORY_PARENT_HAND;
+let fixture,hand;
+if(parentHand){
+ assert.equal(process.env.VINPOKER_NATIVE_CORRECTION_UI,'1','owned_parent_ui_gate_required');assert.ok(isUuid(parentHand));
+ assert.equal(verified,true);assert.ok(!lostCommitResponse&&!expiredLease&&!correctionDuringCommit&&!correctionEdge&&!process.argv.includes('--identity-revision'));
+ assert.equal(sql('SELECT current_database();'),database);
+ assert.equal(sql("SELECT host(inet_server_addr())||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000;"),'127.0.0.1|55441|17');
+ const dir=sql('SHOW data_directory');assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');
+ assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net');"),'f');
+ const raw=sql(`SELECT jsonb_build_object('tour',h.tournament_id,'actor',o.actor_user_id,'club',t.club_id) FROM public.tournament_hands h
+  JOIN public.tournaments t ON t.id=h.tournament_id JOIN public.tournament_settlement_outcomes o ON o.hand_id=h.id AND o.source_revision=h.source_revision
+  WHERE h.id='${parentHand}' AND h.status='completed' AND NOT h.is_voided AND o.status='verified' AND o.verification_scope='chain'
+   AND o.correction_reason='TEST parent correction recovery';`);
+ assert.ok(raw,'owned_parent_correction_required');const row=JSON.parse(raw);
+ assert.ok(row&&isUuid(row.tour)&&isUuid(row.actor)&&isUuid(row.club));fixture=row;hand=parentHand;
+ assert.equal(sql(`SELECT count(*) FROM public.tracker_historical_display_queue q JOIN public.tournament_hands h ON h.id=q.hand_id AND h.source_revision=q.source_revision WHERE h.id='${hand}' AND q.status='pending';`),'1');
+}else({fixture,hand}=createPaidCompletedHandFixture(sql,{verified}));
 const business=()=>sql(`SELECT jsonb_build_object('hand',(SELECT to_jsonb(h) FROM public.tournament_hands h WHERE id='${hand}'),
  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${fixture.tour}'),
  'money',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}'));`);
@@ -135,8 +151,8 @@ assert.deepEqual(result,{ok:!lostCommitResponse,claimed:1,completed:verified&&!l
 assert.deepEqual(calls.map(c=>c.name),['claim_tracker_historical_display_jobs_scoped_v1','get_tracker_historical_display_snapshot',verified?'commit_tracker_historical_display_outcome_v2':'finish_tracker_historical_display_job',...(lostCommitResponse?['finish_tracker_historical_display_job']:[])]);
 if(!verified)assert.equal(calls.at(-1).args.p_error_code,'historical_empty_or_invalid_pot');
 assert.equal(sql(`SELECT status FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' AND source_revision=(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}');`),verified?'completed':'needs_attention');
-assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`),verified?'1':'0');
-if(verified){const outcome=JSON.parse(sql(`SELECT public_outcome FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`));
+assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
+if(verified){const outcome=JSON.parse(sql(`SELECT public_outcome FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`));
  const winner=sql(`SELECT hp.player_id FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id WHERE h.id='${hand}' AND hp.seat_number=h.tracker_bb_position;`);
  assert.deepEqual(outcome.players.map(p=>p.netDelta).sort((a,b)=>a-b),[-100,100]);
  assert.equal(outcome.pots[0].allocations[0].winnerId,winner);assert.equal(outcome.pots[0].allocations[0].amount,200);
@@ -244,6 +260,7 @@ for(const [credential,body,status,expectedCode] of [
 const retry=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
 assert.equal(retry.status,200);assert.deepEqual(await retry.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
 assert.equal(calls.at(-1).name,'claim_tracker_historical_display_jobs_scoped_v1');assert.deepEqual(errors,[]);assert.equal(business(),before);
-assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`),verified?'1':'0');
+assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
+if(parentHand)console.log('ACTUAL_PARENT_CORRECTION_SAME_HAND_CURRENT_REVISION_WORKER_PUBLIC_PASS');
 console.log(lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
 }

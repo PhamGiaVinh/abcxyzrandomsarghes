@@ -176,6 +176,23 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    await waitFor(()=>expect(readCorrectionIntent(localStorage,intent!)).toBeNull(),{timeout:10_000});
    expect(commits).toBe(1);expect(fingerprint()).toBe(after);expect(money()).toBe(beforeMoney);expect(errors).toEqual([]);
    expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${intent!.idempotency_key}';`)).toBe('1');
+   const correctedRevision=sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`);
+   for(const [deniedEnv,reason] of [[{VINPOKER_NATIVE_CORRECTION_UI:'0',VINPOKER_HISTORY_PARENT_HAND:hand},'owned_parent_ui_gate_required'],
+    [{VINPOKER_NATIVE_CORRECTION_UI:'1',VINPOKER_HISTORY_PARENT_HAND:crypto.randomUUID()},'owned_parent_correction_required']] as const){
+    let rejection:{stderr?:unknown}|undefined;
+    try{execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],
+     {cwd:process.cwd(),encoding:'utf8',timeout:10_000,maxBuffer:1_000_000,stdio:['pipe','pipe','pipe'],env:{...process.env,...deniedEnv}});}
+    catch(error){rejection=error as {stderr?:unknown};}
+    expect(rejection).toBeDefined();expect(String(rejection?.stderr)).toContain(reason);
+    expect(fingerprint()).toBe(after);
+   }
+   const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],
+    {cwd:process.cwd(),encoding:'utf8',timeout:30_000,maxBuffer:1_000_000,env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand}});
+   expect(worker).toContain('ACTUAL_PARENT_CORRECTION_SAME_HAND_CURRENT_REVISION_WORKER_PUBLIC_PASS');
+   expect(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`)).toBe(correctedRevision);expect(money()).toBe(beforeMoney);
+   const published=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
+   expect(published.items[0].handId).toBe(hand);expect(published.items[0].result.status).toBe('verified');
+   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified' AND source_revision=${correctedRevision};`)).toBe('1');
   }});
  });
 });
