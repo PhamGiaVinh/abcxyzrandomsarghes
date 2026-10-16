@@ -38,6 +38,7 @@ on:
       - 'VinPoker/tests/trackerPoker/correctionNoChipChange*'
       - 'VinPoker/src/components/cashier/tournament-live/useCorrectionCommitRecovery*'
       - 'VinPoker/src/components/cashier/tournament-live/HandHistoryWorkspace.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/HandEditPanel.tsx'
       - 'VinPoker/supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql'
       - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
@@ -1059,6 +1060,7 @@ jobs:
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap --history-correction-locks --expect-history-lock-fixed
           node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts tests/trackerPoker/correctionNoChipChange.render.test.tsx src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/tracker/handEditPanel.validation.render.test.tsx tests/tracker/handEditValidation.test.ts tests/tracker/handEditDiff.test.ts --maxWorkers=1 --minWorkers=1
           VINPOKER_NATIVE_CORRECTION_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidCorrectionRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs

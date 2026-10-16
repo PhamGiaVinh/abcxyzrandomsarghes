@@ -2,7 +2,7 @@
 // testable; the parent (HandHistoryPanel) runs the edit_completed_hand RPC on save.
 // v1 action scope: edit type/amount + delete a row. NO add-row, NO reorder — a deleted
 // row's action_order gap is kept (never renumbered).
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId } from "react";
 import { TrackerInputCardProvider } from "@/components/tracker/TrackerCardStyle";
 import { CardSlotPicker, type Card } from "@/components/shared/CardSlotPicker";
 import {
@@ -65,6 +65,7 @@ export function HandEditPanel(props: HandEditPanelProps) {
 }
 
 function HandEditPanelContent({ board, potSize = null, players, actions, initialActionOrder, buttonSeat, saving, writesEnabled = false, onCancel, onSave, resettleEnabled, onResettle, onEditChange }: HandEditPanelProps) {
+  const reasonId = useId();
   const [boardSlots, setBoardSlots] = useState<(Card | null)[]>(toSlots(board, 5));
   const [holes, setHoles] = useState<Record<string, (Card | null)[]>>(() => {
     const m: Record<string, (Card | null)[]> = {};
@@ -183,7 +184,9 @@ function HandEditPanelContent({ board, potSize = null, players, actions, initial
     <div className="space-y-3">
       {!writesEnabled && (
         <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-100">
-          Bản nháp để đối chiếu. Chức năng ghi sửa hand đang tạm khóa; hãy liên hệ Floor trước khi tiếp tục.
+          {resettleEnabled
+            ? "Đường lưu hiển thị riêng đang tắt. Bạn có thể sửa bản nháp và xem trước; chỉ lưu sau khi máy chủ xác nhận đường sửa nguyên tử."
+            : "Bản nháp để đối chiếu. Chức năng ghi sửa hand đang tạm khóa; hãy liên hệ Floor trước khi tiếp tục."}
         </div>
       )}
       <div>
@@ -354,8 +357,9 @@ function HandEditPanelContent({ board, potSize = null, players, actions, initial
       )}
 
       <div>
-        <div className="text-[11px] font-semibold text-muted-foreground mb-1">Lý do sửa — bắt buộc</div>
+        <label htmlFor={reasonId} className="mb-1 block text-[11px] font-semibold text-muted-foreground">Lý do sửa — bắt buộc</label>
         <textarea
+          id={reasonId}
           className="w-full min-h-[48px] rounded border border-border bg-background p-2 text-base sm:text-sm"
           placeholder="Ví dụ: nhập nhầm lá K♦ — thực tế là K♣"
           value={reason}

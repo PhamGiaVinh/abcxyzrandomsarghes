@@ -39,7 +39,9 @@ describe("HandEditPanel action amounts", () => {
   it("labels a missing recorded pot without showing a verified zero", () => {
     render(<HandEditPanel {...props} potSize={null} />);
     expect(screen.getByText("Chưa có dữ liệu")).toBeInTheDocument();
-    expect(screen.getByText(/Bản nháp để đối chiếu/)).toBeInTheDocument();
+    expect(screen.getByText(/Đường lưu hiển thị riêng đang tắt/)).toBeInTheDocument();
+    expect(screen.getByText(/chỉ lưu sau khi máy chủ xác nhận đường sửa nguyên tử/)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Lý do sửa — bắt buộc" })).toBeInTheDocument();
   });
 
   it("offers the canonical next BB action when an edited SB call leaves the draft incomplete", () => {

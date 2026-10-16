@@ -8,7 +8,8 @@ import { createPaidCompletedHandFixture } from "../cashier/paidJourney.fixture.m
 import { runPaidCorrectionEdge } from "./paidCorrectionEdge.native.mjs";
 import { useCorrectionCommitRecovery } from "@/components/cashier/tournament-live/useCorrectionCommitRecovery";
 import { ResettlePreview } from "@/components/cashier/tournament-live/HandHistoryWorkspace";
-import { buildEditedTarget, runClientResettle } from "@/components/cashier/tournament-live/resettleApply";
+import { HandEditPanel, type HandEditPanelProps } from "@/components/cashier/tournament-live/HandEditPanel";
+import { buildServerSettlementEdit, runClientResettle } from "@/components/cashier/tournament-live/resettleApply";
 import { readCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 const h=vi.hoisted(()=>({actor:"",invoke:vi.fn()}));
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:h.actor}})}));
@@ -40,12 +41,30 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
   const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
   sql(`INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled) VALUES('${fixture.club}','${fixture.tour}','${logical}','${fixture.actor}','correct_completed_hand',true);`);
   await runPaidCorrectionEdge({sql,service,fixture,hand,scenario:async({invoke,body,setMaskReceipt,errors})=>{
+   const snapshot=JSON.parse(sql(service+`SELECT public.get_tracker_historical_display_snapshot('${hand}',NULL);`));
+   const editorPlayers=snapshot.players.map(p=>({...p,display_name:'TEST seat '+p.seat_number}));
+   let submitted:Parameters<NonNullable<HandEditPanelProps['onResettle']>>|undefined;
+   const legacySave=vi.fn();
+   const editor=render(<HandEditPanel board={snapshot.hand.community_cards} potSize={snapshot.hand.pot_size} players={editorPlayers}
+    actions={snapshot.actions} buttonSeat={snapshot.hand.button_seat} writesEnabled={false} resettleEnabled onCancel={()=>{}} onSave={legacySave}
+    onResettle={(...args)=>{submitted=args;}}/>);
+   for(const [rank,suit] of [['2','♣'],['3','♦'],['4','♥']]){
+    await act(async()=>{fireEvent.click(screen.getAllByRole('button',{name:'Chọn lá bài'})[0]);});
+    await act(async()=>{fireEvent.click(await screen.findByRole('button',{name:'Chọn hạng '+rank}));});
+    await act(async()=>{fireEvent.click(await screen.findByRole('button',{name:'Chọn '+rank+suit}));});
+    await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+   }
+   expect(screen.queryByText(/Chức năng ghi sửa hand đang tạm khóa/)).not.toBeInTheDocument();
+   fireEvent.change(screen.getByRole('textbox',{name:'Lý do sửa — bắt buộc'}),{target:{value:body.correction_reason}});
+   expect(screen.getByRole('button',{name:'Xem trước tính chip'})).toBeEnabled();
+   fireEvent.click(screen.getByRole('button',{name:'Xem trước tính chip'}));expect(submitted).toBeDefined();expect(legacySave).not.toHaveBeenCalled();
+   const [editedTarget,patch,reason,,expectedStacks]=submitted!;
+   body={...body,edit:buildServerSettlementEdit(patch),correction_reason:reason,expected_target_ending_stacks:expectedStacks};
+   expect(body.edit.communityCards).toEqual(['2c','3d','4h']);editor.unmount();
    const previewResponse=await invoke(body),preview=await previewResponse.json();expect(previewResponse.status).toBe(200);
    const intent:CorrectionCommitIntent={expected_actor_id:fixture.actor,tournament_id:fixture.tour,hand_id:hand,idempotency_key:crypto.randomUUID(),
     expected_source_revision:preview.source_revision,expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash,expected_request_hash:preview.request_hash};
-   const snapshot=JSON.parse(sql(service+`SELECT public.get_tracker_historical_display_snapshot('${hand}',NULL);`));
    const target={...snapshot.hand,players:snapshot.players,actions:snapshot.actions};
-   const editedTarget=buildEditedTarget({board:body.edit.communityCards,holeCardsByPlayer:Object.fromEntries(snapshot.players.map(p=>[p.player_id,p.hole_cards])),actions:snapshot.actions});
    const client=runClientResettle({target,later:[],editedTarget});expect(client.result.ok).toBe(true);
    const view={result:client.result,targetHandId:hand,expectedEndingStacks:body.expected_target_ending_stacks,
     serverPreview:{sourceRevision:preview.source_revision,sourceChainHash:preview.source_chain_hash,outcomeHash:preview.outcome_hash,requestHash:preview.request_hash,actorId:fixture.actor}};
