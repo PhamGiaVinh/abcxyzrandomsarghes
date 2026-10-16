@@ -2049,3 +2049,52 @@ starting-stack/bust-order/rank evidence, not silently choose/change tie policy.
 No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; localhold/DaybreakOFF/Auto policy,
 masterACTIVE unchanged; no live commands. Remaining original hosted40/provider/
 Storage/performance/fullchecks/criticalreview/livecatalog/recovery/release gaps.
+# 2026-10-16 — Member history read/tenant proof; simultaneous ranking concern
+
+G2/G6/G8 IN_PROGRESS, baseline8174102ad. New gated `paidMemberHistory.native.mjs`
+is called after the same closed/history-enabled8paid journey and also provides
+an explicit read-only resume entrypoint. Exact loopbackPG17/datadir/no-net,
+owned test names/completed/historyON/AutoOFF and8canonical paid member bindings
+are checked before reading. Owner and each linked player read exact participation,
+rank/buy-in/paid amount; missing official prize staysNULL, not fabricated0.
+Each player denied another member; current owner denied owned foreign-club member;
+anon EXECUTE revoked. Getters run BEGIN READ ONLY (writes would fail), and entries/
+cash/hands/proofs/report/chip-ledger fingerprint unchanged. Synthetic Auth/profile
+transport remains modeled, not hosted login/Data API/browser evidence.
+
+Foreign negative fixture is REQUIRED, never skipped. Caller creates a separate
+owned paid1/history-enabled fixture through existing canonical fixture/RPCs;
+no direct member/entry/payment/rank inserts. Its two open native sessions are
+retained for audit, AutoOFF/no real contacts/no outbound transport; not main tour.
+Initial resumed probe3b12ab reached24positive/negative reads then lacked a foreign
+fixture. First full retry3a6a5a correctly hit global unique-display-name guard.
+Fixed TEST metadata names to Paid TEST +fullUUID (not weakened uniqueness/no old
+profile overwrite). Failed fixtures/audit retained; no operational data reset.
+
+Finalb5f81e/2657→c2790e terminal0/PGstopped. Same full journey+member reader PASS:
+clubf0d47a93-a965-472c-b0b7-78a5fa65fde2,
+tour6989f521-5cbc-4504-8ee9-6cdec506f226,
+foldhandce49ee21-8c3f-4a94-9c0e-f25fd6707c21,
+terminalhand8e5f1001-df97-4aaf-a4ac-4c6efacecd7f. Syntax/diff/YAML6ae31cPASS.
+CI path prepared only, no dispatch. No product SQL/Edge/UI changes.
+
+IMPORTANT BUSINESS/RELEASE HOLD for simultaneous elimination, NOT acceptance:
+Actual persisted finalhand shows seat5starting19900→place4 while seat1starting20000
+→place8; seven eliminations are ordered by update/bust_seq/seat iteration, not a
+confirmed house rule. Full observation logged under
+NATIVE_SIMULTANEOUS_ELIMINATION_OBSERVATION_NOT_POLICY_ACCEPTANCE, sums160000.
+Targeted VBacker search found no explicit same-hand rule. This invalidates any
+interpretation of unique1–8 mechanical ranks as business/payout correctness.
+Do NOT release123/history finalization for this case or rewrite existing places
+until owner chooses policy. No new ranking/payout/rounding rule implemented.
+Owner async question sent: stack-priority + equal-stack tie/prize split, OR keep
+payout policy and require manual review/block automatic close for such groups.
+For comparison only, [PokerStars official rules](https://www.pokerstars.com/help/articles/rules-table-master/)
+describe starting-stack priority, equal-stack tie and combined-prize split; this
+is NOT automatically VinPoker policy. No official claim that TDA is identical.
+
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; localhold/DaybreakOFF/masterACTIVE,
+no live commands. Next get house decision for this subproblem; continue safe
+independent original gaps (same-tour deferred move/re-entry, realrotations/hosted40,
+375/provider/Storage/performance/fullchecks/criticalreview/livecatalog/recovery/
+release) without silently changing money/result policy or marking goal complete.

@@ -4,6 +4,9 @@ This is an execution handoff, NOT acceptance of the site. Baseline source
 `f58124289`, plus the history-enabled eight-player and legacy-finalizer overlap extension. Latest fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
+Release caution: same-hand elimination ranks currently follow update order;
+observed19900stack→place4 vs20000→place8. Unique1–8 is NOT policy correctness.
+123/history-finalization release for this case needs owner decision; async asked.
 Owner's local-only/resource hold remains: no push/CI dispatch/production apply,
 Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typecheck.
 
@@ -15,10 +18,17 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G3 | Earlier actual main source/PG ramps2/10/40, shortage/overlap/fault/response-loss; check-in/manual Swing/Voice coupling | Hosted dispatcher/Edge/cron receipts; three real rest15 rotations; tournament canary and desktop/375 evidence. Existing 40-local proof is NOT a new missing test to rerun blindly. |
 | G4 | Atomic create/config88/91, clock89, receipts/true CAS and lifecycle overlaps | Exact deployed revision and real two-table creation/config journey in browser. |
 | G5 | Same8paid tour mode/hand/correction/bust-restore/chip-undo/break/reopen/close; restore history fix122; separate re-entry/concurrency/couplingON/OFF proofs | Same-tour deferred active-hand break, re-entry variants, real browser375, hosted contracts and current legacy-data disposition. |
-| G6 | Actual fold/showdown Finish→workers→anonymous current proofs; official close123/readiness/immutable ranks; two-actor close+legacy-finalizer both barrier orders; TV event isolation/Storage metadata; Voice/client generation/recovery121 | Actual mic/provider/HTTP/Auth/CORS, real Storage bytes/retention, hosted schedules, anonymous browser multi-flight/reconnect, mid-statement lock interleavings/tie policy and required full checks. |
+| G6 | Actual fold/showdown Finish→workers→anonymous current proofs; official close123/readiness/immutable ranks; two-actor close+legacy-finalizer both barrier orders; Owner/self/member/tenant history SQL reads; TV event isolation/Storage metadata; Voice/client generation/recovery121 | Same-hand ranking policy is OPEN/release hold; actual mic/provider/HTTP/Auth/CORS, Storage bytes/retention, hosted schedules, anonymous browser multi-flight/reconnect, mid-statement locks and full checks. |
 | G7 | Earlier source triage records GTO retirement, queue meanings and schedule provenance disclosure | Verify F1–F9 on served revision; financial/security claims need live proof, performance belongsG9. Do not rewrite retired GTO or invent schedule approval. |
 | G8 | Same durable2table/8paid/4dealer native journey through closed tour, both workers/public history/anonTV; historyON8member links and complete unique1–8 ranks | Hosted desktop+375 same-tour receipts; setup-first UI order (native metadata setup follows registration), Auto assignment/three real rotations, deferred break/re-entry variants and simultaneous-elimination policy. Mechanical local success cannot close master goal. |
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
+
+Latestc2790e terminal0/PGstopped: same closed tour6989f521-5cbc-4504-8ee9-6cdec506f226
+member histories match exact paid entries/ranks/NULL prizes; Owner/self allowed,
+other-member/cross-club denied, anon ACL closed. READ ONLY transactions and full
+business fingerprint guard; Auth/HTTP modeled. Foreign fixture required, canonical
+paid1fixture retained; unique TEST names now UUID-scoped. No product/live change.
+Simultaneous ranking observation above is a concern, not a passed business rule.
 
 ## New shared roster checkpoint (actual durable local commit)
 

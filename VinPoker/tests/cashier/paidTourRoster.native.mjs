@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {createPaidJourneyFixture} from './paidJourney.fixture.mjs';
 import {runPaidTourInitialAssignments} from '../dealerSwing/paidTourInitialAssign.native.mjs';
 import {runPaidTourHand,runPaidTourShowdown} from '../trackerVoice/paidTourHand.native.mjs';
+import {verifyPaidMemberHistory} from './paidMemberHistory.native.mjs';
 assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
 for(const [k,v] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:'vinpoker_ops_cash115_qualified_c'}))assert.equal(process.env[k],v);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
@@ -16,7 +17,7 @@ sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.cl
 DO $$ DECLARE player uuid;reg uuid;dealer uuid;shift uuid:=gen_random_uuid();key uuid;r jsonb;first_receipt jsonb;BEGIN
  FOR n IN 2..8 LOOP
   player:=gen_random_uuid();INSERT INTO auth.users(id) VALUES(player);
-  ${historyEnabled?`INSERT INTO public.profiles(user_id,display_name) VALUES(player,'Paid history TEST player '||n) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name;`:''}
+  ${historyEnabled?`INSERT INTO public.profiles(user_id,display_name) VALUES(player,'Paid TEST '||replace(player::text,'-','')) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name;`:''}
   PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
   r:=public.cashier_create_app_registration_v1('${f.tour}',player);reg:=(r->>'registration_id')::uuid;
   IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_tour_registration: %',r;END IF;
@@ -217,5 +218,10 @@ const tvClosed=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon
 assert.equal(tvClosed.status,'paired');assert.equal(tvClosed.tournament.id,f.tour);assert.equal(tvClosed.tournament.status,'completed');
 assert.equal(tvClosed.participation_counts.remaining,1);assert.equal(tvClosed.participation_counts.live_entry_stack,160000);
 console.log('NATIVE_PAID_TOUR_POST_CLOSE_ANONYMOUS_TV_COUNTS_PASS');
+if(historyEnabled){
+ // Separate owned paid/member fixture supplies an actual cross-club negative.
+ createPaidJourneyFixture(sql,{playerHistoryEnabled:true});
+ verifyPaidMemberHistory(sql,f.tour);
+}
 console.log('NATIVE_PAID_TOUR_INTEGRATED_LIFECYCLE_CURRENT_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

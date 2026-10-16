@@ -40,7 +40,7 @@ RETURNS bigint LANGUAGE sql AS 'INSERT INTO net.cash_ui_http_sink(url,body,heade
  const setup=` DECLARE physical uuid; paid jsonb; BEGIN
  PERFORM set_config('role','none',true);
  ${playerHistoryEnabled?`INSERT INTO public.club_settings(club_id,player_history_enabled,auto_swing_enabled) VALUES(club,true,false);
- INSERT INTO public.profiles(user_id,display_name) VALUES(player_id,'Paid history TEST player 1') ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name;`:''}
+ INSERT INTO public.profiles(user_id,display_name) VALUES(player_id,'Paid TEST '||replace(player_id::text,'-','')) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name;`:''}
  INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
  SELECT gen_random_uuid(),club,'Paid journey TEST '||n,n,'tournament','inactive','available' FROM generate_series(1,2) n;
  IF (SELECT count(*) FROM public.game_tables WHERE club_id=club AND table_name LIKE 'Paid journey TEST %')<>2 THEN
