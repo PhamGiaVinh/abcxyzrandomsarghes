@@ -26,7 +26,7 @@ else{
  const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${fixture.role};`;
  const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
- const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','complete_rotation_slot']);
+ const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','worker_execute_rotation_slot_v1','complete_rotation_slot']);
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
@@ -119,8 +119,8 @@ else{
    while(Date.now()<relief+1500)await new Promise(resolve=>setTimeout(resolve,Math.min(30000,relief+1500-Date.now())));
    let completed=initialExecuted,batches=0;
    if(fixture.completionFault){
-    // Real SQL failure within the actual completion RPC, after the actual
-    // executor commits. Scope the trigger to this owned synthetic club only.
+    // Real SQL failure within completion. Before110 the executor committed
+    // separately; the fixed atomic boundary must roll back the swap too.
     const suffix=fixture.club.replaceAll('-',''),name='native_completion_'+suffix;
     await sql(`CREATE FUNCTION floor_private.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.club_id='${fixture.club}'::uuid AND NEW.status='executed' THEN RAISE EXCEPTION 'NATIVE_COMPLETION_WRITE_FAULT';END IF;RETURN NEW;END $$;CREATE TRIGGER ${name} BEFORE UPDATE ON public.dealer_rotation_schedule FOR EACH ROW EXECUTE FUNCTION floor_private.${name}();`);
     let response,body;
@@ -130,10 +130,12 @@ else{
     const actualSwaps=Number(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND attendance_id IN (${originals.map(r=>quote(r.incoming)).join(',')}) AND released_at IS NULL AND status='assigned';`));
     const actualCompleted=await executedCount();
     console.log(JSON.stringify({passR_actual_result:{phase:'main-completion-returned-failure',club:fixture.club,status:response.status,body,actualSwaps,actualCompleted,completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot'),adapterGaps,bridgeErrors,networkCalls}}));
-    assert.equal(actualSwaps,tableCount,'actual dealer changes have committed');assert.equal(actualCompleted,0,'injected completion writes rolled back');assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
-    assert.equal(body.status,'partial','committed swap with failed bookkeeping must not report completed');
-    console.log('ACTUAL_MAIN_COMPLETION_FAILURE_DEGRADED_PASS');
-    return;
+    assert.equal(actualSwaps,0,'completion failure must roll back dealer swaps too');assert.equal(actualCompleted,0,'injected completion writes rolled back');assert.deepEqual(adapterGaps,[]);assert.equal(networkCalls,0);
+    assert.equal(bridgeErrors.length,tableCount);assert.ok(bridgeErrors.every(e=>e.scope==='rpc:worker_execute_rotation_slot_v1'&&e.error.includes('ROTATION_EXECUTION_COMPLETION_FAILED')));
+    bridgeErrors.length=0; // Only these explicitly injected failures were expected.
+    assert.equal(body.status,'partial','failed atomic execution must not report completed');
+    assert.equal(body.metrics[fixture.club].failed,tableCount);assert.equal(body.metrics[fixture.club].success,0);
+    console.log('ACTUAL_MAIN_COMPLETION_FAILURE_ATOMIC_ROLLBACK_PASS');
    }
    while(completed<tableCount){
     assert.ok(++batches<=tableCount,'bounded drain must progress, never loop indefinitely');
@@ -143,12 +145,30 @@ else{
     assert.equal(response.status,200);assert.equal(body.status,'completed');assert.equal(body.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
     assert.ok(next>completed,'scheduled backlog stalled; preserve fixture for diagnosis');completed=next;
    }
-   const executions=rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing');assert.equal(executions.length,expectedNew);assert.ok(executions.every(r=>r.data.status==='success'));
-   const completions=rpcResponses.filter(r=>r.name==='complete_rotation_slot');assert.equal(completions.length,expectedNew);assert.ok(completions.every(r=>r.data.outcome==='executed'));
+   const executions=rpcResponses.filter(r=>r.name==='worker_execute_rotation_slot_v1');assert.equal(executions.length,expectedNew);assert.ok(executions.every(r=>r.data.status==='success'&&r.data.rotation_completion==='executed'));
+   assert.equal(rpcResponses.filter(r=>r.name==='complete_rotation_slot').length,0,'no split bookkeeping RPC');
    for(const old of originals){
     assert.equal(await sql(`SELECT status='executed' AND (reason->>'new_assignment_id') IS NOT NULL FROM public.dealer_rotation_schedule WHERE id='${old.schedule}';`),'t');
     assert.equal(await sql(`SELECT released_at>=${quote(old.relief)}::timestamptz AND swing_processed_at IS NOT NULL FROM public.dealer_assignments WHERE id='${old.assignment}';`),'t');
     assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${old.table}' AND table_session_id='${old.session}' AND attendance_id='${old.incoming}' AND status='assigned' AND released_at IS NULL;`),'1');
+   }
+   if(expectedNew>0||fixture.resumeOriginals){
+    const first=originals.find(r=>executions.some(e=>e.data.rotation_schedule_id===r.schedule))??originals[0];assert.ok(first);
+    const durable=JSON.parse(await sql(`SELECT reason->'execution_receipt_v1' FROM public.dealer_rotation_schedule WHERE id='${first.schedule}';`));assert.ok(durable?.payload&&durable?.result);
+    const p=durable.payload,args={p_schedule_id:p.schedule_id,p_expected_schedule_version:p.schedule_version,p_table_session_id:p.session_id,p_old_assignment_id:p.assignment_id,p_expected_assignment_version:p.assignment_version,p_next_attendance_id:p.incoming,p_swing_due_at:p.swing_due_at,p_duration_minutes:p.duration,p_send_to_break:p.send_to_break,p_break_duration_minutes:p.break_duration};
+    const call=values=>`SELECT public.worker_execute_rotation_slot_v1(${Object.entries(values).map(([k,v])=>ident(k)+'=>'+quote(v)).join(',')});`;
+    const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'))::text);`);
+    const before=await fingerprint();
+    for(const role of ['anon','authenticated']){
+     let denied=false;try{await sql(`SET request.jwt.claim.role='${role}';SET request.jwt.claims='{"role":"${role}","sub":"${fixture.owner}"}';SET ROLE ${role};`+call(args));}catch(e){assert.match(String(e.stderr??e),/permission denied for function worker_execute_rotation_slot_v1/);denied=true;}assert.ok(denied,'browser roles cannot invoke execution or its receipt path');
+    }
+    assert.deepEqual(JSON.parse(await sql(service+call(args))),durable.result,'same intent returns original durable result');
+    assert.deepEqual(JSON.parse(await sql("SET TIME ZONE 'UTC';"+service+call(args))),durable.result,'same timestamp and intent must replay across connection time zones');
+    const off=await sql(`BEGIN;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${fixture.club}';${service}${call(args)}ROLLBACK;`);assert.deepEqual(JSON.parse(off),durable.result,'receipt recovery remains read-only while AutoOFF');
+    let conflict=false;try{await sql(service+call({...args,p_duration_minutes:p.duration+1}));}catch(e){assert.match(String(e.stderr??e),/ROTATION_EXECUTION_IDEMPOTENCY_CONFLICT/);conflict=true;}assert.ok(conflict);
+    let timeConflict=false;try{await sql(service+call({...args,p_swing_due_at:new Date(Date.parse(p.swing_due_at)+1000).toISOString()}));}catch(e){assert.match(String(e.stderr??e),/ROTATION_EXECUTION_IDEMPOTENCY_CONFLICT/);timeConflict=true;}assert.ok(timeConflict);
+    assert.equal(await fingerprint(),before,'replay and conflict cannot create a second swap or mutate audit');
+    console.log('ACTUAL_PASSR_MAIN_ATOMIC_EXECUTION_RECEIPT_REPLAY_TZ_OFF_CONFLICT_PASS');
    }
    assert.equal(await sql(`SELECT count(*)||'|'||count(DISTINCT attendance_id)||'|'||count(DISTINCT table_session_id) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND status='assigned' AND released_at IS NULL;`),`${tableCount}|${tableCount}|${tableCount}`);
    assert.equal(await sql(`SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}' AND a.current_state='in_transition';`),'0');

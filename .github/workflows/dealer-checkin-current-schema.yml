@@ -125,6 +125,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -937,7 +938,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
           PGDATABASE=vinpoker_ops_initial102_ui VINPOKER_NATIVE_INITIAL_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/initialAssignmentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
-      - name: Ready worker103, replan104-107 and completion108 isolated authority/capacity
+      - name: Ready worker103 and rotation104-110 isolated authority/capacity
         working-directory: VinPoker
         env:
           PGDATABASE: vinpoker_ops_ready_capacity_ci
@@ -952,6 +953,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --rotation-auth-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale
@@ -960,6 +962,7 @@ jobs:
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --negative
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --anchor-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --main-execute --main-completion-fault --planner-size=2
           node tests/dealerSwing/readyWorkerCapacity.native.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker

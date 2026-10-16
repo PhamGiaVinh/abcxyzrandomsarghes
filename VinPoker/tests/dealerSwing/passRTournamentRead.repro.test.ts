@@ -6,6 +6,31 @@ import {expect,it,vi} from 'vitest';
 
 const source=readFileSync(resolve(process.cwd(),'supabase/functions/process-swing/passes/passR-rotation-planner.ts'),'utf8');
 const workerSource=readFileSync(resolve(process.cwd(),'supabase/functions/process-swing/index.ts'),'utf8');
+it('actual scheduled executor refuses missing or ambiguous schedule reads and preserves legacy routing',async()=>{
+ const first=workerSource.indexOf('            let executionSlot:'),last=workerSource.indexOf('            if (rpcErr)',first);
+ if(first<0||last<=first)throw Error('Atomic scheduled execution seam missing');
+ const seam=ts.transpileModule(workerSource.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const run=new Function('admin','scheduleDriven',`return (async()=>{
+ const assignment={id:'assignment',table_id:'table',table_session_id:'session',version:7,__lockedVersion:9,pre_assigned_attendance_id:'incoming'};
+ const cid='club',pass3SwingDueAt='2026-10-16T10:00:00Z',swingDurResult={durationMinutes:45},breakDecision={shouldBreak:false},validatedBreakDuration=15;
+ const failures=[],metrics={failed:0};let clubHadPass3Error=false;
+ const recordDispatchSafetyOutcome=(club,failure)=>failures.push({club,failure});
+ const assessCoreQueryFailure=(stage,error)=>({stage,error});const assessSwingExecutionFailure=code=>({code});
+ for(let i=0;i<1;i++){${seam};return {rpcResult,rpcErr,executionSlot,metrics,failures,clubHadPass3Error};}
+ return {skipped:true,metrics,failures,clubHadPass3Error};})();`);
+ const valid={id:'slot',version:3,in_attendance_id:'incoming',table_id:'table',club_id:'club'};
+ for(const response of [{data:null,error:{code:'PGRST002'}},{data:null,error:null},{data:[],error:null},{data:[valid,valid],error:null},{data:[{...valid,table_id:'foreign'}],error:null},{data:[{...valid,in_attendance_id:'other'}],error:null},{data:[valid],error:null}]){
+  const q={select:vi.fn(),eq:vi.fn(),in:vi.fn().mockResolvedValue(response)};q.select.mockReturnValue(q);q.eq.mockReturnValue(q);
+  const rpc=vi.fn().mockResolvedValue({data:{status:'success'},error:null}),admin={from:vi.fn().mockReturnValue(q),rpc};
+  const result=await run(admin,true);
+  if(response.data?.length===1&&response.data[0]===valid){
+   expect(rpc).toHaveBeenCalledOnce();expect(rpc.mock.calls[0][0]).toBe('worker_execute_rotation_slot_v1');
+   expect(rpc.mock.calls[0][1]).toMatchObject({p_schedule_id:'slot',p_expected_schedule_version:3,p_old_assignment_id:'assignment',p_expected_assignment_version:9,p_table_session_id:'session',p_next_attendance_id:'incoming'});
+  }else{expect(rpc).not.toHaveBeenCalled();expect(result).toMatchObject({skipped:true,metrics:{failed:1},clubHadPass3Error:true});expect(result.failures).toHaveLength(1);}
+ }
+ const legacy={from:vi.fn(),rpc:vi.fn().mockResolvedValue({data:{status:'success'},error:null})};await run(legacy,false);
+ expect(legacy.from).not.toHaveBeenCalled();expect(legacy.rpc.mock.calls[0][0]).toBe('worker_execute_pre_assigned_swing');
+});
 it.each(['completed','partial','locked','dependency_unavailable','business_failed'])('actual worker terminal response preserves %s with and without dispatch ledger context',async(state)=>{
  const marker=workerSource.indexOf('run_id: dispatchContext?.runId ?? null');
  const first=workerSource.lastIndexOf('    return new Response(',marker),last=workerSource.indexOf('\n  } catch',marker);
