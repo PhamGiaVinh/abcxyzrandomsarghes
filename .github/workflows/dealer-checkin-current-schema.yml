@@ -126,6 +126,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -954,6 +955,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatcher-due
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatch-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --rotation-auth-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --lock-authority
