@@ -103,7 +103,11 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
 if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.includes(flag))){
  const failures=[];
  for(const action of ['complete','cancel','lock'].filter(action=>process.argv.includes(action==='complete'?'--completion-auth':`--${action}-auth`))){
- const c=seed(1),t=c.rows[0],outsider=randomUUID();sql(`INSERT INTO auth.users(id) VALUES('${outsider}');`);
+ const c=seed(1),t=c.rows[0],outsider=randomUUID(),floor=randomUUID(),dealerControl=randomUUID(),foreignFloor=randomUUID(),foreignClub=randomUUID(),foreignOwner=randomUUID();
+ sql(`INSERT INTO auth.users(id) VALUES('${outsider}'),('${floor}'),('${dealerControl}'),('${foreignFloor}'),('${foreignOwner}');
+ INSERT INTO public.clubs(id,owner_id,name,region) VALUES('${foreignClub}','${foreignOwner}','Rotation actor foreign TEST','TEST');
+ INSERT INTO public.club_floors(club_id,user_id) VALUES('${c.club}','${floor}'),('${foreignClub}','${foreignFloor}');
+ INSERT INTO public.club_dealer_controls(club_id,user_id) VALUES('${c.club}','${dealerControl}');`);
  const id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
  let scheduleId;
  if(action==='lock'){
@@ -118,7 +122,7 @@ if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.i
  const scheduleVersion=sql(`SELECT version FROM public.dealer_rotation_schedule WHERE id='${scheduleId}';`);
  const call=action==='complete'?`public.complete_rotation_slot('${scheduleId}',NULL)`:action==='cancel'?`public.cancel_rotation_slot('${scheduleId}','reconcile_lock_lost')`:`public.lock_rotation_slot('${scheduleId}',${scheduleVersion})`;
  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}'),'schedule',(SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${scheduleId}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
- for(const actor of [{role:'anon',uid:null},{role:'authenticated',uid:outsider},{role:'authenticated',uid:c.owner},{role:'authenticated',uid:outsider,jwtRole:'service_role'}]){
+ for(const actor of [{role:'anon',uid:null,label:'anonymous'},{role:'authenticated',uid:outsider,label:'outsider'},{role:'authenticated',uid:c.owner,label:'owner'},{role:'authenticated',uid:floor,label:'floor'},{role:'authenticated',uid:dealerControl,label:'dealer-control'},{role:'authenticated',uid:foreignFloor,label:'foreign-floor'},{role:'authenticated',uid:outsider,jwtRole:'service_role',label:'contradictory-role-outsider'}]){
   const before=fingerprint();let denied=false,receipt=null,insideStatus=null;
   try{
    const claims=JSON.stringify({role:actor.jwtRole??actor.role,...(actor.uid?{sub:actor.uid}:{})});
@@ -127,10 +131,10 @@ if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.i
    receipt=JSON.parse(output[0]);insideStatus=output[1];denied=receipt.sqlstate==='42501'||action==='lock'&&receipt.outcome==='error'&&receipt.detail==='DEALER_MANUAL_ACQUISITION_FORBIDDEN'&&insideStatus==='predicted';
   }catch(e){const error=String(e.stderr??e);if(/ERROR:\s+42501:/.test(error)&&!/permission denied for schema auth/.test(error))denied=true;else throw e;}
   assert.equal(fingerprint(),before,'actor probe is fully rolled back');
-  console.log(JSON.stringify({rotation_auth:{action,role:actor.role,claimedRole:actor.jwtRole??actor.role,actor:actor.uid===c.owner?'owner':actor.uid?'outsider':'anonymous',denied,receipt,insideStatus,rolledBack:true}}));
-  const manualOwner=actor.uid===c.owner&&action!=='complete';
-  if(manualOwner){assert.equal(denied,false);assert.equal(receipt?.outcome,action==='cancel'?'cancelled':'locked');}
-  else if(!denied)failures.push({action,role:actor.role,actor:actor.uid===c.owner?'owner':'outsider',receipt});
+  console.log(JSON.stringify({rotation_auth:{action,role:actor.role,claimedRole:actor.jwtRole??actor.role,actor:actor.label,denied,receipt,insideStatus,rolledBack:true}}));
+  const allowed=action!=='complete'&&(actor.uid===c.owner||actor.uid===dealerControl||action==='cancel'&&actor.uid===floor);
+  if(allowed){assert.equal(denied,false);assert.equal(receipt?.outcome,action==='cancel'?'cancelled':'locked');}
+  else if(!denied)failures.push({action,role:actor.role,actor:actor.label,receipt});
  }
  const before=fingerprint();
  const positive=sql(`BEGIN;${service}SELECT ${call};${action==='lock'?'':`SELECT ${call};`}ROLLBACK;`).split(/\r?\n/).map(line=>JSON.parse(line));assert.equal(positive[0].outcome,{complete:'executed',cancel:'cancelled',lock:'locked'}[action]);if(action!=='lock')assert.equal(positive[1].outcome,'noop');assert.equal(fingerprint(),before);
@@ -139,6 +143,10 @@ if(['--completion-auth','--cancel-auth','--lock-auth'].some(flag=>process.argv.i
   const off=sql(`BEGIN;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';SET LOCAL request.jwt.claim.role='authenticated';SET LOCAL request.jwt.claim.sub='${c.owner}';SET LOCAL request.jwt.claims='${claims}';SET LOCAL ROLE authenticated;SELECT ${call};RESET ROLE;SELECT status FROM public.dealer_rotation_schedule WHERE id='${scheduleId}';ROLLBACK;`).split(/\r?\n/);
   assert.equal(JSON.parse(off[0]).outcome,'cancelled');assert.equal(off[1],'cancelled');assert.equal(fingerprint(),before);
   console.log('ROTATION_OWNER_CANCEL_AUTO_OFF_PASS');
+ }else if(action==='lock'){
+  const off=JSON.parse(sql(`BEGIN;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';${service}SELECT ${call};ROLLBACK;`));
+  assert.equal(off.outcome,'error');assert.match(off.detail,/AUTO_SWING_OFF/);assert.equal(fingerprint(),before);
+  console.log('ROTATION_AUTOMATIC_LOCK_AUTO_OFF_DENIED_PASS');
  }
  }
  assert.deepEqual(failures,[],'unscoped browser actors must not mutate rotations; complete is worker-only');
@@ -430,7 +438,7 @@ if(process.argv.includes('--negative')){
  }
  console.log('READY_NATIVE_CANCEL_CONTRACT_AND_INNER_FAULT_ATOMICITY_PASS');
 }
-if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')){
+if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')||process.argv.includes('--rotation-auth-overlap')){
  function tx(name,query,hold=false){
   const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];
   const child=process.platform==='win32'?spawn('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags]):spawn('psql',flags);
@@ -441,7 +449,45 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
   if(!hold)end('COMMIT');return {result,end};
  }
  async function barrier(name,condition){for(let i=0;i<60;i++){if(sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${name}' AND ${condition})`)==='t')return;await new Promise(r=>setTimeout(r,25));}assert.fail('missing actual overlap '+name);}
- if(process.argv.includes('--anchor-overlap')){
+ if(process.argv.includes('--rotation-auth-overlap')){
+ for(const order of ['revoke-first','cancel-first-revoke','close-first','cancel-first-close','duplicate']){
+  const c=seed(1),t=c.rows[0],floor=randomUUID();
+  sql(`INSERT INTO auth.users(id) VALUES('${floor}');INSERT INTO public.club_floors(club_id,user_id) VALUES('${c.club}','${floor}');`);
+  const id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
+  sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${t.nextAttendance}';UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${t.nextAttendance}',pre_assigned_at=now() WHERE id='${id}';`);
+  const version=sql(`SELECT version FROM public.dealer_assignments WHERE id='${id}';`);
+  const adopted=JSON.parse(sql(service+`SELECT public.worker_adopt_legacy_preassignment_v1('${c.club}','${t.table}','${t.session}','${id}',${version},'${t.nextAttendance}','${randomUUID()}');`));assert.equal(adopted.outcome,'adopted');
+  const revision=sql(`SELECT revision FROM public.table_sessions WHERE id='${t.session}';`);
+  const actor=uid=>`RESET ROLE;SET LOCAL request.jwt.claim.role='authenticated';SET LOCAL request.jwt.claim.sub='${uid}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${uid}"}';SET LOCAL ROLE authenticated;`;
+  const cancel=actor(floor)+`SELECT public.cancel_rotation_slot('${adopted.schedule_id}','reconcile_lock_lost');`;
+  const close=actor(c.owner)+`SELECT public.operator_close_club_table_v2('${t.session}',${revision},'${randomUUID()}');`;
+  const revoke=`RESET ROLE;DELETE FROM public.club_floors WHERE club_id='${c.club}' AND user_id='${floor}';`;
+  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${id}'),'schedule',(SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${adopted.schedule_id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
+  const before=fingerprint();let holder,waiter;
+  const lastJson=out=>JSON.parse(out.trim().split(/\r?\n/).at(-1));
+  try{
+   holder=tx('rotation109_holder',order==='revoke-first'?`SELECT id FROM public.dealer_rotation_schedule WHERE id='${adopted.schedule_id}' FOR UPDATE;`:order==='close-first'?close:cancel,true);
+   await barrier('rotation109_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('rotation109_waiter',order==='cancel-first-close'?close:order==='cancel-first-revoke'?revoke:cancel);
+   // A membership DELETE need not wait on cancellation's schedule lock.
+   if(order!=='cancel-first-revoke')await barrier('rotation109_waiter',"wait_event_type='Lock'");
+   assert.equal(fingerprint(),before,'uncommitted cancellation/close remains invisible');
+   holder.end(order==='revoke-first'?revoke+'COMMIT':'COMMIT');
+   const h=await holder.result,w=await waiter.result;assert.equal(h.code,0,h.error);assert.equal(w.code,0,w.error);
+   if(order==='revoke-first'){
+    assert.equal(lastJson(w.out).sqlstate,'42501');assert.equal(lastJson(w.out).detail,'ROTATION_SCHEDULE_ACTOR_FORBIDDEN');assert.equal(fingerprint(),before,'revoked waiter cannot clear assignment or attendance');
+   }else if(order==='duplicate'||order==='close-first')assert.equal(lastJson(w.out).outcome,'noop');
+   else if(order==='cancel-first-close')assert.equal(lastJson(w.out).ok,true,w.out);
+   if(order.includes('close')){
+    assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${t.session}';`),'t');
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`),'0');
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${c.club}' AND status IN ('predicted','announced','executing');`),'0');
+   }else if(order!=='revoke-first')assert.equal(sql(`SELECT status FROM public.dealer_rotation_schedule WHERE id='${adopted.schedule_id}';`),'cancelled');
+   console.log(JSON.stringify({rotation109_overlap:order,passed:true}));
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('ROTATION109_REVOKE_CANCEL_CLOSE_DUPLICATE_OVERLAP_PASS');
+ }else if(process.argv.includes('--anchor-overlap')){
  for(const order of ['duplicate','cancel-first','persist-first-cancel','close-first','persist-first-close','version-first']){
   const c=seed(1),t=c.rows[0],id=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
   sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${t.table}',pre_assigned_at=now() WHERE id='${t.nextAttendance}';
@@ -659,7 +705,7 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
  }
 }
-const sizes=['--negative','--overlap','--anchor-overlap','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');

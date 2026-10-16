@@ -953,6 +953,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --rotation-auth-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --adoption
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --legacy
