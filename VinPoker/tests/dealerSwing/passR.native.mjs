@@ -42,7 +42,7 @@ else{
   try{const params=Object.entries(args).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v))).join(',');
    const query=name==='end_breaks_on_demand'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
    const data=JSON.parse(await sql(service+query));
-   if(name==='upsert_rotation_plan')persistReceipts.push({rows:args.p_rows.map(r=>({table_id:r.table_id,slot_index:r.slot_index,assignment_id:r.assignment_id})),response:data});
+   if(name==='upsert_rotation_plan')persistReceipts.push({rows:structuredClone(args.p_rows),response:data});
    return {data,error:null};
   }catch(e){return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}
  },from(table){
@@ -106,9 +106,48 @@ else{
   const lockedProof=()=>sql(`SELECT jsonb_agg(jsonb_build_object('id',id,'table_id',table_id,'incoming',in_attendance_id,'relief',planned_relief_at) ORDER BY table_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`);
   const committed=await lockedProof();
   const repeated=await planner.passRRotationPlanner(admin,{...context,cycleExcludedIds:new Set()});
-  console.log(JSON.stringify({passR_actual_result:{phase:'repeat-recovery-diagnostic',fault,recovered,repeated,lastPersist:persistReceipts.at(-1),liveSessions:Number(await sql(`SELECT count(*) FROM public.table_sessions WHERE club_id='${fixture.club}' AND closed_at IS NULL;`)),announced:Number(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`))}}));
+  console.log(JSON.stringify({passR_actual_result:{phase:'repeat-recovery-diagnostic',fault,recovered,repeated,persistResponse:persistReceipts.at(-1)?.response,liveSessions:Number(await sql(`SELECT count(*) FROM public.table_sessions WHERE club_id='${fixture.club}' AND closed_at IS NULL;`)),announced:Number(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`))}}));
   assert.equal(await lockedProof(),committed,'healthy subsequent tick preserves committed lock IDs and relief times');
   assert.equal(networkCalls,0);assert.deepEqual(repeated.errors,[]);assert.equal(repeated.locked,0);
+  const validRows=structuredClone(persistReceipts.at(-1).rows);
+  const target=fixture.rows[0].table;
+  assert.equal(validRows.filter(r=>r.locked_anchor===true).length,fixture.rows.length);
+  const otherAnchor=validRows.find(r=>r.table_id!==target&&r.locked_anchor===true);assert.ok(otherAnchor);
+  const allProof=()=>sql(`SELECT md5(jsonb_build_object('schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'),'assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'sessions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.table_sessions s WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'))::text);`);
+  const proof=await allProof();
+  for(const [field,wrong] of Object.entries({
+   table_session_id:fixture.rows[1].session,
+   assignment_id:otherAnchor.assignment_id,
+   out_attendance_id:otherAnchor.out_attendance_id,
+   in_attendance_id:otherAnchor.in_attendance_id,
+   locked_schedule_id:crypto.randomUUID(),
+   locked_schedule_version:999999,
+   locked_anchor:false,
+   planned_relief_at:new Date(Date.now()+86400000).toISOString(),
+  })){
+   const rows=structuredClone(validRows),anchor=rows.find(r=>r.table_id===target&&r.locked_anchor===true);assert.ok(anchor);
+   anchor[field]=wrong;
+   const invalid=await admin.rpc('upsert_rotation_plan',{p_club_id:fixture.club,p_plan_run_id:crypto.randomUUID(),p_rows:rows,p_table_ids:fixture.rows.map(r=>r.table)});
+   assert.equal(invalid.error,null);assert.equal(invalid.data.outcome,'ok');assert.deepEqual(invalid.data.rejected_table_ids,[target],field+' quarantines only stale table');
+   assert.equal(await allProof(),proof,field+' must not supersede forecast or change lock/assignment');
+  }
+  console.log('ACTUAL_PASSR_LOCKED_ANCHOR_NEGATIVE_PASS');
+  const originalAnchor=validRows.find(r=>r.table_id===target&&r.locked_anchor===true);
+  const cancelled=await admin.rpc('cancel_rotation_slot',{p_schedule_id:originalAnchor.locked_schedule_id,p_reason:'reconcile_lock_lost'});
+  assert.equal(cancelled.error,null);assert.equal(cancelled.data.outcome,'cancelled');
+  async function rejectStale(label){const before=await allProof();
+   const stale=await admin.rpc('upsert_rotation_plan',{p_club_id:fixture.club,p_plan_run_id:crypto.randomUUID(),p_rows:validRows,p_table_ids:fixture.rows.map(r=>r.table)});
+   assert.equal(stale.error,null);assert.equal(stale.data.outcome,'ok');assert.deepEqual(stale.data.rejected_table_ids,[target],label);assert.equal(await allProof(),before,label+' zero operational delta');
+  }
+  await rejectStale('cancelled exact lock cannot anchor forecasts');
+  const operator=`SET request.jwt.claim.role='authenticated';SET request.jwt.claim.sub='${fixture.owner}';SET request.jwt.claims='{"role":"authenticated","sub":"${fixture.owner}"}';SET ROLE authenticated;`;
+  const revision=Number(await sql(`SELECT revision FROM public.table_sessions WHERE id='${fixture.rows[0].session}';`));
+  const closed=JSON.parse(await sql(operator+`SELECT public.operator_close_club_table_v2('${fixture.rows[0].session}',${revision},'${crypto.randomUUID()}');`));assert.equal(closed.ok,true);
+  const opened=JSON.parse(await sql(operator+`SELECT public.operator_open_club_tables_v2(ARRAY['${target}'::uuid],'cash','${crypto.randomUUID()}');`));assert.equal(opened.ok,true);
+  const newSession=await sql(`SELECT id FROM public.table_sessions WHERE game_table_id='${target}' AND closed_at IS NULL;`);assert.notEqual(newSession,fixture.rows[0].session);
+  const assigned=JSON.parse(await sql(service+`SELECT public.worker_assign_dealer_to_session_v1('${fixture.club}','${target}','${newSession}','${originalAnchor.in_attendance_id}',now()+interval '45 minutes','anchor107_${crypto.randomUUID()}');`));assert.equal(assigned.outcome,'ok');
+  await rejectStale('reopened physical table with new assignment rejects prior anchor');
+  console.log('ACTUAL_PASSR_LOCKED_ANCHOR_CANCEL_REOPEN_PASS');
   console.log(JSON.stringify({passR_actual_result:{fault,recovered,repeated,lockedProofStable:true}}));
   console.log('ACTUAL_PASSR_NATIVE_MODULE_FAULT_PASS '+fault);
  }else{

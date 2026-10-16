@@ -703,11 +703,40 @@ export async function passRRotationPlanner(
     result.planned = plan.rows.length;
     result.shortageTables = plan.rows.filter((r) => r.slotIndex === 0 && r.isShortage).length;
 
-    // Phase D — persist
+    // Phase D — persist. The solver deliberately omits sticky locked slot0.
+    // Forecast rows still need an exact assignment/session anchor for the DB
+    // fence. Refetch schedule after reconciliation (legacy adoption can create
+    // it), but never substitute a newer assignment for the solver's snapshot.
+    const persistRows = plan.rows.map(rowToJson);
+    if (assignments.some((a) => a.pre_assigned_attendance_id)) {
+      const currentLocks = await fetchLiveScheduleRows(admin, ctx.clubId);
+      for (const a of assignments) {
+        if (!a.pre_assigned_attendance_id) continue;
+        const locks = currentLocks.filter((s) => s.table_id === a.table_id && s.slot_index === 0);
+        const locked = locks[0];
+        if (locks.length !== 1 || locked.status !== "announced" || locked.assignment_id !== a.id
+          || locked.in_attendance_id !== a.pre_assigned_attendance_id
+          || locked.out_attendance_id !== a.attendance_id || !a.table_session_id
+          || Date.parse(locked.planned_relief_at) !== Date.parse(a.planned_relief_at ?? "")
+          || !Number.isInteger(locked.version)) {
+          validTableIds.delete(a.table_id);
+          result.errors.push({ scope: `table:${a.table_id}`, error: "rotation_locked_anchor_unverified" });
+          continue;
+        }
+        persistRows.push({
+          table_id: a.table_id, table_session_id: a.table_session_id,
+          assignment_id: a.id, slot_index: 0,
+          out_attendance_id: a.attendance_id, in_attendance_id: a.pre_assigned_attendance_id,
+          planned_relief_at: locked.planned_relief_at, announce_at: locked.announce_at,
+          locked_anchor: true, locked_schedule_id: locked.id, locked_schedule_version: locked.version,
+          is_shortage: false, is_emergency: false, solver_version: SOLVER_VERSION,
+        });
+      }
+    }
     const { data: upsertResult, error: upsertErr } = await admin.rpc("upsert_rotation_plan", {
       p_club_id: ctx.clubId,
       p_plan_run_id: planRunId,
-      p_rows: plan.rows.map(rowToJson),
+      p_rows: persistRows.filter((r) => validTableIds.has(r.table_id as string)),
       p_table_ids: [...validTableIds],
     });
     if (upsertErr || (upsertResult as any)?.outcome !== "ok") {
@@ -732,7 +761,7 @@ export async function passRRotationPlanner(
     }
     // Phase E — announce only tables admitted by the commit-time session fence.
     const announce = await announceDueSlots(
-      admin, ctx, assignments.filter((a) => !commitRejectedTables.has(a.table_id)), supplyByAttendance, tournamentInfo,
+      admin, ctx, assignments.filter((a) => validTableIds.has(a.table_id) && !commitRejectedTables.has(a.table_id)), supplyByAttendance, tournamentInfo,
     );
     result.locked = announce.locked;
     result.errors.push(...announce.errors);
