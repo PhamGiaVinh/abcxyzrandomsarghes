@@ -26,61 +26,71 @@ else{
  const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${fixture.role};`;
  const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
- const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot']);
+ const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident']);
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
    out[key]=open<0?row[key]:row[key]===null?null:Array.isArray(row[key])?row[key].map(v=>project(v,item.slice(open+1,-1))):project(row[key],item.slice(open+1,-1));
   }return out;}
- const reads=[],rpcCalls=[],persistReceipts=[],adapterGaps=[];
- const admin={async rpc(name,args){if(!rpcNames.has(name))adapterGaps.push('rpc:'+name);assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
+ const reads=[],rpcCalls=[],rpcResponses=[],persistReceipts=[],adapterGaps=[],bridgeErrors=[];
+ const admin={rpc(name,args){const task=(async()=>{if(!rpcNames.has(name))adapterGaps.push('rpc:'+name);assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
   if(fixture.fault==='persist'&&name==='upsert_rotation_plan')return {data:null,error:{code:'PGRST002',message:'synthetic persist transport failure'}};
   if(fixture.fault==='lock'&&name==='lock_rotation_slot'){
    const target=await sql(service+`SELECT table_id FROM public.dealer_rotation_schedule WHERE id=${quote(args.p_schedule_id)} AND club_id='${fixture.club}';`);
    if(target===fixture.rows[0].table)return {data:null,error:{code:'PGRST002',message:'synthetic one-table lock transport failure'}};
   }
-  try{const params=Object.entries(args??{}).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v))).join(',');
-   const query=['end_breaks_on_demand','get_dealer_operational_tables_v1'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
+  try{const params=Object.entries(args??{}).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'||v!==null&&typeof v==='object'&&!Array.isArray(v)?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v)+(k==='p_severity'?'::smallint':''))).join(',');
+   const query=['end_breaks_on_demand','get_dealer_operational_tables_v1','detect_stuck_breaks','end_expired_breaks','get_escalation_config'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
    const data=JSON.parse(await sql(service+query));
+   rpcResponses.push({name,data});
    if(name==='upsert_rotation_plan')persistReceipts.push({rows:structuredClone(args.p_rows),response:data});
    return {data,error:null};
-  }catch(e){return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}
+  }catch(e){bridgeErrors.push({scope:'rpc:'+name,error:String(e.stderr??e).slice(0,300)});return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}
+ })();task.single=async()=>{const r=await task;if(r.error)return r;if(!Array.isArray(r.data)||r.data.length!==1)return {data:null,error:{message:'single RPC row expected'}};return {...r,data:r.data[0]};};return task;
  },from(table){
-  const allowedTables=['dealer_assignments','dealer_attendance','dealers','dealer_shift_metrics','dealer_breaks','dealer_meal_breaks','dealer_rotation_schedule','app_settings','dealer_table_profiles','dealer_table_pool','table_sessions','tournament_tables','diagnostic_logs','swing_config','club_settings','clubs','swing_run_metrics'];
+  const allowedTables=['dealer_assignments','dealer_attendance','dealers','dealer_shift_metrics','dealer_breaks','dealer_meal_breaks','dealer_rotation_schedule','app_settings','dealer_table_profiles','dealer_table_pool','table_sessions','tournament_tables','diagnostic_logs','swing_config','swing_configs','club_settings','clubs','swing_run_metrics','swing_metrics','game_tables','dealer_shifts','tournaments','dealer_open_operations','dealer_open_operation_targets'];
   if(!allowedTables.includes(table))adapterGaps.push('table:'+table);assert.ok(allowedTables.includes(table),'unexpected table '+table);
-  let filters=[],orders=[],limit='',patch=null,inserting=false,single=false,head=false,selection='*';
+  let filters=[],orders=[],limit='',patch=null,inserting=false,upserting=false,single=false,head=false,selection='*';
   let joins='',value='to_jsonb(b)';
   if(table==='dealer_assignments'){joins=' LEFT JOIN public.game_tables g ON g.id=b.table_id LEFT JOIN public.dealer_attendance da ON da.id=b.attendance_id LEFT JOIN public.dealers d ON d.id=da.dealer_id';value="to_jsonb(b)||jsonb_build_object('game_tables',to_jsonb(g),'dealer_attendance',to_jsonb(da)||jsonb_build_object('dealers',to_jsonb(d)))";}
   if(table==='dealer_attendance'){joins=' LEFT JOIN public.dealers d ON d.id=b.dealer_id';value="to_jsonb(b)||jsonb_build_object('dealers',to_jsonb(d))";}
   if(table==='dealer_breaks'){joins=' LEFT JOIN public.dealer_assignments da ON da.id=b.assignment_id';value="to_jsonb(b)||jsonb_build_object('dealer_assignments',to_jsonb(da))";}
   if(table==='tournament_tables'){joins=' LEFT JOIN public.tournaments t ON t.id=b.tournament_id';value="to_jsonb(b)||jsonb_build_object('tournaments',to_jsonb(t))";}
+  if(table==='tournaments'){joins=' LEFT JOIN LATERAL (SELECT jsonb_agg(to_jsonb(tt)) AS rows FROM public.tournament_tables tt WHERE tt.tournament_id=b.id) tt ON true';value="to_jsonb(b)||jsonb_build_object('tournament_tables',coalesce(tt.rows,'[]'::jsonb))";}
   const field=k=>{const parts=k.split('.');if(parts.length===1)return 'b.'+ident(k);assert.equal(parts.length,2);const alias={dealers:'d',dealer_assignments:'da',tournaments:'t',game_tables:'g'}[parts[0]];assert.ok(alias,k);return alias+'.'+ident(parts[1]);};
   const q={select(columns='*',options={}){selection=columns;head=options.head===true;return q;},eq(k,v){filters.push(field(k)+'='+quote(v));return q;},
    in(k,values){assert.ok(values.length<=1000);filters.push(values.length?field(k)+' IN ('+values.map(quote).join(',')+')':'false');return q;},
    is(k,v){assert.equal(v,null);filters.push(field(k)+' IS NULL');return q;},not(k,operator,v){assert.equal(operator,'is');assert.equal(v,null);filters.push(field(k)+' IS NOT NULL');return q;},
    gt(k,v){filters.push(field(k)+'>'+quote(v));return q;},gte(k,v){filters.push(field(k)+'>='+quote(v));return q;},lt(k,v){filters.push(field(k)+'<'+quote(v));return q;},lte(k,v){filters.push(field(k)+'<='+quote(v));return q;},
-   or(condition){assert.equal(condition,'current_state.eq.available,current_state.eq.on_break');filters.push("b.current_state IN ('available','on_break')");return q;},
+   or(condition){
+    if(condition==='current_state.eq.available,current_state.eq.on_break')filters.push("b.current_state IN ('available','on_break')");
+    else if(condition==='pre_assigned_table_id.is.null,pre_assigned_at.is.null')filters.push('(b.pre_assigned_table_id IS NULL OR b.pre_assigned_at IS NULL)');
+    else if(condition.startsWith('last_critical_alert_at.is.null,last_critical_alert_at.lt.'))filters.push('(b.last_critical_alert_at IS NULL OR b.last_critical_alert_at<'+quote(condition.slice('last_critical_alert_at.is.null,last_critical_alert_at.lt.'.length))+')');
+    else{adapterGaps.push('or:'+condition);assert.fail('unsupported OR grammar');}return q;
+   },
    order(k,options={}){orders.push(field(k)+(options.ascending===false?' DESC':' ASC'));return q;},limit(n){assert.ok(Number.isInteger(n)&&n<=2000);limit=' LIMIT '+n;return q;},
    update(v){assert.equal(table,'dealer_assignments');patch=v;return q;},insert(v){assert.ok(['diagnostic_logs','swing_run_metrics'].includes(table));patch=v;inserting=true;return q;},
+   upsert(v,options){assert.equal(table,'swing_metrics');assert.deepEqual(options,{onConflict:'club_id,date',ignoreDuplicates:false});patch=v;inserting=true;upserting=true;return q;},
    maybeSingle(){single=true;return execute();},single(){single=true;return execute();},then(resolve,reject){return execute().then(resolve,reject);},
   };
   async function execute(){try{
    const where=filters.length?' WHERE '+filters.join(' AND '):'';
    if(patch){const keys=Object.keys(patch).map(ident);
-    if(inserting)await sql(service+`INSERT INTO public.${table}(${keys.join(',')}) SELECT ${keys.map(k=>'r.'+k).join(',')} FROM jsonb_populate_record(NULL::public.${table},${quote(JSON.stringify(patch))}::jsonb) r;`);
+    if(inserting)await sql(service+`INSERT INTO public.${table}(${keys.join(',')}) SELECT ${keys.map(k=>'r.'+k).join(',')} FROM jsonb_populate_record(NULL::public.${table},${quote(JSON.stringify(patch))}::jsonb) r${upserting?' ON CONFLICT(club_id,date) DO UPDATE SET '+keys.filter(k=>!['club_id','date'].includes(k)).map(k=>k+'=EXCLUDED.'+k).join(','):''};`);
     else{assert.ok(filters.length);await sql(service+`UPDATE public.${table} b SET ${keys.map(k=>k+'='+quote(patch[k])).join(',')}${where};`);}
     return {data:null,error:null};
    }
    reads.push(table);
    if(fixture.fault==='dealer-inventory'&&table==='dealers')return {data:null,error:{code:'PGRST002',message:'synthetic inventory transport failure'},status:503};
+   const innerArray=table==='tournaments'&&selection.includes('tournament_tables!inner(')?(where?' AND ':' WHERE ')+'tt.rows IS NOT NULL':'';
    for(const [relation,alias] of [['game_tables','g'],['dealers','d'],['dealer_assignments','da'],['tournaments','t']]){
     if(selection.includes(relation+'!inner('))joins=joins.replace('LEFT JOIN public.'+relation+' '+alias,'INNER JOIN public.'+relation+' '+alias);
    }
-   if(head)return {data:null,error:null,count:Number(await sql(service+`SELECT count(*) FROM public.${table} b${joins}${where};`))};
-   const rows=JSON.parse(await sql(service+`SELECT coalesce(jsonb_agg(r.value),'[]') FROM (SELECT ${value} AS value FROM public.${table} b${joins}${where}${orders.length?' ORDER BY '+orders.join(','):''}${limit}) r;`));
+   if(head)return {data:null,error:null,count:Number(await sql(service+`SELECT count(*) FROM public.${table} b${joins}${where}${innerArray};`))};
+   const rows=JSON.parse(await sql(service+`SELECT coalesce(jsonb_agg(r.value),'[]') FROM (SELECT ${value} AS value FROM public.${table} b${joins}${where}${innerArray}${orders.length?' ORDER BY '+orders.join(','):''}${limit}) r;`));
    if(single&&rows.length>1)return {data:null,error:{message:'multiple rows'}};
    const projected=rows.map(row=>project(row,selection));return {data:single?projected[0]??null:projected,error:null};
-  }catch(e){return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}}
+  }catch(e){bridgeErrors.push({scope:'query:'+table,error:String(e.stderr??e).slice(0,300)});return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}}
   return q;
  }};
  let networkCalls=0;globalThis.fetch=()=>{networkCalls++;throw new Error('unexpected runtime network');};
@@ -96,8 +106,8 @@ else{
   const stateProof=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_assignments a WHERE club_id='${fixture.club}'),'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${fixture.club}'),'schedule',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.dealer_rotation_schedule s WHERE club_id='${fixture.club}'))::text);`);
   const before=await stateProof();
   const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
-  const body=await response.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-handler',status:response.status,body,reads:[...new Set(reads)],rpcCalls,adapterGaps,networkCalls}}));
-  assert.equal(response.status,200);assert.equal(networkCalls,0);assert.deepEqual(adapterGaps,[]);
+  const body=await response.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-handler',status:response.status,body,reads:[...new Set(reads)],rpcCalls,adapterGaps,bridgeErrors,networkCalls}}));
+  assert.equal(response.status,200);assert.equal(networkCalls,0);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);
   if(fixture.mainOff){
    assert.equal(body.status,'completed');assert.equal(body.error_code,null);assert.deepEqual(body.metrics,{});assert.deepEqual(body.diagnostics,[]);
    assert.equal(await stateProof(),before);assert.ok(!rpcCalls.includes('upsert_rotation_plan'));assert.ok(!rpcCalls.includes('get_dealer_pool_snapshot'));
@@ -110,6 +120,26 @@ else{
   }else{
   assert.equal(body.status,'completed');assert.ok(rpcCalls.includes('upsert_rotation_plan'));
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),'2');
+  assert.ok(rpcResponses.some(r=>r.name==='extend_club_lock_lease'));assert.ok(rpcResponses.filter(r=>r.name==='extend_club_lock_lease').every(r=>r.data===true));
+  assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,true);
+  assert.equal(await sql(`SELECT count(*) FROM public.swing_run_metrics WHERE club_id='${fixture.club}';`),'1');
+  assert.equal(await sql(`SELECT total_swings||'|'||successful_swings FROM public.swing_metrics WHERE club_id='${fixture.club}';`),'2|2','current worker metrics count announcements, not executed rotations');
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule s JOIN public.dealer_assignments a ON a.id=s.assignment_id JOIN public.table_sessions ts ON ts.id=a.table_session_id JOIN public.dealer_attendance d ON d.id=s.in_attendance_id WHERE s.club_id='${fixture.club}' AND s.status='announced' AND s.slot_index=0 AND s.in_attendance_id=a.pre_assigned_attendance_id AND s.out_attendance_id=a.attendance_id AND s.planned_relief_at=a.planned_relief_at AND a.released_at IS NULL AND ts.closed_at IS NULL AND ts.game_table_id=s.table_id AND ts.club_id=s.club_id AND d.current_state='pre_assigned' AND d.pre_assigned_table_id=s.table_id;`),'2');
+  if(fixture.shortageScope){
+   const {buildCanonicalShortageSnapshot}=await import('../../supabase/functions/process-swing/shortageAlert.ts');
+   const snapshot=await buildCanonicalShortageSnapshot(admin,fixture.club,{minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,preAnnounceMinutes:3});
+   const inventory=await admin.rpc('get_dealer_operational_tables_v1',{p_club_id:fixture.club});assert.equal(inventory.error,null);assert.equal(inventory.data.length,2);
+   console.log(JSON.stringify({passR_actual_result:{phase:'shortage-canonical-scope',operationalTables:inventory.data.length,snapshot,adapterGaps,bridgeErrors}}));
+   assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(snapshot.status,'ok');
+   assert.equal(snapshot.active_staffed_tables,2,'shortage health must count the same exact operational sessions as planner');assert.equal(snapshot.active_empty_tables,0);
+  }
+  const lockProof=()=>sql(`SELECT jsonb_agg(jsonb_build_object('id',id,'assignment',assignment_id,'incoming',in_attendance_id,'relief',planned_relief_at,'version',version) ORDER BY table_id) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`);
+  const locks=await lockProof();
+  const repeatedResponse=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+  const repeated=await repeatedResponse.json();console.log(JSON.stringify({passR_actual_result:{phase:'main-handler-repeat',status:repeatedResponse.status,body:repeated,adapterGaps,bridgeErrors,networkCalls}}));
+  assert.equal(repeatedResponse.status,200);assert.equal(repeated.status,'completed');assert.equal(repeated.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+  assert.equal(await lockProof(),locks);assert.equal(rpcResponses.filter(r=>r.name==='release_club_lock_if_owner').at(-1)?.data,true);
+  assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NOT NULL;`),'0','announce lead has not elapsed; outgoing dealers must remain seated');
   console.log('ACTUAL_PASSR_MAIN_HANDLER_NATIVE_PASS');
   }
  }else{

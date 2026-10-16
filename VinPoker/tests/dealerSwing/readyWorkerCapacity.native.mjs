@@ -64,7 +64,11 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
  const size=Number(process.argv.find(a=>a.startsWith('--planner-size='))?.split('=')[1]??2);assert.ok([2,10,40].includes(size));
  const fixture=seed(size);fixture.shortage=process.argv.includes('--planner-shortage');
  if(process.argv.includes('--main-worker')){
+  // Schema-only bootstrap creates this matview WITH NO DATA. Initialize the
+  // owned local read model so the actual concurrent refresh RPC can execute.
+  sql('REFRESH MATERIALIZED VIEW public.dealer_pool_summary;');
   fixture.mainOff=process.argv.includes('--main-off');
+  fixture.shortageScope=process.argv.includes('--main-shortage-scope');assert.ok(!(fixture.mainOff&&fixture.shortageScope));
   if(fixture.mainOff)sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${fixture.club}';`);
   sql(`INSERT INTO public.swing_config(club_id,table_type,rotation_planner_enabled,swing_duration_minutes,break_duration_minutes,min_inter_swing_rest_minutes) VALUES('${fixture.club}','tournament',true,45,15,15) ON CONFLICT(club_id,table_type) DO UPDATE SET rotation_planner_enabled=true,swing_duration_minutes=45,break_duration_minutes=15,min_inter_swing_rest_minutes=15;`);
   const file=resolve('supabase/functions/process-swing/index.ts'),workerSource=readFileSync(file,'utf8'),tree=ts.createSourceFile(file,workerSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
