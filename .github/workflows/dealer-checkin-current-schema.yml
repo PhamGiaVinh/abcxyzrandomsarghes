@@ -30,6 +30,9 @@ on:
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionEdge*'
+      - 'VinPoker/src/lib/tracker-poker/correctionCommitIntent*'
+      - 'VinPoker/tests/trackerPoker/correctionCommitIntent*'
+      - 'VinPoker/src/components/cashier/tournament-live/useCorrectionCommitRecovery*'
       - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
@@ -1042,6 +1045,7 @@ jobs:
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correct-during-commit
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-mask-receipt
+          node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap

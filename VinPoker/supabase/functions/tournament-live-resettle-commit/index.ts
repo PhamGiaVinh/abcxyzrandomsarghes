@@ -203,6 +203,9 @@ Deno.serve(async (req) => {
     }
     const authData = authentication.data;
     if (!authData?.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
+    if (body.expected_actor_id !== undefined && body.expected_actor_id !== authData.user.id) {
+      return publicFailure(req, "actor_context_changed", 409);
+    }
     if (mode === "receipt") {
       if (body.expected_actor_id !== authData.user.id) return publicFailure(req, "actor_context_changed", 409);
       try {

@@ -70,6 +70,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  authFailure=false;authorizationFailure=true;response=await invoke(body);assert.equal(response.status,503,'authority RPC failure is not missing permission');assert.equal((await response.json()).code,'authorization_unavailable');
  for(const failure of ['throw','malformed']){authorizationFailure=failure;response=await invoke(body);assert.equal(response.status,503);assert.equal((await response.json()).code,'authorization_unavailable');}
  authorizationFailure=false;assert.equal(serviceReads,0);assert.equal(fingerprint(),before);
+ response=await invoke({...body,expected_actor_id:crypto.randomUUID()});assert.equal(response.status,409);assert.equal((await response.json()).code,'actor_context_changed');assert.equal(serviceReads,0);
  response=await invoke(body);assert.equal(response.status,403);assert.equal((await response.json()).code,'uat_capability_disabled');assert.equal(serviceReads,0);assert.equal(fingerprint(),before);
  const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
  sql(`INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled) VALUES('${fixture.club}','${fixture.tour}','${logical}','${fixture.actor}','correct_completed_hand',true);`);

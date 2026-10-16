@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
 const backend = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: null }) }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => backend }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { trackerHistoryCompletionWorker: true }, isTrackerAtomicResettleAvailable: () => false }));
 vi.mock("@/lib/tracker-poker/handPlayerNamesClient", () => ({

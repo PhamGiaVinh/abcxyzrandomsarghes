@@ -11,6 +11,7 @@ import { HandEditPanel } from "./HandEditPanel";
 import { FloorHandActionReview } from "./FloorHandActionReview";
 import { HistoricalSettlementDisplayControl } from "./HistoricalSettlementDisplayControl";
 import { HistoricalSettlementBatchControl } from "./HistoricalSettlementBatchControl";
+import { useCorrectionCommitRecovery } from "./useCorrectionCommitRecovery";
 import type { HistoricalSettlementBatchCandidate } from "@/lib/tracker-poker/historicalSettlementBatch";
 import { buildEditCompletedHandArgs, type HandEditPatch } from "./handEditDiff";
 import {
@@ -256,10 +257,16 @@ export function HandHistoryWorkspace({
       sourceRevision: number;
       sourceChainHash: string;
       outcomeHash: string;
+      requestHash: string;
+      actorId: string;
       scope: string;
     };
     idempotencyKey: string;
   } | null>(null);
+  const correctionRecovery = useCorrectionCommitRecovery(tournamentId, selectedHandId, () => {
+    setResettleView(null); setEditMode(false); void loadHands();
+    toast.success("Đã tìm thấy receipt sửa hand. Đang tải lại trạng thái hiện tại.");
+  });
 
   useEffect(() => {
     setSelectedTableId(initialTableId || "all");
@@ -571,6 +578,8 @@ export function HandHistoryWorkspace({
   ) => {
     const target = hands.find((h) => h.id === selectedHandId);
     if (!target) return;
+    try { correctionRecovery.assertNoPending(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Chưa đọc được mã phục hồi."); return; }
     setResettleBusy(true);
     setResettleView(null);
     try {
@@ -682,7 +691,7 @@ export function HandHistoryWorkspace({
           result, entryByPlayer, entryByHandPlayer, patch, reason,
           targetHandId: target.id, targetRow, laterRows, editedTarget,
           expectedEndingStacks,
-          serverPreview: { sourceRevision: 0, sourceChainHash: "", outcomeHash: "", scope: "blocked" },
+          serverPreview: { sourceRevision: 0, sourceChainHash: "", outcomeHash: "", requestHash: "", actorId: "", scope: "blocked" },
           idempotencyKey: crypto.randomUUID(),
         });
         return;
@@ -696,6 +705,7 @@ export function HandHistoryWorkspace({
         body: {
           mode: "preview",
           tournament_id: tournamentId,
+          expected_actor_id: correctionRecovery.actorId,
           hand_id: target.id,
           correction_reason: reason,
           edit: serverEdit,
@@ -707,7 +717,7 @@ export function HandHistoryWorkspace({
         || preview.draft_status !== "READY_TO_APPLY"
         || typeof preview.source_revision !== "number"
         || typeof preview.source_chain_hash !== "string"
-        || typeof preview.outcome_hash !== "string") {
+        || typeof preview.outcome_hash !== "string" || typeof preview.request_hash !== "string") {
         toast.error(textValue(preview?.code) ?? previewError?.message ?? "Máy chủ chưa chấp nhận bản xem trước.");
         return;
       }
@@ -726,6 +736,8 @@ export function HandHistoryWorkspace({
           sourceRevision: preview.source_revision,
           sourceChainHash: preview.source_chain_hash,
           outcomeHash: preview.outcome_hash,
+          requestHash: preview.request_hash,
+          actorId: correctionRecovery.actorId ?? "",
           scope: textValue(preview.scope) ?? "latest_completed_hand_only",
         },
         idempotencyKey: crypto.randomUUID(),
@@ -770,7 +782,15 @@ export function HandHistoryWorkspace({
           toast.error("Chưa có action, Board hoặc bài để máy chủ tính lại. Không thể đổi chip chỉ từ stack hoặc người thắng chọn tay.");
           return;
         }
-        const { data, error } = await supabase.functions.invoke("tournament-live-resettle-commit", {
+        if (rv.serverPreview.actorId !== correctionRecovery.actorId) {
+          toast.error("Tài khoản đã thay đổi. Hãy xem trước lại hand."); return;
+        }
+        const confirmed = await correctionRecovery.commit({
+          expected_actor_id: rv.serverPreview.actorId, tournament_id: tournamentId, hand_id: rv.targetHandId,
+          idempotency_key: rv.idempotencyKey, expected_source_revision: rv.serverPreview.sourceRevision,
+          expected_source_chain_hash: rv.serverPreview.sourceChainHash, expected_outcome_hash: rv.serverPreview.outcomeHash,
+          expected_request_hash: rv.serverPreview.requestHash,
+        }, async () => await supabase.functions.invoke("tournament-live-resettle-commit", {
           body: {
             mode: "commit",
             tournament_id: tournamentId,
@@ -779,13 +799,14 @@ export function HandHistoryWorkspace({
             edit: serverEdit,
             expected_target_ending_stacks: rv.expectedEndingStacks,
             idempotency_key: rv.idempotencyKey,
+            expected_actor_id: rv.serverPreview.actorId,
             expected_source_revision: rv.serverPreview.sourceRevision,
             expected_source_chain_hash: rv.serverPreview.sourceChainHash,
             expected_outcome_hash: rv.serverPreview.outcomeHash,
           },
-        });
-        if (error || (data as any)?.ok === false) {
-          toast.error((data as any)?.message || error?.message || "Không thể sửa hand và tính lại chip nguyên tử.");
+        }));
+        if (!confirmed) {
+          toast.error("Chưa xác minh được kết quả. Kiểm tra receipt trước khi sửa tiếp.");
           return;
         }
         toast.success("Đã sửa hand và tính lại chip theo receipt máy chủ.");
@@ -882,6 +903,8 @@ export function HandHistoryWorkspace({
       setResettleView(null);
       setEditMode(false);
       loadHands();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Chưa xác minh được yêu cầu sửa hand. Giữ mã phục hồi.");
     } finally {
       setResettleBusy(false);
     }
@@ -931,6 +954,13 @@ export function HandHistoryWorkspace({
 
   return (
     <div className="space-y-3">
+      {correctionRecovery.message && (
+        <div role="status" className="space-y-2 rounded-md border p-3 text-sm">
+          <p>{correctionRecovery.message}</p>
+          <Button type="button" variant="outline" className="min-h-11" disabled={correctionRecovery.busy}
+            onClick={() => { void correctionRecovery.recover(); }}>Kiểm tra receipt sửa hand</Button>
+        </div>
+      )}
       {FEATURES.trackerHistoricalSettlementDisplay && enableHistoricalBatchControls && settlementCandidates.length > 0 && (
         <HistoricalSettlementBatchControl
           tournamentId={tournamentId}
