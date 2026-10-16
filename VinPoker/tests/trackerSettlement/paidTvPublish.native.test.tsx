@@ -87,5 +87,34 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
    JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.tournament_id='${f.tour}';`))).toEqual([[1,'Native TEST broadcast'],[2,'Other tab TEST publish']]);
   const currentPublic=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_tv_display_state_v4('${token}',true);`));
   expect(currentPublic.display.club_brand_name).toBe('Other tab TEST publish');
+  cleanup();h.error.mockClear();h.success.mockClear();
+  const owner=`SET request.jwt.claim.sub='${f.actor}';SET request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET ROLE authenticated;`;
+  const created=JSON.parse(sql(owner+`SELECT public.create_tournament_with_levels_v1('${f.club}',${quote({name:'TV flight B TEST',start_time:new Date(Date.now()+3_600_000).toISOString(),buy_in:50000,rake_amount:0,service_fee_amount:0,starting_stack:40000,game_type:'nlh',minutes_per_level:30,late_reg_close_level:6})}::jsonb,
+   '[{"level_number":1,"small_blind":500,"big_blind":1000,"ante":100,"duration_minutes":30,"is_break":false}]'::jsonb,gen_random_uuid(),'${f.actor}');`));
+  expect(created.ok).toBe(true);const flight=created.tournament_id,physical=crypto.randomUUID(),player=crypto.randomUUID(),event=crypto.randomUUID(),secondToken='native-paid-flight-b-'+crypto.randomUUID();
+  sql(`INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+   VALUES('${physical}','${f.club}','TV flight B inventory TEST',99,'tournament','inactive','available');INSERT INTO auth.users(id) VALUES('${player}');`);
+  expect(JSON.parse(sql(owner+`SELECT public.floor_open_tournament_table_v3('${flight}','${physical}','manual',gen_random_uuid());`)).ok).toBe(true);
+  const registered=JSON.parse(sql(`SET request.jwt.claims='{"role":"service_role"}';SET request.jwt.claim.role='service_role';SET ROLE service_role;SELECT public.cashier_create_app_registration_v1('${flight}','${player}');`));
+  expect(registered.ok).toBe(true);
+  const paid=JSON.parse(sql(owner+`SELECT public.resolve_cashier_cash_buyin_intent_v1(${quote({actor_id:f.actor,club_id:f.club,tournament_id:flight,registration_id:registered.registration_id,amount:50000,request_id:crypto.randomUUID()})}::jsonb,'record');`));
+  expect(paid.status).toBe('recorded');expect(paid.result.seating_state).toBe('seated');
+  // Explicit local event association/pairing fixtures, not management UI proof.
+  sql(`INSERT INTO public.tournament_events(id,club_id,name) VALUES('${event}','${f.club}','Native shared TV event TEST');
+   UPDATE public.tournaments SET event_id='${event}' WHERE id IN ('${f.tour}','${flight}');
+   INSERT INTO public.tv_displays(id,club_id,display_token,assigned_tournament_id,status) VALUES(gen_random_uuid(),'${f.club}','${secondToken}','${flight}','paired');`);
+  const operational=()=>sql(`SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.tournaments t WHERE id IN ('${f.tour}','${flight}');`),beforeBranding=operational();
+  render(<TvBrandingEditor tournamentId={f.tour}/>);fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Publish TV layout'})).toBeEnabled());
+  fireEvent.change(screen.getByLabelText('Brand name'),{target:{value:'Shared event TEST brand'}});
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'}));});
+  expect(h.error).not.toHaveBeenCalled();expect(h.success).toHaveBeenCalledOnce();expect(commits).toBe(3);expect(operational()).toBe(beforeBranding);
+  expect(sql(`SELECT count(*)||'|'||min(revision) FROM public.tv_tournament_layouts WHERE event_id='${event}' AND tournament_id IS NULL;`)).toBe('1|1');
+  expect(fingerprint()).toBe(newer); // Original tournament-scoped history stays intact.
+  for(const [displayToken,tournament,stack,bigBlind] of [[token,f.tour,20000,200],[secondToken,flight,40000,1000]] as const){
+   const state=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_tv_display_state_v4('${displayToken}',true);`));
+   expect(state.display.club_brand_name).toBe('Shared event TEST brand');expect(state.tournament.id).toBe(tournament);
+   expect(state.clock.tournament_id).toBe(tournament);expect(state.participation_counts.live_entry_stack).toBe(stack);expect(state.levels[0].big_blind).toBe(bigBlind);
+  }
  });
 });

@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Event-scoped editor publish → two anonymous paid flights local PASS
+
+Baseline646f05479 clean/previousPROGRESS. Existing native TV journey now creates flightB via actual create-with-levels/open/register/cash-pay RPCs (40000 stack/BB1000 versus first flight20000/BB200), same club. Event association and second display pairing are explicit local control-plane fixtures, not management/pairing UI proof. Actual editor publishes first event-scoped revision1; both anonymous v4 displays receive shared branding while tournament/clock IDs, blind levels and live-entry stacks remain flight-specific. Full stored tournament rows unchanged by branding publication; original standalone head/version history fingerprint remains intact, event head is a separate XOR-scoped row.
+
+d27bb0 finalnativePASS8902ms/suite11.97s.4ce149 earliergreen before replacing fixed future date with fixture-relative now+1h to avoid expiry. All prior first publish/response-loss/CAS/actor-denial/gate restore checks retained. Clocks are not run concurrently in this case; no browser375/timing/Storage-byte proof. Existing live-clock paid multflight SQL case remains separate evidence, not silently merged into this claim. Test-only, no app/schema change; existing CI invocation prepared/notrun. PGstopped/nohandle/gateOFFrestored/no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; next Storage asset/version recovery and Voice/provider, fulltour/rest15×3/40/perf/checks/release remain.
+
 ## TV stale editor vs second publisher actual CAS/version integrity PASS
 
 Baselinec11e4eb23 clean/previousPROGRESS. Extended existing native TV case: real owner editor reads revision1 and edits local draft; a second writer invocation commits revision2 through actual authenticated save RPC; stale editor submit receives40001/tv_layout_stale_revision with explicit reopen message. No third commit, exact head/version fingerprint unchanged on denial, local draft retained. Version snapshots remain [[1,Native TEST broadcast],[2,Other tab TEST publish]], and actual anonymous TV still shows revision2 brand. Sequential deterministic stale-snapshot interleaving, NOT two concurrent browsers or row-lock contention proof.
