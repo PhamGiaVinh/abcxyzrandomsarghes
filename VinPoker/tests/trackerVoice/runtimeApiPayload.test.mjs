@@ -80,6 +80,16 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'rotation',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.dealer_rotation_schedule s WHERE club_id='${f.club}'),
  'auto',(SELECT to_jsonb(s) FROM public.club_settings s WHERE club_id='${f.club}'),
  'notification_sink_count',(SELECT count(*) FROM net.cash_ui_http_sink),
+ 'chip_sets',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.chip_set s WHERE club_id='${f.club}'),
+ 'chip_denoms',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.chip_set_denomination s WHERE club_id='${f.club}'),
+ 'tour_chip_set',(SELECT jsonb_agg(to_jsonb(s) ORDER BY to_jsonb(s)::text) FROM public.tournament_chip_set s WHERE tournament_id='${f.tour}'),
+ 'stack_templates',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.stack_template s WHERE tournament_id='${f.tour}'),
+ 'issuance',(SELECT jsonb_agg(to_jsonb(s) ORDER BY stack_template_id) FROM public.stack_template_issuance s WHERE club_id='${f.club}'),
+ 'chip_bank',(SELECT jsonb_agg(to_jsonb(s) ORDER BY denomination_id) FROM public.chip_bank s WHERE club_id='${f.club}'),
+ 'chip_bank_ledger',(SELECT jsonb_agg(to_jsonb(s) ORDER BY to_jsonb(s)::text) FROM public.chip_bank_ledger s WHERE club_id='${f.club}'),
+ 'chip_floor_ledger',(SELECT jsonb_agg(to_jsonb(s) ORDER BY to_jsonb(s)::text) FROM public.chip_inventory_ledger s WHERE club_id='${f.club}'),
+ 'colorup',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.color_up_operation s WHERE club_id='${f.club}'),
+ 'chip_receipts',(SELECT jsonb_agg(to_jsonb(s) ORDER BY request_key) FROM floor_private.chip_mutation_receipts s WHERE actor_id='${f.actor}'),
  'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.table_operation_receipts r))::text);`);
  const before=fingerprint();
  // Canonical paid/open flow above; assignment/config below are explicit local
@@ -136,6 +146,42 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  INSERT INTO native_voice_payloads SELECT 'hand_proof',jsonb_build_object('hand_id',h.id,'state_version',public._tracker_voice_hand_state_version(h.id),
  'players',(SELECT count(*) FROM public.hand_players p WHERE p.hand_id=h.id),'starting_stack',(SELECT sum(starting_stack) FROM public.hand_players p WHERE p.hand_id=h.id))
  FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';
+ DO $$ DECLARE chip_set uuid:=gen_random_uuid();low uuid:=gen_random_uuid();high uuid:=gen_random_uuid();template uuid:=gen_random_uuid();
+ issued jsonb;op jsonb;r jsonb;key text:='native-paid-color-'||gen_random_uuid()::text;operational jsonb;BEGIN
+ -- Setup metadata fixture only; issuance/color-up/undo use actual Chip RPCs.
+ SELECT jsonb_build_object('seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${f.tour}'),
+ 'cash',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}'),
+ 'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p JOIN public.tournament_hands h ON h.id=p.hand_id WHERE h.tournament_id='${f.tour}')) INTO operational;
+ INSERT INTO public.chip_set(id,club_id,name) VALUES(chip_set,'${f.club}','Native paid chip TEST');
+ INSERT INTO public.chip_set_denomination(id,chip_set_id,club_id,value) VALUES(low,chip_set,'${f.club}',100),(high,chip_set,'${f.club}',1000);
+ INSERT INTO public.tournament_chip_set(tournament_id,chip_set_id,club_id) VALUES('${f.tour}',chip_set,'${f.club}');
+ INSERT INTO public.stack_template(id,tournament_id,club_id,chip_set_id,name,stack_value) VALUES(template,'${f.tour}','${f.club}',chip_set,'Native paid stack TEST',20000);
+ INSERT INTO public.stack_template_line(stack_template_id,denomination_id,count) VALUES(template,low,200);
+ INSERT INTO public.chip_bank(club_id,denomination_id,on_hand_count) VALUES('${f.club}',low,1000),('${f.club}',high,100);
+ PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
+ r:=public.chip_ops_set_bank_coupling('${f.club}',true);IF r->>'status' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'native_paid_chip_coupling_failed: %',r;END IF;
+ issued:=public.chip_ops_set_issuance_v2(template,2,0,gen_random_uuid(),'${f.actor}');
+ IF issued->>'status' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'native_paid_chip_issue_failed: %',issued;END IF;
+ IF (SELECT sum(current_count*value) FROM public.chip_ops_current_denom_counts('${f.tour}')) IS DISTINCT FROM 40000::numeric THEN RAISE EXCEPTION 'native_paid_chip_issue_value_mismatch';END IF;
+ op:=public.chip_ops_color_up('${f.tour}',low,high,40,1,key);
+ IF op->>'status' IS DISTINCT FROM 'ok' OR (op->>'rounding_delta')::bigint<>0 THEN RAISE EXCEPTION 'native_paid_colorup_failed: %',op;END IF;
+ IF public.chip_ops_color_up('${f.tour}',low,high,40,1,key) IS DISTINCT FROM op THEN RAISE EXCEPTION 'native_paid_colorup_replay_changed';END IF;
+ IF (SELECT sum(current_count*value) FROM public.chip_ops_current_denom_counts('${f.tour}')) IS DISTINCT FROM 40000::numeric THEN RAISE EXCEPTION 'native_paid_colorup_value_changed';END IF;
+ r:=public.chip_ops_reverse_color_up((op->>'color_up_operation_id')::uuid,key||'-undo');
+ IF r->>'status' IS DISTINCT FROM 'ok' OR (r->>'bank_reversed')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'native_paid_colorup_undo_failed: %',r;END IF;
+ IF (SELECT current_count FROM public.chip_ops_current_denom_counts('${f.tour}') WHERE denomination_id=low) IS DISTINCT FROM 400::bigint
+ OR (SELECT current_count FROM public.chip_ops_current_denom_counts('${f.tour}') WHERE denomination_id=high) IS DISTINCT FROM 0::bigint
+ OR (SELECT on_hand_count FROM public.chip_bank WHERE club_id='${f.club}' AND denomination_id=low) IS DISTINCT FROM 600::bigint
+ OR (SELECT on_hand_count FROM public.chip_bank WHERE club_id='${f.club}' AND denomination_id=high) IS DISTINCT FROM 100::bigint
+ OR (public.get_current_chip_inventory('${f.tour}')->>'reconciled')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'native_paid_colorup_undo_not_reconciled';END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active)<>40000
+ OR operational IS DISTINCT FROM (SELECT jsonb_build_object('seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${f.tour}'),
+ 'cash',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}'),
+ 'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p JOIN public.tournament_hands h ON h.id=p.hand_id WHERE h.tournament_id='${f.tour}'))) THEN RAISE EXCEPTION 'native_paid_chip_ops_changed_cash_seats_or_roster';END IF;
+ INSERT INTO native_voice_payloads VALUES('paid_chips',jsonb_build_object('issued',issued,'color_up',op,'undo',r));
+ END $$;
  DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;
  incoming_dealer uuid:=gen_random_uuid();incoming_attendance uuid;incoming_shift uuid:=gen_random_uuid();outgoing record;
  checkin_key uuid:=gen_random_uuid();checkin_receipt jsonb;
@@ -259,6 +305,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  assert.equal(payload.voice_action.stale.error,'stale_state_version');
  assert.equal(payload.voice_action.assignment_denial.error,'dealer_assignment_lost');
  assert.equal(payload.voice_action.handoff_denial.error,'dealer_assignment_lost');
+ assert.equal(payload.paid_chips.color_up.rounding_delta,0);assert.equal(payload.paid_chips.undo.bank_reversed,true);
  assert.equal(payload.outsider.ok,false);assert.equal(payload.outsider.error,'dealer_assignment_missing');
  await assert.rejects(loader(payload.outsider,null,f.tour,table.id).read(),/dealer_assignment_missing/);
  assert.equal(fingerprint(),before);
