@@ -14,7 +14,9 @@ import {normalizeSettlementSourceRpcResult} from '../../supabase/functions/_shar
 // provider, cron or outbound network. Dedicated dark canary hand scope only.
 const database='vinpoker_ops_cash115_qualified_c';
 const lostCommitResponse=process.argv.includes('--lost-commit-response');
-const verified=process.argv.includes('--verified')||lostCommitResponse;
+const expiredLease=process.argv.includes('--expired-lease');
+const verified=process.argv.includes('--verified')||lostCommitResponse||expiredLease;
+let expiredOnce=false;
 for(const [key,value] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:database}))assert.equal(process.env[key],value);
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
@@ -45,6 +47,11 @@ const client={rpc:async(name,args)=>{try{
  const schema=types[name];assert.ok(schema,'unexpected worker RPC '+name);assert.deepEqual(Object.keys(args).sort(),Object.keys(schema).sort());
  calls.push({name,args});const params=Object.entries(args).map(([k,v])=>`${k}=>${Array.isArray(v)?`ARRAY[${v.map(quote).join(',')}]`:quote(v)}::${schema[k]}`).join(',');
  const query=name==='claim_tracker_historical_display_jobs_scoped_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT to_jsonb(public.${name}(${params}));`;
+ if(expiredLease&&!expiredOnce&&name==='commit_tracker_historical_display_outcome_v2'){
+  // Local fault fixture: expire only this exact worker lease, not business time.
+  sql(`UPDATE public.tracker_historical_display_queue SET lease_until=now()-interval '1 second' WHERE hand_id='${hand}' AND lease_token=${quote(args.p_lease_token)}::uuid AND status='processing';`);
+  expiredOnce=true;
+ }
  const data=JSON.parse(sql(service+query));
  // Inject transport loss only AFTER the real atomic SQL commit returned.
  // Do not roll back/requeue the committed outcome to make recovery pass.
@@ -69,7 +76,25 @@ runInNewContext(code,{Request,Response,TextEncoder,Error,crypto:globalThis.crypt
  historicalWorkerFailureStatus,TRACKER_HISTORY_WORKER_MAX_BATCH,parseHistoryWorkerHandIds,requireHistoryCanaryScope,HISTORY_CANARY_SCOPE_ENV,normalizeSettlementSourceRpcResult,
  Deno:{serve:fn=>handler=fn,env:{get:key=>env[key]}}});
 const response=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
-const result=await response.json();assert.equal(response.status,lostCommitResponse?503:200,JSON.stringify({result,errors}));assert.deepEqual(errors,[]);
+const result=await response.json();
+if(expiredLease){
+ assert.equal(response.status,503,JSON.stringify({result,errors}));
+ assert.deepEqual(result,{ok:false,claimed:1,completed:0,retried:0,needs_attention:0,unresolved:1});
+ assert.equal(errors.length,1);assert.match(errors[0],/queue_lease_lost/);
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}';`),'0');
+ assert.equal(sql(`SELECT status FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' ORDER BY source_revision DESC LIMIT 1;`),'processing');
+ assert.equal(business(),before);
+ errors.length=0;
+ const recovered=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
+ assert.equal(recovered.status,200);assert.deepEqual(await recovered.json(),{ok:true,claimed:1,completed:1,retried:0,needs_attention:0,unresolved:0});
+ const commits=calls.filter(c=>c.name==='commit_tracker_historical_display_outcome_v2');
+ assert.equal(commits.length,2);assert.notEqual(commits[0].args.p_lease_token,commits[1].args.p_lease_token);
+ assert.deepEqual(errors,[]);assert.equal(business(),before);
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`),'1');
+ assert.equal(sql(`SELECT status FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' ORDER BY source_revision DESC LIMIT 1;`),'completed');
+ console.log('ACTUAL_HISTORY_WORKER_EXPIRED_LEASE_REJECT_THEN_RECLAIM_PASS');
+}else{
+assert.equal(response.status,lostCommitResponse?503:200,JSON.stringify({result,errors}));assert.deepEqual(errors,[]);
 assert.deepEqual(result,{ok:!lostCommitResponse,claimed:1,completed:verified&&!lostCommitResponse?1:0,retried:0,needs_attention:verified?0:1,unresolved:lostCommitResponse?1:0});
 assert.deepEqual(calls.map(c=>c.name),['claim_tracker_historical_display_jobs_scoped_v1','get_tracker_historical_display_snapshot',verified?'commit_tracker_historical_display_outcome_v2':'finish_tracker_historical_display_job',...(lostCommitResponse?['finish_tracker_historical_display_job']:[])]);
 if(!verified)assert.equal(calls.at(-1).args.p_error_code,'historical_empty_or_invalid_pot');
@@ -99,3 +124,4 @@ assert.equal(retry.status,200);assert.deepEqual(await retry.json(),{ok:true,clai
 assert.equal(calls.at(-1).name,'claim_tracker_historical_display_jobs_scoped_v1');assert.deepEqual(errors,[]);assert.equal(business(),before);
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified';`),verified?'1':'0');
 console.log(lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
+}
