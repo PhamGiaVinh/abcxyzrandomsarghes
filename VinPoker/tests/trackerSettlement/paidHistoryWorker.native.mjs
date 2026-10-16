@@ -9,14 +9,16 @@ import {canonicalJsonV1} from '../../supabase/functions/_shared/trackerSettlemen
 import {isUuid} from '../../supabase/functions/_shared/internal-trigger-auth.ts';
 import {authorizeHistoryWorker,HISTORY_CANARY_SECRET_ENV} from '../../supabase/functions/_shared/trackerSettlement/historyWorkerAuth.ts';
 import {historicalWorkerFailureStatus,TRACKER_HISTORY_WORKER_MAX_BATCH,parseHistoryWorkerHandIds,requireHistoryCanaryScope,HISTORY_CANARY_SCOPE_ENV} from '../../supabase/functions/_shared/trackerSettlement/historyWorkerPolicy.ts';
-import {normalizeSettlementSourceRpcResult} from '../../supabase/functions/_shared/trackerSettlement/compute.ts';
+import {computeAuthoritativeSettlement,normalizeSettlementSourceRpcResult} from '../../supabase/functions/_shared/trackerSettlement/compute.ts';
 // Actual worker/verifier/SQL, modeled HTTP/PostgREST/CORS. NO hosted credentials,
 // provider, cron or outbound network. Dedicated dark canary hand scope only.
 const database='vinpoker_ops_cash115_qualified_c';
 const lostCommitResponse=process.argv.includes('--lost-commit-response');
 const expiredLease=process.argv.includes('--expired-lease');
-const verified=process.argv.includes('--verified')||lostCommitResponse||expiredLease;
+const correctionDuringCommit=process.argv.includes('--correct-during-commit');
+const verified=process.argv.includes('--verified')||lostCommitResponse||expiredLease||correctionDuringCommit;
 let expiredOnce=false;
+let correctionRevision;
 for(const [key,value] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:database}))assert.equal(process.env[key],value);
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
@@ -36,7 +38,14 @@ const business=()=>sql(`SELECT jsonb_build_object('hand',(SELECT to_jsonb(h) FRO
  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${fixture.tour}'),
  'money',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}'));`);
 const before=business(),calls=[],errors=[];
-const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE service_role;`;
+const nonHandBusiness=()=>{const state=JSON.parse(business());delete state.hand;return JSON.stringify(state);};
+const beforeNonHand=nonHandBusiness();
+// Schema-only bootstrap omits hosted service_role BYPASSRLS. Match the existing
+// native worker fixture pattern without changing application roles/policies.
+const serviceTestRole='history_worker_'+crypto.randomUUID().replaceAll('-','');
+sql(`CREATE ROLE ${serviceTestRole} NOLOGIN INHERIT BYPASSRLS;GRANT service_role TO ${serviceTestRole};`);
+process.on('exit',()=>sql(`DROP ROLE ${serviceTestRole};`));
+const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${serviceTestRole};`;
 const types={claim_tracker_historical_display_jobs_scoped_v1:{p_limit:'integer',p_hand_ids:'uuid[]'},
  get_tracker_historical_display_snapshot:{p_hand_id:'uuid',p_tournament_id:'uuid'},
  finish_tracker_historical_display_job:{p_hand_id:'uuid',p_source_revision:'bigint',p_lease_token:'uuid',p_status:'text',p_error_code:'text'},
@@ -51,6 +60,22 @@ const client={rpc:async(name,args)=>{try{
   // Local fault fixture: expire only this exact worker lease, not business time.
   sql(`UPDATE public.tracker_historical_display_queue SET lease_until=now()-interval '1 second' WHERE hand_id='${hand}' AND lease_token=${quote(args.p_lease_token)}::uuid AND status='processing';`);
   expiredOnce=true;
+ }
+ if(correctionDuringCommit&&!correctionRevision&&name==='commit_tracker_historical_display_outcome_v2'){
+  const readJson=(label,query)=>{const raw=sql(service+query);assert.ok(raw,label+' returned SQL NULL/no rows; privileged chip rows='+sql(`SELECT count(*) FROM public.tournament_chip_counts WHERE tournament_id='${fixture.tour}';`));return JSON.parse(raw);};
+  const snapshot=readJson('correction snapshot',`SELECT public.get_tracker_historical_display_snapshot('${hand}',NULL);`);
+  const liveStacks=readJson('correction live stacks',`SELECT jsonb_agg(jsonb_build_object('player_id',player_id,'entry_number',entry_number,'chip_count',chip_count)) FROM public.tournament_chip_counts WHERE tournament_id='${fixture.tour}';`);
+  const source=normalizeSettlementSourceRpcResult(readJson('chain source hash',`SELECT to_jsonb(s) FROM public.get_tournament_settlement_source_hash('${hand}') s;`));
+  const corrected=await computeAuthoritativeSettlement({tournamentId:fixture.tour,targetHandId:hand,hands:[snapshot.hand],players:snapshot.players,actions:snapshot.actions,liveStacks,
+   edit:{communityCards:['2c','3d','4h']},actor:{userId:fixture.actor,role:'club_owner_or_admin'},sourceRevisionOverride:source.sourceRevision,sourceChainHashOverride:source.sourceChainHash,settlementRevisionOverride:1});
+  const receiptText=sql(service+`SELECT public.commit_tracker_hand_correction_outcome('${hand}','${fixture.actor}',${source.sourceRevision},${quote(source.sourceChainHash)},1,
+   ${quote(corrected.privateOutcome.outcomeHash)},repeat('c',64),'native-worker-correction-${hand}',${quote(corrected.publicOutcome)}::jsonb,${quote(corrected.persistedEdit)}::jsonb,
+   ${quote(corrected.handChanges)}::jsonb,${quote(corrected.finalStacks)}::jsonb,'TEST persisted board correction');`);
+  assert.ok(receiptText,'canonical correction returned no receipt');
+  const receipt=JSON.parse(receiptText);
+  assert.equal(receipt.ok,true);
+  correctionRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
+  assert.ok(correctionRevision>args.p_expected_source_revision);
  }
  const data=JSON.parse(sql(service+query));
  // Inject transport loss only AFTER the real atomic SQL commit returned.
@@ -77,7 +102,24 @@ runInNewContext(code,{Request,Response,TextEncoder,Error,crypto:globalThis.crypt
  Deno:{serve:fn=>handler=fn,env:{get:key=>env[key]}}});
 const response=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
 const result=await response.json();
-if(expiredLease){
+if(correctionDuringCommit){
+ assert.equal(response.status,503,JSON.stringify({result,errors}));
+ assert.deepEqual(result,{ok:false,claimed:1,completed:0,retried:0,needs_attention:0,unresolved:1});
+ assert.equal(errors.length,1);assert.match(errors[0],/stale_source_revision|queue_lease_lost/);
+ assert.ok(correctionRevision);
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display';`),'0');
+ assert.equal(sql(`SELECT count(*) FROM public.tracker_historical_display_queue WHERE hand_id='${hand}' AND source_revision=${correctionRevision} AND status='pending';`),'1');
+ assert.equal(nonHandBusiness(),beforeNonHand,'board-only correction must preserve seats and cash');
+ errors.length=0;
+ const recovered=await handler(new Request('https://test.invalid/history-worker',{method:'POST',headers:{Authorization:'Bearer TEST_HISTORY_CANARY','Content-Type':'application/json'},body:JSON.stringify({hand_ids:[hand],limit:1})}));
+ assert.equal(recovered.status,200);assert.deepEqual(await recovered.json(),{ok:true,claimed:1,completed:1,retried:0,needs_attention:0,unresolved:0});
+ assert.deepEqual(errors,[]);assert.equal(nonHandBusiness(),beforeNonHand);
+ assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND source_revision=${correctionRevision} AND status='verified';`),'1');
+ const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
+ const history=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
+ assert.equal(history.items[0].result.status,'verified');
+ console.log('ACTUAL_HISTORY_WORKER_CANONICAL_CORRECTION_REJECTS_OLD_REVISION_PASS');
+}else if(expiredLease){
  assert.equal(response.status,503,JSON.stringify({result,errors}));
  assert.deepEqual(result,{ok:false,claimed:1,completed:0,retried:0,needs_attention:0,unresolved:1});
  assert.equal(errors.length,1);assert.match(errors[0],/queue_lease_lost/);
