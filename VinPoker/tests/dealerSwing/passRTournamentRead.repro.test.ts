@@ -36,6 +36,32 @@ it('actual input readers distinguish dependency failure from a verified empty sn
 });
 
 const assignment={table_id:'physical-a',table_session_id:'session-new'};
+it.each([
+ {data:null,error:{message:'synthetic outage'}},
+ {data:null,error:null}, {data:-1,error:null}, {data:NaN,error:null},
+ {data:Infinity,error:null}, {data:'0',error:null},
+ {data:0,error:null}, {data:1,error:null},
+ {data:0,error:null,releaseError:true},
+])('gates early-break release on verified supply and exposes failures: %j',async(response)=>{
+ const entryStart=source.indexOf('export async function passRRotationPlanner(');
+ const entryEnd=source.indexOf('// ─── replanSingleTable',entryStart);
+ const entry=ts.transpileModule(source.slice(entryStart,entryEnd).replace('export async function','async function'),{
+  compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
+ }).outputText;
+ const rpc=vi.fn(async(name:string)=>name==='count_available_dealers'?response:{data:[],error:'releaseError' in response?{message:'synthetic release outage'}:null});
+ const planner=new Function('fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo','reconcileAndAdopt','markOvertime','buildRotationSupply','console','crypto','SWING_POLICY',`${entry};return passRRotationPlanner;`)(
+  async()=>[{...assignment,attendance_id:'outgoing',swing_due_at:new Date(0).toISOString()}],async()=>[],
+  async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),async()=>({adopted:0,cancelled:0}),async()=>0,
+  async()=>({status:'query_failed',errorCode:'test_boundary_after_supply'}),{warn:vi.fn(),error:vi.fn()},
+  {randomUUID:()=> 'run-test'},{rest:{executeMinRestFloorMinutes:15}},
+ );
+ const result=await planner({rpc},{clubId:'club-a',cycleExcludedIds:[],preAnnounceMinutes:3});
+ const verified=!response.error&&typeof response.data==='number'&&Number.isInteger(response.data)&&response.data>=0;
+ expect(rpc.mock.calls.map(call=>call[0])).toEqual(verified&&response.data===0?['count_available_dealers','end_breaks_on_demand']:['count_available_dealers']);
+ if(!verified)expect(result.errors).toContainEqual({scope:'early_break_supply',error:'rotation_available_count_unverified'});
+ else if('releaseError' in response)expect(result.errors).toContainEqual({scope:'early_break_release',error:'rotation_early_break_release_unavailable'});
+ else expect(result.errors).toEqual([{scope:'candidate_snapshot',error:'test_boundary_after_supply'}]);
+});
 const session={id:'session-new',club_id:'club-a',game_table_id:'physical-a',
  tournament_id:'tour-new',session_type:'tournament',closed_at:null};
 const link={id:'logical-a',table_id:null,game_table_id:'physical-a',table_session_id:'session-new',

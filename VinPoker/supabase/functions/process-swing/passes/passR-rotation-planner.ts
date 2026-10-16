@@ -593,16 +593,19 @@ export async function passRRotationPlanner(
     // due (or overdue) without a live pre-assign and raw available supply is below
     // that demand, free up to `shortage` dealers whose AUTO comp break already has
     // ≥15' rest. Runs BEFORE buildRotationSupply so the freed dealers join THIS
-    // tick's plan. NEVER force-releases a seated dealer. Non-fatal if the RPC isn't
-    // applied yet (apply order is free).
+    // tick's plan. NEVER force-releases a seated dealer. A failed supply read is
+    // not zero supply; optional release failures remain visible in dispatch.
     try {
       const horizonMs = Date.now() + Math.max(ctx.preAnnounceMinutes, 3) * 60_000;
       const demand = assignments.filter((a) =>
         !a.pre_assigned_attendance_id && new Date(a.swing_due_at).getTime() <= horizonMs
       ).length;
       if (demand > 0) {
-        const { data: availData } = await admin.rpc("count_available_dealers", { p_club_id: ctx.clubId });
-        const available = typeof availData === "number" ? availData : 0;
+        const { data: availData, error: availError } = await admin.rpc("count_available_dealers", { p_club_id: ctx.clubId });
+        if (availError || typeof availData !== "number" || !Number.isInteger(availData) || availData < 0) {
+          result.errors.push({ scope: "early_break_supply", error: "rotation_available_count_unverified" });
+        } else {
+        const available = availData;
         const requestedRelease = Math.max(0, Math.min(demand - available, 20));
         if (requestedRelease > 0) {
           const { data: ended, error: endErr } = await admin.rpc("end_breaks_on_demand", {
@@ -611,10 +614,13 @@ export async function passRRotationPlanner(
             p_max_count: requestedRelease,
           });
           if (endErr) {
-            // Merge-order safety: RPC not applied yet → non-fatal, quiet one-liner.
+            result.errors.push({ scope: "early_break_release", error: "rotation_early_break_release_unavailable" });
+            // Planning may continue, but the dispatch must not report all-green.
             console.warn(`[Pass R] F2 end_breaks_on_demand unavailable; skipping (${endErr.message})`);
+          } else if (!Array.isArray(ended)) {
+            result.errors.push({ scope: "early_break_release", error: "rotation_early_break_result_unverified" });
           } else {
-            const releasedCount = (ended ?? []).length;
+            const releasedCount = ended.length;
             result.earlyBreakEnds = releasedCount;
             if (releasedCount > 0) {
               console.log(
@@ -626,8 +632,10 @@ export async function passRRotationPlanner(
             }
           }
         }
+        }
       }
     } catch (err) {
+      result.errors.push({ scope: "early_break_supply", error: "rotation_early_break_unavailable" });
       console.warn(`[Pass R] F2 end_breaks_on_demand skipped (non-fatal): ${(err as Error)?.message ?? err}`);
     }
 

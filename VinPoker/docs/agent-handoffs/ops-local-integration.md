@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 PassR early-break supply read failure no longer becomes zero
+
+Baseline8f57955af clean. Inspected main PassR: count_available_dealers RPC error ignored; non-number coerced0, negative accepted, causing end_breaks_on_demand with manufactured shortage. Actual-source entrypoint extraction tests RED6 on oldsource (null/error/null/-1/string0 invoked release; NaN/Infinity hid invalid input without diagnostic). Not a live/PG mutation reproduction: transports and upstream seams synthetic, actual phase control flow executed.
+
+Fix requires successful nonnegative integer count before computing requestedRelease. Invalid count adds early_break_supply/rotation_available_count_unverified and skips release; continues independently validated normal supply/planner path. Release RPC errors/malformed nonarray result and thrown failures now populate result.errors; caller process-swing/index.ts already records passR.errors as dispatch degradation. Rest floor15 unchanged, no force seated release, no new policy/notification. Verified0 remains eligible for existing demand-driven release, verified1 meets one-table demand/no release. Existing rollback/OT paths unchanged.
+
+Expanded actual-source suite22PASS, including positive0/1 and releaseRPCfailure visible; focused Deno check actual passR filePASS, diffPASS. No newmigration/DBchange, nativePGnotstarted, no fulltype/build/CI/deployedEdge/main40worker proof. Owner local-onlyhold; no push/liveDB/frontend/flags/Auto/Daybreakchanges. Next full actual planner/worker native bridge or remaining source gaps; campaign G3/G8/G9 still unaccepted.
+
 ## G3 worker103 real two-session overlap qualification
 
 Baselinebbf7c06a2 clean, product/103 unchanged. Extended existing native harness --overlap, reusing two-session psql pattern from manualSwingCancel.currentSchema.mjs; Windows WSL adapter plus Linux direct. Actual held transaction/barriers observed in pg_stat_activity: holder ClientRead with live xact, waiter wait_event_type Lock before releasing holder. Both statement/idle timeouts15s; finally close/await both handles. No timing sleep masquerading as concurrency.
