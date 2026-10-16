@@ -791,7 +791,7 @@ export async function replanSingleTable(
       return { relocked: false, detail: "assignment_no_longer_active" };
     }
     const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, [a]);
-    if (rejectedTables.size) return { relocked: false, detail: `error: ${rejectedTables.get(a.table_id)}` };
+    if (rejectedTables.size) throw new CandidateSnapshotFailure("query_failed", "rotation_emergency_replan_unverified");
     for (const slot of liveSlots) {
       const { data: cancelled, error: cancelError } = await admin.rpc("cancel_rotation_slot", { p_schedule_id: slot.id, p_reason: cancelReason });
       if (cancelError || cancelled?.outcome !== "cancelled" || cancelled?.schedule_id !== slot.id) {
@@ -859,15 +859,15 @@ export async function replanSingleTable(
       p_table_ids: [a.table_id],
     });
     if (upsertErr || (upsertResult as any)?.outcome !== "ok") {
-      return { relocked: false, detail: `upsert_failed: ${upsertErr?.message ?? "?"}` };
+      throw new CandidateSnapshotFailure("query_failed", "rotation_emergency_persist_unverified");
     }
     const rejectedScope = (upsertResult as { rejected_table_ids?: unknown }).rejected_table_ids;
     if (rejectedScope !== undefined && (!Array.isArray(rejectedScope)
       || rejectedScope.some((id: unknown) => typeof id !== "string"))) {
-      return { relocked: false, detail: "rotation_persist_receipt_invalid" };
+      throw new CandidateSnapshotFailure("query_failed", "rotation_persist_receipt_invalid");
     }
     if (rejectedScope?.includes(a.table_id)) {
-      return { relocked: false, detail: "rotation_persist_session_rejected" };
+      throw new CandidateSnapshotFailure("query_failed", "rotation_persist_session_rejected");
     }
 
     if (!slot0.inAttendanceId) {
@@ -887,11 +887,16 @@ export async function replanSingleTable(
     const announce = await announceDueSlots(
       admin, ctx, [a as ActiveAssignmentRow], supplyByAttendance, tournamentInfo,
     );
+    if (announce.errors.length > 0) {
+      throw new CandidateSnapshotFailure("query_failed", "rotation_emergency_announce_unverified");
+    }
     return announce.locked > 0
       ? { relocked: true, detail: `relocked:${slot0.inDealerName ?? slot0.inAttendanceId}` }
       : { relocked: false, detail: "lock_pending_announce_time" };
   } catch (err: any) {
     if (isCandidateSnapshotFailure(err)) throw err;
-    return { relocked: false, detail: `error: ${err?.message ?? String(err)}` };
+    // The dispatch already aborts/degrades on this typed failure. Returning an
+    // ordinary no-replacement outcome would permit false shortage/OT alerts.
+    throw new CandidateSnapshotFailure("query_failed", "rotation_emergency_replan_unverified");
   }
 }

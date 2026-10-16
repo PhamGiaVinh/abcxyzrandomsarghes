@@ -5,6 +5,11 @@ import ts from 'typescript';
 import {expect,it,vi} from 'vitest';
 
 const source=readFileSync(resolve(process.cwd(),'supabase/functions/process-swing/passes/passR-rotation-planner.ts'),'utf8');
+const candidateSource=readFileSync(resolve(process.cwd(),'supabase/functions/_shared/pickNextDealer.ts'),'utf8');
+const failureStart=candidateSource.indexOf('export class CandidateSnapshotFailure'),failureEnd=candidateSource.indexOf('function requireCandidateSnapshot',failureStart);
+if(failureStart<0||failureEnd<=failureStart)throw Error('Actual candidate failure definitions missing');
+const failureJs=ts.transpileModule(candidateSource.slice(failureStart,failureEnd).replaceAll('export ',''),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+const {CandidateSnapshotFailure,isCandidateSnapshotFailure}=new Function(`${failureJs};return {CandidateSnapshotFailure,isCandidateSnapshotFailure};`)();
 const start=source.indexOf('async function fetchTournamentInfo(');
 const end=source.indexOf('// ─── Phase A:',start);
 if(start<0||end<=start)throw Error('Actual PassR tournament reader seam missing');
@@ -195,7 +200,7 @@ it('actual emergency replanner validates before canceling slots or clearing prea
  const entry=ts.transpileModule(source.slice(entryStart).replace('export async function','async function'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
  }).outputText;
- const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure',`${entry};return replanSingleTable;`)(read,()=>false);
+ const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','CandidateSnapshotFailure',`${entry};return replanSingleTable;`)(read,isCandidateSnapshotFailure,CandidateSnapshotFailure);
  for(const failedTable of [undefined,'table_sessions','tournament_tables']){
   const mutation=vi.fn();
   const snapshot=client([],[],failedTable);
@@ -209,17 +214,14 @@ it('actual emergency replanner validates before canceling slots or clearing prea
    query.select.mockReturnValue(query);query.eq.mockReturnValue(query);
    return query;
   })};
-  const result=await replan(admin,{clubId:'club-a'},'assignment-a',new Set(),'test');
-  expect(result.relocked).toBe(false);
-  expect(result.detail).toBe(`error: ${failedTable==='table_sessions'?'rotation_session_snapshot_unavailable':
-   failedTable==='tournament_tables'?'rotation_tournament_snapshot_unavailable':'rotation_assignment_session_invalid'}`);
+  await expect(replan(admin,{clubId:'club-a'},'assignment-a',new Set(),'test')).rejects.toMatchObject({status:'query_failed',errorCode:'rotation_emergency_replan_unverified'});
   expect(mutation).not.toHaveBeenCalled();
  }
 });
 it.each(['schedule-error','schedule-null','assignment-error','cancel-error','cancel-noop','inactive','verified'] as const)('emergency replan handles snapshot/cancel state %s',async(mode)=>{
  const entryStart=source.indexOf('export async function replanSingleTable(');
  const entry=ts.transpileModule(source.slice(entryStart).replace('export async function','async function'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
- const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','buildRotationSupply',`${entry};return replanSingleTable;`)(async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),()=>false,async()=>{throw new Error('test_boundary_after_clear');});
+ const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','buildRotationSupply','CandidateSnapshotFailure',`${entry};return replanSingleTable;`)(async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),isCandidateSnapshotFailure,async()=>{throw new Error('test_boundary_after_clear');},CandidateSnapshotFailure);
  const update=vi.fn();
  const rpc=vi.fn(async()=>mode==='cancel-error'?{data:null,error:{message:'synthetic outage'}}:{data:mode==='verified'?{outcome:'cancelled',schedule_id:'slot-a'}:{outcome:'noop'},error:null});
  const admin={rpc,from:vi.fn(()=>{
@@ -228,11 +230,24 @@ it.each(['schedule-error','schedule-null','assignment-error','cancel-error','can
    maybeSingle:vi.fn(async()=>({data:mode==='assignment-error'||mode==='inactive'?null:{...assignment,id:'assignment-a',status:'assigned',released_at:null,swing_processed_at:null,pre_assigned_attendance_id:'incoming-a'},error:mode==='assignment-error'?{message:'synthetic outage'}:null})),
   };q.select.mockReturnValue(q);q.eq.mockReturnValue(q);update.mockReturnValue(q);return q;
  })};
- const result=await replan(admin,{clubId:'club-a'},'assignment-a',new Set(),'test');
- const expected=mode.startsWith('schedule-')?'rotation_schedule_snapshot_unavailable':mode==='assignment-error'?'rotation_assignment_snapshot_unavailable':mode==='verified'?'test_boundary_after_clear':'rotation_cancel_unverified';
- expect(result).toEqual({relocked:false,detail:mode==='inactive'?'assignment_no_longer_active':`error: ${expected}`});
+ const result=replan(admin,{clubId:'club-a'},'assignment-a',new Set(),'test');
+ if(mode==='inactive')await expect(result).resolves.toEqual({relocked:false,detail:'assignment_no_longer_active'});
+ else await expect(result).rejects.toMatchObject({status:'query_failed',errorCode:'rotation_emergency_replan_unverified'});
  expect(update).toHaveBeenCalledTimes(mode==='verified'?1:0);
  expect(rpc).toHaveBeenCalledTimes(mode.startsWith('cancel-')||mode==='verified'?1:0);
+});
+it.each(['announce-error','locked-error','persist-error','persist-malformed','persist-rejected','pending','locked'] as const)('emergency dispatch distinguishes failure from business state: %s',async(mode)=>{
+ const entryStart=source.indexOf('export async function replanSingleTable(');
+ const entry=ts.transpileModule(source.slice(entryStart).replace('export async function','async function'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const a={...assignment,id:'assignment-a',status:'assigned',released_at:null,swing_processed_at:null,pre_assigned_attendance_id:null};
+ const q={select:vi.fn(),eq:vi.fn(),in:vi.fn(async()=>({data:[],error:null})),maybeSingle:vi.fn(async()=>({data:a,error:null}))};q.select.mockReturnValue(q);q.eq.mockReturnValue(q);
+ const rpc=vi.fn(async()=>({data:mode==='persist-error'?null:{outcome:'ok',...(mode==='persist-malformed'?{rejected_table_ids:'bad'}:mode==='persist-rejected'?{rejected_table_ids:['physical-a']}:{})},error:mode==='persist-error'?{message:'synthetic outage'}:null}));
+ const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','buildRotationSupply','getFeatureTablePoolsByTable','getReservedDealerIds','solveRotationPlan','buildSolverTables','rowToJson','crypto','SWING_POLICY','ANNOUNCE_LEAD_MS','SOLVER_VERSION','announceDueSlots','CandidateSnapshotFailure',`${entry};return replanSingleTable;`)(
+  async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),isCandidateSnapshotFailure,async()=>({status:'ok',supply:[]}),async()=>new Map(),async()=>new Set(),()=>({rows:[{slotIndex:0,inAttendanceId:'incoming-a'}]}),()=>[],()=>({}),{randomUUID:()=> 'run-a'},{rest:{executeMinRestFloorMinutes:15}},180000,'test',async()=>({locked:mode==='locked'||mode==='locked-error'?1:0,errors:mode==='announce-error'||mode==='locked-error'?[{scope:'announce_query',error:'synthetic outage'}]:[]}),CandidateSnapshotFailure,
+ );
+ const result=replan({from:()=>q,rpc},{clubId:'club-a',minInterSwingRestMinutes:15},a.id,new Set(),'test');
+ if(mode==='pending'||mode==='locked')await expect(result).resolves.toEqual({relocked:mode==='locked',detail:mode==='locked'?'relocked:incoming-a':'lock_pending_announce_time'});
+ else await expect(result).rejects.toMatchObject({status:'query_failed',errorCode:mode==='persist-error'?'rotation_emergency_persist_unverified':mode==='persist-malformed'?'rotation_persist_receipt_invalid':mode==='persist-rejected'?'rotation_persist_session_rejected':'rotation_emergency_announce_unverified'});
 });
 it('isolates a legacy row and still admits the valid table to reconciliation',async()=>{
  const entryStart=source.indexOf('export async function passRRotationPlanner(');
