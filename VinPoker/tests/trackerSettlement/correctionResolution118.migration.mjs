@@ -11,6 +11,27 @@ const sql=input=>execFileSync(binary,[...prefix,...flags],{input,encoding:'utf8'
 assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000;"),database+'|127.0.0.1|55441|17');
 const dir=sql('SHOW data_directory');assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');
 assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net');"),'f');
+if(process.argv.includes('--scope120')){
+ const raw=readFileSync(new URL('../../supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql',import.meta.url),'utf8').replaceAll('\r','');
+ const old=raw.match(/old_trigger text:=\$old\$([\s\S]*?)\$old\$/)[1];
+ const replacement=old.replace('UPDATE OF tournament_id, hand_number,','UPDATE OF tournament_id, table_id, tournament_table_id, table_session_id, hand_number,');
+ const trigger=`SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND tgname='trg_tracker_hand_source_revision';`;
+ assert.equal(sql(trigger),replacement);
+ const fingerprint=`SELECT md5(jsonb_build_object('functions',(SELECT jsonb_agg(to_jsonb(p)||jsonb_build_object('definition',pg_get_functiondef(p.oid)) ORDER BY p.oid) FROM pg_proc p WHERE p.prokind='f' AND p.pronamespace IN ('public'::regnamespace,'floor_private'::regnamespace)),
+ 'triggers',(SELECT jsonb_agg(CASE WHEN t.tgrelid='public.tournament_hands'::regclass AND t.tgname='trg_tracker_hand_source_revision' THEN to_jsonb(t)-'oid' ELSE to_jsonb(t) END ORDER BY t.tgrelid,t.tgname) FROM pg_trigger t WHERE NOT t.tgisinternal))::text);`;
+ const before=sql(fingerprint),body=raw.replace(/^BEGIN;$/m,'').replace(/COMMIT;\s*$/,'ROLLBACK;');
+ const restore=`DROP TRIGGER trg_tracker_hand_source_revision ON public.tournament_hands;${old};\n`;
+ const helper=sql("SELECT pg_get_functiondef('floor_private.bump_hand_identity_revision_v1()'::regprocedure);");
+ const changed=helper.replace('BEGIN','BEGIN\n -- scope120 intentional drift');assert.notEqual(changed,helper);
+ for(const [setup,code] of [[restore+changed+';\n','hand_scope120_dependency_drift'],
+  [restore.replace(old,()=>old.replace('hand_number, ','')),'hand_scope120_trigger_drift']]){
+  let failure='';try{sql(`BEGIN;${setup}${body}`);}catch(error){failure=String(error.stderr??error);}
+  assert.ok(failure.includes(code),failure);assert.equal(sql(fingerprint),before);
+ }
+ const check=`DO $check$ BEGIN IF (${fingerprint.replace(/;$/,'')}) IS DISTINCT FROM '${before}' THEN RAISE EXCEPTION 'scope120_unexpected_catalog_delta';END IF;END;$check$;`;
+ sql(`BEGIN;${restore}${body.replace(/ROLLBACK;\s*$/,()=>check+'ROLLBACK;')}`);assert.equal(sql(fingerprint),before);assert.equal(sql(trigger),replacement);
+ console.log('SCOPE120_FUNCTION_TRIGGER_DRIFT_GUARDS_METADATA_ROLLBACK_PASS');process.exit(0);
+}
 if(process.argv.includes('--history119')){
  const worker='public.commit_tracker_historical_display_outcome_v2(uuid,uuid,text,bigint,text,text,text,text,jsonb,uuid)';
  const resolver='public.resolve_tracker_historical_display_intent_v1(uuid,uuid,uuid,text,bigint,text,text)';

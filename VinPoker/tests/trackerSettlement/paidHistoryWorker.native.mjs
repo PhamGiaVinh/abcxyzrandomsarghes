@@ -146,6 +146,33 @@ if(verified){const outcome=JSON.parse(sql(`SELECT public_outcome FROM public.tou
 const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
 const history=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
 assert.equal(history.items[0].result.status,verified?'verified':'needs_attention');assert.equal(business(),before);
+if(process.argv.includes('--identity-revision')){
+ assert.equal(verified,true);
+ const revision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
+ const other=sql(`SELECT id FROM public.tournament_tables WHERE tournament_id='${fixture.tour}' AND id<>'${logical}' ORDER BY id LIMIT 1;`);assert.ok(isUuid(other));
+ let fkBlocked=false;
+ try{sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${fixture.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${fixture.actor}"}';SET LOCAL ROLE authenticated;
+  UPDATE public.tournament_hands SET tournament_table_id='${other}' WHERE id='${hand}';ROLLBACK;`);}
+ catch(error){fkBlocked=String(error.stderr??error).includes('tournament_hands_table_session_match_v3_fkey');}
+ assert.equal(fkBlocked,true,'mismatched non-null session tuple must be rejected');assert.equal(business(),before);
+ const noOp=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${fixture.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${fixture.actor}"}';SET LOCAL ROLE authenticated;
+  UPDATE public.tournament_hands SET updated_at=updated_at WHERE id='${hand}';RESET ROLE;
+  SELECT jsonb_build_object('revision',(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}'),'verified',(SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified'));ROLLBACK;`));
+ assert.equal(noOp.revision,revision);assert.equal(noOp.verified,1);
+ for(const [assignment,target] of [['table_id=NULL',logical],['table_session_id=NULL',logical],[`table_session_id=NULL,tournament_table_id='${other}'`,other]]){
+ const probe=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${fixture.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${fixture.actor}"}';SET LOCAL ROLE authenticated;
+  UPDATE public.tournament_hands SET ${assignment} WHERE id='${hand}';RESET ROLE;
+  SELECT jsonb_build_object('moved',(SELECT tournament_table_id='${target}' FROM public.tournament_hands WHERE id='${hand}'),
+   'revision',(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}'),
+   'pending',(SELECT count(*) FROM public.tracker_historical_display_queue q JOIN public.tournament_hands h ON h.id=q.hand_id AND h.source_revision=q.source_revision WHERE h.id='${hand}' AND q.status='pending'),
+   'verified',(SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified'),
+   'public',(SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${target}',20,NULL,NULL)));ROLLBACK;`));
+ assert.equal(business(),before,'identity diagnostic must rollback all business rows');
+ assert.ok(!probe.moved||probe.revision>revision,'IDENTITY_REPARENT_WITHOUT_REVISION '+JSON.stringify(probe));
+ if(probe.moved){assert.equal(probe.verified,0);assert.equal(probe.pending,1);assert.notEqual(probe.public.items[0].result.status,'verified');}
+ }
+ console.log('PAID_VERIFIED_HAND_IDENTITY_REPARENT_REVISION_FENCE_PASS');
+}
 const observed=calls.length;
 for(const [credential,body,status,expectedCode] of [
  ['TEST_HISTORY_SERVICE',{hand_ids:[hand],limit:1},404,'worker_disabled'],

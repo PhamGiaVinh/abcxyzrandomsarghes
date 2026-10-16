@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Hand scope revision bypass reproduced; forward120 local regression PASS
+
+Baseline73e08a5e2. Catalog writer scan found existing hand revision trigger omits table_id/tournament_table_id/table_session_id. Actual paid canonical hand and actual worker first produced verified proof. Authenticated owner changing mismatched nonnull table/session is correctly rejected by composite FK; however nullable legacy session plus logical-table reparent succeeded without revision advance, and public history still returned verified (RED0c7fa7; probe rolled back). This is local evidence, not a live finding.
+
+New CLI-generated forward120 pins existing bump/invalidation/enqueue function digests and exact predecessor trigger; adds only the three scope columns to its UPDATE OF list. No new function/grant/policy/backfill, identity inference or chip recalculation. Local application preserves full function catalog. Qualification0cd106 proves dependency/trigger drift fail closed and full metadata rollback. Final0f9761 exit0 proves all three scope vectors (physical table NULL, session NULL, nullable-session logical reparent) advance revision, invalidate old verified proof, enqueue current generation and remove public verified status; no-op updated_at preserves revision/proof, FK rejection remains. Every mutation probe rolls back to original business fingerprint. node --check both changed harnesses and git diff --check PASS.
+
+CI apply/qualification/identity commands prepared only; no dispatch or full typecheck/build. Local PG stopped. No push, production DB/Edge/frontend/flag/Auto/Daybreak changes. Supabase/Postgres guidance used to preserve existing server revision/queue machinery rather than recalculate results. G6/master remain ACTIVE, local-only; remaining full writer coverage, parent workspace/browser/provider/full-tour/performance/release criteria are not complete.
+
 ## Real editor cardpicker/reason→actual atomic correction/recovery local PASS
 
 Baseline3873e3bb2 clean/previousPROGRESS. Expanded existing native paid correction journey to render REAL HandEditPanel+CardSlotPicker before preview, click ranks+suits2c/3d/4h, enter actualreason via accessible textbox, click Xemtrướctínhchip, collect actualeditorpatch/expectedstacks and buildServerSettlementEdit. Legacy onSave never called. Actual clientrunClientResettle→realResettlePreview→hookpersist/actualEdge+SQL→missingreceipt→remountresolveroneoutcome remains.55e6ea finalPASS, fullpostcommitbusinessfingerprintstable.361833 firstharnessfailure secondRadixpopover raced previousclose/focus; await act and dialogclosed at each choice fixed2cf18c, no productcardpickerchange/claimthatwaslivebug.

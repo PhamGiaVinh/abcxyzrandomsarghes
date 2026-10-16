@@ -41,6 +41,7 @@ on:
       - 'VinPoker/src/components/cashier/tournament-live/HandEditPanel.tsx'
       - 'VinPoker/supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql'
       - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
@@ -1045,6 +1046,8 @@ jobs:
           node tests/trackerSettlement/correctionResolution118.migration.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql
           node tests/trackerSettlement/correctionResolution118.migration.mjs --history119
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql
+          node tests/trackerSettlement/correctionResolution118.migration.mjs --scope120
           node tests/cashier/paidJourney.runtime.mjs
           node tests/cashier/paidJourney.runtime.mjs --seat-blockers
           node tests/cashier/paidJourney.runtime.mjs --active-hand
@@ -1052,6 +1055,7 @@ jobs:
           node tests/cashier/paidJourney.runtime.mjs --active-hand --legacy-correction
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified --identity-revision
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --lost-commit-response
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --expired-lease
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correct-during-commit
