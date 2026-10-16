@@ -202,6 +202,13 @@ export function TrackerVoicePanel({
   onDiagnosticSnapshot,
 }: TrackerVoicePanelProps) {
   const providerRef = useRef<RealtimeTranscriptionProvider | null>(providerOverride ?? null);
+  const connectionGenerationRef = useRef(0);
+  const connectionScopeKey = JSON.stringify([hook.tournamentId, hook.tournamentTableId]);
+  const connectionScopeRef = useRef(connectionScopeKey);
+  if (connectionScopeRef.current !== connectionScopeKey) {
+    connectionScopeRef.current = connectionScopeKey;
+    ++connectionGenerationRef.current;
+  }
   const [status, setStatus] = useState<VoiceProviderStatus>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [partial, setPartial] = useState("");
@@ -462,6 +469,8 @@ export function TrackerVoicePanel({
       return null;
     }
   }, [hook.tournamentId, hook.tournamentTableId, loadRuntimeOverride, runtimeOverride, runtimeScopeKey]);
+  const refreshRuntimeRef = useRef(refreshRuntime);
+  refreshRuntimeRef.current = refreshRuntime;
 
   useEffect(() => {
     const reads = runtimeReadGenerationRef;
@@ -852,8 +861,9 @@ export function TrackerVoicePanel({
   ]);
 
   useEffect(() => () => {
+    ++connectionGenerationRef.current;
     void providerRef.current?.disconnect();
-  }, []);
+  }, [connectionScopeKey]);
 
   useEffect(() => {
     if (micTestStartedAt === null) return;
@@ -895,7 +905,11 @@ export function TrackerVoicePanel({
   }, []);
 
   const connect = async () => {
-    const currentRuntime = runtime ?? await refreshRuntime();
+    const generation = ++connectionGenerationRef.current;
+    const isCurrent = () => generation === connectionGenerationRef.current
+      && connectionScopeRef.current === connectionScopeKey;
+    const currentRuntime = await refreshRuntimeRef.current();
+    if (!isCurrent()) return;
     if (!currentRuntime?.can_mint_session) {
       setStatus("error");
       setStatusMessage(runtimeError ?? "Dealer chưa có đúng một assignment hoặc Voice chưa được bật.");
@@ -922,6 +936,8 @@ export function TrackerVoicePanel({
     setAudioLevel(0);
     setStatusMessage(null);
     const acceptFinalEvent = (finalEvent: VoiceTranscriptEvent, receivedAt: number) => {
+      if (!isCurrent()) return;
+      const eventScope = runtimeScopeRef.current;
       setPartial("");
       setProposal(null);
       setProposalProviderEventId(null);
@@ -940,7 +956,8 @@ export function TrackerVoicePanel({
         setBufferStatus("Transcript được giữ cục bộ. Voice sẽ không ghi action khi Floor chưa sửa xong.");
         return;
       }
-      void refreshRuntime().then((freshRuntime) => {
+      void refreshRuntimeRef.current().then((freshRuntime) => {
+        if (!isCurrent() || runtimeScopeRef.current !== eventScope) return;
         if (!freshRuntime) {
           setValidationState("error");
           setValidationError("Không tải lại được trạng thái bàn. Hãy thử nói lại action.");
@@ -964,10 +981,12 @@ export function TrackerVoicePanel({
     try {
       await provider.connect({
         onStatus: (next, message) => {
+          if (!isCurrent()) return;
           setStatus(next);
           setStatusMessage(message ?? null);
         },
         onTranscript: (event) => {
+          if (!isCurrent()) return;
           if (!event.isFinal) {
             setPartial(looksLikePrivateHoleCardsTranscript(event.transcript)
               ? "Đang nhận diện đề xuất bài tẩy riêng tư..."
@@ -1021,23 +1040,28 @@ export function TrackerVoicePanel({
           acceptFinalEvent(finalEvent, receivedAt);
         },
         onLevel: (rms) => {
+          if (!isCurrent()) return;
           const normalized = Math.max(0, Math.min(1, rms));
           setAudioLevel(normalized);
           if (micTestActiveRef.current) micTestMaxLevelRef.current = Math.max(micTestMaxLevelRef.current, normalized);
         },
-        onInputDevice: setInputDevice,
-        onSession: setSession,
+        onInputDevice: (device) => { if (isCurrent()) setInputDevice(device); },
+        onSession: (nextSession) => { if (isCurrent()) setSession(nextSession); },
       });
     } catch (error) {
+      if (!isCurrent()) return;
       await provider.disconnect().catch(() => undefined);
+      if (!isCurrent()) return;
       setStatus("error");
       setStatusMessage(error instanceof Error ? error.message : "Không mở được microphone.");
     }
   };
 
   const disconnect = async () => {
+    const generation = ++connectionGenerationRef.current;
     pendingAmountPrefixRef.current = null;
     await providerRef.current?.disconnect();
+    if (generation !== connectionGenerationRef.current) return;
     setStatus("idle");
     setAudioLevel(0);
     setPartial("");

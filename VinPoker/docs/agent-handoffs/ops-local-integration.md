@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Voice panel transcript/disconnect continuation RED → local fence
+
+Baselinefbe9e5fc7 clean/previousPROGRESS. Extended existing source-executing runtime lifecycle tests: actual connect/disconnect callbacks baseline6PASS2FAIL show pending final-transcript refresh creates setFinalAttempt after disconnect, and retained provider callback still publishes after stop. Connection generation now invalidated synchronously at disconnect/table render change/unmount; connect freshly loads runtime before microphone, all provider callbacks and post-refresh/post-disconnect continuations fenced. Event captures exact hand scope and cannot cross hand transition while awaiting refresh. Latest refreshRuntime ref permits continuing microphone across successive hands instead of using the prior hand's captured loader (important compatibility with previous read fence).
+
+Final11/11PASS32.66ms; sourceESLint0/diffcheckPASS. New positives ensure next-hand runtime reader used with one connection, current transcript becomes attempt, stop during initial context load never starts provider. Actual callback/effect source compiled with modeled refs/state/provider/HTTP; NOT full React/Auth/SDK/provider/receipt/375. Existing Voice workflow already invokes extended test, no dispatch. Scope contains tournament/canonicaltable; full actor/session/epoch UI boundary, offline/device-change continuation and stale displayedruntime still not globally proven; DB canonical commit remains authority. No liveDB/Edge/frontend/flags/Auto/Daybreak changes, no handles; localonly/masterACTIVE, fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release remain.
+
 ## Voice panel overlapping runtime reads RED → local fence
 
 Baseline802ffe2e5 clean/previousPROGRESS. Actual refreshRuntime callback unconditionally published late success/rejection: new source-executing Node/SWC tests3/3FAIL reproduced stale success overriding current runtime, stale error clearing it, invalidated request still publishing. Added request generation, render-time tournament/canonicaltable/hand scope generation invalidation, captured callback old-scope refusal and effect cleanup invalidation. Current success/errors still publish; no server authorization/writer/model change, no retry added.

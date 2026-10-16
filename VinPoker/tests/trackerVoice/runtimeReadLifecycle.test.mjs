@@ -6,11 +6,13 @@ import {parseSync,transformSync} from '@swc/core';
 
 // Executes actual panel callback, with modeled state/read seams, not React/Auth/HTTP.
 const source=readFileSync(new URL('../../src/components/tracker/voice/TrackerVoicePanel.tsx',import.meta.url),'utf8');
-const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect;
+const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback;
 const slice=node=>Buffer.from(source).subarray(node.span.start-tree.span.start,node.span.end-tree.span.start).toString();
 function visit(node){
  if(!node||typeof node!=='object')return;
  if(node.type==='VariableDeclarator'&&node.id.value==='refreshRuntime')callback=node.init.arguments[0].expression;
+ if(node.type==='VariableDeclarator'&&node.id.value==='connect')connectCallback=node.init;
+ if(node.type==='VariableDeclarator'&&node.id.value==='disconnect')disconnectCallback=node.init;
  if(node.type==='CallExpression'&&node.callee.value==='useEffect'){
   const candidate=node.arguments[0]?.expression;
   if(candidate&&slice(candidate).includes('void refreshRuntime();'))effect=candidate;
@@ -61,4 +63,52 @@ test('actual runtime effect cleanup invalidates its unfinished request',async()=
  const run=runInNewContext(effectCode,{runtimeReadGenerationRef:f.runtimeReadGenerationRef,refreshRuntime:()=>{pending=f.read();return pending;}});
  const cleanup=run();assert.equal(typeof cleanup,'function');cleanup();f.first.resolve({version:1});
  assert.equal(await pending,null);assert.deepEqual(f.writes,[]);
+});
+
+function connectionFixture(){
+ assert.ok(connectCallback);assert.ok(disconnectCallback);
+ const pending=deferred(),writes=[],runtime={can_mint_session:true,config:{provider_model:'test'},correction_pending:false};
+ let callbacks,waiting=false,connections=0;
+ const refreshRuntime=()=>waiting?pending.promise:Promise.resolve(runtime);
+ const provider={kind:'openai_realtime',connect:async handlers=>{connections++;callbacks=handlers;},disconnect:async()=>{}};
+ const sandbox={Error,performance:{now:()=>1},runtime,runtimeError:null,refreshRuntime,refreshRuntimeRef:{current:refreshRuntime},
+  providerOverride:provider,providerRef:{current:provider},hook:{tournamentId:'tour',tournamentTableId:'table',handId:'hand'},
+  connectionGenerationRef:{current:0},connectionScopeKey:'scope',connectionScopeRef:{current:'scope'},runtimeScopeRef:{current:'hand-scope'},
+  pendingAmountPrefixRef:{current:null},micTestActiveRef:{current:false},micTestFinalCountRef:{current:0},micTestMaxLevelRef:{current:0},
+  runtimeRef:{current:runtime},finalReceivedAtRef:{current:new Map()},handsFreeActionCommitRef:{current:null},
+  isTrackerVoiceGeminiLiveModel:()=>false,isIncompleteAmountCommand:()=>false,combineSplitAmountFinal:()=>null,
+ };
+ for(const name of new Set((slice(connectCallback)+slice(disconnectCallback)).match(/\bset[A-Z]\w+/g)))sandbox[name]=value=>writes.push([name,value]);
+ const compiled=transformSync('const connect='+slice(connectCallback).replaceAll('import.meta.env.VITE_TRACKER_VOICE_PROVIDER','undefined')+';const disconnect='+slice(disconnectCallback)+';({connect,disconnect});',{
+  jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+ const functions=runInNewContext(compiled,sandbox);
+ return {...functions,pending,writes,sandbox,connections:()=>connections,wait:()=>{waiting=true;},emit:()=>callbacks.onTranscript({isFinal:true,providerEventId:'event',transcript:'call',capturedAt:'test'})};
+}
+test('disconnect prevents pending transcript runtime refresh from creating a late attempt',async()=>{
+ const f=connectionFixture();await f.connect();f.wait();f.emit();await f.disconnect();
+ const writes=f.writes.length;f.pending.resolve(f.sandbox.runtime);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.writes.length,writes);assert.equal(f.writes.some(([name])=>name==='setFinalAttempt'),false);
+});
+test('callbacks from the disconnected provider cannot publish a new transcript',async()=>{
+ const f=connectionFixture();await f.connect();await f.disconnect();const writes=f.writes.length;
+ f.emit();await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+});
+test('disconnect during initial runtime lookup never starts microphone provider',async()=>{
+ const f=connectionFixture();f.wait();const pending=f.connect();await f.disconnect();const writes=f.writes.length;
+ f.pending.resolve(f.sandbox.runtime);await pending;assert.equal(f.connections(),0);assert.equal(f.writes.length,writes);
+});
+test('hand transition while transcript runtime is pending discards the old event',async()=>{
+ const f=connectionFixture();await f.connect();f.wait();f.emit();const writes=f.writes.length;
+ f.sandbox.runtimeScopeRef.current='next-hand';f.pending.resolve(f.sandbox.runtime);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+ assert.equal(f.writes.some(([name])=>name==='setFinalAttempt'),false);
+});
+test('ongoing microphone uses latest runtime reader for the next hand without reconnecting',async()=>{
+ const f=connectionFixture();await f.connect();f.sandbox.runtimeScopeRef.current='next-hand';
+ const fresh={...f.sandbox.runtime,active_hand:{hand_id:'next-hand'}};
+ let reads=0;f.sandbox.refreshRuntimeRef.current=async()=>{reads++;return fresh;};
+ f.emit();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(reads,1);assert.equal(f.connections(),1);
+ const attempt=f.writes.find(([name])=>name==='setFinalAttempt');assert.ok(attempt);assert.equal(attempt[1].runtimeSnapshot,fresh);
+ await f.disconnect();
 });
