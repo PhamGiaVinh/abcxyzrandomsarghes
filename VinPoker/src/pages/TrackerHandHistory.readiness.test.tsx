@@ -127,6 +127,48 @@ describe("archive permission readiness", () => {
     expect(screen.queryByText("Home redirect")).not.toBeInTheDocument();
   });
 
+  it.each([null, ["club-a", null], "club-a"])("rejects malformed club scope %j instead of claiming an empty archive", async (data) => {
+    state.rpc.mockResolvedValue({ data, error: null });
+    render(view());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Dữ liệu CLB không hợp lệ");
+    expect(state.from).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("history-panel")).not.toBeInTheDocument();
+  });
+
+  it.each([null, [null], [{ ...tour, name: null }], [{ ...tour, club_id: "club-other" }], [tour, tour]])("rejects malformed or out-of-scope tournaments %j", async (data) => {
+    const query = { select: () => query, order: () => query, in: () => query,
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
+    state.from.mockReturnValue(query);
+    render(view());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Dữ liệu giải không hợp lệ");
+    expect(screen.queryByTestId("history-panel")).not.toBeInTheDocument();
+  });
+
+  it("keeps successful empty scope distinct from malformed scope and recovers on explicit retry", async () => {
+    const read = vi.fn();
+    const query = { select: () => query, order: () => query, in: () => query, then: read };
+    state.from.mockReturnValue(query);
+    state.rpc.mockResolvedValueOnce({ data: null, error: null });
+    render(view());
+    const alert = await screen.findByRole("alert");
+    state.rpc.mockResolvedValueOnce({ data: [], error: null });
+    fireEvent.click(within(alert).getByRole("button"));
+    expect(await screen.findByText("Không tìm thấy giải phù hợp.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(read).not.toHaveBeenCalled(); // Constructing a query is not a network read.
+  });
+
+  it("does not narrow verified admin discovery to incidental club membership", async () => {
+    state.auth.isAdmin = true;
+    const query = { select: () => query, order: () => query, in: vi.fn(() => query),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [{ ...tour, club_id: "club-other" }], error: null }).then(resolve) };
+    state.from.mockReturnValue(query);
+    render(view());
+    expect(await screen.findByTestId("history-panel")).toHaveTextContent("tour-a");
+    expect(query.in).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("times out a hanging club read, retries without losing the deep link and ignores its late result", async () => {
     vi.useFakeTimers();
     let resolveOld!: (value: { data: string[]; error: null }) => void;

@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Archive discovery malformed/scope read integrity RED → local fix
+
+Baseline2421a1c9d clean, previous goal turn PROGRESS. Re-read master G0–G9/code/ship; actual archive parent already has timeout/retry (older handoff gap superseded), so did not reimplement. Actual React tests84977 terminal exit1:6FAIL/11PASS show malformed club scope silently empty/filtered and malformed or crossclub tournament rows trusted. Added narrow read-boundary validation: club array must contain nonempty strings; tournament array requires usable identifiers/name/status/date, unique IDs and nonadmin requested-club membership. Existing RLS remains authority, admin unrestricted discovery preserved; no write/auth/RPC change.
+
+Final21/21 React tests PASS2.68s, scoped ESLint exit0; existing workflow already watches/runs readiness test. Extra empty-scope oracle initially confused query construction with execution; corrected to assert thenable not consumed, not a product/network bug. Positive empty scope/retry/admin other-club and prior timeout/deeplink/actorABA/late-response tests retained. No fulltype/build/browser375/realSDK or production evidence. UI skill influenced explicit retry/error reuse only, no redesign. No PG/helper/run active, push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak unchanged; campaign ACTIVE/localonly. Remaining fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release unaccepted.
+
 ## TV Storage metadata qualification — local PASS, not blob/API proof
 
 Restored original TV-v1 Storage consumer only after exact known closed fixture stub detection; canonical function/ACL/schema usage and existing restrictive policies/immutable-helper digest asserted. Unknown drift fails closed. CI preparation now invokes this bootstrap after its base gate; no dispatch.

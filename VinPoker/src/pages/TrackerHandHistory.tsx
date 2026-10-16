@@ -96,7 +96,10 @@ export default function TrackerHandHistory() {
         setTournamentResult({ scope: readScope, data: [], error: idsError.message });
         return;
       }
-      const clubIds = (ids ?? []).filter((clubId): clubId is string => typeof clubId === "string");
+      if (!Array.isArray(ids) || ids.some((clubId) => typeof clubId !== "string" || !clubId.trim())) {
+        throw new Error("Dữ liệu CLB không hợp lệ. Hãy thử lại.");
+      }
+      const clubIds = ids;
       const archiveClubScope = archiveTournamentClubScope({ isAdmin, trackerClubIds: clubIds });
       let query = supabase
         .from("tournaments")
@@ -113,7 +116,17 @@ export default function TrackerHandHistory() {
         setTournamentResult({ scope: readScope, data: [], error: error.message });
         return;
       }
-      setTournamentResult({ scope: readScope, data: (data ?? []) as TournamentSummary[], error: null });
+      if (!Array.isArray(data) || data.some((row) => !row
+        || typeof row.id !== "string" || !row.id.trim()
+        || typeof row.club_id !== "string" || !row.club_id.trim()
+        || typeof row.name !== "string" || !row.name.trim()
+        || typeof row.status !== "string" || !row.status.trim()
+        || typeof row.created_at !== "string" || !Number.isFinite(Date.parse(row.created_at))
+        || (archiveClubScope !== null && !archiveClubScope.includes(row.club_id)))
+        || new Set(data.map((row) => row.id)).size !== data.length) {
+        throw new Error("Dữ liệu giải không hợp lệ. Hãy thử lại.");
+      }
+      setTournamentResult({ scope: readScope, data, error: null });
     })().catch((error: unknown) => {
       if (!isCurrent()) return;
       setTournamentResult({ scope: readScope, data: [], error: error instanceof Error ? error.message : t("common.archiveUnavailable") });
