@@ -11,6 +11,8 @@ const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','en
 const sql=input=>execFileSync(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
 assert.ok(process.env.VINPOKER_NATIVE_PAID_HISTORY===undefined||process.env.VINPOKER_NATIVE_PAID_HISTORY==='1');
 const historyEnabled=process.env.VINPOKER_NATIVE_PAID_HISTORY==='1';
+assert.ok(process.env.VINPOKER_NATIVE_DEFERRED_BREAK===undefined||process.env.VINPOKER_NATIVE_DEFERRED_BREAK==='1');
+const deferredBreak=process.env.VINPOKER_NATIVE_DEFERRED_BREAK==='1';
 const f=createPaidJourneyFixture(sql,{playerHistoryEnabled:historyEnabled});
 const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
 sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
@@ -183,7 +185,24 @@ assert.ok(breakSource.table);
 const cashProof=()=>sql(`SELECT md5(jsonb_build_object('cash',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}'),
  'hands',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_hands r WHERE tournament_id='${f.tour}'),
  'outcomes',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.tournament_settlement_outcomes r JOIN public.tournament_hands h ON h.id=r.hand_id WHERE h.tournament_id='${f.tour}'))::text);`);
-const cashProofBefore=cashProof();
+let cashProofBefore=cashProof();
+if(deferredBreak){
+ const existingHandIds=JSON.parse(sql(`SELECT jsonb_agg(id ORDER BY id) FROM public.tournament_hands WHERE tournament_id='${f.tour}';`));
+ const existingProof=()=>sql(`SELECT md5(jsonb_build_object('cash',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}'),
+ 'hands',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_hands r WHERE id IN (${existingHandIds.map(id=>`'${id}'::uuid`).join(',')})),
+ 'outcomes',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_settlement_outcomes r WHERE verification_scope='historical_display' AND hand_id IN (${existingHandIds.map(id=>`'${id}'::uuid`).join(',')})))::text);`);
+ const priorChain=JSON.parse(sql(`SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]') FROM public.tournament_settlement_outcomes r WHERE verification_scope='chain' AND hand_id IN (${existingHandIds.map(id=>`'${id}'::uuid`).join(',')});`));
+ const preserved=existingProof();
+ await runPaidTourHand(sql,f,roster(),{breakSource});
+ assert.equal(existingProof(),preserved,'deferred hand must preserve prior historical-display proofs and cash');
+ // Chain proofs intentionally depend on later hands; unlike target-only
+ // historical_display they become stale when this later hand is recorded.
+ for(const old of priorChain){const current=JSON.parse(sql(`SELECT to_jsonb(r) FROM public.tournament_settlement_outcomes r WHERE id='${old.id}';`));
+  assert.equal(current.status,old.status==='verified'?'stale':old.status);
+  for(const key of ['status','updated_at']){delete old[key];delete current[key];}assert.deepEqual(current,old);
+ }
+ cashProofBefore=cashProof();
+}else{
 const plan=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_plan_break_table_v1('${breakSource.table}',${breakSource.revision},'fill_lowest_table');COMMIT;`));
 assert.equal(plan.ok,true);assert.equal(plan.complete,true);assert.equal(plan.moves.length,4);assert.ok(plan.plan_hash);
 const breakKey=crypto.randomUUID();
@@ -192,6 +211,7 @@ const broken=breakCall(plan.plan_hash);assert.equal(broken.ok,true);assert.equal
 const afterBreak=operational(),assignmentAfterBreak=protectedState();
 assert.deepEqual(breakCall(plan.plan_hash),broken);assert.equal(breakCall('different-plan').error,'IDEMPOTENCY_CONFLICT');
 assert.equal(operational(),afterBreak);assert.equal(protectedState(),assignmentAfterBreak);
+}
 assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE table_session_id='${breakSource.session}' AND is_active;`),'0');
 assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
 assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'0');

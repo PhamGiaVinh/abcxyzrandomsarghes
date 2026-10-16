@@ -76,7 +76,11 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand,scenario})
  response=await invoke({...body,expected_actor_id:crypto.randomUUID()});assert.equal(response.status,409);assert.equal((await response.json()).code,'actor_context_changed');assert.equal(serviceReads,0);
  response=await invoke(body);assert.equal(response.status,403);assert.equal((await response.json()).code,'uat_capability_disabled');assert.equal(serviceReads,0);assert.equal(fingerprint(),before);
  const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
- sql(`INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled) VALUES('${fixture.club}','${fixture.tour}','${logical}','${fixture.actor}','correct_completed_hand',true);`);
+ const scope=sql(`INSERT INTO public.tracker_correction_uat_scopes AS s(club_id,tournament_id,tournament_table_id,user_id,capability,enabled)
+ VALUES('${fixture.club}','${fixture.tour}','${logical}','${fixture.actor}','correct_completed_hand',true)
+ ON CONFLICT(tournament_id,tournament_table_id,user_id,capability) DO UPDATE SET enabled=true
+ WHERE s.club_id=excluded.club_id AND s.enabled=false RETURNING id;`);
+ assert.ok(scope,'owned correction scope must be new or the same disabled scope from an earlier hand');
  actor=crypto.randomUUID();response=await invoke(body);assert.equal(response.status,403);assert.equal((await response.json()).code,'actor_not_authorized');assert.equal(serviceReads,0);assert.equal(fingerprint(),before);
  actor=fixture.actor;response=await invoke(body);const preview=await response.json();assert.equal(response.status,200,JSON.stringify({preview,errors}));assert.equal(preview.status,'preview');assert.equal(fingerprint(),before);assert.deepEqual(errors,[]);
  const commit={...body,mode:'commit',idempotency_key:'native-correction-edge-'+hand,expected_source_revision:preview.source_revision,expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash};

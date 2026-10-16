@@ -176,9 +176,12 @@ if(verified){const outcome=JSON.parse(sql(`SELECT public_outcome FROM public.tou
   const board=JSON.parse(sql(`SELECT community_cards FROM public.tournament_hands WHERE id='${hand}';`));assert.deepEqual(board,['Tc','Jc','Qc','2d','3h']);
   const royalWinner=sql(`SELECT player_id FROM public.hand_players WHERE hand_id='${hand}' AND hole_cards @> '["Ac","Kc"]'::jsonb;`);assert.ok(isUuid(royalWinner));
   assert.equal(outcome.players.length,8);assert.deepEqual(outcome.players.map(p=>p.netDelta).sort((a,b)=>a-b),expectedNets);
-  assert.deepEqual(outcome.pots.map(p=>p.amount).sort((a,b)=>a-b),[700,159200]);
+  const deferredTour=process.env.VINPOKER_NATIVE_DEFERRED_BREAK==='1';
+  const starting=JSON.parse(sql(`SELECT jsonb_agg(starting_stack ORDER BY starting_stack) FROM public.hand_players WHERE hand_id='${hand}';`));
+  assert.deepEqual(starting,deferredTour?[19800,20000,20000,20000,20000,20000,20000,20200]:[19900,20000,20000,20000,20000,20000,20000,20100]);
+  assert.deepEqual(outcome.pots.map(p=>p.amount).sort((a,b)=>a-b),deferredTour?[1400,158400]:[700,159200]);
   for(const pot of outcome.pots){assert.equal(pot.allocations.length,1);assert.equal(pot.allocations[0].winnerId,royalWinner);assert.equal(pot.allocations[0].amount,pot.amount);}
-  assert.equal(outcome.refunds.length,1);assert.equal(outcome.refunds[0].playerId,royalWinner);assert.equal(outcome.refunds[0].amount,100);
+  assert.equal(outcome.refunds.length,1);assert.equal(outcome.refunds[0].playerId,royalWinner);assert.equal(outcome.refunds[0].amount,deferredTour?200:100);
   assert.equal(outcome.handRanks.length,1,'public proof must not add losing hand ranks');assert.equal(outcome.handRanks[0].playerId,royalWinner);
   assert.equal(outcome.players.find(p=>p.playerId===royalWinner).endingStack,160000);
  }else{

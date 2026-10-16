@@ -1,5 +1,16 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
+Latest G5/G8 improvement (after4bd26fb7c): SAME durable history-enabled8paid/
+4dealer tour now includes a second4player hand with staffed other-table break:
+4pending/0moved/source seats+dealer retained until actual Finish, then4applied/
+8players160000 at destination/source auto-closed/dealer released, pending mode
+applied, replay/conflict no second effect, new session/no inherited assignment.
+Same tour then canonical terminal showdown/close, workers, anonTV and member
+reads PASS321f13/session55718, PG stopped. Tourcb970403-16e7-407b-9620-19097bffb0db.
+This closes the local durable staffed deferred-break integration gap only;
+mixed cancellation/failure/true concurrent consumer, hosted/browser/Auto/real
+rotations/fullchecks/performance/release and same-hand policy gaps remain.
+
 Latest follow-up after d73a512dc: 4-paid native active-hand deferred move now
 checks pending/applied receipt replay, changed-payload conflict, source close
 denied while occupied, successful empty-source close/replay after Finish in a
@@ -25,10 +36,10 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G2 | Native payroll82/83, profiles84, actor85, tenant86; Cashier paid/re-entry/recovery; Finance read fixes | Served UI, hosted Auth/Data API, live ACL/overloads and actor/club-switch UAT. |
 | G3 | Earlier actual main source/PG ramps2/10/40, shortage/overlap/fault/response-loss; check-in/manual Swing/Voice coupling | Hosted dispatcher/Edge/cron receipts; three real rest15 rotations; tournament canary and desktop/375 evidence. Existing 40-local proof is NOT a new missing test to rerun blindly. |
 | G4 | Atomic create/config88/91, clock89, receipts/true CAS and lifecycle overlaps | Exact deployed revision and real two-table creation/config journey in browser. |
-| G5 | Same8paid tour mode/hand/correction/bust-restore/chip-undo/break/reopen/close; restore history fix122; separate re-entry/concurrency/couplingON/OFF proofs | Same-tour deferred active-hand break, re-entry variants, real browser375, hosted contracts and current legacy-data disposition. |
+| G5 | Same8paid tour mode/hand/correction/bust-restore/chip-undo/immediate and staffed deferred break/reopen/close; restore history fix122; separate re-entry/concurrency/couplingON/OFF proofs | Deferred mixed cancel/fail/concurrent consumer, re-entry variants, real browser375, hosted contracts and current legacy-data disposition. |
 | G6 | Actual fold/showdown Finish→workers→anonymous current proofs; official close123/readiness/immutable ranks; two-actor close+legacy-finalizer both barrier orders; Owner/self/member/tenant history SQL reads; TV event isolation/Storage metadata; Voice/client generation/recovery121 | Same-hand ranking policy is OPEN/release hold; actual mic/provider/HTTP/Auth/CORS, Storage bytes/retention, hosted schedules, anonymous browser multi-flight/reconnect, mid-statement locks and full checks. |
 | G7 | Earlier source triage records GTO retirement, queue meanings and schedule provenance disclosure | Verify F1–F9 on served revision; financial/security claims need live proof, performance belongsG9. Do not rewrite retired GTO or invent schedule approval. |
-| G8 | Same durable2table/8paid/4dealer native journey through closed tour, both workers/public history/anonTV; historyON8member links and complete unique1–8 ranks | Hosted desktop+375 same-tour receipts; setup-first UI order (native metadata setup follows registration), Auto assignment/three real rotations, deferred break/re-entry variants and simultaneous-elimination policy. Mechanical local success cannot close master goal. |
+| G8 | Same durable2table/8paid/4dealer native journey through closed tour, staffed deferred break, three hands/workers/public history/anonTV; historyON8member links and complete unique1–8 ranks | Hosted desktop+375 same-tour receipts; setup-first UI order (native metadata setup follows registration), Auto assignment/three real rotations, re-entry variants and simultaneous-elimination policy. Mechanical local success cannot close master goal. |
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
 
 Latestc2790e terminal0/PGstopped: same closed tour6989f521-5cbc-4504-8ee9-6cdec506f226

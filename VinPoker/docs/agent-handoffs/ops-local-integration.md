@@ -2119,3 +2119,53 @@ staffed deferred break, concurrent consumer, browser/Auth/HTTP or hosted evidenc
 No push/CI/build/fulltypecheck/production DB/Edge/frontend/flags/Auto/UAT; Daybreak
 OFF/local resource hold unchanged. Same-hand ranking business/release hold stays;
 no answer inferred from continuation. Goal ACTIVE, original acceptance gaps remain.
+
+## 2026-10-16 — Same8paid staffed deferred-break integration completed locally
+
+Baseline4bd26fb7c; no product migration/SQL/Edge/UI modified. Existing roster test
+has explicit VINPOKER_NATIVE_DEFERRED_BREAK=1 variant. Reuses runPaidTourHand for
+second actual4player fold hand, next hand number from canonical DB. Break source
+is exact other table, with one real native handler-created dealer assignment.
+Actual complete4move/hash preview → break_v5 COMMIT returns4pending/0moved/notclosed;
+source seats/dealer remain, fresh close denied table_not_empty. Actual Voice Finish
+settlement COMMIT applies4moves before pending Manual/epoch switch, auto-closes
+source and releases that assignment; destination8/160000, zero pending/source seats.
+Break receipt replay after asynchronous completion remains original pending
+receipt; changed hash conflicts, queue unchanged. No second move, cash/chip ledger
+preserved. Reopen new incarnation/no old assignment, old writer rejected. Same
+tour continues terminal8player showdown/close/current worker proof/anonTV/member
+role+tenant checks. Three hands now, not a replacement isolated break fixture.
+
+Harness issues distinguished from product bugs, failures retained/no data reset:
+c67381/37076→07fb12: repeated clock-start expected success incorrectly. Second
+hand now explicitly requires clock_already_started; first still requires success.
+eb4195/47254→9b4ba6: correction test re-inserted its prior disabled same-table
+capability. Native fixture can reactivate ONLY exact same disabled scope/same club;
+enabled/drifted rows do not silently pass. No product grants/auth weakening.
+5d9617/38029→571d06: old-proof fingerprint incorrectly treated chain and
+historical_display equally. Source tracker_mark_prior_settlements_stale explicitly
+invalidates prior chain proofs on later-hand changes. Now asserts prior target-only
+historical_display rows/cash/hands unchanged, and prior chain rows change ONLY
+status verified→stale and updated_at; all other chain fields immutable.
+Showdown independent oracle extended for two real SBfold transfers: starts
+[19800,6×20000,20200], pots158400+1400/refund200 vs original one-hand159200+700/100.
+No settlement/payout/ranking algorithm changed. Private helper grants expanded
+three-hand run240s budget only; original120s retained otherwise. No timeout masked.
+
+Final command: VINPOKER_NATIVE_DEFERRED_BREAK=1 node candidate111-integration-native.mjs
+--cash112 --portable115 --paid-tour-roster --paid-history-roster --existing.
+d6bb72/session55718→321f13 full success markers/PG stopped. Club
+b24bc168-0bea-41e6-96a3-e700defddb44; tourcb970403-16e7-407b-9620-19097bffb0db;
+firsthand14eacbb3-8cdc-4c04-8b72-747a80f29135;
+deferredhand7bc11227-1084-4b70-8fb5-081d10a5bd2e;
+terminalhand5db15f78-322b-45ff-928f-183bafd066f4. Native metadata/audit retained.
+Node syntax4files, YAMLparse, diff checks PASSb819d4. Existing CI historyON roster
+command now selects deferred variant, default historyOFF immediate variant kept;
+CI NOT dispatched,10min suite budget/Node22/full typecheck/build NOT verified.
+
+Same-hand ranking observation persists:19800stack→place4 vs20000→place8.
+Unique ranks remain mechanical evidence, NOT house-policy/payout acceptance;
+123/history finalization release hold still needs owner decision. No liveDB/Edge/
+frontend/flags/UAT/push/Auto/deploy, DaybreakOFF/local resource hold unchanged.
+Goal ACTIVE/PROGRESS; next independent gap is same-tour canonical paid re-entry
+and dependent chip/entry identity, not rerun this successful deferred path blindly.
