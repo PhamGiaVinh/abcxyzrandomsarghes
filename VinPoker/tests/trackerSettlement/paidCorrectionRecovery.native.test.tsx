@@ -4,21 +4,52 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { useState, type ComponentProps } from "react";
 import { execFileSync } from "node:child_process";
 import { webcrypto } from "node:crypto";
+import { MemoryRouter } from "react-router-dom";
 import { createPaidCompletedHandFixture } from "../cashier/paidJourney.fixture.mjs";
 import { runPaidCorrectionEdge } from "./paidCorrectionEdge.native.mjs";
 import { useCorrectionCommitRecovery } from "@/components/cashier/tournament-live/useCorrectionCommitRecovery";
-import { ResettlePreview } from "@/components/cashier/tournament-live/HandHistoryWorkspace";
+import { HandHistoryWorkspace, ResettlePreview } from "@/components/cashier/tournament-live/HandHistoryWorkspace";
 import { HandEditPanel, type HandEditPanelProps } from "@/components/cashier/tournament-live/HandEditPanel";
 import { buildServerSettlementEdit, runClientResettle } from "@/components/cashier/tournament-live/resettleApply";
 import { readCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
-const h=vi.hoisted(()=>({actor:"",invoke:vi.fn()}));
+const h=vi.hoisted(()=>{const invoke=vi.fn(),from=vi.fn(),rpc=vi.fn();return {actor:"",invoke,from,rpc,client:{from,rpc,functions:{invoke}}};});
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:h.actor}})}));
-vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>({functions:{invoke:h.invoke}})}));
-vi.mock("@/lib/featureFlags",()=>({FEATURES:{trackerAtomicResettle:true},isTrackerAtomicResettleAvailable:()=>true}));
+vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>h.client}));
+vi.mock("@/lib/featureFlags",()=>({FEATURES:{trackerAtomicResettle:true,trackerHandHistoryEdit:true,trackerResettleForward:true,trackerHistoryCompletionWorker:true},isTrackerAtomicResettleAvailable:()=>true}));
 const enabled=process.env.VINPOKER_NATIVE_CORRECTION_UI==='1',database='vinpoker_ops_cash115_qualified_c';
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
 const sql=(input:string)=>execFileSync(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
 let testRole:string|undefined;
+
+// Strict read-only SDK seam. Actual parent predicates/paging and authenticated
+// database reads execute; HTTP/PostgREST and auth provider are not exercised.
+function bindParentReads(actor:string,tour:string){
+ const quote=(v:unknown)=>`'${String(v).replaceAll("'","''")}'`;
+ const authenticated=`SET request.jwt.claim.sub=${quote(actor)};SET request.jwt.claims=${quote(JSON.stringify({role:'authenticated',sub:actor}))};SET ROLE authenticated;`;
+ const column=(v:string)=>{expect(v).toMatch(/^[a-z_]+$/);return v;};
+ h.from.mockImplementation((table:string)=>{
+  expect(['tournament_hands','hand_players','hand_actions','tournament_seats']).toContain(table);
+  let columns='',where:string[]=[],order:string[]=[],limit:number|undefined,offset=0;
+  const builder={select:(v:string)=>{expect(v).toMatch(/^[a-z_, ]+$/);columns=v;return builder;},
+   eq:(key:string,value:unknown)=>{where.push(`${column(key)}=${quote(value)}`);return builder;},
+   gte:(key:string,value:unknown)=>{where.push(`${column(key)}>=${quote(value)}`);return builder;},
+   in:(key:string,values:unknown[])=>{expect(values.length).toBeGreaterThan(0);where.push(`${column(key)} IN (${values.map(quote).join(',')})`);return builder;},
+   order:(key:string,options?:{ascending?:boolean})=>{order.push(column(key)+(options?.ascending===false?' DESC':' ASC'));return builder;},
+   limit:(n:number)=>{expect(n).toBe(1);limit=n;return builder;},
+   range:(from:number,to:number)=>{expect(Number.isSafeInteger(from)&&from>=0&&to>=from&&to-from<1000).toBe(true);offset=from;limit=to-from+1;return builder;},
+   then:(resolve:(value:unknown)=>unknown,reject:(error:unknown)=>unknown)=>{
+    try{expect(columns).not.toBe('');const data=JSON.parse(sql(authenticated+`SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (SELECT ${columns} FROM public.${table}${where.length?' WHERE '+where.join(' AND '):''}${order.length?' ORDER BY '+order.join(','):''}${limit!==undefined?' LIMIT '+limit:''} OFFSET ${offset}) x;`));return Promise.resolve({data,error:null}).then(resolve,reject);}
+    catch(error){return Promise.reject(error).then(resolve,reject);}
+   }};return builder;
+ });
+ h.rpc.mockImplementation(async(name:string,args:{p_tournament_id:string})=>{
+  expect(['list_tracker_tables_v2','get_tracker_historical_display_queue_status']).toContain(name);expect(args).toEqual({p_tournament_id:tour});
+  const query=name==='get_tracker_historical_display_queue_status'
+   ? `SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM public.${name}(${quote(tour)}) x;`
+   : `SELECT public.${name}(${quote(tour)});`;
+  return {data:JSON.parse(sql(authenticated+query)),error:null};
+ });
+}
 afterEach(()=>{cleanup();localStorage.clear();});
 afterAll(()=>{if(testRole)sql(`DROP ROLE ${testRole};`);});
 function Panel({intent,mutation,view,players}:{intent:CorrectionCommitIntent;mutation:()=>Promise<{data:unknown;error:unknown}>;
@@ -93,6 +124,58 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    await waitFor(()=>expect(screen.getByRole('status')).toHaveTextContent('recovered'));
    expect(h.invoke).toHaveBeenCalledWith('tournament-live-resettle-commit',{body:{mode:'resolve',...intent}});
    expect(readCorrectionIntent(localStorage,intent)).toBeNull();expect(writes).toBe(1);expect(fingerprint()).toBe(after);expect(errors).toEqual([]);
+  }});
+ });
+ it('runs the full parent editor/preview/commit and remount receipt recovery against actual SQL',async()=>{
+  expect(process.env.PGHOST).toBe('127.0.0.1');expect(process.env.PGPORT).toBe('55441');expect(process.env.PGDATABASE).toBe(database);
+  Object.defineProperty(globalThis,'crypto',{configurable:true,value:webcrypto});
+  Object.defineProperty(navigator,'locks',{configurable:true,value:{request:async(_key:unknown,_options:unknown,fn:()=>Promise<unknown>)=>await fn()}});
+  const {fixture,hand}=createPaidCompletedHandFixture(sql,{verified:true});h.actor=fixture.actor;
+  if(!testRole){testRole='correction_ui_'+crypto.randomUUID().replaceAll('-','');sql(`CREATE ROLE ${testRole} NOLOGIN INHERIT BYPASSRLS;GRANT service_role TO ${testRole};`);}
+  const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${testRole};`;
+  const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
+  sql(`INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled) VALUES('${fixture.club}','${fixture.tour}','${logical}','${fixture.actor}','correct_completed_hand',true);`);
+  bindParentReads(fixture.actor,fixture.tour);h.invoke.mockClear();
+  await runPaidCorrectionEdge({sql,service,fixture,hand,scenario:async({invoke,setMaskReceipt,errors})=>{
+   setMaskReceipt(true);let commits=0;let intent:CorrectionCommitIntent|undefined;
+   h.invoke.mockImplementation(async(_name:string,{body}:{body:Record<string,unknown>})=>{
+    if(body.mode==='commit'){commits++;intent=readCorrectionIntent(localStorage,{expected_actor_id:fixture.actor,tournament_id:fixture.tour,hand_id:hand})??undefined;expect(intent).toBeDefined();}
+    const response=await invoke(body);return {data:await response.json(),error:response.ok?null:new Error('TEST transport unverified')};
+   });
+   const beforeRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
+   const money=()=>sql(`SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}';`),beforeMoney=money();
+   const props={tournamentId:fixture.tour,initialHandId:hand,initialTableId:logical,workspaceMode:true};
+   const first=render(<MemoryRouter><HandHistoryWorkspace {...props}/></MemoryRouter>);
+   fireEvent.click(await screen.findByRole('button',{name:'Xem bản nháp sửa hand'},{timeout:10_000}));
+   for(const [rank,suit] of [['2','♣'],['3','♦'],['4','♥']]){
+    await act(async()=>{fireEvent.click(screen.getAllByRole('button',{name:'Chọn lá bài'})[0]);});
+    await act(async()=>{fireEvent.click(await screen.findByRole('button',{name:'Chọn hạng '+rank}));});
+    await act(async()=>{fireEvent.click(await screen.findByRole('button',{name:'Chọn '+rank+suit}));});
+    await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+   }
+   fireEvent.change(screen.getByRole('textbox',{name:'Lý do sửa — bắt buộc'}),{target:{value:'TEST parent correction recovery'}});
+   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Xem trước tính chip'}));});
+   const confirm=await screen.findByRole('button',{name:'Xác nhận sửa hand'},{timeout:10_000});expect(confirm).toBeEnabled();
+   await act(async()=>{fireEvent.click(confirm);});
+   await waitFor(()=>expect(screen.getByText(/Chưa xác nhận kết quả sửa hand/)).toBeInTheDocument(),{timeout:10_000});
+   expect(commits).toBe(1);expect(intent).toBeDefined();expect(readCorrectionIntent(localStorage,intent!)).toEqual(intent);
+   expect(screen.getByRole('button',{name:'Xác nhận sửa hand'})).toBeDisabled();expect(money()).toBe(beforeMoney);
+   expect(Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`))).toBeGreaterThan(beforeRevision);
+   expect(JSON.parse(sql(`SELECT community_cards FROM public.tournament_hands WHERE id='${hand}';`))).toEqual(['2c','3d','4h']);
+   const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('hand',(SELECT to_jsonb(x) FROM public.tournament_hands x WHERE id='${hand}'),
+    'proof',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_settlement_outcomes x WHERE hand_id='${hand}'),
+    'queue',(SELECT jsonb_agg(to_jsonb(x) ORDER BY source_revision) FROM public.tracker_historical_display_queue x WHERE hand_id='${hand}'),
+    'players',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.hand_players x WHERE hand_id='${hand}'),
+    'actions',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.hand_actions x WHERE hand_id='${hand}'),
+    'entries',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_entries x WHERE tournament_id='${fixture.tour}'),
+    'counts',(SELECT jsonb_agg(to_jsonb(x) ORDER BY player_id,entry_number) FROM public.tournament_chip_counts x WHERE tournament_id='${fixture.tour}'),
+    'seats',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_seats x WHERE tournament_id='${fixture.tour}'))::text);`);
+   const after=fingerprint();first.unmount();render(<MemoryRouter><HandHistoryWorkspace {...props}/></MemoryRouter>);
+   expect(screen.getByText(/Có yêu cầu sửa hand chưa rõ/)).toBeInTheDocument();
+   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Kiểm tra receipt sửa hand'}));});
+   await waitFor(()=>expect(readCorrectionIntent(localStorage,intent!)).toBeNull(),{timeout:10_000});
+   expect(commits).toBe(1);expect(fingerprint()).toBe(after);expect(money()).toBe(beforeMoney);expect(errors).toEqual([]);
+   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${intent!.idempotency_key}';`)).toBe('1');
   }});
  });
 });

@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## FULL parent editor→actual Edge/SQL→lost receipt→remount recovery local PASS
+
+Baseline1ac0889b8 clean/previousPROGRESS. Fetch succeeded: origin/main still ed3db6ac600710e95fe4408c475941916c23ab19. Expanded existing guarded native correction UI test, with stable mocked SDK client and strict read-only whitelist adapter executing actual authenticated SQL predicates/order/range for real HandHistoryWorkspace, including name snapshot/seat fallback and canonical table/queue RPCs. Canonical paid registration/start/Finish fixture; explicit local correction scope. Actual parent→HandEditPanel/CardSlotPicker2c3d4h+reason→actual client compute→real Edge AST/verifier/authorizationSQL/atomic correction→mask committed receipt502→journal survives→parent remount/actual resolver118→clear receipt. One mutation/outcome, real board persisted/revision advanced, cash unchanged. Full postcommit hand/player/action/entry/seat/count/proof/queue fingerprint unchanged by remount/read recovery.
+
+530728 final2/2 native tests PASS (parent10827ms, existing hook8029ms; wholeVitest21.94s), no timeout expansion.17b4f0 initial passed then stronger board/fullfingerprint assertions added. Real app source/canonical SQL and Edge handler execute together; HTTP/PostgREST/Authprovider/CORS/WebLocks modeled, not hosted browser375. Current local worker publication after this exact parent correction remains separate evidence, not automatically proven. Existing CI native test path consumes second case, not dispatched; total job timing/Node22 still unknown. Test-only change, no app/schema/flag change. No installs/heavytypebuild/Docker.
+
+PG stopped/no live handle, no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only. Remaining writer matrix completeness, actual Voice/provider/TV publish/storage, full integrated tour/rest15×3/40worker/performance/required checks/release still required; this is not campaign completion.
+
 ## Correction preview hung read RED→bounded local observation
 
 Baseline38cd9d582 clean/previousPROGRESS. e3bdf2 actual rendered parent RED: never-settling server preview keeps editor busy indefinitely with no error. Reuse existing observeTrackerContextRead (10s) around whole paged chain read, detail Promise.all and Edge preview read; catch read errors with explicit no-mutation message, release current busy only, no retry or automatic commit. Deadline is per phase (up to three sequential phases), not a claimed 10s whole workflow; underlying SDK request is not aborted, late result cannot continue settled observation.
