@@ -5,6 +5,7 @@ import ts from 'typescript';
 import {computeAuthoritativeSettlement,normalizeSettlementSourceRpcResult} from '../../supabase/functions/_shared/trackerSettlement/compute.ts';
 import {assertExpectedTargetEndingStacks,redactedTargetEndingStacks} from '../../supabase/functions/_shared/trackerSettlement/expectedEndingStacks.ts';
 import {canonicalJsonV1} from '../../supabase/functions/_shared/trackerSettlement/outcomeV1.ts';
+import {runPaidCorrectionOverlap} from './paidCorrectionOverlap.native.mjs';
 
 // Called only after paidHistoryWorker's dedicated local database guard/fixture.
 // Real Edge code, compute and SQL; getUser/HTTP/CORS transport is modeled.
@@ -104,5 +105,6 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  response=await invoke({...receiptIntent,mode:'resolve',idempotency_key:'native-never-sent-'+hand});const obsolete=await response.json();assert.equal(response.status,200);assert.equal(obsolete.status,'intent_obsolete');assert.equal(obsolete.receipt,null);
  response=await invoke({...receiptIntent,mode:'resolve',idempotency_key:'native-current-unsent-'+hand,expected_source_revision:resolved.current_source_revision});const unknown=await response.json();assert.equal(response.status,200);assert.equal(unknown.status,'receipt_not_found');assert.equal(unknown.receipt,null);
  response=await invoke({...receiptIntent,mode:'resolve',expected_request_hash:'f'.repeat(64)});assert.equal(response.status,409);assert.equal((await response.json()).code,'idempotency_mismatch');assert.equal(fingerprint(),after);
+ if(process.argv.includes('--correction-overlap'))await runPaidCorrectionOverlap({sql,service,fixture,hand});
  console.log(maskReceipt?'ACTUAL_PAID_CORRECTION_MISSING_COMMIT_RECEIPT_THEN_READ_RECOVERY_PASS':'ACTUAL_PAID_CORRECTION_EDGE_SCOPE_PREVIEW_COMMIT_STALE_RETRY_PASS');
 }

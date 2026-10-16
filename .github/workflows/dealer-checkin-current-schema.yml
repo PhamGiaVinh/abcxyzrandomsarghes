@@ -30,6 +30,8 @@ on:
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionEdge*'
+      - 'VinPoker/tests/trackerSettlement/paidCorrectionOverlap*'
+      - 'VinPoker/tests/trackerSettlement/correctionResolution118*'
       - 'VinPoker/src/lib/tracker-poker/correctionCommitIntent*'
       - 'VinPoker/tests/trackerPoker/correctionCommitIntent*'
       - 'VinPoker/src/components/cashier/tournament-live/useCorrectionCommitRecovery*'
@@ -1035,6 +1037,7 @@ jobs:
           node tests/cashier/seatingMigrations.pg17.mjs --only116
           node tests/cashier/seatingMigrations.pg17.mjs --only117
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql
+          node tests/trackerSettlement/correctionResolution118.migration.mjs
           node tests/cashier/paidJourney.runtime.mjs
           node tests/cashier/paidJourney.runtime.mjs --seat-blockers
           node tests/cashier/paidJourney.runtime.mjs --active-hand
@@ -1047,6 +1050,7 @@ jobs:
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correct-during-commit
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-mask-receipt
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap
           node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
