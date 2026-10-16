@@ -1,5 +1,21 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
+17October00:00+07 retention/TV READ-ONLY follow-up: preserve minimum6exact
+artifacts11769592517/11769907350 (Operations schema/provenance),11572064109/
+11572343786 (pre-release schema/provenance),11879603235/11881236944 (encrypted
+recovery/restore receipt). Actual receipt says isolatedRestore+tableCountMatchPASS,
+productionMutationfalse,snapshot2026-10-14T08:17:35Z, exactsource35bae88d; not a new
+backup/fresh restore. Other old backups NOT classified redundant/no deletions.
+Pinned37828303515 overallFAILURE is correctly handled by existing CI: recovery
+jobSUCCESS; unrelated owner-capture validator failed. Do not delete artifacts or
+weaken job-level provenance on the basis of overall conclusion.
+Live canary5540693c-5701-41e8-85d3-601d9f1a8812 is Quads33333333-3333-3333-3333-333333333333:
+AutoOFF/historyON/2open sessions. Branding getter has0scoped published layout
+rows/no own-project publicStorage asset URLs. Existing asset-byte/retention and
+first-publish acceptance therefore remain UNPROVEN; not missing-object evidence.
+No publish/upload/Auto/write/CI/deploy. Remaining web/fullchecks need release
+hold resolved; same-hand house rule still awaiting owner, not guessed.
+
 Fresh external READ-ONLY refresh at2026-10-16T23:50–23:53+07, source8d7d8a07f:
 production alias stilldpl_2kN8DwMQN7xGXGF3NQGyzg7ACjyG/version1791991490366.
 Vercel raw metadata githubCommitShafd84b43470574b006a9ee339e5257090f0188b4c,

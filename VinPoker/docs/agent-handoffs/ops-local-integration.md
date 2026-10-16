@@ -2387,3 +2387,56 @@ contents printed. Vercel skill required project/provenance verification; Supabas
 skill kept queries read-only. G0/G1 progress, not whole-goal completion. Localhold/
 DaybreakOFF/noAuto unchanged; fullchecks/release/hostedtour/realrest15/performance
 and same-hand ranking house-policy decision remain. No verified wait handle left.
+
+## 2026-10-17 00:00+07 — Protected recovery set, actual receipt and TV acceptance gap
+
+Baseline1ac564113 (last implementation8d7d8a07f), clean owned worktree. Previous
+turnPROGRESS; this turn fresh read-only recovery/TV evidence changes next action,
+NOT another native tour rerun. No artifact cleanup tool exists in owned deploy
+scripts; did not create a speculative deletion framework or delete by age/name.
+
+Minimum KEEP set, NOT proof every other artifact is redundant:
+11769592517 reviewed-operations-schema +11769907350 provenance, recoveryrun38275767630,
+bothunexpiredto2027-01-10 (existing CI content hashd23cfa75... not ZIP digest).
+11572064109 reviewed-pre-release-schema +11572343786 provenance, recoveryrun37828303515,
+bothunexpiredto2027-01-06; current protected-nine workflows pin content hash
+703aed6b620cd24f34c31d4545b2d7e97e4a488f89fe81dfc1a36b175d259223.
+That recovery run overallFAILURE is NOT failed recovery: job Recover immutable
+pre-release TEST schema (no live database access)SUCCESS; unrelated owner capture
+validator failed. Existing workflows explicitly verify successful recovery JOB
+and exact original source SHA; no new bug or reason to relax checks.
+11879603235 encrypted-database-recovery-38533693043,463060426bytes,unexpiredto
+2026-11-13T08:24:38Z, GitHubZIPdigest3b0f80b88bd29016900b8243a01a02050af1ca953c5d97f3af3dd0672ae173da.
+11881236944 restore-verification receipt,415bytes/unexpired, ZIPdigest
+d66d5a80307ecdfeb3fa88334a66485dd529f03bd3f4973873eaa3e58a8708cc.
+Actual38533693043 all4jobsSUCCESS incl download/decrypt/isolated restore.
+Read ONLY415-byte receipt ZIP in memory using existingfflate (no installs/files/
+encrypted DB download): schemaVersion1/kindvinpoker-restore-verification,
+sourceSha35bae88d984eea297145684ac0ad1af37b235a82,
+snapshotAt2026-10-14T08:17:35.247890Z,
+ciphertextSha25690b9966611d98f4ecca222c3a5423e798a0d78004dd0fc9d79b62ab3643f44f6,
+isolatedRestorePASS/tableCountMatchPASS/productionMutationfalse. Ciphertext digest
+is NOT GitHub ZIP digest. This is original historical verification, not fresh
+restore or current pre-apply backup. No backup deletion/retention change/restore
+execution. Distinct historical backups cannot be declared redundant by size/age
+without dependency/recovery review. Evidencefc0650/4ac887/aa5d1f/55c64a.
+
+Live Supabase BEGIN READ ONLY exactcanary5540693c-5701-41e8-85d3-601d9f1a8812:
+Quads Poker Club33333333-3333-3333-3333-333333333333,auto_swing_enabledfalse,
+player_history_enabledtrue,2open table sessions. Branding getter scoped to this
+tournament/event yields0published layout rows and no own-project publicStorage
+asset URLs. This is NOT proof all club branding is absent, any object is missing,
+or upload capability is broken; it means no existing canary publication can
+stand in for first-publish/bytes/retention/recovery acceptance. Did not publish,
+upload, invoke workers, use pairing tokens, start rotations or edit flags/data.
+Source local+native tests remain qualified only within their recorded scope.
+
+No code/runtime changes this turn, no fulltypecheck/build/CI dispatch/push/release,
+no permissions/config changes; Daybreak not activated. Code Review connector
+only exposes PR CI diagnostics, not independent source review, so no review PASS
+invented. Remaining required fullchecks/hosted tour/realrest15/provider/asset/
+performance cannot be replaced by more local mocks. Resource local-only hold and
+same-hand house-policy decision still require owner direction before final release.
+Goal remains ACTIVE, not COMPLETE. Do not repeatedly re-probe unchanged artifacts
+or rerun passing native tour to manufacture progress; revalidate actual blockers
+and use blocked audit if no new permitted substantive action remains.
