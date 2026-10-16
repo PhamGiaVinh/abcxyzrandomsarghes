@@ -13,9 +13,11 @@ const source = process.env.HISTORY_SOURCE_REVISION
 const tree = parseSync(source, { syntax: 'typescript', tsx: true });
 let callback;
 let tableEffect;
+let previewCallback;
 function visit(node) {
   if (!node || typeof node !== 'object') return;
   if (node.type === 'VariableDeclarator' && node.id.value === 'loadHands') callback = node.init.arguments[0].expression;
+  if (node.type === 'VariableDeclarator' && node.id.value === 'handleResettle') previewCallback = node.init;
   if (node.type === 'CallExpression' && node.callee.value === 'useEffect') {
     const effect = node.arguments[0].expression;
     const text = Buffer.from(source).subarray(effect.span.start - tree.span.start, effect.span.end - tree.span.start).toString();
@@ -32,6 +34,10 @@ const expression = Buffer.from(source).subarray(callback.span.start - tree.span.
 const compiled = transformSync(`const callback = ${expression};`, {
   jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
 }).code + ';return callback;';
+assert.ok(previewCallback);
+const previewCompiled = transformSync(`const callback = ${Buffer.from(source).subarray(previewCallback.span.start - tree.span.start, previewCallback.span.end - tree.span.start).toString()};`, {
+  jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+}).code + ';return callback;';
 assert.ok(tableEffect, 'actual table-inventory effect must exist');
 const tableCompiled = transformSync(`const effect = ${Buffer.from(source).subarray(tableEffect.span.start - tree.span.start, tableEffect.span.end - tree.span.start).toString()};`, {
   jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
@@ -42,6 +48,59 @@ function deferred() {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
+
+function previewHarness() {
+  const response = deferred(), views = [], busy = [], invocations = [];
+  const target = { id: 'hand-a', created_at: '2026-10-16', hand_number: 1 };
+  const dependencies = {
+    hands: [target], selectedHandId: target.id, tournamentId: 'tour-a',
+    previewGenerationRef: { current: 0 }, previewScopeRef: { current: 'scope-a' }, previewScope: 'scope-a',
+    correctionRecovery: { actorId: 'actor-a', assertNoPending: () => {} },
+    setResettleBusy: value => busy.push(value), setResettleView: value => views.push(value),
+    toast: { error: () => {} }, record: value => value, textValue: value => value,
+    crypto: { randomUUID: () => 'preview-key' },
+    supabase: { functions: { invoke: (...args) => { invocations.push(args); return response.promise; } } },
+    pageAll: async () => ({ data: [], error: null }),
+    runClientResettle: () => ({ result: { ok: true }, entryByPlayer: new Map(), entryByHandPlayer: new Map() }),
+    buildServerSettlementEdit: () => ({ community_cards: ['2c','3d','4h'] }),
+  };
+  let page = 0;
+  dependencies.pageAll = async () => ({ data: page++ === 0 ? [target] : page === 2 ? [{ hand_id: target.id, player_id: 'player', starting_stack: 100, ending_stack: 100 }] : [], error: null });
+  const start = () => Function(...Object.keys(dependencies), previewCompiled)(...Object.values(dependencies))({}, {}, 'TEST', [], []);
+  return { dependencies, response, views, busy, invocations, start };
+}
+
+const readyPreview = () => ({ data: { ok: true, status: 'preview', draft_status: 'READY_TO_APPLY', source_revision: 9,
+  source_chain_hash: 'a'.repeat(64), outcome_hash: 'b'.repeat(64), request_hash: 'c'.repeat(64) }, error: null });
+
+for (const invalidation of ['scope', 'generation']) test(`late server correction preview cannot repopulate invalidated ${invalidation}`, async () => {
+  const h = previewHarness();
+  const pending = h.start();
+  await new Promise(resolve => setImmediate(resolve));
+  if (invalidation === 'generation') h.dependencies.previewGenerationRef.current++;
+  else h.dependencies.previewScopeRef.current = 'scope-b';
+  h.response.resolve(readyPreview());
+  await pending;
+  assert.deepEqual(h.views, [null], 'old preview must not return after scope invalidation');
+  assert.deepEqual(h.busy, [true], 'old request must not finish a newer scope busy state');
+});
+
+test('current correction preview still publishes and releases its own busy state', async () => {
+  const h = previewHarness(), pending = h.start();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.invocations.length, 1);
+  h.response.resolve(readyPreview());await pending;
+  assert.equal(h.views.length, 2);assert.equal(h.views[1].targetHandId, 'hand-a');
+  assert.equal(h.views[1].serverPreview.sourceRevision, 9);assert.deepEqual(h.busy, [true,false]);
+});
+
+test('invalidated chain read never advances to a server preview request', async () => {
+  const h = previewHarness(), read = deferred();
+  h.dependencies.pageAll = () => read.promise;
+  const pending = h.start();h.dependencies.previewGenerationRef.current++;
+  read.resolve({ data: [{ id: 'hand-a' }], error: null });await pending;
+  assert.deepEqual(h.invocations, []);assert.deepEqual(h.views, [null]);assert.deepEqual(h.busy, [true]);
+});
 function harness() {
   let generation = 0;
   const state = { loading: false, error: null, selected: 'b', hands: [], queueError: false, editing: true, preview: { stale: true } };
@@ -51,6 +110,7 @@ function harness() {
     setLoading: value => { state.loading = value; }, setLoadError: value => { state.error = value; },
     setHands: value => { state.hands = value; }, setCompletionStatusByHand: () => {},
     setEditMode: value => { state.editing = value; }, setResettleView: value => { state.preview = value; },
+    invalidateResettlePreview: () => { state.preview = null; },
     setCompletionStatusError: value => { state.queueError = value; },
     setSelectedHandId: update => { state.selected = update(state.selected); },
     FEATURES: { trackerHistoryCompletionWorker: true },

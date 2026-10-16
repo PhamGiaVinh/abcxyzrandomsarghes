@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Correction preview late-response scope race RED → local fence
+
+Baseline6baa4d907 clean/previousPROGRESS. e7e255 actual handleResettle callback extraction RED: delayed server preview repopulates old hand preview after invalidation; old finally also clears busy. Added separate preview generation + current tournament/table/hand/actor scope. Every awaited chain/detail/server response checks current token/scope before state or further work; finally cannot change new request busy. Scope change/unmount, load/refresh, editor cancel/edit and preview close invalidate. Preview state only: durable correction intent and mutation receipt recovery unchanged; no backend/flag changes.
+
+62ca2b17/17 actual-source callback tests PASS: scope-only and generation-only invalidation independent, positive current preview publishes/unblocks, stale first chain read cannot invoke server. Modeled reads/state/Edge response, not full React/browser/DB. a33416 also23focused rendered read/loadguard/no-chip tests PASS on application fence; no product deps or visual redesign. Only one TSX component changed, existing UI engineering conventions retained. Full type/build/browser375 remain held; current native SQL suites unaffected/not rerun.
+
+No PG/live handle, no push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; next actual parent preview race render/wiring and account read scope, then provider/TV/fulltour/performance/release. Do not call callback race coverage hosted E2E or all writer completion.
+
 ## Parent history UI retained prior tournament while loading: RED → local fix
 
 Baseline4982184e7 clean/previousPROGRESS. Actual HandHistoryWorkspace render regression e19f02 RED: rerender tour A→B with B read pending leaves #1 from A visible. Existing generation guard protects late completion but did not clear already-rendered source. loadHands now clears hand rows, editor and preview at start of each read; it never clears durable correction intent/receipt journal. This also invalidates draft preview on explicit refresh; no mutation/authority/server contract changes.

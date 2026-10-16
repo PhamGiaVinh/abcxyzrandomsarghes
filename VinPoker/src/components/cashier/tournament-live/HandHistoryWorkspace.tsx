@@ -263,11 +263,28 @@ export function HandHistoryWorkspace({
     };
     idempotencyKey: string;
   } | null>(null);
+  const previewGenerationRef = useRef(0);
+  const invalidateResettlePreview = useCallback(() => {
+    previewGenerationRef.current++;
+    setResettleBusy(false);
+    setResettleView(null);
+  }, []);
   const correctionRecovery = useCorrectionCommitRecovery(tournamentId, selectedHandId, (status) => {
     setResettleView(null); setEditMode(false); void loadHands();
     if (status === "found") toast.success("Đã tìm thấy receipt sửa hand. Đang tải lại trạng thái hiện tại.");
     else toast.info("Máy chủ xác nhận yêu cầu cũ đã lỗi thời và không commit. Hãy xem trước lại dữ liệu mới.");
   });
+  const previewScope = JSON.stringify([tournamentId, selectedTableId, selectedHandId, correctionRecovery.actorId]);
+  const previewScopeRef = useRef(previewScope);
+  if (previewScopeRef.current !== previewScope) {
+    previewScopeRef.current = previewScope;
+    previewGenerationRef.current++;
+  }
+  useEffect(() => {
+    setEditMode(false);
+    invalidateResettlePreview();
+    return () => { previewGenerationRef.current++; };
+  }, [previewScope, invalidateResettlePreview]);
 
   useEffect(() => {
     setSelectedTableId(initialTableId || "all");
@@ -356,7 +373,7 @@ export function HandHistoryWorkspace({
     // A refresh also invalidates previews built from the previous source read.
     setHands([]);
     setEditMode(false);
-    setResettleView(null);
+    invalidateResettlePreview();
     setLoading(true);
     setLoadError(null);
     setCompletionStatusByHand(new Map());
@@ -534,7 +551,7 @@ export function HandHistoryWorkspace({
         setLoading(false);
       }
     }
-  }, [selectedTableId, supabase, tables, tournamentId]);
+  }, [selectedTableId, supabase, tables, tournamentId, invalidateResettlePreview]);
 
   useEffect(() => {
     void loadHands();
@@ -586,6 +603,8 @@ export function HandHistoryWorkspace({
     if (!target) return;
     try { correctionRecovery.assertNoPending(); }
     catch (error) { toast.error(error instanceof Error ? error.message : "Chưa đọc được mã phục hồi."); return; }
+    const previewRequest = ++previewGenerationRef.current;
+    const isCurrentPreview = () => previewGenerationRef.current === previewRequest && previewScopeRef.current === previewScope;
     setResettleBusy(true);
     setResettleView(null);
     try {
@@ -606,6 +625,7 @@ export function HandHistoryWorkspace({
           .order("id", { ascending: true })
           .range(from, to),
       );
+      if (!isCurrentPreview()) return;
       if (handsRes.error) {
         toast.error("Không tải được chuỗi ván để tính lại: " + (handsRes.error.message ?? ""));
         return;
@@ -637,6 +657,7 @@ export function HandHistoryWorkspace({
             .range(from, to),
         ),
       ]);
+      if (!isCurrentPreview()) return;
       if (pRes.error || aRes.error) {
         toast.error("Không tải được chi tiết ván để tính lại: " + ((pRes.error || aRes.error)?.message ?? ""));
         return;
@@ -718,6 +739,7 @@ export function HandHistoryWorkspace({
           expected_target_ending_stacks: expectedEndingStacks,
         },
       });
+      if (!isCurrentPreview()) return;
       const preview = record(previewData);
       if (previewError || preview?.ok !== true || preview.status !== "preview"
         || preview.draft_status !== "READY_TO_APPLY"
@@ -749,7 +771,7 @@ export function HandHistoryWorkspace({
         idempotencyKey: crypto.randomUUID(),
       });
     } finally {
-      setResettleBusy(false);
+      if (isCurrentPreview()) setResettleBusy(false);
     }
   };
 
@@ -1204,11 +1226,11 @@ export function HandHistoryWorkspace({
                 buttonSeat={selectedHand.button_seat ?? 0}
                 saving={savingEdit || resettleBusy}
                 writesEnabled={LEGACY_CORRECTION_WRITES_ENABLED}
-                onCancel={() => { setEditMode(false); setResettleView(null); }}
+                onCancel={() => { setEditMode(false); invalidateResettlePreview(); }}
                 onSave={handleSaveEdit}
                 resettleEnabled={SERVER_CORRECTION_PREVIEW_ENABLED && FEATURES.trackerResettleForward && resettleSupported}
                 onResettle={handleResettle}
-                onEditChange={() => setResettleView(null)}
+                onEditChange={invalidateResettlePreview}
               />
               {SERVER_CORRECTION_PREVIEW_ENABLED && resettleView && (
                 <ResettlePreview
@@ -1221,7 +1243,7 @@ export function HandHistoryWorkspace({
                     ending_stack: p.ending_stack,
                   }))}
                   onConfirm={handleResettleConfirm}
-                  onClose={() => setResettleView(null)}
+                  onClose={invalidateResettlePreview}
                 />
               )}
               </>
