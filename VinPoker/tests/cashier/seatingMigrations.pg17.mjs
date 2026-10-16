@@ -14,7 +14,9 @@ assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'|
 const dir=sql('SHOW data_directory');
 assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');
 assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net');"),'f');
-const steps=process.argv.includes('--only117')?[
+const steps=process.argv.includes('--only122')?[
+ ['20270128000122_floor_restore_provisional_history_order_v1.sql','floor_private.restore_busted_player_to_seat(uuid,uuid,integer,bigint,bigint,uuid,uuid)',null],
+]:process.argv.includes('--only117')?[
  ['20270128000117_cashier_correction_alert_seating_fence_v1.sql','floor_private.pick_cashier_canonical_seat_v1(uuid,text)',null],
 ]:process.argv.includes('--only116')?[
  ['20270128000116_floor_restore_pending_reentry_fence_v1.sql','floor_private.restore_busted_player_to_seat(uuid,uuid,integer,bigint,bigint,uuid,uuid)',null],

@@ -25,6 +25,7 @@ on:
       - 'VinPoker/tests/cashier/paidActiveHand*'
       - 'VinPoker/tests/cashier/reentry*'
       - 'VinPoker/tests/cashier/restoreReentry*'
+      - 'VinPoker/tests/cashier/restoreHistoryOrder.native.mjs'
       - 'VinPoker/tests/cashier/seatingMigrations*'
       - 'VinPoker/tests/cashier/canonicalPaidSeating*'
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
@@ -55,6 +56,7 @@ on:
       - 'VinPoker/supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql'
       - 'VinPoker/supabase/migrations/20270128000121_tracker_voice_finish_receipt_resolution_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000122_floor_restore_provisional_history_order_v1.sql'
       - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
@@ -1061,6 +1063,7 @@ jobs:
           node tests/trackerSettlement/correctionResolution118.migration.mjs --history119
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000121_tracker_voice_finish_receipt_resolution_v1.sql
+          node tests/cashier/seatingMigrations.pg17.mjs --only122
           node tests/trackerSettlement/correctionResolution118.migration.mjs --scope120
           node tests/cashier/paidJourney.runtime.mjs
           node tests/cashier/paidJourney.runtime.mjs --seat-blockers
@@ -1085,6 +1088,7 @@ jobs:
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
           VINPOKER_NATIVE_VOICE_FINISH=1 node tests/trackerVoice/paidFinishCommit.native.mjs
           VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_RESTORE_HISTORY=1 node tests/cashier/restoreHistoryOrder.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 node tests/chipOps/paidColorUpCommit.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_COUPLED=1 node tests/chipOps/paidColorUpCommit.native.mjs
           VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_CHAIN=1 node tests/chipOps/paidColorUpCommit.native.mjs

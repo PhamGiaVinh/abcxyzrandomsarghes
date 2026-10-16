@@ -1886,3 +1886,47 @@ definitions/caller before classifying or fixing this gap, never replay archive
 or generate a payout merely to force a close. Same-tour deferred break, real
 rest15rotations, hosted40,375/mic/provider/Storage/fullchecks/performance/release
 are still required. Next: runtime audit of official finalization dependencies.
+# 2026-10-16 — Confirmed/fixed local restore provisional-history corruption (122)
+
+G5/G6 SOURCE_QUALIFIED locally; master IN_PROGRESS. Runtime catalog audit8d2084/
+2288ec confirms restore implementation retained bust_order and did not guard
+finished_place. New exact regression fails recorded pre122 body with restored
+bust_order1 instead ofNULL (initiale9ed5d; final exact test baseline1bdc5f).
+This is a product bug, not a fixture/transport failure.
+
+New forward migration `20270128000122_floor_restore_provisional_history_order_v1.sql`
+(CLI generated20261016151453, source/local slot122 scan) requires old normalized
+function digest e671d6c24edf4d4ed631ecec820efae2. It clears ONLY provisional
+bust_order during canonical restore, never decrements tournament bust_seq, and
+rejects target with official finished_place both before and after entry lock.
+Shared implementation covers old/new public wrappers; ABI/owner/ACL/path unchanged.
+New normalized function digest5d79a4a9e1d8b4da447a3e95a01104f7.
+Local fileSHA2564d827ee6a44ea38014ee58751a4d5744589175b5f01cf75bcd7c2b25d308b74a.
+Not live catalog reservation or approval; no historical migration/ledger edit.
+
+`restoreHistoryOrder.native.mjs`: actual paid2entry fixture, own temporary history
+opt-in restored in finally; canonical bust/replay→restore/replay→null provisional
+order→later bust order2>1. Outsider/stale revision/payload conflict zero delta;
+canonical explicit finalize with1survivor yields targetplace2; restore then returns
+restore_result_dependency with entries/seats/sessions unchanged. Cashier unchanged.
+No payout or hand-inserted rank; actual auto-finalize/registration-close UI path
+still not qualified. Failed baseline audit retained, not repaired/reset.
+
+Final1bdc5f/22259→0cddd7 terminal0/PGstopped: exact final regression fails recorded
+baseline then passes fixed; unknown-body migration rejected, transactional DDL
+rollback and metadata/ACL checks pass via existing seatingMigrations --only122.
+Earlier8f4b43 also rehearsed recorded definition/ACL compensation then ROLLBACK.
+Latest focused tour6346b256-72df-4813-a0d8-0f8974e31166, entry
+68e0b6ff-67a8-4c78-a9e2-6eaee6e2b276. Full same8paid integration AFTER122:
+d025f6/58634→40a290 terminal0/PGstopped; tour52c474d0-7d31-4c70-8d99-a52b8d07d941,
+terminalhand86442476-2e98-4619-b3ad-3a3903610c95, closes/history/TV still pass.
+Syntax/YAMLparse/diff checks pass; CI paths/ordered runtime commands prepared,
+NOT dispatched. Fetch origin/main still ed3db6ac600710e95fe4408c475941916c23ab19.
+
+ProductionDB/Edge/frontend/flags/UAT unchanged; no push/CI/deploy. Local resource
+hold, DaybreakOFF/AutoOFF/masterACTIVE retained, no live command. Release still
+needs independent critical review, exact live catalog/recovery/required checks
+and owner scope under runbook. Existing restored legacy orders are NOT backfilled;
+require evidence-led disposition. Next official finalization/registration-close
+flow, simultaneous-elimination policy evidence, and remaining original gaps
+(realrotations/hosted40/375/provider/Storage/fullchecks/performance/release).

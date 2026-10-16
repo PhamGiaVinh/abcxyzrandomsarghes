@@ -148,3 +148,14 @@ Official final places still unqualified: fixture player-history disabled and
 registration not closed beforeplay. Inspect exact finalization dependencies next.
 Other original gaps (realrotations,hosted40,375/provider/Storage/fullchecks/perf/
 release) remain; this is NOT master acceptance.
+# Latest finding/fix — 2026-10-16 restore history order (122)
+
+Confirmed exact baseline regression: history-enabled canonical restore retained
+old provisional bust_order1. New forward122 clears provisional order only, keeps
+sequence monotonic, rejects official finished_place. Exact final test fails old
+body then passes fixed; actor/stale/payload denials zero delta, rebust getsorder2,
+canonical finalizedplace2 cannot restore. DDL drift/rollback/ABI/ACL metadata pass
+1bdc5f/22259→0cddd7 terminal0/PGstopped. Full8paid integration under122 also passes
+40a290 (tour52c474d0-7d31-4c70-8d99-a52b8d07d941). Local source qualified ONLY,
+not live/deployed/CI/web evidence. Existing legacy rows not backfilled; critical
+review/livecatalog/recovery/release gates and original remaining gaps still open.
