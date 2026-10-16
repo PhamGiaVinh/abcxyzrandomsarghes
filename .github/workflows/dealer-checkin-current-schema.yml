@@ -956,13 +956,16 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --rotation-auth-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --execution-negative
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --execution-overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --adoption
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --legacy
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --negative
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --overlap
           node tests/dealerSwing/readyWorkerCapacity.native.mjs --anchor-overlap
-          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --main-execute --main-completion-fault --planner-size=2
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --main-execute --main-completion-fault --main-response-loss --planner-size=2
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --planner-shortage --planner-size=40
           node tests/dealerSwing/readyWorkerCapacity.native.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker

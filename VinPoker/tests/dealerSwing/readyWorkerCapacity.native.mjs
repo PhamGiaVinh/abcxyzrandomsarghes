@@ -76,6 +76,7 @@ if(process.argv.includes('--planner')||process.argv.includes('--main-worker')){
   fixture.shortageScope=process.argv.includes('--main-shortage-scope');assert.ok(!(fixture.mainOff&&fixture.shortageScope));
   fixture.executeMain=process.argv.includes('--main-execute');assert.ok(!(fixture.executeMain&&(fixture.mainOff||fixture.shortageScope)));
   fixture.completionFault=process.argv.includes('--main-completion-fault');assert.ok(!fixture.completionFault||fixture.executeMain&&size===2);
+  fixture.executionResponseLoss=process.argv.includes('--main-response-loss');assert.ok(!fixture.executionResponseLoss||fixture.executeMain&&size===2);
   if(fixture.mainOff)sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${fixture.club}';`);
   if(!resumeClub)sql(`INSERT INTO public.swing_config(club_id,table_type,rotation_planner_enabled,swing_duration_minutes,break_duration_minutes,min_inter_swing_rest_minutes) VALUES('${fixture.club}','tournament',true,45,15,15) ON CONFLICT(club_id,table_type) DO UPDATE SET rotation_planner_enabled=true,swing_duration_minutes=45,break_duration_minutes=15,min_inter_swing_rest_minutes=15;`);
   const file=resolve('supabase/functions/process-swing/index.ts'),workerSource=readFileSync(file,'utf8'),tree=ts.createSourceFile(file,workerSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
@@ -439,7 +440,7 @@ if(process.argv.includes('--negative')){
  }
  console.log('READY_NATIVE_CANCEL_CONTRACT_AND_INNER_FAULT_ATOMICITY_PASS');
 }
-if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')||process.argv.includes('--rotation-auth-overlap')){
+if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')||process.argv.includes('--rotation-auth-overlap')||process.argv.includes('--execution-overlap')||process.argv.includes('--execution-negative')){
  function tx(name,query,hold=false){
   const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];
   const child=process.platform==='win32'?spawn('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags]):spawn('psql',flags);
@@ -450,7 +451,87 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
   if(!hold)end('COMMIT');return {result,end};
  }
  async function barrier(name,condition){for(let i=0;i<60;i++){if(sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${name}' AND ${condition})`)==='t')return;await new Promise(r=>setTimeout(r,25));}assert.fail('missing actual overlap '+name);}
- if(process.argv.includes('--rotation-auth-overlap')){
+ const executionCall=args=>`SELECT public.worker_execute_rotation_slot_v1(${Object.entries(args).map(([k,v])=>column(k)+'=>'+quote(v)).join(',')});`;
+ function executionFixture(){
+  // Synthetic already-due history for SQL interleavings, not evidence of a
+  // real announcement lead or 15-minute rest cycle. Never rewrite live clocks.
+  const c=seed(1),t=c.rows[0],assignment=sql(`SELECT id FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`);
+  const planned=JSON.parse(sql(service+`SELECT public.upsert_rotation_plan('${c.club}','${randomUUID()}',jsonb_build_array(jsonb_build_object('table_id','${t.table}','table_session_id','${t.session}','assignment_id','${assignment}','slot_index',0,'out_attendance_id','${t.oldAttendance}','in_attendance_id','${t.nextAttendance}','planned_relief_at',now()-interval '1 minute','announce_at',now()-interval '4 minutes','is_shortage',false,'is_emergency',false,'solver_version','native-execution110')),ARRAY['${t.table}'::uuid]);`));assert.equal(planned.outcome,'ok');assert.equal(planned.inserted,1);
+  const predicted=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE club_id='${c.club}' AND slot_index=0 AND status='predicted';`));
+  assert.equal(JSON.parse(sql(service+`SELECT public.lock_rotation_slot('${predicted.id}',${predicted.version});`)).outcome,'locked');
+  const schedule=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${predicted.id}';`));
+  const version=sql(`SELECT version FROM public.dealer_assignments WHERE id='${assignment}';`),revision=sql(`SELECT revision FROM public.table_sessions WHERE id='${t.session}';`),nextDue=new Date(Date.now()+45*60000).toISOString();
+  const args={p_schedule_id:schedule.id,p_expected_schedule_version:schedule.version,p_table_session_id:t.session,p_old_assignment_id:assignment,p_expected_assignment_version:Number(version),p_next_attendance_id:t.nextAttendance,p_swing_due_at:nextDue,p_duration_minutes:45,p_send_to_break:false,p_break_duration_minutes:15};
+  return {c,t,assignment,schedule,revision,args,execute:executionCall(args)};
+ }
+ if(process.argv.includes('--execution-negative')){
+  const f=executionFixture(),other=seed(1),a=f.args;
+  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignments',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.dealer_assignments x WHERE club_id IN ('${f.c.club}','${other.club}')),'schedule',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.dealer_rotation_schedule x WHERE club_id IN ('${f.c.club}','${other.club}')),'attendance',(SELECT jsonb_agg(to_jsonb(x) ORDER BY x.id) FROM public.dealer_attendance x JOIN public.dealers d ON d.id=x.dealer_id WHERE d.club_id IN ('${f.c.club}','${other.club}')),'session',(SELECT to_jsonb(x) FROM public.table_sessions x WHERE id='${f.t.session}'),'table',(SELECT to_jsonb(x) FROM public.game_tables x WHERE id='${f.t.table}'))::text);`);
+  const before=fingerprint();
+  const cases=[
+   ['missing-schedule',{p_schedule_id:randomUUID()},'',/ROTATION_EXECUTION_SCHEDULE_MISSING/],
+   ['null-schedule',{p_schedule_id:null},'',/ROTATION_EXECUTION_INTENT_REQUIRED/],
+   ['null-session',{p_table_session_id:null},'',/ROTATION_EXECUTION_INTENT_REQUIRED/],
+   ['cross-club-session',{p_table_session_id:other.rows[0].session},'',/TABLE_SESSION_STALE/],
+   ['wrong-assignment',{p_old_assignment_id:randomUUID()},'',/ROTATION_EXECUTION_SCHEDULE_CHANGED/],
+   ['wrong-incoming',{p_next_attendance_id:f.t.oldAttendance},'',/ROTATION_EXECUTION_SCHEDULE_CHANGED/],
+   ['stale-schedule',{p_expected_schedule_version:a.p_expected_schedule_version+1},'',/ROTATION_EXECUTION_SCHEDULE_CHANGED/],
+   ['stale-assignment',{p_expected_assignment_version:a.p_expected_assignment_version+1},'',/ROTATION_EXECUTION_ASSIGNMENT_CHANGED/],
+   ['null-version',{p_expected_assignment_version:null},'',/ROTATION_EXECUTION_INTENT_REQUIRED/],
+   ['invalid-duration',{p_duration_minutes:0},'',/ROTATION_EXECUTION_INTENT_REQUIRED/],
+   ['early-execution',{},`UPDATE public.dealer_rotation_schedule SET planned_relief_at=now()+interval '1 hour' WHERE id='${f.schedule.id}';`,/ROTATION_EXECUTION_SCHEDULE_CHANGED/],
+   ['auto-off',{},`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${f.c.club}';`,/AUTO_SWING_OFF/],
+  ];
+  for(const [name,changes,setup,expected] of cases){
+   let rejected=false;try{sql(`BEGIN;${setup}${service}${executionCall({...a,...changes})}ROLLBACK;`);}catch(e){assert.match(String(e.stderr??e),expected,name);rejected=true;}assert.ok(rejected,name);assert.equal(fingerprint(),before,name+' cannot mutate either club');
+  }
+  let badClaim=false;try{sql(`BEGIN;${service}SET request.jwt.claim.role='authenticated';SET request.jwt.claims='{"role":"authenticated"}';${executionCall(a)}ROLLBACK;`);}catch(e){assert.match(String(e.stderr??e),/SWING_WORKER_FORBIDDEN/);badClaim=true;}assert.ok(badClaim);assert.equal(fingerprint(),before);
+  const positive=JSON.parse(sql(`BEGIN;${service}${executionCall(a)}ROLLBACK;`));assert.equal(positive.status,'success');assert.equal(positive.rotation_schedule_id,f.schedule.id);assert.equal(fingerprint(),before,'valid control transaction fully rolls back');
+  console.log('EXECUTION110_ACTUAL_INTENT_TENANT_REVISION_EARLY_OFF_ROLE_NEGATIVES_PASS');
+ }else if(process.argv.includes('--execution-overlap')){
+ for(const order of ['duplicate','cancel-first','execute-first-cancel','off-first','execute-first-off','close-first','execute-first-close','version-first']){
+  const {c,t,assignment,schedule,revision,execute}=executionFixture();
+  const cancel=`SELECT public.cancel_rotation_slot('${schedule.id}','reconcile_lock_lost');`;
+  const off=`RESET ROLE;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';`;
+  const close=`RESET ROLE;SET request.jwt.claim.role='authenticated';SET request.jwt.claim.sub='${c.owner}';SET request.jwt.claims='{"role":"authenticated","sub":"${c.owner}"}';SET ROLE authenticated;SELECT public.operator_close_club_table_v2('${t.session}',${revision},'${randomUUID()}');`;
+  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${assignment}'),'schedule',(SELECT to_jsonb(s) FROM public.dealer_rotation_schedule s WHERE id='${schedule.id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${t.nextAttendance}'))::text);`);
+  const before=fingerprint();let holder,waiter;
+  const lastJson=out=>JSON.parse(out.trim().split(/\r?\n/).at(-1));
+  try{
+   const scheduleFirst=order==='cancel-first'||order==='version-first';
+   holder=tx('execution110_holder',scheduleFirst?`SELECT id FROM public.dealer_rotation_schedule WHERE id='${schedule.id}' FOR UPDATE;`:order==='off-first'?off:order==='close-first'?close:execute,true);
+   await barrier('execution110_holder',"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   waiter=tx('execution110_waiter',order==='execute-first-cancel'?cancel:order==='execute-first-off'?off:order==='execute-first-close'?close:execute);
+   await barrier('execution110_waiter',"wait_event_type='Lock'");
+   assert.equal(fingerprint(),before,'uncommitted execution stays invisible');
+   if(scheduleFirst)sql(`BEGIN;SELECT id FROM public.dealer_assignments WHERE id='${assignment}' FOR UPDATE NOWAIT;ROLLBACK;`);
+   holder.end(order==='cancel-first'?cancel+'COMMIT':order==='version-first'?`UPDATE public.dealer_rotation_schedule SET version=version+1 WHERE id='${schedule.id}';COMMIT`:'COMMIT');
+   const h=await holder.result,w=await waiter.result;assert.equal(h.code,0,h.error);
+   if(['cancel-first','off-first','close-first','version-first'].includes(order)){
+    assert.notEqual(w.code,0);assert.match(w.error,order==='off-first'?/AUTO_SWING_OFF/:order==='close-first'?/TABLE_SESSION_STALE/:/ROTATION_EXECUTION_SCHEDULE_CHANGED/);
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${t.table}' AND attendance_id='${t.nextAttendance}';`),'0','rejected waiter cannot create a replacement');
+    if(order==='off-first')assert.equal(fingerprint(),before);
+   }else{
+    assert.equal(w.code,0,w.error);assert.equal(lastJson(h.out).status,'success');
+    if(order==='duplicate')assert.deepEqual(lastJson(w.out),lastJson(h.out));
+    if(order==='execute-first-cancel')assert.equal(lastJson(w.out).outcome,'noop');
+    if(order==='execute-first-close')assert.equal(lastJson(w.out).ok,true);
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${t.table}' AND attendance_id='${t.nextAttendance}';`),'1','exactly one replacement ever created');
+    assert.equal(sql(`SELECT status||'|'||(reason ? 'execution_receipt_v1')::text FROM public.dealer_rotation_schedule WHERE id='${schedule.id}';`),'executed|true');
+    const committed=fingerprint(),replay=JSON.parse(sql(service+execute));assert.deepEqual(replay,lastJson(h.out));assert.equal(fingerprint(),committed,'receipt replay stays read-only after OFF or Close');
+   }
+   if(order.includes('close')){
+    assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${t.session}';`),'t');
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_id='${t.table}' AND released_at IS NULL;`),'0');
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${c.club}' AND status IN ('predicted','announced','executing');`),'0');
+   }
+   if(order.includes('off'))assert.equal(sql(`SELECT auto_swing_enabled FROM public.club_settings WHERE club_id='${c.club}';`),'f');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_attendance WHERE id IN ('${t.oldAttendance}','${t.nextAttendance}') AND current_state='in_transition';`),'0');
+   console.log(JSON.stringify({execution110_overlap:order,passed:true}));
+  }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
+ }
+ console.log('EXECUTION110_DUPLICATE_CANCEL_OFF_CLOSE_VERSION_BOTH_ORDER_OVERLAP_PASS');
+ }else if(process.argv.includes('--rotation-auth-overlap')){
  for(const order of ['revoke-first','cancel-first-revoke','close-first','cancel-first-close','duplicate']){
   const c=seed(1),t=c.rows[0],floor=randomUUID();
   sql(`INSERT INTO auth.users(id) VALUES('${floor}');INSERT INTO public.club_floors(club_id,user_id) VALUES('${c.club}','${floor}');`);
@@ -706,7 +787,7 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
  }
 }
-const sizes=['--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--execution-overlap','--execution-negative','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');

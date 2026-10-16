@@ -26,13 +26,14 @@ else{
  const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${fixture.role};`;
  const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
- const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','worker_execute_rotation_slot_v1','complete_rotation_slot']);
+ const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','complete_dealer_shortage_alert_notification','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','worker_execute_rotation_slot_v1','complete_rotation_slot']);
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
    out[key]=open<0?row[key]:row[key]===null?null:Array.isArray(row[key])?row[key].map(v=>project(v,item.slice(open+1,-1))):project(row[key],item.slice(open+1,-1));
   }return out;}
  const reads=[],rpcCalls=[],rpcResponses=[],persistReceipts=[],adapterGaps=[],bridgeErrors=[];
+ const lostExecutionResponses=[];let dropExecutionResponse=false;
  const admin={rpc(name,args){const task=(async()=>{if(!rpcNames.has(name))adapterGaps.push('rpc:'+name);assert.ok(rpcNames.has(name),name);rpcCalls.push(name);
   if(fixture.fault==='persist'&&name==='upsert_rotation_plan')return {data:null,error:{code:'PGRST002',message:'synthetic persist transport failure'}};
   if(fixture.fault==='lock'&&name==='lock_rotation_slot'){
@@ -43,6 +44,11 @@ else{
    const query=['end_breaks_on_demand','get_dealer_operational_tables_v1','detect_stuck_breaks','end_expired_breaks','get_escalation_config'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
    const data=JSON.parse(await sql(service+query));
    rpcResponses.push({name,data});
+   if(dropExecutionResponse&&name==='worker_execute_rotation_slot_v1'){
+    assert.equal(data.status,'success');
+    lostExecutionResponses.push({args:structuredClone(args),result:data});
+    return {data:null,error:{code:'FETCH_ERROR',message:'synthetic response lost after SQL commit'}};
+   }
    if(name==='upsert_rotation_plan')persistReceipts.push({rows:structuredClone(args.p_rows),response:data});
    return {data,error:null};
   }catch(e){bridgeErrors.push({scope:'rpc:'+name,error:String(e.stderr??e).slice(0,300)});return {data:null,error:{message:String(e.stderr??e),code:String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]}};}
@@ -118,35 +124,53 @@ else{
    console.log(JSON.stringify({passR_actual_result:{phase:'main-execute-wait-real-lead',club:fixture.club,originals,initialExecuted,waitMs:Math.max(0,relief+1500-Date.now())}}));
    while(Date.now()<relief+1500)await new Promise(resolve=>setTimeout(resolve,Math.min(30000,relief+1500-Date.now())));
    let completed=initialExecuted,batches=0;
-   if(fixture.completionFault){
+   if(fixture.completionFault)for(const failureStage of ['completion','receipt']){
     // Real SQL failure within completion. Before110 the executor committed
     // separately; the fixed atomic boundary must roll back the swap too.
-    const suffix=fixture.club.replaceAll('-',''),name='native_completion_'+suffix;
-    await sql(`CREATE FUNCTION floor_private.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.club_id='${fixture.club}'::uuid AND NEW.status='executed' THEN RAISE EXCEPTION 'NATIVE_COMPLETION_WRITE_FAULT';END IF;RETURN NEW;END $$;CREATE TRIGGER ${name} BEFORE UPDATE ON public.dealer_rotation_schedule FOR EACH ROW EXECUTE FUNCTION floor_private.${name}();`);
+    const suffix=fixture.club.replaceAll('-',''),name='native_'+failureStage+'_'+suffix;
+    const condition=failureStage==='completion'?"NEW.status='executed'":"NEW.reason ? 'execution_receipt_v1'";
+    await sql(`CREATE FUNCTION floor_private.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.club_id='${fixture.club}'::uuid AND (${condition}) THEN RAISE EXCEPTION 'NATIVE_${failureStage.toUpperCase()}_WRITE_FAULT';END IF;RETURN NEW;END $$;CREATE TRIGGER ${name} BEFORE UPDATE ON public.dealer_rotation_schedule FOR EACH ROW EXECUTE FUNCTION floor_private.${name}();`);
     let response,body;
     try{
      response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));body=await response.json();
     }finally{await sql(`DROP TRIGGER ${name} ON public.dealer_rotation_schedule;DROP FUNCTION floor_private.${name}();`);}
     const actualSwaps=Number(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND attendance_id IN (${originals.map(r=>quote(r.incoming)).join(',')}) AND released_at IS NULL AND status='assigned';`));
     const actualCompleted=await executedCount();
-    console.log(JSON.stringify({passR_actual_result:{phase:'main-completion-returned-failure',club:fixture.club,status:response.status,body,actualSwaps,actualCompleted,completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot'),adapterGaps,bridgeErrors,networkCalls}}));
+    console.log(JSON.stringify({passR_actual_result:{phase:'main-'+failureStage+'-write-failure',club:fixture.club,status:response.status,body,actualSwaps,actualCompleted,completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot'),adapterGaps,bridgeErrors,networkCalls}}));
     assert.equal(actualSwaps,0,'completion failure must roll back dealer swaps too');assert.equal(actualCompleted,0,'injected completion writes rolled back');assert.deepEqual(adapterGaps,[]);assert.equal(networkCalls,0);
-    assert.equal(bridgeErrors.length,tableCount);assert.ok(bridgeErrors.every(e=>e.scope==='rpc:worker_execute_rotation_slot_v1'&&e.error.includes('ROTATION_EXECUTION_COMPLETION_FAILED')));
+    const expectedError=failureStage==='completion'?'ROTATION_EXECUTION_COMPLETION_FAILED':'NATIVE_RECEIPT_WRITE_FAULT';
+    assert.equal(bridgeErrors.length,tableCount);assert.ok(bridgeErrors.every(e=>e.scope==='rpc:worker_execute_rotation_slot_v1'&&e.error.includes(expectedError)));
     bridgeErrors.length=0; // Only these explicitly injected failures were expected.
     assert.equal(body.status,'partial','failed atomic execution must not report completed');
     assert.equal(body.metrics[fixture.club].failed,tableCount);assert.equal(body.metrics[fixture.club].success,0);
-    console.log('ACTUAL_MAIN_COMPLETION_FAILURE_ATOMIC_ROLLBACK_PASS');
+    console.log('ACTUAL_PASSR_MAIN_'+failureStage.toUpperCase()+'_WRITE_FAILURE_ATOMIC_ROLLBACK_PASS');
    }
    while(completed<tableCount){
     assert.ok(++batches<=tableCount,'bounded drain must progress, never loop indefinitely');
-    const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+    const dropping=fixture.executionResponseLoss&&lostExecutionResponses.length===0;
+    let response;try{dropExecutionResponse=dropping;response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));}finally{dropExecutionResponse=false;}
     const body=await response.json(),next=await executedCount();
-    console.log(JSON.stringify({passR_actual_result:{phase:'main-executed-batch',club:fixture.club,batch:batches,status:response.status,body,priorCompleted:completed,completed:next,adapterGaps,bridgeErrors,networkCalls,executions:rpcResponses.filter(r=>r.name==='worker_execute_pre_assigned_swing'),completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot')}}));
-    assert.equal(response.status,200);assert.equal(body.status,'completed');assert.equal(body.error_code,null);assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+    console.log(JSON.stringify({passR_actual_result:{phase:'main-executed-batch',club:fixture.club,batch:batches,status:response.status,body,priorCompleted:completed,completed:next,adapterGaps,bridgeErrors,networkCalls,executions:rpcResponses.filter(r=>r.name==='worker_execute_rotation_slot_v1'),completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot')}}));
+    assert.equal(response.status,200);assert.equal(body.status,dropping?'partial':'completed');
+    if(dropping){assert.equal(lostExecutionResponses.length,tableCount);assert.equal(body.metrics[fixture.club].failed,tableCount);assert.equal(body.metrics[fixture.club].success,0);}else assert.equal(body.error_code,null);
+    assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
     assert.ok(next>completed,'scheduled backlog stalled; preserve fixture for diagnosis');completed=next;
    }
    const executions=rpcResponses.filter(r=>r.name==='worker_execute_rotation_slot_v1');assert.equal(executions.length,expectedNew);assert.ok(executions.every(r=>r.data.status==='success'&&r.data.rotation_completion==='executed'));
    assert.equal(rpcResponses.filter(r=>r.name==='complete_rotation_slot').length,0,'no split bookkeeping RPC');
+   if(fixture.executionResponseLoss){
+    assert.equal(lostExecutionResponses.length,tableCount,'drop only real committed successes');
+    const activeIds=await sql(`SELECT string_agg(id::text,',' ORDER BY id) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NULL AND status='assigned';`);
+    for(const lost of lostExecutionResponses){
+     const replay=JSON.parse(await sql(service+`SELECT public.worker_execute_rotation_slot_v1(${Object.entries(lost.args).map(([k,v])=>ident(k)+'=>'+quote(v)).join(',')});`));
+     assert.deepEqual(replay,lost.result,'retry original lost request returns its committed receipt');
+    }
+    const beforeCalls=rpcCalls.filter(n=>n==='worker_execute_rotation_slot_v1').length;
+    const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+    assert.equal((await response.json()).status,'completed');assert.equal(rpcCalls.filter(n=>n==='worker_execute_rotation_slot_v1').length,beforeCalls,'next worker tick cannot execute the old requests again');
+    assert.equal(await sql(`SELECT string_agg(id::text,',' ORDER BY id) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NULL AND status='assigned';`),activeIds);
+    console.log('ACTUAL_PASSR_MAIN_RESPONSE_LOSS_COMMITTED_RECEIPT_NO_SECOND_SWAP_PASS');
+   }
    for(const old of originals){
     assert.equal(await sql(`SELECT status='executed' AND (reason->>'new_assignment_id') IS NOT NULL FROM public.dealer_rotation_schedule WHERE id='${old.schedule}';`),'t');
     assert.equal(await sql(`SELECT released_at>=${quote(old.relief)}::timestamptz AND swing_processed_at IS NOT NULL FROM public.dealer_assignments WHERE id='${old.assignment}';`),'t');
@@ -190,6 +214,23 @@ else{
    assert.equal(await stateProof(),before);assert.ok(!rpcCalls.includes('upsert_rotation_plan'));assert.equal(body.status,'partial');assert.equal(body.error_code,'dealer_inventory_query_failed');
    assert.ok(body.diagnostics.some(d=>d.stage==='dealer_inventory'&&d.code==='PGRST002'));
    console.log('ACTUAL_PASSR_MAIN_HANDLER_INVENTORY_FAILURE_PASS');
+  }else if(fixture.shortage){
+   const {buildCanonicalShortageSnapshot,classifyShortage}=await import('../../supabase/functions/process-swing/shortageAlert.ts');
+   assert.equal(body.status,'completed');assert.equal(body.error_code,null);
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NULL AND status='assigned' AND overtime_started_at IS NOT NULL;`),String(tableCount));
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NOT NULL;`),'0','shortage never authorizes force-release');
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND status IN ('announced','executing','executed');`),'0');
+   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='predicted' AND in_attendance_id IS NULL;`),String(tableCount));
+   const snapshot=await buildCanonicalShortageSnapshot(admin,fixture.club,{minInterSwingRestMinutes:15,clubBreakDurationMinutes:15,preAnnounceMinutes:3});
+   assert.equal(snapshot.status,'ok');assert.equal(snapshot.active_staffed_tables,tableCount);assert.equal(snapshot.active_empty_tables,0);assert.equal(snapshot.genuinely_available_dealers,0);assert.equal(snapshot.tables_without_replacement_total,tableCount);
+   assert.ok(['true_shortage','critical_shortage'].includes(classifyShortage(snapshot)),'healthy transport cannot hide real shortage');
+   const originalActive=await sql(`SELECT string_agg(id::text,',' ORDER BY id) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NULL;`);
+   const repeatedResponse=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
+   assert.equal((await repeatedResponse.json()).status,'completed');
+   assert.equal(await sql(`SELECT string_agg(id::text,',' ORDER BY id) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND released_at IS NULL;`),originalActive);
+   assert.ok(!rpcCalls.includes('worker_execute_rotation_slot_v1'));assert.ok(!rpcCalls.includes('worker_perform_swing'));assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+   console.log(JSON.stringify({passR_actual_result:{phase:'main-real-shortage',club:fixture.club,tableCount,snapshot,classification:classifyShortage(snapshot),noSwaps:true,noForceRelease:true,networkCalls}}));
+   console.log('ACTUAL_PASSR_MAIN_SHORTAGE_OT_NO_FORCE_RELEASE_PASS '+tableCount);
   }else{
   assert.equal(body.status,'completed');assert.ok(rpcCalls.includes('upsert_rotation_plan'));
   assert.equal(await sql(`SELECT count(*) FROM public.dealer_rotation_schedule WHERE club_id='${fixture.club}' AND slot_index=0 AND status='announced';`),String(tableCount));
