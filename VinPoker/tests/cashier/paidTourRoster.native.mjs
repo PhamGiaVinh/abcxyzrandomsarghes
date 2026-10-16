@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createPaidJourneyFixture} from './paidJourney.fixture.mjs';
+import {runPaidTourInitialAssignments} from '../dealerSwing/paidTourInitialAssign.native.mjs';
 assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
 for(const [k,v] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:'vinpoker_ops_cash115_qualified_c'}))assert.equal(process.env[k],v);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
@@ -86,5 +87,14 @@ const tv=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SE
 assert.equal(tv.status,'paired');assert.equal(tv.tournament.id,f.tour);assert.equal(tv.participation_counts.remaining,8);assert.equal(tv.participation_counts.live_entry_stack,160000);
 assert.equal(operational(),beforeChip);assert.equal(issuedLedger(),ledgerBeforeReplay);
 console.log('NATIVE_EIGHT_PAID_CHIP_ISSUANCE_REPLAY_ANON_TV_PASS');
+const financialRoster=()=>sql(`SELECT md5(jsonb_build_object('cash',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}'),
+ 'seats',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_seats r WHERE tournament_id='${f.tour}'),
+ 'entries',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_entries r WHERE tournament_id='${f.tour}'))::text);`);
+const beforeAssignment=financialRoster();
+await runPaidTourInitialAssignments(sql,f,roster());
+assert.equal(operational()===beforeChip,false,'dealer assignment deliberately changes attendance, not chip/cash');
+assert.equal(financialRoster(),beforeAssignment);
+assert.equal(issuedLedger(),ledgerBeforeReplay);
+assert.equal(sql(`SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'160000');
 console.log('NATIVE_TWO_TABLE_EIGHT_PAID_FOUR_CHECKIN_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

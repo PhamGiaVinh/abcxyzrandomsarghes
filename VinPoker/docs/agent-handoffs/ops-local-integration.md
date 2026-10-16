@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G8 actual initial-assignment Edge/RPC/audit joined to eight-paid tour
+
+Baselineeabbc53fb clean/previousPROGRESS. New paidTourInitialAssign.native.mjs executes actual whole assign-dealer handler, actual computeSwingDuration/manualDealerIntentHeaders, actual club-authority/readreceipt/workerwrite SQL and audit INSERT. Auth user discovery/PostgREST bridge modeled; noTelegramtoken/fetchforbidden. Product (not test) builds manual headers after auth; Auto staysOFF and no assignment INSERT fixture. Dedicated NOLOGIN BYPASSRLS role inherits actualservicegrants, droppedfinally, same existingreadycapacitymodel/noapplicationrole/policychange.
+
+Finald17229/29793 polledterminal01974ce/PGstopped:2assignments/2distinctattendance/2exactsessions/2auditrows,2dealersavailable; outsider403zerodelta; exactreplay2returns/no2ndwriter/noauditchange; fullcash/seat/entryfingerprint andissuanceledger unchanged/160000chips. Existing8paid/chip/TVchecks retained. Latesttourbe0bef01-e427-40c2-ac88-d562f423c603/clube4bdd978-7217-4adc-9cfd-7c032679f041 retained; earlierauditkept. Initial failures were TESTbridge schema column (receipt.payload.club notclub_id), SETsessionJSONcast syntax, SQLNULL→JSONnull serialization; notproductbugs/no guard/grant weakening. No sourcebusinesschange. Nodecheck/YAML/diff checks recorded below; CIhelperpathprepared/notdispatched. No liveDB/Edge/frontend/flags/UAT/push/CI/deploychange/localhold/DaybreakOFF/masterACTIVE. Next actual Manual↔Tracker/hand lifecycle on these staffed4-player tables; not Auto/rotation/rest15x3/fulltour/browserproof.
+
 ## G8 same-tour eight-stack issuance/replay and anonymous TV consistency
 
 Baseline1767d3165 clean/previousPROGRESS. Extended existing8paid/2tables/4checkins script with localchipset/template/bank metadata, actual chip_ops_set_issuance_v2 quantity8COMMIT/replay and actual currentdenom projection. 1600×100=160000floorchips matches8seatedentries; replay exactreceipt/ledgerfingerprintunchanged. Cash/entries/seats/attendance entireJSON fingerprintunchanged; couplingOFF/bank3000low untouched/0bankledger. Actualanonrole TVv4 paired correcttour/8remaining/160000liveentrystack, zerooperational/ledgerdelta. No color-up here (already dedicatedruntime), no sourcebusinesschange.

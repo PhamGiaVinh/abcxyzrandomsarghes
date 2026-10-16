@@ -1,7 +1,7 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
 This is an execution handoff, NOT acceptance of the site. Baseline source
-`1767d3165`, plus the paid-tour chip/TV extension in this package. Fresh fetch confirms
+`eabbc53fb`, plus the paid-tour initial-assignment extension in this package. Fresh fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
 Owner's local-only/resource hold remains: no push/CI dispatch/production apply,
@@ -21,6 +21,19 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
 
 ## New shared roster checkpoint (actual durable local commit)
+
+Latest assignment extension `d17229`/handle29793→terminal0`1974ce`, PGstopped:
+actual complete assign-dealer handler→canonical worker RPC→audit assigns2 distinct
+dealer/attendance/exact sessions,2othersavailable; immutable replay/no second
+writer/audit, outsider403zeroDelta. Auth/PostgREST modeled, no Telegramtoken and
+fetch forbidden. Actual product constructs manual intent headers (test never
+invents an authorization header). No Auto activation/rotation proof. Cash/entry/
+seat exact fingerprint and chip ledger stay unchanged. Temporary NOLOGIN inherited
+service/BYPASSRLS parity role dropped in finally; no application role/policy edits.
+Latest retained club `e4bdd978-7217-4adc-9cfd-7c032679f041`, tour
+`be0bef01-e427-40c2-ac88-d562f423c603`, sessions
+`b2b78049-038a-40e5-ace7-221f5ccedda2` and
+`0fe62345-a337-4ca3-862a-8f6a24571a91`.
 
 Latest extended run `396326`, terminal0/PGstopped: one fresh owned tour includes
 all roster/check-in checkpoints PLUS actual issuance8/replay (1600×100 floor
