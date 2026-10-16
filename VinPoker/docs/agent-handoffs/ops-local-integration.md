@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Published old proof→parent correction→current proof transition local PASS
+
+Baselinea47ed34dc clean/previousPROGRESS. Added native worker baseline phase pinned to canonical paid fixture actor/tour/club/player/entry/registration relationships, exact TEST club/tour names, positive actual cash movement, frozen hand participant, no existing outcomes; shared exact localPG/datadir/no-network/native UI guards retained. Initial real worker publishes historical proof on SAME hand before parent opens. Parent correction then advances revision, old historical_display proof becomes stale, and a fresh chain proof matches current source revision/hash. Subsequent actual worker publishes current historical proof; anonymous result remains valid throughout supported chain fallback.
+
+d3299d initial assertion demanded pending after correction and failed. Source public history contract explicitly accepts current verified chain proof, so that oracle was WRONG, not evidence of a product bug. Replaced mandatory-label assertion with stronger exact old-historical stale/current-chain revision+hash match/current-historical absent checks. ab8d5c hit30s test budget (31.267s case with two workers/WSL reads), not assertion failure. Dedicated integration test budget45s now justified by measured duration; application10s/read, helper120s and workflow job bounds unchanged. e9f176 final2/2 nativePASS (parent32089ms, suite47.71s), all assertions retained; no app/schema change.
+
+PG stopped/no handles, diff/syntax PASS; no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. SDK/Auth/CORS/WebLocks/browser375 still modeled; full tour/Voiceprovider/TV/rest15×3/40/performance/full checks/release remain. Next receipt recovery while worker has already republished (current ordering recovers before final worker), plus remaining campaign gaps. Master G6 ACTIVE/local-only.
+
 ## Same parent-corrected hand → actual worker → current anonymous publication PASS
 
 Baselineecce5015c clean/previousPROGRESS. Existing native worker executable gains narrowly guarded parent-hand test mode: exact local PG17/database/datadir/no-network guards, explicit native UI gate, UUID, no other fault modes, current verified chain correction with exact TEST parent reason and pending current queue. Derives actor/tour/club from actual receipt, never creates another hand or broad backfill. Worker assertions now select historical_display scope explicitly (chain correction proof can legitimately coexist). No production worker source change.

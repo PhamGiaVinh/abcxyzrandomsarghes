@@ -136,6 +136,11 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
   const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
   sql(`INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled) VALUES('${fixture.club}','${fixture.tour}','${logical}','${fixture.actor}','correct_completed_hand',true);`);
   bindParentReads(fixture.actor,fixture.tour);h.invoke.mockClear();
+  const baselineWorker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],
+   {cwd:process.cwd(),encoding:'utf8',timeout:30_000,maxBuffer:1_000_000,env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(fixture)}});
+  expect(baselineWorker).toContain('ACTUAL_PAID_PARENT_BASELINE_HISTORY_WORKER_PUBLIC_PASS');
+  const publicHistory=()=>JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
+  expect(publicHistory().items[0].result.status).toBe('verified');
   await runPaidCorrectionEdge({sql,service,fixture,hand,scenario:async({invoke,setMaskReceipt,errors})=>{
    setMaskReceipt(true);let commits=0;let intent:CorrectionCommitIntent|undefined;
    h.invoke.mockImplementation(async(_name:string,{body}:{body:Record<string,unknown>})=>{
@@ -162,6 +167,15 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    expect(screen.getByRole('button',{name:'Xác nhận sửa hand'})).toBeDisabled();expect(money()).toBe(beforeMoney);
    expect(Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`))).toBeGreaterThan(beforeRevision);
    expect(JSON.parse(sql(`SELECT community_cards FROM public.tournament_hands WHERE id='${hand}';`))).toEqual(['2c','3d','4h']);
+   // A freshly verified chain correction is an explicitly supported public
+   // fallback. Verify proof identity, not an incorrect mandatory-pending label.
+   expect(publicHistory().items[0].result.status).toBe('verified');
+   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND source_revision=${beforeRevision} AND status='stale';`)).toBe('1');
+   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes o CROSS JOIN LATERAL public.get_tournament_settlement_source_hash(o.hand_id) current_source
+    WHERE o.hand_id='${hand}' AND o.verification_scope='chain' AND o.status='verified'
+     AND o.source_revision=current_source.source_revision AND o.source_chain_hash=current_source.source_chain_hash;`)).toBe('1');
+   expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes o JOIN public.tournament_hands x ON x.id=o.hand_id AND x.source_revision=o.source_revision
+    WHERE o.hand_id='${hand}' AND o.verification_scope='historical_display' AND o.status='verified';`)).toBe('0');
    const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('hand',(SELECT to_jsonb(x) FROM public.tournament_hands x WHERE id='${hand}'),
     'proof',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_settlement_outcomes x WHERE hand_id='${hand}'),
     'queue',(SELECT jsonb_agg(to_jsonb(x) ORDER BY source_revision) FROM public.tracker_historical_display_queue x WHERE hand_id='${hand}'),
@@ -194,5 +208,7 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    expect(published.items[0].handId).toBe(hand);expect(published.items[0].result.status).toBe('verified');
    expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified' AND source_revision=${correctedRevision};`)).toBe('1');
   }});
- });
+ // Two real worker processes plus WSL-backed UI/SQL exceeded the former 30s
+ // case budget (31.3s observed). Application/read/workflow deadlines unchanged.
+ },45_000);
 });

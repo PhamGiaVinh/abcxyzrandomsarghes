@@ -27,6 +27,8 @@ const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','en
 const binary=prefix.length?'wsl':'psql',flags=['-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
 const sql=q=>execFileSync(binary,[...prefix,...flags],{input:q,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
 const parentHand=process.env.VINPOKER_HISTORY_PARENT_HAND;
+const baselineParent=process.env.VINPOKER_HISTORY_PARENT_BASELINE;
+assert.ok(!baselineParent||parentHand,'parent_hand_required');
 let fixture,hand;
 if(parentHand){
  assert.equal(process.env.VINPOKER_NATIVE_CORRECTION_UI,'1','owned_parent_ui_gate_required');assert.ok(isUuid(parentHand));
@@ -35,7 +37,19 @@ if(parentHand){
  assert.equal(sql("SELECT host(inet_server_addr())||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000;"),'127.0.0.1|55441|17');
  const dir=sql('SHOW data_directory');assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');
  assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net');"),'f');
- const raw=sql(`SELECT jsonb_build_object('tour',h.tournament_id,'actor',o.actor_user_id,'club',t.club_id) FROM public.tournament_hands h
+ let raw;
+ if(baselineParent){
+  const f=JSON.parse(baselineParent);assert.ok(f&&['actor','tour','club','player','entry','registration'].every(key=>isUuid(f[key])),'owned_paid_fixture_required');
+  raw=sql(`SELECT jsonb_build_object('tour',h.tournament_id,'actor',c.owner_id,'club',t.club_id) FROM public.tournament_hands h
+   JOIN public.tournaments t ON t.id=h.tournament_id JOIN public.clubs c ON c.id=t.club_id
+   JOIN public.tournament_entries e ON e.id='${f.entry}' AND e.tournament_id=t.id AND e.player_id='${f.player}' AND e.registration_id='${f.registration}'
+   JOIN public.hand_players hp ON hp.hand_id=h.id AND hp.player_id=e.player_id AND hp.entry_number=e.entry_no
+   WHERE h.id='${parentHand}' AND h.tournament_id='${f.tour}' AND c.id='${f.club}' AND c.owner_id='${f.actor}' AND h.created_by=c.owner_id
+    AND h.status='completed' AND NOT h.is_voided AND c.name='Cash identity local TEST' AND t.name='Cash identity local TEST'
+    AND EXISTS(SELECT 1 FROM public.cashier_buyin_movements m WHERE m.registration_id=e.registration_id AND m.tournament_id=t.id AND m.amount>0)
+    AND NOT EXISTS(SELECT 1 FROM public.tournament_settlement_outcomes o WHERE o.hand_id=h.id);`);
+  assert.ok(raw,'owned_paid_parent_baseline_required');
+ }else raw=sql(`SELECT jsonb_build_object('tour',h.tournament_id,'actor',o.actor_user_id,'club',t.club_id) FROM public.tournament_hands h
   JOIN public.tournaments t ON t.id=h.tournament_id JOIN public.tournament_settlement_outcomes o ON o.hand_id=h.id AND o.source_revision=h.source_revision
   WHERE h.id='${parentHand}' AND h.status='completed' AND NOT h.is_voided AND o.status='verified' AND o.verification_scope='chain'
    AND o.correction_reason='TEST parent correction recovery';`);
@@ -261,6 +275,6 @@ const retry=await handler(new Request('https://test.invalid/history-worker',{met
 assert.equal(retry.status,200);assert.deepEqual(await retry.json(),{ok:true,claimed:0,completed:0,retried:0,needs_attention:0,unresolved:0});
 assert.equal(calls.at(-1).name,'claim_tracker_historical_display_jobs_scoped_v1');assert.deepEqual(errors,[]);assert.equal(business(),before);
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
-if(parentHand)console.log('ACTUAL_PARENT_CORRECTION_SAME_HAND_CURRENT_REVISION_WORKER_PUBLIC_PASS');
+if(parentHand)console.log(baselineParent?'ACTUAL_PAID_PARENT_BASELINE_HISTORY_WORKER_PUBLIC_PASS':'ACTUAL_PARENT_CORRECTION_SAME_HAND_CURRENT_REVISION_WORKER_PUBLIC_PASS');
 console.log(lostCommitResponse?'ACTUAL_HISTORY_WORKER_LOST_COMMIT_RESPONSE_NO_DUPLICATE_PASS':verified?'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_FOLD_OUTCOME_PUBLIC_VERIFIED_PASS':'ACTUAL_HISTORY_WORKER_VERIFIER_PAID_HAND_NEEDS_ATTENTION_PUBLIC_STATE_PASS');
 }
