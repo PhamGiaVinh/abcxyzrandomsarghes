@@ -101,5 +101,72 @@ await runPaidTourHand(sql,f,roster());
 assert.equal(issuedLedger(),ledgerBeforeReplay);
 const tvAfterHand=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
 assert.equal(tvAfterHand.tournament.id,f.tour);assert.equal(tvAfterHand.participation_counts.remaining,8);assert.equal(tvAfterHand.participation_counts.live_entry_stack,160000);
+// Mistaken bust/restore on this same paid tour. Pick a participant from the
+// other table (no historical hand dependency), using only canonical writers.
+const restoreTarget=JSON.parse(sql(`SELECT jsonb_build_object('entry',s.entry_id,'player',s.player_id,'table',s.tournament_table_id,'seat',s.seat_number,'stack',s.chip_count,
+ 'session',x.id,'revision',x.revision,'epoch',x.control_epoch) FROM public.tournament_seats s JOIN public.table_sessions x ON x.id=s.table_session_id
+ WHERE s.tournament_id='${f.tour}' AND s.is_active AND NOT EXISTS(SELECT 1 FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id WHERE h.tournament_id=s.tournament_id AND hp.player_id=s.player_id)
+ ORDER BY s.id LIMIT 1;`));
+assert.ok(restoreTarget.entry);assert.equal(restoreTarget.stack,20000);
+const protectedState=()=>sql(`SELECT md5(jsonb_build_object(
+ 'cash',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}'),
+ 'hands',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_hands r WHERE tournament_id='${f.tour}'),
+ 'outcomes',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.tournament_settlement_outcomes r JOIN public.tournament_hands h ON h.id=r.hand_id WHERE h.tournament_id='${f.tour}'),
+ 'assignments',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.dealer_assignments r WHERE club_id='${f.club}'))::text);`);
+const protectedBefore=protectedState();
+const entryCount=sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`);
+const bustKey=crypto.randomUUID();
+const bust=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_bust_player_v3('${restoreTarget.entry}',${restoreTarget.revision},${restoreTarget.epoch},${restoreTarget.stack},'${bustKey}','eight_paid_mistaken_bust_TEST');COMMIT;`));
+const busted=bust();assert.equal(busted.ok,true);assert.deepEqual(bust(),busted);
+assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'7|140000');
+const evidence=JSON.parse(sql(`BEGIN;${auth}SELECT to_jsonb(r) FROM public.get_floor_restorable_entries_v3('${f.tour}') r WHERE entry_id='${restoreTarget.entry}';COMMIT;`));
+assert.equal(evidence.current_stack,restoreTarget.stack);
+const restoreRevision=sql(`SELECT revision FROM public.table_sessions WHERE id='${restoreTarget.session}';`),restoreKey=crypto.randomUUID();
+const restoreIntent=(seat=restoreTarget.seat)=>`SELECT public.floor_restore_busted_player_to_seat_v5('${restoreTarget.entry}','${restoreTarget.table}',${seat},${restoreRevision},${restoreTarget.epoch},'${restoreKey}','${restoreTarget.session}');`;
+const reentryProbe=sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"service_role"}';SET LOCAL request.jwt.claim.role='service_role';SET LOCAL ROLE service_role;
+ SELECT public.cashier_create_app_reentry_v1('${f.tour}','${restoreTarget.player}');${auth}${restoreIntent()}ROLLBACK;`).split('\n').map(line=>JSON.parse(line));
+assert.equal(reentryProbe.length,2);assert.equal(reentryProbe[0].ok,true,'canonical pending re-entry must exist before testing the restore fence');
+assert.equal(reentryProbe[1].error,'restore_reentry_dependency');
+assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`),entryCount);
+const restore=seat=>JSON.parse(sql(`BEGIN;${auth}${restoreIntent(seat)}COMMIT;`));
+const restored=restore();assert.equal(restored.ok,true);assert.deepEqual(restore(),restored);
+const afterRestore=financialRoster();assert.equal(restore(restoreTarget.seat===1?2:1).error,'IDEMPOTENCY_CONFLICT');assert.equal(financialRoster(),afterRestore);
+assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`),entryCount);
+assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE entry_id='${restoreTarget.entry}' AND is_active AND chip_count=${restoreTarget.stack};`),'1');
+assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'8|160000');
+assert.equal(sql(`SELECT count(*)||'|'||sum(current_stack) FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND status='seated';`),'8|160000');
+assert.equal(protectedState(),protectedBefore);assert.equal(issuedLedger(),ledgerBeforeReplay);
+const tvRestored=JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"anon"}';SET LOCAL ROLE anon;SELECT public.get_tv_display_state_v4('${tvToken}',true);COMMIT;`));
+assert.equal(tvRestored.participation_counts.remaining,8);assert.equal(tvRestored.participation_counts.live_entry_stack,160000);
+console.log('NATIVE_EIGHT_PAID_SAME_TOUR_BUST_REENTRY_FENCE_RESTORE_RECEIPT_TV_PASS');
+const colorKey=crypto.randomUUID(),undoKey=crypto.randomUUID();
+const rosterBeforeColor=operational(),proofBeforeColor=protectedState();
+assert.equal(sql(`SELECT count(*) FROM public.chip_inventory_ledger WHERE tournament_id='${f.tour}';`),'0','issuance is tracked separately from conversion ledger');
+const issuanceBeforeColor=sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY stack_template_id) FROM public.stack_template_issuance r WHERE stack_template_id='${template}';`);
+const color=JSON.parse(sql(`BEGIN;${auth}SELECT public.chip_ops_color_up('${f.tour}','${low}','${high}',160,1,'${colorKey}');COMMIT;`));
+assert.equal(color.status,'ok');assert.equal(color.rounding_delta,0);
+const originalLedgerRows=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.chip_inventory_ledger r WHERE tournament_id='${f.tour}';`));
+assert.equal(originalLedgerRows.length,2);
+const colorPayload=JSON.stringify({tournament:f.tour,removed:low,target:high,added:160,level:1});
+const colorReceipt=payload=>JSON.parse(sql(`BEGIN;${auth}SELECT public.get_chip_color_up_receipt_v1('${f.tour}','color_up','${colorKey}','${payload}'::jsonb);COMMIT;`));
+assert.deepEqual(colorReceipt(colorPayload).result,color);
+assert.equal(colorReceipt(JSON.stringify({...JSON.parse(colorPayload),added:161})).error,'IDEMPOTENCY_CONFLICT');
+let floorCounts=JSON.parse(sql(`BEGIN;${auth}SELECT jsonb_object_agg(denomination_id,current_count) FROM public.chip_ops_current_denom_counts('${f.tour}');COMMIT;`));
+assert.equal(floorCounts[low],0);assert.equal(floorCounts[high],160);
+const undo=JSON.parse(sql(`BEGIN;${auth}SELECT public.chip_ops_reverse_color_up('${color.color_up_operation_id}','${undoKey}');COMMIT;`));
+assert.equal(undo.status,'ok');assert.equal(undo.bank_reversed,false);
+const afterUndoLedger=issuedLedger();
+const undoReceipt=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_chip_color_up_receipt_v1('${f.tour}','reverse_color_up','${undoKey}','{"operation":"${color.color_up_operation_id}"}'::jsonb);COMMIT;`));
+assert.equal(undoReceipt.status,'committed');assert.deepEqual(undoReceipt.result,undo);assert.equal(issuedLedger(),afterUndoLedger);
+assert.deepEqual(colorReceipt(colorPayload).result,color,'historical receipt remains original after undo');
+floorCounts=JSON.parse(sql(`BEGIN;${auth}SELECT jsonb_object_agg(denomination_id,current_count) FROM public.chip_ops_current_denom_counts('${f.tour}');COMMIT;`));
+assert.equal(floorCounts[low],1600);assert.equal(floorCounts[high],0);
+const retainedLedger=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.chip_inventory_ledger r WHERE id IN (${originalLedgerRows.map(row=>`'${row.id}'::uuid`).join(',')});`));
+assert.deepEqual(retainedLedger,originalLedgerRows,'undo must append compensation without changing original conversion ledger');
+assert.equal(sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY stack_template_id) FROM public.stack_template_issuance r WHERE stack_template_id='${template}';`),issuanceBeforeColor);
+assert.equal(sql(`SELECT count(*) FROM public.color_up_operation WHERE tournament_id='${f.tour}' AND idempotency_key='${colorKey}';`),'1');
+assert.equal(sql(`SELECT count(*) FROM public.chip_bank_ledger WHERE club_id='${f.club}';`),'0');
+assert.equal(operational(),rosterBeforeColor);assert.equal(protectedState(),proofBeforeColor);
+console.log('NATIVE_EIGHT_PAID_SAME_TOUR_COLORUP_RECEIPT_UNDO_CONSERVATION_PASS');
 console.log('NATIVE_TWO_TABLE_EIGHT_PAID_FOUR_CHECKIN_ROSTER_PASS',JSON.stringify({club:f.club,tournament:f.tour,tables:roster()}));
 // Durable owned TEST metadata/audit retained. Not a full-tour/Auto/rotation/UI proof.

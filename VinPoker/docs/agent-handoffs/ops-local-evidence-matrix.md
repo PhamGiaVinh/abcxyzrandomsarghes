@@ -101,3 +101,15 @@ new revision, republishes via actual worker and reads verified anonymously.
 Worker replay claims zero; Cashier and seats unchanged. Retained tournament
 `9ac980bf-46d7-4694-a416-228647c667e8`. Local only, transport modeled;
 this does not close the full tour or hosted/browser release gates.
+# Latest extension — 2026-10-16 same-tour bust/restore and color-up/undo
+
+Final `cb4be8` terminal0/PG stopped on tour
+`7fe7d995-cc96-4884-846a-99754b447f94`: canonical evidenced bust/replay,
+actual pending re-entry blocks restore, durable restore/replay/payload conflict,
+8 entries/160000 chips and anonymous TV agree. Canonical color-up/receipt,
+undo/receipt preserve original conversion ledger plus issuance, Cashier,
+hands/proofs and assignments. CouplingOFF/no bank ledger. Native only, no browser
+or hosted release. Earlier harness assumed issuance occupied conversion ledger;
+corrected to assert initial zero, then preserve actual conversion rows. No data
+reset. Remaining same-tour steps: rotations, break/close/reopen/end; original
+full checks, hosted/375/provider and20×5 performance gates still open.

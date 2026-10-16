@@ -1765,3 +1765,28 @@ Node syntax and diff whitespace checks pass. Local-only: no push, CI dispatch,
 deployment, production apply or flag changes. HTTP/Auth/CORS remain modeled.
 Next is the remaining same-tour bust/restore, color-up/undo, break/close/end;
 hosted/browser, real rotations, full typechecks/build and performance remain open.
+# 2026-10-16 — Integrated paid-tour bust/restore and color-up/undo
+
+G5/G8 IN_PROGRESS. Extended `paidTourRoster.native.mjs` after the same staffed
+four-player hand/correction/worker proof. Canonical bust with evidenced20000,
+exact replay, restorable read, actual pending re-entry (transaction rollback)
+blocking restore, then durable v5 restore/replay/key-payload conflict. Eight
+original entries remain, seats/entries total160000, anonymous TV8/160000.
+Canonical color-up1600×100→160×1000, fresh receipt recovery, payload conflict,
+undo/fresh receipt and historical receipt preserved. Original conversion ledger
+rows immutable; compensation appended; issuance unchanged, couplingOFF/no bank
+ledger. Cashier, hands/proofs and dealer assignments unchanged.
+
+Final run `75a3e3`/41625→`cb4be8`: exit0/PG stopped. Club
+`11f9f323-1e68-4726-b12d-7425f3a33042`, tour
+`7fe7d995-cc96-4884-846a-99754b447f94`, hand
+`15f77ef2-4152-4406-a938-7a04237c8ff9`. Syntax/diff checks pass.
+Earlier color-up extension failed before mutation because harness assumed an
+issuance ledger row; source shows issuance is separate, conversion ledger starts
+empty. Fixed oracle, not product schema. Failed tour/audit retained, no reset.
+
+No production DB/Edge/frontend/flags/UAT/push/CI dispatch. Daybreak/Auto unchanged.
+Local hold remains. Same-tour couplingON is not proven (separate dedicated native
+coverage exists). Next: canonical break/close/reopen/end with audit and receipts;
+real rest15 rotations, hosted/browser375/provider/performance/full checks/release
+still required for master completion. No command remains running.
