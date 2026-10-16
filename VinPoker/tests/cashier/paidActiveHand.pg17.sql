@@ -18,6 +18,10 @@ DO $$ DECLARE original public.tournament_registrations%ROWTYPE; actor uuid; dest
  moving_player uuid; moving_reg uuid; moving_entry uuid; opened jsonb; src record; target_seat integer;
  correction_alert uuid; alert_status text; correction_unknown_session boolean;
  expected_public_roster jsonb; public_hand jsonb; public_history jsonb;
+ tv_token text:='fixture-only-paid-tv-'||gen_random_uuid()::text; tv_payload jsonb; branding boolean; expected_remaining integer;
+ flight_b uuid; shared_event uuid:=gen_random_uuid(); physical_b uuid:=gen_random_uuid(); player_b uuid:=gen_random_uuid();
+ token_b text:='fixture-only-paid-flight-b-'||gen_random_uuid()::text; payload_b jsonb; registration_b uuid;
+ clock_revision_a text; flight_b_before jsonb; paused_a_before jsonb;
 BEGIN
  SELECT * INTO STRICT original FROM public.tournament_registrations WHERE id=current_setting('test.paid_registration')::uuid;
  SELECT owner_id INTO STRICT actor FROM public.clubs WHERE id=original.club_id;
@@ -233,6 +237,108 @@ BEGIN
   RAISE EXCEPTION 'anonymous_history_invented_verified_result_or_lost_hand: %',public_history;END IF;
  r:=public.get_public_tournament_table_hand_v2(original.tournament_id,empty_table.id,hand);
  IF r->>'error' IS DISTINCT FROM 'hand_out_of_scope' THEN RAISE EXCEPTION 'anonymous_history_cross_table_link_accepted: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ -- Second flight uses real create/levels/open/register/pay/start RPCs. Event
+ -- association/layout below is explicit local config, not editor publish proof.
+ PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+ PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
+ PERFORM set_config('role','authenticated',true);
+ r:=public.create_tournament_with_levels_v1(original.club_id,jsonb_build_object('name','Paid flight B TEST','start_time',now()+interval '1 hour',
+  'buy_in',50000,'rake_amount',0,'service_fee_amount',0,'starting_stack',40000,'game_type','nlh','minutes_per_level',30,'late_reg_close_level',6),
+  '[{"level_number":1,"small_blind":500,"big_blind":1000,"ante":100,"duration_minutes":30,"is_break":false}]',gen_random_uuid(),actor);
+ IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_flight_b_create_failed: %',r;END IF;
+ flight_b:=(r->>'tournament_id')::uuid;
+ PERFORM set_config('role','none',true);
+ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+ VALUES(physical_b,original.club_id,'Paid flight B table TEST',99,'tournament','inactive','available');
+ INSERT INTO auth.users(id) VALUES(player_b);
+ PERFORM set_config('role','authenticated',true);
+ r:=public.floor_open_tournament_table_v3(flight_b,physical_b,'manual',gen_random_uuid());
+ IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_flight_b_open_failed: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ PERFORM set_config('request.jwt.claim.role','service_role',true);
+ PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
+ r:=public.cashier_create_app_registration_v1(flight_b,player_b);registration_b:=(r->>'registration_id')::uuid;
+ IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_flight_b_registration_failed: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);PERFORM set_config('role','authenticated',true);
+ r:=public.resolve_cashier_cash_buyin_intent_v1(jsonb_build_object('actor_id',actor,'club_id',original.club_id,'tournament_id',flight_b,
+  'registration_id',registration_b,'amount',50000,'request_id',gen_random_uuid()),'record');
+ IF r->>'status'<>'recorded' OR r->'result'->>'seating_state'<>'seated' THEN RAISE EXCEPTION 'paid_flight_b_payment_failed: %',r;END IF;
+ r:=public.floor_start_tournament_clock(flight_b);
+ IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_flight_b_clock_failed: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT count(*)=1 AND sum(amount)=50000 FROM public.cashier_buyin_movements WHERE registration_id=registration_b) IS NOT TRUE
+ OR (SELECT count(*)=1 AND sum(chip_count)=40000 FROM public.tournament_seats WHERE tournament_id=flight_b AND is_active) IS NOT TRUE THEN
+  RAISE EXCEPTION 'second_paid_flight_ledger_or_stack_mismatch';END IF;
+ INSERT INTO public.tournament_events(id,club_id,name) VALUES(shared_event,original.club_id,'Shared paid event TEST');
+ UPDATE public.tournaments SET event_id=shared_event WHERE id IN (original.tournament_id,flight_b);
+ INSERT INTO public.tv_tournament_layouts(club_id,event_id,brand_name,layout,updated_by)
+ VALUES(original.club_id,shared_event,'Shared paid event brand TEST',public.get_tv_tournament_branding_v1(original.tournament_id)->'layout',actor);
+ -- Explicit local paired-display control-plane fixture, not pairing UI proof.
+ INSERT INTO public.tv_displays(id,club_id,display_token,assigned_tournament_id,status)
+ VALUES(gen_random_uuid(),original.club_id,tv_token,original.tournament_id,'paired');
+ INSERT INTO public.tv_displays(id,club_id,display_token,assigned_tournament_id,status)
+ VALUES(gen_random_uuid(),original.club_id,token_b,flight_b,'paired');
+ expected_remaining:=CASE WHEN current_setting('test.paid_move')='true' THEN 4 ELSE 3 END;
+ PERFORM set_config('request.jwt.claim.sub','',true);
+ PERFORM set_config('request.jwt.claim.role','anon',true);PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
+ PERFORM set_config('role','anon',true);
+ FOREACH branding IN ARRAY ARRAY[false,true] LOOP
+  tv_payload:=public.get_tv_display_state_v4(tv_token,branding);
+  IF tv_payload->>'status' IS DISTINCT FROM 'paired' OR tv_payload->'tournament'->>'id' IS DISTINCT FROM original.tournament_id::text
+   OR tv_payload->'clock'->>'tournament_id' IS DISTINCT FROM original.tournament_id::text
+   OR (tv_payload->'participation_counts'->>'remaining')::integer IS DISTINCT FROM expected_remaining
+   OR (tv_payload->'participation_counts'->>'live_entry_stack')::bigint IS DISTINCT FROM expected_remaining*20000
+   OR (tv_payload->'entries'->>'total_confirmed')::integer IS DISTINCT FROM expected_remaining
+   OR (tv_payload->'tournament'->>'players_remaining')::integer IS DISTINCT FROM expected_remaining
+   OR (tv_payload->'tournament'->>'average_stack')::bigint IS DISTINCT FROM 20000
+   OR (tv_payload->'levels'->0->>'big_blind')::bigint IS DISTINCT FROM 200 THEN
+   RAISE EXCEPTION 'anonymous_tv_not_matching_paid_floor_participation: %',tv_payload;END IF;
+  payload_b:=public.get_tv_display_state_v4(token_b,branding);
+  IF payload_b->>'status' IS DISTINCT FROM 'paired' OR payload_b->'tournament'->>'id' IS DISTINCT FROM flight_b::text
+   OR payload_b->'clock'->>'tournament_id' IS DISTINCT FROM flight_b::text
+   OR (payload_b->'participation_counts'->>'remaining')::integer IS DISTINCT FROM 1
+   OR (payload_b->'participation_counts'->>'live_entry_stack')::bigint IS DISTINCT FROM 40000
+   OR (payload_b->'entries'->>'total_confirmed')::integer IS DISTINCT FROM 1
+   OR (payload_b->'tournament'->>'average_stack')::bigint IS DISTINCT FROM 40000
+   OR (payload_b->'levels'->0->>'big_blind')::bigint IS DISTINCT FROM 1000
+   OR payload_b->'clock'->>'remaining_seconds' IS NULL OR tv_payload->'clock'->>'remaining_seconds' IS NULL
+   OR (payload_b->'clock'->>'remaining_seconds')::numeric <= (tv_payload->'clock'->>'remaining_seconds')::numeric+300 THEN
+   RAISE EXCEPTION 'shared_event_paid_flights_runtime_leaked: %',payload_b;END IF;
+  IF branding AND (payload_b->'display'->>'club_brand_name' IS DISTINCT FROM 'Shared paid event brand TEST'
+   OR tv_payload->'display'->>'club_brand_name' IS DISTINCT FROM 'Shared paid event brand TEST') THEN
+   RAISE EXCEPTION 'shared_event_brand_not_shared';END IF;
+ END LOOP;
+ PERFORM set_config('role','none',true);
+ clock_revision_a:=tv_payload->'clock'->>'control_revision';
+ IF clock_revision_a IS NULL THEN RAISE EXCEPTION 'clock_revision_missing_for_canonical_control';END IF;
+ SELECT to_jsonb(t) INTO flight_b_before FROM public.tournaments t WHERE id=flight_b;
+ PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+ PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
+ PERFORM set_config('role','authenticated',true);
+ r:=public.floor_control_tournament_clock(original.tournament_id,'pause',NULL,clock_revision_a);
+ IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'shared_event_flight_a_pause_failed: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ SELECT to_jsonb(t) INTO paused_a_before FROM public.tournaments t WHERE id=original.tournament_id;
+ PERFORM set_config('role','authenticated',true);
+ r:=public.floor_control_tournament_clock(original.tournament_id,'resume',NULL,clock_revision_a);
+ IF r->>'error' IS DISTINCT FROM 'stale_clock_state' THEN RAISE EXCEPTION 'old_clock_revision_not_rejected: %',r;END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT to_jsonb(t) FROM public.tournaments t WHERE id=original.tournament_id) IS DISTINCT FROM paused_a_before
+ OR (SELECT to_jsonb(t) FROM public.tournaments t WHERE id=flight_b) IS DISTINCT FROM flight_b_before THEN
+  RAISE EXCEPTION 'pause_or_stale_retry_changed_wrong_flight';END IF;
+ PERFORM set_config('request.jwt.claim.sub','',true);
+ PERFORM set_config('request.jwt.claim.role','anon',true);PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);
+ PERFORM set_config('role','anon',true);
+ tv_payload:=public.get_tv_display_state_v4(tv_token,true);
+ payload_b:=public.get_tv_display_state_v4(token_b,true);
+ IF (tv_payload->'clock'->>'is_running')::boolean IS DISTINCT FROM false
+ OR (payload_b->'clock'->>'is_running')::boolean IS DISTINCT FROM true THEN
+  RAISE EXCEPTION 'shared_event_pause_leaked_to_other_flight';END IF;
  PERFORM set_config('role','none',true);
 END $$;
 ROLLBACK;

@@ -10,7 +10,7 @@ const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','en
 const binary=prefix.length?'wsl':'psql',flags=['-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
 const sql=q=>execFileSync(binary,[...prefix,...flags],{input:q,encoding:'utf8',timeout:30000}).trim();
 const fixture=createPaidJourneyFixture(sql);
-const tables=['clubs','tournaments','table_sessions','dealer_assignments','tournament_entries','tournament_seats','tournament_hands','tournament_registrations','cashier_buyin_movements','seat_draw_receipts','seat_assignment_history','tournament_chip_counts','notifications','table_operation_receipts','table_session_seat_locks'];
+const tables=['clubs','tournaments','table_sessions','dealer_assignments','tournament_entries','tournament_seats','tournament_hands','tournament_registrations','cashier_buyin_movements','seat_draw_receipts','seat_assignment_history','tournament_chip_counts','notifications','table_operation_receipts','table_session_seat_locks','tv_displays','tournament_events','tv_tournament_layouts'];
 const fingerprint=()=>sql(`SELECT jsonb_object_agg(name,digest) FROM (${tables.map(name=>`SELECT '${name}' name,md5(coalesce(string_agg(md5(to_jsonb(t)::text),'' ORDER BY to_jsonb(t)::text),'')) digest FROM public.${name} t`).join(' UNION ALL ')}) x;`);
 const before=fingerprint();
 const output=sql(String.raw`\set FIXED_REENTRY true
