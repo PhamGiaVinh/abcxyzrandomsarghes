@@ -118,6 +118,23 @@ else{
    console.log(JSON.stringify({passR_actual_result:{phase:'main-execute-wait-real-lead',club:fixture.club,originals,initialExecuted,waitMs:Math.max(0,relief+1500-Date.now())}}));
    while(Date.now()<relief+1500)await new Promise(resolve=>setTimeout(resolve,Math.min(30000,relief+1500-Date.now())));
    let completed=initialExecuted,batches=0;
+   if(fixture.completionFault){
+    // Real SQL failure within the actual completion RPC, after the actual
+    // executor commits. Scope the trigger to this owned synthetic club only.
+    const suffix=fixture.club.replaceAll('-',''),name='native_completion_'+suffix;
+    await sql(`CREATE FUNCTION floor_private.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.club_id='${fixture.club}'::uuid AND NEW.status='executed' THEN RAISE EXCEPTION 'NATIVE_COMPLETION_WRITE_FAULT';END IF;RETURN NEW;END $$;CREATE TRIGGER ${name} BEFORE UPDATE ON public.dealer_rotation_schedule FOR EACH ROW EXECUTE FUNCTION floor_private.${name}();`);
+    let response,body;
+    try{
+     response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));body=await response.json();
+    }finally{await sql(`DROP TRIGGER ${name} ON public.dealer_rotation_schedule;DROP FUNCTION floor_private.${name}();`);}
+    const actualSwaps=Number(await sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${fixture.club}' AND attendance_id IN (${originals.map(r=>quote(r.incoming)).join(',')}) AND released_at IS NULL AND status='assigned';`));
+    const actualCompleted=await executedCount();
+    console.log(JSON.stringify({passR_actual_result:{phase:'main-completion-returned-failure',club:fixture.club,status:response.status,body,actualSwaps,actualCompleted,completions:rpcResponses.filter(r=>r.name==='complete_rotation_slot'),adapterGaps,bridgeErrors,networkCalls}}));
+    assert.equal(actualSwaps,tableCount,'actual dealer changes have committed');assert.equal(actualCompleted,0,'injected completion writes rolled back');assert.deepEqual(adapterGaps,[]);assert.deepEqual(bridgeErrors,[]);assert.equal(networkCalls,0);
+    assert.equal(body.status,'partial','committed swap with failed bookkeeping must not report completed');
+    console.log('ACTUAL_MAIN_COMPLETION_FAILURE_DEGRADED_PASS');
+    return;
+   }
    while(completed<tableCount){
     assert.ok(++batches<=tableCount,'bounded drain must progress, never loop indefinitely');
     const response=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing',{method:'POST',headers:{Authorization:'Bearer synthetic-main-worker','Content-Type':'application/json'},body:JSON.stringify({club_id:fixture.club})}));
