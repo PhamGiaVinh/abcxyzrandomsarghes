@@ -1,27 +1,31 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { execFileSync } from "node:child_process";
 import { webcrypto } from "node:crypto";
 import { createPaidCompletedHandFixture } from "../cashier/paidJourney.fixture.mjs";
 import { runPaidCorrectionEdge } from "./paidCorrectionEdge.native.mjs";
 import { useCorrectionCommitRecovery } from "@/components/cashier/tournament-live/useCorrectionCommitRecovery";
+import { ResettlePreview } from "@/components/cashier/tournament-live/HandHistoryWorkspace";
+import { buildEditedTarget, runClientResettle } from "@/components/cashier/tournament-live/resettleApply";
 import { readCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 const h=vi.hoisted(()=>({actor:"",invoke:vi.fn()}));
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:h.actor}})}));
 vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>({functions:{invoke:h.invoke}})}));
+vi.mock("@/lib/featureFlags",()=>({FEATURES:{trackerAtomicResettle:true},isTrackerAtomicResettleAvailable:()=>true}));
 const enabled=process.env.VINPOKER_NATIVE_CORRECTION_UI==='1',database='vinpoker_ops_cash115_qualified_c';
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
 const sql=(input:string)=>execFileSync(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
 let testRole:string|undefined;
 afterEach(()=>{cleanup();localStorage.clear();});
 afterAll(()=>{if(testRole)sql(`DROP ROLE ${testRole};`);});
-function Panel({intent,mutation}:{intent:CorrectionCommitIntent;mutation:()=>Promise<{data:unknown;error:unknown}>}){
+function Panel({intent,mutation,view,players}:{intent:CorrectionCommitIntent;mutation:()=>Promise<{data:unknown;error:unknown}>;
+ view:ComponentProps<typeof ResettlePreview>['view'];players:ComponentProps<typeof ResettlePreview>['players']}){
  const [outcome,setOutcome]=useState('idle');
  const recovery=useCorrectionCommitRecovery(intent.tournament_id,intent.hand_id,()=>setOutcome('recovered'));
  return <section><p role="status">{outcome}</p><p>{recovery.message}</p>
-  <button type="button" disabled={recovery.busy} onClick={()=>{void recovery.commit(intent,mutation).then(ok=>setOutcome(ok?'confirmed':'unknown')).catch(()=>setOutcome('blocked'));}}>Gửi sửa hand TEST</button>
+  <ResettlePreview view={view} players={players} busy={recovery.busy} confirmationBlocked={!!recovery.message} onClose={()=>{}} onConfirm={()=>{void recovery.commit(intent,mutation).then(ok=>setOutcome(ok?'confirmed':'unknown')).catch(()=>setOutcome('blocked'));}}/>
   <button type="button" disabled={recovery.busy} onClick={()=>{void recovery.recover();}}>Kiểm tra receipt TEST</button></section>;
 }
 describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (not hosted browser)',()=>{
@@ -39,14 +43,23 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    const previewResponse=await invoke(body),preview=await previewResponse.json();expect(previewResponse.status).toBe(200);
    const intent:CorrectionCommitIntent={expected_actor_id:fixture.actor,tournament_id:fixture.tour,hand_id:hand,idempotency_key:crypto.randomUUID(),
     expected_source_revision:preview.source_revision,expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash,expected_request_hash:preview.request_hash};
+   const snapshot=JSON.parse(sql(service+`SELECT public.get_tracker_historical_display_snapshot('${hand}',NULL);`));
+   const target={...snapshot.hand,players:snapshot.players,actions:snapshot.actions};
+   const editedTarget=buildEditedTarget({board:body.edit.communityCards,holeCardsByPlayer:Object.fromEntries(snapshot.players.map(p=>[p.player_id,p.hole_cards])),actions:snapshot.actions});
+   const client=runClientResettle({target,later:[],editedTarget});expect(client.result.ok).toBe(true);
+   const view={result:client.result,targetHandId:hand,expectedEndingStacks:body.expected_target_ending_stacks,
+    serverPreview:{sourceRevision:preview.source_revision,sourceChainHash:preview.source_chain_hash,outcomeHash:preview.outcome_hash,requestHash:preview.request_hash,actorId:fixture.actor}};
+   const players=snapshot.players.map(p=>({player_id:p.player_id,display_name:'TEST seat '+p.seat_number,ending_stack:p.ending_stack}));
    const cash=()=>sql(`SELECT jsonb_agg(to_jsonb(m) ORDER BY id)::text FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}';`),cashBefore=cash();
    let writes=0;setMaskReceipt(true);
    const mutation=async()=>{writes++;expect(readCorrectionIntent(localStorage,intent)).toEqual(intent);
     const response=await invoke({...body,...intent,mode:'commit'});expect(response.status).toBe(502);return {data:await response.json(),error:new Error('TEST missing commit receipt')};};
    h.invoke.mockImplementation(async(_name:string,{body:request}:{body:unknown})=>{const response=await invoke(request);return {data:await response.json(),error:response.ok?null:new Error('TEST read failure')};});
-   const first=render(<Panel intent={intent} mutation={mutation}/>);
-   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Gửi sửa hand TEST'}));});
+   const first=render(<Panel intent={intent} mutation={mutation} view={view} players={players}/>);
+   expect(screen.getByRole('button',{name:'Xác nhận sửa hand'})).toBeEnabled();
+   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Xác nhận sửa hand'}));});
    await waitFor(()=>expect(screen.getByRole('status')).toHaveTextContent('unknown'),{timeout:10_000});
+   expect(screen.getByRole('button',{name:'Xác nhận sửa hand'})).toBeDisabled();
    expect(readCorrectionIntent(localStorage,intent)).toEqual(intent);expect(writes).toBe(1);
    expect(Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`))).toBeGreaterThan(intent.expected_source_revision);expect(cash()).toBe(cashBefore);
    const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('hand',(SELECT to_jsonb(x) FROM public.tournament_hands x WHERE id='${hand}'),
@@ -55,7 +68,7 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
     'counts',(SELECT jsonb_agg(to_jsonb(x) ORDER BY player_id,entry_number) FROM public.tournament_chip_counts x WHERE tournament_id='${fixture.tour}'),
     'cash',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.cashier_buyin_movements x WHERE tournament_id='${fixture.tour}'))::text);`);
    const after=fingerprint();expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${intent.idempotency_key}';`)).toBe('1');
-   first.unmount();render(<Panel intent={intent} mutation={mutation}/>);
+   first.unmount();render(<Panel intent={intent} mutation={mutation} view={view} players={players}/>);
    expect(screen.getByText(/Có yêu cầu sửa hand chưa rõ/)).toBeInTheDocument();
    await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Kiểm tra receipt TEST'}));});
    await waitFor(()=>expect(screen.getByRole('status')).toHaveTextContent('recovered'));

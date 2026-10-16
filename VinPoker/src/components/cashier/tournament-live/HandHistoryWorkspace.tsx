@@ -1209,6 +1209,7 @@ export function HandHistoryWorkspace({
                 <ResettlePreview
                   view={resettleView}
                   busy={resettleBusy}
+                  confirmationBlocked={!!correctionRecovery.message}
                   players={selectedHand.players.map((p) => ({
                     player_id: p.player_id,
                     display_name: p.display_name,
@@ -1318,12 +1319,15 @@ export function HandHistoryWorkspace({
 export function ResettlePreview({
   view,
   busy,
+  confirmationBlocked = false,
   players,
   onConfirm,
   onClose,
 }: {
-  view: { result: ResettleForwardResult; targetHandId?: string; expectedEndingStacks?: ExpectedHandEndStack[] };
+  view: { result: ResettleForwardResult; targetHandId?: string; expectedEndingStacks?: ExpectedHandEndStack[];
+    serverPreview?: { sourceRevision: number; sourceChainHash: string; outcomeHash: string; requestHash: string; actorId: string } };
   busy: boolean;
+  confirmationBlocked?: boolean;
   players: { player_id: string; display_name: string; ending_stack: number }[];
   onConfirm: () => void;
   onClose: () => void;
@@ -1365,6 +1369,11 @@ export function ResettlePreview({
   const ok = result as ResettleOk;
   const changes = resettleChipChanges(ok);
   const noChange = changes.length === 0;
+  const proof = view.serverPreview;
+  const atomicPreview = FEATURES.trackerAtomicResettle && isTrackerAtomicResettleAvailable() && !!proof
+    && Number.isSafeInteger(proof.sourceRevision) && proof.sourceRevision >= 1
+    && [proof.sourceChainHash, proof.outcomeHash, proof.requestHash].every(value => /^[a-f0-9]{64}$/.test(value))
+    && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(proof.actorId);
   const unchangedRows = players.map((player) => ({
     player_id: player.player_id,
     before: player.ending_stack,
@@ -1412,7 +1421,8 @@ export function ResettlePreview({
       </div>
       {noChange ? (
         <div className="text-[11px] text-muted-foreground">
-          Không có thay đổi chip — dùng “Chỉ lưu hiển thị” nếu chỉ muốn sửa lá/hành động.
+          {atomicPreview ? "Stack giữ nguyên. Máy chủ vẫn xác minh và lưu bản sửa hand nguyên tử."
+            : "Stack giữ nguyên; cần preview máy chủ hợp lệ trước khi lưu bản sửa hand."}
         </div>
       ) : (
         <div className="space-y-0.5">
@@ -1436,11 +1446,11 @@ export function ResettlePreview({
       <div className="flex gap-2 pt-0.5">
         <button
           type="button"
-          disabled={busy || noChange || !targetStacks.conserved || !stackCheck.matchesEngine}
+          disabled={busy || confirmationBlocked || (noChange && !atomicPreview) || !targetStacks.conserved || !stackCheck.matchesEngine}
           onClick={onConfirm}
-          className="text-xs font-semibold text-amber-100 border border-amber-500/60 bg-amber-500/15 rounded-lg px-3 py-1.5 hover:bg-amber-500/25 disabled:opacity-40"
+          className="min-h-11 text-xs font-semibold text-amber-100 border border-amber-500/60 bg-amber-500/15 rounded-lg px-3 py-1.5 hover:bg-amber-500/25 disabled:opacity-40"
         >
-          {busy ? "Đang áp dụng…" : "Xác nhận đổi chip"}
+          {busy ? "Đang áp dụng…" : atomicPreview ? "Xác nhận sửa hand" : "Xác nhận đổi chip"}
         </button>
         <button
           type="button"
@@ -1451,7 +1461,9 @@ export function ResettlePreview({
           Huỷ xem trước
         </button>
       </div>
-      <div className="text-[10px] text-amber-300/80">Sẽ lưu hiển thị (lá/hành động) rồi dời chip. Không thay đổi ai bị loại.</div>
+      <div className="text-[10px] text-amber-300/80">{atomicPreview
+        ? "Máy chủ lưu lá/hành động và kết quả trong một transaction; không tự thay đổi ai bị loại."
+        : "Chưa xác minh đường sửa nguyên tử. Không dùng client để tự quyết kết quả hoặc chip."}</div>
     </div>
   );
 }
