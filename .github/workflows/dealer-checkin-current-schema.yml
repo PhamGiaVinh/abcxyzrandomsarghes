@@ -13,6 +13,18 @@ on:
       - 'VinPoker/src/lib/cashPaymentIntent*'
       - 'VinPoker/src/pages/ops/TourCashierWorkbench*'
       - 'VinPoker/supabase/migrations/20270128000112_cashier_cash_intent_receipts_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000113_cashier_canonical_paid_seating_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000114_cashier_canonical_reentry_seating_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000115_cashier_server_priced_reentry_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000116_floor_restore_pending_reentry_fence_v1.sql'
+      - 'VinPoker/supabase/functions/tournament-reentry/**'
+      - 'VinPoker/tests/cashier/paidJourney*'
+      - 'VinPoker/tests/cashier/paidSeatingClose*'
+      - 'VinPoker/tests/cashier/reentry*'
+      - 'VinPoker/tests/cashier/restoreReentry*'
+      - 'VinPoker/tests/cashier/seatingMigrations*'
+      - 'VinPoker/tests/cashier/canonicalPaidSeating*'
+      - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
       - 'VinPoker/supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql'
@@ -1002,6 +1014,24 @@ jobs:
           createdb -T "$PGDATABASE" vinpoker_ops_cash112_overlap
           PGDATABASE=vinpoker_ops_cash112_overlap node tests/cashier/cashPaymentIdentity.concurrent.mjs
           node node_modules/vitest/vitest.mjs run src/lib/cashPaymentIntent.test.ts src/pages/ops/TourCashierWorkbenchShift.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Cash113-116 canonical paid seating re-entry and restore races
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_cash115_qualified_c
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_cash112_qualified "$PGDATABASE"
+          node tests/cashier/seatingMigrations.pg17.mjs
+          node tests/cashier/seatingMigrations.pg17.mjs --only116
+          node tests/cashier/paidJourney.runtime.mjs
+          node tests/cashier/paidSeatingClose.concurrent.mjs
+          node tests/cashier/restoreReentry.concurrent.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap
+          PGDATABASE=vinpoker_ops_reentry115_overlap node tests/cashier/reentryRegistration.concurrent.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_cash112_ui
+          PGDATABASE=vinpoker_ops_cash112_ui VINPOKER_NATIVE_CASH_UI=1 node node_modules/vitest/vitest.mjs run tests/cashier/cashPaymentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
+          node --test tests/cashier/reentryTransport.test.mjs
+          deno check supabase/functions/tournament-reentry/index.ts
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:

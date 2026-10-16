@@ -9,7 +9,7 @@ SELECT set_config('test.cash112','true',true);
 SELECT set_config('test.cash112','false',true);
 \endif
 DO $$ BEGIN
- IF current_database() NOT IN ('vinpoker_ops_full111_finish99','vinpoker_ops_cash112_ci','vinpoker_ops_cash112_qualified','vinpoker_ops_cash112_overlap')
+ IF current_database() NOT IN ('vinpoker_ops_full111_finish99','vinpoker_ops_cash112_ci','vinpoker_ops_cash112_qualified','vinpoker_ops_cash112_overlap','vinpoker_ops_cash112_ui','vinpoker_ops_cash115_qualified_c','vinpoker_ops_reentry115_overlap')
  OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet OR inet_server_port()<>55441
  OR current_setting('server_version_num')::int NOT BETWEEN 170000 AND 179999
  OR EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net') THEN
