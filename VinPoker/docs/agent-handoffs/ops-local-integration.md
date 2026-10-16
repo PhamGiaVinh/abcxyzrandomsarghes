@@ -2311,3 +2311,79 @@ no liveDB/frontend/flags/Auto/push/deploy/UAT. DaybreakOFF/local resource hold s
 Same-hand ranking policy release hold still open (19800→place6 vs20000→place8).
 Goal ACTIVE/PROGRESS, original hosted/real rotations/provider/Storage/performance/
 fullchecks/review/recovery/livecatalog/release evidence still required.
+
+## 2026-10-16 23:50+07 — External baseline READ ONLY; do not pursue cancelled run
+
+Source8d7d8a07f clean; repo PhamGiaVinh/-vinpoker- remains private. PR1564 OPEN/
+Draft/head e4c719342447b46e02b4e4248cce47473e1177a7, not merged. Mained3db6ac600710e95fe4408c475941916c23ab19.
+No build/test reruns, dispatch/upload/push/release/flag/data mutation this turn.
+
+FRONTEND: confirmed exact Davinci/vinpoker projectprj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk,
+rootVinPoker/Vite/Node24.x. Aliasvinpoker.vercel.app still READY
+dpl_2kN8DwMQN7xGXGF3NQGyzg7ACjyG, created2026-10-14T15:25:25Z, URL
+vinpoker-9dactbwtf-davinci-s-projects.vercel.app. Public version.json HTTP200
+version1791991490366. CLI inspect JSON omits provenance; raw authenticated GET
+deployment metadata confirms githubCommitShafd84b43470574b006a9ee339e5257090f0188b4c,
+refHEAD/gitDirty1. Investigated instead of treating dirty flag as code corruption:
+actual run38586908627 completedSUCCESS onfd84, frontend checks/build/deploy/shell/
+receipt steps allSUCCESS; GitHub deployment7069802513 inreceipt-vinpoker-frontend
+forfd84 hasSUCCESS2026-10-14T15:32:57Z. The exact fd84 Vite config writes tracked
+public/version.json with Date.now() at build, explaining possible dirty metadata.
+Receipt+marker establish reviewed older rollout, NOT new8d fixes or byte-level
+attestation of every served asset, current feature behavior or owner UAT.
+
+CI/GATES: old38597705008 completed/cancelled updated2026-10-15T13:39:45Z, not
+WAITING. Latest main run38764287884 completedFAILURE oned3 (push). Failed step
+Preserve auditable plan artifact/check116523328862 says Artifact storage quota
+has been hit. Control-plane tooling checkSUCCESS, target-source/live-contract
+preflight and all deploy jobsSKIPPED. Do not claim target checks green or retry
+without resource change. Failure is historical15Oct; no upload probe this turn
+to establish present billing/quota recovery. Environmentdealer-swing-production-critical
+currently onlybranch_policy/custom_branch_policies,0requiredreviewers. Actual MAIN
+workflow still requires native required_reviewers for critical Edge; OWNED local
+workflow already has owner-initial+triggering/main dispatch guard replacing it
+(23added/8removed vs main), not released. Do not mistake local candidate for
+installed policy or bypass either guard. No environment change/self approval.
+
+RECOVERY/QUOTA: repo API lists959unexpired artifacts,sum7182734214bytes. Largest10
+are encrypted database recovery snapshots (~393–463MB each); protected-name
+heuristic must include recovery, not just backup/schema/baseline. No deletion or
+backup download. This repo byte sum is not account billing usage. Exact pinned
+Operations recovery run38275767630 remainsSUCCESS/head09cff8a829caf3f514a615b231ab96f4ed238757;
+schema11769592517(576104bytes) andprovenance11769907350(367bytes), neither expired,
+bothexpire2027-01-10T16:12:31Z. Workflow pins schemasha256
+d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a.
+Do not delete these or recovery snapshots based on age/size alone; exact redundant
+targets require retained independently verified recovery and reference inventory.
+
+DB: Supabase connector exactprojectorlesggcjamwuknxwcpk ACTIVE_HEALTHY/PG17.6.1.121.
+Only BEGIN READ ONLY metadata queries. Ledger max20270128000077;70–77 names match
+voice actor/epoch,finish,assignment,swinglock,publicvisibility,manualcards,inputread,
+rosterread. No >=78 ledger rows. Actualrecord_tracker_manual_hand_v1(jsonb) absent;
+floor_private.felt_official_results_close_status_v1(uuid) absent. Selected catalog:
+private restore(uuid,uuid,int,bigint,bigint,uuid,uuid) MD59918b112e18e6c516b4ffe338eabf83f,
+postgres/SECDEF/emptysearchpath/postgres-onlyACL; livebreak_v5 MD5d4d372db955d7144efdd9c954b55b1a5,
+cancel_pending_move MD563ec62f6e04122425df7b9cb3b49a73f, bothpostgres/SECDEF/empty
+path/authenticatedEXECUTE. Public legacy restore5arg remains77d5d7871bccb4a9469b6816ff77333e,
+SECDEF/search_pathpublic/authenticatedEXECUTE; metadata only, not an exploit proof.
+Source122 requires private restore preconditione671d6c24edf4d4ed631ecec820efae2,
+so currentlive9918 is NOT a safe standalone122 target: reconcile reviewed ordered
+dependencies first, never remove digest guard or replay archive.
+
+EDGE metadata (not source SHA or operational acceptance):75functions total.
+process-swing374/JWTfalse;assign-dealer143/false;checkout-dealer95/true;
+mass-assign107/true;ready-trigger57/false;cashier-lookup-player50/true;
+tournament-reentry24/true;historical-settlement16/true;worker11/false;
+dispatcher8/false;tournament-live-update70/true;tracker-voice-session16/true.
+AlllistedACTIVE. Actual Voice client uses tournament-live-update; absence of a
+separate voice-action/finish slug is NOT missing-endpoint evidence. No function
+invoke/deploy or flags/job/data mutation; source attestation/canary still required.
+
+Sources: freshGitHub API/run/check annotations/environment/artifacts/receipts,
+Vercel project+alias+deployment read, Supabase project/catalog/function inventory.
+Tool evidence020404/2310a4/a6d55d/336d55/a8d574/e46b2a/1edb8d/2c222b/31f867/e3fdc9/5000bf;
+Supabase metadata read responses retained in conversation. No secret/binary backup
+contents printed. Vercel skill required project/provenance verification; Supabase
+skill kept queries read-only. G0/G1 progress, not whole-goal completion. Localhold/
+DaybreakOFF/noAuto unchanged; fullchecks/release/hostedtour/realrest15/performance
+and same-hand ranking house-policy decision remain. No verified wait handle left.

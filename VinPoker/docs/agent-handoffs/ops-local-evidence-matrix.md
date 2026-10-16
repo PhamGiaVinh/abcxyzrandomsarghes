@@ -1,5 +1,21 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
+Fresh external READ-ONLY refresh at2026-10-16T23:50–23:53+07, source8d7d8a07f:
+production alias stilldpl_2kN8DwMQN7xGXGF3NQGyzg7ACjyG/version1791991490366.
+Vercel raw metadata githubCommitShafd84b43470574b006a9ee339e5257090f0188b4c,
+gitDirty1/refHEAD. Actual38586908627+GitHub receipt7069802513 SUCCESS forfd84;
+that SHA's Vite plugin writes tracked public/version.json during build, explaining
+possible dirty metadata. Not a new dirty-code finding or asset-level proof.
+Live DB ledger max77; manual Finish95 and official-close123 helper absent;
+selected live digests/ACL and Edge versions refreshed (see latest handoff section).
+Old38597705008 is completed/cancelled, NOT a current waiting process. Latest
+main deploy38764287884 failed plan artifact upload; target/live checks and deploy
+skipped.959unexpired repo artifacts7182734214bytes; largest10 encrypted DB
+recovery artifacts, no deletions. Pinned schema/provenance11769592517/11769907350
+remain unexpired through2027-01-10. Main still requires reviewer protection;
+live environment has onlybranch_policy. Local owner-dispatch replacement remains
+unreleased. No assertion current account quota reset or cleared; no rerun/upload.
+
 Latest after72d87b7c0: SAME8player/9paid-entry tour now covers one cancelled,
 one injected per-entry audit fault→stale,2applied in SAME4move break. Source2seats/
 40000 and dealer retained, early close denied; cancelled/failed original entry/
@@ -58,8 +74,9 @@ terminal0/PG stopped; syntax/diff pass. No product/runtime release change. Sourc
 was unstaffed: no new claim of staffed deferred release or durable8player/concurrent
 consumer/browser proof. Same-hand ranking policy hold and original gaps remain.
 
-This is an execution handoff, NOT acceptance of the site. Baseline source
-`f58124289`, plus the history-enabled eight-player and legacy-finalizer overlap extension. Latest fetch confirms
+This is an execution handoff, NOT acceptance of the site. Current owned source
+`8d7d8a07f` before this read-only documentation refresh; earlier runtime evidence
+retains its own exact source/run IDs below. Latest fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
 Release caution: same-hand elimination ranks currently follow update order;
@@ -70,8 +87,8 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 
 | Goal | Local evidence available | Required evidence still missing / next action |
 |---|---|---|
-| G0 | Owned branch/checkpoints; native schema through123; latest main fetch | Full current live migration/function/Edge/deployment/flag manifest not refreshed under release hold. Never substitute old ledger or local schema. |
-| G1 | CI definitions and ordered local migration rehearsals prepared | Required remote checks/quota/recovery/approved exact release manifest and execution. No review gate bypass. |
+| G0 | Owned branch/checkpoints; native schema through123; live ledger77/selected function ACL+digests, Edge version metadata, actual production alias+fd84 receipt freshly read | Full impacted live definitions/Edge source attestation/effective flags and authenticated web journey remain unverified; metadata is not feature acceptance. |
+| G1 | CI definitions/ordered local migration rehearsals; exact latest main artifact failure, old run cancelled; protected schema artifacts retained; environment/main-vs-local gate mismatch known | Required remote checks/fulltype/build, quota/recovery review/approved exact release manifest and execution under resource hold. No reviewer bypass or deletion of unverified backups. |
 | G2 | Native payroll82/83, profiles84, actor85, tenant86; Cashier paid/re-entry/recovery; Finance read fixes | Served UI, hosted Auth/Data API, live ACL/overloads and actor/club-switch UAT. |
 | G3 | Earlier actual main source/PG ramps2/10/40, shortage/overlap/fault/response-loss; check-in/manual Swing/Voice coupling | Hosted dispatcher/Edge/cron receipts; three real rest15 rotations; tournament canary and desktop/375 evidence. Existing 40-local proof is NOT a new missing test to rerun blindly. |
 | G4 | Atomic create/config88/91, clock89, receipts/true CAS and lifecycle overlaps | Exact deployed revision and real two-table creation/config journey in browser. |
