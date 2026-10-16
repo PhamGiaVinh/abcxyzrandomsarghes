@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Actual paid active hand → Owner/Floor Voice runtime compatibility PASS
+
+Baseline396fc02ac clean/previousPROGRESS. Extended same native payload journey: selects actual occupied canonical table, closes other empty table via close RPC, creates second registration through service RPC and cash payment via owner RPC, starts actual clock/Tracker hand. Owner nohand remains positive; Owner and exact-club Floor then both read same active hand/hash while sole assigned Dealer.user_id is NULL. Loader accepts both real SQL payloads. Independently compare state hash to actual _tracker_voice_hand_state_version, exacthandID, frozen2players/40000startingstack; outsider remains actual denial. Assignment/Floor/config are explicit local control-plane fixtures, not operational check-in or role-management UI evidence.
+
+Final native1cc370 exit0:13PASS, SQLcase2119ms/suite2143ms. Expanded rollback fingerprint covers session/tables/config/global/dealers/attendance/assignments/Floors/tournament/entries/registrations/cash/seats/hands/operationreceipts; exactunchanged, Floor authrow and TelegramDealer absent afterward. PGstopped/nohandle. Existing CI invocation consumes extension, notdispatched. Test-only/noapp/schemachange. Notactual Voiceactioncommit/provider/microphone/receipt/HTTP/React375 or realpayroll/rest-cycle proof. Localhold/DaybreakOFF/Auto unchanged, campaignACTIVE/fulltour/rest15x3/40worker/Storagebytes/perf/fullchecks/release outstanding.
+
 ## Real local runtime SQL → payload validator compatibility PASS
 
 Baselinef1fc8b0a0 clean/previousPROGRESS. Extended existing runtimeApiPayload test with explicit native gate/loopbackPG17/datadir/no-network paid fixture guards. Canonical paid create/open/register flow; actual mode RPC inside rollback, explicit synthetic Telegram-only Dealer/attendance/assignment/config control-plane fixture (NOT check-in/rotation proof). Actual authenticated public runtime returns Owner ok/can_mint/nohand and exact payload accepted by source loader. Same public RPC as player-outsider returns dealer_assignment_missing and loader preserves denial. Exact before/after session/tables/config/global flag/dealers/assignments/operation receipts fingerprint unchanged; synthetic Dealer absent afterward. Paid fixture/audit retained, no deleting/resetting.
