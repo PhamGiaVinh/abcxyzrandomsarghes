@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 legacy105 duplicate/OFF/canonical-close true overlap
+
+Baseline0b472f3af clean; product105 bytes unchanged. Expanded existing --overlap with five actual two-session cases: same snapshot duplicate adoption; OFF-first/adoption-first-OFF; canonical operator_close_club_table_v2 first/adoption-first-close. Holder observed ClientRead/live transaction and waiter Lock in pg_stat_activity before COMMIT; uncommitted operational fingerprints remain invisible. Duplicate firstadopted/replayalready_adopted share SAME scheduleID/relief, exactlyone coherent announced row. OFFfirst rejectsAUTO_SWING_OFF/zerodelta; adoptionfirst commits beforeOFF waiter, finalOFF/coherentrow. Closefirst succeeds then staleadoption LEGACY_ADOPTION_SESSION_CHANGED; adoptionfirst thenclose cancels/releases resultingrow. Final exactsessionclosed, no activeassignment/nonterminalschedule, incomingavailable/markerNULL. No new policy, timestamp forcing or production flag changes.
+
+Terminal8065 exit0/PGstopped. Existing103worker/close and104duplicate/OFF overlap retainedPASS in same command; Node/diffPASS. Existing CIoverlap command covers newcases, NOT dispatched. No unchanged49suite/fulltype/build rerun. No deployedworker/planner40/tournamentjourney/rest15/provider/performanceclaim. Next mainPassR/dispatcher actual worker capacity/shortage and emergency final acknowledgement gaps; G3 + fullG8/G9 remainunaccepted. Local-onlyhold/masterACTIVE, no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges/nohandles.
+
 ## G3 legacy105 adoption atomic boundary (partial qualification)
 
 Baselinebbb9406e9 clean. Added opt-in --adoption joined actualreconcile/native adapter; originalsource RED: actual schedule INSERTcommits, secondassignmentUPDATE transportfault ignored, returnsadopted1 whileDBplanned_reliefNULL. Actual fingerprintdelta. No production claim. New CLIcandidate20261016010447 -> reserved105 (no owned/root collision), migration20270128000105_dealer_legacy_adoption_atomic_v1.sql finalSHA dda67897862d4555a7272da27963f8f9360b9357b4c176d7d6ded224c15cae6c.
