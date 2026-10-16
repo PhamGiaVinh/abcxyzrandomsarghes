@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Paid Finish actual engine + durable COMMIT + fresh replay qualified locally
+
+Baseline516fac6b0 clean/previousPROGRESS. Added gated paidFinishCommit.native.mjs reuses exact existing paid/open/Voice setup segment (unique marker guards), not manual participation/payment fixtures. Canonical SB100/BB200/fold→actual Voice snapshot/sharedengine→actual computeVoiceFinishSettlement foldwin/digest→service canonical Finish actualCOMMIT. Freshconnection replay exact originalreceipt+duplicate:true; full hand/players/events/seats/entries fingerprint unchanged, exactly1canonicalreceipt. Actual client strictFinishAPI accepts original+duplicate against independentlybuilt canonical request. Seat AND entry stacks match engine endings, total40000, Cashier ledger unchanged. New owned localTESTaudit retained/noreset; globalVoice local value restored in finally/asserted (not claim immutable appsettings timestamp).
+
+Final5bb4a2 terminal0/PASS7.51s/PGstopped; earlier7e9980 positive before strongerreplay/entrystack assertions. Nodecheck/YAMLparse/diffcheck PASS; exactCIpath+command prepared NOTdispatched/full10minjobruntime unmeasured. Private helper gained --voice-finish-commit outsideGit. This qualifies prior localFinishreceipt guard with realengine+SQL, NOT hostedEdge/Auth/CORS/provider/browser/mic, response-loss network or showdownFinish. No production/push/CI/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next extend durableFinish recovery/changedpayload/actor denial and actual finish proposal boundary; fullG0–G9 acceptance still required.
+
 ## Finish commit receipt binding RED→local fix, runtime pending
 
 Baselineae3e19d37 clean/previousPROGRESS. Actual commitTrackerVoiceFinish onlytruthyok/stringhand accepted13unbound vectors. Added strictok/exacthand/key, nonemptyeventIDs/trace, booleanduplicate and nonduplicate trace binding, exactsettlementorigin/digest from canonical request, valid64hex digest/before/after, before matches API+canonical and distinctafter. SQLduplicate preserves originaltrace, allowed. No server mutation/auth/settlement/rounding/retry change.
