@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {computeVoiceFinishSettlement} from '../../supabase/functions/_shared/trackerSettlement/finishAssist.ts';
 import {reduceHand,isBettingRoundComplete} from '../../src/lib/tracker-poker/handStateCore.ts';
 
@@ -14,15 +15,17 @@ export async function runPaidTourHand(sql,f,tables){
  'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id='${f.tour}'))::text);`);
  const switchMode=(t,mode)=>{const s=session(t);const r=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_request_table_control_mode_v4('${t.id}','${s.id}','${mode}',${s.revision},${s.control_epoch},'${crypto.randomUUID()}');COMMIT;`));assert.equal(r.ok,true);return r;};
  const before=core();
+ const primaryId=sql(`SELECT tournament_table_id FROM public.tournament_seats WHERE entry_id='${f.entry}' AND is_active;`);
+ const table=tables.find(t=>t.id===primaryId),otherTable=tables.find(t=>t.id!==primaryId);assert.ok(table&&otherTable);
  const cash=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(c) ORDER BY id)::text) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}';`);
  const cashBefore=cash();
- const otherSeats=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(s) ORDER BY id)::text) FROM public.tournament_seats s WHERE tournament_table_id='${tables[1].id}';`);
+ const otherSeats=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(s) ORDER BY id)::text) FROM public.tournament_seats s WHERE tournament_table_id='${otherTable.id}';`);
  const otherBefore=otherSeats();
  for(const t of tables){const original=session(t);assert.equal(original.control_mode,'manual');
   switchMode(t,'tracker');assert.equal(session(t).control_mode,'tracker');switchMode(t,'manual');assert.equal(session(t).control_mode,'manual');assert.ok(session(t).control_epoch>original.control_epoch);
  }
  assert.equal(core(),before,'occupied mode transitions must preserve seats/entries/chips/cash');
- const table=tables[0];switchMode(table,'tracker');const startedSession=session(table);
+ switchMode(table,'tracker');const startedSession=session(table);
  const globalBefore=sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');");
  try{
   sql(`BEGIN;INSERT INTO public.app_settings(key,value) VALUES('tracker_voice_global_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
@@ -64,6 +67,11 @@ export async function runPaidTourHand(sql,f,tables){
   assert.equal(otherSeats(),otherBefore);assert.equal(cash(),cashBefore);
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${f.club}' AND status='assigned' AND released_at IS NULL;`),'2');
   console.log('NATIVE_PAID_EIGHT_STAFFED_FOUR_PLAYER_FINISH_PENDING_MODE_PASS',hand.id);
+  const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{encoding:'utf8',timeout:120000,
+   env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(f)}});
+  assert.match(worker,/ACTUAL_PAID_PARENT_BASELINE_HISTORY_WORKER_PUBLIC_PASS/);
+  process.stdout.write(worker);
+  assert.equal(cash(),cashBefore);assert.equal(otherSeats(),otherBefore);
  }finally{
   if(globalBefore==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
   else sql(`UPDATE public.app_settings SET value=${quote(globalBefore)}::jsonb WHERE key='tracker_voice_global_enabled';`);

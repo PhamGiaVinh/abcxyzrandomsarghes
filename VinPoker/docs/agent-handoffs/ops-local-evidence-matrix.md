@@ -1,7 +1,7 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
 This is an execution handoff, NOT acceptance of the site. Baseline source
-`474c2b2ba`, plus the staffed paid-tour hand/mode extension in this package. Fresh fetch confirms
+`4f6ef96cf`, plus the same-hand History worker/publication extension in this package. Fresh fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
 Owner's local-only/resource hold remains: no push/CI dispatch/production apply,
@@ -21,6 +21,18 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
 
 ## New shared roster checkpoint (actual durable local commit)
+
+Latest full local prefix `127712`/46593→terminal0`187c62`, PGstopped: the SAME
+four-player hand from this eight-paid tour runs through actual scoped worker,
+verifier and SQL outcome/queue commit; public history read under actual anon
+role is verified, current generation only. Worker retry claims0/no duplicate,
+source business fingerprint remains exact;4player nets match persisted snapshot.
+Parent gate retains exact local PG/datadir/no-network/owned club/tour/paid
+registration/entry/hand creator checks, not an arbitrary hand selector.
+Latest tour `de513121-e359-4c0f-a0f1-7b5f872c85c1`, club
+`23588253-9b2c-4715-9f59-0f542af8ec28`, hand
+`3b23989c-4f42-4e58-99c4-9955abf7a11b`. This still does not cover correction,
+restore/color-up/break/end, hosted scheduler, microphone, browser375 or full tour.
 
 Latest hand extension `9e87e6`/20742→terminal0`b30be7`, PGstopped: occupied
 both tables Manual→Tracker→Manual preserve exact seats/entries/cash. First table

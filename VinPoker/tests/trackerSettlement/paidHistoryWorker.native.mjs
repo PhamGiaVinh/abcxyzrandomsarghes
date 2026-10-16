@@ -31,7 +31,7 @@ const baselineParent=process.env.VINPOKER_HISTORY_PARENT_BASELINE;
 assert.ok(!baselineParent||parentHand,'parent_hand_required');
 let fixture,hand;
 if(parentHand){
- assert.equal(process.env.VINPOKER_NATIVE_CORRECTION_UI,'1','owned_parent_ui_gate_required');assert.ok(isUuid(parentHand));
+ assert.ok(process.env.VINPOKER_NATIVE_CORRECTION_UI==='1'||process.env.VINPOKER_NATIVE_PAID_TOUR==='1','owned_parent_gate_required');assert.ok(isUuid(parentHand));
  assert.equal(verified,true);assert.ok(!lostCommitResponse&&!expiredLease&&!correctionDuringCommit&&!correctionEdge&&!process.argv.includes('--identity-revision'));
  assert.equal(sql('SELECT current_database();'),database);
  assert.equal(sql("SELECT host(inet_server_addr())||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000;"),'127.0.0.1|55441|17');
@@ -61,6 +61,8 @@ const business=()=>sql(`SELECT jsonb_build_object('hand',(SELECT to_jsonb(h) FRO
  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${fixture.tour}'),
  'money',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}'));`);
 const before=business(),calls=[],errors=[];
+const expectedNets=parentHand?JSON.parse(sql(`SELECT jsonb_agg(delta ORDER BY delta) FROM (SELECT ending_stack-starting_stack delta FROM public.hand_players WHERE hand_id='${hand}') x;`)):[-100,100];
+assert.ok(Array.isArray(expectedNets)&&expectedNets.length>=2);assert.equal(expectedNets.reduce((sum,value)=>sum+value,0),0);
 const nonHandBusiness=()=>{const state=JSON.parse(business());delete state.hand;return JSON.stringify(state);};
 const beforeNonHand=nonHandBusiness();
 // Schema-only bootstrap omits hosted service_role BYPASSRLS. Match the existing
@@ -168,7 +170,7 @@ assert.equal(sql(`SELECT status FROM public.tracker_historical_display_queue WHE
 assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`),verified?'1':'0');
 if(verified){const outcome=JSON.parse(sql(`SELECT public_outcome FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND verification_scope='historical_display' AND status='verified';`));
  const winner=sql(`SELECT hp.player_id FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id WHERE h.id='${hand}' AND hp.seat_number=h.tracker_bb_position;`);
- assert.deepEqual(outcome.players.map(p=>p.netDelta).sort((a,b)=>a-b),[-100,100]);
+ assert.deepEqual(outcome.players.map(p=>p.netDelta).sort((a,b)=>a-b),expectedNets);
  assert.equal(outcome.pots[0].allocations[0].winnerId,winner);assert.equal(outcome.pots[0].allocations[0].amount,200);
  assert.equal(outcome.refunds[0].playerId,winner);assert.equal(outcome.refunds[0].amount,100);assert.deepEqual(outcome.handRanks,[]);
  assert.equal(Object.hasOwn(outcome,'privateEvidence'),false);
