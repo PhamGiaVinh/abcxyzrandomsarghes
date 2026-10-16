@@ -114,6 +114,7 @@ on:
       - 'VinPoker/tests/dealerSwing/manualSwingCancel.currentSchema.mjs'
       - 'VinPoker/supabase/migrations/20270128000102_dealer_initial_intent_resolution_v1.sql'
       - 'VinPoker/tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs'
+      - 'VinPoker/tests/dealerSwing/initialAssignmentRecovery.native.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -922,6 +923,8 @@ jobs:
           set -euo pipefail
           createdb -T vinpoker_ops_swing101_ci "$PGDATABASE"
           node tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
+          PGDATABASE=vinpoker_ops_initial102_ui VINPOKER_NATIVE_INITIAL_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/initialAssignmentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
