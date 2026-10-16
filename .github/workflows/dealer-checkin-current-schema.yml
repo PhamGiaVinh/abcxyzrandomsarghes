@@ -112,6 +112,8 @@ on:
       - 'VinPoker/tests/dealerSwing/manualSwingReceipt.*'
       - 'VinPoker/supabase/migrations/20270128000101_dealer_manual_swing_cancel_actor_v1.sql'
       - 'VinPoker/tests/dealerSwing/manualSwingCancel.currentSchema.mjs'
+      - 'VinPoker/supabase/migrations/20270128000102_dealer_initial_intent_resolution_v1.sql'
+      - 'VinPoker/tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -912,6 +914,14 @@ jobs:
           node tests/dealerSwing/manualSwingCancel.currentSchema.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_swing101_ui
           PGDATABASE=vinpoker_ops_swing101_ui VINPOKER_NATIVE_SWING_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Initial assignment102 serialized closed-session resolution
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_initial102_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_swing101_ci "$PGDATABASE"
+          node tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
