@@ -58,6 +58,32 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
  return {club,owner,rows};
 }
+if(process.argv.includes('--legacy')){
+ const c=seed(1),r=c.rows[0];
+ const a=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE table_id='${r.table}' AND released_at IS NULL;`));
+ sql(`${service}UPDATE public.dealer_attendance SET current_state='pre_assigned',pre_assigned_table_id='${r.table}',pre_assigned_at=now() WHERE id='${r.nextAttendance}';
+ UPDATE public.dealer_assignments SET pre_assigned_attendance_id='${r.nextAttendance}',pre_assigned_at=now(),planned_relief_at=now()+interval '3 minutes' WHERE id='${a.id}';
+ UPDATE public.dealer_attendance SET status='checked_out',check_out_time=now() WHERE id='${r.nextAttendance}';`);
+ const actual=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${a.id}';`));
+ const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${a.id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${r.nextAttendance}'))::text);`);
+ const before=fingerprint(),raw=readFileSync('supabase/functions/process-swing/passes/passR-rotation-planner.ts','utf8');
+ const first=raw.indexOf('async function reconcileAndAdopt('),last=raw.indexOf('// ─── Build solver inputs',first);assert.ok(first>0&&last>first);
+ const reconcile=new Function('console','ANNOUNCE_LEAD_MS',stripTypeScriptTypes(raw.slice(first,last))+';return reconcileAndAdopt;')(console,180000);
+ const writes=[];
+ const admin={rpc:async()=>assert.fail('unexpected legacy RPC'),from(table){assert.ok(['dealer_attendance','dealer_assignments'].includes(table));let patch=null,where=[];
+  const q={select(){return q;},update(value){patch=value;return q;},eq(k,v){where.push(`${column(k)}=${quote(v)}`);return q;},
+   async in(k,values){assert.equal(table,'dealer_attendance');assert.equal(k,'id');return {data:JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(d)),'[]') FROM public.dealer_attendance d WHERE id IN (${values.map(quote).join(',')});`)),error:null};},
+   then(resolve,reject){const perform=async()=>{assert.ok(patch);writes.push(table);
+    // Fault the SECOND request before DB dispatch; the first is a real COMMIT.
+    if(table==='dealer_attendance')return {data:null,error:{message:'synthetic second-request transport failure'}};
+    sql(service+`UPDATE public.${table} SET ${Object.entries(patch).map(([k,v])=>column(k)+'='+quote(v)).join(',')} WHERE ${where.join(' AND ')};`);return {data:null,error:null};};return perform().then(resolve,reject);},
+  };return q;}};
+ const result=await reconcile(admin,{clubId:c.club},[actual],[],randomUUID());
+ const assignmentCleared=sql(`SELECT pre_assigned_attendance_id IS NULL FROM public.dealer_assignments WHERE id='${a.id}';`)==='t';
+ const incomingHeld=sql(`SELECT current_state='pre_assigned' AND pre_assigned_table_id='${r.table}' FROM public.dealer_attendance WHERE id='${r.nextAttendance}';`)==='t';
+ console.log(JSON.stringify({legacy_cleanup_result:result,writes,assignmentCleared,incomingHeld}));
+ assert.equal(fingerprint(),before,'failed legacy multi-write cleanup must not strand incoming attendance');
+}
 if(process.argv.includes('--negative')){
  const c=seed(2);
  const initial=await dispatch(c.club,c.rows[0].nextAttendance);
@@ -203,7 +229,7 @@ if(process.argv.includes('--overlap')){
  }
  console.log('READY_WORKER103_CANONICAL_CLOSE_BOTH_ORDER_OVERLAP_PASS');
 }
-const sizes=process.argv.includes('--negative')||process.argv.includes('--overlap')?[]:process.argv.includes('--small')?[2]:[2,10,40];
+const sizes=['--negative','--overlap','--legacy'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
