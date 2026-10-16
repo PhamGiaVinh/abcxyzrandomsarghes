@@ -203,13 +203,50 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p JOIN public.tournament_hands h ON h.id=p.hand_id WHERE h.tournament_id='${f.tour}'))) THEN RAISE EXCEPTION 'native_paid_chip_ops_changed_cash_seats_or_roster';END IF;
  INSERT INTO native_voice_payloads VALUES('paid_chips',jsonb_build_object('issued',issued,'color_up',op,'undo',r,'tv_after',tv_after));
  END $$;
- DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;board_receipt jsonb;
+ DO $$ DECLARE h record;p record;p2 record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;board_receipt jsonb;board_snapshot jsonb;board_commit jsonb;board_revision bigint;
  incoming_dealer uuid:=gen_random_uuid();incoming_attendance uuid;incoming_shift uuid:=gen_random_uuid();outgoing record;
  checkin_key uuid:=gen_random_uuid();checkin_receipt jsonb;
  k text:='native-voice-'||gen_random_uuid()::text;BEGIN
  SELECT * INTO STRICT h FROM public.tournament_hands WHERE tournament_id='${f.tour}' AND status='in_progress';
  SELECT * INTO STRICT p FROM public.hand_players WHERE hand_id=h.id ORDER BY seat_number LIMIT 1;
  state:=public._tracker_voice_hand_state_version(h.id);
+ BEGIN
+ SELECT * INTO STRICT p2 FROM public.hand_players WHERE hand_id=h.id AND player_id<>p.player_id;
+ PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
+ r:=public.record_action(h.id,p.player_id,'post_sb',1,p.entry_number,'preflop',100);
+ IF r->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'native_board_sb_failed: %',r;END IF;
+ r:=public.record_action(h.id,p2.player_id,'post_bb',2,p2.entry_number,'preflop',200);
+ IF r->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'native_board_bb_failed: %',r;END IF;
+ r:=public.record_action(h.id,p.player_id,'call',3,p.entry_number,'preflop',100);
+ IF r->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'native_board_call_failed: %',r;END IF;
+ r:=public.record_action(h.id,p2.player_id,'check',4,p2.entry_number,'preflop',0);
+ IF r->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'native_board_check_failed: %',r;END IF;
+ board_snapshot:=public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}',h.id);
+ IF board_snapshot->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_board_snapshot_failed: %',board_snapshot;END IF;
+ PERFORM set_config('role','none',true);
+ SELECT source_revision INTO board_revision FROM public.tournament_hands WHERE id=h.id;
+ PERFORM set_config('role','none',true);PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
+ receipt:=public._tracker_voice_register_validated_board_event('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-positive-board','Flop ace hearts five spades two diamonds',
+ jsonb_build_object('kind','board','intent_domain','board','canonical_request',jsonb_build_object('intentDomain','board',
+ 'payload',jsonb_build_object('street','flop','cumulativeCards',jsonb_build_array('Ah','5s','2d'),'expectedExistingBoardCount',0))),
+ board_snapshot->>'state_version','assist',k||'-positive-board','native-positive-board');
+ IF receipt->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_board_positive_root_failed: %',receipt;END IF;
+ PERFORM set_config('role','none',true);PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
+ board_commit:=public.commit_tracker_voice_board_v0((receipt->>'voice_event_id')::uuid,k||'-positive-board','native-positive-commit');
+ IF board_commit->>'ok' IS DISTINCT FROM 'true' OR board_commit->'community_cards' IS DISTINCT FROM '["Ah","5s","2d"]'::jsonb THEN RAISE EXCEPTION 'native_board_positive_commit_failed: %',board_commit;END IF;
+ replay:=public.commit_tracker_voice_board_v0((receipt->>'voice_event_id')::uuid,k||'-positive-board','native-positive-retry');
+ IF replay IS DISTINCT FROM board_commit||jsonb_build_object('duplicate',true) THEN RAISE EXCEPTION 'native_board_positive_replay_failed: %',replay;END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT source_revision FROM public.tournament_hands WHERE id=h.id)<=board_revision OR public._tracker_voice_hand_state_version(h.id)=board_snapshot->>'state_version'
+ OR (SELECT community_cards FROM public.tournament_hands WHERE id=h.id) IS DISTINCT FROM '["Ah","5s","2d"]'::jsonb
+ OR (SELECT count(*) FROM public.tracker_voice_events WHERE root_event_id=(board_commit->>'voice_event_id')::uuid AND event_kind='canonical_receipt')<>1 THEN RAISE EXCEPTION 'native_board_positive_revision_or_receipt_failed';END IF;
+ RAISE SQLSTATE 'PZ004' USING MESSAGE='native_board_positive_case_rollback';
+ EXCEPTION WHEN SQLSTATE 'PZ004' THEN NULL;
+ END;
+ INSERT INTO native_voice_payloads VALUES('board_workflow',jsonb_build_object('snapshot',board_snapshot,'commit',board_commit));
  -- Qualify only the trusted service root receipt shape, not Board workflow legality or Edge parsing.
  BEGIN
  PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
@@ -370,6 +407,20 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  assert.equal(payload.owner_active.active_hand.state_version,payload.hand_proof.state_version);
  assert.equal(payload.floor_active.active_hand.state_version,payload.hand_proof.state_version);
  assert.equal(payload.hand_proof.players,2);assert.equal(payload.hand_proof.starting_stack,40000);
+ // Recompute the actual Edge workflow using its actual shared engine, not a fixture label.
+ const edgeSource=readFileSync(new URL('../../supabase/functions/tournament-live-update/index.ts',import.meta.url),'utf8');
+ const edgeTree=parseSync(edgeSource,{syntax:'typescript'});
+ const workflowNode=edgeTree.body.find(n=>n.type==='FunctionDeclaration'&&n.identifier.value==='workflowForVoiceSnapshot');
+ assert.ok(workflowNode);
+ const workflowSource=Buffer.from(edgeSource).subarray(workflowNode.span.start-edgeTree.span.start,workflowNode.span.end-edgeTree.span.start).toString();
+ const engineSource=readFileSync(new URL('../../src/lib/tracker-poker/handStateCore.ts',import.meta.url),'utf8').replace(/^export /gm,'');
+ const workflowCode=transformSync(engineSource+'\n'+workflowSource+'\nworkflowForVoiceSnapshot;',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
+ const workflow=runInNewContext(workflowCode,{actionWorkflowForStreet:()=>{throw Error('expected a completed betting round');}});
+ assert.equal(workflow(payload.board_workflow.snapshot),'enter_flop');
+ assert.equal(payload.board_workflow.snapshot.actions.length,4);
+ assert.equal(payload.board_workflow.commit.ok,true);
+ assert.equal(payload.board_workflow.commit.state_version_before,payload.board_workflow.snapshot.state_version);
+ assert.notEqual(payload.board_workflow.commit.state_version_after,payload.board_workflow.snapshot.state_version);
  assert.equal(payload.voice_action.receipt.ok,true);assert.equal(payload.voice_action.action.source,'voice');
  assert.equal(payload.voice_action.stale.error,'stale_state_version');
  assert.equal(payload.voice_action.assignment_denial.error,'dealer_assignment_lost');

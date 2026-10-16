@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Positive Board commit at actual enter_flop workflow
+
+Baseline1af2719fa clean/previousPROGRESS. Native paid hand now posts SB100/BB200, call100/check via actual record_action, reads actual Voice validation snapshot; actual Edge workflowForVoiceSnapshot with actual shared handStateCore recomputes enter_flop (fallback action-workflow callback deliberately throws if reached). Trusted service Board root then actual authenticated commit/replay produces persisted Ah/5s/2d, distinct state hash, source_revision strictly above immediate pre-Board revision, exactly one canonical receipt. Subcase rolls back before other prior assertions, full outer fingerprint exact.
+
+Initial5481f1 failure was test-local PLpgSQL ambiguous receipt variable, fixed to captured board_commit field, not product bug. Intermediate44ab92 passed; final stronger revision/readback b1e2ee terminal0/13PASS2.287s/PG stopped. This is real SQL write within rollback + actual workflow computation, NOT durable Board COMMIT, full Edge parser/request pipeline, provider/mic/HTTP/browser or historical proof publication. No product/schema/live/CI/push/deploy/flags/Auto/Daybreak changes. G6/G8 IN_PROGRESS/local-only hold. Next integration: actual parser/canonical request pipeline consuming the real snapshot before Board root registration; retain current positive/negative invariants.
+
 ## Canonical dealer handoff invalidates actual Board commit
 
 Baseline9c4852d8c clean; prior turn PROGRESS. Added trusted service-normalized Board root before actual check-in/plan/manual Swing, then actual authenticated commit_tracker_voice_board_v0 after handoff. Current migration70 already fences root assignment/dealer/physical/club and returns voice_assignment_changed. Initial f7d00e RED was WRONG TEST ORACLE (expected action's dealer_assignment_lost), not a product regression; source70 inspection resolved it, no DB fix needed. Correct exact Board rejection plus unchanged hand/actions/all events fingerprint now passes.
