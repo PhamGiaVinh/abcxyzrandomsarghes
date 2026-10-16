@@ -2,12 +2,24 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
 import { TextEncoder } from "node:util";
+import type { ManualFinishIntent } from "@/lib/trackerManualFinish";
+
+function manualFinishResponse(intent: ManualFinishIntent) {
+  mock.handFinished = true;
+  const total = intent.payload.players.reduce<number>((sum, row) => sum + (row as { starting_stack: number }).starting_stack, 0);
+  return { data: { data: { ok: true, status: "success", hand_id: intent.hand_id,
+    actor_id: intent.actor_id, request_id: intent.request_id, intent,
+    table_session_id: intent.table_session_id, control_epoch: intent.control_epoch,
+    expected_source_revision: intent.source_revision, committed_source_revision: intent.source_revision + 1,
+    starting_total: total, ending_total: total } }, error: null };
+}
 
 const mock = vi.hoisted(() => ({
   committed: false,
+  handFinished: false,
   readError: false,
-  readId: "hand1",
-  metadataSession: "session1" as string | null,
+  readId: "81100000-0000-4000-8000-000000000008",
+  metadataSession: "81100000-0000-4000-8000-000000000006" as string | null,
   readback: null as Promise<unknown> | null,
   resume: false,
   deferred: false,
@@ -21,6 +33,7 @@ const mock = vi.hoisted(() => ({
   seatReadback: null as Promise<unknown> | null,
   lastHandReadback: null as Promise<unknown> | null,
   twoPlayerFold: false,
+  activeBetting: false,
   lineageReadback: null as Promise<unknown> | null,
   readFilters: [] as Array<[string, unknown]>,
   invoke: vi.fn(),
@@ -34,35 +47,36 @@ vi.mock("@/lib/tracker-poker/recordedHandDisplayOutcome",()=>({ensureRecordedHan
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: new Proxy({}, { get: (_, key) => key === "floorDeferredTrackerMoveV1" && mock.deferred }) }));
 vi.mock("react-router-dom", () => ({ useSearchParams: () => [new URLSearchParams(), vi.fn()] }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
-  auth: { getUser: async () => ({ data: { user: mock.resume ? { id: "actor1" } : null } }),
+  auth: { getUser: async () => ({ data: { user: mock.resume ? { id: "81100000-0000-4000-8000-000000000001" } : null } }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
   functions: { invoke: mock.invoke },
   rpc: async (name: string) => {
     if (name === "get_tracker_hand_input_tables_v4") {
       if (mock.tableReadFails) throw new Error("table metadata unavailable");
-      return { data: { ok: true, tables: [{ table_id: "table1", tournament_table_id: "table1",
-        table_name: "Test", table_session_id: "session1", control_epoch: 1,
+      return { data: { ok: true, tables: [{ table_id: "81100000-0000-4000-8000-000000000004", tournament_table_id: "81100000-0000-4000-8000-000000000004",
+        table_name: "Test", table_session_id: "81100000-0000-4000-8000-000000000006", control_epoch: 1,
         max_seats: 9, player_count: 1, has_live_hand: true, control_mode: "tracker", can_manual_cards: true }] }, error: null };
     }
-    return { data: name === "get_tournament_tables" ? [{ table_id: "table1", table_name: "Test" }] : name === "heartbeat_lock" ? { status: "success", locked_by: "actor1" } : null, error: null };
+    return { data: name === "get_tournament_tables" ? [{ table_id: "81100000-0000-4000-8000-000000000004", table_name: "Test" }] : name === "get_next_hand_number" ? 2 : name === "heartbeat_lock" ? { status: "success", locked_by: "81100000-0000-4000-8000-000000000001" } : null, error: null };
   },
   from: (table: string) => {
     let cols = "";
-    const result = () => ({ data: table === "tournaments" ? { id: "tour1" }
+    const result = () => ({ data: table === "tournaments" ? { id: "81100000-0000-4000-8000-000000000002" }
       : table === "tournament_tables" ? (cols.includes("max_seats") ? { max_seats: 9, table_session_id: mock.metadataSession } : [])
       : table === "tournament_seats" ? (mock.twoPlayerFold ? [1,2].map(n=>({player_id:`p${n}`,entry_number:1,seat_number:n,chip_count:30000,player_name:`TEST ${n}`}))
         : [{ player_id: "p1", entry_number: 1, seat_number: 1, chip_count: mock.seatStack, player_name: "TEST" }])
       : table === "hand_actions" ? (mock.twoPlayerFold ? [
         {player_id:'p1',action_type:'post_sb',action_amount:100,action_order:1,street:'preflop'},
         {player_id:'p2',action_type:'post_bb',action_amount:200,action_order:2,street:'preflop'},
-        {player_id:'p1',action_type:'fold',action_amount:0,action_order:3,street:'preflop'},
+        ...(!mock.activeBetting ? [{player_id:'p1',action_type:'fold',action_amount:0,action_order:3,street:'preflop'}] : []),
       ] : [])
-      : table === "tournament_hands" && cols === "id, hand_number" ? { id: "hand1", hand_number: 1 }
-      : table === "tournament_hands" && cols.includes("source_revision") ? { id: "hand1", tournament_id: "tour1",
-        table_id: "table1", tournament_table_id: "table1", table_session_id: "session1",
+      : table === "tournament_hands" && cols === "id, hand_number" ? (mock.handFinished ? null : { id: "81100000-0000-4000-8000-000000000008", hand_number: 1 })
+      : table === "tournament_hands" && cols === "id, button_seat, status, is_voided" && mock.handFinished ? { id: "81100000-0000-4000-8000-000000000008", button_seat: 1, status: "completed", is_voided: false }
+      : table === "tournament_hands" && cols.includes("source_revision") ? { id: "81100000-0000-4000-8000-000000000008", tournament_id: "81100000-0000-4000-8000-000000000002",
+        table_id: "81100000-0000-4000-8000-000000000004", tournament_table_id: "81100000-0000-4000-8000-000000000004", table_session_id: "81100000-0000-4000-8000-000000000006",
         source_revision: mock.manualRevision, status: "in_progress", is_voided: false }
       : table === "tournament_hands" && cols.includes("is_voided") ? { id: mock.readId, is_voided: mock.committed }
-      : table === "tournament_hands" && mock.resume && cols.includes("community_cards") ? { id: "hand1", hand_number: 1, table_id: "table1", button_seat: 1, community_cards: [] }
+      : table === "tournament_hands" && mock.resume && cols.includes("community_cards") ? { id: "81100000-0000-4000-8000-000000000008", hand_number: 1, table_id: "81100000-0000-4000-8000-000000000004", button_seat: 1, community_cards: [] }
       : table === "tournament_hands" && mock.resume && cols.includes("tracker_level_number") ? { tracker_level_number: null, tracker_small_blind: null, tracker_big_blind: null, tracker_bba: null }
       : null, error: (cols.includes("is_voided") && mock.readError)
         || (table==='tournament_seats' && mock.seatReadFails)
@@ -84,14 +98,35 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   },
 } }));
 import { useStandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
-beforeEach(() => { vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder);
+beforeEach(() => { mock.handFinished=false; mock.activeBetting=false; vi.stubGlobal("crypto", webcrypto); vi.stubGlobal("TextEncoder", TextEncoder);
   vi.useRealTimers();mock.seatReadback=null;mock.lastHandReadback=null;
   mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;mock.twoPlayerFold=false;mock.lineageReadback=null;
   mock.displayOutcome.mockResolvedValue({ok:true,status:'already_verified'}); });
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "hand1"; mock.readFilters = []; mock.metadataSession = "session1"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); mock.committed = false; mock.readError = false; mock.readId = "81100000-0000-4000-8000-000000000008"; mock.readFilters = []; mock.metadataSession = "81100000-0000-4000-8000-000000000006"; mock.readback = null; mock.resume = false; mock.deferred = false; mock.tableReadFails = false; mock.manualRevision = 12; sessionStorage.clear(); mock.seatStack = 30000; mock.resumeRead = null; });
 describe("void unknown response through the real controller", () => {
-  const finishReceipt={ok:true as const,hand_id:'hand1',voice_event_id:'voice-test',canonical_receipt_event_id:'receipt-test',
+  it.each([true, false])("updates action state only after confirmed server response (success=%s)", async success => {
+    mock.resume=true;mock.twoPlayerFold=true;mock.activeBetting=true;mock.deferred=true;
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
+    await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
+    await waitFor(()=>expect(result.current.handStarted).toBe(true));
+    const before=JSON.stringify({players:result.current.players,actions:result.current.actions});
+    let resolve!:(value:unknown)=>void;
+    mock.invoke.mockImplementation(()=>new Promise(done=>{resolve=done;}));
+    act(()=>{result.current.handleDockAction('call');});
+    await waitFor(()=>expect(mock.invoke).toHaveBeenCalledTimes(1));
+    expect(JSON.stringify({players:result.current.players,actions:result.current.actions})).toBe(before);
+    await act(async()=>{resolve(success ? {data:{status:'success',data:null},error:null}
+      : {data:null,error:new Error('network unavailable')});});
+    if(success) expect(result.current.actions).toHaveLength(3);
+    else {
+      expect(JSON.stringify({players:result.current.players,actions:result.current.actions})).toBe(before);
+      expect(mock.errorToast).toHaveBeenCalled();
+    }
+  });
+
+  const finishReceipt={ok:true as const,hand_id:'81100000-0000-4000-8000-000000000008',voice_event_id:'voice-test',canonical_receipt_event_id:'receipt-test',
     idempotency_key:'request-test',trace_id:'trace-test',settlement_origin:'engine_fold_win' as const,
     settlement_digest:'a'.repeat(64),state_version_before:'1',state_version_after:'2'};
 
@@ -100,17 +135,17 @@ describe("void unknown response through the real controller", () => {
   it.each(['voice','manual'])('finalizes %s canonical Finish when the actual verification pipeline stalls',async(mode)=>{
     const actual=await vi.importActual<typeof import('@/lib/tracker-poker/recordedHandDisplayOutcome')>('@/lib/tracker-poker/recordedHandDisplayOutcome');
     mock.displayOutcome.mockImplementation(actual.ensureRecordedHandDisplayOutcome);
-    mock.resume=true;mock.twoPlayerFold=mode==='manual';
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    mock.resume=true;mock.twoPlayerFold=mode==='manual';mock.deferred=mode==='manual';
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
-    await act(async()=>{await result.current.handleTableChange('table1');});
-    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
+    await waitFor(()=>expect(result.current.handId).toBe('81100000-0000-4000-8000-000000000008'));
     let resolvePreview!:(value:unknown)=>void;
     const stalledPreview=new Promise(resolve=>{resolvePreview=resolve;});
     mock.invoke.mockClear();
     mock.invoke.mockImplementation(async(name,{body})=>{
       if(name==='tournament-live-update'){
-        expect(body.action).toBe('record_hand');return {data:{data:{hand_id:'hand1'}},error:null};
+        expect(body.action).toBe('record_manual_hand_v1');return manualFinishResponse(body.finish_intent);
       }
       expect(name).toBe('tournament-historical-settlement');expect(body.mode).toBe('preview');
       return stalledPreview;
@@ -122,7 +157,7 @@ describe("void unknown response through the real controller", () => {
     await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
     expect(settled).toBe(true);await pending;
     expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
-    expect(result.current.lastHandId).toBe('hand1');expect(mock.warningToast).toHaveBeenCalled();
+    expect(result.current.lastHandId).toBe('81100000-0000-4000-8000-000000000008');expect(mock.warningToast).toHaveBeenCalled();
     const callCount=mode==='manual'?2:1;
     expect(mock.invoke).toHaveBeenCalledTimes(callCount);
     await act(async()=>{resolvePreview({data:{ok:true},error:null});await vi.advanceTimersByTimeAsync(20_000);});
@@ -130,7 +165,7 @@ describe("void unknown response through the real controller", () => {
   });
 
   it.each(['reject','timeout'])('blocks initial last-hand %s without first-hand fallback',async(mode)=>{
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
     let resolveRead!:(value:unknown)=>void;
     mock.lastHandReadback=mode==='reject'?Promise.reject(new Error('transport unavailable'))
@@ -138,30 +173,30 @@ describe("void unknown response through the real controller", () => {
     vi.useFakeTimers();
     let settled=false;
     let pending!:Promise<unknown>;
-    act(()=>{pending=result.current.handleTableChange('table1').then(value=>{settled=true;return value;});});
+    act(()=>{pending=result.current.handleTableChange('81100000-0000-4000-8000-000000000004').then(value=>{settled=true;return value;});});
     await act(async()=>{await vi.advanceTimersByTimeAsync(10_001);});
     expect(settled).toBe(true);await pending;
     expect(result.current.tableId).toBe('');expect(result.current.blindLineageUnavailable).toBe(true);
     await act(async()=>{await result.current.handleStartHand();});
     expect(mock.invoke).not.toHaveBeenCalled();
     vi.useRealTimers();mock.lastHandReadback=null;
-    await act(async()=>{await result.current.handleTableChange('table2');});
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000005');});
     if(mode==='timeout')await act(async()=>{resolveRead({data:{id:'stale-hand',status:'completed'},error:null});});
-    expect(result.current.tableId).toBe('table2');expect(result.current.lastHandId).toBeNull();
+    expect(result.current.tableId).toBe('81100000-0000-4000-8000-000000000005');expect(result.current.lastHandId).toBeNull();
     expect(result.current.blindLineageUnavailable).toBe(false);
   });
 
   it.each(['voice_seats','voice_lineage','manual_seats','manual_lineage'])('bounds %s after committed Finish and ignores its late result',async(mode)=>{
-    mock.resume=true;mock.twoPlayerFold=mode.startsWith('manual');
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    mock.resume=true;mock.twoPlayerFold=mode.startsWith('manual');mock.deferred=mode.startsWith('manual');
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
-    await act(async()=>{await result.current.handleTableChange('table1');});
-    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
+    await waitFor(()=>expect(result.current.handId).toBe('81100000-0000-4000-8000-000000000008'));
     let resolveRead!:(value:unknown)=>void;
     const suspended=new Promise(resolve=>{resolveRead=resolve;});
     const suspend=()=>{if(mode.endsWith('seats'))mock.seatReadback=suspended;else mock.lineageReadback=suspended;};
     mock.invoke.mockClear();
-    mock.invoke.mockImplementation(async()=>{suspend();return {data:{data:{hand_id:'hand1'}},error:null};});
+    mock.invoke.mockImplementation(async(_name,{body})=>{suspend();return manualFinishResponse(body.finish_intent);});
     vi.useFakeTimers();
     let settled=false;
     let pending!:Promise<unknown>;
@@ -173,49 +208,49 @@ describe("void unknown response through the real controller", () => {
     await act(async()=>{await vi.advanceTimersByTimeAsync(30_000);});
     expect(settled).toBe(true);
     await pending;
-    expect(result.current.handId).toBeNull();expect(result.current.lastHandId).toBe('hand1');
+    expect(result.current.handId).toBeNull();expect(result.current.lastHandId).toBe('81100000-0000-4000-8000-000000000008');
     expect(result.current.blindLineageUnavailable).toBe(true);
     expect(mock.invoke).toHaveBeenCalledTimes(mode.startsWith('manual')?1:0);
     vi.useRealTimers();mock.seatReadback=null;mock.lineageReadback=null;mock.resume=false;
-    await act(async()=>{await result.current.handleTableChange('table2');});
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000005');});
     await act(async()=>{resolveRead({data:[],error:null});await Promise.resolve();});
-    expect(result.current.tableId).toBe('table2');expect(result.current.lastHandId).toBeNull();
+    expect(result.current.tableId).toBe('81100000-0000-4000-8000-000000000005');expect(result.current.lastHandId).toBeNull();
     expect(result.current.blindLineageUnavailable).toBe(false);
   });
 
   it.each(['lineage','seats','seat_reject'])('keeps a committed Voice Finish final when its %s read fails, without another writer',async(read)=>{
     mock.resume=true;
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
-    await act(async()=>{await result.current.handleTableChange('table1');});
-    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
+    await waitFor(()=>expect(result.current.handId).toBe('81100000-0000-4000-8000-000000000008'));
     mock.invoke.mockClear();mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
     await act(async()=>{expect(await result.current.applyVoiceFinishReceipt(finishReceipt)).toBe(true);});
     expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
-    expect(result.current.lastHandId).toBe('hand1');expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(result.current.lastHandId).toBe('81100000-0000-4000-8000-000000000008');expect(result.current.blindLineageUnavailable).toBe(true);
     expect(result.current.buttonConfirmed).toBe(false);
     expect(mock.warningToast).toHaveBeenCalledWith(expect.stringContaining('Hand đã lưu'));
     await act(async()=>{await result.current.handleStartHand();});
     expect(mock.invoke).not.toHaveBeenCalled();
     mock.lineageReadFails=false;mock.seatReadFails=false;mock.seatReadThrows=false;
-    await act(async()=>{await result.current.handleTableChange('table1');});
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
     expect(result.current.blindLineageUnavailable).toBe(false);
   });
 
   it.each(['lineage','seats','seat_reject'])('does not retry a committed manual Finish when the next %s read fails',async(read)=>{
-    mock.resume=true;mock.twoPlayerFold=true;
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    mock.resume=true;mock.twoPlayerFold=true;mock.deferred=true;
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
-    await act(async()=>{await result.current.handleTableChange('table1');});
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
     await waitFor(()=>expect(result.current.workflowState).toBe('submit_ready'));
     mock.invoke.mockImplementation(async(_name,{body})=>{
-      expect(body.action).toBe('record_hand');mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
-      return {data:{data:{hand_id:'hand1'}},error:null};
+      expect(body.action).toBe('record_manual_hand_v1');mock.lineageReadFails=read==='lineage';mock.seatReadFails=read==='seats';mock.seatReadThrows=read==='seat_reject';
+      return manualFinishResponse(body.finish_intent);
     });
     await act(async()=>{await result.current.handleSubmitHand();});
     expect(mock.invoke).toHaveBeenCalledTimes(1);
     expect(result.current.handId).toBeNull();expect(result.current.handStarted).toBe(false);
-    expect(result.current.lastHandId).toBe('hand1');expect(result.current.blindLineageUnavailable).toBe(true);
+    expect(result.current.lastHandId).toBe('81100000-0000-4000-8000-000000000008');expect(result.current.blindLineageUnavailable).toBe(true);
     expect(result.current.buttonConfirmed).toBe(false);
     await act(async()=>{await result.current.handleSubmitHand();await result.current.handleStartHand();});
     expect(mock.invoke).toHaveBeenCalledTimes(1);
@@ -223,27 +258,27 @@ describe("void unknown response through the real controller", () => {
 
   it('discards an old committed-finish follow-up read after changing tables',async()=>{
     mock.resume=true;
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
-    await act(async()=>{await result.current.handleTableChange('table1');});
-    await waitFor(()=>expect(result.current.handId).toBe('hand1'));
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
+    await waitFor(()=>expect(result.current.handId).toBe('81100000-0000-4000-8000-000000000008'));
     let resolveRead!:(value:unknown)=>void;
     mock.lineageReadback=new Promise(resolve=>{resolveRead=resolve;});
     let pending!:Promise<boolean>;
     act(()=>{pending=result.current.applyVoiceFinishReceipt(finishReceipt);});
     await waitFor(()=>expect(mock.displayOutcome).toHaveBeenCalled());
-    await act(async()=>{await result.current.handleTableChange('table2');});
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000005');});
     mock.warningToast.mockClear();
     await act(async()=>{resolveRead({data:null,error:new Error('late lineage read error')});await pending;});
-    expect(result.current.tableId).toBe('table2');expect(result.current.blindLineageUnavailable).toBe(false);
+    expect(result.current.tableId).toBe('81100000-0000-4000-8000-000000000005');expect(result.current.blindLineageUnavailable).toBe(false);
     expect(result.current.lastHandId).toBeNull();expect(mock.warningToast).not.toHaveBeenCalled();
   });
 
   it('returns to table selection instead of treating a failed previous-hand query as first-hand evidence',async()=>{
     mock.readError=true;
-    const {result}=renderHook(()=>useStandaloneHandInput('tour1'));
+    const {result}=renderHook(()=>useStandaloneHandInput('81100000-0000-4000-8000-000000000002'));
     await waitFor(()=>expect(result.current.tableLoadState).toBe('ready'));
-    await act(async()=>{await result.current.handleTableChange('table1');});
+    await act(async()=>{await result.current.handleTableChange('81100000-0000-4000-8000-000000000004');});
     expect(result.current.tableId).toBe('');expect(result.current.blindLineageUnavailable).toBe(true);
     expect(result.current.tableSelectionNotice).toContain('lịch sử blind');
     expect(result.current.orphanHand).toBeNull();expect(mock.invoke).not.toHaveBeenCalled();
@@ -252,10 +287,10 @@ describe("void unknown response through the real controller", () => {
     mock.resume = true;
     mock.deferred = true;
     let respond!: (value: unknown) => void;
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.successToast.mockClear(); // Ignore the already-completed resume toast.
     mock.invoke.mockImplementation(() => new Promise(resolve => { respond = resolve; }));
@@ -267,7 +302,7 @@ describe("void unknown response through the real controller", () => {
     mock.manualRevision = 14;
     await act(async () => {
       respond({ data: { status: "success", data: { status: "success", request_key: body.request_id,
-        hand_id: "hand1", table_session_id: "session1", control_epoch: 1, expected_source_revision: 12,
+        hand_id: "81100000-0000-4000-8000-000000000008", table_session_id: "81100000-0000-4000-8000-000000000006", control_epoch: 1, expected_source_revision: 12,
         committed_source_revision: 14, entry_count: 1 } }, error: null });
       await pending;
     });
@@ -281,10 +316,10 @@ describe("void unknown response through the real controller", () => {
     const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
     try {
       for (let mount = 0; mount < 2; mount++) {
-        const { result, unmount } = renderHook(() => useStandaloneHandInput("tour1"));
+        const { result, unmount } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
         await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-        await act(async () => { await result.current.handleTableChange("table1"); });
-        await waitFor(() => expect(result.current.handId).toBe("hand1"));
+        await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+        await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
         await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
         mock.successToast.mockClear(); // Resume is not the reveal under test.
         await act(async () => { await result.current.handleShowHoleCards(); });
@@ -298,14 +333,14 @@ describe("void unknown response through the real controller", () => {
   it.each(["same-instance", "remount"])("reconciles an unknown manual response with the original request before another writer after %s", async (recovery) => {
     mock.resume = true;
     mock.deferred = true;
-    const { result, unmount } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result, unmount } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.invoke.mockImplementation(async (_name, { body }) => {
       if (body.action === "get_manual_card_receipt_v1") return { data: { status: "success", data: {
-        status: "committed", request_key: body.request_id, hand_id: "hand1", table_session_id: "session1",
+        status: "committed", request_key: body.request_id, hand_id: "81100000-0000-4000-8000-000000000008", table_session_id: "81100000-0000-4000-8000-000000000006",
         control_epoch: 1, expected_source_revision: 12, committed_source_revision: 14,
         entry_count: 1, request_hash: "a".repeat(64),
       } }, error: null };
@@ -314,15 +349,15 @@ describe("void unknown response through the real controller", () => {
     });
     await act(async () => { await result.current.handleShowHoleCards(); });
     const first = mock.invoke.mock.calls[0][1].body;
-    expect(first).toMatchObject({ action: "show_manual_cards_v1", table_session_id: "session1",
+    expect(first).toMatchObject({ action: "show_manual_cards_v1", table_session_id: "81100000-0000-4000-8000-000000000006",
       control_epoch: 1, expected_source_revision: 12, request_id: expect.any(String) });
     let recovered = result;
     if (recovery === "remount") {
       unmount();
-      recovered = renderHook(() => useStandaloneHandInput("tour1")).result;
+      recovered = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002")).result;
       await waitFor(() => expect(recovered.current.tableLoadState).toBe("ready"));
-      await act(async () => { await recovered.current.handleTableChange("table1"); });
-      await waitFor(() => expect(recovered.current.handId).toBe("hand1"));
+      await act(async () => { await recovered.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+      await waitFor(() => expect(recovered.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
       await act(async () => { recovered.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     }
     await act(async () => { await recovered.current.handleShowHoleCards(); });
@@ -336,10 +371,10 @@ describe("void unknown response through the real controller", () => {
     mock.resume = true;
     mock.deferred = true;
     const responders: Array<(value: unknown) => void> = [];
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
     let first!: Promise<void>;
@@ -348,7 +383,7 @@ describe("void unknown response through the real controller", () => {
     mock.tableReadFails = true;
     act(() => { result.current.retryTableLoad(); });
     await waitFor(() => expect(result.current.tableLoadState).toBe("error"));
-    expect(result.current.handId).toBe("hand1");
+    expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008");
     let second!: Promise<void>;
     act(() => { second = result.current.handleShowHoleCards(); });
     const callsWhileMetadataUnavailable = responders.length;
@@ -367,17 +402,17 @@ describe("void unknown response through the real controller", () => {
     mock.resume = true;
     let respond!: (value: unknown) => void;
     const { result, rerender, unmount } = renderHook(({ tour }) => useStandaloneHandInput(tour),
-      { initialProps: { tour: "tour1" } });
+      { initialProps: { tour: "81100000-0000-4000-8000-000000000002" } });
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
     let pending!: Promise<void>;
     act(() => { pending = handler === "runout"
       ? result.current.handleRevealRunout() : result.current.handleShowHoleCards(); });
     expect(mock.invoke).toHaveBeenCalledTimes(1);
-    if (change === "tournament") rerender({ tour: "tour2" });
+    if (change === "tournament") rerender({ tour: "81100000-0000-4000-8000-000000000003" });
     else unmount();
     mock.successToast.mockClear();
     mock.errorToast.mockClear();
@@ -392,10 +427,10 @@ describe("void unknown response through the real controller", () => {
   });
   it("reports revealed manual cards only for the full canonical batch", async () => {
     mock.resume = true;
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.successToast.mockClear();
     mock.errorToast.mockClear();
@@ -408,10 +443,10 @@ describe("void unknown response through the real controller", () => {
   it("does not send a second manual card mutation while the first is pending", async () => {
     mock.resume = true;
     const responders: Array<(value: unknown) => void> = [];
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
     let first!: Promise<void>;
@@ -431,17 +466,17 @@ describe("void unknown response through the real controller", () => {
   it.each(["new_session", "same_session"])("preserves pending manual ownership when reloading %s", async (reload) => {
     mock.resume = true;
     const responders: Array<(value: unknown) => void> = [];
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.invoke.mockImplementation(() => new Promise((resolve) => { responders.push(resolve); }));
     let oldRequest!: Promise<void>;
     act(() => { oldRequest = result.current.handleShowHoleCards(); });
     if (reload === "new_session") mock.metadataSession = "sessionB";
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Jh", "Js"] }); });
     let freshRequest!: Promise<void>;
     act(() => { freshRequest = result.current.handleShowHoleCards(); });
@@ -475,10 +510,10 @@ describe("void unknown response through the real controller", () => {
     { status: "success", data: { status: "success", entry_count: 0 } },
   ])("does not report manual cards revealed for an unconfirmed canonical result %j", async (payload) => {
     mock.resume = true;
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { result.current.setPlayerHoleCards({ p1: ["Qh", "Qs"] }); });
     mock.successToast.mockClear();
     mock.errorToast.mockClear();
@@ -492,9 +527,9 @@ describe("void unknown response through the real controller", () => {
   it("does not offer or resume a legacy orphan when the current session is unknown", async () => {
     mock.metadataSession = null;
     mock.resume = true;
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     expect(result.current.orphanHand).toBeNull();
     await act(async () => { expect(await result.current.handleContinueOrphan()).toBe(false); });
     expect(result.current.handId).toBeNull();
@@ -503,13 +538,13 @@ describe("void unknown response through the real controller", () => {
   it("releases old void busy state immediately when tournament changes", async () => {
     let respond!: (value: unknown) => void;
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
-    const { result, rerender } = renderHook(({ tour }) => useStandaloneHandInput(tour), { initialProps: { tour: "tour1" } });
+    const { result, rerender } = renderHook(({ tour }) => useStandaloneHandInput(tour), { initialProps: { tour: "81100000-0000-4000-8000-000000000002" } });
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleVoidOrphan(); });
     expect(result.current.submitting).toBe(true);
-    rerender({ tour: "tour2" });
+    rerender({ tour: "81100000-0000-4000-8000-000000000003" });
     expect(result.current.submitting).toBe(false);
     await act(async () => { respond({ data: null, error: new Error("old response") }); await pending; });
   });
@@ -517,15 +552,15 @@ describe("void unknown response through the real controller", () => {
     let respond!: (value: unknown) => void;
     mock.metadataSession = "sessionA";
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleVoidOrphan(); });
     mock.metadataSession = "sessionB";
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     await act(async () => { respond({ data: { status: "success", data: { status: "success" } }, error: null }); await pending; });
-    expect(result.current.orphanHand?.id).toBe("hand1");
+    expect(result.current.orphanHand?.id).toBe("81100000-0000-4000-8000-000000000008");
     expect(mock.successToast).not.toHaveBeenCalled();
   });
   it("old void finally cannot clear a new table's pending resume", async () => {
@@ -533,14 +568,14 @@ describe("void unknown response through the real controller", () => {
     let finishResume!: (value: unknown) => void;
     mock.readback = new Promise((_, reject) => { rejectRead = reject; });
     mock.invoke.mockResolvedValue({ data: null, error: new Error("lost response") });
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleVoidOrphan(); });
     await waitFor(() => expect(mock.readFilters.length).toBeGreaterThan(0));
     mock.resumeRead = new Promise((resolve) => { finishResume = resolve; });
-    await act(async () => { await result.current.handleTableChange("table2"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000005"); });
     await waitFor(() => expect(result.current.submitting).toBe(true));
     mock.errorToast.mockClear();
     await act(async () => { rejectRead(new Error("late read failure")); await pending; });
@@ -559,10 +594,10 @@ describe("void unknown response through the real controller", () => {
         ? { data: { status: "success", data: { status: "success" } }, error: null }
         : { data: null, error: new Error("lost response") };
     });
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.handId).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.handId).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { await result.current.handleVoid(); });
     expect(result.current.handId).toBeNull();
     expect(result.current.submitting).toBe(false);
@@ -573,29 +608,29 @@ describe("void unknown response through the real controller", () => {
     let rejectRead!: (error: Error) => void;
     mock.readback = new Promise((_, reject) => { rejectRead = reject; });
     mock.invoke.mockResolvedValue({ data: null, error: new Error("lost response") });
-    const { result, rerender, unmount } = renderHook(({ tour }) => useStandaloneHandInput(tour), { initialProps: { tour: "tour1" } });
+    const { result, rerender, unmount } = renderHook(({ tour }) => useStandaloneHandInput(tour), { initialProps: { tour: "81100000-0000-4000-8000-000000000002" } });
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleVoidOrphan(); });
     await waitFor(() => expect(mock.readFilters.length).toBeGreaterThan(0));
-    if (change === "table") await act(async () => { await result.current.handleTableChange("table2"); });
-    else if (change === "tournament") rerender({ tour: "tour2" });
+    if (change === "table") await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000005"); });
+    else if (change === "tournament") rerender({ tour: "81100000-0000-4000-8000-000000000003" });
     else unmount();
     mock.errorToast.mockClear();
     await act(async () => { rejectRead(new Error("late read failure")); await pending; });
     expect(mock.errorToast).not.toHaveBeenCalled();
-    if (change === "table") expect(result.current.orphanHand?.id).toBe("hand1");
+    if (change === "table") expect(result.current.orphanHand?.id).toBe("81100000-0000-4000-8000-000000000008");
   });
   it("keeps the metadata-only known session in the recovery query", async () => {
-    mock.metadataSession = "session1";
+    mock.metadataSession = "81100000-0000-4000-8000-000000000006";
     mock.committed = true;
     mock.invoke.mockResolvedValue({ data: null, error: new Error("lost response") });
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     await act(async () => { await result.current.handleVoidOrphan(); });
-    expect(mock.readFilters).toContainEqual(["table_session_id", "session1"]);
+    expect(mock.readFilters).toContainEqual(["table_session_id", "81100000-0000-4000-8000-000000000006"]);
   });
   it.each(["returned_error", "thrown_error"])("reconciles committed orphan void with %s without another mutation", async (mode) => {
     mock.invoke.mockImplementation(async () => {
@@ -603,32 +638,32 @@ describe("void unknown response through the real controller", () => {
       if (mode === "thrown_error") throw new Error("response lost after commit");
       return { data: null, error: new Error("response lost after commit") };
     });
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
-    await waitFor(() => expect(result.current.orphanHand?.id).toBe("hand1"));
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
+    await waitFor(() => expect(result.current.orphanHand?.id).toBe("81100000-0000-4000-8000-000000000008"));
     await act(async () => { await result.current.handleVoidOrphan(); });
     expect(mock.committed).toBe(true);
     expect(mock.invoke).toHaveBeenCalledTimes(1);
-    expect(mock.invoke.mock.calls[0][1].body.hand_id).toBe("hand1");
+    expect(mock.invoke.mock.calls[0][1].body.hand_id).toBe("81100000-0000-4000-8000-000000000008");
     expect(result.current.orphanHand).toBeNull();
-    expect(mock.readFilters).toEqual([["id", "hand1"], ["tournament_id", "tour1"], ["table_id", "table1"],
-      ["table_session_id", "session1"]]);
+    expect(mock.readFilters).toEqual([["id", "81100000-0000-4000-8000-000000000008"], ["tournament_id", "81100000-0000-4000-8000-000000000002"], ["table_id", "81100000-0000-4000-8000-000000000004"],
+      ["table_session_id", "81100000-0000-4000-8000-000000000006"]]);
   });
   it.each(["not_committed", "read_error", "wrong_hand", "nested_denial", "unknown_success"])("does not claim success for %s", async (mode) => {
     mock.invoke.mockImplementation(async () => {
       mock.committed = ["read_error", "wrong_hand"].includes(mode);
       mock.readError = mode === "read_error";
-      mock.readId = mode === "wrong_hand" ? "other-hand" : "hand1";
+      mock.readId = mode === "wrong_hand" ? "other-hand" : "81100000-0000-4000-8000-000000000008";
       if (mode === "nested_denial") return { data: { status: "success", data: { error: "actor_not_allowed" } }, error: null };
       if (mode === "unknown_success") return { data: null, error: null };
       return { data: null, error: new Error("response lost") };
     });
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     await act(async () => { await result.current.handleVoidOrphan(); });
-    expect(result.current.orphanHand?.id).toBe("hand1");
+    expect(result.current.orphanHand?.id).toBe("81100000-0000-4000-8000-000000000008");
     expect(mock.successToast).not.toHaveBeenCalled();
     expect(mock.errorToast).toHaveBeenCalled();
     expect(mock.invoke).toHaveBeenCalledTimes(1);
@@ -636,12 +671,12 @@ describe("void unknown response through the real controller", () => {
   it("discards a late response after tournament changes", async () => {
     let respond!: (value: unknown) => void;
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
-    const { result, rerender } = renderHook(({ tour }) => useStandaloneHandInput(tour), { initialProps: { tour: "tour1" } });
+    const { result, rerender } = renderHook(({ tour }) => useStandaloneHandInput(tour), { initialProps: { tour: "81100000-0000-4000-8000-000000000002" } });
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleVoidOrphan(); });
-    rerender({ tour: "tour2" });
+    rerender({ tour: "81100000-0000-4000-8000-000000000003" });
     await act(async () => { respond({ data: { ok: true }, error: null }); await pending; });
     expect(mock.successToast).not.toHaveBeenCalled();
     expect(mock.invoke).toHaveBeenCalledTimes(1);
@@ -649,9 +684,9 @@ describe("void unknown response through the real controller", () => {
   it("does not send a second void while the first response is pending", async () => {
     let respond!: (value: unknown) => void;
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let first!: Promise<void>;
     let second!: Promise<void>;
     act(() => { first = result.current.handleVoidOrphan(); second = result.current.handleVoidOrphan(); });
@@ -661,15 +696,15 @@ describe("void unknown response through the real controller", () => {
   it("does not clear the new table's orphan when an old table response arrives", async () => {
     let respond!: (value: unknown) => void;
     mock.invoke.mockImplementation(() => new Promise((resolve) => { respond = resolve; }));
-    const { result } = renderHook(() => useStandaloneHandInput("tour1"));
+    const { result } = renderHook(() => useStandaloneHandInput("81100000-0000-4000-8000-000000000002"));
     await waitFor(() => expect(result.current.tableLoadState).toBe("ready"));
-    await act(async () => { await result.current.handleTableChange("table1"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000004"); });
     let pending!: Promise<void>;
     act(() => { pending = result.current.handleVoidOrphan(); });
-    await act(async () => { await result.current.handleTableChange("table2"); });
+    await act(async () => { await result.current.handleTableChange("81100000-0000-4000-8000-000000000005"); });
     await act(async () => { respond({ data: { status: "success", data: { status: "success" } }, error: null }); await pending; });
-    expect(result.current.tableId).toBe("table2");
-    expect(result.current.orphanHand?.id).toBe("hand1");
+    expect(result.current.tableId).toBe("81100000-0000-4000-8000-000000000005");
+    expect(result.current.orphanHand?.id).toBe("81100000-0000-4000-8000-000000000008");
     expect(mock.successToast).not.toHaveBeenCalled();
     expect(mock.invoke).toHaveBeenCalledTimes(1);
   });

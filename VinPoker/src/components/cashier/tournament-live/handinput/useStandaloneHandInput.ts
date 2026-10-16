@@ -1177,7 +1177,8 @@ export function useStandaloneHandInput(tournamentId: string) {
           ? seatQuery.filter("tournament_table_id", "eq", tbl.tournamentTableId)
             .filter("table_session_id", "eq", loadedSessionId)
           : seatQuery.eq("table_id", newTableId);
-        const r = await seatQuery.order("seat_number");
+        const r = await observeTrackerContextRead(seatQuery.order("seat_number"))
+          .catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
         if (!isCurrentLoad()) return;
         if (r.error && (r.error as any).code === "42703") {
           setAvatarSupported(false);
@@ -1196,7 +1197,8 @@ export function useStandaloneHandInput(tournamentId: string) {
           ? seatQuery.filter("tournament_table_id", "eq", tbl.tournamentTableId)
             .filter("table_session_id", "eq", loadedSessionId)
           : seatQuery.eq("table_id", newTableId);
-        const r = await seatQuery.order("seat_number");
+        const r = await observeTrackerContextRead(seatQuery.order("seat_number"))
+          .catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
         if (!isCurrentLoad()) return;
         loadedSeats = r.data as any[] | null;
         error = r.error;

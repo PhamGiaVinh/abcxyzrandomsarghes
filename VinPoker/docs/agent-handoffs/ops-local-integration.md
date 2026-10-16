@@ -2440,3 +2440,55 @@ same-hand house-policy decision still require owner direction before final relea
 Goal remains ACTIVE, not COMPLETE. Do not repeatedly re-probe unchanged artifacts
 or rerun passing native tour to manufacture progress; revalidate actual blockers
 and use blocked audit if no new permitted substantive action remains.
+
+## 17 Oct — owner-supplied tracker findings verified and repaired locally
+
+Owner supplied attachment 3e225bb3-62e1-4dea-b85d-22103ebba6e7 and requested
+verification plus local fixes, not release. Baseline8844cf2f3 clean; fetched
+origin/main remains ed3db6ac600710e95fe4408c475941916c23ab19. No agents or
+production mutations, dependency installs, Docker, push, CI or heavy build used.
+
+Finding disposition against CURRENT owned source (not production attestation):
+- Tournament-wide latest-hand bug: already corrected by loadLatestLiveHand,
+  which scopes table before limit; current request/scope guards prevent late
+  reads replacing a newly selected table. Added three query-order regressions.
+- Optimistic unconfirmed action: old HandInputPanel no longer exists. Current
+  controller commits players/actions only after canonical success; uncertain
+  response blocks further writes. Added two actual-controller delayed success/
+  transport failure tests; no write-path changes.
+- Resume-only-handId: already rebuilds persisted board, street, players, actions,
+  next max action order and lock before enabling hand. Existing resume tests pass.
+- Modulo positions: live display already uses occupied seats, but replayEngine
+  still used raw modulo. Three replay regressions FAILED before fix, including
+  seats2/5/9 producing BTN/BTN/SB and wraparound yielding undefined labels. Reuse
+  existing getSeatPositions once per replay; no settlement or chip changes.
+- Missing action notification: confirmed in legacy/non-public-V2 live branch.
+  Added exact displayed-hand subscription, existing one-second coordinator for
+  coalescing, subscribe refresh and cleanup. Never subscribes to raw actions in
+  public V2, never broadens grants or publishes private data. Rendered parent
+  regression FAILED before fix and now proves scoped callback refresh/cleanup.
+  Actual hosted publication/RLS/network delivery still requires web acceptance.
+- History50/error-as-empty: already replaced by HandHistoryWorkspace pageAll
+  range queries, explicit load error/retry and stale-read guards. Manual refresh
+  remains; automatic history refresh/feed/search/replay expansion are separate
+  product enhancements, not silently implemented in this correctness repair.
+
+Additional confirmed bug: post-commit manual Finish calls handleTableChange;
+both ordinary/avatar seat reads could reject or never settle, unlike other
+bounded context reads. Use observeTrackerContextRead and existing fail-closed
+error path. Confirmed Finish remains finished when reload fails, no second writer.
+Six old manual Finish tests initially failed: their fixture still used record_hand,
+non-UUID IDs and lacked exact session/epoch/intent proof. Updated fixture to real
+canonical record_manual_hand_v1 receipt and completed-hand readback, not weaker
+production validation. This exposed the two real seat-read rejection/timeout
+failures; after source fix the controller suite57/57 passes.
+
+Final sequential focused run67046, terminal exit0: 10 suites /167 tests PASS
+(replay30, replaybets8, positions10, viewer4+2, queryscope3, resume12,
+controller57, historyrecovery25, asyncguards16). Initial RED runs: bbdb23 replay3;
+85da15 action subscription1; 2f2c97 post-commit seat failures2. New/edited test
+files ESLint clean; git diff --check clean. Existing production-file lint debt
+unchanged vs exact HEAD: viewer21 errors/3 warnings, controller63/4, replay2/0.
+Not a full lint/typecheck/build, native DB rerun, browser375 or production PASS.
+Frontend skill preserved existing UI; Supabase guidance kept subscriptions scoped
+and server/RLS authoritative. No ranking/payout/rest/flags/Daybreak changes.

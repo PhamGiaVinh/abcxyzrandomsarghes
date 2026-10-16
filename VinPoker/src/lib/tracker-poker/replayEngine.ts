@@ -7,7 +7,7 @@
 // Action-amount convention matches T3A/T4: action_amount = chips ADDED this
 // street (never a raise-to total), so running pot = Σ contributing amounts.
 
-import { getPosition } from "@/lib/tournament/button";
+import { getSeatPositions } from "@/lib/tournament/button";
 import {
   computePotBreakdown,
   contributionsFromActions,
@@ -222,7 +222,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
   const actions = [...(hand.actions || [])].sort((a, b) => a.action_order - b.action_order);
   const N = actions.length;
   const players = hand.players || [];
-  const totalPlayers = players.length;
+  const positions = getSeatPositions(players.map((player) => player.seat_number), hand.button_seat);
   const community = hand.community_cards || [];
 
   const pad5 = (cards: string[]): string[] => [
@@ -291,7 +291,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
         chip_count: Math.max(0, st.chip),
         is_active: true,
         table_id: null,
-        position: getPosition(p.seat_number, hand.button_seat, totalPlayers),
+        position: positions.get(p.seat_number) ?? "",
         avatar_url: p.avatar_url ?? null,
         last_action: st.folded || st.allIn ? undefined : st.last,
         last_action_type: st.folded || st.allIn ? undefined : st.lastType,

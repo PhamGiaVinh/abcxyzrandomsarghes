@@ -961,6 +961,24 @@ function TournamentLiveViewContent({
     };
   }, [tournamentId, loadAllData, spectator, startPolling, stopPolling]);
 
+  // Legacy action writes need not update tournament_hands. Listen only to the
+  // displayed hand; public V2 already receives its safe server broadcast.
+  useEffect(() => {
+    if (!handId || mode !== "live" || (spectator && FEATURES.publicSpectatorRealtimeV2)) return;
+    const coordinator = new PublicSnapshotCoordinator(loadAllData, 1_000);
+    const channel = supabase.channel(`live-hand-actions:${tournamentId}:${handId}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "hand_actions", filter: `hand_id=eq.${handId}`,
+      }, () => coordinator.request())
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") coordinator.request();
+      });
+    return () => {
+      coordinator.stop();
+      void supabase.removeChannel(channel);
+    };
+  }, [tournamentId, handId, mode, spectator, loadAllData]);
+
   useEffect(() => {
     if (!isRunning || localRemaining <= 0) return;
     const interval = setInterval(() => {

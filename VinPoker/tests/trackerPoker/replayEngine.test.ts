@@ -31,6 +31,22 @@ function hand(partial: Partial<ReplayHand>): ReplayHand {
 }
 
 describe("buildReplayFrames", () => {
+  it.each([
+    { seats: [2, 5, 9], button: 2, positions: ["BTN", "SB", "BB"] },
+    { seats: [2, 5, 9], button: 9, positions: ["SB", "BB", "BTN"] },
+    { seats: [2, 9], button: 9, positions: ["BB", "BTN/SB"] },
+  ])("uses recorded occupied seats for replay positions: $seats / button $button", ({ seats, button, positions }) => {
+    const h = hand({
+      button_seat: button,
+      players: seats.map((seat, index) => ({ ...PLAYERS[index], seat_number: seat })),
+      actions: [A("P1", "fold", 0)],
+    });
+    for (const frame of buildReplayFrames(h)) {
+      expect(frame.seats.map((seat) => seat.position)).toEqual(positions);
+    }
+    expect(h.players.map((player) => player.seat_number)).toEqual(seats);
+  });
+
   it("produces N+1 frames (frame 0 = initial state)", () => {
     const h = hand({ actions: [A("P2", "post_sb", 50), A("P3", "post_bb", 100)] });
     const frames = buildReplayFrames(h);
