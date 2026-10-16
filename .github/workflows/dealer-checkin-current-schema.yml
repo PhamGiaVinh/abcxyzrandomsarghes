@@ -28,6 +28,7 @@ on:
       - 'VinPoker/tests/cashier/seatingMigrations*'
       - 'VinPoker/tests/cashier/canonicalPaidSeating*'
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
+      - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
       - 'VinPoker/supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql'
@@ -1032,6 +1033,8 @@ jobs:
           node tests/cashier/paidJourney.runtime.mjs --active-hand
           node tests/cashier/paidJourney.runtime.mjs --active-hand --pending-move
           node tests/cashier/paidJourney.runtime.mjs --active-hand --legacy-correction
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified
           node tests/cashier/paidSeatingClose.concurrent.mjs
           node tests/cashier/restoreReentry.concurrent.mjs
           createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap

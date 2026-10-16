@@ -123,7 +123,8 @@ function sourceRefundAction(actions: readonly SettlementDbAction[], playerId: st
   const source = [...actions]
     .filter((action) => action.player_id === playerId)
     .sort((left, right) => right.action_order - left.action_order)
-    .find((action) => ["bet", "raise", "all_in"].includes(action.action_type));
+    .find((action) => action.action_amount > 0
+      && ["bet", "raise", "all_in", "post_sb", "post_bb", "post_ante"].includes(action.action_type));
   return source ?? fail("refund_source_action_missing");
 }
 
@@ -291,7 +292,7 @@ export async function verifyHistoricalDisplaySettlement(
     ? [{
       playerId: breakdown.uncalled.player_id,
       amount: refund,
-      sourceActionId: actionId(sourceRefundAction(actions, breakdown.uncalled.player_id)),
+      sourceActionId: actionId(sourceRefundAction(potActions, breakdown.uncalled.player_id)),
     }]
     : [];
   const settlements = players.map((player) => {

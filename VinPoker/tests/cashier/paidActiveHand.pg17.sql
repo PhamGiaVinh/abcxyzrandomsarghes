@@ -7,6 +7,11 @@ SELECT set_config('test.paid_move','false',true);
 \endif
 SELECT set_config('test.paid_registration',:'PAID_REGISTRATION',true);
 SELECT set_config('test.paid_correction',:'PAID_CORRECTION_CASE',true);
+\if :{?PAID_VERIFIED_HAND}
+SELECT set_config('test.paid_verified_hand',:'PAID_VERIFIED_HAND',true);
+\else
+SELECT set_config('test.paid_verified_hand','false',true);
+\endif
 DO $$ BEGIN
  IF current_database()<>'vinpoker_ops_cash115_qualified_c' OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
  OR inet_server_port()<>55441 OR current_setting('server_version_num')::int/10000<>17
@@ -146,6 +151,21 @@ BEGIN
    'starting_stack',hp.starting_stack,'ending_stack',hp.starting_stack,'is_eliminated',false)) FROM public.hand_players hp WHERE hp.hand_id=hand),
    'actions','[]'::jsonb,'side_pots','[]'::jsonb,'community_cards','[]'::jsonb,'pot_size',0)) INTO finish_intent
  FROM public.tournament_hands hh WHERE hh.id=hand;
+ IF current_setting('test.paid_verified_hand')='true' THEN
+  -- Real manual Finish input: SB100 folds to BB200. BB gets uncalled100
+  -- back and wins pot200: ending SB19900/BB20100, no invented showdown cards.
+  finish_intent:=jsonb_set(finish_intent,'{payload,players}',(SELECT jsonb_agg(jsonb_build_object(
+   'player_id',hp.player_id,'entry_number',hp.entry_number,'seat_number',hp.seat_number,'starting_stack',hp.starting_stack,
+   'ending_stack',hp.starting_stack+CASE WHEN hp.seat_number=h.tracker_sb_position THEN -100 ELSE 100 END,
+   'is_eliminated',false,'hole_cards','[]'::jsonb)) FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id WHERE hp.hand_id=hand));
+  finish_intent:=jsonb_set(finish_intent,'{payload,actions}',(SELECT jsonb_build_array(
+   jsonb_build_object('player_id',sb.player_id,'entry_number',sb.entry_number,'street','preflop','action_type','post_sb','action_amount',100,'action_order',1),
+   jsonb_build_object('player_id',bb.player_id,'entry_number',bb.entry_number,'street','preflop','action_type','post_bb','action_amount',200,'action_order',2),
+   jsonb_build_object('player_id',sb.player_id,'entry_number',sb.entry_number,'street','preflop','action_type','fold','action_amount',0,'action_order',3))
+   FROM public.tournament_hands h JOIN public.hand_players sb ON sb.hand_id=h.id AND sb.seat_number=h.tracker_sb_position
+    JOIN public.hand_players bb ON bb.hand_id=h.id AND bb.seat_number=h.tracker_bb_position WHERE h.id=hand));
+  finish_intent:=jsonb_set(finish_intent,'{payload,pot_size}','200'::jsonb);
+ END IF;
  PERFORM set_config('role','authenticated',true);
  finish_receipt:=public.record_tracker_manual_hand_v1(finish_intent);
  IF finish_receipt->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'canonical_finish_failed: %',finish_receipt;END IF;

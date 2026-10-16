@@ -162,6 +162,24 @@ describe("historical display settlement verification", () => {
     expect(result.publicOutcome.handRanks).toEqual([]);
   });
 
+  it.each(["post_bb", "big_blind"])("traces an uncalled %s refund after an SB fold", async (blindType) => {
+    const input = validInput();
+    input.hand = hand({ community_cards: [], pot_size: 200, tracker_bba: 0 });
+    input.players = [
+      { hand_id: "hand-8", player_id: "SB", entry_number: 1, seat_number: 1, starting_stack: 20_000, ending_stack: 19_900, hole_cards: [], is_eliminated: false },
+      { hand_id: "hand-8", player_id: "BB", entry_number: 1, seat_number: 2, starting_stack: 20_000, ending_stack: 20_100, hole_cards: [], is_eliminated: false },
+    ];
+    input.actions = [
+      { id: "sb", hand_id: "hand-8", player_id: "SB", entry_number: 1, street: "preflop", action_type: "post_sb", action_amount: 100, action_order: 1 },
+      { id: "bb", hand_id: "hand-8", player_id: "BB", entry_number: 1, street: "preflop", action_type: blindType, action_amount: 200, action_order: 2 },
+      { id: "fold", hand_id: "hand-8", player_id: "SB", entry_number: 1, street: "preflop", action_type: "fold", action_amount: 0, action_order: 3 },
+    ];
+    const result = await verifyHistoricalDisplaySettlement(input);
+    expect(result.winnerIds).toEqual(["BB"]);
+    expect(result.publicOutcome.refunds).toEqual([{ playerId: "BB", amount: 100, sourceActionId: "bb" }]);
+    expect(result.publicOutcome.handRanks).toEqual([]);
+  });
+
   it("requires a frozen blind snapshot and never infers from posts", async () => {
     const input = validInput();
     input.hand = hand({ tracker_big_blind: null, tracker_small_blind: null, tracker_level_id: null });
