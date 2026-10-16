@@ -186,14 +186,27 @@ Deno.serve(async (req) => {
     if (!url || !anonKey || !serviceKey) throw new Error("hand_correction_runtime_not_configured");
 
     const user = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
-    const { data: authData } = await user.auth.getUser();
-    if (!authData.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
-    const { data: authorizationData, error: authorizationError } = await user.rpc("authorize_tracker_completed_hand_correction_uat_v1", {
-      p_tournament_id: tournamentId,
-      p_hand_id: handId,
-    });
-    const authorizationReceipt = isRecord(authorizationData) ? authorizationData : null;
-    if (authorizationError || authorizationReceipt?.ok !== true) {
+    let authentication: Awaited<ReturnType<typeof user.auth.getUser>>;
+    try { authentication = await user.auth.getUser(); }
+    catch { return publicFailure(req, "authentication_unavailable", 503); }
+    if (authentication.error) {
+      const unavailable = ![400, 401, 403, 422].includes(authentication.error.status ?? 0);
+      return publicFailure(req, unavailable ? "authentication_unavailable" : "unauthorized", unavailable ? 503 : 401);
+    }
+    const authData = authentication.data;
+    if (!authData?.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
+    let authorizationReceipt: RecordValue | null;
+    try {
+      const { data, error } = await user.rpc("authorize_tracker_completed_hand_correction_uat_v1", {
+        p_tournament_id: tournamentId, p_hand_id: handId,
+      });
+      if (error) return publicFailure(req, "authorization_unavailable", 503);
+      authorizationReceipt = isRecord(data) ? data : null;
+    } catch { return publicFailure(req, "authorization_unavailable", 503); }
+    if (!authorizationReceipt || typeof authorizationReceipt.ok !== "boolean") {
+      return publicFailure(req, "authorization_unavailable", 503);
+    }
+    if (authorizationReceipt.ok !== true) {
       return publicFailure(req, text(authorizationReceipt?.error) || "actor_not_authorized", 403);
     }
 

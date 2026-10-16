@@ -30,6 +30,7 @@ on:
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
       - 'VinPoker/tests/trackerSettlement/paidCorrectionEdge*'
+      - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
       - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
       - 'VinPoker/tests/tournamentConfig/**'
       - 'VinPoker/supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql'
@@ -1048,6 +1049,7 @@ jobs:
           PGDATABASE=vinpoker_ops_cash112_ui VINPOKER_NATIVE_CASH_UI=1 node node_modules/vitest/vitest.mjs run tests/cashier/cashPaymentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           node --test tests/cashier/reentryTransport.test.mjs
           deno check supabase/functions/tournament-reentry/index.ts
+          deno check supabase/functions/tournament-live-resettle-commit/index.ts
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
