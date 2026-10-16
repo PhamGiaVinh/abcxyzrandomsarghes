@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Hole-card receipt binding and real runout SQL compatibility
+
+Baselinefc30cefff clean/previousPROGRESS. Actual client accepted13unbound/malformed redacted receipt vectors (truthyok, root/receiptID missing, wrongkey/trace/player/entry/seat/before/after/duplicatemarker). Bind strictok/redacted, nonemptyeventIDs, exactkey/nonduplicate trace, canonical player+entry+seat, expected beforestate both API+canonical, distinct validafterhash; duplicate originaltrace retained. No server/write/retry/privacy policy change.
+
+Final47receiptunitPASS/52ms +apiESLint0. Native paid Board positive subcase now records two real all-ins on flop via record_action, actual snapshot→actual Edge workflow/core runout_reveal; service-only canonical hole commit writes Kh/Ks to expected frozen participant, actual redacted SQLreceipt through actual client validates against independent requestidentity. Whole subcase/outerfingerprint rollback exact. e73c57 exit0/13PASS2.539s/PGstopped. No fullEdgegrammar/HTTP/Auth/provider/browser/durableCOMMIT or Finishqualification claim; no install/schemachange. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak change; localhold/masterACTIVE. Next Finishproposal/commit receipt binding with actual settlement runtime evidence.
+
 ## Action confirmation UI late-result fence RED→fix
 
 Baselinec3ee2d47f clean/previousPROGRESS. Inspected actual handleVoiceAction→handleAction: existing actionScopeRef/writeToken already fences canonical local action application after transport; no hook rewrite. Panel confirmAssist still published old success/error/readback and cleared newer guard. Source-callback RED33PASS3FAIL; added current render scope + validation/connection generation checks before entry and after awaits/catch, own-promise cleanup. Current-scope single-flight/readback positive preserved; no mutation retry/server authority change.

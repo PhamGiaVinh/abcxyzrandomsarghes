@@ -17,7 +17,7 @@ const text=Buffer.from(source).subarray(declaration.span.start-tree.span.start,d
 assert.ok(!text.includes('await import('));
 return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
 }
-const code=compileApi('loadTrackerVoiceRuntimeContext'),validationCode=compileApi('validateTrackerVoiceEvent'),boardCommitCode=compileApi('commitTrackerVoiceBoard');
+const code=compileApi('loadTrackerVoiceRuntimeContext'),validationCode=compileApi('validateTrackerVoiceEvent'),boardCommitCode=compileApi('commitTrackerVoiceBoard'),holeCommitCode=compileApi('commitTrackerVoiceHoleCards');
 const valid=()=>({ok:true,can_mint_session:true,read_only:false,correction_pending:false,tournament_table_id:'table',
  config:{enabled:true,configured_mode:'assist',provider_model:'existing-reviewed-model',spoken_amount_unit:1,amount_unit_confirmed:false,
   provider_confidence_threshold:null,server_auto_allowed:false,correction_state:'ready'},
@@ -214,7 +214,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM public.hand_players p JOIN public.tournament_hands h ON h.id=p.hand_id WHERE h.tournament_id='${f.tour}'))) THEN RAISE EXCEPTION 'native_paid_chip_ops_changed_cash_seats_or_roster';END IF;
  INSERT INTO native_voice_payloads VALUES('paid_chips',jsonb_build_object('issued',issued,'color_up',op,'undo',r,'tv_after',tv_after));
  END $$;
- DO $$ DECLARE h record;p record;p2 record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;board_receipt jsonb;board_snapshot jsonb;board_commit jsonb;board_revision bigint;
+ DO $$ DECLARE h record;p record;p2 record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;handoff_denial jsonb;board_receipt jsonb;board_snapshot jsonb;board_commit jsonb;board_revision bigint;hole_payload jsonb;hole_snapshot jsonb;hole_commit jsonb;
  incoming_dealer uuid:=gen_random_uuid();incoming_attendance uuid;incoming_shift uuid:=gen_random_uuid();outgoing record;
  checkin_key uuid:=gen_random_uuid();checkin_receipt jsonb;
  k text:='native-voice-'||gen_random_uuid()::text;BEGIN
@@ -254,11 +254,28 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  IF (SELECT source_revision FROM public.tournament_hands WHERE id=h.id)<=board_revision OR public._tracker_voice_hand_state_version(h.id)=board_snapshot->>'state_version'
  OR (SELECT community_cards FROM public.tournament_hands WHERE id=h.id) IS DISTINCT FROM '["Ah","5s","2d"]'::jsonb
  OR (SELECT count(*) FROM public.tracker_voice_events WHERE root_event_id=(board_commit->>'voice_event_id')::uuid AND event_kind='canonical_receipt')<>1 THEN RAISE EXCEPTION 'native_board_positive_revision_or_receipt_failed';END IF;
+ PERFORM set_config('role','authenticated',true);
+ r:=public.record_action(h.id,p2.player_id,'all_in',5,p2.entry_number,'flop',19800);
+ IF r->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'native_hole_allin_failed: %',r;END IF;
+ r:=public.record_action(h.id,p.player_id,'all_in',6,p.entry_number,'flop',19800);
+ IF r->>'status' IS DISTINCT FROM 'success' THEN RAISE EXCEPTION 'native_hole_match_failed: %',r;END IF;
+ hole_snapshot:=public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}',h.id);
+ IF hole_snapshot->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_hole_snapshot_failed: %',hole_snapshot;END IF;
+ PERFORM set_config('role','none',true);PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
+ hole_commit:=public.commit_tracker_voice_hole_cards_v0('${f.actor}','${f.tour}','${table.id}',h.id,
+ 'openai_realtime','gpt-live-transcribe',k||'-hole',hole_snapshot->>'state_version',k||'-hole','native-hole-trace',p.seat_number,'["Kh","Ks"]'::jsonb);
+ IF hole_commit->>'ok' IS DISTINCT FROM 'true' OR hole_commit->>'redacted' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_hole_commit_failed: %',hole_commit;END IF;
+ hole_payload:=jsonb_build_object('snapshot',hole_snapshot,'receipt',hole_commit,'request_identity',jsonb_build_object(
+ 'idempotencyKey',k||'-hole','traceId','native-hole-trace','expectedStateVersion',hole_snapshot->>'state_version',
+ 'playerId',p.player_id,'entryNumber',p.entry_number,'seatNumber',p.seat_number));
+ PERFORM set_config('role','none',true);
+ IF (SELECT hole_cards FROM public.hand_players WHERE hand_id=h.id AND player_id=p.player_id) IS DISTINCT FROM '["Kh","Ks"]'::jsonb THEN RAISE EXCEPTION 'native_hole_cards_not_persisted';END IF;
  RAISE SQLSTATE 'PZ004' USING MESSAGE='native_board_positive_case_rollback';
  EXCEPTION WHEN SQLSTATE 'PZ004' THEN NULL;
  END;
  INSERT INTO native_voice_payloads VALUES('board_workflow',jsonb_build_object('snapshot',board_snapshot,'commit',board_commit,'canonical_request',command,
  'commit_request',jsonb_build_object('voiceEventId',receipt->>'voice_event_id','idempotencyKey',k||'-positive-board','traceId','native-positive-commit')));
+ INSERT INTO native_voice_payloads VALUES('hole_workflow',hole_payload);
  -- Qualify only the trusted service root receipt shape, not Board workflow legality or Edge parsing.
  BEGIN
  PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
@@ -445,6 +462,16 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  assert.equal(await commitBoard({...payload.board_workflow.commit_request,tournamentId:f.tour,tournamentTableId:table.id,
   handId:payload.hand_proof.hand_id,canonicalRequest:expectedCanonical}),payload.board_workflow.commit);
  assert.equal(boardCommitCalls,1);
+ assert.equal(workflow(payload.hole_workflow.snapshot),'runout_reveal');
+ const holeIdentity=payload.hole_workflow.request_identity;
+ let holeCalls=0;
+ const commitHole=runInNewContext(holeCommitCode,{Error,client:{functions:{invoke:async()=>{
+  holeCalls++;return {data:{data:payload.hole_workflow.receipt},error:null};
+ }}}});
+ assert.equal(await commitHole({...holeIdentity,tournamentId:f.tour,tournamentTableId:table.id,handId:payload.hand_proof.hand_id,
+  canonicalRequest:{intentDomain:'hole_cards',envelope:{expectedStateVersion:holeIdentity.expectedStateVersion},
+   payload:{expectedPlayerId:holeIdentity.playerId,expectedEntryNumber:holeIdentity.entryNumber,seatNumber:holeIdentity.seatNumber,cards:['Kh','Ks']}}}),payload.hole_workflow.receipt);
+ assert.equal(holeCalls,1);
  assert.equal(payload.board_workflow.snapshot.actions.length,4);
  assert.equal(payload.board_workflow.commit.ok,true);
  assert.equal(payload.board_workflow.commit.state_version_before,payload.board_workflow.snapshot.state_version);

@@ -195,7 +195,23 @@ export async function commitTrackerVoiceHoleCards(
   if (receipt?.ok === false && typeof receipt.error === "string") {
     throw new Error(receipt.error);
   }
-  if (!receipt?.ok || receipt.redacted !== true || typeof receipt.player_id !== "string") {
+  const request = input.canonicalRequest;
+  if (receipt?.ok !== true || receipt.redacted !== true
+    || request.intentDomain !== "hole_cards"
+    || typeof receipt.voice_event_id !== "string" || !receipt.voice_event_id.trim()
+    || typeof receipt.canonical_receipt_event_id !== "string" || !receipt.canonical_receipt_event_id.trim()
+    || receipt.idempotency_key !== input.idempotencyKey
+    || typeof receipt.trace_id !== "string" || !receipt.trace_id.trim()
+    || (receipt.duplicate !== undefined && typeof receipt.duplicate !== "boolean")
+    || (!receipt.duplicate && receipt.trace_id !== input.traceId)
+    || receipt.player_id !== request.payload.expectedPlayerId
+    || receipt.entry_number !== request.payload.expectedEntryNumber
+    || receipt.seat_number !== request.payload.seatNumber
+    || receipt.state_version_before !== input.expectedStateVersion
+    || receipt.state_version_before !== request.envelope.expectedStateVersion
+    || !/^[0-9a-f]{64}$/.test(receipt.state_version_before)
+    || typeof receipt.state_version_after !== "string" || !/^[0-9a-f]{64}$/.test(receipt.state_version_after)
+    || receipt.state_version_after === receipt.state_version_before) {
     throw new Error("Voice bài tẩy không trả redacted canonical receipt hợp lệ.");
   }
   return receipt;

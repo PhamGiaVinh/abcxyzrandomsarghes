@@ -14,7 +14,7 @@ const text=Buffer.from(source).subarray(fn.span.start-tree.span.start,fn.span.en
 assert.ok(!text.includes('await import('));
 return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
 }
-const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard');
+const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard'),holeCode=compileBody('commitTrackerVoiceHoleCards');
 const input={tournamentId:'tour',tournamentTableId:'table',handId:'hand',finalTranscript:'check',providerName:'openai_realtime',providerModel:'test',providerEventId:'event',
  executionMode:'assist',expectedStateVersion:'a'.repeat(64),idempotencyKey:'voice:key',traceId:'trace:key'};
 const valid=()=>({ok:true,voice_event_id:'voice-event',idempotency_key:input.idempotencyKey,trace_id:input.traceId,state_version:input.expectedStateVersion,
@@ -76,4 +76,25 @@ for(const [name,patch] of [
  ['duplicate marker string',{duplicate:'true'}],['duplicate wrong key',{duplicate:true,idempotency_key:'other'}],
 ])test(`reject unbound Board commit receipt: ${name}`,async()=>{
  await assert.rejects(invokeBoard({...validBoard(),...patch}),/Voice Board không trả canonical receipt hợp lệ/);
+});
+
+const holeInput={...boardInput,expectedStateVersion:'a'.repeat(64),canonicalRequest:{intentDomain:'hole_cards',envelope:{expectedStateVersion:'a'.repeat(64)},
+ payload:{seatNumber:2,expectedPlayerId:'player',expectedEntryNumber:1,cards:['Kh','Ks']}}};
+const validHole=()=>({ok:true,voice_event_id:'root',canonical_receipt_event_id:'receipt',idempotency_key:holeInput.idempotencyKey,trace_id:holeInput.traceId,
+ seat_number:2,player_id:'player',entry_number:1,redacted:true,state_version_before:'a'.repeat(64),state_version_after:'b'.repeat(64)});
+async function invokeHole(receipt){
+ let calls=0;const api=runInNewContext(holeCode,{Error,client:{functions:{invoke:async()=>{calls++;return {data:{data:receipt},error:null};}}}});
+ try{return await api(holeInput);}finally{assert.equal(calls,1);}
+}
+test('redacted hole receipt and original-trace duplicate remain usable',async()=>{
+ for(const receipt of [validHole(),{...validHole(),duplicate:true,trace_id:'original'}])assert.equal(await invokeHole(receipt),receipt);
+});
+for(const [name,patch] of [
+ ['truthy ok',{ok:'yes'}],['empty root',{voice_event_id:''}],['missing receipt',{canonical_receipt_event_id:undefined}],
+ ['wrong key',{idempotency_key:'other'}],['wrong trace',{trace_id:'other'}],['wrong player',{player_id:'other'}],
+ ['wrong entry',{entry_number:2}],['wrong seat',{seat_number:3}],['wrong before',{state_version_before:'c'.repeat(64)}],
+ ['missing after',{state_version_after:undefined}],['unchanged proof',{state_version_after:'a'.repeat(64)}],
+ ['duplicate marker string',{duplicate:'true'}],['duplicate wrong player',{duplicate:true,player_id:'other'}],
+])test(`reject unbound hole receipt: ${name}`,async()=>{
+ await assert.rejects(invokeHole({...validHole(),...patch}),/Voice bài tẩy không trả redacted canonical receipt hợp lệ/);
 });
