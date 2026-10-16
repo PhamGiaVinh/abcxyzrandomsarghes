@@ -172,6 +172,31 @@ if(process.argv.includes('--identity-revision')){
  if(probe.moved){assert.equal(probe.verified,0);assert.equal(probe.pending,1);assert.notEqual(probe.public.items[0].result.status,'verified');}
  }
  console.log('PAID_VERIFIED_HAND_IDENTITY_REPARENT_REVISION_FENCE_PASS');
+ const sourceRows=()=>sql(`SELECT jsonb_build_object('actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a WHERE hand_id='${hand}'),'players',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.hand_players p WHERE hand_id='${hand}'));`);
+ const originalRows=sourceRows();
+ // Trigger coverage only: privileged source writes, not endpoint authority proof.
+ // Each vector begins from the same genuine worker-verified paid hand.
+ for(const [name,mutation] of [
+  ['action amount',`UPDATE public.hand_actions SET action_amount=action_amount+1 WHERE id=(SELECT id FROM public.hand_actions WHERE hand_id='${hand}' ORDER BY id LIMIT 1)`],
+  ['action delete',`DELETE FROM public.hand_actions WHERE id=(SELECT id FROM public.hand_actions WHERE hand_id='${hand}' ORDER BY id DESC LIMIT 1)`],
+  ['hole cards',`UPDATE public.hand_players SET hole_cards='["2c","3d"]'::jsonb WHERE id=(SELECT id FROM public.hand_players WHERE hand_id='${hand}' ORDER BY id LIMIT 1)`],
+  ['participant stack',`UPDATE public.hand_players SET ending_stack=ending_stack+1 WHERE id=(SELECT id FROM public.hand_players WHERE hand_id='${hand}' ORDER BY id LIMIT 1)`],
+  ['board',`UPDATE public.tournament_hands SET community_cards='["2c","3d","4h"]'::jsonb WHERE id='${hand}'`],
+  ['blind',`UPDATE public.tournament_hands SET tracker_big_blind=tracker_big_blind+1 WHERE id='${hand}'`],
+  ['void',`UPDATE public.tournament_hands SET is_voided=true WHERE id='${hand}'`],
+ ]){
+  const probe=JSON.parse(sql(`BEGIN;${mutation};SELECT jsonb_build_object(
+   'revision',(SELECT source_revision FROM public.tournament_hands WHERE id='${hand}'),
+   'verified',(SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified'),
+   'queued',(SELECT count(*) FROM public.tracker_historical_display_queue q JOIN public.tournament_hands h ON h.id=q.hand_id AND h.source_revision=q.source_revision WHERE h.id='${hand}'),
+   'public',(SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL)));ROLLBACK;`));
+  assert.ok(probe.revision>revision,name+' must advance source revision');
+  assert.equal(probe.verified,0,name+' must invalidate proof');
+  if(name!=='void')assert.equal(probe.queued,1,name+' must enqueue current generation');
+  assert.ok(!probe.public.items.some(item=>item.result?.status==='verified'),name+' must not publish old proof');
+  assert.equal(business(),before,name+' business rollback');assert.equal(sourceRows(),originalRows,name+' source rollback');
+ }
+ console.log('PAID_VERIFIED_SOURCE_TRIGGER_MUTATION_MATRIX_PASS');
 }
 const observed=calls.length;
 for(const [credential,body,status,expectedCode] of [

@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Source trigger matrix on genuinely verified paid hand PASS
+
+Baseline36012524e; prior turn PROGRESS. Expanded existing --identity-revision native worker case, no application/schema change. Seven independent rollback-only privileged source probes: hand_actions amount UPDATE and DELETE; hand_players hole_cards and ending_stack UPDATE; tournament_hands board, big blind and void UPDATE. 3ccba8 exit0 PAID_VERIFIED_SOURCE_TRIGGER_MUTATION_MATRIX_PASS: every vector advances revision, removes verified proof and prevents old verified public output; nonvoid vectors also require one queue row for current generation. Each rollback compares original hand/seats/cash plus full action/player rows. Reuses real paid registration/Finish and actual worker/verifier proof, not inserted synthetic outcome. Syntax/diff checks PASS, PG stopped.
+
+Scope: trigger-level source coverage under privileged SQL, NOT authorization or behavior proof of record/add/delete/undo/card/blind/void endpoints. INSERT, participant identity/reparent and all actual endpoint callers remain to cover; no broad writer-matrix completion claim. No push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6/local-only remains IN_PROGRESS; browser/fulltour/performance/release still incomplete.
+
 ## Hand scope revision bypass reproduced; forward120 local regression PASS
 
 Baseline73e08a5e2. Catalog writer scan found existing hand revision trigger omits table_id/tournament_table_id/table_session_id. Actual paid canonical hand and actual worker first produced verified proof. Authenticated owner changing mismatched nonnull table/session is correctly rejected by composite FK; however nullable legacy session plus logical-table reparent succeeded without revision advance, and public history still returned verified (RED0c7fa7; probe rolled back). This is local evidence, not a live finding.
