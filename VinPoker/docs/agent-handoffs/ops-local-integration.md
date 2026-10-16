@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G0 evidence refresh + G8 two-table/eight-paid/four-check-in foundation
+
+Baseline7c79ebd7a clean/previousPROGRESS; get_goalACTIVE, actualfetch3114 terminal0 mainunchangeded3db6ac600710e95fe4408c475941916c23ab19. Read priorG3 proof: main2/10/40 already localqualified (not hosted/rest15x3), no redundant rerun. Added ops-local-evidence-matrix.md distinguishes G0–G9 source/local versus all outstanding hosted/browser/fulltour/performance/release gates.
+
+New gated paidTourRoster.native.mjs uses existing canonical paid/open fixture,7more actualregistration+cashRPCs,4actualdealercheckins+replays, optional exactFloorbalanceRPC (no directentry/seat/payment writes). Actual3433de terminal0/PGstopped:2active exactsessions,4players each,8distinctpaidseatedentries,160000stack,8cashmovements,4checkinattendances,AutoOFF/nohands. Club435b8b6f-1320-466f-927f-9f3e82a778fb/tour14b5a2a0-6599-49a4-b471-d8c1c07ff145 retained with audit; exacttables/sessions in matrix. TESTmetadata onlyauthusers/dealers/shift, no realcontacts/no pg_net; no Autoassignment/rotation/payroll/browser/fulltourclaim. CIpath+commandprepared/notdispatched, Nodecheck/YAMLparse/diffcheckPASS. Privatehelper --paid-tour-roster outsideGit.
+
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploychanges; localhold/AutoOFF/DaybreakOFF/masterACTIVE. Next extend same scoped tour through chip setup/issuance and projections, supported dealer assignment/hand lifecycle, not another unrelated fixture or a smaller definition of done.
+
 ## Finish prepare receipt read integrity RED→fix→actual engine compatibility
 
 Baselineb83c17935 clean/previousPROGRESS. Actual prepareTrackerVoiceFinish onlytruthyok/stringdigest accepted13invalid vectors: wrongstate/emptydigest/origin/missingsummary/nullNaNnegativechip/stringtotal/wrongconservation/duplicateparticipants/unknownwinner. Strict currentproof/64hexdigest/origin and summaryshape now required: safe nonnegative chips, positiveintegerseats, unique endingIDs/seats, endingtotal equals serverconservation, winners linked to participant/seat, main/sidepots with knownwinnerIDs. This validates server response only, no client payout recomputation or mutation. Zeroendingstack and nullableplayername positive retained.
