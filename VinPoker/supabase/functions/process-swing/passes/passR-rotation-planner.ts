@@ -317,25 +317,17 @@ async function reconcileAndAdopt(
     const valid = dealer?.current_state === "pre_assigned" && dealer?.status !== "checked_out";
 
     if (!valid) {
-      // Invalid legacy pre-assign: clear it so phase C can re-plan this tick.
-      await admin
-        .from("dealer_assignments")
-        .update({
-          pre_assigned_attendance_id: null,
-          pre_assigned_at: null,
-          planned_relief_at: null,
-          is_emergency_pre_assign: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", a.id)
-        .eq("pre_assigned_attendance_id", a.pre_assigned_attendance_id);
-      if (dealer && dealer.current_state === "pre_assigned") {
-        await admin
-          .from("dealer_attendance")
-          .update({ current_state: "available", pre_assigned_table_id: null, pre_assigned_at: null })
-          .eq("id", a.pre_assigned_attendance_id)
-          .eq("current_state", "pre_assigned")
-          .eq("pre_assigned_table_id", a.table_id);
+      // One server transaction owns both assignment and attendance changes.
+      const { data: cleared, error: clearError } = await admin.rpc("worker_clear_legacy_preassignment_v1", {
+        p_club_id: ctx.clubId, p_table_id: a.table_id, p_table_session_id: a.table_session_id,
+        p_assignment_id: a.id, p_expected_version: a.version,
+        p_incoming_attendance_id: a.pre_assigned_attendance_id,
+      });
+      if (clearError || cleared?.outcome !== "cleared" || cleared?.club_id !== ctx.clubId
+        || cleared?.table_id !== a.table_id || cleared?.table_session_id !== a.table_session_id
+        || cleared?.assignment_id !== a.id || cleared?.expected_version !== a.version
+        || cleared?.incoming_attendance_id !== a.pre_assigned_attendance_id) {
+        throw new Error("rotation_legacy_cleanup_unverified");
       }
       a.pre_assigned_attendance_id = null;
       a.planned_relief_at = null;

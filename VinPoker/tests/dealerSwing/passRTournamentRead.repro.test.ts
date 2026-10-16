@@ -71,6 +71,19 @@ it.each([
  await expect(reconcile({from:()=>query,rpc},{clubId:'club-a'},[a],[{id:'slot-a',assignment_id:a.id,table_id:a.table_id,status:'announced',in_attendance_id:'incoming-a'}],'run-a')).rejects.toThrow('rotation_cancel_unverified');
  expect(a).toEqual(before);
 });
+it.each(['transport','repair','wrong-session','wrong-version','cleared'] as const)('legacy cleanup mirrors only exact atomic receipt: %s',async(mode)=>{
+ const first=source.indexOf('async function reconcileAndAdopt('),last=source.indexOf('// ─── Build solver inputs',first);
+ const entry=ts.transpileModule(source.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const reconcile=new Function('console',`${entry};return reconcileAndAdopt;`)({warn:vi.fn()});
+ const a={...assignment,id:'assignment-a',version:7,pre_assigned_attendance_id:'incoming-a' as string|null,planned_relief_at:'2026-10-16T01:00:00Z' as string|null},before={...a};
+ const receipt={outcome:mode==='repair'?'repair_required':'cleared',club_id:'club-a',table_id:a.table_id,table_session_id:mode==='wrong-session'?'old-session':a.table_session_id,assignment_id:a.id,expected_version:mode==='wrong-version'?8:7,incoming_attendance_id:'incoming-a'};
+ const rpc=vi.fn(async()=>({data:mode==='transport'?null:receipt,error:mode==='transport'?{message:'synthetic outage'}:null}));
+ const query={select:vi.fn(),in:vi.fn(async()=>({data:[{id:'incoming-a',current_state:'pre_assigned',status:'checked_out'}],error:null}))};query.select.mockReturnValue(query);
+ const result=reconcile({from:()=>query,rpc},{clubId:'club-a'},[a],[],'run-a');
+ if(mode==='cleared'){await expect(result).resolves.toEqual({adopted:0,cancelled:1});expect(a.pre_assigned_attendance_id).toBeNull();}
+ else{await expect(result).rejects.toThrow('rotation_legacy_cleanup_unverified');expect(a).toEqual(before);}
+ expect(rpc).toHaveBeenCalledWith('worker_clear_legacy_preassignment_v1',{p_club_id:'club-a',p_table_id:before.table_id,p_table_session_id:before.table_session_id,p_assignment_id:before.id,p_expected_version:7,p_incoming_attendance_id:'incoming-a'});
+});
 it.each([
  {data:null,error:{message:'synthetic outage'}},
  {data:null,error:null}, {data:-1,error:null}, {data:NaN,error:null},

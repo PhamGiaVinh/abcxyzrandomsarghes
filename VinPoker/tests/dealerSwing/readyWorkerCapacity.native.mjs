@@ -67,10 +67,39 @@ if(process.argv.includes('--legacy')){
  const actual=JSON.parse(sql(`SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${a.id}';`));
  const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('assignment',(SELECT to_jsonb(a) FROM public.dealer_assignments a WHERE id='${a.id}'),'incoming',(SELECT to_jsonb(d) FROM public.dealer_attendance d WHERE id='${r.nextAttendance}'))::text);`);
  const before=fingerprint(),raw=readFileSync('supabase/functions/process-swing/passes/passR-rotation-planner.ts','utf8');
+ const signature='public.worker_clear_legacy_preassignment_v1(uuid,uuid,uuid,uuid,integer,uuid)';
+ assert.equal(sql(`SELECT has_function_privilege('anon','${signature}','EXECUTE') OR has_function_privilege('authenticated','${signature}','EXECUTE');`),'f');
+ assert.equal(sql(`SELECT has_function_privilege('service_role','${signature}','EXECUTE');`),'t');
+ const wrong=seed(1);
+ const intent=[c.club,r.table,r.session,a.id,actual.version,r.nextAttendance];
+ for(const [index,value] of [[0,wrong.club],[1,wrong.rows[0].table],[2,wrong.rows[0].session],[3,randomUUID()],[4,actual.version+1],[5,wrong.rows[0].nextAttendance],[2,null]]){
+  const args=[...intent];args[index]=value;
+  sql(service+`DO $$ BEGIN BEGIN PERFORM public.worker_clear_legacy_preassignment_v1(${args.map(quote).join(',')});RAISE EXCEPTION 'negative accepted';EXCEPTION WHEN invalid_parameter_value THEN NULL;END;END $$;`);
+  assert.equal(fingerprint(),before,'invalid scope/version has zero effect');
+ }
+ sql(service+`SET request.jwt.claim.role='authenticated';SET request.jwt.claims='{"role":"authenticated"}';DO $$ BEGIN BEGIN PERFORM public.worker_clear_legacy_preassignment_v1(${intent.map(quote).join(',')});RAISE EXCEPTION 'role accepted';EXCEPTION WHEN insufficient_privilege THEN NULL;END;END $$;`);
+ assert.equal(fingerprint(),before);
+ sql(`BEGIN;${service}UPDATE public.dealer_attendance SET status='checked_in',check_out_time=NULL WHERE id='${r.nextAttendance}';
+ DO $$ DECLARE result jsonb;BEGIN result:=public.worker_clear_legacy_preassignment_v1(${intent.map(quote).join(',')});
+ IF result->>'outcome' IS DISTINCT FROM 'legacy_lock_valid' OR NOT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE id='${a.id}' AND pre_assigned_attendance_id='${r.nextAttendance}') THEN RAISE EXCEPTION 'valid_legacy_lock_changed';END IF;END $$;ROLLBACK;`);
+ sql(`BEGIN;${service}INSERT INTO public.dealer_rotation_schedule(club_id,table_id,assignment_id,slot_index,out_attendance_id,in_attendance_id,planned_relief_at,status,is_shortage,plan_run_id,solver_version,reason)
+ VALUES('${c.club}','${r.table}','${a.id}',0,'${r.oldAttendance}',NULL,now()+interval '3 minutes','predicted',true,'${randomUUID()}','legacy104-native-test','{}');
+ DO $$ DECLARE result jsonb;BEGIN result:=public.worker_clear_legacy_preassignment_v1(${intent.map(quote).join(',')});
+ IF result->>'outcome' IS DISTINCT FROM 'repair_required' OR NOT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE id='${a.id}' AND pre_assigned_attendance_id='${r.nextAttendance}') THEN RAISE EXCEPTION 'scheduled_legacy_lock_changed';END IF;END $$;ROLLBACK;`);
+ assert.equal(fingerprint(),before);
  const first=raw.indexOf('async function reconcileAndAdopt('),last=raw.indexOf('// ─── Build solver inputs',first);assert.ok(first>0&&last>first);
  const reconcile=new Function('console','ANNOUNCE_LEAD_MS',stripTypeScriptTypes(raw.slice(first,last))+';return reconcileAndAdopt;')(console,180000);
- const writes=[];
- const admin={rpc:async()=>assert.fail('unexpected legacy RPC'),from(table){assert.ok(['dealer_attendance','dealer_assignments'].includes(table));let patch=null,where=[];
+ const writes=[];let faultCleanup=true;
+ const admin={rpc:async(name,args)=>{
+  assert.equal(name,'worker_clear_legacy_preassignment_v1');
+  assert.deepEqual(args,{p_club_id:c.club,p_table_id:r.table,p_table_session_id:r.session,p_assignment_id:a.id,p_expected_version:actual.version,p_incoming_attendance_id:r.nextAttendance});
+  const call=`SELECT public.worker_clear_legacy_preassignment_v1(${Object.entries(args).map(([k,v])=>column(k)+'=>'+quote(v)).join(',')});`;
+  try{
+   const output=sql((faultCleanup?`BEGIN;CREATE FUNCTION pg_temp.reject_legacy_clear() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'native_legacy_second_write_fault';END $$;
+   CREATE TRIGGER native_legacy_second_write_fault BEFORE UPDATE ON public.dealer_attendance FOR EACH ROW WHEN (OLD.id='${r.nextAttendance}'::uuid) EXECUTE FUNCTION pg_temp.reject_legacy_clear();`: '')+service+call+(faultCleanup?'ROLLBACK;':''));
+   return {data:JSON.parse(output),error:null};
+  }catch(e){assert.match(String(e.stderr),/native_legacy_second_write_fault/);return {data:null,error:{message:'native_legacy_second_write_fault'}};}
+ },from(table){assert.ok(['dealer_attendance','dealer_assignments'].includes(table));let patch=null,where=[];
   const q={select(){return q;},update(value){patch=value;return q;},eq(k,v){where.push(`${column(k)}=${quote(v)}`);return q;},
    async in(k,values){assert.equal(table,'dealer_attendance');assert.equal(k,'id');return {data:JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(d)),'[]') FROM public.dealer_attendance d WHERE id IN (${values.map(quote).join(',')});`)),error:null};},
    then(resolve,reject){const perform=async()=>{assert.ok(patch);writes.push(table);
@@ -78,11 +107,18 @@ if(process.argv.includes('--legacy')){
     if(table==='dealer_attendance')return {data:null,error:{message:'synthetic second-request transport failure'}};
     sql(service+`UPDATE public.${table} SET ${Object.entries(patch).map(([k,v])=>column(k)+'='+quote(v)).join(',')} WHERE ${where.join(' AND ')};`);return {data:null,error:null};};return perform().then(resolve,reject);},
   };return q;}};
+ await assert.rejects(reconcile(admin,{clubId:c.club},[actual],[],randomUUID()),/rotation_legacy_cleanup_unverified/);
+ assert.equal(fingerprint(),before,'second-write SQL fault rolls back the first assignment write');
+ assert.deepEqual(writes,[],'planner no longer sends split table writes');
+ faultCleanup=false;
  const result=await reconcile(admin,{clubId:c.club},[actual],[],randomUUID());
- const assignmentCleared=sql(`SELECT pre_assigned_attendance_id IS NULL FROM public.dealer_assignments WHERE id='${a.id}';`)==='t';
- const incomingHeld=sql(`SELECT current_state='pre_assigned' AND pre_assigned_table_id='${r.table}' FROM public.dealer_attendance WHERE id='${r.nextAttendance}';`)==='t';
- console.log(JSON.stringify({legacy_cleanup_result:result,writes,assignmentCleared,incomingHeld}));
- assert.equal(fingerprint(),before,'failed legacy multi-write cleanup must not strand incoming attendance');
+ assert.equal(result.cancelled,1);assert.equal(result.adopted,0);
+ assert.equal(sql(`SELECT pre_assigned_attendance_id IS NULL FROM public.dealer_assignments WHERE id='${a.id}';`),'t');
+ assert.equal(sql(`SELECT current_state||'|'||(pre_assigned_table_id IS NULL)::text FROM public.dealer_attendance WHERE id='${r.nextAttendance}';`),'checked_out|true');
+ const after=fingerprint();
+ sql(service+`DO $$ BEGIN BEGIN PERFORM public.worker_clear_legacy_preassignment_v1(${intent.map(quote).join(',')});RAISE EXCEPTION 'stale retry accepted';EXCEPTION WHEN invalid_parameter_value THEN NULL;END;END $$;`);
+ assert.equal(fingerprint(),after,'stale retry cannot release a new lifecycle');
+ console.log('LEGACY104_ACTUAL_PLANNER_NATIVE_ATOMIC_FAULT_AND_POSITIVE_PASS');
 }
 if(process.argv.includes('--negative')){
  const c=seed(2);
