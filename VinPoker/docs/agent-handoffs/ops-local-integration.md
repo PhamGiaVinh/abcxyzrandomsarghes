@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Finish commit receipt binding RED→local fix, runtime pending
+
+Baselineae3e19d37 clean/previousPROGRESS. Actual commitTrackerVoiceFinish onlytruthyok/stringhand accepted13unbound vectors. Added strictok/exacthand/key, nonemptyeventIDs/trace, booleanduplicate and nonduplicate trace binding, exactsettlementorigin/digest from canonical request, valid64hex digest/before/after, before matches API+canonical and distinctafter. SQLduplicate preserves originaltrace, allowed. No server mutation/auth/settlement/rounding/retry change.
+
+Final61receiptunitPASS65ms +apiESLint0; diffcheckPASS. REAL Finish SQL+engine receipt compatibility NOT YET qualified: existing nativejourney still rollback-only and cannot pause for JS authoritative settlement computation. Do not fabricate service settlement/digest simply to pass. Next build/reuse dedicated local paid fixture and actual computeVoiceFinishSettlement between canonical SQL transactions; preserve audit, validate client against real result then receipt recovery. Relevant original SQL/finishAssist.ts/paidJourney.fixture.mjs inspected, no native rerun because current sourceclient not included yet. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE.
+
 ## Hole-card receipt binding and real runout SQL compatibility
 
 Baselinefc30cefff clean/previousPROGRESS. Actual client accepted13unbound/malformed redacted receipt vectors (truthyok, root/receiptID missing, wrongkey/trace/player/entry/seat/before/after/duplicatemarker). Bind strictok/redacted, nonemptyeventIDs, exactkey/nonduplicate trace, canonical player+entry+seat, expected beforestate both API+canonical, distinct validafterhash; duplicate originaltrace retained. No server/write/retry/privacy policy change.

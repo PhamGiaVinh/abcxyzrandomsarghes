@@ -14,7 +14,7 @@ const text=Buffer.from(source).subarray(fn.span.start-tree.span.start,fn.span.en
 assert.ok(!text.includes('await import('));
 return transformSync(text+'\n'+name+';',{jsc:{parser:{syntax:'typescript'},target:'es2022'}}).code;
 }
-const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard'),holeCode=compileBody('commitTrackerVoiceHoleCards');
+const code=compileBody('validateTrackerVoiceEvent'),boardCode=compileBody('commitTrackerVoiceBoard'),holeCode=compileBody('commitTrackerVoiceHoleCards'),finishCode=compileBody('commitTrackerVoiceFinish');
 const input={tournamentId:'tour',tournamentTableId:'table',handId:'hand',finalTranscript:'check',providerName:'openai_realtime',providerModel:'test',providerEventId:'event',
  executionMode:'assist',expectedStateVersion:'a'.repeat(64),idempotencyKey:'voice:key',traceId:'trace:key'};
 const valid=()=>({ok:true,voice_event_id:'voice-event',idempotency_key:input.idempotencyKey,trace_id:input.traceId,state_version:input.expectedStateVersion,
@@ -97,4 +97,25 @@ for(const [name,patch] of [
  ['duplicate marker string',{duplicate:'true'}],['duplicate wrong player',{duplicate:true,player_id:'other'}],
 ])test(`reject unbound hole receipt: ${name}`,async()=>{
  await assert.rejects(invokeHole({...validHole(),...patch}),/Voice bài tẩy không trả redacted canonical receipt hợp lệ/);
+});
+
+const finishInput={...boardInput,expectedStateVersion:'a'.repeat(64),canonicalRequest:{intentDomain:'finish_hand',envelope:{expectedStateVersion:'a'.repeat(64)},
+ payload:{settlementOrigin:'engine_showdown',settlementDigest:'c'.repeat(64)}}};
+const validFinish=()=>({ok:true,voice_event_id:'root',canonical_receipt_event_id:'receipt',idempotency_key:finishInput.idempotencyKey,trace_id:finishInput.traceId,
+ hand_id:finishInput.handId,settlement_origin:'engine_showdown',settlement_digest:'c'.repeat(64),state_version_before:'a'.repeat(64),state_version_after:'b'.repeat(64)});
+async function invokeFinish(receipt){
+ let calls=0;const api=runInNewContext(finishCode,{Error,client:{functions:{invoke:async()=>{calls++;return {data:{data:receipt},error:null};}}}});
+ try{return await api(finishInput);}finally{assert.equal(calls,1);}
+}
+test('Finish receipt and original-trace duplicate remain usable',async()=>{
+ for(const receipt of [validFinish(),{...validFinish(),duplicate:true,trace_id:'original'}])assert.equal(await invokeFinish(receipt),receipt);
+});
+for(const [name,patch] of [
+ ['truthy ok',{ok:'yes'}],['wrong hand',{hand_id:'other'}],['empty root',{voice_event_id:''}],['missing receipt',{canonical_receipt_event_id:''}],
+ ['wrong key',{idempotency_key:'other'}],['wrong trace',{trace_id:'other'}],['wrong before',{state_version_before:'c'.repeat(64)}],
+ ['missing after',{state_version_after:undefined}],['unchanged proof',{state_version_after:'a'.repeat(64)}],
+ ['wrong origin',{settlement_origin:'engine_fold_win'}],['wrong digest',{settlement_digest:'d'.repeat(64)}],
+ ['duplicate marker string',{duplicate:'true'}],['duplicate wrong hand',{duplicate:true,hand_id:'other'}],
+])test(`reject unbound Finish receipt: ${name}`,async()=>{
+ await assert.rejects(invokeFinish({...validFinish(),...patch}),/Voice Finish không trả canonical receipt hợp lệ/);
 });

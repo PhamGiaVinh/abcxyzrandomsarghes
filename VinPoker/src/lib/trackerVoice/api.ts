@@ -270,7 +270,24 @@ export async function commitTrackerVoiceFinish(
   const envelope = data as { data?: VoiceFinishCommitReceipt; error?: string } | null;
   if (envelope?.error) throw new Error(envelope.error);
   const receipt = envelope?.data;
-  if (!receipt?.ok || typeof receipt.hand_id !== "string") {
+  const request = input.canonicalRequest;
+  if (receipt?.ok !== true || receipt.hand_id !== input.handId
+    || request.intentDomain !== "finish_hand"
+    || typeof receipt.voice_event_id !== "string" || !receipt.voice_event_id.trim()
+    || typeof receipt.canonical_receipt_event_id !== "string" || !receipt.canonical_receipt_event_id.trim()
+    || receipt.idempotency_key !== input.idempotencyKey
+    || typeof receipt.trace_id !== "string" || !receipt.trace_id.trim()
+    || (receipt.duplicate !== undefined && typeof receipt.duplicate !== "boolean")
+    || (!receipt.duplicate && receipt.trace_id !== input.traceId)
+    || !["engine_fold_win", "engine_showdown"].includes(receipt.settlement_origin)
+    || receipt.settlement_origin !== request.payload.settlementOrigin
+    || receipt.settlement_digest !== request.payload.settlementDigest
+    || !/^[0-9a-f]{64}$/.test(receipt.settlement_digest)
+    || receipt.state_version_before !== input.expectedStateVersion
+    || receipt.state_version_before !== request.envelope.expectedStateVersion
+    || !/^[0-9a-f]{64}$/.test(receipt.state_version_before)
+    || typeof receipt.state_version_after !== "string" || !/^[0-9a-f]{64}$/.test(receipt.state_version_after)
+    || receipt.state_version_after === receipt.state_version_before) {
     throw new Error("Voice Finish không trả canonical receipt hợp lệ.");
   }
   return receipt;
