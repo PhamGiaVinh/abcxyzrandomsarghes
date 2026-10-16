@@ -27,7 +27,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
    eq:(key,value)=>{where.push(`${column(key)}=${quote(value)}`);return query;},
    in:(key,values)=>{assert.ok(values.length>0);where.push(`${column(key)} IN (${values.map(quote).join(',')})`);return query;},
    order:(key,options)=>{order.push(column(key)+(options?.ascending===false?' DESC':' ASC'));return query;},
-   limit:value=>{assert.equal(value,1);limit=value;return query;},
+   limit:value=>{assert.ok(value===1||value===2);limit=value;return query;},
    then(resolve,reject){serviceReads++;try{
     const data=JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (SELECT ${columns} FROM public.${table}${where.length?' WHERE '+where.join(' AND '):''}${order.length?' ORDER BY '+order.join(','):''}${limit?' LIMIT '+limit:''}) x;`));
     return Promise.resolve({data,error:null}).then(resolve,reject);
@@ -38,6 +38,10 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
   if(authFailure==='throw')throw new Error('TEST network unavailable');
   return authFailure?{data:{user:null},error:{status:authFailure==='invalid'?401:503,message:'TEST auth failure'}}:{data:{user:{id:actor}},error:null};
  }},rpc:async(name,args)=>{
+  if(name==='authorize_tournament_live_resettle'){
+   assert.deepEqual(JSON.parse(JSON.stringify(args)),{p_tournament_id:fixture.tour});
+   return {data:JSON.parse(sql(`SET request.jwt.claim.sub='${actor}';SET request.jwt.claims='{"role":"authenticated","sub":"${actor}"}';SET ROLE authenticated;SELECT to_jsonb(public.${name}('${fixture.tour}'));`)),error:null};
+  }
   assert.equal(name,'authorize_tracker_completed_hand_correction_uat_v1');assert.deepEqual(JSON.parse(JSON.stringify(args)),{p_tournament_id:fixture.tour,p_hand_id:hand});
   if(authorizationFailure==='throw')throw new Error('TEST authority network unavailable');
   if(authorizationFailure==='malformed')return {data:{},error:null};
@@ -74,5 +78,21 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand}){
  assert.ok(Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`))>preview.source_revision);
  assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND correction_reason='TEST correct persisted board';`),'1');
  const after=fingerprint();response=await invoke(commit);assert.equal(response.status,409);assert.equal((await response.json()).code,'stale_correction_preview');assert.equal(fingerprint(),after);
+ const receiptIntent={mode:'receipt',tournament_id:fixture.tour,hand_id:hand,idempotency_key:commit.idempotency_key,expected_actor_id:fixture.actor,
+  expected_source_revision:preview.source_revision,expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash,expected_request_hash:preview.request_hash};
+ response=await invoke(receiptIntent);const found=await response.json();assert.equal(response.status,200,JSON.stringify(found));assert.equal(found.status,'receipt_found');
+ assert.equal(found.receipt.ok,true);assert.equal(found.receipt.outcome_hash,preview.outcome_hash);assert.equal(fingerprint(),after);
+ assert.deepEqual(Object.keys(found.receipt).sort(),['idempotent','ok','outcome_hash','settlement_revision']);
+ for(const patch of [{expected_request_hash:'f'.repeat(64)},{expected_outcome_hash:'e'.repeat(64)},
+  {expected_source_revision:preview.source_revision+1},{expected_source_chain_hash:'d'.repeat(64)},
+  {hand_id:crypto.randomUUID()}]){
+  response=await invoke({...receiptIntent,...patch});assert.equal(response.status,409);assert.equal((await response.json()).code,'idempotency_mismatch');assert.equal(fingerprint(),after);
+ }
+ response=await invoke({...receiptIntent,idempotency_key:'native-uncommitted-'+hand});const absent=await response.json();assert.equal(response.status,200);assert.equal(absent.status,'receipt_not_found');assert.equal(absent.receipt,null);
+ const readsBefore=serviceReads;actor=crypto.randomUUID();response=await invoke(receiptIntent);assert.equal(response.status,409);assert.equal((await response.json()).code,'actor_context_changed');assert.equal(serviceReads,readsBefore);
+ response=await invoke({...receiptIntent,expected_actor_id:actor});assert.equal(response.status,403);assert.equal((await response.json()).code,'actor_not_authorized');assert.equal(serviceReads,readsBefore);
+ actor=fixture.actor;
+ sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE tournament_id='${fixture.tour}' AND user_id='${fixture.actor}';`);
+ response=await invoke(receiptIntent);assert.equal(response.status,200);assert.equal((await response.json()).status,'receipt_found');assert.equal(fingerprint(),after);
  console.log('ACTUAL_PAID_CORRECTION_EDGE_SCOPE_PREVIEW_COMMIT_STALE_RETRY_PASS');
 }

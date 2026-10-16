@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Read-only correction receipt recovery endpoint qualified locally; UI not yet wired
+
+Baselinee158c4dd9 clean/previousPROGRESS. Existing correction commit replay recomputes current state and rejects old preview, so cannot recover unknown commit. Added mode=receipt to actual correction Edge using existing immutable outcomes (no migration): preview exposes original request_hash without changing its canonical hash algorithm; receipt requires actor/tour/hand/key/source revision+hash/outcome+request hash. Re-authorizes owner/admin via existing authorize_tournament_live_resettle (not latest-hand mutation UAT capability), reads exact tournament+key, compares actor/hand, chain verification scope, correction marker, original pre-edit fingerprint from public_outcome and persisted request_hash. Returns only receipt metadata; does NOT assert past proof still current. Null read errors fail503, malformed result502, mismatched fingerprint409, absent receipt explicitnotfound. No source mutation/new key/recompute in receipt mode.
+
+9442c4 RED missing receipt mode400;5fa9e6 initialgreen;437a19 final realEdge+SQL PASS: committed receipt found after revisionchange; wrong request/outcome/source/hash/hand conflict without delta; absentkeynotfound; changedactor409/outsider403 before service reads; disabled correction UAT still allows authorized past receipt read (no new mutation). Initialdde037 harness bool SQL serialization fixed to to_jsonb, NOT auth bug. Deno4b060bPASS, contractf93e222/2. PGstopped/nohandles; no hostedAuth/HTTP/browser/durableUI proof, no push/release/DBflagsAutoDaybreak. G6/masterACTIVE/local-only. Next wire durable correction intent and strict success receipt validation; current HandHistoryWorkspace still memory-only and permissive success, so feature NOT complete.
+
 ## Correction Auth outages misclassified as permission failures: reproduced and fixed locally
 
 Baselinefc0264c2b clean/previousPROGRESS. Receipt audit: HandHistoryWorkspace holds key in resettleView only; error leaves view/key, but new preview generates new key, no durable correction receipt lookup found. Atomic success check also accepts missing/invalid receipt unless error or ok===false; these are unresolved UI/recovery findings, not fixed by stale-retry proof. No UI change this turn.

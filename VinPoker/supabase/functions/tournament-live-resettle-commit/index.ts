@@ -26,6 +26,8 @@ type Body = {
   expected_source_revision?: unknown;
   expected_source_chain_hash?: unknown;
   expected_outcome_hash?: unknown;
+  expected_request_hash?: unknown;
+  expected_actor_id?: unknown;
 };
 
 type RecordValue = Record<string, unknown>;
@@ -174,10 +176,16 @@ Deno.serve(async (req) => {
     const correctionReason = text(body.correction_reason);
     const edit = parseEdit(body.edit);
     const expectedEndingStacks = parseExpectedTargetEndingStacks(body.expected_target_ending_stacks);
-    if ((mode !== "preview" && mode !== "commit") || !tournamentId || !handId
-      || (mode === "commit" && idempotencyKey.length < 12)
-      || correctionReason.length < 8 || correctionReason.length > 500 || !edit || !expectedEndingStacks) {
+    if ((mode !== "preview" && mode !== "commit" && mode !== "receipt") || !tournamentId || !handId
+      || ((mode === "commit" || mode === "receipt") && (idempotencyKey.length < 12 || idempotencyKey.length > 255))
+      || (mode !== "receipt" && (correctionReason.length < 8 || correctionReason.length > 500 || !edit || !expectedEndingStacks))) {
       return publicFailure(req, "invalid_hand_correction_intent", 400);
+    }
+    if (mode === "receipt" && (!text(body.expected_actor_id)
+      || !Number.isSafeInteger(body.expected_source_revision) || Number(body.expected_source_revision) < 1
+      || ![body.expected_source_chain_hash, body.expected_outcome_hash, body.expected_request_hash]
+        .every(value => /^[0-9a-f]{64}$/.test(text(value))))) {
+      return publicFailure(req, "invalid_receipt_intent", 400);
     }
 
     const url = Deno.env.get("SUPABASE_URL");
@@ -195,6 +203,38 @@ Deno.serve(async (req) => {
     }
     const authData = authentication.data;
     if (!authData?.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
+    if (mode === "receipt") {
+      if (body.expected_actor_id !== authData.user.id) return publicFailure(req, "actor_context_changed", 409);
+      try {
+        const { data, error } = await user.rpc("authorize_tournament_live_resettle", { p_tournament_id: tournamentId });
+        if (error || typeof data !== "boolean") return publicFailure(req, "authorization_unavailable", 503);
+        if (!data) return publicFailure(req, "actor_not_authorized", 403);
+      } catch { return publicFailure(req, "authorization_unavailable", 503); }
+      // A past receipt may outlive the latest-hand UAT scope. This read grants no
+      // correction capability and does not claim that its proof is still current.
+      const service = createClient(url, serviceKey);
+      try {
+        const { data, error } = await service.from("tournament_settlement_outcomes")
+          .select("hand_id,actor_user_id,request_hash,outcome_hash,public_outcome,settlement_revision,correction_reason,verification_scope")
+          .eq("tournament_id", tournamentId).eq("idempotency_key", idempotencyKey).limit(2);
+        if (error) return publicFailure(req, "receipt_read_unavailable", 503);
+        if (!Array.isArray(data) || data.length > 1) return publicFailure(req, "correction_receipt_unconfirmed", 502);
+        const row = data[0];
+        if (row) {
+          const proof = isRecord(row.public_outcome) ? row.public_outcome : null;
+          if (row.hand_id !== handId || row.actor_user_id !== authData.user.id
+            || row.request_hash !== body.expected_request_hash || row.outcome_hash !== body.expected_outcome_hash
+            || proof?.sourceRevision !== body.expected_source_revision || proof?.sourceChainHash !== body.expected_source_chain_hash
+            || !row.correction_reason || row.verification_scope !== "chain") return publicFailure(req, "idempotency_mismatch", 409);
+          if (!Number.isSafeInteger(row.settlement_revision) || row.settlement_revision < 1) return publicFailure(req, "correction_receipt_unconfirmed", 502);
+        }
+        return jsonResp(req, { ok: true, status: row ? "receipt_found" : "receipt_not_found",
+          actor_id: authData.user.id, tournament_id: tournamentId, hand_id: handId, idempotency_key: idempotencyKey,
+          source_revision: body.expected_source_revision, source_chain_hash: body.expected_source_chain_hash,
+          outcome_hash: body.expected_outcome_hash, request_hash: body.expected_request_hash,
+          receipt: row ? { ok: true, idempotent: true, settlement_revision: row.settlement_revision, outcome_hash: row.outcome_hash } : null });
+      } catch { return publicFailure(req, "receipt_read_unavailable", 503); }
+    }
     let authorizationReceipt: RecordValue | null;
     try {
       const { data, error } = await user.rpc("authorize_tracker_completed_hand_correction_uat_v1", {
@@ -210,6 +250,7 @@ Deno.serve(async (req) => {
       return publicFailure(req, text(authorizationReceipt?.error) || "actor_not_authorized", 403);
     }
 
+    if (!edit || !expectedEndingStacks) return publicFailure(req, "invalid_hand_correction_intent", 400);
     const service = createClient(url, serviceKey);
     const { data: hands, error: handError } = await service.from("tournament_hands")
       .select("id,tournament_id,hand_number,table_id,button_seat,community_cards,pot_size,side_pots,status,is_voided,updated_at,created_at,source_revision")
@@ -256,6 +297,11 @@ Deno.serve(async (req) => {
         }));
       assertExpectedTargetEndingStacks({ expected: expectedEndingStacks, targetPlayers, outcome: result.privateOutcome });
 
+      const requestHash = await sha256Hex(canonicalJsonV1({
+        contract: "tracker-hand-correction-commit-v1", tournamentId, handId, actorUserId: authData.user.id,
+        sourceRevision: result.privateOutcome.sourceRevision, sourceChainHash: result.privateOutcome.sourceChainHash,
+        outcomeHash: result.privateOutcome.outcomeHash, correctionReason, expectedEndingStacks, edit: result.persistedEdit,
+      }));
       const preview = {
         ok: true,
         status: "preview",
@@ -265,6 +311,7 @@ Deno.serve(async (req) => {
         source_revision: result.privateOutcome.sourceRevision,
         source_chain_hash: result.privateOutcome.sourceChainHash,
         outcome_hash: result.privateOutcome.outcomeHash,
+        request_hash: requestHash,
         public_outcome: result.publicOutcome,
         target_ending_stacks: redactedTargetEndingStacks({ targetPlayers, outcome: result.privateOutcome }),
       };
@@ -275,18 +322,6 @@ Deno.serve(async (req) => {
         return publicFailure(req, "stale_correction_preview");
       }
 
-      const requestHash = await sha256Hex(canonicalJsonV1({
-        contract: "tracker-hand-correction-commit-v1",
-        tournamentId,
-        handId,
-        actorUserId: authData.user.id,
-        sourceRevision: result.privateOutcome.sourceRevision,
-        sourceChainHash: result.privateOutcome.sourceChainHash,
-        outcomeHash: result.privateOutcome.outcomeHash,
-        correctionReason,
-        expectedEndingStacks,
-        edit: result.persistedEdit,
-      }));
       const { data: receipt, error: commitError } = await service.rpc("commit_tracker_hand_correction_outcome", {
         p_hand_id: handId,
         p_actor_user_id: authData.user.id,
