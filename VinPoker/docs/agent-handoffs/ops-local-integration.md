@@ -1,5 +1,13 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## G3 emergency replan read/cancel failure boundaries
+
+Baselineaf8543256 clean. Extended actual replanSingleTable source tests: schedule error/null ignored and could clear legacy intent; assignment read error misreported assignment_no_longer_active; cancel transport/noop ignored and clear continued. Initial test adapter update returnedundefined causing testTypeError; fixed chain+explicit boundary afterclear, then confirmed RED5 on actual inspected control flow. No native/live mutation claim from this mock reproduction.
+
+Fix: schedule error/nonarray throws rotation_schedule_snapshot_unavailable before mutation; assignmentError throws explicit rotation_assignment_snapshot_unavailable while successful null remains inactive; each cancellation must acknowledge cancelled with exactslot ID before any legacyclear/newpick. Errors produce existing relocked:false/error detail; no fallback to authority. Positiveinactive noRPC/no clear; verifiedcancel proceeds through clear to deliberately stopped supply boundary.38 actualsource testsPASS/focusedDenoPassRcheckPASS/diffPASS. No fulltype/build/native/fullplanner40 proof. Legacyclear multi-request acknowledgement/CAS/atomicity, adoption write path and final emergency announce errors remain for review; not claiming allplannerfixed.
+
+No runninghandles/nativePGnotstarted. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next native cancel contract and multi-write legacycleanup/adoption safe-boundary evidence, or full planner bridge; campaign G8/G9 remain unmet.
+
 ## G3 PassR reconciliation read/cancel acknowledgement guards
 
 Baseline5cf15e36e clean. Actual reconcileAndAdopt extraction RED2: dealer_attendance read outage/null converted empty map, cancelled announced slot and cleared snapshot. Added error/Array.isArray guard before any reconciliation mutation. Positive verified dealerpre_assigned preserves lock; successful empty dealer rows still cancel stale schedule.

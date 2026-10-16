@@ -788,15 +788,16 @@ export async function replanSingleTable(
 ): Promise<{ relocked: boolean; detail: string }> {
   try {
     // 1. Cancel any live slot-0 row for this assignment (clears the dead lock).
-    const { data: liveSlots } = await admin
+    const { data: liveSlots, error: liveSlotsError } = await admin
       .from("dealer_rotation_schedule")
       .select("id, status")
       .eq("assignment_id", assignmentId)
       .eq("club_id", ctx.clubId)
       .in("status", ["predicted", "announced", "executing"]);
+    if (liveSlotsError || !Array.isArray(liveSlots)) throw new Error("rotation_schedule_snapshot_unavailable");
 
     // Defensive: clear legacy pre-assign fields even without a schedule row.
-    const { data: a } = await admin
+    const { data: a, error: assignmentError } = await admin
       .from("dealer_assignments")
       .select(`
         id, table_id, table_session_id, attendance_id, assigned_at, swing_due_at, version,
@@ -807,13 +808,17 @@ export async function replanSingleTable(
       .eq("id", assignmentId)
       .eq("club_id", ctx.clubId)
       .maybeSingle();
+    if (assignmentError) throw new Error("rotation_assignment_snapshot_unavailable");
     if (!a || a.status !== "assigned" || a.released_at || a.swing_processed_at) {
       return { relocked: false, detail: "assignment_no_longer_active" };
     }
     const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, [a]);
     if (rejectedTables.size) return { relocked: false, detail: `error: ${rejectedTables.get(a.table_id)}` };
-    for (const slot of liveSlots ?? []) {
-      await admin.rpc("cancel_rotation_slot", { p_schedule_id: slot.id, p_reason: cancelReason });
+    for (const slot of liveSlots) {
+      const { data: cancelled, error: cancelError } = await admin.rpc("cancel_rotation_slot", { p_schedule_id: slot.id, p_reason: cancelReason });
+      if (cancelError || cancelled?.outcome !== "cancelled" || cancelled?.schedule_id !== slot.id) {
+        throw new Error("rotation_cancel_unverified");
+      }
     }
     if (a.pre_assigned_attendance_id) {
       await admin

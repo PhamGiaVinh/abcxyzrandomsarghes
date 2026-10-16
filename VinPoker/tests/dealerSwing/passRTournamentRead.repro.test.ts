@@ -190,6 +190,24 @@ it('actual emergency replanner validates before canceling slots or clearing prea
   expect(mutation).not.toHaveBeenCalled();
  }
 });
+it.each(['schedule-error','schedule-null','assignment-error','cancel-error','cancel-noop','inactive','verified'] as const)('emergency replan handles snapshot/cancel state %s',async(mode)=>{
+ const entryStart=source.indexOf('export async function replanSingleTable(');
+ const entry=ts.transpileModule(source.slice(entryStart).replace('export async function','async function'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+ const replan=new Function('fetchTournamentInfo','isCandidateSnapshotFailure','buildRotationSupply',`${entry};return replanSingleTable;`)(async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),()=>false,async()=>{throw new Error('test_boundary_after_clear');});
+ const update=vi.fn();
+ const rpc=vi.fn(async()=>mode==='cancel-error'?{data:null,error:{message:'synthetic outage'}}:{data:mode==='verified'?{outcome:'cancelled',schedule_id:'slot-a'}:{outcome:'noop'},error:null});
+ const admin={rpc,from:vi.fn(()=>{
+  const q={select:vi.fn(),eq:vi.fn(),update,
+   in:vi.fn(async()=>({data:mode.startsWith('schedule-')?null:[{id:'slot-a',status:'announced'}],error:mode==='schedule-error'?{message:'synthetic outage'}:null})),
+   maybeSingle:vi.fn(async()=>({data:mode==='assignment-error'||mode==='inactive'?null:{...assignment,id:'assignment-a',status:'assigned',released_at:null,swing_processed_at:null,pre_assigned_attendance_id:'incoming-a'},error:mode==='assignment-error'?{message:'synthetic outage'}:null})),
+  };q.select.mockReturnValue(q);q.eq.mockReturnValue(q);update.mockReturnValue(q);return q;
+ })};
+ const result=await replan(admin,{clubId:'club-a'},'assignment-a',new Set(),'test');
+ const expected=mode.startsWith('schedule-')?'rotation_schedule_snapshot_unavailable':mode==='assignment-error'?'rotation_assignment_snapshot_unavailable':mode==='verified'?'test_boundary_after_clear':'rotation_cancel_unverified';
+ expect(result).toEqual({relocked:false,detail:mode==='inactive'?'assignment_no_longer_active':`error: ${expected}`});
+ expect(update).toHaveBeenCalledTimes(mode==='verified'?1:0);
+ expect(rpc).toHaveBeenCalledTimes(mode.startsWith('cancel-')||mode==='verified'?1:0);
+});
 it('isolates a legacy row and still admits the valid table to reconciliation',async()=>{
  const entryStart=source.indexOf('export async function passRRotationPlanner(');
  const entryEnd=source.indexOf('// ─── replanSingleTable',entryStart);
