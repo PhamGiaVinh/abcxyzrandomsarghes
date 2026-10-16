@@ -131,7 +131,8 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('actual local authentica
  INSERT INTO native_voice_payloads SELECT 'hand_proof',jsonb_build_object('hand_id',h.id,'state_version',public._tracker_voice_hand_state_version(h.id),
  'players',(SELECT count(*) FROM public.hand_players p WHERE p.hand_id=h.id),'starting_stack',(SELECT sum(starting_stack) FROM public.hand_players p WHERE p.hand_id=h.id))
  FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';
- DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;k text:='native-voice-'||gen_random_uuid()::text;BEGIN
+ DO $$ DECLARE h record;p record;state text;command jsonb;receipt jsonb;replay jsonb;r jsonb;action_state jsonb;assignment_denial jsonb;
+ k text:='native-voice-'||gen_random_uuid()::text;BEGIN
  SELECT * INTO STRICT h FROM public.tournament_hands WHERE tournament_id='${f.tour}' AND status='in_progress';
  SELECT * INTO STRICT p FROM public.hand_players WHERE hand_id=h.id ORDER BY seat_number LIMIT 1;
  state:=public._tracker_voice_hand_state_version(h.id);
@@ -140,6 +141,26 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('actual local authentica
  PERFORM set_config('request.jwt.claim.role','service_role',true);PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
  receipt:=public._tracker_voice_register_validated_event('${f.actor}','${f.tour}','${table.id}',h.id,'openai_realtime','gpt-live-transcribe',k,NULL,'check',command,state,'assist',k,'native-voice-trace','enforce',true,NULL);
  IF receipt->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_voice_event_registration_failed: %',receipt;END IF;
+ PERFORM set_config('role','none',true);
+ SELECT jsonb_build_object('hand',to_jsonb(row),'actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a WHERE a.hand_id=h.id),
+ 'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tracker_voice_events e WHERE e.hand_id=h.id)) INTO action_state FROM public.tournament_hands row WHERE id=h.id;
+ -- Controlled assignment-revocation fixture, not a replacement/acquisition:
+ -- Auto stays OFF and its acquisition guard must not be bypassed.
+ -- Roll back this subcase before the positive write; not a Swing/rest test.
+ BEGIN
+ UPDATE public.dealer_assignments SET status='completed',released_at=now() WHERE table_session_id=h.table_session_id AND status='assigned' AND released_at IS NULL;
+ PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
+ r:=public.get_tracker_voice_runtime_context('${f.tour}','${table.id}');
+ IF r->>'error' IS DISTINCT FROM 'dealer_assignment_missing' THEN RAISE EXCEPTION 'native_voice_revocation_runtime_not_denied: %',r;END IF;
+ assignment_denial:=public.record_action(h.id,p.player_id,'check',1,p.entry_number,'preflop',0,k,'native-after-revocation','${f.actor}');
+ IF assignment_denial->>'error' IS DISTINCT FROM 'dealer_assignment_lost' THEN RAISE EXCEPTION 'native_voice_old_assignment_receipt_accepted: %',assignment_denial;END IF;
+ PERFORM set_config('role','none',true);
+ IF action_state IS DISTINCT FROM (SELECT jsonb_build_object('hand',to_jsonb(row),'actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a WHERE a.hand_id=h.id),
+ 'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tracker_voice_events e WHERE e.hand_id=h.id)) FROM public.tournament_hands row WHERE id=h.id) THEN RAISE EXCEPTION 'native_voice_revocation_denial_changed_source';END IF;
+ RAISE SQLSTATE 'PZ001' USING MESSAGE='native_voice_revocation_case_rollback';
+ EXCEPTION WHEN SQLSTATE 'PZ001' THEN NULL;
+ END;
  PERFORM set_config('role','none',true);PERFORM set_config('request.jwt.claim.sub','${f.actor}',true);
  PERFORM set_config('request.jwt.claim.role','authenticated',true);PERFORM set_config('request.jwt.claims','{"role":"authenticated","sub":"${f.actor}"}',true);PERFORM set_config('role','authenticated',true);
  r:=public.record_action(h.id,p.player_id,'check',1,p.entry_number,'preflop',0,k,'native-voice-trace','${f.actor}');
@@ -161,7 +182,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('actual local authentica
  PERFORM set_config('role','none',true);
  IF (SELECT count(*) FROM public.hand_actions WHERE hand_id=h.id)<>1 OR (SELECT count(*) FROM public.tracker_voice_events WHERE hand_id=h.id AND event_kind='final_transcript')<>1 THEN RAISE EXCEPTION 'native_voice_duplicate_or_stale_delta';END IF;
  IF public._tracker_voice_hand_state_version(h.id)=state OR (SELECT source_revision FROM public.tournament_hands WHERE id=h.id)<=h.source_revision THEN RAISE EXCEPTION 'native_voice_action_revision_not_invalidated';END IF;
- INSERT INTO native_voice_payloads VALUES('voice_action',jsonb_build_object('receipt',receipt,'action',r,'stale',replay));
+ INSERT INTO native_voice_payloads VALUES('voice_action',jsonb_build_object('receipt',receipt,'action',r,'stale',replay,'assignment_denial',assignment_denial));
  END $$;
  SELECT jsonb_object_agg(k,v) FROM native_voice_payloads;
  ROLLBACK;`));
@@ -178,6 +199,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('actual local authentica
  assert.equal(payload.hand_proof.players,2);assert.equal(payload.hand_proof.starting_stack,40000);
  assert.equal(payload.voice_action.receipt.ok,true);assert.equal(payload.voice_action.action.source,'voice');
  assert.equal(payload.voice_action.stale.error,'stale_state_version');
+ assert.equal(payload.voice_action.assignment_denial.error,'dealer_assignment_lost');
  assert.equal(payload.outsider.ok,false);assert.equal(payload.outsider.error,'dealer_assignment_missing');
  await assert.rejects(loader(payload.outsider,null,f.tour,table.id).read(),/dealer_assignment_missing/);
  assert.equal(fingerprint(),before);

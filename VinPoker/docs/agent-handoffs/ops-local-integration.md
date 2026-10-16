@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Validated Voice receipt after assignment revocation — local PASS
+
+Baseline6f763df84 clean/previousPROGRESS. Existing native paid Assist journey now revokes sole exactsession assignment in a rollback subtransaction AFTER service validates immutable event but BEFORE authenticated canonical action. Runtime returns dealer_assignment_missing; record_action rejects dealer_assignment_lost. Full hand/action/event snapshot unchanged by denial; rollback restores original assignment so original positive action/replay/conflict/stale tests still execute. Outer lifecycle/money/audit fingerprint unchanged.
+
+Initialfd6e95 attempted new Dealer acquisition in replacement fixture and correctly hit AUTO_SWING_OFF. Did NOT change guard/role/Auto to evade; changed subcase to explicit revocation only, preserving full replacement via canonicalSwing as outstanding. No claim of fullhandoff/rest test or productbugfix. Final8a517d exit0/13PASS2.359s/PGstopped/nohandles; subsequent string-only diagnostic renames do not change SQL oracle. Trusted normalized fixture/directSQL, not Edgeparser/provider/mic/HTTP/COMMITproof. Existing CI consumes test/notdispatched; localhold/DaybreakOFF/Auto/production unchanged. MasterACTIVE/fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release outstanding.
+
 ## Actual local Voice Assist event → canonical action/retry/stale fence PASS
 
 Baselinee760068bf clean/previousPROGRESS. Same paid-activehand native transaction now calls actual service-only event registration with explicit trusted normalized check fixture, then authenticated owner record_action matching immutable event. Canonical source=voice, exactly1action/1finalevent, real revision/hash advance. Replay duplicate=true; changedamount samekey idempotency_key_conflict; suppliedactor mismatch actor_mismatch; exact hand/action snapshot unchanged by replay/denials. New event using priorhash rejects stale_state_version, no extra finalevent/action. Existing Owner/FloorTelegram runtime and outsider denials retained; outerrollback fingerprint includes actions/voiceevents and original scoped money/identity/lifecycle rows.
