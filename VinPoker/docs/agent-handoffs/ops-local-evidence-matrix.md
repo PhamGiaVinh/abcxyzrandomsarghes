@@ -1,7 +1,7 @@
 # G0–G9 evidence map — local-only, 16 October 2026
 
 This is an execution handoff, NOT acceptance of the site. Baseline source
-`4f6ef96cf`, plus the same-hand History worker/publication extension in this package. Fresh fetch confirms
+`f58124289`, plus the history-enabled eight-player and legacy-finalizer overlap extension. Latest fetch confirms
 origin/main `ed3db6ac600710e95fe4408c475941916c23ab19`. Goal API ACTIVE.
 No live catalog, deployment or feature flag is inferred from these local tests.
 Owner's local-only/resource hold remains: no push/CI dispatch/production apply,
@@ -9,15 +9,15 @@ Edge/frontend release, Auto/Daybreak activation, Docker/heavy build/full typeche
 
 | Goal | Local evidence available | Required evidence still missing / next action |
 |---|---|---|
-| G0 | Owned clean branch/checkpoints; native schema through121; fresh main fetch | Full current live migration/function/Edge/deployment/flag manifest not refreshed under release hold. Never substitute old ledger or local schema. |
+| G0 | Owned branch/checkpoints; native schema through123; latest main fetch | Full current live migration/function/Edge/deployment/flag manifest not refreshed under release hold. Never substitute old ledger or local schema. |
 | G1 | CI definitions and ordered local migration rehearsals prepared | Required remote checks/quota/recovery/approved exact release manifest and execution. No review gate bypass. |
 | G2 | Native payroll82/83, profiles84, actor85, tenant86; Cashier paid/re-entry/recovery; Finance read fixes | Served UI, hosted Auth/Data API, live ACL/overloads and actor/club-switch UAT. |
 | G3 | Earlier actual main source/PG ramps2/10/40, shortage/overlap/fault/response-loss; check-in/manual Swing/Voice coupling | Hosted dispatcher/Edge/cron receipts; three real rest15 rotations; tournament canary and desktop/375 evidence. Existing 40-local proof is NOT a new missing test to rerun blindly. |
 | G4 | Atomic create/config88/91, clock89, receipts/true CAS and lifecycle overlaps | Exact deployed revision and real two-table creation/config journey in browser. |
-| G5 | Local mode/pending/move/close, restore/re-entry safety; paid chip COMMIT/replay/chain undo couplingON/OFF | Same-tour eight-player journey through all operations, real browser375, hosted contracts and current legacy-data disposition. |
-| G6 | Paid correction/history real worker/proof; TV event isolation/Storage metadata; Voice Board/hole/Finish SQL+engine/client boundaries, stale UI/provider generations; Finish recovery121 | Actual mic/provider/HTTP/Auth/CORS, real Storage bytes/retention, hosted worker schedules, anonymous browser multi-flight/reconnect, showdown Finish compatibility and required full checks. |
+| G5 | Same8paid tour mode/hand/correction/bust-restore/chip-undo/break/reopen/close; restore history fix122; separate re-entry/concurrency/couplingON/OFF proofs | Same-tour deferred active-hand break, re-entry variants, real browser375, hosted contracts and current legacy-data disposition. |
+| G6 | Actual fold/showdown Finish→workers→anonymous current proofs; official close123/readiness/immutable ranks; two-actor close+legacy-finalizer both barrier orders; TV event isolation/Storage metadata; Voice/client generation/recovery121 | Actual mic/provider/HTTP/Auth/CORS, real Storage bytes/retention, hosted schedules, anonymous browser multi-flight/reconnect, mid-statement lock interleavings/tie policy and required full checks. |
 | G7 | Earlier source triage records GTO retirement, queue meanings and schedule provenance disclosure | Verify F1–F9 on served revision; financial/security claims need live proof, performance belongsG9. Do not rewrite retired GTO or invent schedule approval. |
-| G8 | New durable local two-table/eight-paid/four-check-in roster checkpoint; other paid two-player integrated journeys | A SINGLE full TEST tour: chip setup→paid registrations→dealer assignment/three rotations→hand/correction→bust/restore→colorup/undo→break/close/end→all projections. Desktop+375 UI/RPC/DB receipts. Partial fixtures cannot close it. |
+| G8 | Same durable2table/8paid/4dealer native journey through closed tour, both workers/public history/anonTV; historyON8member links and complete unique1–8 ranks | Hosted desktop+375 same-tour receipts; setup-first UI order (native metadata setup follows registration), Auto assignment/three real rotations, deferred break/re-entry variants and simultaneous-elimination policy. Mechanical local success cannot close master goal. |
 | G9 | Focused lightweight checks and per-test timings, not app latency | 20 samples×Floor/Tracker/Swing/Cashier/Chip, cold/warm/RPC raw data+p95; full required typechecks/build/CI, exact production SHA and smoke/UAT. |
 
 ## New shared roster checkpoint (actual durable local commit)

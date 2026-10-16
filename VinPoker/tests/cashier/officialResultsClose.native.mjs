@@ -11,13 +11,16 @@ const f=createPaidJourneyFixture(sql),survivor=crypto.randomUUID();
 const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
 const call=q=>JSON.parse(sql(`BEGIN;${auth}${q}COMMIT;`));
 const missing=process.argv.includes('--missing-evidence'),existing=process.argv.includes('--existing-places'),partial=process.argv.includes('--partial-places'),fault=process.argv.includes('--close-fault'),overlap=process.argv.includes('--overlap');
-assert.ok([missing,existing,partial,fault,overlap].filter(Boolean).length<=1);
-function tx(name,hold,actor=f.actor){const p=spawn(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1']);let out='',error='';
+const finalizerFirst=process.argv.includes('--finalizer-first'),closeFirst=process.argv.includes('--close-first');
+assert.ok([missing,existing,partial,fault,overlap,finalizerFirst,closeFirst].filter(Boolean).length<=1);
+function tx(name,hold,actor=f.actor,operation='close'){assert.ok(['close','finalize'].includes(operation));const p=spawn(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1']);let out='',error='';
  const result=new Promise(resolve=>{p.stdout.on('data',c=>out+=c);p.stderr.on('data',c=>error+=c);p.on('close',code=>resolve({code,out,error}));p.on('error',e=>resolve({code:-1,out,error:String(e)}));});
  const end=command=>{if(!p.stdin.writableEnded)p.stdin.end(command+';\n');};
  p.stdin.write(`SET application_name='${name}';BEGIN;SET LOCAL statement_timeout='10s';SET LOCAL idle_in_transaction_session_timeout='15s';
  SET LOCAL request.jwt.claim.sub='${actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${actor}"}';SET LOCAL ROLE authenticated;
- SELECT public.close_tournament('${f.tour}','TEST official close overlap');\n`);
+ ${operation==='close'?`SELECT public.close_tournament('${f.tour}','TEST official close overlap');`:`SELECT public.finalize_tournament_results('${f.tour}');`}
+ -- Admin readback is an oracle only, AFTER the authenticated writer returned.
+ RESET ROLE;SELECT 'ENTRY_PROOF:'||md5(jsonb_agg(to_jsonb(e) ORDER BY id)::text) FROM public.tournament_entries e WHERE tournament_id='${f.tour}';\n`);
  if(!hold)end('COMMIT');return {result,end};}
 async function barrier(name,condition){for(let n=0;n<100;n++){if(sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='${name}' AND ${condition});`)==='t')return;await new Promise(resolve=>setTimeout(resolve,25));}assert.fail('official close overlap barrier absent '+name);}
 sql(`BEGIN;INSERT INTO auth.users(id) VALUES('${survivor}');DO $$ DECLARE r jsonb;reg uuid;BEGIN
@@ -70,7 +73,17 @@ try{
   console.log('NATIVE_OFFICIAL_CLOSE_'+(missing?'MISSING_EVIDENCE':partial?'PARTIAL_RESULT':'AFTER_FINALIZATION_FAULT')+'_ZERO_DELTA_PASS');
  }else{
  let close;
- if(overlap){const suffix=crypto.randomUUID().slice(0,8),hname='official_h_'+suffix,wname='official_w_'+suffix,cashier=crypto.randomUUID();let h,w;
+ if(finalizerFirst||closeFirst){const suffix=crypto.randomUUID().slice(0,8),hname='result_h_'+suffix,wname='result_w_'+suffix,cashier=crypto.randomUUID();let h,w;
+  sql(`BEGIN;INSERT INTO auth.users(id) VALUES('${cashier}');INSERT INTO public.club_cashiers(club_id,user_id) VALUES('${f.club}','${cashier}');COMMIT;`);
+  try{h=tx(hname,true,f.actor,finalizerFirst?'finalize':'close');await barrier(hname,"wait_event='ClientRead' AND xact_start IS NOT NULL");
+   w=tx(wname,false,cashier,finalizerFirst?'close':'finalize');await barrier(wname,"wait_event_type='Lock'");
+   h.end('COMMIT');const holder=await h.result,waiter=await w.result;assert.equal(holder.code,0,holder.error);assert.equal(waiter.code,0,waiter.error);
+   const hResult=JSON.parse(holder.out.split('\n').find(s=>s.startsWith('{'))),wResult=JSON.parse(waiter.out.split('\n').find(s=>s.startsWith('{')));
+   close=finalizerFirst?wResult:hResult;const finalized=finalizerFirst?hResult:wResult;assert.equal(finalized.ok,true);assert.equal(finalized.survivors,1);
+   const heldProof=holder.out.split('\n').find(s=>s.startsWith('ENTRY_PROOF:'))?.slice('ENTRY_PROOF:'.length);assert.match(heldProof??'',/^[0-9a-f]{32}$/);
+   assert.equal(sql(`SELECT md5(jsonb_agg(to_jsonb(e) ORDER BY id)::text) FROM public.tournament_entries e WHERE tournament_id='${f.tour}';`),heldProof,'later writer must preserve complete official entry rows');
+  }finally{h?.end('ROLLBACK');w?.end('ROLLBACK');await Promise.all([h?.result,w?.result]);}
+ }else if(overlap){const suffix=crypto.randomUUID().slice(0,8),hname='official_h_'+suffix,wname='official_w_'+suffix,cashier=crypto.randomUUID();let h,w;
   sql(`BEGIN;INSERT INTO auth.users(id) VALUES('${cashier}');INSERT INTO public.club_cashiers(club_id,user_id) VALUES('${f.club}','${cashier}');COMMIT;`);
   try{h=tx(hname,true);await barrier(hname,"wait_event='ClientRead' AND xact_start IS NOT NULL");w=tx(wname,false,cashier);await barrier(wname,"wait_event_type='Lock'");
    h.end('COMMIT');const holder=await h.result,waiter=await w.result;assert.equal(holder.code,0,holder.error);assert.equal(waiter.code,0,waiter.error);
@@ -85,9 +98,9 @@ try{
  assert.equal(actual[f.player],2,'canonical completed tour must finalize captured loser place');
  assert.equal(actual[survivor],1,'canonical completed tour must finalize survivor place');
  const finalState=protectedState(),replayed=call(`SELECT public.close_tournament('${f.tour}','TEST replay official close');`);assert.equal(replayed.outcome,'already_closed');assert.equal(replayed.report_id,close.report_id);assert.equal(protectedState(),finalState);
- assert.equal(sql(`SELECT detail->'official_results'->>'status' FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),existing?'preserved':'finalized');
+ assert.equal(sql(`SELECT detail->'official_results'->>'status' FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),existing||finalizerFirst?'preserved':'finalized');
  if(existing)assert.equal(entries(),beforeEntries,'existing official results must not be recomputed');
- console.log('NATIVE_PAID_HISTORY_ENABLED_CANONICAL_CLOSE_OFFICIAL_PLACES'+(existing?'_PRESERVED':overlap?'_TRUE_OVERLAP':'')+'_PASS');
+ console.log('NATIVE_PAID_HISTORY_ENABLED_CANONICAL_CLOSE_OFFICIAL_PLACES'+(existing?'_PRESERVED':overlap?'_TRUE_OVERLAP':finalizerFirst?'_LEGACY_FINALIZER_FIRST':closeFirst?'_CLOSE_FIRST':'')+'_PASS');
  }
 }finally{
  if(settings==='')sql(`DELETE FROM public.club_settings WHERE club_id='${f.club}';`);

@@ -2006,3 +2006,46 @@ unrun under resource hold; no claim of frontend release or full UI acceptance.
 No running command. Next legacy-finalizer vs close interleaving and history-
 enabled full-tour/re-entry/tied-elimination evidence, then original hosted40,
 real rotations, provider/Storage/performance/required checks/release gaps.
+# 2026-10-16 — History-enabled eight-paid tour and legacy-finalizer overlap
+
+G5/G6/G8 IN_PROGRESS, baselinef58124289. Native official close harness now runs
+actual public legacy finalizer vs canonical close in BOTH staged transaction
+orders, Owner vs different Cashier. Holder reaches actual ClientRead after its
+function returns; waiter is observed in Lock before holder COMMIT. Both succeed,
+one close report, places1/2, no Cashier/payment change. Holder's in-transaction
+entry fingerprint equals final rows, proving later writer did not rewrite them.
+Readback RESET ROLE happens only AFTER authenticated writer returns (test oracle,
+not authorization bypass). 136e8c/3642→836187 terminal0/PGstopped. Tours
+90bbd0ee-e070-4418-9b46-46c7ebc21bc6 (finalizer first) and
+bae8b5f9-5ec9-46f8-b3f5-b64b70a127d2 (close first). Not a forced mid-statement
+partial-row-lock/deadlock proof; that independent review risk remains.
+
+Existing paid fixture gets optional playerHistoryEnabled boolean, defaultfalse
+unchanged. Explicit native paid-history mode configures ONLY its fresh owned
+club historyON/AutoOFF before FIRST paid entry, synthetic profile metadata with
+no real contact/payment info, then uses actual trigger/member linking/Cashier
+writers. No INSERT of operational entries/seats/payments/member links/ranks.
+All8entries link to8distinct members in sameclub/player, link-errors0.
+Same entire journey passes: two staffed sessions→modes→fold/correction/worker→
+bust/restore(re-entry fence)→chip colorup/undo→break/reopen→actual8player showdown→
+winner leaves seat preserving160000→canonical close123 finalizes unique1–8,
+royal winnerplace1→terminal actualworker/currentproof/anonTVcompleted.
+Own club opt-in metadata retained with fixture/audit, not a global/live flag.
+
+3dd550/31517→9cdd8f terminal0/PGstopped. Retained club
+814961c6-8ddc-42f2-a4d2-d30fa87123fd, tour
+204e5c1d-d857-47a0-9a86-6687b9b37b33, foldhand
+f72ce3c3-1b73-43a0-a62c-44356f62d060, terminalhand
+e05897b1-eff6-4da7-86d9-ecad0b243dfa. Syntax/diff/YAML49d3e9PASS. CI2overlap
+commands +explicit historyON journey prepared only, NOTdispatched. Product SQL/
+Edge/UI unchanged. No rerun of unchanged old historyOFF journey or full checks.
+
+Not master acceptance: synthetic Auth/profile transport, no desktop375/browser,
+manual initial assignment (not Auto), no realrest15rotations, metadata chipsetup
+follows paid registrations (not exact setup-first UI order).1–8 mechanical ranks
+do not validate fairness/tie policy for7same-hand eliminations or re-entry cases.
+Need inspect per-member read projection/role boundaries and retain same-hand
+starting-stack/bust-order/rank evidence, not silently choose/change tie policy.
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; localhold/DaybreakOFF/Auto policy,
+masterACTIVE unchanged; no live commands. Remaining original hosted40/provider/
+Storage/performance/fullchecks/criticalreview/livecatalog/recovery/release gaps.

@@ -8,12 +8,15 @@ for(const [k,v] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'pos
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
 const prefix=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_cash115_qualified_c','psql']:[];
 const sql=input=>execFileSync(prefix.length?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']}).trim();
-const f=createPaidJourneyFixture(sql);
+assert.ok(process.env.VINPOKER_NATIVE_PAID_HISTORY===undefined||process.env.VINPOKER_NATIVE_PAID_HISTORY==='1');
+const historyEnabled=process.env.VINPOKER_NATIVE_PAID_HISTORY==='1';
+const f=createPaidJourneyFixture(sql,{playerHistoryEnabled:historyEnabled});
 const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
 sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
 DO $$ DECLARE player uuid;reg uuid;dealer uuid;shift uuid:=gen_random_uuid();key uuid;r jsonb;first_receipt jsonb;BEGIN
  FOR n IN 2..8 LOOP
   player:=gen_random_uuid();INSERT INTO auth.users(id) VALUES(player);
+  ${historyEnabled?`INSERT INTO public.profiles(user_id,display_name) VALUES(player,'Paid history TEST player '||n) ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name;`:''}
   PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);PERFORM set_config('role','service_role',true);
   r:=public.cashier_create_app_registration_v1('${f.tour}',player);reg:=(r->>'registration_id')::uuid;
   IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'paid_tour_registration: %',r;END IF;
@@ -53,6 +56,10 @@ assert.ok(roster().every(t=>t.players===4));
 assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count)||'|'||count(DISTINCT entry_id) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'8|160000|8');
 assert.equal(sql(`SELECT count(*)||'|'||sum(current_stack) FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND status='seated';`),'8|160000');
 assert.equal(sql(`SELECT count(*) FROM public.cashier_buyin_movements WHERE tournament_id='${f.tour}';`),'8');
+if(historyEnabled){
+ assert.equal(sql(`SELECT count(*)||'|'||count(DISTINCT e.member_id) FROM public.tournament_entries e JOIN public.club_members m ON m.id=e.member_id AND m.club_id='${f.club}' AND m.player_user_id=e.player_id WHERE e.tournament_id='${f.tour}';`),'8|8');
+ assert.equal(sql(`SELECT count(*) FROM public.player_history_link_errors WHERE club_id='${f.club}';`),'0');
+}
 assert.equal(sql(`SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${f.club}' AND a.status='checked_in';`),'4');
 assert.equal(sql(`SELECT count(*) FROM public.club_settings WHERE club_id='${f.club}' AND auto_swing_enabled;`),'0');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_hands WHERE tournament_id='${f.tour}';`),'0');

@@ -167,6 +167,14 @@ export async function runPaidTourShowdown(sql,f,table){
   assert.equal(sql(`SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='${f.tour}';`),'0');
   assert.equal(sql(`SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'1');assert.equal(cash(),cashBefore);
   console.log('NATIVE_EIGHT_PAID_WINNER_STACK_PRESERVED_CANONICAL_TABLE_TOUR_CLOSE_REPLAY_PASS',f.tour);
+  if(process.env.VINPOKER_NATIVE_PAID_HISTORY==='1'){
+   const places=JSON.parse(sql(`SELECT jsonb_agg(finished_place ORDER BY finished_place) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`));
+   assert.deepEqual(places,[1,2,3,4,5,6,7,8]);
+   assert.equal(sql(`SELECT finished_place FROM public.tournament_entries WHERE id='${survivor.id}';`),'1');
+   assert.equal(sql(`SELECT detail->'official_results'->>'status' FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'finalized');
+   assert.equal(sql(`SELECT count(*) FROM public.player_history_link_errors WHERE club_id='${f.club}';`),'0');
+   console.log('NATIVE_EIGHT_PAID_HISTORY_ENABLED_MEMBER_LINKS_AND_OFFICIAL_PLACES_PASS',f.tour);
+  }
   const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{encoding:'utf8',timeout:120000,
    env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(f),VINPOKER_HISTORY_PARENT_SHOWDOWN:'1'}});
   assert.match(worker,/ACTUAL_PAID_TERMINAL_SHOWDOWN_HISTORY_WORKER_PUBLIC_VERIFIED_PASS/);process.stdout.write(worker);assert.equal(cash(),cashBefore);

@@ -18,7 +18,8 @@ export function createPaidCompletedHandFixture(sql,{verified=false}={}){
 }
 // Reuse the canonical initial-registration fixture rather than hand-inserting
 // entries, paid markers, price snapshots or seats. Caller owns local transport.
-export function createPaidJourneyFixture(sql){
+export function createPaidJourneyFixture(sql,{playerHistoryEnabled=false}={}){
+ assert.equal(typeof playerHistoryEnabled,'boolean');
  const database=sql('SELECT current_database();');
  assert.ok(['vinpoker_ops_cash115_qualified_c','vinpoker_ops_reentry115_overlap'].includes(database));
  assert.equal(sql("SELECT host(inet_server_addr())||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000;"),'127.0.0.1|55441|17');
@@ -38,6 +39,8 @@ RETURNS bigint LANGUAGE sql AS 'INSERT INTO net.cash_ui_http_sink(url,body,heade
  const marker=' -- CASH112_CONCURRENCY_FIXTURE_READY';assert.equal(base.split(marker).length,2);
  const setup=` DECLARE physical uuid; paid jsonb; BEGIN
  PERFORM set_config('role','none',true);
+ ${playerHistoryEnabled?`INSERT INTO public.club_settings(club_id,player_history_enabled,auto_swing_enabled) VALUES(club,true,false);
+ INSERT INTO public.profiles(user_id,display_name) VALUES(player_id,'Paid history TEST player 1') ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name;`:''}
  INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
  SELECT gen_random_uuid(),club,'Paid journey TEST '||n,n,'tournament','inactive','available' FROM generate_series(1,2) n;
  IF (SELECT count(*) FROM public.game_tables WHERE club_id=club AND table_name LIKE 'Paid journey TEST %')<>2 THEN
