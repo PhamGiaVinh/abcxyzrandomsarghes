@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Action confirmation UI late-result fence RED→fix
+
+Baselinec3ee2d47f clean/previousPROGRESS. Inspected actual handleVoiceAction→handleAction: existing actionScopeRef/writeToken already fences canonical local action application after transport; no hook rewrite. Panel confirmAssist still published old success/error/readback and cleared newer guard. Source-callback RED33PASS3FAIL; added current render scope + validation/connection generation checks before entry and after awaits/catch, own-promise cleanup. Current-scope single-flight/readback positive preserved; no mutation retry/server authority change.
+
+Final79e6c4 terminal0/36lifecyclePASS105.9ms and scopedPanelESLint0/diffcheckPASS. First patch failed matching (atomic/no file change), corrected unique context; not runtime failure or external writer. UI skills reread/minimal state fix/no redesign. Not fullReact/browser/provider/typebuild proof; SQL/API unchanged and not rerun unnecessarily. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next remaining private-hole/finish client receipt integrity boundaries, then source-qualified release gaps; full acceptance remains open.
+
 ## Private-hole and Finish UI scope fences RED→fix
 
 Baseline87a872832 clean/previousPROGRESS. Actual extracted hole/finish callback tests reproduced stale receipt apply, mutation after cancelled hashing, stale rejection restoring old UI and clearing newer promise/queue; positive same-scope paths retained. Existing Board fixture generalized only to execute additional actual callbacks. Fix binds both paths to current render scope plus validation/connection generations before entry/send/apply/readback/finalstate; hole queue stops processing after invalidation. Finally clears own settled guard only, old failures cannot resurrect prior attempts. No server effects rolled back or retried by client.

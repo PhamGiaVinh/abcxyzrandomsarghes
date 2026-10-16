@@ -6,7 +6,7 @@ import {parseSync,transformSync} from '@swc/core';
 
 // Executes actual panel callback, with modeled state/read seams, not React/Auth/HTTP.
 const source=readFileSync(new URL('../../src/components/tracker/voice/TrackerVoicePanel.tsx',import.meta.url),'utf8');
-const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback,deviceEffect,boardCallback,holeCallback,finishCallback;
+const tree=parseSync(source,{syntax:'typescript',tsx:true});let callback,effect,connectCallback,disconnectCallback,deviceEffect,boardCallback,holeCallback,finishCallback,actionCallback;
 const slice=node=>Buffer.from(source).subarray(node.span.start-tree.span.start,node.span.end-tree.span.start).toString();
 function visit(node){
  if(!node||typeof node!=='object')return;
@@ -16,6 +16,7 @@ function visit(node){
  if(node.type==='VariableDeclarator'&&node.id.value==='confirmBoardAssist')boardCallback=node.init;
  if(node.type==='VariableDeclarator'&&node.id.value==='confirmHoleCardsAssist')holeCallback=node.init;
  if(node.type==='VariableDeclarator'&&node.id.value==='confirmFinishAssist')finishCallback=node.init;
+ if(node.type==='VariableDeclarator'&&node.id.value==='confirmAssist')actionCallback=node.init;
  if(node.type==='CallExpression'&&node.callee.value==='useEffect'){
   const candidate=node.arguments[0]?.expression;
   if(candidate&&slice(candidate).includes('void refreshRuntime();'))effect=candidate;
@@ -247,3 +248,25 @@ for(const kind of ['hole','finish']){
   assert.equal(f.sandbox.privateHoleCardsAttemptsRef.current,queue);assert.equal(f.sandbox.assistCommitRef.current,guard);
  });
 }
+
+function actionFixture(){
+ const f=boardFixture(actionCallback);f.sandbox.validatedProposal={ok:true,canonicalAction:'check'};
+ let calls=0;f.sandbox.hook.handleVoiceAction=()=>{calls++;return f.commit.promise;};
+ return {...f,calls:()=>calls};
+}
+test('current action remains single-flight and verifies canonical readback',async()=>{
+ const f=actionFixture(),first=f.run(),second=f.run();f.commit.resolve(true);await Promise.all([first,second]);
+ assert.equal(f.calls(),1);assert.deepEqual(f.writes.at(-1),['setValidationState','committed']);
+});
+for(const result of ['success','failure'])test(`old action ${result} cannot publish into a replaced hand`,async()=>{
+ const f=actionFixture(),pending=f.run();f.sandbox.runtimeScopeRef.current='next-hand';const writes=f.writes.length;
+ const newer=Promise.resolve(true);f.sandbox.assistCommitRef.current=newer;
+ if(result==='success')f.commit.resolve(true);else f.commit.reject(new Error('late action error'));
+ await pending;assert.equal(f.writes.length,writes);assert.equal(f.sandbox.assistCommitRef.current,newer);
+});
+test('action readback after disconnect cannot clear the current proposal',async()=>{
+ const f=actionFixture(),read=deferred();f.sandbox.refreshRuntime=()=>read.promise;
+ const pending=f.run();f.commit.resolve(true);await new Promise(resolve=>setImmediate(resolve));
+ ++f.sandbox.connectionGenerationRef.current;const writes=f.writes.length;
+ read.resolve({active_hand:{hand_id:'hand',state_version:'after'}});await pending;assert.equal(f.writes.length,writes);
+});

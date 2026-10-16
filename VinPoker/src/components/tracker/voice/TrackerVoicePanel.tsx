@@ -1220,8 +1220,14 @@ export function TrackerVoicePanel({
   );
 
   const confirmAssist = async (): Promise<boolean> => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     if (
-      !hook.tournamentTableId
+      !isCurrent()
+      || !hook.tournamentTableId
       ||
       validationState !== "validated"
       || !validatedReceipt
@@ -1243,12 +1249,14 @@ export function TrackerVoicePanel({
     assistCommitRef.current = commit;
     try {
       const committed = await commit;
+      if (!isCurrent()) return false;
       if (!committed) {
         setValidationState("error");
         setValidationError("Action không được canonical writer xác nhận. Hãy tải lại trạng thái bàn.");
         return false;
       }
       const readBack = await refreshRuntime();
+      if (!isCurrent()) return false;
       if (!readBack || readBack.active_hand?.hand_id !== hook.handId) {
         setValidationState("error");
         setValidationError("Action đã gửi nhưng không đọc lại được trạng thái bàn. Hãy tải lại trước khi tiếp tục.");
@@ -1265,13 +1273,14 @@ export function TrackerVoicePanel({
       setValidationState("committed");
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       setValidationState("error");
       setValidationError(error instanceof Error
         ? error.message
         : "Không thể xác nhận action Voice. Hãy tải lại trạng thái bàn.");
       return false;
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === commit) assistCommitRef.current = null;
     }
   };
 
