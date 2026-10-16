@@ -70,5 +70,22 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   expect(h.success).not.toHaveBeenCalled();expect(h.error).toHaveBeenCalledWith(expect.stringContaining('tv_layout_forbidden'));
   expect(commits).toBe(1);expect(fingerprint()).toBe(after);
   expect(h.rpc.mock.calls.filter(([name])=>name==='get_tv_tournament_branding_v1')).toHaveLength(1);
+  cleanup();h.actor=f.actor;h.error.mockClear();h.success.mockClear();h.rpc.mockClear();
+  render(<TvBrandingEditor tournamentId={f.tour}/>);fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Publish TV layout'})).toBeEnabled());
+  fireEvent.change(screen.getByLabelText('Brand name'),{target:{value:'Stale local draft TEST'}});
+  const canonical=JSON.parse(sql(`SELECT public.get_tv_tournament_branding_v1('${f.tour}');`));
+  // Deterministic second-writer interleaving, not two concurrent browser tabs.
+  const second=await h.rpc('save_tv_tournament_layout_v1',{p_tournament_id:f.tour,p_expected_revision:canonical.revision,
+   p_brand_name:'Other tab TEST publish',p_logo_url:canonical.logo_url??'',p_bg_url:canonical.background_url??'',p_layout:canonical.layout});
+  expect(second.error).toBeNull();expect(second.data.revision).toBe(2);const newer=fingerprint();
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'}));});
+  expect(h.error).toHaveBeenCalledWith('Another operator published a new layout. Reopen the editor before saving.');
+  expect(h.success).not.toHaveBeenCalled();expect(commits).toBe(2);expect(fingerprint()).toBe(newer);
+  expect(screen.getByLabelText('Brand name')).toHaveValue('Stale local draft TEST');
+  expect(JSON.parse(sql(`SELECT jsonb_agg(jsonb_build_array(v.revision,v.brand_name) ORDER BY v.revision) FROM public.tv_tournament_layout_versions v
+   JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.tournament_id='${f.tour}';`))).toEqual([[1,'Native TEST broadcast'],[2,'Other tab TEST publish']]);
+  const currentPublic=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_tv_display_state_v4('${token}',true);`));
+  expect(currentPublic.display.club_brand_name).toBe('Other tab TEST publish');
  });
 });

@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## TV stale editor vs second publisher actual CAS/version integrity PASS
+
+Baselinec11e4eb23 clean/previousPROGRESS. Extended existing native TV case: real owner editor reads revision1 and edits local draft; a second writer invocation commits revision2 through actual authenticated save RPC; stale editor submit receives40001/tv_layout_stale_revision with explicit reopen message. No third commit, exact head/version fingerprint unchanged on denial, local draft retained. Version snapshots remain [[1,Native TEST broadcast],[2,Other tab TEST publish]], and actual anonymous TV still shows revision2 brand. Sequential deterministic stale-snapshot interleaving, NOT two concurrent browsers or row-lock contention proof.
+
+6f588d nativePASS6296ms/suite10.01s, all existing gate-closed/first publish response-loss/player denial/restore checks retained. Exact local gate restored OFF afterward, PG stopped/no handle. Test-only, existing CI invocation consumes extended case but not dispatched. No app/schema/flags/live changes, no installs/fulltypebuild/browser375. Master G6 ACTIVE/local-only; next event-scoped multi-flight publish/Storage recovery and Voice/provider, then fulltour/rest15×3/40/perf/checks/release remain.
+
 ## Actual TV first publish→resolved response loss→anonymous display local PASS
 
 Baselinebb11f053f clean/previousPROGRESS. New gated paidTvPublish.native.test.tsx uses canonical paid tour/open/registration fixture, real TvBrandingEditor/clock renderer and authenticated SQL save/get RPCs; only upload UI and SDK/Auth transport modeled. Actual commit returns a simulated resolved SDK fetch error, canonical readback confirms it without another write. One layout/revision1/version1; anonymous get_tv_display_state_v4 paired to exact tour shows new branding. Player write denied by actual42501/tv_layout_forbidden, no additional committed version or head/history delta.
