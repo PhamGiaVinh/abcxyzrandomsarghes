@@ -1,5 +1,11 @@
 # Operations local integration —16/10/2026, NOT RELEASED
 
+## Rendered parent correction preview cancellation wiring PASS
+
+Baseline0d25e5683 clean/previousPROGRESS. Expanded existing HandHistoryWorkspace render suite with controlled draft editor seam and modeled read/client-calculation/Edge preview. Actual parent handlers and actual ResettlePreview render execute. Start preview→wait server response→select another hand, cancel editor, or click actual Làm mới→reopen editor→release old response: no stale preview appears. Fresh preview then succeeds, Edge body targets current selected hand; every invocation remains preview, never commit. This verifies actual event→generation invalidation wiring beyond prior callback extraction.
+
+fbe1a4 final22/22 parent cases PASS (74671c initial21 hand/cancel; final adds refresh). Test-only change. Editor/cardpicker/settlement compute/transport are mocked in this suite; separate native journey tests those real pieces, but combining reports does NOT establish full parent→hosted Edge→DB/browser E2E. No new application fix/feature flags, no repeated unchanged PG test. UI skills preserved existing controls. Diff check PASS; full type/build/browser375 held. No PG/handle/push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; next remaining writer/read transport/Voice/provider/TV/fulltour/performance/release acceptance.
+
 ## History queue malformed/partial read falsely accepted RED→local boundary fix
 
 Baselinec247a7835 clean/previousPROGRESS. Reviewed actual queue-status RPC contract: rows use missing_blind/missing_outcome/stale/pending/needs_attention; successful [] is valid.197a68 parent render RED5cases: null/object/unknown status/missing hand/duplicate hand silently empty or last-write-wins. Null row already hit catch, not a newly found failure. Parent now rejects non-array, malformed used fields, unknown status, duplicate hand IDs, and any RPC error even with partial data. Clears untrusted status map, retains successfully loaded hand rows, shows explicit queue-unavailable warning. No verified proof invented or backend writer change.

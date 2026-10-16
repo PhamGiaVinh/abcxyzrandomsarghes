@@ -3,20 +3,32 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
-const backend = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
+const backend = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), functions: { invoke: vi.fn() } }));
+const editor = vi.hoisted(() => ({ enabled: false }));
 const auth = vi.hoisted(() => ({ user: null as { id: string } | null }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => auth }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => backend }));
-vi.mock("@/lib/featureFlags", () => ({ FEATURES: { trackerHistoryCompletionWorker: true }, isTrackerAtomicResettleAvailable: () => false }));
+vi.mock("@/lib/featureFlags", () => ({ FEATURES: { trackerHistoryCompletionWorker: true, trackerHandHistoryEdit: true, trackerResettleForward: true }, isTrackerAtomicResettleAvailable: () => false }));
 vi.mock("@/lib/tracker-poker/handPlayerNamesClient", () => ({
   handPlayersHasSnapshotForClient: async () => true,
   fetchHandPlayerDisplayForClient: async () => new Map(),
 }));
-vi.mock("@/components/cashier/tournament-live/HandEditPanel", () => ({ HandEditPanel: () => null }));
+// This seam supplies a draft; the actual parent orchestration/preview is rendered.
+// Real editor/cardpicker and SQL are covered by the separate native journey.
+vi.mock("@/components/cashier/tournament-live/HandEditPanel", () => ({
+  HandEditPanel: ({ onResettle, onCancel }: { onResettle: (...args: unknown[]) => unknown; onCancel: () => void }) => editor.enabled
+    ? <><button onClick={() => { void onResettle({}, { community_cards: ["2c", "3d", "4h"] }, "TEST correction", [], []); }}>Preview draft TEST</button>
+      <button onClick={onCancel}>Cancel draft TEST</button></> : null,
+}));
 vi.mock("@/components/cashier/tournament-live/FloorHandActionReview", () => ({ FloorHandActionReview: () => null }));
 vi.mock("@/components/cashier/tournament-live/HistoricalSettlementDisplayControl", () => ({ HistoricalSettlementDisplayControl: () => null }));
 vi.mock("@/components/cashier/tournament-live/HistoricalSettlementBatchControl", () => ({ HistoricalSettlementBatchControl: () => null }));
-vi.mock("@/components/cashier/tournament-live/resettleApply", () => ({}));
+vi.mock("@/components/cashier/tournament-live/resettleApply", () => ({
+  runClientResettle: () => ({ result: { ok: true, targetWinnerIds: [], changes: [], summary: "modeled preview TEST" }, entryByPlayer: new Map(), entryByHandPlayer: new Map() }),
+  buildServerSettlementEdit: () => ({ communityCards: ["2c", "3d", "4h"] }),
+  resettleChipChanges: () => [], resettleHandEndStacks: () => ({ rows: [], conserved: true, beforeTotal: 0, afterTotal: 0 }),
+  checkExpectedHandEndStacks: () => ({ rows: [], matchesEngine: true, expectedTotal: 0 }),
+}));
 vi.mock("@/components/cashier/tournament-live/handEditDiff", () => ({}));
 
 import { HandHistoryWorkspace } from "@/components/cashier/tournament-live/HandHistoryWorkspace";
@@ -30,7 +42,7 @@ const ok = (data: unknown[]) => ({ data, error: null });
 function query(result: () => Promise<unknown>) {
   const builder = {
     select: () => builder, eq: () => builder, in: () => builder,
-    order: () => builder, range: () => builder,
+    order: () => builder, range: () => builder, gte: () => builder,
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => result().then(resolve, reject),
   };
   return builder;
@@ -40,9 +52,36 @@ function hand(id: string, number: number) {
 }
 beforeEach(() => {
   auth.user = null;
+  editor.enabled = false;
   backend.from.mockImplementation((table: string) => query(async () => ok(table === "tournament_hands" ? [hand("hand-a", 1)] : [])));
   // Keep table inventory unresolved so its independent effect does not trigger another load.
   backend.rpc.mockImplementation((name: string) => name === "list_tracker_tables_v2" ? new Promise(() => {}) : Promise.resolve(ok([])));
+});
+
+it.each(["hand", "cancel", "refresh"])("does not restore a canceled preview in the rendered parent after %s change", async (change) => {
+  auth.user = { id: "81100000-0000-4000-8000-000000000001" };editor.enabled = true;
+  backend.from.mockImplementation((table: string) => query(async () => ok(table === "tournament_hands"
+    ? [hand("hand-a", 1), hand("hand-b", 2)] : table === "hand_players"
+      ? ["hand-a", "hand-b"].map(id => ({ id: id+"-player", hand_id: id, player_id: "player", entry_number: 1, seat_number: 1, starting_stack: 100, ending_stack: 100 })) : [])));
+  const oldPreview = deferred<unknown>();backend.functions.invoke.mockReturnValue(oldPreview.promise);
+  render(<MemoryRouter><HandHistoryWorkspace tournamentId="tour-a" /></MemoryRouter>);
+  fireEvent.click(await screen.findByText("#1"));
+  fireEvent.click(screen.getByRole("button", { name: "Xem bản nháp sửa hand" }));
+  fireEvent.click(screen.getByRole("button", { name: "Preview draft TEST" }));
+  await waitFor(() => expect(backend.functions.invoke).toHaveBeenCalledTimes(1));
+  if (change === "hand") fireEvent.click(screen.getByText("#2"));
+  else if (change === "refresh") fireEvent.click(screen.getByRole("button", { name: "Làm mới" }));
+  else fireEvent.click(screen.getByRole("button", { name: "Cancel draft TEST" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Xem bản nháp sửa hand" }));
+  const ready = { data: { ok: true, status: "preview", draft_status: "READY_TO_APPLY", source_revision: 9,
+    source_chain_hash: "a".repeat(64), outcome_hash: "b".repeat(64), request_hash: "c".repeat(64) }, error: null };
+  await act(async () => { oldPreview.resolve(ready); });
+  expect(screen.queryByText("Xem trước — tính lại chip")).not.toBeInTheDocument();
+  backend.functions.invoke.mockResolvedValue(ready);
+  fireEvent.click(screen.getByRole("button", { name: "Preview draft TEST" }));
+  expect(await screen.findByText("Xem trước — tính lại chip")).toBeInTheDocument();
+  expect(backend.functions.invoke.mock.calls[1][1].body.hand_id).toBe(change === "hand" ? "hand-b" : "hand-a");
+  expect(backend.functions.invoke.mock.calls.every(([, args]) => args.body.mode === "preview")).toBe(true);
 });
 
 it.each(["actor-b", null])("invalidates hand/table reads on the same client and tournament after account becomes %s", async (nextActor) => {
