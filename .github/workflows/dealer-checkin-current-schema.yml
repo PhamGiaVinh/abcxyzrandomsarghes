@@ -115,6 +115,8 @@ on:
       - 'VinPoker/supabase/migrations/20270128000102_dealer_initial_intent_resolution_v1.sql'
       - 'VinPoker/tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs'
       - 'VinPoker/tests/dealerSwing/initialAssignmentRecovery.native.test.tsx'
+      - 'VinPoker/tests/dealerSwing/readyWorkerAssignmentSelection.mjs'
+      - 'VinPoker/tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
       - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
@@ -359,6 +361,7 @@ jobs:
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingLifecycle.test.tsx tests/dealerSwing/manualAssignLifecycle.test.tsx src/components/cashier/dealer-swing/ManualAssignmentRecovery.test.tsx --maxWorkers=1 --minWorkers=1
           node tests/dealerSwing/assignDealerReceiptEdgeHandler.mjs
+          node tests/dealerSwing/readyWorkerAssignmentSelection.mjs
       - name: Next dealer intent UI and full application qualification
         working-directory: VinPoker
         env:
@@ -375,7 +378,7 @@ jobs:
           deno check supabase/functions/run-dealer-ready-backup/index.ts
           deno check supabase/functions/process-swing-on-dealer-ready/index.ts
           deno check supabase/functions/process-swing/index.ts
-          deno check supabase/functions/assign-dealer/index.ts supabase/functions/mass-assign/index.ts supabase/functions/checkout-dealer/index.ts
+          deno check supabase/functions/assign-dealer/index.ts supabase/functions/mass-assign/index.ts supabase/functions/checkout-dealer/index.ts supabase/functions/process-swing-on-dealer-ready/index.ts
           deno test --allow-env supabase/functions/run-dealer-ready-backup/auth.test.ts supabase/functions/_shared/__tests__/backupServiceAuth.test.ts supabase/functions/process-swing-on-dealer-ready/runtime.test.ts
           deno test supabase/functions/process-swing/executionSafety.test.ts
           deno test --allow-read=supabase/functions/process-swing supabase/functions/process-swing/plannerDispatchOutcome.test.ts
@@ -923,6 +926,7 @@ jobs:
           set -euo pipefail
           createdb -T vinpoker_ops_swing101_ci "$PGDATABASE"
           node tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
           PGDATABASE=vinpoker_ops_initial102_ui VINPOKER_NATIVE_INITIAL_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/initialAssignmentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
       - name: Manual75 full migration rollback and actor-bound payload receipts

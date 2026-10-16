@@ -105,6 +105,7 @@ Deno.serve(async (req) => {
       .eq("club_id", payload.clubId)
       .in("table_id", operationalTables.map((table) => table.id))
       .eq("status", "assigned")
+      .is("released_at", null)
       .lt("swing_due_at", new Date().toISOString())
       .order("swing_due_at", { ascending: true })
       .limit(1)
