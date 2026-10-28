@@ -9,7 +9,7 @@ DO $$ DECLARE
  actor uuid:=gen_random_uuid();club uuid:=gen_random_uuid();
  tour uuid;physical uuid;tt uuid;sess uuid;epoch bigint;hand uuid;button integer;seats integer[];
  player uuid;reg jsonb;r jsonb;first jsonb;replay jsonb;revision bigint;i integer;key text:=gen_random_uuid()::text;
- actors uuid[];entries integer[];
+ actors uuid[];entries integer[];target_hand uuid;source_action uuid;
 BEGIN
  ASSERT current_database()='vinpoker_ops_guard_main_20261028_v2';
  ASSERT host(inet_server_addr())='127.0.0.1' AND inet_server_port()=55442;
@@ -92,6 +92,38 @@ BEGIN
   RAISE EXCEPTION 'reparent_to_missing_hand_accepted';
  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM='tracker_action_stack_evidence_missing',SQLERRM;
  END;
+ -- Existing-parent reparent boundary: synthetic completed hand + frozen roster.
+ -- This is maintenance-trigger coverage, not an operational hand transition.
+ SELECT id INTO STRICT source_action FROM public.hand_actions WHERE hand_id=hand AND action_order=1;
+ BEGIN
+  target_hand:=gen_random_uuid();
+  INSERT INTO public.tournament_hands
+  SELECT (jsonb_populate_record(NULL::public.tournament_hands,
+   to_jsonb(h)||jsonb_build_object('id',target_hand,'hand_number',1001,'status','completed'))).*
+  FROM public.tournament_hands h WHERE h.id=hand;
+  INSERT INTO public.hand_players
+  SELECT (jsonb_populate_record(NULL::public.hand_players,
+   to_jsonb(hp)||jsonb_build_object('id',gen_random_uuid(),'hand_id',target_hand))).*
+  FROM public.hand_players hp WHERE hp.hand_id=hand;
+  ASSERT (SELECT count(*)=3 AND sum(starting_stack)=60000 FROM public.hand_players WHERE hand_id=target_hand);
+  INSERT INTO public.hand_actions(hand_id,player_id,entry_number,action_type,action_amount,action_order,street)
+  VALUES(target_hand,actors[1],entries[1],'bet',19901,10,'flop');
+  BEGIN
+   UPDATE public.hand_actions SET hand_id=target_hand WHERE id=source_action;
+   RAISE EXCEPTION 'existing_target_over_stack_reparent_accepted';
+  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM='tracker_action_stack_exceeded',SQLERRM;
+  END;
+  ASSERT (SELECT hand_id=hand AND action_amount=100 FROM public.hand_actions WHERE id=source_action);
+  ASSERT (SELECT count(*)=1 AND sum(action_amount)=19901 FROM public.hand_actions WHERE hand_id=target_hand);
+  UPDATE public.hand_actions SET action_amount=19900 WHERE hand_id=target_hand AND action_order=10;
+  UPDATE public.hand_actions SET hand_id=target_hand WHERE id=source_action;
+  ASSERT (SELECT hand_id=target_hand FROM public.hand_actions WHERE id=source_action);
+  ASSERT (SELECT count(*)=2 AND sum(action_amount)=20000 FROM public.hand_actions WHERE hand_id=target_hand);
+  ASSERT (SELECT count(*)=1 AND sum(action_amount)=200 FROM public.hand_actions WHERE hand_id=hand);
+  RAISE EXCEPTION USING ERRCODE='P1891',MESSAGE='rollback_existing_parent_probe';
+ EXCEPTION WHEN SQLSTATE 'P1891' THEN NULL;
+ END;
+ ASSERT NOT EXISTS(SELECT 1 FROM public.tournament_hands WHERE id=target_hand);
  ASSERT (SELECT count(*)=2 AND sum(action_amount)=300 FROM public.hand_actions WHERE hand_id=hand);
  PERFORM set_config('role','authenticated',true);
  r:=public.record_action(hand,actors[3],'fold',3,entries[3],'preflop',0);ASSERT r->>'status'='success',r::text;
@@ -115,3 +147,4 @@ BEGIN
 END $$;
 ROLLBACK;
 SELECT 'DECIDED_HAND_LAST_SURVIVOR_REJECT_REPLAY_AND_LOCK_GUARDS_PASS';
+SELECT 'EXISTING_PARENT_REPARENT_OVER_STACK_REJECT_EXACT_BUDGET_ACCEPT_PASS';
