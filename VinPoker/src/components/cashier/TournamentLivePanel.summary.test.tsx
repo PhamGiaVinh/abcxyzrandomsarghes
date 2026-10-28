@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 type QueryFixture = {
-  select: () => QueryFixture; is: () => QueryFixture; in: () => QueryFixture; order: () => QueryFixture;
+  select: () => QueryFixture; is: () => QueryFixture; in: (column: string, values: string[]) => QueryFixture; order: () => QueryFixture;
   then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
 };
 type ChannelFixture = {
@@ -11,7 +11,7 @@ type ChannelFixture = {
   subscribe: () => ChannelFixture;
 };
 
-const db = vi.hoisted(() => ({ rpc: vi.fn(), actor: "owner", status: "live", liveStatus: null as string | null,
+const db = vi.hoisted(() => ({ rpc: vi.fn(), actor: "owner", status: "live", liveStatus: null as string | null, honorStatuses: false, closeReport: false,
   callbacks: new Map<string, () => void>(), childCallback: undefined as (() => void) | undefined }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: db.actor } }) }));
 vi.mock("react-i18next", async () => {
@@ -19,7 +19,7 @@ vi.mock("react-i18next", async () => {
   return { useTranslation: () => ({ t: (key: string) => key.startsWith("tournamentLive.statusLabels.")
     ? viLocale.tournamentLive.statusLabels[key.split(".").at(-1) as keyof typeof viLocale.tournamentLive.statusLabels] : key }) };
 });
-vi.mock("@/lib/featureFlags", () => ({ FEATURES: {} }));
+vi.mock("@/lib/featureFlags", () => ({ FEATURES: { get closeReport() { return db.closeReport; } } }));
 vi.mock("@/components/tracker/TableAppearanceEditor", () => ({ TableAppearanceEditor: () => null }));
 vi.mock("./tournament-live/ClockPanel", () => ({ ClockPanel: () => null }));
 vi.mock("./tournament-live/handinput/unified/TrackerHandInputBoundary", () => ({ TrackerHandInputBoundary: () => null }));
@@ -54,10 +54,11 @@ vi.mock("@/components/ui/select", async () => {
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   rpc: db.rpc,
   from: () => {
-    const query: QueryFixture = { select: () => query, is: () => query, in: () => query,
+    let statuses: string[] = [];
+    const query: QueryFixture = { select: () => query, is: () => query, in: (column, values) => { if (column === "status") statuses = values; return query; },
       order: () => query,
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: ["a", "b"].map((id) => ({ id, name: `Tour ${id}`, club_id: "club",
-        status: db.status, live_status: db.liveStatus, players_remaining: 99, average_stack: 123 })), error: null }).then(resolve) };
+        status: db.status, live_status: db.liveStatus, players_remaining: 99, average_stack: 123 })).filter(row => !db.honorStatuses || statuses.includes(row.status)), error: null }).then(resolve) };
     return query;
   },
   channel: () => {
@@ -72,11 +73,24 @@ const payload = (id: string, remaining = 8) => ({ tournament_id: id, average_sta
   counts: { total_entries: 11, re_entries: 0, remaining, seated: 8, waiting: 0, busted: 3,
     anomaly_entries: 0, anomaly_seats: 0, live_entry_stack: 78000000, seated_stack: 78000000, waiting_stack: 0 } });
 const props = { clubIds: ["club"], clubs: [{ id: "club", name: "Club" }], mode: "floor" as const };
-beforeEach(() => { db.rpc.mockReset(); db.callbacks.clear(); db.actor = "owner"; db.status = "live"; db.liveStatus = null;
+beforeEach(() => { db.rpc.mockReset(); db.callbacks.clear(); db.actor = "owner"; db.status = "live"; db.liveStatus = null; db.honorStatuses = false; db.closeReport = false;
   db.rpc.mockImplementation((_name, args) => Promise.resolve({ data: payload(args.p_tournament_id), error: null })); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Floor selected-tour canonical summary integration", () => {
+  it("opens a completed Floor tour and exposes its existing close report", async () => {
+    db.status = "completed"; db.honorStatuses = true; db.closeReport = true;
+    render(<TournamentLivePanel {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: "select-a" }));
+    expect(await screen.findByRole("button", { name: "confirmed-seat-change" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Xem báo cáo chốt giải" })).toBeInTheDocument();
+  });
+  it("keeps completed tours outside other active-only workspaces", async () => {
+    db.status = "completed"; db.honorStatuses = true;
+    render(<TournamentLivePanel {...props} mode="full" />);
+    expect(await screen.findByText("Không có giải active")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "confirmed-seat-change" })).not.toBeInTheDocument();
+  });
   it("ignores a settled child callback from the previous actor scope", async () => {
     const view = render(<TournamentLivePanel {...props} />);
     fireEvent.click(await screen.findByRole("button", { name: "select-a" }));
