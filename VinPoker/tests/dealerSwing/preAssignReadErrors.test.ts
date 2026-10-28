@@ -1,7 +1,8 @@
+import { test } from "vitest";
 import { pass2PreAssignNext } from "../../supabase/functions/process-swing/passes/pass2-pre-assign.ts";
 
 for (const failedRead of ["manual", "normal", "ot"]) {
-  Deno.test(`preassignment ${failedRead} read failure is not an empty successful pass`, async () => {
+  test(`preassignment ${failedRead} read failure is not an empty successful pass`, async () => {
     let reads = 0;
     let mutations = 0;
     const admin = {
@@ -26,7 +27,7 @@ for (const failedRead of ["manual", "normal", "ot"]) {
 }
 
 for (const throws of [false, true]) {
-  Deno.test(`preassignment ${throws ? "thrown transport failure" : "verified empty snapshot"} is classified honestly`, async () => {
+  test(`preassignment ${throws ? "thrown transport failure" : "verified empty snapshot"} is classified honestly`, async () => {
     let mutations = 0;
     const admin = {
       from() {
@@ -52,7 +53,7 @@ for (const throws of [false, true]) {
 
 for (const data of [null, { rows: [] }]) {
  for (const stage of ["manual", "normal", "ot"]) {
-  Deno.test(`preassignment ${stage} malformed snapshot ${JSON.stringify(data)} is not verified empty`, async () => {
+  test(`preassignment ${stage} malformed snapshot ${JSON.stringify(data)} is not verified empty`, async () => {
     let reads = 0;
     const query: any = { then(resolve: (value: unknown) => void) { reads++; resolve({ data: stage === "ot" && reads === 1 ? [] : data, error: null }); } };
     for (const method of ["select", "eq", "is", "gte", "lt", "lte", "not"]) query[method] = () => query;
@@ -64,7 +65,7 @@ for (const data of [null, { rows: [] }]) {
  }
 }
 
-Deno.test("OT read failure aborts a nonempty normal snapshot before any candidate or reservation write", async () => {
+test("OT read failure aborts a nonempty normal snapshot before any candidate or reservation write", async () => {
   let reads = 0;
   let mutations = 0;
   const query: any = {

@@ -18,6 +18,7 @@ const production = new Function("useRef", "useEffect", "useState", "context", `
     refetchDealers,refetchCheckedOut,toast,supabase,checkinCandidatesLoading,checkinCandidatesError,
     setCheckinCandidatesLoading,setCheckinCandidatesError}=context;
   const checkinReadSequence = useRef(0);
+  const checkinReadController = useRef(null);
   ${code}
   return {doCheckin,setCheckinShiftId,checkinShiftId,doReCheckin,reconcileCheckin,pendingCheckinIntents};
 `);
