@@ -16,6 +16,7 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/AddPlayerDialog.tsx"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableDetailSheet.tsx"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanel.tsx"
+      - "VinPoker/src/components/cashier/tournament-live/__tests__/FloorTableMapPanel.test.tsx"
       - "VinPoker/src/components/cashier/tournament-live/OpenTableDialog.tsx"
       - "VinPoker/src/components/ops/shared/FloorPlayerActions.tsx"
       - "VinPoker/src/components/ops/shared/FloorSeatRoster.tsx"
@@ -65,6 +66,7 @@ jobs:
         working-directory: VinPoker
         run: >-
           npx vitest run
+          src/components/cashier/tournament-live/__tests__/FloorTableMapPanel.test.tsx
           tests/floorProduction/floorSeatEntryPreflight.test.ts
           tests/floorProduction/floorOpsErrors.test.ts
           tests/floorProduction/playerActionSheets.render.test.tsx
