@@ -70,6 +70,16 @@ BEGIN
   RAISE EXCEPTION 'direct_update_over_stack_accepted';
  EXCEPTION WHEN check_violation THEN ASSERT SQLERRM='tracker_action_stack_exceeded',SQLERRM;
  END;
+ BEGIN
+  UPDATE public.hand_actions SET entry_number=entries[1]+100 WHERE hand_id=hand AND action_order=1;
+  RAISE EXCEPTION 'missing_frozen_entry_evidence_accepted';
+ EXCEPTION WHEN check_violation THEN ASSERT SQLERRM='tracker_action_stack_evidence_missing',SQLERRM;
+ END;
+ BEGIN
+  UPDATE public.hand_actions SET hand_id=gen_random_uuid() WHERE hand_id=hand AND action_order=1;
+  RAISE EXCEPTION 'reparent_to_missing_hand_accepted';
+ EXCEPTION WHEN check_violation THEN ASSERT SQLERRM='tracker_action_stack_evidence_missing',SQLERRM;
+ END;
  ASSERT (SELECT count(*)=2 AND sum(action_amount)=300 FROM public.hand_actions WHERE hand_id=hand);
  PERFORM set_config('role','authenticated',true);
  r:=public.record_action(hand,actors[3],'fold',3,entries[3],'preflop',0);ASSERT r->>'status'='success',r::text;
