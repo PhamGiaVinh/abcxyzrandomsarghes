@@ -93,9 +93,10 @@ function v3ErrorMessage(error: string): string {
  */
 type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null; onParticipationChanged?: () => void };
 
-// Changing actor/tournament invalidates every open writer as well as the roster.
+// Entering/leaving a terminal state also discards any open writer.
 export function FloorTableMapPanelV3(props: FloorPanelProps) {
-  return <ScopedFloorTableMapPanelV3 key={JSON.stringify([props.actorId, props.tournament.id])} {...props} />;
+  return <ScopedFloorTableMapPanelV3 key={JSON.stringify([props.actorId, props.tournament.id,
+    ["completed", "finished", "cancelled"].includes(props.tournament.status)])} {...props} />;
 }
 
 function ScopedFloorTableMapPanelV3({
@@ -110,9 +111,12 @@ function ScopedFloorTableMapPanelV3({
   onParticipationChanged?: () => void;
 }) {
   const supabase = useSupabaseClient();
+  const tournamentEnded = ["completed", "finished", "cancelled"].includes(tournament.status);
   const v3 = useMemo(() => createFloorTableControlV3Client(
     ((name, args) => (supabase.rpc as unknown as FloorTableControlV3Rpc)(name, args)),
-  ), [supabase]);
+    // Closed-state rendering and run() prohibit mutations; only roster reads run.
+    { enabled: tournamentEnded || FEATURES.floorTableControlV3 },
+  ), [supabase, tournamentEnded]);
   const [tables, setTables] = useState<FloorTournamentTableRoster[]>([]);
   const [seatableEntries, setSeatableEntries] = useState<FloorSeatableEntry[]>([]);
   const [restorableEntries, setRestorableEntries] = useState<FloorRestorableEntry[]>([]);
@@ -184,9 +188,9 @@ function ScopedFloorTableMapPanelV3({
     try {
       const settled = await Promise.allSettled([
         v3.getTournamentTableRoster(tournament.id),
-        v3.getSeatableEntries(tournament.id),
-        v3.getRestorableEntries(tournament.id),
-        v3.getPendingTrackerMoves(tournament.id),
+        tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : v3.getSeatableEntries(tournament.id),
+        tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : v3.getRestorableEntries(tournament.id),
+        tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : v3.getPendingTrackerMoves(tournament.id),
       ]);
       if (!isCurrent()) return false;
       const failed = (error: string) => ({ ok: false as const, error });
@@ -226,7 +230,7 @@ function ScopedFloorTableMapPanelV3({
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [readScope, tournament.id, v3]);
+  }, [readScope, tournament.id, tournamentEnded, v3]);
 
   useEffect(() => {
     void load();
@@ -272,7 +276,7 @@ function ScopedFloorTableMapPanelV3({
 
 
   const run = async (successMessage: string | ((data: Record<string, unknown>) => string), mutation: Mutation): Promise<boolean> => {
-    if (busy) return false;
+    if (busy || tournamentEnded) return false;
     setBusy(true);
     try {
       const result = await mutation();
@@ -390,6 +394,28 @@ function ScopedFloorTableMapPanelV3({
     );
   }
 
+  if (tournamentEnded) return (
+    <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Bàn của giải đã đóng</h2>
+        <Button data-ops-action="floor.tables.refresh" size="sm" variant="outline" className="min-h-12" disabled={loading} onClick={() => void load()}>
+          <RefreshCw className="mr-2 h-4 w-4" /> Làm mới
+        </Button>
+      </div>
+      <p role="status" className="text-sm text-muted-foreground">Giải đã kết thúc hoặc bị hủy. Chỉ xem trạng thái bàn; không mở bàn, xếp chỗ hoặc redraw.</p>
+      {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
+      {loading ? <p role="status">Đang kiểm tra phiên bàn…</p> : loadError ? null : tables.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">Không còn phiên bàn đang hoạt động.</p>
+      ) : <div className="space-y-3">
+        <p role="alert" className="text-sm text-amber-300">Giải đã đóng nhưng còn {tables.length} phiên bàn đang hoạt động. Cần kiểm tra dữ liệu trước khi xử lý.</p>
+        <ul className="space-y-2">{tables.map(table => <li key={table.tournamentTableId} className="break-words text-sm">
+          Bàn {table.tableNumber} · {table.tableName} · {table.seats.length} người
+        </li>)}</ul>
+      </div>}
+    </Card>
+  );
+
+
   return (
     <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -399,12 +425,14 @@ function ScopedFloorTableMapPanelV3({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button data-ops-action="floor.tables.refresh" size="sm" variant="outline" className="min-h-12" disabled={loading || busy} onClick={() => void load()}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Làm mới</Button>
-          <Button data-ops-action="floor.tables.open_table_dialog" size="sm" className="min-h-12" disabled={busy} onClick={() => setOpenTable(true)}><Plus className="mr-2 h-4 w-4" /> Mở bàn</Button>
+          <Button data-ops-action="floor.tables.open_table_dialog" size="sm" className="min-h-12" disabled={busy || tournamentEnded} onClick={() => setOpenTable(true)}><Plus className="mr-2 h-4 w-4" /> Mở bàn</Button>
           {FEATURES.floorRedrawSeatLockV1 && (
-            <Button data-ops-action="floor.redraw.open" size="sm" variant="outline" className="min-h-12" disabled={busy || tables.length === 0} onClick={() => setRedrawOpen(true)}><Shuffle className="mr-2 h-4 w-4" /> Redraw</Button>
+            <Button data-ops-action="floor.redraw.open" size="sm" variant="outline" className="min-h-12" disabled={busy || tournamentEnded || tables.length === 0} onClick={() => setRedrawOpen(true)}><Shuffle className="mr-2 h-4 w-4" /> Redraw</Button>
           )}
         </div>
       </div>
+
+      {tournamentEnded && <p role="status" className="text-sm text-muted-foreground">Giải đã kết thúc hoặc đã hủy. Không thể mở bàn mới.</p>}
 
       {loadError && <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{loadError}</p>}
       {secondaryLoadError && <p role="status" className="rounded-xl border border-amber-400/35 bg-amber-400/10 p-3 text-sm text-amber-100">{secondaryLoadError}</p>}
@@ -413,7 +441,7 @@ function ScopedFloorTableMapPanelV3({
       {loading ? (
         <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Đang tải danh sách bàn…</div>
       ) : tables.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Chưa có bàn đang hoạt động. Chọn “Mở bàn” để lấy một bàn vật lý còn trống.</div>
+        !loadError && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{tournamentEnded ? "Không còn bàn đang hoạt động trong giải này." : "Chưa có bàn đang hoạt động. Chọn “Mở bàn” để lấy một bàn vật lý còn trống."}</div>
       ) : (
         <FloorTableRosterIndex tables={tableIndex} onOpen={(tableId) => {
           // The sheet may have been closed across a server-only mode transition.
@@ -435,7 +463,7 @@ function ScopedFloorTableMapPanelV3({
           playerName={moveTarget.playerName} currentTournamentTableId={moveTarget.tableId}
           currentSeatNumber={moveTarget.seatNumber} onMoved={() => void load(true)} />
       )}
-      <OpenTableDialog open={openTable} onOpenChange={setOpenTable} tournamentId={tournament.id} onDone={() => { onParticipationChanged?.(); void load(); }} />
+      {!tournamentEnded && <OpenTableDialog open={openTable} onOpenChange={setOpenTable} tournamentId={tournament.id} onDone={() => { onParticipationChanged?.(); void load(); }} />}
       {manualPlayerTarget && <AddPlayerDialog open={true} onOpenChange={(open) => { if (!open) setManualPlayerTarget(null); }}
           actorId={actorId} tournamentId={tournament.id} tournamentName={tournament.name} tournamentDate={null}
           tableTtId={manualPlayerTarget.tableId} tableSessionId={manualPlayerTarget.sessionId}

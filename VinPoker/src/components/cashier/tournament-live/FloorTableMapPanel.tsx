@@ -89,7 +89,8 @@ export function FloorTableMapPanel({
   onParticipationChanged?: () => void;
 }) {
   const { user } = useAuth();
-  if (FEATURES.floorTableControlV3) {
+  // Terminal tours use the read-only roster even with live V3 operations off.
+  if (FEATURES.floorTableControlV3 || ["completed", "finished", "cancelled"].includes(tournament.status)) {
     return <FloorTableMapPanelV3 actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
   }
   return <FloorTableMapPanelLegacy actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
