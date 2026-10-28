@@ -2444,6 +2444,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   const restoreLastSnapshot = () => {
     const snap = undoStack[undoStack.length - 1];
     if (!snap) return;
+    setEndingStacks({});
+    setEndingStacksManuallyEdited(false);
     setPlayers(snap.players);
     setActions(snap.actions);
     setCurrentStreet(snap.currentStreet);
