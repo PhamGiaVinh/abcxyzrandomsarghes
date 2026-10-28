@@ -49,6 +49,29 @@ BEGIN
  PERFORM set_config('role','authenticated',true);
  r:=public.record_action(hand,actors[1],'post_sb',1,entries[1],'preflop',100);ASSERT r->>'status'='success',r::text;
  r:=public.record_action(hand,actors[2],'post_bb',2,entries[2],'preflop',200);ASSERT r->>'status'='success',r::text;
+ -- Qualify stack189 through the real RPC before the hand becomes decided.
+ r:=public.record_action(hand,actors[3],'bet',3,entries[3],'preflop',-1);
+ ASSERT r->>'error'='tracker_action_negative_amount','negative amount accepted: '||r::text;
+ r:=public.record_action(hand,actors[3],'bet',3,entries[3],'preflop',20001);
+ ASSERT r->>'error'='tracker_action_stack_exceeded','over-stack amount accepted: '||r::text;
+ r:=public.record_action(hand,actors[1],'bet',3,entries[1],'flop',19901);
+ ASSERT r->>'error'='tracker_action_stack_exceeded','cross-round committed budget ignored: '||r::text;
+ -- The exact remaining budget is valid; roll only this probe back immediately.
+ BEGIN
+  r:=public.record_action(hand,actors[1],'bet',3,entries[1],'flop',19900);
+  ASSERT r->>'status'='success','exact remaining stack rejected: '||r::text;
+  RAISE EXCEPTION USING ERRCODE='P1890',MESSAGE='rollback_exact_budget_probe';
+ EXCEPTION WHEN SQLSTATE 'P1890' THEN NULL;
+ END;
+ PERFORM set_config('role','none',true);
+ -- Privileged maintenance also cannot silently bypass the table-level bound.
+ BEGIN
+  UPDATE public.hand_actions SET action_amount=20001 WHERE hand_id=hand AND action_order=1;
+  RAISE EXCEPTION 'direct_update_over_stack_accepted';
+ EXCEPTION WHEN check_violation THEN ASSERT SQLERRM='tracker_action_stack_exceeded',SQLERRM;
+ END;
+ ASSERT (SELECT count(*)=2 AND sum(action_amount)=300 FROM public.hand_actions WHERE hand_id=hand);
+ PERFORM set_config('role','authenticated',true);
  r:=public.record_action(hand,actors[3],'fold',3,entries[3],'preflop',0);ASSERT r->>'status'='success',r::text;
  first:=public.record_action(hand,actors[1],'fold',4,entries[1],'preflop',0,key);ASSERT first->>'status'='success',first::text;
  PERFORM set_config('role','none',true);SELECT source_revision INTO revision FROM public.tournament_hands WHERE id=hand;
