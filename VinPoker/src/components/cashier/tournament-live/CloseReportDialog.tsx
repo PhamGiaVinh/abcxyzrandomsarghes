@@ -43,12 +43,12 @@ function Cell({ label, value, hint }: { label: string; value: string | number; h
 
 function Row({ label, sub, amount, accent }: { label: string; sub?: string; amount: string; accent?: boolean }) {
   return (
-    <div className="flex items-center justify-between py-1.5 text-sm border-b border-border/60 last:border-0">
-      <span>
+    <div className="flex items-start justify-between gap-2 py-1.5 text-sm border-b border-border/60 last:border-0">
+      <span className="min-w-0 break-words">
         {label}
         {sub && <span className="text-muted-foreground"> · {sub}</span>}
       </span>
-      <span className={`tabular-nums ${accent ? "text-warning font-medium" : ""}`}>{amount}</span>
+      <span className={`shrink-0 tabular-nums ${accent ? "text-warning font-medium" : ""}`}>{amount}</span>
     </div>
   );
 }
@@ -81,12 +81,12 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-lg max-h-[90vh] overflow-y-auto min-w-0">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="w-4 h-4" /> Chốt giải
           </DialogTitle>
-          <DialogDescription className="font-medium text-foreground">{tournamentName}</DialogDescription>
+          <DialogDescription className="font-medium text-foreground break-words">{tournamentName}</DialogDescription>
         </DialogHeader>
 
         {loading && (
@@ -106,7 +106,7 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
           <div className="space-y-3">
             {alreadyClosed && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
-                <CheckCircle2 className="w-4 h-4 text-primary" /> Giải này đã được chốt.
+                <CheckCircle2 className="w-4 h-4 text-primary shrink-0" /><span>Giải này đã được chốt. Đây là snapshot tại lúc chốt, không phải số dư quầy hiện tại. Các khoản trả thưởng sau đó xem tại mục Payout.</span>
               </div>
             )}
             {!alreadyClosed && readiness && !readiness.ready && (
@@ -121,7 +121,7 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               <Cell label="Free-rake" value={report.freeRakeUsed} />
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] font-medium text-muted-foreground mb-1">TIỀN VÀO</div>
                 <Row label="Buy-in" sub="pass-through" amount={fmt(report.buyInTotal)} />
@@ -132,8 +132,8 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] font-medium text-muted-foreground mb-1">TIỀN RA</div>
-                <Row label="Prize trả hạng" sub="pass-through" amount={fmt(report.prizeTotal)} />
-                <Row label="Số dư quầy" sub="vào − ra" amount={fmt(report.cashierBalance)} />
+                <Row label={alreadyClosed ? "Prize ghi nhận lúc chốt" : "Prize trả hạng"} sub="pass-through" amount={fmt(report.prizeTotal)} />
+                <Row label={alreadyClosed ? "Số dư quầy lúc chốt" : "Số dư quầy"} sub="vào − ra" amount={fmt(report.cashierBalance)} />
               </div>
             </div>
 
@@ -141,7 +141,7 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2">
                 <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
                 <div className="text-sm">
-                  <div className="font-medium">Số dư quầy khớp — chênh 0₫</div>
+                  <div className="font-medium">{alreadyClosed ? "Lúc chốt: số dư quầy khớp — chênh 0₫" : "Số dư quầy khớp — chênh 0₫"}</div>
                   <div className="text-xs text-muted-foreground">Doanh thu club {fmt(report.clubRevenue)} = tiền vào − tiền ra</div>
                 </div>
               </div>
@@ -149,14 +149,14 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <div className="font-medium text-warning">Số dư chưa cân — chênh {fmt(Math.abs(report.reconcileDelta))}</div>
+                  <div className="font-medium text-warning">{alreadyClosed ? "Lúc chốt: số dư chưa cân" : "Số dư chưa cân"} — chênh {fmt(Math.abs(report.reconcileDelta))}</div>
                   <div className="text-xs text-muted-foreground">
-                    {report.overlay > 0
+                    {alreadyClosed ? "Chênh lệch đã được lưu tại thời điểm chốt. Đối chiếu các khoản trả thưởng phát sinh sau đó trong Payout; snapshot này không tự cập nhật." : report.overlay > 0
                       ? `Club bù overlay ${fmt(report.overlay)} (prize > buy-in).`
                       : report.surplusToPool > 0
                         ? `Buy-in dư ${fmt(report.surplusToPool)} so với prize đã trả (payout chưa nhập đủ?).`
                         : "Kiểm tra lại prize/cashout."}
-                    {" "}Vẫn chốt được — sẽ ghi nhận minh bạch.
+                    {!alreadyClosed && <> Vẫn chốt được — sẽ ghi nhận minh bạch.</>}
                   </div>
                 </div>
               </div>

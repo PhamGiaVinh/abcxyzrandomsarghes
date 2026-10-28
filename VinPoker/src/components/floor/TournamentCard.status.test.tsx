@@ -11,6 +11,13 @@ vi.mock('@/lib/featureFlags',()=>({FEATURES:{}}));
 import {TournamentCard} from './TournamentManagerShared';
 
 describe('Floor tournament card status display',()=>{
+ it.each(['completed','finished','cancelled'])('does not offer Start for closed status %s',(status)=>{
+  const start=vi.fn();
+  render(<TournamentCard tour={{id:'closed-tour',name:'Closed TEST',status,start_time:'2026-10-14T10:00:00Z'}}
+   multiClub={false} reload={vi.fn()} onDelete={vi.fn()} onSetStatus={vi.fn()} onStart={start}/>);
+  expect(screen.queryByRole('button',{name:/Bắt đầu giải/})).not.toBeInTheDocument();
+  expect(start).not.toHaveBeenCalled();
+ });
  it('renders registration-open status and preserves the original writer choices',()=>{
   const setStatus=vi.fn();const start=vi.fn();
   render(<TournamentCard tour={{id:'tour-test',name:'TEST registration open',status:'registration_open',

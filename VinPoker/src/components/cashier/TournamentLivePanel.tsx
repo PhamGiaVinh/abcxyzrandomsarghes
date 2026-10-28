@@ -138,7 +138,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
       .from("tournaments")
       .select("*")
       .is("deleted_at", null)
-      .in("status", ["upcoming", "registering", "drawing", "active", "live", "break", "final_table"])
+      .in("status", ["upcoming", "registering", "drawing", "active", "live", "break", "final_table", ...(mode === "floor" ? ["completed"] : [])])
       .order("created_at", { ascending: false });
     if (clubIds.length) q = q.in("club_id", clubIds);
     const { data, error } = await q;
@@ -151,7 +151,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
     setListError(null);
     setTournaments((data as unknown as LiveTournament[]) ?? []);
     setLoading(false);
-  }, [clubIds]);
+  }, [clubIds, mode]);
 
   const selectTournament = useCallback((id: string) => {
     setSelectedTournamentId(id);
@@ -371,7 +371,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
             </Button>
             {FEATURES.closeReport && selectedTournament && (
               <Button size="sm" onClick={() => setCloseReportOpen(true)}>
-                Chốt giải
+                {selectedTournament.status === "completed" ? "Xem báo cáo chốt giải" : "Chốt giải"}
               </Button>
             )}
           </div>

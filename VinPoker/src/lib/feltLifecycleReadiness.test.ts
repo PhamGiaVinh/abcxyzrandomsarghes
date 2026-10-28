@@ -10,6 +10,7 @@ import {
   withServerCloseTotals,
 } from "./feltLifecycleReadiness";
 import { computeCloseReport } from "./closeReport";
+import { supabase } from "@/integrations/supabase/client";
 
 describe("server-sourced close readiness", () => {
   beforeEach(() => rpc.mockReset());
@@ -39,6 +40,7 @@ describe("server-sourced close readiness", () => {
       cashier_balance: 0, reconcile_delta: 2_000_000, reconciled: false,
     }, error: null });
     const server = await getTournamentCloseReadiness("felt");
+    expect(rpc.mock.contexts[rpc.mock.contexts.length - 1]).toBe(supabase);
     expect(server).toMatchObject({
       ready: true, clubRevenue: -2_000_000, reconciled: false,
       reconcileDelta: 2_000_000,
