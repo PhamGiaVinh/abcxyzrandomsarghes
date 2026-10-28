@@ -20,7 +20,7 @@ import { BLIND_PRESETS, type BlindLevel, type BlindTemplate } from "@/lib/blindP
 import { isValidBlindDraft } from "@/lib/blindDraftSuggest";
 import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
 import { useAuth } from "@/hooks/useAuth";
-import { tournamentStatusLabel } from "@/lib/tournament/statusPresentation";
+import { tournamentStatusCategory, tournamentStatusLabel } from "@/lib/tournament/statusPresentation";
 
 // Shared building blocks for the Floor tournament boards (Daily + Multi-day) and the
 // legacy TournamentManagerPanel. Extracted verbatim so both surfaces reuse one source
@@ -759,7 +759,7 @@ export function TournamentCard({
           Vào giải (vận hành) →
         </Button>
       )}
-      {t2.status !== "live" && (
+      {t2.status !== "live" && tournamentStatusCategory(t2.status) !== "closed" && (
         <Button size="sm" variant="outline" className="w-full h-9 text-xs border-primary/50 text-primary hover:bg-primary/10" onClick={() => onStart(t2.id)}>
           <Play className="w-3.5 h-3.5 mr-1" /> Bắt đầu giải (chạy đồng hồ + lên live)
         </Button>
