@@ -132,8 +132,9 @@ async function processOneCheckout(
       const receipt = await admin.rpc("get_dealer_checkout_receipt_v1", {
         p_actor_id: uid, p_attendance_id: attendanceId,
       });
-      if (!receipt.error && receipt.data?.status === "receipt_found") {
-        core = checkoutCore(receipt.data.result, attendanceId, clubId);
+      const receiptData = receipt.data as { status?: unknown; result?: unknown } | null;
+      if (!receipt.error && receiptData?.status === "receipt_found") {
+        core = checkoutCore(receiptData.result, attendanceId, clubId);
         recovered = Boolean(core);
       }
     } catch { /* Outcome remains explicitly unconfirmed. */ }

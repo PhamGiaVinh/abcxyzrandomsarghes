@@ -4,6 +4,9 @@ on:
     paths:
       - 'VinPoker/supabase/functions/cashier-lookup-player/**'
       - 'VinPoker/supabase/functions/_shared/validate.ts'
+      - 'VinPoker/supabase/functions/_shared/vendor/**'
+      - 'VinPoker/deno.json'
+      - 'VinPoker/tests/security/tslibVendorIntegrity.test.mjs'
       - 'VinPoker/tests/cashier/lookupPlayerScope.repro.mjs'
       - 'VinPoker/src/components/cashier/UnifiedLookupTab*'
       - '.github/workflows/cashier-lookup-scope.yml'
@@ -38,6 +41,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.8.0
+      - run: node --test tests/security/tslibVendorIntegrity.test.mjs
+        working-directory: VinPoker
       - run: deno check --frozen --lock=deno.lock supabase/functions/cashier-lookup-player/index.ts
         working-directory: VinPoker
       - run: deno test --frozen --lock=deno.lock --allow-env --allow-read supabase/functions/cashier-lookup-player/index.test.ts

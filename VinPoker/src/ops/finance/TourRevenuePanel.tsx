@@ -78,7 +78,7 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0"><h2 id={`${selectId}-heading`} className="text-balance font-semibold text-white">Rake theo giải</h2>
         <p className="mt-1 text-pretty text-sm text-[#9fb1a6]">Tạm thu theo buy đã thanh toán, gồm buy đang chờ xếp chỗ. Chốt báo cáo khi đóng buy; tổng hợp ngày theo ngày giải diễn ra.</p></div>
-      <Button variant="outline" onClick={() => setRevision(v => v + 1)}>Làm mới rake</Button>
+      <Button variant="outline" className="min-h-11" onClick={() => setRevision(v => v + 1)}>Làm mới rake</Button>
     </div>
     {error ? <p role="alert" className="mt-3 text-sm text-amber-200">Không tải được rake. Hãy làm mới để kiểm tra lại.</p>
       : !current ? <p role="status" className="mt-3 text-sm text-[#9fb1a6]">Đang tải rake…</p>
@@ -104,7 +104,7 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
               : official?.report?.canExport ? `Đã chốt khi đóng buy · rake ${money(official.report.snapshot?.rake ?? null)} · phí dịch vụ ${money(official.report.snapshot?.serviceFee ?? null)}.`
                 : official?.error ? "Chưa tải được báo cáo chốt. Hãy làm mới."
                   : !official ? "Đang kiểm tra báo cáo chốt…" : "Đã đóng buy nhưng chưa có báo cáo chốt đủ dữ liệu để xuất."}</p>
-            <Button variant="outline" className="mt-3 max-w-full whitespace-normal" disabled={tour.buyState !== "closed" || !official?.report?.canExport || exporting} onClick={() => { void exportReport(); }}>
+            <Button variant="outline" className="mt-3 min-h-11 max-w-full whitespace-normal" disabled={tour.buyState !== "closed" || !official?.report?.canExport || exporting} onClick={() => { void exportReport(); }}>
               {exporting ? "Đang tải báo cáo…" : "Xuất báo cáo rake đã chốt"}
             </Button>
             {download?.tourId === tourId && <a className="mt-3 block w-fit max-w-full break-words text-sm text-emerald-200 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
