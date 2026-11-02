@@ -17,6 +17,9 @@ for (const startCapability of ['denied', 'loading', 'error', 'allowed']) {
       startCapability, blindLineageUnavailable, LINEAGE_READ_UNAVAILABLE:'lineage unavailable TEST',
       startingRef: { current: false }, tableId: 'physical', handNumber: 1,
       user: { id: 'floor-actor' }, tournamentId: 'tour', buttonConfirmed: true, buttonSeat: 1,
+      pendingFinishError: null, rosterContext: null, localStorage: {}, sessionStorage: {},
+      adoptManualFinishJournals() {}, listManualFinishJournals: () => [],
+      setPendingFinish() {}, setPendingFinishError() {},
       players: [{ is_active: true, current_stack: 20000, seat_number: 1 }],
       availableTables: [{ id: 'physical', tableSessionId: 'session', tournamentTableId: 'tt', controlEpoch: 2 }],
       FEATURES: { floorDeferredTrackerMoveV1: true },
@@ -44,7 +47,8 @@ function authorityHarness(permission, actorId = 'actor') {
   let focus;
   let authChanged;
   const context = {
-    user: { id: 'actor' }, tournamentId: 'tour', tableReloadAttempt: 0,
+    user: { id: 'actor' }, userAuthGeneration: { current: 0 }, tournamentId: 'tour', tableReloadAttempt: 0,
+    observeTrackerContextRead: operation => operation,
     useState: () => [null, value => published.push(value)],
     useEffect: effect => { cleanup = effect(); },
     setUser() {},

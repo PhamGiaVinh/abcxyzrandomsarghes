@@ -95,7 +95,7 @@ async function installMockOpsSession(page: Page, modeWrites: { rpc: string; payl
       return json({ ok: true, outcome: "pending", request_id: pendingMode.id, blockers: pendingMode.blockers });
     }
     if (path.endsWith("/rpc/get_tournament_participation_counts_v1")) return json({
-      tournament_id: tournamentId, average_stack: 40_000,
+      tournament_id: tournamentId, average_stack: 40_000, prize_pool: 0,
       counts: { total_entries: 1, re_entries: 0, remaining: 1, seated: 1,
         waiting: 0, busted: 0, anomaly_entries: 0, anomaly_seats: 0,
         live_entry_stack: 40_000, seated_stack: 40_000, waiting_stack: 0 },

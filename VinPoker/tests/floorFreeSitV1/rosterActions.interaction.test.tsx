@@ -46,7 +46,7 @@ vi.mock("@/components/ops/shared/FloorSeatRoster", () => ({
     <button onClick={() => onSeatTap(1)}>Mở Ghế 1</button>,
 }));
 vi.mock("@/components/cashier/tournament-live/OpenTableDialog", () => ({ OpenTableDialog: () => null }));
-vi.mock("@/components/cashier/tournament-live/FloorRedrawDialogV1", () => ({ FloorRedrawDialogV1: () => null }));
+vi.mock("@/components/cashier/tournament-live/FloorRedrawWorkspaceV1", () => ({ FloorRedrawWorkspaceV1: () => null }));
 vi.mock("@/components/cashier/tournament-live/MovePlayerDialog", () => ({ MovePlayerDialog: (props: {
   open: boolean; entryId: string; actorId: string | null; onMoved: () => void;
 }) => {

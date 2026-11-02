@@ -280,7 +280,7 @@ export async function fillEmptyTables(
 
     const effectiveDuration = tableOverrideConfig.get(table.id)
       ?? (table.tournament_id ? tournamentConfig.get(table.tournament_id) : undefined)
-      ?? clubDurationConfig.get(table.table_type)
+      ?? (table.table_type ? clubDurationConfig.get(table.table_type) : undefined)
       ?? null;
     if(effectiveDuration!==null&&(!Number.isInteger(effectiveDuration)||effectiveDuration<=0)){
       markFillFailure(result,'degraded','duration','swing_duration_invalid',table.id);
