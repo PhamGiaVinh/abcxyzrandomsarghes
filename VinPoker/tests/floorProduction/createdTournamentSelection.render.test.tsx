@@ -20,6 +20,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   removeChannel: state.removed,
 } }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "owner" } }) }));
+vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: { id: "owner" }, session: null, loading: false }) }));
 vi.mock("@/components/floor/FloorTournamentsLanding", () => ({
   FloorTournamentsLanding: ({ onSelect }: { onSelect: (id: string) => void }) =>
     <button onClick={() => onSelect(state.pick)}>Vào tour TEST vừa tạo</button>,

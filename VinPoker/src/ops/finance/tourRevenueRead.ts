@@ -79,7 +79,7 @@ export function finalTourRevenueCsv(report: FinalTourRevenue): string {
   if (!report.canExport || !report.snapshot || !report.capturedAt) throw new Error("TOUR_REVENUE_NOT_FINAL");
   const t = report.snapshot;
   // Quote every cell and neutralize spreadsheet formulas in editable tour names.
-  const cell = (value: unknown) => `"${String(value ?? "").replace(/^(?:\s*[=+@\-]|[\t\r\n])/, "'$&").replace(/"/g, '""')}"`;
+  const cell = (value: unknown) => `"${String(value ?? "").replace(/^(?:\s*[=+@-]|[\t\r\n])/, "'$&").replace(/"/g, '""')}"`;
   return "\uFEFF" + [
     ["Tour ID", "Tên giải", "Ngày giải", "Đóng buy", "Ghi nhận snapshot", "Buy đã thu", "Người chơi duy nhất", "Rake VND", "Phí dịch vụ VND", "Phí nền tảng VND", "Tổng đã thu VND"],
     [t.tournamentId, t.name, t.eventDay, t.registrationClosedAt, report.capturedAt, t.paidBuys, t.uniquePlayers, t.rake, t.serviceFee, t.platformFee, t.collected],
