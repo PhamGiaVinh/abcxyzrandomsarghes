@@ -105,12 +105,7 @@ function ScopedFloorTableMapPanelV3({
   refreshTrigger,
   actorId, sessionEpoch,
   onParticipationChanged,
-}: {
-  tournament: Tournament;
-  refreshTrigger: number;
-  actorId: string | null;
-  onParticipationChanged?: () => void;
-}) {
+}: FloorPanelProps) {
   const supabase = useSupabaseClient();
   const tournamentEnded = ["completed", "finished", "cancelled"].includes(tournament.status);
   const v3 = useMemo(() => createFloorTableControlV3Client(

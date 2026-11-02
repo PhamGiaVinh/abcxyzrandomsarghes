@@ -7,7 +7,7 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
   const client = { rpc: m.rpc }; return { useSupabaseClient: () => client };
 });
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: true } }));
-vi.mock("@/components/ProofUploader", () => ({ ProofUploadWorkspace: ({folder,onUploadingChange}:{folder:string;onUploadingChange?:(busy:boolean)=>void}) => <div>
+vi.mock("@/components/ProofUploadWorkspace", () => ({ ProofUploadWorkspace: ({folder,onUploadingChange}:{folder:string;onUploadingChange?:(busy:boolean)=>void}) => <div>
  <button onClick={()=>onUploadingChange?.(true)}>Start {folder}</button><button onClick={()=>onUploadingChange?.(false)}>Finish {folder}</button>
  </div> }));
 vi.mock("@/components/tournament-clock/VinPokerTournamentClock", () => ({ VinPokerTournamentClock: ({data}:{data:{brandName:string}}) => <div data-testid="clock-preview">{data.brandName}</div> }));
