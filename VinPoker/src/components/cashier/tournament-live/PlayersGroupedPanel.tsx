@@ -61,10 +61,10 @@ function responseError(data: unknown): string | null {
     : null;
 }
 
-type GroupKey = "playing" | "waiting" | "bust" | "anomaly";
+type GroupKey = "playing" | "waiting" | "bagged" | "bust" | "anomaly";
 
 /**
- * Kholdem-style 3-group players panel: Đang chơi / Chờ xếp / Bust, each with a
+ * Grouped participants panel with a separate read-only bagged roster, each with a
  * count badge + search + sort-by-chips. All groups use the canonical server
  * participation projection; invalid occupancy stays visible without actions.
  * Tap a valid playing row → action sheet (Chuyển / Sửa chip /
@@ -82,7 +82,8 @@ export function PlayersGroupedPanel({
   const tid = tournament.id;
   const { user } = useAuth();
   const { t } = useTranslation();
-  const scope = `${user?.id ?? "anonymous"}:${tournament.club_id}:${tid}`;
+  const tournamentEnded = ["completed", "finished", "cancelled"].includes(tournament.status);
+  const scope = `${user?.id ?? "anonymous"}:${tournament.club_id}:${tid}:${tournamentEnded}`;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   const requestSeq = useRef(0);
@@ -132,7 +133,7 @@ export function PlayersGroupedPanel({
       const [participationRes, tablesRes] = await Promise.all([
         (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>)(
           "get_tournament_participation_v1", { p_tournament_id: tid }),
-        floorClient.getTournamentTableInventory(tid),
+        tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : floorClient.getTournamentTableInventory(tid),
       ]);
       if (seq !== requestSeq.current || scopeRef.current !== scope) return;
       if (participationRes.error) {
@@ -155,14 +156,15 @@ export function PlayersGroupedPanel({
       const m: Record<string, string> = {};
       for (const r of projection.seats) if (r.entry_id) m[r.seat_id] = r.entry_id;
       setEntryBySeat(m);
-      setEntries(projection.entries.filter((e) => e.participation_status === "waiting" || e.participation_status === "busted").map((e) => ({
+      setEntries(projection.entries.filter((e) => e.participation_status === "busted" || e.participation_status === "waiting"
+        || (e.status === "bagged" && e.participation_status === "bagged")).map((e) => ({
         id: e.id,
         player_id: e.player_id,
         player_name: e.player_name ?? "",
         current_stack: e.current_stack ?? 0,
         seat_number: e.seat_number ?? null,
         finished_place: e.finished_place ?? null,
-        status: e.participation_status === "waiting" ? "registered" : "busted",
+        status: e.status === "bagged" ? "bagged" : e.participation_status === "waiting" ? "registered" : "busted",
       })));
       // Viewing participation does not require mutation authority. An unavailable
       // table context must disable actions, not discard an authorized read.
@@ -185,7 +187,7 @@ export function PlayersGroupedPanel({
     } finally {
       if (seq === requestSeq.current && scopeRef.current === scope) setLoading(false);
     }
-  }, [tid, scope, user?.id, t]);
+  }, [tid, scope, user?.id, t, tournamentEnded]);
 
   useEffect(() => {
     setSelected(null); setMoveTarget(null); setEditTarget(null); setInfoTarget(null);
@@ -200,6 +202,7 @@ export function PlayersGroupedPanel({
     () => entries.filter((e) => e.status === "registered"),
     [entries],
   );
+  const bagged = useMemo(() => entries.filter((e) => e.status === "bagged"), [entries]);
   const bust = useMemo(
     () => entries
       .filter((e) => e.status === "busted")
@@ -208,8 +211,8 @@ export function PlayersGroupedPanel({
   );
 
   const scopeReady = loadedScope === scope;
-  const operationsReady = scopeReady && !loading && !loadError && !authorityError;
-  const counts = { playing: seats?.length ?? 0, waiting: waiting.length, bust: bust.length,
+  const operationsReady = !tournamentEnded && scopeReady && !loading && !loadError && !authorityError;
+  const counts = { playing: seats?.length ?? 0, waiting: waiting.length, bagged: bagged.length, bust: bust.length,
     anomaly: anomalySeats.length + anomalyEntries.length };
 
   const filterText = useCallback(
@@ -326,13 +329,14 @@ export function PlayersGroupedPanel({
       {scopeReady && authorityError && <div role="alert" className="text-sm text-warning">
         Không xác minh được trạng thái bàn. Vẫn có thể xem danh sách; thao tác tạm khóa. Hãy tải lại.
       </div>}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className={`grid grid-cols-2 ${bagged.length || group === "bagged" ? "sm:grid-cols-5" : "sm:grid-cols-4"} gap-2`}>
         {([
           ["playing", "Đang chơi", counts.playing, "text-primary border-primary/45 bg-primary/10"],
           ["waiting", "Chờ xếp", counts.waiting, "text-warning border-warning/45 bg-warning/10"],
+          ["bagged", t("participation.bagged"), counts.bagged, "text-primary border-primary/45 bg-primary/10"],
           ["bust", "Bust", counts.bust, "text-destructive border-destructive/45 bg-destructive/10"],
           ["anomaly", t("participation.repairRequired"), counts.anomaly, "text-warning border-warning/45 bg-warning/10"],
-        ] as [GroupKey, string, number, string][]).map(([k, label, n, active]) => (
+        ] as [GroupKey, string, number, string][]).filter(([k, , n]) => k !== "bagged" || n > 0 || group === "bagged").map(([k, label, n, active]) => (
           <button
             key={k}
             onClick={() => setGroup(k)}
@@ -396,6 +400,19 @@ export function PlayersGroupedPanel({
             ))}
           </div>
         )
+      ) : group === "bagged" ? (
+        <section aria-label={t("participation.bagged")} className="space-y-2">
+          <p className="text-sm text-muted-foreground">{t("participation.baggedHint")}</p>
+          {bagged.filter((e) => filterText(e.player_name || e.player_id)).length === 0
+            ? <Empty text={t("participation.noBagged")} />
+            : bagged.filter((e) => filterText(e.player_name || e.player_id)).map((e) => (
+              <div key={e.id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-2">
+                <Avatar name={e.player_name || e.player_id} tone="muted" />
+                <div className="min-w-0 flex-1 break-words text-sm font-medium">{e.player_name || e.player_id.slice(0, 8)}</div>
+                <div className="shrink-0 font-mono text-xs text-muted-foreground">{formatStack(e.current_stack)}</div>
+              </div>
+            ))}
+        </section>
       ) : group === "anomaly" ? (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">{t("participation.repairHint")}</p>
@@ -419,9 +436,9 @@ export function PlayersGroupedPanel({
                 <Avatar name={e.player_name || e.player_id} tone="muted" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium line-through decoration-muted-foreground/40">{e.player_name || e.player_id.slice(0, 8)}</div>
-                  <div className="text-xs text-destructive">Đã loại</div>
+                  <div className="text-xs text-destructive">Đã loại · entry {e.id.slice(-8)}</div>
                 </div>
-                {canMove && operationsReady && <Button variant="outline" className="min-h-11 shrink-0" onClick={() => setRestoreTarget({ entryId: e.id, name: e.player_name || e.player_id })}>
+                {canMove && operationsReady && <Button variant="outline" className="min-h-11 shrink-0" onClick={() => setRestoreTarget({ entryId: e.id, name: `${e.player_name || e.player_id} · entry ${e.id.slice(-8)}` })}>
                   Hoàn tác bust nhầm
                 </Button>}
               </div>
@@ -430,13 +447,13 @@ export function PlayersGroupedPanel({
         )
       )}
 
-      <RestoreBustDialog actorId={user?.id ?? null} tournamentId={tid} target={restoreTarget} onClose={() => setRestoreTarget(null)} onRestored={() => {
+      <RestoreBustDialog actorId={user?.id ?? null} tournamentId={tid} target={tournamentEnded ? null : restoreTarget} onClose={() => setRestoreTarget(null)} onRestored={() => {
         void load();
         // Refresh server-owned tournament totals even when Realtime is delayed.
         onTournamentChanged?.();
       }} />
       <PlayerActionSheet
-        open={selected !== null}
+        open={!tournamentEnded && selected !== null}
         onOpenChange={(v) => { if (!v) setSelected(null); }}
         seat={selected as ActionSeat | null}
         entryId={selected ? entryBySeat[selected.seat_id] : undefined}
@@ -451,7 +468,7 @@ export function PlayersGroupedPanel({
       />
 
       <PlayerInfoSheet
-        open={infoTarget !== null}
+        open={!tournamentEnded && infoTarget !== null}
         onOpenChange={(v) => { if (!v) setInfoTarget(null); }}
         seat={infoTarget as ActionSeat | null}
         ticketNumber={infoTarget ? entryBySeat[infoTarget.seat_id] : undefined}
@@ -462,7 +479,7 @@ export function PlayersGroupedPanel({
         onBust={() => { void requestBust(infoTarget); }}
       />
 
-      {moveTarget && entryBySeat[moveTarget.seat_id] && (
+      {!tournamentEnded && moveTarget && entryBySeat[moveTarget.seat_id] && (
         <MovePlayerDialog
           actorId={user?.id ?? null}
           open={moveTarget !== null}
@@ -477,7 +494,7 @@ export function PlayersGroupedPanel({
       )}
 
       <EditChipsDialog
-        open={editTarget !== null}
+        open={!tournamentEnded && editTarget !== null}
         onOpenChange={(v) => { if (!v) setEditTarget(null); }}
         tournamentId={tid}
         seat={editTarget as ActionSeat | null}
@@ -485,7 +502,7 @@ export function PlayersGroupedPanel({
       />
 
       <ManualFloorBustConfirmDialog
-        open={manualBustTarget !== null}
+        open={!tournamentEnded && manualBustTarget !== null}
         onOpenChange={(open) => { if (!open) setManualBustTarget(null); }}
         playerName={manualBustTarget?.player_name || manualBustTarget?.player_id.slice(0, 8) || "Người chơi"}
         chipCount={manualBustTarget?.chip_count ?? 0}

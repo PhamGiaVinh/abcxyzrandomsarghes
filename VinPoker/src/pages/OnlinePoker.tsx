@@ -13,7 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { FEATURES } from '@/lib/featureFlags';
 import { RUNTIME_LIVE } from '@/lib/onlinePoker/types';
-import type { RpcOutcome } from '@/lib/onlinePoker/wire';
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
+import { useOnlineCreateIntent } from '@/hooks/useOnlineCreateIntent';
+import type { OnlineCreatePayload } from '@/lib/onlinePoker/createReceipt';
 import { useLobby } from '@/lib/onlinePoker/useOnlinePoker';
 import { PokerComingSoon } from '@/components/poker/PokerComingSoon';
 import { CreateTableDialog } from '@/components/poker/CreateTableDialog';
@@ -49,25 +51,28 @@ function TableFelt({ seated, maxSeats }: { seated: number; maxSeats: number }) {
 }
 
 export default function OnlinePoker() {
-  const { user } = useAuth();
-  const { tables, loading, error, createTable, refresh } = useLobby();
+  const { user, session } = useAuth();
+  if (!FEATURES.onlinePoker) return <PokerComingSoon />;
+  const backend = import.meta.env.VITE_SUPABASE_URL ?? '';
+  return <OnlinePokerWorkspace key={JSON.stringify([user?.id, backend, sessionReadEpoch(session)])} actorId={user?.id ?? ''} backend={backend} />;
+}
+
+function OnlinePokerWorkspace({ actorId, backend }: { actorId: string; backend: string }) {
+  const { tables, loading, error, refresh } = useLobby();
   const nav = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
 
-  if (!FEATURES.onlinePoker) return <PokerComingSoon />;
+  const intent = useOnlineCreateIntent(actorId, backend, (receipt) => {
+    if (receipt.outcome === 'ok') nav(`/poker/table/${receipt.table_id}`);
+    else toast.error(receipt.outcome === 'disabled' ? 'Poker đang tạm đóng.' : 'Server từ chối cấu hình bàn. Kiểm tra blind, chip và số ghế.');
+  });
+  const cannotCreate = intent.blocked || intent.busy || !!intent.pending;
 
   const totalPlayers = tables.reduce((s, t) => s + t.seatedCount, 0);
 
-  const onCreate = async (args: { name: string; sb: string; bb: string; buyin: string; maxSeats: number }) => {
-    try {
-      const res = (await createTable(args.name, args.sb, args.bb, args.buyin, args.maxSeats)) as RpcOutcome;
-      if (res?.outcome === 'ok' && typeof res.table_id === 'string') {
-        setCreateOpen(false);
-        nav(`/poker/table/${res.table_id}`);
-      } else {
-        toast.error(res?.outcome === 'disabled' ? 'Poker đang tạm đóng.' : 'Không tạo được bàn, thử lại.');
-      }
-    } catch { toast.error('Không tạo được bàn, thử lại.'); }
+  const onCreate = async (args: OnlineCreatePayload) => {
+    setCreateOpen(false);
+    await intent.submit(args);
   };
 
   return (
@@ -90,11 +95,13 @@ export default function OnlinePoker() {
       {/* summary + create */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span><span className="font-semibold text-foreground">{tables.length}</span> bàn</span>
-          <span><span className="font-semibold text-foreground">{totalPlayers}</span> người chơi</span>
+          {error ? <span>Chưa xác minh số bàn và người chơi</span> : loading ? <span>Đang xác minh số bàn và người chơi…</span> : <>
+            <span><span className="font-semibold text-foreground">{tables.length}</span> bàn</span>
+            <span><span className="font-semibold text-foreground">{totalPlayers}</span> người chơi</span>
+          </>}
         </div>
-        {user ? (
-          <Button size="sm" className="ml-auto gap-1.5" onClick={() => setCreateOpen(true)}>
+        {actorId ? (
+          <Button size="sm" className="ml-auto gap-1.5" disabled={cannotCreate} onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> Tạo bàn mới
           </Button>
         ) : (
@@ -103,6 +110,20 @@ export default function OnlinePoker() {
           </Button>
         )}
       </div>
+
+      {actorId && intent.message && <p role="status" className="text-sm text-muted-foreground">{intent.message}</p>}
+      {actorId && intent.pending && (
+        <section aria-label="Yêu cầu tạo bàn đang chờ" aria-busy={intent.busy} className="rounded-lg border p-4 space-y-2">
+          <h2 className="font-semibold">Xác minh yêu cầu tạo bàn</h2>
+          <p className="text-sm break-all">Mã yêu cầu: {intent.pending.requestId}</p>
+          <p className="text-sm break-words">{intent.pending.payload.name || 'Bàn không tên'} · Blinds {intent.pending.payload.sb}/{intent.pending.payload.bb} · {intent.pending.payload.buyin} chip ảo · {intent.pending.payload.maxSeats} ghế</p>
+          <p className="text-sm text-muted-foreground">Không tạo mã mới khi chưa biết kết quả. Kiểm tra receipt chỉ đọc, không tạo thêm bàn.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={intent.busy || intent.blocked} onClick={() => void intent.recover()}>Kiểm tra receipt</Button>
+            {!intent.readOnlyRecovery && <Button variant="outline" disabled={intent.busy || intent.blocked} onClick={() => void intent.retry()}>Thử lại đúng mã</Button>}
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
@@ -113,10 +134,12 @@ export default function OnlinePoker() {
       {/* table grid */}
       {loading && tables.length === 0 ? (
         <div className="py-12 text-center text-muted-foreground text-sm">Đang tải bàn…</div>
+      ) : error && tables.length === 0 ? (
+        <p role="status" className="py-12 text-center text-muted-foreground text-sm">Chưa xác minh được danh sách bàn. Dùng nút tải lại để kiểm tra kết nối.</p>
       ) : tables.length === 0 ? (
         <div className="py-12 text-center space-y-3">
           <p className="text-muted-foreground text-sm">Chưa có bàn nào đang mở.</p>
-          {user && <Button onClick={() => setCreateOpen(true)} className="gap-1.5"><Plus className="h-4 w-4" /> Tạo bàn đầu tiên</Button>}
+          {actorId && <Button disabled={cannotCreate} onClick={() => setCreateOpen(true)} className="gap-1.5"><Plus className="h-4 w-4" /> Tạo bàn đầu tiên</Button>}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

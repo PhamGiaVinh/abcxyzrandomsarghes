@@ -81,6 +81,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand,scenario})
  ON CONFLICT(tournament_id,tournament_table_id,user_id,capability) DO UPDATE SET enabled=true
  WHERE s.club_id=excluded.club_id AND s.enabled=false RETURNING id;`);
  assert.ok(scope,'owned correction scope must be new or the same disabled scope from an earlier hand');
+ try{
  actor=crypto.randomUUID();response=await invoke(body);assert.equal(response.status,403);assert.equal((await response.json()).code,'actor_not_authorized');assert.equal(serviceReads,0);assert.equal(fingerprint(),before);
  actor=fixture.actor;response=await invoke(body);const preview=await response.json();assert.equal(response.status,200,JSON.stringify({preview,errors}));assert.equal(preview.status,'preview');assert.equal(fingerprint(),before);assert.deepEqual(errors,[]);
  const commit={...body,mode:'commit',idempotency_key:'native-correction-edge-'+hand,expected_source_revision:preview.source_revision,expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash};
@@ -105,7 +106,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand,scenario})
  const readsBefore=serviceReads;actor=crypto.randomUUID();response=await invoke(receiptIntent);assert.equal(response.status,409);assert.equal((await response.json()).code,'actor_context_changed');assert.equal(serviceReads,readsBefore);
  response=await invoke({...receiptIntent,expected_actor_id:actor});assert.equal(response.status,403);assert.equal((await response.json()).code,'actor_not_authorized');assert.equal(serviceReads,readsBefore);
  actor=fixture.actor;
- sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE tournament_id='${fixture.tour}' AND user_id='${fixture.actor}';`);
+ sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE id='${scope}' AND tournament_id='${fixture.tour}' AND user_id='${fixture.actor}' AND capability='correct_completed_hand';`);
  response=await invoke(receiptIntent);assert.equal(response.status,200);assert.equal((await response.json()).status,'receipt_found');assert.equal(fingerprint(),after);
  response=await invoke({...receiptIntent,mode:'resolve'});const resolved=await response.json();assert.equal(response.status,200,JSON.stringify({resolved,errors}));assert.equal(resolved.status,'receipt_found');assert.ok(resolved.current_source_revision>preview.source_revision);
  response=await invoke({...receiptIntent,mode:'resolve',idempotency_key:'native-never-sent-'+hand});const obsolete=await response.json();assert.equal(response.status,200);assert.equal(obsolete.status,'intent_obsolete');assert.equal(obsolete.receipt,null);
@@ -113,4 +114,70 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand,scenario})
  response=await invoke({...receiptIntent,mode:'resolve',expected_request_hash:'f'.repeat(64)});assert.equal(response.status,409);assert.equal((await response.json()).code,'idempotency_mismatch');assert.equal(fingerprint(),after);
  if(process.argv.includes('--correction-overlap'))await runPaidCorrectionOverlap({sql,service,fixture,hand});
  console.log(maskReceipt?'ACTUAL_PAID_CORRECTION_MISSING_COMMIT_RECEIPT_THEN_READ_RECOVERY_PASS':'ACTUAL_PAID_CORRECTION_EDGE_SCOPE_PREVIEW_COMMIT_STALE_RETRY_PASS');
+ }finally{
+  // Failed preview/assertions must not leave an unbounded local UAT grant. Only
+  // restore the exact scope acquired above, never another capability or actor.
+  sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE id='${scope}' AND tournament_id='${fixture.tour}' AND user_id='${fixture.actor}' AND capability='correct_completed_hand' AND enabled;`);
+ }
+}
+
+// One explicit local test command while an anonymous browser stays open.
+// Browser transport remains read-only; no public correction endpoint is added.
+export async function correctRetainedObserverHand({sql,fixture,hand}){
+ assert.equal(hand,'055121ac-b49f-4b4b-9d17-a13cdee903e3');
+ assert.equal(fixture.tour,'eb0c2302-5fec-4e61-a326-a9ba84728bb2');
+ assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
+ assert.equal(sql("SHOW data_directory;"),'/tmp/vinpoker-sol-local-20261016-0e79a729/data');
+ assert.equal(sql("SELECT host(inet_server_addr())||'|'||inet_server_port();"),'127.0.0.1|55441');
+ assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net');"),'f');
+ assert.equal(sql("SELECT has_schema_privilege('authenticated','auth','USAGE');"),'t','existing native Auth model required');
+ const scope=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.tracker_correction_uat_scopes s
+  JOIN public.tournament_hands h ON h.tournament_id=s.tournament_id AND h.tournament_table_id=s.tournament_table_id
+  WHERE h.id='${hand}' AND s.user_id='${fixture.actor}' AND s.capability='correct_completed_hand';`));
+ assert.equal(scope.enabled,false,'must restore the same disabled local scope');
+ const currentRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
+ assert.ok(currentRevision===12||currentRevision===13,'one-shot exact retained canary or its original receipt');
+ const nonHand=()=>sql(`SELECT md5(jsonb_build_object(
+  'cash',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}'),
+  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${fixture.tour}'),
+  'chips',(SELECT jsonb_agg(to_jsonb(c)-'updated_at' ORDER BY player_id,entry_number) FROM public.tournament_chip_counts c WHERE tournament_id='${fixture.tour}'))::text);`);
+ const before=nonHand(),role='history_observer_'+crypto.randomUUID().replaceAll('-','');
+ const request=currentRevision===13?'observer-live-89944e8b-63b3-45b0-a1fb-6702d8284db2':'observer-live-'+crypto.randomUUID();
+ const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${role};`;
+ sql(`CREATE ROLE ${role} NOLOGIN INHERIT BYPASSRLS;GRANT service_role TO ${role};`);
+ try{
+  if(currentRevision===13){
+   const saved=JSON.parse(sql(`SELECT to_jsonb(o) FROM public.tournament_settlement_outcomes o WHERE o.hand_id='${hand}'
+    AND o.idempotency_key='${request}' AND o.actor_user_id='${fixture.actor}' AND o.verification_scope='chain' AND o.source_revision=13;`));
+   assert.equal(saved.public_outcome.sourceRevision,12);assert.equal(saved.status,'verified');
+   return await runPaidCorrectionEdge({sql,service,fixture,hand,scenario:async({invoke,errors})=>{
+    const response=await invoke({mode:'resolve',tournament_id:fixture.tour,hand_id:hand,idempotency_key:request,expected_actor_id:fixture.actor,
+     expected_source_revision:12,expected_source_chain_hash:saved.public_outcome.sourceChainHash,
+     expected_outcome_hash:saved.outcome_hash,expected_request_hash:saved.request_hash});
+    const result=await response.json();assert.equal(response.status,200,JSON.stringify({result,errors}));
+    assert.equal(result.status,'receipt_found');assert.equal(result.current_source_revision,13);assert.equal(result.receipt.ok,true);assert.deepEqual(errors,[]);
+    return {hand,request,oldRevision:12,revision:13,board:['8d','9h','Ts'],receipt:result.receipt,recovered:true};
+   }});
+  }
+  sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=true WHERE id='${scope.id}' AND enabled=false;`);
+  return await runPaidCorrectionEdge({sql,service,fixture,hand,scenario:async({invoke,body,errors})=>{
+   const payload={...body,edit:{communityCards:['8d','9h','Ts']}};
+   const previewResponse=await invoke(payload),preview=await previewResponse.json();
+   assert.equal(previewResponse.status,200,JSON.stringify({preview,errors}));assert.equal(preview.source_revision,12);
+   const commit={...payload,mode:'commit',idempotency_key:request,expected_source_revision:preview.source_revision,
+    expected_source_chain_hash:preview.source_chain_hash,expected_outcome_hash:preview.outcome_hash};
+   console.log('LOCAL_OBSERVER_CORRECTION_INTENT',JSON.stringify({hand,request,revision:preview.source_revision,board:payload.edit.communityCards}));
+   const response=await invoke(commit),result=await response.json();
+   assert.equal(response.status,200,JSON.stringify({result,errors}));assert.equal(result.status,'verified');assert.equal(result.receipt.ok,true);
+   assert.deepEqual(errors,[]);assert.equal(nonHand(),before);
+   const revision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));assert.ok(revision>12);
+   const page=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${scope.tournament_table_id}',20,NULL,NULL);`));
+   const item=page.items.find(row=>row.handId===hand);assert.deepEqual(item.board,payload.edit.communityCards);assert.equal(item.result.status,'verified');
+   return {hand,request,oldRevision:12,revision,board:item.board,receipt:result.receipt};
+  }});
+ }finally{
+  sql(`UPDATE public.tracker_correction_uat_scopes SET enabled=false WHERE id='${scope.id}';DROP ROLE ${role};`);
+  assert.deepEqual(JSON.parse(sql(`SELECT to_jsonb(s) FROM public.tracker_correction_uat_scopes s WHERE id='${scope.id}';`)),scope);
+  assert.equal(nonHand(),before);
+ }
 }

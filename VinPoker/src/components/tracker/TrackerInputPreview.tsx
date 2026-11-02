@@ -88,7 +88,7 @@ function TrackerInputPreviewContent() {
     console.log('[tracker intent]', intent);
     if (actingSeatNumber != null) history.current.push(actingSeatNumber);
     setActingSeatNumber((cur) => (cur == null ? null : nextActing(SEATS, cur)));
-    showFlash('✓ đã ghi · → ghế kế');
+    showFlash('Mô phỏng · chưa ghi DB · → ghế kế');
   };
 
   const handleUndo = () => {
@@ -96,7 +96,7 @@ function TrackerInputPreviewContent() {
     const prev = history.current.pop();
     if (prev != null) {
       setActingSeatNumber(prev);
-      showFlash('↶ hoàn tác · ← ghế trước');
+      showFlash('Mô phỏng hoàn tác · chưa ghi DB · ← ghế trước');
     }
   };
 

@@ -33,7 +33,16 @@ export function LegacyPayrollPreviewDialog(props: {
             <iframe
               title="Bản xem tạm tính phiếu lương"
               sandbox=""
-              srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${preview.html}</body></html>`}
+              srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${preview.html}<style>
+                @media screen and (max-width: 800px) {
+                  .payroll-print { width: 100%; min-height: 0; padding: 16px; box-shadow: none; overflow-wrap: anywhere; }
+                  .payroll-brand { flex-wrap: wrap; gap: 8px; }
+                  .identity-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px; }
+                  .identity-grid div { min-width: 0; gap: 8px; }
+                  .payroll-table th, .payroll-table td { padding: 6px 4px; overflow-wrap: anywhere; }
+                  .payroll-net { flex-wrap: wrap; gap: 8px; padding: 10px; }
+                }
+              </style></body></html>`}
               className="h-full min-h-[620px] w-full border-0 bg-[#dfe5e0]"
             />
           ) : null}

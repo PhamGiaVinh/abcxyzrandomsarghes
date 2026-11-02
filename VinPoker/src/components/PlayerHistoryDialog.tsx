@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 interface Props {
   playerId: string | null;
@@ -25,25 +27,39 @@ const fmtShort = (n: number) => {
   return `${sign}₫${abs}`;
 };
 
-export default function PlayerHistoryDialog({ playerId, playerName, avatarUrl, open, onOpenChange }: Props) {
+export default function PlayerHistoryDialog(props: Props) {
+  return <ScopedPlayerHistoryDialog key={JSON.stringify([props.playerId,props.open])} {...props} />;
+}
+
+function ScopedPlayerHistoryDialog({ playerId, playerName, avatarUrl, open, onOpenChange }: Props) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
 
   useEffect(() => {
-    if (!open || !playerId) return;
-    setLoading(true);
-    supabase
+    let active=true;
+    const controller=new AbortController();
+    setRows([]);setLoading(true);setReadError(false);
+    if (!open || !playerId) {setLoading(false);setReadError(true);return ()=>controller.abort();}
+    const load=async()=>{try {
+    const {data,error}=await observeTrackerContextRead(supabase
       .from("player_results")
       .select("*")
       .eq("player_id", playerId)
       .eq("verified_by_admin", true)
-      .order("event_date", { ascending: false })
-      .then(({ data }) => {
-        setRows(data ?? []);
-        setLoading(false);
-      });
-  }, [open, playerId]);
+      .order("event_date", { ascending: false }).abortSignal(controller.signal));
+    if(!active)return;
+    if(error||!Array.isArray(data)||data.some(row=>!row||row.player_id!==playerId||row.verified_by_admin!==true
+      || typeof row.id!=="string" || !row.id.trim()
+      || (row.tournament_name!=null&&typeof row.tournament_name!=="string")
+      || (row.event_date!=null&&typeof row.event_date!=="string")))throw new Error("player_history_unverified");
+    setRows(data);
+    }catch{if(active)setReadError(true);}finally{controller.abort();if(active)setLoading(false);}};
+    void load();
+    return ()=>{active=false;controller.abort();};
+  }, [open, playerId,readAttempt]);
 
   const totalPrize = rows.reduce((s, r) => s + Number(r.prize || 0), 0);
   const totalBuyIn = rows.reduce((s, r) => s + Number(r.buy_in || 0), 0);
@@ -61,7 +77,7 @@ export default function PlayerHistoryDialog({ playerId, playerName, avatarUrl, o
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-3 gap-2 my-3">
+        {!loading&&!readError&&<div className="grid grid-cols-3 gap-2 my-3">
           <div className="rounded-md border border-border p-2 text-center min-w-0">
             <div className="text-[10px] sm:text-xs text-muted-foreground">{t("playerHistory.prizeCount")}</div>
             <div className="font-display text-primary text-base sm:text-lg tabular-nums">{rows.length}</div>
@@ -80,11 +96,11 @@ export default function PlayerHistoryDialog({ playerId, playerName, avatarUrl, o
               <span className="hidden sm:inline">{fmt(profit)}</span>
             </div>
           </div>
-        </div>
+        </div>}
 
         {loading ? (
-          <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-        ) : rows.length === 0 ? (
+          <div role="status" aria-label={t("playerHistory.loading")} className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+        ) : readError ? <div className="space-y-3 py-8 text-center"><p role="alert">{t("playerHistory.loadError")}</p><Button type="button" variant="outline" className="min-h-11" onClick={()=>setReadAttempt(value=>value+1)}>{t("playerHistory.retry")}</Button></div> : rows.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-8">{t("playerHistory.noVerifiedResults")}</div>
         ) : (
           <>

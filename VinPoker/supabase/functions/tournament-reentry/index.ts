@@ -32,30 +32,52 @@ Deno.serve(async (req) => {
     if (tourError) return j({ error: "Tournament unavailable" }, 503);
     if (!tour) return j({ error: "Tournament not found" }, 404);
 
-    // Preserve configured club-bank preference. Read errors are not evidence
-    // the club lacks an account and must not silently select a different bank.
+    if (!tour.club_id) return j({ error: "Tournament has no club" }, 400);
+    // Match registration: cashier clubs advertise only the account actually
+    // configured for SePay, or accept payment at the counter without a bank.
+    const setting = await admin.from("cashier_tour_settings").select("enabled")
+      .eq("club_id", tour.club_id).maybeSingle();
+    if (setting.error) return j({ error: "Payment configuration unavailable" }, 503);
     const columns = "id,bank_name,account_number,account_holder,qr_code_url";
     let bank: { id: string; bank_name: string; account_number: string; account_holder: string; qr_code_url: string | null } | null = null;
-    if (tour.club_id) {
+    if (setting.data?.enabled) {
+      const config = await admin.from("club_payment_config").select("master_account_number")
+        .eq("club_id", tour.club_id).eq("is_active", true)
+        .not("api_token_vault_key", "is", null).maybeSingle();
+      if (config.error) return j({ error: "Payment configuration unavailable" }, 503);
+      if (config.data) {
+        if (!config.data.master_account_number) return j({ error: "SePay master account missing" }, 503);
+        const accounts = await admin.from("platform_bank_accounts").select(`${columns},club_id`)
+          .eq("is_active", true).eq("account_number", config.data.master_account_number);
+        if (accounts.error) return j({ error: "Club bank account unavailable" }, 503);
+        if (accounts.data?.length !== 1 || accounts.data[0].club_id !== tour.club_id) {
+          return j({ error: "SePay master account is not exclusive to this club" }, 503);
+        }
+        bank = accounts.data[0];
+      }
+    } else {
       const result = await admin.from("platform_bank_accounts").select(columns)
         .eq("is_active", true).eq("club_id", tour.club_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (result.error) return j({ error: "Bank configuration unavailable" }, 503);
       bank = result.data;
+      if (!bank) {
+        const fallback = await admin.from("platform_bank_accounts").select(columns)
+          .eq("is_active", true).is("club_id", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (fallback.error) return j({ error: "Bank configuration unavailable" }, 503);
+        bank = fallback.data;
+      }
+      if (!bank) return j({ error: "CLB chưa cấu hình tài khoản nhận tiền." }, 400);
     }
-    if (!bank) {
-      const result = await admin.from("platform_bank_accounts").select(columns)
-        .eq("is_active", true).is("club_id", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (result.error) return j({ error: "Bank configuration unavailable" }, 503);
-      bank = result.data;
-    }
-    if (!bank) return j({ error: "CLB chưa cấu hình tài khoản nhận tiền." }, 400);
-    const bin = await admin.from("platform_bank_accounts").select("bank_bin").eq("id", bank.id).maybeSingle();
+    const bin = bank ? await admin.from("platform_bank_accounts").select("bank_bin").eq("id", bank.id).maybeSingle() : null;
 
     // No insert or client/Edge price arithmetic. Existing pending registrations
     // retain their committed snapshot even if tournament pricing changes later.
     const { data: registration, error: registrationError } = await admin.rpc("cashier_create_app_reentry_v1", {
       p_tournament_id: tour.id, p_player_id: userData.user.id,
     });
+    if (registrationError?.code === "23514" && registrationError.message === "multi_day_rules_required_before_registration") {
+      return j({ error: "Main Event chưa khóa rules. Vui lòng liên hệ Floor trước khi đăng ký.", code: "MAIN_EVENT_RULES_NOT_READY" }, 409);
+    }
     if (registrationError) return j({ error: "Re-entry unavailable" }, 503);
     if (!registration?.ok) return j({ error: registration?.error ?? "Re-entry unavailable" }, 400);
     const snapshot = registration.price_snapshot as {
@@ -72,7 +94,7 @@ Deno.serve(async (req) => {
       // never retried by this transport after a registration response is lost.
       await admin.from("notifications").insert({
         user_id: userData.user.id, type: "registration_confirmed", title: "Yêu cầu mua lại giải",
-        body: `Bạn đã tạo yêu cầu mua lại giải "${tour.name}". Vui lòng chuyển khoản để vào lại bàn.`,
+        body: `Bạn đã tạo yêu cầu mua lại giải "${tour.name}". ${bank ? "Vui lòng chuyển khoản để vào lại bàn." : "Vui lòng thanh toán tại quầy để vào lại bàn."}`,
         data: { tournament_id: tour.id, club_id: tour.club_id, reentry: true },
       }).then(() => undefined, () => undefined);
     }
@@ -81,8 +103,8 @@ Deno.serve(async (req) => {
       registration_id: registration.registration_id, status: registration.status,
       reference_code: registration.reference_code, total_pay: registration.total_pay,
       breakdown: { buy_in: snapshot.buy_in, club_fee: snapshot.rake, service_fee: snapshot.service_fee, platform_fee: snapshot.platform_fee },
-      bank_name: bank.bank_name, account_number: bank.account_number, account_holder: bank.account_holder,
-      qr_code_url: bank.qr_code_url, bank_bin: bin.error ? null : bin.data?.bank_bin ?? null,
+      bank_name: bank?.bank_name ?? null, account_number: bank?.account_number ?? null, account_holder: bank?.account_holder ?? null,
+      qr_code_url: bank?.qr_code_url ?? null, bank_bin: bin?.error ? null : bin?.data?.bank_bin ?? null,
       transfer_proof_url: registration.transfer_proof_image_url,
       transfer_proof_submitted: registration.transfer_proof_submitted,
       committed_at: registration.committed_at, free_rake_applied: false, savings: 0,

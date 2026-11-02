@@ -6,8 +6,6 @@ import {
 } from "../_shared/telegram.ts";
 import { authenticateUser } from "../_shared/staking-common.ts";
 import { mapWithConcurrency } from "../_shared/mapWithConcurrency.ts";
-import { requiresStaleCheckoutCleanup } from "../_shared/checkoutSafety.ts";
-import { checkoutReplacementTarget } from "../_shared/checkoutReplacement.ts";
 
 const CHECKOUT_BATCH_CONCURRENCY = 3;
 
@@ -27,22 +25,6 @@ interface DealerRow {
   full_name: string;
   telegram_username: string | null;
   telegram_user_id: string | null;
-}
-
-interface TableNameRow {
-  table_name: string | null;
-}
-
-interface AssignmentIdRow {
-  id: string;
-}
-
-interface BreakRow {
-  id: string;
-  assignment_id: string | null;
-  attendance_id: string | null;
-  break_start: string;
-  break_end: string | null;
 }
 
 interface TxResultRow {
@@ -66,241 +48,116 @@ interface SwingConfigRow {
   swing_duration_minutes: number | null;
 }
 
+interface CheckoutCore {
+  success: true;
+  core_version: 1;
+  attendance_id: string;
+  club_id: string;
+  dealer_name: string;
+  check_in_time: string;
+  check_out_time: string;
+  total_hours: number;
+  released_pre_assigned: boolean;
+  pre_assigned_table: string | null;
+  replacement_table_id: string | null;
+  replacement_session_id: string | null;
+  replacement_assignment_id: string | null;
+  released_assignment_ids: string[];
+  cleared_preassignment_assignment_ids: string[];
+  idempotent: boolean;
+}
+
+function checkoutCore(value: unknown, attendanceId: string, clubId: string): CheckoutCore | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const textOrNull = (v: unknown) => v === null || (typeof v === "string" && v.length > 0);
+  const ids = [row.replacement_table_id, row.replacement_session_id, row.replacement_assignment_id];
+  if (row.success !== true || row.core_version !== 1 || row.attendance_id !== attendanceId || row.club_id !== clubId ||
+      typeof row.dealer_name !== "string" || typeof row.check_in_time !== "string" || typeof row.check_out_time !== "string" ||
+      !Number.isFinite(Date.parse(row.check_in_time)) || !Number.isFinite(Date.parse(row.check_out_time)) ||
+      Date.parse(row.check_out_time) < Date.parse(row.check_in_time) ||
+      typeof row.total_hours !== "number" || !Number.isFinite(row.total_hours) || row.total_hours < 0 || row.total_hours > 24 ||
+      typeof row.released_pre_assigned !== "boolean" || !(row.pre_assigned_table === null || typeof row.pre_assigned_table === "string") ||
+      typeof row.idempotent !== "boolean" || !ids.every(textOrNull) ||
+      !(ids.every(v => v === null) || ids.every(v => typeof v === "string")) ||
+      ![row.released_assignment_ids, row.cleared_preassignment_assignment_ids].every(
+        list => Array.isArray(list) && list.every(id => typeof id === "string" && id.length > 0))) return null;
+  return row as unknown as CheckoutCore;
+}
+
 async function processOneCheckout(
-  admin: any,
+  admin: Pick<ReturnType<typeof createClient>, "from" | "rpc">,
   botToken: string,
   uid: string,
   attendanceId: string,
 ): Promise<Record<string, unknown>> {
-  // 1. Get attendance info
-  const { data: att, error: attErr } = (await admin
-    .from("dealer_attendance")
-    .select("id, dealer_id, status, current_state, shift_id, check_in_time, pre_assigned_table_id")
-    .eq("id", attendanceId)
-    .single()) as unknown as { data: AttendanceRow | null; error: { message: string } | null };
-
-  if (attErr) return { attendance_id: attendanceId, success: false, error: `DB error: ${attErr.message}` };
-  if (!att) return { attendance_id: attendanceId, success: false, error: "Attendance not found" };
-  if (att.status !== "checked_in") {
-    return { attendance_id: attendanceId, success: false, error: "Dealer không trong trạng thái check-in" };
-  }
-
-  // 1b. Get dealer info (separate query to avoid join syntax issues)
-  const { data: dealer, error: dealerErr } = (await admin
-    .from("dealers")
-    .select("id, full_name, club_id, telegram_username, telegram_user_id")
-    .eq("id", att.dealer_id)
-    .single()) as unknown as { data: DealerRow | null; error: { message: string } | null };
-
-  if (dealerErr) {
-    return { attendance_id: attendanceId, success: false, error: `Dealer lookup failed: ${dealerErr.message}` };
-  }
-  if (!dealer) {
-    return { attendance_id: attendanceId, success: false, error: "Dealer not found" };
-  }
-
-  const clubId = dealer?.club_id ?? "";
-  const dealerName = dealer?.full_name ?? "";
-  const dealerMention = mention({
-    full_name: dealerName,
-    telegram_username: dealer?.telegram_username ?? null,
-    telegram_user_id: dealer?.telegram_user_id ? Number(dealer.telegram_user_id) : null,
-  });
-  const checkInTime = att.check_in_time;
-
-  // Normal checkout calculates worked time and overtime from check-in until now.
-  // Old or invalid attendance must use the separately owner-gated stale cleanup
-  // path so a retry cannot turn weeks of stale test data into payroll minutes.
-  if (requiresStaleCheckoutCleanup(checkInTime)) {
-    return {
-      attendance_id: attendanceId,
-      success: false,
-      code: "STALE_ATTENDANCE_REQUIRES_CLEANUP",
-      error: "Ca check-in quá 24 giờ hoặc thiếu giờ vào; hãy dùng chế độ dọn ca treo để không tính lại lương/OT",
+  // Metadata is only for notification/display. The canonical RPC rechecks the
+  // actor, club, attendance, session and breaks under locks before any write.
+  const { data: att, error: attErr } = await admin.from("dealer_attendance")
+    .select("id, dealer_id").eq("id", attendanceId).single() as {
+      data: AttendanceRow | null; error: { message: string } | null;
     };
-  }
-
-  // Auth check for first item only (caller already verified for this club)
-  // All items in a batch are expected to belong to the same club
-
-  let releasedPreAssigned = false;
-  let preAssignedTableName: string | null = null;
-  let preAssignedDealerName: string | null = null;
-
-  // 2. Atomic cleanup: release pre_assigned nếu dealer đang ở state pre_assigned
-  const wasPreAssigned = (att as any).current_state === "pre_assigned";
-
-  if (wasPreAssigned) {
-    preAssignedDealerName = dealerName;
-
-    // Get table name trước khi cleanup
-    const { data: tableInfo } = (await admin
-      .from("game_tables")
-      .select("table_name")
-      .eq("id", (att as any).pre_assigned_table_id)
-      .maybeSingle()) as unknown as { data: TableNameRow | null };
-    preAssignedTableName = tableInfo?.table_name ?? null;
-
-    await admin.rpc("transition_dealer_state", {
-      p_attendance_id: attendanceId,
-      p_new_state: "available",
-      p_reason: "checkout_release_pre_assign",
+  if (attErr || !att) return { attendance_id: attendanceId, success: false, error: "Cannot load checkout attendance" };
+  const { data: dealer, error: dealerErr } = await admin.from("dealers")
+    .select("id, full_name, club_id, telegram_username, telegram_user_id").eq("id", att.dealer_id).single() as {
+      data: DealerRow | null; error: { message: string } | null;
+    };
+  if (dealerErr || !dealer) return { attendance_id: attendanceId, success: false, error: "Cannot load checkout dealer" };
+  const clubId = dealer.club_id;
+  let data: unknown;
+  let uncertain = false;
+  try {
+    const response = await admin.rpc("operator_checkout_dealer_attendance_v1", {
+      p_actor_id: uid, p_attendance_id: attendanceId,
     });
-
-    await admin
-      .from("dealer_attendance")
-      .update({ pre_assigned_table_id: null, pre_assigned_at: null })
-      .eq("id", attendanceId);
-
-    // Cleanup dealer_assignments
-    await admin
-      .from("dealer_assignments")
-      .update({
-        pre_assigned_attendance_id: null,
-        pre_assigned_at: null,
-      })
-      .eq("pre_assigned_attendance_id", attendanceId)
-      .eq("status", "assigned");
-
-    releasedPreAssigned = true;
-  }
-
-  // ── Compute overtime minutes at checkout ──────────────────────────
-  // TODO: move STANDARD_SHIFT_MINUTES to club_settings for per-club configurability
-  const STANDARD_SHIFT_MINUTES = 480;
-
-  let overtimeMinutes = 0;
-  let workedMinutes = 0;
-  let totalHours = 0;
-
-  if (checkInTime) {
-    const checkInMs = new Date(checkInTime).getTime();
-    const nowMs = Date.now();
-    const totalMinutes = Math.round((nowMs - checkInMs) / 60000);
-
-    // Subtract break time from both assignment-linked and attendance-linked rows.
-    const { data: assignments, error: assignmentsErr } = (await admin
-      .from("dealer_assignments")
-      .select("id")
-      .eq("attendance_id", attendanceId)) as unknown as {
-        data: AssignmentIdRow[] | null;
-        error: { message: string } | null;
-      };
-    if (assignmentsErr) {
-      return { attendance_id: attendanceId, success: false, error: `Assignment lookup failed: ${assignmentsErr.message}` };
+    data = response.data;
+    uncertain = Boolean(response.error);
+  } catch { uncertain = true; }
+  if (!uncertain && data && typeof data === "object" && !Array.isArray(data)) {
+    const denied = data as Record<string, unknown>;
+    if (denied.success === false && denied.attendance_id === attendanceId &&
+        ["STALE_ATTENDANCE_REQUIRES_CLEANUP", "LEGACY_CHECKOUT_REVIEW_REQUIRED"].includes(String(denied.code))) {
+      return { attendance_id: attendanceId, success: false, code: denied.code,
+        error: denied.code === "STALE_ATTENDANCE_REQUIRES_CLEANUP"
+          ? "Ca check-in quá 24 giờ hoặc thiếu giờ vào; hãy dùng chế độ dọn ca treo để không tính lại lương/OT"
+          : "Ca đã đóng nhưng thiếu receipt chuẩn; cần kiểm tra lịch sử trước khi xử lý" };
     }
-    const assignmentIds = (assignments ?? []).map((a) => a.id);
-
-    const [attendanceBreakResult, assignmentBreakResult] = (await Promise.all([
-      admin
-        .from("dealer_breaks")
-        .select("id, assignment_id, attendance_id, break_start, break_end")
-        .eq("attendance_id", attendanceId)
-        .not("break_end", "is", null),
-      assignmentIds.length > 0
-        ? admin
-            .from("dealer_breaks")
-            .select("id, assignment_id, attendance_id, break_start, break_end")
-            .in("assignment_id", assignmentIds)
-            .not("break_end", "is", null)
-        : Promise.resolve({ data: [], error: null }),
-    ])) as [
-      { data: BreakRow[] | null; error: { message: string } | null },
-      { data: BreakRow[] | null; error: { message: string } | null },
-    ];
-
-    if (attendanceBreakResult.error) {
-      return { attendance_id: attendanceId, success: false, error: `DB error: ${attendanceBreakResult.error.message}` };
-    }
-    if (assignmentBreakResult.error) {
-      return { attendance_id: attendanceId, success: false, error: `DB error: ${assignmentBreakResult.error.message}` };
-    }
-
-    const breaksById = new Map<string, { break_start: string; break_end: string | null }>();
-    for (const b of [...(attendanceBreakResult.data ?? []), ...(assignmentBreakResult.data ?? [])]) {
-      breaksById.set(b.id, { break_start: b.break_start, break_end: b.break_end });
-    }
-
-    const totalBreakMinutes = [...breaksById.values()].reduce((sum: number, b: { break_start: string; break_end: string | null }) => {
-      const duration = Math.round(
-        ((b.break_end ? new Date(b.break_end).getTime() : Date.now()) - new Date(b.break_start).getTime()) / 60000
-      );
-      return sum + Math.max(duration, 0);
-    }, 0);
-
-    workedMinutes = totalMinutes - totalBreakMinutes;
-    overtimeMinutes = Math.max(0, workedMinutes - STANDARD_SHIFT_MINUTES);
-    totalHours = Math.round(workedMinutes / 6) / 10;
   }
-
-  // 3. State transition via RPC (validated + audited)
-  const { data: txResult, error: txErr } = (await admin.rpc("transition_dealer_state", {
-      p_attendance_id: attendanceId,
-      p_new_state: "checked_out",
-      p_reason: "dealer_checkout",
-    })) as unknown as { data: TxResultRow | null; error: { message: string } | null };
-  if (txErr) {
-    return { attendance_id: attendanceId, success: false, error: `State transition DB error: ${txErr.message}` };
+  let core = uncertain ? null : checkoutCore(data, attendanceId, clubId);
+  let recovered = false;
+  if (!core) {
+    // A lost/invalid response never authorizes the legacy multi-write path.
+    // Read the same attendance receipt once; do not send another mutation.
+    try {
+      const receipt = await admin.rpc("get_dealer_checkout_receipt_v1", {
+        p_actor_id: uid, p_attendance_id: attendanceId,
+      });
+      if (!receipt.error && receipt.data?.status === "receipt_found") {
+        core = checkoutCore(receipt.data.result, attendanceId, clubId);
+        recovered = Boolean(core);
+      }
+    } catch { /* Outcome remains explicitly unconfirmed. */ }
   }
-  if (!txResult) {
-    return { attendance_id: attendanceId, success: false, error: "State transition returned no result" };
-  }
-  if (txResult?.ok === false) {
-    return { attendance_id: attendanceId, success: false, error: `State transition failed: ${txResult.error}` };
-  }
-
-  // 4. Update non-state fields (checkout time, status, OT, cleanup)
-  const nowISO = new Date().toISOString();
-  const { data: checkoutRow, error: checkoutErr } = (await admin
-    .from("dealer_attendance")
-    .update({
-      status: "checked_out",
-      check_out_time: nowISO,
-      pre_assigned_table_id: null,
-      pre_assigned_at: null,
-      overtime_minutes: overtimeMinutes,
-      worked_minutes_since_last_break: 0,
-      total_worked_minutes_today: workedMinutes,
-    })
-    .eq("id", attendanceId)
-    .eq("status", "checked_in")
-    .select("id")
-    .maybeSingle()) as unknown as {
-      data: { id: string } | null;
-      error: { message: string } | null;
-    };   // anti-double-checkout guard
-
-  if (checkoutErr) {
-    return { attendance_id: attendanceId, success: false, error: `Checkout update failed: ${checkoutErr.message}` };
-  }
-  if (!checkoutRow) {
-    const { data: current, error: currentErr } = (await admin
-      .from("dealer_attendance")
-      .select("status, check_out_time")
-      .eq("id", attendanceId)
-      .maybeSingle()) as unknown as {
-        data: { status: string; check_out_time: string | null } | null;
-        error: { message: string } | null;
-      };
-    if (currentErr) {
-      return { attendance_id: attendanceId, success: false, error: `Checkout verification failed: ${currentErr.message}` };
-    }
-    if (current?.status === "checked_out") {
-      return {
-        attendance_id: attendanceId,
-        success: true,
-        idempotent: true,
-        dealer_name: dealerName,
-        check_in_time: checkInTime,
-        check_out_time: current.check_out_time,
-      };
-    }
-    return { attendance_id: attendanceId, success: false, error: "Checkout conflict: attendance was not updated" };
-  }
-
+  if (!core) return { attendance_id: attendanceId, success: false, code: "CHECKOUT_OUTCOME_UNCONFIRMED",
+    error: "Chưa xác minh được kết quả check-out; tải lại trạng thái và kiểm tra receipt trước khi thử lại" };
+  const saved = { attendance_id: attendanceId, success: true, dealer_name: core.dealer_name,
+    check_in_time: core.check_in_time, check_out_time: core.check_out_time, total_hours: core.total_hours,
+    released_pre_assigned: core.released_pre_assigned, pre_assigned_table: core.pre_assigned_table,
+    needs_replacement_table: core.replacement_table_id, auto_assigned_dealer: null };
+  // Never repeat notifications/staffing after recovery or explicit replay.
+  if (core.idempotent || recovered) return { ...saved, idempotent: true, recovered };
+  const dealerName = core.dealer_name;
+  const dealerMention = mention({ full_name: dealerName, telegram_username: dealer.telegram_username,
+    telegram_user_id: dealer.telegram_user_id ? Number(dealer.telegram_user_id) : null });
+  const checkInTime = core.check_in_time;
+  const nowISO = core.check_out_time;
+  const totalHours = core.total_hours;
+  const releasedPreAssigned = core.released_pre_assigned;
+  const preAssignedTableName = core.pre_assigned_table;
   const fmtTime = (d: Date) =>
     d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Ho_Chi_Minh" });
 
+  try {
   // 4. Telegram: gửi thông báo checkout tới group chat
   if (botToken) {
     try {
@@ -350,7 +207,7 @@ async function processOneCheckout(
         .eq("club_id", clubId)
         .maybeSingle()) as unknown as { data: ClubSettingsRow | null };
 
-      const fmChatId = (cs as any)?.floor_manager_chat_id;
+      const fmChatId = cs?.floor_manager_chat_id;
       if (fmChatId) {
         await sendTelegramNotification(botToken, fmChatId,
           `🚨 *Check-out đột ngột!*\n\n${dealerMention} (đang pre_assigned cho bàn ${preAssignedTableName ?? "N/A"}) vừa check-out.\nCần gán dealer mới cho bàn này!`,
@@ -367,43 +224,14 @@ async function processOneCheckout(
     }
   }
 
-  // 5. BUG 3 FIX: Release active dealer_assignment for this attendance
-  // so the table is no longer considered "occupied" by fillEmptyTables.
-  // Set needs_replacement=true so process-swing prioritizes refilling it.
-  let needsReplacementTableId: string | null = null;
-  let replacementSessionId: string | null = null;
-  let replacementAssignmentId: string | null = null;
-  // Release ALL active dealer_assignments for this attendance — not just
-  // status='assigned'. A dealer can hold an on_break / pre_assigned row that, if
-  // left with released_at IS NULL, becomes an orphan poisoning pickNextDealer
-  // Step 5b (matched by dealer_id) and can freeze the club rotation (the pgv
-  // incident). Only an actively 'assigned' table needs a replacement.
-  // (Canonical teardown is release_dealer_assignments(); kept inline here to stay
-  // deploy-safe — this edge fn auto-deploys on push while that RPC applies under
-  // owner-gated control. Route through the RPC once it is live.)
-      const { data: activeAss } = (await admin
-        .from("dealer_assignments")
-        .select("id, table_id, table_session_id, status")
-        .eq("attendance_id", attendanceId)
-        .in("status", ["assigned", "on_break", "pre_assigned", "reserved"])
-        .is("released_at", null)) as unknown as { data: Array<{ id: string; table_id: string | null; table_session_id: string | null; status: string }> | null };
-
-  if (activeAss && activeAss.length > 0) {
-    const activeTable = checkoutReplacementTarget(activeAss);
-    needsReplacementTableId = activeTable?.table_id ?? null;
-    replacementSessionId = activeTable?.table_session_id ?? null;
-    replacementAssignmentId = activeTable?.id ?? null;
-    await admin
-      .from("dealer_assignments")
-      .update({
-        released_at: nowISO,
-        status: "completed",
-        needs_replacement: true,
-      })
-      .eq("attendance_id", attendanceId)
-      .in("status", ["assigned", "on_break", "pre_assigned", "reserved"])
-      .is("released_at", null);
+  } catch {
+    console.warn("[checkout-dealer] checkout committed; notification unavailable");
   }
+
+  // Assignment release and audit already committed in the canonical RPC.
+  const needsReplacementTableId = core.replacement_table_id;
+  const replacementSessionId = core.replacement_session_id;
+  const replacementAssignmentId = core.replacement_assignment_id;
 
   // 6. BUG 3: Best-effort auto-replacement for the affected table.
   // If a dealer is available, assign immediately. If not, cron will
@@ -474,10 +302,10 @@ async function processOneCheckout(
           }
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(
         `[checkout-dealer] Auto-replace failed for table ${needsReplacementTableId}:`,
-        err.message
+        err instanceof Error ? err.message : "Unknown error"
       );
     }
 
@@ -489,7 +317,7 @@ async function processOneCheckout(
           .select("floor_manager_chat_id")
           .eq("club_id", clubId)
           .maybeSingle()) as unknown as { data: ClubSettingsRow | null };
-        const fmChatId = (cs as any)?.floor_manager_chat_id;
+        const fmChatId = cs?.floor_manager_chat_id;
         if (fmChatId) {
           await sendTelegramNotification(
             botToken,
@@ -503,23 +331,6 @@ async function processOneCheckout(
       }
     }
   }
-
-  // 7. Audit log
-  void admin.from("audit_logs").insert({
-    club_id: clubId,
-    actor_id: uid,
-    action: "checkout_dealer",
-    entity_type: "dealer_attendance",
-    entity_id: attendanceId,
-    payload: {
-      dealer_name: dealerName,
-      was_pre_assigned: wasPreAssigned,
-      released_pre_assigned: releasedPreAssigned,
-      pre_assigned_table: preAssignedTableName,
-      needs_replacement_table: needsReplacementTableId,
-      auto_assigned: autoAssigned?.dealer_name ?? null,
-    },
-  });
 
   return {
     attendance_id: attendanceId,

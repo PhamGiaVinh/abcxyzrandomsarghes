@@ -15,12 +15,16 @@ import { normalizeBankNameToBin } from "@/lib/vietnamBanks";
 import { FEATURES } from "@/lib/featureFlags";
 import { SeatReceiptDialog } from "@/components/tournament/seat/SeatReceiptDialog";
 import { fetchBuyinReceipt, toSeatReceiptData, type BuyinReceiptSnapshot } from "@/components/tournament/seat/buyinReceipt";
+import { z } from "zod";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 interface RegInfo {
   registration_id: string;
   reference_code: string;
   total_pay: number;
-  breakdown: { buy_in: number; club_fee?: number; service_fee?: number; platform_fee?: number };
+  breakdown: { buy_in: number; club_fee?: number | null; service_fee?: number | null; platform_fee?: number | null };
   bank_name: string | null;
   account_number: string | null;
   account_holder: string | null;
@@ -32,7 +36,7 @@ interface RegInfo {
   transfer_proof_submitted?: boolean;
   already_registered?: boolean;
   free_rake_applied?: boolean;
-  savings?: number;
+  savings?: number | null;
   price_detail_available?: boolean;
 }
 
@@ -52,6 +56,18 @@ interface Props {
 
 const TIMEOUT_MS = 30 * 60 * 1000;
 const RECEIPT_POLL_MS = 10_000;
+const amount = z.number().finite().nonnegative();
+const registrationResponse = z.object({
+  registration_id: z.string().min(1), reference_code: z.string().min(1), total_pay: amount,
+  breakdown: z.object({ buy_in: amount, club_fee: amount.nullable().optional(),
+    service_fee: amount.nullable().optional(), platform_fee: amount.nullable().optional() }),
+  bank_name: z.string().nullable(), account_number: z.string().nullable(), account_holder: z.string().nullable(),
+  qr_code_url: z.string().nullable().optional(), bank_bin: z.string().nullable().optional(),
+  transfer_proof_url: z.string().nullable().optional(), transfer_proof_submitted: z.boolean().optional(),
+  committed_at: z.string().optional(), status: z.string().optional(), already_registered: z.boolean().optional(),
+  free_rake_applied: z.boolean().optional(), savings: amount.nullable().optional(), price_detail_available: z.boolean().optional(),
+});
+const registrationUnknown = "Chưa xác minh được đăng ký. Kiểm tra danh sách Đã đăng ký trước khi thử lại; không chuyển tiền hoặc gửi đăng ký mới dựa trên màn hình này.";
 
 const useCountdown = (deadline: number) => {
   const [remaining, setRemaining] = useState(Math.max(0, deadline - Date.now()));
@@ -64,10 +80,17 @@ const useCountdown = (deadline: number) => {
   return { label: `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`, expired: remaining <= 0 };
 };
 
-export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, onClose, onCompleted, mode = "register" }: Props) => {
-  const { t } = useTranslation();
+export const TournamentRegisterModal = (props: Props) => {
   const { user } = useAuth();
+  return <ScopedTournamentRegisterModal key={JSON.stringify([props.open, user?.id, props.tournamentId, props.mode ?? "register"])} {...props} />;
+};
+
+const ScopedTournamentRegisterModal = ({ tournamentId, tournamentName, open, onClose, onCompleted, mode = "register" }: Props) => {
+  const { t } = useTranslation();
+  const { user, session } = useAuth();
+  const sessionEpoch = sessionReadEpoch(session);
   const [loading, setLoading] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [info, setInfo] = useState<RegInfo | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -85,47 +108,73 @@ export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, on
   onCompletedRef.current = onCompleted;
   translateRef.current = t;
   const userId = user?.id;
+  const cancelKey=JSON.stringify([open,userId,tournamentId,mode,sessionEpoch]);
+  const cancelScope=useRef({key:cancelKey});if(cancelScope.current.key!==cancelKey)cancelScope.current={key:cancelKey};
+  const cancelRun=useRef<{scope:object}|null>(null),cancelMounted=useRef(false);
+  const proofRun=useRef<{scope:object}|null>(null);
+  useEffect(()=>{cancelMounted.current=true;return()=>{cancelMounted.current=false;};},[]);
+  const bootstrapSession = useRef(sessionEpoch);
+  useEffect(() => {
+    if (bootstrapSession.current === sessionEpoch) return;
+    bootstrapSession.current = sessionEpoch;
+    setInfo(null); setConfirmedReceipt(null); setPaymentSnapshot(null); setLoading(false);
+    setBootstrapError("Phiên đăng nhập đã thay đổi. Kiểm tra danh sách Đã đăng ký trước khi mở lại; chưa tự gửi đăng ký mới.");
+  }, [sessionEpoch]);
 
   useEffect(() => {
     if (!open || !userId) return;
     let mounted = true;
+    const scope = cancelScope.current;
+    const current = () => mounted && cancelScope.current === scope;
     (async () => {
       setInfo(null);
+      setBootstrapError(null);
+      setCancelling(false);
+      setSubmitting(false);
+      setUploading(false);
       completionNotified.current = false;
       setConfirmedReceipt(null);
       setPaymentSnapshot(null);
       setProofUrl(null);
       setProofSubmitted(false);
       setLoading(true);
-      const { data, error } = await supabase.functions.invoke(
+      try {
+      const { data, error } = await waitForManualPlayerResponse(supabase.functions.invoke(
         mode === "reentry" ? "tournament-reentry" : "tournament-register",
         { body: { tournament_id: tournamentId } },
-      );
-      if (!mounted) return;
+      ));
+      if (!current()) return;
       setLoading(false);
       const response = data as EdgeErrorBody | null;
-      if (error || response?.error) {
+      const reportedError = typeof response?.error === "string" && response.error ? response.error : null;
+      if (error || reportedError) {
         // supabase-js reports any non-2xx as a generic "Edge Function returned a
         // non-2xx status code" and drops the body — surface the real reason
         // (e.g. "Giải đã bắt đầu hoặc kết thúc.") from the response context.
-        let msg = response?.error ?? error?.message ?? translateRef.current("tournamentRegister.regError");
+        let msg = reportedError ?? error?.message ?? translateRef.current("tournamentRegister.regError");
         const ctx = (error as ErrorWithJsonContext | null)?.context;
         if (ctx && typeof ctx.json === "function") {
           try {
-            const body = await ctx.json() as EdgeErrorBody;
-            if (body?.error) msg = body.error;
+            const body = await observeTrackerContextRead(ctx.json()) as EdgeErrorBody;
+            if (typeof body?.error === "string" && body.error) msg = body.error;
           } catch { /* keep generic */ }
         }
+        if (!current()) return;
         toast.error(msg);
         onCloseRef.current();
         return;
       }
-      const r = data as RegInfo;
+      const parsed = registrationResponse.safeParse(data);
+      if (!parsed.success) { setBootstrapError(registrationUnknown); return; }
+      const r = parsed.data as RegInfo;
       setInfo(r);
       setProofUrl(r.transfer_proof_url ?? null);
       setProofSubmitted(!!r.transfer_proof_submitted);
       // Tell the mobile "Đã đăng ký" badge (RegisteredBadge) to refresh.
       window.dispatchEvent(new Event("vinpoker:registration-changed"));
+      } catch {
+        if (current()) setBootstrapError(registrationUnknown);
+      } finally { if (current()) setLoading(false); }
     })();
     return () => { mounted = false; };
   }, [open, tournamentId, userId, mode]);
@@ -133,11 +182,12 @@ export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, on
   // Polls only the read-only receipt endpoint while this payment dialog is open.
   // Do not call tournament-register again here: it can consume a free-rake slot.
   useEffect(() => {
-    if (!open || !info?.registration_id || confirmedReceipt) return;
+    if (!open || !info?.registration_id || confirmedReceipt || bootstrapError) return;
     let current = true;
+    const scope = cancelScope.current;
     const refreshReceipt = async () => {
       const snapshot = await fetchBuyinReceipt({ registrationId: info.registration_id });
-      if (!current || !snapshot) return;
+      if (!current || cancelScope.current !== scope || !snapshot) return;
       setPaymentSnapshot(snapshot);
       if (snapshot.status !== "confirmed" || !snapshot.receipt_code) return;
       setConfirmedReceipt(snapshot);
@@ -155,7 +205,7 @@ export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, on
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [open, info?.registration_id, confirmedReceipt]);
+  }, [open, info?.registration_id, confirmedReceipt, bootstrapError]);
 
 
   const transferContent = info ? `VINPoker ${info.reference_code}` : "";
@@ -192,71 +242,97 @@ export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, on
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.files?.[0];
-    if (!raw || !user || !info) return;
+    if (!raw || !user || !info||proofRun.current?.scope===cancelScope.current) return;
     if (!["image/jpeg","image/png","image/webp"].includes(raw.type)) {
       toast.error(t("tournamentRegister.onlyImageTypes")); return;
     }
     if (raw.size > 5 * 1024 * 1024) { toast.error(t("tournamentRegister.maxImage5")); return; }
+    const run={scope:cancelScope.current};proofRun.current=run;
+    const current=()=>cancelMounted.current&&cancelScope.current===run.scope;
+    const input=e.target;
     setUploading(true);
     try {
       const file = await compressImage(raw, { maxEdge: 1600, quality: 0.8 });
+      if(!current())return;
       const ext = file.type === "image/png" ? "png" : "jpg";
       const path = `${user.id}/tournament-regs/${info.registration_id}-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("staking-proofs")
         .upload(path, file, { upsert: false, contentType: file.type, cacheControl: "3600" });
       if (upErr) throw upErr;
+      if(!current())return;
       const { data: signed } = await supabase.storage
         .from("staking-proofs")
         .createSignedUrl(path, 60 * 60 * 24 * 365);
+      if(!current())return;
       const url = signed?.signedUrl ?? path;
-      const { error: updErr } = await supabase
+      const { data,error: updErr } = await supabase
         .from("tournament_registrations")
         .update({ transfer_proof_image_url: url })
-        .eq("id", info.registration_id);
-      if (updErr) throw updErr;
+        .eq("id", info.registration_id).eq('player_id',user.id)
+        .select('id,transfer_proof_image_url').maybeSingle();
+      if(!current())return;
+      if (updErr||data?.id!==info.registration_id||data.transfer_proof_image_url!==url) {
+        toast.error(t('tournamentRegister.proofUnverified'));return;
+      }
       setProofUrl(url);
       toast.success(t("tournamentRegister.proofUploaded"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("tournamentRegister.uploadFailed"));
+      if(current())toast.error(error instanceof Error ? error.message : t("tournamentRegister.uploadFailed"));
     } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
+      if(proofRun.current===run)proofRun.current=null;
+      if(current()){setUploading(false);input.value="";}
     }
   };
 
   const markTransferred = async () => {
-    if (!info) return;
+    if (!info||!userId||!proofUrl||proofSubmitted||proofRun.current?.scope===cancelScope.current) return;
+    const run={scope:cancelScope.current};proofRun.current=run;
+    const current=()=>cancelMounted.current&&cancelScope.current===run.scope;
     setSubmitting(true);
-    const { error } = await supabase
+    try{
+    const { data,error } = await supabase
       .from("tournament_registrations")
       .update({ transfer_proof_submitted: true })
-      .eq("id", info.registration_id);
-    setSubmitting(false);
-    if (error) { toast.error(error.message); return; }
+      .eq("id", info.registration_id).eq('player_id',userId)
+      .select('id,transfer_proof_submitted').maybeSingle();
+    if(!current())return;
+    if (error||data?.id!==info.registration_id||data.transfer_proof_submitted!==true) {
+      toast.error(t('tournamentRegister.proofUnverified'));return;
+    }
     setProofSubmitted(true);
     toast.success(t("tournamentRegister.markedToast"));
-    onCompleted?.();
+    onCompletedRef.current?.();
+    }catch{if(current())toast.error(t('tournamentRegister.proofUnverified'));}
+    finally{if(proofRun.current===run)proofRun.current=null;if(current())setSubmitting(false);}
   };
 
   const cancelReg = async () => {
-    if (!info) return;
+    if (!info||!userId||cancelRun.current?.scope===cancelScope.current) return;
     if ((paymentSnapshot?.received_amount ?? 0) > 0) {
       toast.error(t("tournamentRegister.paidCannotCancel")); return;
     }
     if (!confirm(t("tournamentRegister.confirmCancel"))) return;
+    const run={scope:cancelScope.current};cancelRun.current=run;
+    const current=()=>cancelMounted.current&&cancelScope.current===run.scope;
     setCancelling(true);
-    const { error } = await supabase
+    try{
+    const { data,error } = await supabase
       .from("tournament_registrations")
       .update({ status: "cancelled", cancellation_reason: "player_cancelled", cancelled_at: new Date().toISOString() })
       .eq("id", info.registration_id)
-      .eq("player_id", user?.id ?? "")
-      .eq("status", "pending");
-    setCancelling(false);
-    if (error) { toast.error(error.message); return; }
+      .eq("player_id", userId)
+      .eq("status", "pending")
+      .select('id,status').maybeSingle();
+    if(!current())return;
+    if (error||data?.id!==info.registration_id||data.status!=='cancelled') {
+      toast.error(t('tournamentRegister.cancelUnverified'));return;
+    }
     toast.success(t("tournamentRegister.cancelled"));
     window.dispatchEvent(new Event("vinpoker:registration-changed"));
     onClose();
+    }catch{if(current())toast.error(t('tournamentRegister.cancelUnverified'));}
+    finally{if(cancelRun.current===run)cancelRun.current=null;if(current())setCancelling(false);}
   };
 
   if (confirmedReceipt) {
@@ -277,7 +353,7 @@ export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, on
           <DialogDescription className="text-xs">{tournamentName}</DialogDescription>
         </DialogHeader>
 
-        {loading || !info ? (
+        {!userId || bootstrapError ? <p role="alert" className="py-6 text-sm text-amber-200">{bootstrapError ?? "Chưa xác minh tài khoản đăng ký."}</p> : loading || !info ? (
           <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
         ) : (
           <div className="space-y-4">
@@ -305,7 +381,7 @@ export const TournamentRegisterModal = ({ tournamentId, tournamentName, open, on
               {((info.breakdown.club_fee ?? 0) + (info.breakdown.service_fee ?? 0)) > 0 && (
                 <div className="flex justify-between"><span className="text-muted-foreground">{t("tournamentRegister.serviceFeeLabel")}</span><span className="font-mono">{formatVND((info.breakdown.club_fee ?? 0) + (info.breakdown.service_fee ?? 0))}</span></div>
               )}
-              {info.savings && info.savings > 0 && (
+              {typeof info.savings === "number" && info.savings > 0 && (
                 <div className="flex justify-between text-success">
                   <span className="text-xs">{t("tournamentRegister.freeClubService")}</span>
                   <span className="font-mono text-xs">-{formatStack(info.savings)}</span>

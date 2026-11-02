@@ -12,6 +12,7 @@ import {
 import type { TvData } from "@/types/tv";
 import { FEATURES } from "@/lib/featureFlags";
 import { parseParticipationSummary } from "@/lib/tournamentParticipation";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 export type TvDataState = "loading" | "auth_required" | "not_found" | "error" | "ready";
 export type TvRealtimeStatus = "connecting" | "online" | "offline";
@@ -26,6 +27,12 @@ interface RawTvData {
   reEntries: number | null;
   prizes: TvPrizeRow[];
 }
+
+// These two source RPCs postdate generated Database types. Preserve their
+// abortable PostgREST read contract without casting payloads to success.
+type TvReadRpc = (name: string, args: Record<string, unknown>) => {
+  abortSignal(signal: AbortSignal): PromiseLike<{ data: unknown; error: { message: string } | null }>;
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -49,29 +56,34 @@ const ZERO_REPOLL_MAX = 10;
  */
 export function useTournamentTvDataCore(
   tournamentId: string | undefined,
-  options: { enabled?: boolean; userId: string | null; authLoading: boolean },
+  options: { enabled?: boolean; userId: string | null; authLoading: boolean; authEpoch?: number },
 ) {
   const enabled = options?.enabled ?? true;
   const supabase = useSupabaseClient();
   const authLoading = options.authLoading;
   const hasUser = !!options.userId;
-  const scopeKey = `${options.userId ?? "anonymous"}:${tournamentId ?? ""}`;
+  const scopeKey = JSON.stringify([options.userId ?? "anonymous", tournamentId ?? "", options.authEpoch ?? 0]);
   const scopeRef = useRef(scopeKey);
   scopeRef.current = scopeKey;
 
   const [state, setState] = useState<TvDataState>("loading");
   const [raw, setRaw] = useState<RawTvData | null>(null);
   const [rawScope, setRawScope] = useState<string | null>(null);
+  const [rawClient, setRawClient] = useState<typeof supabase | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<TvRealtimeStatus>("connecting");
 
   const anchorRef = useRef<ClockAnchor | null>(null);
   const requestSeqRef = useRef(0);
+  const inFlightRef = useRef<{
+    scopeKey: string; client: typeof supabase; controller: AbortController;
+    queued: boolean; promise: Promise<void>;
+  } | null>(null);
   const pollingRef = useRef<number | null>(null);
   const zeroPollRef = useRef<{ tries: number; timer: number | null }>({ tries: 0, timer: null });
 
   const nowMs = useLiveClock(); // 1s shared tick → re-render; display math uses performance.now()
 
-  const loadAll = useCallback(async () => {
+  const readSnapshot = useCallback(async (seq: number, signal: AbortSignal) => {
     if (!enabled || !tournamentId || scopeRef.current !== scopeKey) return;
     if (!UUID_RE.test(tournamentId)) {
       // Malformed link — a uuid-typed eq() would error; report it as a bad
@@ -79,12 +91,11 @@ export function useTournamentTvDataCore(
       setState("not_found");
       return;
     }
-    const seq = ++requestSeqRef.current;
-
     const { data: tournament, error: tournamentError } = await supabase
       .from("tournaments")
-      .select("name, status, players_remaining, average_stack, prize_pool, starting_stack, guarantee_amount, buy_in, rake_amount, club:clubs(name, cover_url, tv_logo_url, tv_brand_name, tv_bg_url)")
+      .select("name, status, players_remaining, average_stack, prize_pool, starting_stack, guarantee_amount, buy_in, rake_amount, main_event:tournament_events(guarantee_amount), club:clubs(name, cover_url, tv_logo_url, tv_brand_name, tv_bg_url)")
       .eq("id", tournamentId)
+      .abortSignal(signal)
       .maybeSingle();
     if (seq !== requestSeqRef.current || scopeRef.current !== scopeKey) return;
     if (tournamentError) {
@@ -104,32 +115,35 @@ export function useTournamentTvDataCore(
     }
 
     const [clockRes, levelsRes, regsRes, participationRes, prizesRes, satRes, brandingRes] = await Promise.all([
-      supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId }),
+      supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId }).abortSignal(signal),
       supabase
         .from("tournament_levels")
         .select("level_number, small_blind, big_blind, ante, duration_minutes, is_break")
         .eq("tournament_id", tournamentId)
+        .abortSignal(signal)
         .order("level_number"),
       supabase
         .from("tournament_registrations")
         .select("buy_in")
         .eq("tournament_id", tournamentId)
-        .eq("status", "confirmed"),
-      (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>)(
-        "get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }),
+        .eq("status", "confirmed")
+        .abortSignal(signal),
+      (supabase.rpc as unknown as TvReadRpc)("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }).abortSignal(signal),
       supabase
         .from("tournament_prizes")
         .select("position, amount")
         .eq("tournament_id", tournamentId)
+        .abortSignal(signal)
         .order("position"),
       // satellite_payout: cột source-only (chưa apply trên vài DB) → best-effort, lỗi (thiếu cột) → null.
       supabase
         .from("tournaments")
         .select("satellite_payout" as never)
         .eq("id", tournamentId)
+        .abortSignal(signal)
         .maybeSingle(),
       FEATURES.tvLayoutEditorV1
-        ? (supabase.rpc as any)("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId })
+        ? (supabase.rpc as unknown as TvReadRpc)("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId }).abortSignal(signal)
         : Promise.resolve({ data: null, error: null }),
     ]);
     if (seq !== requestSeqRef.current || scopeRef.current !== scopeKey) return;
@@ -140,9 +154,15 @@ export function useTournamentTvDataCore(
       return;
     }
     let participation: ReturnType<typeof parseParticipationSummary>;
+    let prizePool: number | null;
     try {
       if (participationRes.error) throw participationRes.error;
       participation = parseParticipationSummary(participationRes.data, tournamentId);
+      const value = (participationRes.data as { prize_pool?: unknown }).prize_pool;
+      if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER)) {
+        throw new Error('invalid_tv_prize_pool');
+      }
+      prizePool = value as number | null;
     } catch {
       setState("error");
       return;
@@ -167,6 +187,7 @@ export function useTournamentTvDataCore(
     const row = tournament as unknown as TvTournamentRow;
     row.players_remaining = participation.counts.remaining;
     row.average_stack = participation.averageStack;
+    row.prize_pool = prizePool;
     if (FEATURES.tvLayoutEditorV1 && row.club) {
       const branding = brandingRes.data as {
         logo_url: string | null; brand_name: string | null;
@@ -196,8 +217,39 @@ export function useTournamentTvDataCore(
       prizes: (prizesRes.data ?? []) as TvPrizeRow[],
     });
     setRawScope(scopeKey);
+    setRawClient(supabase);
     setState("ready");
   }, [enabled, hasUser, supabase, tournamentId, scopeKey]);
+
+  const loadAll = useCallback((): Promise<void> => {
+    if (!enabled || authLoading || !tournamentId || scopeRef.current !== scopeKey) return Promise.resolve();
+    const current = inFlightRef.current;
+    if (current?.scopeKey === scopeKey && current.client === supabase) {
+      current.queued = true;
+      return current.promise;
+    }
+    if (current) { current.queued = false; current.controller.abort(); }
+    const seq = ++requestSeqRef.current;
+    const job = { scopeKey, client: supabase, controller: new AbortController(), queued: false, promise: Promise.resolve() };
+    inFlightRef.current = job;
+    job.promise = (async () => {
+      try {
+        await observeTrackerContextRead(readSnapshot(seq, job.controller.signal));
+      } catch {
+        if (seq === requestSeqRef.current && scopeRef.current === scopeKey) setState("error");
+      } finally {
+        job.controller.abort();
+        // A transport may ignore abort. Its response must stay invalid after
+        // timeout even if no later request has started yet.
+        if (seq === requestSeqRef.current) requestSeqRef.current += 1;
+        if (inFlightRef.current === job) {
+          inFlightRef.current = null;
+          if (job.queued && scopeRef.current === scopeKey) void loadAll();
+        }
+      }
+    })();
+    return job.promise;
+  }, [enabled, authLoading, tournamentId, scopeKey, supabase, readSnapshot]);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current != null) {
@@ -226,8 +278,16 @@ export function useTournamentTvDataCore(
     setRaw(null);
     anchorRef.current = null;
     void loadAll();
-    return () => { requestSeqRef.current += 1; };
-  }, [enabled, tournamentId, authLoading, loadAll]);
+    return () => {
+      requestSeqRef.current += 1;
+      const job = inFlightRef.current;
+      if (job?.scopeKey === scopeKey && job.client === supabase) {
+        job.queued = false;
+        job.controller.abort();
+        inFlightRef.current = null;
+      }
+    };
+  }, [enabled, tournamentId, authLoading, loadAll, scopeKey, supabase]);
 
   // Realtime re-anchor + conditional polling fallback (TournamentLiveView pattern).
   useEffect(() => {
@@ -305,9 +365,9 @@ export function useTournamentTvDataCore(
   }, [enabled, state, display, nowMs, loadAll]);
 
   const data: TvData | null = useMemo(() => {
-    if (!raw || rawScope !== scopeKey) return null;
+    if (!raw || rawScope !== scopeKey || rawClient !== supabase) return null;
     return mapTvData({ ...raw, displayRemainingSeconds: display });
-  }, [raw, display, rawScope, scopeKey]);
+  }, [raw, display, rawScope, scopeKey, rawClient, supabase]);
 
-  return { state: state === "ready" && rawScope !== scopeKey ? "loading" as const : state, data, realtimeStatus, refetch: loadAll };
+  return { state: state === "ready" && (rawScope !== scopeKey || rawClient !== supabase) ? "loading" as const : state, data, realtimeStatus, refetch: loadAll };
 }

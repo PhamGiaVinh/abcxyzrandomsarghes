@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { FEATURES } from "@/lib/featureFlags";
 import { useAuth } from "@/hooks/useAuth";
 import { useFnbClubs } from "@/hooks/useFnbClubs";
+import { FnbClubReadError } from "@/components/fnb/FnbClubReadError";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
@@ -33,11 +34,12 @@ export default function FnbAdmin() {
 
 function FnbAdminInner() {
   const { loading: authLoading, isClubOwner, isAdmin } = useAuth();
-  const { clubs } = useFnbClubs();
+  const { clubs, error: clubError, reload: reloadClubs } = useFnbClubs();
   const [clubId, setClubId] = useState<string>("");
 
   const isOwner = isClubOwner || isAdmin;
 
+  if (clubError) return <FnbClubReadError message={clubError} onRetry={reloadClubs} />;
   if (authLoading || clubs === null) {
     return (
       <div className="container mx-auto max-w-5xl px-4 py-6 space-y-3">
@@ -73,7 +75,7 @@ function FnbAdminInner() {
     );
   }
 
-  const activeClub = clubId || clubs[0].id;
+  const activeClub = clubs.find(club => club.id === clubId)?.id ?? clubs[0].id;
   const activeClubName = clubs.find((club) => club.id === activeClub)?.name ?? "VinPoker Club";
 
   return (

@@ -10,11 +10,12 @@ export function TvTicker({ data }: { data: TvData }) {
   }
 
   return (
-    <div className="flex h-[8vh] shrink-0 items-center gap-[3vmin] overflow-hidden border-t border-border/60 px-[3vmin]">
+    <div className="min-h-[8vh] shrink-0 border-t border-border/60 px-[3vmin] py-[1vmin]">
+      <div className="flex items-center gap-[3vmin] overflow-hidden">
       {data.prizes.length > 0 ? (
         <>
           <span className="shrink-0 text-[1.8vmin] font-semibold uppercase tracking-widest text-muted-foreground">
-            {t("tv.payouts")}
+            {t("tv.rankAwards")}
           </span>
           <div className="flex min-w-0 flex-1 items-center gap-[2.5vmin] overflow-hidden whitespace-nowrap">
             {data.prizes.map((prize) => (
@@ -31,6 +32,8 @@ export function TvTicker({ data }: { data: TvData }) {
       {data.sponsorText ? (
         <span className="shrink-0 text-[1.8vmin] text-muted-foreground">{data.sponsorText}</span>
       ) : null}
+      </div>
+      {data.prizes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">{t("tv.rankAwardsHint")}</p>}
     </div>
   );
 }

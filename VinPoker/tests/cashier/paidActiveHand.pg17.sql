@@ -310,6 +310,12 @@ BEGIN
    FROM public.tournament_hands h JOIN public.hand_players sb ON sb.hand_id=h.id AND sb.seat_number=h.tracker_sb_position
     JOIN public.hand_players bb ON bb.hand_id=h.id AND bb.seat_number=h.tracker_bb_position WHERE h.id=hand));
   finish_intent:=jsonb_set(finish_intent,'{payload,pot_size}','200'::jsonb);
+  -- Include the canonical main pot too, as required by the actual Edge wire
+  -- contract; empty pots with contributing actions were a fixture shortcut.
+  finish_intent:=jsonb_set(finish_intent,'{payload,side_pots}',(SELECT jsonb_build_array(jsonb_build_object(
+   'amount',200,'eligible_player_ids',jsonb_build_array(hp.player_id)))
+   FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id
+   WHERE h.id=hand AND hp.seat_number=h.tracker_bb_position));
  END IF;
  PERFORM set_config('role','authenticated',true);
  finish_receipt:=public.record_tracker_manual_hand_v1(finish_intent);

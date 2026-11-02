@@ -16,6 +16,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { formatVND } from "@/lib/format";
+import {financeBusinessToday} from '@/lib/financeSummaryRead';
 import { staffSalarySource } from "@/lib/staffSalary/dataSource";
 import { STAFF_DEPARTMENT_LABELS, type StaffDepartment } from "@/types/staffApp";
 import { useSalaryActions, useSalaryClubs, useStaffSalaryMonth } from "@/hooks/staffSalary/useStaffSalary";
@@ -45,8 +46,8 @@ function deptLabel(dept: string): string {
 }
 
 function currentYM(): { year: number; month: number } {
-  const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  const [year,month]=financeBusinessToday().split('-').map(Number);
+  return {year,month};
 }
 
 function shiftYM(year: number, month: number, delta: number): { year: number; month: number } {
@@ -69,7 +70,7 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
 
   const clubsQuery = useSalaryClubs(source, allowed);
   const clubs = useMemo(() => clubsQuery.data ?? [], [clubsQuery.data]);
-  const activeClubId = clubId || clubs[0]?.id || null;
+  const activeClubId = clubs.find((c) => c.id === clubId)?.id || clubs[0]?.id || null;
   const activeClub = clubs.find((c) => c.id === activeClubId) ?? clubs[0] ?? null;
 
   const monthQuery = useStaffSalaryMonth(source, activeClubId, year, month);
@@ -82,6 +83,11 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
   if (authLoading || clubsQuery.isLoading) return <ChotSkeleton />;
   // Embedded (accountant workspace): the parent already gates access — never redirect.
   if (!allowed && !embedded) return <Navigate to="/club/admin" replace />;
+  if (clubsQuery.isPaused || monthQuery.isPaused) {
+    return <Card role="status" className="p-6 text-sm text-muted-foreground">
+      Mất kết nối — bảng lương sẽ tự cập nhật khi có mạng trở lại.
+    </Card>;
+  }
 
   const view = monthQuery.data;
   const status: SalaryPeriodStatus = view?.status ?? "prepared";
@@ -89,6 +95,7 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
   const rows = hasRuns ? view?.lockedRows ?? [] : view?.previewRows ?? [];
   const canApprove = activeClub?.role === "owner" || activeClub?.role === "admin";
   const busy =
+    !view || monthQuery.isFetching ||
     actions.chot.isPending ||
     actions.submit.isPending ||
     actions.approve.isPending ||
@@ -127,17 +134,21 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
         </Card>
       )}
 
-      {clubs.length === 0 ? (
+      {clubsQuery.isError ? (
+        <Card role="alert" className="p-6 border-border text-sm text-destructive">
+          Không tải được danh sách CLB. <Button variant="outline" size="sm" onClick={() => void clubsQuery.refetch()}>Thử lại</Button>
+        </Card>
+      ) : clubs.length === 0 ? (
         <Card className="p-6 border-border text-sm text-muted-foreground">
           Bạn không có CLB nào để chốt lương (cần quyền chủ CLB hoặc kế toán CLB).
         </Card>
       ) : (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard icon={Coins} label="Tổng lương (gross)" value={formatVND(view?.totalGrossVnd ?? 0)} />
-            <MetricCard icon={Wallet} label="Thực nhận (net)" value={formatVND(view?.totalNetVnd ?? 0)} />
-            <MetricCard icon={Users} label="Số nhân viên" value={`${rows.length}`} />
-            <MetricCard icon={BadgeCheck} label="Trạng thái" value={hasRuns ? STATUS_LABEL[status] : "Chưa chốt"} />
+            <MetricCard icon={Coins} label="Tổng lương (gross)" value={view ? formatVND(view.totalGrossVnd) : "—"} />
+            <MetricCard icon={Wallet} label="Thực nhận (net)" value={view ? formatVND(view.totalNetVnd) : "—"} />
+            <MetricCard icon={Users} label="Số nhân viên" value={view ? `${rows.length}` : "—"} />
+            <MetricCard icon={BadgeCheck} label="Trạng thái" value={!view ? "Chưa xác minh" : hasRuns ? STATUS_LABEL[status] : "Chưa chốt"} />
           </div>
 
           <Card className="p-4 border-border bg-card space-y-3">
@@ -147,7 +158,7 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
                   Bảng lương {String(month).padStart(2, "0")}/{year}
                 </h2>
                 <p className="text-[12px] text-muted-foreground">
-                  {activeClub?.name ?? "Chưa chọn CLB"} · {hasRuns ? "số đã chốt (bất biến)" : "tạm tính (chưa chốt)"}
+                  {activeClub?.name ?? "Chưa chọn CLB"} · {!view ? "chưa xác minh bảng lương" : hasRuns ? "số đã chốt (bất biến)" : "tạm tính (chưa chốt)"}
                 </p>
               </div>
               {clubs.length > 1 && (
@@ -174,7 +185,11 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
               </div>
             )}
 
-            {monthQuery.isLoading ? (
+            {monthQuery.isError ? (
+              <div role="alert" className="text-sm text-destructive">
+                Không xác minh được bảng lương. <Button variant="outline" size="sm" onClick={() => void monthQuery.refetch()}>Thử lại</Button>
+              </div>
+            ) : monthQuery.isLoading ? (
               <div className="space-y-2">
                 {[0, 1, 2].map((i) => (
                   <Skeleton key={i} className="h-14 rounded-xl" />
@@ -192,7 +207,7 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
                     row={row}
                     showMarkPaid={hasRuns && status === "approved"}
                     onMarkPaid={() => row.runId && actions.markPaid.mutate(row.runId)}
-                    markPaidPending={actions.markPaid.isPending}
+                    markPaidPending={busy || actions.markPaid.isPending}
                   />
                 ))}
               </div>
@@ -253,7 +268,7 @@ function SalaryRowItem({
   const paid = row.status === "paid";
   const meta =
     row.employmentType === "part_time"
-      ? `PT · ${Math.round((row.workedMinutes ?? 0) / 60)}h`
+      ? "PT"
       : `FT · ${row.workedDays ?? 0} công`;
   return (
     <div className="py-3 flex items-center gap-3">
@@ -266,6 +281,9 @@ function SalaryRowItem({
           <span className="text-[11px] text-muted-foreground">{meta}</span>
           {row.alreadyLocked && <span className="text-[10px] text-amber-400">đã có bản chốt</span>}
         </div>
+        {row.employmentType === "part_time" && (
+          <p className="text-[11px] text-muted-foreground">Tổng đã trả theo ngày · chỉ đối chiếu tháng</p>
+        )}
         {(row.manualBhxhVnd > 0 || row.manualTaxVnd > 0) && (
           <p className="text-[11px] text-muted-foreground">
             BHXH {formatVND(row.manualBhxhVnd)} · Thuế {formatVND(row.manualTaxVnd)}
@@ -276,7 +294,7 @@ function SalaryRowItem({
         <div className="font-bold tabular-nums text-foreground">{formatVND(row.netVnd)}</div>
         <div className="text-[11px] text-muted-foreground tabular-nums">gross {formatVND(row.grossVnd)}</div>
       </div>
-      {showMarkPaid &&
+      {showMarkPaid && row.employmentType === "full_time" &&
         (paid ? (
           <span className="text-[11px] font-bold text-primary shrink-0 inline-flex items-center gap-1">
             <BadgeCheck className="w-3.5 h-3.5" /> Đã trả
@@ -347,7 +365,7 @@ function ActionBar({
   }
   return (
     <p className="text-[12px] text-primary text-right inline-flex items-center gap-1 justify-end w-full">
-      <BadgeCheck className="w-4 h-4" /> Đã duyệt — có thể đánh dấu đã trả từng nhân viên ở bảng trên.
+      <BadgeCheck className="w-4 h-4" /> Đã duyệt — lương FT được đánh dấu trả theo từng dòng; lương PT chỉ đối chiếu các khoản đã trả theo ngày.
     </p>
   );
 }

@@ -1,11 +1,42 @@
 import { describe, it, expect } from "vitest";
 import {
   nextActionOrderFrom,
+  readResumeCards,
   deriveResumeStreet,
   replayActions,
   type ResumeActionRow,
   type ResumePlayer,
 } from "@/components/cashier/tournament-live/handinput/resumeHand";
+
+describe('persisted resume deck boundary',()=>{
+ const players=[{player_id:'p1',entry_number:1},{player_id:'p2',entry_number:2}];
+ const rows=()=>[{player_id:'p1',entry_number:1,hole_cards:['As','Ad']},{player_id:'p2',entry_number:2,hole_cards:['Ks','Kd']}];
+ it('restores exact identities and card order without changing persisted inputs',()=>{
+  const board=['2h','3d','4c',null,null],cards=rows(),before=JSON.stringify({board,cards});
+  expect(readResumeCards(board,cards,players)).toEqual({communitySlots:board,communityCount:3,playerHoleCards:{p1:['As','Ad'],p2:['Ks','Kd']}});
+  expect(JSON.stringify({board,cards})).toBe(before);
+ });
+ it('keeps legacy explicit NULL undealt board/hole cards distinct from missing evidence',()=>{
+  expect(readResumeCards(null,[{player_id:'p1',entry_number:1,hole_cards:null},{player_id:'p2',entry_number:2,hole_cards:[]}],players))
+   .toEqual({communitySlots:[null,null,null,null,null],communityCount:0,playerHoleCards:{}});
+ });
+ it.each([
+  [{player_id:'p1',entry_number:2,hole_cards:[]},{player_id:'p2',entry_number:2,hole_cards:[]}],
+  [{player_id:'ghost',entry_number:undefined,hole_cards:[]},{player_id:'p2',entry_number:2,hole_cards:[]}],
+  [{player_id:'p1',entry_number:1},{player_id:'p2',entry_number:2,hole_cards:[]}],
+  [{player_id:'p1',entry_number:1,hole_cards:['As']}],
+  [{player_id:'p1',entry_number:1,hole_cards:[]},{player_id:'p1',entry_number:1,hole_cards:[]}],
+ ].map(cards=>({cards})))('rejects missing, duplicate or wrong-entry participants',({cards})=>{
+  expect(()=>readResumeCards([],cards,players)).toThrow('Không xác minh');
+ });
+ it.each([
+  {board:['As','2h','3d'],cards:rows()},
+  {board:[],cards:[{player_id:'p1',entry_number:1,hole_cards:['As','Ad']},{player_id:'p2',entry_number:2,hole_cards:['As','Kd']}]},
+  {board:[],cards:[{player_id:'p1',entry_number:1,hole_cards:['As','As']},{player_id:'p2',entry_number:2,hole_cards:[]}]},
+ ])('rejects any duplicate across the persisted deck',({board,cards})=>{
+  expect(()=>readResumeCards(board,cards,players)).toThrow('Không xác minh');
+ });
+});
 
 function player(id: string, stack: number): ResumePlayer {
   return {

@@ -55,6 +55,61 @@ export function getSeatPositions(activeSeats: number[], btnSeat: number): Map<nu
   return result
 }
 
+/** Operator display with known blind slots, including a dead SB/button.
+ * Missing slots still occupy positions in the existing position-name convention;
+ * they must not shift UTG onto the second/third live player after the actual BB.
+ * Display only: never used to choose an actor, move the button or post a blind.
+ */
+export function getBlindSlotSeatPositions(
+  activeSeats: number[], btnSeat: number, sbSeat: number | null, bbSeat: number | null,
+): Map<number, string> {
+  const positions = getSeatPositions(activeSeats, btnSeat)
+  const seats = [...positions.keys()].sort((a, b) => a - b)
+  if (seats.length < 2 || bbSeat == null || !positions.has(bbSeat)) return positions
+  for (const seat of seats) positions.set(seat, "")
+  if (positions.has(btnSeat)) positions.set(btnSeat, sbSeat === btnSeat ? "BTN/SB" : "BTN")
+  if (sbSeat != null && positions.has(sbSeat) && sbSeat !== btnSeat) positions.set(sbSeat, "SB")
+  positions.set(bbSeat, "BB")
+  if (seats.length === 2) return positions
+
+  const slotCount = seats.length + Number(!positions.has(btnSeat)) + Number(sbSeat == null)
+  const names = POSITION_NAMES[slotCount]?.slice(3) ?? []
+  const afterBb = seats.filter((seat) => seat > bbSeat).concat(seats.filter((seat) => seat < bbSeat))
+    .filter((seat) => seat !== btnSeat && seat !== sbSeat)
+  afterBb.forEach((seat, index) => positions.set(seat, names[index] ?? ""))
+  return positions
+}
+
+/** Display only: recorded blind posts outrank an occupied-seat approximation.
+ * A dead blind/button breaks that approximation. Without frozen slot metadata,
+ * keep the known BTN/blinds and leave other positions neutral rather than
+ * inventing their full-ring labels. Never changes action order or settlement.
+ */
+export function getHandSeatPositions(
+  players: ReadonlyArray<{ player_id: string; seat_number: number }>,
+  btnSeat: number,
+  actions: ReadonlyArray<{ player_id: string; action_type: string }>,
+): Map<number, string> {
+  const positions = getSeatPositions(players.map((player) => player.seat_number), btnSeat)
+  const seatByPlayer = new Map(players.map((player) => [player.player_id, player.seat_number]))
+  const postedSeats = (type: string) => [...new Set(actions
+    .filter((action) => action.action_type === type)
+    .map((action) => seatByPlayer.get(action.player_id))
+    .filter((seat): seat is number => seat != null && positions.has(seat)))]
+  const sb = postedSeats("post_sb")
+  const bb = postedSeats("post_bb")
+  if (sb.length === 0 && bb.length === 0) return positions
+  const agrees = sb.length <= 1 && bb.length <= 1
+    && (sb.length === 0 || ["SB", "BTN/SB"].includes(positions.get(sb[0]) ?? ""))
+    && (bb.length === 0 || positions.get(bb[0]) === "BB")
+  if (agrees) return positions
+
+  for (const seat of positions.keys()) positions.set(seat, seat === btnSeat ? "BTN" : "")
+  if (sb.length === 1) positions.set(sb[0], sb[0] === btnSeat ? "BTN/SB" : "SB")
+  if (bb.length === 1) positions.set(bb[0], "BB")
+  return positions
+}
+
 export function nextButton(activeSeats: number[], currentBtn: number): number {
   const sorted = [...new Set(activeSeats)]
     .filter((seat) => Number.isInteger(seat) && seat > 0)

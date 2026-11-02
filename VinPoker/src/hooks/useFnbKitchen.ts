@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { FnbOrder, FnbOrderItem } from "./useFnbOrders";
+import { useAuth } from "./useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 /**
  * Live Kitchen board (F6). PAID-but-not-yet-shipped orders for a club, FIFO by `paid_at`, kept fresh
@@ -12,12 +14,15 @@ import type { FnbOrder, FnbOrderItem } from "./useFnbOrders";
  * untyped → `supabase as any`. Mirrors the two-read + client-side grouping of `useFnbOrders`.
  */
 export function useFnbKitchen(clubId: string | undefined) {
+  const {user,session,loading:authLoading}=useAuth();
+  const actor=authLoading?undefined:user?.id;
+  const epoch=sessionReadEpoch(session);
   const qc = useQueryClient();
-  const queryKey = ["fnb", "kitchen", clubId];
+  const queryKey = ["fnb", "kitchen", clubId, actor, epoch];
 
   const query = useQuery({
     queryKey,
-    enabled: !!clubId,
+    enabled: !!actor && !!clubId,
     refetchInterval: 30000, // poll fallback (realtime is primary)
     queryFn: async (): Promise<FnbOrder[]> => {
       const sb = supabase as any;
@@ -25,13 +30,15 @@ export function useFnbKitchen(clubId: string | undefined) {
         .select("*").eq("club_id", clubId).eq("status", "paid")
         .order("paid_at", { ascending: true }).limit(100); // FIFO — oldest first
       if (error) throw error;
-      const list = (orders ?? []) as FnbOrder[];
+      if (!Array.isArray(orders)) throw new Error("Không xác minh được danh sách đơn.");
+      const list = orders as FnbOrder[];
       if (list.length === 0) return [];
       const ids = list.map((o) => o.id);
       const { data: items, error: e2 } = await sb.from("fnb_order_items").select("*").in("order_id", ids);
       if (e2) throw e2;
+      if (!Array.isArray(items)) throw new Error("Không xác minh được chi tiết đơn.");
       const byOrder: Record<string, FnbOrderItem[]> = {};
-      for (const it of (items ?? []) as FnbOrderItem[]) (byOrder[it.order_id] ??= []).push(it);
+      for (const it of items as FnbOrderItem[]) (byOrder[it.order_id] ??= []).push(it);
       return list.map((o) => ({ ...o, items: byOrder[o.id] ?? [] }));
     },
   });
@@ -39,8 +46,8 @@ export function useFnbKitchen(clubId: string | undefined) {
   // per-instance channel id so two boards never collide on the channel name
   const instanceId = useRef(Math.random().toString(36).slice(2, 8)).current;
   useEffect(() => {
-    if (!clubId) return;
-    const channel = supabase.channel(`fnb-kitchen:${clubId}:${instanceId}`);
+    if (!actor || !clubId) return;
+    const channel = supabase.channel(`fnb-kitchen:${clubId}:${instanceId}:${epoch}`);
     for (const table of ["fnb_orders", "fnb_order_items"]) {
       channel.on(
         "postgres_changes",
@@ -50,7 +57,7 @@ export function useFnbKitchen(clubId: string | undefined) {
     }
     channel.subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [clubId, instanceId, qc]);
+  }, [actor, clubId, instanceId, epoch, qc]);
 
   return query;
 }

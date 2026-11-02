@@ -1,4 +1,10 @@
 {
+  "clubDetailRead": {"error":"클럽 정보를 불러오지 못했습니다. 다시 시도해 주세요.","retry":"다시 불러오기","loading":"클럽 정보를 불러오는 중…"},
+  "rankingReview": {"title":"플로어 순위 확인","note":"같은 핸드에서 탈락한 그룹 안에서만 순위를 바꿀 수 있습니다. 이 확인은 대회 종료나 상금 지급을 기록하지 않습니다.","storage":"요청을 안전하게 읽거나 저장하지 못했습니다. 페이지를 새로고침하고 이전 요청을 대조한 후 계속해 주세요.","readError":"순위 목록을 확인하지 못했습니다. 다시 불러온 후 확인해 주세요.","unknown":"결과가 확인되지 않았습니다. 대조를 위해 원래 요청을 보관하며 새 요청을 만들지 마세요.","changed":"데이터 또는 조건이 바뀌어 요청이 거절되었습니다. 최신 순위를 확인해 주세요.","recorded":"순위 확인을 기록했습니다. 대회 종료 상태를 새로 불러옵니다.","historical":"이전 요청을 대조했지만 원본 데이터가 바뀌었습니다. 현재 순위를 다시 확인해 주세요.","loading":"순위를 확인하는 중…","pending":"확인되지 않은 요청을 보관하고 있습니다. 새 요청을 보내지 마세요.","check":"저장된 요청 대조","retrySame":"동일한 저장 요청 다시 전송","reload":"순위 다시 불러오기","notReady":"승자 한 명과 완전한 핸드 및 탈락 순서 증거가 필요합니다.","approved":"확인 영수증이 저장되었습니다. 대회 종료 조건은 별도로 검사합니다.","up":"그룹 안에서 {{name}}의 순위 올리기","down":"그룹 안에서 {{name}}의 순위 내리기","confirm":"플로어가 선택한 순서 확인","group":"동일 핸드 탈락 그룹 {{group}}","reference":"참가 기록 번호 {{reference}}"},
+  "publicScheduleRead": { "loading": "대회 일정을 불러오는 중…", "error": "대회 일정을 불러오지 못해 일정 유무를 확인할 수 없습니다. 다시 시도해 주세요.", "retry": "대회 일정 다시 불러오기" },
+  "trackerSkipRevealNote": "‘공개하지 않고 계속’을 선택한 경우에만 홀 카드가 뷰어에 표시되지 않으며, 쇼다운 결과를 직접 선택해야 합니다.",
+  "baggedFlightRelease": { "title": "백 보관 완료 테이블 해제", "note": "백 보관이 잠기고 대조가 완료된 뒤 정확한 테이블 세션만 종료합니다. 칩, 참가 기록과 이력을 보존하며 탈락 처리, 칩 발행 또는 상금 지급이 아닙니다.", "refresh": "테이블 상태 새로고침", "loading": "테이블 세션 확인 중…", "readError": "테이블 상태를 확인하지 못했습니다. 새로고침 후 세션과 좌석을 확인하세요.", "unknown": "결과를 확인하지 못했습니다. 원래 요청을 보관했습니다. 진행 중인 핸드, 좌석 이동, 정정 또는 대기 중인 모드 변경을 확인한 뒤 같은 요청으로 재시도하세요.", "recover": "저장된 해제 요청 확인", "peer": "다른 플라이트에 확인되지 않은 해제 요청이 있습니다.", "bagFirst": "테이블 해제 전에 칩 관리에서 백 보관을 잠그세요.", "released": "정확한 테이블 세션이 해제되었으며 칩은 백에 보관됩니다.", "release": "이 테이블 해제", "confirm": "테이블 세션 해제 확인", "cancel": "취소" },
+  "mainEventCreate": { "guaranteeLabel": "메인 이벤트 전체 보장액 (VND)", "guaranteeNote": "메인 이벤트 전체에 하나의 보장액을 적용합니다. 플라이트 수로 곱하거나 실제 상금 풀 입금으로 취급하지 않습니다. 미정이면 비워 두세요.", "guaranteeMissing": "메인 이벤트 보장액 미공개", "guaranteeNone": "메인 이벤트 보장액 없음", "guaranteeValue": "메인 이벤트 전체 보장액: {{amount}}", "invalidMoney": "서비스 수수료와 보장액은 안전한 숫자 범위 내의 0 이상 정수 VND여야 합니다." },
   "legacyScheduleEvidence": "이 이미지의 출처, 버전 및 검토 정보는 여기에 제공되지 않습니다. 최신 일정은 클럽에 확인해 주세요.",
   "createAtomic": { "signin": "대회를 만들기 전에 로그인하세요.", "storageError": "대기 중인 생성 요청을 읽거나 저장할 수 없습니다. 새 요청은 전송되지 않았습니다.", "unknown": "생성 결과가 확인되지 않았습니다. 다시 시도하기 전에 이전 요청을 확인하세요.", "check": "이전 요청 확인", "retry": "동일한 요청 재전송", "pending": "이전 생성 요청의 결과가 아직 확인되지 않았습니다. 다른 대회를 만들기 전에 확인하세요. 재전송 시 수정한 값이 아닌 원래 값이 사용됩니다." },
   "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
@@ -19,7 +25,10 @@
   "floorReadiness": { "unavailable": "참가자 수가 확인되지 않았습니다" },
   "clockControl": { "loadError": "타이머 제어를 불러올 수 없습니다." },
   "stack_projection_mismatch": "좌석, 참가 및 칩 기록이 일치하지 않습니다",
-  "participation": {"repairRequired":"데이터 수정 필요","repairHint":"이 기록은 확인을 위해 보존되며 현재 좌석 집계나 작업에 사용되지 않습니다.","loadError":"플레이어를 불러오지 못했습니다. 새로고침하세요.","stale":"이전 데이터가 표시되며 작업은 일시 중지됩니다.","reasons":{"missing_entry":"참가 기록 없음","entry_identity_mismatch":"참가 정보 불일치","entry_not_live":"참가 기록 비활성","missing_table_session":"테이블 또는 세션 없음","closed_session":"테이블 세션 종료","inactive_table":"테이블 비활성","table_session_mismatch":"테이블과 세션 불일치","seat_out_of_range":"좌석 정원 초과","duplicate_entry_seat":"한 참가 기록의 활성 좌석 중복","duplicate_seat_position":"좌석 위치 중복","duplicate_entry_generation":"참가 회차 중복","missing_active_seat":"착석 기록에 유효 좌석 없음"}},
+  "participation": {
+    "bagged": "칩백 완료",
+    "baggedHint": "칩백에 보관된 스택은 확인용이며, 이 플레이어들은 좌석 배정을 기다리는 상태가 아닙니다.",
+    "noBagged": "일치하는 칩백 완료 참가 기록이 없습니다.","repairRequired":"데이터 수정 필요","repairHint":"이 기록은 확인을 위해 보존되며 현재 좌석 집계나 작업에 사용되지 않습니다.","loadError":"플레이어를 불러오지 못했습니다. 새로고침하세요.","stale":"이전 데이터가 표시되며 작업은 일시 중지됩니다.","reasons":{"missing_entry":"참가 기록 없음","entry_identity_mismatch":"참가 정보 불일치","entry_not_live":"참가 기록 비활성","missing_table_session":"테이블 또는 세션 없음","closed_session":"테이블 세션 종료","inactive_table":"테이블 비활성","table_session_mismatch":"테이블과 세션 불일치","seat_out_of_range":"좌석 정원 초과","duplicate_entry_seat":"한 참가 기록의 활성 좌석 중복","duplicate_seat_position":"좌석 위치 중복","duplicate_entry_generation":"참가 회차 중복","missing_active_seat":"착석 기록에 유효 좌석 없음"}},
   "trackerCards": { "deck": "카드 스타일", "fourColor": "4색", "classic": "클래식" },
   "fnb": {
     "navCounter": "F&B · Quầy",
@@ -291,6 +300,8 @@
     "international": "국제 대회"
   },
   "documentsPage": {
+    "readError": "자료를 불러오지 못했습니다. 다시 시도해 주세요.",
+    "retry": "다시 시도",
     "title": "문서",
     "subtitle": "공식 가이드, 비디오 및 참고 파일.",
     "tabVideos": "비디오",
@@ -1217,6 +1228,7 @@
     "photo": "📷 사진",
     "searchUsers": "채팅을 시작하려면 표시 이름으로 사용자를 검색하세요...",
     "searching": "검색 중...",
+    "searchFail": "검색 결과를 불러오지 못했습니다. 다시 시도해 주세요.",
     "noResultsFor": "\"{{q}}\"에 대한 결과가 없습니다.",
     "inboxLabel": "받은 메시지 · {{n}}",
     "noDM": "아직 메시지가 없습니다. 위에 있는 사용자를 찾아 시작하세요.",
@@ -2228,6 +2240,9 @@
     "registeredCount": "등록됨: {{registered}} / {{max}}"
   },
   "playerHistory": {
+    "loading": "검증된 결과를 불러오는 중…",
+    "loadError": "플레이어 기록을 불러올 수 없습니다. 결과가 확인되지 않았습니다.",
+    "retry": "다시 시도",
     "playerFallback": "플레이어",
     "prizeCount": "대회 수",
     "totalCashout": "총 캐시아웃",
@@ -2463,6 +2478,8 @@
     "register": "등록하기"
   },
   "tournamentRegister": {
+"cancelUnverified": "취소 결과를 확인하지 못했습니다. 다시 시도하기 전에 등록 상태를 새로 확인하세요. 취소되었다고 가정하지 마세요.",
+    "proofUnverified": "증빙 제출을 확인하지 못했습니다. 다시 시도하기 전에 등록 상태를 새로 확인하세요.",
     "title": "트레이닝 토너먼트 등록",
     "regError": "등록 오류",
     "copied": "{{label}} 복사됨",
@@ -2583,6 +2600,9 @@
     "closeAria": "닫기"
   },
   "bulkCreate": {
+    "pendingBatch": "대회 {{count}}개의 요청 결과가 확인되지 않았습니다. 새 일괄 요청 전에 처리 영수증을 확인하세요.",
+    "checkReceipt": "일괄 처리 영수증 확인",
+    "cancelPendingBatch": "미확정 요청 취소 (생성된 대회 유지)",
     "adminOnly": "슈퍼 관리자만 접근 가능",
     "noPending": "처리 대기 중인 이미지가 없습니다",
     "errorPrefix": "오류: {{msg}}",
@@ -2701,8 +2721,8 @@
     "photos": { "empty": "사진이 아직 없습니다", "soon": "이벤트 사진이 곧 제공됩니다" },
     "breakdown": {
       "title": "핸드 분석",
-      "pot": "팟",
-      "potHint": "이 스트리트까지의 팟",
+      "pot": "누적 베팅",
+      "potHint": "이 스트리트까지의 누적 베팅액으로, 콜되지 않은 베팅 반환 전 금액이며 분배되는 팟이 아닙니다.",
       "player": "플레이어"
     },
     "map": {
@@ -2918,17 +2938,17 @@
       "scoreLabel": "Poker IQ",
       "confidence": "신뢰도: {{level}}",
       "interpretation": "규율 있는 기본기를 갖췄고 중간 규모 딥스택에 잘 맞습니다.",
-      "nextHook": "A-에 가까워지려면: 공격적인 상대를 더 잘 다루세요.",
+      "nextHook": "아래에 제시된 기술 영역을 계속 연습하세요.",
       "whyTitle": "시스템이 그렇게 판단한 이유",
       "weakest": "가장 약함: {{category}} {{score}} — {{insight}}",
       "strengthsTitle": "강점",
       "weaknessesTitle": "개선 필요",
       "trainingKicker": "훈련 경로",
-      "trainingGoal": "다음 목표: A-",
+      "trainingGoal": "다음 목표: 가장 약한 기술 영역 강화",
       "step1": "{{drill}} 드릴 완료",
       "step2": "중간 규모 딥스택 2개 플레이",
       "step3": "검증 프로필 잠금 해제",
-      "cta": "{{drill}} 훈련으로 A- 잠금 해제",
+      "cta": "{{drill}} 연습하기",
       "ctaSub": "이 영역이 점수를 가장 많이 깎고 있어요.",
       "eventsTitle": "당신에게 맞는 대회",
       "eventAvoidPrefix": "당분간 피하기",

@@ -189,7 +189,7 @@
           };
           splash.appendChild(btn);
           var hint = document.createElement('div');
-          hint.textContent = 'Không thể tải ứng dụng. Vui lòng bấm Tải lại.';
+          hint.textContent = 'Ứng dụng đang tải lâu hơn dự kiến. Bạn có thể chờ hoặc bấm Tải lại.';
           hint.style.cssText = 'position:absolute;bottom:24%;left:0;right:0;text-align:center;' +
             'color:rgba(255,255,255,.7);font:500 13px system-ui,-apple-system,sans-serif;padding:0 24px';
           splash.appendChild(hint);
@@ -241,7 +241,7 @@
           try {
             if (sessionStorage.getItem('vp:chunk-reloaded')) return;
             sessionStorage.setItem('vp:chunk-reloaded', '1');
-          } catch (_) {}
+          } catch (_) { return; }
           var url = new URL(location.href);
           url.searchParams.set('recover', Date.now().toString());
           location.replace(url.toString());

@@ -24,6 +24,8 @@ export interface LivePayoutData {
     paid: number;
     outstanding: number | null;
     finishersCount: number;
+    liabilityScope?: 'ORDINARY'|'INDIVIDUAL'|'GLOBAL';
+    isPartial?: boolean;
   }[];
   aging: { d0_1: number; d2_7: number; d8p: number };
 }
@@ -65,7 +67,13 @@ function OwedRow({ row }: { row: PayoutRow }) {
 }
 
 /** Card "chênh lệch" đổi hình theo dấu: >0 còn nợ · =0 đủ · <0 trả vượt (cảnh báo). */
-function OutstandingCard({ outstanding }: { outstanding: number }) {
+function OutstandingCard({ outstanding, incomplete, empty }: { outstanding: number; incomplete: boolean; empty: boolean }) {
+  if (outstanding === 0 && (incomplete || empty)) {
+    return <Card className="p-3 md:p-4 h-full space-y-1.5">
+      <span className="text-sm font-semibold">{empty ? "Chưa có giải trong kỳ" : "Chưa xác định đầy đủ"}</span>
+      <p className="text-[11px] text-muted-foreground">{empty ? "Không có giải thuộc kỳ báo cáo này." : "Chưa có đủ kết quả đã chốt để xác nhận mọi khoản phải trả trong kỳ."}</p>
+    </Card>;
+  }
   if (outstanding > 0) {
     return <LiabilityCard label="Còn phải trả (thực)" amount={outstanding} state="provisional" note="owed − đã trả" />;
   }
@@ -90,19 +98,21 @@ function OutstandingCard({ outstanding }: { outstanding: number }) {
 }
 
 function LivePayoutBody({ d }: { d: LivePayoutData }) {
+  const hasPartial=d.perTournament.some(t=>t.isPartial===true);
   return (
     <>
       <div className="flex items-start gap-2.5 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
         <PlugZap className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
         <p className="text-[12px] leading-relaxed text-foreground/85">
-          <span className="font-semibold text-primary">Số thật</span> — còn phải trả cho các giải chốt
+          <span className="font-semibold text-primary">Số thật</span> — còn phải trả cho các nghĩa vụ thưởng đã chốt
           trong kỳ, theo trạng thái trả hiện tại. Tiền giải là tiền của người chơi (pass-through),
           không phải doanh thu. <span className="text-muted-foreground">{d.periodLabel}</span>
         </p>
       </div>
 
+      {hasPartial&&<p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-foreground/85">Báo cáo gồm các nghĩa vụ đã chốt từng người; phần còn lại của giải chưa được chốt.</p>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-        <LiabilityCard label="Còn phải trả (nghĩa vụ)" amount={d.owedTotal} state="provisional" note="Σ tiền thưởng các giải đã chốt" />
+        <LiabilityCard label="Tổng nghĩa vụ thưởng" amount={d.owedTotal} state="provisional" note="Tổng thưởng đã chốt, gồm cả phần đã trả" />
         <MoneyCard
           label="Đã trả"
           amount={d.paidTotal}
@@ -110,7 +120,7 @@ function LivePayoutBody({ d }: { d: LivePayoutData }) {
           kind="neutral"
           sub={d.paidTotal === 0 ? "Chưa ghi nhận trả (bật ghi nhận trả ở Cashier)" : "Đã ghi nhận trả tới hôm nay"}
         />
-        <OutstandingCard outstanding={d.outstandingTotal} />
+        <OutstandingCard outstanding={d.outstandingTotal} empty={d.perTournament.length === 0} incomplete={hasPartial||d.perTournament.some((tour) => !tour.hasFinishedPlace)} />
       </div>
 
       <Card className="p-0 gradient-card overflow-hidden">
@@ -127,7 +137,7 @@ function LivePayoutBody({ d }: { d: LivePayoutData }) {
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <span className="text-sm text-foreground/90 flex-1 min-w-[120px]">{t.name}</span>
                 <span className="text-[11px] text-muted-foreground">{dm(t.closeDate)}</span>
-                {!t.hasFinishedPlace ? (
+                {t.isPartial===true ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">Chốt từng người — chưa chốt toàn giải</span> : !t.hasFinishedPlace ? (
                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-400 bg-amber-500/10">
                     chưa chốt kết quả
                   </span>
@@ -235,8 +245,14 @@ export function PayoutLiabilityTab({
         </div>
       )}
 
-      {isLive && live?.data ? (
+      {isLive && live?.loading ? (
+        <p role="status" className="text-sm text-muted-foreground">Đang tải phải-trả giải…</p>
+      ) : isLive && live?.error ? (
+        <p role="alert" className="text-sm text-destructive">Không tải được phải-trả giải: {live.error}</p>
+      ) : isLive && live?.data ? (
         <LivePayoutBody d={live.data} />
+      ) : isLive && !live?.notApplied ? (
+        <p role="status" className="text-sm text-muted-foreground">Chưa có dữ liệu phải-trả giải đã xác minh.</p>
       ) : (
         <MockBody payout={payout} />
       )}

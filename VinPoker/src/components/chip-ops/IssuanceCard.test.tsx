@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssuanceCard } from "./IssuanceCard";
+import {createChipSetupWriteGate} from '@/lib/chipSetupWriteGate';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), toast: vi.fn() }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock("sonner", () => ({ toast: { success: mocks.toast } }));
@@ -16,6 +17,14 @@ afterEach(() => { vi.useRealTimers(); cleanup(); });
 async function ready() { await waitFor(() => expect(screen.getByLabelText("Số bộ TEST stack")).toBeEnabled()); fireEvent.change(screen.getByLabelText("Số bộ TEST stack"), { target: { value: "8" } }); }
 const writes = () => mocks.rpc.mock.calls.filter(([name]) => name === "chip_ops_set_issuance_v2");
 describe("issuance intent lifecycle", () => {
+  it('does not journal or dispatch issuance while another Setup card owns the shared gate',async()=>{
+    const acquireWrite=createChipSetupWriteGate(vi.fn()),release=acquireWrite()!;
+    render(<IssuanceCard {...props} acquireWrite={acquireWrite}/>);await ready();
+    fireEvent.click(screen.getByRole('button',{name:'Lưu TEST stack'}));
+    expect(writes()).toHaveLength(0);expect(sessionStorage.length).toBe(0);
+    release();fireEvent.click(screen.getByRole('button',{name:'Lưu TEST stack'}));
+    await waitFor(()=>expect(writes()).toHaveLength(1));
+  });
   it("sends integer intent once and never calls retired writer", async () => {
     render(<IssuanceCard {...props} />); await ready();
     fireEvent.click(screen.getByRole("button", { name: "Lưu TEST stack" }));

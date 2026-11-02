@@ -21,13 +21,13 @@ import { SpreadPnL } from "@/components/admin/SpreadPnL";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { AdminStreamManager } from "@/components/admin/AdminStreamManager";
 import { PokerIqQuestionsEditor } from "@/components/admin/PokerIqQuestionsEditor";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import { NewTournamentDialog, EditTournamentDialog } from "@/components/floor/TournamentManagerShared";
+import {TournamentLifecycleControls} from '@/components/floor/TournamentLifecycleControls';
 import { cn } from "@/lib/utils";
 
 const REGIONS = ["TP.HCM", "Hanoi", "Da Nang", "Hai Phong", "Can Tho"];
 const GAME_TYPES = [{v:"nlh",l:"No Limit Hold'em"},{v:"plo",l:"Pot Limit Omaha"},{v:"mixed",l:"Mixed Games"}];
 
-type TournamentStatus = "scheduled" | "live" | "finished" | "cancelled";
 
 type SectionKey =
   | "tournaments" | "series" | "banners"
@@ -230,11 +230,6 @@ const SuperAdmin = () => {
     if (error) toast.error(error.message); else { toast.success("Updated"); load(); }
   };
 
-  const setTourStatus = async (id: string, status: TournamentStatus) => {
-    const { error } = await supabase.from("tournaments").update({ status }).eq("id", id);
-    if (error) toast.error(error.message); else { toast.success("Tournament status updated"); load(); }
-  };
-
   const deleteTour = async (id: string) => {
     if (!confirm("Delete this tournament?")) return;
     const { data, error } = await supabase.rpc("ops_delete_tournament_safe", {
@@ -267,7 +262,7 @@ const SuperAdmin = () => {
             <Button variant="outline" size="sm" onClick={() => navigate("/admin/tournaments/bulk-create")}>
               <Wand2 className="h-4 w-4 mr-1" /> Tạo hàng loạt từ ảnh
             </Button>
-            <NewTournamentDialog clubs={clubs} onCreated={load} />
+            <NewTournamentDialog clubs={clubs.filter(club => club.status === "approved")} defaultClubId="" multiClub lockMode="single" onCreated={load} />
           </div>
           {tournaments.length === 0 ? (
             <p className="text-sm text-muted-foreground">No tournaments yet.</p>
@@ -287,17 +282,7 @@ const SuperAdmin = () => {
                   </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <Select value={t.status} onValueChange={(v) => setTourStatus(t.id, v as TournamentStatus)}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="scheduled">Scheduled</SelectItem>
-                    <SelectItem value="live">Live</SelectItem>
-                    <SelectItem value="finished">Finished</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="mt-2"><TournamentLifecycleControls tournament={t} onChanged={load}/></div>
               <div className="mt-2">
                 <LiveStateEditor tournament={t} onSaved={load} />
               </div>
@@ -618,55 +603,6 @@ const ClubSettingsCard = ({ club, onChanged, onApprove }: { club: any; onChanged
   );
 };
 
-const NewTournamentDialog = ({ clubs, onCreated }: { clubs: any[]; onCreated: () => void }) => {
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ club_id: "", name: "", start_time: "", buy_in: 1000000, starting_stack: 20000, location: "", description: "", game_type: "nlh" });
-  const submit = async () => {
-    if (!f.club_id || !f.name || !f.start_time) return toast.error("Please fill all required fields");
-    const { error } = await supabase.from("tournaments").insert(withTournamentCreateLiveStatus({
-      club_id: f.club_id, name: f.name, start_time: new Date(f.start_time).toISOString(),
-      buy_in: Number(f.buy_in), starting_stack: Number(f.starting_stack),
-      location: f.location, description: f.description, game_type: f.game_type,
-    }));
-    if (error) toast.error(error.message); else { toast.success("Tournament created"); setOpen(false); onCreated(); }
-  };
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" className="gradient-neon text-primary-foreground border-0">
-          <Plus className="w-4 h-4 mr-1" />New Tournament
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Create Tournament</DialogTitle></DialogHeader>
-        <div className="space-y-2">
-          <Label>Club</Label>
-          <Select value={f.club_id} onValueChange={v => setF({ ...f, club_id: v })}>
-            <SelectTrigger><SelectValue placeholder="Select club" /></SelectTrigger>
-            <SelectContent>
-              {clubs.filter(c => c.status === "approved").map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Label>Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-          <Label>Start time</Label><Input type="datetime-local" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
-          <Label>Game type</Label>
-          <Select value={f.game_type} onValueChange={v => setF({ ...f, game_type: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>{GAME_TYPES.map(g => <SelectItem key={g.v} value={g.v}>{g.l}</SelectItem>)}</SelectContent>
-          </Select>
-          <div className="grid grid-cols-2 gap-2">
-            <div><Label>Buy-in (VND)</Label><Input type="number" value={f.buy_in} onChange={e => setF({ ...f, buy_in: +e.target.value })} /></div>
-            <div><Label>Starting stack</Label><Input type="number" value={f.starting_stack} onChange={e => setF({ ...f, starting_stack: +e.target.value })} /></div>
-          </div>
-          <Label>Location</Label><Input value={f.location} onChange={e => setF({ ...f, location: e.target.value })} />
-          <Label>Description</Label><Textarea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} />
-          <Button onClick={submit} className="w-full gradient-neon text-primary-foreground border-0">Create</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
 const NewClubDialog = ({ onCreated }: { onCreated: () => void }) => {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: "", address: "", region: "TP.HCM", description: "", schedule: "", owner_id: "" });
@@ -787,69 +723,6 @@ const VipBannerEditor = () => {
         </Button>
       </div>
     </Card>
-  );
-};
-
-const EditTournamentDialog = ({ tournament, onSaved }: { tournament: any; onSaved: () => void }) => {
-  const [open, setOpen] = useState(false);
-  const toLocalInput = (iso: string) => {
-    const d = new Date(iso);
-    const off = d.getTimezoneOffset();
-    return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
-  };
-  const [f, setF] = useState({
-    name: tournament.name,
-    start_time: toLocalInput(tournament.start_time),
-    buy_in: tournament.buy_in,
-    starting_stack: tournament.starting_stack,
-    location: tournament.location ?? "",
-    description: tournament.description ?? "",
-    minutes_per_level: tournament.minutes_per_level ?? 20,
-    late_reg_close_level: tournament.late_reg_close_level ?? 6,
-  });
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    if (!f.name || !f.start_time) return toast.error("Please fill all required fields");
-    setSaving(true);
-    const { error } = await supabase.from("tournaments").update({
-      name: f.name,
-      start_time: new Date(f.start_time).toISOString(),
-      buy_in: Number(f.buy_in),
-      starting_stack: Number(f.starting_stack),
-      location: f.location,
-      description: f.description,
-      minutes_per_level: Number(f.minutes_per_level),
-      late_reg_close_level: Number(f.late_reg_close_level),
-    }).eq("id", tournament.id);
-    setSaving(false);
-    if (error) toast.error(error.message); else { toast.success("Saved"); setOpen(false); onSaved(); }
-  };
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon"><Pencil className="w-4 h-4 text-primary" /></Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Edit Tournament</DialogTitle></DialogHeader>
-        <div className="space-y-2">
-          <Label>Tournament Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-          <Label>Start Time</Label><Input type="datetime-local" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
-          <div className="grid grid-cols-2 gap-2">
-            <div><Label>Buy-in (VND)</Label><Input type="number" value={f.buy_in} onChange={e => setF({ ...f, buy_in: +e.target.value })} /></div>
-            <div><Label>Starting Stack</Label><Input type="number" value={f.starting_stack} onChange={e => setF({ ...f, starting_stack: +e.target.value })} /></div>
-          </div>
-          <Label>Location</Label><Input value={f.location} onChange={e => setF({ ...f, location: e.target.value })} />
-          <div className="grid grid-cols-2 gap-2">
-            <div><Label>Phút / Level</Label><Input type="number" min={1} value={f.minutes_per_level} onChange={e => setF({ ...f, minutes_per_level: +e.target.value })} /></div>
-            <div><Label>Đóng buy-in tại Level</Label><Input type="number" min={1} value={f.late_reg_close_level} onChange={e => setF({ ...f, late_reg_close_level: +e.target.value })} /></div>
-          </div>
-          <Label>Description</Label><Textarea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} rows={2} />
-          <Button onClick={save} disabled={saving} className="w-full gradient-neon text-primary-foreground border-0">
-            <Save className="w-4 h-4 mr-1" />{saving ? "Saving..." : "Save Changes"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 };
 

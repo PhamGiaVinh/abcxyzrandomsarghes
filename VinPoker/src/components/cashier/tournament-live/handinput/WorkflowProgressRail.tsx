@@ -56,7 +56,7 @@ const ACTIVE_TONE: Record<Tone, string> = {
 
 interface WorkflowProgressRailProps {
   state: TrackerWorkflowState;
-  /** ≥2 players all-in before the river — flagged on the rail as a hint. */
+  /** Betting is closed after an all-in; the covering player may retain chips. */
   allInRunout?: boolean;
 }
 
@@ -92,7 +92,7 @@ export function WorkflowProgressRail({ state, allInRunout }: WorkflowProgressRai
       </div>
       {allInRunout && (
         <div className="mt-1 px-1 text-[10px] text-amber-300/90">
-          All-in nhiều người — nhập từng board để cập nhật viewer.
+          Runout sau all-in — nhập từng board để cập nhật viewer.
         </div>
       )}
     </div>

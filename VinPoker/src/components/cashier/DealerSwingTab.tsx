@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { mergeCheckinCandidateReads, type CheckinCandidate } from "@/lib/dealerCheckinCandidates";
 import { DealerCheckinCandidateList } from "./dealer-swing/DealerCheckinCandidateList";
 import { useManualSwingRecovery } from "./dealer-swing/useManualSwingRecovery";
@@ -103,6 +104,7 @@ import {
   assignedThisRun,
   edgeErrorStatus,
   errorMessage,
+  dealerEdgeErrorMessage,
   isCurrentMassOpenRequest,
   operationOutcome,
   readOpenOperationProgress,
@@ -238,12 +240,13 @@ const DIAG_LABELS: Record<string, string> = {
 type SwingPanelProps = { clubIds: string[]; clubs: ClubRow[]; onOpenPayroll?: () => void };
 
 export default function SwingPanel(props: SwingPanelProps) {
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session } = useAuth();
   // Operator changes discard every operational selection, dialog and local request lifetime.
-  return <SwingPanelSession key={JSON.stringify([user?.id ?? null, [...props.clubIds].sort()])} {...props} />;
+  return <SwingPanelSession key={JSON.stringify([user?.id ?? null, sessionReadEpoch(session), [...props.clubIds].sort()])} {...props} />;
 }
 
 function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
+  const { user, session, loading: authLoading, isClubAdmin, isAdmin, isClubOwner, isFloor } = useAuth();
   const [clubFilter, setClubFilter] = useState<string | null>(clubIds.length === 1 ? clubIds[0] : null);
   const activeClubId = clubFilter ?? (clubIds.length === 1 ? clubIds[0] : null);
   const filteredClubIds = useMemo(() => {
@@ -260,7 +263,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
   const { data: dealers, loading: dealersLoading, error: dealersError, refetch: refetchDealers } = useCheckedInDealers(filteredClubIds);
   const { data: checkedOutDealers, refetch: refetchCheckedOut } = useTodayCheckedOutDealers(filteredClubIds);
-  const { data: allDealers } = useAllDealers(filteredClubIds);
+  const { data: allDealers, loading: allDealersLoading, error: allDealersError } = useAllDealers(filteredClubIds);
   const { data: tables, loading: tablesLoading, error: tablesError, refetch: refetchTables } = useDealerOperationalTables(filteredClubIds);
   const poolTables = tables;
   const poolLoading = tablesLoading;
@@ -282,7 +285,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     refetch: refetchSchedule,
   } = useRotationSchedule(filteredClubIds);
   const { data: swingConfigs, loading: configsLoading, error: configsError, refetch: refetchSwingConfigs } = useSwingConfigs(filteredClubIds);
-  const { data: tournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0], user?.id, authLoading ? null : session);
+  const { data: tournaments, isLoading: tournamentsLoading, isError: tournamentsError, refetch: refetchTournaments } = useActiveTournaments(clubFilter ?? filteredClubIds[0], user?.id, authLoading ? null : session);
   const staleCleanupCandidateIds = useMemo(
     () => staleCleanupCandidateAttendanceIds(dealers ?? [], nowMs),
     [dealers, nowMs],
@@ -351,7 +354,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     [freshPoolDealers, restMinutesByClub, nowMs],
   );
   const { optimistic: checkedInCount, onCheckout: onOptCheckout } = useOptimisticDealerCount(rosterDealers.length);
-  const { data: nextDealerMap } = useNextDealerPredictions(filteredClubIds, assignments);
+  const { data: nextDealerMap, error: nextDealerError } = useNextDealerPredictions(filteredClubIds, assignments);
 
   // ── Tournament config for swing override display ─────────────────────────
   const [processing, setProcessing] = useState<string | null>(null);
@@ -371,6 +374,14 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const [roomReconcileOpen, setRoomReconcileOpen] = useState(false);
   const [manualDealerId, setManualDealerId] = useState<string>("");
   const [suggestions, setSuggestions] = useState<any[] | null>(null);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const suggestionsContext = JSON.stringify([user?.id, sessionReadEpoch(session), activeClubId, selectedTour]);
+  const suggestionsRequest = useRef({ context: suggestionsContext, generation: 0 });
+  if (suggestionsRequest.current.context !== suggestionsContext) suggestionsRequest.current = {
+    context: suggestionsContext, generation: suggestionsRequest.current.generation + 1,
+  };
+  const suggestionsTables = useRef(tables);
+  suggestionsTables.current = tables;
   // C1: exclusion counters from the suggestions endpoint — "why other dealers
   // were not chosen". Read-only display; does not affect assignment.
   const [assignDiag, setAssignDiag] = useState<Record<string, number> | null>(null);
@@ -381,6 +392,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const [checkinCandidatesLoading, setCheckinCandidatesLoading] = useState(false);
   const [checkinCandidatesError, setCheckinCandidatesError] = useState<string | null>(null);
   const checkinReadSequence = useRef(0);
+  const checkinReadController = useRef<AbortController | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutAttendanceId, setCheckoutAttendanceId] = useState("");
   // Pool-based table creation state
@@ -547,7 +559,6 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     }
   };
 
-  const { user, isClubAdmin, isAdmin, isClubOwner, isFloor } = useAuth();
 
   const isSubmitting = useRef(false);
 
@@ -674,7 +685,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   // Manual swing: perform swing for a single assignment only (no side effects on other tables)
   const manualSwingRecovery = useManualSwingRecovery({ actorId: user?.id ?? null, clubId: activeClubId,
     assignments: assignments ?? [], rpc: dealerMassOpenRpc,
-    onSettled: () => Promise.all([refetchAssignments(), refetchDealers()]),
+    onSettled: () => Promise.all([refetchAssignments(), refetchDealers(), refetchSchedule()]),
   });
   const { swingingTableId, performSwingForTable } = manualSwingRecovery;
 
@@ -908,19 +919,29 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
   // Open assignment modal for a table
   const openAssignModal = async (tableId: string) => {
+    const generation = ++suggestionsRequest.current.generation;
+    const context = suggestionsContext;
+    const tableSession = tables.find(table => table.id === tableId)?.table_session_id;
+    const current = () => manualAssignAlive.current && suggestionsRequest.current.generation === generation
+      && suggestionsRequest.current.context === context
+      && suggestionsTables.current.find(table => table.id === tableId)?.table_session_id === tableSession;
     setModalTable(tableId);
     setManualDealerId("");
     setSuggestions(null);
+    setSuggestionsError(null);
     setAssignDiag(null);
     try {
-      const { data, error } = await supabase.functions.invoke("assign-dealer", {
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(supabase.functions.invoke("assign-dealer", {
         body: { table_id: tableId, requested_by: user?.id, return_suggestions_only: true, shift_id: selectedTour ?? undefined },
-      });
-      if (error) { toast.error(`Lỗi gợi ý: ${error.message}`); return; }
-      setSuggestions((data as any)?.suggestions ?? []);
+      })));
+      if (!current()) return;
+      if (error) throw new Error(error.message);
+      if (!data || !Array.isArray(data.suggestions)) throw new Error("Phản hồi gợi ý không hợp lệ.");
+      setSuggestions(data.suggestions);
       setAssignDiag((data as any)?.diagnostics ?? null);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch {
+      if (!current()) return;
+      setSuggestionsError("Không tải được gợi ý dealer. Bạn có thể thử lại; dữ liệu này chưa xác nhận thiếu dealer.");
     }
   };
 
@@ -984,8 +1005,8 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
           const body = await waitForManualPlayerResponse(error.context.json(), 10000).catch(() => null);
           if (!current()) return;
           status = error.context.status;
-          detail = body?.error ?? body?.message ?? detail;
-          console.error("[confirmAssign] edge function returned:", { status, body });
+          detail = dealerEdgeErrorMessage(body, detail);
+          console.error("[confirmAssign] edge function returned:", { status });
         }
         // 409 = table already has an active dealer (cron may have auto-assigned)
         if (status === 409) {
@@ -1041,7 +1062,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             errorBody = null;
           }
         }
-        toast.error(errorBody?.error ?? error.message);
+        toast.error(dealerEdgeErrorMessage(errorBody, error.message));
         return;
       }
       const response = data as any;
@@ -1108,7 +1129,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
           response = errorBody ?? response;
           idempotent = true;
         } else {
-          toast.error(errorBody?.error ?? error.message);
+          toast.error(dealerEdgeErrorMessage(errorBody, error.message));
           return;
         }
       } else {
@@ -1504,8 +1525,12 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   if (checkinScope.current.key !== checkinScopeKey) {
     checkinScope.current = { key: checkinScopeKey };
   }
-  useEffect(() => () => { checkinScope.current = { key: "" }; }, []);
+  useEffect(() => () => {
+    checkinScope.current = { key: "" };
+    checkinReadController.current?.abort();
+  }, []);
   const loadCheckinDealers = async () => {
+    checkinReadController.current?.abort();
     const scope = checkinScope.current;
     const sequence = ++checkinReadSequence.current;
     const isCurrent = () => scope === checkinScope.current && sequence === checkinReadSequence.current;
@@ -1513,21 +1538,23 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     setCheckinDealerIds([]);
     setCheckinCandidatesError(null);
     if (!activeClubId) { setCheckinCandidatesLoading(false); return; }
+    const controller = new AbortController();
+    checkinReadController.current = controller;
     setCheckinCandidatesLoading(true);
     try {
-      const [dealerRead, openRead] = await Promise.all([
+      const [dealerRead, openRead] = await waitForManualPlayerResponse(Promise.all([
         supabase.from("dealers")
           .select("id, full_name, tier, club_id, dealer_attendance(id,dealer_id,status,check_in_time,check_out_time)", { count: "exact" })
           .eq("club_id", activeClubId).eq("status", "active").is("deleted_at", null)
           .order("full_name").range(0, 999)
           .order("check_in_time", { referencedTable: "dealer_attendance", ascending: false, nullsFirst: false })
           .order("id", { referencedTable: "dealer_attendance", ascending: false })
-          .limit(1, { referencedTable: "dealer_attendance" }),
+          .limit(1, { referencedTable: "dealer_attendance" }).abortSignal(controller.signal),
         supabase.from("dealer_attendance")
           .select("id,dealer_id,status,check_in_time,check_out_time,dealers!inner(club_id,status,deleted_at)", { count: "exact" })
           .eq("dealers.club_id", activeClubId).eq("dealers.status", "active").is("dealers.deleted_at", null)
-          .or("check_out_time.is.null,status.eq.checked_in").order("id").range(0, 999),
-      ]);
+          .or("check_out_time.is.null,status.eq.checked_in").order("id").range(0, 999).abortSignal(controller.signal),
+      ]), 15_000);
       if (!isCurrent()) return;
       setCheckinDealers(mergeCheckinCandidateReads(activeClubId, dealerRead, openRead));
     } catch {
@@ -1536,6 +1563,8 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         setCheckinCandidatesError("Không xác minh được trạng thái ca. Không gửi check-in mới; hãy tải lại.");
       }
     } finally {
+      controller.abort();
+      if (checkinReadController.current === controller) checkinReadController.current = null;
       if (isCurrent()) setCheckinCandidatesLoading(false);
     }
   };
@@ -1544,6 +1573,8 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const checkinKeys = useRef(new Map<string, string>());
   const [checkinShiftId, setCheckinShiftId] = useState("");
   useEffect(() => {
+    checkinReadController.current?.abort();
+    checkinReadController.current = null;
     setCheckinShiftId("");
     setCheckinDealerIds([]);
     setCheckinDealers([]);
@@ -1990,7 +2021,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const { triggerSwingAnimation, isAnimating } = useSwingAnimation();
   const { focusedTableId, focusTable } = useFocusNavigation();
 
-  const loading = dealersLoading || tablesLoading || assignsLoading || configsLoading;
+  const loading = dealersLoading || tablesLoading || assignsLoading || configsLoading || tournamentsLoading;
 
   if (clubs.length > 1 && !activeClubId) {
     return (
@@ -2018,12 +2049,12 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     );
   }
 
-  if (loading || dealersError || tablesError || assignmentsError || configsError) return (
+  if (loading || dealersError || tablesError || assignmentsError || configsError || tournamentsError) return (
     <div className="space-y-3" role={loading ? "status" : "alert"}>
       <h2 className="text-base font-semibold">{loading ? "Đang xác minh dữ liệu Dealer Swing…" : "Không xác minh được dữ liệu Dealer Swing"}</h2>
       <p className="text-sm text-muted-foreground">Chưa thể dùng dữ liệu này để gán, xoay hoặc kết ca dealer. Dừng Swing vẫn khả dụng.</p>
       <div className="flex items-center gap-3">
-        <Button variant="outline" onClick={() => { refetchDealers(); refetchTables(); refetchAssignments(); refetchSwingConfigs(); }}>Thử lại</Button>
+        <Button variant="outline" onClick={() => { refetchDealers(); refetchTables(); refetchAssignments(); refetchSwingConfigs(); void refetchTournaments(); }}>Thử lại</Button>
         <DealerSwingStopControl clubId={activeClubId} onStopped={() => setAutoSwingEnabled(false)} />
       </div>
     </div>
@@ -2206,10 +2237,11 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
         <DealerSwingInfraHealth
           health={swingHealth}
-          clubs={clubs}
+          clubs={clubs.filter((club) => filteredClubIds.includes(club.id))}
           unavailable={swingHealthUnavailable}
           nowMs={nowMs}
         />
+        {nextDealerError && <p role="alert" className="mb-4 text-sm text-muted-foreground">{nextDealerError}</p>}
 
         {/* ── PRIORITY LANE (V3) — full-width alerts band on top ── */}
         <div className="mb-4">
@@ -2413,7 +2445,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
                   assignments={assignments ?? []}
                   swingConfigs={swingConfigs ?? []}
                   processing={processing}
-                  totalDealers={allDealers?.filter(d => d.status === 'active').length ?? 0}
+                  totalDealers={allDealersLoading || allDealersError ? null : allDealers.filter(d => d.status === 'active').length}
                   checkedInCount={checkedInCount}
                   checkedOutDealers={checkedOutDealers ?? []}
                   onSendToBreak={(attId) => setBreakDurationOpen(attId)}
@@ -2460,14 +2492,21 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       )}
 
       {/* Assignment Modal */}
-      <Dialog open={!!modalTable} onOpenChange={(o) => !o && setModalTable(null)}>
+      <Dialog open={!!modalTable} onOpenChange={(o) => {
+        if (!o) { suggestionsRequest.current.generation++; setModalTable(null); }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Gán Dealer</DialogTitle>
             <DialogDescription>Chọn dealer phù hợp cho bàn này.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {suggestions === null ? (
+            {suggestionsError ? (
+              <div role="alert" className="space-y-2 text-sm">
+                <p>{suggestionsError}</p>
+                <Button variant="outline" onClick={() => modalTable && void openAssignModal(modalTable)}>Thử lại gợi ý</Button>
+              </div>
+            ) : suggestions === null ? (
               <div className="text-sm text-muted-foreground">Đang tìm dealer phù hợp...</div>
             ) : suggestions.length === 0 ? (
               <div className="text-sm text-warning">Không có dealer sẵn sàng.</div>
@@ -2606,7 +2645,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             dealers={freshPoolDealers}
             assignedTableNameByAttendanceId={cpNameByAtt}
             restMinutes={Math.max(15, cpRestMinutes)}
-            onChanged={() => { refetchAssignments(); refetchDealers(); }}
+            onChanged={() => { refetchAssignments(); refetchDealers(); refetchSchedule(); }}
           />
         );
       })()}
@@ -2665,6 +2704,8 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         if (o) { loadCheckinDealers(); setCheckinDealerIds([]); }
         else {
           checkinReadSequence.current += 1;
+          checkinReadController.current?.abort();
+          checkinReadController.current = null;
           setCheckinCandidatesLoading(false);
           setCheckinCandidatesError(null);
           setCheckinDealers([]);
@@ -2672,7 +2713,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         }
       }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Check-in thủ công</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Check-in thủ công</DialogTitle>
+            <DialogDescription>Chọn ca và dealer sau khi trạng thái ca được xác minh. Máy chủ kiểm tra lại điều kiện khi gửi.</DialogDescription>
+          </DialogHeader>
           {pendingCheckinIntents.length > 0 && (
             <section aria-label="Yêu cầu check-in chưa xác nhận" className="space-y-2 border border-border rounded p-2">
               <p className="text-sm font-medium">Yêu cầu chưa xác nhận</p>
@@ -3489,7 +3532,7 @@ function RosterPanel({
   assignments: DealerAssignment[];
   swingConfigs: SwingConfig[];
   processing: string | null;
-  totalDealers: number;
+  totalDealers: number | null;
   checkedInCount?: number;
   checkedOutDealers: DealerAttendance[];
   onSendToBreak: (attendanceId: string) => void;
@@ -3607,9 +3650,11 @@ function RosterPanel({
       {/* ── Stats row ── */}
       <div className="text-[11px] text-muted-foreground mb-2 flex items-center gap-1.5">
         <span className="text-success font-semibold">{checkedInCount ?? filteredDealers.length}</span>
-        <span>/</span>
-        <span>{totalDealers}</span>
-        <span className="ml-1">đang hoạt động</span>
+        {totalDealers === null ? <span role="status">Tổng dealer chưa xác minh</span> : <>
+          <span>/</span>
+          <span>{totalDealers}</span>
+          <span className="ml-1">đang hoạt động</span>
+        </>}
       </div>
 
       {/* ── Search input ── */}

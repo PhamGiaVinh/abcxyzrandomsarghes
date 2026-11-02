@@ -5,8 +5,7 @@
  * a cron-liveness proxy ("hoạt động gần nhất"), and the Telegram pre-announce queue.
  *
  * Fed by the read-only get_dealer_swing_health RPC (useDealerSwingHealth). PRESENTATION
- * ONLY; hides entirely when the RPC is unavailable (not yet applied) or returns nothing,
- * so it is zero-risk to ship before the migration is applied. Token-driven → warm-theme safe.
+ * ONLY; unavailable and missing-club responses stay explicit, never healthy by omission.
  */
 import { cn } from "@/lib/utils";
 import type { ClubSwingHealth } from "@/hooks/useDealerSwingHealth";
@@ -36,14 +35,16 @@ function ageSecFromIso(iso: string | null, nowMs: number): number | null {
 }
 
 export default function DealerSwingInfraHealth({ health, clubs, unavailable, nowMs }: Props) {
+  if (clubs.length === 0) return null;
   if (unavailable) return (
     <div role="alert" className="mb-4 rounded-xl border border-border/60 bg-card/40 px-4 py-2.5 text-sm text-muted-foreground">
       Hạ tầng swing: Không xác minh được. Kiểm tra kết nối rồi tải lại; chưa có dữ liệu để kết luận hệ thống ổn định.
     </div>
   );
-  if (!health || health.length === 0) return null;
+  if (!health) return <div role="status" className="mb-4 text-sm text-muted-foreground">Hạ tầng swing: Đang xác minh…</div>;
+  const missing = clubs.filter((club) => !health.some((row) => row.club_id === club.id));
   const nameOf = (id: string) => clubs.find((c) => c.id === id)?.name ?? "CLB";
-  const multi = health.length > 1;
+  const multi = clubs.length > 1;
 
   return (
     <div className="mb-4 rounded-xl border border-border/60 bg-card/40 px-4 py-2.5">
@@ -53,6 +54,9 @@ export default function DealerSwingInfraHealth({ health, clubs, unavailable, now
       </div>
 
       <div className="flex flex-col gap-2">
+        {missing.length > 0 && <p role="alert" className="text-sm text-muted-foreground">
+          Không xác minh được: {missing.map((club) => club.name).join(", ")}. Kiểm tra quyền CLB và tải lại.
+        </p>}
         {health.map((h) => {
           const held = !!h.lock?.held;
           const stuck = held && !!h.lock?.is_expired;

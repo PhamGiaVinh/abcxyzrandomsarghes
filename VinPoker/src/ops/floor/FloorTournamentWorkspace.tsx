@@ -7,6 +7,8 @@ import OpsTournamentCockpit from "@/pages/ops/OpsTournamentCockpit";
 import { TrackerFloorAlertLane } from "@/components/cashier/tournament-live/TrackerFloorAlertLane";
 import { cn } from "@/lib/utils";
 import { useTournamentOps } from "@/ops/workspace/TournamentOpsProvider";
+import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { OPS_CASHIER_MUTATIONS_ENABLED } from "@/ops/opsMutations";
 import FloorRefundClearance from "./FloorRefundClearance";
 import {
@@ -18,6 +20,7 @@ import {
 export default function FloorTournamentWorkspace({ section }: { section: FloorTournamentSection }) {
   const navigate = useNavigate();
   const tournament = useTournamentOps();
+  const { user, session } = useOpsAuth();
   const { snapshot } = tournament;
   const clubQuery = `?club=${encodeURIComponent(snapshot.clubId)}`;
   const routeFor = (target: FloorTournamentSection) =>
@@ -87,7 +90,7 @@ export default function FloorTournamentWorkspace({ section }: { section: FloorTo
           </div>
         )}
 
-        <TrackerFloorAlertLane tournamentId={snapshot.tournamentId} />
+        <TrackerFloorAlertLane key={JSON.stringify([user?.id, sessionReadEpoch(session), snapshot.tournamentId])} tournamentId={snapshot.tournamentId} actorId={user?.id} />
 
         <div key={`${section}:${tournament.revision}`} className="min-w-0">
           {section === "tables"

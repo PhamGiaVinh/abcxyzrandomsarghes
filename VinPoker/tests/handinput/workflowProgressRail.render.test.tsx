@@ -53,9 +53,10 @@ describe("WorkflowProgressRail (read-only progress rail)", () => {
 
   it("shows the all-in runout hint only when flagged", () => {
     const off = renderToStaticMarkup(<WorkflowProgressRail state="enter_turn" />);
-    expect(off).not.toContain("All-in nhiều người");
+    expect(off).not.toContain("Runout sau all-in");
     const on = renderToStaticMarkup(<WorkflowProgressRail state="enter_turn" allInRunout />);
-    expect(on).toContain("All-in nhiều người");
+    expect(on).toContain("Runout sau all-in");
+    expect(on).not.toContain("All-in nhiều người");
   });
 
   it("railStepIndex maps every workflow state into 0..8 with the documented collapses", () => {

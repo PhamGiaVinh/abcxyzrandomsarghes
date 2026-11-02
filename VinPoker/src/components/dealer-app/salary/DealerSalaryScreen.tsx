@@ -3,6 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Clock, Lock, Info, History, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDealerLink } from "@/hooks/dealer/useDealerLink";
+import type { UseDealerLinkResult } from "@/hooks/dealer/useDealerLink";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { formatVND } from "@/lib/format";
 import { mockDealerPtWage } from "@/lib/dealerApp/mockDealerData";
 import {
@@ -27,7 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  */
 
 const GOLD = "#E6B84C";
-const db = supabase as unknown as { rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }> };
+const db = supabase as unknown as { rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }> };
 
 function fmtHMS(ms: number): string {
   let s = Math.max(0, Math.floor(ms / 1000));
@@ -63,11 +67,45 @@ interface FtPayslip {
   total_adjustments_vnd?: number | null;
   net_pay_vnd?: number | null;
   payment_status?: string | null;
+  period_status?: string | null;
 }
 
 export function DealerSalaryScreen() {
+  const link = useDealerLink();
+  const { user,session, loading } = useAuth();
+  if (link.source === "live" && loading) return <Skeleton className="h-40 w-full rounded-2xl" />;
+  if (link.source === "live" && !user) return <p role="alert">Đăng nhập để xem lương của bạn.</p>;
+  return <ScopedDealerSalaryScreen key={JSON.stringify([user?.id,sessionReadEpoch(session),link.source,link.dealer?.dealerId,link.dealer?.clubId])} link={link} />;
+}
+
+function salaryEvidence(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || 'error' in value) {
+    throw new Error('Chưa xác minh được dữ liệu lương. Vui lòng tải lại.');
+  }
+  return value as Record<string, unknown>;
+}
+const amountEvidence = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
+const dateEvidence = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+function partTimeEvidence(row: Record<string, unknown>): PtWage {
+  if (!amountEvidence(row.hourly_rate_vnd) || row.hourly_rate_vnd < 0
+    || !amountEvidence(row.balance_vnd) || row.balance_vnd < 0
+    || !amountEvidence(row.accrued_minutes) || row.accrued_minutes < 0
+    || typeof row.current_shift_open !== 'boolean'
+    || (row.current_shift_open && !dateEvidence(row.current_shift_start))
+    || !Array.isArray(row.recent_payments) || !row.recent_payments.every(value => {
+      if (!value || typeof value !== 'object') return false;
+      const payment = value as Record<string, unknown>;
+      return amountEvidence(payment.amount_vnd) && payment.amount_vnd >= 0 && dateEvidence(payment.paid_at);
+    }) || ['live_accrual_active','standby_accrual_enabled','current_shift_cap_reached'].some(key =>
+      row[key] !== undefined && row[key] !== null && typeof row[key] !== 'boolean')) {
+    throw new Error('Chưa xác minh được số dư lương Part-time. Vui lòng tải lại.');
+  }
+  return row as PtWage;
+}
+
+function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
   const { t } = useTranslation();
-  const { dealer, isDealer, loading: linkLoading, source } = useDealerLink();
+  const { dealer, isDealer, loading: linkLoading, source } = link;
   const dealerId = dealer?.dealerId ?? null;
 
   const [loading, setLoading] = useState(true);
@@ -78,9 +116,12 @@ export function DealerSalaryScreen() {
 
   const ptFetchedAt = useRef<number>(Date.now());
   const [nowMs, setNowMs] = useState<number>(Date.now());
+  const readGeneration = useRef(0);
+  useEffect(() => () => { readGeneration.current += 1; }, []);
 
   const load = useCallback(async () => {
-    if (!dealerId) return;
+    if (!dealerId || !isDealer || linkLoading) return;
+    const generation = ++readGeneration.current;
     setLoading(true);
     setError(null);
     try {
@@ -92,26 +133,42 @@ export function DealerSalaryScreen() {
         return;
       }
 
-      const { data: ptw, error: e1 } = await db.rpc("get_my_pt_wage", { p_dealer_id: dealerId });
+      const { data: ptw, error: e1 } = await observeTrackerContextRead(db.rpc("get_my_pt_wage", { p_dealer_id: dealerId }));
+      if (generation !== readGeneration.current) return;
       if (e1) throw e1;
-      const et = (ptw?.employment_type as string) ?? null;
+      const wage = salaryEvidence(ptw);
+      if (wage.dealer_id !== dealerId || wage.club_id !== dealer?.clubId) throw new Error('Chưa xác minh được phạm vi lương dealer. Vui lòng tải lại.');
+      const et = wage.employment_type;
+      if (et !== 'part_time' && et !== 'full_time') throw new Error('Chưa xác minh được loại hợp đồng lương. Vui lòng tải lại.');
       setEmpType(et);
       if (et === "part_time") {
-        setPt(ptw as PtWage);
+        setPt(partTimeEvidence(wage));
         ptFetchedAt.current = Date.now();
         setFt(null);
       } else {
-        const { data: ftp, error: e2 } = await db.rpc("get_my_dealer_payroll", { p_dealer_id: dealerId });
+        const { data: ftp, error: e2 } = await observeTrackerContextRead(db.rpc("get_my_dealer_payroll", { p_dealer_id: dealerId }));
+        if (generation !== readGeneration.current) return;
         if (e2) throw e2;
-        setFt(ftp as FtPayslip);
+        const saved = salaryEvidence(ftp);
+        if (saved.dealer_id !== dealerId || typeof saved.has_data !== 'boolean' || (saved.has_data && (
+          !amountEvidence(saved.net_pay_vnd)
+          ||(saved.monthly_salary_vnd!=null&&!amountEvidence(saved.monthly_salary_vnd))
+          ||(saved.total_hours!=null&&(typeof saved.total_hours!=='number'||!Number.isFinite(saved.total_hours)))
+        ))) {
+          throw new Error('Chưa xác minh được bảng lương đã lưu. Vui lòng tải lại.');
+        }
+        setFt(saved as FtPayslip);
         setPt(null);
       }
-    } catch (e: any) {
-      setError(e?.message ?? "Lỗi tải lương");
+    } catch (e: unknown) {
+      if (generation !== readGeneration.current) return;
+      const message = e instanceof Error ? e.message
+        : e && typeof e === "object" && "message" in e && typeof e.message === "string" ? e.message : "Lỗi tải lương";
+      setError(message === "tracker_context_read_timeout" ? "Quá thời gian tải lương. Vui lòng thử lại." : message);
     } finally {
-      setLoading(false);
+      if (generation === readGeneration.current) setLoading(false);
     }
-  }, [dealerId, source]);
+  }, [dealerId, dealer?.clubId, isDealer, linkLoading, source]);
 
   useEffect(() => { load(); }, [load]);
   // tick the display every 1s; resync PT from the server every 60s
@@ -130,7 +187,7 @@ export function DealerSalaryScreen() {
     </>
   );
 
-  if (linkLoading || loading) {
+  if (linkLoading) {
     return <div>{Header}<Skeleton className="h-40 w-full rounded-2xl mb-3" /><Skeleton className="h-56 w-full rounded-2xl" /></div>;
   }
   if (!isDealer || !dealerId) {
@@ -142,10 +199,13 @@ export function DealerSalaryScreen() {
       </div>
     );
   }
+  if (loading) return <div>{Header}<Skeleton className="h-40 w-full rounded-2xl mb-3" /><Skeleton className="h-56 w-full rounded-2xl" /></div>;
   if (error) {
     return (
       <div>{Header}
-        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-center text-[13px] text-destructive">{error}</div>
+        <div role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-center text-[13px] text-destructive">{error}
+          <button type="button" className="ml-2 underline" onClick={() => { void load(); }}>Thử lại</button>
+        </div>
       </div>
     );
   }
@@ -256,6 +316,8 @@ export function DealerSalaryScreen() {
     );
   }
   const paid = ft.payment_status === "paid" || ft.payment_status === "reconciled";
+  const closed = ["locked", "payment_prepared", "paid", "reconciled"].includes(ft.period_status ?? "");
+  const draft = ["draft", "rejected", "submitted", "approved"].includes(ft.period_status ?? "");
   const adj = ft.total_adjustments_vnd ?? 0;
   return (
     <div>{Header}
@@ -266,7 +328,10 @@ export function DealerSalaryScreen() {
               <Wallet className="w-4 h-4 text-muted-foreground" />
               {t("dealer.salary.payslip", "Bảng lương")} {t("dealer.salary.month", "Tháng")} {ft.period_month}/{ft.period_year}
             </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">{t("dealer.salary.ftClosed", "Full-time · đã chốt")}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">{closed
+              ? t("dealer.salary.ftClosed", "Full-time · đã chốt")
+              : draft ? t("dealer.salary.ftNotClosed", "Full-time · chưa chốt")
+                : t("dealer.salary.ftUnverified", "Full-time · chưa xác minh trạng thái chốt")}</div>
           </div>
           <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${paid ? "text-primary border-primary/40 bg-primary/10" : "text-amber-400 border-amber-500/40 bg-amber-500/10"}`}>
             {paid ? t("dealer.salary.paid", "Đã trả") : t("dealer.salary.unpaid", "Chưa trả")}
@@ -279,8 +344,8 @@ export function DealerSalaryScreen() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card divide-y divide-border mb-3">
-        <Row label={t("dealer.salary.monthlySalary", "Lương tháng")} value={formatVND(ft.monthly_salary_vnd ?? 0)} />
-        <Row label={t("dealer.salary.hours", "Giờ làm")} value={`${(ft.total_hours ?? 0).toFixed(1)}h`} />
+        <Row label={t("dealer.salary.monthlySalary", "Lương tháng")} value={ft.monthly_salary_vnd==null?'Chưa có dữ liệu':formatVND(ft.monthly_salary_vnd)} />
+        <Row label={t("dealer.salary.hours", "Giờ làm")} value={ft.total_hours==null?'Chưa có dữ liệu':`${ft.total_hours.toFixed(1)}h`} />
         {(ft.ot_pay_vnd ?? 0) > 0 && <Row label={t("dealer.salary.ot", "Tăng ca (OT)")} value={`+${formatVND(ft.ot_pay_vnd ?? 0)}`} positive />}
         {(ft.bhxh_deduction_vnd ?? 0) > 0 && <Row label="BHXH (8%)" value={`−${formatVND(ft.bhxh_deduction_vnd ?? 0)}`} negative />}
         {(ft.bhyt_deduction_vnd ?? 0) > 0 && <Row label="BHYT (1.5%)" value={`−${formatVND(ft.bhyt_deduction_vnd ?? 0)}`} negative />}

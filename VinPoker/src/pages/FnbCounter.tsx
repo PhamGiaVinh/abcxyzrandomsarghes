@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,8 +6,14 @@ import { toast } from "sonner";
 import { FEATURES } from "@/lib/featureFlags";
 import { formatVND } from "@/lib/format";
 import { mapFnbError } from "@/lib/fnbErrors";
+import { fnbOrderMutationOutcome, type FnbOrderMutationRpc } from "@/lib/fnbMutationOutcome";
+import { useFnbCreateIntent } from "@/hooks/useFnbCreateIntent";
+import { fnbShiftBackend } from "@/lib/fnbShiftIntent";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import type { FnbCreatePayload } from "@/lib/fnbCreateIntent";
 import { useAuth } from "@/hooks/useAuth";
 import { useFnbClubs } from "@/hooks/useFnbClubs";
+import { FnbClubReadError } from "@/components/fnb/FnbClubReadError";
 import { useFnbOrders, type FnbOrder } from "@/hooks/useFnbOrders";
 import { useFnbLinkTargets, type FnbLinkTargets } from "@/hooks/useFnbLinkTargets";
 import { OrderEntryPanel, type NewOrder } from "@/components/fnb/OrderEntryPanel";
@@ -15,7 +21,7 @@ import { FnbConfirmPaymentDialog, type PayableOrder } from "@/components/fnb/Fnb
 import { ShiftReconciliationPanel } from "@/components/fnb/ShiftReconciliationPanel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,25 +41,14 @@ export default function FnbCounter() {
 }
 
 function FnbCounterInner() {
-  const { loading: authLoading, isClubOwner, isAdmin, isFnb, isFnbCashier } = useAuth();
-  const { clubs } = useFnbClubs();
+  const { user, session, loading: authLoading, isClubOwner, isAdmin, isFnb, isFnbCashier } = useAuth();
+  const { clubs, error: clubError, reload: reloadClubs } = useFnbClubs();
   const [clubId, setClubId] = useState("");
-  const qc = useQueryClient();
 
   const isOperator = isFnb || isClubOwner || isAdmin;
   const canPay = isFnbCashier || isClubOwner || isAdmin; // affordance only — server re-checks
 
-  const [creating, setCreating] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
-  const [payOrder, setPayOrder] = useState<PayableOrder | null>(null);
-  const [payOpen, setPayOpen] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [compOpen, setCompOpen] = useState(false);
-  const [compOrder, setCompOrder] = useState<NewOrder | null>(null);
-  const [compReason, setCompReason] = useState("");
-  const [comping, setComping] = useState(false);
-
+  if (clubError) return <FnbClubReadError message={clubError} onRetry={reloadClubs} />;
   if (authLoading || clubs === null) {
     return (
       <div className="container mx-auto max-w-5xl px-4 py-6 space-y-3">
@@ -68,39 +63,58 @@ function FnbCounterInner() {
     return <div className="container mx-auto max-w-5xl px-4 py-6"><Card><CardContent className="py-6 text-sm text-muted-foreground">Bạn chưa được gán vào câu lạc bộ F&amp;B nào.</CardContent></Card></div>;
   }
 
-  const activeClub = clubId || clubs[0].id;
+  const activeClub = clubs.find(club => club.id === clubId)?.id ?? clubs[0].id;
+  let backend='invalid';try{backend=fnbShiftBackend(import.meta.env.VITE_SUPABASE_URL);}catch{/* Mutation hook fails closed. */}
+  return <FnbCounterScope key={`${user?.id ?? "anonymous"}:${sessionReadEpoch(session)}:${backend}:${activeClub}`} clubs={clubs}
+    actorId={user?.id ?? ''} activeClub={activeClub} setClubId={setClubId} canPay={canPay} />;
+}
+
+function FnbCounterScope({clubs,actorId,activeClub,setClubId,canPay}: {
+  clubs: {id:string;name?:string|null}[];actorId:string;activeClub:string;setClubId:(id:string)=>void;canPay:boolean;
+}) {
+  const qc = useQueryClient();
+  const current = useRef(true);
+  useEffect(() => { current.current=true; return () => { current.current=false; }; }, []);
+  const [resetKey, setResetKey] = useState(0);
+  const [payOrder, setPayOrder] = useState<PayableOrder | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [compOpen, setCompOpen] = useState(false);
+  const [compOrder, setCompOrder] = useState<NewOrder | null>(null);
+  const [compReason, setCompReason] = useState("");
+  const submittedRequest = useRef<string|null>(null);
+  const clearOwnDraft=(requestId:string)=>{
+    if(submittedRequest.current!==requestId)return;
+    submittedRequest.current=null;
+    setResetKey(k=>k+1);setCompOpen(false);setCompOrder(null);setCompReason('');
+  };
   const invalidate = () => qc.invalidateQueries({ queryKey: ["fnb", "orders", activeClub] });
+  const journal=useFnbCreateIntent(actorId,activeClub,async(intent,order,resumed)=>{
+    clearOwnDraft(intent.requestId);
+    await invalidate();if(!current.current)return;
+    if(intent.operation==='comp')toast.success(resumed?'Đã đối chiếu đơn COMP. Hãy xem trạng thái hiện tại; không ghi COMP lần nữa.':'Đã ghi COMP — kho đã trừ.');
+    else if(resumed)toast.success('Đã đối chiếu đơn. Mở Chờ thanh toán để tải trạng thái và số tiền hiện tại trước khi thu.');
+  },intent=>{
+    clearOwnDraft(intent.requestId);
+    toast.success('Đã hủy yêu cầu chưa ghi. Yêu cầu đến muộn không thể tạo đơn.');
+  });
+  const creating=journal.busy,comping=journal.busy;
+  const payload=(o:NewOrder,operation:'order'|'comp'):FnbCreatePayload=>({source:'counter',table:o.table_label,customer:o.customer_name,note:o.note,
+    lines:o.items.map(it=>({menu_item_id:it.menu_item_id,qty:it.qty})),
+    ...(operation==='order'?{table_ref:FEATURES.fnbTableLink?o.table_ref??null:null,player_ref:FEATURES.fnbTableLink?o.player_ref??null:null}:{reason:compReason.trim()||null})});
 
   const createOrder = async (o: NewOrder) => {
-    setCreating(true);
-    // Base = the ORIGINAL 7-arg call. The A2 link params (p_table_ref/p_player_ref) are only sent when
-    // fnbTableLink is on — their 9-arg fnb_create_order (migration …0014) is the precondition for that
-    // flag. With the flag OFF this is the plain 7-arg call, so it works whether or not …0014 is applied
-    // (avoids a "could not find function" failure when the migration hasn't been applied to the DB yet).
-    const params: any = {
-      p_club_id: activeClub,
-      p_source: "counter",
-      p_table_label: o.table_label,
-      p_customer_name: o.customer_name,
-      p_note: o.note,
-      p_lines: o.items.map((it) => ({ menu_item_id: it.menu_item_id, qty: it.qty })),
-      p_client_request_id: o.client_request_id,
-    };
-    if (FEATURES.fnbTableLink) {
-      params.p_table_ref = o.table_ref ?? null;
-      params.p_player_ref = o.player_ref ?? null;
-    }
-    const { data, error } = await (supabase.rpc as any)("fnb_create_order", params);
-    setCreating(false);
-    const res = data as any;
-    if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); return; }
-    setResetKey((k) => k + 1); // success → clear cart + mint a fresh idempotency key
-    invalidate();
+    if(journal.busy||journal.pending||journal.blocked)return;
+    submittedRequest.current=o.client_request_id;
+    const result=await journal.submit('order',o.client_request_id,payload(o,'order'));
+    if(!result||!current.current||result.resumed||result.order.status!=='pending')return;
+    if(result.order.subtotal_vnd!==o.subtotal_vnd){toast.error('Giá tại máy chủ đã thay đổi. Mở Chờ thanh toán để tải lại đơn trước khi thu.');return;}
     setPayOrder({
-      id: res.order_id,
+      id: result.order.id,
       table_label: o.table_label,
       customer_name: o.customer_name,
-      subtotal_vnd: res.subtotal_vnd ?? o.subtotal_vnd,
+      subtotal_vnd: result.order.subtotal_vnd,
       items: o.items.map((it) => ({ name_snapshot: it.name_snapshot, qty: it.qty, unit_price_snapshot: it.unit_price_snapshot })),
     });
     setPayOpen(true);
@@ -109,20 +123,23 @@ function FnbCounterInner() {
   const doPay = async () => {
     if (!payOrder) return;
     setPaying(true);
-    const { data, error } = await (supabase.rpc as any)("fnb_mark_paid", { p_order_id: payOrder.id });
-    setPaying(false);
-    const res = data as any;
-    if (error || res?.error) {
-      // RECIPE_REQUIRED / INSUFFICIENT_STOCK are THROWN → tx aborted, order stays pending → retry in "Chờ thanh toán".
-      toast.error(mapFnbError(res?.error ?? error));
-      setPayOpen(false);
-      setPayOrder(null); // thrown RECIPE_REQUIRED/INSUFFICIENT_STOCK → drop the stale view; order stays pending (retry from the queue)
-      invalidate();
-      return;
+    try {
+      const { data, error } = await (supabase.rpc as unknown as FnbOrderMutationRpc)("fnb_mark_paid", { p_order_id: payOrder.id });
+      if (!current.current) return;
+      if (error) { toast.error(mapFnbError(error)); return; }
+      const outcome = fnbOrderMutationOutcome(data, payOrder.id);
+      if (outcome.kind !== "confirmed") {
+        toast.error(mapFnbError(outcome.kind === "rejected" ? outcome.code : "FNB_MUTATION_UNKNOWN"));
+        return;
+      }
+      toast.success(outcome.idempotent ? "Đơn này đã thu tiền trước đó." : "Đã thu tiền — đơn xuống bếp.");
+      setPayOpen(false); setPayOrder(null);
+    } catch {
+      if (current.current) toast.error(mapFnbError("FNB_MUTATION_UNKNOWN"));
+    } finally {
+      setPaying(false);
+      void invalidate();
     }
-    toast.success(res?.idempotent ? "Đơn này đã thu tiền trước đó." : "Đã thu tiền — đơn xuống bếp.");
-    setPayOpen(false); setPayOrder(null);
-    invalidate();
   };
 
   const handleCompClick = (o: NewOrder) => {
@@ -130,25 +147,10 @@ function FnbCounterInner() {
   };
 
   const doComp = async () => {
-    if (!compOrder) return;
-    setComping(true);
-    const { data, error } = await (supabase.rpc as any)("fnb_create_comp_order", {
-      p_club_id: activeClub,
-      p_source: "counter",
-      p_table_label: compOrder.table_label,
-      p_customer_name: compOrder.customer_name,
-      p_note: compOrder.note,
-      p_lines: compOrder.items.map((it) => ({ menu_item_id: it.menu_item_id, qty: it.qty })),
-      p_comp_reason: compReason.trim() || null,
-      p_client_request_id: compOrder.client_request_id,
-    });
-    setComping(false);
-    const res = data as any;
-    if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); return; }
-    toast.success(res?.idempotent ? "Đơn comp đã ghi trước đó." : "Đã ghi COMP — kho đã trừ.");
-    setCompOpen(false); setCompOrder(null); setCompReason("");
-    setResetKey((k) => k + 1);
-    invalidate();
+    if (!compOrder||journal.busy||journal.pending||journal.blocked) return;
+    const draft=compOrder;setCompOpen(false);
+    submittedRequest.current=draft.client_request_id;
+    await journal.submit('comp',draft.client_request_id,payload(draft,'comp'));
   };
 
   const payPending = (ord: FnbOrder) => {
@@ -158,12 +160,22 @@ function FnbCounterInner() {
 
   const cancel = async (id: string, reason: string) => {
     setBusyId(id);
-    const { data, error } = await (supabase.rpc as any)("fnb_cancel_order", { p_order_id: id, p_reason: reason });
-    setBusyId(null);
-    const res = data as any;
-    if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); return; }
-    toast.success(res?.idempotent ? "Đơn đã được huỷ trước đó." : "Đã huỷ đơn.");
-    invalidate();
+    try {
+      const { data, error } = await (supabase.rpc as unknown as FnbOrderMutationRpc)("fnb_cancel_order", { p_order_id: id, p_reason: reason });
+      if (!current.current) return;
+      if (error) { toast.error(mapFnbError(error)); return; }
+      const outcome = fnbOrderMutationOutcome(data, id);
+      if (outcome.kind !== "confirmed") {
+        toast.error(mapFnbError(outcome.kind === "rejected" ? outcome.code : "FNB_MUTATION_UNKNOWN"));
+        return;
+      }
+      toast.success(outcome.idempotent ? "Đơn đã được huỷ trước đó." : "Đã huỷ đơn.");
+    } catch {
+      if (current.current) toast.error(mapFnbError("FNB_MUTATION_UNKNOWN"));
+    } finally {
+      setBusyId(null);
+      void invalidate();
+    }
   };
 
   return (
@@ -191,6 +203,16 @@ function FnbCounterInner() {
           Bạn không có vai trò Thu ngân — có thể tạo đơn nhưng nút thu tiền/huỷ bị khoá (chủ CLB cấp quyền ở Quản trị → Nhân sự).
         </div>
       )}
+      {(journal.pending||journal.message)&&<Card role="alert" className="p-4 space-y-2 text-sm">
+        <p>{journal.message??'Yêu cầu tạo đơn chưa được xác minh. Không tạo mã mới.'}</p>
+        {journal.pending&&<><p>Mã {journal.pending.operation==='comp'?'COMP':'đơn'}: {journal.pending.requestId}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={journal.busy||journal.blocked} onClick={()=>void journal.recover()}>Đối chiếu đơn</Button>
+            <Button variant="outline" disabled={journal.busy||journal.blocked||journal.readOnlyRecovery} onClick={()=>void journal.retry()}>Gửi lại cùng mã đơn</Button>
+            <Button variant="outline" disabled={journal.busy||journal.blocked||journal.readOnlyRecovery} onClick={()=>void journal.cancel()}>Hủy yêu cầu chưa ghi</Button>
+          </div></>}
+        {journal.pending&&<p className="text-xs text-muted-foreground">Hủy chỉ ngăn yêu cầu chưa ghi. Nếu đơn đã được ghi, hệ thống sẽ đối chiếu đơn đó, không hoàn tác hoặc tự thu tiền.</p>}
+      </Card>}
 
       <Tabs defaultValue="new" className="w-full">
         <TabsList>
@@ -201,7 +223,9 @@ function FnbCounterInner() {
         </TabsList>
 
         <TabsContent value="new" className="mt-4">
-          <OrderEntryPanel clubId={activeClub} submitting={creating} resetKey={resetKey} onSubmit={createOrder} onSubmitComp={canPay ? handleCompClick : undefined} />
+          <fieldset disabled={journal.blocked||journal.busy||!!journal.pending} className="min-w-0">
+            <OrderEntryPanel clubId={activeClub} submitting={creating||journal.blocked||!!journal.pending} resetKey={resetKey} onSubmit={createOrder} onSubmitComp={canPay ? handleCompClick : undefined} />
+          </fieldset>
         </TabsContent>
 
         <TabsContent value="pending" className="mt-4">
@@ -244,9 +268,9 @@ function FnbCounterInner() {
             <DialogHeader>
               <DialogTitle>Comp / Miễn phí</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground">
+            <DialogDescription className="text-sm text-muted-foreground">
               Xác nhận miễn phí đơn này — tiền không thu, nhưng nguyên liệu vẫn trừ kho và COGS được ghi nhận.
-            </p>
+            </DialogDescription>
             {compOrder && (
               <div className="text-xs text-muted-foreground bg-muted/30 rounded p-2 leading-relaxed">
                 {compOrder.items.map((it) => `${it.qty}× ${it.name_snapshot}`).join(" · ")}
@@ -287,9 +311,13 @@ function OrdersTab({ clubId, status, emptyText, children }: {
   clubId: string; status: "pending" | "paid"; emptyText: string;
   children: (o: FnbOrder) => React.ReactNode;
 }) {
-  const { data, isLoading } = useFnbOrders(clubId, [status]);
+  const { data, isLoading, isError, refetch } = useFnbOrders(clubId, [status]);
   const { data: linkTargets } = useFnbLinkTargets(clubId);
   if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (isError) return <div role="alert" className="space-y-3 rounded-lg border border-destructive/40 p-4">
+    <p className="text-sm text-destructive">Không tải được danh sách đơn tại quầy. Chưa thể xác minh trạng thái đơn; hãy tải lại trước khi thu hoặc hoàn tiền.</p>
+    <Button variant="outline" onClick={() => { void refetch(); }}>Thử tải lại đơn</Button>
+  </div>;
   const orders = data ?? [];
   if (orders.length === 0) {
     return <div className="rounded-lg border border-border bg-muted/20 py-8 text-center text-sm text-muted-foreground">{emptyText}</div>;

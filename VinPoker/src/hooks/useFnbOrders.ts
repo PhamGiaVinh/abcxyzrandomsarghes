@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "./useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 export type FnbOrderStatus = "pending" | "paid" | "shipped" | "cancelled" | "expired";
 
@@ -26,9 +28,12 @@ export type FnbOrder = {
  * `['fnb','orders',clubId]`. `fnb_*` is untyped → `supabase as any`.
  */
 export function useFnbOrders(clubId: string | undefined, statuses: FnbOrderStatus[]) {
+  const {user,session,loading:authLoading}=useAuth();
+  const actor=authLoading?undefined:user?.id;
+  const epoch=sessionReadEpoch(session);
   return useQuery({
-    queryKey: ["fnb", "orders", clubId, statuses],
-    enabled: !!clubId && statuses.length > 0,
+    queryKey: ["fnb", "orders", clubId, statuses, actor, epoch],
+    enabled: !!actor && !!clubId && statuses.length > 0,
     refetchInterval: 15000,
     queryFn: async (): Promise<FnbOrder[]> => {
       const sb = supabase as any;
@@ -36,13 +41,15 @@ export function useFnbOrders(clubId: string | undefined, statuses: FnbOrderStatu
         .select("*").eq("club_id", clubId).in("status", statuses)
         .order("created_at", { ascending: false }).limit(100);
       if (error) throw error;
-      const list = (orders ?? []) as FnbOrder[];
+      if (!Array.isArray(orders)) throw new Error("Không xác minh được danh sách đơn.");
+      const list = orders as FnbOrder[];
       if (list.length === 0) return [];
       const ids = list.map((o) => o.id);
       const { data: items, error: e2 } = await sb.from("fnb_order_items").select("*").in("order_id", ids);
       if (e2) throw e2;
+      if (!Array.isArray(items)) throw new Error("Không xác minh được chi tiết đơn.");
       const byOrder: Record<string, FnbOrderItem[]> = {};
-      for (const it of (items ?? []) as FnbOrderItem[]) {
+      for (const it of items as FnbOrderItem[]) {
         (byOrder[it.order_id] ??= []).push(it);
       }
       return list.map((o) => ({ ...o, items: byOrder[o.id] ?? [] }));

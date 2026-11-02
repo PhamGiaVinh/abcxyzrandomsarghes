@@ -62,6 +62,7 @@ export interface RawHandRow {
   button_seat: number | null;
   table_id: string | null;
   publicSettlement?: ReplayPublicSettlement | null;
+  settlementUnavailable?: boolean;
 }
 export interface RawHandPlayer {
   hand_id: string;
@@ -114,6 +115,7 @@ export interface HandFeedPlayer {
   rankingText?: string | null;
 }
 export interface HandFeedItem {
+  verificationStatus?: "verified" | "unverified" | "unavailable";
   handId: string;
   handNumber: number;
   tableId: string | null;
@@ -332,6 +334,7 @@ export function buildHandFeedItems(
       });
 
     return {
+      verificationStatus: h.settlementUnavailable ? "unavailable" : h.publicSettlement?.status === "verified" ? "verified" : "unverified",
       handId: h.id,
       handNumber: h.hand_number,
       tableId: h.table_id,

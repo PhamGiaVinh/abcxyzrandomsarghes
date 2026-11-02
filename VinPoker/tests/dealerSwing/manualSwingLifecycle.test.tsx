@@ -2,7 +2,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useManualSwingRecovery } from "@/components/cashier/dealer-swing/useManualSwingRecovery";
 import { manualSwingJournalKey, type DealerManualSwingIntent } from "@/lib/dealerManualSwingIntent";
-const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), info: vi.fn() }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), info: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 const id = (n: number) => `e1800000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 function context() {
@@ -16,6 +16,31 @@ function response(intent: DealerManualSwingIntent, status = "receipt_found", res
 }
 beforeEach(() => { sessionStorage.clear(); vi.clearAllMocks(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+it.each(["reconcile", "cancel"] as const)("explains a detail-only rest error through %s without repeating Swing", async(operation)=>{
+  const ctx=context();ctx.rpc.mockResolvedValueOnce({data:null,error:{message:"lost response"}});
+  const hook=renderHook(()=>useManualSwingRecovery(ctx));
+  await act(async()=>hook.result.current.performSwingForTable(id(3)));
+  const intent=pending();ctx.rpc.mockReset().mockResolvedValue(response(intent,"receipt_found",{outcome:"error",detail:"DEALER_REST_REQUIRED"}));
+  await act(async()=>hook.result.current[operation]());
+  expect(ctx.rpc.mock.calls.map(call=>call[0])).toEqual([operation==="cancel"?"cancel_dealer_manual_swing_v1":"get_dealer_manual_swing_receipt_v1"]);
+  expect(toast.error).toHaveBeenCalledWith("Dealer chưa đủ thời gian nghỉ. Chờ đủ lịch nghỉ rồi tải lại trạng thái bàn.");
+  expect(toast.success).not.toHaveBeenCalled();expect(sessionStorage.getItem(key)).toBeNull();expect(ctx.onSettled).toHaveBeenCalledOnce();
+});
+it.each(["reconcile", "cancel"] as const)("settles an exact terminal error receipt through %s without retrying the writer", async (operation) => {
+  const ctx=context(); ctx.rpc.mockResolvedValueOnce({data:null,error:{message:"lost response"}});
+  const hook=renderHook(()=>useManualSwingRecovery(ctx));
+  await act(async()=>hook.result.current.performSwingForTable(id(3)));
+  const intent=pending();
+  ctx.rpc.mockReset().mockResolvedValue(response(intent,"receipt_found",{outcome:"error",message:"Dealer acquisition rejected"}));
+  await act(async()=>hook.result.current[operation]());
+  expect(ctx.rpc.mock.calls.map(call=>call[0])).toEqual([operation==="cancel"?"cancel_dealer_manual_swing_v1":"get_dealer_manual_swing_receipt_v1"]);
+  expect(sessionStorage.getItem(key)).toBeNull();
+  expect(hook.result.current.pending).toBeNull();
+  expect(ctx.onSettled).toHaveBeenCalledOnce();
+  expect(toast.error).toHaveBeenCalledWith("Lỗi: Dealer acquisition rejected");
+  expect(toast.success).not.toHaveBeenCalled();
+  expect(toast.info).not.toHaveBeenCalled();
+});
 it("persists before writing, requires canonical receipt, and prevents double-clicks", async () => {
   const ctx = context(); let finish!: (v: unknown) => void;
   ctx.rpc.mockImplementationOnce(() => { expect(pending().expected_version).toBe(1); return new Promise(resolve => {finish=resolve;}); })

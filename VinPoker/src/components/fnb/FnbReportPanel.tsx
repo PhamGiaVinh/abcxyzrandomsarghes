@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFnbReport } from "@/hooks/useFnbReport";
 import { formatVND } from "@/lib/format";
 import { Card } from "@/components/ui/card";
@@ -8,16 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Loader2, TrendingUp, AlertTriangle } from "lucide-react";
+import { assertFinanceCalendarRange, financeBusinessToday } from "@/lib/financeSummaryRead";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const daysAgoISO = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+import {startLiveReportRefresh} from '@/lib/liveReportRefresh';
+
+const todayISO = () => financeBusinessToday();
+const rangeStartISO = (days: number) => {
+  return financeBusinessToday(new Date(Date.now() - (days-1) * 86_400_000));
 };
 const monthStartISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  return `${financeBusinessToday().slice(0, 7)}-01`;
 };
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
@@ -38,7 +38,19 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 export function FnbReportPanel({ clubId }: { clubId: string }) {
   const [from, setFrom] = useState(monthStartISO());
   const [to, setTo] = useState(todayISO());
-  const { data, isLoading, error } = useFnbReport(clubId, `${from}T00:00:00`, `${to}T23:59:59`);
+  const [relativeRange,setRelativeRange]=useState<7|30|'month'|null>('month');
+  useEffect(()=>{
+    if(relativeRange===null)return;
+    return startLiveReportRefresh(async()=>{
+      setFrom(relativeRange==='month'?monthStartISO():rangeStartISO(relativeRange));
+      setTo(todayISO());
+    });
+  },[relativeRange]);
+  let validRange = true;
+  try { assertFinanceCalendarRange(from, to); } catch { validRange = false; }
+  // fnb_get_report uses inclusive BETWEEN, and Postgres timestamps retain microseconds.
+  const { data, isLoading, isPaused, error } = useFnbReport(validRange ? clubId : undefined,
+    `${from}T00:00:00+07:00`, `${to}T23:59:59.999999+07:00`);
 
   return (
     <div className="space-y-4">
@@ -46,30 +58,36 @@ export function FnbReportPanel({ clubId }: { clubId: string }) {
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <Label className="text-xs text-muted-foreground">Từ ngày</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-[150px]" />
+            <Input type="date" value={from} onChange={(e) => {setRelativeRange(null);setFrom(e.target.value);}} className="h-9 w-[150px]" />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Đến ngày</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-[150px]" />
+            <Input type="date" value={to} onChange={(e) => {setRelativeRange(null);setTo(e.target.value);}} className="h-9 w-[150px]" />
           </div>
           <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="h-9" onClick={() => { setFrom(daysAgoISO(7)); setTo(todayISO()); }}>7 ngày</Button>
-            <Button size="sm" variant="outline" className="h-9" onClick={() => { setFrom(daysAgoISO(30)); setTo(todayISO()); }}>30 ngày</Button>
-            <Button size="sm" variant="outline" className="h-9" onClick={() => { setFrom(monthStartISO()); setTo(todayISO()); }}>Tháng này</Button>
+            <Button size="sm" variant="outline" className="h-9" onClick={() => {setRelativeRange(7); setFrom(rangeStartISO(7)); setTo(todayISO()); }}>7 ngày</Button>
+            <Button size="sm" variant="outline" className="h-9" onClick={() => {setRelativeRange(30); setFrom(rangeStartISO(30)); setTo(todayISO()); }}>30 ngày</Button>
+            <Button size="sm" variant="outline" className="h-9" onClick={() => {setRelativeRange('month'); setFrom(monthStartISO()); setTo(todayISO()); }}>Tháng này</Button>
           </div>
         </div>
       </Card>
 
-      {isLoading && (
+      {!validRange && <p role="alert" className="text-sm text-destructive">Chọn khoảng ngày hợp lệ; ngày bắt đầu không được sau ngày kết thúc.</p>}
+      {validRange && isPaused && (
+        <p role="status" className="text-sm text-muted-foreground py-4">
+          Mất kết nối — báo cáo F&B sẽ tự cập nhật khi có mạng trở lại.
+        </p>
+      )}
+      {validRange && isLoading && !isPaused && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
           <Loader2 className="w-4 h-4 animate-spin" /> Đang tải báo cáo…
         </div>
       )}
-      {!!error && !isLoading && (
+      {validRange && !!error && !isLoading && !isPaused && (
         <div className="text-sm text-destructive py-4">Không tải được báo cáo — thử lại sau.</div>
       )}
 
-      {data && !isLoading && (
+      {validRange && data && !error && !isLoading && !isPaused && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Doanh thu (sau hoàn)" value={formatVND(data.revenue)} />

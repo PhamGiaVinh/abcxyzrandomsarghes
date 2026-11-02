@@ -1001,6 +1001,15 @@ export function TrackerVoicePanel({
       await provider.connect({
         onStatus: (next, message) => {
           if (!isCurrent()) return;
+          if (next === "paused" || next === "recovering" || next === "offline" || next === "error") {
+            // Separate capture segments cannot complete an earlier spoken amount.
+            if (pendingAmountPrefixRef.current) {
+              pendingAmountPrefixRef.current = null;
+              setFinalTranscript("");
+              setValidationError(null);
+            }
+            setPartial("");
+          }
           setStatus(next);
           setStatusMessage(message ?? null);
         },

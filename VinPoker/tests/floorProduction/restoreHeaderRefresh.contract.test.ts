@@ -12,6 +12,8 @@ describe("restore refreshes server-owned tournament totals without waiting for R
     const parent = readFileSync("src/components/cashier/TournamentLivePanel.tsx", "utf8");
     expect(parent).toContain("onTournamentChanged={() => { void loadTournaments(); }}");
     expect(parent).toContain('from("tournaments")');
-    expect(parent).toContain("selectedTournament.players_remaining");
+    expect(parent).toContain("participation.data.counts.remaining");
+    expect(parent).toContain("participation.data.averageStack");
+    expect(parent).not.toContain("selectedTournament.players_remaining");
   });
 });

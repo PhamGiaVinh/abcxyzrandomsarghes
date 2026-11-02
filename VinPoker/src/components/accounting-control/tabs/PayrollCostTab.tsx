@@ -94,6 +94,7 @@ export function PayrollCostTab({
 }) {
   const isLive = !!live?.active;
   const d = live?.data ?? null;
+  const showLiveNumbers = isLive && !live?.loading && !live?.error && !!d;
 
   return (
     <TabShell
@@ -106,7 +107,7 @@ export function PayrollCostTab({
     >
       {FRAMING}
 
-      {isLive && (
+      {showLiveNumbers && (
         <div className="flex items-start gap-2.5 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
           <PlugZap className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
           <p className="text-[12px] leading-relaxed text-foreground/85">
@@ -118,13 +119,13 @@ export function PayrollCostTab({
       )}
 
       {isLive && live?.error && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
+        <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
           <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-destructive" />
-          <p className="text-[12px] text-foreground/85">Không tải được số thật ({live.error}). Hiện dữ liệu mẫu.</p>
+          <p className="text-[12px] text-foreground/85">Không tải được số thật ({live.error}). Không thay số chưa xác minh bằng dữ liệu mẫu.</p>
         </div>
       )}
 
-      {isLive && d ? (
+      {showLiveNumbers && d ? (
         <>
           <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
             {d.periodLabel}
@@ -162,7 +163,9 @@ export function PayrollCostTab({
             </Card>
           )}
         </>
-      ) : (
+      ) : isLive ? <div role="status" className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+        {live?.loading ? "Đang tải số liệu lương…" : "Chưa xác minh số liệu lương. Không hiển thị số tiền thay thế."}
+      </div> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {lines.map((line) =>
             line.missing ? (

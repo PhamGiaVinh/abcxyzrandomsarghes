@@ -56,7 +56,10 @@ describe("TV display management authority", () => {
 
   it("moves the client to the guarded RPC and consumes its canonical row", () => {
     expect(adminClient).toContain('sb.rpc("save_tv_display_config_v1"');
-    expect(adminClient).toContain("data as TvDisplayRow");
+    expect(adminClient).toContain("!isDisplayRow(data)");
+    expect(adminClient).toContain("data.id !== row.id");
+    expect(adminClient).toContain("data.club_id !== row.club_id");
+    expect(adminClient).toContain('data.status !== "paired"');
     expect(adminClient).not.toContain('.from("tv_displays").update');
   });
 

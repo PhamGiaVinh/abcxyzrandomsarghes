@@ -23,11 +23,11 @@ export function json(b: unknown, status = 200) {
 }
 
 /** Create a Supabase admin client (service_role key, no auth header). */
-export function createAdminClient() {
+export function createAdminClient(options: { retry?: boolean } = {}) {
   return createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { global: { fetch: retryFetch } },
+    { global: { fetch: options.retry === false ? fetch : retryFetch } },
   );
 }
 
@@ -60,11 +60,12 @@ export async function requireAdminRoles(
   admin: SupabaseAdmin,
   uid: string,
 ): Promise<{ isSuper: boolean; isCashier: boolean } | Response> {
-  const { data: roles } = await admin
+  const { data: roles, error } = await admin
     .from("user_roles").select("role")
     .eq("user_id", uid).in("role", ["super_admin", "cashier"]);
 
-  const roleSet = new Set((roles ?? []).map((r: any) => r.role));
+  if (error || !Array.isArray(roles)) return json({ error: "Permission check unavailable" }, 503);
+  const roleSet = new Set(roles.map((r: any) => r.role));
   const isSuper = roleSet.has("super_admin");
   const isCashier = roleSet.has("cashier");
   if (!isSuper && !isCashier) return json({ error: "Forbidden" }, 403);
@@ -83,9 +84,10 @@ export async function requireClubAccess(
 ): Promise<void | Response> {
   if (!clubId) return json({ error: "Forbidden: deal không gắn CLB" }, 403);
 
-  const { data: ok } = await admin.rpc("is_club_cashier", {
+  const { data: ok, error } = await admin.rpc("is_club_cashier", {
     _user_id: uid,
     _club_id: clubId,
   });
+  if (error || typeof ok !== "boolean") return json({ error: "Permission check unavailable" }, 503);
   if (!ok) return json({ error: "Forbidden: bạn không được gán cashier cho CLB này" }, 403);
 }

@@ -9,6 +9,7 @@ const mock = vi.hoisted(() => ({
   clubError: null as { message: string } | null,
   scopeRequest: null as ((userId: string) => Promise<{ data: string[] | null; error: { message: string } | null }>) | null,
   countRequest: null as ((table: string) => Promise<MockQueryResult>) | null,
+  ptEnabled: false,
 }));
 
 type MockQueryResult = { data: unknown[]; count: number | null; error: { message: string } | null };
@@ -33,7 +34,13 @@ vi.mock("react-i18next", () => ({
 vi.mock("@/lib/featureFlags", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/featureFlags")>(),
   OPS_TOUR_CASHIER_ENABLED: true,
+  FEATURES: { ...(await importOriginal<typeof import('@/lib/featureFlags')>()).FEATURES,
+    get salaryTabV2() { return mock.ptEnabled; } },
 }));
+vi.mock('@/components/cashier/DealerPtWageTab', () => ({ default: ({ clubIds, ownerClubIds, finalizeStatements }: {
+  clubIds: string[]; ownerClubIds: string[]; finalizeStatements: boolean;
+}) => <div data-testid="pt-workbench" data-clubs={clubIds.join(',')} data-owner-clubs={ownerClubIds.join(',')}
+  data-statements={String(finalizeStatements)}>PT statement workbench</div> }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     rpc: (_name: string, args: { _user_id: string }) => mock.scopeRequest
@@ -71,6 +78,27 @@ describe("Cashier tour entry", () => {
     mock.clubError = null;
     mock.scopeRequest = null;
     mock.countRequest = null;
+    mock.ptEnabled = false;
+  });
+
+  it('opens the real PT statement destination only with the salary rollout and verified cashier clubs', async () => {
+    mock.ptEnabled = true;
+    render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard /></MemoryRouter>);
+    const panel = await screen.findByTestId('pt-workbench');
+    expect(panel).toHaveAttribute('data-clubs', 'club-a');
+    expect(panel).toHaveAttribute('data-owner-clubs', '');
+    expect(panel).toHaveAttribute('data-statements', 'true');
+    expect(screen.getByRole('button', { name: 'Lương PT' })).toBeInTheDocument();
+  });
+
+  it('does not mount PT statement writes for a hidden rollout or an unverified club scope', async () => {
+    const view = render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard /></MemoryRouter>);
+    await screen.findByText('Tính năng này chưa được mở cho tài khoản của bạn.');
+    expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument(); view.unmount();
+    mock.ptEnabled = true; mock.scopeError = { message: 'offline' };
+    render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard /></MemoryRouter>);
+    await screen.findByRole('alert');
+    expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument();
   });
 
   it("does not present an unavailable overview count as confirmed zero", async () => {

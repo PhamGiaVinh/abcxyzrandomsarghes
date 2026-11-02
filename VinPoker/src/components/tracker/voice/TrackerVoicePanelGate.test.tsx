@@ -1,17 +1,24 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 import type { TrackerVoiceRuntimeContext } from "@/lib/trackerVoice";
 import { isTrackerVoiceUiEnabled } from "@/lib/trackerVoice/uiGate";
 
 const loadRuntime = vi.fn();
+const auth = vi.hoisted(() => ({ user: { id: "actor-a" } as {id:string}|null, loading: false }));
+const panelCleanup = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/useAuth", () => ({useAuth: () => auth}));
 
 vi.mock("@/lib/trackerVoice", () => ({
   loadTrackerVoiceRuntimeContext: (...args: unknown[]) => loadRuntime(...args),
 }));
 vi.mock("./TrackerVoicePanel", () => ({
-  TrackerVoicePanel: () => <p>Voice panel ready</p>,
+  TrackerVoicePanel: function VoicePanel() {
+    useEffect(() => () => panelCleanup(), []);
+    return <p>Voice panel ready</p>;
+  },
 }));
 
 import { TrackerVoicePanelGate } from "./TrackerVoicePanelGate";
@@ -45,7 +52,7 @@ function hookFixture(tournamentTableId = "table-1"): StandaloneHandInput {
 }
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
-beforeEach(() => loadRuntime.mockReset());
+beforeEach(() => {loadRuntime.mockReset();panelCleanup.mockReset();auth.user={id:"actor-a"};auth.loading=false;});
 
 describe("isTrackerVoiceUiEnabled", () => {
   it("only opens the Voice surface for a server-enabled writable assignment", () => {
@@ -63,6 +70,31 @@ describe("isTrackerVoiceUiEnabled", () => {
 });
 
 describe("TrackerVoicePanelGate", () => {
+  for (const change of ["actor", "logout", "loading"]) it(`removes the previous actor Voice surface on ${change}`, async () => {
+    loadRuntime.mockResolvedValueOnce(runtimeFixture()).mockImplementation(() => new Promise(() => {}));
+    const view=render(<TrackerVoicePanelGate hook={hookFixture()} />);
+    expect(await screen.findByText("Voice panel ready")).toBeTruthy();
+    if(change==="actor") auth.user={id:"actor-b"};
+    if(change==="logout") auth.user=null;
+    if(change==="loading") auth.loading=true;
+    view.rerender(<TrackerVoicePanelGate hook={hookFixture()} />);
+    expect(screen.queryByText("Voice panel ready")).toBeNull();
+    expect(panelCleanup).toHaveBeenCalledTimes(1);
+    expect(loadRuntime).toHaveBeenCalledTimes(change==="actor"?2:1);
+  });
+
+  it("ignores an actor A runtime response after actor B is verified", async () => {
+    let resolveA!: (value:TrackerVoiceRuntimeContext)=>void;
+    loadRuntime.mockImplementationOnce(()=>new Promise(resolve=>{resolveA=resolve;})).mockResolvedValueOnce(runtimeFixture());
+    const view=render(<TrackerVoicePanelGate hook={hookFixture()} />);
+    auth.user={id:"actor-b"};
+    view.rerender(<TrackerVoicePanelGate hook={hookFixture()} />);
+    expect(await screen.findByText("Voice panel ready")).toBeTruthy();
+    await act(async()=>resolveA(runtimeFixture({read_only:true})));
+    expect(screen.getByText("Voice panel ready")).toBeTruthy();
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
   it("unblocks a hung runtime read and ignores its late response after explicit retry", async () => {
     vi.useFakeTimers();
     let complete!: (value: TrackerVoiceRuntimeContext) => void;

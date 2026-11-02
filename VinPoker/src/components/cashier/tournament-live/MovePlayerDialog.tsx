@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { createFloorTableControlV3Client, type FloorTournamentTableRoster, type FloorTableControlV3Rpc } from "@/lib/floorTableControlV3";
 import { readPendingFloorMove, savePendingFloorMove, clearPendingFloorMove, type PendingFloorMove } from "@/lib/floorPendingMoveIntent";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
@@ -86,8 +87,13 @@ export function MovePlayerDialog({
   onMoved: () => void;
 }) {
   const supabase = useSupabaseClient();
+  const readController = useRef<AbortController | null>(null);
   const canonical = useMemo(() => createFloorTableControlV3Client(
-    (async (name, args) => supabase.rpc(name as never, args as never)) as FloorTableControlV3Rpc,
+    (async (name, args) => {
+      const query = supabase.rpc(name as never, args as never);
+      return readController.current && ["get_floor_tournament_table_roster_v3", "get_floor_tournament_table_roster_v6", "get_floor_pending_tracker_moves_v1"].includes(name)
+        ? query.abortSignal(readController.current.signal) : query;
+    }) as FloorTableControlV3Rpc,
   ), [supabase]);
   const loadSequence = useRef(0);
   const scope = `${actorId ?? ""}:${tournamentId}:${entryId}`;
@@ -122,17 +128,25 @@ export function MovePlayerDialog({
     setTargetTableId("");
     setTargetSeat(null);
     if (!actorId) { setReadError("Bạn cần đăng nhập lại trước khi chuyển ghế."); return; }
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     try {
-      const [roster, reservations, metadata] = await Promise.all([
+      const [roster, reservations, metadata] = await waitForManualPlayerResponse(Promise.all([
         canonical.getTournamentTableRoster(tournamentId),
         canonical.getPendingTrackerMoves(tournamentId),
-        supabase.from("tournaments").select("name, start_time").eq("id", tournamentId).single(),
-      ]);
+        supabase.from("tournaments").select("name, start_time").eq("id", tournamentId).abortSignal(controller.signal).single(),
+      ]), 10_000);
       if (sequence !== loadSequence.current || currentScope.current !== scope) return;
       if (roster.ok === false) throw new Error(roster.error);
       if (reservations.ok === false) throw new Error(reservations.error);
       if (metadata.error) throw new Error(metadata.error.message);
-      if (metadata.data) setTournamentMeta({ name: metadata.data.name ?? "Giải đấu", start_time: metadata.data.start_time });
+      const meta = metadata.data;
+      if (!meta || typeof meta.name !== "string" || !meta.name.trim()
+        || (meta.start_time !== null && (typeof meta.start_time !== "string" || !Number.isFinite(Date.parse(meta.start_time))))) {
+        throw new Error("Không nhận được tên hoặc lịch giải hợp lệ.");
+      }
+      setTournamentMeta({ name: meta.name, start_time: meta.start_time });
       const occ: Record<string, OccupiedSeat[]> = {};
       const scopedRoster = roster.data.filter((table) => table.tournamentId === tournamentId);
       const sourceSeats = scopedRoster.flatMap((table) => table.seats
@@ -161,7 +175,11 @@ export function MovePlayerDialog({
         ? attempt.current.intent.toTournamentTableId : source.tournamentTableId);
     } catch (cause) {
       if (sequence !== loadSequence.current || currentScope.current !== scope) return;
-      setReadError(`Không xác minh được phiên bàn. Chưa thể chuyển ghế (${cause instanceof Error ? cause.message : "lỗi tải dữ liệu"}).`);
+      const message = cause instanceof Error ? cause.message : "lỗi tải dữ liệu";
+      setReadError(`Không xác minh được phiên bàn. Chưa thể chuyển ghế (${message === "MANUAL_PLAYER_OUTCOME_UNKNOWN" ? "quá 10 giây chưa nhận đủ dữ liệu" : message}).`);
+    } finally {
+      controller.abort();
+      if (readController.current === controller) readController.current = null;
     }
   }, [canonical, supabase, scope, actorId, tournamentId, entryId]);
 
@@ -188,7 +206,7 @@ export function MovePlayerDialog({
     if (attempt.current) setWriteError("Chưa xác minh kết quả yêu cầu trước. Xác nhận chỉ gửi lại đúng mã và payload đã lưu.");
     setPhase(attempt.current ? "confirm" : "pick"); setResult(null); setReceipt(null); setReceiptOpen(false);
     void loadState();
-    return () => { loadSequence.current++; activeRun.current = null; busy.current = false; };
+    return () => { loadSequence.current++; readController.current?.abort(); readController.current = null; activeRun.current = null; busy.current = false; };
   }, [open, loadState]);
 
   const targetTable = useMemo(
@@ -381,7 +399,10 @@ export function MovePlayerDialog({
           </SheetHeader>
 
           {writeError && <div role="alert" className="text-sm text-destructive">{writeError}</div>}
-          {readError && <div role="alert" className="text-sm text-destructive">{readError}</div>}
+          {readError && <div className="space-y-2">
+            <div role="alert" className="text-sm text-destructive">{readError}</div>
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => void loadState()}>Tải lại phiên bàn</Button>
+          </div>}
 
           {phase === "pick" && (
             <div className="space-y-3">

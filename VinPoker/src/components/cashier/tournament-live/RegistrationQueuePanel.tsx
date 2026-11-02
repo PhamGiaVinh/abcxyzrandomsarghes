@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +20,7 @@ import { VoidRegistrationDialog } from "@/components/cashier/registrations/VoidR
 
 const POLL_MS = 15_000; // tournament_registrations is NOT realtime-published — honest poll + seats-channel piggyback (refreshTrigger)
 
-type QueueStatus = "waiting" | "seated" | "printed" | "needs_review" | "cancelled";
+type QueueStatus = "bagged" | "waiting" | "seated" | "printed" | "needs_review" | "cancelled" | "busted";
 
 interface QueueRow {
   id: string;
@@ -68,6 +70,8 @@ function mapVoidErr(res: any, raw?: string): string {
 }
 
 const QUEUE_BADGE: Record<QueueStatus, { label: string; cls: string }> = {
+  bagged: {label:"Đã bag",cls:"text-muted-foreground"},
+  busted: {label:'Đã bust',cls:'text-muted-foreground'},
   waiting: { label: "⏳ Chờ xếp ghế", cls: "text-warning border-warning/40" },
   seated: { label: "🪑 Đã có ghế", cls: "text-success border-success/40" },
   printed: { label: "🖨 Đã in phiếu", cls: "text-sky-400 border-sky-500/40" },
@@ -82,20 +86,23 @@ const QUEUE_BADGE: Record<QueueStatus, { label: string; cls: string }> = {
  * confirm_registration_and_assign_seat; cancel reuses the cashier dialog.
  */
 export function RegistrationQueuePanel(props: Parameters<typeof ScopedRegistrationQueuePanel>[0]) {
-  const { user } = useAuth();
+  const { user,session } = useAuth();
   // A different actor/tournament must not inherit rows or open mutation dialogs.
   if (!user) return <Card className="p-4" role="alert">Đăng nhập để tải hàng chờ.</Card>;
-  return <ScopedRegistrationQueuePanel key={`${user.id}:${props.tournamentId}`} {...props} />;
+  const ended = ["completed", "finished", "cancelled"].includes(props.tournamentStatus ?? "");
+  return <ScopedRegistrationQueuePanel key={JSON.stringify([user.id,props.tournamentId,sessionReadEpoch(session),ended])} {...props} />;
 }
 
 function ScopedRegistrationQueuePanel({
-  tournamentId, tournamentName, tournamentDate, refreshTrigger,
+  tournamentId, tournamentName, tournamentDate, refreshTrigger, tournamentStatus,
 }: {
   tournamentId: string;
   tournamentName: string;
   tournamentDate: string | null;
   refreshTrigger: number;
+  tournamentStatus?: string;
 }) {
+  const tournamentEnded = ["completed", "finished", "cancelled"].includes(tournamentStatus ?? "");
   const { user } = useAuth();
   const [rows, setRows] = useState<QueueRow[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -110,7 +117,8 @@ function ScopedRegistrationQueuePanel({
   const [voidBusy, setVoidBusy] = useState(false);
   const [moveRow, setMoveRow] = useState<QueueRow | null>(null);
   const seqRef = useRef(0);
-  useEffect(() => () => { ++seqRef.current; }, []);
+  const reading=useRef<number|null>(null);
+  useEffect(() => () => { ++seqRef.current;reading.current=null; }, []);
   useEffect(() => {
     if (!readError) return;
     setDrawRegs(null);
@@ -121,10 +129,12 @@ function ScopedRegistrationQueuePanel({
   }, [readError]);
 
   const load = useCallback(async () => {
+    if(reading.current!==null)return;
     const seq = ++seqRef.current;
+    reading.current=seq;
     setLoading(true);
     try {
-    const [{ data: regs, error: regErr }, { data: entries, error: entryErr }, { data: receipts, error: receiptErr }] = await Promise.all([
+    const [{ data: regs, error: regErr }, { data: entries, error: entryErr }, { data: receipts, error: receiptErr }] = await observeTrackerContextRead(Promise.all([
       supabase.from("tournament_registrations")
         .select("id, reference_code, status, total_pay, committed_at, confirmed_at, confirmed_by, player_id")
         .eq("tournament_id", tournamentId)
@@ -139,7 +149,7 @@ function ScopedRegistrationQueuePanel({
         .eq("tournament_id", tournamentId)
         .in("status", ["issued", "printed"])
         .order("issued_at", { ascending: false }),
-    ]);
+    ]));
     if (seq !== seqRef.current) return; // stale response
     const readFailure = regErr ?? entryErr ?? receiptErr;
     if (readFailure) {
@@ -148,11 +158,13 @@ function ScopedRegistrationQueuePanel({
       toast.error(readFailure.message);
       return;
     }
+    if(!Array.isArray(regs)||!Array.isArray(entries)||!Array.isArray(receipts))
+      throw new Error('Chưa xác minh được đầy đủ dữ liệu hàng chờ.');
 
     const base = (regs ?? []) as any[];
     const userIds = [...new Set(base.flatMap((r) => [r.player_id, r.confirmed_by]).filter(Boolean))];
     const { data: profs, error: profileErr } = userIds.length
-      ? await supabase.from("profiles").select("user_id, display_name, phone").in("user_id", userIds)
+      ? await observeTrackerContextRead(supabase.from("profiles").select("user_id, display_name, phone").in("user_id", userIds))
       : { data: [] as any[], error: null };
     if (seq !== seqRef.current) return;
     if (profileErr) {
@@ -161,6 +173,7 @@ function ScopedRegistrationQueuePanel({
       toast.error(profileErr.message);
       return;
     }
+    if(!Array.isArray(profs))throw new Error('Chưa xác minh được hồ sơ người chơi.');
     const pMap = new Map((profs ?? []).map((p: any) => [p.user_id, p]));
     const entryByReg = new Map((entries ?? []).map((e: any) => [e.registration_id, e]));
     // receipts are issued_at DESC — first hit per registration is the latest non-superseded
@@ -168,12 +181,19 @@ function ScopedRegistrationQueuePanel({
     for (const rc of (receipts ?? []) as any[]) {
       if (rc.registration_id && !receiptByReg.has(rc.registration_id)) receiptByReg.set(rc.registration_id, rc);
     }
+    for(const registration of base){
+      const entry=entryByReg.get(registration.id),issued=receiptByReg.get(registration.id);
+      if((entry&&entry.player_id!==registration.player_id)||(issued&&(!entry||issued.entry_id!==entry.id)))
+        throw new Error('Đăng ký, entry và phiếu ghế không khớp. Cần kiểm tra dữ liệu trước khi thao tác.');
+    }
 
     setRows(base.map((r): QueueRow => {
       const entry = entryByReg.get(r.id);
       const rc = receiptByReg.get(r.id);
       let queueStatus: QueueStatus;
-      if (r.status === "pending") queueStatus = "waiting";
+      if (entry?.status === 'bagged') queueStatus='bagged';
+      else if (entry?.status === 'busted') queueStatus='busted';
+      else if (r.status === "pending") queueStatus = "waiting";
       else if (entry && rc) queueStatus = rc.status === "printed" ? "printed" : "seated";
       else if (entry) queueStatus = "seated";
       else queueStatus = "needs_review"; // confirmed but no entry (already_confirmed_no_entry class)
@@ -205,6 +225,8 @@ function ScopedRegistrationQueuePanel({
       setLoading(false);
       setReadError("Không tải được hàng chờ. Hãy thử lại trước khi thao tác.");
       toast.error(error instanceof Error ? error.message : "Lỗi kết nối khi tải hàng chờ.");
+    } finally {
+      if(reading.current===seq)reading.current=null;
     }
   }, [tournamentId]);
 
@@ -213,7 +235,10 @@ function ScopedRegistrationQueuePanel({
 
   // honest poll for NEW registrations (table not realtime-published)
   useEffect(() => {
-    const t = setInterval(load, POLL_MS);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      void load();
+    }, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
 
@@ -285,11 +310,11 @@ function ScopedRegistrationQueuePanel({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" className="h-9" disabled={loading || !!readError || waiting.length === 0}
+          <Button size="sm" className="h-9" disabled={tournamentEnded || loading || !!readError || waiting.length === 0}
             onClick={() => setDrawRegs(waiting.map((w) => ({ id: w.id, reference_code: w.reference_code, player_name: w.player_name })))}>
             <Dices className="w-3.5 h-3.5 mr-1" /> Bốc thăm tất cả ({waiting.length})
           </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={load} disabled={loading}>
+          <Button aria-label="Tải lại hàng chờ" variant="ghost" size="icon" className="h-9 w-9" onClick={load} disabled={loading}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           </Button>
         </div>
@@ -298,6 +323,7 @@ function ScopedRegistrationQueuePanel({
         Tự làm mới mỗi 15s{lastRefreshed ? ` · Cập nhật ${lastRefreshed.toLocaleTimeString("vi-VN")}` : ""} — đăng ký mới có thể trễ tối đa 15s.
       </div>
 
+      {tournamentEnded && <p role="status" className="text-sm text-muted-foreground">Giải đã kết thúc hoặc bị hủy. Không bốc thăm hoặc chuyển ghế.</p>}
       {readError && (
         <div role="alert" className="text-sm text-destructive border border-destructive/40 rounded-md p-3">
           {readError}{rows !== null ? " Dữ liệu bên dưới là lần tải thành công trước, chưa được xác minh lại." : ""}
@@ -310,7 +336,9 @@ function ScopedRegistrationQueuePanel({
       ) : (
         <div className="space-y-2">
           {rows.map((r) => {
-            const badge = QUEUE_BADGE[r.queueStatus];
+            const badge = tournamentEnded && r.queueStatus === "seated"
+              ? { label: "Đã xác nhận đăng ký", cls: "text-muted-foreground" }
+              : QUEUE_BADGE[r.queueStatus];
             return (
               <div key={r.id} className="rounded-lg border border-border bg-card/40 p-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
                 <div className="space-y-1 text-sm min-w-0">
@@ -329,7 +357,7 @@ function ScopedRegistrationQueuePanel({
                   </div>
                   {r.queueStatus !== "waiting" && (
                     <div className="text-xs text-muted-foreground">
-                      {r.receipt ? <>Bàn {r.receipt.table_number ?? "?"} · Ghế {r.receipt.seat_number} · Phiếu <span className="font-mono">{r.receipt.receipt_code}</span></> : "Chưa có phiếu"}
+                      {r.receipt ? <>{(r.queueStatus==='busted'||r.queueStatus==='bagged')&&'Phiếu ghế đã cấp: '}Bàn {r.receipt.table_number ?? "?"} · Ghế {r.receipt.seat_number} · Phiếu <span className="font-mono">{r.receipt.receipt_code}</span></> : "Chưa có phiếu"}
                       {r.cashier_name ? <> · Xác nhận bởi <span className="text-foreground">{r.cashier_name}</span></> : null}
                       {r.confirmed_at ? <> · {formatDateTime(r.confirmed_at)}</> : null}
                     </div>
@@ -342,10 +370,12 @@ function ScopedRegistrationQueuePanel({
                 <fieldset disabled={loading || !!readError} className="flex md:flex-col gap-2 md:w-44">
                   {r.queueStatus === "waiting" && (
                     <>
+                      {!tournamentEnded && (
                       <Button size="sm" className="flex-1 h-9"
                         onClick={() => setDrawRegs([{ id: r.id, reference_code: r.reference_code, player_name: r.player_name }])}>
                         <Dices className="w-3.5 h-3.5 mr-1" /> Bốc thăm chỗ
                       </Button>
+                      )}
                       <Button size="sm" variant="outline" className="flex-1 h-9 text-destructive border-destructive/40"
                         onClick={() => setCancelTarget(r)}>
                         <XCircle className="w-3.5 h-3.5 mr-1" /> Huỷ
@@ -357,12 +387,12 @@ function ScopedRegistrationQueuePanel({
                       <Ticket className="w-3.5 h-3.5 mr-1" /> Xem phiếu
                     </Button>
                   )}
-                  {FEATURES.movePlayer && r.entry_id && (r.queueStatus === "seated" || r.queueStatus === "printed") && (
+                  {!tournamentEnded && FEATURES.movePlayer && r.entry_id && (r.queueStatus === "seated" || r.queueStatus === "printed") && (
                     <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => setMoveRow(r)}>
                       <ArrowRightLeft className="w-3.5 h-3.5 mr-1" /> Chuyển ghế
                     </Button>
                   )}
-                  {FEATURES.registrationExtensions && r.queueStatus !== "waiting" && (
+                  {FEATURES.registrationExtensions && r.queueStatus !== "waiting" && r.queueStatus !== 'busted' && r.queueStatus !== 'bagged' && (
                     <Button size="sm" variant="outline" className="flex-1 h-9 text-destructive border-destructive/40"
                       onClick={() => setVoidTarget(r)}>
                       <Undo2 className="w-3.5 h-3.5 mr-1" /> Yêu cầu hoàn tiền
@@ -376,7 +406,7 @@ function ScopedRegistrationQueuePanel({
       )}
 
       <SeatDrawDialog
-        open={drawRegs !== null && !readError}
+        open={!tournamentEnded && drawRegs !== null && !readError}
         onOpenChange={(v) => { if (!v) setDrawRegs(null); }}
         tournamentId={tournamentId}
         tournamentName={tournamentName}
@@ -405,7 +435,7 @@ function ScopedRegistrationQueuePanel({
         onConfirm={voidReg}
       />
 
-      {moveRow?.entry_id && !readError && (
+      {!tournamentEnded && moveRow?.entry_id && !readError && (
         <MovePlayerDialog
           actorId={user?.id ?? null}
           open={moveRow !== null}

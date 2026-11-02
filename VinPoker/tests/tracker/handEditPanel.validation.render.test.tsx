@@ -25,6 +25,15 @@ const props = {
 };
 
 describe("HandEditPanel action amounts", () => {
+  it("distinguishes gross draft wagers from a saved pot after an uncalled return", () => {
+    render(<HandEditPanel {...props} potSize={100} actions={[
+      ...props.actions.slice(0,2),
+      {player_id:"p1",entry_number:1,street:"preflop",action_type:"fold",action_amount:0,action_order:3},
+    ]}/>);
+    expect(screen.getByText(/Tổng cược nháp \(chưa hoàn cược\):/)).toHaveTextContent("150");
+    expect(screen.queryByText(/Pot từ action nháp:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Pot đã lưu:/)).toHaveTextContent("100");
+  });
   it("shows the exact call requirement and prevents an invalid action correction", () => {
     render(<HandEditPanel {...props} />);
 

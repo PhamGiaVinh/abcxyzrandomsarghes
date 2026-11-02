@@ -11,10 +11,29 @@ import { useTranslation } from "react-i18next";
 import { exportToExcel } from "@/lib/exportExcel";
 import PlayerHistoryDialog from "@/components/PlayerHistoryDialog";
 import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 const PAGE_SIZE = 20;
+const hasDisplayFields = (row: unknown, fields: string[]): row is Record<string, unknown> =>
+  row !== null && typeof row === "object" && !Array.isArray(row) && fields.every(field => {
+    const value = (row as Record<string, unknown>)[field];
+    return value == null || typeof value === "string";
+  });
+
+// Numeric columns are NOT NULL; malformed responses must not become zero rankings.
+const hasMoneyFields = (row: unknown, fields: string[]) =>
+  row !== null && typeof row === 'object' && !Array.isArray(row) && fields.every(field => {
+    const value = (row as Record<string, unknown>)[field];
+    return (typeof value === 'number' || typeof value === 'string' && value.trim() !== '')
+      && Number.isFinite(Number(value));
+  });
 
 const Leaderboard = () => {
+  const { user, session } = useAuth();
+  return <ScopedLeaderboard key={JSON.stringify([user?.id, sessionReadEpoch(session)])} />;
+};
+
+const ScopedLeaderboard = () => {
   const { t } = useTranslation();
   const { isAdmin } = useAuth();
   const [entries, setEntries] = useState<any[]>([]);
@@ -35,57 +54,123 @@ const Leaderboard = () => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyPlayer, setHistoryPlayer] = useState<{ id: string; name: string; avatar: string | null } | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date>(new Date());
-
-  const load = async () => {
-    setLoading(true);
-    const cutoff = (() => {
-      const d = new Date();
-      if (timeFilter === "week") d.setDate(d.getDate() - 7);
-      else if (timeFilter === "month") d.setMonth(d.getMonth() - 1);
-      else return null;
-      return d.toISOString().slice(0, 10);
-    })();
-
-    let trustedQuery = supabase.from("player_results").select("*").eq("verified_by_admin", true);
-    if (cutoff) trustedQuery = trustedQuery.gte("event_date", cutoff);
-
-    const [{ data: e }, { data: c }, { data: at }, { data: cm }, { data: tr }] = await Promise.all([
-      supabase.from("leaderboard_entries").select("*"),
-      supabase.from("clubs").select("id,name").eq("status", "approved"),
-      supabase.from("all_time_money_list").select("*").order("total_winnings", { ascending: false }),
-      supabase.from("club_money_list").select("*").order("total_winnings", { ascending: false }),
-      trustedQuery,
-    ]);
-    setEntries(e ?? []);
-    setClubs(c ?? []);
-    setAllTime(at ?? []);
-    setClubMoney(cm ?? []);
-    setTrustedResults(tr ?? []);
-    const ids = Array.from(new Set([
-      ...((e ?? []).map((x: any) => x.player_id)),
-      ...((at ?? []).map((x: any) => x.player_id).filter(Boolean)),
-      ...((cm ?? []).map((x: any) => x.player_id).filter(Boolean)),
-      ...((tr ?? []).map((x: any) => x.player_id).filter(Boolean)),
-    ]));
-    if (ids.length) {
-      const { data: profs } = await supabase.from("profiles").select("user_id, display_name, avatar_url").in("user_id", ids);
-      setProfiles(Object.fromEntries((profs ?? []).map((p: any) => [p.user_id, p])));
-    }
-    setLoadedAt(new Date());
-    setLoading(false);
-  };
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
 
   useEffect(() => {
-    load();
+    let alive = true;
+    let inFlight: Promise<void> | null = null;
+    let queued = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    const canRead = () => document.visibilityState !== 'hidden' && navigator.onLine !== false;
+    const readSnapshot = async (signal: AbortSignal) => {
+      const cutoff = (() => {
+        const d = new Date();
+        if (timeFilter === "week") d.setDate(d.getDate() - 7);
+        else if (timeFilter === "month") d.setMonth(d.getMonth() - 1);
+        else return null;
+        return d.toISOString().slice(0, 10);
+      })();
+
+      let trustedQuery = supabase.from("player_results").select("*").eq("verified_by_admin", true);
+      if (cutoff) trustedQuery = trustedQuery.gte("event_date", cutoff);
+
+      const replies = await Promise.all([
+        supabase.from("leaderboard_entries").select("*").abortSignal(signal),
+        supabase.from("clubs").select("id,name").eq("status", "approved").abortSignal(signal),
+        supabase.from("all_time_money_list").select("*").order("total_winnings", { ascending: false }).abortSignal(signal),
+        supabase.from("club_money_list").select("*").order("total_winnings", { ascending: false }).abortSignal(signal),
+        trustedQuery.abortSignal(signal),
+      ]);
+      if (signal.aborted) throw new Error('Leaderboard read cancelled');
+      if (replies.some(reply => reply.error || !Array.isArray(reply.data))) throw new Error('Leaderboard read unavailable');
+      const [{ data: e }, { data: c }, { data: at }, { data: cm }, { data: tr }] = replies;
+      if ([e, at, cm, tr].some(rows => (rows ?? []).some(row => !hasDisplayFields(row, ['player_id', 'display_name', 'club_id'])))
+        || (c ?? []).some(row => !hasDisplayFields(row, ['id', 'name']) || typeof row.id !== 'string' || !row.id.trim() || typeof row.name !== 'string')) {
+        throw new Error('Leaderboard display rows unavailable');
+      }
+      if ((e ?? []).some(row => !hasMoneyFields(row, ['winnings', 'cashout']))
+        || [...(at ?? []), ...(cm ?? [])].some(row => !hasMoneyFields(row, ['total_winnings']))
+        || (tr ?? []).some(row => !hasMoneyFields(row, ['prize']))) {
+        throw new Error('Leaderboard monetary rows unavailable');
+      }
+      const ids = Array.from(new Set([
+        ...((e ?? []).map((x: any) => x.player_id)),
+        ...((at ?? []).map((x: any) => x.player_id).filter(Boolean)),
+        ...((cm ?? []).map((x: any) => x.player_id).filter(Boolean)),
+        ...((tr ?? []).map((x: any) => x.player_id).filter(Boolean)),
+      ]));
+      const profileReply = ids.length
+        ? await supabase.from("profiles").select("user_id, display_name, avatar_url").in("user_id", ids).abortSignal(signal)
+        : { data: [], error: null };
+      if (profileReply.error || !Array.isArray(profileReply.data)) throw new Error('Leaderboard profiles unavailable');
+      if (profileReply.data.some(row => !hasDisplayFields(row, ['user_id', 'display_name', 'avatar_url']) || typeof row.user_id !== 'string' || !row.user_id.trim())) {
+        throw new Error('Leaderboard profile rows unavailable');
+      }
+      return {e, c, at, cm, tr, profs: profileReply.data};
+    };
+
+    const schedule = () => {
+      if (alive && !timer) timer = setTimeout(() => {timer = undefined; void load();}, 200);
+    };
+    const load = (): Promise<void> => {
+      if (!alive) return Promise.resolve();
+      if (inFlight) {queued = true; return inFlight;}
+      if (!canRead()) {queued = true; setReadError(true); setLoading(false); return Promise.resolve();}
+      queued = false;
+      const requestController = new AbortController();
+      controller = requestController;
+      setLoading(true);
+      setReadError(false);
+      inFlight = Promise.resolve().then(async () => {
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        let cancel: (() => void) | undefined;
+        try {
+          const interrupted = new Promise<never>((_, reject) => {
+            cancel = () => reject(new Error('Leaderboard read cancelled'));
+            requestController.signal.addEventListener('abort', cancel, {once: true});
+            deadline = setTimeout(() => requestController.abort(), 15_000);
+          });
+          if (!alive || requestController.signal.aborted) return;
+          const snapshot = await Promise.race([readSnapshot(requestController.signal), interrupted]);
+          if (!alive || requestController.signal.aborted) return;
+          setEntries(snapshot.e ?? []);
+          setClubs(snapshot.c ?? []);
+          setAllTime(snapshot.at ?? []);
+          setClubMoney(snapshot.cm ?? []);
+          setTrustedResults(snapshot.tr ?? []);
+          setProfiles(Object.fromEntries(snapshot.profs.map(p => [p.user_id, p])));
+          setLoadedAt(new Date());
+        } catch {
+          if (alive) setReadError(true);
+        } finally {
+          clearTimeout(deadline);
+          if (cancel) requestController.signal.removeEventListener('abort', cancel);
+          requestController.abort();
+          inFlight = null;
+          if (alive) {setLoading(false); if (queued && canRead()) schedule();}
+        }
+      });
+      return inFlight;
+    };
+    const refresh = () => {queued = true; if (!inFlight && canRead()) schedule();};
+    void load();
     const ch = supabase.channel("lb").on("postgres_changes",
-      { event: "*", schema: "public", table: "leaderboard_entries" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "all_time_money_list" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "club_money_list" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "player_results" }, () => load())
+      { event: "*", schema: "public", table: "leaderboard_entries" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "all_time_money_list" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "club_money_list" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "player_results" }, refresh)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeFilter]);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('online', refresh);
+    return () => {
+      alive = false; clearTimeout(timer); controller?.abort();
+      void supabase.removeChannel(ch);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('online', refresh);
+    };
+  }, [timeFilter, readAttempt]);
 
   const aggregate = useMemo(() => {
     const filtered = clubFilter === "all" ? entries : entries.filter(e => e.club_id === clubFilter);
@@ -131,7 +216,11 @@ const Leaderboard = () => {
     return arr;
   }, [trustedResults, sortBy]);
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (loading) return <div role="status" aria-label={t('leaderboardPage.loading')} className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (readError) return <div role="alert" className="py-12 text-center space-y-3">
+    <p>{t('leaderboardPage.loadError')}</p>
+    <Button variant="outline" onClick={() => setReadAttempt(n => n + 1)}>{t('leaderboardPage.retry')}</Button>
+  </div>;
 
   const fmt = (n: number) => "$" + n.toLocaleString("en-US");
   const fmtVnd = (n: number) => "₫" + Math.round(n).toLocaleString("vi-VN");

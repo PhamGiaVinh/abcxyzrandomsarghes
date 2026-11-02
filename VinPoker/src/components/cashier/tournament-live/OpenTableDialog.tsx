@@ -285,9 +285,15 @@ export function OpenTableDialog({
           ) : (
             <div className="space-y-4">
               {unconfiguredTables.length > 0 && (
-                <p role="status" className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-3 text-sm text-amber-100">
-                  {unconfiguredTables.length} bàn cũ chưa có số chuẩn ({unconfiguredTables.join(", ")}). Các bàn này không thể chọn; cần đối soát trước khi đưa vào kho bàn V3.
-                </p>
+                <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-3 text-sm text-amber-100">
+                  <p role="status">{unconfiguredTables.length} bàn cũ chưa có số chuẩn. Các bàn này không thể chọn; cần đối soát trước khi đưa vào kho bàn V3.</p>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer rounded-sm py-1 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Xem {unconfiguredTables.length} bàn cần đối soát</summary>
+                    <ul className="mt-2 max-h-48 list-inside list-disc overflow-y-auto break-words">
+                      {unconfiguredTables.map((name,index)=><li key={`${name}:${index}`}>{name}</li>)}
+                    </ul>
+                  </details>
+                </div>
               )}
               {repairTables.length > 0 && (
                 <p role="status" className="rounded-xl border border-rose-400/30 bg-rose-400/8 px-3 py-3 text-sm text-rose-100">

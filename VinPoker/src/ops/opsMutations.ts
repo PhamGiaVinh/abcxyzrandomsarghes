@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { assertTournamentDeleted } from "@/lib/tournamentDeleteResult";
+import {assertStakingFundingReceipt} from '@/lib/stakingFundingReceipt';
 
 export type OpsClient = SupabaseClient<Database>;
 
@@ -38,6 +39,16 @@ export function assertMutationOk(data: unknown, error?: unknown): JsonRecord {
   return record ?? {};
 }
 
+function assertTournamentMutation(data:unknown,error:unknown,expectedId?:string):JsonRecord {
+  const result=assertMutationOk(data,error);
+  if(result.ok!==true||typeof result.tournament_id!=='string'
+    || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(result.tournament_id)
+    || (expectedId!==undefined&&result.tournament_id!==expectedId)){
+    throw new Error('Chưa xác minh được kết quả lưu giải. Hãy tải lại để kiểm tra trước khi thử lại.');
+  }
+  return result;
+}
+
 export async function createTournament(client: OpsClient, input: {
   clubId: string;
   name: string;
@@ -60,7 +71,7 @@ export async function createTournament(client: OpsClient, input: {
     p_late_reg_close_level: input.lateRegCloseLevel,
     p_game_type: input.gameType ?? "nlh",
   });
-  return assertMutationOk(data, error);
+  return assertTournamentMutation(data, error);
 }
 
 export async function updateTournament(client: OpsClient, tournamentId: string, patch: {
@@ -80,7 +91,7 @@ export async function updateTournament(client: OpsClient, tournamentId: string, 
     p_minutes_per_level: patch.minutesPerLevel ?? 0,
     p_late_reg_close_level: patch.lateRegCloseLevel ?? 0,
   });
-  return assertMutationOk(data, error);
+  return assertTournamentMutation(data, error, tournamentId);
 }
 
 export async function updateTournamentLive(client: OpsClient, input: {
@@ -182,7 +193,8 @@ export async function confirmStaking(client: OpsClient, input: { purchaseId: str
       note: input.note?.trim() || undefined,
     },
   });
-  return assertMutationOk(data, error);
+  if(error)throw mutationError(error,data);
+  return assertStakingFundingReceipt(data,input.purchaseId);
 }
 
 export async function reviewVerification(client: OpsClient, input: {

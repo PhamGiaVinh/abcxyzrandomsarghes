@@ -24,56 +24,25 @@ Deno.serve(async (req) => {
     const body = parsed.data;
 
     const admin = createAdminClient();
-    const { data: deal } = await admin
-      .from("staking_deals")
-      .select("id, player_id, status, filled_percent, percentage_sold, early_closed")
-      .eq("id", body.deal_id)
-      .maybeSingle();
-    if (!deal) return json({ error: "Deal not found" }, 404);
-    if (deal.player_id !== uid) return json({ error: "Forbidden" }, 403);
-    if (deal.early_closed) return json({ error: "Already closed early" }, 409);
-    if (!["listing", "committing"].includes(String(deal.status))) {
-      return json({ error: `Cannot close from status=${deal.status}` }, 409);
-    }
-
-    // Determine new status
-    const { data: rows } = await admin
-      .from("staking_purchases")
-      .select("status, percent")
-      .eq("deal_id", deal.id);
-    const live = (rows ?? []).filter((r: any) => r.status === "committed" || r.status === "funded");
-    const totalLive = live.reduce((s, r: any) => s + Number(r.percent), 0);
-
-    let newStatus = deal.status;
-    if (totalLive === 0) newStatus = "cancelled";
-    else if (deal.status === "committing") newStatus = "committed";
-
-    const { error: upErr } = await admin
-      .from("staking_deals")
-      .update({
-        early_closed: true,
-        early_closed_at: new Date().toISOString(),
-        status: newStatus,
-        cancellation_reason: newStatus === "cancelled" ? "early_closed_no_purchases" : null,
-      })
-      .eq("id", deal.id);
-    if (upErr) return json({ error: upErr.message }, 500);
-
-    await admin.from("staking_audit_logs").insert({
-      deal_id: deal.id,
-      action: "player_close_early",
-      performed_by: uid,
-      old_status: deal.status,
-      new_status: newStatus,
-      metadata: {
-        filled_percent: totalLive,
-        early_closed: true,
-      },
+    const { data, error } = await admin.rpc("close_staking_deal_early_v1", {
+      p_actor: uid, p_deal: body.deal_id,
     });
-
-    return json({ success: true, deal_status: newStatus, filled_percent: totalLive });
-  } catch (e: any) {
-    return json({ error: e?.message ?? "internal" }, 500);
+    if (error) {
+      if (error.code === "42501") return json({ error: "Forbidden" }, 403);
+      if (error.message === "staking_close_not_found") return json({ error: "Deal not found" }, 404);
+      if (["staking_close_state_conflict", "staking_close_receipt_conflict", "staking_close_retry_snapshot"].includes(error.message)) {
+        return json({ error: "Deal đã thay đổi; hãy tải lại trước khi thử đóng sớm." }, 409);
+      }
+      return json({ error: "Không xác minh được kết quả đóng sớm; hãy tải lại deal trước khi thử lại." }, 503);
+    }
+    const receipt = z.object({ success: z.literal(true),
+      deal_status: z.enum(["listing", "committed", "cancelled"]),
+      filled_percent: z.number().int().nonnegative(),
+    }).safeParse(data);
+    if (!receipt.success) return json({ error: "Không xác minh được receipt đóng sớm" }, 503);
+    return json(receipt.data);
+  } catch (e: unknown) {
+    return json({ error: e instanceof Error ? e.message : "internal" }, 500);
   }
 });
 

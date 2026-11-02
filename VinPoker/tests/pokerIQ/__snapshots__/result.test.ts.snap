@@ -37,7 +37,7 @@ exports[`computeDrillResult — canonical fixture > is deterministic (snapshot l
   ],
   "recommendedDrill": "vs_aggro",
   "resultSchemaVersion": "v1",
-  "scoringVersion": "v1",
+  "scoringVersion": "v2",
   "strengths": [
     "read_nit",
     "preflop_discipline",

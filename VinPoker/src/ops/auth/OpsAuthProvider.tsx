@@ -105,7 +105,7 @@ export function OpsAuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <SupabaseClientProvider client={opsClient}>
+    <SupabaseClientProvider client={opsClient} backendScope={import.meta.env.VITE_SUPABASE_URL}>
       <OpsAuthContext.Provider value={value}>{children}</OpsAuthContext.Provider>
     </SupabaseClientProvider>
   );

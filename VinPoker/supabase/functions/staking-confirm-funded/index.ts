@@ -1,5 +1,4 @@
-// Admin confirms VND has actually arrived in escrow bank account.
-// Effect: writes immutable escrow_transactions(fund_lock) row + flips deal status committed -> funded -> locked.
+// Legacy single-backer funding; purchase-based deals use admin-confirm-funded.
 import { parseBody, z } from "../_shared/validate.ts";
 import {
   corsHeaders,
@@ -11,85 +10,51 @@ import {
 const BodySchema = z.object({
   deal_id: z.string().uuid(),
   bank_tx_id: z.string().trim().min(1).max(200),
-  amount_vnd: z.number().min(1).max(1e10),
+  amount_vnd: z.number().int().min(1).max(1e10),
   proof_image_url: z.string().url().max(2048).nullish(),
   note: z.string().trim().max(1000).nullish(),
 });
+const ReceiptSchema = z.object({success:z.literal(true),deal_id:z.string().uuid(),status:z.literal('locked')}).strict();
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({error:'Method not allowed'},405);
 
   try {
     const auth = await authenticateUser(req);
     if (auth instanceof Response) return auth;
     const uid = auth.uid;
 
-    const admin = createAdminClient();
-    const { data: roleRow } = await admin
+    const admin = createAdminClient({retry:false});
+    const { data: roleRow, error: roleError } = await admin
       .from("user_roles")
       .select("role")
       .eq("user_id", uid)
       .eq("role", "super_admin")
       .maybeSingle();
+    if (roleError) return json({error:'Permission check unavailable'},503);
     if (!roleRow) return json({ error: "Forbidden: super_admin only" }, 403);
 
     const parsed = await parseBody(req, BodySchema, corsHeaders);
     if (!parsed.ok) return parsed.response;
     const body = parsed.data;
 
-    const { data: deal, error: dErr } = await admin
-      .from("staking_deals")
-      .select("id, status, escrow_amount_vnd, backer_id")
-      .eq("id", body.deal_id)
-      .maybeSingle();
-    if (dErr || !deal) return json({ error: "Deal not found" }, 404);
-    if (deal.status !== "committed")
-      return json({ error: `Deal must be 'committed' (current: ${deal.status})` }, 400);
-    if (!deal.backer_id) return json({ error: "Deal has no backer" }, 400);
-
-    if (body.amount_vnd !== Number(deal.escrow_amount_vnd)) {
-      return json(
-        {
-          error: "Amount mismatch",
-          expected: deal.escrow_amount_vnd,
-          received: body.amount_vnd,
-        },
-        400
-      );
+    const {data,error}=await admin.rpc('commit_staking_legacy_funding_v1',{
+      p_actor:uid,p_deal:body.deal_id,p_bank_tx:body.bank_tx_id,p_amount:body.amount_vnd,
+      p_proof:body.proof_image_url??null,p_note:body.note??null,
+    });
+    if(error){
+      const code=typeof error.message==='string'&&error.message.startsWith('staking_legacy_funding_')?error.message:'staking_legacy_funding_unavailable';
+      const status=error.code==='42501'?403:code==='staking_legacy_funding_deal_not_found'?404:
+        ['staking_legacy_funding_invalid_payload','staking_legacy_funding_amount_mismatch','staking_legacy_funding_state_conflict'].includes(code)?400:
+          code==='staking_legacy_funding_unavailable'?500:409;
+      return json({error:'Legacy funding not confirmed',code},status);
     }
-
-    // 1) Append-only ledger entry
-    const { error: txErr } = await admin.from("escrow_transactions").insert({
-      deal_id: body.deal_id,
-      transaction_type: "fund_lock",
-      amount_vnd: body.amount_vnd,
-      bank_tx_id: body.bank_tx_id,
-      proof_image_url: body.proof_image_url ?? null,
-      performed_by_admin_id: uid,
-      note: body.note ?? null,
-    });
-    if (txErr) return json({ error: `Ledger write failed: ${txErr.message}` }, 500);
-
-    // 2) Move deal to locked (committed -> funded -> locked atomically by single update)
-    const { error: updErr } = await admin
-      .from("staking_deals")
-      .update({ status: "locked" })
-      .eq("id", body.deal_id)
-      .eq("status", "committed");
-    if (updErr) return json({ error: updErr.message }, 500);
-
-    await admin.from("staking_audit_logs").insert({
-      deal_id: body.deal_id,
-      action: "funded",
-      performed_by: uid,
-      old_status: "committed",
-      new_status: "locked",
-      metadata: { bank_tx_id: body.bank_tx_id, amount_vnd: body.amount_vnd },
-    });
-
-    return json({ success: true, deal_id: body.deal_id, status: "locked" });
-  } catch (e: any) {
-    return json({ error: e.message ?? "internal" }, 500);
+    const receipt=ReceiptSchema.safeParse(data);
+    if(!receipt.success||receipt.data.deal_id!==body.deal_id)return json({error:'Funding receipt unverified'},502);
+    return json(receipt.data);
+  } catch {
+    return json({error:'Funding outcome unavailable; verify the same deal and bank transaction before retrying'},500);
   }
 });
 

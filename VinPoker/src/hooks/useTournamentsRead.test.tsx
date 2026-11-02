@@ -1,17 +1,17 @@
 import type {ReactNode} from 'react';
 import {act,renderHook,waitFor} from '@testing-library/react';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
-import {beforeEach,it,expect,vi} from 'vitest';
-const calls=vi.hoisted(()=>({from:vi.fn(),select:vi.fn(),eq:vi.fn(),in:vi.fn(),rows:[] as unknown[]}));
+import {afterEach,beforeEach,it,expect,vi} from 'vitest';
+const calls=vi.hoisted(()=>({from:vi.fn(),select:vi.fn(),eq:vi.fn(),in:vi.fn(),abortSignal:vi.fn(),rows:[] as unknown}));
 vi.mock('@/integrations/supabase/SupabaseClientContext',()=>({useSupabaseClient:()=>({from:calls.from})}));
 import {useTournaments,useActiveTournaments} from './useTournaments';
 const verifiedSession={access_token:'TEST-only-token-a'};
 it.each([useTournaments,useActiveTournaments])('keeps late old-session data separate and never includes a bearer token in cache keys (%#)',async(read)=>{
  let finish!:(value:unknown)=>void;
- const query={select:calls.select,eq:calls.eq,in:calls.in,order:vi.fn()
+ const query={select:calls.select,eq:calls.eq,in:calls.in,abortSignal:calls.abortSignal,order:vi.fn()
   .mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}))
   .mockResolvedValueOnce({data:[{id:'new-session-only'}],error:null})};
- calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);
+ calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);calls.abortSignal.mockReturnValue(query);
  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
  const provider=({children}:{children:ReactNode})=><QueryClientProvider client={client}>{children}</QueryClientProvider>;
  const view=renderHook(({session})=>read('club-a','actor-a',session),{initialProps:{session:verifiedSession},wrapper:provider});
@@ -69,10 +69,10 @@ it.each([useTournaments,useActiveTournaments])('does not share fresh tournament 
 });
 it.each([useTournaments,useActiveTournaments])('does not publish an old actor response into the new actor read (%#)',async(read)=>{
  let finish!:(value:unknown)=>void;
- const query={select:calls.select,eq:calls.eq,in:calls.in,order:vi.fn()
+ const query={select:calls.select,eq:calls.eq,in:calls.in,abortSignal:calls.abortSignal,order:vi.fn()
   .mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}))
   .mockResolvedValueOnce({data:[{id:'actor-b-only'}],error:null})};
- calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);
+ calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);calls.abortSignal.mockReturnValue(query);
  const view=renderHook(({actor})=>read('club-a',actor,verifiedSession),{initialProps:{actor:'actor-a'},wrapper:wrapper()});
  view.rerender({actor:'actor-b'});
  await waitFor(()=>expect(view.result.current.data).toEqual([{id:'actor-b-only'}]));
@@ -82,8 +82,40 @@ it.each([useTournaments,useActiveTournaments])('does not publish an old actor re
 beforeEach(()=>{
  vi.clearAllMocks();
  calls.rows=[];
- const query={select:calls.select,eq:calls.eq,in:calls.in,order:()=>Promise.resolve({data:calls.rows,error:null})};
- calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);
+ const query={select:calls.select,eq:calls.eq,in:calls.in,abortSignal:calls.abortSignal,order:()=>Promise.resolve({data:calls.rows,error:null})};
+ calls.abortSignal.mockReturnValue(query);
+ calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);calls.abortSignal.mockReturnValue(query);
+});
+afterEach(()=>vi.useRealTimers());
+it.each([useTournaments,useActiveTournaments])('rejects null and object envelopes, permits verified empty, and recovers on explicit retry (%#)',async(read)=>{
+ calls.rows=null;
+ const view=renderHook(()=>read('club-a','actor-a',verifiedSession),{wrapper:wrapper()});
+ await waitFor(()=>expect(view.result.current.isError).toBe(true));
+ expect(view.result.current.data).toBeUndefined();
+ calls.rows={rows:[]};await act(async()=>{await view.result.current.refetch();});
+ expect(view.result.current.isError).toBe(true);expect(view.result.current.data).toBeUndefined();
+ calls.rows=[];await act(async()=>{await view.result.current.refetch();});
+ await waitFor(()=>expect(view.result.current.isSuccess).toBe(true));expect(view.result.current.data).toEqual([]);
+});
+it.each([useTournaments,useActiveTournaments])('bounds hung reads and aborts their SDK request (%#)',async(read)=>{
+ vi.useFakeTimers();
+ let finish!:(value:unknown)=>void;
+ const query={select:calls.select,eq:calls.eq,in:calls.in,abortSignal:calls.abortSignal,order:()=>new Promise(resolve=>{finish=resolve;})};
+ calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);calls.abortSignal.mockReturnValue(query);calls.abortSignal.mockReturnValue(query);
+ const view=renderHook(()=>read('club-a','actor-a',verifiedSession),{wrapper:wrapper()});
+ await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+ expect(view.result.current.isError).toBe(true);
+ expect(calls.abortSignal.mock.calls[0]?.[0]?.aborted).toBe(true);
+ await act(async()=>{finish({data:[{id:'late-after-deadline'}],error:null});await vi.advanceTimersByTimeAsync(1);});
+ expect(view.result.current.isError).toBe(true);expect(view.result.current.data).toBeUndefined();
+});
+it.each([useTournaments,useActiveTournaments])('aborts a pending SDK read when its last observer unmounts (%#)',async(read)=>{
+ const query={select:calls.select,eq:calls.eq,in:calls.in,abortSignal:calls.abortSignal,order:()=>new Promise(()=>{})};
+ calls.from.mockReturnValue(query);calls.select.mockReturnValue(query);calls.eq.mockReturnValue(query);calls.in.mockReturnValue(query);calls.abortSignal.mockReturnValue(query);
+ const view=renderHook(()=>read('club-a','actor-a',verifiedSession),{wrapper:wrapper()});
+ const signal=calls.abortSignal.mock.calls[0][0] as AbortSignal;
+ expect(signal.aborted).toBe(false);view.unmount();expect(signal.aborted).toBe(true);
 });
 function wrapper(){
  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});

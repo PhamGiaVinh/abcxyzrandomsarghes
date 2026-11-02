@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, BadgeInfo, CircleDot, DatabaseZap, RefreshCw, ShieldCheck, Table2, UsersRound } from "lucide-react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
@@ -20,6 +20,9 @@ import { isOpsQuantDataHealthQ0Enabled } from "./opsQuantDataHealthGate";
 import { operationsQueryOptions, pulseQueryOptions, type OpsReadEnvelope } from "./opsIntelligenceQueryOptions";
 
 const PENDING_OBSERVED_AT = "1970-01-01T00:00:00.000Z";
+type FinanceRead = OpsReadEnvelope<Awaited<ReturnType<typeof loadFinanceSummary>>> & {
+  queryRange: ReturnType<typeof currentMonthFinanceRange>;
+};
 
 export function OpsIntelligenceCommandCenterV1({
   clubId,
@@ -34,16 +37,20 @@ export function OpsIntelligenceCommandCenterV1({
 }) {
   const client = useSupabaseClient();
   const q0Enabled = isOpsQuantDataHealthQ0Enabled();
-  const range = useMemo(() => currentMonthFinanceRange(), []);
+  const [range,setRange] = useState(currentMonthFinanceRange);
   const pulse = useQuery(pulseQueryOptions(client, clubId));
   const operations = useQuery(operationsQueryOptions(client, clubId, q0Enabled));
   const finance = useQuery({
     queryKey: ["ops", clubId, "intelligence", "finance", range.from, range.to],
-    queryFn: async (): Promise<OpsReadEnvelope<Awaited<ReturnType<typeof loadFinanceSummary>>>> => {
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    queryFn: async (): Promise<FinanceRead> => {
+      const queryRange = currentMonthFinanceRange();
       try {
-        return Object.freeze({ value: await loadFinanceSummary(client, clubId, range), availability: "exact", observedAt: new Date().toISOString(), reasonCode: null });
+        return Object.freeze({ value: await loadFinanceSummary(client, clubId, queryRange), queryRange, availability: "exact", observedAt: new Date().toISOString(), reasonCode: null });
       } catch (error) {
-        return Object.freeze({ value: null, availability: "unavailable", observedAt: new Date().toISOString(), reasonCode: error instanceof Error ? error.message : "FINANCE_READ_FAILED" });
+        return Object.freeze({ value: null, queryRange, availability: "unavailable", observedAt: new Date().toISOString(), reasonCode: error instanceof Error ? error.message : "FINANCE_READ_FAILED" });
       }
     },
   });
@@ -78,8 +85,8 @@ export function OpsIntelligenceCommandCenterV1({
   });
 
   const model = useMemo(() => {
-    const operationValue = operations.data ?? emptyOperations();
-    const pulseResult = pulse.data?.value;
+    const operationValue = operations.isError ? emptyOperations() : operations.data ?? emptyOperations();
+    const pulseResult = pulse.isError ? null : pulse.data?.value;
     const pulseValue = pulseResult?.ok ? { value: pulseResult.value, observedAt: pulse.data!.observedAt } : null;
     const supplemental: OpsSupplementalSourceInputV1[] = [
       sourceFromRead("finance-summary", "Tài chính & Đối soát", finance.data, operationValue.observedAt),
@@ -102,10 +109,14 @@ export function OpsIntelligenceCommandCenterV1({
       supplemental,
       verifiedTrackerAlertCount: tracker.data?.availability === "exact" ? tracker.data.value : null,
     });
-  }, [clubId, digest.data, finance.data, operations.data, pulse.data, pulse.error, tracker.data]);
+  }, [clubId, digest.data, finance.data, operations.data, operations.isError, pulse.data, pulse.error, pulse.isError, tracker.data]);
 
   const refresh = () => {
-    const refreshes: Promise<unknown>[] = [pulse.refetch(), operations.refetch(), finance.refetch(), digest.refetch()];
+    const nextRange=currentMonthFinanceRange();
+    setRange(nextRange);
+    const refreshes: Promise<unknown>[] = [pulse.refetch(), operations.refetch(), digest.refetch()];
+    // A new query key fetches the new cutoff. Same-millisecond refresh still rereads.
+    if(nextRange.from===range.from&&nextRange.to===range.to)refreshes.push(finance.refetch());
     if (shouldReadTrackerAlerts(FEATURES.trackerVoiceInput, operations.data?.runningTournamentIds ?? [])) refreshes.push(tracker.refetch());
     void Promise.allSettled(refreshes);
   };
@@ -139,7 +150,11 @@ export function OpsIntelligenceCommandCenterV1({
               <h2 id="ops-intelligence-board" className="text-sm font-semibold text-white">Operations Board</h2>
               <p className="mt-0.5 text-xs text-[#73867c]">Liên kết bàn, giải và assignment hiện có. Không tự suy luận số thiếu.</p>
             </div>
-            <span className="font-mono text-xs tabular-nums text-[#91a49b]">{q0Enabled && operations.data?.configuredTableCount !== null && operations.data?.configuredTableCount !== undefined ? `${operations.data.openTableCount ?? "—"} bàn đang mở · ${operations.data.configuredTableCount} bàn cấu hình` : `${model.operations.length} bàn`}</span>
+            <span className="font-mono text-xs tabular-nums text-[#91a49b]">{!operations.isError && operations.data?.availability==='exact'
+              ? operations.data.configuredTableCount !== null && operations.data.configuredTableCount !== undefined
+                ? `${operations.data.openTableCount ?? "—"} bàn đang mở · ${operations.data.configuredTableCount} bàn cấu hình`
+                : `${model.operations.length} bàn`
+              : model.operations.length ? `${model.operations.length} bàn đã đọc · chưa xác minh đầy đủ` : 'Chưa xác minh số bàn'}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-xs">
@@ -153,7 +168,8 @@ export function OpsIntelligenceCommandCenterV1({
                   <td className="px-4 py-3 font-mono tabular-nums text-[#d8bc85]">{row.currentLevel === null ? "Không có contract" : `L${row.currentLevel}`} {row.averageStack === null ? "" : `· ${formatNumber(row.averageStack)}`}</td>
                   <td className={`px-4 py-3 ${row.dealerAssignmentState === "overdue" ? "text-rose-200" : row.dealerAssignmentState === "missing" ? "text-amber-200" : "text-[#b9c8c0]"}`}>{row.dealerName ?? (row.sourceAvailability === "exact" ? "Chưa phân công" : "Chưa xác minh")}</td>
                 </tr>)}
-                {!model.operations.length && <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-[#73867c]">Chưa có bàn vận hành được đọc từ nguồn hiện hữu.</td></tr>}
+                {!model.operations.length && <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-[#73867c]">{!operations.isError && operations.data?.availability==='exact'
+                  ? 'Chưa có bàn vận hành được đọc từ nguồn hiện hữu.' : 'Không xác minh được danh sách bàn. Hãy làm mới.'}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -172,7 +188,7 @@ export function OpsIntelligenceCommandCenterV1({
         </section>
 
         <section className="col-span-12 border border-white/10 bg-[#07100c] p-4 xl:col-span-6">
-          <PanelHeading icon={<DatabaseZap className="h-4 w-4" />} title="Tài chính & Đối soát" detail={`LIVE AGGREGATE · ${formatRange(range)}`} />
+          <PanelHeading icon={<DatabaseZap className="h-4 w-4" />} title="Tài chính & Đối soát" detail={`LIVE AGGREGATE · ${formatRange(finance.data?.queryRange ?? range)}`} />
           {finance.data?.value ? <dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><DataPoint label="Doanh thu" value={formatVnd(finance.data.value.revenue.total)} /><DataPoint label="Còn lại theo range" value={formatVnd(finance.data.value.net)} /></dl> : <Unavailable detail={finance.data?.reasonCode ?? "Đang đọc nguồn tài chính."} />}
         </section>
         <section className="col-span-12 border border-white/10 bg-[#07100c] p-4 xl:col-span-6">
@@ -184,7 +200,7 @@ export function OpsIntelligenceCommandCenterV1({
       <section className="border border-white/10 bg-[#07100c]" aria-labelledby="ops-intelligence-provenance">
         <div className="flex items-center gap-2 border-b border-white/8 px-4 py-3"><ShieldCheck className="h-4 w-4 text-emerald-300" /><h2 id="ops-intelligence-provenance" className="text-sm font-semibold text-white">Source health & provenance</h2></div>
         <div className="grid divide-y divide-white/8 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
-          {model.sources.map((source) => <article key={source.sourceId} className="min-w-0 p-3"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-medium text-[#d7e3dc]">{source.label}</span><AvailabilityBadge availability={source.availability} /></div><p className="mt-2 font-mono text-[10px] leading-4 text-[#73867c]">as-of {source.asOf ?? "không do source cung cấp"}<br />receipt {formatTimestamp(source.observedAt)}</p>{source.reasonCode && <p className="mt-1 font-mono text-[10px] text-amber-200">{source.reasonCode}</p>}</article>)}
+          {model.sources.map((source) => <article key={source.sourceId} className="min-w-0 p-3"><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-medium text-[#d7e3dc]">{source.label}</span><AvailabilityBadge availability={source.availability} /></div><p className="mt-2 font-mono text-[10px] leading-4 text-[#73867c]">as-of {source.asOf ?? "không do source cung cấp"}<br />receipt {source.observedAt===PENDING_OBSERVED_AT ? 'chưa nhận phản hồi' : formatTimestamp(source.observedAt)}</p>{source.reasonCode && <p className="mt-1 font-mono text-[10px] text-amber-200">{source.reasonCode}</p>}</article>)}
         </div>
       </section>
       {showDataHealth && q0Enabled && <OpsQuantDataHealthQ0Panel clubId={clubId} baselineSources={model.sources} />}
@@ -244,4 +260,4 @@ function EmptyExact({ detail }: { detail: string }) {
 function formatNumber(value: number): string { return value.toLocaleString("vi-VN"); }
 function formatVnd(value: number): string { return `${formatNumber(value)} ₫`; }
 function formatRange(range: { from: string; to: string }): string { return `${formatTimestamp(range.from)} → ${formatTimestamp(range.to)}`; }
-function formatTimestamp(value: string): string { return new Date(value).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+function formatTimestamp(value: string): string { return new Date(value).toLocaleString("vi-VN", { timeZone:'Asia/Ho_Chi_Minh', day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); }

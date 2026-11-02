@@ -11,6 +11,8 @@ import { useTranslation } from "react-i18next";
 import { FEATURES } from "@/lib/featureFlags";
 import { ImageCarousel } from "@/components/ImageCarousel";
 import { LegacyScheduleEvidenceNote } from "@/components/LegacyScheduleEvidenceNote";
+import { Button } from "@/components/ui/button";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 const ClubDetail = () => {
   const { t } = useTranslation();
@@ -20,27 +22,55 @@ const ClubDetail = () => {
   const [tours, setTours] = useState<any[]>([]);
   const [seriesImgs, setSeriesImgs] = useState<{ image_url: string; caption: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toursLoading, setToursLoading] = useState(true);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+  const [readErrors, setReadErrors] = useState({club:false,tours:false,gallery:false});
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [contextId, setContextId] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const [{ data: c }, { data: t }] = await Promise.all([
-        supabase.from("clubs").select("*").eq("id", id!).maybeSingle(),
-        supabase.from("tournaments").select("*").eq("club_id", id!).gte("start_time", new Date(Date.now() - 24*60*60*1000).toISOString()).order("start_time"),
-      ]);
-      setClub(c); setTours(t ?? []); setLoading(false);
-      // Club "Lịch series" gallery (gated): swipeable carousel below the day/week images.
-      if (FEATURES.clubSeriesSchedule && id) {
-        const { data: imgs } = await (supabase as any)
-          .from("club_series_images")
-          .select("image_url, caption, position")
-          .eq("club_id", id)
-          .order("position");
-        setSeriesImgs(((imgs ?? []) as any[]).map((r) => ({ image_url: r.image_url, caption: r.caption ?? null })));
-      }
-    })();
-  }, [id]);
+    let active = true;
+    const controller = new AbortController();
+    setContextId(id ?? ""); setClub(null); setTours([]); setSeriesImgs([]);
+    setLoading(true); setToursLoading(true); setGalleryLoading(true); setReadErrors({club:false,tours:false,gallery:false});
+    if (!id) { setReadErrors({club:true,tours:false,gallery:false}); setLoading(false); setToursLoading(false); setGalleryLoading(false); return () => controller.abort(); }
+    const loadClub = async () => {
+      try {
+        const {data,error} = await observeTrackerContextRead(supabase.from("clubs").select("*").eq("id",id).abortSignal(controller.signal).maybeSingle());
+        if (!active) return;
+        if (error || (data !== null && (!data || data.id !== id || typeof data.name !== "string"))) throw new Error("club_read_unverified");
+        setClub(data);
+      } catch { if(active) setReadErrors(previous=>({...previous,club:true})); }
+      finally { if(active) setLoading(false); }
+    };
+    const loadTours = async () => {
+      try {
+        const {data,error} = await observeTrackerContextRead(supabase.from("tournaments").select("*").eq("club_id",id).gte("start_time",new Date(Date.now()-24*60*60*1000).toISOString()).order("start_time").abortSignal(controller.signal));
+        if (!active) return;
+        if (error || !Array.isArray(data) || data.some(row=>!row || row.club_id!==id
+          || typeof row.id!=="string" || !row.id.trim() || typeof row.name!=="string" || !row.name.trim()
+          || typeof row.start_time!=="string" || !Number.isFinite(Date.parse(row.start_time)))) throw new Error("club_tours_unverified");
+        setTours(data);
+      } catch { if(active) setReadErrors(previous=>({...previous,tours:true})); }
+      finally { if(active) setToursLoading(false); }
+    };
+    const loadGallery = async () => {
+      try {
+        if (!FEATURES.clubSeriesSchedule) return;
+        const {data,error} = await observeTrackerContextRead(supabase.from("club_series_images").select("image_url, caption, position").eq("club_id",id).order("position").abortSignal(controller.signal));
+        if (!active) return;
+        if (error || !Array.isArray(data)) throw new Error("club_gallery_unverified");
+        setSeriesImgs(data.map(r=>({image_url:r.image_url,caption:r.caption??null})));
+      } catch { if(active) setReadErrors(previous=>({...previous,gallery:true})); }
+      finally { if(active) setGalleryLoading(false); }
+    };
+    void Promise.all([loadClub(),loadTours(),loadGallery()]).finally(()=>controller.abort());
+    return () => { active=false; controller.abort(); };
+  }, [id,readAttempt]);
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  const readFailure = <div className="space-y-2 py-4"><p role="alert" className="text-sm text-destructive">{t("clubDetailRead.error")}</p><Button type="button" variant="outline" className="min-h-11" onClick={()=>setReadAttempt(attempt=>attempt+1)}>{t("clubDetailRead.retry")}</Button></div>;
+  if (loading || contextId !== (id ?? "")) return <div role="status" className="flex justify-center gap-2 py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" />{t("clubDetailRead.loading")}</div>;
+  if (readErrors.club) return readFailure;
   if (!club) return <p className="text-center py-20 text-muted-foreground">{t("clubsPage.clubNotFound")}</p>;
 
   return (
@@ -95,16 +125,16 @@ const ClubDetail = () => {
         </div>
       )}
 
-      {FEATURES.clubSeriesSchedule && seriesImgs.length > 0 && (
+      {FEATURES.clubSeriesSchedule && (galleryLoading || readErrors.gallery || seriesImgs.length > 0) && (
         <div>
           <h2 className="font-display text-lg text-gold mb-2">Lịch series</h2>
-          <ImageCarousel images={seriesImgs} />
+          {galleryLoading ? <p role="status">{t("clubDetailRead.loading")}</p> : readErrors.gallery ? readFailure : <ImageCarousel images={seriesImgs} />}
         </div>
       )}
 
       <div>
         <h2 className="font-display text-lg text-gold mb-2">{t("clubsPage.upcomingTournaments")}</h2>
-        {tours.length === 0 ? (
+        {toursLoading ? <p role="status">{t("clubDetailRead.loading")}</p> : readErrors.tours ? readFailure : tours.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("clubsPage.noTournaments")}</p>
         ) : (
           <div className="space-y-2">

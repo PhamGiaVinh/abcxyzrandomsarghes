@@ -38,6 +38,7 @@ export function TableHistoryPanel({
   const inFlightRef = useRef<number | null>(null);
   const refreshQueuedRef = useRef(false);
   const deadlineTimerRef = useRef<number | null>(null);
+  const readControllerRef=useRef<AbortController|null>(null);
   const context = `${tournamentId}:${tableId ?? ""}`;
 
   const load = useCallback(async (mode: "replace" | "append" | "refresh"): Promise<void> => {
@@ -56,15 +57,19 @@ export function TableHistoryPanel({
     inFlightRef.current = generation;
     const pageTarget = mode === "refresh" ? loadedPageCountRef.current : 1;
     let cursor = mode === "append" ? nextCursorRef.current : null;
+    const seenCursorIds = new Set<string>(cursor ? [cursor.handId] : []);
     const refreshedItems: PublicTableHistoryItem[] = [];
     let finalCursor = cursor;
     let fetchedPages = 0;
     let accessRevoked = false;
     let loadError: string | null = null;
     let timedOut = false;
+    const controller=new AbortController();
+    readControllerRef.current=controller;
     const deadline = new Promise<never>((_resolve, reject) => {
       deadlineTimerRef.current = window.setTimeout(() => {
         timedOut = true;
+        controller.abort();
         reject(new Error("TABLE_HISTORY_READ_TIMEOUT"));
       }, READ_TIMEOUT_MS);
     });
@@ -77,7 +82,7 @@ export function TableHistoryPanel({
         p_limit: PAGE_SIZE,
         p_before_created_at: cursor?.createdAt ?? null,
         p_before_id: cursor?.handId ?? null,
-      } as never), deadline]);
+      } as never).abortSignal(controller.signal), deadline]);
       if (generation !== requestGenerationRef.current) return;
       if (rpcError) {
         loadError = "Không thể tải lịch sử bàn. Dữ liệu đang hiển thị vẫn được giữ nguyên.";
@@ -92,8 +97,24 @@ export function TableHistoryPanel({
         accessRevoked = true;
         break;
       }
+      // A hand UUID is immutable across corrections. Reusing a cursor hand
+      // cannot advance keyset pagination, even if its timestamp spelling differs.
+      if (page.nextCursor && seenCursorIds.has(page.nextCursor.handId)) {
+        loadError = "Dữ liệu lịch sử không hợp lệ.";
+        break;
+      }
+      if (page.nextCursor) seenCursorIds.add(page.nextCursor.handId);
+      if (mode === "refresh" && page.items.length > 0) {
+        // A validated page can already invalidate a displayed proof. Do not
+        // keep that old winner while later pages wait/fail. Unseen rows and
+        // pagination are committed only when the complete refresh succeeds.
+        const latestPage = new Map(page.items.map((item) => [item.handId, item]));
+        setItems((previous) => previous.map((item) => latestPage.get(item.handId) ?? item));
+      }
       for (const item of page.items) {
-        if (!refreshedItems.some((seen) => seen.handId === item.handId)) refreshedItems.push(item);
+        const previousIndex = refreshedItems.findIndex((seen) => seen.handId === item.handId);
+        if (previousIndex < 0) refreshedItems.push(item);
+        else refreshedItems[previousIndex] = item;
       }
       fetchedPages += 1;
       finalCursor = page.nextCursor;
@@ -117,9 +138,15 @@ export function TableHistoryPanel({
       onAccessRevoked();
       return;
     }
-    setItems((previous) => mode === "append"
-      ? [...previous, ...refreshedItems.filter((item) => !previous.some((seen) => seen.handId === item.handId))]
-      : refreshedItems);
+    setItems((previous) => {
+      if (mode !== "append") return refreshedItems;
+      // Reads are single-flight and generation-fenced. An overlapping row from
+      // this later read must replace its old proof, not preserve a stale winner.
+      const latest = new Map(refreshedItems.map((item) => [item.handId, item]));
+      const existing = new Set(previous.map((item) => item.handId));
+      return [...previous.map((item) => latest.get(item.handId) ?? item),
+        ...refreshedItems.filter((item) => !existing.has(item.handId))];
+    });
     setNextCursor(finalCursor);
     nextCursorRef.current = finalCursor;
     if (mode === "append") loadedPageCountRef.current += fetchedPages;
@@ -128,6 +155,7 @@ export function TableHistoryPanel({
     setLoading(false);
     } catch {
       if (generation === requestGenerationRef.current) {
+        if(readControllerRef.current===controller)readControllerRef.current=null;
         setError("Không thể tải lịch sử bàn. Dữ liệu đang hiển thị vẫn được giữ nguyên.");
       }
     } finally {
@@ -159,6 +187,8 @@ export function TableHistoryPanel({
     void load("replace");
     return () => {
       requestGenerationRef.current += 1;
+      readControllerRef.current?.abort();
+      readControllerRef.current=null;
       if (deadlineTimerRef.current !== null) window.clearTimeout(deadlineTimerRef.current);
       deadlineTimerRef.current = null;
     };
@@ -185,7 +215,10 @@ export function TableHistoryPanel({
       <History className="h-4 w-4 text-[hsl(var(--viewer-neon))]" />
       <div><h2 className="text-sm font-black">Lịch sử bàn chơi</h2><p className="text-xs text-muted-foreground">Các phiên của bàn này trong đúng giải đang xem.</p></div>
     </header>
-    {error && <p role="status" className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{error}</p>}
+    {error && <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+      <p role="status">{error}</p>
+      <button type="button" disabled={loading} onClick={() => void load("refresh")} className="mt-2 min-h-11 rounded-lg border border-current px-3 font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Tải lại lịch sử</button>
+    </div>}
     {loading && visibleItems.length === 0 ? <div className="grid min-h-40 place-items-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Đang tải lịch sử…</div> : null}
     {!loading && visibleItems.length === 0 && !error ? <div className="rounded-2xl border border-dashed border-border/55 px-5 py-12 text-center text-sm text-muted-foreground">Bàn này chưa có ván đã hoàn tất.</div> : null}
     <div className="space-y-2">
@@ -200,11 +233,13 @@ export function TableHistoryPanel({
           {item.result.status === "verified" ? <div className="mt-3 divide-y divide-border/35">
             {item.result.recipients.map((recipient) => <div key={`${recipient.playerId}:${recipient.entryNumber ?? "legacy"}`} className="flex min-w-0 flex-wrap items-center gap-2 py-2">
               <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full border border-[hsl(var(--poker-gold)/0.55)] bg-secondary text-xs font-bold" aria-hidden="true">{recipient.avatarUrl ? <img src={recipient.avatarUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : recipient.name.slice(0, 2).toUpperCase()}</span>
-              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{recipient.name}</span><span className="text-[10px] text-muted-foreground">{t("tableHistory.received", "Nhận")} {recipient.potKinds.map((kind) => t(`tableHistory.${kind}`, kind === "main" ? "pot chính" : "pot phụ")).join(" + ")}</span></span>
+              <span className="min-w-0 flex-[1_1_12rem]"><span className="block break-words text-sm font-bold [overflow-wrap:anywhere]">{recipient.name}</span><span className="text-[10px] text-muted-foreground">{t("tableHistory.received", "Nhận")} {recipient.potKinds.map((kind) => t(`tableHistory.${kind}`, kind === "main" ? "pot chính" : "pot phụ")).join(" + ")}</span></span>
               {recipient.holeCards.length > 0 && <span className="flex shrink-0 gap-1" aria-label={t("tableHistory.publicCards", "Bài đã công khai của {{name}}", { name: recipient.name })}>{recipient.holeCards.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="xs" />)}</span>}
               <span className={`tracker-num ml-auto text-sm font-bold ${recipient.netDelta > 0 ? "text-emerald-400" : recipient.netDelta < 0 ? "text-rose-400" : "text-muted-foreground"}`} aria-label={`${t("tableHistory.net", "Lãi ròng")} ${formatViewerSignedChipAndBB(recipient.netDelta, item.bigBlind)}`}>{formatViewerSignedChipAndBB(recipient.netDelta, item.bigBlind)}</span>
             </div>)}
-          </div> : <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{item.result.status === "needs_attention"
+          </div> : item.result.status === "refunded" ? <p className="mt-3 rounded-lg border border-border/45 bg-background/35 px-3 py-2 text-xs text-muted-foreground">
+            {t("tableHistory.fullRefund", "Đã xác minh: hoàn trả toàn bộ cược chưa được theo.")} {item.result.refund.name} · {formatViewerChipAndBB(item.result.refund.amount, item.bigBlind)}
+          </p> : <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{item.result.status === "needs_attention"
             ? t("tableHistory.needsAttention", "Kết quả cần kiểm tra bổ sung; chưa được xác minh")
             : t("tableHistory.pending", "Kết quả đang được kiểm tra")}</p>}
           {item.board.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/35 pt-3"><span className="mr-1 text-[10px] font-bold uppercase text-muted-foreground">Board</span>{item.board.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="xs" />)}</div>}

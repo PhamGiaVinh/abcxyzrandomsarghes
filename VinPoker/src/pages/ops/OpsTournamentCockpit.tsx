@@ -26,8 +26,9 @@ import type { MockTable } from "@/components/ops/mock/opsData";
 import type { TournamentLeaderboardPlayer } from "@/types/tournament";
 import type { FloorTournamentSection } from "@/ops/floor/floorTournamentSections";
 import { useTournamentOps } from "@/ops/workspace/TournamentOpsProvider";
-import { MultiDayFloorEventPanel } from "@/components/floor/MultiDayFloorEventPanel";
-import { TvBrandingEditor } from "@/components/cashier/tournament-live/TvBrandingEditor";
+import { MultiDayFloorEventWorkspace } from "@/components/floor/MultiDayFloorEventPanel";
+import { TvBrandingEditorWorkspace } from "@/components/cashier/tournament-live/TvBrandingEditor";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 type UnappliedFloorRpcResult = { data: unknown; error: { message?: string; code?: string } | null };
 /**
@@ -57,7 +58,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
   const { id } = useParams();
   const tournamentOps = useTournamentOps();
   const supabase = useSupabaseClient();
-  const { user, loading: authLoading } = useOpsAuth();
+  const { user, session, loading: authLoading } = useOpsAuth();
   const untypedFloorRpc = useMemo(
     () => supabase.rpc.bind(supabase) as unknown as (
       name: string,
@@ -79,6 +80,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
     enabled: !!id,
     userId: user?.id ?? null,
     authLoading,
+    authEpoch: sessionReadEpoch(session),
   });
   const d = tv.data;
   const [multiDayPayoutRoute, setMultiDayPayoutRoute] = useState<{
@@ -94,7 +96,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
       if (!alive) return;
       if (error) setMultiDayPayoutRoute({ status: "error", error: error.message });
       else if (data?.phase === "final" && data.event_id) {
-        const call = supabase.rpc as unknown as (name: string, args: Record<string, unknown>) =>
+        const call = supabase.rpc.bind(supabase) as unknown as (name: string, args: Record<string, unknown>) =>
           Promise<{ data: { releaseEnabled?: boolean } | null; error: { message: string; code?: string } | null }>;
         const release = await call("multi_day_floor_read_v1", { p_event_id: data.event_id });
         if (!alive) return;
@@ -580,7 +582,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
       {tab === "payout" && multiDayPayoutRoute.status === "loading" && <div role="status">Checking payout route…</div>}
       {tab === "payout" && multiDayPayoutRoute.status === "error" && <div role="alert">Cannot verify payout route: {multiDayPayoutRoute.error}</div>}
       {tab === "payout" && multiDayPayoutRoute.status === "verified" && multiDayPayoutRoute.eventId &&
-        <MultiDayFloorEventPanel eventId={multiDayPayoutRoute.eventId} surface="payout" />}
+        <MultiDayFloorEventWorkspace eventId={multiDayPayoutRoute.eventId} surface="payout" actorId={user?.id} sessionEpoch={sessionReadEpoch(session)} />}
       {tab === "payout" && multiDayPayoutRoute.status === "other" && (
         <div className="space-y-3">
           {/* Satellite (nhập tay): giải vé trả ghế + tiền bubble (bubble nằm NGAY TRONG rows,
@@ -646,7 +648,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
             </div>
             {id && (
               <div className="mt-4">
-                <TvBrandingEditor tournamentId={id} />
+                <TvBrandingEditorWorkspace tournamentId={id} actorId={user?.id} sessionEpoch={sessionReadEpoch(session)} />
               </div>
             )}
             <a

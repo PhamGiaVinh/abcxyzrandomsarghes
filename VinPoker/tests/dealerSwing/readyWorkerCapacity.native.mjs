@@ -2,13 +2,17 @@
 // Replaces HTTP/PostgREST with guarded psql, not a deployed worker/cron proof.
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync,spawn} from 'node:child_process';import {randomUUID} from 'node:crypto';import {stripTypeScriptTypes} from 'node:module';import {runInNewContext} from 'node:vm';
 import {getDealerOperationalTables} from '../../supabase/functions/_shared/dealerOperationalTables.ts';
+import {getReadySwingDuration,getReadyRestThreshold} from '../../supabase/functions/_shared/readySwingDuration.ts';
+import {loadEligibleDealerAttendance} from '../../supabase/functions/_shared/dealerPoolEligibility.ts';
 import {authorizeInternalTrigger,authorizeSwingWorkerRequest,getIdempotencyKey,parseDealerReadyPayload} from '../../supabase/functions/_shared/internal-trigger-auth.ts';
 import ts from 'typescript';
 import {resolve,dirname} from 'node:path';import {pathToFileURL} from 'node:url';
-assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_ready_capacity_ci');
+const integratedProjections=process.argv.includes('--integrated-projections');
+const database=integratedProjections?'vinpoker_ops_cash115_qualified_c':'vinpoker_ops_ready_capacity_ci';
+assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,database);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
-function sql(input){const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];const options={input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']};return (process.platform==='win32'?execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags],options):execFileSync('psql',flags,options)).trim();}
-assert.equal(sql("SELECT current_database()||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000"),'vinpoker_ops_ready_capacity_ci|55441|17');
+function sql(input){const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];const options={input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']};return (process.platform==='win32'?execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql',...flags],options):execFileSync('psql',flags,options)).trim();}
+assert.equal(sql("SELECT current_database()||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000"),`${database}|55441|17`);
 const dir=sql('SHOW data_directory');assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');
 assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net')"),'f','no external network worker in this fixture');
 // The schema-only bootstrap omits hosted service_role's BYPASSRLS attribute.
@@ -21,15 +25,15 @@ assert.equal(sql(`SELECT rolcanlogin||'|'||rolsuper||'|'||rolbypassrls FROM pg_r
 const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims='{"role":"service_role"}';SET ROLE ${testRole};`;
 const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
 const column=v=>(assert.match(v,/^[a-z_]+$/),v);
-const rpcArgs={get_dealer_operational_tables_v1:['p_club_id'],atomic_dealer_ready_check:['p_club_id','p_attendance_id'],worker_perform_swing:['p_assignment_id','p_table_id','p_table_session_id','p_expected_version','p_next_attendance_id','p_send_to_break','p_break_duration_minutes','p_duration_minutes','p_rest_deficit_minutes']};
-const rpcCalls=[],rpcResults=[];let failRpc=null;
+const rpcArgs={get_dealer_pool_eligible_attendance_v1:['p_club_id','p_attendance_ids'],get_dealer_operational_tables_v1:['p_club_id'],atomic_dealer_ready_check:['p_club_id','p_attendance_id'],worker_perform_swing:['p_assignment_id','p_table_id','p_table_session_id','p_expected_version','p_next_attendance_id','p_send_to_break','p_break_duration_minutes','p_duration_minutes','p_rest_deficit_minutes']};
+const rpcCalls=[],rpcResults=[];let failRpc=null,workerInterleave=null;
 function rpc(name,args){assert.ok(rpcArgs[name],name);assert.deepEqual(Object.keys(args).sort(),[...rpcArgs[name]].sort());rpcCalls.push({name,args});
- const params=Object.entries(args).map(([k,v])=>`${column(k)}=>${quote(v)}`).join(',');
- const query=name==='get_dealer_operational_tables_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
+ const params=Object.entries(args).map(([k,v])=>`${column(k)}=>${Array.isArray(v)?`ARRAY[${v.map(quote).join(',')}]::uuid[]`:quote(v)}`).join(',');
+ const query=['get_dealer_operational_tables_v1','get_dealer_pool_eligible_attendance_v1'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
  const result=JSON.parse(sql(service+query));rpcResults.push({name,result});return result;
 }
-function client(){return {rpc:async(name,args)=>{if(name===failRpc)return {data:null,error:{message:'synthetic transport failure before dispatch'}};try{return {data:rpc(name,args),error:null};}catch(e){const pg=String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):\s*([^\r\n]+)/);return {data:null,error:{code:pg?.[1],message:pg?.[2]??String(e)}};}},
- from(table){assert.ok(['club_settings','swing_config','dealer_assignments','cron_metrics'].includes(table));let columns=[],conditions=[],ordering='',maximum='';
+function client(){return {rpc:async(name,args)=>{if(name===failRpc)return {data:null,error:{message:'synthetic transport failure before dispatch'}};try{if(name==='worker_perform_swing'&&workerInterleave)return await workerInterleave(args);return {data:rpc(name,args),error:null};}catch(e){if(workerInterleave)console.log('READY153_INTERLEAVE_DIAGNOSTIC',String(e));const pg=String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):\s*([^\r\n]+)/);return {data:null,error:{code:pg?.[1],message:pg?.[2]??String(e)}};}},
+ from(table){assert.ok(['club_settings','swing_config','swing_configs','tournaments','dealer_assignments','cron_metrics'].includes(table));let columns=[],conditions=[],ordering='',maximum='';
   const q={select(value){columns=value.split(',').map(x=>column(x.trim()));return q;},eq(k,v){conditions.push(`${column(k)}=${quote(v)}`);return q;},
    in(k,values){assert.ok(Array.isArray(values)&&values.length<=100);conditions.push(`${column(k)} IN (${values.map(quote).join(',')})`);return q;},
    is(k,v){assert.equal(v,null);conditions.push(`${column(k)} IS NULL`);return q;},lt(k,v){conditions.push(`${column(k)}<${quote(v)}`);return q;},
@@ -40,15 +44,15 @@ function client(){return {rpc:async(name,args)=>{if(name===failRpc)return {data:
   };return q;},
  };}
 const source=stripTypeScriptTypes(readFileSync('supabase/functions/process-swing-on-dealer-ready/index.ts','utf8').replace(/^import[\s\S]*?from\s+["'][^"']+["'];\s*/gm,''));let handler;
-runInNewContext(source,{Request,Response,Date,console,getDealerOperationalTables,getIdempotencyKey,parseDealerReadyPayload,
+runInNewContext(source,{Request,Response,Date,console,getDealerOperationalTables,getReadySwingDuration,getReadyRestThreshold,loadEligibleDealerAttendance,getIdempotencyKey,parseDealerReadyPayload,
  authorizeInternalTrigger:req=>authorizeInternalTrigger(req,'synthetic-secret'),authorizeSwingWorkerRequest:req=>authorizeSwingWorkerRequest(req,'synthetic-worker','synthetic-internal'),createClient:client,
  Deno:{env:{get:k=>({SUPABASE_URL:'https://synthetic.invalid',SUPABASE_SERVICE_ROLE_KEY:'synthetic-worker'})[k]},serve:fn=>{handler=fn;}}});
 async function dispatch(club,attendance,key=randomUUID()){
  const r=await handler(new Request('https://synthetic.invalid/functions/v1/process-swing-on-dealer-ready',{method:'POST',headers:{Authorization:'Bearer synthetic-worker','Content-Type':'application/json','x-idempotency-key':key},body:JSON.stringify({club_id:club,attendance_id:attendance})}));
  return {status:r.status,body:await r.json()};
 }
-function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(),rows=Array.from({length:size},()=>({table:randomUUID(),session:randomUUID(),oldDealer:randomUUID(),oldAttendance:randomUUID(),nextDealer:randomUUID(),nextAttendance:randomUUID()}));
- sql(`INSERT INTO auth.users(id) VALUES('${owner}');INSERT INTO public.clubs(id,owner_id,name,region) VALUES('${club}','${owner}','Ready capacity TEST ${size}','TEST');
+function seed(size,{atomic=false}={}){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(),rows=Array.from({length:size},()=>({table:randomUUID(),session:randomUUID(),oldDealer:randomUUID(),oldAttendance:randomUUID(),nextDealer:randomUUID(),nextAttendance:randomUUID()}));
+ sql(`${atomic?'BEGIN;':''}INSERT INTO auth.users(id) VALUES('${owner}');INSERT INTO public.clubs(id,owner_id,name,region) VALUES('${club}','${owner}','Ready capacity TEST ${size}','TEST');
  INSERT INTO public.club_settings(club_id,auto_swing_enabled) VALUES('${club}',true);
  UPDATE public.swing_config SET rotation_planner_enabled=false WHERE club_id='${club}' AND table_type='tournament';
  INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES('${shift}','${club}','Ready capacity TEST','00:00','23:59');
@@ -57,8 +61,18 @@ function seed(size){const owner=randomUUID(),club=randomUUID(),shift=randomUUID(
  INSERT INTO public.dealers(id,club_id,full_name,status) VALUES('${r.oldDealer}','${club}','Old TEST ${n}','active'),('${r.nextDealer}','${club}','Next TEST ${n}','active');
  INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state) VALUES('${r.oldAttendance}','${r.oldDealer}','${shift}',current_date,'checked_in',now()-interval '90 minutes','available'),('${r.nextAttendance}','${r.nextDealer}','${shift}',current_date,'checked_in',now()-interval '90 minutes','available');`).join('\n')}
  ${service} DO $$ DECLARE result jsonb;BEGIN ${rows.map(r=>`result:=public.worker_assign_dealer_to_session_v1('${club}','${r.table}','${r.session}','${r.oldAttendance}',now()+interval '45 minutes','capacity_old_${r.oldAttendance}');IF result->>'outcome' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'capacity_seed_assignment_failed:%',result;END IF;`).join('\n')}END $$;
- RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;`);
+ RESET ROLE;UPDATE public.dealer_assignments SET assigned_at=now()-interval '90 minutes',swing_due_at=now()-interval '1 minute' WHERE club_id='${club}' AND released_at IS NULL;${atomic?'COMMIT;':''}`);
  return {club,owner,rows};
+}
+if(process.argv.includes('--edge-compensation153')){
+ assert.ok(integratedProjections);
+ const {runReadyEdgeCompensation153}=await import('./workerContention150.native.mjs');
+ await runReadyEdgeCompensation153({sql,seed,service,dispatch,quote,setWorkerInterleave:hook=>{workerInterleave=hook;}});
+}
+if(process.argv.includes('--worker-contention40')||process.argv.includes('--shared-incoming-contention')){
+ assert.ok(integratedProjections);
+ const {runWorkerContention150}=await import('./workerContention150.native.mjs');
+ await runWorkerContention150({sql,seed,service,sharedIncoming:process.argv.includes('--shared-incoming-contention'),compensation:process.argv.includes('--rest-deficit-contention'),fallbackDeficit:process.argv.includes('--fallback-deficit-contention')});
 }
 if(process.argv.includes('--dispatcher-due')){
  const club=randomUUID(),owner=randomUUID(),table=randomUUID();
@@ -862,17 +876,115 @@ if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')
  console.log('EMERGENCY106_DUPLICATE_RAW_CANCEL_OFF_CLOSE_OVERLAP_AND_LOCK_ORDER_PASS');
  }
 }
-const sizes=['--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--execution-overlap','--execution-negative','--dispatch-overlap','--dispatcher-due','--lock-authority','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
+if(process.argv.includes('--wall-clock-soak')){
+ // Only this dedicated CI/native database: never change existing club settings,
+ // wall clock, release timestamps or policy to make elapsed-rest checks pass.
+ const c=seed(2),started=Date.now();let stopped=false;
+ const otherSettings=()=>sql(`SELECT md5(coalesce(jsonb_agg(to_jsonb(s) ORDER BY club_id),'[]')::text) FROM public.club_settings s WHERE club_id<>'${c.club}';`);
+ const otherBefore=otherSettings();
+ const stopRequest=data=>{if(String(data).trim()==='stop')stopped=true;};
+ process.stdin.setEncoding('utf8');process.stdin.on('data',stopRequest);process.stdin.resume();
+ const active=()=>JSON.parse(sql(`SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'attendance',attendance_id,
+  'table',table_id,'session',table_session_id,'assigned_at',assigned_at,'due',swing_due_at) ORDER BY table_id),'[]')
+  FROM public.dealer_assignments WHERE club_id='${c.club}' AND status='assigned' AND released_at IS NULL;`));
+ console.log('READY_WALL_CLOCK_SOAK_STARTED',JSON.stringify({club:c.club,tables:c.rows.map(r=>({table:r.table,session:r.session})),
+  old:c.rows.map(r=>r.oldAttendance),next:c.rows.map(r=>r.nextAttendance),started:new Date(started).toISOString(),
+  fixture:'dedicated-native-db-only',initialAssignmentAgedFixture:true,subsequentTimestampsUnmodified:true}));
+ try{
+  for(let cycle=1;cycle<=3;cycle++){
+   if(cycle>1){
+    const due=Math.max(...active().map(a=>Date.parse(a.due)));
+    assert.ok(Number.isFinite(due)&&due-Date.now()<46*60_000,'unexpected configured duration; never shorten it for soak');
+    while(Date.now()<=due+250){
+     assert.equal(stopped,false,'wall-clock soak stopped by operator');
+     assert.ok(Date.now()-started<95*60_000,'wall-clock soak exceeded configured budget');
+     console.log('READY_WALL_CLOCK_SOAK_WAIT',JSON.stringify({cycle,now:new Date().toISOString(),due:new Date(due).toISOString(),active:active()}));
+     await new Promise(resolve=>setTimeout(resolve,Math.min(30_000,Math.max(1,due+251-Date.now()))));
+    }
+   }
+   assert.equal(stopped,false,'wall-clock soak stopped by operator');
+   const incoming=c.rows.map(r=>cycle%2===1?r.nextAttendance:r.oldAttendance);
+   const rest=JSON.parse(sql(`SELECT jsonb_agg(jsonb_build_object('attendance',a.id,
+    'elapsed_rest_seconds',extract(epoch FROM(clock_timestamp()-(SELECT max(released_at) FROM public.dealer_assignments x WHERE x.attendance_id=a.id AND x.released_at IS NOT NULL)))))
+    FROM public.dealer_attendance a WHERE a.id IN(${incoming.map(quote).join(',')});`));
+   if(cycle>1)assert.ok(rest.every(r=>Number(r.elapsed_rest_seconds)>=900),'incoming dealer did not rest15 real minutes');
+   for(const attendance of incoming){
+    const key=randomUUID(),result=await dispatch(c.club,attendance,key);
+    assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));
+    const replay=await dispatch(c.club,attendance,key);assert.equal(replay.status,200);assert.equal(replay.body.skipped,'state_changed',JSON.stringify(replay));
+   }
+   const rows=active();assert.equal(rows.length,2);
+   assert.deepEqual(rows.map(r=>r.attendance).sort(),[...incoming].sort());
+   assert.equal(new Set(rows.map(r=>r.session)).size,2);
+   assert.ok(rows.every(a=>c.rows.some(r=>r.table===a.table&&r.session===a.session)),'session changed during soak');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${c.club}' AND released_at IS NOT NULL;`),String(cycle*2));
+   console.log('READY_WALL_CLOCK_CYCLE_PASS',JSON.stringify({cycle,elapsed_ms:Date.now()-started,rest,active:rows}));
+  }
+  assert.equal(sql(`SELECT count(*) FROM public.cron_metrics WHERE club_id='${c.club}' AND cron_name='process-swing-on-dealer-ready' AND status='success' AND processed_count=1;`),'6');
+  assert.equal(otherSettings(),otherBefore,'other club settings changed');
+  console.log('READY_WALL_CLOCK_3_CYCLES_PASS',JSON.stringify({club:c.club,elapsed_ms:Date.now()-started,
+   scope:'actual-ready-handler-real-PG-local-tick-not-hosted-cron-or-browser'}));
+ }finally{
+  sql(`UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';`);
+  assert.equal(sql(`SELECT auto_swing_enabled FROM public.club_settings WHERE club_id='${c.club}';`),'f');
+  process.stdin.removeListener('data',stopRequest);process.stdin.pause();
+  console.log('READY_WALL_CLOCK_SOAK_FIXTURE_AUTO_OFF_AUDIT_RETAINED',c.club);
+ }
+}
+if(integratedProjections)for(const signature of ['public.get_table_assignments_with_next(uuid)','public.get_dealer_swing_health(uuid[])'])
+ assert.equal(sql(`SELECT to_regprocedure('${signature}') IS NOT NULL;`),'t','qualified projection contract required; never apply schema here');
+const sizes=process.argv.includes('--worker-contention40')||process.argv.includes('--shared-incoming-contention')||process.argv.includes('--edge-compensation153')?[]:integratedProjections?[40]:['--wall-clock-soak','--negative','--overlap','--anchor-overlap','--rotation-auth-overlap','--execution-overlap','--execution-negative','--dispatch-overlap','--dispatcher-due','--lock-authority','--completion-auth','--cancel-auth','--lock-auth','--legacy','--adoption','--emergency-stale','--planner','--main-worker'].some(flag=>process.argv.includes(flag))?[]:process.argv.includes('--small')?[2]:[2,10,40];
 for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
+ const money=()=>sql(`SELECT md5(jsonb_build_array((SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.cashier_buyin_movements x),
+  (SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.chip_inventory_ledger x),
+  (SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.chip_bank_ledger x),
+  (SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_prize_payments x))::text);`);
+ const beforeMoney=integratedProjections?money():null;
+ const otherSettings=()=>sql(`SELECT md5(coalesce(jsonb_agg(to_jsonb(s) ORDER BY club_id),'[]')::text) FROM public.club_settings s WHERE club_id<>'${c.club}';`);
+ const beforeSettings=integratedProjections?otherSettings():null;
+ const owner=`RESET ROLE;SET request.jwt.claim.sub='${c.owner}';SET request.jwt.claim.role='authenticated';SET request.jwt.claims='{"sub":"${c.owner}","role":"authenticated"}';SET ROLE authenticated;`;
+ const checkProjection=(expectedTables,expectedOverdue)=>{
+  const predictions=JSON.parse(sql(owner+`SELECT coalesce(jsonb_agg(to_jsonb(p)),'[]') FROM public.get_table_assignments_with_next('${c.club}')p;`));
+  const health=JSON.parse(sql(owner+`SELECT public.get_dealer_swing_health(ARRAY['${c.club}'::uuid]);`));
+  const inventory=rpc('get_dealer_operational_tables_v1',{p_club_id:c.club});
+  assert.equal(predictions.length,expectedTables);assert.equal(new Set(predictions.map(p=>p.table_id)).size,expectedTables);
+  assert.equal(inventory.length,expectedTables);assert.equal(health.length,1);assert.equal(health[0].club_id,c.club);
+  assert.equal(health[0].overdue_now,expectedOverdue);
+  assert.deepEqual(predictions.map(p=>p.table_id).sort(),inventory.map(t=>t.id).sort());
+  const current=JSON.parse(sql(`SELECT jsonb_agg(jsonb_build_object('table',a.table_id,'session',a.table_session_id,'name',d.full_name) ORDER BY a.table_id)
+   FROM public.dealer_assignments a JOIN public.dealer_attendance att ON att.id=a.attendance_id JOIN public.dealers d ON d.id=att.dealer_id
+   WHERE a.club_id='${c.club}' AND a.status='assigned' AND a.released_at IS NULL;`));
+  assert.equal(current.length,expectedTables);
+  for(const row of current){assert.equal(predictions.find(p=>p.table_id===row.table)?.current_dealer,row.name);
+   assert.equal(inventory.find(t=>t.id===row.table)?.table_session_id,row.session);}
+  console.log('READY_INTEGRATED_PROJECTIONS_CHECK',JSON.stringify({club:c.club,swings:count,tables:expectedTables,overdue:expectedOverdue}));
+ };
+ try{
+ if(integratedProjections)checkProjection(size,size);
  for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
   const replay=await dispatch(c.club,row.nextAttendance);assert.equal(replay.status,200);assert.equal(replay.body.skipped,'state_changed');
   if(count%10===0)console.log(JSON.stringify({phase:size,completed:count}));
+  if(integratedProjections&&count%10===0)checkProjection(size,size-count);
  }
  assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${c.club}' AND status='assigned' AND released_at IS NULL;`),String(size));
  assert.equal(sql(`SELECT count(DISTINCT attendance_id)||'|'||count(DISTINCT table_session_id) FROM public.dealer_assignments WHERE club_id='${c.club}' AND status='assigned' AND released_at IS NULL;`),`${size}|${size}`);
  assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${c.club}' AND released_at IS NOT NULL;`),String(size));
  assert.equal(sql(`SELECT count(*) FROM public.cron_metrics WHERE club_id='${c.club}' AND cron_name='process-swing-on-dealer-ready' AND status='success' AND processed_count=1;`),String(size));
  console.log(JSON.stringify({ready_capacity:size,actual_swings:count,replays:count,elapsed_ms:Date.now()-start,scope:'isolated-native-psql-not-HTTP'}));
+ if(integratedProjections){
+  const row=c.rows[0],revision=sql(`SELECT revision FROM public.table_sessions WHERE id='${row.session}';`);
+  const closed=JSON.parse(sql(owner+`SELECT public.operator_close_club_table_v2('${row.session}',${revision},'${randomUUID()}');`));
+  assert.equal(closed.ok,true);checkProjection(size-1,0);
+  const late=JSON.parse(sql(service+`SELECT public.worker_assign_dealer_to_session_v1('${c.club}','${row.table}','${row.session}','${row.oldAttendance}',now()+interval '30 minutes','integrated_closed_${randomUUID()}');`));
+  assert.equal(late.outcome,'table_session_changed');checkProjection(size-1,0);
+  console.log('READY40_SWAPS_REPLAYS_PREDICTION_HEALTH_CLOSE_LATE_SESSION_PASS',c.club);
+ }
+ }finally{
+  if(integratedProjections){sql(`RESET ROLE;UPDATE public.club_settings SET auto_swing_enabled=false WHERE club_id='${c.club}';`);
+   assert.equal(sql(`SELECT auto_swing_enabled FROM public.club_settings WHERE club_id='${c.club}';`),'f');
+   assert.equal(money(),beforeMoney);assert.equal(otherSettings(),beforeSettings);
+   console.log('READY_INTEGRATED_FIXTURE_AUTO_OFF_MONEY_OTHER_CLUB_SETTINGS_UNCHANGED',c.club);}
+ }
 }
 console.log('READY_EDGE_NATIVE_CAPACITY_PASS');

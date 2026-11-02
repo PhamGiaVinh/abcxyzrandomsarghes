@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect,useRef, useState } from "react";
+import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranslation } from "react-i18next";
-import { Camera, Loader2, User as UserIcon } from "lucide-react";
+import { Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/compressImage";
+import {sessionReadEpoch} from '@/lib/sessionReadEpoch';
 
 interface Props {
   avatarUrl?: string | null;
@@ -12,45 +13,50 @@ interface Props {
   onUploaded: (url: string) => void;
 }
 
-export const AvatarUploader = ({ avatarUrl, displayName, onUploaded }: Props) => {
-  const { user } = useAuth();
+export const AvatarUploader = (props:Props) => {
+  const {user,session}=useAuth();
+  return <AvatarUploadScope key={JSON.stringify([user?.id,sessionReadEpoch(session)])} {...props} actorId={user?.id}/>;
+};
+function AvatarUploadScope({avatarUrl,displayName,onUploaded,actorId}:Props&{actorId:string|undefined}){
+  const supabase=useSupabaseClient();
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const live=useRef(false),inflight=useRef(false);
+  useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
 
   const handleFile = async (rawFile: File) => {
-    if (!user) return;
+    if (!actorId||!live.current||inflight.current) return;
     if (rawFile.size > 10 * 1024 * 1024) {
       toast.error(t("account.avatarTooLarge"));
       return;
     }
-    setUploading(true);
-    const file = await compressImage(rawFile, { maxEdge: 800, quality: 0.85 });
-    const ext = file.type === "image/png" ? "png" : "jpg";
-    const path = `${user.id}/avatar-${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
-      upsert: true,
-      cacheControl: "3600",
-      contentType: file.type,
-    });
-    if (upErr) {
-      setUploading(false);
-      toast.error(upErr.message);
-      return;
-    }
-    const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-    const publicUrl = data.publicUrl;
-    const { error: updErr } = await supabase
-      .from("profiles")
-      .update({ avatar_url: publicUrl })
-      .eq("user_id", user.id);
-    setUploading(false);
-    if (updErr) {
-      toast.error(updErr.message);
-      return;
-    }
-    onUploaded(publicUrl);
-    toast.success(t("account.avatarUpdated"));
+    inflight.current=true;setUploading(true);
+    try{
+      const file = await compressImage(rawFile, { maxEdge: 800, quality: 0.85 });
+      if(!live.current)return;
+      const ext = file.type === "image/png" ? "png" : "jpg";
+      const path = `${actorId}/avatar-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
+        upsert: true,
+        cacheControl: "3600",
+        contentType: file.type,
+      });
+      if(!live.current)return;
+      if(upErr)throw upErr;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+      const { error: updErr } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("user_id", actorId);
+      if(!live.current)return;
+      if(updErr)throw updErr;
+      onUploaded(publicUrl);
+      toast.success(t("account.avatarUpdated"));
+    }catch(cause){
+      if(live.current)toast.error(cause&&typeof cause==='object'&&'message' in cause?String(cause.message):t('common.error'));
+    }finally{inflight.current=false;if(live.current)setUploading(false);}
   };
 
   const initial = (displayName?.[0] || "?").toUpperCase();
@@ -60,7 +66,8 @@ export const AvatarUploader = ({ avatarUrl, displayName, onUploaded }: Props) =>
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        disabled={uploading}
+        disabled={uploading||!actorId}
+        aria-label={t("account.avatarHint")}
         className="relative w-20 h-20 rounded-full overflow-hidden gradient-gold flex items-center justify-center shadow-gold border-2 border-gold/40 hover:opacity-90 transition group"
       >
         {avatarUrl ? (
@@ -80,6 +87,7 @@ export const AvatarUploader = ({ avatarUrl, displayName, onUploaded }: Props) =>
       <input
         ref={inputRef}
         type="file"
+        disabled={uploading||!actorId}
         accept="image/*"
         className="hidden"
         onChange={(e) => {

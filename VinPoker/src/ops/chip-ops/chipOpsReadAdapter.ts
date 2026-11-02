@@ -35,16 +35,18 @@ type OpsClient = SupabaseClient<Database>;
 export async function loadChipOpsTournamentOptions(
   client: OpsClient,
   clubId: string,
+  signal?: AbortSignal,
 ): Promise<ChipOpsTournamentOption[]> {
-  const result = await client
+  const query = client
     .from("tournaments")
     .select("id, name, status, start_time, phase")
     .eq("club_id", clubId)
     .is("deleted_at", null)
     .order("start_time", { ascending: false })
     .limit(200);
-  if (result.error) throw new Error("CHIP_OPS_TOURNAMENT_READ_FAILED");
-  return (result.data ?? []).map((row) => ({
+  const result = await (signal ? query.abortSignal(signal) : query);
+  if (result.error || !Array.isArray(result.data)) throw new Error("CHIP_OPS_TOURNAMENT_READ_FAILED");
+  return result.data.map((row) => ({
     id: row.id,
     name: row.name,
     status: row.status,
@@ -56,10 +58,12 @@ export async function loadChipOpsTournamentOptions(
 export async function loadIssuedChipInventory(
   client: OpsClient,
   tournamentId: string,
+  signal?: AbortSignal,
 ): Promise<IssuedChipInventory> {
-  const result = await client.rpc("get_issued_chip_inventory", {
+  const query = client.rpc("get_issued_chip_inventory", {
     p_tournament_id: tournamentId,
   });
+  const result = await (signal ? query.abortSignal(signal) : query);
   if (result.error) throw new Error("CHIP_OPS_INVENTORY_READ_FAILED");
   return parseIssuedChipInventory(result.data, tournamentId);
 }
@@ -67,20 +71,26 @@ export async function loadIssuedChipInventory(
 export async function loadIssuedStackSummary(
   client: OpsClient,
   tournamentId: string,
+  signal?: AbortSignal,
 ): Promise<IssuedStackSummary> {
-  const templatesResult = await client.from("stack_template")
+  const templatesQuery = client.from("stack_template")
     .select("id, name, stack_value")
     .eq("tournament_id", tournamentId)
     .order("stack_value", { ascending: true });
+  const templatesResult = await (signal ? templatesQuery.abortSignal(signal) : templatesQuery);
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   if (templatesResult.error) throw new Error("CHIP_OPS_TEMPLATE_READ_FAILED");
-  const templates = templatesResult.data ?? [];
+  if (!Array.isArray(templatesResult.data)) throw new Error("CHIP_OPS_TEMPLATE_MALFORMED");
+  const templates = templatesResult.data;
   if (!templates.length) return { templates: [], totalIssuedStacks: 0 };
 
-  const issuanceResult = await client.from("stack_template_issuance")
+  const issuanceQuery = client.from("stack_template_issuance")
     .select("stack_template_id, issued_count")
     .in("stack_template_id", templates.map((row) => row.id));
+  const issuanceResult = await (signal ? issuanceQuery.abortSignal(signal) : issuanceQuery);
   if (issuanceResult.error) throw new Error("CHIP_OPS_ISSUANCE_READ_FAILED");
-  return parseIssuedStackSummary(templates, issuanceResult.data ?? []);
+  if (!Array.isArray(issuanceResult.data)) throw new Error("CHIP_OPS_ISSUANCE_MALFORMED");
+  return parseIssuedStackSummary(templates, issuanceResult.data);
 }
 
 export function parseIssuedStackSummary(

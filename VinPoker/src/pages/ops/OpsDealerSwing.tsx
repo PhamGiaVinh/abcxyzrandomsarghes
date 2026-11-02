@@ -257,7 +257,8 @@ function DealerSwingClubView({
       const dealer = a?.dealer_attendance?.dealers?.full_name ?? null;
       const next = a?.pre_assigned?.dealers?.full_name ?? null;
       return {
-        id: t.id, clubId: t.club_id, name: t.table_name, assignment: a ?? null,
+        id: t.id, clubId: t.club_id, tableSessionId: t.table_session_id ?? null,
+        name: t.table_name, assignment: a ?? null,
         dealer, next, missing: !a,
         since: a ? hhmm(a.assigned_at) : "—",
       };
@@ -343,8 +344,18 @@ function DealerSwingClubView({
 
   // Gán 1 dealer cụ thể vào bàn → edge assign-dealer force_dealer_id (mirror confirmAssign)
   const doAssign = (t: TableVM, d: DealerAttendance) => runAction(async () => {
+    const current = tablesQ.data?.find((row) => row.id === t.id && row.club_id === activeClubId);
+    if (!user?.id || t.clubId !== activeClubId || !t.tableSessionId
+      || current?.table_session_id !== t.tableSessionId || current.status !== "active") {
+      toast.error("Phiên bàn đã thay đổi hoặc chưa được xác minh. Tải lại trước khi gán dealer.");
+      setPickFor(null);
+      reloadAll();
+      return;
+    }
     const { data, error } = await supabase.functions.invoke("assign-dealer", {
-      body: { table_id: t.id, force_dealer_id: d.dealer_id, requested_by: user?.id, idempotency_key: crypto.randomUUID() },
+      body: { table_id: t.id, table_session_id: t.tableSessionId, force_dealer_id: d.dealer_id,
+        requested_by: user.id, expected_actor_id: user.id, expected_club_id: t.clubId,
+        idempotency_key: crypto.randomUUID() },
     });
     if (error) {
       let detail = error.message;
@@ -1235,6 +1246,7 @@ function DealerSwingClubView({
 
       {phoneCompletionQ.allowed && (
         <DealerPhoneCheckinSheet
+          actorId={user?.id??null}
           open={checkinOpen}
           activeClubId={activeClubId}
           scheduleAssignments={todayScheduleAssignments}
@@ -1275,7 +1287,7 @@ function DealerSwingClubView({
 }
 
 interface TableVM {
-  id: string; clubId: string; name: string;
+  id: string; clubId: string; tableSessionId: string | null; name: string;
   assignment: EnrichedAssignment | null;
   dealer: string | null; next: string | null; missing: boolean; since: string;
 }

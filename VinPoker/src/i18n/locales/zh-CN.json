@@ -1,4 +1,10 @@
 {
+  "clubDetailRead": {"error":"无法加载俱乐部资料，请重试。","retry":"重新加载","loading":"正在加载俱乐部资料…"},
+  "rankingReview": {"title":"场务确认名次","note":"只能在同一手牌淘汰组内交换名次。此确认不会结束赛事，也不会记录奖金支付。","storage":"无法安全读取或保存请求。请重新加载页面，核对之前的请求后再继续。","readError":"无法核实名次列表。请重新加载后再确认。","unknown":"结果尚未核实。原请求已保留以供核对，请勿创建新请求。","changed":"数据或条件已变化，此请求被拒绝。请检查最新名次。","recorded":"名次确认已记录，正在刷新赛事结束状态。","historical":"已核对旧请求，但其来源已变化。请检查并重新确认当前名次。","loading":"正在核实名次…","pending":"尚未核实的请求已保留，请勿发送新请求。","check":"核对已保存的请求","retrySame":"重发同一已保存请求","reload":"重新加载名次","notReady":"确认需要唯一获胜者，以及完整的手牌和淘汰顺序证据。","approved":"确认回执已保存，赛事结束条件仍会另行检查。","up":"将{{name}}在组内排名上调","down":"将{{name}}在组内排名下调","confirm":"确认场务选择的顺序","group":"同一手牌淘汰组 {{group}}","reference":"参赛记录编号 {{reference}}"},
+  "publicScheduleRead": { "loading": "正在加载赛事日程…", "error": "无法加载赛事日程，暂时无法确认是否有日程。请重试。", "retry": "重新加载赛事日程" },
+  "trackerSkipRevealNote": "仅当选择“不亮牌继续”时：观众端不会显示底牌，您仍须在摊牌阶段手动选择结果。",
+  "baggedFlightRelease": { "title": "释放已封袋牌桌", "note": "仅在封袋已锁定且核对无误后关闭该牌桌场次。保留筹码、参赛记录和历史；不算淘汰，也不发放筹码或奖金。", "refresh": "刷新牌桌状态", "loading": "正在核实牌桌场次…", "readError": "牌桌状态尚未核实。请刷新并检查场次和座位后再操作。", "unknown": "结果尚未核实。原请求已保留；请检查进行中的牌局、移座、更正或待处理的模式切换，再重试同一请求。", "recover": "检查已保存的释放请求", "peer": "另一场初赛有尚未核实的释放请求。", "bagFirst": "释放牌桌前，请先在筹码管理中锁定封袋。", "released": "该牌桌场次已释放，筹码仍保留在袋中。", "release": "释放此牌桌", "confirm": "确认释放牌桌场次", "cancel": "取消" },
+  "mainEventCreate": { "guaranteeLabel": "主赛事总保底（VND）", "guaranteeNote": "整个主赛事共用一项保底承诺，不按初赛场次累加，也不视为已注入奖池的资金。尚未公布时请留空。", "guaranteeMissing": "主赛事保底尚未公布", "guaranteeNone": "主赛事无保底承诺", "guaranteeValue": "主赛事总保底：{{amount}}", "invalidMoney": "服务费和保底必须是安全数值范围内的非负整数越南盾。" },
   "legacyScheduleEvidence": "此处未提供该图片的来源、版本及审核信息。请向俱乐部确认最新赛程。",
   "createAtomic": { "signin": "创建比赛前请先登录。", "storageError": "无法读取或保存待处理的创建请求。未发送新请求。", "unknown": "尚未确认创建结果。重试前请检查上次请求。", "check": "检查上次请求", "retry": "重发原请求", "pending": "上次创建请求的结果尚未确认。创建其他比赛前请先检查。重发将使用原始数据，而非刚编辑的内容。" },
   "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
@@ -19,7 +25,10 @@
   "floorReadiness": { "unavailable": "参赛人数尚未核实" },
   "clockControl": { "loadError": "无法加载计时器控制。" },
   "stack_projection_mismatch": "座位、参赛记录与筹码记录不一致",
-  "participation": {"repairRequired":"需要修复数据","repairHint":"保留这些记录以供核查，不计入当前座位，也不可用于操作。","loadError":"无法加载玩家，请刷新。","stale":"正在显示旧数据，操作暂时禁用。","reasons":{"missing_entry":"座位缺少参赛记录","entry_identity_mismatch":"参赛身份不匹配","entry_not_live":"参赛记录已不活跃","missing_table_session":"缺少牌桌或会话","closed_session":"牌桌会话已关闭","inactive_table":"牌桌不活跃","table_session_mismatch":"牌桌与会话不匹配","seat_out_of_range":"座位超出容量","duplicate_entry_seat":"参赛记录有多个活跃座位","duplicate_seat_position":"座位位置重复","duplicate_entry_generation":"参赛次数记录重复","missing_active_seat":"已入座记录无有效座位"}},
+  "participation": {
+    "bagged": "已封袋",
+    "baggedHint": "已封袋筹码仅供核对；这些玩家并非等待入座。",
+    "noBagged": "没有匹配的已封袋参赛记录。","repairRequired":"需要修复数据","repairHint":"保留这些记录以供核查，不计入当前座位，也不可用于操作。","loadError":"无法加载玩家，请刷新。","stale":"正在显示旧数据，操作暂时禁用。","reasons":{"missing_entry":"座位缺少参赛记录","entry_identity_mismatch":"参赛身份不匹配","entry_not_live":"参赛记录已不活跃","missing_table_session":"缺少牌桌或会话","closed_session":"牌桌会话已关闭","inactive_table":"牌桌不活跃","table_session_mismatch":"牌桌与会话不匹配","seat_out_of_range":"座位超出容量","duplicate_entry_seat":"参赛记录有多个活跃座位","duplicate_seat_position":"座位位置重复","duplicate_entry_generation":"参赛次数记录重复","missing_active_seat":"已入座记录无有效座位"}},
   "trackerCards": { "deck": "牌面样式", "fourColor": "四色", "classic": "经典" },
   "fnb": {
     "navCounter": "F&B · Quầy",
@@ -90,6 +99,8 @@
     "international": "国际赛事"
   },
   "documentsPage": {
+    "readError": "无法加载文档，请重试。",
+    "retry": "重试",
     "title": "资料",
     "subtitle": "系统官方教程视频与文档。",
     "tabVideos": "视频",
@@ -1286,6 +1297,7 @@
     "photo": "📷 图片",
     "searchUsers": "按昵称搜索用户以开始聊天...",
     "searching": "搜索中...",
+    "searchFail": "无法加载搜索结果，请重试。",
     "noResultsFor": "未找到匹配 \"{{q}}\" 的用户",
     "inboxLabel": "收件箱 · {{n}}",
     "noDM": "暂无消息。请在上方搜索用户开始聊天。",
@@ -2232,6 +2244,9 @@
     "registeredCount": "已报名：{{registered}} / {{max}}"
   },
   "playerHistory": {
+    "loading": "正在加载已验证的结果…",
+    "loadError": "无法加载玩家历史记录。结果尚未验证。",
+    "retry": "重试",
     "playerFallback": "玩家",
     "prizeCount": "赛事数",
     "totalCashout": "总奖金",
@@ -2467,6 +2482,8 @@
     "register": "立即报名"
   },
   "tournamentRegister": {
+"cancelUnverified": "尚未确认取消结果。重试前请重新加载报名状态，请勿认定已取消。",
+    "proofUnverified": "尚未确认凭证提交结果。重试前请重新加载报名状态。",
     "title": "报名培训赛",
     "regError": "报名出错",
     "copied": "已复制{{label}}",
@@ -2587,6 +2604,9 @@
     "closeAria": "关闭"
   },
   "bulkCreate": {
+    "pendingBatch": "包含 {{count}} 场赛事的请求尚未确认。创建新批次前，请先检查回执。",
+    "checkReceipt": "检查批次回执",
+    "cancelPendingBatch": "取消未提交的请求（保留已创建赛事）",
     "adminOnly": "仅限超级管理员访问",
     "noPending": "没有待处理的图片",
     "errorPrefix": "错误：{{msg}}",
@@ -2705,8 +2725,8 @@
     "photos": { "empty": "暂无照片", "soon": "赛事照片即将上线" },
     "breakdown": {
       "title": "牌局分析",
-      "pot": "底池",
-      "potHint": "至本轮累计底池",
+      "pot": "累计下注",
+      "potHint": "至本轮的累计下注，尚未扣除无人跟注的退还部分；并非实际分配的底池。",
       "player": "玩家"
     },
     "map": {
@@ -2922,17 +2942,17 @@
       "scoreLabel": "Poker IQ",
       "confidence": "可信度：{{level}}",
       "interpretation": "你的基础纪律不错，适合中等规模的深筹码赛。",
-      "nextHook": "要更接近 A-：更好地应对激进对手。",
+      "nextHook": "继续练习下方建议的技能领域。",
       "whyTitle": "系统为何这样判断",
       "weakest": "最弱：{{category}} {{score}} — {{insight}}",
       "strengthsTitle": "优势",
       "weaknessesTitle": "待提升",
       "trainingKicker": "训练路径",
-      "trainingGoal": "下一目标：A-",
+      "trainingGoal": "下一目标：加强最薄弱的技能领域",
       "step1": "完成 {{drill}} 训练",
       "step2": "打 2 场中等规模深筹码赛",
       "step3": "解锁已验证档案",
-      "cta": "训练 {{drill}} 以解锁 A-",
+      "cta": "练习 {{drill}}",
       "ctaSub": "这一项最拖累你的分数。",
       "eventsTitle": "适合你的赛事",
       "eventAvoidPrefix": "暂时避免",

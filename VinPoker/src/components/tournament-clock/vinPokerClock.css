@@ -263,14 +263,26 @@
   padding: 3vmin 3.4vmin;
 }
 .vpc-title-cell { grid-column: 1 / -1; }
+.vpc-root:not(.vpc-editor-preview) .vpc-title-cell > .truncate {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  line-height: 1.05;
+}
 .vpc-grid > *, .vpc-panel > * { min-width: 0; }
 .vpc-payout-row > span { overflow-wrap: anywhere; }
 .vpc-footer-cell { grid-column: 1 / -1; align-self: end; }
 
+/* The compact landscape clock has no spare vertical row for a wrapped title. */
+@media (min-width: 761px) and (max-width: 900px) and (orientation: landscape) {
+  .vpc-root:not(.vpc-editor-preview) .vpc-title-cell { font-size: 18px !important; }
+}
+
 /* Phone / narrow portrait — drop the forced 16:9, stack vertically and fill the
  * screen, and bump the ring up. Order: title → ring → stats → blinds/prizes → footer.
  * The clamp() minimums on every font keep text readable even though vmin is small. */
-@media (max-width: 760px), (max-width: 1023px) and (orientation: portrait) {
+@media (max-width: 760px), (max-width: 1200px) and (orientation: portrait) {
   .vpc-brand-layer { display: none; }
   .vpc-root .tv-branding-item { display: none !important; }
   .vpc-has-custom-brand .vpc-brand-default { display: contents; }
@@ -295,6 +307,19 @@
   .vpc-center { order: 2; }
   .vpc-aside-l { order: 3; }
   .vpc-aside-r { order: 4; }
+  /* Long club names must not size the implicit aside column wider than the
+     phone. Keep broadcast/editor sizing untouched. */
+  .vpc-root:not(.vpc-editor-preview) .vpc-aside-l,
+  .vpc-root:not(.vpc-editor-preview) .vpc-aside-r { grid-template-columns: minmax(0, 1fr); }
+  .vpc-root:not(.vpc-editor-preview) .vpc-brand-default > * { min-width: 0; max-width: 100%; }
+  .vpc-root:not(.vpc-editor-preview) .vpc-title-cell > .truncate {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .vpc-root:not(.vpc-editor-preview) .vpc-footer-note {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
   .vpc-footer-cell { order: 5; }
   .vpc-ring { width: min(72vw, 360px); }
 
@@ -325,3 +350,78 @@
   .vpc-editor-preview .vpc-footer-cell { order: initial; }
   .vpc-editor-preview .tv-branding-item { display: block !important; }
 }
+
+/* A portrait TV has enough width for two information columns. Keep the ring
+ * and title full-width so the whole read-only board fits without kiosk scroll. */
+@media (min-width: 761px) and (max-width: 1200px) and (orientation: portrait) {
+  .vpc-root:not(.vpc-editor-preview) .vpc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vpc-root:not(.vpc-editor-preview) .vpc-title-cell,
+  .vpc-root:not(.vpc-editor-preview) .vpc-center,
+  .vpc-root:not(.vpc-editor-preview) .vpc-footer-cell { grid-column: 1 / -1; }
+  .vpc-root:not(.vpc-editor-preview) .vpc-brand-default-name {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Editor-only broadcast scene. One cqw is 1% of the preview canvas width;
+ * dimensions below preserve the existing 1920x1080 landscape proportions.
+ * Viewport vmin/clamp floors otherwise overflow a small embedded canvas.
+ * Do not apply these rules to the public renderer's stacked phone layout. */
+.vpc-editor-preview .vpc-grid {
+  height: 100%;
+  min-height: 100%;
+  gap: 1.125cqw 1.35cqw;
+  padding: 1.6875cqw 1.9125cqw;
+}
+.vpc-editor-preview .vpc-title-cell {
+  font-size: 3.0375cqw !important;
+  gap: 1.35cqw !important;
+}
+.vpc-editor-preview .vpc-title-cell > [aria-hidden] {
+  display: inline-block !important;
+  width: 7.875cqw !important;
+  height: .15625cqw !important;
+}
+.vpc-editor-preview .vpc-aside-l,
+.vpc-editor-preview .vpc-aside-r { gap: 1.0125cqw !important; }
+.vpc-editor-preview .vpc-aside-l > .vpc-panel {
+  padding: 1.125cqw 1.2375cqw !important;
+  min-height: 7.3125cqw !important;
+  gap: 1.125cqw !important;
+}
+.vpc-editor-preview .vpc-aside-l > .vpc-panel:nth-child(2) {
+  padding: 1.2375cqw 1.35cqw 1.6875cqw !important;
+  min-height: 19.125cqw !important;
+  gap: .7875cqw !important;
+}
+.vpc-editor-preview.vpc-has-custom-brand .vpc-brand-default { display: none; }
+.vpc-editor-preview .vpc-aside-r > .vpc-panel { padding: 1.0125cqw 1.2375cqw !important; }
+.vpc-editor-preview .vpc-aside-r > .vpc-panel:nth-child(2) { min-height: 19.125cqw !important; }
+.vpc-editor-preview .vpc-label { font-size: .84375cqw !important; }
+.vpc-editor-preview .vpc-value { font-size: 1.35cqw !important; }
+.vpc-editor-preview .vpc-aside-l > .vpc-panel:first-child .vpc-value { font-size: 1.63125cqw !important; }
+.vpc-editor-preview .vpc-aside-l > .vpc-panel:nth-child(2) .vpc-value { font-size: 2.025cqw !important; }
+.vpc-editor-preview .vpc-divider-x { padding-left: 1.125cqw !important; }
+.vpc-editor-preview .vpc-ring { width: 23.625cqw; }
+.vpc-editor-preview .vpc-ring-level { font-size: 1.6875cqw !important; }
+.vpc-editor-preview .vpc-ring-time {
+  font-size: 5.23125cqw !important;
+  margin: 1.0125cqw 0 .675cqw !important;
+}
+.vpc-editor-preview .vpc-ring-inner > .flex { font-size: .9cqw !important; }
+.vpc-editor-preview .vpc-ring-inner > .flex > span { width: 4.5cqw !important; }
+.vpc-editor-preview .vpc-ring-break { font-size: 1.125cqw !important; margin-top: .9cqw !important; }
+.vpc-editor-preview .vpc-payout-row {
+  grid-template-columns: minmax(3.3333cqw, auto) 1fr;
+  font-size: 1.18125cqw !important;
+  gap: .5625cqw;
+  padding: .421875cqw 0;
+}
+.vpc-editor-preview .vpc-footer-cell {
+  padding: .7875cqw 1.6875cqw !important;
+  min-height: 4.5cqw !important;
+  font-size: 1.06875cqw !important;
+  gap: 1.125cqw !important;
+}
+.vpc-editor-preview .vpc-footer-icon { font-size: 1.6875cqw !important; }

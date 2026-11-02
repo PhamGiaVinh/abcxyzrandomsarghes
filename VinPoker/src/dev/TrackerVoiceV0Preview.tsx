@@ -409,8 +409,8 @@ export default function TrackerVoiceV0Preview() {
 
   const emitDuplicateProviderCallback = () => {
     if (!(provider instanceof MockRealtimeTranscriptionProvider)) return;
-    provider.emit("call", { final: true, id: "duplicate-provider-item" });
-    provider.emit("call", { final: true, id: "duplicate-provider-item" });
+    provider.emit("ghế 4 call", { final: true, id: "duplicate-provider-item" });
+    provider.emit("ghế 4 call", { final: true, id: "duplicate-provider-item" });
   };
 
   const exportJson = () => downloadArtifact("tracker-voice-uat.json", JSON.stringify({

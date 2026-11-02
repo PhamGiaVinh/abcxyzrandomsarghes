@@ -7,6 +7,35 @@ import PublicTournamentClock from './PublicTournamentClock';
 function show(){return render(<MemoryRouter initialEntries={['/clock/tour-a']}><Link to='/clock/tour-b'>Change tournament</Link><Routes>
  <Route path='/clock/:tournamentId' element={<PublicTournamentClock/>}/></Routes></MemoryRouter>);}
 afterEach(()=>{cleanup();vi.useRealTimers();vi.resetAllMocks();});
+it('keeps explicit public payout pending distinct from a failure and polls for publication',async()=>{
+ vi.useFakeTimers();let published=false;
+ api.rpc.mockImplementation((name:string)=>Promise.resolve(name==='get_public_tournament_results'
+  ?published?{data:[{place:1,prize:100,player_name:'Published TEST',result_status:'official'}],error:null}
+   :{data:null,error:{message:'public_payout_pending'}}
+  :{data:{id:'tour-a',name:'Pending TEST',status:'running'},error:null}));
+ show();await act(async()=>{await vi.advanceTimersByTimeAsync(0);});
+ expect(screen.getByRole('status')).toHaveTextContent('Payout đang chờ xác minh');
+ expect(screen.queryByRole('button',{name:'Thử tải lại payout'})).toBeNull();
+ published=true;await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});
+ expect(screen.getByText('Published TEST')).toBeInTheDocument();
+ expect(screen.queryByText(/Payout đang chờ xác minh/)).toBeNull();
+});
+it('does not label a completed tournament live or count down a finished level',async()=>{
+ api.rpc.mockImplementation((name:string)=>Promise.resolve({data:name==='get_public_tournament_results'
+  ?[{place:1,prize:200000,player_name:'Winner TEST',result_status:'official'}]
+  :{id:'tour-a',name:'Completed TEST',status:'completed',is_running:false,remaining_seconds:125},error:null}));
+ show();await screen.findByText('Completed TEST');
+ expect(screen.getByText('Đã kết thúc')).toBeInTheDocument();
+ expect(screen.queryByText('Live',{exact:true})).toBeNull();
+ expect(screen.queryByText('Level kết thúc trong')).toBeNull();
+ expect(screen.queryByText('02:05')).toBeNull();
+ expect(screen.getByText('Winner TEST')).toBeInTheDocument();
+});
+it.each([['live','Live'],['finished','Đã kết thúc'],['cancelled','Đã hủy'],['scheduled','Chưa bắt đầu'],['unknown','Chưa xác minh trạng thái']])('renders server status %s as %s',async(status,label)=>{
+ api.rpc.mockImplementation((name:string)=>Promise.resolve({data:name==='get_public_tournament_results'?[]
+  :{id:'tour-a',name:'Status TEST',status},error:null}));
+ show();await screen.findByText('Status TEST');expect(screen.getByText(label,{exact:true})).toBeInTheDocument();
+});
 it('calls the public RPC with its Supabase client receiver intact',async()=>{
  api.rpc.mockImplementation(function(this:{rpc:unknown}|undefined,name:string){
   if(this?.rpc!==api.rpc) throw new Error('Supabase RPC receiver lost');

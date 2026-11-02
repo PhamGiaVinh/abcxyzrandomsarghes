@@ -31,6 +31,7 @@ import type { RotationScheduleRow } from "@/hooks/useRotationSchedule";
 import { classifyCandidate, type CandidateGroup } from "@/lib/rotationEligibility";
 import { clearDealerNextIntent, dealerNextIntentArgs, dealerNextIntentKey, persistDealerNextIntent,
   readDealerNextIntent, type DealerNextIntent, type DealerNextScope } from "@/lib/dealerNextIntent";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
 function hhmm(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return "--:--";
@@ -170,9 +171,9 @@ export default function ChangePredictedDealerModal({
       setUnresolved(intent);
       const readingReceipt = recovery || (!!unresolved && !retry);
       // Untyped RPC: not in generated types yet (same pattern as useRotationSchedule).
-      const { data, error } = await (supabase as any).rpc(
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve((supabase as any).rpc(
         readingReceipt ? "get_dealer_next_intent_receipt_v1" : "operator_plan_next_dealer_v1",
-        dealerNextIntentArgs(intent));
+        dealerNextIntentArgs(intent))),readingReceipt?10000:20000);
       if (!live.current || activeScope.current !== requestedScope) return;
       if (error) {
         toast.error("Chưa xác minh được kết quả. Giữ yêu cầu để kiểm tra biên nhận.");

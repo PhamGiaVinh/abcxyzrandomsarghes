@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { playSuccessSound, playErrorSound, playWarningSound, playInfoSound, playAlertSound } from "@/lib/notifySound";
 import i18n from "@/i18n";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
 export type NotificationType =
   | "deal_committed"
@@ -57,12 +58,14 @@ const ROUTE_FOR: Record<NotificationType, (data: Record<string, unknown>) => str
   release_requested: () => "/staking/portfolio",
   payout_executed: () => "/staking/portfolio",
   system_announcement: () => "/",
-  schedule_updated: () => "/tournaments",
-  club_schedule_updated: () => "/tournaments",
-  registration_confirmed: () => "/tournaments",
-  tournament_created: () => "/tournaments",
+  schedule_updated: () => "/",
+  club_schedule_updated: () => "/",
+  registration_confirmed: () => "/",
+  tournament_created: () => "/",
   stream_live: () => "/",
-  chat_message: (data) => `/chat/groups/${data?.group_id ?? ""}`,
+  chat_message: (data) => typeof data?.group_id === "string"
+    && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(data.group_id)
+      ? `/group/${data.group_id}` : "/inbox",
   verification_approved: () => "/account",
   verification_rejected: () => "/account",
   package_purchase_paid: () => "/packages",
@@ -142,6 +145,7 @@ export function useNotifications(limit = 20, onNewNotification?: (notification: 
     lifetime.current.mounted && lifetime.current.generation === generation && scopeRef.current === actorScope,
   [actorScope]);
   const readGeneration = useRef(0);
+  const activeRead = useRef<AbortController | null>(null);
   const [snapshotScope, setSnapshotScope] = useState<typeof actorScope | null>(null);
   const [failure, setFailure] = useState<{ scope: typeof actorScope; message: string } | null>(null);
   const [items, setItems] = useState<NotificationRow[]>([]);
@@ -163,6 +167,8 @@ export function useNotifications(limit = 20, onNewNotification?: (notification: 
     if (!isCurrentScope()) return;
     const capturedLifetime = lifetime.current.generation;
     const generation = ++readGeneration.current;
+    activeRead.current?.abort();
+    activeRead.current = null;
     if (!userId) {
       setItems([]);
       setUnreadCount(0);
@@ -173,36 +179,49 @@ export function useNotifications(limit = 20, onNewNotification?: (notification: 
     }
     setLoading(true);
     setFailure(null);
+    const controller = new AbortController();
+    activeRead.current = controller;
     try {
-    const [list, count] = await Promise.all([
+    const [list, count] = await waitForManualPlayerResponse(Promise.all([
       supabase
         .from("notifications")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
-        .limit(limit),
+        .limit(limit)
+        .abortSignal(controller.signal),
       supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
-        .eq("is_read", false),
-    ]);
+        .eq("is_read", false)
+        .abortSignal(controller.signal),
+    ]), 10000);
     if (!isCurrentScope(capturedLifetime) || generation !== readGeneration.current) return;
     if (list.error || count.error) throw list.error ?? count.error;
-    setItems((list.data ?? []) as NotificationRow[]);
-    setUnreadCount(count.count ?? 0);
+    if (!Array.isArray(list.data) || typeof count.count !== "number"
+      || !Number.isSafeInteger(count.count) || count.count < 0) {
+      throw new Error("Không xác minh được danh sách hoặc số thông báo chưa đọc. Hãy thử lại.");
+    }
+    setItems(list.data as NotificationRow[]);
+    setUnreadCount(count.count);
     setSnapshotScope(actorScope);
     } catch (reason) {
       if (isCurrentScope(capturedLifetime) && generation === readGeneration.current) {
-        setFailure({ scope: actorScope, message: reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? "Không tải được thông báo") });
+        setFailure({ scope: actorScope, message: reason instanceof Error && reason.message === "MANUAL_PLAYER_OUTCOME_UNKNOWN"
+          ? "Không tải được thông báo trong 10 giây. Hãy thử lại."
+          : reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? "Không tải được thông báo") });
       }
     } finally {
+      controller.abort();
+      if (activeRead.current === controller) activeRead.current = null;
       if (isCurrentScope(capturedLifetime) && generation === readGeneration.current) setLoading(false);
     }
   }, [userId, limit, actorScope, isCurrentScope]);
 
   useEffect(() => {
     fetchAll();
+    return () => { activeRead.current?.abort(); };
   }, [fetchAll]);
 
   useEffect(() => {
@@ -250,13 +269,17 @@ export function useNotifications(limit = 20, onNewNotification?: (notification: 
     if (!userId || !isCurrentScope()) return false;
     const capturedLifetime = lifetime.current.generation;
     try {
-      const result = await supabase.from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", userId);
+      const result = await waitForManualPlayerResponse(Promise.resolve(
+        supabase.from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", userId),
+      ), 10000);
       if (!isCurrentScope(capturedLifetime)) return false;
       if (result.error) throw result.error;
       await fetchAll();
       return isCurrentScope(capturedLifetime);
     } catch (reason) {
-      if (isCurrentScope(capturedLifetime)) setFailure({ scope: actorScope, message: reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? "Không đánh dấu được thông báo") });
+      if (isCurrentScope(capturedLifetime)) setFailure({ scope: actorScope, message: reason instanceof Error && reason.message === "MANUAL_PLAYER_OUTCOME_UNKNOWN"
+        ? "Chưa xác minh được thao tác đã đọc trong 10 giây. Hãy tải lại danh sách để đối chiếu."
+        : reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? "Không đánh dấu được thông báo") });
       return false;
     }
   }, [userId, fetchAll, isCurrentScope, actorScope]);
@@ -265,17 +288,19 @@ export function useNotifications(limit = 20, onNewNotification?: (notification: 
     if (!userId || !isCurrentScope()) return false;
     const capturedLifetime = lifetime.current.generation;
     try {
-    const result = await supabase
+    const result = await waitForManualPlayerResponse(Promise.resolve(supabase
       .from("notifications")
       .update({ is_read: true })
       .eq("user_id", userId)
-      .eq("is_read", false);
+      .eq("is_read", false)), 10000);
     if (!isCurrentScope(capturedLifetime)) return false;
     if (result.error) throw result.error;
     await fetchAll();
     return isCurrentScope(capturedLifetime);
     } catch (reason) {
-      if (isCurrentScope(capturedLifetime)) setFailure({ scope: actorScope, message: reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? "Không đánh dấu được thông báo") });
+      if (isCurrentScope(capturedLifetime)) setFailure({ scope: actorScope, message: reason instanceof Error && reason.message === "MANUAL_PLAYER_OUTCOME_UNKNOWN"
+        ? "Chưa xác minh được thao tác đã đọc trong 10 giây. Hãy tải lại danh sách để đối chiếu."
+        : reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? "Không đánh dấu được thông báo") });
       return false;
     }
   }, [userId, fetchAll, isCurrentScope, actorScope]);

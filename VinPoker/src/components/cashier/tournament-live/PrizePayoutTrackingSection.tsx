@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { usePrizePaymentIntent } from "@/hooks/usePrizePaymentIntent";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -8,7 +10,6 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { toast } from "sonner";
 import { Loader2, Lock, CheckCircle2, HandCoins } from "lucide-react";
 import { formatVND } from "@/lib/format";
 import {
@@ -17,8 +18,8 @@ import {
 
 // W3-B2 — cashier "Đã trả thưởng" (record prize paid) section. Read via
 // get_tournament_payout_recipients (server-derived list); write via
-// record_tournament_prize_payment (server-derives amount + recipient — the client sends only
-// tournament_id + finished_place + method). Money-action: a confirmation dialog restates the
+// record_tournament_prize_payment_v2 (server derives amount + recipient and
+// revalidates the read confirmation token). Money-action: a confirmation dialog restates the
 // recipient / rank / amount before the ledger row is written; already_paid is idempotent success,
 // never a red error. Read-only display doctrine: every number is Tạm tính (a hand-over
 // acknowledgement, NOT a bank/cash reconciliation).
@@ -27,64 +28,37 @@ const METHOD_LABEL: Record<string, string> = {
   cash: "Tiền mặt", bank: "Chuyển khoản", app: "Ví/App", other: "Khác",
 };
 
-const ERR_VI: Record<string, string> = {
-  unauthorized: "Bạn chưa đăng nhập.",
-  tournament_not_found: "Không tìm thấy giải.",
-  actor_not_allowed: "Bạn không có quyền ghi nhận (cần Chủ CLB/Thu ngân).",
-  place_not_in_money: "Hạng này không có tiền thưởng.",
-  place_not_finalized: "Hạng này chưa chốt kết quả.",
-};
-function mapErr(code?: string | null, raw?: string): string {
-  if (code && ERR_VI[code]) return ERR_VI[code];
-  return raw || "Lỗi ghi nhận trả thưởng";
-}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "";
-  try { return new Date(iso).toLocaleDateString("vi-VN"); } catch { return ""; }
+  try { return new Date(iso).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }); } catch { return ""; }
 }
 
 export function PrizePayoutTrackingSection({ tournamentId }: { tournamentId: string }) {
+  const { user, session } = useAuth();
+  const scope = JSON.stringify([tournamentId, user?.id, sessionReadEpoch(session)]);
+  return <ScopedPrizePayoutTrackingSection key={scope} tournamentId={tournamentId} actorId={user?.id} />;
+}
+
+function ScopedPrizePayoutTrackingSection({ tournamentId, actorId }: { tournamentId: string; actorId?: string }) {
   const { loading, error, notApplied, data, reload } = useTournamentPayoutRecipients(tournamentId);
   const [target, setTarget] = useState<PayoutRecipientPlace | null>(null);
   const [method, setMethod] = useState<string>("cash");
-  const [busy, setBusy] = useState(false);
-
-  const confirmPay = async () => {
-    if (!target) return;
-    setBusy(true);
-    try {
-      const { data: res, error: rpcErr } = await (supabase as any).rpc(
-        "record_tournament_prize_payment",
-        { p_tournament_id: tournamentId, p_finished_place: target.finishedPlace, p_method: method },
-      );
-      if (rpcErr) {
-        if (rpcErr.code === "42883" || rpcErr.code === "42P01") {
-          toast.error("Chức năng chưa được bật trên hệ thống (chưa áp dụng).");
-        } else {
-          toast.error(mapErr(null, rpcErr.message));
-        }
-        return;
-      }
-      const r = res as any;
-      if (!r?.ok) {
-        toast.error(mapErr(r?.error));
-        return;
-      }
-      const amt = formatVND(Number(r.prize_amount ?? target.prizeAmount));
-      // recorded AND already_paid are BOTH success (idempotent is a feature).
-      toast.success(
-        r.outcome === "already_paid"
-          ? `Đã ghi nhận trả trước đó · Hạng ${target.finishedPlace} · ${amt}`
-          : `Đã ghi nhận trả · Hạng ${target.finishedPlace} · ${amt}`,
-      );
-      setTarget(null);
-      reload();
-    } catch (e: any) {
-      toast.error(e?.message || "Lỗi ghi nhận trả thưởng");
-    } finally {
-      setBusy(false);
-    }
+  const payment = usePrizePaymentIntent(actorId, tournamentId, reload);
+  const busy = payment.busy;
+  const verified = !loading && !error && !notApplied && data?.tournamentId === tournamentId;
+  const confirmedTarget = verified && !payment.pending && !payment.blocked && target && data.places.some((place) =>
+    !place.isPaid && place.finishedPlace === target.finishedPlace && place.entryId === target.entryId
+    && place.recipientRef === target.recipientRef && place.confirmationToken === target.confirmationToken
+    && place.recipientName === target.recipientName && place.prizeAmount === target.prizeAmount,
+  ) ? target : null;
+  useEffect(() => {
+    if (target && !confirmedTarget) setTarget(null);
+  }, [target, confirmedTarget]);
+  const confirmPay = () => {
+    if (!confirmedTarget) return;
+    void payment.submit(confirmedTarget, method);
+    setTarget(null);
   };
 
   return (
@@ -93,18 +67,36 @@ export function PrizePayoutTrackingSection({ tournamentId }: { tournamentId: str
         <div className="flex items-center gap-1.5">
           <HandCoins className="w-4 h-4 text-primary" />
           <span className="text-sm font-semibold">Đã trả thưởng</span>
+          {verified && data.isPartial && <Badge variant="outline">Một phần Main Event</Badge>}
         </div>
         {data && data.totalCount > 0 && (
           <span className="text-[11px] text-muted-foreground">
-            {data.paidCount}/{data.totalCount} suất · {formatVND(data.paidTotal)}/{formatVND(data.owedTotal)}
+            {data.paidCount}/{data.totalCount} {data.isPartial ? "suất đã chốt" : "suất"} · {formatVND(data.paidTotal)}/{formatVND(data.owedTotal)}
           </span>
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
         Ghi nhận đã trao tiền thưởng cho người thắng — <span className="text-amber-500">Tạm tính</span>,
-        không phải đối soát ngân hàng. Số tiền do hệ thống tự tính theo hạng.
+        không phải đối soát ngân hàng. {data?.mode==='multi_day'
+          ?'Số tiền theo nghĩa vụ Main Event đã khóa và điều chỉnh đã duyệt, gồm minimum cash/bag cash.'
+          :'Số tiền do hệ thống tự tính theo hạng.'}
       </p>
+      {verified && data.isPartial && (
+        <p role="status" className="text-xs text-amber-500">
+          Chỉ gồm nghĩa vụ cá nhân đã chốt; chưa phải tổng nghĩa vụ toàn Main Event.
+        </p>
+      )}
 
+      {payment.pending && (
+        <div role="status" className="space-y-2 rounded border border-amber-500/30 p-2 text-xs">
+          <p>Yêu cầu đang chờ xác minh · Hạng {payment.pending.finishedPlace} · {payment.pending.recipientName} · {formatVND(payment.pending.prizeAmount)}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => { void payment.recover(); }}>Kiểm tra kết quả</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => { void payment.retry(); }}>Gửi lại yêu cầu cũ</Button>
+          </div>
+        </div>
+      )}
+      {payment.blocked && <p role="alert" className="text-xs text-destructive">Chưa xác minh được yêu cầu đã lưu. Tạm khóa ghi nhận mới.</p>}
       {notApplied ? (
         <div className="flex items-start gap-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-500">
           <Lock className="w-4 h-4 mt-0.5 shrink-0" />
@@ -115,8 +107,11 @@ export function PrizePayoutTrackingSection({ tournamentId }: { tournamentId: str
           <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang tải danh sách…
         </div>
       ) : error ? (
-        <p className="text-xs text-destructive">Không tải được: {error}</p>
-      ) : !data || data.places.length === 0 ? (
+        <div className="space-y-2">
+          <p role="alert" className="text-xs text-destructive">Không tải được: {error}</p>
+          <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={reload}>Tải lại danh sách trả thưởng</Button>
+        </div>
+      ) : !verified || !data || data.places.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           Chưa có hạng trúng thưởng đã chốt kết quả — chưa thể ghi nhận trả.
         </p>
@@ -124,13 +119,15 @@ export function PrizePayoutTrackingSection({ tournamentId }: { tournamentId: str
         <div className="space-y-1">
           {data.places.map((p) => (
             <div
-              key={p.finishedPlace}
+              key={p.entryId}
               className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-2 rounded border border-border/60 bg-muted/20 px-2 py-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto]"
             >
               <span className="text-xs font-semibold text-muted-foreground">#{p.finishedPlace}</span>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{p.recipientName}</div>
-                <div className="font-mono text-xs text-primary">{formatVND(p.prizeAmount)}</div>
+                <div className="font-mono text-xs text-primary">{data.mode==='multi_day'
+                  ?<>Nghĩa vụ {formatVND(p.obligationAmount??0)} · Đã trả {formatVND(p.paidAmount??0)} · Còn {formatVND(p.prizeAmount)}</>
+                  :formatVND(p.prizeAmount)}</div>
               </div>
               {p.isPaid ? (
                 <Badge variant="outline" className="col-start-2 w-fit max-w-full whitespace-normal border-emerald-500/40 text-emerald-500 text-[10px] sm:col-start-auto">
@@ -141,6 +138,7 @@ export function PrizePayoutTrackingSection({ tournamentId }: { tournamentId: str
               ) : (
                 <Button
                   size="sm"
+                  disabled={busy || !!payment.pending || payment.blocked}
                   variant="outline"
                   className="col-start-2 min-h-11 w-fit text-xs sm:col-start-auto"
                   onClick={() => { setMethod("cash"); setTarget(p); }}
@@ -153,7 +151,7 @@ export function PrizePayoutTrackingSection({ tournamentId }: { tournamentId: str
         </div>
       )}
 
-      <AlertDialog open={!!target} onOpenChange={(v) => { if (!busy && !v) setTarget(null); }}>
+      <AlertDialog open={!!confirmedTarget} onOpenChange={(v) => { if (!busy && !v) setTarget(null); }}>
         <AlertDialogContent className="operations-typography max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain">
           <AlertDialogHeader>
             <AlertDialogTitle>Xác nhận đã trả thưởng</AlertDialogTitle>

@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { correctionCommitKey, correctionResolutionState, correctionCommitConfirmed, persistCorrectionIntent,
   readCorrectionIntent, settleCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
-export function useCorrectionCommitRecovery(tournamentId: string, handId: string | null, onResolved: (status: "found" | "obsolete") => void) {
-  const { user } = useAuth(), supabase = useSupabaseClient();
-  const identity = useMemo(() => user?.id && handId ? { expected_actor_id: user.id, tournament_id: tournamentId, hand_id: handId } : null,
-    [user?.id, tournamentId, handId]);
+export function useCorrectionCommitRecovery(tournamentId: string, handId: string | null, onResolved: (status: "found" | "obsolete") => void, actorId: string | undefined) {
+  const supabase = useSupabaseClient();
+  const identity = useMemo(() => actorId && handId ? { expected_actor_id: actorId, tournament_id: tournamentId, hand_id: handId } : null,
+    [actorId, tournamentId, handId]);
   const scope = JSON.stringify(identity), generation = useRef(0), scopeRef = useRef(scope), mounted = useRef(true);
   if (scopeRef.current !== scope) { scopeRef.current = scope; generation.current++; }
   const flight = useRef(false);
@@ -76,5 +75,5 @@ export function useCorrectionCommitRecovery(tournamentId: string, handId: string
       if (current()) { setBusy(false); if (readCorrectionIntent(localStorage, intent)) setMessage("Chưa xác nhận kết quả sửa hand. Dùng Kiểm tra receipt; không gửi lại thao tác."); }
     }
   };
-  return { actorId: user?.id, message, busy, assertNoPending, recover, commit };
+  return { actorId, message, busy, assertNoPending, recover, commit };
 }

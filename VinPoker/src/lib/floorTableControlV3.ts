@@ -52,6 +52,7 @@ export type FloorTableControlV3RpcName =
   | "cancel_floor_restore_request_v1"
   | "floor_plan_tournament_redraw_v1"
   | "floor_apply_tournament_redraw_v1"
+  | "floor_get_redraw_intent_v1"
   | "floor_continue_tournament_redraw_v1"
   | "get_public_tournament_redraw_v1"
   | "get_floor_pending_tracker_moves_v1"
@@ -199,6 +200,21 @@ export type FloorActiveRedraw = {
   batchId: string;
   redrawRevision: number;
 };
+
+export type FloorRedrawIntent = { actorId: string; tournamentId: string; requestId: string } & (
+  | { operation: "plan"; targetMaxSeats: 8 | 9; gameTableIds: string[] }
+  | { operation: "apply"; batchId: string }
+  | { operation: "continue"; batchId: string; expectedRedrawRevision: number }
+);
+export type FloorRedrawResolution = { status: "unknown" }
+  | { status: "found"; operation: "plan" | "apply"; plan: FloorRedrawPlan }
+  | { status: "found"; operation: "continue"; clockResumed: boolean };
+export function floorRedrawIntentPayload(intent: FloorRedrawIntent): Record<string, unknown> {
+  if (intent.operation === "plan") return { tournament_id: intent.tournamentId, target_max_seats: intent.targetMaxSeats,
+    game_table_ids: intent.gameTableIds.map(id => id.toLowerCase()).sort() };
+  if (intent.operation === "apply") return { batch_id: intent.batchId };
+  return { batch_id: intent.batchId, expected_redraw_revision: intent.expectedRedrawRevision };
+}
 
 export type FloorRestorableEntry = {
   entryId: string;
@@ -1013,18 +1029,25 @@ export function createFloorTableControlV3Client(
           }).then(mutationFromResponse)
         : Promise.resolve({ ok: false as const, error: "FLOOR_DEFERRED_TRACKER_MOVE_V1_DISABLED" }),
 
-    cancelPendingTrackerMove: (pendingMoveId: string) =>
-      deferredTrackerMoveEnabled
-        ? call("floor_cancel_pending_tracker_move_v1", { p_pending_move_id: pendingMoveId }).then((response) => {
-          const result = mutationFromResponse(response);
+    cancelPendingTrackerMove: async (pendingMoveId: string) => {
+      if (!deferredTrackerMoveEnabled) return { ok: false as const, error: "FLOOR_DEFERRED_TRACKER_MOVE_V1_DISABLED" };
+      if (!enabled) return { ok: false as const, error: "FLOOR_TABLE_CONTROL_V3_DISABLED" };
+      try {
+          const response = await rpc("floor_cancel_pending_tracker_move_v1", { p_pending_move_id: pendingMoveId });
+          // A lost response can follow a committed cancellation. Re-read the
+          // authoritative pending moves; do not label it a rejected operation.
+          if (response.error) return { ok: false as const, error: "V3_CANCEL_PENDING_MOVE_OUTCOME_UNKNOWN" };
+          const result = mutationFromResponse({ ok: true, data: response.data });
           if (result.ok === false) return result;
           const status = result.data.status;
           if (status !== "cancelled" && status !== "applied" && status !== "stale") {
             return { ok: false as const, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" };
           }
           return result;
-        })
-        : Promise.resolve({ ok: false as const, error: "FLOOR_DEFERRED_TRACKER_MOVE_V1_DISABLED" }),
+      } catch {
+        return { ok: false as const, error: "V3_CANCEL_PENDING_MOVE_OUTCOME_UNKNOWN" };
+      }
+    },
 
     closeTournamentTable: (args: { tournamentTableId: string; expectedRevision: number; requestId: string }) =>
       (redrawSeatLockEnabled ? callRedrawSeatLock : call)(redrawSeatLockEnabled ? "close_tournament_table_v4" : "close_tournament_table_v3", {
@@ -1141,6 +1164,37 @@ export function createFloorTableControlV3Client(
       const mutation = parseMutation(response.data);
       if (mutation.ok === false) return { ok: false, error: mutation.error };
       return parseRedrawPlan(mutation.data);
+    },
+
+    async getRedrawIntent(args: FloorRedrawIntent): Promise<FloorTableControlV3Result<FloorRedrawResolution>> {
+      const intent = { ...args }, payload = floorRedrawIntentPayload(intent);
+      const response = await callRedrawSeatLock("floor_get_redraw_intent_v1", {
+        p_tournament_id: intent.tournamentId, p_operation: intent.operation, p_request_id: intent.requestId,
+        p_payload: payload, p_expected_actor: intent.actorId,
+      });
+      if (response.ok === false) return response;
+      const value = response.data;
+      if (isRecord(value) && typeof value.error === "string") return { ok: false, error: value.error };
+      const malformed = { ok: false as const, error: "V3_REDRAW_RECEIPT_UNVERIFIED" };
+      if (!isRecord(value) || value.actor_id !== intent.actorId || value.tournament_id !== intent.tournamentId
+        || value.operation !== intent.operation || value.request_id !== intent.requestId || !isRecord(value.payload)) return malformed;
+      const receivedPayload = value.payload;
+      if (Object.keys(receivedPayload).length !== Object.keys(payload).length
+        || Object.entries(payload).some(([key, expected]) => JSON.stringify(receivedPayload[key]) !== JSON.stringify(expected))) return malformed;
+      if (value.status === "unknown" && value.result === undefined) return { ok: true, data: { status: "unknown" } };
+      if (value.status !== "found") return malformed;
+      if (intent.operation === "continue") {
+        const result = value.result;
+        if (!isRecord(result) || result.ok !== true || result.error !== undefined || result.batch_id !== intent.batchId
+          || result.redraw_revision !== intent.expectedRedrawRevision + 1 || typeof result.clock_resumed !== "boolean") return malformed;
+        return { ok: true, data: { status: "found", operation: "continue", clockResumed: result.clock_resumed } };
+      }
+      if (!isRecord(value.result) || value.result.error !== undefined) return malformed;
+      const parsed = parseRedrawPlan(value.result);
+      if (parsed.ok === false || parsed.data.status !== (intent.operation === "plan" ? "planned" : "applied")
+        || (intent.operation === "apply" && parsed.data.batchId !== intent.batchId)
+        || (intent.operation === "plan" && parsed.data.targetMaxSeats !== intent.targetMaxSeats)) return malformed;
+      return { ok: true, data: { status: "found", operation: intent.operation, plan: parsed.data } };
     },
 
     async getActiveTournamentRedraw(tournamentId: string): Promise<FloorTableControlV3Result<FloorActiveRedraw | null>> {

@@ -17,8 +17,8 @@ vi.mock("@/lib/featureFlags", () => ({ FEATURES: { get cockpitFloorActions() { r
 vi.mock("@/components/cashier/tournament-live/RestoreBustDialog", () => ({ RestoreBustDialog: (props: { tournamentId: string; actorId: string | null; target: { entryId: string; name: string } | null }) => props.target ? <div role="dialog">{JSON.stringify(props)}</div> : null }));
 vi.mock("@/components/ops/shared/useFloorSeats", () => ({ useFloorSeats: () => ({ tables: [], seatsByTable: {} }) }));
 vi.mock("@/components/ops/shared/FloorPlayerActions", () => ({ FloorPlayerActions: () => null }));
-vi.mock("@/components/floor/MultiDayFloorEventPanel", () => ({ MultiDayFloorEventPanel: () => null }));
-vi.mock("@/components/cashier/tournament-live/TvBrandingEditor", () => ({ TvBrandingEditor: () => null }));
+vi.mock("@/components/floor/MultiDayFloorEventPanel", () => ({ MultiDayFloorEventWorkspace: () => null }));
+vi.mock("@/components/cashier/tournament-live/TvBrandingEditor", () => ({ TvBrandingEditorWorkspace: () => null }));
 vi.mock("@/hooks/useTournamentTvDataCore", () => ({ useTournamentTvDataCore: () => ({ state: "ready", refetch: vi.fn(), data: {
   tournamentName: state.id, status: "live", isRunning: false, remainingSeconds: 600,
   playersRemaining: 8, totalEntries: 8, averageStack: 1000, prizePool: 0,

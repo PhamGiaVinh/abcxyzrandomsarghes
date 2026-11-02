@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { startLiveReportRefresh } from '@/lib/liveReportRefresh';
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
 import { type PayrollStatusKey, type AgingBucketKey, PAYROLL_STATUS_META } from '@/lib/clubFinance';
-import { parseFinanceCore, financeRecord, financeNumber, financeRows, financeText, financeSessionReadEpoch } from '@/lib/financeSummaryRead';
+import { parseFinanceCore, financeRecord, financeNumber, financeRows, financeText, financeSessionReadEpoch, assertFinanceCalendarRange, assertFinanceCalendarScope } from '@/lib/financeSummaryRead';
+import {parseFinanceStaffLive,parseFinanceDealerLive,parseFinanceDealerFtLive,type FinanceDealerFtLive,type FinanceDealerLive,type FinanceStaffLive} from '@/lib/financeSummaryRead';
 
 export interface ClubFinanceSummary {
   revenue: {
@@ -12,6 +15,10 @@ export interface ClubFinanceSummary {
   };
   cost: {payrollNet:number; payrollGross:number; adjustments:number; fnbCogs:number; compCogs:number};
   net:number; statusTotals:Record<PayrollStatusKey,number>; unpaidTotal:number; reconciledTotal:number;
+  staffLive?:FinanceStaffLive;
+  dealerLive?:FinanceDealerLive;
+  dealerFtLive?:FinanceDealerFtLive;
+  fnbAvailable?:boolean;
   aging:Record<AgingBucketKey,number>;
   trend:{key:string; revenue:number; cost:number}[];
   perPeriod:{id:string; clubId:string; clubName:string; periodKey:string; gross:number; net:number; status:PayrollStatusKey}[];
@@ -19,8 +26,9 @@ export interface ClubFinanceSummary {
 }
 export interface FinanceQuery {from:string; to:string; clubFilter:string}
 
-function parseSummary(value:unknown) {
+function parseSummary(value:unknown,query:FinanceQuery) {
   const {data,revenue:r,cost:c,net}=parseFinanceCore(value);
+  assertFinanceCalendarScope(data,{from:query.from,to:query.to,clubId:query.clubFilter==='all'?null:query.clubFilter});
   const status=financeRecord(data.statusTotals,'statusTotals');
   const statusTotals={} as Record<PayrollStatusKey,number>;
   for(const key of Object.keys(status)) if(!Object.prototype.hasOwnProperty.call(PAYROLL_STATUS_META,key)) throw new Error('FINANCE_SUMMARY_INVALID: statusTotals');
@@ -37,6 +45,10 @@ function parseSummary(value:unknown) {
       rakeOffline:r.rakeOffline??0,rakeReentry:r.rakeReentry??0,serviceFee:r.serviceFee??0,total:r.total,fnb:r.fnb??0},
     cost:{payrollNet:c.payrollNet,payrollGross:c.payrollGross,adjustments:c.adjustments,fnbCogs:c.fnbCogs??0,compCogs:c.compCogs??0},
     net,statusTotals,aging,unpaidTotal:financeNumber(data.unpaidTotal,'unpaidTotal'),reconciledTotal:financeNumber(data.reconciledTotal,'reconciledTotal'),
+    fnbAvailable:Object.prototype.hasOwnProperty.call(r,'fnb')&&Object.prototype.hasOwnProperty.call(c,'fnbCogs')&&Object.prototype.hasOwnProperty.call(c,'compCogs'),
+    ...(Object.prototype.hasOwnProperty.call(data,'staffLive')?{staffLive:parseFinanceStaffLive(data.staffLive)}:{}),
+    ...(Object.prototype.hasOwnProperty.call(data,'dealerLive')?{dealerLive:parseFinanceDealerLive(data.dealerLive)}:{}),
+    ...(Object.prototype.hasOwnProperty.call(data,'dealerFtLive')?{dealerFtLive:parseFinanceDealerFtLive(data.dealerFtLive)}:{}),
     trend:financeRows(data.trend,'trend').map(row=>({key:financeText(row.key,'trend.key'),revenue:financeNumber(row.revenue,'trend.revenue'),cost:financeNumber(row.cost,'trend.cost')})),
     perPeriod:financeRows(data.perPeriod,'perPeriod').map(row=>{
       const status=financeText(row.status,'perPeriod.status');
@@ -69,17 +81,19 @@ export function useClubFinanceSummary({from,to,clubFilter}:FinanceQuery): {
     if(active.current!==context) return;
     const request=++generation.current;
     const current=()=>active.current===context&&generation.current===request;
-    setState({context,loading:true,error:null,clubs:[],summary:null});
+    setState(previous=>previous.context===context&&!previous.error
+      ? {...previous,loading:true,error:null}
+      : {context,loading:true,error:null,clubs:[],summary:null});
     if(authLoading) return;
     if(!user?.id || !session?.access_token) {setState({context,loading:false,error:'AUTH_REQUIRED',clubs:[],summary:null});return;}
     try {
-      const fromTs=new Date(from+'T00:00:00').toISOString();
-      const toTs=new Date(to+'T23:59:59').toISOString();
-      const {data,error}=await supabase.rpc('get_club_finance_summary',{
-        p_from:fromTs,p_to:toTs,p_club_id:clubFilter!=='all'?clubFilter:undefined,
-      });
+      assertFinanceCalendarRange(from,to);
+      const {data,error}=await observeTrackerContextRead(supabase.rpc('get_club_finance_summary_v2' as never,{
+        p_from_date:from,p_to_date:to,p_club_id:clubFilter==='all'?null:clubFilter,
+      } as never));
+      if(error && ['PGRST202','42883'].includes(error.code)) throw new Error('Chưa có contract báo cáo UTC+7. Cần cập nhật backend trước khi tải báo cáo.');
       if(error) throw error;
-      const parsed=parseSummary(data);
+      const parsed=parseSummary(data,{from,to,clubFilter});
       if(current()) setState({context,loading:false,error:null,...parsed});
     } catch(error) {
       const message=error instanceof Error?error.message:
@@ -87,7 +101,11 @@ export function useClubFinanceSummary({from,to,clubFilter}:FinanceQuery): {
       if(current()) setState({context,loading:false,error:message,clubs:[],summary:null});
     }
   },[context,authLoading,user?.id,session?.access_token,from,to,clubFilter]);
-  useEffect(()=>{active.current=context;void load();return()=>{if(active.current===context) active.current=null;};},[context,load]);
+  useEffect(()=>{
+    active.current=context;
+    const stop=startLiveReportRefresh(load);
+    return()=>{stop();if(active.current===context) active.current=null;};
+  },[context,load]);
   const visible=state.context===context?state:{loading:true,error:null,clubs:[],summary:null};
   return {loading:visible.loading,error:visible.error,clubs:visible.clubs,summary:visible.summary,reload:load};
 }

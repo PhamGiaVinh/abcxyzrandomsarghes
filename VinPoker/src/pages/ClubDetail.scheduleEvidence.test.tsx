@@ -5,10 +5,10 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import i18n from '@/i18n';
 import ClubDetail from './ClubDetail';
 const state=vi.hoisted(()=>({images:true}));
-vi.mock('@/integrations/supabase/client',()=>({supabase:{from:()=>({select:()=>({
- eq:()=>({maybeSingle:async()=>({data:{id:'club-test',name:'Schedule TEST',region:'TEST',updated_at:'2035-12-31T23:59:59Z',daily_schedule_image_url:state.images?'https://example.test/daily.png':null,weekly_schedule_image_url:state.images?'https://example.test/weekly.png':null}}),
- gte:()=>({order:async()=>({data:[]})}),order:async()=>({data:[]})}),
-})})}}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{from:(table:string)=>{
+ const q={select:()=>q,eq:()=>q,gte:()=>q,order:()=>q,maybeSingle:()=>q,abortSignal:()=>q,
+ then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:table==='clubs'?{id:'club-test',name:'Schedule TEST',region:'TEST',updated_at:'2035-12-31T23:59:59Z',daily_schedule_image_url:state.images?'https://example.test/daily.png':null,weekly_schedule_image_url:state.images?'https://example.test/weekly.png':null}:[],error:null}).then(resolve)};return q;
+}}}));
 afterEach(cleanup);beforeEach(async()=>{state.images=true;await i18n.changeLanguage('vi');});
 function mount(){render(<MemoryRouter initialEntries={['/club/club-test']}><Routes><Route path="/club/:id" element={<ClubDetail/>}/></Routes></MemoryRouter>);}
 it('shows an unavailable-metadata disclosure for each legacy daily/weekly image, not club update date',async()=>{

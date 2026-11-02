@@ -84,3 +84,30 @@ export function settleManualFinishJournal(storage: FinishStorage, key: string, i
   storage.removeItem(key);
   if (storage.getItem(key) !== null) throw new Error("MANUAL_FINISH_JOURNAL_SETTLE_FAILED");
 }
+
+/** Upgrade tab-scoped journals without inventing or overwriting an intent.
+ * Durable storage stays actor-scoped and is never an authorization source.
+ * Validate every scoped entry before moving any legacy data. A failed copy
+ * retains the original; a conflict blocks rather than choosing a winner.
+ */
+export function adoptManualFinishJournals(durable: FinishStorage & Pick<Storage,"length"|"key">,
+ legacy: FinishStorage & Pick<Storage,"length"|"key">,identity: Omit<FinishIdentity,"hand_id">): void {
+ const current=listManualFinishJournals(durable,identity);
+ const previous=listManualFinishJournals(legacy,identity);
+ for(const intent of previous){
+  const existing=current.find(value=>value.hand_id===intent.hand_id);
+  if(existing&&canonicalVoiceJson(existing)!==canonicalVoiceJson(intent))throw new Error('MANUAL_FINISH_JOURNAL_CHANGED');
+ }
+ for(const intent of previous){
+  const key=`vinpoker:manual-finish:${intent.actor_id}:${intent.tournament_id}:${intent.tournament_table_id}:${intent.hand_id}`;
+  const saved=durable.getItem(key);
+  if(saved===null)persistManualFinishJournal(durable,key,intent);
+  else if(canonicalVoiceJson(readManualFinishJournal(saved,{...identity,hand_id:intent.hand_id}))!==canonicalVoiceJson(intent))throw new Error('MANUAL_FINISH_JOURNAL_CHANGED');
+ }
+ for(const intent of previous){
+  const key=`vinpoker:manual-finish:${intent.actor_id}:${intent.tournament_id}:${intent.tournament_table_id}:${intent.hand_id}`;
+  const saved=durable.getItem(key);
+  if(saved===null||canonicalVoiceJson(readManualFinishJournal(saved,{...identity,hand_id:intent.hand_id}))!==canonicalVoiceJson(intent))throw new Error('MANUAL_FINISH_JOURNAL_CHANGED');
+  settleManualFinishJournal(legacy,key,intent);
+ }
+}

@@ -864,14 +864,14 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     this.channel = channel;
     channel.addEventListener("message", (message) => { if (current()) this.handleProviderMessage(message.data); });
     channel.addEventListener("open", () => { if (current()) handlers.onStatus("listening"); });
-    channel.addEventListener("close", () => { if (current()) handlers.onStatus("offline"); });
+    channel.addEventListener("close", () => this.finishConnection(generation,"offline"));
     peer.addEventListener("connectionstatechange", () => {
       if (!current()) return;
       if (peer.connectionState === "disconnected") handlers.onStatus("recovering", "Kết nối microphone đang khôi phục.");
-      if (peer.connectionState === "failed") handlers.onStatus("error", "Kết nối Voice bị lỗi. Hãy kết nối lại.");
+      if (peer.connectionState === "failed") this.finishConnection(generation,"error", "Kết nối Voice bị lỗi. Hãy kết nối lại.");
     });
     this.stream.getAudioTracks().forEach((track) => {
-      track.addEventListener("ended", () => { if (current()) handlers.onStatus("offline", "Microphone đã ngắt khỏi thiết bị."); }, { once: true });
+      track.addEventListener("ended", () => this.finishConnection(generation,"offline", "Microphone đã ngắt khỏi thiết bị."), { once: true });
     });
 
     const offer = await peer.createOffer();
@@ -926,6 +926,17 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     await audioContext?.close().catch(() => undefined);
   }
 
+  /** Terminal transport loss must also stop capture, not only change its label.
+   * Cleanup increments the generation before closing the channel; a reconnect
+   * supersedes this final status and any late transcription callbacks. */
+  private finishConnection(generation:number,status:'offline'|'error',message?:string):void {
+    if(this.generation!==generation)return;
+    const handlers=this.handlers,closedGeneration=generation+1;
+    void this.disconnect().then(()=>{
+      if(this.generation===closedGeneration)handlers?.onStatus(status,message);
+    });
+  }
+
   private startLevelMeter(stream: MediaStream): void {
     const generation = this.generation;
     try {
@@ -962,6 +973,7 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     } catch {
       return;
     }
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
     const type = typeof event.type === "string" ? event.type : "";
     const isFinal = type === "conversation.item.input_audio_transcription.completed";
     const isPartial = type === "conversation.item.input_audio_transcription.delta";
@@ -975,9 +987,9 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
       transcript = `${this.partialTranscripts.get(itemId) ?? ""}${nextDelta}`;
       this.partialTranscripts.set(itemId, transcript);
     } else {
-      transcript = typeof event.transcript === "string"
-        ? event.transcript
-        : this.partialTranscripts.get(itemId) ?? "";
+      // Only the provider's explicit final text may become a final proposal.
+      // A malformed completion must never promote an interim fragment.
+      transcript = typeof event.transcript === "string" ? event.transcript : "";
       this.partialTranscripts.delete(itemId);
     }
     if (!transcript) return;

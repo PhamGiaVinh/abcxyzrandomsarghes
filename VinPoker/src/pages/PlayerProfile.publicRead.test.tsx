@@ -15,16 +15,21 @@ vi.mock('@/components/PerformanceCard', () => ({ PerformanceCard: () => null }))
 vi.mock('@/integrations/supabase/client', () => ({ supabase: {
   from: (table: string) => {
     let projection = '';
+    const result = (value: {data: unknown; error: unknown}) => {
+      const response = Promise.resolve(value);
+      return Object.assign(response, {abortSignal: () => response});
+    };
     const query = {
       select: (columns: string) => { projection = columns; return query; },
       eq: () => query, gte: () => query, order: () => query, limit: () => query,
+      abortSignal: () => query,
       maybeSingle: () => {
-        if (table !== 'profiles') return Promise.resolve({ data: null, error: null });
+        if (table !== 'profiles') return result({ data: null, error: null });
         fixture.projections.push(projection);
         if (!fixture.actor && projection.split(',').includes('phone')) {
-          return Promise.resolve({ data: null, error: { code: '42501' } });
+          return result({ data: null, error: { code: '42501' } });
         }
-        return Promise.resolve({ data: {
+        return result({ data: {
           user_id: 'player', display_name: 'Public fixture player', region: 'TEST',
           ...(projection.includes('phone') ? { phone: 'FIXTURE PHONE' } : {}),
         }, error: null });

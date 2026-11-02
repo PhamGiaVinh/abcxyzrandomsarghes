@@ -55,7 +55,8 @@ const Body = z.discriminatedUnion("op", [
   z.object({ op: z.literal("stand_up"), tableId: z.string().uuid(), idempotencyKey: IdemKey }),
   z.object({ op: z.literal("start_hand"), tableId: z.string().uuid(), idempotencyKey: IdemKey }),
   // Friends-practice (open tables, wallet-free, host succession)
-  z.object({ op: z.literal("create_open_table"), name: z.string().max(40).optional(), sb: z.string().regex(/^[1-9][0-9]*$/), bb: z.string().regex(/^[1-9][0-9]*$/), buyin: z.string().regex(/^[1-9][0-9]*$/), maxSeats: z.number().int().min(2).max(10).optional() }),
+  z.object({ op: z.literal("create_open_table"), expectedActorId: z.string().uuid(), requestId: z.string().uuid(), name: z.string().max(40).optional(), sb: z.string().regex(/^[1-9][0-9]*$/), bb: z.string().regex(/^[1-9][0-9]*$/), buyin: z.string().regex(/^[1-9][0-9]*$/), maxSeats: z.number().int().min(2).max(10).optional() }),
+  z.object({ op: z.literal("get_create_receipt"), expectedActorId: z.string().uuid(), requestId: z.string().uuid() }),
   z.object({ op: z.literal("sit_open"), tableId: z.string().uuid(), seat: z.number().int().min(1).max(10), buyin: z.string().regex(/^[1-9][0-9]*$/), idempotencyKey: IdemKey }),
   z.object({ op: z.literal("transfer_host"), tableId: z.string().uuid(), toUserId: z.string().uuid() }),
   z.object({ op: z.literal("leave_open_table"), tableId: z.string().uuid() }),
@@ -111,9 +112,22 @@ Deno.serve(async (req) => {
     const body = parsed.data;
     op = body.op;
 
+    // This is an expectation fence, never an authorization identity. The JWT
+    // remains authoritative if the SDK account changed after intent capture.
+    if ((body.op === "create_open_table" || body.op === "get_create_receipt") && body.expectedActorId !== uid) {
+      logDone("actor_context_changed", { http: 403 });
+      return json({ error: "actor_context_changed" }, 403);
+    }
+
     // Keep-warm ping: return BEFORE the admin client + dark-switch (zero Postgres IO).
     // Auth already ran above (G2) — a ping still requires a valid user JWT.
     if (body.op === "ping") { logDone("ok", { http: 200 }); return json({ ok: true }, 200); }
+
+    // Resolve an existing intent even after gameplay was disabled. This is a
+    // USER-bound read, never an unkeyed create or an admin lookup by actor input.
+    if (body.op === "get_create_receipt") {
+      return await rpcPassthrough(userClient, "op_get_create_receipt_v1", { p_request_id: body.requestId }, json, (o) => logDone(o), { logData: false });
+    }
 
     const admin = createClient(url, serviceKey, { global: { fetch: retryFetch } });
 
@@ -130,7 +144,7 @@ Deno.serve(async (req) => {
       case "stand_up":          return await rpcPassthrough(userClient, "op_stand_up", { p_table_id: body.tableId, p_idempotency_key: body.idempotencyKey }, json, (o) => logDone(o, { table_id: body.tableId }));
       case "start_hand":        return await handleStart(admin, uid, body, json, logDone);
       case "submit_action":     return await handleSubmit(admin, uid, body, json, logDone);
-      case "create_open_table": return await rpcPassthrough(userClient, "op_create_open_table", { p_name: body.name ?? null, p_sb: body.sb, p_bb: body.bb, p_buyin: body.buyin, p_max_seats: body.maxSeats ?? 9 }, json, (o) => logDone(o));
+      case "create_open_table": return await rpcPassthrough(userClient, "op_create_open_table_v2", { p_name: body.name ?? null, p_sb: body.sb, p_bb: body.bb, p_buyin: body.buyin, p_max_seats: body.maxSeats ?? 9, p_request_id: body.requestId }, json, (o) => logDone(o));
       case "sit_open":          return await rpcPassthrough(userClient, "op_sit_open", { p_table_id: body.tableId, p_seat_no: body.seat, p_buyin: body.buyin, p_idempotency_key: body.idempotencyKey }, json, (o) => logDone(o, { table_id: body.tableId }));
       case "transfer_host":     return await rpcPassthrough(userClient, "op_transfer_host", { p_table_id: body.tableId, p_to_user_id: body.toUserId }, json, (o) => logDone(o, { table_id: body.tableId }));
       case "leave_open_table":  return await rpcPassthrough(userClient, "op_leave_open_table", { p_table_id: body.tableId }, json, (o) => logDone(o, { table_id: body.tableId }));

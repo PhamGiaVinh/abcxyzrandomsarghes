@@ -4,10 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/featureFlags";
 import { useAuth } from "@/hooks/useAuth";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { flightEntrants, qualifierTarget, type ClubRow, type FlightMeta, type FinalMeta } from "./TournamentManagerShared";
 
-export type EventMeta = { name: string; itm_percent: number };
-type TourStatus = "scheduled" | "live" | "finished" | "cancelled";
+export type EventMeta = { name: string; itm_percent: number; guarantee_amount?: number | null };
 const EMPTY_TOURS: never[] = [];
 
 /**
@@ -30,7 +30,7 @@ export function useFloorTournaments(clubIds: string[]) {
   scopeRef.current = scope;
   const mounted = useRef(false);
   const requestSequence = useRef(0);
-  const readFlight = useRef<{ scope: string; trailing: boolean } | null>(null);
+  const readFlight = useRef<{ scope: string; trailing: boolean; controller: AbortController } | null>(null);
   const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const [stateScope, setStateScope] = useState("");
   const [storedTours, setTours] = useState<any[]>([]);
@@ -44,7 +44,7 @@ export function useFloorTournaments(clubIds: string[]) {
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => { mounted.current = false; readFlight.current?.controller.abort(); };
   }, []);
 
   const load = useCallback(async () => {
@@ -53,6 +53,7 @@ export function useFloorTournaments(clubIds: string[]) {
       readFlight.current.trailing = true;
       return;
     }
+    readFlight.current?.controller.abort();
     const sequence = ++requestSequence.current;
     const current = () => mounted.current && scopeRef.current === scope && requestSequence.current === sequence;
     const scopedClubs = JSON.parse(clubKey) as string[];
@@ -62,16 +63,16 @@ export function useFloorTournaments(clubIds: string[]) {
     setTours([]);
     setError(null);
     if (!user?.id || authLoading || !scopedClubs.length) { setLoading(false); return; }
-    const flight = { scope, trailing: false };
+    const flight = { scope, trailing: false, controller: new AbortController() };
     readFlight.current = flight;
     setLoading(true);
     try {
-    const { data, error } = await supabase
+    const { data, error } = await observeTrackerContextRead(supabase
       .from("tournaments")
       .select("*")
       .is("deleted_at", null)
       .in("club_id", scopedClubs)
-      .order("start_time");
+      .order("start_time").abortSignal(flight.controller.signal));
     if (!current()) return;
     if (error) throw error;
     if (!Array.isArray(data) || data.some(row => !scopedClubs.includes(row.club_id))) {
@@ -83,9 +84,12 @@ export function useFloorTournaments(clubIds: string[]) {
       if (!current()) return;
       const message = failure instanceof Error ? failure.message
         : (failure as { message?: string })?.message ?? "Không tải được danh sách giải";
-      setError(message);
-      toast.error(message);
+      const visibleMessage = message === "tracker_context_read_timeout"
+        ? "Hết thời gian tải danh sách giải. Vui lòng thử lại." : message;
+      setError(visibleMessage);
+      toast.error(visibleMessage);
     } finally {
+      flight.controller.abort();
       if (current()) setLoading(false);
       if (readFlight.current === flight) {
         readFlight.current = null;
@@ -129,7 +133,7 @@ export function useFloorTournaments(clubIds: string[]) {
       const [regsRes, seatsRes, evsRes, qualRes, entRes] = await Promise.all([
         flightIds.length ? (supabase as any).from("tournament_registrations").select("tournament_id").in("tournament_id", flightIds).eq("status", "confirmed") : Promise.resolve({ data: [] }),
         flightIds.length ? (supabase as any).from("tournament_seats").select("tournament_id, player_id").in("tournament_id", flightIds).eq("is_active", true) : Promise.resolve({ data: [] }),
-        eventIds.length ? (supabase as any).from("tournament_events").select("id, itm_percent, name").in("id", eventIds) : Promise.resolve({ data: [] }),
+        eventIds.length ? (supabase as any).from("tournament_events").select("id, itm_percent, name, guarantee_amount").in("id", eventIds) : Promise.resolve({ data: [] }),
         finalIds.length ? (supabase as any).from("tournament_event_qualifiers").select("final_tournament_id").in("final_tournament_id", finalIds) : Promise.resolve({ data: [] }),
         finalIds.length ? (supabase as any).from("tournament_entries").select("tournament_id, player_id").in("tournament_id", finalIds) : Promise.resolve({ data: [] }),
       ]);
@@ -142,7 +146,12 @@ export function useFloorTournaments(clubIds: string[]) {
       for (const s of ((seatsRes.data ?? []) as any[])) (survivors[s.tournament_id] ??= new Set()).add(s.player_id);
       const itmMap: Record<string, number> = {};
       const evMeta: Record<string, EventMeta> = {};
-      for (const e of ((evsRes.data ?? []) as any[])) { itmMap[e.id] = Number(e.itm_percent) || 0; evMeta[e.id] = { name: e.name ?? "", itm_percent: Number(e.itm_percent) || 0 }; }
+      for (const e of ((evsRes.data ?? []) as any[])) {
+        itmMap[e.id] = Number(e.itm_percent) || 0;
+        evMeta[e.id] = { name: e.name ?? "", itm_percent: Number(e.itm_percent) || 0,
+          guarantee_amount: e.guarantee_amount === null ? null
+            : typeof e.guarantee_amount === 'number' && Number.isSafeInteger(e.guarantee_amount) && e.guarantee_amount >= 0 ? e.guarantee_amount : undefined };
+      }
       const fMeta: Record<string, FlightMeta> = {};
       for (const fl of flights) {
         const surv = survivors[fl.id]?.size ?? 0;
@@ -185,14 +194,6 @@ export function useFloorTournaments(clubIds: string[]) {
     else { toast.success(t("clubAdmin.tournamentDeleted")); load(); }
   }, [t, load, scope, loadedScope, tours]);
 
-  const setTourStatus = useCallback(async (id: string, status: TourStatus) => {
-    if (!mounted.current || scopeRef.current !== scope || loadedScope !== scope || !tours.some(tour => tour.id === id)) return;
-    const { error } = await supabase.from("tournaments").update({ status }).eq("id", id);
-    if (!mounted.current || scopeRef.current !== scope) return;
-    if (error) toast.error(error.message);
-    else { toast.success(t("clubAdmin.statusUpdated")); load(); }
-  }, [t, load, scope, loadedScope, tours]);
-
   // "Bắt đầu giải" — same canonical clock-start as the operator Clock tab.
   const startTournament = useCallback(async (id: string) => {
     if (!mounted.current || scopeRef.current !== scope || loadedScope !== scope || !tours.some(tour => tour.id === id)) return;
@@ -208,7 +209,7 @@ export function useFloorTournaments(clubIds: string[]) {
   const metadataCurrent = loadedScope === scope && metadataOwner?.scope === scope && metadataOwner.tours === tours;
   return { tours, loading: stateScope !== scope ? !!user?.id && !authLoading && clubKey !== "[]" : loading,
     error: visibleError, flightMeta: metadataCurrent ? flightMeta : {}, finalMeta: metadataCurrent ? finalMeta : {},
-    eventMeta: metadataCurrent ? eventMeta : {}, reload: load, deleteTour, setTourStatus, startTournament };
+    eventMeta: metadataCurrent ? eventMeta : {}, reload: load, deleteTour, startTournament };
 }
 
 /** Props every Floor board receives — the hook's return plus the view-level extras the

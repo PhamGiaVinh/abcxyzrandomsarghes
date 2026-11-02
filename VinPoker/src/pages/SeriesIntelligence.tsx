@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ArrowLeft, Sparkles, FileSpreadsheet, Info, ShieldCheck, ChevronDown, FileText, BarChart3, CalendarRange, Dice5, FileImage, ClipboardList } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { FEATURES } from "@/lib/featureFlags";
 import { SERIES_INTEL } from "@/lib/seriesIntelligence";
 import { OwnerCommandCenter } from "@/components/series-intelligence/OwnerCommandCenter";
@@ -25,6 +26,7 @@ import { SeriesCaptureConsole } from "@/components/series-intelligence/SeriesCap
 import { SeriesAssistant } from "@/components/series-intelligence/SeriesAssistant";
 import { VCopilotPanel } from "@/components/series-intelligence/VCopilotPanel";
 import { ClubPulsePanel } from "@/components/series-intelligence/ClubPulsePanel";
+import TourRevenuePanel from "@/ops/finance/TourRevenuePanel";
 import { SeriesCandidateAuthoringPanel } from "@/components/series-intelligence/SeriesCandidateAuthoringPanel";
 import { RegistrationPacePanel } from "@/components/series-intelligence/RegistrationPacePanel";
 import { SeriesIntelligenceWorkspaceNav } from "@/components/series-intelligence/SeriesIntelligenceWorkspaceNav";
@@ -33,7 +35,7 @@ import type { ScheduleEvent } from "@/lib/series-intelligence/scheduleGenerator"
 import { useSeriesLibrary } from "@/lib/series-intelligence/useSeriesLibrary";
 import { useGroupingOverrides } from "@/lib/series-intelligence/useGroupingOverrides";
 import { mapClubPulseToExternalCopilotContextV1, type SeriesClubLivePulseV1 } from "@/lib/series-intelligence/seriesClubLivePulseV1";
-import { mapSeriesClubPulseDemoToCopilotContextV1 } from "@/lib/series-intelligence/seriesClubPulseDemoV1";
+import { mapSeriesClubPulseDemoToCopilotContextV1, SERIES_CLUB_PULSE_DEMO_CLUB_ID } from "@/lib/series-intelligence/seriesClubPulseDemoV1";
 
 /**
  * Club Admin → Series Intelligence — Owner Command Center (Phase 9).
@@ -43,7 +45,8 @@ import { mapSeriesClubPulseDemoToCopilotContextV1 } from "@/lib/series-intellige
  */
 export default function SeriesIntelligence() {
   const nav = useNavigate();
-  const { isAdmin, isClubAdmin, isClubOwner, loading } = useAuth();
+  const { user, session, isAdmin, isClubAdmin, isClubOwner, loading } = useAuth();
+  const readerScope = JSON.stringify([user?.id ?? null, sessionReadEpoch(session)]);
   // W3 — F5 redirect race: useAuth flips `loading` false as soon as getSession resolves, but roles /
   // club-ownership are fetched a beat later (fetchRoles is async + fired separately). On a hard reload
   // that left an authorized owner briefly "unauthorized" → Navigate("/") kicked them home. Give roles a
@@ -70,8 +73,17 @@ export default function SeriesIntelligence() {
   const [forecastFeed, setForecastFeed] = useState<ForecastFeedWithFee | null>(null);
   // CTA "Xem rủi ro overlay với dự đoán này": bump the signal → the simulator switches source + we scroll to it.
   const [forecastSignal, setForecastSignal] = useState(0);
-  const [liveClubPulse, setLiveClubPulse] = useState<SeriesClubLivePulseV1 | null>(null);
+  const [acceptedClubPulse, setAcceptedClubPulse] = useState<{
+    scope: string;
+    value: SeriesClubLivePulseV1 | null;
+  } | null>(null);
+  const liveClubPulse = acceptedClubPulse?.scope === readerScope ? acceptedClubPulse.value : null;
+  const acceptClubPulse = useCallback((value: SeriesClubLivePulseV1 | null) => {
+    setAcceptedClubPulse({ scope: readerScope, value });
+  }, [readerScope]);
   const [clubPulseDemoMode, setClubPulseDemoMode] = useState(false);
+  // Demo->live clears asynchronously in ClubPulsePanel; never send its sentinel to a money reader.
+  const moneyClubId = liveClubPulse?.clubId === SERIES_CLUB_PULSE_DEMO_CLUB_ID ? null : liveClubPulse?.clubId;
   const viewOverlayWithForecast = () => {
     setForecastSignal((s) => s + 1);
     // scroll after the state flush so the panel has re-rendered in forecast mode
@@ -129,7 +141,10 @@ export default function SeriesIntelligence() {
 
       <SeriesIntelligenceWorkspaceNav active="operations" />
 
-      {FEATURES.seriesClubPulseV1 && <ClubPulsePanel enabled demoMode={clubPulseDemoMode} onDemoModeChange={setClubPulseDemoMode} onPulseChange={setLiveClubPulse} />}
+      {FEATURES.seriesClubPulseV1 && <ClubPulsePanel key={readerScope} enabled demoMode={clubPulseDemoMode} onDemoModeChange={setClubPulseDemoMode} onPulseChange={acceptClubPulse} />}
+      {FEATURES.seriesClubPulseV1 && user && !clubPulseDemoMode && moneyClubId && (
+        <TourRevenuePanel key={`${readerScope}:${moneyClubId}`} clubId={moneyClubId} />
+      )}
 
       {/* transparency badge + report entry */}
       <div className="flex flex-wrap items-center justify-between gap-2">

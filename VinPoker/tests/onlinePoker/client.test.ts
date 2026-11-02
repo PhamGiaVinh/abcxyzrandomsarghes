@@ -8,6 +8,10 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// This suite exercises the OFF branch explicitly. Runtime configuration is ON
+// in the product; live transport has its own actual-SDK tests.
+vi.mock('@/lib/onlinePoker/types',async original=>({...await original<typeof import('@/lib/onlinePoker/types')>(),RUNTIME_LIVE:false}));
+
 // The supabase client reads import.meta.env at module load and createClient throws
 // on missing env — so mock it. The fns double as "was the network touched?" probes.
 vi.mock('@/integrations/supabase/client', () => ({
@@ -38,8 +42,11 @@ beforeEach(() => {
   from.mockReset();
 });
 
-describe('shell stays dark', () => {
-  it('RUNTIME_LIVE is false (the shell must never reach the runtime)', () => {
+describe('explicit dark runtime fixture', () => {
+  it('does not expose the retired unkeyed table-create client method', () => {
+    expect(onlinePokerClient).not.toHaveProperty('createOpenTable');
+  });
+  it('the OFF branch is selected for the no-network guard tests', () => {
     expect(RUNTIME_LIVE).toBe(false);
   });
 });

@@ -63,6 +63,7 @@ function mapClock(row: RpcRow): PublicClockState {
 }
 
 function formatCountdown(clock: PublicClockState | null, now: number): string {
+  if (clock && ['completed', 'finished', 'cancelled'].includes(clock.status)) return '--:--';
   if (clock?.isRunning === false) {
     if (clock.remainingSeconds == null) return '--:--';
     return `${String(Math.floor(clock.remainingSeconds / 60)).padStart(2, '0')}:${String(clock.remainingSeconds % 60).padStart(2, '0')}`;
@@ -87,6 +88,7 @@ function ScopedPublicTournamentClock() {
   const [results, setResults] = useState<TournamentResultView[]>([]);
   const [unavailable, setUnavailable] = useState(false);
   const [resultsUnavailable, setResultsUnavailable] = useState(false);
+  const [resultsPending, setResultsPending] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [now, setNow] = useState(Date.now());
 
@@ -120,10 +122,13 @@ function ScopedPublicTournamentClock() {
       if (!active) return;
       const candidate = readRpcRow(clockResult.data);
       const row = candidate && String(candidate.id ?? candidate.tournament_id) === tournamentId ? candidate : null;
-      failed = !!clockResult.error || !row || !!resultRows.error;
+      const pending = /\bpublic_payout_pending\b/.test(resultRows.error?.message ?? '');
+      const payoutFailed = !pending && (!!resultRows.error || !Array.isArray(resultRows.data));
+      failed = !!clockResult.error || !row || payoutFailed;
       setUnavailable(!!clockResult.error || !row);
       setClock(row ? mapClock(row) : null);
-      setResultsUnavailable(!!resultRows.error || !Array.isArray(resultRows.data));
+      setResultsUnavailable(payoutFailed);
+      setResultsPending(pending);
       const rows = !resultRows.error && Array.isArray(resultRows.data) ? resultRows.data as RpcRow[] : [];
       setResults(rows.map((item) => ({
         place: Number(item.place),
@@ -139,6 +144,7 @@ function ScopedPublicTournamentClock() {
         setClock(null);
         setResults([]);
         setResultsUnavailable(true);
+        setResultsPending(false);
       } finally { inFlight = false; }
     };
     void load();
@@ -149,6 +155,11 @@ function ScopedPublicTournamentClock() {
   }, [searchParams, tournamentId, attempt]);
 
   const countdown = useMemo(() => formatCountdown(clock, now), [clock, now]);
+  const terminal = !!clock && ['completed', 'finished', 'cancelled'].includes(clock.status);
+  const statusLabel = clock?.status === 'completed' || clock?.status === 'finished' ? 'Đã kết thúc'
+    : clock?.status === 'cancelled' ? 'Đã hủy'
+    : clock && ['live', 'running', 'in_progress', 'active', 'final_table', 'break'].includes(clock.status) ? 'Live'
+    : clock?.status === 'scheduled' ? 'Chưa bắt đầu' : 'Chưa xác minh trạng thái';
 
   if (unavailable) return <main className="grid min-h-[100dvh] place-items-center bg-background px-5 text-center"><div className="max-w-md rounded-3xl border border-border/55 bg-card/80 p-7"><Clock3 className="mx-auto h-8 w-8 text-[hsl(var(--poker-gold))]" /><h1 className="mt-4 text-xl font-black">Đồng hồ công khai chưa sẵn sàng</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">Không xác minh được dữ liệu đồng hồ công khai. Có thể do kết nối hoặc nguồn dữ liệu chưa sẵn sàng; trang không dùng dữ liệu nội bộ để thay thế.</p><button className="mt-4 min-h-11 rounded-xl border border-border px-4 text-sm font-bold" onClick={() => setAttempt(value => value + 1)}>Thử tải lại</button><Link to="/live" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 text-sm font-bold"><ArrowLeft className="h-4 w-4" /> Live Center</Link></div></main>;
   if (!clock) return <main className="grid min-h-[100dvh] place-items-center bg-background text-sm text-muted-foreground">Đang đồng bộ đồng hồ...</main>;
@@ -156,12 +167,12 @@ function ScopedPublicTournamentClock() {
   return (
     <main className="min-h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_50%_28%,hsl(var(--poker-felt)_/_0.2),transparent_36%),radial-gradient(circle_at_90%_5%,hsl(var(--poker-gold)_/_0.14),transparent_28%),linear-gradient(160deg,hsl(var(--background)),hsl(var(--card)))] px-[max(1rem,env(safe-area-inset-left))] pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-foreground">
       <div className="mx-auto flex min-h-[calc(100dvh-2rem)] max-w-[1500px] flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-border/45 pb-3"><Link to="/live" className="inline-flex min-h-11 items-center gap-2 text-xs font-bold text-muted-foreground"><ArrowLeft className="h-4 w-4" /> Live Center</Link><span className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--viewer-neon)_/_0.4)] bg-[hsl(var(--viewer-neon)_/_0.09)] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[hsl(var(--viewer-neon))]"><Radio className="h-3.5 w-3.5" /> Live</span></header>
+        <header className="flex items-center justify-between gap-3 border-b border-border/45 pb-3"><Link to="/live" className="inline-flex min-h-11 items-center gap-2 text-xs font-bold text-muted-foreground"><ArrowLeft className="h-4 w-4" /> Live Center</Link><span className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--viewer-neon)_/_0.4)] bg-[hsl(var(--viewer-neon)_/_0.09)] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[hsl(var(--viewer-neon))]"><Radio className="h-3.5 w-3.5" /> {statusLabel}</span></header>
         <section className="flex flex-1 flex-col justify-center py-6 text-center sm:py-9">
-          {clock.isRunning === false && <p className="text-sm font-bold text-muted-foreground">Đồng hồ đang dừng</p>}
+          {!terminal && clock.isRunning === false && <p className="text-sm font-bold text-muted-foreground">Đồng hồ đang dừng</p>}
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[hsl(var(--poker-gold))]">Level {clock.currentLevel ?? "--"}</p>
           <h1 className="mx-auto mt-2 max-w-5xl text-2xl font-black tracking-[-0.04em] sm:text-4xl xl:text-5xl">{clock.name}</h1>
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Level kết thúc trong</p>
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{terminal ? 'Đồng hồ đã dừng' : 'Level kết thúc trong'}</p>
           <div className="tracker-num my-2 text-[clamp(5rem,20vw,14rem)] font-black leading-[0.88] tracking-[-0.08em] tabular-nums text-foreground drop-shadow-[0_0_38px_hsl(var(--viewer-neon)_/_0.12)]">{countdown}</div>
           <div className="mx-auto mt-5 grid w-full max-w-5xl grid-cols-3 overflow-hidden rounded-2xl border border-border/55 bg-card/55 backdrop-blur-xl">
             <div className="p-3 sm:p-5"><div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">SB</div><div className="tracker-num mt-1 text-lg font-black sm:text-3xl">{fmtCompact(clock.smallBlind)}</div></div>
@@ -171,6 +182,7 @@ function ScopedPublicTournamentClock() {
         </section>
         <section className="grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
           {resultsUnavailable && <div role="status" className="text-sm text-destructive lg:col-span-2">Không tải được dữ liệu payout công khai. Không xác nhận danh sách kết quả đang trống. <button className="min-h-11 underline" onClick={() => setAttempt(value => value + 1)}>Thử tải lại payout</button></div>}
+          {resultsPending && <p role="status" className="text-sm text-muted-foreground lg:col-span-2">Payout đang chờ xác minh. Kết quả sẽ tự cập nhật khi máy chủ công bố.</p>}
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-2xl border border-border/50 bg-card/65 p-3"><Users className="h-4 w-4 text-[hsl(var(--poker-gold))]" /><div className="tracker-num mt-3 text-xl font-black">{clock.playersRemaining ?? "--"}</div><div className="mt-1 text-[9px] uppercase tracking-wider text-muted-foreground">Còn lại</div></div>
             <div className="rounded-2xl border border-border/50 bg-card/65 p-3"><Trophy className="h-4 w-4 text-[hsl(var(--poker-gold))]" /><div className="tracker-num mt-3 text-xl font-black">{clock.entries}</div><div className="mt-1 text-[9px] uppercase tracking-wider text-muted-foreground">Entries</div></div>

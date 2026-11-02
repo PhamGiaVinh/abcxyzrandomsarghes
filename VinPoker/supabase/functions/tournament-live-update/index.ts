@@ -23,6 +23,7 @@ import { routeTrackerVoiceIntent } from "../../../src/lib/trackerVoice/intentRou
 import { resolveNextVoiceHoleCardsSeatNumber } from "../../../src/lib/trackerVoice/holeCardsParser.ts";
 import { computeVoiceFinishSettlement } from "../_shared/trackerSettlement/finishAssist.ts";
 import { isManualFinishIntent, manualFinishReceiptMatches, manualFinishCancellationMatches } from "../../../src/lib/trackerManualFinish.ts";
+import { trackerUndoReceiptMatches } from "../../../src/lib/trackerUndoReceipt.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -373,31 +374,21 @@ Deno.serve(async (req) => {
         );
       }
       case "start_hand": {
-        const { table_id, hand_number, hand_time, button_seat,
+        const { hand_number, hand_time, button_seat,
           table_session_id, tournament_table_id, control_epoch } = body;
-        if ((table_session_id !== undefined || tournament_table_id !== undefined || control_epoch !== undefined)
-          && (typeof table_session_id !== "string" || typeof tournament_table_id !== "string"
-            || !Number.isInteger(control_epoch) || control_epoch < 1)) {
+        if (typeof table_session_id !== "string" || typeof tournament_table_id !== "string"
+          || !Number.isInteger(control_epoch) || control_epoch < 1) {
           return validationError("INVALID_TRACKER_CONTEXT", "Phiên bàn Tracker không hợp lệ. Hãy tải lại bàn.");
         }
         const normalizedButtonSeat =
           Number.isInteger(button_seat) && button_seat >= 1 && button_seat <= 10
             ? button_seat
             : 1;
-        result = table_session_id
-          ? await supabase.rpc("start_tracker_hand_v3", {
+        result = await supabase.rpc("start_tracker_hand_v3", {
             p_tournament_id: tournament_id,
             p_tournament_table_id: tournament_table_id,
             p_table_session_id: table_session_id,
             p_control_epoch: control_epoch,
-            p_hand_number: hand_number,
-            p_hand_time: hand_time || new Date().toISOString(),
-            p_created_by: user.id,
-            p_button_seat: normalizedButtonSeat,
-          })
-          : await supabase.rpc("start_hand", {
-            p_tournament_id: tournament_id,
-            p_table_id: table_id,
             p_hand_number: hand_number,
             p_hand_time: hand_time || new Date().toISOString(),
             p_created_by: user.id,
@@ -1252,6 +1243,19 @@ Deno.serve(async (req) => {
         code: "tracker_correction_pending" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (result.error) throw result.error;
+    if (action === "undo_last_action_v1") {
+      const proof = result.data;
+      if (proof?.ok === false && typeof proof.error === "string") {
+        return new Response(JSON.stringify({ error: proof.error, code: proof.error }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!trackerUndoReceiptMatches(proof, body)) {
+        return new Response(JSON.stringify({ error: "undo_receipt_unconfirmed", code: "undo_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     if (action === "record_manual_hand_v1" || action === "get_manual_finish_receipt_v1" || action === "cancel_manual_finish_v1") {
       const proof = result.data;
       if (proof && typeof proof.error === "string") {

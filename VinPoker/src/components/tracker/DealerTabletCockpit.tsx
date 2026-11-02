@@ -41,13 +41,15 @@ export function DealerTabletCockpit(props: CockpitProps) {
       const publish = (allowed: boolean) => { if (alive && version === requestVersion) setTrackerAllowed(allowed); };
       try {
         // Roster display metadata (names, seat locks, table numbers) is not writer authority.
-        const result = await rpc("get_floor_tournament_table_roster_v3", { p_tournament_id: hook.tournamentId });
-        const matches = !result.error && Array.isArray(result.data) ? result.data.filter((row) =>
-          row?.tournament_id === hook.tournamentId && row?.tournament_table_id === hook.tournamentTableId) : [];
+        // The Floor roster is operator-only. This context also scopes assigned dealers.
+        const result = await supabase.rpc("get_tracker_hand_input_tables_v4" as never, { p_tournament_id: hook.tournamentId } as never);
+        const context = result.data as { ok?: boolean; tables?: Record<string, unknown>[] } | null;
+        const matches = !result.error && context?.ok === true && Array.isArray(context.tables) ? context.tables.filter((row) =>
+          row && typeof row === "object" && row.tournament_table_id === hook.tournamentTableId) : [];
         const table = matches.length === 1 ? matches[0] : null;
-        if (!table || table.control_mode !== "tracker" || table.tournament_table_status !== "active"
-          || table.session_closed_at !== null || typeof table.table_session_id !== "string" || !table.table_session_id
-          || !Number.isSafeInteger(table.control_epoch) || table.control_epoch < 1) { publish(false); return; }
+        if (!table || table.control_mode !== "tracker" || table.can_manual_cards !== true
+          || typeof table.table_session_id !== "string" || !table.table_session_id
+          || typeof table.control_epoch !== "number" || !Number.isSafeInteger(table.control_epoch) || table.control_epoch < 1) { publish(false); return; }
         const authority = await client.validateTrackerContext({ tournamentId: hook.tournamentId, tournamentTableId: hook.tournamentTableId!, tableSessionId: table.table_session_id, controlEpoch: table.control_epoch });
         publish(authority.ok && !!authority.data && typeof authority.data === "object" && "ok" in authority.data && authority.data.ok === true);
       } catch { publish(false); }

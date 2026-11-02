@@ -1,9 +1,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useCorrectionCommitRecovery } from "./useCorrectionCommitRecovery";
+import { useCorrectionCommitRecovery as useRecovery } from "./useCorrectionCommitRecovery";
 import { persistCorrectionIntent, readCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 const mock=vi.hoisted(()=>({actor:'81100000-0000-4000-8000-000000000001',invoke:vi.fn()}));
-vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:mock.actor}})}));
+function useCorrectionCommitRecovery(tournament: string, hand: string, resolved: (status: "found" | "obsolete") => void) {
+ return useRecovery(tournament, hand, resolved, mock.actor);
+}
 vi.mock('@/integrations/supabase/SupabaseClientContext',()=>({useSupabaseClient:()=>({functions:{invoke:mock.invoke}})}));
 vi.mock('@/lib/tournament/observeTrackerContextRead',()=>({observeTrackerContextRead:<T,>(value:T)=>value}));
 const intent:CorrectionCommitIntent={expected_actor_id:'81100000-0000-4000-8000-000000000001',tournament_id:'85000000-0000-4000-8000-000000000001',
@@ -15,6 +17,14 @@ const receipt=()=>({data:{ok:true,status:'receipt_found',actor_id:intent.expecte
 describe('correction recovery scope and mutation boundary',()=>{
  beforeEach(()=>{vi.useRealTimers();localStorage.clear();mock.actor=intent.expected_actor_id;mock.invoke.mockReset();
   Object.defineProperty(navigator,'locks',{configurable:true,value:{request:vi.fn(async(_key:unknown,_options:unknown,fn:()=>unknown)=>await fn())}});
+ });
+ it('does not send or recover with an absent shell actor',async()=>{
+  const mutation=vi.fn(),resolved=vi.fn();persistCorrectionIntent(localStorage,intent);
+  const hook=renderHook(()=>useRecovery(intent.tournament_id,intent.hand_id,resolved,undefined));
+  await expect(hook.result.current.commit(intent,mutation)).rejects.toThrow(/Tài khoản/);
+  await act(async()=>{await hook.result.current.recover();});
+  expect(mock.invoke).not.toHaveBeenCalled();expect(mutation).not.toHaveBeenCalled();
+  expect(readCorrectionIntent(localStorage,intent)).toEqual(intent);
  });
  it('persists before sending, blocks double-click and recovers after remount without mutation retry',async()=>{
   let finish!:(v:{data:unknown,error:unknown})=>void;

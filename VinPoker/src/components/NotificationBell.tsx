@@ -64,23 +64,25 @@ export const NotificationBell = () => {
           ) : (
             <ul>
               {items.map((n) => (
-                <li
-                  key={n.id}
+                <li key={n.id} className="border-b border-border/50">
+                <button
+                  type="button"
                   onClick={() => handleClick(n)}
                   className={cn(
-                    "px-4 py-3 border-b border-border/50 cursor-pointer hover:bg-muted/40 transition-colors flex gap-3",
+                    "w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors flex gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                     !n.is_read && "bg-primary/5 border-l-2 border-l-primary",
                     n.is_read && "opacity-70",
                   )}
                 >
-                  <div className="text-xl leading-none shrink-0">{ICON_FOR[n.type]}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className={cn("text-sm leading-tight", !n.is_read && "font-semibold")}>
+                  <span aria-hidden="true" className="text-xl leading-none shrink-0">{ICON_FOR[n.type]}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className={cn("block text-sm leading-tight", !n.is_read && "font-semibold")}>
                       {n.title}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</div>
-                    <div className="text-[10px] text-muted-foreground mt-1">{timeAgo(n.created_at)}</div>
-                  </div>
+                    </span>
+                    <span className="block text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</span>
+                    <span className="block text-[10px] text-muted-foreground mt-1">{timeAgo(n.created_at)}</span>
+                  </span>
+                </button>
                 </li>
               ))}
             </ul>

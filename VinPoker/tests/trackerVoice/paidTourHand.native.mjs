@@ -3,6 +3,77 @@ import {execFileSync} from 'node:child_process';
 import {computeVoiceFinishSettlement} from '../../supabase/functions/_shared/trackerSettlement/finishAssist.ts';
 import {reduceHand,isBettingRoundComplete} from '../../src/lib/tracker-poker/handStateCore.ts';
 
+// Continue the same paid flights -> qualified bags -> initial D2 seating fixture.
+// Dealer/attendance/config are explicit local prerequisites, not Swing evidence.
+export async function runD2InitialHand(sql,f,total) {
+ assert.equal(process.env.VINPOKER_NATIVE_CROSS_FLOW,'1');
+ assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
+ assert.equal(sql(`SELECT name FROM public.tournaments WHERE id='${f.tour}';`),'Multi-day Final local TEST');
+ const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
+ const call=q=>JSON.parse(sql(`BEGIN;${auth}${q}COMMIT;`));
+ const quote=v=>`'${JSON.stringify(v).replaceAll("'","''")}'::jsonb`;
+ const table=JSON.parse(sql(`SELECT to_jsonb(tt) FROM public.tournament_tables tt JOIN public.tournament_seats s
+   ON s.tournament_table_id=tt.id AND s.is_active WHERE tt.tournament_id='${f.tour}' GROUP BY tt.id
+   HAVING count(*)=3 ORDER BY tt.table_number LIMIT 1;`));
+ assert.ok(table?.table_session_id);
+ let state=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${table.table_session_id}';`));
+ const changed=call(`SELECT public.floor_request_table_control_mode_v4('${table.id}','${state.id}','tracker',${state.revision},${state.control_epoch},'${crypto.randomUUID()}');`);
+ assert.equal(changed.ok,true,JSON.stringify(changed));
+ state=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${state.id}';`));
+ const dealer=crypto.randomUUID(),shift=crypto.randomUUID(),attendance=crypto.randomUUID();
+ const prior=sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');");
+ try {
+  sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claim.role='authenticated';
+   SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
+   SET LOCAL request.headers='{"x-vinpoker-dealer-intent":"manual","x-vinpoker-dealer-actor":"${f.actor}"}';
+   INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES('${shift}','${f.club}','D2 hand local TEST','00:00','23:59');
+   INSERT INTO public.dealers(id,club_id,full_name,status) VALUES('${dealer}','${f.club}','D2 hand local TEST','active');
+   INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+   VALUES('${attendance}','${dealer}','${shift}',current_date,'checked_in',now(),'assigned');
+   INSERT INTO public.dealer_assignments(table_id,table_session_id,club_id,dealer_id,attendance_id,status,assigned_at)
+   VALUES('${state.game_table_id}','${state.id}','${f.club}','${dealer}','${attendance}','assigned',now());
+   INSERT INTO public.app_settings(key,value) VALUES('tracker_voice_global_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+   INSERT INTO public.tracker_voice_configs(club_id,tournament_id,tournament_table_id,physical_table_id,table_session_id,control_epoch,enabled,configured_mode)
+   VALUES('${f.club}','${f.tour}','${table.id}','${state.game_table_id}','${state.id}',${state.control_epoch},true,'assist');COMMIT;`);
+  const started=call(`SELECT public.start_tracker_hand_v3('${f.tour}','${table.id}','${state.id}',${state.control_epoch},1,now(),'${f.actor}',1);`);
+  assert.equal(started.status,'success',JSON.stringify(started));
+  const hand=JSON.parse(sql(`SELECT to_jsonb(h) FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';`));
+  const players=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY seat_number) FROM public.hand_players p WHERE hand_id='${hand.id}';`));
+  assert.equal(players.length,3);assert.ok(players.every(p=>p.starting_stack===total/8));
+  for(const [p,type,order,amount] of [[players[1],'post_sb',1,100],[players[2],'post_bb',2,200],[players[0],'fold',3,0],[players[1],'fold',4,0]]) {
+   const r=call(`SELECT public.record_action('${hand.id}','${p.player_id}','${type}',${order},${p.entry_number},'preflop',${amount});`);
+   assert.equal(r.status,'success',JSON.stringify(r));
+  }
+  const snapshot=call(`SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand.id}');`);
+  assert.equal(snapshot.ok,true,JSON.stringify(snapshot));
+  const runtime=reduceHand(snapshot.players,snapshot.actions,snapshot.button_seat);
+  const result=await computeVoiceFinishSettlement({handId:hand.id,stateVersion:snapshot.state_version,buttonSeat:snapshot.button_seat,
+   communityCards:snapshot.community_cards,players,actions:snapshot.actions,bettingComplete:isBettingRoundComplete(runtime)});
+  assert.equal(result.settlementOrigin,'engine_fold_win');assert.equal(result.summary.conservation_total,total*3/8);
+  const key='native-d2-finish-'+crypto.randomUUID();
+  const record={hand_number:hand.hand_number,hand_time:hand.created_at,players:result.recordPlayers,actions:result.recordActions,
+   side_pots:result.sidePots,community_cards:snapshot.community_cards,pot_size:result.potSize};
+  const finish=()=>JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"service_role"}';SET LOCAL ROLE service_role;
+   SELECT public.commit_tracker_voice_finish_v0('${f.actor}','${f.tour}','${table.id}','${hand.id}','openai_realtime','gpt-live-transcribe',
+   '${key}','ket thuc hand','${snapshot.state_version}','${key}','native-d2-finish','${result.settlementOrigin}','${result.settlementDigest}',${quote(record)});COMMIT;`));
+  const receipt=finish();assert.equal(receipt.ok,true,JSON.stringify(receipt));assert.equal(finish().ok,true);
+  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${hand.id}';`),'completed');
+  assert.equal(Number(sql(`SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`)),total);
+  for(const p of result.recordPlayers) {
+   assert.equal(Number(sql(`SELECT current_stack FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND player_id='${p.player_id}' AND entry_no=${p.entry_number};`)),p.ending_stack);
+  }
+  assert.equal(sql(`SELECT count(*) FROM public.cashier_buyin_movements WHERE tournament_id='${f.tour}';`),'0');
+  console.log('MULTIDAY_SAME_FINAL_THREE_PLAYER_HAND_FINISH_CARRY_CONSERVATION_PASS',JSON.stringify({tour:f.tour,hand:hand.id,total}));
+  assert.ok(f.event&&f.plan,'D2 history requires immutable qualification/plan provenance');
+  const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{
+   encoding:'utf8',timeout:120000,env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_D2:JSON.stringify(f)}});
+  assert.match(worker,/ACTUAL_D2_QUALIFIED_PARENT_HISTORY_WORKER_PUBLIC_PASS/);process.stdout.write(worker);
+ } finally {
+  if(prior==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
+  else sql(`UPDATE public.app_settings SET value='${prior.replaceAll("'","''")}'::jsonb WHERE key='tracker_voice_global_enabled';`);
+ }
+}
+
 export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
  assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
  assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
@@ -149,7 +220,8 @@ export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
    console.log('NATIVE_EIGHT_PAID_STAFFED_DEFERRED_BREAK_FINISH_CLOSE_RELEASE_PASS',hand.id);
   }else assert.equal(otherSeats(),otherBefore);
   assert.equal(cash(),cashBefore);
-  assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE club_id='${f.club}' AND status='assigned' AND released_at IS NULL;`),breakSource?'1':'2');
+  assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments a JOIN public.table_sessions s ON s.id=a.table_session_id
+    WHERE a.club_id='${f.club}' AND s.tournament_id='${f.tour}' AND a.status='assigned' AND a.released_at IS NULL;`),breakSource?'1':'2');
   console.log('NATIVE_PAID_EIGHT_STAFFED_FOUR_PLAYER_FINISH_PENDING_MODE_PASS',hand.id);
   const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{encoding:'utf8',timeout:120000,
    env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(f)}});

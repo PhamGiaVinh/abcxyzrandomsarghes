@@ -7,7 +7,7 @@ const h=vi.hoisted(()=>{const rpc=vi.fn();return {actor:"",rpc,client:{rpc},succ
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:h.actor}})}));
 vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>h.client}));
 vi.mock("@/lib/featureFlags",()=>({FEATURES:{tvLayoutEditorV1:true}}));
-vi.mock("@/components/ProofUploader",()=>({ProofUploader:()=>null}));
+vi.mock("@/components/ProofUploader",()=>({ProofUploadWorkspace:()=>null}));
 vi.mock("sonner",()=>({toast:{success:h.success,error:h.error}}));
 import {TvBrandingEditor} from "@/components/cashier/tournament-live/TvBrandingEditor";
 const enabled=process.env.VINPOKER_NATIVE_TV_UI==='1',database='vinpoker_ops_cash115_qualified_c';
@@ -30,7 +30,7 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   const assetPath=`${f.actor}/tv/branding-logo/v1/${crypto.randomUUID()}.png`;
   const assetUrl=`https://orlesggcjamwuknxwcpk.supabase.co/storage/v1/object/public/backing-proofs/${assetPath}`;
   gateBefore=JSON.parse(sql('SELECT to_jsonb(r) FROM public.centerpoint_tournament_ops_release r WHERE id=true;'));
-  expect(gateBefore!.enabled).toBe(false);expect(gateBefore!.allowed_club_ids).toEqual([]);
+  expect(gateBefore!.enabled).toBe(false);expect(Array.isArray(gateBefore!.allowed_club_ids)).toBe(true);
   // Metadata-only Storage seam: no blob bytes or hosted upload are modeled.
   sql(`INSERT INTO storage.buckets(id,name,public) VALUES('backing-proofs','backing-proofs',true) ON CONFLICT(id) DO NOTHING;`);
   expect(sql(`SELECT name||'|'||public FROM storage.buckets WHERE id='backing-proofs';`)).toBe('backing-proofs|true');
@@ -53,6 +53,7 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
     return {data:null,error:{code:failure?.[1]??'',message:failure?.[2]??stderr}};}
   });
   expect(sql(`SELECT count(*) FROM public.tv_tournament_layouts WHERE tournament_id='${f.tour}';`)).toBe('0');
+  expect(JSON.parse(sql(ownerSql+`SELECT public.get_tv_tournament_branding_v1('${f.tour}');`)).revision).toBe(0);
   const first=render(<TvBrandingEditor tournamentId={f.tour}/>);
   fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
   await waitFor(()=>expect(screen.getByRole('button',{name:'Publish TV layout'})).toBeEnabled());
@@ -144,5 +145,44 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   catch(error){expect(String((error as {stderr?:unknown}).stderr??error)).toContain('tv_layout_asset_missing');}
   expect(sql(`SELECT revision FROM public.tv_tournament_layouts WHERE event_id='${event}';`)).toBe('2');
   expect(sql(`SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}';`)).toBe(retained);
+  // Recovery is a compensating publish with CAS, never UPDATE of history.
+  const version=(revision:number)=>JSON.parse(sql(`SELECT to_jsonb(v) FROM public.tv_tournament_layout_versions v
+    JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}' AND v.revision=${revision};`));
+  const original1=version(1),original2=version(2),recoveryOps=operational();
+  const restore=(snapshot:Record<string,unknown>,expected:number)=>JSON.parse(sql(ownerSql+`SELECT public.save_tv_tournament_layout_v1(
+    '${f.tour}',${expected},${quote(snapshot.brand_name??'')},${quote(snapshot.logo_url??'')},${quote(snapshot.background_url??'')},${quote(snapshot.layout)}::jsonb);`));
+  expect(restore(original1,2).revision).toBe(3);
+  expect(restore(original2,3).revision).toBe(4);
+  expect(version(1)).toEqual(original1);expect(version(2)).toEqual(original2);
+  expect(operational()).toBe(recoveryOps);
+  expect(sql(`SELECT to_jsonb(o) FROM storage.objects o WHERE bucket_id='backing-proofs' AND name='${assetPath}';`)).toBe(assetBefore);
+  for(const displayToken of [token,secondToken]){
+    const restored=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_tv_display_state_v4('${displayToken}',true);`));
+    expect(restored.display.club_brand_name).toBe(original2.brand_name);
+    expect(restored.display.club_logo_url).toBe(assetUrl);
+  }
+  cleanup();h.error.mockClear();h.success.mockClear();mask=true;
+  const oldVersions=sql(`SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}';`);
+  const beforeResetCommits=commits;
+  render(<TvBrandingEditor tournamentId={f.tour}/>);fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Publish TV layout'})).toBeEnabled());
+  fireEvent.click(screen.getByRole('button',{name:'Reset draft to defaults'}));
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'}));});
+  expect(h.success).toHaveBeenCalledOnce();expect(h.error).not.toHaveBeenCalled();expect(commits).toBe(beforeResetCommits+1);
+  const reset=JSON.parse(sql(ownerSql+`SELECT public.get_tv_tournament_branding_v1('${f.tour}');`));
+  expect(reset.revision).toBe(5);expect(reset.configured_brand_name).toBeNull();expect(reset.brand_name).toBe('Cash identity local TEST');
+  expect(sql(`SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.event_id='${event}' AND v.revision<=4;`)).toBe(oldVersions);
+  expect(operational()).toBe(recoveryOps);expect(sql(`SELECT to_jsonb(o) FROM storage.objects o WHERE bucket_id='backing-proofs' AND name='${assetPath}';`)).toBe(assetBefore);
+  expect(reset.fallback_brand_name).toBe('Cash identity local TEST');
+  cleanup();h.error.mockClear();h.success.mockClear();
+  render(<TvBrandingEditor tournamentId={f.tour}/>);fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Publish TV layout'})).toBeEnabled());
+  expect(screen.getByLabelText('Brand name')).toHaveValue('');
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'}));});
+  expect(h.success).toHaveBeenCalledOnce();expect(h.error).not.toHaveBeenCalled();
+  expect(h.rpc.mock.calls.filter(([name])=>name==='save_tv_tournament_layout_v1').at(-1)?.[1].p_brand_name).toBe('');
+  expect(sql(`SELECT revision||'|'||(brand_name IS NULL) FROM public.tv_tournament_layouts WHERE event_id='${event}';`)).toBe('6|true');
+  expect(operational()).toBe(recoveryOps);
+  console.log('TV_FIRST_PUBLISH_ANON_FLIGHTS_COMPENSATING_METADATA_RESTORE_IMMUTABLE_HISTORY_PASS',JSON.stringify({club:f.club,tour:f.tour,event,revision:6,storageBytesVerified:false,resetLostResponseVerified:true,inheritedNamePreservedAfterReload:true}));
  });
 });

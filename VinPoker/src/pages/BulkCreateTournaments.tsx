@@ -1,3 +1,4 @@
+import {observeScheduleAnalysis} from '@/lib/scheduleAnalysisRead';
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -9,7 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Upload, Trash2, ImagePlus, Wand2, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import {useScheduleBatchCreate} from '@/hooks/useScheduleBatchCreate';
+import {ScheduleBatchRecovery} from '@/components/floor/ScheduleBatchRecovery';
+import {useAuth} from '@/hooks/useAuth';
+import {parseTournamentSchedule} from '@/lib/parsedTournamentSchedule';
+import {observeTrackerContextRead} from '@/lib/tournament/observeTrackerContextRead';
 
 type Status = "pending" | "processing" | "done" | "error";
 
@@ -17,8 +22,8 @@ interface ParsedTour {
   tempId: string;
   name: string;
   start_time: string; // ISO
-  buy_in: number;
-  starting_stack: number;
+  buy_in: number | "";
+  starting_stack: number | "";
   game_type: "nlh" | "plo" | "mixed";
   venue?: string | null;
   club_id: string;
@@ -59,31 +64,66 @@ const toLocalInputValue = (iso: string) => {
 };
 
 export default function BulkCreateTournaments() {
+  const {user,loading,authError,rolesLoading,rolesError,isAdmin}=useAuth();
+  const navigate=useNavigate();
+  const {t}=useTranslation();
+  const pending=loading||rolesLoading;
+  const unavailable=authError||(!isAdmin&&rolesError);
+  useEffect(()=>{
+    if(pending||unavailable)return;
+    if(!user){navigate('/auth');return;}
+    if(!isAdmin){toast.error(t('bulkCreate.adminOnly'));navigate('/');}
+  },[pending,unavailable,user,isAdmin,navigate,t]);
+  if(unavailable)return <div role="alert" className="p-6">Không xác minh được quyền. Vui lòng tải lại trang để thử lại.</div>;
+  if(pending)return <div role="status" className="p-6 text-center" aria-label="Đang xác minh quyền"><Loader2 className="animate-spin inline" /></div>;
+  if(!user||!isAdmin)return null;
+  return <ScopedBulkCreateTournaments key={user?.id??'anonymous'}/>;
+}
+function ScopedBulkCreateTournaments() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [authChecked, setAuthChecked] = useState(false);
+  const [clubsLoading,setClubsLoading]=useState(true);
+  const [clubsError,setClubsError]=useState(false);
+  const [clubsAttempt,setClubsAttempt]=useState(0);
   const [clubs, setClubs] = useState<{ id: string; name: string }[]>([]);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [parsed, setParsed] = useState<ParsedTour[]>([]);
   const [defaultClubId, setDefaultClubId] = useState<string>("");
-  const [creating, setCreating] = useState(false);
+  const batch=useScheduleBatchCreate();
+  const creating=batch.busy;
   const inputRef = useRef<HTMLInputElement>(null);
+  const processingRef=useRef(false),removedImages=useRef(new Set<string>());
+  const previewUrls=useRef(new Map<string,string>());
+  const analysisRef=useRef<AbortController|null>(null);
+  useEffect(()=>{
+    const urls=previewUrls.current;
+    return()=>{analysisRef.current?.abort();urls.forEach(url=>URL.revokeObjectURL(url));urls.clear();};
+  },[]);
 
   useEffect(() => {
+    let active=true;
+    const controller=new AbortController();
+    setClubsLoading(true);setClubsError(false);
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate("/auth"); return; }
-      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
-      const isAdmin = roles?.some((r: any) => r.role === "super_admin");
-      if (!isAdmin) { toast.error(t("bulkCreate.adminOnly")); navigate("/"); return; }
-      setAuthChecked(true);
-      const { data: cs } = await supabase.from("clubs").select("id,name").eq("status", "approved").order("name");
-      setClubs(cs ?? []);
-      if (cs && cs.length === 1) setDefaultClubId(cs[0].id);
+      try {
+        const {data:cs,error}=await observeTrackerContextRead(supabase.from('clubs').select('id,name').eq('status','approved').order('name').abortSignal(controller.signal));
+        if(!active)return;
+        if(error||!Array.isArray(cs)||cs.some(row=>!row||typeof row!=='object'||Array.isArray(row)
+          ||typeof row.id!=='string'||!row.id.trim()||typeof row.name!=='string'))throw new Error('clubs_unavailable');
+        setClubs(cs);
+        if(cs.length===1)setDefaultClubId(cs[0].id);
+      }catch{
+        controller.abort();
+        if(active)setClubsError(true);
+      }finally{
+        if(active)setClubsLoading(false);
+      }
     })();
-  }, [navigate]);
+    return()=>{active=false;controller.abort();};
+  }, [clubsAttempt]);
 
   const onFiles = (files: FileList | null) => {
+    if(batch.blocked||batch.busy)return;
     if (!files) return;
     const arr: UploadedImage[] = Array.from(files).filter(f => f.type.startsWith("image/")).map(f => ({
       id: crypto.randomUUID(),
@@ -92,36 +132,56 @@ export default function BulkCreateTournaments() {
       status: "pending" as Status,
       count: 0,
     }));
+    arr.forEach(img=>previewUrls.current.set(img.id,img.url));
     setImages(prev => [...prev, ...arr]);
   };
 
   const removeImage = (id: string) => {
+    removedImages.current.add(id);
+    const url=previewUrls.current.get(id);
+    if(url){URL.revokeObjectURL(url);previewUrls.current.delete(id);}
     setImages(prev => prev.filter(i => i.id !== id));
     setParsed(prev => prev.filter(p => p.source_image !== id));
   };
 
   const processAll = async () => {
+    if(processingRef.current)return;
     const todo = images.filter(i => i.status === "pending" || i.status === "error");
     if (todo.length === 0) { toast.info(t("bulkCreate.noPending")); return; }
 
-    for (const img of todo) {
+    processingRef.current=true;
+    const analysis=new AbortController();
+    analysisRef.current=analysis;
+    let analysisFailed = false;
+    let analyzedImages = 0;
+    try { for (const img of todo) {
+      if(analysis.signal.aborted)break;
+      if(removedImages.current.has(img.id))continue;
       setImages(prev => prev.map(i => i.id === img.id ? { ...i, status: "processing", error: undefined } : i));
       try {
-        const b64 = await fileToBase64(img.file);
-        const { data, error } = await supabase.functions.invoke("parse-tournament-schedule", {
-          body: { image_base64: b64, image_mime: img.file.type },
+        const result = await observeScheduleAnalysis(analysis.signal, async (signal) => {
+          const b64 = await fileToBase64(img.file);
+          if (signal.aborted || removedImages.current.has(img.id)) return null;
+          return supabase.functions.invoke("parse-tournament-schedule", {
+            signal, body: { image_base64: b64, image_mime: img.file.type },
+          });
         });
+        if (!result) continue;
+        const { data, error } = result;
+        if(analysis.signal.aborted)break;
+        if(removedImages.current.has(img.id))continue;
         if (error) throw new Error(error.message);
         if ((data as any)?.error) throw new Error((data as any).error);
 
-        const tours = (data?.tournaments ?? []) as any[];
+        const tours = parseTournamentSchedule(data);
+        analyzedImages++;
         const newParsed: ParsedTour[] = tours.map(t => ({
           tempId: crypto.randomUUID(),
           name: t.name ?? "",
           start_time: t.start_time ?? "",
-          buy_in: Number(t.buy_in) || 0,
-          starting_stack: Number(t.starting_stack) || 20000,
-          game_type: (["nlh", "plo", "mixed"].includes(t.game_type) ? t.game_type : "nlh") as any,
+          buy_in: t.buy_in,
+          starting_stack: t.starting_stack,
+          game_type: t.game_type,
           venue: t.venue ?? null,
           club_id: defaultClubId || "",
           selected: true,
@@ -130,11 +190,15 @@ export default function BulkCreateTournaments() {
         setParsed(prev => [...prev, ...newParsed]);
         setImages(prev => prev.map(i => i.id === img.id ? { ...i, status: "done", count: tours.length } : i));
       } catch (e: any) {
+        if(analysis.signal.aborted)break;
+        if(removedImages.current.has(img.id))continue;
         setImages(prev => prev.map(i => i.id === img.id ? { ...i, status: "error", error: e.message } : i));
+        analysisFailed = true;
         toast.error(t("bulkCreate.errorPrefix", { msg: e.message }));
       }
     }
-    toast.success(t("bulkCreate.processDone"));
+    if(!analysis.signal.aborted && !analysisFailed && analyzedImages > 0)toast.success(t("bulkCreate.processDone"));
+    } finally {processingRef.current=false;analysisRef.current=null;}
   };
 
   const updateRow = (tempId: string, patch: Partial<ParsedTour>) => {
@@ -144,33 +208,38 @@ export default function BulkCreateTournaments() {
   const removeRow = (tempId: string) => setParsed(prev => prev.filter(p => p.tempId !== tempId));
 
   const createAll = async () => {
+    if(batch.blocked||creating||processingRef.current)return;
     const rows = parsed.filter(p => p.selected);
     if (rows.length === 0) { toast.error(t("bulkCreate.noRowSelected")); return; }
-    const invalid = rows.find(r => !r.name.trim() || !r.start_time || !r.club_id);
+    if (rows.some(r => typeof r.buy_in !== 'number' || !Number.isSafeInteger(r.buy_in) || r.buy_in < 0
+      || typeof r.starting_stack !== 'number' || !Number.isSafeInteger(r.starting_stack) || r.starting_stack <= 0)) {
+      toast.error("Mỗi giải cần buy-in nguyên từ 0 và stack nguyên lớn hơn 0");return;
+    }
+    const invalid = rows.find(r => !r.name.trim() || !r.start_time || !r.club_id
+      || !Number.isFinite(new Date(r.start_time).getTime()));
     if (invalid) { toast.error(t("bulkCreate.rowValidation")); return; }
 
-    setCreating(true);
     // `schedule_upload_id` intentionally omitted — migration 20260516123400 (adds
     // tournaments.schedule_upload_id for push-notification grouping) is NOT applied to the live DB,
     // so sending it fails the insert with "column not found in schema cache". Nothing reads it in the
     // app. Re-add once that migration is applied (owner-gated). Same fix as BulkScheduleDialog.tsx.
-    const payload = rows.map(r => withTournamentCreateLiveStatus({
+    const payload = rows.map(r => ({
       name: r.name.trim(),
       start_time: new Date(r.start_time).toISOString(),
-      buy_in: r.buy_in,
-      starting_stack: r.starting_stack,
+      buy_in: Number(r.buy_in),
+      starting_stack: Number(r.starting_stack),
       game_type: r.game_type,
       location: r.venue ?? null,
       club_id: r.club_id,
     }));
-    const { error } = await (supabase as any).from("tournaments").insert(payload as any);
-    setCreating(false);
-    if (error) { toast.error(error.message); return; }
+    const ids=await batch.submit(payload);if(!ids)return;
     toast.success(t("bulkCreate.created", { count: rows.length }));
-    setParsed(prev => prev.filter(p => !p.selected));
+    const submitted=new Set(rows.map(r=>r.tempId));setParsed(prev => prev.filter(p => !submitted.has(p.tempId)));
   };
 
-  if (!authChecked) return <div className="p-6 text-center"><Loader2 className="animate-spin inline" /></div>;
+  if(clubsLoading)return <div role="status" aria-label="Đang tải CLB" className="p-6 text-center"><Loader2 className="animate-spin inline" /></div>;
+  if(clubsError)return <div role="alert" className="p-6 space-y-2"><p>Không tải được danh sách CLB. Chưa thể nhập lịch.</p><Button onClick={()=>setClubsAttempt(value=>value+1)}>Thử lại</Button></div>;
+  if(clubs.length===0)return <div role="status" className="p-6">Không có CLB đã được duyệt để nhập lịch.</div>;
 
   const stats = {
     uploaded: images.length,
@@ -181,6 +250,8 @@ export default function BulkCreateTournaments() {
 
   return (
     <div className="container max-w-6xl mx-auto p-4 space-y-4">
+      <ScheduleBatchRecovery batch={batch} onRecovered={()=>setParsed(prev=>prev.filter(p=>!p.selected))}/>
+      <fieldset disabled={batch.blocked||batch.busy} className="min-w-0 space-y-4">
       <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> {t("bulkCreate.back")}
@@ -189,6 +260,7 @@ export default function BulkCreateTournaments() {
         <div />
       </div>
 
+      <p className="text-sm text-muted-foreground">Chỉ tạo lịch giải, chưa có cấu hình blind. Sau khi lưu, mở cấu hình giải để bổ sung blind trước khi bắt đầu clock.</p>
       {/* Upload zone */}
       <Card className="p-4">
         <div
@@ -234,7 +306,7 @@ export default function BulkCreateTournaments() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 mt-4">
-              <Button onClick={processAll} disabled={images.every(i => i.status === "done" || i.status === "processing")}>
+              <Button onClick={processAll} disabled={images.some(i=>i.status==='processing')||images.every(i => i.status === "done" || i.status === "processing")}>
                 <Wand2 className="h-4 w-4 mr-1" /> {t("bulkCreate.analyzeAi")}
               </Button>
               <div className="text-sm text-muted-foreground ml-auto">
@@ -262,7 +334,7 @@ export default function BulkCreateTournaments() {
             <Button variant="secondary" size="sm" onClick={() => setParsed(prev => prev.map(p => ({ ...p, club_id: defaultClubId })))} disabled={!defaultClubId}>
               {t("bulkCreate.applyAll")}
             </Button>
-            <Button className="ml-auto" onClick={createAll} disabled={creating}>
+            <Button className="ml-auto" onClick={createAll} disabled={creating||batch.blocked||images.some(i=>i.status==='processing')}>
               {creating && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {t("bulkCreate.createCount", { count: parsed.filter(p => p.selected).length })}
             </Button>
@@ -289,10 +361,10 @@ export default function BulkCreateTournaments() {
                     <td className="p-2"><Input value={p.name} onChange={(e) => updateRow(p.tempId, { name: e.target.value })} className="h-8 min-w-[180px]" /></td>
                     <td className="p-2">
                       <Input type="datetime-local" value={toLocalInputValue(p.start_time)}
-                        onChange={(e) => updateRow(p.tempId, { start_time: new Date(e.target.value).toISOString() })} className="h-8 w-44" />
+                        onChange={(e) => updateRow(p.tempId, { start_time: e.target.value ? new Date(e.target.value).toISOString() : "" })} className="h-8 w-44" />
                     </td>
-                    <td className="p-2"><Input type="number" value={p.buy_in} onChange={(e) => updateRow(p.tempId, { buy_in: Number(e.target.value) })} className="h-8 w-28" /></td>
-                    <td className="p-2"><Input type="number" value={p.starting_stack} onChange={(e) => updateRow(p.tempId, { starting_stack: Number(e.target.value) })} className="h-8 w-24" /></td>
+                    <td className="p-2"><Input type="number" value={p.buy_in} onChange={(e) => updateRow(p.tempId, { buy_in: e.target.value === "" ? "" : Number(e.target.value) })} className="h-8 w-28" /></td>
+                    <td className="p-2"><Input type="number" value={p.starting_stack} onChange={(e) => updateRow(p.tempId, { starting_stack: e.target.value === "" ? "" : Number(e.target.value) })} className="h-8 w-24" /></td>
                     <td className="p-2">
                       <Select value={p.game_type} onValueChange={(v: any) => updateRow(p.tempId, { game_type: v })}>
                         <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
@@ -319,6 +391,7 @@ export default function BulkCreateTournaments() {
           </div>
         </Card>
       )}
+      </fieldset>
     </div>
   );
 }

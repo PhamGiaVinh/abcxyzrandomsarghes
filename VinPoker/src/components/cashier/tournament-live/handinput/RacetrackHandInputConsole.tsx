@@ -42,6 +42,7 @@ import { DealerTabletCockpit } from "@/components/tracker/DealerTabletCockpit";
 import { useDealerTabletLandscape } from "@/hooks/useDealerTabletLandscape";
 import { formatStack } from "./format";
 import type { PlayerState, StandaloneHandInput } from "./useStandaloneHandInput";
+import {TableContextReadStatus} from './TableContextReadStatus';
 
 // players → racetrack SeatVM (display-only view-model). The `rich` extras (avatar +
 // hole cards + muck) are joined ONLY when FEATURES.trackerRacetrackRich is on; when
@@ -83,6 +84,8 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
 
   // No table chosen → operator table picker (full screen).
   const appearance = useTournamentTableAppearance(hook.tournamentId);
+  if(hook.tableId&&(hook.tableContextReadState==='loading'||hook.tableContextReadState==='error'))return <TableContextReadStatus
+    state={hook.tableContextReadState} message={hook.tableSelectionNotice} onBack={hook.backToTableMap} onRetry={()=>{void hook.handleTableChange(hook.tableId);}}/>;
   if (!hook.tableId) {
     return (
       <div className="mx-auto max-w-3xl">
@@ -185,13 +188,16 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
           board={hook.communityCards}
           endingStacks={hook.endingStacks}
           onEndingStackChange={hook.handleEndingStackChange}
-          potSize={hook.potSize}
+          potSize={hook.reviewPotBreakdown.totalPot}
+          uncalled={hook.reviewPotBreakdown.uncalled}
           conservationOk={hook.conservationOk}
           winnerDetermined={hook.winnerDetermined}
           canSubmit={hook.reviewValid}
           showdownLayers={hook.showdownLayers}
           onSubmit={hook.handleSubmitHand}
-          onBack={() => hook.setEndingStacks({})}
+          onBack={hook.handleUndo}
+          backLabel="Hoàn tác hành động cuối"
+          backDisabled={!hook.canUndo}
           submitting={disabled}
           rankShifts={FEATURES.trackerChipQuickEdit ? hook.rankShifts : undefined}
           diagnostics={FEATURES.trackerWorkflowAids}

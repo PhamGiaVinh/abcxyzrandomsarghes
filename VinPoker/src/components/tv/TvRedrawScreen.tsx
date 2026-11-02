@@ -47,7 +47,7 @@ export function TvRedrawScreen({ tournamentName, batch }: { tournamentName: stri
                   <div className="min-w-0">
                     <div className="truncate text-[2.7vmin] font-bold">{move.playerName}</div>
                     <div className="mt-[0.6vmin] flex items-center gap-[0.8vmin] text-[1.9vmin]">
-                      <span className="text-white/45">Table {move.fromTableNumber} · Seat {move.fromSeatNumber}</span>
+                      <span className="text-white/45">{batch.kind === 'initial_d2' ? 'D2 · Initial seating' : <>Table {move.fromTableNumber} · Seat {move.fromSeatNumber}</>}</span>
                       <ArrowRight className="h-[2vmin] w-[2vmin] shrink-0 text-[#c9a86a]" />
                       <span className="font-black text-emerald-300">Seat {move.toSeatNumber}</span>
                     </div>

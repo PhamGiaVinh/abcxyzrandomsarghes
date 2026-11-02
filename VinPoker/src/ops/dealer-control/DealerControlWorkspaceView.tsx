@@ -50,6 +50,9 @@ export function DealerControlWorkspaceView({
         <StateCard title="Đang tải snapshot Dealer Swing…" />
       ) : !model ? null : (
         <>
+          {!loading&&<p className="text-xs text-[#91a49b]" title="Thời điểm client hoàn tất đọc, không phải thời điểm dữ liệu được sửa trên máy chủ.">
+            Đã đọc dữ liệu lúc <time dateTime={model.loadedAt}>{new Date(model.loadedAt).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</time> (UTC+7)
+          </p>}
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <Metric icon={<Users className="h-4 w-4" />} label="Trong ca" value={model.checkedIn} />
             <Metric icon={<ShieldCheck className="h-4 w-4" />} label="Sẵn sàng" value={model.available} />
@@ -57,10 +60,13 @@ export function DealerControlWorkspaceView({
             <Metric icon={<Coffee className="h-4 w-4" />} label="Đang nghỉ" value={model.onBreak} />
           </div>
           <div className="overflow-hidden rounded-3xl border border-white/8 bg-[#07100c]">
+            <p className="border-b border-white/7 px-4 py-3 text-xs leading-5 text-[#91a49b]">
+              Bàn đang mở: {model.tables.filter((table) => table.status === "in_use").length} · Bàn sẵn sàng: {model.tables.filter((table) => table.status === "available").length} · Cần sửa dữ liệu: {model.tables.filter((table) => table.status === "repair_required" || table.status === "preflight_required").length}
+            </p>
             {model.tables.length === 0 ? (
               <p className="px-5 py-10 text-center text-sm text-[#91a49b]">Không có bàn đang hoạt động.</p>
-            ) : model.tables.map((table) => (
-              <article key={table.id} className="grid min-w-0 gap-2 border-b border-white/7 px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5">
+            ) : [...model.tables].sort((a, b) => tablePriority(a.status) - tablePriority(b.status)).map((table) => (
+              <article key={table.id} data-ops-table-id={table.id} className="grid min-w-0 gap-2 border-b border-white/7 px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate font-semibold text-white">{table.name}</span>
@@ -71,7 +77,7 @@ export function DealerControlWorkspaceView({
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-3 sm:justify-end">
-                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-[#b9c8c0]">{table.status}</span>
+                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-[#b9c8c0]">{table.status === "repair_required" || table.status === "preflight_required" ? "Cần sửa dữ liệu" : table.status === "in_use" ? "Đang mở" : table.status === "available" ? "Sẵn sàng" : table.status}</span>
                   <span className="font-mono text-xs text-[#d8bc85]">{table.swingDueAt ? formatTime(table.swingDueAt) : "—"}</span>
                 </div>
               </article>
@@ -104,4 +110,8 @@ function StateCard({ title, detail }: { title: string; detail?: string }) {
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function tablePriority(status: string): number {
+  return status === "in_use" ? 0 : status === "available" ? 1 : 2;
 }

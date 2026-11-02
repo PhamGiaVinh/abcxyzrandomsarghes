@@ -35,5 +35,7 @@ for(const name of names){
  assert.deepEqual(actual.config,['search_path=""']);assert.deepEqual(actual.acl.sort(),['postgres=X/postgres','service_role=X/postgres']);
 }
 assert.equal(sql("SELECT md5(replace(pg_get_functiondef('public.save_tv_tournament_layout_v1(uuid,bigint,text,text,text,jsonb)'::regprocedure),chr(13),''));"),saveBefore);
-assert.equal(sql('SELECT count(*) FROM public.centerpoint_tournament_ops_release WHERE id AND NOT enabled AND cardinality(allowed_club_ids)=0;'),'1','fixture gate must remain closed before test');
+// Retained TEST allowlist is inert while enabled=false. Do not erase it merely
+// to match an old empty-fixture assumption; the caller must restore it exactly.
+assert.equal(sql('SELECT count(*) FROM public.centerpoint_tournament_ops_release WHERE id AND NOT enabled;'),'1','fixture gate must remain closed before test');
 console.log('LOCAL_TV_ORIGINAL_RELEASE_GATE_DEPENDENCY_QUALIFIED_PASS');

@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { parsePublicTableCurrentResponse, parsePublicTableHistoryPage } from "./publicTableHistory";
+import { parsePublicTableCurrentResponse, parsePublicTableHistoryPage,parsePublicParticipationSummary } from "./publicTableHistory";
+
+describe('public participation aggregate boundary',()=>{
+  const row={tournament_id:'tour',players_remaining:3,average_stack:20000};
+  it('keeps exact scoped canonical aggregates including a real zero',()=>{
+    expect(parsePublicParticipationSummary([row],'tour')).toEqual({playersRemaining:3,averageStack:20000});
+    expect(parsePublicParticipationSummary([{...row,players_remaining:0,average_stack:0}],'tour')).toEqual({playersRemaining:0,averageStack:0});
+  });
+  it('rejects missing, duplicate or another tournament instead of inventing zero',()=>{
+    for(const value of [null,[],[row,row],[{...row,tournament_id:'other'}]])expect(parsePublicParticipationSummary(value,'tour')).toBeNull();
+  });
+  it('rejects malformed count or average rather than showing healthy-looking values',()=>{
+    for(const value of [{...row,players_remaining:null},{...row,players_remaining:-1},{...row,players_remaining:1.5},
+      {...row,average_stack:null},{...row,average_stack:Infinity},{...row,average_stack:-1}])expect(parsePublicParticipationSummary([value],'tour')).toBeNull();
+  });
+});
 
 describe("public current-table RPC parser", () => {
   it("keeps a confirmed last-completed hand separate from waiting", () => {
@@ -18,6 +33,19 @@ describe("public current-table RPC parser", () => {
 });
 
 describe("public table history parser", () => {
+  it("keeps a verified full uncalled refund separate from pot winners", () => {
+    const refund = { playerId: "bb", entryNumber: 2, seatNumber: 9, name: "BB", amount: 100 };
+    const parse = (result: unknown) => parsePublicTableHistoryPage({ access: "public", items: [{
+      handId: "dead-sb", createdAt: "2026-10-29T01:00:00Z", pot: 100, result,
+    }], nextCursor: null }, "tour", "table")?.items[0];
+    expect(parse({ status: "refunded", refund })).toMatchObject({ pot: 0, result: { status: "refunded", refund } });
+    for (const changed of [{ amount: 0 }, { amount: -1 }, { amount: 1.5 }, { amount: Infinity },
+      { playerId: "" }, { entryNumber: null }, { entryNumber: 0 }, { seatNumber: 11 }]) {
+      expect(parse({ status: "refunded", refund: { ...refund, ...changed } })?.result).toEqual({ status: "pending" });
+    }
+    expect(parse({ status: "refunded", refund, recipients: [] })?.result).toEqual({ status: "pending" });
+    expect(parse({ status: "refunded" })?.result).toEqual({ status: "pending" });
+  });
   it("keeps needs-attention distinct without exposing private diagnostic or recipients", () => {
     const page = parsePublicTableHistoryPage({ access: "public", items: [{ handId: "hand", createdAt: "2026-09-17T01:00:00Z",
       result: { status: "needs_attention", last_error_code: "private", recipients: [{ name: "unverified" }] } }], nextCursor: null }, "tour", "table");
@@ -53,7 +81,7 @@ describe("public table history parser", () => {
 
   it("shows verified side-pot recipients with their signed net, once per entry", () => {
     const page = parsePublicTableHistoryPage({ access: "public", items: [{
-      handId: "hand", createdAt: "2026-09-17T01:00:00Z", pot: 280_000, bigBlind: 20_000,
+      handId: "hand", createdAt: "2026-09-17T01:00:00Z", pot: 300_000, bigBlind: 20_000,
       result: { status: "verified", recipients: [
         { playerId: "a", entryNumber: 1, seatNumber: 2, name: "A", potAward: 240_000, netDelta: 160_000, potKinds: ["main"] },
         { playerId: "b", entryNumber: 1, seatNumber: 3, name: "B", potAward: 40_000, netDelta: -60_000, potKinds: ["side"] },
@@ -62,6 +90,14 @@ describe("public table history parser", () => {
     expect(page?.items[0].result).toMatchObject({ status: "verified", recipients: [
       { playerId: "a", netDelta: 160_000 }, { playerId: "b", netDelta: -60_000, potKinds: ["side"] },
     ] });
+    expect(page?.items[0].pot).toBe(280_000);
+  });
+
+  it('sums chop awards once and rejects unsafe aggregate awards',()=>{
+    const parse=(awards:number[])=>parsePublicTableHistoryPage({access:'public',items:[{handId:'chop',createdAt:'2026-09-17T01:00:00Z',pot:900,
+      result:{status:'verified',recipients:awards.map((potAward,i)=>({playerId:`p${i}`,entryNumber:1,potAward,netDelta:0,potKinds:['main']}))}}],nextCursor:null},'tour','table')?.items[0];
+    expect(parse([100,100])?.pot).toBe(200);
+    expect(parse([Number.MAX_SAFE_INTEGER,1])?.result).toEqual({status:'pending'});
   });
 
   it("fails closed for absent, malformed, refunded-only or duplicate winner data", () => {

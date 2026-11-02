@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Check, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { mapFnbError } from "@/lib/fnbErrors";
+import { fnbOrderMutationOutcome, type FnbOrderMutationRpc } from "@/lib/fnbMutationOutcome";
 import type { FnbOrder } from "@/hooks/useFnbOrders";
 
 const ageMins = (paidAt: string | null): number =>
@@ -21,11 +22,19 @@ export function KitchenTicket({ order, onChanged, label }: { order: FnbOrder; on
 
   const ship = async (lineId: string | null) => {
     setBusy(true);
-    const { data, error } = await (supabase.rpc as any)("fnb_mark_shipped", { p_order_id: order.id, p_line_id: lineId });
-    setBusy(false);
-    const res = data as any;
-    if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); return; }
-    onChanged();
+    try {
+      const { data, error } = await (supabase.rpc as unknown as FnbOrderMutationRpc)("fnb_mark_shipped", { p_order_id: order.id, p_line_id: lineId });
+      const outcome = fnbOrderMutationOutcome(data, order.id);
+      if (error || outcome.kind !== "confirmed") {
+        toast.error(mapFnbError(error ?? (outcome.kind === "rejected" ? outcome.code : "FNB_MUTATION_UNKNOWN")));
+        return;
+      }
+      onChanged();
+    } catch {
+      toast.error(mapFnbError("FNB_MUTATION_UNKNOWN"));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const mins = ageMins(order.paid_at);
@@ -33,35 +42,35 @@ export function KitchenTicket({ order, onChanged, label }: { order: FnbOrder; on
   const hasUnshipped = order.items.some((i) => i.line_status !== "shipped");
 
   return (
-    <div className="flex flex-col gap-[1vmin] rounded-[1.4vmin] border border-border bg-card p-[1.6vmin]">
-      <div className="flex items-center justify-between gap-[1vmin]">
-        <div className="text-[2.4vmin] font-bold leading-none text-foreground">
+    <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-3 sm:gap-[1vmin] sm:rounded-[1.4vmin] sm:p-[1.6vmin]">
+      <div className="flex items-center justify-between gap-3 sm:gap-[1vmin]">
+        <div className="min-w-0 break-words text-base font-bold leading-tight text-foreground sm:text-[max(1rem,2.4vmin)]">
           {label || order.table_label || "Khách lẻ"}{order.guest_seat ? ` · Ghế ${order.guest_seat}` : ""}
         </div>
-        <div className={`flex items-center gap-[0.5vmin] text-[1.8vmin] tabular-nums ${ageColor}`}>
-          <Clock className="h-[1.8vmin] w-[1.8vmin]" /> {mins}′
+        <div className={`flex shrink-0 items-center gap-1 text-xs tabular-nums sm:gap-[0.5vmin] sm:text-[max(0.75rem,1.8vmin)] ${ageColor}`}>
+          <Clock className="h-4 w-4 sm:h-[1.8vmin] sm:w-[1.8vmin]" /> {mins}′
         </div>
       </div>
-      {order.customer_name ? <div className="text-[1.6vmin] text-muted-foreground">{order.customer_name}</div> : null}
+      {order.customer_name ? <div className="break-words text-sm text-muted-foreground sm:text-[max(0.875rem,1.6vmin)]">{order.customer_name}</div> : null}
 
-      <div className="flex flex-col gap-[0.7vmin]">
+      <div className="flex flex-col gap-2 sm:gap-[0.7vmin]">
         {order.items.map((it) => {
           const shipped = it.line_status === "shipped";
           return (
-            <div key={it.id} className="flex items-center justify-between gap-[1vmin]">
-              <div className={`text-[2vmin] ${shipped ? "text-muted-foreground/50 line-through" : "text-foreground"}`}>
+            <div key={it.id} className="flex items-center justify-between gap-3 sm:gap-[1vmin]">
+              <div className={`min-w-0 flex-1 break-words text-sm sm:text-[max(0.875rem,2vmin)] ${shipped ? "text-muted-foreground/50 line-through" : "text-foreground"}`}>
                 <span className="font-bold tabular-nums">{it.qty}×</span> {it.name_snapshot}
               </div>
               {shipped ? (
-                <Check className="h-[2vmin] w-[2vmin] shrink-0 text-success/60" />
+                <Check className="h-5 w-5 shrink-0 text-success/60 sm:h-[2vmin] sm:w-[2vmin]" />
               ) : (
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => ship(it.id)}
-                  className="flex shrink-0 items-center gap-[0.4vmin] rounded-[0.8vmin] border border-success/50 px-[1.1vmin] py-[0.5vmin] text-[1.6vmin] font-semibold text-success transition-colors hover:bg-success/15 disabled:opacity-50"
+                  className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md border border-success/50 px-3 py-2 text-xs font-semibold text-success transition-colors hover:bg-success/15 disabled:opacity-50 sm:gap-[0.4vmin] sm:rounded-[0.8vmin] sm:px-[1.1vmin] sm:py-[0.5vmin] sm:text-[max(0.75rem,1.6vmin)]"
                 >
-                  <Check className="h-[1.6vmin] w-[1.6vmin]" /> Xong
+                  <Check className="h-4 w-4 sm:h-[1.6vmin] sm:w-[1.6vmin]" /> Xong
                 </button>
               )}
             </div>
@@ -74,7 +83,7 @@ export function KitchenTicket({ order, onChanged, label }: { order: FnbOrder; on
           type="button"
           disabled={busy}
           onClick={() => ship(null)}
-          className="mt-[0.4vmin] rounded-[0.9vmin] bg-success/15 py-[0.9vmin] text-[1.8vmin] font-semibold text-success transition-colors hover:bg-success/25 disabled:opacity-50"
+          className="mt-1 min-h-11 min-w-11 rounded-lg bg-success/15 px-3 py-2 text-sm font-semibold text-success transition-colors hover:bg-success/25 disabled:opacity-50 sm:mt-[0.4vmin] sm:rounded-[0.9vmin] sm:py-[0.9vmin] sm:text-[max(0.875rem,1.8vmin)]"
         >
           Tất cả xong
         </button>

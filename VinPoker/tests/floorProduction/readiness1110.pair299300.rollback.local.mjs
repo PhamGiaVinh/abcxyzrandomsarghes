@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';import{execFileSync}from'node:child_process';import{createHash}from'node:crypto';import{readFileSync,writeFileSync,existsSync}from'node:fs';assert.equal(process.env.VINPOKER_READINESS1110_LOCAL,'1');const output='D:/Quy trình/output/reports/readiness1110-pair299300-roundtrip-local-20261027.json';assert.equal(existsSync(output),false);
+const sql=q=>execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ranking860_local','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:q,encoding:'utf8',timeout:20000,maxBuffer:4e6}).trim();
+const read=q=>JSON.parse(sql(`BEGIN READ ONLY;SET LOCAL statement_timeout='10s';${q}ROLLBACK;`));
+const guard=read(`SELECT jsonb_build_object('db',current_database(),'host',host(inet_server_addr()),'port',inet_server_port(),'dir',current_setting('data_directory'),'comment',(SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()),'external',(SELECT count(*) FROM pg_extension WHERE extname IN('pg_net','pg_cron','dblink')));`);
+assert.equal(guard.db,'vinpoker_ranking860_local');assert.equal(guard.host,'127.0.0.1');assert.equal(guard.port,55441);assert.equal(guard.dir,'/tmp/vinpoker-sol-local-20261016-0e79a729/data');assert.equal(guard.external,0);assert.equal(guard.comment,'VINPOKER_RANKING860_OWNED_LOCAL_SOURCE_vinpoker_ops_cash115_qualified_c_HEAD_ef6a26948');
+const tables=['chip_bag','fnb_categories','fnb_menu_items','fnb_ingredients','fnb_recipe_items','fnb_stock_movements','fnb_stocktakes','fnb_stocktake_lines','fnb_orders','fnb_order_items','tournaments','tournament_entries','tournament_seats','cashier_buyin_movements','tournament_prize_payments','chip_bank_ledger','tournament_hands','table_operation_receipts'];
+const fingerprint=()=>read(`SELECT to_jsonb(md5(jsonb_build_array(${tables.map(t=>`(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM public.${t} x)`).join(',')})::text));`);
+
+
+
+
+
+
+assert.equal(process.cwd().replaceAll('\\','/'),'D:/wt/vinpoker-ops-local-integration/VinPoker');
+const paths={up299:'supabase/migrations/20270128000299_participation_bagged_read_classification_v1.sql',down299:'tests/tvBrandingStorage/participation1053.bagged.rollback.sql',up300:'supabase/migrations/20270128000300_fnb_stock_in_request_binding_v1.sql',down300:'tests/floorProduction/stock1095.request-binding.rollback.sql'};
+const files=Object.fromEntries(Object.entries(paths).map(([key,path])=>{const content=readFileSync(path,'utf8');return [key,{path,content,sha256:createHash('sha256').update(content).digest('hex')}];}));
+assert.equal(files.up300.sha256,'db1c596c29bab4f5b80bb0e12dfc91d38eddec94573e92f72e489477295bc2ff');
+const snapshotSql="SELECT jsonb_build_object('participation',md5((SELECT prosrc FROM pg_proc WHERE oid='floor_private.tournament_participation_v1(uuid)'::regprocedure)),'stock',md5((SELECT prosrc FROM pg_proc WHERE oid='public.fnb_stock_in(uuid,uuid,numeric,numeric,text)'::regprocedure)),'otherBodies',md5((SELECT jsonb_agg(jsonb_build_array(p.oid,md5(p.prosrc)) ORDER BY p.oid)::text FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','floor_private') AND p.oid NOT IN('floor_private.tournament_participation_v1(uuid)'::regprocedure,'public.fnb_stock_in(uuid,uuid,numeric,numeric,text)'::regprocedure))));";
+const beforeBodies=read(snapshotSql);assert.equal(beforeBodies.participation,'b9624adaa8d7bb35713917486c40fe67');assert.equal(beforeBodies.stock,'1289355dbf6cdfddca6b1f5738f34cfb');const before=fingerprint();
+const raw=sql("BEGIN;SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='15s';"+files.up299.content+files.up300.content+snapshotSql+files.down300.content+files.down299.content+snapshotSql+files.up299.content+files.up300.content+snapshotSql+'ROLLBACK;');
+const observations=raw.split(/\r?\n/).filter(Boolean).map(JSON.parse);assert.equal(observations.length,3);
+for(const i of [0,2]){assert.equal(observations[i].participation,'52c35e94cfaf361537ccb4f56a1cc57b');assert.equal(observations[i].stock,'67e707fdb0cf139843191b06201539a8');assert.equal(observations[i].otherBodies,beforeBodies.otherBodies);}assert.deepEqual(observations[1],beforeBodies);
+const afterBodies=read(snapshotSql),after=fingerprint();assert.deepEqual(afterBodies,beforeBodies);assert.equal(after,before);
+writeFileSync(output,JSON.stringify({kind:'SOURCE_CANDIDATES299300_UP_DOWN_UP_OUTER_ROLLBACK_NOT_DURABLE_OR_CATALOG_RELEASE_ACCEPTANCE',guard,files:Object.values(files).map(({path,sha256})=>({path,sha256})),beforeBodies,observations,afterBodies,before,after,unchanged:true,businessRpcCalls:0,persistentApply:false},null,2)+'\n');console.log(JSON.stringify({upDownUp:true,otherFunctionBodiesUnchanged:true,protectedTables:tables.length,unchanged:true,persistentApply:false}));

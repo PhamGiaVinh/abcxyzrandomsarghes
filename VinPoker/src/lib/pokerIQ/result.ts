@@ -13,7 +13,11 @@ import {
 
 export function computeDrillResult(hands: DrillHand[], answers: DrillAnswer[]): DrillResult {
   const cs = categoryScores(hands, answers);
-  const total = totalScore(cs);
+  const answeredCategories = new Set(hands.filter(hand => {
+    const answer = answers.find(a => a.handId === hand.id);
+    return answer && hand.options.some(option => option.id === answer.optionId);
+  }).map(hand => hand.category));
+  const total = totalScore(cs.filter(c => answeredCategories.has(c.category)));
   const weakest = weakestCategory(cs);
   const archetype = classifyArchetype(cs);
 

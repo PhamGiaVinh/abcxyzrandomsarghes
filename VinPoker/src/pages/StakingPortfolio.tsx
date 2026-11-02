@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,8 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "sonner";
 import { formatVND, formatDateTime } from "@/lib/format";
-import { BankInfoCard } from "@/components/BankInfoCard";
+import { StakingTransferBankCard } from "@/components/StakingTransferBankCard";
 import { TransferInstructions } from "@/components/TransferInstructions";
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { compressImage } from "@/lib/compressImage";
 import {
   Wallet, ChevronDown, Clock, Upload, Eye, Loader2, ShieldCheck, XCircle, Star, TrendingUp, TrendingDown,
@@ -70,40 +71,59 @@ interface Purchase {
   cancelled_at: string | null;
   cancellation_reason: string | null;
   deal?: PurchaseDeal | null;
-  ledger?: { proof_url: string | null; payout_method: string | null } | null;
+  ledger?: { amount_vnd: number; proof_url: string | null; payout_method: string | null } | null;
   recipient?: PayoutRecipientRow | null;
 }
 
 type TabKey = "B" | "F" | "L" | "D";
 
 const StakingPortfolio = () => {
+  const { user, loading, session } = useAuth();
+  return <StakingPortfolioScope key={`${loading ? 'loading' : 'ready'}:${user?.id ?? 'signed-out'}:${sessionReadEpoch(session)}`} />;
+};
+
+const StakingPortfolioScope = () => {
   const { user, loading: authLoading } = useAuth();
   const nav = useNavigate();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [ratedDealIds, setRatedDealIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState<TabKey>("B");
   const [helperPurchase, setHelperPurchase] = useState<Purchase | null>(null);
+  const active = useRef(true);
+  const loadGeneration = useRef(0);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; loadGeneration.current += 1; };
+  }, []);
 
   useEffect(() => { if (!authLoading && !user) nav("/auth"); }, [authLoading, user, nav]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || authLoading || !active.current) return;
+    const generation = ++loadGeneration.current;
+    const current = () => active.current && generation === loadGeneration.current;
     setLoading(true);
+    setLoadError(false);
+    try {
     const { data, error } = await supabase
       .from("staking_purchases")
       .select("*")
       .eq("backer_id", user.id)
       .order("committed_at", { ascending: false });
-    if (error) { toast.error(error.message); setLoading(false); return; }
+    if (!current()) return;
+    if (error) throw error;
     const rows = (data ?? []) as unknown as Purchase[];
     const dIds = Array.from(new Set(rows.map((p) => p.deal_id)));
-    const { data: deals } = dIds.length
+    const { data: deals, error: dealsError } = dIds.length
       ? await supabase
           .from("staking_deals")
           .select("id, player_id, tournament_id, custom_event_name, custom_event_date, buy_in_amount_vnd, percentage_sold, filled_percent, markup, status, result_prize_vnd, escrow_locked_at, early_closed, completed_at, player_checked_in, player_checkin_at")
           .in("id", dIds)
-      : { data: [] as any[] };
+      : { data: [] as any[], error: null };
+    if (!current()) return;
+    if (dealsError) throw dealsError;
     const dealMap = new Map<string, any>((deals ?? []).map((d: any) => [d.id, d]));
     const tIds = Array.from(new Set((deals ?? []).map((d: any) => d.tournament_id).filter(Boolean) as string[]));
     const pIds = Array.from(new Set((deals ?? []).map((d: any) => d.player_id)));
@@ -111,38 +131,56 @@ const StakingPortfolio = () => {
       tIds.length ? supabase.from("tournaments").select("id, name, start_time").in("id", tIds) : Promise.resolve({ data: [] } as any),
       pIds.length ? supabase.from("profiles").select("user_id, display_name, avatar_url").in("user_id", pIds) : Promise.resolve({ data: [] } as any),
     ]);
+    if (!current()) return;
+    if (tRes.error) throw tRes.error;
+    if (pRes.error) throw pRes.error;
     const tMap = new Map<string, any>((tRes.data ?? []).map((t: any) => [t.id, t]));
     const pMap = new Map<string, any>((pRes.data ?? []).map((p: any) => [p.user_id, p]));
     // Load ledger entries (VND payout details) for the backer's completed purchases
-    const { data: ledger } = dIds.length
+    const { data: ledger, error: ledgerError } = dIds.length
       ? await supabase
           .from("staking_ledger")
           .select("deal_id, amount_vnd, proof_url, payout_method, metadata")
           .in("deal_id", dIds)
           .eq("entry_type", "escrow_out_backer")
           .eq("user_id", user.id)
-      : { data: [] as any[] };
+      : { data: [] as any[], error: null };
+    if (!current()) return;
+    if (ledgerError) throw ledgerError;
     // Map by purchase_id (stored in metadata)
     const ledgerByPurchase = new Map<string, any>();
     for (const l of (ledger ?? []) as any[]) {
       const pid = l?.metadata?.purchase_id;
-      if (pid) ledgerByPurchase.set(pid, l);
+      if (pid) {
+        if (ledgerByPurchase.has(pid) || !Number.isSafeInteger(l.amount_vnd) || l.amount_vnd < 0) throw new Error('settlement_evidence_invalid');
+        ledgerByPurchase.set(pid, l);
+      }
     }
     // Load payout_recipients (fee breakdown + self-confirm) for this backer
-    const { data: recipients } = dIds.length
+    const { data: recipients, error: recipientError } = dIds.length
       ? await supabase
           .from("payout_recipients")
           .select("id, purchase_id, amount_vnd, platform_fee_vnd, method, status, paid_at, confirmed_at, proof_image_url")
           .in("deal_id", dIds)
           .eq("user_id", user.id)
-      : { data: [] as any[] };
+      : { data: [] as any[], error: null };
+    if (!current()) return;
+    if (recipientError) throw recipientError;
     const recipientByPurchase = new Map<string, PayoutRecipientRow>();
     for (const r of (recipients ?? []) as any[]) {
-      if (r.purchase_id) recipientByPurchase.set(r.purchase_id, r);
+      if (r.purchase_id) {
+        if (recipientByPurchase.has(r.purchase_id) || !Number.isSafeInteger(r.amount_vnd) || r.amount_vnd < 0
+          || !Number.isSafeInteger(r.platform_fee_vnd) || r.platform_fee_vnd < 0) throw new Error('settlement_evidence_invalid');
+        recipientByPurchase.set(r.purchase_id, r);
+      }
     }
     setPurchases(rows.map((p) => {
       const d = dealMap.get(p.deal_id) ?? null;
       const l = ledgerByPurchase.get(p.id) ?? null;
+      const recipient = recipientByPurchase.get(p.id) ?? null;
+      if (p.status === 'funded' && (d?.status === 'completed' || d?.status === 'released')
+        && (!l || !recipient || l.deal_id !== p.deal_id || l.amount_vnd !== recipient.amount_vnd
+          || !['paid', 'confirmed'].includes(recipient.status))) throw new Error('settlement_evidence_missing_or_conflicting');
       return {
         ...p,
         deal: d ? {
@@ -150,24 +188,30 @@ const StakingPortfolio = () => {
           tournament: d.tournament_id ? tMap.get(d.tournament_id) ?? null : null,
           player: pMap.get(d.player_id) ?? null,
         } : null,
-        ledger: l ? { proof_url: l.proof_url, payout_method: l.payout_method } : null,
-        recipient: recipientByPurchase.get(p.id) ?? null,
+        ledger: l ? { amount_vnd: l.amount_vnd, proof_url: l.proof_url, payout_method: l.payout_method } : null,
+        recipient,
       };
     }));
     if (dIds.length) {
-      const { data: rated } = await supabase.from("deal_ratings")
+      const { data: rated, error: ratingError } = await supabase.from("deal_ratings")
         .select("deal_id").eq("rater_id", user.id).in("deal_id", dIds);
+      if (!current()) return;
+      if (ratingError) throw ratingError;
       setRatedDealIds(new Set((rated ?? []).map((r: any) => r.deal_id)));
     } else {
       setRatedDealIds(new Set());
     }
-    setLoading(false);
-  }, [user]);
+    } catch {
+      if (current()) setLoadError(true);
+    } finally {
+      if (current()) setLoading(false);
+    }
+  }, [user, authLoading]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || authLoading) return;
     const ch = supabase
       .channel(`portfolio-${user.id}`)
       .on("postgres_changes",
@@ -178,7 +222,7 @@ const StakingPortfolio = () => {
         () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [user, load]);
+  }, [user, authLoading, load]);
 
   const grouped = useMemo(() => {
     const g: Record<TabKey, Purchase[]> = { B: [], F: [], L: [], D: [] };
@@ -204,9 +248,7 @@ const StakingPortfolio = () => {
     funded.forEach((p) => {
       const ds = p.deal?.status;
       if (ds === "completed" || ds === "released") {
-        if (p.deal?.result_prize_vnd) {
-          totalReturned += Math.round((Number(p.deal.result_prize_vnd) * p.percent) / 100);
-        }
+        totalReturned += p.ledger!.amount_vnd;
       } else {
         activeCount += 1;
       }
@@ -219,6 +261,13 @@ const StakingPortfolio = () => {
   }, [purchases]);
 
   if (authLoading) return <div className="staking-scope text-muted-foreground">Đang tải...</div>;
+  if (loading) return <div className="staking-scope" aria-busy="true" aria-label="Đang tải danh mục backing"><Skeleton className="h-32 rounded-xl" /></div>;
+  if (loadError) return (
+    <Alert role="alert" className="staking-scope">
+      <AlertDescription>Không tải được danh mục backing. Chưa thể xác minh số tiền và thao tác.</AlertDescription>
+      <Button variant="outline" onClick={() => void load()}>Thử tải lại danh mục</Button>
+    </Alert>
+  );
 
   return (
     <div className="staking-scope space-y-6">
@@ -323,10 +372,8 @@ const PortfolioRow = ({
   const tournamentName = deal?.tournament?.name ?? deal?.custom_event_name ?? "Sự kiện riêng";
   const dateIso = deal?.tournament?.start_time ?? deal?.custom_event_date;
   const [rateOpen, setRateOpen] = useState(false);
-  // Backer payout proportional to their funded percent of the prize
-  const myPayout = deal?.result_prize_vnd != null
-    ? Math.round((Number(deal.result_prize_vnd) * purchase.percent) / 100)
-    : null;
+  // Completed returns are committed purchase evidence, never a gross-prize estimate.
+  const myPayout = purchase.ledger?.amount_vnd ?? null;
   const completedAt = deal?.completed_at ? new Date(deal.completed_at).getTime() : null;
   const within7Days = completedAt ? (Date.now() - completedAt) < 7 * 24 * 60 * 60 * 1000 : false;
   const canRate = deal?.status === "completed" && purchase.status === "funded" && within7Days && !hasRated;
@@ -405,6 +452,8 @@ const PortfolioRow = ({
 };
 
 const PurchaseStatusBadge = ({ purchase }: { purchase: Purchase }) => {
+  if (purchase.status === 'funded' && ['completed', 'released'].includes(purchase.deal?.status ?? '') && purchase.ledger && purchase.recipient)
+    return <Badge variant="outline" className="border-success/50 text-success">Đã giải ngân</Badge>;
   const map: Record<string, { label: string; tone: string }> = {
     committed: { label: "Chờ chuyển", tone: "border-warning/50 text-warning" },
     funded: { label: "Đã khóa", tone: "border-success/50 text-success" },
@@ -443,32 +492,47 @@ const CommittedSection = ({
   const { label, expired } = useCountdown(startedAt + 30 * 60 * 1000);
   const [open, setOpen] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const uploadBusy=useRef(false);
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
 
   const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.files?.[0];
     if (!raw || !user) return;
+    if(uploadBusy.current)return;
     if (!["image/jpeg","image/png","image/webp"].includes(raw.type)) { toast.error("Chỉ JPG/PNG/WEBP"); return; }
     if (raw.size > 5 * 1024 * 1024) { toast.error("Tối đa 5MB"); return; }
+    uploadBusy.current=true;
     setUploading(true);
     try {
       const file = await compressImage(raw, { maxEdge: 1600, quality: 0.8 });
+      if(!alive.current)return;
       const ext = file.type === "image/png" ? "png" : "jpg";
       const path = `${user.id}/transfer-proofs/${purchase.deal_id}-${purchase.id}-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from("staking-proofs")
         .upload(path, file, { upsert: false, contentType: file.type, cacheControl: "3600" });
+      if(!alive.current)return;
       if (upErr) throw upErr;
-      const { data: signed } = await supabase.storage.from("staking-proofs").createSignedUrl(path, 60 * 60 * 24 * 365);
-      const url = signed?.signedUrl ?? path;
-      const { error } = await supabase.from("staking_purchases")
+      const { data: signed,error:signError } = await supabase.storage.from("staking-proofs").createSignedUrl(path, 60 * 60 * 24 * 365);
+      if(!alive.current)return;
+      if(signError||!signed?.signedUrl||!/^https?:\/\//i.test(signed.signedUrl))throw new Error('Chưa xác minh được liên kết biên lai. Chưa gửi cho Cashier.');
+      const url = signed.signedUrl;
+      const { data,error } = await supabase.from("staking_purchases")
         .update({ transfer_proof_url: url, transfer_proof_submitted: true })
-        .eq("id", purchase.id);
+        .eq("id", purchase.id).eq('deal_id',purchase.deal_id).eq('backer_id',user.id).eq('status','committed')
+        .select('id,status,transfer_proof_url,transfer_proof_submitted');
+      if(!alive.current)return;
       if (error) throw error;
+      if(!data||data.length!==1||data[0].id!==purchase.id||data[0].status!=='committed'
+        ||data[0].transfer_proof_url!==url||data[0].transfer_proof_submitted!==true)
+        throw new Error('Chưa xác nhận được biên lai gắn với giao dịch. Hãy tải lại để kiểm tra.');
       toast.success("Đã upload biên lai");
       onChanged();
-    } catch (e: any) {
-      toast.error(e.message ?? "Upload lỗi");
+    } catch (e) {
+      if(alive.current)toast.error(e instanceof Error?e.message:'Upload lỗi');
     } finally {
-      setUploading(false);
+      uploadBusy.current=false;
+      if(alive.current)setUploading(false);
       e.target.value = "";
     }
   };
@@ -492,7 +556,8 @@ const CommittedSection = ({
       </CollapsibleTrigger>
 
       <CollapsibleContent className="space-y-3 pt-1">
-        <BankInfoCard />
+        <StakingTransferBankCard purchaseId={purchase.id} dealId={purchase.deal_id}
+          amount={purchase.amount_vnd} reference={purchase.reference_code} />
 
         <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs space-y-1">
           <div className="flex justify-between"><span className="text-muted-foreground">Số tiền:</span>
@@ -502,7 +567,7 @@ const CommittedSection = ({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <input id={`up-${purchase.id}`} type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={upload} />
+          <input id={`up-${purchase.id}`} type="file" hidden disabled={uploading} accept="image/jpeg,image/png,image/webp" onChange={upload} />
           <Button asChild size="sm" variant="outline" className="flex-1" disabled={uploading}>
             <label htmlFor={`up-${purchase.id}`} className="cursor-pointer">
               {uploading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Upload className="w-3.5 h-3.5 mr-1" />}

@@ -1,0 +1,60 @@
+\set ON_ERROR_STOP on
+BEGIN READ ONLY;
+SET LOCAL statement_timeout='10s';
+DO $$ DECLARE f record;c jsonb;proof jsonb;app jsonb;new_plan uuid;old_row jsonb;actual jsonb;t text;i integer:=0;read_result jsonb;
+BEGIN
+ ASSERT current_database()='vinpoker_checkout814_race_local' AND host(inet_server_addr())='127.0.0.1' AND inet_server_port()=55441;
+ ASSERT current_setting('data_directory')='/tmp/vinpoker-sol-local-20261016-0e79a729/data';
+ SELECT * INTO STRICT f FROM private.d2_seed846_commit_fixture WHERE id;
+ c:=f.context;proof:=f.stages;
+ ASSERT jsonb_array_length(proof)=4 AND proof->-1->>'stage'='complete';
+ ASSERT proof->0->>'stage'='correction_committed_waiter_stale';
+ ASSERT proof->2->>'stage'='apply_committed_waiter_held';
+ new_plan:=(proof->-1->'evidence'->>'newPlanId')::uuid;
+ ASSERT new_plan='c5d33468-65fa-4516-8914-1da3594f549d'::uuid;
+ app:=proof->2->'evidence'->'applied';
+ ASSERT app->>'state'='APPLIED' AND (app->'seatReceipts'->0->>'seedStack')::bigint=20001;
+ ASSERT proof->2->'evidence'->'held'->>'state'='OWNER_APPROVED_HELD';
+ ASSERT proof->2->'evidence'->'held'->'liveStackChanged'='false'::jsonb;
+ ASSERT (SELECT count(*)=1 AND sum(current_stack)=20001 FROM public.tournament_entries WHERE tournament_id=(c->>'final')::uuid);
+ ASSERT (SELECT count(*)=1 AND sum(chip_count)=20001 FROM public.tournament_seats WHERE tournament_id=(c->>'final')::uuid AND is_active);
+ ASSERT (SELECT count(*)=1 AND sum(chip_count)=20001 FROM public.tournament_chip_counts WHERE tournament_id=(c->>'final')::uuid);
+ ASSERT (SELECT count(*)=1 AND bool_and(revision=1 AND prior_stack=20000 AND revised_stack=20001) FROM public.multi_day_final_stack_revisions_v1 WHERE participation_id=(c->>'part')::uuid);
+ ASSERT (SELECT count(*)=1 AND bool_and(prior_seed_stack=20001 AND proposed_seed_stack=20002 AND delta_chips=1) FROM public.multi_day_final_adjustments_v1 WHERE participation_id=(c->>'part')::uuid);
+ ASSERT (SELECT count(*)=3 AND count(*) FILTER(WHERE kind='correct')=2 AND count(*) FILTER(WHERE kind='seat')=1 FROM public.multi_day_final_requests_v1 WHERE participation_id=(c->>'part')::uuid);
+ ASSERT NOT EXISTS(SELECT 1 FROM private.multi_day_initial_draw_applications_v1 WHERE plan_id=(c->>'oldPlan')::uuid);
+ ASSERT (SELECT count(*)=1 AND bool_and(receipt=app) FROM private.multi_day_initial_draw_applications_v1 WHERE plan_id=new_plan);
+ ASSERT NOT EXISTS(SELECT 1 FROM public.cashier_buyin_movements WHERE tournament_id=(c->>'final')::uuid);
+ SELECT to_jsonb(x) INTO STRICT actual FROM public.tournaments x WHERE id=(c->>'final')::uuid;
+ old_row:=c->'canaryBefore'->'tour';
+ ASSERT actual-'clock_control_revision'=old_row-'clock_control_revision';
+ ASSERT (actual->>'clock_control_revision')::bigint=(old_row->>'clock_control_revision')::bigint+1;
+ FOR old_row IN SELECT value FROM jsonb_array_elements(c->'canaryBefore'->'sessions') LOOP
+  SELECT to_jsonb(x) INTO STRICT actual FROM public.table_sessions x WHERE id=(old_row->>'id')::uuid;
+  ASSERT actual-ARRAY['revision','redraw_hold_batch_id','redraw_hold_revision','redraw_hold_at']=old_row-ARRAY['revision','redraw_hold_batch_id','redraw_hold_revision','redraw_hold_at'];
+  ASSERT (actual->>'revision')::bigint=(old_row->>'revision')::bigint+1;
+  ASSERT actual->>'redraw_hold_batch_id'=new_plan::text AND actual->>'redraw_hold_revision'=actual->>'revision' AND actual->>'redraw_hold_at' IS NOT NULL;
+ END LOOP;
+ FOR old_row IN SELECT value FROM jsonb_array_elements(c->'canaryBefore'->'tables') LOOP
+  SELECT to_jsonb(x) INTO STRICT actual FROM public.tournament_tables x WHERE id=(old_row->>'id')::uuid;
+  ASSERT actual-'floor_control_revision'=old_row-'floor_control_revision';
+  ASSERT (actual->>'floor_control_revision')::bigint=(old_row->>'floor_control_revision')::bigint+1;
+ END LOOP;
+ FOREACH t IN ARRAY ARRAY['multi_day_package_release_v1','centerpoint_tournament_ops_release'] LOOP
+  EXECUTE format('SELECT to_jsonb(x) FROM public.%I x WHERE id',t) INTO STRICT actual;
+  ASSERT actual=c->'gatesBefore'->i,'release gate differs from exact pre-test row';i:=i+1;
+ END LOOP;
+ ASSERT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name LIKE 'd2846_%');
+ ASSERT NOT EXISTS(SELECT 1 FROM public.club_settings WHERE club_id=(c->>'club')::uuid AND auto_swing_enabled);
+ ASSERT (SELECT relrowsecurity FROM pg_class WHERE oid='private.d2_seed846_commit_fixture'::regclass);
+ ASSERT NOT has_table_privilege('authenticated','private.d2_seed846_commit_fixture','SELECT');
+ ASSERT NOT has_table_privilege('anon','private.d2_seed846_commit_fixture','SELECT');
+ ASSERT NOT has_table_privilege('service_role','private.d2_seed846_commit_fixture','SELECT');
+ PERFORM set_config('request.jwt.claim.sub',c->>'actor',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',c->>'actor','role','authenticated')::text,true);
+ PERFORM set_config('role','authenticated',true);
+ read_result:=public.multi_day_get_initial_draw_application_v1((c->>'event')::uuid,new_plan);
+ ASSERT read_result->'application'=app,'read-only receipt recovery does not match committed application';
+END $$;
+ROLLBACK;
+SELECT 'D2_846_SCOPED_COMMITTED_STALE_AND_HELD_20001_NO_EXTRA_BUYIN_EXACT_CLOCK_SESSION_DELTAS_GATES_PRIVATE_PROOF_RECEIPT_READ_PASS';

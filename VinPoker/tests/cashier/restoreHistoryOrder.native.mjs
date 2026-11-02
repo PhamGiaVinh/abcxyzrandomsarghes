@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createPaidJourneyFixture} from './paidJourney.fixture.mjs';
+import {closeCanonicalFinishedField} from './officialCloseJourney.native.mjs';
 
 assert.equal(process.env.VINPOKER_NATIVE_RESTORE_HISTORY,'1');
 for(const [k,v] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:'vinpoker_ops_cash115_qualified_c'}))assert.equal(process.env[k],v);
@@ -47,14 +48,19 @@ try{
  const nextBust=call(`SELECT public.floor_bust_player_v3('${f.entry}',${after.session.revision},${after.session.control_epoch},20000,'${crypto.randomUUID()}','TEST later genuine bust after restore');`);
  assert.equal(nextBust.ok,true);
  const secondOrder=Number(sql(`SELECT bust_order FROM public.tournament_entries WHERE id='${f.entry}';`));assert.ok(secondOrder>firstOrder,'later bust needs a new monotonic order; never decrement tournament sequence');
- const finalized=call(`SELECT public.finalize_tournament_results('${f.tour}');`);assert.equal(finalized.ok,true);assert.equal(finalized.survivors,1);
+ const legacyDirect=sql(`SELECT has_function_privilege('authenticated','public.finalize_tournament_results(uuid)','EXECUTE');`)==='t';
+ if(legacyDirect){
+  const finalized=call(`SELECT public.finalize_tournament_results('${f.tour}');`);assert.equal(finalized.ok,true);assert.equal(finalized.survivors,1);
+ }else closeCanonicalFinishedField(sql,f);
  assert.equal(sql(`SELECT finished_place FROM public.tournament_entries WHERE id='${f.entry}';`),'2');
  const finalState=()=>sql(`SELECT md5(jsonb_build_object('entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id='${f.tour}'),
  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${f.tour}'),
  'sessions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.table_sessions s WHERE tournament_id='${f.tour}'))::text);`),beforeDenied=finalState();
  const lastRevision=sql(`SELECT revision FROM public.table_sessions WHERE id='${before.session.id}';`);
  const denied=call(`SELECT public.floor_restore_busted_player_to_seat_v5('${f.entry}','${before.seat.tournament_table_id}',${before.seat.seat_number},${lastRevision},${before.session.control_epoch},'${crypto.randomUUID()}','${before.session.id}');`);
- assert.equal(denied.error,'restore_result_dependency');assert.equal(finalState(),beforeDenied,'official results cannot be silently cleared by restore');
+ assert.equal(sql(`SELECT status FROM public.tournaments WHERE id='${f.tour}';`),legacyDirect?'active':'completed');
+ assert.equal(denied.error,legacyDirect?'restore_result_dependency':'tournament_not_open');
+ assert.equal(finalState(),beforeDenied,'official results cannot be silently cleared by restore');
  assert.equal(cash(),cashBefore);
  console.log('NATIVE_PAID_RESTORE_CLEARS_PROVISIONAL_BUST_ORDER_AND_REBUST_ADVANCES_PASS',JSON.stringify({club:f.club,tournament:f.tour,entry:f.entry,firstOrder,secondOrder}));
 }finally{

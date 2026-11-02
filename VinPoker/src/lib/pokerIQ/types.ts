@@ -7,7 +7,7 @@
 export const CONTENT_VERSION = "v1";
 // Bump SCORING_VERSION whenever answer→subscore→archetype mapping changes, so
 // cohorts stay comparable and a grade shift is explainable.
-export const SCORING_VERSION = "v1";
+export const SCORING_VERSION = "v2";
 export const RESULT_SCHEMA_VERSION = "v1";
 
 export type DrillCategory =

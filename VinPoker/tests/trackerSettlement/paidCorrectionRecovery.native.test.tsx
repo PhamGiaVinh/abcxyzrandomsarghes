@@ -13,7 +13,9 @@ import { HandEditPanel, type HandEditPanelProps } from "@/components/cashier/tou
 import { buildServerSettlementEdit, runClientResettle } from "@/components/cashier/tournament-live/resettleApply";
 import { readCorrectionIntent, type CorrectionCommitIntent } from "@/lib/tracker-poker/correctionCommitIntent";
 const h=vi.hoisted(()=>{const invoke=vi.fn(),from=vi.fn(),rpc=vi.fn();return {actor:"",invoke,from,rpc,client:{from,rpc,functions:{invoke}}};});
-vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:h.actor}})}));
+// This native component test owns its explicit actor, not a browser Auth shell.
+// Keep the unused public wrapper import from initializing a real SDK client.
+vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:h.actor?{id:h.actor}:null})}));
 vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>h.client}));
 vi.mock("@/lib/featureFlags",()=>({FEATURES:{trackerAtomicResettle:true,trackerHandHistoryEdit:true,trackerResettleForward:true,trackerHistoryCompletionWorker:true},isTrackerAtomicResettleAvailable:()=>true}));
 const enabled=process.env.VINPOKER_NATIVE_CORRECTION_UI==='1',database='vinpoker_ops_cash115_qualified_c';
@@ -55,7 +57,7 @@ afterAll(()=>{if(testRole)sql(`DROP ROLE ${testRole};`);});
 function Panel({intent,mutation,view,players}:{intent:CorrectionCommitIntent;mutation:()=>Promise<{data:unknown;error:unknown}>;
  view:ComponentProps<typeof ResettlePreview>['view'];players:ComponentProps<typeof ResettlePreview>['players']}){
  const [outcome,setOutcome]=useState('idle');
- const recovery=useCorrectionCommitRecovery(intent.tournament_id,intent.hand_id,()=>setOutcome('recovered'));
+ const recovery=useCorrectionCommitRecovery(intent.tournament_id,intent.hand_id,()=>setOutcome('recovered'),h.actor);
  return <section><p role="status">{outcome}</p><p>{recovery.message}</p>
   <ResettlePreview view={view} players={players} busy={recovery.busy} confirmationBlocked={!!recovery.message} onClose={()=>{}} onConfirm={()=>{void recovery.commit(intent,mutation).then(ok=>setOutcome(ok?'confirmed':'unknown')).catch(()=>setOutcome('blocked'));}}/>
   <button type="button" disabled={recovery.busy} onClick={()=>{void recovery.recover();}}>Kiểm tra receipt TEST</button></section>;
@@ -149,7 +151,7 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    });
    const beforeRevision=Number(sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`));
    const money=()=>sql(`SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.cashier_buyin_movements m WHERE tournament_id='${fixture.tour}';`),beforeMoney=money();
-   const props={tournamentId:fixture.tour,initialHandId:hand,initialTableId:logical,workspaceMode:true};
+   const props={tournamentId:fixture.tour,initialHandId:hand,initialTableId:logical,workspaceMode:true,actorId:fixture.actor};
    const first=render(<MemoryRouter><HandHistoryWorkspace {...props}/></MemoryRouter>);
    fireEvent.click(await screen.findByRole('button',{name:'Xem bản nháp sửa hand'},{timeout:10_000}));
    for(const [rank,suit] of [['2','♣'],['3','♦'],['4','♥']]){
@@ -186,7 +188,7 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
     'seats',(SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM public.tournament_seats x WHERE tournament_id='${fixture.tour}'))::text);`);
    const beforeWorker=fingerprint();
    const correctedRevision=sql(`SELECT source_revision FROM public.tournament_hands WHERE id='${hand}';`);
-   for(const [deniedEnv,reason] of [[{VINPOKER_NATIVE_CORRECTION_UI:'0',VINPOKER_HISTORY_PARENT_HAND:hand},'owned_parent_ui_gate_required'],
+   for(const [deniedEnv,reason] of [[{VINPOKER_NATIVE_CORRECTION_UI:'0',VINPOKER_HISTORY_PARENT_HAND:hand},'owned_parent_gate_required'],
     [{VINPOKER_NATIVE_CORRECTION_UI:'1',VINPOKER_HISTORY_PARENT_HAND:crypto.randomUUID()},'owned_parent_correction_required']] as const){
     let rejection:{stderr?:unknown}|undefined;
     try{execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],
@@ -211,6 +213,8 @@ describe.skipIf(!enabled)('Correction hook UI → actual Edge → PostgreSQL (no
    await waitFor(()=>expect(readCorrectionIntent(localStorage,intent!)).toBeNull(),{timeout:10_000});
    expect(commits).toBe(1);expect(fingerprint()).toBe(after);expect(money()).toBe(beforeMoney);expect(errors).toEqual([]);
    expect(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${intent!.idempotency_key}';`)).toBe('1');
+   console.info('CORRECTION_PARENT_NATIVE_MANIFEST',JSON.stringify({tour:fixture.tour,club:fixture.club,
+    actor:fixture.actor,hand,table:logical,sourceRevision:correctedRevision}));
   }});
  // Two real worker processes plus WSL-backed UI/SQL exceeded the former 30s
  // case budget (31.3s observed). Application/read/workflow deadlines unchanged.

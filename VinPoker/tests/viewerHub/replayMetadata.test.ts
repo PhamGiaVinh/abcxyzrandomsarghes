@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deriveReplayHeaderMetadata } from "@/components/cashier/tournament-live/viewer-hub/replayMetadata";
 import type { ReplayHand } from "@/lib/tracker-poker/replayEngine";
+import {buildReplayFrames} from '@/lib/tracker-poker/replayEngine';
 
 const handOne: ReplayHand = {
   hand_id: "hand-1",
@@ -34,6 +35,24 @@ const handEight: ReplayHand = {
 };
 
 describe("deriveReplayHeaderMetadata", () => {
+  it('uses the selected timeline pot including the final uncalled refund instead of stored gross contributions',()=>{
+    const hand:ReplayHand={...handOne,players:handOne.players.slice(0,3),big_blind:200,small_blind:100,actions:[
+      {player_id:'player-1',action_type:'post_sb',action_amount:100,street:'preflop',action_order:1},
+      {player_id:'player-2',action_type:'post_bb',action_amount:200,street:'preflop',action_order:2},
+      {player_id:'player-0',action_type:'fold',action_amount:0,street:'preflop',action_order:3},
+      {player_id:'player-1',action_type:'fold',action_amount:0,street:'preflop',action_order:4},
+    ]};
+    const frames=buildReplayFrames(hand);
+    expect(frames.map(f=>f.potSize)).toEqual([0,100,300,300,200]);
+    expect(frames.map(f=>deriveReplayHeaderMetadata(hand,undefined,f).potSize)).toEqual([0,100,300,300,200]);
+    expect(deriveReplayHeaderMetadata(hand,undefined,null).potSize).toBeNull();
+  });
+  it('retains only the resolved target identity while its snapshot is loading',()=>{
+    expect(deriveReplayHeaderMetadata(null,{kind:'resolved',handId:'hand-8',tableId:'table',handNumber:8})).toEqual({
+      handNumber:8,playerCount:null,averageStack:null,potSize:null,
+    });
+    expect(deriveReplayHeaderMetadata(null,{kind:'not_found'}).handNumber).toBeNull();
+  });
   it("keeps header metadata tied to the selected hand snapshot", () => {
     expect(deriveReplayHeaderMetadata(handOne)).toMatchObject({
       handNumber: 1,

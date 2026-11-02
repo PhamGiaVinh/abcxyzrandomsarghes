@@ -9,9 +9,13 @@ describe("Series Club Pulse V1 architecture boundary", () => {
   it("keeps contracts and mapping pure while isolating Supabase to one fixed RPC adapter", () => {
     const contract = source("src/lib/series-intelligence/seriesClubLivePulseV1.ts");
     const adapter = source("src/lib/series-intelligence/seriesClubLivePulseRpc.ts");
+    const client = source("src/lib/series-intelligence/seriesClubLivePulseClient.ts");
     expect(contract).not.toMatch(/supabase|\.rpc\(|\bfetch\s*\(/i);
-    expect(adapter).toContain('const CLUB_PULSE_RPC = "get_series_club_live_pulse_v1"');
-    expect(adapter).toContain("parseSeriesClubLivePulseV1(data)");
+    expect(adapter).toContain("getSeriesClubLivePulseV1WithClient(supabase, clubId)");
+    expect(client).toContain('const CLUB_PULSE_RPC = "get_series_club_live_pulse_v1"');
+    expect(client).toContain("parseSeriesClubLivePulseV1(data)");
+    expect(client).not.toContain("@/integrations/supabase/client");
+    expect(client).not.toMatch(/\.from\s*\(/);
     expect(adapter).not.toMatch(/\.from\s*\(/);
   });
 

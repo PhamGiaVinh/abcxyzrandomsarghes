@@ -148,9 +148,9 @@ describe("Per-tab doctrine (rendered directly — Radix unmounts inactive TabsCo
     // real numbers from the mocked finance summary
     expect(screen.getByText(/12\.345\.000/)).toBeInTheDocument();
     expect(screen.getByText(/8\.345\.000/)).toBeInTheDocument();
-    // live banner + honest "còn lại sau lương" contribution label (not "biên đóng góp" in live)
+    // Canonical net also deducts recorded COGS/club expenses; it is not just after payroll.
     expect(screen.getByText(/Khối "Tiền của club" đang là SỐ THẬT/)).toBeInTheDocument();
-    expect(screen.getByText(/Còn lại sau lương/)).toBeInTheDocument();
+    expect(screen.getByText(/Biên đóng góp theo báo cáo tài chính/)).toBeInTheDocument();
     // page banner reflects partial-live, and mock parts are tagged
     expect(screen.getByText(/SỐ THẬT một phần/)).toBeInTheDocument();
     expect(screen.getAllByText(/\(mock — chưa nối\)/).length).toBeGreaterThan(0);

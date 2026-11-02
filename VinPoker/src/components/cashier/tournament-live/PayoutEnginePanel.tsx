@@ -20,6 +20,11 @@ import { groupPayoutRows } from "@/lib/tv/payoutBands";
 import { PrizePayoutTrackingSection } from "./PrizePayoutTrackingSection";
 import { SatellitePayoutEditor } from "./SatellitePayoutEditor";
 import { SatelliteAwardPlanPanel } from "./SatelliteAwardPlanPanel";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { payoutEditBackend } from "@/lib/payoutEditIntent";
+import { usePayoutEditIntent } from "@/hooks/usePayoutEditIntent";
 
 // PR-3: flag-gated (FEATURES.payoutEngine) operator UI for the "Engine 3-neo" payout backend
 // (PR-2a RPCs + PR-2b compute-payouts Edge). Forecast preview (no persist) · one-way close-and-
@@ -41,6 +46,7 @@ const ERR_VI: Record<string, string> = {
   RUN_NOT_DRAFT: "Bản payout này đã được áp dụng — không chạy lại được.",
   RUN_NOT_FOUND: "Không tìm thấy bản nháp payout.",
   NOT_AUTHORIZED: "Bạn không có quyền (cần Owner/Admin/Cashier của CLB).",
+  PAYOUT_AUTHORITY_UNVERIFIED: "Chưa xác minh được quyền trả thưởng do lỗi kết nối hệ thống. Tải lại để đối chiếu trước khi thử tiếp.",
   MANUAL_EDIT_REASON_REQUIRED: "Cần nhập lý do khi chỉnh tay.",
   PRIZE_POOL_OVERRIDE_REASON_REQUIRED: "Cần lý do khi sửa prize pool.",
   MULTIDAY_UNSUPPORTED: "Giải nhiều ngày chưa hỗ trợ payout tự động.",
@@ -92,6 +98,57 @@ function readOfficialPayout(prizes: unknown, run: unknown, tournamentId: string)
   return { rows, appliedRun };
 }
 
+function readPreparedPayout(raw: unknown, confirmed: {
+  entries: number; buyIn: number; rake: number; pool: number; itm: number;
+  archetype: Archetype; minCash: number; rounding: number;
+}): string {
+  const invalid = () => new Error("Snapshot payout không khớp cấu hình vừa xác nhận. Chưa áp dụng payout; tải lại và đối chiếu bản nháp trước khi tiếp tục.");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
+  const row = raw as Record<string, unknown>;
+  if (!["prepared", "resumed"].includes(String(row.status)) || typeof row.run_id !== "string" || !row.run_id.trim()
+    || payoutNumber(row.entries_snapshot) !== confirmed.entries || !Number.isSafeInteger(confirmed.entries) || confirmed.entries < 1
+    || payoutNumber(row.buy_in_snapshot) !== confirmed.buyIn || payoutNumber(row.rake_snapshot) !== confirmed.rake
+    || payoutNumber(row.prize_pool_snapshot) !== confirmed.pool || !Number.isSafeInteger(confirmed.pool) || confirmed.pool <= 0
+    || row.archetype !== confirmed.archetype || payoutNumber(row.itm_percent) !== confirmed.itm
+    || payoutNumber(row.min_cash_x) !== confirmed.minCash || payoutNumber(row.rounding_unit) !== confirmed.rounding
+    || !Number.isSafeInteger(payoutNumber(row.effective_floor)) || payoutNumber(row.effective_floor) < 0) throw invalid();
+  return row.run_id;
+}
+
+interface FrozenPayoutDraft {
+  id: string; tournament_id: string; status: "draft_snapshot"; archetype: Archetype;
+  entries_snapshot: number; buy_in_snapshot: number; rake_snapshot: number; prize_pool_snapshot: number;
+  effective_floor: number; itm_percent: number; min_cash_x: number; rounding_unit: number;
+  custom_percents: { position: number; percent_bp: number }[] | null;
+}
+function readFrozenPayoutDraft(raw: unknown, tournamentId: string): FrozenPayoutDraft | null {
+  if (raw === null) return null;
+  const invalid = () => new Error("Dữ liệu bản nháp payout không hợp lệ. Tải lại để đối chiếu trước khi tiếp tục.");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
+  const row = raw as Record<string, unknown>;
+  if (typeof row.id !== "string" || !row.id.trim() || row.tournament_id !== tournamentId || row.status !== "draft_snapshot"
+    || !Object.prototype.hasOwnProperty.call(ARCHE_LABEL, String(row.archetype))) throw invalid();
+  const numbers = Object.fromEntries(["entries_snapshot", "buy_in_snapshot", "rake_snapshot", "prize_pool_snapshot", "effective_floor", "itm_percent", "min_cash_x", "rounding_unit"]
+    .map(key => [key, payoutNumber(row[key])])) as Pick<FrozenPayoutDraft, "entries_snapshot" | "buy_in_snapshot" | "rake_snapshot" | "prize_pool_snapshot" | "effective_floor" | "itm_percent" | "min_cash_x" | "rounding_unit">;
+  if (![numbers.entries_snapshot, numbers.prize_pool_snapshot, numbers.rounding_unit].every(value => Number.isSafeInteger(value) && value > 0)
+    || ![numbers.buy_in_snapshot, numbers.rake_snapshot, numbers.effective_floor].every(value => Number.isSafeInteger(value) && value >= 0)
+    || !Number.isFinite(numbers.itm_percent) || numbers.itm_percent <= 0 || numbers.itm_percent > 1
+    || !Number.isFinite(numbers.min_cash_x) || numbers.min_cash_x <= 0) throw invalid();
+  let custom: FrozenPayoutDraft["custom_percents"] = null;
+  if (row.archetype === "CUSTOM") {
+    if (!Array.isArray(row.custom_percents) || !row.custom_percents.length || row.custom_percents.length > numbers.entries_snapshot) throw invalid();
+    custom = row.custom_percents.map((item: unknown, index: number) => {
+      if (!item || typeof item !== "object" || !("position" in item) || !("percent_bp" in item)) throw invalid();
+      const position = payoutNumber(item.position), bp = payoutNumber(item.percent_bp);
+      if (position !== index + 1 || !Number.isSafeInteger(bp) || bp <= 0 || bp > 10000) throw invalid();
+      return { position, percent_bp: bp };
+    });
+    if (custom.reduce((sum, item) => sum + item.percent_bp, 0) !== 10000
+      || custom.some((item, index) => index > 0 && item.percent_bp > custom![index - 1].percent_bp)) throw invalid();
+  } else if (row.custom_percents != null) throw invalid();
+  return {id: row.id, tournament_id: tournamentId, status: "draft_snapshot", archetype: row.archetype as Archetype, ...numbers, custom_percents: custom};
+}
+
 const SUGGEST_WARN_VI: Record<string, string> = {
   PLACES_REDUCED_BY_ENGINE: "Quỹ giải/min-cash chỉ đủ trả ít suất hơn — đã giảm số suất.",
   TARGET_BELOW_FLAT_MIN: "% hạng nhất thấp hơn mức chia đều — đã nâng lên mức tối thiểu.",
@@ -111,16 +168,23 @@ interface TournamentRow {
 }
 
 export function PayoutEnginePanel({ tournamentId }: { tournamentId: string }) {
-  // A tournament switch must discard previews, edits and late async results.
-  return <TournamentPayoutPanel key={tournamentId} tournamentId={tournamentId} />;
+  const { user, session } = useAuth();
+  let backend = "invalid";
+  try { backend = payoutEditBackend(import.meta.env.VITE_SUPABASE_URL); } catch { /* Never put credentials or invalid config into the key. */ }
+  // A changed actor/session must retire the old two-step writer as well as reads.
+  return <TournamentPayoutPanel key={JSON.stringify([backend, tournamentId, user?.id, sessionReadEpoch(session)])} tournamentId={tournamentId} />;
 }
 
 function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
+  const { user } = useAuth();
+  const active = useRef(false);
+  const loadController = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tour, setTour] = useState<TournamentRow | null>(null);
   const [officialRows, setOfficialRows] = useState<PayoutRow[]>([]);
   const [appliedRun, setAppliedRun] = useState<any | null>(null);
+  const [draftRun, setDraftRun] = useState<FrozenPayoutDraft | null>(null);
   const [liveEntries, setLiveEntries] = useState<number>(0);
 
   // generator inputs
@@ -162,12 +226,13 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
 
   const [preview, setPreview] = useState<EngineResult | null>(null);
   const [busy, setBusy] = useState<"" | "preview" | "official">("");
+  const officialInFlight = useRef(false);
 
   // manual edit
   const [editing, setEditing] = useState(false);
   const [editRows, setEditRows] = useState<PayoutRow[]>([]);
   const [editReason, setEditReason] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [editBase, setEditBase] = useState<{runId: string; pool: number} | null>(null);
 
   const isClosed = !!tour?.registration_closed_at || tour?.live_status === "finished";
   const hasOfficial = officialRows.length > 0;
@@ -192,41 +257,53 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
   }, [customBp, customBpTotal]);
 
   const load = useCallback(async () => {
+    if (!active.current) return;
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    const current = () => loadController.current === controller && !controller.signal.aborted;
     setLoading(true); setLoadError(null);
     try {
       // Satellite award plans do not depend on the one-day payout engine's prize/run
       // reads. Resolve the mode first so an unrelated payout-source failure cannot
       // hide the TD's locked Satellite decision. This preflight only runs when enabled.
       if (FEATURES.satelliteAwardsV1) {
-        const { data: satelliteTour, error: modeError } = await (supabase as any)
+        const { data: satelliteTour, error: modeError } = await observeTrackerContextRead(Promise.resolve((supabase as any)
           .from("tournaments").select("id, club_id, operations_mode, buy_in, rake_amount, prize_pool, itm_places, registration_closed_at, live_status, event_id")
-          .eq("id", tournamentId).single();
+          .eq("id", tournamentId).abortSignal(controller.signal).single()));
+        if (!current()) return;
         if (modeError) throw modeError;
         if (satelliteTour?.operations_mode === "satellite") {
           setTour(satelliteTour as TournamentRow);
           return;
         }
       }
-      const [{ data: t, error: te }, prizesRes, runRes, cntRes] = await Promise.all([
+      const [{ data: t, error: te }, prizesRes, runRes, cntRes, draftRes] = await observeTrackerContextRead(Promise.all([
         // (supabase as any): registration_closed_at + planned_* are live (PR-2a) but not in the
         // generated types.ts (no regen) — treat tournaments as any here, same as the rows/entries reads.
-        (supabase as any).from("tournaments").select(`id, buy_in, rake_amount, prize_pool, itm_places, registration_closed_at, live_status, event_id, club_id, planned_itm_percent, planned_payout_archetype, planned_min_cash_x, planned_rounding_unit${FEATURES.satelliteAwardsV1 ? ", operations_mode" : ""}`).eq("id", tournamentId).single(),
-        (supabase.rpc as any)("get_tournament_prizes", { p_tournament_id: tournamentId }),
-        (supabase as any).from("tournament_payout_runs").select("*").eq("tournament_id", tournamentId).eq("status", "applied").maybeSingle(),
-        (supabase as any).from("tournament_entries").select("id", { count: "exact", head: true }).eq("tournament_id", tournamentId).neq("status", "cancelled"),
-      ]);
+        (supabase as any).from("tournaments").select(`id, buy_in, rake_amount, prize_pool, itm_places, registration_closed_at, live_status, event_id, club_id, planned_itm_percent, planned_payout_archetype, planned_min_cash_x, planned_rounding_unit${FEATURES.satelliteAwardsV1 ? ", operations_mode" : ""}`).eq("id", tournamentId).abortSignal(controller.signal).single(),
+        (supabase.rpc as any)("get_tournament_prizes", { p_tournament_id: tournamentId }).abortSignal(controller.signal),
+        (supabase as any).from("tournament_payout_runs").select("*").eq("tournament_id", tournamentId).eq("status", "applied").abortSignal(controller.signal).maybeSingle(),
+        // Match prepare_payout_snapshot's COALESCE(status,'') eligibility, including legacy NULL.
+        (supabase as any).from("tournament_entries").select("id", { count: "exact", head: true }).eq("tournament_id", tournamentId).or("status.is.null,status.not.in.(void,voided,cancelled,canceled,refunded,rejected)").abortSignal(controller.signal),
+        supabase.from("tournament_payout_runs").select("*").eq("tournament_id", tournamentId).eq("status", "draft_snapshot").abortSignal(controller.signal).maybeSingle(),
+      ]));
+      if (!current()) return;
       if (te) throw te;
       if (prizesRes?.error) throw prizesRes.error;
       if (runRes?.error) throw runRes.error;
       if (cntRes?.error) throw cntRes.error;
+      if (draftRes.error) throw draftRes.error;
       if (!t || t.id !== tournamentId || !Array.isArray(prizesRes?.data)
         || runRes?.data === undefined || !Number.isSafeInteger(cntRes?.count) || cntRes.count < 0) {
         throw new Error("Không tải được dữ liệu payout đầy đủ. Vui lòng thử lại.");
       }
       const { rows: prizes, appliedRun: validatedRun } = readOfficialPayout(prizesRes.data, runRes.data, tournamentId);
+      const frozenDraft = readFrozenPayoutDraft(draftRes.data, tournamentId);
       setTour(t as TournamentRow);
       setOfficialRows(prizes);
       setAppliedRun(validatedRun);
+      setDraftRun(validatedRun ? null : frozenDraft);
       const cnt = Number(cntRes?.count ?? 0);
       setLiveEntries(cnt);
       setEntries((prev) => (prev > 0 ? prev : cnt));
@@ -252,15 +329,25 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
         if (pt.planned_itm_percent != null) setItmPct(Number(pt.planned_itm_percent) * 100);
         if (pt.planned_rounding_unit != null) setRoundingUnit(Number(pt.planned_rounding_unit));
       }
+      return { appliedRun: validatedRun, rows: prizes };
     } catch (e: any) {
-      setLoadError(e?.message || "Không tải được dữ liệu payout");
+      if (!current()) return;
+      setLoadError(e?.message === "tracker_context_read_timeout"
+        ? "Hết thời gian tải dữ liệu payout. Vui lòng tải lại." : e?.message || "Không tải được dữ liệu payout");
+      controller.abort();
     } finally {
-      setLoading(false);
+      if (loadController.current === controller) setLoading(false);
     }
   }, [tournamentId]);
+  const manualEdit = usePayoutEditIntent(user?.id, tournamentId, load, () => { setEditing(false); setEditBase(null); });
+  const savingEdit = manualEdit.busy;
 
   useEffect(() => { plannedAppliedRef.current = false; }, [tournamentId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    active.current = true;
+    void load();
+    return () => { active.current = false; loadController.current?.abort(); loadController.current = null; };
+  }, [load]);
   // Số suất gợi ý tự bám ITM% × entries cho tới khi operator sửa tay (dirty ref) — không đè giá trị đã nhập.
   useEffect(() => {
     if (suggestNDirtyRef.current) return;
@@ -286,9 +373,13 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
         planned_min_cash_x: minCashX, planned_rounding_unit: roundingUnit,
       }).eq("id", tournamentId).select("id");
       if (error) { toast.error(/row-level security|permission|policy|denied/i.test(error.message) ? "Bạn không có quyền lưu mặc định cho giải này (cần TD/Chủ CLB)." : friendly(error.message)); return; }
-      if (!data || data.length === 0) {
+      if (Array.isArray(data) && data.length === 0) {
         if (import.meta.env.DEV) console.warn("[save_planned_payout] zero-row update", { tournamentId, returnedRows: 0 });
         toast.error("Không có quyền lưu mặc định — cần tài khoản chủ CLB hoặc quyền điều hành sàn.");
+        return;
+      }
+      if (!Array.isArray(data) || data.length !== 1 || data[0]?.id !== tournamentId) {
+        toast.error("Chưa xác minh được kết quả lưu mặc định. Hãy tải lại giải để kiểm tra trước khi lưu lại.");
         return;
       }
       toast.success("Đã lưu mặc định payout cho giải này");
@@ -360,6 +451,8 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
   }, [loadTemplates]);
 
   const defaultPool = useMemo(() => entries * (tour?.buy_in ?? 0), [entries, tour]);
+  const officialDefaultPool = liveEntries * (tour?.buy_in ?? 0);
+  const officialPool = poolOverride.trim() ? Number(poolOverride) : officialDefaultPool;
 
   // ---- Auto-suggest CUSTOM ladder (client-only pre-fill of customRows; server re-validates on chốt) ----
   const suggestPool = () => (poolOverride.trim() && Number(poolOverride) !== defaultPool ? Number(poolOverride) : defaultPool);
@@ -428,54 +521,140 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
   }, [entries, itmPct, archetype, minCashX, roundingUnit, poolOverride, defaultPool, tournamentId, isCustom, customValid, customBp]);
 
   // Official: close registration (one-way) via prepare_payout_snapshot, then compute-payouts official.
-  const runOfficial = useCallback(async () => {
-    if (isCustom && !customValid) { toast.error("Cấu hình % chưa hợp lệ — Σ phải = 100%, giảm dần, mỗi hạng > 0"); return; }
+  const runOfficial = useCallback(async (confirmedDraft?: FrozenPayoutDraft) => {
+    if (!active.current || officialInFlight.current) return;
+    if (!confirmedDraft && isCustom && !customValid) { toast.error("Cấu hình % chưa hợp lệ — Σ phải = 100%, giảm dần, mỗi hạng > 0"); return; }
+    if (!tour || (!confirmedDraft && (!Number.isSafeInteger(liveEntries) || liveEntries < 1 || !Number.isSafeInteger(officialPool) || officialPool <= 0))) {
+      toast.error("Chưa xác minh được số entry đã trả tiền hoặc prize pool chính thức."); return;
+    }
+    if (!confirmedDraft && officialPool !== officialDefaultPool && !overrideReason.trim()) {
+      toast.error(friendly("PRIZE_POOL_OVERRIDE_REASON_REQUIRED")); return;
+    }
+    officialInFlight.current = true;
     setBusy("official");
+    let outcomeRunId: string | undefined;
+    let outcomeError: string | undefined;
+    let alreadyApplied = false;
     try {
-      const ov = poolOverride.trim() ? Number(poolOverride) : null;
-      const prep = await (supabase.rpc as any)("prepare_payout_snapshot", {
-        p_tournament_id: tournamentId, p_itm_percent: itmPct / 100, p_archetype: archetype,
-        p_min_cash_x: minCashX, p_rounding_unit: roundingUnit,
-        p_prize_pool_override: ov != null && ov !== defaultPool ? ov : null,
-        p_override_reason: overrideReason.trim() || null, p_regenerate: false, p_reason: null,
-        p_custom_percents: isCustom ? customBp() : null,
-      });
-      if (prep.error) { toast.error(friendly(prep.error.message)); return; }
-      const runId = (prep.data as any)?.run_id;
-      if (!runId) { toast.error("Không tạo được snapshot payout"); return; }
+      let runId: string;
+      if (confirmedDraft) {
+        const fresh = await observeTrackerContextRead(Promise.resolve(supabase.from("tournament_payout_runs")
+          .select("*").eq("id", confirmedDraft.id).eq("tournament_id", tournamentId).eq("status", "draft_snapshot").maybeSingle()));
+        if (!active.current) return;
+        if (fresh.error) throw fresh.error;
+        const verified = readFrozenPayoutDraft(fresh.data, tournamentId);
+        if (!verified || JSON.stringify(verified) !== JSON.stringify(confirmedDraft)) {
+          throw new Error("Bản nháp đã thay đổi hoặc đã áp dụng. Tải lại và xem lại trước khi tiếp tục.");
+        }
+        runId = verified.id;
+      } else {
+        const expectedCustom = isCustom ? customBp() : null;
+        const prep = await (supabase.rpc as any)("prepare_payout_snapshot", {
+          p_tournament_id: tournamentId, p_itm_percent: itmPct / 100, p_archetype: archetype,
+          p_min_cash_x: minCashX, p_rounding_unit: roundingUnit,
+          p_prize_pool_override: officialPool !== officialDefaultPool ? officialPool : null,
+          p_override_reason: overrideReason.trim() || null, p_regenerate: false, p_reason: null,
+          p_custom_percents: expectedCustom,
+        });
+        if (!active.current) return;
+        if (prep.error) { toast.error(friendly(prep.error.message)); return; }
+        if (prep.data?.status === "already_applied") {
+          if (typeof prep.data.run_id !== "string" || !prep.data.run_id.trim()) {
+            toast.error("Chưa xác minh được mã payout đã áp dụng. Tải lại để đối chiếu."); return;
+          }
+          outcomeRunId = prep.data.run_id;
+          alreadyApplied = true;
+          outcomeError = "Đã có payout nhưng chưa đối chiếu được bảng chính thức. Tải lại trước khi tiếp tục.";
+          return;
+        }
+        runId = readPreparedPayout(prep.data, {
+          entries: liveEntries, buyIn: tour.buy_in, rake: tour.rake_amount ?? 0, pool: officialPool,
+          itm: expectedCustom ? expectedCustom.length / liveEntries : itmPct / 100,
+          archetype, minCash: minCashX, rounding: roundingUnit,
+        });
+        if (expectedCustom) {
+          // prepare's public response does not echo the frozen CUSTOM ladder.
+          const frozen = await supabase.from("tournament_payout_runs")
+            .select("id,tournament_id,status,custom_percents").eq("id", runId).eq("tournament_id", tournamentId).maybeSingle();
+          if (!active.current) return;
+          if (frozen.error) throw frozen.error;
+          const row = frozen.data;
+          if (row?.id !== runId || row?.tournament_id !== tournamentId || row?.status !== "draft_snapshot"
+            || !Array.isArray(row.custom_percents) || row.custom_percents.length !== expectedCustom.length
+            || !row.custom_percents.every((value: unknown, index: number) =>
+              value !== null && typeof value === "object" && "position" in value && "percent_bp" in value
+              && value.position === expectedCustom[index].position && value.percent_bp === expectedCustom[index].percent_bp)) {
+            throw new Error("Bản nháp CUSTOM khác tỷ lệ vừa xác nhận. Chưa áp dụng payout; đối chiếu bản nháp trước khi tiếp tục.");
+          }
+        }
+      }
+      outcomeRunId = runId;
       const { data, error } = await supabase.functions.invoke("compute-payouts", { body: { mode: "official", run_id: runId } });
+      if (!active.current) return;
       const res = data as any;
-      if (error || res?.error) { toast.error(friendly(res?.error || error?.message)); return; }
-      toast.success("Đã đóng đăng ký & tạo payout chính thức");
-      setPreview(null);
-      await load();
-    } catch (e: any) { toast.error(friendly(e?.message)); } finally { setBusy(""); }
-  }, [tournamentId, itmPct, archetype, minCashX, roundingUnit, poolOverride, overrideReason, defaultPool, load, isCustom, customValid, customBp]);
+      if (error || res?.error) outcomeError = friendly(res?.error || error?.message);
+    } catch (e: any) {
+      if (active.current) {
+        if (outcomeRunId) outcomeError = friendly(e?.message);
+        else toast.error(friendly(e?.message));
+      }
+    } finally {
+      // prepare can commit the one-way registration close before compute fails,
+      // or before its response is lost. Re-read facts; never infer a rollback or
+      // automatically retry either mutation from a transport failure.
+      if (active.current) {
+        const fresh = await load();
+        if (active.current && outcomeRunId) {
+          if (fresh?.appliedRun?.id === outcomeRunId) {
+            setPreview(null);
+            toast.success(alreadyApplied ? "Đã đối chiếu payout chính thức có sẵn; không tính lại." : "Đã đối chiếu payout chính thức đã lưu.");
+          } else {
+            toast.error(outcomeError ?? "Chưa đối chiếu được payout đã lưu. Tải lại trước khi thử tiếp; không gửi yêu cầu mới khi chưa rõ kết quả.");
+          }
+        }
+      }
+      officialInFlight.current = false;
+      if (active.current) setBusy("");
+    }
+  }, [tournamentId, tour, liveEntries, itmPct, archetype, minCashX, roundingUnit, officialPool, officialDefaultPool, overrideReason, load, isCustom, customValid, customBp]);
 
-  const startEdit = () => { setEditRows(officialRows.map((r) => ({ ...r }))); setEditReason(""); setEditing(true); };
+  const startEdit = () => {
+    if (busy !== "" || manualEdit.busy || manualEdit.pending || manualEdit.blocked || !appliedRun?.id) return;
+    setEditRows(officialRows.map((r) => ({ ...r }))); setEditReason("");
+    setEditBase({runId: appliedRun.id, pool: Number(appliedRun.prize_pool_snapshot)}); setEditing(true);
+  };
   const editSum = useMemo(() => editRows.reduce((s, r) => s + (Number(r.amount) || 0), 0), [editRows]);
   const lockedPool = Number(appliedRun?.prize_pool_snapshot ?? tour?.prize_pool ?? 0);
 
-  const saveEdit = useCallback(async () => {
+  const editStale = editing && editBase?.runId !== appliedRun?.id;
+  const saveEdit = async () => {
+    if (!editBase || editStale || busy !== "" || manualEdit.pending || manualEdit.blocked || manualEdit.busy) return;
     if (!editReason.trim()) { toast.error(friendly("MANUAL_EDIT_REASON_REQUIRED")); return; }
-    setSavingEdit(true);
-    try {
-      const rows = editRows.map((r) => ({ position: r.position, amount: Math.round(Number(r.amount) || 0) }));
-      const { error } = await (supabase.rpc as any)("save_tournament_prizes_v2", { p_tournament_id: tournamentId, p_rows: rows, p_reason: editReason.trim() });
-      if (error) { toast.error(friendly(error.message)); return; }
-      toast.success("Đã lưu chỉnh tay (đã ghi audit)");
-      setEditing(false);
-      await load();
-    } catch (e: any) { toast.error(friendly(e?.message)); } finally { setSavingEdit(false); }
-  }, [editRows, editReason, tournamentId, load]);
+    const rows = editRows.map((r) => ({ position: r.position, amount: Math.round(Number(r.amount) || 0) }));
+    await manualEdit.submit(editBase.runId, editBase.pool, rows, editReason);
+  };
+
+  const recovery = (manualEdit.pending || manualEdit.blocked || manualEdit.message) && <div role="status" className="rounded border border-warning/30 p-3 space-y-2 text-xs">
+    {manualEdit.pending && <>
+      <p>Chỉnh tay đang chờ xác minh · {manualEdit.pending.rows.length} suất · pool {vnd(manualEdit.pending.pool)}đ</p>
+      <p className="break-all">Mã yêu cầu: {manualEdit.pending.requestId}. Không tạo yêu cầu mới khi chưa rõ kết quả.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" disabled={manualEdit.busy} onClick={() => void manualEdit.recover()}>Đối chiếu chỉnh tay</Button>
+        <Button size="sm" variant="outline" disabled={manualEdit.busy || manualEdit.blocked} onClick={() => void manualEdit.retry()}>Gửi lại đúng yêu cầu</Button>
+        <Button size="sm" variant="outline" disabled={manualEdit.busy || manualEdit.blocked} onClick={() => void manualEdit.cancel()}>Hủy yêu cầu an toàn</Button>
+      </div>
+    </>}
+    {manualEdit.blocked && <p role="alert">Không xác minh được journal chỉnh tay. Tạm khóa chỉnh tay mới; không xóa yêu cầu để thử lại.</p>}
+    {manualEdit.message && <p>{friendly(manualEdit.message)}</p>}
+  </div>;
 
   // ---------- render ----------
-  if (loading) return <Card className="p-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></Card>;
+  if (loading) return <div className="space-y-3">{recovery}<Card className="p-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></Card></div>;
   if (loadError) return (
-    <Card className="p-6 space-y-3 text-center">
+    <div className="space-y-3">{recovery}<Card className="p-6 space-y-3 text-center">
       <p className="text-sm text-destructive">{loadError}</p>
       <Button size="sm" variant="outline" onClick={load}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Thử lại</Button>
-    </Card>
+    </Card></div>
   );
 
   // Grouped payout: gộp hạng LIỀN KỀ cùng mức tiền thành 1 dải ("13–15") — dùng chung
@@ -526,6 +705,7 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
 
   return (
     <div className="space-y-4">
+      {recovery}
       {/* Satellite (nhập tay) — giải vé: cơ cấu tách khỏi engine tính tiền. Flag-gated; ẩn hoàn toàn khi OFF. */}
       {FEATURES.payoutSatelliteManual && <SatellitePayoutEditor tournamentId={tournamentId} />}
       <Card className="p-4 space-y-4">
@@ -551,6 +731,7 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
 
       {/* ===== generator / preview inputs ===== */}
       <div className="space-y-3 rounded border border-border p-3">
+        {hasOfficial && <p className="text-xs text-muted-foreground">Cấu hình dự kiến — không thay thế payout chính thức</p>}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">Số entry {isClosed ? "" : "(dự kiến)"}</Label>
@@ -708,7 +889,7 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
             )}
           </div>
         )}
-        {poolOverride.trim() && Number(poolOverride) !== defaultPool && (
+        {poolOverride.trim() && Number(poolOverride) !== officialDefaultPool && (
           <Input placeholder="Lý do sửa prize pool (bắt buộc)" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
         )}
         <div className="flex flex-wrap items-center gap-2">
@@ -717,10 +898,10 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
           </Button>
 
           {/* official / close-and-generate */}
-          {!hasOfficial && (
+          {!hasOfficial && !draftRun && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" className="gap-1" disabled={busy !== "" || isMultiDay || !(entries > 0) || (isCustom && !customValid)}>
+                <Button size="sm" className="gap-1" disabled={busy !== "" || isMultiDay || !(liveEntries > 0) || (isCustom && !customValid)}>
                   <Lock className="w-3.5 h-3.5" /> {isClosed ? "Tạo payout chính thức" : "Đóng đăng ký & tạo payout"}
                 </Button>
               </AlertDialogTrigger>
@@ -729,24 +910,50 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
                   <AlertDialogTitle className="flex items-center gap-2"><Lock className="w-4 h-4 text-warning" /> {isClosed ? "Tạo payout chính thức?" : "Đóng đăng ký & chốt payout?"}</AlertDialogTitle>
                   <AlertDialogDescription className="space-y-2">
                     {!isClosed && <span className="block font-medium text-warning">⚠️ Đóng đăng ký là MỘT CHIỀU — không mở lại được.</span>}
-                    <span className="block">Hệ thống sẽ chốt {entries} entry (snapshot), prize pool {vnd(poolOverride.trim() && Number(poolOverride) !== defaultPool ? Number(poolOverride) : defaultPool)}đ, rồi tạo bảng payout chính thức ({isCustom ? `CUSTOM · ${customRows.length} suất` : `${archetype}, ITM ${itmPct}%`}). Sau đó vẫn chỉnh tay được (có ghi audit).</span>
+                    <span className="block">Hệ thống sẽ chốt {liveEntries} entry đã trả tiền (snapshot), prize pool {vnd(officialPool)}đ, rồi tạo bảng payout chính thức ({isCustom ? `CUSTOM · ${customRows.length} suất` : `${archetype}, ITM ${itmPct}%`}). Số entry dự kiến chỉ dùng cho xem trước. Sau đó vẫn chỉnh tay được (có ghi audit).</span>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Hủy</AlertDialogCancel>
-                  <AlertDialogAction onClick={runOfficial}>{isClosed ? "Tạo payout" : "Đóng đăng ký & tạo"}</AlertDialogAction>
+                  <AlertDialogAction onClick={() => void runOfficial()}>{isClosed ? "Tạo payout" : "Đóng đăng ký & tạo"}</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           )}
         </div>
+        {!hasOfficial && draftRun && (
+          <div className="rounded border border-warning/30 bg-warning/10 p-3 space-y-2">
+            <p className="text-sm font-medium">Có bản nháp payout đã lưu</p>
+            <p className="text-xs text-muted-foreground">Chưa áp dụng. Xem snapshot đã chốt trước khi tiếp tục; cấu hình dự kiến ở trên không thay thế bản nháp này.</p>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" disabled={busy !== "" || isMultiDay}>Xem & tiếp tục bản nháp</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Áp dụng đúng bản nháp đã lưu?</AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <span className="block">{draftRun.archetype} · {draftRun.entries_snapshot} entry · pool {vnd(draftRun.prize_pool_snapshot)}đ · ITM {Number((draftRun.itm_percent * 100).toFixed(6))}%</span>
+                    <span className="block">Buy-in {vnd(draftRun.buy_in_snapshot)}đ · phí {vnd(draftRun.rake_snapshot)}đ · min-cash {draftRun.min_cash_x}× · sàn {vnd(draftRun.effective_floor)}đ · làm tròn {vnd(draftRun.rounding_unit)}đ</span>
+                    {draftRun.custom_percents && <span className="block">{draftRun.custom_percents.map(row => `Hạng ${row.position}: ${row.percent_bp / 100}%`).join(" · ")}</span>}
+                    <span className="block break-all">Mã bản nháp: {draftRun.id}. Không tạo lại snapshot, không đổi cấu hình đã lưu và chưa ghi thanh toán cho người chơi.</span>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Hủy</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => void runOfficial(draftRun)}>Áp dụng bản nháp đã xem</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
       </div>
 
       {/* ===== preview result (estimated, no persist) ===== */}
-      {preview && !hasOfficial && (
+      {preview && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 rounded border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning">
-            <AlertTriangle className="w-3.5 h-3.5" /> <span>DỰ KIẾN{isCustom ? " — custom" : ""} — chưa đóng đăng ký, chưa lưu. Số liệu thay đổi theo entry.</span>
+            <AlertTriangle className="w-3.5 h-3.5" /> <span>{hasOfficial ? "DỰ KIẾN — không thay thế payout chính thức" : isClosed ? "DỰ KIẾN — không thay đổi bản nháp đã chốt" : `DỰ KIẾN${isCustom ? " — custom" : ""} — chưa đóng đăng ký, chưa lưu. Số liệu thay đổi theo entry.`}</span>
           </div>
           {isCustom && preview.rows.length > 0 && (() => {
             const floor = minCashX * ((tour?.buy_in ?? 0) + (tour?.rake_amount ?? 0));
@@ -767,13 +974,16 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
             <p className="text-xs text-muted-foreground">
               Chốt: {appliedRun?.entries_snapshot ?? tour?.itm_places} entry · pool {vnd(lockedPool)}đ · {appliedRun?.itm_places ?? officialRows.length} suất
             </p>
-            {!editing && <Button size="sm" variant="outline" onClick={startEdit}><Pencil className="w-3.5 h-3.5 mr-1" /> Chỉnh tay</Button>}
+            {!editing && <Button size="sm" variant="outline" disabled={busy !== "" || manualEdit.busy || !!manualEdit.pending || manualEdit.blocked} onClick={startEdit}><Pencil className="w-3.5 h-3.5 mr-1" /> Chỉnh tay</Button>}
           </div>
+
+          <p className="text-xs text-muted-foreground">Kiểu chia đã chốt: {Object.prototype.hasOwnProperty.call(ARCHE_LABEL, String(appliedRun?.archetype)) ? String(appliedRun.archetype) : "chưa xác minh"}</p>
 
           {!editing ? (
             <RowsTable rows={officialRows} pool={lockedPool} />
           ) : (
             <div className="space-y-2">
+              {editStale && <p role="alert" className="text-xs text-destructive">Bảng payout đã thay đổi. Hủy bản chỉnh đang mở rồi xem dữ liệu mới trước khi sửa tiếp.</p>}
               <div className="flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>Chỉnh tay được GHI AUDIT. Tổng phải = prize pool đã chốt ({vnd(lockedPool)}đ), giảm dần theo hạng.</span>
@@ -791,10 +1001,10 @@ function TournamentPayoutPanel({ tournamentId }: { tournamentId: string }) {
               </div>
               <Textarea placeholder="Lý do chỉnh tay (bắt buộc — ghi audit)" value={editReason} onChange={(e) => setEditReason(e.target.value)} rows={2} />
               <div className="flex items-center gap-2">
-                <Button size="sm" onClick={saveEdit} disabled={savingEdit || !editReason.trim() || editSum !== lockedPool}>
+                <Button size="sm" onClick={saveEdit} disabled={savingEdit || !!manualEdit.pending || manualEdit.blocked || editStale || !editReason.trim() || editSum !== editBase?.pool}>
                   {savingEdit ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1" />} Lưu chỉnh tay
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Hủy</Button>
+                <Button size="sm" variant="ghost" disabled={savingEdit || !!manualEdit.pending} onClick={() => { setEditing(false); setEditBase(null); }}>Hủy</Button>
               </div>
             </div>
           )}

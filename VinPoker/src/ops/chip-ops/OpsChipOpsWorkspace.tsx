@@ -60,10 +60,17 @@ function ScopedChipOpsWorkspace({ allowed }: { allowed: boolean }) {
   useEffect(() => {
     if (!allowed || !clubId) return;
     let active = true;
+    const controller = new AbortController();
+    const deadline = window.setTimeout(() => {
+      if (!active) return;
+      active = false;
+      controller.abort();
+      setState((current) => ({ ...current, loading: false, inventory: null, stacks: null, errorCode: "CHIP_OPS_READ_TIMEOUT" }));
+    }, 10000);
     const load = async () => {
       setState((current) => ({ ...current, loading: true, errorCode: null }));
       try {
-        const tournaments = await loadChipOpsTournamentOptions(client, clubId);
+        const tournaments = await loadChipOpsTournamentOptions(client, clubId, controller.signal);
         if (!active) return;
         if (selectedTournamentId && !tournaments.some((row) => row.id === selectedTournamentId)) {
           setState({ loading: false, tournaments, inventory: null, stacks: null, errorCode: "CHIP_TOURNAMENT_SCOPE_INVALID" });
@@ -71,8 +78,8 @@ function ScopedChipOpsWorkspace({ allowed }: { allowed: boolean }) {
         }
         const [inventory, stacks] = selectedTournamentId
           ? await Promise.all([
-            loadIssuedChipInventory(client, selectedTournamentId),
-            loadIssuedStackSummary(client, selectedTournamentId),
+            loadIssuedChipInventory(client, selectedTournamentId, controller.signal),
+            loadIssuedStackSummary(client, selectedTournamentId, controller.signal),
           ])
           : [null, null];
         if (!active) return;
@@ -86,10 +93,12 @@ function ScopedChipOpsWorkspace({ allowed }: { allowed: boolean }) {
           stacks: null,
           errorCode: safeErrorCode(error),
         }));
+      } finally {
+        window.clearTimeout(deadline);
       }
     };
     void load();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); window.clearTimeout(deadline); };
   }, [allowed, client, clubId, selectedTournamentId, revision]);
 
   const clubName = useMemo(
@@ -113,9 +122,12 @@ function ScopedChipOpsWorkspace({ allowed }: { allowed: boolean }) {
       inventory={allowed ? state.inventory : null}
       stacks={allowed ? state.stacks : null}
       loading={capabilities.loading || (allowed && state.loading)}
-      errorCode={capabilities.scopeError ?? (!clubId ? "CHIP_OPS_CLUB_SCOPE_REQUIRED" : state.errorCode)}
+      errorCode={capabilities.scopeError ?? (!allowed && !capabilities.loading ? "CHIP_OPS_CLUB_SCOPE_REQUIRED" : state.errorCode)}
       onSelectTournament={onSelectTournament}
-      onRefresh={() => setRevision((value) => value + 1)}
+      onRefresh={() => {
+        if (capabilities.scopeError) capabilities.refresh();
+        else setRevision((value) => value + 1);
+      }}
     />
     {allowed && !state.loading && !state.errorCode && selectedTournamentId
       && state.tournaments.find((row) => row.id === selectedTournamentId)?.phase === "flight"

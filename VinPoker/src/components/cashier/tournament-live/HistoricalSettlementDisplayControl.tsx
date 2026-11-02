@@ -77,14 +77,20 @@ function diagnosticFailureMessage(code: string): string {
  * to verify stored history; it never submits cards, winners, stack values, or
  * a settlement chosen in the browser.
  */
-export function HistoricalSettlementDisplayControl({
+export function HistoricalSettlementDisplayControl(props: HistoricalSettlementDisplayControlProps) {
+  const { user } = useAuth();
+  return <HistoricalSettlementDisplayWorkspace {...props} actorId={user?.id} />;
+}
+
+export function HistoricalSettlementDisplayWorkspace({
   tournamentId,
   handId,
   handNumber,
   onVerified,
-}: HistoricalSettlementDisplayControlProps) {
+  actorId,
+}: HistoricalSettlementDisplayControlProps & { actorId: string | null | undefined }) {
   const supabase = useSupabaseClient();
-  const { user } = useAuth();
+  const user = actorId ? { id: actorId } : null;
   const [busy, setBusy] = useState(false);
   const [storedPreview, setPreview] = useState<HistoricalSettlementDisplayPreview | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);

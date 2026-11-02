@@ -14,20 +14,20 @@ vi.mock("@/lib/tournamentParticipation", () => ({
   parseTournamentParticipation: () => ({ seats: [] }),
   parseParticipationSummary: () => ({ counts: { remaining: 0 }, averageStack: 0 }),
 }));
-vi.mock("@/components/cashier/tournament-live/loadLatestLiveHand", () => ({ loadLatestLiveHand: async () => { realtime.reads(); return ({ data: fixture.hand ? [{
+vi.mock("@/components/cashier/tournament-live/loadLatestLiveHand", () => ({ loadLatestLiveHand: () => { realtime.reads(); const response = Promise.resolve({ data: fixture.hand ? [{
   id: "frozen-hand", hand_number: 16, status: "completed", tracker_small_blind: 100000,
   tracker_big_blind: 200000, tracker_bba: 25000, tracker_level_number: 1, pot_size: 0,
-}] : [], error: null }); } }));
+}] : [], error: null }); return Object.assign(response, {abortSignal: () => response}); } }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
-  rpc: async (name: string) => ({ data: name === "get_tournament_clock" ? {
+  rpc: (name: string) => { const response = Promise.resolve({ data: name === "get_tournament_clock" ? {
     is_running: false, remaining_seconds: 600,
     current_level: { level_number: 1, small_blind: 100, big_blind: 100, ante: 0 },
-  } : null, error: null }),
+  } : null, error: null }); return Object.assign(response, {abortSignal: () => response}); },
   from: () => {
-    type Method = "select" | "eq" | "order" | "in" | "single" | "limit";
+    type Method = "select" | "eq" | "order" | "in" | "single" | "limit" | "abortSignal";
     type Query = Promise<{ data: unknown[]; error: null }> & Record<Method, () => Query>;
     const query = Promise.resolve({ data: [], error: null }) as Query;
-    for (const method of ["select", "eq", "order", "in", "single", "limit"] as const) query[method] = () => query;
+    for (const method of ["select", "eq", "order", "in", "single", "limit", "abortSignal"] as const) query[method] = () => query;
     return query;
   },
   channel: () => { const channel = {

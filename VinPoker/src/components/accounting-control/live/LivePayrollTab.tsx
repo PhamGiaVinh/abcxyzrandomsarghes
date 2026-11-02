@@ -1,12 +1,7 @@
 import { useClubFinanceSummary } from "@/hooks/useClubFinanceSummary";
 import { PAYROLL_STATUS_META } from "@/lib/clubFinance";
 import { PayrollCostTab, type LivePayrollData } from "../tabs/PayrollCostTab";
-
-const monthStartISO = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
-const todayISO = () => new Date().toISOString().slice(0, 10);
+import { financeBusinessToday } from "@/lib/financeSummaryRead";
 const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /**
@@ -15,8 +10,8 @@ const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
  * table-hour stay mock inside PayrollCostTab.
  */
 export function LivePayrollTab() {
-  const from = monthStartISO();
-  const to = todayISO();
+  const to = financeBusinessToday();
+  const from = `${to.slice(0, 7)}-01`;
   const { loading, error, summary } = useClubFinanceSummary({ from, to, clubFilter: "all" });
 
   const data: LivePayrollData | null = summary

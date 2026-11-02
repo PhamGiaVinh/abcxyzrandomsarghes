@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+assert.equal(process.env.VINPOKER_EARLYITM1163_LOCAL,'1');
+const base='D:/Quy trình/output/reports/earlyitm1163-lifecycle-local-20261027';assert.equal(existsSync(base+'.json'),false);assert.equal(existsSync(base+'.sql'),false);
+let sql=readFileSync('D:/Quy trình/output/reports/earlyitm1162-individual-rank-executed-attempt6-local-20261027.sql','utf8');
+const anchor=" r:=public.record_multi_day_prize_payment_v1(event,p,'cash',md5('LOCAL1161 no final individual rank'),gen_random_uuid());";assert.equal(sql.split(anchor).length,2);
+sql=sql.replace(anchor,()=>readFileSync('tests/cashier/earlyItm1163.lifecycle.extension.sql','utf8')+'\n'+anchor);
+sql=sql.replace("count(*) FILTER(WHERE status='busted')=1",()=>"count(*) FILTER(WHERE status='busted')=2");
+sql=sql.replace("'survivors',7,'busted',1",()=>"'survivors',6,'busted',2");
+sql=sql.replace("SELECT current_setting('test.early1162')::jsonb;",()=>"SELECT current_setting('test.early1162')::jsonb;SELECT current_setting('test.early1163')::jsonb;");
+writeFileSync(base+'.sql',sql);
+const args=['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ranking860_local','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
+const raw=execFileSync('wsl',args,{input:sql,encoding:'utf8',timeout:60000,maxBuffer:4e6});
+const observations=raw.split(/\r?\n/).filter(x=>x.startsWith('{')).map(JSON.parse);
+assert.equal(observations.at(-1).candidateRemoved,true);assert.deepEqual(observations[2].frozenRanks,[7,8]);
+writeFileSync(base+'.json',JSON.stringify({kind:'CANONICAL_RESTORE_SUBSEQUENT_BUST_OUTER_ROLLBACK_NOT_EARLY_PAYMENT',observations,durablyApplied:false,fullR03Accepted:false},null,2)+'\n');
+console.log('EARLYITM1163_CANONICAL_RESTORE_AND_SEQUENTIAL_RANKS_ROLLBACK_PASS_NOT_PAYMENT');

@@ -1,10 +1,8 @@
 /**
- * FeatureTableConfigDialog — Patch 1 (UI mock shell). Configures a table's mode
- * (Thường/Tâm điểm), Final flag, allow-override policy, and the allowed dealer
- * pool (with a primary). Writes to the local mock store only (no DB/RPC). In a
- * later patch the Save handler calls set_table_dealer_mode / set_table_dealer_pool.
+ * Configures a table profile and dealer pool through one canonical server save.
+ * Uncertain responses retain the scoped intent for read-only receipt recovery.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Star } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -14,9 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
-  getProfile, saveProfileToDb, useFeatureEnforcementEnabled,
+  useFeatureEnforcementEnabled,
   type DealerTableMode, type FeatureTablePoolMember,
 } from "./featureTableMock";
+import {useAuth} from '@/hooks/useAuth';
+import {useFeatureProfileSave} from './useFeatureProfileSave';
 
 export interface PoolDealer { id: string; name: string }
 
@@ -29,23 +29,24 @@ interface Props {
   dealers: PoolDealer[];
 }
 
-export function FeatureTableConfigDialog({ open, onOpenChange, tableId, tableName, clubId, dealers }: Props) {
+export function FeatureTableConfigDialog(props:Props){
+ const {user,session}=useAuth();
+ if(!props.open)return null;
+ return <ScopedFeatureTableConfigDialog key={JSON.stringify([user?.id,session?.access_token,props.clubId,props.tableId,import.meta.env.VITE_SUPABASE_URL])}
+  {...props} actorId={user?.id??null}/>;
+}
+function ScopedFeatureTableConfigDialog({ open, onOpenChange, tableId, tableName, clubId, dealers,actorId }: Props&{actorId:string|null}) {
   const [mode, setMode] = useState<DealerTableMode>("normal");
   const [isFinal, setIsFinal] = useState(false);
   const [allowOverride, setAllowOverride] = useState(false);
   const [pool, setPool] = useState<FeatureTablePoolMember[]>([]);
-  const [saving, setSaving] = useState(false);
-  const { enabled: enforcementOn } = useFeatureEnforcementEnabled();
+  const { enabled: enforcementOn, loading: enforcementLoading, error: enforcementError,
+    refetch: retryEnforcement } = useFeatureEnforcementEnabled();
 
-  // hydrate from the mock store each time the dialog opens
-  useEffect(() => {
-    if (!open) return;
-    const p = getProfile(tableId);
-    setMode(p.tableMode);
-    setIsFinal(p.isFinal);
-    setAllowOverride(p.allowOverride);
-    setPool(p.pool);
-  }, [open, tableId]);
+  const saveState=useFeatureProfileSave(actorId,clubId,tableId,p=>{
+    setMode(p.tableMode);setIsFinal(p.isFinal);setAllowOverride(p.allowOverride);setPool(p.pool);
+  },status=>{toast.success(status==='saved'?'Đã xác minh cấu hình bàn đã lưu':'Đã hủy yêu cầu chưa ghi; cấu hình không bị thay đổi.');onOpenChange(false);});
+  const saving=saveState.busy;
 
   const isSpecial = mode === "feature" || isFinal;
   const inPool = (id: string) => pool.some((m) => m.dealerId === id);
@@ -63,27 +64,18 @@ export function FeatureTableConfigDialog({ open, onOpenChange, tableId, tableNam
   // special tables (feature + final), no auto-fallback to a normal dealer.
   const minPoolWarning = isSpecial && pool.length < 2;
 
-  const save = async () => {
-    if (saving) return;
+  const save = () => {
+    if (saving||saveState.blocked||saveState.pending) return;
     if (minPoolWarning) {
       toast.error("Bàn tâm điểm/final cần ít nhất 2 dealer trong nhóm (để có người thay khi 1 người nghỉ).");
       return;
     }
-    setSaving(true);
-    try {
-      await saveProfileToDb(tableId, clubId, { tableMode: mode, isFinal, allowOverride, pool });
-      toast.success("Đã lưu cấu hình bàn");
-      onOpenChange(false);
-    } catch (e) {
-      toast.error(`Lưu thất bại: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setSaving(false);
-    }
+    void saveState.submit({tableMode:mode,isFinal,allowOverride,pool:pool.map(({dealerId,isPrimary})=>({dealerId,isPrimary}))});
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md grid-cols-1 max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Cấu hình bàn — {tableName}</DialogTitle>
           <DialogDescription>
@@ -91,13 +83,34 @@ export function FeatureTableConfigDialog({ open, onOpenChange, tableId, tableNam
           </DialogDescription>
         </DialogHeader>
 
+        {enforcementLoading && <p role="status" className="text-[11px] text-muted-foreground">Đang xác minh trạng thái bảo vệ bàn…</p>}
+        {enforcementError && (
+          <div role="alert" className="space-y-1 rounded-md border border-warning/40 bg-warning/5 p-2 text-[11px] text-warning">
+            <p>{enforcementError}</p>
+            <button type="button" onClick={() => void retryEnforcement()} className="underline">Thử lại trạng thái bảo vệ</button>
+          </div>
+        )}
         {enforcementOn === false && (
           <div className="rounded-md border border-warning/40 bg-warning/5 p-2 text-[11px] text-warning">
             ℹ Cấu hình sẽ được lưu nhưng <b>enforcement đang TẮT</b> — nhóm dealer chưa bảo vệ bàn (sẽ bật sau).
           </div>
         )}
 
-        <div className="space-y-4">
+        {!actorId&&<p role="status">Cần đăng nhập để đọc và lưu cấu hình.</p>}
+        {actorId&&saveState.message&&<div role="alert" className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
+          <p>{saveState.message}</p>
+          {saveState.pending?<>
+            <p className="break-all">Mã yêu cầu: {saveState.pending.requestId}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" disabled={saving||saveState.blocked} onClick={()=>void saveState.recover()}>Kiểm tra kết quả lưu</Button>
+              <Button variant="outline" size="sm" disabled={saving||saveState.blocked||saveState.readOnly} onClick={()=>void saveState.retry()}>Gửi lại cùng mã</Button>
+              <Button variant="outline" size="sm" disabled={saving||saveState.blocked||saveState.readOnly} onClick={()=>void saveState.cancel()}>Hủy yêu cầu chưa ghi</Button>
+            </div>
+            <p>Hủy không hoàn tác cấu hình nếu máy chủ đã lưu trước đó.</p>
+          </>:<Button variant="outline" size="sm" disabled={saving} onClick={()=>void saveState.load()}>Tải lại cấu hình</Button>}
+        </div>}
+        {actorId&&saving&&!saveState.pending&&<p role="status">Đang xác minh cấu hình bàn…</p>}
+        <fieldset disabled={saving||saveState.blocked||!!saveState.pending} className="min-w-0 space-y-4">
           {/* Mode */}
           <div>
             <Label className="text-xs text-muted-foreground">Loại bàn</Label>
@@ -147,7 +160,7 @@ export function FeatureTableConfigDialog({ open, onOpenChange, tableId, tableNam
               <input
                 type="time"
                 disabled
-                className="flex-1 cursor-not-allowed rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground/60"
+                className="min-w-0 flex-1 cursor-not-allowed rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground/60"
                 aria-label="Giờ bắt đầu dự kiến (sắp ra mắt)"
               />
               <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Sắp ra mắt</span>
@@ -207,12 +220,12 @@ export function FeatureTableConfigDialog({ open, onOpenChange, tableId, tableNam
               </p>
             )}
           </div>
-        </div>
+        </fieldset>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Huỷ</Button>
-          <Button className="bg-success text-success-foreground hover:bg-success/90" onClick={save} disabled={minPoolWarning || saving}>
-            {saving ? "Đang lưu…" : "Lưu"}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Đóng</Button>
+          <Button className="bg-success text-success-foreground hover:bg-success/90" onClick={save} disabled={minPoolWarning || saving||saveState.blocked||!!saveState.pending}>
+            {saving ? (saveState.pending ? 'Đang đối chiếu…' : 'Đang tải…') : 'Lưu'}
           </Button>
         </DialogFooter>
       </DialogContent>

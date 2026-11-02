@@ -37,3 +37,10 @@ it('preserves server denial and does not retry a denied readiness read',async()=
   await expect(getDealerTourCloseReadiness('tour-test','club-test')).rejects.toThrow('permission denied');
   expect(transport.fetch).toHaveBeenCalledTimes(1);
 });
+
+it('forwards the caller abort signal through the actual tournament readiness SDK request',async()=>{
+  transport.fetch.mockResolvedValue(new Response(JSON.stringify(readiness),{status:200,headers:{'Content-Type':'application/json'}}));
+  const controller=new AbortController();await getTournamentCloseReadiness('tour-test',controller.signal);
+  expect(transport.fetch.mock.calls[0][1].signal).toBe(controller.signal);
+  expect(transport.fetch).toHaveBeenCalledTimes(1);
+});

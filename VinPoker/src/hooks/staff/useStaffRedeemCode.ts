@@ -2,8 +2,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { staffKeys } from "@/lib/staffApp/queryKeys";
+import { z } from "zod";
+import { useEffect, useRef } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
-const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args);
+const rpc = supabase.rpc.bind(supabase) as unknown as (fn:'staff_redeem_link_code',args:{p_code:string})=>
+  PromiseLike<{data:unknown;error:{code?:string;message?:string}|null}>;
+const linkedReceipt=z.object({status:z.literal('ok'),staff_id:z.string().uuid(),club_id:z.string().uuid()});
+const denial=z.object({error:z.string().min(1),detail:z.string().optional()});
 
 const ERRORS: Record<string, string> = {
   NOT_FOUND: "Mã không đúng hoặc đã dùng. Kiểm tra lại với chủ CLB.",
@@ -21,7 +28,15 @@ const ERRORS: Record<string, string> = {
  */
 export function useStaffRedeemCode() {
   const qc = useQueryClient();
+  const {user,session}=useAuth();
+  const scope=JSON.stringify([user?.id,sessionReadEpoch(session)]);
+  const currentScope=useRef(scope);currentScope.current=scope;
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  const current=(context:{scope:string}|undefined)=>alive.current&&context?.scope===currentScope.current;
   return useMutation({
+    retry:false,
+    onMutate:()=>({scope}),
     mutationFn: async (code: string) => {
       const { data, error } = await rpc("staff_redeem_link_code", { p_code: code.trim() });
       if (error) {
@@ -30,13 +45,20 @@ export function useStaffRedeemCode() {
         }
         throw error;
       }
-      if (data?.error) throw new Error(ERRORS[data.error] ?? data.detail ?? data.error);
-      return data as { status: "ok"; staff_id: string; club_id: string };
+      const rejected=denial.safeParse(data);
+      if(rejected.success)throw new Error(ERRORS[rejected.data.error]??rejected.data.detail??rejected.data.error);
+      const confirmed=linkedReceipt.safeParse(data);
+      if(!confirmed.success)throw new Error('Chưa xác minh được kết quả liên kết. Hãy tải lại hồ sơ trước khi thử tiếp.');
+      return confirmed.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data,_variables,context) => {
+      if(!current(context))return;
       toast.success("Đã liên kết! Đang mở cổng nhân viên…");
       qc.invalidateQueries({ queryKey: staffKeys.all });
     },
-    onError: (e: any) => toast.error(e?.message ?? "Không liên kết được."),
+    onError: (error:unknown,_variables,context) => {
+      if(current(context))toast.error(error && typeof error==='object' && 'message' in error
+        && typeof error.message==='string'?error.message:"Không liên kết được.");
+    },
   });
 }

@@ -9,6 +9,7 @@ import type { Tournament, TournamentWithTables } from "@/types/tournament";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from '@/lib/floorTableControlV3';
 import { assertTournamentDeleted } from '@/lib/tournamentDeleteResult';
 import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
 
 export function useTournamentConfigTableInventory(clubId: string, actorId: string | undefined) {
   const supabase = useSupabaseClient();
@@ -42,10 +43,14 @@ export function useTournaments(clubId: string | undefined, actorId: string | und
   const epoch = session?.access_token ? sessionReadEpoch(session) : 0;
   return useQuery({
     queryKey: tournamentKeys.all(clubId, actorId, epoch),
-    queryFn: async () => {
+    queryFn: async ({signal}) => {
       if (!clubId || !actorId || !epoch) throw new Error('AUTH_SCOPE_REQUIRED');
-
-      const { data, error } = await supabase
+      const controller=new AbortController();
+      const abort=()=>controller.abort();
+      signal.addEventListener('abort',abort,{once:true});
+      if(signal.aborted)abort();
+      try{
+      const { data, error } = await observeTrackerContextRead(supabase
         .from("tournaments")
         .select(
           `
@@ -68,10 +73,13 @@ export function useTournaments(clubId: string | undefined, actorId: string | und
         `
         )
         .eq("club_id", clubId)
-        .order("created_at", { ascending: false });
+        .abortSignal(controller.signal)
+        .order("created_at", { ascending: false }));
 
       if (error) throw error;
-      return (data ?? []) as unknown as TournamentWithTables[];
+      if(!Array.isArray(data))throw new Error('TOURNAMENT_LIST_READ_INVALID');
+      return data as unknown as TournamentWithTables[];
+      }finally{signal.removeEventListener('abort',abort);controller.abort();}
     },
     enabled: !!clubId && !!actorId && !!epoch,
     staleTime: 5 * 60 * 1000,
@@ -85,10 +93,14 @@ export function useActiveTournaments(clubId: string | undefined, actorId: string
   const epoch = session?.access_token ? sessionReadEpoch(session) : 0;
   return useQuery({
     queryKey: tournamentKeys.active(clubId, actorId, epoch),
-    queryFn: async () => {
+    queryFn: async ({signal}) => {
       if (!clubId || !actorId || !epoch) throw new Error('AUTH_SCOPE_REQUIRED');
-
-      const { data, error } = await supabase
+      const controller=new AbortController();
+      const abort=()=>controller.abort();
+      signal.addEventListener('abort',abort,{once:true});
+      if(signal.aborted)abort();
+      try{
+      const { data, error } = await observeTrackerContextRead(supabase
         .from("tournaments")
         .select(
           `
@@ -116,10 +128,13 @@ export function useActiveTournaments(clubId: string | undefined, actorId: string
         )
         .eq("club_id", clubId)
         .in("status", ["active", "live", "break", "final_table"])
-        .order("name");
+        .abortSignal(controller.signal)
+        .order("name"));
 
       if (error) throw error;
-      return (data ?? []) as unknown as TournamentWithTables[];
+      if(!Array.isArray(data))throw new Error('TOURNAMENT_LIST_READ_INVALID');
+      return data as unknown as TournamentWithTables[];
+      }finally{signal.removeEventListener('abort',abort);controller.abort();}
     },
     enabled: !!clubId && !!actorId && !!epoch,
     staleTime: 2 * 60 * 1000,

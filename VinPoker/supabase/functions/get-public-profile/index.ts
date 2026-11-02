@@ -1,6 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-import { retryFetch } from "../_shared/retry.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -23,7 +22,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const [{ data: profile }, { data: dealsAsPlayer }, { data: purchases }, { data: ratings }] =
+    const replies =
       await Promise.all([
         supabase.from("profiles").select("user_id,display_name,avatar_url,bio,is_verified,rating_avg,total_deals,region")
           .eq("user_id", userId).maybeSingle(),
@@ -34,6 +33,14 @@ Deno.serve(async (req) => {
         supabase.from("deal_ratings").select("id,deal_id,rater_id,rating,comment,role,created_at")
           .eq("ratee_id", userId).order("created_at", { ascending: false }).limit(50),
       ]);
+    if (replies.some(reply => reply.error)) throw new Error('PROFILE_DATA_UNAVAILABLE');
+    const [{ data: profile }, { data: dealsAsPlayer }, { data: purchases }, { data: ratings }] = replies;
+    if (![dealsAsPlayer, purchases, ratings].every(Array.isArray)) throw new Error('PROFILE_DATA_UNAVAILABLE');
+    if (!profile) {
+      return new Response(JSON.stringify({error: 'PROFILE_NOT_FOUND'}), {
+        status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'},
+      });
+    }
 
     // Player stats
     const dealsCreated = (dealsAsPlayer ?? []).length;
@@ -54,10 +61,11 @@ Deno.serve(async (req) => {
     let totalReturned = 0;
     if (fundedPurchases.length) {
       const dealIds = Array.from(new Set(fundedPurchases.map((p: any) => p.deal_id)));
-      const { data: payoutDeals } = await supabase
+      const { data: payoutDeals, error } = await supabase
         .from("staking_deals")
         .select("id,status,result_prize_vnd")
         .in("id", dealIds);
+      if (error || !Array.isArray(payoutDeals)) throw new Error('PROFILE_DATA_UNAVAILABLE');
       const dMap = new Map<string, any>((payoutDeals ?? []).map((d: any) => [d.id, d]));
       for (const p of fundedPurchases) {
         const d = dMap.get(p.deal_id);
@@ -70,9 +78,10 @@ Deno.serve(async (req) => {
 
     // Rater names for display
     const raterIds = Array.from(new Set((ratings ?? []).map((r: any) => r.rater_id)));
-    const { data: raters } = raterIds.length
+    const { data: raters, error: ratersError } = raterIds.length
       ? await supabase.from("profiles").select("user_id,display_name,avatar_url").in("user_id", raterIds)
-      : { data: [] as any[] };
+      : { data: [] as any[], error: null };
+    if (ratersError || !Array.isArray(raters)) throw new Error('PROFILE_DATA_UNAVAILABLE');
     const raterMap = new Map((raters ?? []).map((r: any) => [r.user_id, r]));
     const ratingsWithNames = (ratings ?? []).map((r: any) => ({
       ...r, rater: raterMap.get(r.rater_id) ?? null,
@@ -84,9 +93,9 @@ Deno.serve(async (req) => {
       backer: { totalPurchases, totalStaked, totalReturned, netPnl, activeCount },
       ratings: ratingsWithNames,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: (e as Error).message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+  } catch {
+    return new Response(JSON.stringify({ error: 'PROFILE_DATA_UNAVAILABLE' }), {
+      status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

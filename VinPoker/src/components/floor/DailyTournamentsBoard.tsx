@@ -40,7 +40,7 @@ export function DailyTournamentsBoard(p: FloorBoardProps) {
       <TournamentCard key={tr.id} tour={tr} flightMeta={p.flightMeta[tr.id]}
         finalMeta={p.finalMeta[tr.id]} multiClub={p.multiClub}
         clubName={p.clubNameMap[tr.club_id]} reload={p.reload}
-        onDelete={p.deleteTour} onSetStatus={p.setTourStatus}
+        onDelete={p.deleteTour}
         onStart={p.startTournament} onSelect={p.onSelect} />
     ))}
   </div>;

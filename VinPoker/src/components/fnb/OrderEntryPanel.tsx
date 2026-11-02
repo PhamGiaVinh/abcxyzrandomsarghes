@@ -41,14 +41,28 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
   onSubmit: (o: NewOrder) => void;
   onSubmitComp?: (o: NewOrder) => void;
 }) {
-  const { data, isLoading } = useFnbMenu(clubId);
+  const { data, isLoading, isError: menuError, refetch: reloadMenu } = useFnbMenu(clubId);
   const cats = data?.categories ?? [];
   const items = useMemo(() => (data?.items ?? []).filter((m) => m.is_active), [data]);
 
-  // A2 — real table/player picker data (empty when the flag is off or the RPC hasn't been applied yet).
-  const { data: linkTargets } = useFnbLinkTargets(clubId);
+  // A failed target read is not a verified empty list. Walk-in orders remain independent.
+  const { data: linkTargets, isLoading: linksLoading, isError: linksError, refetch: reloadLinks } = useFnbLinkTargets(clubId);
   const tables = linkTargets?.tables ?? [];
   const players = linkTargets?.players ?? [];
+  // A player can legitimately have multiple rows. Select a displayed location, never the first
+  // player_id match. Indistinguishable/unknown locations cannot be safely auto-linked.
+  const playerLocations = useMemo(() => {
+    const rows = (linkTargets?.players ?? []).map(player => ({
+      player, key: JSON.stringify([player.player_id, player.table_id, player.seat_number,
+        player.seat_id ?? null, player.entry_id ?? null, player.table_session_id ?? null]),
+    }));
+    const counts = new Map<string, number>();
+    for (const row of rows) counts.set(row.key, (counts.get(row.key) ?? 0) + 1);
+    return rows.filter(row => counts.get(row.key) === 1 && row.player.table_id
+      && (linkTargets?.tables ?? []).some(table => table.id === row.player.table_id));
+  }, [linkTargets?.players, linkTargets?.tables]);
+  const unresolvedLocations = players.length - playerLocations.length + (linkTargets?.unavailable_player_count ?? 0);
+  const unresolvedTables = linkTargets?.unavailable_table_count ?? 0;
 
   const [activeCat, setActiveCat] = useState<string>("all");
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -66,10 +80,10 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
   }, [resetKey]);
 
   // picking a seated player auto-fills their current table (the player IS at that table already).
-  const pickPlayer = (playerId: string) => {
-    setPlayerPick(playerId);
-    if (playerId === NO_PLAYER) return;
-    const p = players.find((pl) => pl.player_id === playerId);
+  const pickPlayer = (locationKey: string) => {
+    setPlayerPick(locationKey);
+    if (locationKey === NO_PLAYER) return;
+    const p = playerLocations.find(row => row.key === locationKey)?.player;
     if (p?.table_id) setTablePick(p.table_id);
   };
 
@@ -84,6 +98,10 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
 
   const hasRealTable = FEATURES.fnbTableLink && tablePick !== WALKIN;
   const hasRealPlayer = FEATURES.fnbTableLink && playerPick !== NO_PLAYER;
+  const selectedPlayer = playerLocations.find(row => row.key === playerPick)?.player;
+  const linksUnavailable = FEATURES.fnbTableLink && (linksLoading || linksError || !linkTargets);
+  const invalidSelectedLink = (hasRealTable && (linksUnavailable || !tables.some(t => t.id === tablePick)))
+    || (hasRealPlayer && (linksUnavailable || !selectedPlayer || selectedPlayer.table_id !== tablePick));
 
   const buildOrder = (): NewOrder => ({
     table_label: hasRealTable ? null : (table.trim() || null),
@@ -95,14 +113,17 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
     })),
     subtotal_vnd: subtotal,
     table_ref: hasRealTable ? tablePick : null,
-    player_ref: hasRealPlayer ? playerPick : null,
+    player_ref: hasRealPlayer ? selectedPlayer?.player_id ?? null : null,
   });
 
-  const submit = () => { if (lines.length === 0 || submitting) return; onSubmit(buildOrder()); };
-  const submitComp = () => { if (lines.length === 0 || submitting) return; onSubmitComp?.(buildOrder()); };
+  const submit = () => { if (lines.length === 0 || submitting || invalidSelectedLink || isLoading || menuError || !data) return; onSubmit(buildOrder()); };
+  const submitComp = () => { if (lines.length === 0 || submitting || invalidSelectedLink || isLoading || menuError || !data) return; onSubmitComp?.(buildOrder()); };
 
   if (isLoading) {
     return <Card className="p-5"><div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải thực đơn…</div></Card>;
+  }
+  if (menuError || !data) {
+    return <Card role="alert" className="space-y-3 p-5"><p>Không tải được thực đơn. Chưa thể xác minh món và giá để tạo đơn.</p><Button variant="outline" onClick={()=>void reloadMenu()}>Thử tải lại thực đơn</Button></Card>;
   }
   if (items.length === 0) {
     return <Card className="p-5 text-sm text-muted-foreground">Chưa có món nào đang bán. Thêm món ở tab Quản trị → Thực đơn.</Card>;
@@ -136,12 +157,32 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
 
       <Card className="p-4 flex flex-col">
         <div className="text-sm font-semibold mb-2">Đơn hàng</div>
+        {FEATURES.fnbTableLink && (linksError ? (
+          <div role="alert" className="mb-3 text-sm text-destructive">
+            Không xác minh được danh sách bàn/người chơi. Khách lẻ không gắn bàn vẫn có thể tạo đơn.
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => void reloadLinks()}>Thử tải lại bàn/người chơi</Button>
+          </div>
+        ) : linksUnavailable ? (
+          <div role="status" className="mb-3 text-sm text-muted-foreground">Đang tải bàn/người chơi…</div>
+        ) : invalidSelectedLink ? (
+          <div role="alert" className="mb-3 text-sm text-destructive">Bàn/người chơi đã chọn không còn trong danh sách. Hãy chọn lại trước khi tạo đơn.</div>
+        ) : null)}
+        {FEATURES.fnbTableLink && !linksUnavailable && unresolvedLocations > 0 && (
+          <div role="alert" className="mb-3 text-sm text-destructive">
+            Không xác định duy nhất bàn/ghế của {unresolvedLocations} hàng người chơi. Các hàng này chưa thể gắn tự động; hãy xác minh tại Floor. Vẫn có thể chọn bàn hoặc nhập khách lẻ.
+          </div>
+        )}
+        {FEATURES.fnbTableLink && !linksUnavailable && unresolvedTables > 0 && (
+          <div role="alert" className="mb-3 text-sm text-destructive">
+            Có {unresolvedTables} bàn chưa xác minh được phiên hoạt động. Hãy kiểm tra tại Floor trước khi gắn đơn vào các bàn này.
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div>
             <Label className="text-xs text-muted-foreground">Bàn</Label>
             {FEATURES.fnbTableLink ? (
               <>
-                <Select value={tablePick} onValueChange={setTablePick}>
+                <Select value={tablePick} onValueChange={value => { setTablePick(value); setPlayerPick(NO_PLAYER); }} disabled={linksUnavailable}>
                   <SelectTrigger className="bg-card border-border text-foreground h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -165,17 +206,17 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
           <div><Label className="text-xs text-muted-foreground">Khách</Label>
             <Input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="(tuỳ chọn)"
               className="bg-card border-border text-foreground h-8" /></div>
-          {FEATURES.fnbTableLink && players.length > 0 && (
+          {FEATURES.fnbTableLink && (players.length > 0 || hasRealPlayer) && (
             <div className="col-span-2">
               <Label className="text-xs text-muted-foreground">Người chơi (đang ngồi)</Label>
-              <Select value={playerPick} onValueChange={pickPlayer}>
+              <Select value={playerPick} onValueChange={pickPlayer} disabled={linksUnavailable}>
                 <SelectTrigger className="bg-card border-border text-foreground h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border text-foreground">
                   <SelectItem value={NO_PLAYER}>— Không chọn —</SelectItem>
-                  {players.map((p) => (
-                    <SelectItem key={p.player_id} value={p.player_id}>
+                  {playerLocations.map(({player: p, key}) => (
+                    <SelectItem key={key} value={key}>
                       {p.name}{p.table_name ? ` · ${p.table_name}${p.seat_number ? ` #${p.seat_number}` : ""}` : ""}
                     </SelectItem>
                   ))}
@@ -203,12 +244,12 @@ export function OrderEntryPanel({ clubId, submitting, resetKey, onSubmit, onSubm
         </div>
         <div className="border-t border-border mt-3 pt-3 space-y-2">
           <div className="flex justify-between text-sm"><span className="text-muted-foreground">Tổng cộng</span><span className="font-mono font-semibold">{formatVND(subtotal)}</span></div>
-          <Button className="w-full bg-success hover:bg-success/90 text-success-foreground" disabled={lines.length === 0 || submitting} onClick={submit}>
+          <Button className="w-full bg-success hover:bg-success/90 text-success-foreground" disabled={lines.length === 0 || submitting || invalidSelectedLink} onClick={submit}>
             {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Receipt className="w-4 h-4 mr-1" />}
             Tạo đơn &amp; thu tiền
           </Button>
           {FEATURES.fnbComp && onSubmitComp && (
-            <Button variant="outline" className="w-full border-border text-muted-foreground hover:text-foreground" disabled={lines.length === 0 || submitting} onClick={submitComp}>
+            <Button variant="outline" className="w-full border-border text-muted-foreground hover:text-foreground" disabled={lines.length === 0 || submitting || invalidSelectedLink} onClick={submitComp}>
               <Gift className="w-4 h-4 mr-1" /> Comp / Miễn phí
             </Button>
           )}

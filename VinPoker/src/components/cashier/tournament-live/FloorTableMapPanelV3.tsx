@@ -70,6 +70,7 @@ function v3ErrorMessage(error: string): string {
     case "destination_table_has_active_hand": return "Bàn đích đang có ván chạy nên chưa thể chuyển người.";
     case "destination_hand_not_active": return "Ván Tracker vừa kết thúc. Hãy tải lại và chuyển người ngay.";
     case "pending_move_conflict": return "Người chơi hoặc ghế này đã có yêu cầu chuyển chờ xử lý. Hãy tải lại.";
+    case "V3_CANCEL_PENDING_MOVE_OUTCOME_UNKNOWN":
     case "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED": return "Chưa xác nhận được kết quả hủy chuyển. Hãy kiểm tra trạng thái ghế sau khi tải lại; không tự gửi lại yêu cầu.";
     case "source_table_busy": return "Bàn nguồn đang có ván hoặc không ở chế độ Manual. Hãy kết thúc ván nguồn trước.";
     case "chip_state_mismatch": return "Chip ở ghế và hồ sơ giải chưa khớp. Hãy làm mới rồi kiểm tra trước khi chuyển.";

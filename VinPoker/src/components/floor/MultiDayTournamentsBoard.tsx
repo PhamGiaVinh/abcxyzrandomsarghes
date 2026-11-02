@@ -7,8 +7,9 @@ import { NewTournamentDialog, TournamentCard } from "./TournamentManagerShared";
 import type { EventMeta, FloorBoardProps } from "./useFloorTournaments";
 import { BoardEmpty, BoardError } from "./floorBoardStates";
 import { MultiDayFloorEventPanel } from "./MultiDayFloorEventPanel";
+import { formatVND } from "@/lib/format";
 
-type EventGroup = { eventId: string; name: string; itmPercent: number; flights: any[]; final: any | null };
+type EventGroup = { eventId: string; name: string; itmPercent: number; guarantee: number | null | undefined; flights: any[]; final: any | null };
 
 // Last-resort name when the event row's name isn't loaded: strip the child suffix the
 // create RPC adds ("<Event> · Flight A" / "<Event> · Final Day").
@@ -28,7 +29,7 @@ function groupEvents(tours: any[], eventMeta: Record<string, EventMeta>): EventG
     let g = byEvent.get(tr.event_id);
     if (!g) {
       const meta = eventMeta[tr.event_id];
-      g = { eventId: tr.event_id, name: meta?.name || stripSuffix(tr.name) || "Main Event", itmPercent: meta?.itm_percent ?? 0, flights: [], final: null };
+      g = { eventId: tr.event_id, name: meta?.name || stripSuffix(tr.name) || "Main Event", itmPercent: meta?.itm_percent ?? 0, guarantee: meta?.guarantee_amount, flights: [], final: null };
       byEvent.set(tr.event_id, g);
     }
     if (tr.phase === "final") g.final = tr;
@@ -82,7 +83,6 @@ function EventCard({ group, p }: { group: EventGroup; p: FloorBoardProps }) {
     clubName: p.clubNameMap[tr.club_id],
     reload: p.reload,
     onDelete: p.deleteTour,
-    onSetStatus: p.setTourStatus,
     onStart: p.startTournament,
     onSelect: p.onSelect,
     legacyMultiDayActions: !verifiedRelease,
@@ -90,13 +90,18 @@ function EventCard({ group, p }: { group: EventGroup; p: FloorBoardProps }) {
 
   return (
     <Card className="border-primary/30 p-3 space-y-2">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="grid w-full grid-cols-[1rem_1rem_minmax(0,1fr)_auto] items-center gap-2 text-left sm:flex">
         {open ? <ChevronDown className="w-4 h-4 text-primary shrink-0" /> : <ChevronRight className="w-4 h-4 text-primary shrink-0" />}
         <Layers className="w-4 h-4 text-primary shrink-0" />
-        <span className="font-semibold truncate">{group.name}</span>
+        <span className="min-w-0 font-semibold truncate">{group.name}</span>
         {group.itmPercent > 0 && <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">ITM {group.itmPercent}%</span>}
-        <span className="ml-auto min-w-0 text-right text-[11px] text-muted-foreground">{group.flights.length} flight · {entrants === null ? t("floorReadiness.unavailable") : `${entrants} entrant`}</span>
+        <span className="col-span-2 col-start-3 min-w-0 break-words text-[11px] text-muted-foreground sm:ml-auto sm:text-right">{group.flights.length} flight · {entrants === null ? t("floorReadiness.unavailable") : `${entrants} entrant`}</span>
       </button>
+      {group.guarantee !== undefined && <p className="text-xs text-muted-foreground">{
+        group.guarantee === null ? t("mainEventCreate.guaranteeMissing")
+          : group.guarantee === 0 ? t("mainEventCreate.guaranteeNone")
+          : t("mainEventCreate.guaranteeValue", { amount: formatVND(group.guarantee) })
+      }</p>}
       {open && (
         <div className="space-y-2 border-l-2 border-primary/15 pl-2">
           <MultiDayFloorEventPanel eventId={group.eventId} onReleaseRead={setVerifiedRelease} />

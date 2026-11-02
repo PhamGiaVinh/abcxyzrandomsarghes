@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,9 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
 import { formatVND, formatDateTime } from "@/lib/format";
 import { Loader2, RefreshCw, CheckCircle2, XCircle, Banknote } from "lucide-react";
+import {useSePaySettlementIntent} from './useSePaySettlementIntent';
 
 // Shape returned by public.sepay_cashier_settlement_worklist (20261116000000) — RAW FACTS only.
 type Row = {
@@ -38,76 +41,100 @@ type Row = {
 
 /**
  * Cashier "Đối soát SePay" tab — surfaces the SePay reconciliation worklist (transfers the reconcile
- * worker verified + flagged) and lets a cashier confirm (→ manual_confirm_bank_transaction) or ignore
- * (→ ignore_bank_transaction). The RPC returns raw facts; the cashier eyeballs the comparison and the
+ * worker verified + flagged) and submits confirm/ignore through actor-bound intent receipts.
+ * The RPC returns raw facts; the cashier eyeballs the comparison and the
  * RPC re-validates authoritatively on click. clubIds is accepted for parity (the RPC self-scopes).
  */
 export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => {
+  const { user, session } = useAuth();
+  if (!user) return <Card className="p-4" role="alert">Đăng nhập để đọc danh sách đối soát SePay.</Card>;
+  return <SettlementSession actorId={user.id} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort()])}/>;
+};
+
+function validSettlementRow(value: unknown): value is Row {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const r = value as Record<string, unknown>;
+  const optionalText=(field:string)=>r[field]===undefined||r[field]===null||typeof r[field]==='string';
+  const optionalDate=(field:string)=>r[field]===undefined||r[field]===null
+    ||typeof r[field]==='string'&&Number.isFinite(Date.parse(r[field]));
+  return typeof r.bank_transaction_id === 'string' && !!r.bank_transaction_id.trim()
+    && ['club_name','content','txn_ref','reference_code','reg_status','player_display','tournament_name','settlement_outcome','settlement_reason'].every(optionalText)
+    && ['occurred_at','settlement_created_at'].every(optionalDate)
+    && (r.club_id === null || typeof r.club_id === 'string')
+    && typeof r.created_at === 'string' && Number.isFinite(Date.parse(r.created_at))
+    && typeof r.bt_status === 'string' && Number.isSafeInteger(r.reg_match_count) && Number(r.reg_match_count) >= 0
+    && (r.registration_id === null || typeof r.registration_id === 'string')
+    && [r.amount, r.reg_total_pay, r.amount_delta].every(value => value === null || typeof value === 'number' && Number.isSafeInteger(value));
+}
+
+function SettlementSession({actorId}:{actorId:string}) {
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [scope, setScope] = useState<"actionable" | "resolved">("actionable");
   const [confirmTarget, setConfirmTarget] = useState<Row | null>(null);
   const [confirmReason, setConfirmReason] = useState("");
   const [ignoreTarget, setIgnoreTarget] = useState<Row | null>(null);
   const [ignoreReason, setIgnoreReason] = useState("");
   // Stale-response guard (mount + clubs-loaded fire back to back; only the latest may write state).
-  const loadSeq = useState({ n: 0 })[0];
+  const loadSeq = useRef(0), readFlight = useRef<AbortController | null>(null);
 
-  const load = async () => {
-    const seq = ++loadSeq.n;
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    readFlight.current?.abort();
+    const controller = new AbortController(); readFlight.current = controller;
     setRows(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC source: supabase/migrations/20261116000000; not yet in generated types.ts
-    const { data, error } = await (supabase.rpc as any)("sepay_cashier_settlement_worklist", {
-      p_scope: scope,
-      p_limit: 200,
-    });
-    if (seq !== loadSeq.n) return;
-    if (error) { toast.error(error.message); setRows([]); return; }
-    setRows((data ?? []) as Row[]);
-  };
+    setLoadError(null);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- existing RPC is not in generated types.ts
+      const { data, error } = await observeTrackerContextRead((supabase.rpc as any)("sepay_cashier_settlement_worklist", {
+        p_scope: scope, p_limit: 200,
+      }).abortSignal(controller.signal)) as { data: unknown; error: { code?: string } | null };
+      if (seq !== loadSeq.current) return;
+      if (error?.code === '42501') { setLoadError('Không có quyền đọc danh sách đối soát SePay.'); return; }
+      if (error || !Array.isArray(data) || !data.every(validSettlementRow)
+        || new Set(data.map(row => row.bank_transaction_id)).size !== data.length) throw new Error('unverified_worklist');
+      setRows(data);
+    } catch {
+      if (seq === loadSeq.current) setLoadError('Không tải được danh sách đối soát SePay. Hãy thử lại.');
+    } finally {
+      controller.abort();
+      if (seq === loadSeq.current) readFlight.current = null;
+    }
+  }, [scope]);
 
-  // Re-run when the scope filter or the cashier's club set changes.
-  useEffect(() => { load(); }, [scope, clubIds?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cancelRead = useCallback(() => { loadSeq.current++; readFlight.current?.abort(); }, []);
+  const mutation=useSePaySettlementIntent(actorId,()=>{
+    setConfirmTarget(null);setConfirmReason('');setIgnoreTarget(null);setIgnoreReason('');void load();
+  });
+  const busy=mutation.busy?mutation.pending?.bankId??null:null;
+  const mutationBlocked=mutation.busy||mutation.pending!==null||mutation.journalError||rows===null||loadError!==null;
+  // Re-run when the scope filter changes; actor/session/club changes remount above.
+  useEffect(() => {
+    setConfirmTarget(null); setConfirmReason(''); setIgnoreTarget(null); setIgnoreReason('');
+    void load();
+    return cancelRead;
+  }, [load, cancelRead]);
 
   const doConfirm = async () => {
     const r = confirmTarget;
-    if (!r || !r.registration_id) return;
-    setBusy(r.bank_transaction_id);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC source: supabase/migrations/20261114000000; not yet in generated types.ts
-    const { data, error } = await (supabase.rpc as any)("manual_confirm_bank_transaction", {
-      p_bank_transaction_id: r.bank_transaction_id,
-      p_registration_id: r.registration_id,
-      p_reason: confirmReason.trim() || null,
-    });
-    setBusy(null);
-    const res = data as { ok?: boolean; error?: string; outcome?: string } | null;
-    if (error || !res?.ok) { toast.error(mapError(res?.error, error?.message)); return; }
-    setConfirmTarget(null); setConfirmReason("");
-    toast.success("Đã xác nhận — ghế đã được xếp.");
-    load();
+    if (!r || !r.registration_id || mutationBlocked) return;
+    const flight=mutation.start({operation:'confirm',bankId:r.bank_transaction_id,registrationId:r.registration_id,
+      clubId:r.club_id,reason:confirmReason.trim()||null,snapshot:{bank_amount:r.amount,total_pay:r.reg_total_pay}});
+    setConfirmTarget(null);await flight;
   };
 
   const doIgnore = async () => {
     const r = ignoreTarget;
-    if (!r) return;
-    setBusy(r.bank_transaction_id);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC source: supabase/migrations/20261114000000; not yet in generated types.ts
-    const { data, error } = await (supabase.rpc as any)("ignore_bank_transaction", {
-      p_bank_transaction_id: r.bank_transaction_id,
-      p_reason: ignoreReason.trim() || null,
-    });
-    setBusy(null);
-    const res = data as { ok?: boolean; error?: string } | null;
-    if (error || !res?.ok) { toast.error(mapError(res?.error, error?.message)); return; }
-    setIgnoreTarget(null); setIgnoreReason("");
-    toast.success("Đã bỏ qua giao dịch.");
-    load();
+    if (!r || mutationBlocked) return;
+    const flight=mutation.start({operation:'ignore',bankId:r.bank_transaction_id,registrationId:null,
+      clubId:r.club_id,reason:ignoreReason.trim()||null,snapshot:{bank_amount:r.amount,total_pay:null}});
+    setIgnoreTarget(null);await flight;
   };
 
   // Mirror the RPC's reason_required_on_mismatch: reason is required when CK amount ≠ reg total_pay.
   const confirmMismatch = !!confirmTarget && confirmTarget.amount != null && confirmTarget.reg_total_pay != null
     && confirmTarget.amount !== confirmTarget.reg_total_pay;
-  const confirmDisabled = busy === confirmTarget?.bank_transaction_id
+  const confirmDisabled = mutationBlocked
     || (confirmMismatch && confirmReason.trim().length === 0);
 
   return (
@@ -124,13 +151,22 @@ export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => 
         <div className="flex items-center gap-2">
           <Button variant={scope === "actionable" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("actionable")}>Cần xử lý</Button>
           <Button variant={scope === "resolved" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("resolved")}>Đã xử lý</Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={load} disabled={rows === null}>
-            {rows === null ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          <Button variant="ghost" size="icon" aria-label="Tải lại đối soát SePay" className="h-9 w-9" onClick={load} disabled={rows === null && !loadError}>
+            {rows === null && !loadError ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           </Button>
         </div>
       </div>
 
-      {rows === null ? (
+      {(mutation.pending||mutation.journalError)&&<div role="alert" className="rounded-md border border-warning/40 p-3 text-sm space-y-2">
+        <p>{mutation.journalError?'Không đọc/lưu được yêu cầu đang chờ. Không gửi khoản mới; cần kiểm tra journal trước.':mutation.notice||'Có yêu cầu chưa xác minh từ lần trước. Tra cứu receipt trước khi tiếp tục.'}</p>
+        {mutation.pending&&<div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" disabled={mutation.busy} onClick={()=>void mutation.recover()}>Tra cứu yêu cầu đang chờ</Button>
+          {mutation.missing&&<Button variant="outline" size="sm" disabled={mutation.busy} onClick={()=>void mutation.retry()}>Thử lại cùng yêu cầu</Button>}
+        </div>}
+      </div>}
+      {loadError ? <div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm">
+        <p>{loadError}</p><Button variant="outline" size="sm" className="mt-2" onClick={() => void load()}>Thử lại</Button>
+      </div> : rows === null ? (
         <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
       ) : rows.length === 0 ? (
         <div className="text-center text-sm text-muted-foreground py-10">
@@ -161,10 +197,10 @@ export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => 
                     <div className="rounded-md bg-muted/40 p-2 text-xs space-y-0.5">
                       <div className="font-medium">{r.player_display ?? "Player"} · {r.tournament_name ?? "—"}</div>
                       <div className={isMismatch ? "text-warning" : "text-muted-foreground"}>
-                        CK <b>{r.amount != null ? formatVND(r.amount) : "—"}</b> · Cần thu <b>{r.reg_total_pay != null ? formatVND(r.reg_total_pay) : "—"}</b>
-                        {isMismatch && r.amount_delta != null && <span> · lệch {formatVND(r.amount_delta)}</span>}
+                        CK <b>{r.amount != null ? formatVND(r.amount) : "—"}</b> · Tổng phí đăng ký <b>{r.reg_total_pay != null ? formatVND(r.reg_total_pay) : "—"}</b>
+                        {isMismatch && r.amount_delta != null && <span> · chênh so với tổng phí {formatVND(r.amount_delta)}</span>}
                       </div>
-                      {r.reg_status && r.reg_status !== "pending" && (
+                      {scope === "actionable" && r.reg_status && r.reg_status !== "pending" && (
                         <div className="text-warning">Đăng ký không ở trạng thái chờ (đang: {r.reg_status})</div>
                       )}
                     </div>
@@ -184,12 +220,12 @@ export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => 
                 {scope === "actionable" && (
                   <div className="flex md:flex-col gap-2 md:w-40">
                     <Button size="sm" className="flex-1 h-9"
-                      disabled={busy === r.bank_transaction_id || r.reg_match_count !== 1 || r.amount == null}
+                      disabled={mutationBlocked || r.reg_match_count !== 1 || r.amount == null}
                       onClick={() => { setConfirmTarget(r); setConfirmReason(""); }}>
                       <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Xác nhận
                     </Button>
                     <Button size="sm" variant="outline" className="flex-1 h-9 text-destructive border-destructive/40"
-                      disabled={busy === r.bank_transaction_id}
+                      disabled={mutationBlocked}
                       onClick={() => { setIgnoreTarget(r); setIgnoreReason(""); }}>
                       <XCircle className="w-3.5 h-3.5 mr-1" /> Bỏ qua
                     </Button>
@@ -207,19 +243,20 @@ export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => 
           <DialogHeader>
             <DialogTitle>Xác nhận khoản chuyển khoản</DialogTitle>
             <DialogDescription>
-              Xếp ghế cho <b>{confirmTarget?.player_display ?? "Player"}</b> — giải <b>{confirmTarget?.tournament_name ?? "—"}</b>.
-              <br />CK <b>{confirmTarget?.amount != null ? formatVND(confirmTarget.amount) : "—"}</b> · Cần thu <b>{confirmTarget?.reg_total_pay != null ? formatVND(confirmTarget.reg_total_pay) : "—"}</b>
-              {confirmMismatch && <span className="text-warning"> — số tiền LỆCH, bắt buộc nhập lý do.</span>}
+              Ghi nhận khoản chuyển cho <b>{confirmTarget?.player_display ?? "Player"}</b> — giải <b>{confirmTarget?.tournament_name ?? "—"}</b>.
+              <span className="block mt-1">Chỉ xếp ghế khi tổng tiền đã ghi nhận đủ và có bàn/ghế phù hợp.</span>
+              <br />CK <b>{confirmTarget?.amount != null ? formatVND(confirmTarget.amount) : "—"}</b> · Tổng phí đăng ký <b>{confirmTarget?.reg_total_pay != null ? formatVND(confirmTarget.reg_total_pay) : "—"}</b>
+              {confirmMismatch && <span className="text-warning"> — chênh với tổng phí, bắt buộc nhập lý do.</span>}
             </DialogDescription>
           </DialogHeader>
           <Textarea
-            placeholder={confirmMismatch ? "Lý do (bắt buộc khi lệch tiền) — VD: khách bù tiền mặt phần thiếu" : "Ghi chú (không bắt buộc)"}
+            placeholder={confirmMismatch ? "Lý do chênh lệch (bắt buộc). Ghi chú không thay cho ghi nhận tiền tại Cashier." : "Ghi chú (không bắt buộc)"}
             value={confirmReason} onChange={(e) => setConfirmReason(e.target.value)} />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setConfirmTarget(null); setConfirmReason(""); }}>Huỷ</Button>
             <Button disabled={confirmDisabled} onClick={doConfirm}>
               {busy === confirmTarget?.bank_transaction_id ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
-              Xác nhận & xếp ghế
+              Xác nhận khoản chuyển
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -238,7 +275,7 @@ export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => 
             value={ignoreReason} onChange={(e) => setIgnoreReason(e.target.value)} />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setIgnoreTarget(null); setIgnoreReason(""); }}>Huỷ</Button>
-            <Button variant="destructive" disabled={busy === ignoreTarget?.bank_transaction_id} onClick={doIgnore}>
+            <Button variant="destructive" disabled={mutationBlocked} onClick={doIgnore}>
               {busy === ignoreTarget?.bank_transaction_id ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               Xác nhận bỏ qua
             </Button>
@@ -247,23 +284,4 @@ export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => 
       </Dialog>
     </Card>
   );
-};
-
-// Maps manual_confirm_bank_transaction / ignore_bank_transaction RPC error codes to Vietnamese.
-function mapError(code?: string, raw?: string): string {
-  switch (code ?? raw) {
-    case "unauthorized": return "Phiên đăng nhập hết hạn — đăng nhập lại.";
-    case "actor_not_allowed": return "Tài khoản của bạn không có quyền cho CLB này.";
-    case "bank_txn_not_found": return "Không tìm thấy giao dịch.";
-    case "registration_not_found": return "Không tìm thấy đăng ký.";
-    case "club_unresolved": return "Không xác định được CLB của giao dịch.";
-    case "club_mismatch": return "Tiền của CLB khác — không thể xác nhận cho đăng ký này.";
-    case "already_settled": return "Giao dịch này đã được xử lý.";
-    case "registration_already_settled": return "Đăng ký này đã được thanh toán bằng một giao dịch khác.";
-    case "amount_missing": return "Giao dịch chưa có số tiền — chờ SePay cập nhật rồi thử lại.";
-    case "reason_required_on_mismatch": return "Số tiền lệch — bắt buộc nhập lý do.";
-    case "seating_failed": return "Hết bàn/ghế — mở bàn cho giải rồi thử lại.";
-    case "club_unresolved_super_admin_only": return "Giao dịch không thuộc CLB nào — chỉ super admin xử lý.";
-    default: return code ? `Thao tác thất bại (${code}).` : (raw || "Thao tác thất bại.");
-  }
 }

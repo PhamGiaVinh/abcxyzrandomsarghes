@@ -15,6 +15,9 @@
 // Vietnamese is hard-coded here (vi-first app); a later pass can route these through i18n keys.
 
 const VI: Record<string, string> = {
+  FNB_GUEST_LOOKUP_INVALID: "Chưa xác minh được thực đơn. Vui lòng tải lại; chưa thể gửi đơn.",
+  FNB_MUTATION_UNKNOWN: "Chưa xác nhận được kết quả. Hãy tải lại trạng thái đơn trước khi thao tác lại; không tạo đơn mới để thay thế.",
+  REQUEST_ID_CONFLICT: "Mã yêu cầu đã gắn với đơn hoặc nội dung khác. Tải lại đơn đã ghi để kiểm tra; không tạo đơn thay thế khi chưa xác minh.",
   Unauthorized:        "Bạn cần đăng nhập lại.",
   Forbidden:           "Bạn không có quyền thực hiện thao tác này.",
   INVALID_INPUT:       "Dữ liệu nhập không hợp lệ.",
@@ -22,7 +25,9 @@ const VI: Record<string, string> = {
   MENU_ITEM_NOT_FOUND: "Không tìm thấy món.",
   MENU_ITEM_INACTIVE:  "Món đang tắt bán.",
   ORDER_NOT_FOUND:     "Không tìm thấy đơn.",
+  LINE_NOT_FOUND:      "Không tìm thấy dòng món trong đơn này. Tải lại đơn trước khi đánh dấu hoàn tất.",
   BAD_STATE:           "Đơn không ở trạng thái phù hợp để thao tác.",
+  PARTIAL_RETURN_SNAPSHOT_UNAVAILABLE: "Đơn cũ đã giao một phần nhưng thiếu dữ liệu nguyên liệu lúc thu tiền. Cần đối soát hàng trả trước khi huỷ; đơn chưa bị thay đổi.",
   INGREDIENT_NOT_FOUND:"Không tìm thấy nguyên liệu.",
   STOCKTAKE_NOT_FOUND: "Không tìm thấy phiên kiểm kho.",
   DUPLICATE_NAME:      "Tên này đã tồn tại.",

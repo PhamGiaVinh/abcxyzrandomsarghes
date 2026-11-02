@@ -1,4 +1,4 @@
-// Spectator completed-hand feed. The legacy branch stays byte-identical while
+// Spectator completed-hand feed. The legacy layout remains available while
 // liveViewerRPTShell is OFF; the new branch composes persisted hand view-models
 // with optional editorial view-models supplied by the future owner-gated adapter.
 
@@ -65,7 +65,7 @@ export function LiveHandFeed({
   const [kindFilter, setKindFilter] = useState<KindFilter>(initialTableHistory ? "hands" : "all");
   const [search, setSearch] = useState("");
 
-  const { items, loading, hasMore, loadMore } = useCompletedHandsFeed(tournamentId, {
+  const { items, loading, hasMore, loadMore, error, reload } = useCompletedHandsFeed(tournamentId, {
     tableId: allTables ? null : featuredTableId ?? null,
     tags: tagFilter,
   });
@@ -92,7 +92,19 @@ export function LiveHandFeed({
     return () => window.cancelAnimationFrame(frame);
   }, [rpt, focusedPostId, editorialPosts.length, items.length]);
 
-  // Preserve today's output and behavior while the new shell flag is OFF.
+  const readError = error ? (
+    <div role="alert" className="rounded-xl border border-border bg-card p-3 text-sm text-foreground">
+      <p>{t("liveHub.handFeed.readError", "Không tải được lịch sử hand. Chưa thể xác minh dữ liệu mới nhất.")}</p>
+      <button type="button" disabled={loading} onClick={() => { void reload(); }}
+        className="mt-2 min-h-11 rounded-lg border border-border px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+        {t("liveHub.handFeed.retry", "Thử tải lại lịch sử")}
+      </button>
+    </div>
+  ) : null;
+  const emptyHistory = items.length === 0 && !hasMore && !search.trim() && tagFilter.length === 0;
+  const moreMatchesHint = t("liveHub.handFeed.noLoadedMatch", "Chưa có ván khớp trong dữ liệu đã tải. Có thể tải thêm để tìm tiếp.");
+
+  // Keep the legacy layout while sharing filtered-pagination safeguards.
   if (!rpt) {
     return (
       <div className="space-y-1.5">
@@ -140,23 +152,23 @@ export function LiveHandFeed({
           />
         </div>
 
-        {loading && items.length === 0 ? (
+        {readError || (loading && items.length === 0 ? (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-card/50 py-6 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> {t("liveHub.handFeed.loading", "Đang tải các ván…")}
           </div>
         ) : shownHands.length === 0 ? (
           <div className="rounded-xl border border-border/50 bg-card/50 px-3 py-6 text-center text-xs italic text-muted-foreground">
-            {items.length === 0 ? t("liveHub.handFeed.empty", "Chưa có ván nào hoàn tất") : t("liveHub.handFeed.noMatch", "Không có ván khớp bộ lọc")}
+            {emptyHistory ? t("liveHub.handFeed.empty", "Chưa có ván nào hoàn tất") : hasMore ? moreMatchesHint : t("liveHub.handFeed.noMatch", "Không có ván khớp bộ lọc")}
           </div>
         ) : (
           <div className="space-y-2">
             {shownHands.map((item) => <HandFeedCard key={item.handId} item={item} onViewHand={onViewHand} onShare={onShare} />)}
-            {hasMore && !search.trim() && (
-              <button type="button" onClick={loadMore} className="w-full rounded-xl border border-border/60 bg-card/50 py-2 text-xs font-semibold text-muted-foreground transition hover:text-foreground">
-                {t("liveHub.handFeed.more", "Xem thêm")}
-              </button>
-            )}
           </div>
+        ))}
+        {hasMore && !error && (
+          <button type="button" disabled={loading} onClick={loadMore} className="w-full rounded-xl border border-border/60 bg-card/50 py-2 text-xs font-semibold text-muted-foreground transition hover:text-foreground disabled:opacity-50">
+            {t("liveHub.handFeed.more", "Xem thêm")}
+          </button>
         )}
       </div>
     );
@@ -261,13 +273,13 @@ export function LiveHandFeed({
         </label>
       </div>
 
-      {loading && items.length === 0 ? (
+      {readError || (loading && items.length === 0 ? (
         <div className="flex min-h-32 items-center justify-center gap-2 rounded-2xl border border-border/50 bg-card/45 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> {t("liveHub.handFeed.loading", "Đang tải các ván…")}
         </div>
       ) : visibleFeed.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border/55 bg-card/35 px-4 py-10 text-center text-sm text-muted-foreground">
-          {feedItems.length === 0 ? t("liveHub.handFeed.empty", "Chưa có ván nào hoàn tất") : t("liveHub.handFeed.noMatch", "Không có nội dung khớp bộ lọc")}
+          {emptyHistory && feedItems.length === 0 && kindFilter !== "news" ? t("liveHub.handFeed.empty", "Chưa có ván nào hoàn tất") : hasMore && kindFilter !== "news" ? moreMatchesHint : t("liveHub.handFeed.noMatch", "Không có nội dung khớp bộ lọc")}
         </div>
       ) : (
         <div className="space-y-3">
@@ -283,12 +295,12 @@ export function LiveHandFeed({
               onShare={onShare}
             />
           ))}
-          {hasMore && !search.trim() && kindFilter !== "news" && (
-            <button type="button" onClick={loadMore} className="min-h-11 w-full rounded-xl border border-border/65 bg-card/55 px-4 text-sm font-semibold text-muted-foreground transition hover:border-[hsl(var(--viewer-neon)_/_0.45)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {t("liveHub.handFeed.more", "Xem thêm")}
-            </button>
-          )}
         </div>
+      ))}
+      {hasMore && !error && kindFilter !== "news" && (
+        <button type="button" disabled={loading} onClick={loadMore} className="min-h-11 w-full rounded-xl border border-border/65 bg-card/55 px-4 text-sm font-semibold text-muted-foreground transition hover:border-[hsl(var(--viewer-neon)_/_0.45)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+          {t("liveHub.handFeed.more", "Xem thêm")}
+        </button>
       )}
     </section>
   );

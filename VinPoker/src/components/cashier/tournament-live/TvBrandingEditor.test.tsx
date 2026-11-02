@@ -48,15 +48,25 @@ const { rpc, client, saveFailure, lostResponseCommitted, submittedState, brandin
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "test-owner" } }) }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: true } }));
-vi.mock("@/components/ProofUploader", () => ({ ProofUploader: () => <div>Image upload</div> }));
+vi.mock("@/components/ProofUploader", () => ({ ProofUploadWorkspace: () => <div>Image upload</div> }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-import { TvBrandingEditor } from "./TvBrandingEditor";
+import { TvBrandingEditor, TvBrandingEditorWorkspace } from "./TvBrandingEditor";
 import { toast } from "sonner";
 
 afterEach(() => { cleanup(); rpc.mockClear(); saveFailure.value = false; lostResponseCommitted.value = false; submittedState.value = null; brandingLayout.value = {}; brandingAssets.value = { logo_url: null, background_url: null }; });
 
 describe("TvBrandingEditor publish boundary", () => {
+  it('maps only displayed assets and still submits the canonical stored URL',async()=>{
+    brandingAssets.value.logo_url='https://canonical.test/logo.png';
+    render(<TvBrandingEditorWorkspace tournamentId="flight-1" actorId="test-owner" sessionEpoch={0}
+      assetPreviewUrl={url=>url?'http://127.0.0.1:54329/local-logo.png':null}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
+    const clock=await screen.findByLabelText('VinPoker tournament clock');
+    await waitFor(()=>expect(Array.from(clock.querySelectorAll('img')).some(img=>img.getAttribute('src')==='http://127.0.0.1:54329/local-logo.png')).toBe(true));
+    await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'})));
+    expect(rpc).toHaveBeenCalledWith('save_tv_tournament_layout_v1',expect.objectContaining({p_logo_url:'https://canonical.test/logo.png'}));
+  });
   it("keeps the editor discoverable while server RPCs remain the authority boundary", async () => {
     render(<TvBrandingEditor tournamentId="flight-1" />);
 

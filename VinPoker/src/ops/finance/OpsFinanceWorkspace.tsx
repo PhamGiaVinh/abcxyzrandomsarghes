@@ -10,8 +10,8 @@ import { FinanceWorkspaceView } from "@/ops/finance/FinanceWorkspaceView";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
 import { OPS_CASHIER_MUTATIONS_ENABLED } from "@/ops/opsMutations";
 import CashierCashflowPanel from "./CashierCashflowPanel";
-
-const range = currentMonthFinanceRange();
+import TourRevenuePanel from "./TourRevenuePanel";
+import { startLiveReportRefresh } from "@/lib/liveReportRefresh";
 
 export default function OpsFinanceWorkspace() {
   const client = useSupabaseClient();
@@ -23,6 +23,7 @@ export default function OpsFinanceWorkspace() {
     ? selectedClubId
     : null;
   const [revision, setRevision] = useState(0);
+  const [range, setRange] = useState(currentMonthFinanceRange);
   const [state, setState] = useState<{
     clubId: string | null;
     loading: boolean;
@@ -31,15 +32,24 @@ export default function OpsFinanceWorkspace() {
   }>({ clubId: null, loading: true, summary: null, blockedReason: null });
 
   useEffect(() => {
-    if (!clubId || capabilities.loading || capabilities.scopeError) return;
+    if (!clubId || capabilities.loading || capabilities.scopeError) {
+      setState({clubId:null,loading:true,summary:null,blockedReason:null});
+      return;
+    }
     let active = true;
-    setState({ clubId, loading: true, summary: null, blockedReason: null });
-    void loadFinanceSummary(client, clubId, range).then((summary) => {
-      if (active) setState({ clubId, loading: false, summary, blockedReason: null });
-    }).catch((error: unknown) => {
-      if (active) setState({ clubId, loading: false, summary: null, blockedReason: safeErrorCode(error) });
-    });
-    return () => { active = false; };
+    const load = async () => {
+      const currentRange = currentMonthFinanceRange();
+      setRange(currentRange);
+      setState(previous=>({ clubId, loading: true, summary: previous.clubId===clubId?previous.summary:null, blockedReason: null }));
+      try {
+        const summary = await loadFinanceSummary(client, clubId, currentRange);
+        if (active) setState({ clubId, loading: false, summary, blockedReason: null });
+      } catch (error: unknown) {
+        if (active) setState({ clubId, loading: false, summary: null, blockedReason: safeErrorCode(error) });
+      }
+    };
+    const stop = startLiveReportRefresh(load);
+    return () => { active = false; stop(); };
   }, [capabilities.loading, capabilities.scopeError, client, clubId, revision]);
 
   const clubName = useMemo(
@@ -51,11 +61,12 @@ export default function OpsFinanceWorkspace() {
     <FinanceWorkspaceView
       clubName={clubName}
       range={range}
-      summary={clubId && state.clubId === clubId ? state.summary : null}
+      summary={!capabilities.loading && !capabilities.scopeError && clubId && state.clubId === clubId ? state.summary : null}
       loading={capabilities.loading || state.clubId !== clubId || state.loading}
-      blockedReason={capabilities.scopeError ?? (!clubId ? "FINANCE_CLUB_SCOPE_REQUIRED" : state.clubId === clubId ? state.blockedReason : null)}
-      onRefresh={() => setRevision((value) => value + 1)}
+      blockedReason={capabilities.scopeError ?? (capabilities.loading ? null : !clubId ? "FINANCE_CLUB_SCOPE_REQUIRED" : state.clubId === clubId ? state.blockedReason : null)}
+      onRefresh={() => { setRange(currentMonthFinanceRange()); setRevision((value) => value + 1); }}
     />
+    {clubId && !capabilities.loading && !capabilities.scopeError && <TourRevenuePanel key={clubId} clubId={clubId} />}
     {clubId && OPS_CASHIER_MUTATIONS_ENABLED && <CashierCashflowPanel key={`${clubId}:${range.from}:${range.to}`} clubId={clubId} range={range} />}
   </>);
 }

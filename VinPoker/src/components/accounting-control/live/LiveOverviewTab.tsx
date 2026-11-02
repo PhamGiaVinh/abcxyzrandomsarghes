@@ -1,11 +1,6 @@
 import { useClubFinanceSummary } from "@/hooks/useClubFinanceSummary";
 import { OverviewTab, type LiveOverviewData } from "../tabs/OverviewTab";
-
-const monthStartISO = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
-const todayISO = () => new Date().toISOString().slice(0, 10);
+import { financeBusinessToday } from "@/lib/financeSummaryRead";
 const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /**
@@ -15,8 +10,8 @@ const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
  * "Tiền của club" block; everything else stays mock inside OverviewTab.
  */
 export function LiveOverviewTab({ onNavigate }: { onNavigate: (id: string) => void }) {
-  const from = monthStartISO();
-  const to = todayISO();
+  const to = financeBusinessToday();
+  const from = `${to.slice(0, 7)}-01`;
   const { loading, error, summary } = useClubFinanceSummary({ from, to, clubFilter: "all" });
 
   const data: LiveOverviewData | null = summary

@@ -17,6 +17,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { z } from "zod";
+import {assertStakingFundingReceipt,stakingFundingDeliveryMessage,stakingFundingEmailDelivered} from '@/lib/stakingFundingReceipt';
+import {pendingStakingFunding,persistStakingFundingIntent,clearStakingFundingIntent,type StakingFundingIntent} from '@/lib/stakingFundingIntent';
+import {sessionReadEpoch} from '@/lib/sessionReadEpoch';
+import {pendingStakingRefunds,persistStakingRefundIntent,clearStakingRefundIntent,type StakingRefundIntent} from '@/lib/stakingRefundIntent';
 import { formatVND, formatDateTime } from "@/lib/format";
 import { exportToExcel, formatExcelDate } from "@/lib/exportExcel";
 import CashierCounter from "@/components/admin/CashierCounter";
@@ -32,6 +37,7 @@ import { DocumentRedirect } from "@/components/DocumentRedirect";
 import { ReentryPanel } from "@/components/cashier/ReentryPanel";
 import { SatelliteTicketRedeemPanel } from "@/components/cashier/SatelliteTicketRedeemPanel";
 import { SePaySettlementTab } from "@/components/cashier/SePaySettlementTab";
+import DealerPtWageTab from "@/components/cashier/DealerPtWageTab";
 import { FEATURES, OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
 import { PROFILE_REVIEW_ENABLED } from "@/lib/profileReviewGate";
 import {
@@ -41,7 +47,19 @@ import {
 } from "lucide-react";
 
 type ClubRow = { id: string; name: string };
-type SectionKey = "overview" | "staking" | "members" | "reports" | "tournament_registrations" | "offline_buyin" | "reentry" | "sepay_settlement";
+const refundReceiptSchema=z.object({success:z.literal(true),deal_id:z.string().uuid(),request_id:z.string().uuid(),
+  refunded_backers:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  ledger_failures:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+}).refine(value=>value.ledger_failures<=value.refunded_backers);
+const refundDeliveryCompleteSchema=z.object({request_id:z.string().uuid(),deal_id:z.string().uuid(),
+  expected:z.number().int().nonnegative().safe(),total:z.number().int().nonnegative().safe(),delivered:z.number().int().nonnegative().safe(),
+  pending:z.literal(0),processing:z.literal(0),needs_attention:z.literal(0),evidence_missing:z.literal(false),state:z.literal('all_delivered')})
+  .refine(value=>value.expected===value.total&&value.total===value.delivered);
+const refundPreviewSchema=z.object({deal_id:z.string().uuid(),club_id:z.string().nullable(),label:z.string().min(1),
+  state:z.enum(['eligible','refunded']),amount_vnd:z.number().int().nonnegative().safe(),purchase_count:z.number().int().nonnegative().safe(),request_id:z.string().uuid().nullable().optional()});
+type RefundPreview=z.infer<typeof refundPreviewSchema>;
+type RefundPreviewRead=(name:'get_staking_refund_preview_v1',args:{p_deal:string})=>{abortSignal(signal:AbortSignal):PromiseLike<{data:unknown;error:unknown}>};
+type SectionKey = "overview" | "staking" | "members" | "reports" | "tournament_registrations" | "offline_buyin" | "reentry" | "sepay_settlement" | "pt_wages";
 
 export default function CashierDashboard() {
   const { user, loading, isAdmin, rolesLoading, rolesError } = useAuth();
@@ -54,6 +72,7 @@ export default function CashierDashboard() {
   const [clubsError, setClubsError] = useState<string | null>(null);
   const [clubsForUserId, setClubsForUserId] = useState<string | null>(null);
   const [isClubOwner, setIsClubOwner] = useState(false);
+  const [ownerClubIds, setOwnerClubIds] = useState<string[]>([]);
   const clubRequestId = useRef(0);
 
   useEffect(() => {
@@ -72,6 +91,7 @@ export default function CashierDashboard() {
     setClubsError(null);
     setClubsForUserId(null);
     setIsClubOwner(false);
+    setOwnerClubIds([]);
 
     try {
       const { data: ids, error: scopeError } = await supabase.rpc("cashier_club_ids", { _user_id: userId });
@@ -104,7 +124,10 @@ export default function CashierDashboard() {
       try {
         const { data: owned, error: ownerError } = await supabase
           .from("clubs").select("id").eq("owner_id", userId).limit(1);
-        if (isCurrentRequest() && !ownerError) setIsClubOwner((owned ?? []).length > 0);
+        if (isCurrentRequest() && !ownerError) {
+          setIsClubOwner((owned ?? []).length > 0);
+          setOwnerClubIds((owned ?? []).map(club => club.id));
+        }
       } catch {
         // Keep owner-only affordances hidden when this secondary read is unavailable.
       }
@@ -123,6 +146,7 @@ export default function CashierDashboard() {
       setClubsError(null);
       setClubsForUserId(null);
       setIsClubOwner(false);
+      setOwnerClubIds([]);
       return;
     }
 
@@ -189,6 +213,7 @@ export default function CashierDashboard() {
   // SePay reconciliation "Đối soát SePay" — same UAT-override rollout; hidden from regular cashiers
   // until FEATURES.sepayReconcile flips; admins/club owners see it for UAT.
   const showSettlement = clubIds.length > 0 && (FEATURES.sepayReconcile || isAdmin || isClubOwner);
+  const showPtWages = clubIds.length > 0 && (FEATURES.salaryTabV2 || isAdmin || isClubOwner);
 
   // Keep existing Cashier links, including saved ?tab=offline_buyin URLs, on the
   // server-backed tour counter once its production build gate is enabled.
@@ -208,6 +233,7 @@ export default function CashierDashboard() {
     ...(showOfflineBuyIn ? [{ key: "offline_buyin" as SectionKey, label: OPS_TOUR_CASHIER_ENABLED ? "Buy-in theo tour" : "Buy-in tại quầy", icon: UserPlus }] : []),
     ...(showReentry ? [{ key: "reentry" as SectionKey, label: "Re-entry", icon: RotateCcw }] : []),
     ...(showSettlement ? [{ key: "sepay_settlement" as SectionKey, label: "Đối soát SePay", icon: Banknote }] : []),
+    ...(showPtWages ? [{ key: "pt_wages" as SectionKey, label: "Lương PT", icon: Wallet }] : []),
   ];
 
   return (
@@ -258,6 +284,9 @@ export default function CashierDashboard() {
           {section === "staking" && <StakingPanel clubIds={clubIds} />}
           {section === "members" && <MembersPanel clubIds={clubIds} clubs={clubs} />}
           {section === "reports" && <ReportsPanel clubIds={clubIds} clubs={clubs} />}
+          {section === "pt_wages" && (showPtWages
+            ? <DealerPtWageTab key={JSON.stringify([userId, [...clubIds].sort()])} clubIds={clubIds} clubs={clubs} ownerClubIds={ownerClubIds} finalizeStatements />
+            : <Card className="p-8 text-center text-sm text-muted-foreground">Tính năng này chưa được mở cho tài khoản của bạn.</Card>)}
           {section === "tournament_registrations" && (
             showRegistrations ? (
               <div className="space-y-4"><SatelliteTicketRedeemPanel /><TournamentRegistrationsTab clubIds={clubIds} /></div>
@@ -417,12 +446,64 @@ function StakingPanel({ clubIds }: { clubIds: string[] }) {
   );
 }
 
-function PendingConfirmTab({ clubIds }: { clubIds: string[] }) {
+export function PendingConfirmTab({ clubIds }: { clubIds: string[] }) {
+  const {user,session}=useAuth();
+  if(!user?.id)return <p>Đăng nhập để kiểm tra yêu cầu FUNDED.</p>;
+  return <ScopedPendingConfirmTab key={`${user.id}:${sessionReadEpoch(session)}:${[...clubIds].sort().join(',')}`} clubIds={clubIds} actorId={user.id}/>;
+}
+function ScopedPendingConfirmTab({ clubIds,actorId }: { clubIds: string[];actorId:string }) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [fundingOutcome,setFundingOutcome]=useState<string|null>(null);
+  const [listError,setListError]=useState(false);
+  const listGeneration=useRef(0);
+  const activeRead=useRef<AbortController|null>(null);
+  const recoveryRead=useRef<AbortController|null>(null);
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;activeRead.current?.abort();recoveryRead.current?.abort();};},[]);
+  const mutationInFlight=useRef(false);
+  const [pendingFunding,setPendingFunding]=useState<StakingFundingIntent[]>([]);
+  const [intentError,setIntentError]=useState<string|null>(null);
+  const [fundingRetryAllowed,setFundingRetryAllowed]=useState<Set<string>>(()=>new Set());
+  const refreshFunding=useCallback(()=>{
+    try{setPendingFunding(pendingStakingFunding(actorId).filter(item=>item.club_id!==null&&(!clubIds.length||clubIds.includes(item.club_id))));setIntentError(null);}
+    catch{setIntentError('Không đọc được yêu cầu FUNDED đã lưu. Giữ nguyên dữ liệu trên máy để đối chiếu; chưa gửi xác nhận mới.');}
+  },[actorId,clubIds]);
+  useEffect(()=>{refreshFunding();const sync=()=>{if(alive.current){setFundingRetryAllowed(new Set());refreshFunding();}};window.addEventListener('storage',sync);return()=>window.removeEventListener('storage',sync);},[refreshFunding]);
+  const showReceipt=(data:unknown,intent:StakingFundingIntent)=>{
+    const receipt=assertStakingFundingReceipt(data,intent.purchase_id);
+    setFundingOutcome(`Kết quả lần xác nhận: Đã xác nhận FUNDED (${receipt.purchase_id}). ${stakingFundingDeliveryMessage(receipt.delivery,intent.purchase_id)}`);
+    if(stakingFundingEmailDelivered(receipt.delivery,intent.purchase_id)){clearStakingFundingIntent(intent);refreshFunding();}
+  };
+  const recoverFunding=async(intent:StakingFundingIntent)=>{
+    if(mutationInFlight.current)return;
+    mutationInFlight.current=true;setBusy(intent.purchase_id);
+    setFundingRetryAllowed(previous=>{const next=new Set(previous);next.delete(intent.purchase_id);return next;});
+    const controller=new AbortController();recoveryRead.current=controller;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{
+      const {data,error}=await Promise.race([supabase.functions.invoke('admin-staking-funding-status',{body:{purchase_id:intent.purchase_id},signal:controller.signal}),
+        new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('funding_status_timeout'));},10000);})]);
+      if(!alive.current)return;
+      if(error)throw error;
+      const pending=z.object({success:z.literal(false),purchase_id:z.literal(intent.purchase_id),state:z.enum(['not_recorded','needs_attention'])}).strict().safeParse(data);
+      if(pending.success){setFundingRetryAllowed(previous=>{const next=new Set(previous);if(pending.data.state==='not_recorded')next.add(intent.purchase_id);else next.delete(intent.purchase_id);return next;});setFundingOutcome(pending.data.state==='not_recorded'
+        ?`Chưa tìm thấy ghi nhận FUNDED (${intent.reference}) ở lần kiểm tra này. Không tự gửi lại. Nếu đã đối chiếu tiền, chỉ xác nhận lại đúng yêu cầu này trong danh sách chờ.`
+        :`Yêu cầu FUNDED (${intent.reference}) cần đối chiếu dữ liệu. Không xác nhận tiền lại.`);return;}
+      setFundingRetryAllowed(previous=>{const next=new Set(previous);next.delete(intent.purchase_id);return next;});showReceipt(data,intent);
+    }catch{if(alive.current)setFundingOutcome('Không tra được kết quả FUNDED. Yêu cầu đã lưu vẫn được giữ; chưa gửi lại tiền hoặc email.');}
+    finally{if(timer)clearTimeout(timer);mutationInFlight.current=false;if(alive.current)setBusy(null);}
+  };
 
   const load = useCallback(async () => {
+    const generation=++listGeneration.current;
+    activeRead.current?.abort();
+    const controller=new AbortController();activeRead.current=controller;
+    const current=()=>alive.current&&generation===listGeneration.current;
+    let timer:ReturnType<typeof setTimeout>|undefined;
     setRows(null);
+    setListError(false);
+    const read=async()=>{
     let q = supabase
       .from("staking_purchases")
       .select(`
@@ -435,47 +516,77 @@ function PendingConfirmTab({ clubIds }: { clubIds: string[] }) {
       .eq("status", "committed")
       .order("committed_at", { ascending: true });
     if (clubIds.length) q = q.in("deal.club_id", clubIds);
-    const { data, error } = await q;
-    if (error) { toast.error(error.message); setRows([]); return; }
-    const arr = data ?? [];
+    const { data, error } = await q.abortSignal(controller.signal);
+    if(error||!Array.isArray(data))throw new Error('funding_list_unavailable');
+    const arr = data;
     const ids = Array.from(new Set(arr.flatMap((r: any) => [r.backer_id, r.deal?.player_id]).filter(Boolean)));
     let pmap: Record<string, any> = {};
     if (ids.length) {
-      const { data: ps } = await supabase.from("profiles").select("user_id, display_name, phone").in("user_id", ids);
+      const { data: ps, error: profileError } = await supabase.from("profiles").select("user_id, display_name, phone").in("user_id", ids).abortSignal(controller.signal);
+      if(profileError||!Array.isArray(ps))throw new Error('funding_profiles_unavailable');
       pmap = Object.fromEntries((ps ?? []).map((p: any) => [p.user_id, p]));
     }
-    setRows(arr.map((r: any) => ({
+    return arr.map((r: any) => ({
       ...r,
       backer: pmap[r.backer_id] ?? null,
       deal: r.deal ? { ...r.deal, player: pmap[r.deal.player_id] ?? null } : null,
-    })));
+    }));
+    };
+    try{
+      const result=await Promise.race([read(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('funding_list_timeout'));},10000);})]);
+      if(current())setRows(result);
+    }catch{if(current()){setRows([]);setListError(true);}}
+    finally{if(timer)clearTimeout(timer);}
   }, [clubIds]);
 
   useEffect(() => { load(); }, [load]);
 
   const confirm = async (purchase_id: string) => {
+    if(mutationInFlight.current)return;
+    mutationInFlight.current=true;
     setBusy(purchase_id);
+    try {
+    const row=rows?.find(item=>item.id===purchase_id);
+    if(!row?.deal?.club_id||!row.reference_code||(clubIds.length&&!clubIds.includes(row.deal.club_id)))throw new Error('Chưa xác minh được phạm vi yêu cầu FUNDED.');
+    if(pendingStakingFunding(actorId).some(item=>item.purchase_id===purchase_id)&&!fundingRetryAllowed.has(purchase_id))throw new Error('Tra kết quả yêu cầu FUNDED đã lưu trước khi xác nhận lại.');
+    const intent=persistStakingFundingIntent({actor_id:actorId,purchase_id,club_id:row.deal.club_id,reference:row.reference_code});
+    setFundingRetryAllowed(previous=>{const next=new Set(previous);next.delete(purchase_id);return next;});
+    refreshFunding();
     const { data, error } = await supabase.functions.invoke("admin-confirm-funded", {
       body: { purchase_id },
     });
-    setBusy(null);
-    if (error || (data as any)?.error) { toast.error(error?.message ?? (data as any).error); return; }
+    if(!alive.current)return;
+    if (error || (data as any)?.error) {
+      const message=`Chưa xác minh được kết quả FUNDED (${intent.reference}). Yêu cầu đã lưu; dùng Tra kết quả trước khi xác nhận lại.`;
+      setFundingOutcome(message);toast.error(message);return;
+    }
+    showReceipt(data,intent);
     toast.success("Đã xác nhận FUNDED");
     load();
+    } catch(cause) {if(alive.current)toast.error(cause instanceof Error?cause.message:'Chưa xác minh được kết quả FUNDED. Hãy tải lại để đối chiếu.');}
+    finally {mutationInFlight.current=false;if(alive.current)setBusy(null);}
   };
 
-  if (rows === null) return <Skeleton className="h-40 rounded-xl" />;
-
   return (
-    <Card className="p-3">
+    <>
+    {intentError&&<p role="alert" className="mb-3 text-sm">{intentError}</p>}
+    {pendingFunding.length>0&&<Card className="mb-3 space-y-2 p-3">
+      <p className="text-sm">Yêu cầu FUNDED đã lưu trên máy. Tra kết quả chỉ đọc, không gửi lại tiền hoặc email.</p>
+      {pendingFunding.map(intent=><div key={intent.purchase_id} className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 break-all text-sm">{intent.reference}</span>
+        <Button size="sm" variant="outline" disabled={busy!==null} aria-label={`Tra kết quả FUNDED ${intent.reference}`} onClick={()=>recoverFunding(intent)}>Tra kết quả FUNDED</Button>
+      </div>)}
+    </Card>}
+    {fundingOutcome&&<p role="status" className="mb-3 rounded-lg border border-border p-3 text-sm">{fundingOutcome}</p>}
+    {rows===null?<Skeleton className="h-40 rounded-xl" />:<Card className="p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold">Backer đã chuyển khoản — chờ đối chiếu ({rows.length})</div>
-        <Button size="sm" variant="outline" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
+        <Button aria-label="Tải lại danh sách chờ FUNDED" size="sm" variant="outline" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
       </div>
       <p className="text-[11px] text-warning mb-3">
         ⚠️ Chỉ xác nhận khi tiền đã thật sự vào tài khoản CLB. App KHÔNG giữ tiền.
       </p>
-      {rows.length === 0 ? (
+      {listError?<p role="alert">Không tải được danh sách chờ FUNDED. Bấm tải lại để kiểm tra; chưa xác minh danh sách trống.</p>:rows.length === 0 ? (
         <div className="text-center text-sm text-muted-foreground py-10">Không có yêu cầu chờ xác nhận</div>
       ) : (
         <div className="space-y-2">
@@ -503,7 +614,7 @@ function PendingConfirmTab({ clubIds }: { clubIds: string[] }) {
                     )}
                   </div>
                 </div>
-                <Button size="sm" disabled={busy === r.id} onClick={() => confirm(r.id)}>
+                <Button size="sm" disabled={busy !== null||intentError!==null||(pendingFunding.some(item=>item.purchase_id===r.id)&&!fundingRetryAllowed.has(r.id))} onClick={() => confirm(r.id)}>
                   {busy === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
                   Xác nhận FUNDED
                 </Button>
@@ -512,7 +623,8 @@ function PendingConfirmTab({ clubIds }: { clubIds: string[] }) {
           })}
         </div>
       )}
-    </Card>
+    </Card>}
+    </>
   );
 }
 
@@ -976,14 +1088,51 @@ function ReportsPanel({ clubIds, clubs }: { clubIds: string[]; clubs: ClubRow[] 
 /* REFUND                                                          */
 /* ============================================================== */
 
-function RefundTab({ clubIds }: { clubIds: string[] }) {
+export function RefundTab({ clubIds }: { clubIds: string[] }) {
+  const {user,session}=useAuth();
+  return <ScopedRefundTab key={`${user?.id??'out'}:${sessionReadEpoch(session)}:${[...clubIds].sort().join(',')}`} clubIds={clubIds}/>;
+}
+function ScopedRefundTab({ clubIds }: { clubIds: string[] }) {
+  const {user}=useAuth();
+  const actorId=user?.id;
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  const [pending,setPending]=useState<StakingRefundIntent[]>([]);
+  const [intentError,setIntentError]=useState<string|null>(null);
+  const refreshPending=useCallback(()=>{try{setPending(actorId?pendingStakingRefunds(actorId).filter(i=>!clubIds.length||(i.club_id!==null&&clubIds.includes(i.club_id))):[]);setIntentError(null);}
+    catch {setIntentError('Không đọc được yêu cầu hoàn tiền đang lưu. Không tạo yêu cầu mới.');}},[actorId,clubIds]);
+  useEffect(()=>{refreshPending();},[refreshPending]);
   const [rows, setRows] = useState<any[] | null>(null);
+  const [listError,setListError]=useState(false);
+  const listGeneration=useRef(0);
   const [busy, setBusy] = useState<string | null>(null);
+  const mutationInFlight=useRef(false);
   const [refundFor, setRefundFor] = useState<any | null>(null);
   const [refundReason, setRefundReason] = useState("");
+  const [preview,setPreview]=useState<RefundPreview|null>(null);
+  const [previewError,setPreviewError]=useState(false);
+  const [previewAttempt,setPreviewAttempt]=useState(0);
+  const previewDeal=refundFor?.id as string|undefined,previewClub=(refundFor?.club_id??null) as string|null;
+  useEffect(()=>{
+    setPreview(null);setPreviewError(false);if(!previewDeal)return;
+    let current=true;const controller=new AbortController();
+    const timer=setTimeout(()=>{if(current){current=false;setPreviewError(true);controller.abort();}},10000);
+    void(async()=>{try{
+      const result=await (supabase.rpc as unknown as RefundPreviewRead)('get_staking_refund_preview_v1',{p_deal:previewDeal}).abortSignal(controller.signal);
+      if(!current)return;const parsed=refundPreviewSchema.safeParse(result.data);
+      if(result.error||!parsed.success||parsed.data.deal_id!==previewDeal||parsed.data.club_id!==previewClub)throw new Error('refund_preview_unverified');
+      setPreview(parsed.data);
+    }catch{if(current)setPreviewError(true);}finally{clearTimeout(timer);}})();
+    return()=>{current=false;clearTimeout(timer);controller.abort();};
+  },[previewDeal,previewClub,previewAttempt]);
+  const previewReady=!!preview&&preview.deal_id===previewDeal&&(preview.state==='eligible'||
+    (preview.state==='refunded'&&pending.some(i=>i.deal_id===previewDeal&&i.request_id===preview.request_id)));
 
   const load = useCallback(async () => {
+    const generation=++listGeneration.current;
     setRows(null);
+    setListError(false);
+    try {
     let q = supabase.from("staking_deals")
       .select(`id, custom_event_name, club_id, buy_in_amount_vnd, filled_percent, percentage_sold, status, player_id, created_at,
                tournament:tournament_id(name, start_time)`)
@@ -991,47 +1140,78 @@ function RefundTab({ clubIds }: { clubIds: string[] }) {
       .order("created_at", { ascending: false });
     if (clubIds.length) q = q.in("club_id", clubIds);
     const { data, error } = await q;
-    if (error) { toast.error(error.message); setRows([]); return; }
-    const arr = data ?? [];
+    if(!alive.current||generation!==listGeneration.current)return;
+    if (error||!Array.isArray(data)) throw new Error('refund_list_unavailable');
+    const arr = data;
     const ids = Array.from(new Set(arr.map((r: any) => r.player_id).filter(Boolean)));
     let pmap: Record<string, any> = {};
     if (ids.length) {
-      const { data: ps } = await supabase.from("profiles").select("user_id, display_name").in("user_id", ids);
+      const { data: ps,error:profileError } = await supabase.from("profiles").select("user_id, display_name").in("user_id", ids);
+      if(!alive.current||generation!==listGeneration.current)return;
+      if(profileError||!Array.isArray(ps))throw new Error('refund_profiles_unavailable');
       pmap = Object.fromEntries((ps ?? []).map((p: any) => [p.user_id, p]));
     }
     setRows(arr.map((r: any) => ({ ...r, player: pmap[r.player_id] ?? null })));
+    }catch {if(alive.current&&generation===listGeneration.current){setRows([]);setListError(true);}}
   }, [clubIds]);
 
   useEffect(() => { load(); }, [load]);
 
   const doRefund = async () => {
-    if (!refundFor || !refundReason.trim()) return;
+    if (mutationInFlight.current || !refundFor || !refundReason.trim() || !user || intentError || !previewReady) return;
+    mutationInFlight.current=true;
     setBusy(refundFor.id);
+    try {
+    if(!navigator.locks)throw new Error('Trình duyệt chưa hỗ trợ khóa yêu cầu giữa các tab. Chưa gửi hoàn tiền.');
+    await navigator.locks.request(`vinpoker:staking-refund-lock:v1:${user.id}:${refundFor.id}`,{ifAvailable:true},async lock=>{
+    if(!lock)throw new Error('Yêu cầu đang được xử lý ở tab khác. Chưa gửi thêm; hãy kiểm tra lại.');
+    if(!alive.current)return;
+    const intent=persistStakingRefundIntent(user.id,refundFor.id,refundFor.club_id??null,refundReason);
+    refreshPending();
     const { data, error } = await supabase.functions.invoke("staking-process-refund", {
-      body: { deal_id: refundFor.id, reason: refundReason.trim() },
+      body: { deal_id: intent.deal_id, request_id:intent.request_id,reason: intent.reason },
     });
-    setBusy(null);
+    if(!alive.current)return;
     if (error || (data as any)?.error) {
       toast.error((data as any)?.error ?? error?.message ?? "Lỗi hoàn tiền");
       return;
     }
-    toast.success("✅ Đã hoàn trả phí hỗ trợ tập huấn cho tất cả backer.");
+    const receipt=refundReceiptSchema.safeParse(data);
+    if(!receipt.success||receipt.data.deal_id!==intent.deal_id||receipt.data.request_id!==intent.request_id)throw new Error('Chưa xác minh được kết quả hoàn tiền. Giữ nguyên yêu cầu để đối chiếu.');
+    if(receipt.data.ledger_failures>0)toast.warning(`Đã xử lý hoàn tiền nhưng có ${receipt.data.ledger_failures} lỗi sổ quỹ. Cần đối chiếu thủ công; không gửi lại yêu cầu hoàn tiền.`);
+    else {
+      const delivery=refundDeliveryCompleteSchema.safeParse((data as {delivery?:unknown}).delivery);
+      const delivered=delivery.success&&delivery.data.request_id===intent.request_id&&delivery.data.deal_id===intent.deal_id
+        &&delivery.data.expected===receipt.data.refunded_backers;
+      if(delivered){clearStakingRefundIntent(intent);refreshPending();}
+      toast.success("✅ Đã ghi nhận hoàn tiền cho tất cả backer.");
+      if(!delivered)toast.warning('Hoàn tiền đã ghi nhận; email chưa xác nhận gửi hết. Giữ yêu cầu để kiểm tra hoặc tiếp tục gửi.');
+    }
     setRefundFor(null);
     setRefundReason("");
     load();
+    });
+    } catch(cause) {if(alive.current)toast.error(cause instanceof Error?cause.message:'Chưa xác minh được kết quả hoàn tiền. Hãy tải lại để đối chiếu.');}
+    finally {mutationInFlight.current=false;if(alive.current)setBusy(null);}
   };
-
-  if (rows === null) return <Skeleton className="h-40 rounded-xl" />;
 
   return (
     <>
-      <Card className="p-3">
+      {intentError&&<p role="alert">{intentError}</p>}
+      {pending.map(intent=><div key={intent.request_id} className="rounded border border-warning/40 p-3 text-sm">
+        <p>Yêu cầu hoàn tiền cần kiểm tra: {intent.deal_id}</p>
+        <Button variant="outline" onClick={()=>{setRefundFor({id:intent.deal_id,club_id:intent.club_id});setRefundReason(intent.reason);}}>Khôi phục yêu cầu hoàn tiền</Button>
+      </div>)}
+      {rows===null?<Skeleton className="h-40 rounded-xl"/>:listError?<div role="alert" className="rounded border border-destructive/40 p-3 space-y-2">
+        <p>Không tải được danh sách hoàn tiền. Chưa xác minh được có deal nào đủ điều kiện.</p>
+        <Button variant="outline" onClick={load}>Thử tải lại danh sách hoàn tiền</Button>
+      </div>:<Card className="p-3">
         <div className="flex items-center justify-between mb-2">
           <div className="text-sm font-semibold">Deals đã funded — có thể hoàn tiền ({rows.length})</div>
           <Button size="sm" variant="outline" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
         </div>
         <p className="text-[11px] text-warning mb-3">
-          ⚠️ Hoàn tiền sẽ trả lại toàn bộ số tiền backer đã góp, trừ phí nền tảng (nếu có). Hành động này không thể hoàn tác.
+          ⚠️ Hoàn tiền ghi nhận lại số tiền gốc của các purchase đã funded theo dữ liệu server. Không tính số tiền hoàn từ buy-in của deal.
         </p>
         {rows.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-10">Không có deal nào đã funded</div>
@@ -1068,22 +1248,26 @@ function RefundTab({ clubIds }: { clubIds: string[] }) {
             </Table>
           </div>
         )}
-      </Card>
+      </Card>}
 
       <Dialog open={!!refundFor} onOpenChange={(o) => !o && setRefundFor(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Xác nhận hoàn tiền</DialogTitle>
             <DialogDescription>
-              Hoàn trả phí hỗ trợ tập huấn cho tất cả backer của deal <b>{refundFor?.custom_event_name ?? refundFor?.tournament?.name ?? ""}</b>.
-              <br />Số tiền: <b>{refundFor?.buy_in_amount_vnd ? formatVND(refundFor.buy_in_amount_vnd) : "—"}</b>
+              Deal: <b>{preview?.label??refundFor?.custom_event_name??refundFor?.id}</b>.
+              {preview&&<><br />{preview.state==='refunded'?'Đã ghi nhận hoàn tiền (ledger)':'Dự kiến hoàn tiền theo server'}: <b>{formatVND(preview.amount_vnd)}</b> · {preview.purchase_count} purchase.</>}
+              {preview?.state==='eligible'&&<><br />Preview là dữ liệu hiện tại; server kiểm tra lại khi xử lý.</>}
+              {preview?.state==='refunded'&&<><br />Đối chiếu receipt bằng yêu cầu cũ; không tạo lần hoàn tiền mới.</>}
             </DialogDescription>
           </DialogHeader>
+          {previewError?<div role="alert"><p>Không xác minh được preview hoàn tiền. Chưa gửi yêu cầu.</p><Button variant="outline" onClick={()=>setPreviewAttempt(n=>n+1)}>Thử tải lại preview hoàn tiền</Button></div>:
+            !preview?<p role="status">Đang xác minh số tiền hoàn từ server…</p>:!previewReady?<p role="alert">Receipt thuộc yêu cầu khác hoặc chưa được chứng minh. Không gửi yêu cầu mới.</p>:null}
           <Textarea placeholder="Lý do hoàn tiền (bắt buộc)"
             value={refundReason} onChange={(e) => setRefundReason(e.target.value)} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setRefundFor(null)}>Huỷ</Button>
-            <Button variant="destructive" disabled={!refundReason.trim() || busy === refundFor?.id}
+            <Button variant="destructive" disabled={!previewReady || !refundReason.trim() || busy === refundFor?.id}
               onClick={doRefund}>
               {busy === refundFor?.id ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               Xác nhận hoàn tiền

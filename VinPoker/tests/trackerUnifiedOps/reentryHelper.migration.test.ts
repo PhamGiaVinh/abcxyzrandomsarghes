@@ -2,23 +2,31 @@ import { readFileSync } from "node:fs";
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 
 const migrationsDir = resolve(process.cwd(), "supabase/migrations");
 const migrationName = "20270109000001_tracker_pr2a_reentry_helper_canonicalization.sql";
-const migration = readFileSync(resolve(migrationsDir, migrationName), "utf8");
+const archivePath = `supabase/migration-archive/superseded/replaced/${migrationName}`;
+const archiveFile = resolve(process.cwd(), archivePath);
+const migration = readFileSync(archiveFile, "utf8");
+const manifest = JSON.parse(readFileSync(resolve(process.cwd(), "supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json"), "utf8"));
 const sourceEntryMigration = readFileSync(
-  resolve(migrationsDir, "20261122000000_treg_source_entry_id.sql"),
+  resolve(process.cwd(), "supabase/migration-archive/historical-never-replay/20261122000000_treg_source_entry_id.sql"),
   "utf8",
 );
 
-describe("Tracker PR2A re-entry helper migration contract", () => {
-  it("uses one unique version after its required predecessor", () => {
+describe("archived Tracker PR2A re-entry helper migration contract", () => {
+  it("retains its unique historical version without restoring it to active replay", () => {
     const versions = readdirSync(migrationsDir)
       .map((name) => /^([0-9]{14})_/.exec(name)?.[1])
       .filter((version): version is string => Boolean(version));
     const version = migrationName.slice(0, 14);
 
-    expect(versions.filter((candidate) => candidate === version)).toHaveLength(1);
+    expect(versions.filter((candidate) => candidate === version)).toHaveLength(0);
+    const entry = manifest.historicalSources.find((item: {filename: string}) => item.filename === migrationName);
+    expect(entry).toMatchObject({superseded: true, bucket: "superseded/replaced", archivePath});
+    // Archive manifest hashes use LF; Windows checkout may materialize CRLF.
+    expect(createHash("sha256").update(migration.replace(/\r\n/g, "\n")).digest("hex")).toBe(entry.sha256);
     expect(Number(version)).toBeGreaterThan(Number("20270109000000"));
   });
 

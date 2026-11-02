@@ -17,7 +17,7 @@ export function SpectatorMiniTable({ table, appearance }: { table: PublicTableSn
     const bb = formatViewerBBOrUnavailable(value, table.bigBlind ?? 0);
     return bb === '— BB' ? `${formatStack(value)} · — BB` : bb;
   };
-  const stateLabel = table.trackerState === 'waiting' ? 'Đang chờ ván đầu'
+  const stateLabel = table.trackerState === 'waiting' ? 'Đang chờ ván bài'
     : table.trackerState === 'inactive' ? 'Bàn chưa hoạt động'
     : table.trackerState === 'closed' ? 'Phiên bàn đã đóng'
     : null;

@@ -21,7 +21,7 @@ function visit(node) {
   if (node.type === 'CallExpression' && node.callee.value === 'useEffect') {
     const effect = node.arguments[0].expression;
     const text = Buffer.from(source).subarray(effect.span.start - tree.span.start, effect.span.end - tree.span.start).toString();
-    if (text.includes('"list_tracker_tables_v2"')) tableEffect = effect;
+    if (text.includes('"list_tracker_history_tables_v1"')) tableEffect = effect;
   }
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) value.forEach(visit);
@@ -95,6 +95,38 @@ test('current correction preview still publishes and releases its own busy state
   assert.equal(h.views[1].serverPreview.sourceRevision, 9);assert.deepEqual(h.busy, [true,false]);
 });
 
+test('preview chain uses server hand-number/UUID order, excludes prior timestamp ties and includes later backdated hands',async()=>{
+  const h=previewHarness();
+  const rows=[
+    {id:'00000000-0000-4000-8000-000000000001',hand_number:10,created_at:'2026-10-20T00:00:00Z'},
+    {id:'00000000-0000-4000-8000-000000000002',hand_number:10,created_at:'2026-10-20T00:00:00Z'},
+    {id:'00000000-0000-4000-8000-000000000003',hand_number:11,created_at:'2026-10-19T00:00:00Z'},
+  ];
+  h.dependencies.hands=[rows[1]];h.dependencies.selectedHandId=rows[1].id;
+  let selected=[],stage=0,captured;
+  const filters=[],orders=[];
+  h.dependencies.supabase.from=()=>{
+    const q={select:()=>q,eq:()=>q,gte:(field,value)=>{filters.push([field,value]);return q;},
+      order:(field)=>{orders.push(field);return q;},range:()=>q,
+      then:(resolve)=>{
+        selected=rows.filter(row=>filters.every(([field,value])=>row[field]>=value)).sort((a,b)=>{
+          for(const field of orders){if(a[field]<b[field])return -1;if(a[field]>b[field])return 1;}return 0;
+        });
+        return Promise.resolve({data:selected,error:null}).then(resolve);
+      }};return q;
+  };
+  h.dependencies.pageAll=async makeQuery=>++stage===1?await makeQuery(0,999):{
+    data:stage===2?selected.map(row=>({hand_id:row.id,player_id:'player',entry_number:1,seat_number:1,starting_stack:100,ending_stack:100})):[],error:null,
+  };
+  h.dependencies.runClientResettle=input=>{captured=input;return{result:{ok:false},entryByPlayer:new Map(),entryByHandPlayer:new Map()};};
+  await h.start();
+  assert.deepEqual(filters,[['hand_number',10]]);
+  assert.deepEqual(orders,['hand_number','id']);
+  assert.equal(captured.target.id,rows[1].id);
+  assert.deepEqual(captured.later.map(row=>row.id),[rows[2].id]);
+  assert.deepEqual(h.invocations,[],'this is a chain/read regression, not mocked server-preview acceptance');
+});
+
 test('invalidated chain read never advances to a server preview request', async () => {
   const h = previewHarness(), read = deferred();
   h.dependencies.pageAll = () => read.promise;
@@ -102,11 +134,29 @@ test('invalidated chain read never advances to a server preview request', async 
   read.resolve({ data: [{ id: 'hand-a' }], error: null });await pending;
   assert.deepEqual(h.invocations, []);assert.deepEqual(h.views, [null]);assert.deepEqual(h.busy, [true]);
 });
+
+test('missing current target stops before child reads, replay and server preview', async () => {
+  const h = previewHarness(), errors = [];
+  let reads = 0, replays = 0;
+  h.dependencies.toast.error = message => errors.push(message);
+  h.dependencies.pageAll = async () => {
+    reads++;
+    return { data: [{ id: 'other-hand', hand_number: 2 }], error: null };
+  };
+  h.dependencies.runClientResettle = () => { replays++; throw new Error('must not replay'); };
+  await h.start();
+  assert.equal(reads, 1, 'do not read participants/actions without the selected source hand');
+  assert.equal(replays, 0);
+  assert.deepEqual(h.invocations, []);
+  assert.deepEqual(h.views, [null]);
+  assert.deepEqual(h.busy, [true, false]);
+  assert.deepEqual(errors, ['Không tìm thấy ván gốc trong chuỗi để tính lại.']);
+});
 function harness() {
   let generation = 0;
   const state = { loading: false, error: null, selected: 'b', hands: [], queueError: false, editing: true, preview: { stale: true } };
   const dependencies = {
-    tournamentId: 'tour', selectedTableId: 'all', tables: [],
+    tournamentId: 'tour', selectedTableId: 'all', tables: [], ambiguousPhysical:false,archiveSessionId:null,
     loadGuardRef: { current: { begin: () => ++generation, isCurrent: request => request === generation, finish: () => {} } },
     setLoading: value => { state.loading = value; }, setLoadError: value => { state.error = value; },
     setHands: value => { state.hands = value; }, setCompletionStatusByHand: () => {},
@@ -179,7 +229,7 @@ test('late queue response cannot clear newer selection or finish its loading', a
 async function inventory(v2, legacy = { data: [], error: null }) {
   const state = { tables: [], error: null, loading: false, selected: 'physical' }, calls = [];
   const deps = {
-    tournamentId: 'tour', supabase: { rpc: async name => { calls.push(name); return name === 'list_tracker_tables_v2' ? v2 : legacy; } },
+    tournamentId: 'tour', supabase: { rpc: async name => { calls.push(name); return name === 'list_tracker_history_tables_v1' ? v2 : legacy; } },
     tableLoadGuardRef: { current: { begin: () => 1, finish: () => {}, invalidate: () => {} } },
     record: value => value && typeof value === 'object' && !Array.isArray(value) ? value : null,
     textValue: value => typeof value === 'string' && value.trim() ? value.trim() : null,
@@ -195,7 +245,7 @@ test('canonical inventory maps exact logical and physical identities', async () 
   const { state, calls } = await inventory({ data: { ok: true, tables: [{ tournament_table_id: 'logical', physical_table_id: 'physical', table_name: 'Table' }] }, error: null });
   assert.equal(state.tables[0].id, 'logical');
   assert.equal(state.selected, 'logical');
-  assert.deepEqual(calls, ['list_tracker_tables_v2']);
+  assert.deepEqual(calls, ['list_tracker_history_tables_v1']);
 });
 for (const [name, response] of [
   ['authority denial', { data: { ok: false, error: 'actor_not_allowed' }, error: null }],
@@ -205,7 +255,7 @@ for (const [name, response] of [
   const { state, calls } = await inventory(response);
   assert.ok(state.error);
   assert.equal(state.loading, false);
-  assert.deepEqual(calls, ['list_tracker_tables_v2']);
+  assert.deepEqual(calls, ['list_tracker_history_tables_v1']);
 });
 test('only absent canonical RPC falls back to the supported legacy contract', async () => {
   const { state, calls } = await inventory({ data: null, error: { code: 'PGRST202' } }, { data: [{ table_id: 'physical', table_name: 'Old table' }], error: null });
@@ -222,7 +272,7 @@ test('rejected inventory promise is reported and releases its loading state', as
   const { state, calls } = await inventory(Promise.reject(new Error('network rejected')));
   assert.equal(state.error, 'network rejected');
   assert.equal(state.loading, false);
-  assert.deepEqual(calls, ['list_tracker_tables_v2']);
+  assert.deepEqual(calls, ['list_tracker_history_tables_v1']);
 });
 test('inventory completion after cleanup cannot repopulate the old scope', async () => {
   const read = deferred();

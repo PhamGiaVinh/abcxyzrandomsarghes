@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DocumentUploadDialog, type DocumentRow } from "@/components/DocumentUploadDialog";
 import { DocumentViewerDialog } from "@/components/DocumentViewerDialog";
 import { TabLoader } from "@/components/RouteLoader";
+
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 const ICMCalculator = lazy(() => import("@/components/gto/ICMCalculator"));
 const EquityCalculator = lazy(() => import("@/components/gto/EquityCalculator"));
@@ -39,6 +41,9 @@ export default function Documents() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<(DocumentRow & { created_at: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const readRef = useRef<AbortController | null>(null);
+  const liveRef = useRef(false);
   const [q, setQ] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editing, setEditing] = useState<DocumentRow | null>(null);
@@ -63,20 +68,38 @@ export default function Documents() {
     setPlaying(v);
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    if (!liveRef.current) return;
+    readRef.current?.abort();
+    const controller = new AbortController();
+    readRef.current = controller;
+    const current = () => liveRef.current && readRef.current === controller && !controller.signal.aborted;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("documents")
-      .select("id, kind, title, description, tags, file_url, thumbnail_url, mime_type, size_bytes, is_public, subtitle_url, created_at")
-      .order("created_at", { ascending: false });
-    if (error) toast.error(error.message);
-    setRows((data as any) ?? []);
-    setLoading(false);
-  };
+    setLoadError(false);
+    try {
+      const { data, error } = await observeTrackerContextRead(supabase
+        .from("documents")
+        .select("id, kind, title, description, tags, file_url, thumbnail_url, mime_type, size_bytes, is_public, subtitle_url, created_at")
+        .order("created_at", { ascending: false })
+        .abortSignal(controller.signal));
+      if (!current()) return;
+      if (error || !Array.isArray(data) || data.some(row => !row || typeof row.id !== "string" ||
+        !["file", "video"].includes(row.kind) || typeof row.title !== "string" ||
+        typeof row.file_url !== "string" || typeof row.created_at !== "string")) throw new Error("documents_read_unavailable");
+      setRows(data.map((row):DocumentRow & {created_at:string}=>({...row,kind:row.kind==='file'?'file':'video'})));
+    } catch {
+      if (current()) { setRows([]); setLoadError(true); }
+    } finally {
+      if (current()) setLoading(false);
+      controller.abort();
+    }
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    liveRef.current = true;
+    void load();
+    return () => { liveRef.current = false; readRef.current?.abort(); };
+  }, [load]);
 
   const videos = useMemo(
     () => rows.filter((r) => r.kind === "video" && r.title.toLowerCase().includes(q.toLowerCase())),
@@ -136,6 +159,12 @@ export default function Documents() {
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("documentsPage.search")} className="pl-9 bg-card/50 border-border/40" />
       </div>
 
+      {loadError && (
+        <div role="alert" className="rounded-lg border border-border p-4 space-y-3">
+          <p className="text-sm text-muted-foreground">{t("documentsPage.readError")}</p>
+          <Button variant="outline" onClick={() => void load()}>{t("documentsPage.retry")}</Button>
+        </div>
+      )}
       <Tabs defaultValue="files">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="files">{t("documentsPage.title")}</TabsTrigger>
@@ -147,7 +176,7 @@ export default function Documents() {
         <TabsContent value="files">
           {loading ? (
             <p className="text-muted-foreground py-12 text-center">{t("common.loading")}</p>
-          ) : files.length === 0 ? (
+          ) : loadError ? null : files.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center">{t("documentsPage.empty")}</p>
           ) : (
             <div className="space-y-3">
@@ -203,7 +232,7 @@ export default function Documents() {
         <TabsContent value="videos">
           {loading ? (
             <p className="text-muted-foreground py-12 text-center">{t("common.loading")}</p>
-          ) : videos.length === 0 ? (
+          ) : loadError ? null : videos.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center">{t("documentsPage.empty")}</p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

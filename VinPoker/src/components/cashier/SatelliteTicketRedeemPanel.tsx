@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { z } from "zod";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 type Verified = {
   ok: true; ticketId: string; status: string; serial: number;
@@ -13,17 +16,30 @@ type Verified = {
   targetBuyInVnd: string; targetFeeVnd: string;
 };
 type Player = { user_id: string; display_name: string | null };
-type Receipt = {
-  ok: true; status?: string; ticketId: string; winnerPlayerId: string;
-  redeemedForPlayerId: string; registrationId: string; entryId: string;
-  receiptId: string; receiptCode: string; buyInVnd: string; feeVnd: string;
-};
-const rpc = supabase.rpc as unknown as (name: string, args: Record<string, unknown>) =>
+const receiptSchema = z.object({
+  ok:z.literal(true),status:z.enum(['redeemed','reversed']),ticketId:z.string().uuid(),
+  winnerPlayerId:z.string().uuid(),redeemedForPlayerId:z.string().uuid(),
+  registrationId:z.string().uuid(),entryId:z.string().uuid(),receiptId:z.string().uuid(),
+  receiptCode:z.string().min(1),buyInVnd:z.string().regex(/^\d+$/),feeVnd:z.string().regex(/^\d+$/),
+});
+type Receipt = z.infer<typeof receiptSchema>;
+function readReceipt(value:unknown):Receipt {
+  const parsed=receiptSchema.safeParse(value);
+  if(!parsed.success)throw new Error('Cannot verify the server receipt. Keep the request ID and reload the receipt before retrying.');
+  return parsed.data;
+}
+const rpc = supabase.rpc.bind(supabase) as unknown as (name: string, args: Record<string, unknown>) =>
   Promise<{ data: unknown; error: { message: string } | null }>;
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 /** Cashier-only operational surface. The bearer code never enters a URL or log. */
 export function SatelliteTicketRedeemPanel() {
+  const {user,session}=useAuth();
+  if(!user)return <Card className="p-4" role="alert">Sign in to verify or redeem a Satellite ticket.</Card>;
+  return <ScopedSatelliteTicketRedeemPanel key={JSON.stringify([user.id,sessionReadEpoch(session)])}/>;
+}
+
+function ScopedSatelliteTicketRedeemPanel() {
   const [code, setCode] = useState("");
   const [verified, setVerified] = useState<Verified | null>(null);
   const [query, setQuery] = useState("");
@@ -36,18 +52,23 @@ export function SatelliteTicketRedeemPanel() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const verificationGeneration=useRef(0);
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;verificationGeneration.current+=1;};},[]);
 
   const verify = async () => {
     if (!isUuid(code) || busy) { setError("Enter the full private ticket code."); return; }
+    const generation=++verificationGeneration.current;
     setBusy(true); setError(null); setVerified(null); setReceipt(null);
     try {
       const result = await rpc("satellite_verify_ticket_v1", { p_code: code });
+      if(generation!==verificationGeneration.current)return;
       if (result.error) throw new Error(result.error.message);
       const value = result.data as Verified;
       if (value?.ok !== true || !value.ticketId) throw new Error("Incomplete ticket verification");
       setVerified(value);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Verification failed"); }
-    finally { setBusy(false); }
+    } catch (cause) { if(generation===verificationGeneration.current)setError(cause instanceof Error ? cause.message : "Verification failed"); }
+    finally { if(alive.current)setBusy(false); }
   };
   const findPlayers = async () => {
     if (query.trim().length < 2) { setError("Search by at least two name characters."); return; }
@@ -77,33 +98,36 @@ export function SatelliteTicketRedeemPanel() {
         p_current_code: code, p_request_id: id,
         p_redeemed_for_player_id: bearer, p_source_entry_id: sourceEntry || null,
       });
+      if(!alive.current)return;
       if (result.error) throw new Error(result.error.message);
       const loaded = await rpc("satellite_get_redemption_receipt_v1", { p_request_id: id });
+      if(!alive.current)return;
       if (loaded.error) throw new Error(loaded.error.message);
-      setReceipt(loaded.data as Receipt); setReceiptRequestId(id);
+      setReceipt(readReceipt(loaded.data)); setReceiptRequestId(id);
       setRequestId(globalThis.crypto.randomUUID()); setCode(""); setVerified(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Redeem failed; reload the server receipt before retrying"); }
-    finally { setBusy(false); }
+    } catch (cause) { if(alive.current)setError(cause instanceof Error ? cause.message : "Redeem failed; reload the server receipt before retrying"); }
+    finally { if(alive.current)setBusy(false); }
   };
   const reloadReceipt = async () => {
     const id = receiptRequestId || requestId;
     if (!isUuid(id) || busy) { setError("Enter a valid request ID."); return; }
     setBusy(true); setError(null);
-    const result = await rpc("satellite_get_redemption_receipt_v1", { p_request_id: id });
-    setBusy(false);
-    if (result.error) setError(result.error.message);
-    else {
-      setReceipt(result.data as Receipt);
+    try {
+      const result = await rpc("satellite_get_redemption_receipt_v1", { p_request_id: id });
+      if(!alive.current)return;
+      if (result.error) throw new Error(result.error.message);
+      setReceipt(readReceipt(result.data));
       setReceiptRequestId(id);
       setRequestId(globalThis.crypto.randomUUID());
       setCode(""); setVerified(null); setBearer(""); setSourceEntry(""); setBusted([]);
-    }
+    } catch(cause) {if(alive.current)setError(cause instanceof Error?cause.message:'Receipt recovery failed. Keep the request ID and retry receipt lookup.');}
+    finally {if(alive.current)setBusy(false);}
   };
 
   return <Card className="space-y-3 p-4">
     <h2 className="font-semibold">Satellite ticket · Cashier</h2>
     <p className="text-xs text-muted-foreground">Verify the private code, select the actual bearer, then redeem. No cash is collected for this ticket.</p>
-    <div className="space-y-1"><Label htmlFor="sat-ticket-code">Private ticket code</Label><Input id="sat-ticket-code" type="password" autoComplete="off" value={code} onChange={e => { setCode(e.target.value); setVerified(null); }} /></div>
+    <div className="space-y-1"><Label htmlFor="sat-ticket-code">Private ticket code</Label><Input id="sat-ticket-code" type="password" autoComplete="off" value={code} onChange={e => { verificationGeneration.current+=1; setCode(e.target.value); setVerified(null); setError(null); }} /></div>
     <Button variant="outline" disabled={busy} onClick={() => void verify()}>Verify ticket</Button>
     {verified && <div role="status" className="space-y-1 rounded border p-3 text-sm">
       <p>Ticket #{verified.serial} · {verified.status}</p>

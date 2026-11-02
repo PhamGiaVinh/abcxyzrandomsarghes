@@ -2,8 +2,8 @@
 // Capacity-only preview (owner decision 2026-06-13): the preview never predicts
 // WHICH seat a player gets — exact seats are drawn server-side at commit by
 // confirm_registration_and_assign_seat. These helpers only mirror the RPC's
-// table-eligibility filter (status='active' AND table_id IS NOT NULL AND
-// active_count < max_seats) so the warning matches what the server will do.
+// canonical Floor binding (game_table_id + session), retaining the legacy
+// table_id path for old compatible rows. Server decides the final seat.
 
 export interface TournamentTableRow {
   id: string;
@@ -11,13 +11,17 @@ export interface TournamentTableRow {
   table_number: number | null;
   max_seats: number | null;
   status: string | null;
-  /** game_tables.id — NULL rows are ineligible for the draw (RPC filter). */
+  /** Legacy game_tables.id; canonical Floor may leave it NULL. */
   table_id: string | null;
+  game_table_id?: string | null;
+  table_session_id?: string | null;
 }
 
 export interface ActiveSeatRow {
   table_id: string; // tournament_tables.id
   is_active: boolean;
+  tournament_table_id?: string | null;
+  table_session_id?: string | null;
 }
 
 export interface AvailabilityTable {
@@ -43,13 +47,16 @@ export function computeAvailability(
   tables: TournamentTableRow[],
   seats: ActiveSeatRow[],
 ): AvailabilityTable[] {
+  const eligible = tables.filter(t=>t.status==='active'&&(t.game_table_id?!!t.table_session_id:t.table_id!==null));
+  const byId=new Map(eligible.map(t=>[t.id,t]));
   const activeCount: Record<string, number> = {};
   for (const s of seats) {
     if (!s.is_active) continue;
-    activeCount[s.table_id] = (activeCount[s.table_id] ?? 0) + 1;
+    const id=s.tournament_table_id??s.table_id,table=byId.get(id);
+    if(!table||(s.table_session_id&&table.table_session_id&&s.table_session_id!==table.table_session_id))continue;
+    activeCount[id] = (activeCount[id] ?? 0) + 1;
   }
-  return tables
-    .filter((t) => t.status === "active" && t.table_id !== null)
+  return eligible
     .map((t) => {
       const max = t.max_seats ?? DEFAULT_MAX_SEATS;
       const count = activeCount[t.id] ?? 0;

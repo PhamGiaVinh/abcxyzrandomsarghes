@@ -14,10 +14,13 @@ function harness(options={}){
   committed_at:'2026-10-16T00:00:00Z',price_snapshot:{buy_in:100000,rake:1000,service_fee:2000,platform_fee:0},...options.registration};
  const client={auth:{getUser:async()=>options.authStatus!==undefined?{data:null,error:{status:options.authStatus}}:{data:{user:{id:'verified-player'}},error:null}},
   rpc:async(name,args)=>{calls.push({name,args});return options.rpcFailure?{data:null,error:{message:'unavailable'}}:{data:registration,error:null};},
-  from(table){const filters=[];calls.push({table,filters});const query={select:()=>query,eq:(k,v)=>{filters.push([k,v]);return query;},
-   is:(k,v)=>{filters.push([k,v]);return query;},order:()=>query,limit:()=>query,maybeSingle:()=>query,
-   insert:()=>{calls.push({insert:table});return query;},then(resolve,reject){
+  from(table){const filters=[];let columns='',single=false;calls.push({table,filters});const query={select:value=>{columns=value;return query;},eq:(k,v)=>{filters.push([k,v]);return query;},
+   is:(k,v)=>{filters.push([k,v]);return query;},not:(...args)=>{filters.push(args);return query;},order:()=>query,limit:()=>query,maybeSingle:()=>{single=true;return query;},
+   insert:value=>{calls.push({insert:table,value});return query;},then(resolve,reject){
     const data=table==='tournaments'?{id:'tour-verified',name:'TEST',club_id:'club-test'}:
+     table==='cashier_tour_settings'?{enabled:options.cashierEnabled??false}:
+     table==='club_payment_config'?options.paymentConfig??null:
+     table==='platform_bank_accounts'&&!single?options.bankMatches??[{id:'bank-test',club_id:'club-test',bank_name:'TEST',account_number:'MASTER',account_holder:'TEST',qr_code_url:null}]:
      table==='platform_bank_accounts'?{id:'bank-test',bank_name:'TEST',account_number:'TEST',account_holder:'TEST',qr_code_url:null,bank_bin:'TEST'}:null;
     return Promise.resolve({data:options.failTable===table?null:data,error:options.failTable===table?{message:'backend failed'}:null}).then(resolve,reject);
    }};return query;}};
@@ -43,6 +46,12 @@ test('unknown RPC outcome is not retried and never notifies',async()=>{
 test('unverified legacy price returns explicit denial, not an invented quote',async()=>{
  const r=await harness({registration:{ok:false,error:'legacy_reentry_price_requires_review'}}).run();assert.equal(r.status,400);assert.equal(r.body.error,'legacy_reentry_price_requires_review');
 });
+test('closed registration is a business denial and never queues a notification or retries',async()=>{
+ const h=harness({registration:{ok:false,error:'reentry_window_closed'}}),r=await h.run();
+ assert.equal(r.status,400);assert.equal(r.body.error,'reentry_window_closed');
+ assert.equal(h.calls.filter(c=>c.name==='cashier_create_app_reentry_v1').length,1);
+ assert.equal(h.calls.some(c=>c.insert),false);
+});
 test('malformed stored price is unavailable, not zero or newly computed',async()=>{
  const r=await harness({registration:{price_snapshot:null}}).run();assert.equal(r.status,503);
 });
@@ -51,4 +60,30 @@ for(const status of [0,503])test(`auth infrastructure ${status} is unavailable w
 });
 test('invalid token is denied without privileged reads',async()=>{
  const h=harness({authStatus:401}),r=await h.run();assert.equal(r.status,401);assert.equal(h.calls.length,0);
+});
+
+test('cashier without SePay config accepts counter re-entry without advertising legacy banks',async()=>{
+ const h=harness({cashierEnabled:true,registration:{already_registered:false}}),r=await h.run();
+ assert.equal(r.status,200);for(const key of ['bank_name','account_number','account_holder','qr_code_url','bank_bin'])assert.equal(r.body[key],null);
+ assert.equal(h.calls.some(c=>c.table==='platform_bank_accounts'),false);
+ assert.match(h.calls.find(c=>c.insert)?.value.body,/thanh toán tại quầy/);
+});
+test('cashier uses its exclusive configured SePay account',async()=>{
+ const h=harness({cashierEnabled:true,paymentConfig:{master_account_number:'MASTER'}}),r=await h.run();
+ assert.equal(r.status,200);assert.equal(r.body.account_number,'MASTER');
+ const reads=h.calls.filter(c=>c.table==='platform_bank_accounts');assert.equal(reads.length,2);
+ assert.ok(reads[0].filters.some(([key,value])=>key==='account_number'&&value==='MASTER'));
+ assert.equal(reads.some(c=>c.filters.some(([key])=>key==='club_id')),false,'no legacy or platform fallback');
+});
+for(const bankMatches of [[],[{club_id:'foreign'}],[{club_id:'club-test'},{club_id:'foreign'}]])test(`rejects unverified SePay account set ${JSON.stringify(bankMatches)}`,async()=>{
+ const h=harness({cashierEnabled:true,paymentConfig:{master_account_number:'MASTER'},bankMatches}),r=await h.run();
+ assert.equal(r.status,503);assert.equal(h.calls.some(c=>c.name||c.insert),false);
+});
+for(const table of ['cashier_tour_settings','club_payment_config'])test(`${table} unavailable does not create re-entry or fall back`,async()=>{
+ const h=harness({cashierEnabled:true,failTable:table}),r=await h.run();
+ assert.equal(r.status,503);assert.equal(h.calls.some(c=>c.name||c.insert||c.table==='platform_bank_accounts'),false);
+});
+test('configured SePay without a master account denies before creating re-entry',async()=>{
+ const h=harness({cashierEnabled:true,paymentConfig:{master_account_number:null}}),r=await h.run();
+ assert.equal(r.status,503);assert.equal(h.calls.some(c=>c.name||c.insert),false);
 });

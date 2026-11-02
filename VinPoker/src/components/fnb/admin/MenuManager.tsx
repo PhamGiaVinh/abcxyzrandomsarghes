@@ -34,7 +34,8 @@ type FnbRpcCall = (
 
 export function MenuManager({ clubId, clubName }: { clubId: string; clubName: string }) {
   const qc = useQueryClient();
-  const { data, isLoading } = useFnbMenu(clubId);
+  const { data, isLoading, isError, isFetching, refetch } = useFnbMenu(clubId);
+  const menuUnavailable=isLoading||isError||!data;
   const [editing, setEditing] = useState<FnbMenuItem | null>(null);
   const [open, setOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -52,16 +53,18 @@ export function MenuManager({ clubId, clubName }: { clubId: string; clubName: st
           <p className="text-xs text-muted-foreground">Giá ở đây là giá bán; sửa giá không làm thay đổi đơn đã thanh toán.</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)} disabled={items.length === 0}>
+          <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)} disabled={menuUnavailable||items.length === 0}>
             <Eye className="w-4 h-4 mr-1" /> Xem như khách
           </Button>
-          <Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}>
+          <Button size="sm" disabled={menuUnavailable} onClick={() => { setEditing(null); setOpen(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Thêm món
           </Button>
         </div>
       </div>
 
-      {isLoading ? (
+      {isError||!data&&!isLoading ? (
+        <div role="alert" className="space-y-3"><p>Không tải được thực đơn. Dữ liệu chưa được xác minh.</p><Button variant="outline" onClick={()=>void refetch()}>Thử tải lại thực đơn</Button></div>
+      ) : isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" /> Đang tải…
         </div>
@@ -109,7 +112,7 @@ export function MenuManager({ clubId, clubName }: { clubId: string; clubName: st
                       : <Badge variant="outline" className="text-xs text-muted-foreground">Tắt</Badge>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => { setEditing(m); setOpen(true); }}>
+                    <Button size="sm" variant="ghost" disabled={menuUnavailable} onClick={() => { setEditing(m); setOpen(true); }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
                   </TableCell>
@@ -122,10 +125,10 @@ export function MenuManager({ clubId, clubName }: { clubId: string; clubName: st
 
       <MenuItemDialog
         clubId={clubId} open={open} onOpenChange={setOpen}
-        editing={editing} categories={categories} onSaved={refresh}
+        editing={editing} categories={categories} onSaved={refresh} readUnavailable={menuUnavailable} readPending={isLoading||isFetching} onReadRetry={()=>void refetch()}
       />
       <FnbGuestMenuPreviewDialog
-        open={previewOpen}
+        open={previewOpen&&!menuUnavailable}
         onOpenChange={setPreviewOpen}
         clubName={clubName}
         categories={categories}
@@ -136,10 +139,10 @@ export function MenuManager({ clubId, clubName }: { clubId: string; clubName: st
 }
 
 function MenuItemDialog({
-  clubId, open, onOpenChange, editing, categories, onSaved,
+  clubId, open, onOpenChange, editing, categories, onSaved, readUnavailable, readPending, onReadRetry,
 }: {
   clubId: string; open: boolean; onOpenChange: (v: boolean) => void;
-  editing: FnbMenuItem | null; categories: FnbCategory[]; onSaved: () => void;
+  editing: FnbMenuItem | null; categories: FnbCategory[]; onSaved: () => void; readUnavailable: boolean; readPending: boolean; onReadRetry: () => void;
 }) {
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState<string>(NO_CATEGORY);
@@ -151,6 +154,7 @@ function MenuItemDialog({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleImageFile = async (rawFile: File) => {
+    if(readUnavailable||uploading)return;
     if (!rawFile.type.startsWith("image/")) { toast.error("Vui lòng chọn tệp ảnh."); return; }
     if (rawFile.size > 8 * 1024 * 1024) { toast.error("Ảnh quá lớn (tối đa 8MB)."); return; }
     setUploading(true);
@@ -184,10 +188,15 @@ function MenuItemDialog({
   }
 
   const save = async () => {
+    if(readUnavailable||saving)return;
     if (!name.trim()) { toast.error("Vui lòng nhập tên món."); return; }
-    const priceNum = Math.max(0, Math.floor(Number(price) || 0));
+    const priceNum = Number(price);
+    if (!price.trim() || !Number.isSafeInteger(priceNum) || priceNum < 0) {
+      toast.error("Vui lòng nhập giá bán là số nguyên không âm hợp lệ.");
+      return;
+    }
     setSaving(true);
-    const callRpc = supabase.rpc as unknown as FnbRpcCall;
+    const callRpc = supabase.rpc.bind(supabase) as unknown as FnbRpcCall;
     const { data, error } = await callRpc("fnb_upsert_menu_item", {
       p_club_id: clubId,
       p_id: editing?.id ?? null,
@@ -213,6 +222,7 @@ function MenuItemDialog({
           <DialogTitle>{editing ? "Sửa món" : "Thêm món"}</DialogTitle>
           <DialogDescription className="text-muted-foreground">Tên, danh mục và giá bán.</DialogDescription>
         </DialogHeader>
+        {readUnavailable&&<div role="alert" className="space-y-2 text-sm"><p className="text-destructive">Chưa xác minh được thực đơn. Bản nháp được giữ; hãy tải lại trước khi lưu.</p><Button type="button" variant="outline" disabled={readPending} onClick={onReadRetry}>Thử tải lại thực đơn</Button></div>}
         <div className="space-y-4">
           <div>
             <Label htmlFor="mi-name">Tên món *</Label>
@@ -246,7 +256,7 @@ function MenuItemDialog({
               </div>
               <div className="flex-1 space-y-2">
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="outline" disabled={uploading}
+                  <Button type="button" size="sm" variant="outline" disabled={uploading||readUnavailable}
                     onClick={() => fileRef.current?.click()}
                     className="border-border text-foreground">
                     {uploading
@@ -273,7 +283,7 @@ function MenuItemDialog({
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" onClick={() => onOpenChange(false)} className="border-border text-foreground">Hủy</Button>
-            <Button onClick={save} disabled={saving || !name.trim()}
+            <Button onClick={save} disabled={saving || readUnavailable || !name.trim()}
               className="bg-success hover:bg-success/90 text-success-foreground">
               {saving ? "Đang lưu…" : "Lưu"}
             </Button>

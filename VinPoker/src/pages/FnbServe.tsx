@@ -6,8 +6,10 @@ import { toast } from "sonner";
 import { FEATURES } from "@/lib/featureFlags";
 import { formatVND } from "@/lib/format";
 import { mapFnbError } from "@/lib/fnbErrors";
+import { fnbOrderMutationOutcome, type FnbOrderMutationRpc } from "@/lib/fnbMutationOutcome";
 import { useAuth } from "@/hooks/useAuth";
 import { useFnbClubs } from "@/hooks/useFnbClubs";
+import { FnbClubReadError } from "@/components/fnb/FnbClubReadError";
 import { useFnbLinkTargets } from "@/hooks/useFnbLinkTargets";
 import { useFnbServeQueue, type FnbServeOrder } from "@/hooks/useFnbServe";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,7 +32,7 @@ export default function FnbServe() {
 
 function FnbServeInner() {
   const { loading: authLoading, isFnbServer, isFnbCashier, isClubOwner, isAdmin, isFnb } = useAuth();
-  const { clubs } = useFnbClubs();
+  const { clubs, error: clubError, reload: reloadClubs } = useFnbClubs();
   const [clubId, setClubId] = useState("");
   const qc = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -38,6 +40,7 @@ function FnbServeInner() {
   const canServe = isFnbServer || isFnbCashier || isClubOwner || isAdmin; // server re-enforces
   const isOperator = isFnb || isClubOwner || isAdmin;
 
+  if (clubError) return <FnbClubReadError message={clubError} onRetry={reloadClubs} />;
   if (authLoading || clubs === null) {
     return <div className="container mx-auto max-w-2xl px-4 py-6 space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-64 w-full" /></div>;
   }
@@ -48,7 +51,7 @@ function FnbServeInner() {
     return <div className="container mx-auto max-w-2xl px-4 py-6"><Card><CardContent className="py-6 text-sm text-muted-foreground">Bạn chưa được gán vào câu lạc bộ F&amp;B nào.</CardContent></Card></div>;
   }
 
-  const activeClub = clubId || clubs[0].id;
+  const activeClub = clubs.find(club => club.id === clubId)?.id ?? clubs[0].id;
 
   return (
     <div className="container mx-auto max-w-2xl px-4 py-6 space-y-4">
@@ -78,12 +81,20 @@ function FnbServeInner() {
 
       <ServeQueue clubId={activeClub} canServe={canServe} busyId={busyId} onPay={async (o) => {
         setBusyId(o.id);
-        const { data, error } = await (supabase.rpc as any)("fnb_mark_paid", { p_order_id: o.id });
-        setBusyId(null);
-        const res = data as any;
-        if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); qc.invalidateQueries({ queryKey: ["fnb", "serve", activeClub] }); return; }
-        toast.success(res?.idempotent ? "Đơn đã thu trước đó." : "Đã thu tiền — đơn xuống bếp.");
-        qc.invalidateQueries({ queryKey: ["fnb", "serve", activeClub] });
+        try {
+          const { data, error } = await (supabase.rpc as unknown as FnbOrderMutationRpc)("fnb_mark_paid", { p_order_id: o.id });
+          const outcome = fnbOrderMutationOutcome(data, o.id);
+          if (error || outcome.kind !== "confirmed") {
+            toast.error(mapFnbError(error ?? (outcome.kind === "rejected" ? outcome.code : "FNB_MUTATION_UNKNOWN")));
+            return;
+          }
+          toast.success(outcome.idempotent ? "Đơn đã thu trước đó." : "Đã thu tiền — đơn xuống bếp.");
+        } catch {
+          toast.error(mapFnbError("FNB_MUTATION_UNKNOWN"));
+        } finally {
+          setBusyId(null);
+          void qc.invalidateQueries({ queryKey: ["fnb", "serve", activeClub] });
+        }
       }} />
     </div>
   );
@@ -92,9 +103,13 @@ function FnbServeInner() {
 function ServeQueue({ clubId, canServe, busyId, onPay }: {
   clubId: string; canServe: boolean; busyId: string | null; onPay: (o: FnbServeOrder) => void;
 }) {
-  const { data, isLoading } = useFnbServeQueue(clubId);
+  const { data, isLoading, isError, refetch } = useFnbServeQueue(clubId);
   const { data: linkTargets } = useFnbLinkTargets(clubId);
   if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (isError) return <div role="alert" className="space-y-3 rounded-lg border border-destructive/40 p-4">
+    <p className="text-sm text-destructive">Không tải được danh sách đơn cần thu tiền. Chưa thể xác minh trạng thái đơn; hãy tải lại trước khi thu.</p>
+    <Button variant="outline" onClick={() => { void refetch(); }}>Thử tải lại đơn</Button>
+  </div>;
   const orders = data ?? [];
   if (orders.length === 0) {
     return <div className="rounded-lg border border-border bg-muted/20 py-10 text-center text-sm text-muted-foreground">Chưa có đơn nào cần thu tiền mặt.</div>;

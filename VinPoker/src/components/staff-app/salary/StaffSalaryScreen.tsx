@@ -26,12 +26,17 @@ function methodMeta(method?: string | null): { icon: typeof Banknote; label: str
 
 export function StaffSalaryScreen() {
   const { staff, isStaff, loading } = useStaffLink();
-  const { salary, isLoading } = useStaffSalary(staff);
+  const { salary, isLoading, isError, scopeError, refetch, isFetching } = useStaffSalary(staff);
 
   if (loading) return <SalarySkeleton />;
   if (!isStaff || !staff) return <StaffNotLinkedScreen />;
+  if (isError || scopeError) return <Card role="alert" className="p-4 space-y-2">
+    <h1 className="font-bold">Không xác minh được dữ liệu lương.</h1>
+    <p className="text-sm text-muted-foreground">{scopeError ?? 'Không thể kết luận số dư hoặc lịch sử chi trả. Vui lòng tải lại.'}</p>
+    {!scopeError && <button type="button" className="underline" disabled={isFetching} onClick={()=>{void refetch();}}>Thử lại</button>}
+  </Card>;
 
-  const isPartTime = staff.employmentType === "part_time";
+  const isPartTime = (salary?.employmentType ?? staff.employmentType) === "part_time";
   const payments = salary?.recentPayments ?? [];
 
   return (
@@ -72,7 +77,9 @@ export function StaffSalaryScreen() {
             <span className="text-[12px] text-muted-foreground">Lương tháng này</span>
             <span className="text-[11px] text-muted-foreground">Trả theo tháng</span>
           </div>
-          <div className="text-3xl font-display font-black text-primary">{fmtVnd(salary.monthlySalaryVnd)}</div>
+          <div className="text-3xl font-display font-black text-primary">{salary.monthlySalaryVnd == null
+            ? <span className="text-sm text-muted-foreground">Chưa cấu hình mức lương tháng.</span>
+            : fmtVnd(salary.monthlySalaryVnd)}</div>
           <div className="flex items-start gap-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
             <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             Lương cố định theo tháng. Câu lạc bộ chốt và chi trả cuối kỳ.

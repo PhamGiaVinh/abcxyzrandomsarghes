@@ -1,0 +1,3 @@
+# Release artifacts have exact-byte checksums and canonical LF serialization.
+/raw/jeju_events_seed_v0.csv text eol=lf
+/canonical/jeju_import_v1.json text eol=lf

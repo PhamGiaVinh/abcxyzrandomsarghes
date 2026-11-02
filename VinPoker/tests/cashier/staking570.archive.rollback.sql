@@ -1,0 +1,42 @@
+BEGIN;
+SET LOCAL statement_timeout='15s';
+SET LOCAL request.jwt.claim.sub='';
+DO $$
+DECLARE actor uuid:='a364de8e-06b1-4428-a20d-ac614ec406e5';deal uuid:=gen_random_uuid();club uuid;before_audit jsonb;result jsonb;denied boolean;audit_count bigint;notifications_before bigint;
+BEGIN
+ ASSERT current_database()='vinpoker_ops_cash115_qualified_c' AND host(inet_server_addr())='127.0.0.1' AND inet_server_port()=55441;
+ ASSERT NOT EXISTS(SELECT 1 FROM pg_extension WHERE extname IN('pg_net','pg_cron'));
+ ASSERT NOT EXISTS(SELECT 1 FROM public.user_roles WHERE user_id=actor AND role='super_admin');
+ SELECT id INTO STRICT club FROM public.clubs WHERE owner_id<>actor ORDER BY id LIMIT 1;
+ INSERT INTO public.staking_deals(id,player_id,club_id,custom_event_name,custom_event_date,custom_event_venue,percentage_sold,markup,buy_in_amount_vnd,status,admin_review_status)
+ VALUES(deal,actor,club,'LOCAL570 archive rollback',now(),'LOCAL ONLY',10,1,1000000,'listing','rejected');
+ SELECT jsonb_agg(to_jsonb(x) ORDER BY id) INTO before_audit FROM public.staking_audit_logs x WHERE deal_id=deal;
+ SELECT count(*) INTO notifications_before FROM public.notifications;
+ INSERT INTO public.user_roles(user_id,role) VALUES(actor,'super_admin');
+ PERFORM set_config('role','service_role',true);
+ result:=public.archive_staking_listing_v1(actor,deal,'rejected');
+ ASSERT result=jsonb_build_object('success',true,'deal_id',deal,'status','cancelled','archived',true);
+ PERFORM set_config('role','postgres',true);
+ ASSERT (SELECT status='cancelled' AND cancellation_reason='reviewed_listing_archived' FROM public.staking_deals WHERE id=deal);
+ ASSERT NOT EXISTS(SELECT 1 FROM public.escrow_transactions WHERE deal_id=deal);
+ ASSERT NOT EXISTS(SELECT 1 FROM public.staking_purchases WHERE deal_id=deal);
+ ASSERT (SELECT count(*) FROM public.notifications)=notifications_before;
+ ASSERT NOT EXISTS(SELECT 1 FROM jsonb_array_elements(before_audit) old WHERE NOT EXISTS(SELECT 1 FROM public.staking_audit_logs a WHERE to_jsonb(a)=old));
+ ASSERT EXISTS(SELECT 1 FROM public.staking_audit_logs WHERE deal_id=deal AND performed_by=actor AND metadata->>'operation'='archive_reviewed_listing');
+ SELECT count(*) INTO audit_count FROM public.staking_audit_logs WHERE deal_id=deal;
+ PERFORM set_config('role','service_role',true);
+ ASSERT public.archive_staking_listing_v1(actor,deal,'rejected')=result;
+ denied:=false;BEGIN PERFORM public.archive_staking_listing_v1(actor,deal,'approved');EXCEPTION WHEN raise_exception THEN denied:=true;END;ASSERT denied;
+ PERFORM set_config('role','postgres',true);
+ ASSERT (SELECT count(*) FROM public.staking_audit_logs WHERE deal_id=deal)=audit_count;
+ DELETE FROM public.user_roles WHERE user_id=actor AND role='super_admin';
+ PERFORM set_config('role','service_role',true);denied:=false;
+ BEGIN PERFORM public.archive_staking_listing_v1(actor,deal,'rejected');EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;ASSERT denied;
+ PERFORM set_config('role','postgres',true);
+ ASSERT NOT has_function_privilege('anon','public.archive_staking_listing_v1(uuid,uuid,text)','EXECUTE');
+ ASSERT NOT has_function_privilege('authenticated','public.archive_staking_listing_v1(uuid,uuid,text)','EXECUTE');
+ ASSERT has_function_privilege('service_role','public.archive_staking_listing_v1(uuid,uuid,text)','EXECUTE');
+ ASSERT NOT has_table_privilege('service_role','public.staking_listing_archive_receipts_v1','SELECT');
+ RAISE NOTICE 'ARCHIVE570_PRESERVES_AUDIT_NO_MONEY_NO_NOTIFICATIONS_EXACT_REPLAY_PAYLOAD_CONFLICT_REVOKED_ROLE_ACL_PASS';
+END $$;
+ROLLBACK;

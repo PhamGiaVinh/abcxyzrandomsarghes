@@ -71,9 +71,14 @@ function resultLabel(result: HistoricalSettlementPreviewResult | HistoricalSettl
   return labels[result.code] ?? `Cần sửa hand (${result.code})`;
 }
 
-export function HistoricalSettlementBatchControl({ tournamentId, candidates, onSelectHand, onCommitted }: Props) {
-  const supabase = useSupabaseClient();
+export function HistoricalSettlementBatchControl(props: Props) {
   const { user } = useAuth();
+  return <HistoricalSettlementBatchWorkspace {...props} actorId={user?.id} />;
+}
+
+export function HistoricalSettlementBatchWorkspace({ tournamentId, candidates, onSelectHand, onCommitted, actorId }: Props & { actorId: string | null | undefined }) {
+  const supabase = useSupabaseClient();
+  const user = actorId ? { id: actorId } : null;
   const [storedPreviews, setPreviews] = useState<HistoricalSettlementPreviewResult[]>([]);
   const [storedCommits, setCommits] = useState<HistoricalSettlementCommitResult[]>([]);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });

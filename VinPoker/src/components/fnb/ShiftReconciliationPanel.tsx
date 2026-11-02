@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatVND } from "@/lib/format";
-import { mapFnbError } from "@/lib/fnbErrors";
+import { useAuth } from "@/hooks/useAuth";
+import { useFnbShiftIntent } from "@/hooks/useFnbShiftIntent";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { fnbShiftBackend,parseFnbShiftCash } from "@/lib/fnbShiftIntent";
 import { useFnbShifts, useFnbShiftReport } from "@/hooks/useFnbShift";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,10 +15,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Loader2, DoorOpen, DoorClosed, Wallet } from "lucide-react";
 
-const toInt = (s: string): number => {
-  const n = Math.round(Number(String(s).replace(/[^\d-]/g, "")));
-  return Number.isFinite(n) ? n : 0;
-};
 const fmtTime = (iso: string | null): string => (iso ? new Date(iso).toLocaleString("vi-VN") : "—");
 // khớp = muted, thừa (>0) = success, thiếu (<0) = destructive — same convention as StocktakeBoard.
 const varTone = (v: number | null | undefined): string =>
@@ -34,58 +32,77 @@ const signed = (v: number | null | undefined): string =>
  * FEATURES.fnbShifts && canPay. Untyped fnb_* client.
  */
 export function ShiftReconciliationPanel({ clubId, canClose }: { clubId: string; canClose: boolean }) {
+  const {user,session,loading}=useAuth();
+  if(loading)return <Skeleton className="h-40 w-full"/>;
+  if(!user)return <Card role="alert" className="p-4">Đăng nhập để xác minh ca.</Card>;
+  let backend='';try{backend=fnbShiftBackend(import.meta.env.VITE_SUPABASE_URL);}catch{return <Card role="alert" className="p-4">Không xác minh được backend ca.</Card>;}
+  return <ScopedShiftPanel key={`${backend}:${user.id}:${sessionReadEpoch(session)}:${clubId}`} clubId={clubId} canClose={canClose} actorId={user.id}/>;
+}
+function ScopedShiftPanel({clubId,canClose,actorId}:{clubId:string;canClose:boolean;actorId:string}) {
   const qc = useQueryClient();
-  const { data, isLoading } = useFnbShifts(clubId);
-  const openShift = data?.open ?? null;
+  const { data, isLoading, isError, refetch } = useFnbShifts(clubId);
+  const openShift = isError ? null : data?.open ?? null;
   const closedRows = (data?.recent ?? []).filter((r) => r.status === "closed");
 
-  const { data: report } = useFnbShiftReport(openShift?.id ?? null);
+  const { data: report, isLoading: reportLoading, isError: reportError, refetch: refetchReport } = useFnbShiftReport(openShift?.id ?? null);
 
   const [floatInput, setFloatInput] = useState("");
   const [countedInput, setCountedInput] = useState("");
-  const [opening, setOpening] = useState(false);
-  const [closing, setClosing] = useState(false);
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["fnb", "shifts", clubId] });
-    if (openShift?.id) qc.invalidateQueries({ queryKey: ["fnb", "shiftReport", openShift.id] });
+  const invalidate = async () => {
+    await qc.invalidateQueries({ queryKey: ["fnb", "shifts", clubId] });
+    if (openShift?.id) await qc.invalidateQueries({ queryKey: ["fnb", "shiftReport", openShift.id] });
+    setFloatInput("");setCountedInput("");
   };
-
+  const intent=useFnbShiftIntent(actorId,clubId,invalidate);
+  const opening=intent.busy,closing=intent.busy;
   const openShiftFn = async () => {
-    setOpening(true);
-    const { data: out, error } = await (supabase.rpc as any)("fnb_open_shift", {
-      p_club_id: clubId,
-      p_opening_float_vnd: toInt(floatInput),
-      p_client_request_id: crypto.randomUUID(),
-    });
-    setOpening(false);
-    const res = out as any;
-    if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); return; }
-    toast.success(res?.already_open ? "Ca này đã được mở trước đó." : "Đã mở ca.");
-    setFloatInput("");
-    invalidate();
+    const amount=parseFnbShiftCash(floatInput,true);
+    if(amount===null){toast.error('Nhập số tiền nguyên không âm hợp lệ.');return;}
+    await intent.submit('open',null,amount);
   };
 
   const closeShiftFn = async () => {
     if (!openShift) return;
     if (countedInput.trim() === "") { toast.error("Nhập số tiền mặt đã đếm."); return; }
-    setClosing(true);
-    const { data: out, error } = await (supabase.rpc as any)("fnb_close_shift", {
-      p_shift_id: openShift.id,
-      p_counted_cash_vnd: toInt(countedInput),
-      p_note: null,
-      p_client_request_id: crypto.randomUUID(),
-    });
-    setClosing(false);
-    const res = out as any;
-    if (error || res?.error) { toast.error(mapFnbError(res?.error ?? error)); return; }
-    const v = Number(res?.variance_vnd ?? 0);
-    toast.success(`Đã chốt ca. Chênh lệch: ${signed(v)} ${varLabel(v)}`.trim());
-    setCountedInput("");
-    invalidate();
+    const amount=parseFnbShiftCash(countedInput);
+    if(amount===null){toast.error('Nhập số tiền nguyên không âm hợp lệ.');return;}
+    await intent.submit('close',openShift.id,amount);
   };
 
+  if(intent.pending)return <Card role="alert" className="p-4 space-y-3">
+    <p>Yêu cầu {intent.pending.operation==='open'?'mở':'chốt'} ca chưa được xác minh. Không tạo mã mới.</p>
+    <p className="text-xs break-all">Mã: {intent.pending.requestId}</p>
+    {intent.message&&<p className="text-sm">{intent.message}</p>}
+    <div className="flex flex-wrap gap-2">
+      <Button disabled={intent.busy} onClick={()=>void intent.recover()}>Đối chiếu yêu cầu</Button>
+      <Button variant="outline" disabled={!canClose||intent.busy} onClick={()=>void intent.retry()}>Gửi lại cùng mã</Button>
+      <Button variant="outline" disabled={!canClose||intent.busy} onClick={()=>void intent.cancel()}>Hủy yêu cầu an toàn</Button>
+    </div>
+  </Card>;
+  if(intent.blocked)return <Card role="alert" className="p-4">{intent.message??'Đang xác minh yêu cầu ca đã lưu…'}</Card>;
+  if(!isError&&data&&(data.open&&data.open.club_id!==clubId||data.recent.some(row=>row?.club_id!==clubId))
+    ||!reportLoading&&!reportError&&openShift&&report&&(report.shift.id!==openShift.id||report.shift.club_id!==clubId))return (
+    <Card role="alert" className="p-4 space-y-3">
+      <p>Không xác minh được ca thuộc đúng CLB. Chưa thể mở hoặc chốt ca.</p>
+      <Button variant="outline" onClick={()=>{void refetch();void refetchReport();}}>Thử tải lại ca</Button>
+    </Card>
+  );
+
   if (isLoading) return <Skeleton className="h-40 w-full" />;
+  if (isError || !data) return (
+    <Card role="alert" className="p-4 space-y-3">
+      <p>Không xác minh được danh sách ca. Chưa thể mở hoặc chốt ca.</p>
+      <Button variant="outline" onClick={() => void refetch()}>Thử tải lại ca</Button>
+    </Card>
+  );
+  if (openShift && reportLoading) return <p role="status">Đang tải số liệu ca…</p>;
+  if (openShift && (reportError || !report)) return (
+    <Card role="alert" className="p-4 space-y-3">
+      <p>Không xác minh được số liệu ca. Chưa thể chốt ca.</p>
+      <Button variant="outline" onClick={() => void refetchReport()}>Thử tải lại số liệu ca</Button>
+    </Card>
+  );
 
   return (
     <div className="space-y-4">
@@ -103,7 +120,7 @@ export function ShiftReconciliationPanel({ clubId, canClose }: { clubId: string;
           <div className="flex flex-wrap items-end gap-2">
             <div>
               <Label className="text-xs text-muted-foreground">Tiền quỹ đầu ca (nếu có)</Label>
-              <Input value={floatInput} onChange={(e) => setFloatInput(e.target.value)} inputMode="numeric"
+              <Input aria-label="Tiền quỹ đầu ca" value={floatInput} onChange={(e) => setFloatInput(e.target.value)} inputMode="numeric"
                 placeholder="0" className="bg-card border-border text-foreground h-9 w-[160px] font-mono" />
             </div>
             <Button className="h-9" disabled={!canClose || opening} onClick={openShiftFn}>
@@ -132,16 +149,16 @@ export function ShiftReconciliationPanel({ clubId, canClose }: { clubId: string;
           <div className="border-t border-border pt-3 flex flex-wrap items-end gap-2">
             <div>
               <Label className="text-xs text-muted-foreground">Tiền mặt đã đếm</Label>
-              <Input value={countedInput} onChange={(e) => setCountedInput(e.target.value)} inputMode="numeric"
+              <Input aria-label="Tiền mặt đã đếm" value={countedInput} onChange={(e) => setCountedInput(e.target.value)} inputMode="numeric"
                 placeholder="Đếm trong két" className="bg-card border-border text-foreground h-9 w-[180px] font-mono" />
             </div>
             <Button variant="destructive" className="h-9" disabled={!canClose || closing} onClick={closeShiftFn}>
               {closing ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <DoorClosed className="w-4 h-4 mr-1" />} Chốt ca
             </Button>
-            {countedInput.trim() !== "" && (
-              <div className={`text-sm font-mono self-center ${varTone(toInt(countedInput) - (report?.expected_drawer_vnd ?? openShift.opening_float_vnd))}`}>
-                Chênh lệch: {signed(toInt(countedInput) - (report?.expected_drawer_vnd ?? openShift.opening_float_vnd))}{" "}
-                {varLabel(toInt(countedInput) - (report?.expected_drawer_vnd ?? openShift.opening_float_vnd))}
+            {parseFnbShiftCash(countedInput) !== null && (
+              <div className={`text-sm font-mono self-center ${varTone(parseFnbShiftCash(countedInput)! - (report?.expected_drawer_vnd ?? openShift.opening_float_vnd))}`}>
+                Chênh lệch: {signed(parseFnbShiftCash(countedInput)! - (report?.expected_drawer_vnd ?? openShift.opening_float_vnd))}{" "}
+                {varLabel(parseFnbShiftCash(countedInput)! - (report?.expected_drawer_vnd ?? openShift.opening_float_vnd))}
               </div>
             )}
           </div>

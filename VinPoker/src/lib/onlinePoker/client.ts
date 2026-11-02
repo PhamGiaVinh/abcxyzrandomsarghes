@@ -16,6 +16,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { RUNTIME_LIVE } from './types';
+import {parseOnlineCreateReceipt,parseOnlineCreateResolution,type OnlineCreatePayload} from './createReceipt';
 import type { ActionType, LobbyTableSummary, PublicHandView, PublicSeatView, WalletView } from './types';
 import {
   isChipString,
@@ -79,7 +80,7 @@ export const bodyStartHand = (tableId: string, idempotencyKey: string) =>
   ({ op: 'start_hand' as const, tableId, idempotencyKey });
 
 // Friends-practice (open tables, wallet-free, host succession)
-export const bodyCreateOpenTable = (name: string, sb: ChipString, bb: ChipString, buyin: ChipString, maxSeats: number) =>
+const bodyCreateOpenTable = (name: string, sb: ChipString, bb: ChipString, buyin: ChipString, maxSeats: number) =>
   ({ op: 'create_open_table' as const, name, sb, bb, buyin, maxSeats });
 
 export const bodySitOpen = (tableId: string, seat: number, buyin: ChipString, idempotencyKey: string) =>
@@ -155,9 +156,13 @@ export const onlinePokerClient = {
   /** Start a new hand at a table (≥2 seated; server deals + assigns the button). */
   startHand: (tableId: string) => invokeEdge<RpcOutcome>(bodyStartHand(tableId, newIdemKey())),
 
-  /** Create an open practice table (caller becomes host, seated at seat 1). */
-  createOpenTable: (name: string, sb: ChipString, bb: ChipString, buyin: ChipString, maxSeats = 9) =>
-    invokeEdge<RpcOutcome>(bodyCreateOpenTable(name, sb, bb, buyin, maxSeats)),
+  /** Caller persists this key/payload before dispatch; no key is minted here. */
+  createOpenTableWithRequest: async (payload:OnlineCreatePayload,requestId:string,expectedActorId:string) =>
+    parseOnlineCreateReceipt(await invokeEdge<unknown>({...bodyCreateOpenTable(payload.name,payload.sb,payload.bb,payload.buyin,payload.maxSeats),requestId,expectedActorId}),requestId),
+
+  /** Resolution never creates a table, including when the receipt is absent. */
+  getCreateReceipt: async (payload:OnlineCreatePayload,requestId:string,expectedActorId:string) =>
+    parseOnlineCreateResolution(await invokeEdge<unknown>({op:'get_create_receipt',requestId,expectedActorId}),requestId,payload),
 
   /** Sit directly at an open seat with a self-chosen stack (no wallet). */
   sitOpen: (tableId: string, seat: number, buyin: ChipString) =>
@@ -196,20 +201,21 @@ function rails() {
 }
 
 /** Live lobby: open/paused tables with real seat counts. Gated by RUNTIME_LIVE. */
-export async function listTablesLive(): Promise<LobbyTableSummary[]> {
+export async function listTablesLive(signal?:AbortSignal): Promise<LobbyTableSummary[]> {
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
-  const [tablesRes, seatsRes] = await Promise.all([
-    rails()
+  let tablesRead=rails()
       .from('online_poker_tables')
       .select('id, name, sb, bb, max_seats, status')
       .neq('status', 'closed')
-      .order('name', { ascending: true }),
-    rails()
+      .order('name', { ascending: true });
+  let seatsRead=rails()
       .from('online_poker_seats')
       .select('table_id')
-      .eq('status', 'sitting'),
-  ]);
+      .eq('status', 'sitting');
+  if(signal){tablesRead=tablesRead.abortSignal(signal);seatsRead=seatsRead.abortSignal(signal);}
+  const [tablesRes, seatsRes] = await Promise.all([tablesRead,seatsRead]);
   if (tablesRes.error) throw new OnlinePokerError('tables_load_failed', tablesRes.error.message);
+  if (seatsRes.error) throw new OnlinePokerError('seats_load_failed', seatsRes.error.message);
   const counts: Record<string, number> = {};
   for (const s of (seatsRes.data ?? []) as Array<{ table_id: string }>) {
     counts[String(s.table_id)] = (counts[String(s.table_id)] ?? 0) + 1;
@@ -243,13 +249,14 @@ export interface LiveTableMeta {
 }
 
 /** Single table row by id — for the table page header when RUNTIME_LIVE. */
-export async function loadTableMetaLive(tableId: string): Promise<LiveTableMeta | null> {
+export async function loadTableMetaLive(tableId: string,signal?:AbortSignal): Promise<LiveTableMeta | null> {
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
-  const { data, error } = await rails()
+  let read = rails()
     .from('online_poker_tables')
     .select('id, name, sb, bb, max_seats, status, min_buyin, max_buyin, starting_stack_default, host_user_id')
-    .eq('id', tableId)
-    .maybeSingle();
+    .eq('id', tableId);
+  if(signal)read=read.abortSignal(signal);
+  const { data, error } = await read.maybeSingle();
   if (error || !data) return null;
   return {
     id: String(data.id),
@@ -350,19 +357,19 @@ export interface BuyinSummary {
  * Per-player buy-in totals from the append-only `online_poker_buyins` ledger. Wallet-free
  * friends-practice: an informal record of how many chips each player has bought in (sit +
  * rebuy) over the table's whole lifetime — it SURVIVES a leave→re-sit (a new sit just adds
- * on). Grouped by user (duplicate display names are fine). Degrades to [] when the ledger
- * isn't applied yet (source-only migration) or there are no rows. Gated.
+ * on). Grouped by user (duplicate display names are fine). An unavailable ledger is
+ * not an empty ledger. Gated.
  */
 export async function loadBuyinsLive(tableId: string): Promise<BuyinSummary[]> {
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
-  // online_poker_buyins is source-only (not in generated types until applied) → cast + degrade.
+  // online_poker_buyins is not in generated types until applied.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (rails() as any)
     .from('online_poker_buyins')
     .select('user_id, amount, created_at')
     .eq('table_id', tableId)
     .order('created_at', { ascending: true });
-  if (error || !data) return [];
+  if (error || !data) throw new OnlinePokerError('buyins_load_failed', error?.message);
   const rows = data as Array<{ user_id: string; amount: number | string; created_at: string }>;
   if (!rows.length) return [];
 
@@ -416,19 +423,21 @@ export async function loadLegalActionsLive(handId: string): Promise<WireLegalAct
  */
 export async function loadHandStateLive(
   tableId: string,
+  signal?: AbortSignal,
 ): Promise<{ wire: WirePublicHandState; stateVersion: number } | null> {
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
   // state_version = the CAS counter op_submit_action bumps on EVERY action; carried out so
   // the hook's high-water snapshot guard can drop stale poll responses (fast-path ordering).
   // Whole-row RLS (op_hands_select USING(true)) — spectators read it identically.
-  const { data, error } = await rails()
+  let read = rails()
     .from('online_poker_hands')
     .select('state, state_version')
     .eq('table_id', tableId)
     .in('status', ['dealing', 'betting', 'complete'])
     .order('hand_no', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if(signal)read=read.abortSignal(signal);
+  const { data, error } = await read.maybeSingle();
   if (error) throw new OnlinePokerError('hand_load_failed', error.message);
   if (!data?.state) return null;
   return { wire: data.state as WirePublicHandState, stateVersion: Number(data.state_version ?? 0) };

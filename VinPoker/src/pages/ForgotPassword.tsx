@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,18 +17,24 @@ const ForgotPassword = () => {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [sentEmail,setSentEmail]=useState('');
+  const sending=useRef(false);
 
   const submit = async () => {
+    if(sending.current)return;
     const r = z.string().trim().email(t("forgotPassword.invalidEmail")).max(255).safeParse(email);
     if (!r.success) return toast.error(r.error.errors[0].message);
-    setBusy(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(r.data, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    setSent(true);
-    toast.success(t("forgotPassword.resetEmailSent"));
+    sending.current=true;setBusy(true);
+    try{
+      const { error } = await supabase.auth.resetPasswordForEmail(r.data, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) return toast.error(error.message);
+      setSentEmail(r.data);setSent(true);
+      toast.success(t("forgotPassword.resetEmailSent"));
+    }catch{
+      toast.error(t('forgotPassword.requestUnavailable',{defaultValue:'Chưa xác minh được yêu cầu gửi email. Hãy kiểm tra hộp thư trước khi thử lại.'}));
+    }finally{sending.current=false;setBusy(false);}
   };
 
   return (
@@ -42,8 +48,8 @@ const ForgotPassword = () => {
         {sent ? (
           <div className="text-sm text-muted-foreground space-y-3">
             <p>
-              <Trans i18nKey="forgotPassword.sentTo" values={{ email }}>
-                Đã gửi liên kết đặt lại mật khẩu tới <b className="text-foreground">{email}</b>.
+              <Trans i18nKey="forgotPassword.sentTo" values={{ email:sentEmail }}>
+                Đã gửi liên kết đặt lại mật khẩu tới <b className="text-foreground">{sentEmail}</b>.
               </Trans>
             </p>
             <p>{t("forgotPassword.checkSpamHint")}</p>
@@ -55,8 +61,8 @@ const ForgotPassword = () => {
           <>
             <p className="text-xs text-muted-foreground">{t("forgotPassword.prompt")}</p>
             <div className="space-y-1">
-              <Label className="text-xs">{t("forgotPassword.emailLabel")}</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("forgotPassword.emailPlaceholder")} />
+              <Label htmlFor="reset-email" className="text-xs">{t("forgotPassword.emailLabel")}</Label>
+              <Input id="reset-email" type="email" disabled={busy} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("forgotPassword.emailPlaceholder")} />
             </div>
             <Button onClick={submit} disabled={busy} className="w-full gradient-gold text-primary-foreground border-0">
               {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}

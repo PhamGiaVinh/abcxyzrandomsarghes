@@ -1,4 +1,10 @@
 {
+  "clubDetailRead": {"error":"Không tải được dữ liệu CLB. Vui lòng thử lại.","retry":"Thử tải lại","loading":"Đang tải dữ liệu CLB…"},
+  "rankingReview": {"title":"Floor xác nhận thứ hạng","note":"Chỉ đổi vị trí trong cùng nhóm bust cùng hand. Xác nhận này chưa chốt giải và không ghi nhận trả thưởng.","storage":"Không đọc hoặc lưu được yêu cầu an toàn. Tải lại trang và đối chiếu yêu cầu cũ trước khi tiếp tục.","readError":"Chưa đối chiếu được danh sách thứ hạng. Hãy tải lại trước khi xác nhận.","unknown":"Chưa xác minh kết quả. Yêu cầu gốc được giữ để đối chiếu; không tạo yêu cầu khác.","changed":"Dữ liệu hoặc điều kiện đã thay đổi; yêu cầu này bị từ chối. Hãy kiểm tra thứ hạng mới.","recorded":"Đã ghi nhận xác nhận thứ hạng. Đang tải lại trạng thái chốt.","historical":"Đã đối chiếu yêu cầu cũ, nhưng nguồn đã đổi. Cần kiểm tra và xác nhận lại thứ hạng hiện tại.","loading":"Đang đối chiếu thứ hạng…","pending":"Đang giữ yêu cầu chưa đối chiếu. Không gửi yêu cầu mới.","check":"Đối chiếu yêu cầu đã lưu","retrySame":"Gửi lại đúng yêu cầu đã lưu","reload":"Tải lại thứ hạng","notReady":"Chưa đủ điều kiện xác nhận: cần một người thắng và bằng chứng hand, thứ tự bust đầy đủ.","approved":"Đã có biên nhận xác nhận. Điều kiện chốt giải vẫn được kiểm tra riêng.","up":"Xếp {{name}} cao hơn trong cùng nhóm","down":"Xếp {{name}} thấp hơn trong cùng nhóm","confirm":"Xác nhận thứ tự do Floor chọn","group":"Nhóm bust cùng hand {{group}}","reference":"Mã entry {{reference}}"},
+  "publicScheduleRead": { "loading": "Đang tải lịch thi đấu…", "error": "Không tải được lịch thi đấu. Chưa thể xác nhận có lịch hay không. Vui lòng thử lại.", "retry": "Tải lại lịch thi đấu" },
+  "trackerSkipRevealNote": "Nếu chọn “Tiếp tục không lật”: Bài sẽ không hiển thị trên viewer. Bạn vẫn phải chấm kết quả thủ công ở Showdown.",
+  "baggedFlightRelease": { "title": "Giải phóng bàn đã bag", "note": "Chỉ đóng phiên bàn sau khi bagging đã khóa và khớp. Giữ nguyên chip, entry và lịch sử; không tính là bust, không phát chip hoặc trả thưởng.", "refresh": "Tải lại trạng thái bàn", "loading": "Đang xác minh phiên bàn…", "readError": "Chưa xác minh được bàn. Tải lại và kiểm tra phiên/ghế trước khi thao tác.", "unknown": "Kết quả chưa được xác minh. Request cũ được giữ lại; kiểm tra hand, chuyển ghế, correction hoặc đổi mode đang chờ trước khi thử lại cùng request.", "recover": "Kiểm tra request giải phóng đã lưu", "peer": "Một flight khác đang có request giải phóng chưa xác minh.", "bagFirst": "Khóa bagging trong Chip Master trước khi giải phóng bàn.", "released": "Đã giải phóng đúng phiên bàn; chip vẫn được giữ trong bag.", "release": "Giải phóng bàn này", "confirm": "Xác nhận giải phóng phiên bàn", "cancel": "Hủy" },
+  "mainEventCreate": { "guaranteeLabel": "GTD chung của Main Event (VND)", "guaranteeNote": "Một cam kết cho toàn bộ Main Event, không nhân theo số flight và không phải tiền đã tài trợ vào prize pool. Để trống nếu chưa có GTD.", "guaranteeMissing": "Chưa có GTD Main Event", "guaranteeNone": "Main Event không cam kết GTD", "guaranteeValue": "GTD Main Event: {{amount}}", "invalidMoney": "Phí dịch vụ và GTD phải là số nguyên VND không âm trong giới hạn an toàn." },
   "legacyScheduleEvidence": "Thông tin nguồn, phiên bản và xét duyệt của ảnh chưa được cung cấp tại đây. Hãy xác nhận lịch mới nhất với CLB.",
   "createAtomic": { "signin": "Đăng nhập trước khi tạo giải.", "storageError": "Không đọc hoặc lưu được yêu cầu tạo giải đang chờ. Chưa gửi yêu cầu mới.", "unknown": "Chưa xác minh được kết quả tạo giải. Hãy kiểm tra yêu cầu trước trước khi thử lại.", "check": "Kiểm tra yêu cầu trước", "retry": "Gửi lại đúng yêu cầu cũ", "pending": "Yêu cầu tạo giải trước chưa rõ kết quả. Hãy kiểm tra trước khi tạo giải khác. Gửi lại sẽ dùng dữ liệu ban đầu, không dùng các ô vừa chỉnh sửa." },
   "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
@@ -19,7 +25,10 @@
   "floorReadiness": { "unavailable": "Chưa xác minh số người vào giải" },
   "clockControl": { "loadError": "Không tải được quyền điều khiển đồng hồ." },
   "stack_projection_mismatch": "Chip ở ghế, entry và bảng chip không khớp",
-  "participation": {"repairRequired":"Cần sửa dữ liệu","repairHint":"Các dòng này được giữ để kiểm tra lịch sử, không được tính là ghế đang chơi hoặc dùng để thao tác.","loadError":"Không tải được danh sách người chơi. Hãy làm mới.","stale":"Đang hiển thị dữ liệu cũ; thao tác tạm khóa.","reasons":{"missing_entry":"Ghế thiếu entry","entry_identity_mismatch":"Entry không khớp người chơi hoặc giải","entry_not_live":"Entry không còn hoạt động","missing_table_session":"Thiếu bàn hoặc phiên bàn","closed_session":"Phiên bàn đã đóng","inactive_table":"Bàn không hoạt động","table_session_mismatch":"Bàn và phiên không khớp","seat_out_of_range":"Ghế vượt sức chứa","duplicate_entry_seat":"Entry có nhiều ghế hoạt động","duplicate_seat_position":"Vị trí ghế bị trùng","duplicate_entry_generation":"Entry thế hệ bị trùng","missing_active_seat":"Entry đã xếp nhưng không có ghế hợp lệ"}},
+  "participation": {
+    "bagged": "Đã bag",
+    "baggedHint": "Stack đã bag được giữ để đối chiếu; không phải người chờ xếp bàn.",
+    "noBagged": "Không có entry đã bag phù hợp.","repairRequired":"Cần sửa dữ liệu","repairHint":"Các dòng này được giữ để kiểm tra lịch sử, không được tính là ghế đang chơi hoặc dùng để thao tác.","loadError":"Không tải được danh sách người chơi. Hãy làm mới.","stale":"Đang hiển thị dữ liệu cũ; thao tác tạm khóa.","reasons":{"missing_entry":"Ghế thiếu entry","entry_identity_mismatch":"Entry không khớp người chơi hoặc giải","entry_not_live":"Entry không còn hoạt động","missing_table_session":"Thiếu bàn hoặc phiên bàn","closed_session":"Phiên bàn đã đóng","inactive_table":"Bàn không hoạt động","table_session_mismatch":"Bàn và phiên không khớp","seat_out_of_range":"Ghế vượt sức chứa","duplicate_entry_seat":"Entry có nhiều ghế hoạt động","duplicate_seat_position":"Vị trí ghế bị trùng","duplicate_entry_generation":"Entry thế hệ bị trùng","missing_active_seat":"Entry đã xếp nhưng không có ghế hợp lệ"}},
   "trackerCards": { "deck": "Bộ bài", "fourColor": "4 màu", "classic": "Kiểu cũ" },
   "fnb": {
     "navCounter": "F&B · Quầy",
@@ -168,6 +177,8 @@
     "reEntries": "Re-entry",
     "prizePool": "Tổng giải thưởng",
     "payouts": "Trả thưởng",
+    "rankAwards": "Thưởng theo hạng",
+    "rankAwardsHint": "Quyền lợi bổ sung (nếu có) được đối soát riêng tại Cashier.",
     "breakTitle": "Giải lao",
     "paused": "Tạm dừng",
     "live": "Đang diễn ra",
@@ -177,6 +188,7 @@
     "demo": "Demo",
     "fullscreenPrompt": "Bấm để bật toàn màn hình",
     "fullscreenSkip": "Bỏ qua",
+    "fullscreenFailed": "Chưa bật được toàn màn hình. Hãy thử lại hoặc chọn Bỏ qua.",
     "loading": "Đang tải dữ liệu giải đấu…",
     "notFound": "Không tìm thấy giải đấu",
     "notFoundHint": "Kiểm tra lại đường dẫn TV",
@@ -214,6 +226,8 @@
     "international": "Giải quốc tế"
   },
   "documentsPage": {
+    "readError": "Chưa tải được tài liệu. Vui lòng thử lại.",
+    "retry": "Thử lại",
     "title": "Tài liệu",
     "subtitle": "Video hướng dẫn và tài liệu chính thức của hệ thống.",
     "tabVideos": "Video",
@@ -577,6 +591,9 @@
     "clubNotFound": "Không tìm thấy CLB."
   },
   "leaderboardPage": {
+    "loading": "Đang tải bảng xếp hạng",
+    "loadError": "Không tải được bảng xếp hạng. Kết quả chưa được xác minh.",
+    "retry": "Thử tải lại",
     "title": "Bảng xếp hạng",
     "overall": "Toàn quốc",
     "byClub": "Theo CLB",
@@ -1190,6 +1207,10 @@
     "cancelReg": "Huỷ đăng ký"
   },
   "playerProfile": {
+    "loadError": "Không tải được hồ sơ người chơi. Dữ liệu chưa được xác minh.",
+    "retry": "Thử tải lại",
+    "summaryLoading": "Đang tải tổng hợp hoạt động…",
+    "summaryError": "Không xác minh được tổng hợp hoạt động. Không coi dữ liệu thiếu là số 0.",
     "loading": "Đang tải...",
     "notFound": "Không tìm thấy player.",
     "reportScam": "Báo cáo scam",
@@ -1308,6 +1329,9 @@
     "startingStack": "Stack khởi đầu",
     "location": "Địa điểm",
     "registered": "Đã đăng ký",
+    "registrationCount": "{{n}} lượt đăng ký",
+    "reentryClosed": "Cửa mua lại đã đóng.",
+    "pendingReentryClosed": "Yêu cầu mua lại đang chờ nhưng cửa mua lại đã đóng. Liên hệ Cashier để kiểm tra; không chuyển khoản thêm.",
     "players": "{{n}} người",
     "description": "Mô tả",
     "viewClub": "Xem CLB",
@@ -1392,6 +1416,8 @@
     "tabArchived": "Đã lưu trữ",
     "noArchived": "Chưa có cuộc trò chuyện nào được lưu trữ.",
     "autoArchiveHint": "Chat thuộc tournament đã kết thúc hơn 30 ngày sẽ tự động chuyển vào đây.",
+    "unarchiveUnknown": "Chưa xác minh được kết quả bỏ lưu trữ. Tải lại danh sách để kiểm tra; hệ thống không tự gửi lại thao tác.",
+    "unarchiving": "Đang bỏ lưu trữ…",
     "sectionActive": "Đang hoạt động",
     "sectionClosed": "Đã đóng",
     "sectionArchived": "Đã lưu trữ",
@@ -1405,6 +1431,7 @@
     "photo": "📷 Ảnh",
     "searchUsers": "Tìm người dùng theo tên hiển thị để bắt đầu trò chuyện...",
     "searching": "Đang tìm...",
+    "searchFail": "Không tải được kết quả tìm kiếm. Hãy thử lại.",
     "noResultsFor": "Không tìm thấy ai khớp \"{{q}}\"",
     "inboxLabel": "Hộp thư · {{n}}",
     "noDM": "Chưa có tin nhắn nào. Tìm người dùng phía trên để bắt đầu.",
@@ -1508,7 +1535,8 @@
     "defaultLabel": "Tải ảnh proof",
     "onlyImg": "Chỉ chấp nhận JPG, PNG, WEBP",
     "max5": "Ảnh tối đa 5MB",
-    "uploadedOk": "Đã tải ảnh"
+    "uploadedOk": "Đã tải ảnh",
+    "previewUnavailable": "Không tải được ảnh xem trước. Liên kết đã lưu vẫn được giữ nguyên."
   },
   "livestream": {
     "title": "Phát sóng trực tiếp",
@@ -2491,6 +2519,9 @@
     "registeredCount": "Đã đăng ký: {{registered}} / {{max}}"
   },
   "playerHistory": {
+    "loading": "Đang tải kết quả đã xác minh…",
+    "loadError": "Không tải được lịch sử người chơi. Kết quả chưa được xác minh.",
+    "retry": "Thử tải lại",
     "playerFallback": "Người chơi",
     "prizeCount": "Số giải",
     "totalCashout": "Tổng cashout",
@@ -2726,6 +2757,8 @@
     "register": "Đăng ký"
   },
   "tournamentRegister": {
+"cancelUnverified": "Chưa xác minh được kết quả hủy. Hãy tải lại trạng thái đăng ký trước khi thử lại; chưa kết luận đã hủy.",
+    "proofUnverified": "Chưa xác minh được việc gửi chứng từ. Hãy tải lại trạng thái đăng ký trước khi thử lại.",
     "title": "Đăng ký giải tập huấn",
     "regError": "Lỗi đăng ký",
     "copied": "Đã copy {{label}}",
@@ -2846,6 +2879,9 @@
     "closeAria": "Đóng"
   },
   "bulkCreate": {
+    "pendingBatch": "Có {{count}} giải trong yêu cầu chưa xác minh. Không tạo batch mới trước khi kiểm tra receipt.",
+    "checkReceipt": "Kiểm tra receipt batch",
+    "cancelPendingBatch": "Hủy yêu cầu chưa tạo giải (không xóa giải)",
     "adminOnly": "Chỉ super admin được truy cập",
     "noPending": "Không có ảnh chờ xử lý",
     "errorPrefix": "Lỗi: {{msg}}",
@@ -2979,8 +3015,8 @@
     "photos": { "empty": "Chưa có ảnh", "soon": "Hình ảnh sự kiện sẽ sớm có ở đây", "photoAlt": "Ảnh giải đấu" },
     "breakdown": {
       "title": "Phân tích ván",
-      "pot": "Pot",
-      "potHint": "Pot đến street này",
+      "pot": "Cược lũy kế",
+      "potHint": "Tổng cược đến street này, chưa trừ cược được hoàn; không phải pot được chia.",
       "player": "Người chơi"
     },
     "map": {
@@ -3071,6 +3107,7 @@
       "loading": "Đang tải các ván…",
       "empty": "Chưa có ván nào hoàn tất",
       "noMatch": "Không có nội dung khớp bộ lọc",
+      "noLoadedMatch": "Chưa có ván khớp trong dữ liệu đã tải. Có thể tải thêm để tìm tiếp.",
       "more": "Xem thêm",
       "hand": "Ván #{{n}}",
       "pot": "POT",
@@ -3289,17 +3326,17 @@
       "scoreLabel": "Poker IQ",
       "confidence": "Độ tin cậy: {{level}}",
       "interpretation": "Bạn có nền tảng kỷ luật tốt và hợp với giải deepstack field vừa.",
-      "nextHook": "Điểm cần cải thiện để tiến gần A-: xử lý tốt hơn khi gặp đối thủ aggro.",
+      "nextHook": "Tiếp tục luyện nhóm kỹ năng được gợi ý bên dưới.",
       "whyTitle": "Vì sao hệ thống nói vậy",
       "weakest": "Yếu nhất: {{category}} {{score}} — {{insight}}",
       "strengthsTitle": "Điểm mạnh",
       "weaknessesTitle": "Cần cải thiện",
       "trainingKicker": "Lộ trình luyện",
-      "trainingGoal": "Mục tiêu tiếp theo: A-",
+      "trainingGoal": "Mục tiêu tiếp theo: củng cố nhóm kỹ năng yếu nhất",
       "step1": "Hoàn thành Drill {{drill}}",
       "step2": "Chơi 2 giải Deepstack field vừa",
       "step3": "Mở khóa Verified Profile",
-      "cta": "Luyện {{drill}} để mở khóa A-",
+      "cta": "Luyện {{drill}}",
       "ctaSub": "Nhóm này đang kéo điểm của bạn xuống nhiều nhất.",
       "eventsTitle": "Loại giải phù hợp",
       "eventAvoidPrefix": "Tạm tránh",

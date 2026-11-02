@@ -23,18 +23,19 @@ export interface HandPlayerDisplay {
 // 20261224000000) may not exist yet if the owner-gated apply hasn't run. Probe ONCE
 // (cached) so the read sites can add the columns to their select only when present —
 // selecting a missing column would 42703 the whole query and break the hand load. The
-// promise is memoised so this costs one tiny query per session.
+// Successful/confirmed missing-column results are memoised; failed reads retry.
 let snapshotProbe: Promise<boolean> | null = null;
 export function handPlayersHasSnapshot(): Promise<boolean> {
   if (!snapshotProbe) {
     snapshotProbe = (async () => {
-      try {
-        const { error } = await supabase.from("hand_players").select("player_name").limit(1);
-        return !error;
-      } catch {
-        return false;
-      }
-    })();
+      const { error } = await supabase.from("hand_players").select("player_name").limit(1);
+      if (!error) return true;
+      if (error.code === "42703") return false;
+      throw new Error(error.message || "Không xác minh được dữ liệu snapshot của hand.");
+    })().catch((error: unknown) => {
+      snapshotProbe = null;
+      throw error;
+    });
   }
   return snapshotProbe;
 }

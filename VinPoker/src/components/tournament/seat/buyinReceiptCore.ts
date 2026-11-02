@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {z} from 'zod';
+import {observeTrackerContextRead} from '../../../lib/tournament/observeTrackerContextRead.ts';
 import type { SeatReceiptData } from "./SeatReceipt";
 
 export type BuyinReceiptSnapshot = {
@@ -31,13 +33,17 @@ export type BuyinReceiptLookup =
 
 export type BuyinReceiptClient = Pick<SupabaseClient, "functions">;
 
-type BuyinReceiptResponse = { receipt?: BuyinReceiptSnapshot | null };
-
-const isSnapshot = (value: unknown): value is BuyinReceiptSnapshot => {
-  if (!value || typeof value !== "object") return false;
-  const receipt = value as Record<string, unknown>;
-  return typeof receipt.status === "string" && typeof receipt.club === "object";
-};
+const text=z.string().nullable(),amount=z.number().finite().nonnegative().nullable();
+const snapshotSchema=z.object({
+  registration_id:text,receipt_code:text,qr_value:text,reference_code:text,
+  status:z.enum(['pending','confirmed','rejected','cancelled','refunded']),
+  payment_state:z.enum(['unverified','partial','paid_waiting_seat','confirmed','refunded']).optional(),
+  received_amount:amount.optional(),remaining_amount:amount.optional(),
+  club:z.object({name:text,address:text,logo_url:text}),
+  player_name:text,tournament_name:text,total_pay:amount,completed_at:text,
+  completed_at_source:z.enum(['confirmed_at','issued_at']).nullable(),
+  table_number:z.number().int().positive().nullable(),seat_number:z.number().int().positive().nullable(),starting_stack:amount,
+}).refine(receipt=>receipt.qr_value===receipt.receipt_code);
 
 /** Client-injected server-authorized receipt reader for every application shell. */
 export async function fetchBuyinReceiptWithClient(
@@ -47,10 +53,19 @@ export async function fetchBuyinReceiptWithClient(
   const body = "registrationId" in lookup
     ? { registration_id: lookup.registrationId }
     : { receipt_code: lookup.receiptCode };
-  const { data, error } = await client.functions.invoke("get-buyin-receipt", { body });
-  if (error) return null;
-  const receipt = (data as BuyinReceiptResponse | null)?.receipt;
-  return isSnapshot(receipt) ? receipt : null;
+  const controller=new AbortController();
+  try {
+    const { data, error } = await observeTrackerContextRead(client.functions.invoke("get-buyin-receipt", { body,signal:controller.signal }));
+    if (error) return null;
+    const parsed=snapshotSchema.safeParse(data?.receipt);
+    if(!parsed.success)return null;
+    const receipt=parsed.data;
+    if('registrationId' in lookup ? receipt.registration_id!==lookup.registrationId : receipt.receipt_code!==lookup.receiptCode)return null;
+    // safeParse above enforces required fields at runtime. With strictNullChecks
+    // off, Zod's inferred nullable object keys appear optional to TypeScript.
+    return receipt as BuyinReceiptSnapshot;
+  } catch { return null; }
+  finally { controller.abort(); }
 }
 
 /** Converts the read-only server snapshot into the shared print-safe view model. */

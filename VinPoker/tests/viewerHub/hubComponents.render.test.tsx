@@ -202,8 +202,13 @@ describe("RPT hand and editorial cards", () => {
   it("uses readable viewer card sizes and a neon-glow View hand CTA", () => {
     const html = renderToStaticMarkup(<HandFeedCard rpt item={handCard} onViewHand={() => {}} />);
     expect(html).toContain('data-testid="viewer-rpt-board"');
-    expect(html).toContain("h-16 w-12");
-    expect(html).toContain("min-[390px]:h-20");
+    // RPT deliberately overrides the generic PokerCard md dimensions. Verify
+    // five board slots, not obsolete generic size classes. Actual375px browser
+    // geometry is recorded in viewer205: five40x56 cards fit without overflow.
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    const board=doc.querySelector('[data-testid="viewer-rpt-board"]')!;
+    expect(board.children).toHaveLength(5);
+    expect(Array.from(board.querySelectorAll('[data-card-code]')).map(card=>card.getAttribute('data-card-code'))).toEqual(['As','Kd','7h']);
     expect(html).toContain('data-testid="viewer-rpt-hole-cards"');
     expect(html).toContain("h-12 w-9");
     expect(html).toContain("min-[390px]:h-14");
@@ -237,6 +242,40 @@ describe("RPT hand and editorial cards", () => {
 });
 
 describe("HandBreakdown (spectator action breakdown)", () => {
+  it('does not announce a prior stack-derived winner while settlement needs recalculation',()=>{
+    const html=renderToStaticMarkup(<HandBreakdown actions={breakdownActions} players={breakdownPlayers}
+      buttonSeat={1} bigBlind={50} showdownResult="needs_resettle"/>);
+    expect(html).toContain(i18n.t('liveHub.felt.needsResettle'));
+    expect(html).not.toContain('lucide-trophy');expect(html).not.toContain('+40 BB');
+    expect(html).toContain('Bet 4 BB'); // actions remain inspectable, not erased
+  });
+  it.each([undefined,NaN,Infinity,-1])('does not invent a winner when the starting stack is %s',starting=>{
+    const html=renderToStaticMarkup(<HandBreakdown actions={breakdownActions}
+      players={[{...breakdownPlayers[0],starting_stack:starting}]} buttonSeat={1} bigBlind={50}/>);
+    expect(html).not.toContain('lucide-trophy');
+    expect(html).not.toContain('+240 BB');
+  });
+  it.each([undefined,NaN,Infinity,-1])('does not claim a winner when the ending stack is %s',ending=>{
+    const html=renderToStaticMarkup(<HandBreakdown actions={breakdownActions}
+      players={[{...breakdownPlayers[0],ending_stack:ending}]} buttonSeat={1} bigBlind={50}/>);
+    expect(html).not.toContain('lucide-trophy');
+  });
+  it("does not label cumulative wagers including an uncalled return as the awarded pot", () => {
+    // Actual Final hand8: 161400 + (300 + 19700) + dead SB200 = 181600
+    // wagered, but only40200 contested;141400 is returned, not awarded.
+    const html = renderToStaticMarkup(<HandBreakdown actions={[
+      {player_id:'sb',street:'preflop',action_type:'post_sb',action_amount:200,action_order:1},
+      {player_id:'bb',street:'preflop',action_type:'post_bb',action_amount:300,action_order:2},
+      {player_id:'winner',street:'preflop',action_type:'all_in',action_amount:161400,action_order:3},
+      {player_id:'sb',street:'preflop',action_type:'fold',action_amount:0,action_order:4},
+      {player_id:'bb',street:'preflop',action_type:'call',action_amount:19700,action_order:5},
+    ]} players={[]} buttonSeat={8} bigBlind={300}/>);
+    expect(html).toContain('Cược lũy kế');
+    expect(html).toContain('605.33 BB');
+    expect(html).toContain('chưa trừ cược được hoàn');
+    expect(html).not.toContain('>Pot ');
+  });
+
   it("renders street columns, positions, action + cumulative pot, and a POSITIVE win indicator only", () => {
     const html = renderToStaticMarkup(
       <HandBreakdown
@@ -249,15 +288,14 @@ describe("HandBreakdown (spectator action breakdown)", () => {
     expect(html).toContain("Phân tích ván"); // title (vi)
     expect(html).toContain("Preflop");
     expect(html).toContain("Flop");
-    expect(html).toContain("Pot"); // cumulative pot label
+    expect(html).toContain("Cược lũy kế"); // committed wagers, not the settled pot
     expect(html).toContain("BB"); // heads-up position badge / BB units
-    expect(html).toContain("Bet 200"); // sample action label
-    // Winner net = +2000 → "+2k (40 BB)". Loser net is NEGATIVE → never rendered.
-    expect(html).toContain("+2k");
-    expect(html).toContain("40 BB");
-    // Win indicators are the ONLY "(… BB)" strings → exactly one (the winner),
-    // proving the loser gets no (negative) indicator.
-    expect((html.match(/BB\)/g) || []).length).toBe(1);
+    // Same public BB contract independently tested by handBreakdown.test.ts:
+    // action200/BB50=4BB; positive net2000/BB50=40BB, never raw chips as BB.
+    expect(html).toContain("Bet 4 BB");
+    expect(html).toContain("+40 BB");
+    expect(html).not.toContain("+2k");
+    expect((html.match(/lucide-trophy/g) || []).length).toBe(1);
     expect(html).not.toContain("+-"); // never a negative net after the "+" prefix
   });
 
@@ -300,7 +338,7 @@ describe("viewer-hub i18n wiring", () => {
       <HandBreakdown actions={breakdownActions} players={breakdownPlayers} buttonSeat={1} bigBlind={50} />
     );
     expect(breakdown).toContain("Hand breakdown"); // localized title (en)
-    expect(breakdown).toContain("+2k"); // positive winner net, BB-annotated
-    expect(breakdown).toContain("40 BB");
+    expect(breakdown).toContain("+40 BB"); // same public BB contract in English
+    expect(breakdown).not.toContain("+2k");
   });
 });

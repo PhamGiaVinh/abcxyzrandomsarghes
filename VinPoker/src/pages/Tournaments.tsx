@@ -25,6 +25,7 @@ import News from "./News";
 import { useTournamentPackages } from "@/hooks/useTournamentPackages";
 import PackageCard from "@/components/packages/PackageCard";
 import PackageCardSkeleton from "@/components/packages/PackageCardSkeleton";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 
 interface Tournament {
@@ -79,6 +80,8 @@ const Tournaments = () => {
   const [seriesByClub, setSeriesByClub] = useState<Record<string, { image_url: string; caption: string | null }[]>>({});
   const [reordering, setReordering] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [readErrors, setReadErrors] = useState({daily:false,weekly:false,series:false});
   const [view, setView] = useState<"daily" | "weekly" | "news" | "series" | "livestream" | "livetracker" | "packages">("weekly");
   const [buyInRange, setBuyInRange] = useState("all");
   const [statusUpcoming, setStatusUpcoming] = useState(true);
@@ -92,35 +95,59 @@ const Tournaments = () => {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
     (async () => {
       setLoading(true);
-      const [{ data: t }, { data: bs }, { data: vb }, { data: sr }, { data: cs }] = await Promise.all([
+      setReadErrors({daily:false,weekly:false,series:false});
+      try {
+      const [tourRead, { data: bs }, { data: vb }, seriesRead, clubRead] = await observeTrackerContextRead(Promise.all([
         // Cast to any: the dynamic (feature-flagged) select string overflows the
         // generated-types union (TS2590); the result is narrowed to Tournament[] below.
         (supabase as any)
           .from("tournaments")
           .select(`id,name,start_time,buy_in,rake_amount${FEATURES.tournamentServiceFee ? ",service_fee_amount" : ""},free_rake_enabled,free_rake_slots,free_rake_used,starting_stack,current_players,current_blinds,live_status,clock_started_at,location,game_type,minutes_per_level,late_reg_close_level, club:clubs(id,name,region)`)
-          .order("buy_in", { ascending: false }),
-        supabase.from("app_settings").select("value").eq("key", "banners").maybeSingle(),
-        supabase.from("app_settings").select("value").eq("key", "vip_banner").maybeSingle(),
-        supabase.from("tournament_series").select("id,name,location,start_date,end_date,cover_url").order("start_date", { ascending: true }),
-        supabase.from("clubs").select("id,name,region,daily_schedule_image_url,weekly_schedule_image_url,schedule_sort_order").eq("status", "approved").order("schedule_sort_order", { ascending: true }).order("name"),
-      ]);
-      setItems((t as any) ?? []);
-      setSeries((sr as any) ?? []);
-      setScheduleClubs((cs as any) ?? []);
+          .order("buy_in", { ascending: false }).abortSignal(controller.signal),
+        supabase.from("app_settings").select("value").eq("key", "banners").abortSignal(controller.signal).maybeSingle(),
+        supabase.from("app_settings").select("value").eq("key", "vip_banner").abortSignal(controller.signal).maybeSingle(),
+        supabase.from("tournament_series").select("id,name,location,start_date,end_date,cover_url").order("start_date", { ascending: true }).abortSignal(controller.signal),
+        supabase.from("clubs").select("id,name,region,daily_schedule_image_url,weekly_schedule_image_url,schedule_sort_order").eq("status", "approved").order("schedule_sort_order", { ascending: true }).order("name").abortSignal(controller.signal),
+      ]));
+      if (!active) return;
+      const readableRows = Array.isArray(tourRead.data) && tourRead.data.every((row: unknown) =>
+        row !== null && typeof row === "object" && !Array.isArray(row)
+        && typeof (row as { name?: unknown }).name === "string"
+        && ((row as { current_players?: unknown }).current_players == null
+          || (typeof (row as { current_players?: unknown }).current_players === "number"
+            && Number.isFinite((row as { current_players: number }).current_players))),
+      );
+      const dailyError = !!tourRead.error || !readableRows;
+      const seriesError = !!seriesRead.error || !Array.isArray(seriesRead.data);
+      const weeklyError = !!clubRead.error || !Array.isArray(clubRead.data);
+      setReadErrors({daily:dailyError,weekly:weeklyError,series:seriesError});
+      const cs = Array.isArray(clubRead.data) ? clubRead.data : [];
+      setItems(dailyError ? [] : tourRead.data as Tournament[]);
+      setSeries(seriesError ? [] : seriesRead.data as SeriesItem[]);
+      setScheduleClubs(cs);
+      setSeriesByClub({});
       // Club "Lịch series" galleries embedded in the weekly view (gated).
-      if (FEATURES.clubSeriesSchedule) {
-        const ids = ((cs as any[]) ?? []).map((c) => c.id);
+      if (FEATURES.clubSeriesSchedule && !weeklyError) {
+        try {
+        const ids = cs.map((c) => c.id);
         if (ids.length) {
-          const { data: simgs } = await (supabase as any)
+          const { data: simgs, error: imageError } = await observeTrackerContextRead<{data:unknown;error:unknown}>((supabase as any)
             .from("club_series_images")
             .select("club_id, image_url, caption, position")
             .in("club_id", ids)
-            .order("position");
+            .order("position").abortSignal(controller.signal));
+          if (!active) return;
+          if (imageError || !Array.isArray(simgs)) throw new Error("schedule_images_unavailable");
           const grouped: Record<string, { image_url: string; caption: string | null }[]> = {};
           for (const r of ((simgs ?? []) as any[])) (grouped[r.club_id] ??= []).push({ image_url: r.image_url, caption: r.caption ?? null });
           setSeriesByClub(grouped);
+        }
+        } catch {
+          if (active) setReadErrors(previous => ({ ...previous, weekly: true }));
         }
       }
       const list: BannerItem[] = [];
@@ -134,9 +161,15 @@ const Tournaments = () => {
         if (v.image_url || v.title) list.push(v);
       }
       setBanners(list);
-      setLoading(false);
+      } catch {
+        if (active) setReadErrors({daily:true,weekly:true,series:true});
+      } finally {
+        controller.abort();
+        if (active) setLoading(false);
+      }
     })();
-  }, []);
+    return () => { active=false; controller.abort(); };
+  }, [readAttempt]);
 
   // Auto-rotate banners every 5s
   useEffect(() => {
@@ -498,7 +531,14 @@ const Tournaments = () => {
             </div>
           )}
 
-          {view === "weekly" ? (() => {
+          {loading ? (
+            <Card role="status" className="p-12 text-center text-sm text-muted-foreground">{tr("publicScheduleRead.loading")}</Card>
+          ) : ((view === "weekly" || view === "daily" || view === "series") && readErrors[view]) ? (
+            <Card className="space-y-3 p-6 text-center">
+              <p role="alert" className="text-sm text-destructive">{tr("publicScheduleRead.error")}</p>
+              <Button variant="outline" onClick={()=>setReadAttempt(attempt=>attempt+1)}>{tr("publicScheduleRead.retry")}</Button>
+            </Card>
+          ) : view === "weekly" ? (() => {
             const visible = scheduleClubs.filter(c => c.weekly_schedule_image_url || c.daily_schedule_image_url || (FEATURES.clubSeriesSchedule && (seriesByClub[c.id]?.length ?? 0) > 0));
             const moveClub = async (clubId: string, dir: "up" | "down") => {
               if (reordering) return;

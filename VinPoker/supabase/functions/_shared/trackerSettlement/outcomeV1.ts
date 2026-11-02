@@ -434,7 +434,7 @@ function validatePrivateEvidence(
   }
   const targetHandId = requireString(value, "targetHandId", path, issues);
   const buttonSeat = requireChip(value, "buttonSeat", path, issues);
-  if (buttonSeat <= 0) addIssue(issues, "INVALID_BUTTON_SEAT", `${path}.buttonSeat`, "button seat must be > 0");
+  if (buttonSeat <= 0 || buttonSeat > 10) addIssue(issues, "INVALID_BUTTON_SEAT", `${path}.buttonSeat`, "button must be a physical seat in 1..10");
   const communityCards = requireStringArray(value.communityCards, `${path}.communityCards`, issues);
   requireUnique(communityCards, `${path}.communityCards`, issues);
   if (communityCards.length > 5) addIssue(issues, "INVALID_BOARD", `${path}.communityCards`, "board cannot contain more than five cards");
@@ -467,9 +467,9 @@ function validatePrivateEvidence(
   if (!sameSet([...playerIds], seatedPlayerIds)) {
     addIssue(issues, "SOURCE_SEAT_SET_MISMATCH", `${path}.seats`, "source seats must match settlement players");
   }
-  if (!seatNumbers.includes(String(buttonSeat))) {
-    addIssue(issues, "BUTTON_NOT_SEATED", `${path}.buttonSeat`, "button seat must exist in source seats");
-  }
+  // Tournament dead buttons occupy a physical position, not necessarily a
+  // dealt player's seat. Source/hash binding owns the recorded button identity;
+  // participant membership is not a valid button-position constraint.
 
   const rawActions = Array.isArray(value.actions) ? value.actions : [];
   if (!Array.isArray(value.actions)) addIssue(issues, "INVALID_ARRAY", `${path}.actions`, "expected an array");
@@ -614,14 +614,18 @@ export function validateSettlementOutcomeV1(value: unknown): SettlementValidatio
   if (!Array.isArray(value.pots)) addIssue(issues, "INVALID_ARRAY", "pots", "expected an array");
   const pots = rawPots.map((pot, index) => parsePot(pot, index, playerIdSet, issues)).filter((pot): pot is SettledPotV1 => !!pot);
   requireUnique(pots.map((pot) => pot.potId), "pots[].potId", issues);
-  if (pots.filter((pot) => pot.kind === "main").length !== 1) {
-    addIssue(issues, "MAIN_POT_COUNT", "pots", "a settlement must contain exactly one main pot");
-  }
-
   const rawRefunds = Array.isArray(value.refunds) ? value.refunds : [];
   if (!Array.isArray(value.refunds)) addIssue(issues, "INVALID_ARRAY", "refunds", "expected an array");
   const refunds = rawRefunds.map((refund, index) => parseRefund(refund, index, playerIdSet, issues)).filter((refund): refund is UncalledRefundV1 => !!refund);
   requireUnique(refunds.map((refund) => refund.sourceActionId), "refunds[].sourceActionId", issues);
+  const refundOnly = rawPots.length === 0 && players.length >= 2 && refunds.length === 1
+    && refunds[0].amount > 0 && Array.isArray(value.handRanks) && value.handRanks.length === 0
+    && players.every((player) => player.potAward === 0 && player.netDelta === 0 && player.externalDelta === 0
+      && player.startingStack === player.endingStack && player.committedTotal === player.refund
+      && player.creditedTotal === player.refund);
+  if (!refundOnly && pots.filter((pot) => pot.kind === "main").length !== 1) {
+    addIssue(issues, "MAIN_POT_COUNT", "pots", "a settlement must contain one main pot or only a fully returned uncalled bet");
+  }
 
   const awardsByPlayer = new Map<string, number>();
   for (const allocation of pots.flatMap((pot) => pot.allocations)) {

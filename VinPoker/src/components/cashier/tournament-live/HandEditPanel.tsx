@@ -232,7 +232,7 @@ function HandEditPanelContent({ board, potSize = null, players, actions, initial
         </div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2 text-xs">
           <span className="text-muted-foreground">Pot đã lưu: <strong className="font-mono text-foreground">{potSize === null ? "Chưa có dữ liệu" : potSize.toLocaleString("vi-VN")}</strong></span>
-          <span className="text-muted-foreground">Pot từ action nháp: <strong className="font-mono text-foreground">{actionValidation.potSize.toLocaleString("vi-VN")}</strong></span>
+          <span className="text-muted-foreground">Tổng cược nháp (chưa hoàn cược): <strong className="font-mono text-foreground">{actionValidation.potSize.toLocaleString("vi-VN")}</strong></span>
           <span className={effectiveStatus === "READY_TO_APPLY" ? "font-medium text-emerald-300" : effectiveStatus === "INCOMPLETE" ? "font-medium text-amber-300" : "font-medium text-rose-300"}>
             {effectiveStatus === "READY_TO_APPLY" ? "READY_TO_APPLY · đủ diễn biến"
               : effectiveStatus === "INCOMPLETE" ? "INCOMPLETE · cần nhập tiếp diễn biến"

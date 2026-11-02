@@ -16799,6 +16799,7 @@ export type Database = {
           club_id: string
           created_at: string
           final_tournament_id: string | null
+          guarantee_amount: number | null
           id: string
           itm_percent: number
           name: string
@@ -16812,6 +16813,7 @@ export type Database = {
           club_id: string
           created_at?: string
           final_tournament_id?: string | null
+          guarantee_amount?: number | null
           id?: string
           itm_percent?: number
           name: string
@@ -16825,6 +16827,7 @@ export type Database = {
           club_id?: string
           created_at?: string
           final_tournament_id?: string | null
+          guarantee_amount?: number | null
           id?: string
           itm_percent?: number
           name?: string
@@ -20219,6 +20222,22 @@ export type Database = {
       }
     }
     Functions: {
+      get_tournament_edit_context_v1: {
+        Args: { p_tournament_id: string; p_expected_actor_id: string }
+        Returns: Json
+      }
+      edit_tournament_with_levels_v1: {
+        Args: { p_tournament_id: string; p_club_id: string; p_expected_state: Json; p_config: Json; p_levels: Json; p_request_id: string; p_expected_actor_id: string }
+        Returns: Json
+      }
+      get_tournament_edit_receipt_v1: {
+        Args: { p_tournament_id: string; p_club_id: string; p_expected_state: Json; p_config: Json; p_levels: Json; p_request_id: string; p_expected_actor_id: string }
+        Returns: Json
+      }
+      ensure_booking_chat_v1: {
+        Args: { p_tournament_id: string }
+        Returns: Json
+      }
       _assert_dealer_allowed_for_table: {
         Args: { p_dealer_id: string; p_table_id: string }
         Returns: boolean
@@ -21397,6 +21416,19 @@ export type Database = {
       dealer_check_out: { Args: { p_assignment_id: string }; Returns: Json }
       dealer_confirm_shift: { Args: { p_assignment_id: string }; Returns: Json }
       dealer_control_club_ids: { Args: { _user_id: string }; Returns: string[] }
+      get_dealer_scores_v1: {
+        Args: { p_club_id: string }
+        Returns: {
+          dealer_id: string
+          full_name: string
+          tier: string
+          club_id: string
+          employment_type: string | null
+          total_hours: number
+          total_swings: number
+          score: number
+        }[]
+      }
       dealer_phone_reconcile_room_state: {
         Args: {
           p_admin_override?: boolean
@@ -21907,6 +21939,30 @@ export type Database = {
         Returns: Json
       }
       fnb_guest_lookup: { Args: { p_token: string }; Returns: Json }
+      fnb_guest_abandon_request_v1: {
+        Args: {
+          p_token: string
+          p_seat: number | null
+          p_customer_name: string | null
+          p_note: string | null
+          p_lines: Json
+          p_payment_method: string
+          p_client_request_id: string
+        }
+        Returns: Json
+      }
+      fnb_guest_order_receipt_v1: {
+        Args: {
+          p_token: string
+          p_seat: number | null
+          p_customer_name: string | null
+          p_note: string | null
+          p_lines: Json
+          p_payment_method: string
+          p_client_request_id: string
+        }
+        Returns: Json
+      }
       fnb_guest_order_status: {
         Args: { p_order_id: string; p_token: string }
         Returns: Json
@@ -22567,6 +22623,28 @@ export type Database = {
       }
       get_tracker_hand_input_tables_v3: {
         Args: { p_tournament_id: string }
+        Returns: Json
+      }
+      get_tracker_undo_receipt_v1: {
+        Args: {
+          p_tournament_id: string
+          p_tournament_table_id: string
+          p_hand_id: string
+          p_expected_action_id: string
+          p_expected_source_revision: number
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      cancel_tracker_undo_intent_v1: {
+        Args: {
+          p_tournament_id: string
+          p_tournament_table_id: string
+          p_hand_id: string
+          p_expected_action_id: string
+          p_expected_source_revision: number
+          p_idempotency_key: string
+        }
         Returns: Json
       }
       get_tracker_historical_display_commit_receipt: {

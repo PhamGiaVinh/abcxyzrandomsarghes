@@ -55,7 +55,7 @@ vi.mock("@/components/cashier/tournament-live/MovePlayerDialog", () => ({ MovePl
     <button onClick={props.onMoved}>Đặt chờ canonical</button></div> : null;
 } }));
 
-function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean; staleReason?: string | null } = {}) {
+function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean; staleReason?: string | null; rosterError?:boolean; emptyRoster?:boolean; tournamentStatus?:Tournament['status'] } = {}) {
   vi.clearAllMocks();
   sessionStorage.clear();
   fixture.actor = "owner-a";
@@ -96,8 +96,40 @@ function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean
     }],
   } });
   fixture.client.breakTournamentTable.mockResolvedValue({ ok: true, data: { ok: true, break_pending: true } });
-  return render(<FloorTableMapPanelV3 actorId="owner-a" tournament={{ id: "tour-1" } as Tournament} refreshTrigger={0} />);
+  if(options.rosterError)fixture.client.getTournamentTableRoster.mockResolvedValue({ok:false,error:'TEST_ROSTER_UNAVAILABLE'});
+  else if(options.emptyRoster)fixture.client.getTournamentTableRoster.mockResolvedValue({ok:true,data:[]});
+  return render(<FloorTableMapPanelV3 actorId="owner-a" tournament={{ id: "tour-1",status:options.tournamentStatus } as Tournament} refreshTrigger={0} />);
 }
+
+it.each(['completed','cancelled'] as const)('does not invite opening a table in a %s tournament',async status=>{
+  setup({emptyRoster:true,tournamentStatus:status});
+  expect(await screen.findByText('Giải đã kết thúc hoặc bị hủy. Chỉ xem trạng thái bàn; không mở bàn, xếp chỗ hoặc redraw.')).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Mở bàn',exact:true})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Redraw',exact:true})).toBeNull();
+  expect(screen.queryByText(/Chọn “Mở bàn”/)).toBeNull();
+  expect(fixture.supabase.rpc).not.toHaveBeenCalled();
+});
+
+it('keeps opening available for a live tournament and retires it when the same tour closes',async()=>{
+  const view=setup({emptyRoster:true,tournamentStatus:'live'});
+  await screen.findByText(/^Chưa có bàn đang hoạt động/);
+  expect(screen.getByRole('button',{name:'Mở bàn',exact:true})).toBeEnabled();
+  view.rerender(<FloorTableMapPanelV3 actorId="owner-a" tournament={{id:'tour-1',status:'completed'} as Tournament} refreshTrigger={0}/>);
+  expect(screen.queryByRole('button',{name:'Mở bàn',exact:true})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Redraw',exact:true})).toBeNull();
+  expect(screen.queryByText(/Chọn “Mở bàn”/)).toBeNull();
+});
+
+it('does not describe an unavailable roster as no active tables',async()=>{
+ setup({rosterError:true});
+ expect(await screen.findByRole('alert')).toHaveTextContent('Không tải được danh sách bàn');
+ expect(screen.queryByText(/^Chưa có bàn đang hoạt động/)).toBeNull();
+});
+it('still explains a genuinely empty roster after a successful read',async()=>{
+ setup({emptyRoster:true});
+ expect(await screen.findByText(/^Chưa có bàn đang hoạt động/)).toBeInTheDocument();
+ expect(screen.queryByRole('alert')).toBeNull();
+});
 
 it("offers a manual participant on an empty canonical seat with the exact session tuple", async () => {
   setup();

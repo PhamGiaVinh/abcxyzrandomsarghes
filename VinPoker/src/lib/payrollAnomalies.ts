@@ -33,7 +33,7 @@ function fmtVnd(v: number): string {
   return `${Math.round(v).toLocaleString("vi-VN")}đ`;
 }
 
-/** Ca chưa checkout → giờ công đang được tính đến hiện tại, chi phí có thể đang tăng sai (B4). */
+/** Open shifts use the server's standard-shift estimate, not a running elapsed clock. */
 export function openShifts(rows: DealerPayrollRow[]): AnomalyItem[] {
   const items: AnomalyItem[] = [];
   for (const r of rows) {
@@ -42,7 +42,7 @@ export function openShifts(rows: DealerPayrollRow[]): AnomalyItem[] {
         items.push({
           dealerId: r.dealer_id,
           dealerName: r.full_name,
-          detail: `vào ca ${fmtTime(s.check_in_time)} — chưa checkout, giờ đang tự tăng`,
+          detail: `vào ca ${fmtTime(s.check_in_time)} — chưa checkout, giờ tạm tính theo ca chuẩn; chưa phải giờ thực tế`,
         });
       }
     }

@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type QueryResponse = { data: unknown[]; error: { message: string } | null };
 type QueryBuilder = {
@@ -9,6 +9,7 @@ type QueryBuilder = {
   eq: () => QueryBuilder;
   limit: () => QueryBuilder;
   is: () => QueryBuilder;
+  abortSignal: (signal:AbortSignal) => QueryBuilder;
   then: <TResult1 = QueryResponse, TResult2 = never>(
     onfulfilled?: ((value: QueryResponse) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
@@ -16,11 +17,12 @@ type QueryBuilder = {
 };
 
 const auth = vi.hoisted(() => ({
-  listener: null as ((event: string, session: { user: { id: string } } | null) => void) | null,
+  listener: null as ((event: string, session: { user: { id: string }; access_token?: string } | null) => void) | null,
   getSession: vi.fn(),
   queryReads: [] as Array<{ table: string; userId: string }>,
   resolveQuery: null as ((table: string, userId: string) => Promise<QueryResponse>) | null,
   synchronousInitialSession: null as { user: { id: string } } | null,
+  signals:[] as AbortSignal[],
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -45,6 +47,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       };
       query.limit = () => query;
       query.is = () => query;
+      query.abortSignal = signal => {auth.signals.push(signal);return query;};
       query.then = (onfulfilled, onrejected) => {
         if (table !== "profiles") auth.queryReads.push({ table, userId });
         const result = auth.resolveQuery
@@ -86,12 +89,51 @@ function renderAuth() {
 }
 
 describe("AuthProvider role loading", () => {
+  afterEach(()=>vi.useRealTimers());
   beforeEach(() => {
     auth.listener = null;
     auth.queryReads = [];
     auth.resolveQuery = null;
     auth.synchronousInitialSession = null;
     auth.getSession.mockReset();
+    auth.signals=[];
+  });
+
+  it('bounds a hanging role read, ignores its late privileges, and recovers after same-account sign-in',async()=>{
+    vi.useFakeTimers();const pending=deferred<QueryResponse>();let hanging=true;
+    auth.resolveQuery=table=>table==='user_roles'&&hanging?pending.promise:Promise.resolve({data:table==='user_roles'?[{role:'cashier'}]:[],error:null});
+    auth.getSession.mockResolvedValue({data:{session:{user:{id:'owner-timeout'},access_token:'first'}},error:null});
+    renderAuth();await act(async()=>{});
+    expect(screen.getByText('owner-timeout|roles-loading')).toBeInTheDocument();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});
+    expect(screen.getByText(/owner-timeout\|Không tải được quyền/)).toBeInTheDocument();
+    await act(async()=>pending.resolve({data:[{role:'super_admin'}],error:null}));
+    expect(screen.queryByText('owner-timeout|admin')).not.toBeInTheDocument();
+    hanging=false;
+    await act(async()=>auth.listener?.('SIGNED_IN',{user:{id:'owner-timeout'},access_token:'second'}));
+    expect(screen.getByText('owner-timeout|cashier')).toBeInTheDocument();
+  });
+  it('retains a confirmed cashier role while timing out incomplete dealer metadata',async()=>{
+    vi.useFakeTimers();const pending=deferred<QueryResponse>();
+    auth.resolveQuery=table=>table==='dealers'?pending.promise:Promise.resolve({data:table==='user_roles'?[{role:'cashier'}]:[],error:null});
+    auth.getSession.mockResolvedValue({data:{session:{user:{id:'cashier-timeout'} }},error:null});
+    function PartialProbe(){const {isCashier,rolesLoading,rolesError}=useAuth();return <p>{`${isCashier}|${rolesLoading}|${rolesError??'ready'}`}</p>;}
+    render(<AuthProvider><PartialProbe/></AuthProvider>);await act(async()=>{});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});
+    expect(screen.getByText(/true\|false\|Chưa xác minh/)).toBeInTheDocument();
+    await act(async()=>pending.resolve({data:[{id:'late-dealer'}],error:null}));
+    expect(screen.getByText(/true\|false\|Chưa xác minh/)).toBeInTheDocument();
+  });
+  it('aborts pending role requests and clears their deadlines on unmount',async()=>{
+    vi.useFakeTimers();const pending=deferred<QueryResponse>();
+    auth.resolveQuery=()=>pending.promise;
+    auth.getSession.mockResolvedValue({data:{session:{user:{id:'leaving-owner'}}},error:null});
+    const view=renderAuth();await act(async()=>{});
+    expect(auth.signals).toHaveLength(3);
+    view.unmount();await act(async()=>{await vi.advanceTimersByTimeAsync(0);});
+    expect(auth.signals.every(signal=>signal.aborted)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async()=>pending.resolve({data:[{role:'super_admin'}],error:null}));
   });
 
   it("loads base roles only once when the initial auth event and getSession return the same user", async () => {
@@ -107,6 +149,51 @@ describe("AuthProvider role loading", () => {
       expect(auth.queryReads.filter((query) => query.table === "user_roles" && query.userId === "owner-a")).toHaveLength(1);
     });
   });
+  it('retries failed roles after valid sign-in of the same user',async()=>{
+    let failed=true;
+    auth.resolveQuery=table=>Promise.resolve(table==='user_roles'&&failed
+      ?{data:[],error:{message:'old TEST session rejected'}}
+      :{data:table==='user_roles'?[{role:'cashier'}]:[],error:null});
+    auth.getSession.mockResolvedValue({data:{session:{user:{id:'same-owner'},access_token:'old-test'}},error:null});
+    renderAuth();await screen.findByText(/same-owner\|Không tải được quyền/);failed=false;
+    act(()=>auth.listener?.('SIGNED_IN',{user:{id:'same-owner'},access_token:'new-test'}));
+    expect(await screen.findByText('same-owner|cashier')).toBeInTheDocument();
+    expect(auth.queryReads.filter(r=>r.table==='user_roles')).toHaveLength(2);
+  });
+  it("does not refetch healthy roles for repeated sign-in or token refresh", async () => {
+    const session = { user: { id: "healthy-owner" }, access_token: "first-test" };
+    auth.getSession.mockResolvedValue({ data: { session }, error: null });
+    renderAuth();
+    await screen.findByText("healthy-owner|cashier");
+    act(() => {
+      auth.listener?.("SIGNED_IN", session);
+      auth.listener?.("TOKEN_REFRESHED", { ...session, access_token: "next-test" });
+    });
+    expect(auth.queryReads.filter((read) => read.table === "user_roles")).toHaveLength(1);
+    expect(screen.getByText("healthy-owner|cashier")).toBeInTheDocument();
+  });
+  it('clears partial metadata error on same-user refreshed session',async()=>{
+    let failed=true;
+    auth.resolveQuery=table=>Promise.resolve(table==='dealers'&&failed
+      ?{data:[],error:{message:'503'}}:{data:table==='user_roles'?[{role:'cashier'}]:[],error:null});
+    auth.getSession.mockResolvedValue({data:{session:{user:{id:'same-owner'},access_token:'old-test'}},error:null});
+    renderAuth();await screen.findByText(/same-owner\|Chưa xác minh/);failed=false;
+    act(()=>auth.listener?.('TOKEN_REFRESHED',{user:{id:'same-owner'},access_token:'new-test'}));
+    expect(await screen.findByText('same-owner|cashier')).toBeInTheDocument();
+  });
+  it('fences an in-flight old-token role read when the same user obtains a new session',async()=>{
+    const old=deferred<QueryResponse>();let first=true;
+    auth.resolveQuery=table=>{
+      if(table==='user_roles'&&first){first=false;return old.promise;}
+      return Promise.resolve({data:table==='user_roles'?[{role:'cashier'}]:[],error:null});
+    };
+    auth.getSession.mockResolvedValue({data:{session:{user:{id:'same-owner'},access_token:'old-test'}},error:null});
+    renderAuth();await screen.findByText('same-owner|roles-loading');
+    act(()=>auth.listener?.('SIGNED_IN',{user:{id:'same-owner'},access_token:'new-test'}));
+    await screen.findByText('same-owner|cashier');
+    await act(async()=>{old.resolve({data:[{role:'super_admin'}],error:null});await old.promise;});
+    expect(screen.getByText('same-owner|cashier')).toBeInTheDocument();
+  });
 
   it("ignores an older account's role response after sign-out", async () => {
     const oldRoleRead = deferred<QueryResponse>();
@@ -120,6 +207,7 @@ describe("AuthProvider role loading", () => {
     act(() => { auth.listener?.("SIGNED_IN", { user: { id: "owner-old" } }); });
     await waitFor(() => expect(screen.getByText("owner-old|roles-loading")).toBeInTheDocument());
     act(() => { auth.listener?.("SIGNED_OUT", null); });
+    expect(auth.signals.every(signal=>signal.aborted)).toBe(true);
     oldRoleRead.resolve({ data: [{ role: "super_admin" }], error: null });
 
     await waitFor(() => expect(screen.getByText("anonymous|no-role")).toBeInTheDocument());

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { z } from "zod";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { Button } from "@/components/ui/button";
 import { LiquidButton, LiquidGlassCard } from "@/components/kokonutui/liquid-glass-card";
 import { Input } from "@/components/ui/input";
@@ -583,7 +585,26 @@ const DealCard = ({
   );
 };
 
-const DealDetailDialog = ({
+const reservationReceiptSchema = z.object({
+  committed_at: z.string().datetime({offset:true}),
+  request_id: z.string().uuid(), deal_id: z.string().uuid(),
+  success: z.literal(true), purchase_id: z.string().uuid(), reference_code: z.string().min(1),
+  amount_vnd: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  deal_status: z.enum(["committing", "committed"]), filled_percent: z.number().int().min(1).max(100),
+  bank_name: z.string().min(1), account_number: z.string().min(1), account_holder: z.string().min(1),
+  qr_code_url: z.string().nullable().default(null),
+});
+const purchaseIntentSchema = z.object({
+  actor_id: z.string().uuid(), deal_id: z.string().uuid(), request_id: z.string().uuid(),
+  percent: z.number().int().min(1).max(100),
+}).strict();
+
+export function DealDetailDialog(props: ComponentProps<typeof ScopedDealDetailDialog>) {
+  const { session } = useAuth();
+  return <ScopedDealDetailDialog key={`${props.currentUser ?? 'signed-out'}:${sessionReadEpoch(session)}:${props.deal?.id ?? 'none'}`} {...props} />;
+}
+
+const ScopedDealDetailDialog = ({
   deal, stats, breakdown, onClose, onPurchased, currentUser, onAuthRequired,
 }: {
   deal: DealRow | null;
@@ -605,8 +626,28 @@ const DealDetailDialog = ({
   const [percent, setPercent] = useState<number>(initialPercent || effectiveMin);
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const purchaseErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (purchaseError) purchaseErrorRef.current?.focus(); }, [purchaseError]);
+  const [pendingPurchase, setPendingPurchase] = useState<z.infer<typeof purchaseIntentSchema> | null>(null);
+  useEffect(() => {
+    if (!currentUser || !deal?.id) return;
+    try {
+      const raw = localStorage.getItem(`vinpoker:staking-purchase:v1:${currentUser}:${deal.id}`);
+      if (raw === null) return;
+      const intent = purchaseIntentSchema.parse(JSON.parse(raw));
+      if (intent.actor_id !== currentUser || intent.deal_id !== deal.id) throw new Error('scope');
+      setPendingPurchase(intent);
+    } catch {
+      setPurchaseError("Chưa đọc được intent cam kết đang chờ; dữ liệu được giữ nguyên để đối chiếu.");
+    }
+  }, [currentUser, deal?.id]);
+  const purchaseInFlight = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [committed, setCommitted] = useState<{
     purchaseId: string; amount: number; reference: string; committedAt: string;
+    escrowAccount: ComponentProps<typeof TransferInstructions>['escrowAccount'];
   } | null>(null);
 
   useEffect(() => {
@@ -615,8 +656,8 @@ const DealDetailDialog = ({
       setCommitted(null);
       return;
     }
-    setPercent(Math.min(remaining, Math.max(effectiveMin, Math.min(10, remaining))) || effectiveMin);
-  }, [deal?.id]);
+    setPercent(pendingPurchase?.percent ?? (Math.min(remaining, Math.max(effectiveMin, Math.min(10, remaining))) || effectiveMin));
+  }, [deal?.id, pendingPurchase?.request_id, pendingPurchase?.percent]);
 
   if (!deal) return null;
 
@@ -624,7 +665,7 @@ const DealDetailDialog = ({
   const tournamentName = deal.tournament?.name ?? deal.custom_event_name ?? t("marketplace.customEvent");
   const pricePer1Pct = (Number(deal.buy_in_amount_vnd) / 100) * Number(deal.markup);
   const totalToPay = Math.round(pricePer1Pct * percent);
-  const canBuy = remaining > 0 && !isOwn;
+  const canBuy = (remaining > 0 || pendingPurchase !== null) && !isOwn;
   const isLastSlice = remaining < minP && remaining > 0;
 
   const fundedPct = Math.min(breakdown?.funded_pct ?? 0, sold);
@@ -633,20 +674,44 @@ const DealDetailDialog = ({
   const pendingW = Math.round((pendingPct / Math.max(1, sold)) * 100);
 
   const handleBuy = async () => {
+    if (purchaseInFlight.current) return;
     if (!currentUser) { onAuthRequired(); return; }
-    if (percent < effectiveMin || percent > remaining) {
+    const recovering = pendingPurchase?.percent === percent;
+    if (!recovering && (percent < effectiveMin || percent > remaining)) {
       toast.error(t("marketplace.pickRange", { min: effectiveMin, max: remaining })); return;
     }
+    purchaseInFlight.current = true;
     setSubmitting(true);
+    setPurchaseError(null);
     try {
+      if (!navigator.locks) throw new Error("Trình duyệt chưa hỗ trợ khóa an toàn giữa các tab; chưa gửi cam kết.");
+      await navigator.locks.request(`vinpoker:staking-purchase-lock:v1:${currentUser}:${deal.id}`, { ifAvailable: true }, async lock => {
+      if (!lock) throw new Error("Cam kết đang được xử lý ở tab khác; hãy chờ và tải lại trước khi thử tiếp.");
+      if (!alive.current) return;
+      const journalKey = `vinpoker:staking-purchase:v1:${currentUser}:${deal.id}`;
+      const stored = localStorage.getItem(journalKey);
+      if (stored === null && pendingPurchase) throw new Error("Intent đang chờ đã thay đổi ở tab khác; hãy tải lại để đối chiếu.");
+      const intent = stored === null
+        ? purchaseIntentSchema.parse({ actor_id: currentUser, deal_id: deal.id, request_id: crypto.randomUUID(), percent })
+        : purchaseIntentSchema.parse(JSON.parse(stored));
+      if (intent.actor_id !== currentUser || intent.deal_id !== deal.id || intent.percent !== percent) {
+        throw new Error("Còn cam kết chưa xác minh với payload khác; hãy khôi phục lựa chọn cũ trước khi thử lại.");
+      }
+      const serializedIntent = JSON.stringify(intent);
+      localStorage.setItem(journalKey, serializedIntent);
+      if (localStorage.getItem(journalKey) !== serializedIntent) throw new Error("Không lưu được intent cam kết; chưa gửi thao tác.");
+      setPendingPurchase(intent);
       const { data, error } = await supabase.functions.invoke("staking-commit-deal", {
-        body: { deal_id: deal.id, percent },
+        body: { deal_id: intent.deal_id, percent: intent.percent, request_id: intent.request_id },
       });
+      if (!alive.current) return;
       if (error) {
         const ctx: any = (error as any).context;
         let body: any = null;
         try { body = ctx ? await ctx.json() : null; } catch { /* noop */ }
+        if (!alive.current) return;
         if (body?.code === "MISSING_BANK_ACCOUNT") {
+          setPurchaseError(body.error);
           toast.error(body.error, {
             action: { label: t("marketplace.openProfile"), onClick: () => { window.location.href = "/account"; } },
           });
@@ -657,6 +722,7 @@ const DealDetailDialog = ({
       const d = data as any;
       if (d?.error) {
         if (d?.code === "MISSING_BANK_ACCOUNT") {
+          setPurchaseError(d.error);
           toast.error(d.error, {
             action: { label: t("marketplace.openProfile"), onClick: () => { window.location.href = "/account"; } },
           });
@@ -664,24 +730,48 @@ const DealDetailDialog = ({
         }
         throw new Error(d.error);
       }
+      const verified = reservationReceiptSchema.safeParse(data);
+      if (!verified.success || verified.data.request_id !== intent.request_id || verified.data.deal_id !== intent.deal_id) {
+        throw new Error("Chưa xác minh được kết quả đúng intent cam kết; hãy tải lại trước khi thử tiếp.");
+      }
+      if (localStorage.getItem(journalKey) !== serializedIntent) throw new Error("Intent cam kết đã thay đổi; cần đối chiếu lại kết quả.");
+      localStorage.removeItem(journalKey);
+      if (localStorage.getItem(journalKey) !== null) throw new Error("Chưa hoàn tất lưu kết quả cam kết; hãy tải lại trước khi thử tiếp.");
+      setPendingPurchase(null);
       toast.success(t("marketplace.reservedToast", { pct: percent }));
       setCommitted({
-        purchaseId: d.purchase_id,
-        amount: d.amount_vnd,
-        reference: d.reference_code,
-        committedAt: new Date().toISOString(),
+        purchaseId: verified.data.purchase_id,
+        amount: verified.data.amount_vnd,
+        reference: verified.data.reference_code,
+        escrowAccount: {bank_name:verified.data.bank_name,account_number:verified.data.account_number,
+          account_holder:verified.data.account_holder,qr_code_url:verified.data.qr_code_url,notes:null},
+        committedAt: verified.data.committed_at,
+      });
       });
     } catch (e: any) {
-      toast.error(e.message ?? t("marketplace.cantReserve"));
+      if (alive.current) {
+        const message = e.message ?? t("marketplace.cantReserve");
+        setPurchaseError(message);toast.error(message);
+      }
     } finally {
-      setSubmitting(false);
-      setConfirming(false);
+      purchaseInFlight.current = false;
+      if (alive.current) {
+        setSubmitting(false);
+        setConfirming(false);
+      }
     }
   };
 
   return (
     <Dialog open={!!deal} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-popover/90 backdrop-blur-2xl [box-shadow:inset_0_1px_0_hsl(var(--foreground)/0.1)]">
+        {purchaseError && <p ref={purchaseErrorRef} tabIndex={-1} role="alert" className="text-sm text-destructive">{purchaseError}</p>}
+        {pendingPurchase && !committed && <div className="space-y-2 text-sm">
+          <p>Còn cam kết chưa xác minh. Khôi phục lựa chọn không tự gửi lại hoặc tạo request mới.</p>
+          <Button variant="outline" disabled={submitting} onClick={() => {setPercent(pendingPurchase.percent);setConfirming(false);}}>
+            Khôi phục lựa chọn đang chờ: {pendingPurchase.percent}%
+          </Button>
+        </div>}
         {!committed ? (
           <>
             <DialogHeader>
@@ -758,14 +848,14 @@ const DealDetailDialog = ({
                       <Input
                         type="number"
                         min={effectiveMin}
-                        max={remaining}
+                        max={Math.max(remaining, pendingPurchase?.percent ?? 0)}
                         value={percent}
                         onChange={(e) => {
                           const v = Math.floor(Number(e.target.value));
                           if (Number.isFinite(v)) setPercent(Math.max(effectiveMin, Math.min(remaining, v)));
                         }}
                         className="h-9 w-20 rounded-lg border-success/30 bg-background/35 text-right font-jetbrains text-sm font-bold tabular-nums focus-visible:border-success"
-                        disabled={isLastSlice}
+                        disabled={isLastSlice || !!pendingPurchase}
                       />
                       <span className="text-sm font-semibold font-jetbrains tabular-nums">%</span>
                     </div>
@@ -774,7 +864,8 @@ const DealDetailDialog = ({
                     <Slider
                       value={[percent]}
                       min={effectiveMin}
-                      max={remaining}
+                      max={Math.max(remaining, pendingPurchase?.percent ?? 0)}
+                      disabled={!!pendingPurchase}
                       step={1}
                       onValueChange={(v) => setPercent(v[0])}
                     />
@@ -839,6 +930,7 @@ const DealDetailDialog = ({
             amount={committed.amount}
             reference={committed.reference}
             committedAt={committed.committedAt}
+            escrowAccount={committed.escrowAccount}
             onMarkedTransferred={onPurchased}
             onCancel={onPurchased}
           />

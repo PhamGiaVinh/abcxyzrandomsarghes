@@ -37,6 +37,85 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 describe("mistaken-bust restore", () => {
+  it.each(["write", "receipt"])("preserves the pending intent when %s reports a zero-stack success", async (path) => {
+    if (path === "write") state.restore.mockResolvedValueOnce({ ok: true, data: { ...canonicalReceipt, chip_count: 0 } });
+    else {
+      state.restore.mockRejectedValueOnce(new Error("response lost"));
+      state.receipt.mockResolvedValueOnce({ ok: true, data: { ok: true, status: "committed", result: { ...canonicalReceipt, chip_count: 0 } } });
+    }
+    const view = mount(); await choose();
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận hoàn tác bust" }));
+    await screen.findByRole("alert");
+    if (path === "receipt") fireEvent.click(screen.getByRole("button", { name: "Đối chiếu yêu cầu" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Phản hồi chưa xác minh đúng entry"));
+    expect(view.onRestored).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(1);
+    expect(state.restore).toHaveBeenCalledOnce();
+  });
+  it("can reconcile a saved request even while current roster evidence is unavailable", async () => {
+    const intent = { entryId: "entry-a", toTournamentTableId: "tt-a", toSeatNumber: 1,
+      expectedRevision: 7, expectedControlEpoch: 2, expectedTableSessionId: "session-a", requestId: "offline-evidence-request" };
+    const key = `vinpoker:restore-bust-pending:${JSON.stringify(["owner-a", "tour-a", "entry-a"])}`;
+    sessionStorage.setItem(key, JSON.stringify({ actorId: "owner-a", tournamentId: "tour-a", intent }));
+    state.roster.mockImplementation(() => new Promise(() => {}));
+    state.receipt.mockResolvedValue({ ok: true, data: { ok: true, status: "committed", result: canonicalReceipt } });
+    const onRestored = vi.fn();
+    render(<RestoreBustDialog actorId="owner-a" tournamentId="tour-a" target={null} onRestored={onRestored} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Đối chiếu hoàn tác bust đang chờ/ }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Đang xác minh bàn và stack");
+    fireEvent.click(screen.getByRole("button", { name: "Đối chiếu yêu cầu" }));
+    await waitFor(() => expect(onRestored).toHaveBeenCalledOnce());
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(state.restore).not.toHaveBeenCalled();
+  });
+  it("does not discover journals belonging to another actor or tournament", async () => {
+    for (const [actorId, tournamentId] of [["owner-b", "tour-a"], ["owner-a", "tour-b"]]) {
+      const key = `vinpoker:restore-bust-pending:${JSON.stringify([actorId, tournamentId, "entry-a"])}`;
+      sessionStorage.setItem(key, JSON.stringify({ actorId, tournamentId, intent: { entryId: "entry-a" } }));
+    }
+    const before = sessionStorage.length;
+    render(<RestoreBustDialog actorId="owner-a" tournamentId="tour-a" target={null} onRestored={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Đối chiếu hoàn tác bust đang chờ/ })).not.toBeInTheDocument();
+    expect(sessionStorage.length).toBe(before);
+    expect(state.receipt).not.toHaveBeenCalled();
+    expect(state.restore).not.toHaveBeenCalled();
+  });
+  it("preserves a malformed discovered journal without enabling writes", async () => {
+    const key = `vinpoker:restore-bust-pending:${JSON.stringify(["owner-a", "tour-a", "entry-a"])}`;
+    const raw = JSON.stringify({ actorId: "owner-a", tournamentId: "tour-a", intent: { entryId: "entry-a" } });
+    sessionStorage.setItem(key, raw);
+    render(<RestoreBustDialog actorId="owner-a" tournamentId="tour-a" target={null} onRestored={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Đối chiếu hoàn tác bust đang chờ/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Không xác minh được yêu cầu đã lưu");
+    expect(sessionStorage.getItem(key)).toBe(raw);
+    expect(state.restore).not.toHaveBeenCalled();
+    expect(state.receipt).not.toHaveBeenCalled();
+  });
+  it("discovers a committed pending request after reload without a busted target", async () => {
+    const intent = { entryId: "entry-a", toTournamentTableId: "tt-a", toSeatNumber: 1,
+      expectedRevision: 7, expectedControlEpoch: 2, expectedTableSessionId: "session-a", requestId: "lost-request" };
+    const key = `vinpoker:restore-bust-pending:${JSON.stringify(["owner-a", "tour-a", "entry-a"])}`;
+    sessionStorage.setItem(key, JSON.stringify({ actorId: "owner-a", tournamentId: "tour-a", intent }));
+    state.entries.mockResolvedValue({ ok: true, data: [] });
+    state.receipt.mockResolvedValue({ ok: true, data: { ok: true, status: "committed", result: canonicalReceipt } });
+    const onRestored = vi.fn();
+    render(<RestoreBustDialog actorId="owner-a" tournamentId="tour-a" target={null} onRestored={onRestored} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Đối chiếu hoàn tác bust đang chờ/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Đối chiếu yêu cầu" }));
+    await waitFor(() => expect(onRestored).toHaveBeenCalledOnce());
+    expect(state.receipt).toHaveBeenCalledWith(intent);
+    expect(state.restore).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+  it('does not offer a zero-chip restore as an actionable mistaken bust',async()=>{
+    state.entries.mockResolvedValue({ok:true,data:[{entryId:'entry-a',currentStack:0}]});
+    mount();await screen.findByText('0 chip');
+    fireEvent.change(screen.getByLabelText('Bàn khôi phục'),{target:{value:'tt-a'}});
+    fireEvent.change(screen.getByLabelText('Ghế khôi phục'),{target:{value:'1'}});
+    expect(screen.getByRole('button',{name:'Xác nhận hoàn tác bust'})).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/stack dương/);
+    expect(state.restore).not.toHaveBeenCalled();
+  });
   it("does not erase a later journal when an older restore succeeds", async () => {
     let complete!: (value: unknown) => void;
     state.restore.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));

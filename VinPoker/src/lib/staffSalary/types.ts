@@ -29,7 +29,7 @@ export interface SalaryMonthView {
   clubId: string;
   year: number;
   month: number;
-  standardShifts: number;
+  standardShifts: number | null;
   status: SalaryPeriodStatus;
   submittedAt?: string | null;
   approvedAt?: string | null;

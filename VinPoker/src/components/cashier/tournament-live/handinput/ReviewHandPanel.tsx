@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { type Card, displayCard } from "@/components/shared/CardSlotPicker";
 import { formatStack } from "./format";
 import { type ShowdownLayerResult } from "@/lib/tracker-poker/trackerShowdown";
+import type { UncalledBet } from "@/lib/tracker-poker/potEngine";
 
 export interface ReviewPlayer {
   player_id: string;
@@ -23,6 +24,8 @@ interface ReviewHandPanelProps {
   endingStacks: Record<string, number>;
   onEndingStackChange: (playerId: string, value: number) => void;
   potSize: number;
+  /** Returned commitment, already excluded from potSize and included in ending stacks. */
+  uncalled?: UncalledBet | null;
   /** Σ ending === Σ starting. */
   conservationOk: boolean;
   /** A winner/result has been determined (someone's ending > current, or fold-win). */
@@ -33,6 +36,8 @@ interface ReviewHandPanelProps {
   showdownLayers?: ShowdownLayerResult[];
   onSubmit: () => void;
   onBack: () => void;
+  backLabel?: string;
+  backDisabled?: boolean;
   submitting?: boolean;
   /**
    * A3 (trackerChipQuickEdit) — ADDITIVE; absent/empty → panel byte-identical. Seats
@@ -53,12 +58,15 @@ export function ReviewHandPanel({
   endingStacks,
   onEndingStackChange,
   potSize,
+  uncalled,
   conservationOk,
   winnerDetermined,
   canSubmit,
   showdownLayers,
   onSubmit,
   onBack,
+  backLabel = '← Quay lại',
+  backDisabled,
   submitting,
   rankShifts,
   diagnostics,
@@ -77,6 +85,12 @@ export function ReviewHandPanel({
         Board: <span className="font-mono text-foreground">{board.filter((c): c is Card => c !== null).map((c) => displayCard(c)).join("  ") || "—"}</span>
         <span className="ml-3">Pot: <strong className="text-emerald-400">{formatStack(potSize)}</strong></span>
       </div>
+
+      {uncalled && uncalled.amount > 0 && (
+        <div role="note" aria-label="Hoàn cược chưa được theo" className="text-[11px] text-amber-300">
+          Hoàn cược chưa được theo: <strong>{formatStack(uncalled.amount)}</strong> → {seatLabel(uncalled.player_id)} (không tính vào pot)
+        </div>
+      )}
 
       {showdownLayers && showdownLayers.length > 0 && (
         <div className="space-y-1 rounded-lg border border-emerald-500/30 bg-emerald-950/10 p-2">
@@ -146,7 +160,7 @@ export function ReviewHandPanel({
       )}
 
       <div className="flex items-center justify-between gap-2 border-t border-border/20 pt-2">
-        <button type="button" onClick={onBack} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">← Quay lại</button>
+        <button type="button" onClick={onBack} disabled={submitting || backDisabled} className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40">{backLabel}</button>
         <button
           type="button"
           disabled={submitting || !canSubmit}

@@ -12,10 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ProofUploader } from "@/components/ProofUploader";
+import { ProofUploadWorkspace } from "@/components/ProofUploader";
 import { VinPokerTournamentClock } from "@/components/tournament-clock/VinPokerTournamentClock";
 import type { TournamentClockData } from "@/components/tournament-clock/types";
 import { FEATURES } from "@/lib/featureFlags";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import {
   DEFAULT_TV_BRANDING_LAYOUT,
   TV_BRANDING_FONTS,
@@ -75,11 +76,19 @@ function RangeControl({ label, value, min, max, onChange }: {
 }
 
 export function TvBrandingEditor({ tournamentId }: { tournamentId: string }) {
-  const { user } = useAuth();
-  return <ScopedTvBrandingEditor key={JSON.stringify([user?.id, tournamentId])} tournamentId={tournamentId} />;
+  const { user, session } = useAuth();
+  return <TvBrandingEditorWorkspace tournamentId={tournamentId} actorId={user?.id} sessionEpoch={sessionReadEpoch(session)} />;
 }
 
-function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
+type TvBrandingEditorWorkspaceProps={tournamentId:string;actorId:string|undefined;sessionEpoch:number;
+  /** Explicit display transport, never used in publish/CAS or persisted URLs. */
+  assetPreviewUrl?:(canonicalUrl:string|null)=>string|null;
+};
+export function TvBrandingEditorWorkspace(props:TvBrandingEditorWorkspaceProps) {
+  return <ScopedTvBrandingEditor key={JSON.stringify([props.actorId,props.sessionEpoch,props.tournamentId])} {...props}/>;
+}
+
+function ScopedTvBrandingEditor({ tournamentId,actorId,sessionEpoch,assetPreviewUrl }: TvBrandingEditorWorkspaceProps) {
   const supabase = useSupabaseClient();
   const rpc = useMemo(
     () => supabase.rpc.bind(supabase) as UntypedRpc,
@@ -89,10 +98,14 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState("");
+  const [fallbackBrandName,setFallbackBrandName]=useState<string|null>(null);
   const [layout, setLayout] = useState<TvBrandingLayout>({ ...DEFAULT_TV_BRANDING_LAYOUT });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
+  const assetsUploading = logoUploading || backgroundUploading;
   const [revision, setRevision] = useState(0);
   const alive = useRef(true);
   const saveFlight = useRef(false);
@@ -115,14 +128,20 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
         const row = data as unknown as {
           logo_url: string | null;
           brand_name: string | null;
+          configured_brand_name?: string | null;
+          fallback_brand_name?: string;
           background_url: string | null;
           layout: unknown;
           revision: number;
         };
         if (!Number.isSafeInteger(row.revision) || row.revision < 0) throw new Error("tv_revision_unverified");
+        const configured=Object.prototype.hasOwnProperty.call(row,'configured_brand_name');
+        if(configured&&row.configured_brand_name!==null&&typeof row.configured_brand_name!=='string')throw new Error('tv_configured_name_unverified');
+        if(Object.prototype.hasOwnProperty.call(row,'fallback_brand_name')&&typeof row.fallback_brand_name!=='string')throw new Error('tv_fallback_name_unverified');
         setLogoUrl(row.logo_url);
         setBgUrl(row.background_url);
-        setBrandName(row.brand_name ?? "");
+        setBrandName(row.revision>0&&configured?(row.configured_brand_name??''):(row.brand_name??''));
+        setFallbackBrandName(row.fallback_brand_name??(row.revision>0&&configured&&row.configured_brand_name===null?row.brand_name:null));
         setLayout(parseTvBrandingLayout(row.layout));
         setRevision(row.revision);
         setLoading(false);
@@ -135,11 +154,11 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
 
   const previewData = useMemo<TournamentClockData>(() => ({
     ...BRANDING_PREVIEW_DATA,
-    clubBackgroundUrl: bgUrl,
-    clubLogoUrl: logoUrl,
-    brandName: brandName.trim() || "VINPOKER",
+    clubBackgroundUrl: assetPreviewUrl?.(bgUrl) ?? bgUrl,
+    clubLogoUrl: assetPreviewUrl?.(logoUrl) ?? logoUrl,
+    brandName: brandName.trim() || fallbackBrandName || "VINPOKER",
     brandingLayout: layout,
-  }), [bgUrl, brandName, layout, logoUrl]);
+  }), [bgUrl, brandName, fallbackBrandName, layout, logoUrl,assetPreviewUrl]);
 
   const patchLayout = <K extends keyof TvBrandingLayout>(key: K, value: TvBrandingLayout[K]) => {
     setLayout((current) => ({ ...current, [key]: value }));
@@ -155,13 +174,23 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
   const layoutError = validateTvBrandingLayout(layout);
 
   const save = async () => {
-    if (saveFlight.current || loading || loadError || layoutError) return;
+    if (saveFlight.current || loading || loadError || layoutError || assetsUploading) return;
     saveFlight.current = true;
     const submitted = {
       brandName: brandName.trim(),
       logoUrl: logoUrl?.trim() || null,
       backgroundUrl: bgUrl?.trim() || null,
       layout: serializeTvBrandingLayout(layout),
+    };
+    const publicationMatches=(value:unknown)=>{
+      if(!value||typeof value!=='object'||Array.isArray(value))return false;
+      const proof=value as Record<string,unknown>;
+      return Number.isSafeInteger(proof.revision)&&Number(proof.revision)>revision
+        &&typeof proof.brand_name==='string'
+        &&(Object.prototype.hasOwnProperty.call(proof,'configured_brand_name')
+          ?proof.configured_brand_name===(submitted.brandName||null):proof.brand_name===submitted.brandName)
+        &&proof.logo_url===submitted.logoUrl&&proof.background_url===submitted.backgroundUrl
+        &&canonicalVoiceJson(proof.layout)===canonicalVoiceJson(submitted.layout);
     };
     setSaving(true);
     try {
@@ -186,7 +215,7 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
       }
       if (error || !data) throw new Error("tv_publish_unconfirmed");
       const savedRevision = (data as { revision?: unknown }).revision;
-      if (!Number.isSafeInteger(savedRevision) || Number(savedRevision) <= revision) throw new Error("tv_publish_unconfirmed");
+      if (savedRevision !== revision+1 || !publicationMatches(data)) throw new Error("tv_publish_unconfirmed");
       toast.success("TV layout published. Screens update on their next refresh.");
       setOpen(false);
     } catch {
@@ -197,16 +226,7 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
       try {
         const { data, error } = await observeTrackerContextRead(rpc("get_tv_tournament_branding_v1", { p_tournament_id: tournamentId }));
         if (!alive.current) return;
-        const canonical = data as null | {
-          brand_name: string | null; logo_url: string | null;
-          background_url: string | null; layout: unknown; revision: number;
-        };
-        if (!error && canonical
-          && Number.isSafeInteger(canonical.revision) && canonical.revision > revision
-          && (canonical.brand_name ?? "") === submitted.brandName
-          && canonical.logo_url === submitted.logoUrl
-          && canonical.background_url === submitted.backgroundUrl
-          && canonicalVoiceJson(canonical.layout) === canonicalVoiceJson(submitted.layout)) {
+        if (!error && publicationMatches(data)) {
           toast.success("TV layout published. Screens update on their next refresh.");
           setOpen(false);
         } else {
@@ -263,10 +283,10 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
 
             <section className="space-y-5 p-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                <div className="space-y-1.5"><Label className="text-xs">Tournament logo</Label><ProofUploader folder="tv/branding-logo" versioned value={logoUrl} onChange={setLogoUrl} /></div>
-                <div className="space-y-1.5"><Label className="text-xs">TV background</Label><ProofUploader folder="tv/branding-background" versioned value={bgUrl} onChange={setBgUrl} /></div>
+                <div className="space-y-1.5"><Label className="text-xs">Tournament logo</Label><ProofUploadWorkspace actorId={actorId} sessionEpoch={sessionEpoch} folder="tv/branding-logo" versioned value={logoUrl} previewUrl={assetPreviewUrl?.(logoUrl)} onChange={setLogoUrl} onUploadingChange={setLogoUploading} /></div>
+                <div className="space-y-1.5"><Label className="text-xs">TV background</Label><ProofUploadWorkspace actorId={actorId} sessionEpoch={sessionEpoch} folder="tv/branding-background" versioned value={bgUrl} previewUrl={assetPreviewUrl?.(bgUrl)} onChange={setBgUrl} onUploadingChange={setBackgroundUploading} /></div>
               </div>
-              <div className="space-y-1.5"><Label htmlFor="tv-brand-name" className="text-xs">Brand name</Label><Input id="tv-brand-name" value={brandName} onChange={(event) => setBrandName(event.target.value)} maxLength={40} placeholder="VINPOKER" /></div>
+              <div className="space-y-1.5"><Label htmlFor="tv-brand-name" className="text-xs">Brand name</Label><Input id="tv-brand-name" value={brandName} onChange={(event) => setBrandName(event.target.value)} maxLength={40} placeholder={fallbackBrandName || "VINPOKER"} aria-describedby="tv-brand-fallback" /><p id="tv-brand-fallback" className="text-xs text-muted-foreground">Leave blank to use the club name{fallbackBrandName ? `: ${fallbackBrandName}` : "."}</p></div>
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div><h3 className="text-sm font-semibold">Text blocks</h3><p className="text-xs text-muted-foreground">Move each block on the preview or focus it and use arrow keys.</p></div>
@@ -315,8 +335,9 @@ function ScopedTvBrandingEditor({ tournamentId }: { tournamentId: string }) {
         )}
 
         <DialogFooter className="border-t px-5 py-4 sm:justify-between">
-          <Button type="button" variant="ghost" className="gap-2" disabled={loading || !!loadError || saving} onClick={() => { setLayout({ ...DEFAULT_TV_BRANDING_LAYOUT }); setLogoUrl(null); setBgUrl(null); setBrandName(""); }}><RotateCcw className="h-4 w-4" /> Reset draft to defaults</Button>
-          <Button type="button" className="gap-2" onClick={save} disabled={loading || !!loadError || !!layoutError || saving}><Save className="h-4 w-4" /> {saving ? "Publishing…" : "Publish TV layout"}</Button>
+          {assetsUploading && <p role="status" className="text-xs text-muted-foreground">Wait for image uploads to finish before publishing.</p>}
+          <Button type="button" variant="ghost" className="gap-2" disabled={loading || !!loadError || saving || assetsUploading} onClick={() => { setLayout({ ...DEFAULT_TV_BRANDING_LAYOUT }); setLogoUrl(null); setBgUrl(null); setBrandName(""); }}><RotateCcw className="h-4 w-4" /> Reset draft to defaults</Button>
+          <Button type="button" className="gap-2" onClick={save} disabled={loading || !!loadError || !!layoutError || saving || assetsUploading}><Save className="h-4 w-4" /> {saving ? "Publishing…" : "Publish TV layout"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

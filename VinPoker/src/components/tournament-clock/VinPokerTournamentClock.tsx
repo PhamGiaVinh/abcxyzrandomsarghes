@@ -101,7 +101,7 @@ export function VinPokerTournamentClock({
                   )}
                 </div>
                 <div className="justify-self-center text-center">
-                  <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: "clamp(22px, 3.4vmin, 56px)", letterSpacing: ".08em", color: "#ecfff0", textShadow: "0 0 16px rgba(98,255,143,.78), 0 3px 0 rgba(0,0,0,.7)", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{data.brandName || "VINPOKER"}</div>
+                  <div className="vpc-brand-default-name" style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: "clamp(22px, 3.4vmin, 56px)", letterSpacing: ".08em", color: "#ecfff0", textShadow: "0 0 16px rgba(98,255,143,.78), 0 3px 0 rgba(0,0,0,.7)", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{data.brandName || "VINPOKER"}</div>
                   <div style={{ color: "var(--clock-green)", letterSpacing: ".34em", textIndent: ".34em", marginTop: ".5vmin", fontSize: "clamp(12px, 1.4vmin, 20px)", textShadow: "0 0 10px var(--clock-green)" }}>♠♥♦♣</div>
                 </div>
             </div>
@@ -125,6 +125,7 @@ export function VinPokerTournamentClock({
             levelLabel={data.levelLabel}
             secondsLeft={data.secondsLeft}
             nextBreakSecondsLeft={data.nextBreakSecondsLeft}
+            terminal={data.terminalStatus != null}
           />
         </section>
 
@@ -136,7 +137,7 @@ export function VinPokerTournamentClock({
           </div>
 
           <div className="vpc-panel grid content-center" style={{ padding: "2vmin 2.4vmin", minHeight: "34vmin" }}>
-            <div className="vpc-label" style={{ ...labelUpper, marginBottom: "1vmin" }}>Prizes</div>
+            <div className="vpc-label" style={{ ...labelUpper, marginBottom: "1vmin" }}>Rank awards</div>
             <div>
               {data.payouts.map((p, i) => (
                 <div key={`${p.rank}-${i}`} className="vpc-payout-row" style={{ fontSize: "clamp(16px, 2.1vmin, 36px)" }}>
@@ -145,6 +146,9 @@ export function VinPokerTournamentClock({
                 </div>
               ))}
             </div>
+            {data.payouts.length > 0 && <p className="text-muted-foreground" style={{ fontSize: "clamp(12px, 1.5vmin, 26px)", marginTop: "1vmin" }}>
+              Additional entitlements, if any, are reconciled separately in Cashier.
+            </p>}
           </div>
 
           <div className="vpc-panel text-center" style={{ padding: "1.8vmin 2.2vmin" }}>
@@ -159,7 +163,7 @@ export function VinPokerTournamentClock({
           style={{ gridTemplateColumns: "auto 1fr auto", padding: "1.4vmin 3vmin", minHeight: "8vmin", fontSize: "clamp(13px, 1.9vmin, 30px)", gap: "2vmin" }}
         >
           <div className="vpc-footer-icon" style={{ fontSize: "clamp(20px, 3vmin, 45px)" }}>♣</div>
-          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.footerNote}</div>
+          <div className="vpc-footer-note" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.footerNote}</div>
           <div className="vpc-footer-icon" style={{ fontSize: "clamp(20px, 3vmin, 45px)" }}>♦</div>
         </footer>
       </div>

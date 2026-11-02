@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { loadTrackerVoiceRuntimeContext, type TrackerVoiceRuntimeContext } from "@/lib/trackerVoice";
 import { isTrackerVoiceUiEnabled } from "@/lib/trackerVoice/uiGate";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
@@ -14,6 +15,16 @@ import { TrackerVoicePanel } from "./TrackerVoicePanel";
  * authoritative for the exact table, active dealer assignment, and Voice mode.
  */
 export function TrackerVoicePanelGate({ hook, compact = false }: { hook: StandaloneHandInput; compact?: boolean }) {
+  const {user,loading}=useAuth();
+  // A previous actor's verified gate and provider must never survive into the
+  // next actor/table. Remount also runs the panel's provider cleanup.
+  if (loading || !user) return <p className="p-4 text-xs text-amber-100/80">
+    {loading ? "Đang kiểm tra quyền Voice…" : trackerVoiceUnavailableMessage("unauthorized")}
+  </p>;
+  return <TrackerVoiceScopedGate key={JSON.stringify([user.id,hook.tournamentId,hook.tournamentTableId])} hook={hook} compact={compact} />;
+}
+
+function TrackerVoiceScopedGate({ hook, compact }: { hook: StandaloneHandInput; compact: boolean }) {
   const [runtime, setRuntime] = useState<TrackerVoiceRuntimeContext | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

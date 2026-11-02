@@ -67,7 +67,7 @@ async function writeAudit(row: {
   // raw_payload is left at its '{}' default (no payer-PII duplication); the Apikey lives in the
   // header, never the body, so raw_body is secret-free.
   try {
-    await admin.from("bank_webhook_audit").insert({
+    const { error } = await admin.from("bank_webhook_audit").insert({
       provider: "sepay",
       verified: row.verified,
       http_status: row.http_status,
@@ -76,11 +76,14 @@ async function writeAudit(row: {
       remote_ip: row.remote_ip,
       raw_body: row.raw_body ?? null,
     });
-  } catch (e) {
+    if (error) console.error("sepay-webhook: audit write failed");
+  } catch {
     // Audit is observability, not authority — never throw out of the request path. But log it:
     // for 401/400 outcomes the audit row is the ONLY trace (no bank_transactions row), so a silent
     // failure would lose forensics. Edge logs capture this. (P2-4)
-    console.error("sepay-webhook: audit write failed:", (e as Error)?.message ?? String(e));
+    // Database/transport details may contain private payer data. The failure
+    // marker is enough for telemetry; never echo those details into Edge logs.
+    console.error("sepay-webhook: audit write failed");
   }
 }
 
@@ -99,16 +102,21 @@ function nonEmpty(v: unknown): string | null {
 
 /** SePay transferAmount may be a number (5000000) or a decimal string ("18067000.00"). */
 function parseAmount(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
+  if ((typeof v !== 'number' && typeof v !== 'string') || (typeof v === 'string' && v.trim() === '')) return null;
+  if (typeof v === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(v.trim())) return null;
   const n = typeof v === "number" ? v : Number(String(v).trim());
-  return Number.isFinite(n) ? Math.round(n) : null;
+  const rounded = Math.round(n);
+  return Number.isSafeInteger(rounded) ? rounded : null;
 }
 
 /** SePay transactionDate "YYYY-MM-DD HH:MM:SS" has no offset; VN has no DST → fix +07:00. */
 function parseOccurredAt(v: unknown): string | null {
   if (typeof v !== "string" || v.trim() === "") return null;
-  const d = new Date(v.trim().replace(" ", "T") + "+07:00");
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  const local = v.trim().replace(" ", "T");
+  const d = new Date(local + "+07:00");
+  if (Number.isNaN(d.getTime())) return null;
+  const roundTrip = new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 19);
+  return roundTrip === local.slice(0, 19) ? d.toISOString() : null;
 }
 
 Deno.serve(async (req) => {
@@ -198,7 +206,9 @@ Deno.serve(async (req) => {
 
   if (insErr) {
     // DB write failed → do NOT claim success (would lose the event). 500 lets SePay/Patch-2 recover.
-    console.error("sepay-webhook: ingest failed:", insErr.message);
+    // Database errors may include payer/account/reference values. Keep only
+    // a stable failure marker, as in the audit failure path above.
+    console.error("sepay-webhook: ingest failed");
     return jsonResponse(500, { success: false, error: "ingest failed" });
   }
 

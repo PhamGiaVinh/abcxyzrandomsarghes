@@ -1,0 +1,59 @@
+// LOCAL ONLY: explicit owned-runtime guard, fresh run tag, canonical RPCs, actual wait graph.
+// Usage: VINPOKER_OWNED_NATIVE_RUNTIME=<existing-runtime> node <this-file> green <fresh-tag>
+// Commits fresh isolated TEST fixtures; candidate definitions always restored in finally.
+import fs from'node:fs';import assert from'node:assert/strict';import{spawn}from'node:child_process';import{randomUUID}from'node:crypto';import{pathToFileURL,fileURLToPath}from'node:url';import path from'node:path';
+const runtime=process.env.VINPOKER_OWNED_NATIVE_RUNTIME;assert.ok(runtime,'set VINPOKER_OWNED_NATIVE_RUNTIME to the existing guarded local runtime');const {sql,read,guard,auth,directory}=await import(pathToFileURL(path.join(runtime,'report-owner-ft-native-context-20261031.mjs')).href);const {assertOriginalProtected}=await import(pathToFileURL(path.join(runtime,'main-live-native-context-20261031.mjs')).href);
+const runTag=process.argv[3];assert.match(runTag??'',/^[a-z0-9-]{1,48}$/,'supply a fresh run tag; never overwrite/replay committed fixtures');
+const period=read(`SELECT jsonb_build_object('year',extract(year from current_date)::int,'month',extract(month from current_date)::int);`);
+const mode=process.argv[2];assert.ok(['red','green'].includes(mode));const file=directory+'report-staff-salary-wait-authority-'+runTag+'-'+mode+'.json';assert.ok(!fs.existsSync(file),'never replay committed fixtures');const A=fileURLToPath(new URL('../../',import.meta.url)).replaceAll('\\','/'),catalog=JSON.parse(fs.readFileSync(directory+'report-staff-salary-actions-native-catalog-20261031.json','utf8')),candidate=fs.readFileSync(A+'supabase/migrations/20270128000305_staff_salary_period_serialization_v1.sql','utf8')+(mode==='green'?String.fromCharCode(10)+fs.readFileSync(A+'supabase/migrations/20270128000306_staff_salary_wait_authority_v1.sql','utf8'):'');
+const j={phase:'CREATING_LOCAL_SALARY_RACES',mode,localOnly:true,fixtures:[],races:[]},save=()=>fs.writeFileSync(file,JSON.stringify(j,null,2));
+const oldHash=()=>{const clubs=j.fixtures.map(f=>"'"+f.club+"'").join(','),actors=j.fixtures.flatMap(f=>[f.owner,f.accountant,f.staffUser]).map(x=>"'"+x+"'").join(',');return read(`SELECT jsonb_build_object('staff',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]')::text) FROM public.staff e WHERE club_id<>ALL(ARRAY[${clubs}]::uuid[])),'attendance',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]')::text) FROM public.staff_attendance e WHERE staff_id IN(SELECT id FROM public.staff WHERE club_id<>ALL(ARRAY[${clubs}]::uuid[]))),'runs',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]')::text) FROM public.staff_salary_runs e WHERE club_id<>ALL(ARRAY[${clubs}]::uuid[])),'periods',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]')::text) FROM public.staff_salary_periods e WHERE club_id<>ALL(ARRAY[${clubs}]::uuid[])),'profiles',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY user_id),'[]')::text) FROM public.profiles e WHERE user_id<>ALL(ARRAY[${actors}]::uuid[])),'payroll',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]')::text) FROM public.dealer_payroll e),'dealerPeriods',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]')::text) FROM public.payroll_periods e));`);};j.before=oldHash();save();assertOriginalProtected();for(const r of catalog)assert.equal(read(`SELECT to_jsonb(pg_get_functiondef('${r.signature}'::regprocedure));`),r.definition);assert.equal(read(`SELECT to_jsonb(to_regprocedure('floor_private.staff_salary_period_lock_v1(uuid,integer,integer)'));`),null);
+async function fixture(name,approved){
+ const f={name,owner:randomUUID(),accountant:randomUUID(),staffUser:randomUUID(),club:randomUUID(),staff:randomUUID()};j.fixtures.push(f);save();
+ sql(`BEGIN;${guard}
+ INSERT INTO auth.users(id)VALUES('${f.owner}'),('${f.accountant}'),('${f.staffUser}');
+ INSERT INTO public.profiles(user_id,display_name)VALUES('${f.owner}','LOCAL TEST so ${f.owner.slice(0,8)}'),('${f.accountant}','LOCAL TEST sa ${f.accountant.slice(0,8)}'),('${f.staffUser}','LOCAL TEST ss ${f.staffUser.slice(0,8)}');
+ INSERT INTO public.clubs(id,owner_id,name,region,status)VALUES('${f.club}','${f.owner}','LOCAL TEST salary revoke ${name}','TEST','approved');
+ INSERT INTO public.club_accountants(club_id,user_id,granted_by)VALUES('${f.club}','${f.accountant}','${f.owner}');
+ INSERT INTO public.staff(id,club_id,user_id,full_name,department,employment_type,monthly_salary_vnd,manual_bhxh_vnd,manual_tax_vnd)VALUES('${f.staff}','${f.club}','${f.staffUser}','LOCAL TEST revoke staff','service','full_time',2600000,0,0);
+ ${auth(f.staffUser)}DO $attendance$ DECLARE r jsonb;BEGIN r:=public.staff_check_in('${f.staff}');ASSERT r->>'outcome'='checked_in';r:=public.staff_check_out('${f.staff}');ASSERT r->>'outcome'='checked_out';END $attendance$;
+ ${auth(f.owner)}DO $seed$ DECLARE r jsonb;BEGIN IF '${name}'<>'chot' THEN
+ r:=public.chot_staff_salary_month('${f.club}',${period.year},${period.month});ASSERT r->>'status'='ok';r:=public.submit_staff_salary_month('${f.club}',${period.year},${period.month},'LOCAL TEST submitted');ASSERT r->>'status'='submitted';
+ ${approved?`r:=public.approve_staff_salary_month('${f.club}',${period.year},${period.month});ASSERT r->>'status'='approved';`:''}
+ END IF;END $seed$;COMMIT;`);
+ f.run=read(`SELECT to_jsonb(id) FROM public.staff_salary_runs WHERE staff_id='${f.staff}';`);save();return f;
+}
+class Worker{
+ constructor(label){this.label=label;this.rows=[];this.waiters=[];this.err='';this.buffer='';this.child=spawn('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_owner_ft_reports_20261031','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe']});this.child.stdout.on('data',data=>{this.buffer+=data;let at;while((at=this.buffer.indexOf('\n'))>=0){const line=this.buffer.slice(0,at).trim();this.buffer=this.buffer.slice(at+1);if(line.startsWith('{')){const row=JSON.parse(line);this.rows.push(row);for(const waiter of [...this.waiters])if(waiter.phase===row.phase){clearTimeout(waiter.timer);this.waiters.splice(this.waiters.indexOf(waiter),1);waiter.resolve(row);}}}});this.child.stderr.on('data',x=>{this.err+=x;});this.done=new Promise(resolve=>this.child.on('close',code=>{this.code=code;resolve(code);for(const w of this.waiters){clearTimeout(w.timer);w.reject(Error(label+' closed: '+this.err));}this.waiters=[];}));}
+ send(q){this.child.stdin.write(q+'\n');}
+ wait(phase){const row=this.rows.find(x=>x.phase===phase);if(row)return Promise.resolve(row);return new Promise((resolve,reject)=>{const waiter={phase,resolve,reject,timer:setTimeout(()=>{this.waiters.splice(this.waiters.indexOf(waiter),1);reject(Error(this.label+' timeout '+phase+' '+this.err));},15000)};this.waiters.push(waiter);});}
+ async end(){this.child.stdin.end();const code=await this.done;assert.equal(code,0,this.label+' '+this.err);}
+}
+
+
+const workers=[];const create=label=>{const w=new Worker(label);workers.push(w);return w;};let installed=false;
+const snapshot=f=>read(`SELECT jsonb_build_object('period',(SELECT to_jsonb(p) FROM public.staff_salary_periods p WHERE club_id='${f.club}'),'run',(SELECT to_jsonb(r) FROM public.staff_salary_runs r WHERE staff_id='${f.staff}'));`);
+const operation=(f,name)=>name==='approve'?`public.approve_staff_salary_month('${f.club}',${period.year},${period.month})`:name==='reject'?`public.reject_staff_salary_month('${f.club}',${period.year},${period.month},'LOCAL TEST revoked actor reject')`:name==='submit'?`public.submit_staff_salary_month('${f.club}',${period.year},${period.month},'LOCAL TEST revoked actor submit')`:name==='chot'?`public.chot_staff_salary_month('${f.club}',${period.year},${period.month})`:`public.mark_staff_salary_paid('${f.run}','LOCAL_TEST','LOCAL TEST revoked actor paid')`;
+try{
+ j.restoreCatalog=catalog;save();sql(`BEGIN;${guard}${candidate}COMMIT;`);installed=true;
+ const cases=mode==='red'?['chot','submit']:['chot','submit','approve','reject','paid'];
+ for(const name of cases){const f=await fixture(name,name==='paid'),before=snapshot(f),holder=create(name+'-holder'),caller=create(name+'-caller');
+ holder.send(`BEGIN;${guard}SELECT floor_private.staff_salary_period_lock_v1('${f.club}',${period.year},${period.month});SELECT jsonb_build_object('phase','held','pid',pg_backend_pid());`);const hr=await holder.wait('held');
+ const actor=name==='approve'||name==='reject'?f.owner:f.accountant;caller.send(`BEGIN;SET LOCAL lock_timeout='12s';${guard}${auth(actor)}SELECT jsonb_build_object('phase','ready','pid',pg_backend_pid());`);const cr=await caller.wait('ready');
+ caller.send(`DO $probe$ DECLARE r jsonb;BEGIN BEGIN r:=${operation(f,name)};EXCEPTION WHEN insufficient_privilege THEN r:=jsonb_build_object('error','Forbidden','sqlstate',SQLSTATE);END;PERFORM set_config('local.salary_auth_probe',r::text,true);END $probe$;SELECT jsonb_build_object('phase','result','data',current_setting('local.salary_auth_probe')::jsonb);`);
+ let lock;for(let i=0;i<40;i++){const r=read(`SELECT jsonb_build_object('pid',pid,'waitType',wait_event_type,'event',wait_event,'blockers',pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid=${cr.pid};`);if(r?.blockers?.includes(hr.pid)){lock=r;break;}await new Promise(r=>setTimeout(r,100));}assert.equal(lock?.waitType,'Lock');
+ let revoke;
+ if(name==='approve'||name==='reject'){
+  sql(`BEGIN;${guard}UPDATE public.clubs SET owner_id='${f.accountant}' WHERE id='${f.club}' AND owner_id='${f.owner}';COMMIT;`);assert.equal(read(`SELECT to_jsonb(public.is_club_owner('${f.owner}','${f.club}'));`),false);revoke={kind:'fresh fixture ownership transfer',publicTransferRPC:false};
+ }else{
+  revoke=JSON.parse(sql(`BEGIN;${guard}${auth(f.owner)}SELECT public.revoke_club_accountant('${f.club}','${f.accountant}');COMMIT;`));assert.equal(revoke.status,'ok');assert.equal(read(`SELECT to_jsonb(public.is_club_accountant('${f.accountant}','${f.club}'));`),false);
+ }
+ holder.send(`COMMIT;SELECT jsonb_build_object('phase','released');`);await holder.wait('released');const result=(await caller.wait('result')).data;caller.send(`COMMIT;SELECT jsonb_build_object('phase','committed');`);await caller.wait('committed');await holder.end();await caller.end();
+ const after=snapshot(f);if(mode==='green'){assert.equal(result.sqlstate,'42501');assert.deepEqual(after,before);}else{assert.ok(result.status==='ok'||result.status==='submitted');assert.notDeepEqual(after,before);}
+ j.races.push({name,actor,lock,revoke,result,before,after,bugReproduced:mode==='red',pass:mode==='green'});assert.deepEqual(oldHash(),j.before);assertOriginalProtected();save();
+ }
+}finally{
+ for(const w of workers)if(w.code===undefined)w.child.stdin.end();await Promise.all(workers.map(w=>w.done));
+ if(installed){sql(`BEGIN;SET LOCAL lock_timeout='5s';${guard}${catalog.map(r=>r.definition.trimEnd()+';').join('\n')}DROP FUNCTION floor_private.staff_salary_period_lock_v1(uuid,integer,integer);COMMIT;`);j.candidateFunctionsRestored=true;save();}
+}
+for(const r of catalog)assert.equal(read(`SELECT to_jsonb(pg_get_functiondef('${r.signature}'::regprocedure));`),r.definition);assert.equal(read(`SELECT to_jsonb(to_regprocedure('floor_private.staff_salary_period_lock_v1(uuid,integer,integer)'));`),null);assert.deepEqual(oldHash(),j.before);assertOriginalProtected();j.phase=mode==='red'?'NATIVE_BUG_REVOKED_ACCOUNTANT_WRITES_AFTER_PERIOD_WAIT':'QUALIFIED_FIVE_NATIVE_SALARY_WAIT_AUTHORITY_CASES_PASS';save();console.log(JSON.stringify({phase:j.phase,cases:j.races.map(r=>({name:r.name,result:r.result,lock:r.lock,bug:r.bugReproduced,pass:r.pass})),oldFactsExact:true,publicDefinitionsRestored:true}));

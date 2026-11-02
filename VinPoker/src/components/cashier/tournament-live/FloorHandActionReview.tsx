@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -50,14 +50,16 @@ function actionText(action: ReviewAction): string {
 }
 
 export function FloorHandActionReview({ handNumber, tableName, potSize, buttonSeat, seats, actions, initialActionId, canEdit, isVoided, onEditAction }: Props) {
-  const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
+  const scope=JSON.stringify([handNumber,tableName,initialActionId??null]);
+  const [selection,setSelection]=useState<{scope:string;key:string}|null>(null);
+  // Orders may be reused after correction. Canonical IDs survive reordering;
+  // legacy rows without IDs retain selection only for the exact read snapshot.
+  const actionKey=(action:ReviewAction)=>action.id?`id:${action.id}`:`legacy:${JSON.stringify(action)}`;
+  const selectedKey=selection?.scope===scope?selection.key:initialActionId?`id:${initialActionId}`:null;
   const ordered = [...actions].sort((a, b) => a.action_order - b.action_order);
-  useEffect(() => {
-    if (!initialActionId) return;
-    setSelectedOrder(actions.find((action) => action.id === initialActionId)?.action_order ?? null);
-  }, [initialActionId, actions]);
-  const selectedIndex = ordered.findIndex((action) => action.action_order === selectedOrder);
+  const selectedIndex = ordered.findIndex((action) => actionKey(action) === selectedKey);
   const selected = selectedIndex >= 0 ? ordered[selectedIndex] : null;
+  const original=initialActionId?ordered.find(action=>action.id===initialActionId):null;
   const recordedPot = potSize === null ? "Chưa có dữ liệu" : potSize.toLocaleString("vi-VN");
 
   return (
@@ -105,14 +107,17 @@ export function FloorHandActionReview({ handNumber, tableName, potSize, buttonSe
       <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-100">
         <AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />
         {initialActionId
-          ? selectedOrder === null ? "Action gốc không còn trong hand hiện tại. Xem dấu vết trên cảnh báo; không chọn action mới cùng số thứ tự." : "Action gốc đã được chọn theo ID. Kiểm tra trước khi sửa."
+          ? !original ? "Action gốc không còn trong hand hiện tại. Xem dấu vết trên cảnh báo; không chọn action mới cùng số thứ tự."
+            : selected?.id===initialActionId ? "Action gốc đã được chọn theo ID. Kiểm tra trước khi sửa."
+              : "Bạn đang đối chiếu action khác với action gốc trên cảnh báo. Kiểm tra ID trước khi sửa."
           : "Cảnh báo chưa chỉ rõ action sai. Chạm dòng nghi sai để đối chiếu, không tự động kết luận lỗi."}
       </div>
+      {selection?.scope===scope&&!selected&&<p role="status" className="text-xs text-amber-100">Action đã chọn không còn trong nhật ký hiện tại. Hãy chọn lại theo dữ liệu mới trước khi xem bản nháp.</p>}
 
       <div className="space-y-1" aria-label="Nhật ký action theo thứ tự">
         {ordered.length === 0 && <p className="py-4 text-center text-sm text-zinc-400">Hand chưa có action được ghi.</p>}
         {ordered.map((action, index) => {
-          const active = selectedOrder === action.action_order;
+          const active = selectedKey === actionKey(action);
           const streetChanged = index === 0 || ordered[index - 1].street !== action.street;
           return (
             <div key={action.action_order}>
@@ -120,7 +125,7 @@ export function FloorHandActionReview({ handNumber, tableName, potSize, buttonSe
               <button
                 type="button"
                 aria-pressed={active}
-                onClick={() => setSelectedOrder(action.action_order)}
+                onClick={() => setSelection({scope,key:actionKey(action)})}
                 className={`flex min-h-12 w-full items-center gap-2 rounded-lg border px-2.5 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${active ? "border-amber-400 bg-amber-400/10" : "border-white/10 bg-white/[0.035] hover:border-emerald-400/50"}`}
               >
                 <span className="w-8 shrink-0 font-mono text-xs text-amber-300">#{action.action_order}</span>

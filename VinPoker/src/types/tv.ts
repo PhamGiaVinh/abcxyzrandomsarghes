@@ -55,7 +55,11 @@ export interface TvData {
   /** Sum of confirmed buy-ins (VND). Null until wired to live data. */
   totalBuyIns: number | null;
   prizePool: number | null;
+  /** A server read-model value: preserve explicit zero/unknown, never estimate. */
+  prizePoolIsCanonical?: boolean;
   guarantee?: number | null;
+  /** One promise for the whole Main Event; never a flight prize-pool fallback. */
+  mainEventGuarantee?: number | null;
   prizes: TvPrize[];
   sponsorText?: string | null;
   /** Tournament starting stack (chips) — used to derive total chips in play. */

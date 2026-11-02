@@ -7,7 +7,7 @@ import { Copy, Landmark } from "lucide-react";
 import { toast } from "sonner";
 
 interface BankAccount {
-  id: string;
+  id?: string;
   bank_name: string;
   account_number: string;
   account_holder: string;
@@ -61,7 +61,7 @@ export const BankInfoCard = ({ account: provided, className }: Props) => {
   }
 
   return (
-    <div className={`rounded-xl border border-primary/30 bg-card p-4 space-y-3 ${className ?? ""}`}>
+    <div className={`min-w-0 w-full rounded-xl border border-primary/30 bg-card p-4 space-y-3 ${className ?? ""}`}>
       <div className="flex items-center gap-2 text-sm font-semibold text-primary">
         <Landmark className="w-4 h-4" /> {t("bankInfo.title")}
       </div>

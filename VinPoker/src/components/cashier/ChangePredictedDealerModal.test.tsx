@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChangePredictedDealerModal from "./ChangePredictedDealerModal";
 import type { DealerAttendance } from "@/hooks/useDealerSwing";
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -12,7 +12,35 @@ function props() { return { open: true, onOpenChange: vi.fn(), tableName: "TEST 
     last_released_at: null, dealers: { full_name: "TEST candidate" } } as DealerAttendance],
   assignedTableNameByAttendanceId: {}, restMinutes: 15, onChanged: vi.fn() }; }
 beforeEach(() => { rpc.mockReset(); sessionStorage.clear(); });
+afterEach(()=>{cleanup();vi.useRealTimers();});
 describe("exact next-dealer intent modal", () => {
+  it('bounds a hung write and receipt lookup without discarding or reissuing the original intent',async()=>{
+    vi.useFakeTimers();const p=props();rpc.mockReturnValue(new Promise(()=>{}));
+    render(<ChangePredictedDealerModal {...p}/>);
+    fireEvent.click(screen.getByRole('button',{name:/TEST candidate/}));
+    fireEvent.click(screen.getByRole('button',{name:'Đổi & CHỐT'}));
+    const original=rpc.mock.calls[0][1],stored=sessionStorage.getItem(sessionStorage.key(0)!);
+    expect(screen.getByRole('button',{name:'Kiểm tra biên nhận'})).toBeDisabled();
+    await act(async()=>vi.advanceTimersByTimeAsync(20001));
+    expect(screen.getByRole('button',{name:'Kiểm tra biên nhận'})).toBeEnabled();
+    expect(sessionStorage.getItem(sessionStorage.key(0)!)).toBe(stored);expect(rpc).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button',{name:'Kiểm tra biên nhận'}));
+    await act(async()=>vi.advanceTimersByTimeAsync(10001));
+    expect(screen.getByRole('button',{name:'Kiểm tra biên nhận'})).toBeEnabled();
+    expect(rpc.mock.calls[1]).toEqual(['get_dealer_next_intent_receipt_v1',original]);
+    expect(sessionStorage.getItem(sessionStorage.key(0)!)).toBe(stored);expect(p.onChanged).not.toHaveBeenCalled();
+  });
+  it('does not acknowledge a late writer response after its deadline; only exact receipt reconciliation resolves it',async()=>{
+    vi.useFakeTimers();const p=props();let finish!:(v:unknown)=>void;
+    rpc.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));render(<ChangePredictedDealerModal {...p}/>);
+    fireEvent.click(screen.getByRole('button',{name:/TEST candidate/}));fireEvent.click(screen.getByRole('button',{name:'Đổi & CHỐT'}));
+    const args=rpc.mock.calls[0][1];await act(async()=>vi.advanceTimersByTimeAsync(20001));
+    const terminal={data:{outcome:'changed',table_session_id:args.p_table_session_id,assignment_id:args.p_assignment_id,request_id:args.p_request_id},error:null};
+    await act(async()=>finish(terminal));expect(p.onChanged).not.toHaveBeenCalled();expect(sessionStorage.length).toBe(1);
+    rpc.mockResolvedValueOnce(terminal);fireEvent.click(screen.getByRole('button',{name:'Kiểm tra biên nhận'}));
+    await act(async()=>{});expect(p.onChanged).toHaveBeenCalledOnce();expect(sessionStorage.length).toBe(0);
+    expect(rpc.mock.calls[1]).toEqual(['get_dealer_next_intent_receipt_v1',args]);
+  });
   it("receipt read denied after lost response does not discard unresolved mutation", async () => {
     const p = props(); rpc.mockResolvedValueOnce({ data: null, error: { message: "lost response" } });
     render(<ChangePredictedDealerModal {...p} />);

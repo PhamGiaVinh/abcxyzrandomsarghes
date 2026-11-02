@@ -3,6 +3,7 @@
 // pot (collision-guarded). Operator/TV (viewerLayout off) render NO stack → byte-identical.
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import {cleanup,render,screen} from '@testing-library/react';
 import { LiveFelt, type SeatInfo } from "@/components/cashier/tournament-live/LiveFelt";
 
 const noBB = () => null;
@@ -41,14 +42,14 @@ describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
     expect(stackCount(renderToStaticMarkup(<LiveFelt seats={s} {...baseProps} portrait viewerLayout />))).toBe(1);
   });
 
-  it("keeps committed bets visible until collection, including folded seats; no-bet seats get none", () => {
+  it("renders only live seat-side contributions, not folded or already swept whole-hand totals", () => {
     const s = [
       seat({ player_id: "a", seat_number: 1, current_bet: 200000 }), // bet → stack
       seat({ player_id: "b", seat_number: 2, is_all_in: true, current_bet: 5_000_000 }), // all-in → stack
       seat({ player_id: "c", seat_number: 3 }), // no bet → none
-      seat({ player_id: "d", seat_number: 4, is_folded: true, current_bet: 100 }), // folded contribution stays visible until collection
+      seat({ player_id: "d", seat_number: 4, is_folded: true, current_bet: 100 }), // canonical viewer excludes folded seat-side piles
     ];
-    expect(stackCount(renderToStaticMarkup(<LiveFelt seats={s} {...baseProps} portrait viewerLayout />))).toBe(3);
+    expect(stackCount(renderToStaticMarkup(<LiveFelt seats={s} {...baseProps} portrait viewerLayout />))).toBe(2);
   });
 
   it("all-in stack is RED (#d33), a regular stack is GOLD (#f5b340)", () => {
@@ -133,19 +134,20 @@ describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
     expect(Math.max(...tops)).toBeLessThan(32);
   });
 
-  it("compact: ALL-IN pill shows the whole-hand total AMOUNT-ONLY on the red pill (RPT style)", () => {
-    const html = renderToStaticMarkup(
+  it.each([false,true])('keeps an explicit ALL-IN status after street sweep without recreating committed chips (compact=%s)',compact=>{
+    try{render(
       <LiveFelt
         seats={[seat({ player_id: "a", seat_number: 1, is_all_in: true, current_bet: 0, total_committed: 19_900_000 })]}
         {...baseProps}
         portrait
         viewerLayout
-        compact
+        compact={compact}
       />
     );
-    expect(html).toContain("19.9M"); // amount survives the street sweep via total_committed
-    expect(html).not.toContain("ALL IN 19.9M"); // no wide prefix — red pill signals all-in
-    expect(html.toLowerCase()).toContain("#d33"); // red all-in styling carries the signal
+    expect(screen.getByTestId('felt-all-in-status-a')).toHaveTextContent('ALL IN');
+    expect(screen.getByTestId('felt-all-in-status-a')).toHaveTextContent('19.9M');
+    expect(document.querySelectorAll('.z-\\[15\\]')).toHaveLength(0);
+    }finally{cleanup();}
   });
 
   it("non-compact retains the authoritative total after current_bet is swept", () => {
@@ -158,6 +160,19 @@ describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
       />
     );
     expect(html).toContain("ALL IN");
-    expect(html).toContain("ALL IN 19.9M");
+    expect(html).toContain("19.9M");
+    expect(stackCount(html)).toBe(0);
+  });
+  it.each([undefined,NaN,Infinity])('does not invent an amount for a swept ALL-IN with unknown total %s',total=>{
+    const html=renderToStaticMarkup(<LiveFelt {...baseProps} viewerLayout portrait
+      seats={[seat({player_id:'a',seat_number:1,is_all_in:true,current_bet:0,total_committed:total})]}/>);
+    expect(html).toContain('felt-all-in-status-a');expect(html).toContain('ALL IN');
+    expect(html).not.toContain('NaN');expect(html).not.toContain('Infinity');
+    expect(html).not.toContain('ALL IN · 0');expect(stackCount(html)).toBe(0);
+  });
+  it('does not label a folded seat ALL-IN from a stale all-in bit',()=>{
+    const html=renderToStaticMarkup(<LiveFelt {...baseProps} viewerLayout portrait
+      seats={[seat({player_id:'a',seat_number:1,is_all_in:true,is_folded:true,current_bet:0,total_committed:500})]}/>);
+    expect(html).not.toContain('felt-all-in-status-a');expect(stackCount(html)).toBe(0);
   });
 });

@@ -17,8 +17,8 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       select: () => query,
       is: (key: string, value: unknown) => { filters.push([key, value]); db.filters.push([key, value]); return query; },
       in: (key: string, values: unknown[]) => { filters.push([key, values]); return query; },
-      order: async () => ({ data: db.rows.filter((r) => filters.every(([k, v]) => Array.isArray(v)
-        ? v.includes(r[k as keyof typeof r]) : r[k as keyof typeof r] === v)), error: null }),
+      order: () => ({ abortSignal: async () => ({ data: db.rows.filter((r) => filters.every(([k, v]) => Array.isArray(v)
+        ? v.includes(r[k as keyof typeof r]) : r[k as keyof typeof r] === v)), error: null }) }),
     };
     return query;
   },

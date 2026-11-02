@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   authorizeInternalTrigger,
   authorizeSwingWorkerRequest,
@@ -6,6 +6,8 @@ import {
   parseDealerReadyPayload,
 } from "../_shared/internal-trigger-auth.ts";
 import { getDealerOperationalTables } from "../_shared/dealerOperationalTables.ts";
+import { getReadySwingDuration, getReadyRestThreshold } from "../_shared/readySwingDuration.ts";
+import { loadEligibleDealerAttendance } from "../_shared/dealerPoolEligibility.ts";
 
 interface PickResult {
   outcome: "swung" | "no_table" | "skipped" | "race_lost" | "error";
@@ -78,14 +80,21 @@ Deno.serve(async (req) => {
     }
 
     const verifiedAttendanceId = verifyResult?.attendance_id;
-    const restThreshold = Number(verifyResult?.rest_threshold_min);
-    const restMin = Number(verifyResult?.rest_min);
-    if (!verifiedAttendanceId || !Number.isFinite(restThreshold) || !Number.isFinite(restMin)) {
+    const restMin = verifyResult?.rest_min;
+    if (verifiedAttendanceId !== payload.attendanceId || typeof restMin !== 'number' || !Number.isSafeInteger(restMin) || restMin < 0) {
       await logMetric(admin, payload.clubId, startTime, "failure", 1, 0, "invalid_verification_result");
       return json({ error: "verify_failed" }, 500);
     }
 
-    const restDeficit = Math.max(0, restThreshold - restMin);
+    const eligibility=await loadEligibleDealerAttendance(admin,payload.clubId,[verifiedAttendanceId]);
+    if(eligibility.error){
+      await logMetric(admin,payload.clubId,startTime,"failure",1,0,"operating_day_unverified");
+      return json({error:"attendance_operating_day_unverified"},503);
+    }
+    if(!eligibility.ids.has(verifiedAttendanceId)){
+      return json({skipped:"attendance_operating_day_invalid",verified:false});
+    }
+
     const { data: swingConfig, error: plannerError } = await admin
       .from("swing_config")
       .select("rotation_planner_enabled")
@@ -126,6 +135,23 @@ Deno.serve(async (req) => {
       return json({ error: "table_session_binding_required" }, 409);
     }
 
+    const exactTable = operationalTables.find((table) => table.id === overdueTable.table_id
+      && table.table_session_id === overdueTable.table_session_id);
+    if (!exactTable) return json({ error: "table_session_binding_required" }, 409);
+    let durationMinutes: number;
+    try {
+      durationMinutes = await getReadySwingDuration(admin, payload.clubId, exactTable);
+    } catch {
+      return json({ error: "swing_duration_unverified" }, 503);
+    }
+    let restThreshold: number;
+    try {
+      restThreshold = await getReadyRestThreshold(admin, payload.clubId, exactTable);
+    } catch {
+      return json({ error: "ready_rest_policy_unverified" }, 503);
+    }
+    const restDeficit = Math.max(0, restThreshold - restMin);
+
     const { data: swingResult, error: swingError } = await admin.rpc("worker_perform_swing", {
       p_assignment_id: overdueTable.id,
       p_table_id: overdueTable.table_id,
@@ -134,7 +160,7 @@ Deno.serve(async (req) => {
       p_next_attendance_id: verifiedAttendanceId,
       p_send_to_break: false,
       p_break_duration_minutes: 15,
-      p_duration_minutes: 30,
+      p_duration_minutes: durationMinutes,
       p_rest_deficit_minutes: restDeficit,
     });
 
@@ -143,12 +169,18 @@ Deno.serve(async (req) => {
       return json({ error: "swing_failed" }, 500);
     }
 
+    if (swingResult?.outcome === "swung"
+      && (!Number.isInteger(swingResult.rest_deficit_minutes) || swingResult.rest_deficit_minutes < 0)) {
+      await logMetric(admin, payload.clubId, startTime, "failure", 1, 0, "invalid_swing_receipt");
+      return json({ error: "invalid_swing_receipt" }, 500);
+    }
+
     const result: PickResult = {
       outcome: swingResult?.outcome ?? "error",
       table_id: overdueTable.table_id,
       assignment_id: overdueTable.id,
       new_assignment_id: swingResult?.new_assignment_id,
-      rest_deficit_minutes: restDeficit,
+      rest_deficit_minutes: swingResult?.outcome === "swung" ? swingResult.rest_deficit_minutes : restDeficit,
       duration_ms: Date.now() - startTime,
     };
     const processedCount = result.outcome === "swung" ? 1 : 0;
@@ -165,7 +197,7 @@ Deno.serve(async (req) => {
 });
 
 async function logMetric(
-  admin: any,
+  admin: SupabaseClient,
   clubId: string,
   startTime: number,
   status: "success" | "failure" | "partial",

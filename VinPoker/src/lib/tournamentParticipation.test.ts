@@ -55,3 +55,8 @@ describe("canonical participation boundary", () => {
     expect(() => parseTournamentParticipation(p, "tour")).toThrow("invalid_participation_seat");
   });
 });
+
+it('retains an explicitly bagged entry without reclassifying it as waiting or registered',()=>{
+ const p={...projection(),entries:[{id:'bagged-entry',player_id:'bagged-player',player_name:'Bagged TEST',entry_no:1,current_stack:20000,seat_number:null,finished_place:null,status:'bagged',participation_status:'bagged',anomaly_reason:null}]};
+ expect(parseTournamentParticipation(p,'tour').entries[0]).toMatchObject({status:'bagged',participation_status:'bagged',current_stack:20000});
+});

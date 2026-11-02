@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
+import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
 import {
   loadDealerControlReadModel,
@@ -9,6 +11,19 @@ import {
 import { DealerControlWorkspaceView } from "@/ops/dealer-control/DealerControlWorkspaceView";
 
 export default function OpsDealerControlWorkspace() {
+  const { user, session, loading } = useOpsAuth();
+  const capabilities = useOpsCapabilities();
+  const { selectedClubId } = useOpsWorkspace();
+  const allowed = Boolean(user && !loading && !capabilities.loading && !capabilities.scopeError
+    && selectedClubId && (capabilities.isSuperAdmin
+      || capabilities.moduleClubIds("dealer-control").includes(selectedClubId)));
+  // Scope changes retire the entire snapshot, even when returning A -> B -> A.
+  return <ScopedDealerControlWorkspace key={JSON.stringify([
+    user?.id, sessionReadEpoch(session), allowed, selectedClubId,
+  ])} allowed={allowed} />;
+}
+
+function ScopedDealerControlWorkspace({ allowed }: { allowed: boolean }) {
   const client = useSupabaseClient();
   const capabilities = useOpsCapabilities();
   const { selectedClubId } = useOpsWorkspace();
@@ -25,16 +40,27 @@ export default function OpsDealerControlWorkspace() {
   }>({ loading: true, model: null, errorCode: null });
 
   useEffect(() => {
-    if (!clubId || capabilities.loading || capabilities.scopeError) return;
+    if (!allowed || !clubId) return;
     let active = true;
+    const controller=new AbortController();
+    const deadline = window.setTimeout(() => {
+      if (!active) return;
+      active = false;
+      controller.abort();
+      setState({ loading: false, model: null, errorCode: "DEALER_CONTROL_READ_TIMEOUT" });
+    }, 10000);
     setState((current) => ({ ...current, loading: true, errorCode: null }));
-    void loadDealerControlReadModel(client, clubId)
-      .then((model) => { if (active) setState({ loading: false, model, errorCode: null }); })
+    void loadDealerControlReadModel(client, clubId,controller.signal)
+      .then((model) => {
+        window.clearTimeout(deadline);
+        if (active) setState({ loading: false, model, errorCode: null });
+      })
       .catch((error: unknown) => {
+        window.clearTimeout(deadline);
         if (active) setState({ loading: false, model: null, errorCode: safeErrorCode(error) });
-      });
-    return () => { active = false; };
-  }, [capabilities.loading, capabilities.scopeError, client, clubId, revision]);
+      }).finally(()=>controller.abort());
+    return () => { active = false;controller.abort(); window.clearTimeout(deadline); };
+  }, [allowed, client, clubId, revision]);
 
   const clubName = useMemo(
     () => capabilities.clubs.find((club) => club.id === clubId)?.name ?? "CLB đã chọn",
@@ -44,10 +70,13 @@ export default function OpsDealerControlWorkspace() {
   return (
     <DealerControlWorkspaceView
       clubName={clubName}
-      model={clubId ? state.model : null}
-      loading={capabilities.loading || state.loading}
-      errorCode={capabilities.scopeError ?? (!clubId ? "DEALER_CONTROL_CLUB_SCOPE_REQUIRED" : state.errorCode)}
-      onRefresh={() => setRevision((value) => value + 1)}
+      model={allowed ? state.model : null}
+      loading={capabilities.loading || (allowed && state.loading)}
+      errorCode={capabilities.scopeError ?? (!allowed && !capabilities.loading ? "DEALER_CONTROL_CLUB_SCOPE_REQUIRED" : state.errorCode)}
+      onRefresh={() => {
+        if (capabilities.scopeError) capabilities.refresh();
+        else setRevision((value) => value + 1);
+      }}
     />
   );
 }

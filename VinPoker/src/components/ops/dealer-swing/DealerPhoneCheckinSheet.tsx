@@ -30,6 +30,8 @@ import {
 } from "@/lib/dealerSwingPhone";
 import type { PublishedScheduleAssignment } from "@/hooks/usePublishedDealerSchedule";
 import { cn } from "@/lib/utils";
+import {readPhoneCheckinIntent,persistPhoneCheckinIntent,settlePhoneCheckinIntent,phoneCheckinReceipt,type DealerPhoneCheckinIntent} from '@/lib/dealerPhoneCheckinIntent';
+import {waitForManualPlayerResponse} from '@/lib/floorManualPlayerIntent';
 
 type DealerPhoneCheckinInputMethod = "camera" | "paste" | "manual_list";
 type PickerMode = "camera" | "paste" | "manual";
@@ -49,6 +51,7 @@ interface DraftEntry extends DealerCandidate {
 }
 
 interface Props {
+  actorId: string | null;
   open: boolean;
   activeClubId: string;
   scheduleAssignments: PublishedScheduleAssignment[];
@@ -73,16 +76,20 @@ const SUCCESS_CODES = new Set([
   "already_checked_in",
 ]);
 
-function assignmentFor(
+function assignmentsFor(
   assignments: PublishedScheduleAssignment[],
   dealerId: string,
-): PublishedScheduleAssignment | null {
-  return assignments.find((assignment) => (
+): PublishedScheduleAssignment[] {
+  return assignments.filter((assignment) => (
     assignment.dealerId === dealerId && assignment.state !== "closed"
-  )) ?? null;
+  ));
 }
 
-export function DealerPhoneCheckinSheet({
+export function DealerPhoneCheckinSheet(props:Props){
+ return <ScopedDealerPhoneCheckinSheet key={JSON.stringify([props.actorId,props.activeClubId])} {...props}/>;
+}
+function ScopedDealerPhoneCheckinSheet({
+  actorId,
   open,
   activeClubId,
   scheduleAssignments,
@@ -101,20 +108,23 @@ export function DealerPhoneCheckinSheet({
   const [resolving, setResolving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [response, setResponse] = useState<DealerPhoneCheckinResponse | null>(null);
+  const [saved]=useState(()=>{try{return {intent:actorId?readPhoneCheckinIntent(sessionStorage,{actorId,clubId:activeClubId}):null,error:!actorId};}
+    catch{return {intent:null,error:true};}});
+  const [pending,setPending]=useState<DealerPhoneCheckinIntent|null>(saved.intent);
+  const [journalError,setJournalError]=useState(saved.error);
+  const [pendingError,setPendingError]=useState<string|null>(null);
+  const sending=useRef(false),mounted=useRef(false);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastFrameAtRef = useRef(0);
   const acceptingFrameRef = useRef(true);
-  const requestIdRef = useRef<string | null>(null);
+  const resolveGeneration = useRef(0);
   const resolveUserRef = useRef<(userId: string, method: "camera" | "paste") => Promise<void>>(
     async () => undefined,
   );
 
   const scheduledByDealer = useMemo(
-    () => new Map(
-      scheduleAssignments
-        .filter((assignment) => assignment.state !== "closed")
-        .map((assignment) => [assignment.dealerId, assignment]),
-    ),
+    () => new Set(scheduleAssignments.filter((assignment) => assignment.state !== "closed").map((assignment) => assignment.dealerId)),
     [scheduleAssignments],
   );
 
@@ -135,6 +145,8 @@ export function DealerPhoneCheckinSheet({
   }, []);
 
   const reset = useCallback(() => {
+    resolveGeneration.current += 1;
+    setResolving(false);
     setPickerMode("camera");
     setPasteValue("");
     setScanMessage(null);
@@ -143,10 +155,15 @@ export function DealerPhoneCheckinSheet({
     setManualCandidates([]);
     setManualError(null);
     setResponse(null);
-    requestIdRef.current = null;
     lastFrameAtRef.current = 0;
     acceptingFrameRef.current = true;
   }, []);
+
+  useEffect(() => {
+    resolveGeneration.current += 1;
+    setResolving(false);
+    return () => { resolveGeneration.current += 1; };
+  }, [open, activeClubId]);
 
   const changeOpen = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -157,7 +174,7 @@ export function DealerPhoneCheckinSheet({
   };
 
   const addDraft = useCallback((candidate: DealerCandidate, method: DealerPhoneCheckinInputMethod, userId: string | null) => {
-    const assignment = assignmentFor(scheduleAssignments, candidate.id);
+    const assignments = assignmentsFor(scheduleAssignments, candidate.id);
     setDrafts((current) => {
       if (current.some((entry) => entry.id === candidate.id)) {
         toast.info(`${candidate.fullName} đã có trong danh sách.`);
@@ -168,15 +185,17 @@ export function DealerPhoneCheckinSheet({
         entryId: crypto.randomUUID(),
         userId,
         inputMethod: method,
-        shiftAssignmentId: assignment?.id ?? null,
+        shiftAssignmentId: assignments.length === 1 ? assignments[0].id : null,
         reason: "",
       }];
     });
     setResponse(null);
-    requestIdRef.current = null;
   }, [scheduleAssignments]);
 
   const resolveUser = useCallback(async (userId: string, method: "camera" | "paste") => {
+    if (!open || pending || journalError) return;
+    const generation = ++resolveGeneration.current;
+    const current = () => generation === resolveGeneration.current;
     setResolving(true);
     setScanMessage(null);
     try {
@@ -186,6 +205,7 @@ export function DealerPhoneCheckinSheet({
         .eq("user_id", userId)
         .eq("club_id", activeClubId)
         .maybeSingle();
+      if (!current()) return;
       if (error) throw error;
       if (!data || data.deleted_at || data.status !== "active") {
         setScanMessage("QR không thuộc dealer đang hoạt động tại CLB này.");
@@ -195,15 +215,15 @@ export function DealerPhoneCheckinSheet({
       setScanMessage(`Đã thêm ${data.full_name}.`);
       setPasteValue("");
     } catch (caught) {
-      setScanMessage((caught as Error)?.message || "Không xác minh được dealer từ QR.");
+      if (current()) setScanMessage((caught as Error)?.message || "Không xác minh được dealer từ QR.");
     } finally {
-      setResolving(false);
+      if (current()) setResolving(false);
     }
-  }, [activeClubId, addDraft]);
+  }, [open, activeClubId, addDraft, pending, journalError]);
   resolveUserRef.current = resolveUser;
 
   useEffect(() => {
-    if (!open || pickerMode !== "camera") return;
+    if (!open || pending || journalError || pickerMode !== "camera") return;
 
     let cancelled = false;
     acceptingFrameRef.current = true;
@@ -246,10 +266,10 @@ export function DealerPhoneCheckinSheet({
       acceptingFrameRef.current = false;
       void stopScanner();
     };
-  }, [activeClubId, open, pickerMode, stopScanner]);
+  }, [activeClubId, open, pickerMode, stopScanner, pending, journalError]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || pending || journalError) return;
     const controller = new AbortController();
     setManualLoading(true);
     setManualError(null);
@@ -300,7 +320,7 @@ export function DealerPhoneCheckinSheet({
     })();
 
     return () => controller.abort();
-  }, [activeClubId, open]);
+  }, [activeClubId, open, pending, journalError]);
 
   const submitPaste = () => {
     const userId = parseDealerUserQr(pasteValue);
@@ -314,7 +334,6 @@ export function DealerPhoneCheckinSheet({
   const removeDraft = (dealerId: string) => {
     setDrafts((current) => current.filter((entry) => entry.id !== dealerId));
     setResponse(null);
-    requestIdRef.current = null;
   };
 
   const updateReason = (dealerId: string, reason: string) => {
@@ -322,22 +341,32 @@ export function DealerPhoneCheckinSheet({
       entry.id === dealerId ? { ...entry, reason } : entry
     )));
     setResponse(null);
-    requestIdRef.current = null;
+  };
+
+  const shiftUnverified = (entry: DraftEntry) => {
+    const choices = assignmentsFor(scheduleAssignments, entry.id);
+    if (choices.length > 1) return true;
+    return entry.shiftAssignmentId
+      ? !choices.some((choice) => choice.id === entry.shiftAssignmentId)
+      : choices.length > 0;
+  };
+  const unresolvedShift = drafts.some(shiftUnverified);
+  const updateShift = (dealerId: string, shiftAssignmentId: string | null) => {
+    setDrafts((current) => current.map((entry) => entry.id === dealerId ? {...entry, shiftAssignmentId} : entry));
+    setResponse(null);
   };
 
   const submit = async () => {
-    if (drafts.length === 0 || submitting || response) return;
+    if ((!pending&&drafts.length === 0) || sending.current || response || journalError || !actorId) return;
     if (drafts.length > 50) {
       toast.error("Mỗi lần chỉ check-in tối đa 50 dealer.");
       return;
     }
-    if (drafts.some((entry) => !entry.shiftAssignmentId && !entry.reason.trim())) {
+    if (!pending&&drafts.some((entry) => !entry.shiftAssignmentId && !entry.reason.trim())) {
       toast.error("Mỗi dealer ngoài lịch cần một lý do riêng.");
       return;
     }
 
-    const requestId = requestIdRef.current ?? crypto.randomUUID();
-    requestIdRef.current = requestId;
     const entries: DealerPhoneCheckinEntry[] = drafts.map((entry) => ({
       entry_id: entry.entryId,
       mode: entry.shiftAssignmentId ? "scheduled" : "unscheduled",
@@ -348,31 +377,40 @@ export function DealerPhoneCheckinSheet({
       reason: entry.shiftAssignmentId ? null : entry.reason,
     }));
 
-    setSubmitting(true);
+    const intent=pending??{actorId,clubId:activeClubId,requestId:crypto.randomUUID(),entries,
+      labels:drafts.map(d=>({entryId:d.entryId,dealerId:d.id,name:d.fullName}))};
+    try{persistPhoneCheckinIntent(sessionStorage,intent);}catch{
+      setJournalError(true);setPendingError('Không xác minh được yêu cầu đã lưu. Chưa gửi thao tác mới.');return;
+    }
+    if (!pending && unresolvedShift) {
+      toast.error("Chọn đúng ca hiện hành cho từng dealer trước khi check-in.");
+      return;
+    }
+    setPending(intent);sending.current=true;setSubmitting(true);setPendingError(null);
     try {
-      const result = await rpcCheckin("operator_check_in_dealers", {
-        p_request_id: requestId,
-        p_expected_club_id: activeClubId,
-        p_entries: entries,
-      });
+      const result = await waitForManualPlayerResponse(rpcCheckin("operator_check_in_dealers", {
+        p_request_id: intent.requestId,
+        p_expected_club_id: intent.clubId,
+        p_entries: intent.entries,
+      }));
+      if(!mounted.current)return;
       if (result.error) throw result.error;
-
-      const nextResponse = result.data as DealerPhoneCheckinResponse;
-      setResponse(nextResponse);
-      if (nextResponse.outcome === "rollout_disabled") {
-        onRolloutDisabled();
-        changeOpen(false);
-        toast.warning("Tính năng vừa được quản trị viên tắt.");
-        return;
+      if(result.data&&typeof result.data==='object'&&'outcome' in result.data&&result.data.outcome==='rollout_disabled'){
+        setPendingError('Tính năng đã tắt. Giữ yêu cầu cũ, chưa kết luận kết quả check-in.');onRolloutDisabled();return;
       }
+
+      const nextResponse = phoneCheckinReceipt(result.data,intent);
+      if(!nextResponse){setPendingError('Chưa xác minh được kết quả theo mã yêu cầu và từng dealer. Giữ nguyên yêu cầu để đối chiếu.');return;}
+      settlePhoneCheckinIntent(sessionStorage,intent);
+      setPending(null);
+      setResponse(nextResponse);
       if (nextResponse.outcome === "completed" || nextResponse.outcome === "partial") {
-        requestIdRef.current = null;
         onCompleted();
       }
     } catch (caught) {
-      toast.error((caught as Error)?.message || "Mất kết nối khi check-in. Có thể thử lại an toàn.");
+      if(mounted.current)setPendingError((caught as Error)?.message || 'Chưa biết kết quả check-in. Giữ nguyên mã yêu cầu, không tạo yêu cầu mới.');
     } finally {
-      setSubmitting(false);
+      sending.current=false;if(mounted.current)setSubmitting(false);
     }
   };
 
@@ -382,7 +420,7 @@ export function DealerPhoneCheckinSheet({
   };
 
   const resultName = (entryId: string) => (
-    drafts.find((entry) => entry.entryId === entryId)?.fullName ?? "Dealer"
+    drafts.find((entry) => entry.entryId === entryId)?.fullName ?? saved.intent?.labels.find(l=>l.entryId===entryId)?.name ?? "Dealer"
   );
 
   return (
@@ -396,7 +434,13 @@ export function DealerPhoneCheckinSheet({
           </SheetDescription>
         </SheetHeader>
 
-        {!response && (
+        {(journalError||pendingError)&&<p role="alert">{pendingError??'Không xác minh được tài khoản hoặc yêu cầu đã lưu. Chưa gửi check-in mới.'}</p>}
+        {pending&&!response&&<div className="mt-4 space-y-3">
+          <p role="status">Còn yêu cầu check-in {pending.entries.length} dealer chưa được đối chiếu. Không sửa danh sách hoặc tạo mã mới.</p>
+          <ul>{pending.labels.map(l=><li key={l.entryId}>{l.name}</li>)}</ul>
+          <Button disabled={submitting||journalError} onClick={()=>void submit()}>Gửi lại nguyên yêu cầu check-in</Button>
+        </div>}
+        {!response && !pending && !journalError && (
           <>
             <div className="mt-4 grid grid-cols-3 gap-1 rounded-lg bg-white/5 p-1" role="tablist" aria-label="Cách chọn dealer">
               {([
@@ -467,7 +511,7 @@ export function DealerPhoneCheckinSheet({
                 ) : manualError ? (
                   <div className="px-4 py-6 text-center text-[13px] text-rose-300">{manualError}</div>
                 ) : manualCandidates.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-[13px] text-[#9b8e97]">Không còn dealer active để chọn.</div>
+                  <div className="px-4 py-6 text-center text-[13px] text-[#9b8e97]">Không còn dealer chưa check-in để chọn.</div>
                 ) : manualCandidates.map((dealer) => {
                   const selected = drafts.some((entry) => entry.id === dealer.id);
                   const scheduled = scheduledByDealer.has(dealer.id);
@@ -501,20 +545,31 @@ export function DealerPhoneCheckinSheet({
                   <span>Chờ check-in</span><span>{drafts.length}/50</span>
                 </div>
                 <div className="ios-group">
-                  {drafts.map((entry) => (
+                  {drafts.map((entry) => {
+                    const choices = assignmentsFor(scheduleAssignments, entry.id);
+                    const unverified = shiftUnverified(entry);
+                    return (
                     <div key={entry.entryId} className="ios-row-inset px-4 py-3">
                       <div className="flex items-start gap-3">
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[14px] text-[#f2ece6]">{entry.fullName}</span>
                           <span className={cn("block text-[11px]", entry.shiftAssignmentId ? "text-emerald-300" : "text-amber-300")}>
-                            {entry.shiftAssignmentId ? "Theo lịch đã phát hành" : "Ngoài lịch · cần lý do"}
+                            {unverified ? "Chưa xác minh ca · cần chọn lại" : entry.shiftAssignmentId ? "Theo lịch đã phát hành" : "Ngoài lịch · cần lý do"}
                           </span>
                         </span>
                         <button type="button" onClick={() => removeDraft(entry.id)} className="min-h-8 px-1 text-[12px] text-rose-300">
                           Bỏ
                         </button>
                       </div>
-                      {!entry.shiftAssignmentId && (
+                      {choices.length > 1 && <p role="alert" className="mt-2 text-sm text-destructive">Lịch không nhất quán: dealer có nhiều ca. Tải lại lịch trước khi check-in.</p>}
+                      {unverified && choices.length === 1 && <div className="mt-2 space-y-2 text-sm">
+                        <p>Ca hiện hành: {new Date(choices[0].scheduledStartAt).toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'})} – {new Date(choices[0].scheduledEndAt).toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'})}</p>
+                        <Button type="button" variant="secondary" onClick={() => updateShift(entry.id,choices[0].id)}>Xác nhận ca hiện hành cho {entry.fullName}</Button>
+                      </div>}
+                      {unverified && choices.length === 0 && <Button type="button" variant="secondary" onClick={() => updateShift(entry.id,null)}>
+                        Ca cũ không còn · chuyển sang ngoài lịch
+                      </Button>}
+                      {!entry.shiftAssignmentId && choices.length === 0 && (
                         <Input
                           value={entry.reason}
                           onChange={(event) => updateReason(entry.id, event.target.value)}
@@ -523,7 +578,7 @@ export function DealerPhoneCheckinSheet({
                         />
                       )}
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             )}
@@ -531,7 +586,7 @@ export function DealerPhoneCheckinSheet({
             <Button
               type="button"
               className="mt-4 min-h-11 w-full"
-              disabled={drafts.length === 0 || submitting || resolving}
+              disabled={drafts.length === 0 || submitting || resolving || unresolvedShift}
               onClick={() => void submit()}
             >
               {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}

@@ -4,6 +4,7 @@
 // Fold-win never reaches here (it routes straight to Review with the winner prefilled).
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CardSlotPicker, type Card, displayCard } from "@/components/shared/CardSlotPicker";
 
 export interface ShowdownPlayer {
@@ -69,6 +70,7 @@ export function ShowdownInputPanel({
   onSkipReveal,
   revealOrder,
 }: ShowdownInputPanelProps) {
+  const {t}=useTranslation();
   // UAT wave 2: 2-tap confirm for the skip-reveal escape — first tap arms for 8s.
   const [skipArmed, setSkipArmed] = useState(false);
   const skipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -114,7 +116,7 @@ export function ShowdownInputPanel({
       </h3>
       {revealOnly && (
         <div className="text-[11px] text-amber-300">
-          Tất cả đã all-in. Lật bài tẩy của từng người (ai bỏ bài thì bấm "Úp bài"), rồi chạy nốt board.
+          Đã hết lượt cược. Lật bài tẩy của từng người (ai bỏ bài thì bấm "Úp bài"), rồi chạy nốt board.
         </div>
       )}
       <div className="text-[11px] text-muted-foreground">
@@ -182,7 +184,7 @@ export function ShowdownInputPanel({
               // primary purple reveal CTA, with a 2-tap confirm (no silent skip).
               <div className="mt-3 space-y-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5">
                 <div className="text-[10px] text-amber-300">
-                  Bài sẽ không hiển thị trên viewer. Bạn vẫn phải chấm kết quả thủ công ở Showdown.
+                  {t('trackerSkipRevealNote')}
                 </div>
                 <button
                   type="button"

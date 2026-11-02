@@ -8,8 +8,12 @@ export type SupabaseAdmin = any;
 
 // R8: full name everywhere, @mention appended when available —
 // "Trần Ngọc Anh @Synsyn223", never a bare @username without the name.
+export function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function mention(dealer: { full_name: string; telegram_username?: string | null; telegram_user_id?: number | null }): string {
-  const safe = dealer.full_name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safe = escapeHtml(dealer.full_name);
   if (dealer.telegram_username) return `${safe} @${dealer.telegram_username}`;
   if (dealer.telegram_user_id) {
     return `<a href="tg://user?id=${dealer.telegram_user_id}">${safe}</a>`;
@@ -73,7 +77,7 @@ export function formatCloseTableMessage(params: {
   tourName?: string;
 }): string {
   const { tableName, dealer } = params;
-  return `Đóng bàn : ${tableName} - Dealer ${mention(dealer)} được nghỉ.`;
+  return `Đóng bàn : ${escapeHtml(tableName)} - Dealer ${mention(dealer)} được nghỉ.`;
 }
 
 export function formatMassAssignMessage(assignments: Array<{
@@ -82,7 +86,7 @@ export function formatMassAssignMessage(assignments: Array<{
 }>): string {
   if (!assignments.length) return "";
   const lines = assignments.map(
-    (a, i) => `${i + 1}.${a.tableName} → ${mention(a.dealer)}`
+    (a, i) => `${i + 1}.${escapeHtml(a.tableName)} → ${mention(a.dealer)}`
   );
   return `Mở Bàn (${assignments.length} bàn)\n${lines.join("\n")}`;
 }
@@ -114,7 +118,7 @@ export function formatEmergencyPreAssignMessage(params: {
   // Match the batch pre_assign format so operators see a consistent "Tiếp theo" message
   return [
     `Có 1 cập nhật:`,
-    ` 📋 Tiếp theo ${params.tableName}: ${mention(params.outDealer)} ra, ${mention(params.inDealer)} vào (${hhmm(params.swingAt)}, còn ${params.minutesLeft} phút)`,
+    ` 📋 Tiếp theo ${escapeHtml(params.tableName)}: ${mention(params.outDealer)} ra, ${mention(params.inDealer)} vào (${hhmm(params.swingAt)}, còn ${params.minutesLeft} phút)`,
   ].join("\n");
 }
 
@@ -287,7 +291,7 @@ export async function notifyIncomingDealer(
   minutesLeft: number,
   chatId?: string,
 ): Promise<void> {
-  const msg = `🔔 Chuẩn bị: <b>${tableName}</b> sau ~${minutesLeft} phút.`;
+  const msg = `🔔 Chuẩn bị: <b>${escapeHtml(tableName)}</b> sau ~${minutesLeft} phút.`;
 
   if (dealer.telegram_user_id) {
     try {

@@ -20,6 +20,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { loadCandidateActiveBreaks } from "./candidateBreaks.ts";
+import { loadEligibleDealerAttendance } from "./dealerPoolEligibility.ts";
 import { candidateSnapshotFailureDiagnostic } from "./candidateSnapshotTelemetry.ts";
 import {
   isFreshDealerPoolAttendance,
@@ -461,9 +462,12 @@ export async function buildDealerCandidates(
   // Step 2 edge case: query error or empty rows
   if (error) return candidateQueryFailure(error, "attendance_pool");
 
-  const freshRows = ((rawRows ?? []) as AttendancePoolRow[]).filter((row) =>
+  const ageFilteredRows = ((rawRows ?? []) as AttendancePoolRow[]).filter((row) =>
     isFreshDealerPoolAttendance(row.check_in_time, candidateNowMs)
   );
+  const eligibility=await loadEligibleDealerAttendance(admin,clubId,ageFilteredRows.map(row=>row.id));
+  if(eligibility.error)return candidateQueryFailure(eligibility.error,'operating_day');
+  const freshRows=ageFilteredRows.filter(row=>eligibility.ids.has(row.id));
   const rowsByDealer = new Map<string, AttendancePoolRow>();
   let duplicateDealerRows = 0;
   for (const row of freshRows) {

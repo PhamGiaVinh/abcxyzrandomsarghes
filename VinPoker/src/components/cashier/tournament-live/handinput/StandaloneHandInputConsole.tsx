@@ -39,6 +39,7 @@ import { OperatorActionLog } from "./OperatorActionLog";
 import { HandGuideDrawer } from "./HandGuideDrawer";
 import { playersToSeatInfo, lastActorIdOf, latestActionLogOf, selectedSeatOf } from "./standaloneFelt";
 import type { StandaloneHandInput } from "./useStandaloneHandInput";
+import {TableContextReadStatus} from './TableContextReadStatus';
 
 type MobileTab = "table" | "action" | "log";
 
@@ -65,6 +66,9 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
       </div>
     );
   }
+
+  if(hook.tableContextReadState==='loading'||hook.tableContextReadState==='error')return <TableContextReadStatus
+    state={hook.tableContextReadState} message={hook.tableSelectionNotice} onBack={hook.backToTableMap} onRetry={()=>{void hook.handleTableChange(hook.tableId);}}/>;
 
   const bigBlind = hook.bigBlind;
   const formatBB = (n: number): string | null =>
@@ -145,13 +149,16 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
           board={hook.communityCards}
           endingStacks={hook.endingStacks}
           onEndingStackChange={hook.handleEndingStackChange}
-          potSize={hook.potSize}
+          potSize={hook.reviewPotBreakdown.totalPot}
+          uncalled={hook.reviewPotBreakdown.uncalled}
           conservationOk={hook.conservationOk}
           winnerDetermined={hook.winnerDetermined}
           canSubmit={hook.reviewValid}
           showdownLayers={hook.showdownLayers}
           onSubmit={hook.handleSubmitHand}
-          onBack={() => hook.setEndingStacks({})}
+          onBack={hook.handleUndo}
+          backLabel="Hoàn tác hành động cuối"
+          backDisabled={!hook.canUndo}
           submitting={disabled}
           rankShifts={FEATURES.trackerChipQuickEdit ? hook.rankShifts : undefined}
           diagnostics={FEATURES.trackerWorkflowAids}
@@ -387,9 +394,9 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
         ))}
       </div>
 
-      <div className="grid gap-3 min-[1200px]:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-3 min-[1200px]:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         {/* LEFT — oval table map (shared LiveFelt) + state summary */}
-        <div className={`${tab === "table" ? "block" : "hidden"} space-y-2 md:block`}>
+        <div className={`${tab === "table" ? "block" : "hidden"} min-w-0 space-y-2 md:block`}>
           {hook.players.length === 0 ? (
             <div className="rounded-2xl border border-border/40 bg-card/50 py-10 text-center text-sm text-muted-foreground">
               Bàn này chưa có người chơi đang hoạt động.
@@ -398,7 +405,7 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
             <LiveFelt
               seats={seatInfo}
               lastActorId={lastActorIdOf(hook.actions)}
-              toActId={hook.toActId}
+              toActId={!hook.handStarted || hook.isSummary ? null : hook.showActionStep ? hook.actorPlayer?.player_id ?? hook.toActId : hook.toActId}
               displayCards={displayCards}
               potSize={hook.potSize}
               potBreakdown={hook.potBreakdown}
@@ -414,7 +421,7 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
               compact
               blinds={feltBlinds}
               appearance={appearance.data}
-              runout={hook.allInRunout}
+              runout={hook.allInRunout && !hook.showActionStep}
             />
           )}
           {hook.handStarted && !hook.isSummary && (
@@ -439,7 +446,7 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
         </div>
 
         {/* RIGHT — guided action region */}
-        <div className={`${tab === "action" ? "block" : "hidden"} space-y-2 md:block`}>
+        <div className={`${tab === "action" ? "block" : "hidden"} min-w-0 space-y-2 md:block`}>
           {actionRegion}
           {hook.handStarted && !hook.isSummary && (
             <HandControlsStrip

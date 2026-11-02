@@ -3,6 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {createPaidJourneyFixture} from './paidJourney.fixture.mjs';
+import {closeCanonicalFinishedField} from './officialCloseJourney.native.mjs';
 
 assert.equal(process.env.VINPOKER_NATIVE_CROSS_FLOW,'1');
 for(const [key,value] of Object.entries({PGHOST:'127.0.0.1',PGPORT:'55441',PGUSER:'postgres',PGDATABASE:'vinpoker_ops_cash115_qualified_c'})) assert.equal(process.env[key],value);
@@ -15,6 +16,11 @@ if(process.argv.includes('--bank-only')) {
 }
 const actor=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
 const call=query=>JSON.parse(sql(`BEGIN;${actor}${query}COMMIT;`));
+const directFinalizer=sql(`SELECT has_function_privilege('authenticated','public.finalize_tournament_results(uuid)','EXECUTE');`)==='t';
+const assertUnfinished=()=>{
+ if(directFinalizer)assert.equal(call(`SELECT public.finalize_tournament_results('${f.tour}');`).error,'tournament_not_finished');
+ else assert.throws(()=>call(`SELECT public.finalize_tournament_results('${f.tour}');`),/permission denied for function finalize_tournament_results/);
+};
 const players=[f.player,randomUUID(),randomUUID(),randomUUID()];
 for(const player of players.slice(1)) {
   sql(`BEGIN;INSERT INTO auth.users(id) VALUES('${player}');
@@ -41,17 +47,18 @@ const bust=player=>{
   assert.deepEqual(call(query),result,'out replay must not allocate a second rank');return seat.entry;
 };
 const first=bust(players[0]);
-assert.equal(call(`SELECT public.finalize_tournament_results('${f.tour}');`).error,'tournament_not_finished');
+assertUnfinished();
 assert.equal(call(`SELECT public.record_tournament_prize_payment('${f.tour}',2,'cash');`).error,'place_not_finalized');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='${f.tour}';`),'0');
 const second=bust(players[1]);
 // The first in-money elimination occurs while TWO players still remain.
-assert.equal(call(`SELECT public.finalize_tournament_results('${f.tour}');`).error,'tournament_not_finished');
+assertUnfinished();
 assert.equal(call(`SELECT public.record_tournament_prize_payment('${f.tour}',3,'cash');`).error,'place_not_finalized');
 assert.equal(sql(`SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='${f.tour}';`),'0');
 console.log('GAP_ITM_OUT_PRIZE_NOT_AVAILABLE_UNTIL_FINALIZATION');
 const third=bust(players[2]);
-assert.equal(call(`SELECT public.finalize_tournament_results('${f.tour}');`).ok,true);
+if(directFinalizer)assert.equal(call(`SELECT public.finalize_tournament_results('${f.tour}');`).ok,true);
+else closeCanonicalFinishedField(sql,f);
 const ranks=JSON.parse(sql(`SELECT jsonb_object_agg(player_id,finished_place) FROM public.tournament_entries WHERE tournament_id='${f.tour}';`));
 assert.deepEqual(ranks,{[players[0]]:4,[players[1]]:3,[players[2]]:2,[players[3]]:1});
 const hasRecipientRead=sql("SELECT to_regprocedure('public.get_tournament_payout_recipients(uuid)') IS NOT NULL;")==='t';

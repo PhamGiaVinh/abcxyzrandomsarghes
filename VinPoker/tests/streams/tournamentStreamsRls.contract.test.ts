@@ -58,7 +58,8 @@ describe("tournament_streams owner write policy", () => {
     expect(streamLinkManager).not.toMatch(/created_by\s*:/);
     expect(adminStreamManager).not.toMatch(/created_by\s*:/);
     expect(streamLinkManager.match(/\.select\("id"\)/g)).toHaveLength(3);
-    expect(adminStreamManager.match(/\.select\("id"\)/g)).toHaveLength(4);
+    // Four stream mutations plus the manual tournament counter update return proof.
+    expect(adminStreamManager.match(/\.select\("id"\)/g)).toHaveLength(5);
     expect(streamLinkManager).toContain("changedExactlyOneStream(data)");
     expect(adminStreamManager).toContain("changedExactlyOneStream(data)");
   });

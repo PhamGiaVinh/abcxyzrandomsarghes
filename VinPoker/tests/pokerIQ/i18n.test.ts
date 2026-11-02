@@ -16,6 +16,14 @@ const flat = (obj: any, prefix = ""): string[] =>
   });
 
 describe("pokerDrill i18n", () => {
+  it("does not promise unlocking the current top drill grade or assume everyone's weakest category", () => {
+    for (const [lng, res] of Object.entries(locales)) {
+      for (const key of ['nextHook', 'trainingGoal', 'cta']) {
+        expect(res.pokerDrill.result[key], `${lng}.${key}`).not.toContain('A-');
+      }
+      expect(res.pokerDrill.result.cta, lng).toContain('{{drill}}');
+    }
+  });
   it("namespace exists in every locale", () => {
     for (const [lng, res] of Object.entries(locales)) {
       expect(res.pokerDrill, lng).toBeTruthy();

@@ -19,17 +19,25 @@ const ResetPassword = () => {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    let active=true,generation=0;
     // Supabase auto-creates a recovery session when redirected with the token in URL hash.
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") setReady(true);
+    const { data: sub } = supabase.auth.onAuthStateChange((event,session) => {
+      generation++;
+      if(!active)return;
+      if(event==='SIGNED_OUT'||event==='SIGNED_IN'||event==='PASSWORD_RECOVERY'){
+        setPw('');setPw2('');
+        setReady(event!=='SIGNED_OUT'&&!!session);
+      }
     });
+    const readGeneration=generation;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true);
-    });
-    return () => sub.subscription.unsubscribe();
+      if(active&&generation===readGeneration)setReady(!!session);
+    }).catch(()=>{if(active&&generation===readGeneration)setReady(false);});
+    return () => {active=false;sub.subscription.unsubscribe();};
   }, []);
 
   const submit = async () => {
+    if(!ready)return;
     if (pw.length < 8) return toast.error(t("resetPassword.passwordMin"));
     if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return toast.error(t("resetPassword.passwordLettersAndNumbers"));
     if (pw !== pw2) return toast.error(t("resetPassword.passwordsDoNotMatch"));

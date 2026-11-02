@@ -11,7 +11,10 @@ import { Loader2, Send, ArrowLeft, Users, Trash2, Lock, Globe, MessageCircle, Pa
 import { toast } from "sonner";
 import { GroupMembersDialog } from "@/components/groups/GroupMembersDialog";
 import { InviteLinkDialog } from "@/components/groups/InviteLinkDialog";
-import { MessageAttachment } from "@/components/groups/MessageAttachment";
+import { PrivateChatAttachment } from "@/components/groups/PrivateChatAttachment";
+import {CHAT_ATTACHMENT_BUCKET,privateChatAttachmentReference} from '@/lib/chatAttachment';
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 interface Group {
   id: string;
@@ -42,6 +45,12 @@ const MAX_FILE_MB = 10;
 const ALLOWED_TYPES = /^(image\/.*|application\/pdf|application\/zip|application\/x-zip-compressed|application\/msword|application\/vnd\.openxmlformats-officedocument\..*|application\/vnd\.ms-excel|text\/plain)$/;
 
 const GroupChat = () => {
+  const {user,session,loading}=useAuth();
+  const {groupId}=useParams<{groupId:string}>();
+  return <GroupChatScope key={JSON.stringify([user?.id,sessionReadEpoch(session),groupId,loading])}/>;
+};
+
+const GroupChatScope = () => {
   const { t, i18n } = useTranslation();
   const { groupId } = useParams<{ groupId: string }>();
   const { user, loading: authLoading } = useAuth();
@@ -53,8 +62,17 @@ const GroupChat = () => {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(true);
   const [sending, setSending] = useState(false);
+  const sendingRef=useRef(false);
+  const deletingRef=useRef(false);
   const [hasMore, setHasMore] = useState(true);
+  const olderFlight=useRef(false);
+  const [olderLoading,setOlderLoading]=useState(false);
+  const [olderError,setOlderError]=useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const [loadError,setLoadError]=useState(false);
+  const [readAttempt,setReadAttempt]=useState(0);
+  const current=useRef(true);
+  useEffect(()=>{current.current=true;return()=>{current.current=false;};},[]);
   const [openMembers, setOpenMembers] = useState(false);
   const [openInvite, setOpenInvite] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -80,13 +98,14 @@ const GroupChat = () => {
     return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   };
 
-  const loadProfiles = async (ids: string[]) => {
+  const loadProfiles = async (ids: string[], accepts = () => current.current) => {
     const missing = ids.filter((id) => !profiles[id]);
     if (missing.length === 0) return;
     const { data } = await supabase.from("profiles").select("user_id, display_name, avatar_url").in("user_id", missing);
+    if(!accepts())return;
     setProfiles((prev) => {
       const next = { ...prev };
-      (data ?? []).forEach((p: any) => { next[p.user_id] = p; });
+      (data ?? []).forEach((p) => { next[p.user_id] = p; });
       return next;
     });
   };
@@ -95,58 +114,73 @@ const GroupChat = () => {
     if (authLoading || !user || !groupId) return;
     let cancelled = false;
     (async () => {
-      setBusy(true);
+      setBusy(true);setLoadError(false);setForbidden(false);
+      try {
+      await waitForManualPlayerResponse((async () => {
       const { data: g, error: gErr } = await supabase
         .from("chat_groups")
         .select("id, name, avatar_url, is_public, created_by, deleted_at")
         .eq("id", groupId)
         .maybeSingle();
       if (cancelled) return;
-      if (gErr || !g) { setForbidden(true); setBusy(false); return; }
+      if(gErr)throw gErr;
+      if (!g) { setForbidden(true); return; }
       if (g.deleted_at) { toast.error(t("groupChat.chat.deleted")); nav("/inbox"); return; }
-      setGroup(g as Group);
 
       const { data: mems, error: mErr } = await supabase
         .from("chat_group_members")
         .select("user_id")
         .eq("group_id", groupId);
-      if (mErr) { setForbidden(true); setBusy(false); return; }
+      if(cancelled)return;
+      if (mErr) throw mErr;
       const memList = mems ?? [];
       setMemberCount(memList.length);
-      if (!memList.find((m: any) => m.user_id === user.id)) {
+      if (!memList.find((m) => m.user_id === user.id)) {
         setForbidden(true);
         setBusy(false);
         return;
       }
-      await supabase
-        .from("chat_group_members")
-        .update({ last_read_at: new Date().toISOString() })
-        .eq("group_id", groupId)
-        .eq("user_id", user.id);
-
-      const { data: m } = await supabase
+      setGroup(g as Group);
+      const { data: m,error:messageError } = await supabase
         .from("chat_group_messages")
         .select("*")
         .eq("group_id", groupId)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(PAGE);
+      if(cancelled)return;
+      if(messageError||!Array.isArray(m))throw messageError??new Error('group_messages_unavailable');
       const list = ((m ?? []) as Msg[]).reverse();
       setMsgs(list);
       setHasMore((m ?? []).length === PAGE);
-      await loadProfiles(Array.from(new Set(list.map((x) => x.sender_id))));
+      await loadProfiles(Array.from(new Set(list.map((x) => x.sender_id))), () => !cancelled && current.current);
+      if(cancelled)return;
+      // Do not mark unseen history as read while its initial fetch is hung.
+      await supabase
+        .from("chat_group_members")
+        .update({ last_read_at: new Date().toISOString() })
+        .eq("group_id", groupId)
+        .eq("user_id", user.id);
+      if(cancelled)return;
       setBusy(false);
       scrollToBottom(false);
+      })());
+      }catch{
+        if(!cancelled){setLoadError(true);setMsgs([]);setGroup(null);setBusy(false);cancelled=true;}
+      }finally{if(!cancelled)setBusy(false);}
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line
-  }, [user, authLoading, groupId, nav]);
+  }, [user?.id, authLoading, groupId, nav, readAttempt]);
 
   // Realtime: messages + members + group + typing broadcast
   useEffect(() => {
-    if (!groupId || !user) return;
+    if (!groupId || !user || busy || forbidden || loadError || !group) return;
+    let active=true;
     const ch = supabase.channel(`group:${groupId}`, { config: { broadcast: { self: false } } })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_group_messages", filter: `group_id=eq.${groupId}` }, async (payload) => {
+        if(!active)return;
         const m = payload.new as Msg;
         setMsgs((prev) => {
           const idx = prev.findIndex((x) => x._optimistic && x.sender_id === m.sender_id && (x.content ?? "") === (m.content ?? "") && (x.attachment_url ?? "") === (m.attachment_url ?? ""));
@@ -159,6 +193,7 @@ const GroupChat = () => {
           return [...prev, m];
         });
         await loadProfiles([m.sender_id]);
+        if(!active)return;
         if (isNearBottom()) scrollToBottom();
         if (document.visibilityState === "visible") {
           await supabase.from("chat_group_members").update({ last_read_at: new Date().toISOString() })
@@ -166,6 +201,7 @@ const GroupChat = () => {
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_group_messages", filter: `group_id=eq.${groupId}` }, (payload) => {
+        if(!active)return;
         const m = payload.new as Msg;
         if (m.deleted_at) {
           setMsgs((prev) => prev.filter((x) => x.id !== m.id));
@@ -173,13 +209,15 @@ const GroupChat = () => {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_group_members", filter: `group_id=eq.${groupId}` }, async () => {
         const { data: mems } = await supabase.from("chat_group_members").select("user_id").eq("group_id", groupId);
+        if(!active)return;
         setMemberCount((mems ?? []).length);
-        if (mems && !mems.find((m: any) => m.user_id === user.id)) {
+        if (mems && !mems.find((m) => m.user_id === user.id)) {
           toast.error(t("groupChat.chat.kicked"));
           nav("/inbox");
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_groups", filter: `id=eq.${groupId}` }, (payload) => {
+        if(!active)return;
         const g = payload.new as Group;
         if (g.deleted_at) {
           toast.error(t("groupChat.chat.deleted"));
@@ -189,15 +227,16 @@ const GroupChat = () => {
         }
       })
       .on("broadcast", { event: "typing" }, (payload) => {
+        if(!active)return;
         const p = payload.payload as { user_id: string; name: string };
         if (!p?.user_id || p.user_id === user.id) return;
         setTypingUsers((prev) => ({ ...prev, [p.user_id]: { name: p.name, ts: Date.now() } }));
       })
       .subscribe();
     channelRef.current = ch;
-    return () => { supabase.removeChannel(ch); channelRef.current = null; };
+    return () => { active=false;supabase.removeChannel(ch); channelRef.current = null; };
     // eslint-disable-next-line
-  }, [groupId, user?.id, nav]);
+  }, [groupId, user?.id, nav, busy, forbidden, loadError, group?.id]);
 
   // Typing cleanup tick
   useEffect(() => {
@@ -246,7 +285,7 @@ const GroupChat = () => {
   };
 
   const send = async () => {
-    if (!user || !groupId) return;
+    if (!user || !groupId || busy || forbidden || loadError || !group || sendingRef.current || !current.current) return;
     const trimmed = text.trim();
     if (!trimmed && !pendingFile) return;
     if (trimmed.length > MAX_LEN) { toast.error(t("groupChat.chat.textTooLong", { n: MAX_LEN })); return; }
@@ -256,30 +295,33 @@ const GroupChat = () => {
     let attachment_name: string | null = null;
     let attachment_size: number | null = null;
 
+    sendingRef.current=true;
     setSending(true);
+    let tempId:string|null=null;
+    try {
 
     if (pendingFile) {
       const isImg = pendingFile.type.startsWith("image/");
       const ext = pendingFile.name.split(".").pop() ?? "bin";
-      const path = `${user.id}/groups/${groupId}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("chat-uploads").upload(path, pendingFile, {
+      const path = `${user.id}/groups/${groupId}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(CHAT_ATTACHMENT_BUCKET).upload(path, pendingFile, {
         cacheControl: "3600",
         contentType: pendingFile.type,
         upsert: false,
       });
+      if(!current.current)return;
       if (upErr) {
         setSending(false);
         toast.error(t("groupChat.chat.uploadFail", { msg: upErr.message }));
         return;
       }
-      const { data: pub } = supabase.storage.from("chat-uploads").getPublicUrl(path);
-      attachment_url = pub.publicUrl;
+      attachment_url = privateChatAttachmentReference(path);
       attachment_type = isImg ? "image" : "file";
       attachment_name = pendingFile.name;
       attachment_size = pendingFile.size;
     }
 
-    const tempId = `tmp-${Date.now()}`;
+    tempId = `tmp-${crypto.randomUUID()}`;
     const optimistic: Msg = {
       id: tempId,
       group_id: groupId,
@@ -290,8 +332,6 @@ const GroupChat = () => {
       _optimistic: true,
     };
     setMsgs((prev) => [...prev, optimistic]);
-    setText("");
-    clearPending();
     scrollToBottom();
 
     const { error } = await supabase.from("chat_group_messages").insert({
@@ -300,50 +340,82 @@ const GroupChat = () => {
       content: trimmed || null,
       attachment_url, attachment_type, attachment_name, attachment_size,
     });
-    setSending(false);
+    if(!current.current)return;
     if (error) {
       setMsgs((prev) => prev.filter((m) => m.id !== tempId));
       setText(trimmed);
       toast.error(error.message);
-    }
+    }else {setText('');clearPending();}
+    }catch{
+      if(current.current){
+        if(tempId)setMsgs(prev=>prev.filter(m=>m.id!==tempId));
+        toast.error('Chưa xác minh được tin nhắn đã gửi. Giữ nội dung; kiểm tra nhóm trước khi gửi lại.');
+      }
+    }finally{sendingRef.current=false;if(current.current)setSending(false);}
   };
 
   const loadOlder = async () => {
-    if (!groupId || msgs.length === 0 || !hasMore) return;
+    if (!groupId || msgs.length === 0 || !hasMore || busy || forbidden || loadError || olderFlight.current || !current.current) return;
+    olderFlight.current=true;setOlderLoading(true);setOlderError(false);
     const oldest = msgs[0];
     const el = scrollRef.current;
     const prevScrollHeight = el?.scrollHeight ?? 0;
-    const { data } = await supabase
+    try {
+    // Raw PostgREST filters must contain only validated server cursor values.
+    // Preserve PostgreSQL microseconds; Date.toISOString would truncate them.
+    if(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(oldest.id)
+      ||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(oldest.created_at)
+      ||!Number.isFinite(Date.parse(oldest.created_at)))throw new Error('invalid_group_page_cursor');
+    const { data,error } = await waitForManualPlayerResponse(Promise.resolve(supabase
       .from("chat_group_messages")
       .select("*")
       .eq("group_id", groupId)
       .is("deleted_at", null)
-      .lt("created_at", oldest.created_at)
+      .or(`created_at.lt.${oldest.created_at},and(created_at.eq.${oldest.created_at},id.lt.${oldest.id})`)
       .order("created_at", { ascending: false })
-      .limit(PAGE);
-    const older = ((data ?? []) as Msg[]).reverse();
+      .order("id", { ascending: false })
+      .limit(PAGE)));
+    if(!current.current)return;
+    if(error||!Array.isArray(data)||data.some(m=>m.group_id!==groupId||typeof m.id!=='string'
+      ||typeof m.created_at!=='string'||!Number.isFinite(Date.parse(m.created_at))))throw error??new Error('older_messages_unavailable');
+    const older = (data as Msg[]).slice().reverse();
     if (older.length === 0) { setHasMore(false); return; }
-    setMsgs((prev) => [...older, ...prev]);
+    setMsgs((prev) => [...older.filter(m=>!prev.some(existing=>existing.id===m.id)), ...prev]);
     await loadProfiles(Array.from(new Set(older.map((x) => x.sender_id))));
+    if(!current.current)return;
     requestAnimationFrame(() => {
+      if(!current.current)return;
       if (el) el.scrollTop = el.scrollHeight - prevScrollHeight;
     });
     if (older.length < PAGE) setHasMore(false);
+    }catch{if(current.current)setOlderError(true);}
+    finally{olderFlight.current=false;if(current.current)setOlderLoading(false);}
   };
 
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    if (el.scrollTop < 80 && hasMore && !busy) loadOlder();
+    if (el.scrollTop < 80 && hasMore && !busy && !olderError) void loadOlder();
   };
 
   const deleteGroup = async () => {
-    if (!group) return;
+    if (!group || !user || group.created_by!==user.id || deletingRef.current || !current.current) return;
     if (!confirm(t("groupChat.chat.deleteConfirm", { name: group.name }))) return;
-    const { error } = await supabase.from("chat_groups").update({ deleted_at: new Date().toISOString() }).eq("id", group.id);
-    if (error) { toast.error(error.message); return; }
-    toast.success(t("groupChat.chat.deletedToast"));
-    nav("/inbox");
+    deletingRef.current=true;
+    try {
+      const rpc=supabase.rpc as unknown as (name:string,args:{p_group_id:string})=>Promise<{data:unknown;error:{message:string}|null}>;
+      const {data,error}=await rpc.call(supabase,'soft_delete_chat_group_v1',{p_group_id:group.id});
+      if(!current.current)return;
+      const receipt=data&&typeof data==='object'?data as Record<string,unknown>:null;
+      if(error||receipt?.ok!==true||receipt.groupId!==group.id
+        ||!['deleted','already_deleted'].includes(String(receipt.outcome))
+        ||typeof receipt.deletedAt!=='string'||!Number.isFinite(Date.parse(receipt.deletedAt))) {
+        toast.error(error?.message??'Chưa xác minh được kết quả xóa nhóm. Hãy tải lại trước khi thử tiếp.');return;
+      }
+      toast.success(t("groupChat.chat.deletedToast"));nav('/inbox');
+    }catch{
+      if(current.current)toast.error('Chưa xác minh được kết quả xóa nhóm. Hãy tải lại trước khi thử tiếp.');
+    }finally{deletingRef.current=false;}
   };
 
   const fmtTime = (iso: string) => {
@@ -357,6 +429,11 @@ const GroupChat = () => {
 
   if (authLoading) return <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>;
   if (!user) return <Navigate to="/auth" replace />;
+
+  if(loadError)return <Card role="alert" className="max-w-md mx-auto p-6 mt-8 space-y-3">
+    <p>Không tải được nhóm. Chưa xác minh quyền và nội dung; đây không phải xác nhận bạn bị mất quyền.</p>
+    <Button onClick={()=>setReadAttempt(value=>value+1)}>Thử tải lại nhóm</Button>
+  </Card>;
 
   if (forbidden) {
     return (
@@ -406,6 +483,11 @@ const GroupChat = () => {
 
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2 bg-background">
+        {olderLoading&&<p role="status" className="text-xs text-muted-foreground">Đang tải tin nhắn cũ…</p>}
+        {olderError&&<div role="alert" className="text-sm space-y-1">
+          <p>Chưa tải được tin nhắn cũ. Nội dung hiện tại vẫn được giữ.</p>
+          <Button variant="outline" size="sm" onClick={()=>void loadOlder()} disabled={olderLoading}>Thử tải tin nhắn cũ</Button>
+        </div>}
         {busy ? (
           <div className="space-y-3">
             {[0, 1, 2, 3].map((i) => (
@@ -441,7 +523,7 @@ const GroupChat = () => {
                   )}
                   {m.attachment_url && (
                     <div className={`${m._optimistic ? "opacity-60" : ""} mb-1`}>
-                      <MessageAttachment url={m.attachment_url} type={m.attachment_type ?? null} name={m.attachment_name} size={m.attachment_size} />
+                      <PrivateChatAttachment reference={m.attachment_url} scope={{kind:'groups',id:groupId??''}} type={m.attachment_type ?? null} name={m.attachment_name} size={m.attachment_size} />
                     </div>
                   )}
                   {hasText && (
@@ -499,12 +581,13 @@ const GroupChat = () => {
             accept="image/*,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
             onChange={(e) => handleFilePick(e.target.files?.[0] ?? null)}
           />
-          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => fileInputRef.current?.click()} title={t("groupChat.chat.attachTitle")} disabled={sending}>
+          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => fileInputRef.current?.click()} title={t("groupChat.chat.attachTitle")} disabled={sending || busy || !group}>
             <Paperclip className="w-4 h-4" />
           </Button>
           <textarea
             ref={inputRef}
             value={text}
+            disabled={sending || busy || !group}
             onChange={(e) => { setText(e.target.value.slice(0, MAX_LEN)); if (e.target.value.trim()) sendTyping(); }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -516,7 +599,7 @@ const GroupChat = () => {
             rows={1}
             className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary max-h-32"
           />
-          <Button onClick={send} disabled={sending || (!text.trim() && !pendingFile)} size="icon">
+          <Button onClick={send} disabled={sending || busy || !group || (!text.trim() && !pendingFile)} size="icon" aria-label="Gửi tin nhắn">
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
         </div>

@@ -88,12 +88,17 @@ serve(async (req) => {
   const service = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
   // Owner/Admin/Cashier check, reusing the canonical live role helpers with the JWT-verified uid.
-  async function canManageClub(clubId: string): Promise<boolean> {
+  async function authorizeClub(clubId: string): Promise<Response | null> {
+    let unverified = false;
     for (const fn of ["is_club_owner", "is_club_admin", "is_club_cashier"]) {
-      const { data } = await service.rpc(fn, { _user_id: uid, _club_id: clubId });
-      if (data === true) return true;
+      try {
+        const { data, error } = await service.rpc(fn, { _user_id: uid, _club_id: clubId });
+        if (error || (data !== true && data !== false)) { unverified = true; continue; }
+        if (data === true) return null;
+      } catch { unverified = true; }
     }
-    return false;
+    return unverified ? json({ error: "PAYOUT_AUTHORITY_UNVERIFIED" }, 503)
+      : json({ error: "NOT_AUTHORIZED" }, 403);
   }
 
   // ----------------------------------------------------------------------------------- OFFICIAL
@@ -120,7 +125,8 @@ serve(async (req) => {
       .from("tournaments").select("club_id").eq("id", run.tournament_id).maybeSingle();
     if (tourLookupErr) return json({ error: tourLookupErr.message }, 400);
     if (!tourRow) return json({ error: "TOURNAMENT_NOT_FOUND" }, 404);
-    if (!(await canManageClub(tourRow.club_id))) return json({ error: "NOT_AUTHORIZED" }, 403);
+    const denied = await authorizeClub(tourRow.club_id);
+    if (denied) return denied;
 
     // Compute STRICTLY from the frozen snapshot — never recount, never read live tournament state.
     // CUSTOM uses the frozen `custom_percents`; presets use the α engine. Both go through
@@ -223,10 +229,11 @@ serve(async (req) => {
     .maybeSingle();
   if (tourErr) return json({ error: tourErr.message }, 400);
   if (!tour) return json({ error: "TOURNAMENT_NOT_FOUND" }, 404);
-  if (!(await canManageClub(tour.club_id))) return json({ error: "NOT_AUTHORIZED" }, 403);
+  const denied = await authorizeClub(tour.club_id);
+  if (denied) return denied;
   if (tour.event_id) return json({ error: "MULTIDAY_UNSUPPORTED" }, 400);
 
-  // Forecast entries: explicit override, else live count of non-cancelled entries (NON-authoritative).
+  // Forecast only: use the same eligibility as prepare_payout_snapshot, including legacy NULL.
   let entries: number;
   let entriesSource: string;
   if (body.entries_override != null) {
@@ -237,7 +244,7 @@ serve(async (req) => {
       .from("tournament_entries")
       .select("id", { count: "exact", head: true })
       .eq("tournament_id", tournamentId)
-      .not("status", "in", `(${EXCLUDED_ENTRY_STATUS.join(",")})`);
+      .or(`status.is.null,status.not.in.(${EXCLUDED_ENTRY_STATUS.join(",")})`);
     if (cntErr) return json({ error: cntErr.message }, 400);
     entries = count ?? 0;
     entriesSource = "live_entries";

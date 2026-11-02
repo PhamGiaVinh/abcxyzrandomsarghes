@@ -104,6 +104,21 @@ describe("fetchHandPlayerDisplay", () => {
 describe("handPlayersHasSnapshot (E1 feature-detect)", () => {
   beforeEach(() => __resetHandPlayersSnapshotProbe());
 
+  it.each(["42501", "PGRST301", "503"])("does not cache a %s failure as missing schema", async (code) => {
+    from.mockReturnValueOnce(probeQuery({ error: { code, message: "temporary read failure" } }) as any)
+      .mockReturnValueOnce(probeQuery({ error: null }) as any);
+    await expect(handPlayersHasSnapshot()).rejects.toThrow("temporary read failure");
+    expect(await handPlayersHasSnapshot()).toBe(true);
+    expect(from).toHaveBeenCalledTimes(2);
+  });
+
+  it("evicts a rejected transport probe so reconnect can retry", async () => {
+    from.mockReturnValueOnce({ select: () => ({ limit: () => Promise.reject(new Error("offline")) }) } as any)
+      .mockReturnValueOnce(probeQuery({ error: null }) as any);
+    await expect(handPlayersHasSnapshot()).rejects.toThrow("offline");
+    expect(await handPlayersHasSnapshot()).toBe(true);
+  });
+
   it("true when the probe succeeds; cached (one query for repeated calls)", async () => {
     from.mockReturnValue(probeQuery({ error: null }) as any);
     expect(await handPlayersHasSnapshot()).toBe(true);

@@ -47,6 +47,10 @@ function makeAdmin(fix: {
   attendanceBreaksStatus?: number | null;
   assignmentBreaksError?: { code?: string; message: string; status?: number };
   assignmentBreaksStatus?: number | null;
+  eligibleAttendanceIds?: string[];
+  eligibilityError?: { code?: string; message: string };
+  malformedEligibility?: boolean;
+  eligibilityRows?: Row[];
 }) {
   const CHAIN_METHODS = [
     "select", "eq", "in", "is", "or", "not", "gt", "gte", "lt", "lte", "neq", "order", "limit",
@@ -159,7 +163,17 @@ function makeAdmin(fix: {
       Promise.resolve(resolve()).then(onF, onR);
     return chain;
   }
-  return { from: (table: string) => builder(table) };
+  return {
+    from: (table: string) => builder(table),
+    rpc: (name: string, args: { p_attendance_ids: string[] }) => {
+      assertEquals(name, 'get_dealer_pool_eligible_attendance_v1');
+      if (fix.eligibilityError) return Promise.resolve({data:null,error:fix.eligibilityError});
+      if (fix.malformedEligibility) return Promise.resolve({data:null,error:null});
+      if (fix.eligibilityRows) return Promise.resolve({data:fix.eligibilityRows,error:null});
+      const eligible=new Set(fix.eligibleAttendanceIds??fix.poolRows.map(row=>row.id as string));
+      return Promise.resolve({data:args.p_attendance_ids.filter(id=>eligible.has(id)).map(id=>({attendance_id:id})),error:null});
+    },
+  };
 }
 
 // ── Fixture builders ────────────────────────────────────────────────────────
@@ -206,6 +220,27 @@ function onBreakPoolRow(id: string, dealerId: string): Row {
 // Expected baseline score for an available tier-C dealer, no tourTier, restMin≥20:
 //   rest_bonus(+200, restMin≥20) + tier_bonus(+20, LOW-branch tier C) = 220.
 const EXPECTED_BASELINE_SCORE = 220;
+
+Deno.test('operating-day eligibility excludes a fresh but closed/prior-day shift before scoring', async()=>{
+ const admin=makeAdmin({dealerIds:['closed','current'],
+  poolRows:[poolRow('a-closed','closed'),poolRow('a-current','current')],
+  metricsRows:[metric('a-closed',30),metric('a-current',30)],eligibleAttendanceIds:['a-current']});
+ const result=await buildDealerCandidates(admin,'club1');
+ assertEquals(result.status,'ok');
+ assertEquals(result.candidates.map(row=>row.dealer_id),['current']);
+});
+
+Deno.test('operating-day eligibility error or malformed result is not a usable pool',async()=>{
+ for(const failure of [{eligibilityError:{code:'XX000',message:'backend failure'}},{malformedEligibility:true},
+  {eligibilityRows:[{attendance_id:'outside'}]},
+  {eligibilityRows:[{attendance_id:'a-current'},{attendance_id:'a-current'}]},
+  {eligibilityRows:[{attendance_id:'a-current',unexpected:true}]}]){
+  const admin=makeAdmin({dealerIds:['current'],poolRows:[poolRow('a-current','current')],metricsRows:[metric('a-current',30)],...failure});
+  const result=await buildDealerCandidates(admin,'club1');
+  assertEquals(result.candidates,[]);
+  assertEquals(result.status==='ok',false);
+ }
+});
 
 Deno.test("baseline: a normal rested tier-C dealer scores exactly 220 (mock fidelity check)", async () => {
   const admin = makeAdmin({

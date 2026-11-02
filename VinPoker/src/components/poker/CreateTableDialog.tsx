@@ -3,7 +3,7 @@
 // chips and become the host (seated at seat 1). Others join freely and self-set
 // their chips. op_create_open_table re-validates everything (chips/blinds STRINGS).
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
@@ -28,6 +28,7 @@ export function CreateTableDialog({
   const [buyin, setBuyin] = useState('5000');
   const [maxSeats, setMaxSeats] = useState(9);
   const [busy, setBusy] = useState(false);
+  const creating = useRef(false);
 
   const sbN = Math.floor(Number(sb)), bbN = Math.floor(Number(bb)), buyinN = Math.floor(Number(buyin));
   const blindsOk = sbN >= 1 && bbN > sbN && bbN <= MAX_CHIPS;
@@ -35,14 +36,15 @@ export function CreateTableDialog({
   const valid = blindsOk && buyinOk;
 
   const create = async () => {
-    if (!valid) return;
+    if (!valid || creating.current) return;
+    creating.current = true;
     setBusy(true);
     try { await onCreate({ name: name.trim(), sb: String(sbN), bb: String(bbN), buyin: String(buyinN), maxSeats }); }
-    finally { setBusy(false); }
+    finally { creating.current = false; setBusy(false); }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!busy) onOpenChange(v); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!creating.current) onOpenChange(v); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Tạo bàn mới</DialogTitle>

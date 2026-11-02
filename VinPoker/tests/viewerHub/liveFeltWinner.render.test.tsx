@@ -97,6 +97,75 @@ function cardClass(html: string, code: string): string {
 }
 
 describe("LiveFelt verified best-five focus", () => {
+  it.each([false,true])('keeps nine-seat board and one active pot structurally separate through collection/awards (portrait=%s)',portrait=>{
+    vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+    vi.useFakeTimers();
+    try{
+      const nineSeats=Array.from({length:9},(_,i)=>seat({
+        player_id:i===0?'tom':`nine-${i}`,seat_number:i+1,
+        display_name:`TEST long player name at seat ${i+1}`,chip_count:i===0?7000:1000,
+        payout_starting_stack:1000,is_all_in:true,current_bet:100,
+        ...(i===0?{payout_award:6000,pot_winner:true,hole_cards:['Jd','Jh']}:{}),
+      }));
+      const presentation:VerifiedShowdownPresentation={...showdownPresentation,potLayers:[0,1,2].map(index=>({
+        potId:`nine-pot-${index}`,kind:index===0?'main':'side',amount:2000,
+        winnerPlayerIds:['tom'],allocations:[{playerId:'tom',amount:2000}],
+      }))};
+      const props={...baseProps,seats:nineSeats,potSize:6000,viewerLayout:true,viewerAmountsInBB:true,tableFx:true,portrait,showdownPresentation:presentation};
+      const view=render(<LiveFelt {...props} replayRunoutPhase="pot_collect"
+        replayRunoutPresentation={{key:'nine-pots',phase:'pot_collect',visibleBoardCount:5,potAwardIndex:null}}/>);
+      const checkBoard=()=>{
+        const board=view.getByTestId('board-cards');
+        expect(board.querySelectorAll('[data-card-code]')).toHaveLength(5);
+        expect(view.getAllByTestId('seat-holecards')).toHaveLength(9);
+        expect(board.querySelector('[data-testid^="felt-settlement-"]')).toBeNull();
+        expect(view.queryByTestId('felt-total-pot')).toBeNull();
+      };
+      checkBoard();expect(view.getAllByTestId('felt-settlement-collect-stack')).toHaveLength(9);
+      expect(view.getByTestId('felt-stack-tom')).toHaveAttribute('data-stack-target','1000');
+      for(const phase of ['pot_award','static'] as const){
+        for(let index=0;index<3;index++){
+          view.rerender(<LiveFelt {...props} replayRunoutPhase={phase}
+            replayRunoutPresentation={{key:'nine-pots',phase,visibleBoardCount:5,potAwardIndex:index}}/>);
+          checkBoard();
+          expect(view.queryByTestId('felt-settlement-collect-center')).toBeNull();
+          const pots=view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]');
+          expect(pots).toHaveLength(1);
+          expect(pots[0]).toHaveAttribute('data-testid',`felt-settlement-pot-${index===0?'main':'side'}-0`);
+          expect(pots[0].className.includes('-translate-y-1/2')).toBe(portrait);
+          expect((pots[0] as HTMLElement).style.marginTop).toBe(portrait?'16px':'24px');
+          if(phase==='pot_award')act(()=>vi.advanceTimersByTime(420));
+          const credited=phase==='static'?6000:(index+1)*2000;
+          expect(view.getByTestId('felt-stack-tom')).toHaveAttribute('data-stack-target',String(1000+credited));
+          const total=Array.from(view.container.querySelectorAll('[data-testid^="felt-stack-"]'))
+            .reduce((sum,element)=>sum+Number(element.getAttribute('data-stack-target')),0);
+          expect(total).toBe(9000+credited);
+        }
+      }
+    }finally{cleanup();vi.useRealTimers();vi.unstubAllGlobals();}
+  });
+  it.each(['pot_collect','static'] as const)('keeps the landscape %s pot below its anchor rather than lifting it across the board',phase=>{
+    vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+    try {
+    const view=render(<LiveFelt {...baseProps} viewerLayout tableFx portrait={false}
+      showdownPresentation={showdownPresentation}
+      replayRunoutPresentation={{key:'board-clearance',phase,visibleBoardCount:5,potAwardIndex:0}} />);
+    const pot=view.getByTestId(phase==='pot_collect'?'felt-settlement-collect-center':'felt-settlement-pot-main-0');
+    expect(pot.className).not.toContain('-translate-y-1/2');
+    // Existing scaled clearance plus the reveal's8px travel and8px breathing room.
+    expect(pot.style.marginTop).toBe('24px');
+    } finally {cleanup();vi.unstubAllGlobals();}
+  });
+  it('keeps portrait centering with clearance for the actual narrow-view board reveal',()=>{
+    vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+    try{
+      const view=render(<LiveFelt {...baseProps} viewerLayout tableFx portrait
+        showdownPresentation={showdownPresentation}
+        replayRunoutPresentation={{key:'portrait-clearance',phase:'pot_collect',visibleBoardCount:5,potAwardIndex:0}}/>);
+      const pot=view.getByTestId('felt-settlement-collect-center');
+      expect(pot.className).toContain('-translate-y-1/2');expect(pot.style.marginTop).toBe('16px');
+    }finally{cleanup();vi.unstubAllGlobals();}
+  });
   it("focuses the exact Hand #1 five cards and dims every other face-up card", () => {
     const html = renderToStaticMarkup(
       <LiveFelt {...baseProps} tableFx bestFiveFocus={focus} showdownResult="winner" />,
@@ -358,10 +427,13 @@ describe("LiveFelt verified best-five focus", () => {
   try {
     const view = render(felt("pot_award", 0));
     const target = () => Number(view.getByTestId("felt-stack-tom").getAttribute("data-stack-target"));
+    const tooltip = () => view.getByTestId("felt-stack-tom").parentElement?.getAttribute("title");
     expect(target()).toBe(5_000);
+    expect(tooltip()).toBe("Tom Dwan · 5000");
     expect(view.queryByTestId("felt-settlement-award-label-tom")).toBeNull();
     act(() => vi.advanceTimersByTime(420));
     expect(target()).toBe(13_000);
+    expect(tooltip()).toBe("Tom Dwan · 13000");
     expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("+40 BB");
     view.rerender(felt("pot_award", 0));
     expect(target()).toBe(13_000);
@@ -369,6 +441,7 @@ describe("LiveFelt verified best-five focus", () => {
     expect(target()).toBe(13_000);
     act(() => vi.advanceTimersByTime(420));
     expect(target()).toBe(25_000);
+    expect(tooltip()).toBe("Tom Dwan · 25000");
     expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("+60 BB");
     view.rerender(felt("static", 0));
     expect(target()).toBe(25_000);

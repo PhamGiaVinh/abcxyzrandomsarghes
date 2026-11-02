@@ -92,6 +92,44 @@ export async function runPaidCorrectionOverlap({sql,service,fixture,hand}){
    assert.equal(business(),before);
   }finally{holder?.end('ROLLBACK');waiter?.end('ROLLBACK');await Promise.all([holder?.result,waiter?.result]);}
   if(fixed){
+   // Opposite real lock order: correction owns tournament/hand while a worker
+   // holding the prior revision's lease attempts its actual commit.
+   const seed=await plan(['2d','3h','4s']);
+   assert.equal(JSON.parse(sql(service+seed.commit)).ok,true);
+   const next=await plan(['5d','6h','7s']);
+   const nextJobs=JSON.parse(sql(service+`SELECT coalesce(jsonb_agg(to_jsonb(j)),'[]') FROM public.claim_tracker_historical_display_jobs_scoped_v1(p_limit=>1,p_hand_ids=>ARRAY['${hand}']::uuid[]) j;`));
+   assert.equal(nextJobs.length,1);
+   const snap=JSON.parse(sql(service+`SELECT public.get_tracker_historical_display_snapshot('${hand}',NULL);`));
+   const nextSettlement=Number(sql(service+`SELECT coalesce(max(settlement_revision),0)+1 FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}';`));
+   const proof=await verifyHistoricalDisplaySettlement({tournamentId:fixture.tour,hand:snap.hand,players:snap.players,actions:snap.actions,
+    sourceRevision:snap.sourceRevision,sourceChainHash:snap.sourceChainHash,settlementRevision:nextSettlement,actor:{userId:'00000000-0000-4000-8000-000000000001',role:'system_worker'}});
+   const historyKey='native-correction-first-history-'+hand;
+   const staleCall=`SELECT public.commit_tracker_historical_display_outcome_v2('${hand}','00000000-0000-4000-8000-000000000001','system_worker',${snap.sourceRevision},
+    ${quote(snap.sourceChainHash)},${quote(proof.privateOutcome.outcomeHash)},repeat('b',64),'${historyKey}',${quote(proof.publicOutcome)}::jsonb,'${nextJobs[0].lease_token}');`;
+   const cname='correction_first_'+suffix,dname='history_stale_'+suffix;let c,d;
+   try{
+    c=tx(cname,next.commit,true);await barrier(cname,"wait_event='ClientRead' AND xact_start IS NOT NULL");
+    d=tx(dname,staleCall,false);
+    await barrier(dname,`wait_event_type='Lock' AND (SELECT pid FROM pg_stat_activity WHERE application_name='${cname}')=ANY(pg_blocking_pids(pid))`);
+    c.end('COMMIT');assert.equal(parse(await c.result).ok,true);
+    const rejected=await d.result;assert.notEqual(rejected.code,0);assert.match(rejected.error,/stale_source_revision|queue_lease_lost/);
+    assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND idempotency_key='${historyKey}';`),'0');
+    const current=JSON.parse(sql(service+`SELECT to_jsonb(s) FROM public.get_tournament_settlement_source_hash('${hand}') s;`));
+    const actualSource=normalizeSettlementSourceRpcResult(current);
+    assert.ok(actualSource.sourceRevision>snap.sourceRevision);
+    assert.equal(sql(`SELECT count(*) FROM public.tracker_historical_display_queue WHERE hand_id='${hand}'
+     AND source_revision=${actualSource.sourceRevision} AND status='pending';`),'1','current generation must remain available to a fresh worker');
+    assert.equal(sql(`SELECT coalesce(auto_swing_enabled,false) FROM public.club_settings WHERE club_id='${fixture.club}';`),'f');
+    assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}' AND status='verified'
+     AND source_revision=${actualSource.sourceRevision} AND verification_scope='chain' AND source_chain_hash=${quote(actualSource.sourceChainHash)};`),'1');
+    const logical=sql(`SELECT tournament_table_id FROM public.tournament_hands WHERE id='${hand}';`);
+    const page=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_public_tournament_table_history_v2('${fixture.tour}','${logical}',20,NULL,NULL);`));
+    assert.equal(page.access,'public');const item=page.items.find(row=>row.handId===hand);assert.ok(item);
+    assert.deepEqual(item.board,['5d','6h','7s']);assert.equal(item.result.status,'verified');
+    assert.equal(business(),before);
+    console.log('CORRECTION_FIRST_TRUE_LOCK_OVERLAP_STALE_WORKER_REJECTED_CURRENT_ANON_BOARD_PASS',JSON.stringify({
+     tour:fixture.tour,hand,priorRevision:snap.sourceRevision,currentRevision:actualSource.sourceRevision,workerRejected:true}));
+   }finally{c?.end('ROLLBACK');d?.end('ROLLBACK');await Promise.all([c?.result,d?.result]);}
    // Compatibility: old History resolver must not take tournament SHARE while
    // retaining hand UPDATE. Prove it can finish its read under a held tour lock.
    const current=JSON.parse(sql(service+`SELECT public.get_tracker_historical_display_snapshot('${hand}',NULL);`));

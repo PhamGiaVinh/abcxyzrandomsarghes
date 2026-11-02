@@ -5,8 +5,10 @@ import { describe, expect, it } from "vitest";
 
 const migrationsDir = resolve(process.cwd(), "supabase/migrations");
 const canonicalFilename = "20270106000003_close_table_canonical_contract.sql";
-const migrationPath = resolve(migrationsDir, canonicalFilename);
+const archivePath = `supabase/migration-archive/superseded/replaced/${canonicalFilename}`;
+const migrationPath = resolve(process.cwd(), archivePath);
 const sql = readFileSync(migrationPath, "utf8");
+const manifest = JSON.parse(readFileSync(resolve(process.cwd(), "supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json"), "utf8"));
 const historicalHashes = {
   "20261240000000_floor_production_hardening.sql":
     "97f0b1784de774cb991e82ff9c854e24212cce54d7536e874382d1daff903aa3",
@@ -23,7 +25,7 @@ function closeTableDefinitionsInFilenameOrder(): string[] {
     ));
 }
 
-describe("close_tournament_table canonical migration contract", () => {
+describe("archived close_tournament_table canonical migration contract", () => {
   it("keeps the live authorization and exact canonical signature", () => {
     expect(sql).toContain("CREATE OR REPLACE FUNCTION public.close_tournament_table(");
     expect(sql).toContain("p_tournament_table_id UUID");
@@ -77,11 +79,13 @@ describe("close_tournament_table canonical migration contract", () => {
     expect(sql).not.toContain("close_table_conservation_failed");
   });
 
-  it("keeps the canonical migration as the final definition in filename order", () => {
+  it("keeps the superseded definition intact outside active migration replay", () => {
     const definitions = closeTableDefinitionsInFilenameOrder();
-    expect(definitions).toContain("20260914000000_close_tournament_table.sql");
-    expect(definitions).toContain("20270101000000_close_tournament_table_containment.sql");
-    expect(definitions.at(-1)).toBe(canonicalFilename);
+    expect(definitions).not.toContain(canonicalFilename);
+    const entry = manifest.historicalSources.find((item: {filename: string}) => item.filename === canonicalFilename);
+    expect(entry).toMatchObject({superseded: true, bucket: "superseded/replaced", archivePath});
+    // Archive manifest hashes use LF; Windows checkout may materialize CRLF.
+    expect(createHash("sha256").update(sql.replace(/\r\n/g, "\n")).digest("hex")).toBe(entry.sha256);
     expect(sql).toContain("'UNLINKED_ACTIVE_SEATS'");
   });
 
@@ -102,7 +106,9 @@ describe("close_tournament_table canonical migration contract", () => {
   it("does not edit either historical close-table migration", () => {
     for (const [filename, expected] of Object.entries(historicalHashes)) {
       const actual = createHash("sha256")
-        .update(readFileSync(resolve(migrationsDir, filename)))
+        .update(readFileSync(filename === "20270101000000_close_tournament_table_containment.sql"
+          ? resolve(process.cwd(), "supabase/migration-archive/superseded/replaced", filename)
+          : resolve(migrationsDir, filename)))
         .digest("hex");
       expect(actual).toBe(expected);
     }

@@ -1,5 +1,5 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {createTournament,recoverTournamentCreate,readTournamentCreateJournal,type TournamentCreateRequest} from './tournamentCreate';
+import {createTournament,recoverTournamentCreate,readTournamentCreateJournal,tournamentCreateJournalKey,type TournamentCreateRequest} from './tournamentCreate';
 const request:TournamentCreateRequest={p_club_id:'e9100000-0000-4000-8000-000000000011',p_expected_actor_id:'e9100000-0000-4000-8000-000000000001',p_request_id:'e9100000-0000-4000-8000-000000000021',p_config:{name:'TEST'},p_levels:[]};
 const committed={ok:true,tournament_id:'e9100000-0000-4000-8000-000000000031',actor_id:request.p_expected_actor_id,club_id:request.p_club_id,request_id:request.p_request_id,level_count:0};
 afterEach(()=>{vi.useRealTimers();});
@@ -40,4 +40,32 @@ it('bounds a hung writer, reads the same receipt, and ignores the late writer re
  expect(await pending).toBe(committed.tournament_id);expect(rpc).toHaveBeenCalledTimes(2);
  respond({data:committed,error:null});await vi.advanceTimersByTimeAsync(20_000);
  expect(rpc).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+});
+
+const eventRequest={...request,p_config:{name:'TEST Main Event',flight_count:2}};
+const eventCommitted={...committed,event_id:'e9100000-0000-4000-8000-000000000041',
+ final_tournament_id:'e9100000-0000-4000-8000-000000000042',flight_count:2};
+it('Main Event writer loss reads its exact receipt without falling back to the unkeyed legacy RPC',async()=>{
+ const rpc=vi.fn().mockRejectedValueOnce(new Error('lost')).mockResolvedValueOnce({data:eventCommitted,error:null});
+ expect(await createTournament(rpc,eventRequest,'multi')).toBe(eventCommitted.event_id);
+ expect(rpc.mock.calls).toEqual([['create_tournament_event_with_flights_v2',eventRequest],['get_tournament_event_create_receipt_v1',eventRequest]]);
+});
+it.each(['event_id','final_tournament_id','flight_count'])('Main Event rejects a mismatched %s receipt',async(field)=>{
+ const rpc=vi.fn().mockResolvedValue({data:{...eventCommitted,[field]:'wrong'},error:null});
+ await expect(createTournament(rpc,eventRequest,'multi')).rejects.toMatchObject({unknownOutcome:true});
+});
+it('Main Event journal has a different operation namespace and validates flight count',()=>{
+ const {p_expected_actor_id:actor,p_club_id:club}=eventRequest;
+ expect(tournamentCreateJournalKey(actor,club,'multi')).not.toBe(tournamentCreateJournalKey(actor,club));
+ expect(readTournamentCreateJournal(JSON.stringify(eventRequest),actor,club,'multi')).toEqual(eventRequest);
+ expect(()=>readTournamentCreateJournal(JSON.stringify({...eventRequest,p_config:{flight_count:0}}),actor,club,'multi')).toThrow();
+});
+it('bounds a hung Main Event writer and preserves the original identity for receipt recovery',async()=>{
+ vi.useFakeTimers();
+ const rpc=vi.fn().mockReturnValueOnce(new Promise(()=>{})).mockResolvedValueOnce({data:eventCommitted,error:null});
+ const pending=createTournament(rpc,eventRequest,'multi');
+ await vi.advanceTimersByTimeAsync(20_001);
+ expect(await pending).toBe(eventCommitted.event_id);
+ expect(rpc.mock.calls).toEqual([['create_tournament_event_with_flights_v2',eventRequest],['get_tournament_event_create_receipt_v1',eventRequest]]);
+ expect(vi.getTimerCount()).toBe(0);
 });

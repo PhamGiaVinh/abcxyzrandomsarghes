@@ -19,6 +19,16 @@ export function errorMessage(error: unknown): string {
   return typeof record?.message === "string" ? record.message : "";
 }
 
+/** Only text from an unverified Edge error body may reach a toast. */
+export function dealerEdgeErrorMessage(body: unknown, fallback: string): string {
+  if (Array.isArray(body)) return fallback;
+  const record = asRecord(body);
+  for (const value of [record?.error, record?.message]) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return fallback;
+}
+
 export function edgeErrorStatus(error: unknown): number | null {
   const context = asRecord(asRecord(error)?.context);
   return typeof context?.status === "number" ? context.status : null;

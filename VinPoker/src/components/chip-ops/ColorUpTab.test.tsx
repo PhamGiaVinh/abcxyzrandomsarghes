@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {renderToStaticMarkup} from 'react-dom/server';
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), actor: "owner-a" }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: h.rpc, from: h.from } }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: h.actor } }) }));
@@ -8,6 +9,74 @@ const key = "vinpoker:color-up-pending:owner-a:club-a:tour-a";
 const intent = { fn: "chip_ops_color_up", args: { p_tournament_id: "tour-a", p_denom_removed: "low", p_denom_target: "high", p_target_added: 1, p_level_number: 2, p_idempotency_key: "original-request" } };
 const readerArgs = { p_tournament_id: "tour-a", p_operation: "color_up", p_request_key: "original-request",
   p_payload: { tournament: "tour-a", removed: "low", target: "high", added: 1, level: 2 } };
+it.each([
+ {status:'pending'}, {id:''}, {removed_count:-1}, {target_added:0.5},
+ {rounding_delta:'0'}, {level_number:null},
+])('rejects an unverified history row before offering reverse (%j)',async(patch)=>{
+ h.rpc.mockImplementation(async(name:string)=>({data:name==='get_current_chip_inventory'?{denominations:[]}:
+  {operations:[{id:'op-a',level_number:2,status:'confirmed',denom_removed_value:100,denom_target_value:500,
+   removed_count:10,target_added:2,rounding_delta:0,...patch}]},error:null}));
+ render(<ColorUpTab tournamentId="tour-a" clubId="club-a"/>);
+ await screen.findByText(/Không xác minh được tồn chip hoặc lịch sử/);
+ expect(screen.queryByRole('button',{name:/Hoàn tác color-up level/})).toBeNull();
+ expect(h.rpc.mock.calls.every(([name])=>name.startsWith('get_'))).toBe(true);
+});
+it('names both denomination selectors for keyboard and assistive technology',async()=>{
+ h.rpc.mockImplementation(async(name:string)=>({data:name==='get_current_chip_inventory'
+  ?{denominations:[{denomination_id:'low',value:100,color:null,current_count:600},{denomination_id:'high',value:500,color:null,current_count:0}]}
+  :{operations:[]},error:null}));
+ render(<ColorUpTab tournamentId="tour-a" clubId="club-a"/>);
+ expect(await screen.findByRole('combobox',{name:'Rút mệnh giá'})).toBeEnabled();
+ expect(screen.getByRole('combobox',{name:'Race lên'})).toBeEnabled();
+});
+it.each([null,-1,0.5,Number.MAX_SAFE_INTEGER+1,'',false])('rejects malformed inventory count instead of coercing it (%j)',async(count)=>{
+ h.rpc.mockImplementation(async(name:string)=>({data:name==='get_current_chip_inventory'
+  ?{denominations:[{denomination_id:'low',value:100,color:null,current_count:count}]}
+  :{operations:[]},error:null}));
+ render(<ColorUpTab tournamentId="tour-a" clubId="club-a"/>);
+ await screen.findByText(/Không xác minh được tồn chip hoặc lịch sử/);
+ expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Xác nhận color-up'})).not.toBeInTheDocument();
+ expect(h.rpc.mock.calls.every(([name])=>name.startsWith('get_'))).toBe(true);
+});
+it.each([
+ [null],
+ [{denomination_id:'low',value:0,color:null,current_count:1}],
+ [{denomination_id:'low',value:0.5,color:null,current_count:1}],
+ [{denomination_id:'',value:100,color:null,current_count:1}],
+ [{denomination_id:'low',value:100,color:42,current_count:1}],
+ [{denomination_id:'low',value:100,color:null,current_count:Number.MAX_SAFE_INTEGER}],
+ [{denomination_id:'low',value:100,color:null,current_count:1},{denomination_id:'low',value:500,color:null,current_count:0}],
+])('rejects malformed or duplicate denomination rows (%j)',async(...rows)=>{
+ h.rpc.mockImplementation(async(name:string)=>({data:name==='get_current_chip_inventory'?{denominations:rows}:{operations:[]},error:null}));
+ render(<ColorUpTab tournamentId="tour-a" clubId="club-a"/>);
+ await screen.findByText(/Không xác minh được tồn chip hoặc lịch sử/);
+ expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+ expect(h.rpc.mock.calls.every(([name])=>name.startsWith('get_'))).toBe(true);
+});
+it.each([false,true])('invalidates the shared inventory after verified receipt (reverse=%s)',async(reverse)=>{
+ const saved=reverse?{fn:'chip_ops_reverse_color_up',args:{p_operation_id:'op-a',p_idempotency_key:'reverse-request'}}:intent;
+ sessionStorage.setItem(key,JSON.stringify(saved));
+ const changed=vi.fn();
+ h.rpc.mockImplementation(async(name:string)=>({data:name==='get_current_chip_inventory'?{denominations:[]}
+  :name==='get_color_up_history'?{operations:[]}
+  :{status:'committed',result:reverse?{status:'ok',color_up_operation_id:'op-a',reversed:true}
+   :{status:'ok',color_up_operation_id:'op-a',removed_count:10,target_added:1}},error:null}));
+ render(<ColorUpTab tournamentId="tour-a" clubId="club-a" onInventoryChanged={changed}/>);
+ expect(changed).not.toHaveBeenCalled();
+ fireEvent.click(await screen.findByRole('button',{name:'Đối chiếu thao tác'}));
+ await waitFor(()=>expect(changed).toHaveBeenCalledTimes(1));
+ expect(sessionStorage.getItem(key)).toBeNull();
+ expect(h.rpc.mock.calls.filter(([name])=>name===saved.fn)).toHaveLength(0);
+});
+it('does not announce empty setup/history on the first paint before effects read the server',()=>{
+ const firstPaint=renderToStaticMarkup(<ColorUpTab tournamentId="tour-a" clubId="club-a" onOpenSetup={vi.fn()}/>);
+ expect(firstPaint).toContain('aria-busy="true"');
+ expect(firstPaint).toContain('Đang tải tồn chip và lịch sử color-up');
+ expect(firstPaint).not.toContain('Chưa có mệnh giá chip');
+ expect(firstPaint).not.toContain('Chưa có color-up nào');
+ expect(h.rpc).not.toHaveBeenCalled();
+});
 it("does not erase a later journal when the previous receipt arrives", async () => {
   sessionStorage.setItem(key, JSON.stringify(intent));
   let finish!: (value: unknown) => void;

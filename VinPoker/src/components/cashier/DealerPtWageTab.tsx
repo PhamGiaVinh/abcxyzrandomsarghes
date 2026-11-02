@@ -1,3 +1,5 @@
+import { startLiveReportRefresh } from "@/lib/liveReportRefresh";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ import {
 } from "@/lib/dealerPtWagePolicyControl";
 import DealerPtWageGlobalPolicyControl from "@/components/cashier/DealerPtWageGlobalPolicyControl";
 import { useAuth } from "@/hooks/useAuth";
+import { PtStatementControl } from "./PtStatementControl";
 import { RefreshCw, Loader2, Clock, Coins, Wallet, Info, ShieldCheck, ShieldOff } from "lucide-react";
 
 /**
@@ -72,6 +75,8 @@ interface Props {
   clubIds: string[];
   clubs: ClubRow[];
   readOnly?: boolean;
+  finalizeStatements?: boolean;
+  ownerClubIds?: string[];
 }
 
 type RpcError = { message?: string } | null;
@@ -96,7 +101,7 @@ function fmtHMS(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Props) {
+export default function DealerPtWageTab({ clubIds, clubs, readOnly = false, finalizeStatements = false, ownerClubIds }: Props) {
   const { isAdmin, isClubAdmin, isClubOwner } = useAuth();
   const [clubFilter, setClubFilter] = useState<string>(clubIds[0] ?? "");
   const activeClubId = clubFilter || clubIds[0] || "";
@@ -110,6 +115,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
   const [globalFutureClubEnabled, setGlobalFutureClubEnabled] = useState(false);
   const [globalPolicyLoading, setGlobalPolicyLoading] = useState(false);
   const fetchedAtRef = useRef<number>(Date.now());
+  const snapshotClubRef = useRef<string | null>(null);
   const fetchSequenceRef = useRef(0);
   const globalPolicySequenceRef = useRef(0);
   const activeClubIdRef = useRef(activeClubId);
@@ -130,7 +136,8 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
   const [policyAcknowledged, setPolicyAcknowledged] = useState(false);
   const [savingPolicy, setSavingPolicy] = useState(false);
   const policySubmitRef = useRef(false);
-  const canManagePolicy = !readOnly && (isAdmin || isClubAdmin || isClubOwner);
+  const canFinalizeForClub = isAdmin || isClubAdmin || (ownerClubIds ? ownerClubIds.includes(activeClubId) : isClubOwner);
+  const canManagePolicy = !readOnly && canFinalizeForClub;
   const activeClub = clubs.find((club) => club.id === activeClubId) ?? null;
 
   useEffect(() => { activeClubIdRef.current = activeClubId; }, [activeClubId]);
@@ -138,19 +145,28 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
   const fetchData = useCallback(async () => {
     if (!activeClubId) return;
     const sequence = ++fetchSequenceRef.current;
-    setLoading(true);
+    if (snapshotClubRef.current !== activeClubId) setLoading(true);
     setError(null);
     try {
-      const { data, error: rpcError } = await db.rpc("get_club_pt_wages", { p_club_id: activeClubId });
+      const { data, error: rpcError } = await observeTrackerContextRead(db.rpc("get_club_pt_wages", { p_club_id: activeClubId }));
       if (rpcError) throw rpcError;
-      const response = (data ?? {}) as PtWageResponse;
+      const response = data as PtWageResponse;
+      if (!response || typeof response !== 'object' || Array.isArray(response) || !Array.isArray(response.dealers)
+        || response.dealers.some(d => !d || typeof d !== 'object' || Array.isArray(d)
+          || typeof d.dealer_id !== 'string' || !d.dealer_id || typeof d.full_name !== 'string'
+          || [d.hourly_rate_vnd,d.accrued_minutes,d.balance_vnd].some(n=>typeof n!=='number'||!Number.isFinite(n)||n<0)
+          || typeof d.current_shift_open !== 'boolean')) {
+        throw new Error('Không xác minh được dữ liệu lương part-time.');
+      }
       if (sequence !== fetchSequenceRef.current) return;
-      setDealers(response.dealers ?? []);
+      snapshotClubRef.current = activeClubId;
+      setDealers(response.dealers);
       setClubAccrualMode(response.accrual_mode ?? null);
       setStandbyAccrualEnabled(response.standby_accrual_enabled === true);
       fetchedAtRef.current = Date.now();
     } catch (e: unknown) {
       if (sequence !== fetchSequenceRef.current) return;
+      snapshotClubRef.current = null;
       setError(rpcErrorMessage(e, "Lỗi tải lương part-time"));
       setDealers([]);
       setClubAccrualMode(null);
@@ -189,13 +205,15 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
     }
   }, [isAdmin]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const stop = startLiveReportRefresh(fetchData);
+    return () => { fetchSequenceRef.current += 1; stop(); };
+  }, [fetchData]);
   useEffect(() => { fetchGlobalPolicy(); }, [fetchGlobalPolicy]);
-  // resync from the server every 60s; tick the display every 1s
+  // Tick the bounded display estimate; server refresh has its own lifecycle.
   useEffect(() => {
     const tick = setInterval(() => setNowMs(Date.now()), 1000);
-    const resync = setInterval(() => { fetchData(); }, 60000);
-    return () => { clearInterval(tick); clearInterval(resync); };
+    return () => { clearInterval(tick); };
   }, [fetchData]);
 
   // The server owns the balance. This only presents a bounded estimate until the next refresh.
@@ -280,7 +298,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
   }, [fetchData, fetchGlobalPolicy]);
 
   const handlePay = useCallback(async () => {
-    if (!payDealer) return;
+    if (!payDealer || readOnly || finalizeStatements) return;
     setPaying(true);
     try {
       const key =
@@ -306,7 +324,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
     } finally {
       setPaying(false);
     }
-  }, [payDealer, payMethod, payRef, nowMs, fetchData]);
+  }, [payDealer, payMethod, payRef, nowMs, fetchData, readOnly, finalizeStatements]);
 
   return (
     <div className="h-full flex flex-col gap-3">
@@ -347,26 +365,26 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
         )}
         <div className="text-[11px] text-zinc-500">
           {clubAccrualMode === "continuous_standby"
-            ? "Tính cả thời gian chờ trong pool · trả đủ thì reset"
-            : "Lương theo giờ · cập nhật trực tiếp · trả đủ thì reset"}
+            ? "Tính cả thời gian chờ trong pool · phiếu đã chốt hiển thị riêng"
+            : "Lương theo giờ · số dư chưa chốt và phiếu đã chốt"}
         </div>
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {!loading && !error && snapshotClubRef.current === activeClubId && <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5">
           <div className="text-[11px] text-zinc-500 uppercase tracking-wider">PT đang làm</div>
           <div className="text-base font-semibold text-emerald-400">{workingCount}/{dealers.length}</div>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5">
-          <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Tổng chưa trả</div>
+          <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Tổng tạm tính chưa chốt</div>
           <div className="text-base font-semibold text-amber-400 font-mono">{formatVND(totalUnpaid)}</div>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5">
           <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Đã trả (phiên này)</div>
           <div className="text-base font-semibold text-emerald-400 font-mono">{formatVND(paidSession)}</div>
         </div>
-      </div>
+      </div>}
 
       {loading && <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 w-full rounded-lg" />)}</div>}
 
@@ -374,7 +392,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-center text-red-400 text-sm">{error}</div>
       )}
 
-      {!loading && !error && dealers.length === 0 && (
+      {!loading && !error && snapshotClubRef.current === activeClubId && dealers.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-zinc-500">
           <Coins className="w-10 h-10 mb-3 opacity-40" />
           <p className="text-sm">Chưa có dealer part-time đang hoạt động</p>
@@ -382,7 +400,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
       )}
 
       {/* Cards */}
-      {!loading && !error && dealers.length > 0 && (
+      {!loading && !error && snapshotClubRef.current === activeClubId && dealers.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {dealers.map((d) => {
             const bal = liveBalance(d);
@@ -402,7 +420,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
 
                 <div className="flex items-end justify-between gap-3 mt-3">
                   <div>
-                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Số dư chưa thanh toán</div>
+                    <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Tạm tính chưa chốt</div>
                     <div className={`text-2xl font-semibold font-mono ${d.current_shift_open ? "text-emerald-400" : "text-white"}`}>
                       {formatVND(bal)}
                     </div>
@@ -427,7 +445,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
                         : "Chưa có lịch sử thanh toán"}
                     </div>
                   </div>
-                  {!readOnly && (
+                  {!readOnly && !finalizeStatements && (
                     <Button
                       size="sm"
                       className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
@@ -438,6 +456,10 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
                     </Button>
                   )}
                 </div>
+                {finalizeStatements && !readOnly && <PtStatementControl
+                  clubId={activeClubId} dealerId={d.dealer_id} dealerName={d.full_name} onFinalized={() => { void fetchData(); }}
+                  canFinalize={canFinalizeForClub}
+                />}
               </div>
             );
           })}
@@ -445,7 +467,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false }: Pr
       )}
 
       {/* Pay confirm */}
-      <Dialog open={!readOnly && payOpen} onOpenChange={setPayOpen}>
+      <Dialog open={!readOnly && !finalizeStatements && payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Thanh toán lương part-time</DialogTitle>

@@ -1,28 +1,41 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ actor: "actor", club: "A", allowed: true, scopeLoading: false,
-  scopeError: null as string | null, tournament: "flight", load: vi.fn(), inventory: vi.fn(), client: {} }));
+  scopeError: null as string | null, refreshScope: vi.fn(), tournament: "flight", load: vi.fn(), inventory: vi.fn(), client: {} }));
 vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: h.actor ? { id: h.actor } : null, loading: false }) }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => h.client }));
 vi.mock("@/ops/workspace/OpsWorkspaceProvider", () => ({ useOpsWorkspace: () => ({ selectedClubId: h.club }) }));
 vi.mock("@/ops/auth/OpsCapabilityProvider", () => ({ useOpsCapabilities: () => ({
   loading: h.scopeLoading, scopeError: h.scopeError, isSuperAdmin: false,
-  moduleClubIds: () => h.allowed ? ["A", "B"] : [], clubs: [],
+  moduleClubIds: () => h.allowed ? ["A", "B"] : [], clubs: [], refresh: h.refreshScope,
 }) }));
 vi.mock("react-router-dom", () => ({ useSearchParams: () => [new URLSearchParams({ t: h.tournament }), vi.fn()] }));
 vi.mock("./chipOpsReadAdapter", () => ({
   loadChipOpsTournamentOptions: (...args: unknown[]) => h.load(...args),
   loadIssuedChipInventory: (...args: unknown[]) => h.inventory(...args), loadIssuedStackSummary: async () => null,
 }));
-vi.mock("./ChipOpsWorkspaceView", () => ({ ChipOpsWorkspaceView: (p: { tournaments: { name: string }[]; inventory: unknown }) =>
-  <div><div>{p.tournaments.map((t) => t.name).join(",")}</div><div>{JSON.stringify(p.inventory)}</div></div> }));
+vi.mock("./ChipOpsWorkspaceView", () => ({ ChipOpsWorkspaceView: (p: { tournaments: { name: string }[]; inventory: unknown; loading: boolean; errorCode: string | null; onRefresh: () => void }) =>
+  <div><div>{p.tournaments.map((t) => t.name).join(",")}</div><div>{JSON.stringify(p.inventory)}</div>
+    <div>{p.errorCode}</div><button disabled={p.loading} onClick={p.onRefresh}>Refresh chip</button></div> }));
 vi.mock("./MultiDayBaggingPanel", () => ({ MultiDayBaggingPanel: () => <div>bagging-actions</div> }));
 import OpsChipOpsWorkspace from "./OpsChipOpsWorkspace";
 
 beforeEach(() => {
   h.actor = "actor"; h.club = "A"; h.allowed = true; h.scopeLoading = false; h.scopeError = null;
   h.tournament = "flight"; h.load.mockReset(); h.inventory.mockReset(); h.inventory.mockResolvedValue(null);
+  h.refreshScope.mockReset();
+});
+afterEach(() => vi.useRealTimers());
+
+it("refreshes failed capability scope without loading inventory or mounting bagging", () => {
+  h.scopeError = "Scope read unavailable";
+  render(<OpsChipOpsWorkspace />);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh chip" }));
+  expect(h.refreshScope).toHaveBeenCalledTimes(1);
+  expect(h.load).not.toHaveBeenCalled();
+  expect(h.inventory).not.toHaveBeenCalled();
+  expect(screen.queryByText("bagging-actions")).toBeNull();
 });
 
 it("does not replace club B results with a late club A response", async () => {
@@ -111,4 +124,63 @@ it.each(["loading", "error"])("removes actions on scope %s and reloads on recove
   view.rerender(<OpsChipOpsWorkspace />);
   await screen.findByText("bagging-actions");
   expect(h.load).toHaveBeenCalledTimes(2);
+});
+
+it("times out a hung tournament read without starting inventory or bagging writes", async () => {
+  vi.useFakeTimers();
+  let resolveOld!: (value: unknown) => void;
+  h.load.mockImplementation(() => new Promise((done) => { resolveOld = done; }));
+  render(<OpsChipOpsWorkspace />);
+  await act(async () => vi.advanceTimersByTime(10000));
+  expect(screen.getByText("CHIP_OPS_READ_TIMEOUT")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Refresh chip" })).not.toBeDisabled();
+  await act(async () => resolveOld([{ id: "flight", name: "late tour", phase: "flight" }]));
+  expect(screen.queryByText("late tour")).toBeNull();
+  expect(screen.queryByText("bagging-actions")).toBeNull();
+  expect(h.inventory).not.toHaveBeenCalled();
+  expect(h.load).toHaveBeenCalledTimes(1);
+});
+
+it("does not report missing club permission while capabilities are still loading", () => {
+  h.scopeLoading = true; h.allowed = false;
+  render(<OpsChipOpsWorkspace />);
+  expect(screen.queryByText("CHIP_OPS_CLUB_SCOPE_REQUIRED")).toBeNull();
+  expect(h.load).not.toHaveBeenCalled();
+});
+
+it("can explicitly recover after an inventory timeout without accepting the expired snapshot", async () => {
+  vi.useFakeTimers();
+  let resolveOld!: (value: unknown) => void;
+  h.load.mockResolvedValue([{ id: "flight", name: "tour", phase: "flight" }]);
+  h.inventory.mockImplementationOnce(() => new Promise((done) => { resolveOld = done; }))
+    .mockResolvedValueOnce("fresh inventory");
+  render(<OpsChipOpsWorkspace />);
+  await act(async () => {});
+  await act(async () => vi.advanceTimersByTime(10000));
+  expect(screen.getByText("CHIP_OPS_READ_TIMEOUT")).toBeTruthy();
+  expect(screen.queryByText("bagging-actions")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh chip" }));
+  await act(async () => {});
+  expect(screen.getByText('"fresh inventory"')).toBeTruthy();
+  await act(async () => resolveOld("expired inventory"));
+  expect(screen.queryByText('"expired inventory"')).toBeNull();
+  expect(screen.getByText('"fresh inventory"')).toBeTruthy();
+});
+
+
+it("aborts timed-out reads before allowing an explicit fresh read", async () => {
+  vi.useFakeTimers();
+  h.load.mockImplementation(() => new Promise(() => {}));
+  const view = render(<OpsChipOpsWorkspace />);
+  const firstSignal = h.load.mock.calls[0][2] as AbortSignal | undefined;
+  await act(async () => { vi.advanceTimersByTime(10000); });
+  expect(screen.getByText("CHIP_OPS_READ_TIMEOUT")).toBeTruthy();
+  expect(firstSignal?.aborted).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh chip" }));
+  expect(h.load).toHaveBeenCalledTimes(2);
+  const nextSignal = h.load.mock.calls[1][2] as AbortSignal;
+  expect(nextSignal).not.toBe(firstSignal);
+  expect(nextSignal.aborted).toBe(false);
+  view.unmount();
+  expect(nextSignal.aborted).toBe(true);
 });

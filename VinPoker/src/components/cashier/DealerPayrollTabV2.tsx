@@ -3,6 +3,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CalendarRange, Clock, Eye } from "lucide-react";
 import DealerPayrollTab from "@/components/cashier/DealerPayrollTab";
 import DealerPtWageTab from "@/components/cashier/DealerPtWageTab";
+import { Link } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { Button } from '@/components/ui/button';
 
 /**
  * Salary-C — Dealer salary v2: two sub-tabs.
@@ -22,6 +25,7 @@ interface Props {
 }
 
 export default function DealerPayrollTabV2({ clubIds, clubs }: Props) {
+  const { isAdmin, isClubAdmin, isClubOwner } = useAuth();
   const [sub, setSub] = useState("hourly");
   return (
     <Tabs value={sub} onValueChange={setSub} className="w-full">
@@ -36,13 +40,16 @@ export default function DealerPayrollTabV2({ clubIds, clubs }: Props) {
         <div className="mb-3 flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
           <Eye className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
           <div>
-            <div className="font-semibold">Bản xem trước chỉ đọc</div>
+            <div className="font-semibold">Theo dõi và chốt phiếu PT</div>
             <div className="mt-0.5 text-emerald-100/75">
-              Số tiền đang hiển thị là tạm tính theo dữ liệu máy chủ, chưa phải phiếu lương đã chốt.
+              Số tiền đang hiển thị là tạm tính theo dữ liệu máy chủ. Chốt và ghi nhận chi theo phiếu tại quầy thu ngân.
             </div>
+            {(isAdmin || isClubAdmin || isClubOwner) && <Button asChild size="sm" variant="outline" className="mt-2">
+              <Link to="/cashier?tab=pt_wages">Chốt và chi phiếu PT tại quầy</Link>
+            </Button>}
           </div>
         </div>
-        <DealerPtWageTab clubIds={clubIds} clubs={clubs} readOnly />
+        <DealerPtWageTab clubIds={clubIds} clubs={clubs} readOnly finalizeStatements />
       </TabsContent>
     </Tabs>
   );

@@ -94,10 +94,14 @@ export function useManualSwingRecovery(options: Options) {
         && "request_id" in receipt.response && receipt.response.request_id === intent.request_id;
       const outcome = cancelled ? {kind: "info" as const, message: "Đã hủy yêu cầu chưa thực hiện. Không hoàn tác lượt đổi dealer đã commit."}
         : classifyManualSwingOutcome(receipt.response);
-      if (outcome.kind === "unknown" || outcome.kind === "error") throw new Error(outcome.message);
+      // An exact immutable error receipt is terminal too. Keeping its journal
+      // would deadlock recovery: cancellation returns that same stored result.
+      // Transport errors and unknown/malformed receipts still retain the intent.
+      if (outcome.kind === "unknown") throw new Error(outcome.message);
       clearManualSwingIntent(sessionStorage, intent);
       setState({scope: scopeKey, intent: null, error: "", ready: true, retryable: false});
       if (outcome.kind === "success") toast.success(outcome.message);
+      else if (outcome.kind === "error") toast.error(outcome.message);
       else if (outcome.kind === "warning") toast.warning(outcome.message);
       else toast.info(outcome.message);
       try { await waitForManualPlayerResponse(Promise.resolve(onSettled()), 10000); }

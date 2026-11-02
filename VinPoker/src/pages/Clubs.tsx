@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import {observeTrackerContextRead} from "@/lib/tournament/observeTrackerContextRead";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -8,30 +10,42 @@ import { MapPin, Star, Loader2, Spade } from "lucide-react";
 import royalPokerLogo from "@/assets/royal-poker-logo.jpg";
 import { useTranslation } from "react-i18next";
 
+type ClubListRow={id:string;name:string;address?:string|null;region?:string|null;cover_url?:string|null;rating?:number|string|null;schedule_sort_order?:number|null};
+const isClubRow=(value:unknown):value is ClubListRow=>{
+ if(!value||typeof value!=='object'||Array.isArray(value))return false;
+ const row=value as Record<string,unknown>;
+ return typeof row.id==='string'&&!!row.id.trim()&&typeof row.name==='string'
+  && ['address','region','cover_url'].every(key=>row[key]==null||typeof row[key]==='string')
+  && (row.schedule_sort_order==null||typeof row.schedule_sort_order==='number'&&Number.isFinite(row.schedule_sort_order))
+  && (row.rating==null||(typeof row.rating==='number'||typeof row.rating==='string'&&row.rating.trim()!=='')&&Number.isFinite(Number(row.rating)));
+};
 const REGIONS = ["All", "TP.HCM", "Hanoi", "Da Nang"];
 
 const Clubs = () => {
   const { t } = useTranslation();
-  const [clubs, setClubs] = useState<any[]>([]);
+  const [clubs, setClubs] = useState<ClubListRow[]>([]);
   const [region, setRegion] = useState("All");
   const [sort, setSort] = useState("curated");
   const [loading, setLoading] = useState(true);
 
+  const [readError,setReadError]=useState(false),[attempt,setAttempt]=useState(0);
+
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("clubs")
-        .select("*")
-        .eq("status", "approved")
-        .order("schedule_sort_order", { ascending: true })
-        .order("name");
-      setClubs(data ?? []);
-      setLoading(false);
+    let active=true;const controller=new AbortController();setLoading(true);setReadError(false);setClubs([]);
+    void (async()=>{
+      try {
+        const {data,error}=await observeTrackerContextRead(supabase.from('clubs').select('*').eq('status','approved').order('schedule_sort_order',{ascending:true}).order('name').abortSignal(controller.signal));
+        if(!active)return;
+        if(error||!Array.isArray(data)||!data.every(isClubRow)||new Set(data.map(row=>row.id)).size!==data.length)throw new Error('clubs_unavailable');
+        setClubs(data);
+      }catch{controller.abort();if(active)setReadError(true);}
+      finally{if(active)setLoading(false);}
     })();
-  }, []);
+    return()=>{active=false;controller.abort();};
+  }, [attempt]);
 
   const filtered = useMemo(() => {
-    let r = clubs.filter(c => region === "All" || c.region === region);
+    const r = clubs.filter(c => region === "All" || c.region === region);
     r.sort((a, b) => {
       if (sort === "rating") return Number(b.rating) - Number(a.rating);
       if (sort === "name") return a.name.localeCompare(b.name);
@@ -94,9 +108,13 @@ const Clubs = () => {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        <div role="status" aria-label="Đang tải CLB" className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : readError ? (
+        <div role="alert" className="space-y-3 py-8 text-center"><p>Không tải được danh sách CLB. Vui lòng thử lại.</p><Button variant="outline" onClick={()=>setAttempt(value=>value+1)}>Thử lại</Button></div>
+      ) : filtered.length===0 ? (
+        <p role="status" className="py-8 text-center text-muted-foreground">Không có CLB phù hợp với bộ lọc.</p>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {filtered.map(c => (
             <Link key={c.id} to={`/club/${c.id}`}>
               <Card className="bg-gradient-to-br from-card/60 to-card/40 border-border/40 hover:border-gold/40 transition-all p-5 backdrop-blur-sm">
@@ -122,7 +140,7 @@ const Clubs = () => {
                     </p>
                     <div className="flex items-center gap-2 mt-2 text-xs">
                       <span className="flex items-center gap-0.5 text-gold font-semibold">
-                        <Star className="w-3.5 h-3.5 fill-current" /> {(/quads\s*poker/i.test(c.name) ? 5.0 : 4.8).toFixed(1)}
+                        <Star className="w-3.5 h-3.5 fill-current" /> {c.rating == null ? "—" : Number(c.rating).toFixed(1)}
                       </span>
                       <span className="text-muted-foreground">· {c.region}</span>
                     </div>
