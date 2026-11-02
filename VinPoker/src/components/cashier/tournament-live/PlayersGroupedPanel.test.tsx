@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Tournament } from "@/types/tournament";
 const state = vi.hoisted(() => ({ user: { id: "owner" }, read: vi.fn(),
@@ -45,6 +45,49 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe("participation operator panel", () => {
+  it.each(["live", "completed", "finished", "cancelled"])("limits busted-player restore to an active tour: %s", async status => {
+    state.read.mockResolvedValue({ data: { ...projection("a"), entries: [{
+      id: "busted-entry", player_id: "busted-player", player_name: "Busted TEST", entry_no: 1,
+      current_stack: 0, seat_number: null, finished_place: 2, status: "busted",
+      participation_status: "busted", anomaly_reason: null,
+    }] }, error: null });
+    render(<PlayersGroupedPanel tournament={{ ...tour("a"), status } as Tournament} refreshTrigger={0} />);
+    await screen.findByText("Current a");
+    fireEvent.click(screen.getByRole("button", { name: /^Bust/ }));
+    expect(screen.getByText("Busted TEST")).toBeInTheDocument();
+    if (status === "live") expect(screen.getByRole("button", { name: "Hoàn tác bust nhầm" })).toBeInTheDocument();
+    else expect(screen.queryByRole("button", { name: "Hoàn tác bust nhầm" })).toBeNull();
+    expect(state.invoke).not.toHaveBeenCalled();
+  });
+  it.each(["completed", "finished", "cancelled"])("keeps %s player rows readable without mutation actions", async status => {
+    render(<PlayersGroupedPanel tournament={{ ...tour("a"), status } as Tournament} refreshTrigger={0} />);
+    expect((await screen.findByText("Current a")).closest("button")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Sửa chip|Loại TEST|Hoàn tác bust nhầm/ })).toBeNull();
+    expect(state.inventory).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(state.invoke).not.toHaveBeenCalled();
+  });
+  it("retires an open player action sheet immediately when the same tour completes", async () => {
+    const view = render(<PlayersGroupedPanel tournament={{ ...tour("a"), status: "live" }} refreshTrigger={0} />);
+    fireEvent.click((await screen.findByText("Current a")).closest("button")!);
+    expect(screen.getByRole("button", { name: "Loại TEST" })).toBeInTheDocument();
+    view.rerender(<PlayersGroupedPanel tournament={{ ...tour("a"), status: "completed" }} refreshTrigger={0} />);
+    expect(screen.queryByRole("button", { name: "Loại TEST" })).toBeNull();
+    expect((await screen.findByText("Current a")).closest("button")).toBeDisabled();
+    expect(state.invoke).not.toHaveBeenCalled();
+  });
+  it("discards a bust preflight delivered after the tour completes", async () => {
+    const view = render(<PlayersGroupedPanel tournament={{ ...tour("a"), status: "live" }} refreshTrigger={0} />);
+    fireEvent.click((await screen.findByText("Current a")).closest("button")!);
+    let finish!: (value: unknown) => void;
+    state.inventory.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Loại TEST" }));
+    await waitFor(() => expect(finish).toBeDefined());
+    view.rerender(<PlayersGroupedPanel tournament={{ ...tour("a"), status: "completed" }} refreshTrigger={0} />);
+    await act(async () => finish({ data: [table({ control_mode: "tracker" })], error: null }));
+    expect(state.invoke).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Loại TEST" })).toBeNull();
+  });
   it.each(["42501", "PGRST301", "PGRST302", "PGRST303"])("clears previously readable rows for primary access error %s", async (code) => {
     const view = render(<PlayersGroupedPanel tournament={tour("a")} refreshTrigger={0} />);
     await screen.findByText("Current a");
@@ -202,4 +245,30 @@ describe("participation operator panel", () => {
     await waitFor(() => expect(screen.queryByText("Current a")).toBeNull());
     expect(screen.getByText("Current b")).toBeInTheDocument();
   });
+});
+
+it('keeps current participants visible while bagged qualifiers are excluded from waiting actions',async()=>{
+ const p={...projection('a'),entries:[{id:'bagged-entry',player_id:'bagged-player',player_name:'Bagged qualifier TEST',entry_no:1,current_stack:20000,seat_number:null,finished_place:null,status:'bagged',participation_status:'bagged',anomaly_reason:null}]};
+ state.read.mockResolvedValue({data:p,error:null});render(<PlayersGroupedPanel tournament={tour('a')} refreshTrigger={0}/>);
+ expect(await screen.findByText('Current a')).toBeInTheDocument();
+ expect(screen.queryByText('Bagged qualifier TEST')).toBeNull();
+ expect(state.rpc.mock.calls.some(([name])=>name==='floor_manual_bust_v1')).toBe(false);
+});
+
+it('excludes legacy bagged-as-waiting rows while retaining genuinely registered waiting entries',async()=>{
+ const entry={id:'bagged-entry',player_id:'bagged-player',player_name:'Legacy bagged qualifier TEST',entry_no:1,current_stack:20000,seat_number:null,finished_place:null,status:'bagged',participation_status:'waiting',anomaly_reason:null};
+ const p={...projection('a'),entries:[entry,{...entry,id:'waiting-entry',player_id:'waiting-player',player_name:'Genuine waiting TEST',status:'registered'}]};
+ state.read.mockResolvedValue({data:p,error:null});render(<PlayersGroupedPanel tournament={tour('a')} refreshTrigger={0}/>);
+ await screen.findByText('Current a');fireEvent.click(screen.getByRole('button',{name:/Chờ xếp.*1/}));
+ expect(screen.getByText('Genuine waiting TEST')).toBeInTheDocument();expect(screen.queryByText('Legacy bagged qualifier TEST')).toBeNull();
+ expect(state.invoke).not.toHaveBeenCalled();
+});
+
+it.each(['bagged','waiting'] as const)('shows a read-only bagged group for canonical and legacy projections: %s',async(classification)=>{
+ const p={...projection('a'),entries:[{id:'bagged-entry',player_id:'bagged-player',player_name:'Retained qualifier TEST',entry_no:1,current_stack:20000,seat_number:null,finished_place:null,status:'bagged',participation_status:classification,anomaly_reason:null}]};
+ state.read.mockResolvedValue({data:p,error:null});render(<PlayersGroupedPanel tournament={tour('a')} refreshTrigger={0}/>);
+ await screen.findByText('Current a');fireEvent.click(screen.getByRole('button',{name:/participation.bagged.*1/}));
+ const region=screen.getByRole('region',{name:'participation.bagged'});expect(region).toHaveTextContent('Retained qualifier TEST');
+ expect(region).toHaveTextContent('20.000');expect(region).toHaveTextContent('participation.baggedHint');
+ expect(region.querySelector('button,input')).toBeNull();expect(state.invoke).not.toHaveBeenCalled();
 });

@@ -18,6 +18,7 @@ export type TournamentClockData = {
   averageStack: string;
   levelLabel: string;          // e.g. "Level 7"
   secondsLeft: number;         // current level countdown
+  terminalStatus?: 'finished' | 'cancelled';
   /** Seconds until the next scheduled break. NULL when no break is ahead —
    *  the UI then shows "--" and never a misleading 00:00 (owner P0-4). */
   nextBreakSecondsLeft: number | null;

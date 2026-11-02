@@ -189,6 +189,11 @@ function fixtureForAction(actionId: string): string {
 }
 
 export const FLOOR_CASHIER_BUTTON_MANIFEST: readonly FloorCashierButtonManifestEntry[] = [
+  entry("floor.tournaments.refresh_read", "READ", {
+    backend: "caller-bound tournament list refetch for the selected club",
+    invariant: "Refetch does not mutate tournament rows or convert a failed read into an empty verified list.",
+    disposition: "BLOCKED",
+  }),
   entry("floor.tables.reconcile_add_player", "READ", {
     backend: "get_floor_manual_player_receipt_v1 (exact actor, tournament and persisted request ID)",
     invariant: "Reads immutable outcome only; a missing receipt stays unknown and does not issue a new request.",

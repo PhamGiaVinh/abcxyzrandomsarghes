@@ -45,6 +45,7 @@ export type SupabaseAdmin = any;
 interface GameTableRow {
   id: string;
   table_session_id: string;
+  tournament_id: string | null;
   table_name: string;
   table_type: string | null;
   shift_id: string | null;
@@ -61,7 +62,6 @@ interface ActiveAssignmentRow {
 interface TournamentRow {
   id: string;
   swing_duration_minutes: number;
-  tournament_tables: Array<{ table_id: string }>;
 }
 
 interface TableOverrideRow {
@@ -185,26 +185,29 @@ export async function fillEmptyTables(
   const assignedTableIds = new Set((activeAssignments ?? []).flatMap(a =>
     a.table_id && a.table_session_id === sessionsByTable.get(a.table_id) ? [a.table_id] : []));
 
-  // Step 3: Pre-fetch tournament configs + table overrides (2 fixed queries, no N+1)
-  const [tournamentsResult, tableOverridesResult] = (await Promise.all([
+  // Step 3: Pre-fetch scoped configs (3 fixed queries, no N+1).
+  const [tournamentsResult, tableOverridesResult,clubConfigsResult] = (await Promise.all([
     admin
       .from("tournaments")
-      .select("id, swing_duration_minutes, tournament_tables!inner(table_id)")
+      .select("id, swing_duration_minutes")
       .eq("club_id", clubId)
-       .eq("status", "live"),
+      .in('id',[...new Set(scopedTables.filter(table=>table.table_type==='tournament')
+        .map(table=>table.tournament_id).filter((id):id is string=>!!id))]),
     admin
       .from("swing_configs")
       .select("scope_id, swing_duration_minutes")
       .eq("club_id", clubId)
       .eq("scope_type", "table"),
+    admin.from('swing_config').select('table_type, swing_duration_minutes').eq('club_id',clubId),
   ])) as [
     { data: TournamentRow[] | null; error: AssignTableRpcError | null },
     { data: TableOverrideRow[] | null; error: AssignTableRpcError | null },
+    { data: Array<{table_type:string;swing_duration_minutes:number|null}> | null; error: AssignTableRpcError | null },
   ];
 
-  if (tournamentsResult.error || tableOverridesResult.error) {
-    const stage = tournamentsResult.error ? "live_tournaments" : "table_overrides";
-    const error = tournamentsResult.error ?? tableOverridesResult.error;
+  if (tournamentsResult.error || tableOverridesResult.error || clubConfigsResult.error) {
+    const stage = tournamentsResult.error ? "live_tournaments" : tableOverridesResult.error?"table_overrides":"club_configs";
+    const error = tournamentsResult.error ?? tableOverridesResult.error ?? clubConfigsResult.error;
     const status = classifyFillError(error);
     markFillFailure(result, status, stage, `${stage}_${status}`);
     return result;
@@ -212,15 +215,14 @@ export async function fillEmptyTables(
 
   const tournamentConfig = new Map<string, number>();
   for (const trn of tournamentsResult.data ?? []) {
-    for (const tt of trn.tournament_tables) {
-      tournamentConfig.set(tt.table_id, trn.swing_duration_minutes);
-    }
+    tournamentConfig.set(trn.id, trn.swing_duration_minutes);
   }
 
   const tableOverrideConfig = new Map<string, number>();
   for (const sc of tableOverridesResult.data ?? []) {
     tableOverrideConfig.set(sc.scope_id, sc.swing_duration_minutes);
   }
+  const clubDurationConfig=new Map((clubConfigsResult.data??[]).map(row=>[row.table_type,row.swing_duration_minutes]));
 
   // Step 4: Server excludes ended tournaments and malformed incarnations. Cash/VIP
   // Floor sessions do not require an unrelated legacy shift or mass-open marker.
@@ -271,9 +273,19 @@ export async function fillEmptyTables(
     try {
     let assigned = false;
 
+    if(table.table_type==='tournament'&&(!table.tournament_id||!tournamentConfig.has(table.tournament_id))){
+      markFillFailure(result,'degraded','duration','swing_duration_unverified',table.id);
+      continue;
+    }
+
     const effectiveDuration = tableOverrideConfig.get(table.id)
-      ?? tournamentConfig.get(table.id)
+      ?? (table.tournament_id ? tournamentConfig.get(table.tournament_id) : undefined)
+      ?? (table.table_type ? clubDurationConfig.get(table.table_type) : undefined)
       ?? null;
+    if(effectiveDuration!==null&&(!Number.isInteger(effectiveDuration)||effectiveDuration<=0)){
+      markFillFailure(result,'degraded','duration','swing_duration_invalid',table.id);
+      continue;
+    }
 
     // Centered per-table stagger (F1 2026-07-08): spread the TARGET swing_due_at
     // so a manual "Gán loạt" of N tables doesn't come due as one wave (root of the

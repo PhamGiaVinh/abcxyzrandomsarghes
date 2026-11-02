@@ -113,7 +113,7 @@ const SEAT_NUMBERS: Record<string, number> = {
 const SEAT_PREFIX = new RegExp(
   `^(?:seat|ghe)\\s+(?:(?:number|so)\\s+)?(${Object.keys(SEAT_NUMBERS).join("|")})\\b\\s*(.*)$`,
 );
-const POSITION_PREFIX = /^(?:(?:utg)(?:\s*\+\s*\d+)?|(?:btn|button|dealer)|(?:sb|small blind)|(?:bb|big blind))\s+(.+)$/;
+const POSITION_PREFIX = /^(?:(?:utg)(?:\s*\+\s*\d+)?|(?:btn|button)|(?:sb|small blind)|(?:bb|big blind))\s+(.+)$/;
 
 const RAISE_PATTERN = /^(?:raise(?:\s+to)?|to(?:\s+len)?|nang(?:\s+len)?)\s+(.+)$/;
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Headphones, Loader2, Mic, MicOff, PhoneCall, Radio, RotateCcw, ShieldCheck } from "lucide-react";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { FEATURES } from "@/lib/featureFlags";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   loadTrackerVoiceRuntimeContext,
   buildVoiceActionCanonicalRequest,
@@ -202,6 +203,13 @@ export function TrackerVoicePanel({
   onDiagnosticSnapshot,
 }: TrackerVoicePanelProps) {
   const providerRef = useRef<RealtimeTranscriptionProvider | null>(providerOverride ?? null);
+  const connectionGenerationRef = useRef(0);
+  const connectionScopeKey = JSON.stringify([hook.tournamentId, hook.tournamentTableId]);
+  const connectionScopeRef = useRef(connectionScopeKey);
+  if (connectionScopeRef.current !== connectionScopeKey) {
+    connectionScopeRef.current = connectionScopeKey;
+    ++connectionGenerationRef.current;
+  }
   const [status, setStatus] = useState<VoiceProviderStatus>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [partial, setPartial] = useState("");
@@ -248,6 +256,13 @@ export function TrackerVoicePanel({
   const micTestActiveRef = useRef(false);
   const statusRef = useRef<VoiceProviderStatus>("idle");
   const runtimeRef = useRef<TrackerVoiceRuntimeContext | null>(runtimeOverride ?? null);
+  const runtimeReadGenerationRef = useRef(0);
+  const runtimeScopeKey = JSON.stringify([hook.tournamentId, hook.tournamentTableId, hook.handId]);
+  const runtimeScopeRef = useRef(runtimeScopeKey);
+  if (runtimeScopeRef.current !== runtimeScopeKey) {
+    runtimeScopeRef.current = runtimeScopeKey;
+    ++runtimeReadGenerationRef.current;
+  }
   const processedAttemptIdsRef = useRef(new Set<string>());
   const finalReceivedAtRef = useRef(new Map<string, number>());
   const pendingAmountPrefixRef = useRef<PendingAmountPrefix | null>(null);
@@ -427,6 +442,10 @@ export function TrackerVoicePanel({
   }), [hook.actions, hook.buttonSeat, hook.playerHoleCards, hook.players, privateHoleCardsAttempts]);
 
   const refreshRuntime = useCallback(async () => {
+    if (runtimeScopeRef.current !== runtimeScopeKey) return null;
+    const generation = ++runtimeReadGenerationRef.current;
+    const isCurrent = () => generation === runtimeReadGenerationRef.current
+      && runtimeScopeRef.current === runtimeScopeKey;
     if (!hook.tournamentTableId && !runtimeOverride) {
       setRuntime(null);
       setRuntimeError("KhÃ´ng xÃ¡c minh Ä‘Æ°á»£c bÃ n canonical cho Voice.");
@@ -438,20 +457,28 @@ export function TrackerVoicePanel({
       return runtimeOverride;
     }
     try {
-      const next = await loadRuntimeOverride(hook.tournamentId, hook.tournamentTableId);
+      const next = await observeTrackerContextRead(loadRuntimeOverride(hook.tournamentId, hook.tournamentTableId));
+      if (!isCurrent()) return null;
       setRuntime(next);
       setRuntimeError(null);
       return next;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Không tải được quyền Voice.";
+      if (!isCurrent()) return null;
+      const message = error instanceof Error && error.message === "tracker_context_read_timeout"
+        ? "Hết thời gian tải quyền Voice. Hãy kết nối lại để thử lại."
+        : error instanceof Error ? error.message : "Không tải được quyền Voice.";
       setRuntime(null);
       setRuntimeError(message);
       return null;
     }
-  }, [hook.tournamentId, hook.tournamentTableId, loadRuntimeOverride, runtimeOverride]);
+  }, [hook.tournamentId, hook.tournamentTableId, loadRuntimeOverride, runtimeOverride, runtimeScopeKey]);
+  const refreshRuntimeRef = useRef(refreshRuntime);
+  refreshRuntimeRef.current = refreshRuntime;
 
   useEffect(() => {
+    const reads = runtimeReadGenerationRef;
     void refreshRuntime();
+    return () => { ++reads.current; };
   }, [hook.handId, refreshRuntime]);
 
   useEffect(() => {
@@ -837,8 +864,9 @@ export function TrackerVoicePanel({
   ]);
 
   useEffect(() => () => {
+    ++connectionGenerationRef.current;
     void providerRef.current?.disconnect();
-  }, []);
+  }, [connectionScopeKey]);
 
   useEffect(() => {
     if (micTestStartedAt === null) return;
@@ -861,13 +889,27 @@ export function TrackerVoicePanel({
   }, [micTestStartedAt]);
 
   useEffect(() => {
+    const stopCapture = () => {
+      ++connectionGenerationRef.current;
+      ++runtimeReadGenerationRef.current;
+      pendingAmountPrefixRef.current = null;
+      cancelPendingActionRef.current?.();
+      micTestActiveRef.current = false;
+      setMicTestStartedAt(null);
+      setAudioLevel(0);
+      void providerRef.current?.disconnect().catch(() => undefined);
+    };
     const handleOffline = () => {
       if (statusRef.current === "idle") return;
+      stopCapture();
+      statusRef.current = "offline";
       setStatus("offline");
       setStatusMessage("Thiết bị mất mạng. Voice đã dừng ghi action.");
     };
     const handleDeviceChange = () => {
       if (statusRef.current === "idle") return;
+      stopCapture();
+      statusRef.current = "recovering";
       setStatus("recovering");
       setStatusMessage("Danh sách microphone vừa thay đổi. Hãy kết nối lại để xác nhận đúng thiết bị.");
     };
@@ -880,10 +922,16 @@ export function TrackerVoicePanel({
   }, []);
 
   const connect = async () => {
-    const currentRuntime = runtime ?? await refreshRuntime();
+    const generation = ++connectionGenerationRef.current;
+    const isCurrent = () => generation === connectionGenerationRef.current
+      && connectionScopeRef.current === connectionScopeKey;
+    statusRef.current = "connecting";
+    setStatus("connecting");
+    const currentRuntime = await refreshRuntimeRef.current();
+    if (!isCurrent()) return;
     if (!currentRuntime?.can_mint_session) {
       setStatus("error");
-      setStatusMessage(runtimeError ?? "Dealer chưa có đúng một assignment hoặc Voice chưa được bật.");
+      setStatusMessage(currentRuntime?.error ?? "Không xác minh được quyền Voice cho bàn này. Hãy kết nối lại.");
       return;
     }
     const expectedProviderKind = import.meta.env.VITE_TRACKER_VOICE_PROVIDER === "mock"
@@ -907,6 +955,8 @@ export function TrackerVoicePanel({
     setAudioLevel(0);
     setStatusMessage(null);
     const acceptFinalEvent = (finalEvent: VoiceTranscriptEvent, receivedAt: number) => {
+      if (!isCurrent()) return;
+      const eventScope = runtimeScopeRef.current;
       setPartial("");
       setProposal(null);
       setProposalProviderEventId(null);
@@ -925,7 +975,8 @@ export function TrackerVoicePanel({
         setBufferStatus("Transcript được giữ cục bộ. Voice sẽ không ghi action khi Floor chưa sửa xong.");
         return;
       }
-      void refreshRuntime().then((freshRuntime) => {
+      void refreshRuntimeRef.current().then((freshRuntime) => {
+        if (!isCurrent() || runtimeScopeRef.current !== eventScope) return;
         if (!freshRuntime) {
           setValidationState("error");
           setValidationError("Không tải lại được trạng thái bàn. Hãy thử nói lại action.");
@@ -949,10 +1000,21 @@ export function TrackerVoicePanel({
     try {
       await provider.connect({
         onStatus: (next, message) => {
+          if (!isCurrent()) return;
+          if (next === "paused" || next === "recovering" || next === "offline" || next === "error") {
+            // Separate capture segments cannot complete an earlier spoken amount.
+            if (pendingAmountPrefixRef.current) {
+              pendingAmountPrefixRef.current = null;
+              setFinalTranscript("");
+              setValidationError(null);
+            }
+            setPartial("");
+          }
           setStatus(next);
           setStatusMessage(message ?? null);
         },
         onTranscript: (event) => {
+          if (!isCurrent()) return;
           if (!event.isFinal) {
             setPartial(looksLikePrivateHoleCardsTranscript(event.transcript)
               ? "Đang nhận diện đề xuất bài tẩy riêng tư..."
@@ -1006,23 +1068,28 @@ export function TrackerVoicePanel({
           acceptFinalEvent(finalEvent, receivedAt);
         },
         onLevel: (rms) => {
+          if (!isCurrent()) return;
           const normalized = Math.max(0, Math.min(1, rms));
           setAudioLevel(normalized);
           if (micTestActiveRef.current) micTestMaxLevelRef.current = Math.max(micTestMaxLevelRef.current, normalized);
         },
-        onInputDevice: setInputDevice,
-        onSession: setSession,
+        onInputDevice: (device) => { if (isCurrent()) setInputDevice(device); },
+        onSession: (nextSession) => { if (isCurrent()) setSession(nextSession); },
       });
     } catch (error) {
+      if (!isCurrent()) return;
       await provider.disconnect().catch(() => undefined);
+      if (!isCurrent()) return;
       setStatus("error");
       setStatusMessage(error instanceof Error ? error.message : "Không mở được microphone.");
     }
   };
 
   const disconnect = async () => {
+    const generation = ++connectionGenerationRef.current;
     pendingAmountPrefixRef.current = null;
     await providerRef.current?.disconnect();
+    if (generation !== connectionGenerationRef.current) return;
     setStatus("idle");
     setAudioLevel(0);
     setPartial("");
@@ -1162,8 +1229,14 @@ export function TrackerVoicePanel({
   );
 
   const confirmAssist = async (): Promise<boolean> => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     if (
-      !hook.tournamentTableId
+      !isCurrent()
+      || !hook.tournamentTableId
       ||
       validationState !== "validated"
       || !validatedReceipt
@@ -1185,12 +1258,14 @@ export function TrackerVoicePanel({
     assistCommitRef.current = commit;
     try {
       const committed = await commit;
+      if (!isCurrent()) return false;
       if (!committed) {
         setValidationState("error");
         setValidationError("Action không được canonical writer xác nhận. Hãy tải lại trạng thái bàn.");
         return false;
       }
       const readBack = await refreshRuntime();
+      if (!isCurrent()) return false;
       if (!readBack || readBack.active_hand?.hand_id !== hook.handId) {
         setValidationState("error");
         setValidationError("Action đã gửi nhưng không đọc lại được trạng thái bàn. Hãy tải lại trước khi tiếp tục.");
@@ -1207,19 +1282,26 @@ export function TrackerVoicePanel({
       setValidationState("committed");
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       setValidationState("error");
       setValidationError(error instanceof Error
         ? error.message
         : "Không thể xác nhận action Voice. Hãy tải lại trạng thái bàn.");
       return false;
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === commit) assistCommitRef.current = null;
     }
   };
 
   const confirmBoardAssist = async () => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     if (
-      !hook.tournamentTableId
+      !isCurrent()
+      || !hook.tournamentTableId
       || validationState !== "validated"
       || !validatedReceipt
       || !validatedProposal?.ok
@@ -1229,19 +1311,20 @@ export function TrackerVoicePanel({
     setValidationState("committing");
     setValidationError(null);
     const boardProposal = validatedProposal as VoiceBoardProposal;
-    const canonicalRequest = await buildVoiceBoardCanonicalRequest({
-      rawTranscript: boardProposal.command.rawTranscript,
-      expectedStateVersion: validatedReceipt.state_version,
-      expectedWorkflowState: boardProposal.expectedWorkflowState,
-      expectedStreet: boardProposal.expectedStreet,
-      payload: {
-        street: boardProposal.expectedStreet,
-        newCards: boardProposal.command.newCards,
-        cumulativeCards: boardProposal.cumulativeCards,
-        expectedExistingBoardCount: boardProposal.expectedExistingBoardCount,
-      },
-    });
     const commit = (async () => {
+      const canonicalRequest = await buildVoiceBoardCanonicalRequest({
+        rawTranscript: boardProposal.command.rawTranscript,
+        expectedStateVersion: validatedReceipt.state_version,
+        expectedWorkflowState: boardProposal.expectedWorkflowState,
+        expectedStreet: boardProposal.expectedStreet,
+        payload: {
+          street: boardProposal.expectedStreet,
+          newCards: boardProposal.command.newCards,
+          cumulativeCards: boardProposal.cumulativeCards,
+          expectedExistingBoardCount: boardProposal.expectedExistingBoardCount,
+        },
+      });
+      if (!isCurrent()) return false;
       const receipt = await commitBoardOverride({
         tournamentId: hook.tournamentId,
         tournamentTableId: hook.tournamentTableId!,
@@ -1251,10 +1334,12 @@ export function TrackerVoicePanel({
         traceId: validatedReceipt.trace_id,
         canonicalRequest,
       });
+      if (!isCurrent()) return false;
       if (!hook.applyVoiceBoardReceipt(receipt)) {
         throw new Error("Receipt Board không khớp hand đang mở. Hãy tải lại bàn.");
       }
       const readBack = await refreshRuntime();
+      if (!isCurrent()) return false;
       if (!readBack || readBack.active_hand?.hand_id !== hook.handId
         || (!runtimeOverride && readBack.active_hand.state_version !== receipt.state_version_after)) {
         throw new Error("Board đã gửi nhưng không đọc lại được trạng thái server. Hãy tải lại trước khi tiếp tục.");
@@ -1263,18 +1348,20 @@ export function TrackerVoicePanel({
     })();
     assistCommitRef.current = commit;
     try {
-      await commit;
+      const committed = await commit;
+      if (!isCurrent() || !committed) return;
       setProposal(null);
       setValidatedProposal(null);
       setValidatedReceipt(null);
       setValidationState("committed");
     } catch (error) {
+      if (!isCurrent()) return;
       // Preserve the immutable event/idempotency key. A retry uses the same
       // key, and the transactional RPC returns its receipt instead of writing twice.
       setValidationState("validated");
       setValidationError(error instanceof Error ? error.message : "Không thể xác nhận Board Voice.");
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === commit) assistCommitRef.current = null;
     }
   };
 
@@ -1348,9 +1435,15 @@ export function TrackerVoicePanel({
   }, [handsFreeAssistEnabled, validationState, validatedProposal, validatedReceipt]);
 
   const confirmHoleCardsAssist = async (): Promise<boolean> => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     const attempts = [...privateHoleCardsAttemptsRef.current];
     if (
-      attempts.length === 0
+      !isCurrent()
+      || attempts.length === 0
       || !hook.tournamentTableId
       || mode !== "assist"
       || assistCommitRef.current
@@ -1365,6 +1458,7 @@ export function TrackerVoicePanel({
     const committedProviderEventIds = new Set<string>();
     const commit = (async () => {
       let currentRuntime = await refreshRuntime();
+      if (!isCurrent()) return null;
       if (!currentRuntime?.active_hand || currentRuntime.active_hand.hand_id !== hook.handId) {
         throw new Error("Không đọc lại được hand trước khi xác nhận bài tẩy.");
       }
@@ -1389,6 +1483,7 @@ export function TrackerVoicePanel({
             cards: privateAttempt.proposal.command.cards,
           },
         });
+        if (!isCurrent()) return null;
         const receipt = await commitHoleCardsOverride({
           tournamentId: hook.tournamentId,
           tournamentTableId: hook.tournamentTableId,
@@ -1401,6 +1496,7 @@ export function TrackerVoicePanel({
           ...identity,
           canonicalRequest,
         });
+        if (!isCurrent()) return null;
         if (!hook.applyVoiceHoleCardsReceipt({
           receipt,
           playerId: privateAttempt.proposal.player.playerId,
@@ -1418,6 +1514,7 @@ export function TrackerVoicePanel({
           };
         } else {
           const readBack = await refreshRuntime();
+          if (!isCurrent()) return null;
           if (!readBack?.active_hand || readBack.active_hand.hand_id !== hook.handId
             || readBack.active_hand.state_version !== receipt.state_version_after) {
             throw new Error("Bài tẩy đã gửi nhưng không đọc lại được trạng thái server. Hãy tải lại trước khi tiếp tục.");
@@ -1429,9 +1526,11 @@ export function TrackerVoicePanel({
     })();
     // Keep the single-flight guard settled even when the receipt request fails.
     // The original promise below still preserves the proposal and idempotency key for retry.
-    assistCommitRef.current = commit.then(() => true, () => false);
+    const guard = commit.then(() => true, () => false);
+    assistCommitRef.current = guard;
     try {
       const lastSeat = await commit;
+      if (!isCurrent()) return false;
       privateHoleCardsAttemptsRef.current = [];
       setPrivateHoleCardsAttempts([]);
       setConfirmedHoleSeat(lastSeat);
@@ -1441,6 +1540,7 @@ export function TrackerVoicePanel({
       setValidationState("committed");
       return true;
     } catch (error) {
+      if (!isCurrent()) return false;
       const remaining = attempts.filter((attempt) => !committedProviderEventIds.has(attempt.event.providerEventId));
       privateHoleCardsAttemptsRef.current = remaining;
       setPrivateHoleCardsAttempts(remaining);
@@ -1448,7 +1548,7 @@ export function TrackerVoicePanel({
       setValidationError(error instanceof Error ? error.message : "Không thể xác nhận bài tẩy Voice.");
       return false;
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === guard) assistCommitRef.current = null;
     }
   };
 
@@ -1467,10 +1567,16 @@ export function TrackerVoicePanel({
   });
 
   const confirmFinishAssist = async () => {
+    const validationGeneration = validationGenerationRef.current;
+    const connectionGeneration = connectionGenerationRef.current;
+    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+      && validationGenerationRef.current === validationGeneration
+      && connectionGenerationRef.current === connectionGeneration;
     const attempt = finishAttempt;
     const expectedStateVersion = attempt?.proposal.expectedStateVersion;
     if (
-      !attempt
+      !isCurrent()
+      || !attempt
       || !expectedStateVersion
       || !hook.tournamentTableId
       || mode !== "assist"
@@ -1495,6 +1601,7 @@ export function TrackerVoicePanel({
           settlementDigest: attempt.receipt.settlement_digest,
         },
       });
+      if (!isCurrent()) return null;
       const receipt = await commitFinishOverride({
         tournamentId: hook.tournamentId,
         tournamentTableId: hook.tournamentTableId,
@@ -1507,7 +1614,9 @@ export function TrackerVoicePanel({
         ...identity,
         canonicalRequest,
       });
+      if (!isCurrent()) return null;
       const readBack = await refreshRuntime();
+      if (!isCurrent()) return null;
       if (!readBack || readBack.active_hand?.hand_id === receipt.hand_id) {
         throw new Error("Hand đã gửi nhưng chưa đọc lại được trạng thái canonical. Hãy tải lại bàn.");
       }
@@ -1516,17 +1625,20 @@ export function TrackerVoicePanel({
       }
       return receipt;
     })();
-    assistCommitRef.current = commit.then(() => true, () => false);
+    const guard = commit.then(() => true, () => false);
+    assistCommitRef.current = guard;
     try {
-      await commit;
+      const receipt = await commit;
+      if (!isCurrent() || !receipt) return;
       setFinishAttempt(null);
       setFinalTranscript("");
       setValidationState("committed");
     } catch (error) {
+      if (!isCurrent()) return;
       setValidationState("validated");
       setValidationError(error instanceof Error ? error.message : "Không thể xác nhận lưu Hand bằng Voice.");
     } finally {
-      assistCommitRef.current = null;
+      if (assistCommitRef.current === guard) assistCommitRef.current = null;
     }
   };
 

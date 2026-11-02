@@ -43,7 +43,7 @@ type FundingPreview = {
 };
 
 const emptyRow = (): AwardInput => ({ position: "", ticketCount: "0", cashVnd: "0" });
-const planRpc = supabase.rpc as unknown as (name: string, args: Record<string, unknown>) =>
+const planRpc = supabase.rpc.bind(supabase) as unknown as (name: string, args: Record<string, unknown>) =>
   Promise<{ data: unknown; error: { message: string } | null }>;
 const money = (value?: string) => value && /^\d{1,16}$/.test(value)
   ? `${Number(value).toLocaleString("en-US")} VND` : "—";

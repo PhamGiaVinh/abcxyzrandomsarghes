@@ -28,6 +28,19 @@ function Location() { return <output data-testid="location">{useLocation().pathn
 describe("notification toast freshness", () => {
   beforeEach(() => { state.items = []; state.unreadCount = 0; state.notify = undefined; state.toast.mockReset(); state.error = null; state.loading = false; state.refresh.mockReset(); state.markRead.mockReset(); state.markRead.mockResolvedValue(false); });
 
+  it.each(["bell", "page"])("exposes each %s notification as a native keyboard-focusable action", async (surface) => {
+    state.items = [{ id: "keyboard", title: "Keyboard TEST", body: "Open safely", is_read: false }];
+    state.markRead.mockResolvedValue(true);
+    render(<MemoryRouter initialEntries={["/tracker"]}>{surface === "bell" ? <NotificationBell /> : <Notifications />}<Location /></MemoryRouter>);
+    if (surface === "bell") fireEvent.click(screen.getByRole("button", { name: /^Thông báo$/ }));
+    const action = await screen.findByRole("button", { name: /Keyboard TEST/ });
+    expect(action.tagName).toBe("BUTTON");expect(action).toHaveAttribute("type", "button");
+    action.focus();expect(action).toHaveFocus();
+    fireEvent.click(action);
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/notifications"));
+    expect(state.markRead).toHaveBeenCalledOnce();expect(state.markRead).toHaveBeenCalledWith("keyboard");
+  });
+
   it("does not announce historical unread records loaded on page entry", async () => {
     const view = render(<MemoryRouter><NotificationBell /></MemoryRouter>);
     state.items = [{ id: "historical", title: "Registration confirmed", body: "Old registration", is_read: false }];

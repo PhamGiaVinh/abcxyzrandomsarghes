@@ -10,6 +10,10 @@ const viewer = readFileSync(resolve(root, "src/components/cashier/tournament-liv
 const handFeed = readFileSync(resolve(root, "src/components/cashier/tournament-live/viewer-hub/useCompletedHandsFeed.ts"), "utf8");
 
 describe("public spectator v2 boundary", () => {
+  it('reads canonical public counts instead of stale tournament counters',()=>{
+    expect(viewer.includes('"get_public_tournament_clock_summary"')).toBe(true);
+    expect(viewer.includes('supabase.from("tournaments").select("players_remaining, average_stack")')).toBe(false);
+  });
   it("enables the reviewed public viewer through explicit read RPC grants", () => {
     expect(flags).toMatch(/publicSpectatorRealtimeV2:\s*true/);
     expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.get_public_tournament_viewer_snapshot_v2[\s\S]+TO anon, authenticated, service_role/);

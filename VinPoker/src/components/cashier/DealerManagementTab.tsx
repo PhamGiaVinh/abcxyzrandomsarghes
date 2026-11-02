@@ -19,6 +19,8 @@ import { BulkEditDialog } from "./BulkEditDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FEATURES } from "@/lib/featureFlags";
 import { toast } from "sonner";
+import { useAuth } from '@/hooks/useAuth';
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 
 type MainTab = "dealers" | "telegram";
 
@@ -29,10 +31,15 @@ interface DealerManagementTabProps {
 
 type FilterMode = "all" | "full_time" | "part_time" | "A" | "B" | "C";
 
-export default function DealerManagementTab({ clubIds, clubFilter }: DealerManagementTabProps) {
+export default function DealerManagementTab(props: DealerManagementTabProps) {
+  const {user,session}=useAuth();
+  return <DealerManagementSession key={JSON.stringify([user?.id??null,sessionReadEpoch(session),[...props.clubIds].sort(),props.clubFilter])} {...props}/>;
+}
+
+function DealerManagementSession({ clubIds, clubFilter }: DealerManagementTabProps) {
   const activeClubId = clubFilter ?? clubIds[0] ?? "";
-  const { data: dealers, loading: dealersLoading, refetch: refetchDealers } = useAllDealers(clubIds);
-  const { data: scores, loading: scoresLoading } = useDealerScores(activeClubId);
+  const { data: dealers, loading: dealersLoading, error: dealersError, refetch: refetchDealers } = useAllDealers(clubIds);
+  const { data: scores, loading: scoresLoading, error: scoresError, refetch: refetchScores } = useDealerScores(activeClubId);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -294,6 +301,11 @@ export default function DealerManagementTab({ clubIds, clubFilter }: DealerManag
     { key: "B", label: "Hạng B" },
     { key: "C", label: "Hạng C" },
   ];
+
+  if (dealersError || scoresError) return <div role="alert" className="space-y-3 rounded-lg border border-destructive/40 p-4 text-sm">
+    <p>Không xác minh được dữ liệu dealer. Đây không phải xác nhận danh sách trống; chưa dùng dữ liệu này để chỉnh sửa.</p>
+    <Button variant="outline" onClick={() => { refetchDealers(); refetchScores(); }}>Thử tải lại dữ liệu dealer</Button>
+  </div>;
 
   return (
     <div className="h-full flex flex-col">

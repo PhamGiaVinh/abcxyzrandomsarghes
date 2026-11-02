@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { settleShowdown } from '../../src/lib/tracker-poker/trackerShowdown';
+import {validateSettlementOutcomeV1} from '../../supabase/functions/_shared/trackerSettlement/outcomeV1.ts';
+import {parseReplayPublicSettlement} from '../../src/lib/tracker-poker/replaySettlement';
 import {
   HistoricalDisplayVerificationError,
   verifyHistoricalDisplaySettlement,
@@ -49,6 +52,91 @@ function validInput() {
 }
 
 describe("historical display settlement verification", () => {
+  function refundOnlyInput() {
+    const input=validInput();
+    input.hand=hand({community_cards:[],pot_size:0,tracker_small_blind:100,tracker_big_blind:100,tracker_bba:0});
+    input.players=['A','B'].map((player_id,index)=>({hand_id:'hand-8',player_id,entry_number:1,seat_number:index+1,starting_stack:20000,ending_stack:20000,hole_cards:[],is_eliminated:false}));
+    input.actions=[
+      {id:'bb',hand_id:'hand-8',player_id:'B',entry_number:1,street:'preflop',action_type:'post_bb',action_amount:100,action_order:1},
+      {id:'fold',hand_id:'hand-8',player_id:'A',entry_number:1,street:'preflop',action_type:'fold',action_amount:0,action_order:2},
+    ];
+    return input;
+  }
+  it('verifies a fully refunded dead-SB fold hand without inventing a pot or award',async()=>{
+    const result=await verifyHistoricalDisplaySettlement(refundOnlyInput());
+    expect(result.winnerIds).toEqual([]);
+    expect(result.publicOutcome.pots).toEqual([]);
+    expect(result.publicOutcome.refunds).toEqual([{playerId:'B',amount:100,sourceActionId:'bb'}]);
+    expect(result.privateOutcome.totals).toMatchObject({committedTotal:100,distributablePot:0,refundTotal:100,potAward:0,netDelta:0,startingStack:40000,endingStack:40000});
+    expect(validateSettlementOutcomeV1(result.privateOutcome).ok).toBe(true);
+    const {schemaVersion,status,players,pots,refunds,handRanks}=result.publicOutcome;
+    const publicProjection={schemaVersion,status,players,pots,refunds,handRanks};
+    expect(parseReplayPublicSettlement(publicProjection)?.refunds).toEqual(result.publicOutcome.refunds);
+    for(const mutate of [
+      value=>{value.refunds=[];},
+      value=>{value.players[0].netDelta=1;},
+      value=>{value.players[0].potAward=1;},
+      value=>{value.players[1].refund=99;},
+    ]) {
+      const privateValue=structuredClone(result.privateOutcome);mutate(privateValue);
+      expect(validateSettlementOutcomeV1(privateValue).ok).toBe(false);
+      const publicValue=structuredClone(publicProjection);mutate(publicValue);
+      expect(parseReplayPublicSettlement(publicValue)).toBeNull();
+    }
+  });
+  it.each(['no-actions','unfinished','wrong-stack'])('does not accept invalid refund-only evidence: %s',async mode=>{
+    const input=refundOnlyInput();
+    if(mode==='no-actions')input.actions=[];
+    if(mode==='unfinished')input.actions=input.actions.slice(0,1);
+    if(mode==='wrong-stack')input.players[1].ending_stack=19999;
+    await expect(verifyHistoricalDisplaySettlement(input)).rejects.toBeInstanceOf(HistoricalDisplayVerificationError);
+  });
+  it.each([false,true])('agrees with Tracker on two side pots plus a separate refund (reverse rows=%s)',async(reverse)=>{
+    const input=validInput();
+    input.hand=hand({pot_size:100,button_seat:1,community_cards:['2c','4d','6h','8s','Tc']});
+    const cards=[['As','Ad'],['Ks','Kd'],['Qs','Qd'],['Js','Jd']];
+    input.players=[10,20,30,40].map((stack,i)=>({hand_id:'hand-8',player_id:`P${i+1}`,entry_number:1,
+      seat_number:i+1,starting_stack:stack,ending_stack:40-i*10,hole_cards:cards[i],is_eliminated:false}));
+    input.actions=input.players.map((p,i)=>({id:`multi-${i}`,hand_id:'hand-8',player_id:p.player_id,entry_number:1,
+      street:'preflop',action_type:'all_in',action_amount:p.starting_stack,action_order:i+1}));
+    if(reverse)input.players.reverse();
+    const tracker=settleShowdown(input.players.map(p=>({player_id:p.player_id,seat_number:p.seat_number,
+      starting_stack:p.starting_stack,stack:0,street_committed:p.starting_stack,total_committed:p.starting_stack,
+      folded:false,all_in:true})),Object.fromEntries(input.players.map(p=>[p.player_id,p.hole_cards])),input.hand.community_cards);
+    expect(tracker).not.toBeNull();
+    expect(tracker!.layers.map(p=>[p.amount,p.winner_player_ids])).toEqual([[40,['P1']],[30,['P2']],[20,['P3']]]);
+    expect(tracker!.uncalled).toEqual({player_id:'P4',amount:10});
+    const verified=await verifyHistoricalDisplaySettlement(input);
+    expect(verified.publicOutcome.pots.map(p=>[p.amount,p.winnerIds])).toEqual([[40,['P1']],[30,['P2']],[20,['P3']]]);
+    const ends=Object.fromEntries(verified.publicOutcome.players.map(p=>[p.playerId,p.endingStack]));
+    expect(ends).toEqual({P1:40,P2:30,P3:20,P4:10});
+    expect(Object.fromEntries(tracker!.results.map(p=>[p.player_id,p.ending_stack]))).toEqual(ends);
+    // Conservation alone cannot prove correctness: this shifted award still totals100.
+    input.players.find(p=>p.player_id==='P1')!.ending_stack=41;
+    input.players.find(p=>p.player_id==='P2')!.ending_stack=29;
+    await expect(verifyHistoricalDisplaySettlement(input)).rejects.toThrow(/stored_ending_stack_mismatch/);
+  });
+  it('accepts a physical dead button and awards the odd chip clockwise after it',async()=>{
+    const input=validInput();
+    input.hand=hand({button_seat:1,community_cards:['2c','3d','4h','5s','9c'],pot_size:15});
+    input.players=[
+      {hand_id:'hand-8',player_id:'seat2',entry_number:1,seat_number:2,starting_stack:100,ending_stack:103,hole_cards:['As','Kd'],is_eliminated:false},
+      {hand_id:'hand-8',player_id:'seat3',entry_number:1,seat_number:3,starting_stack:100,ending_stack:102,hole_cards:['Ah','Jd'],is_eliminated:false},
+      {hand_id:'hand-8',player_id:'seat4',entry_number:1,seat_number:4,starting_stack:100,ending_stack:95,hole_cards:['Qs','Qc'],is_eliminated:false},
+    ];
+    input.actions=input.players.map((p,i)=>({id:`dead-${i}`,hand_id:'hand-8',player_id:p.player_id,entry_number:1,
+      street:'preflop',action_type:'all_in',action_amount:5,action_order:i+1}));
+    const result=await verifyHistoricalDisplaySettlement(input);
+    expect(result.privateOutcome.privateEvidence.buttonSeat).toBe(1);
+    expect(result.publicOutcome.pots[0].allocations).toEqual([
+      {potId:'main-0',winnerId:'seat2',amount:8,includesOddChip:true},
+      {potId:'main-0',winnerId:'seat3',amount:7,includesOddChip:false},
+    ]);
+  });
+  it.each([0,11,1.5])('rejects an invalid physical button %s',async(button_seat)=>{
+    const input=validInput();input.hand=hand({button_seat});
+    await expect(verifyHistoricalDisplaySettlement(input)).rejects.toThrow(/INVALID_BUTTON_SEAT|invalid_historical_button/i);
+  });
   it("awards an odd tied chip clockwise after the button and leaves the button last", async () => {
     const input = validInput();
     input.hand = hand({ button_seat: 2, community_cards: ["2c", "3d", "4h", "5s", "9c"], pot_size: 15 });
@@ -159,6 +247,24 @@ describe("historical display settlement verification", () => {
     ];
     const result = await verifyHistoricalDisplaySettlement(input);
     expect(result.winnerIds).toEqual(["A"]);
+    expect(result.publicOutcome.handRanks).toEqual([]);
+  });
+
+  it.each(["post_bb", "big_blind"])("traces an uncalled %s refund after an SB fold", async (blindType) => {
+    const input = validInput();
+    input.hand = hand({ community_cards: [], pot_size: 200, tracker_bba: 0 });
+    input.players = [
+      { hand_id: "hand-8", player_id: "SB", entry_number: 1, seat_number: 1, starting_stack: 20_000, ending_stack: 19_900, hole_cards: [], is_eliminated: false },
+      { hand_id: "hand-8", player_id: "BB", entry_number: 1, seat_number: 2, starting_stack: 20_000, ending_stack: 20_100, hole_cards: [], is_eliminated: false },
+    ];
+    input.actions = [
+      { id: "sb", hand_id: "hand-8", player_id: "SB", entry_number: 1, street: "preflop", action_type: "post_sb", action_amount: 100, action_order: 1 },
+      { id: "bb", hand_id: "hand-8", player_id: "BB", entry_number: 1, street: "preflop", action_type: blindType, action_amount: 200, action_order: 2 },
+      { id: "fold", hand_id: "hand-8", player_id: "SB", entry_number: 1, street: "preflop", action_type: "fold", action_amount: 0, action_order: 3 },
+    ];
+    const result = await verifyHistoricalDisplaySettlement(input);
+    expect(result.winnerIds).toEqual(["BB"]);
+    expect(result.publicOutcome.refunds).toEqual([{ playerId: "BB", amount: 100, sourceActionId: "bb" }]);
     expect(result.publicOutcome.handRanks).toEqual([]);
   });
 

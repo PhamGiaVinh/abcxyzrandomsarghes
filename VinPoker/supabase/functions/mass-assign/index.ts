@@ -120,16 +120,21 @@ Deno.serve(async (req) => {
       const chatId = await getClubTelegramChatId(admin, club_id);
       if (botToken && chatId && assignedEntries.length > 0) {
         const sends: Promise<unknown>[] = [];
+        const notificationAudits: Promise<unknown>[] = [];
 
         // Group notification: summary of all assignments
         const msg = formatMassAssignMessage(assignedEntries);
         sends.push(
           sendTelegramNotification(botToken, chatId, msg, {
             logError: (errMsg) => {
-              void admin.from("swing_audit_logs").insert({
+              notificationAudits.push(Promise.resolve(admin.from("swing_audit_logs").insert({
                 club_id, action: "mass_assign_telegram_failed",
                 error_message: errMsg, triggered_by: uid,
-              });
+              })).then(({ error }) => {
+                if (error) console.warn("[mass-assign] notification failure audit unavailable");
+              }).catch(() => {
+                console.warn("[mass-assign] notification failure audit unavailable");
+              }));
             },
           })
         );
@@ -146,7 +151,9 @@ Deno.serve(async (req) => {
         // previous fire-and-forget `.catch(() => {})` promises were dropped when
         // the function froze on return, so bulk opens (owner: "mở 20 bàn") often
         // delivered NOTHING. Same fix as assign-dealer's manual-open sends.
-        const settled = Promise.allSettled(sends);
+        // Failure callbacks run while sends settle and may enqueue lazy DB
+        // audits. Keep those requests inside the same background lifetime.
+        const settled = Promise.allSettled(sends).then(() => Promise.allSettled(notificationAudits));
         const er = (globalThis as any).EdgeRuntime;
         if (er?.waitUntil) er.waitUntil(settled);
         else await settled;

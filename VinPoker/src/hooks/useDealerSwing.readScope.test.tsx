@@ -26,7 +26,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   removeChannel: vi.fn(),
 } }));
 
-import { useCheckedInDealers } from "./useDealerSwing";
+import { useCheckedInDealers, useSwingConfigs } from "./useDealerSwing";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -44,6 +44,55 @@ describe("Dealer production read scope", () => {
     state.read.mockReset();
     state.callbacks = [];
     state.read.mockImplementation((ids: string[]) => rows(ids[0]));
+  });
+
+  it("reports a config refresh failure without silently replacing known config with defaults", async () => {
+    const hook = renderHook(() => useSwingConfigs(["club-a"]));
+    await waitFor(() => expect(hook.result.current.data?.[0]?.id).toBe("club-a"));
+    state.read.mockResolvedValue({ data: null, error: { message: "503 config" } });
+    await act(async () => { await hook.result.current.refetch(); });
+    expect(hook.result.current.error).toBe("503 config");
+    expect(hook.result.current.data?.[0]?.id).toBe("club-a");
+    expect(hook.result.current.loading).toBe(false);
+  });
+
+  it("ignores an old config response after changing clubs", async () => {
+    const old = deferred<unknown>();
+    state.read.mockImplementationOnce(() => old.promise);
+    const hook = renderHook(({ ids }) => useSwingConfigs(ids), { initialProps: { ids: ["club-a"] } });
+    await waitFor(() => expect(state.read).toHaveBeenCalledOnce());
+    hook.rerender({ ids: ["club-b"] });
+    await waitFor(() => expect(hook.result.current.data?.[0]?.id).toBe("club-b"));
+    await act(async () => { old.resolve(rows("obsolete-a")); });
+    expect(hook.result.current.data?.[0]?.id).toBe("club-b");
+  });
+
+  it("hides config across actor changes and clears it on logout", async () => {
+    const hook = renderHook(() => useSwingConfigs(["club-a"]));
+    await waitFor(() => expect(hook.result.current.data?.[0]?.id).toBe("club-a"));
+    const next = deferred<unknown>();
+    state.read.mockImplementation(() => next.promise);
+    state.user = { id: "actor-b" };
+    hook.rerender();
+    expect(hook.result.current.data).toEqual([]);
+    expect(hook.result.current.loading).toBe(true);
+    await act(async () => { next.resolve(rows("actor-b-config")); });
+    expect(hook.result.current.data[0]?.id).toBe("actor-b-config");
+    const count = state.read.mock.calls.length;
+    state.user = null;
+    hook.rerender();
+    expect(hook.result.current.data).toEqual([]);
+    expect(hook.result.current.loading).toBe(false);
+    expect(state.read).toHaveBeenCalledTimes(count);
+  });
+
+  it("keeps config reads on demand without creating subscriptions or polling", async () => {
+    renderHook(() => useSwingConfigs(["club-a"]));
+    await waitFor(() => expect(state.read).toHaveBeenCalledOnce());
+    expect(state.callbacks).toEqual([]);
+    vi.useFakeTimers();
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(state.read).toHaveBeenCalledOnce();
   });
 
   it("hides a prior actor snapshot even when the club selection is unchanged", async () => {

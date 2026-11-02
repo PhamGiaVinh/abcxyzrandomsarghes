@@ -9,10 +9,11 @@ import { BackButton } from "@/components/BackButton";
 import { StaffBottomNav } from "./StaffBottomNav";
 import { StaffClubSwitcher } from "./StaffClubSwitcher";
 import { StaffComingSoon } from "./StaffComingSoon";
+import { Button } from "@/components/ui/button";
 
 export default function StaffAppShell() {
   const { user, isAdmin, isClubOwner, loading: authLoading } = useAuth();
-  const { loading, source } = useStaffLink();
+  const { loading, source, error, refetch, isFetching } = useStaffLink();
   const [searchParams] = useSearchParams();
   const mockPreview = !FEATURES.staffApp && searchParams.get("preview") === "mock";
   const allowPreview = isAdmin || isClubOwner || mockPreview;
@@ -20,6 +21,11 @@ export default function StaffAppShell() {
   if (authLoading || loading) return <RouteLoader />;
   if (source === "live" && !user) return <Navigate to="/auth" replace />;
   if (!FEATURES.staffApp && !allowPreview) return <StaffComingSoon />;
+  if(error)return <div role="alert" className="mx-auto max-w-md space-y-3 p-4">
+    <h1 className="font-bold">Không tải được hồ sơ nhân viên</h1>
+    <p className="text-sm text-muted-foreground">{error}</p>
+    <Button disabled={isFetching} onClick={()=>{void refetch();}}>Tải lại hồ sơ</Button>
+  </div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

@@ -1,0 +1,1 @@
+import React from'react';import{createRoot}from'react-dom/client';import{ClubPulsePanel}from'@/components/series-intelligence/ClubPulsePanel';import{ScopeHarness}from'@/hooks/useOperatorClubs';import'@/index.css';createRoot(document.getElementById('root')).render(<ScopeHarness><ClubPulsePanel enabled/></ScopeHarness>);

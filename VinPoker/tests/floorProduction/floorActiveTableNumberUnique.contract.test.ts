@@ -13,6 +13,7 @@ describe("Floor active table-number uniqueness migration", () => {
     expect(migration).toContain("AND table_number IS NOT NULL");
     expect(migration).toContain("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS tournament_tables_one_active_number_per_tournament");
     expect(migration).toContain("floor_active_table_number_duplicate");
-    expect(migration).not.toMatch(/\bDELETE\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
+    const executableSql = migration.replace(/--[^\r\n]*/g, "");
+    expect(executableSql).not.toMatch(/\bDELETE\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
   });
 });

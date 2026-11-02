@@ -1,0 +1,351 @@
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {computeVoiceFinishSettlement} from '../../supabase/functions/_shared/trackerSettlement/finishAssist.ts';
+import {reduceHand,isBettingRoundComplete} from '../../src/lib/tracker-poker/handStateCore.ts';
+
+// Continue the same paid flights -> qualified bags -> initial D2 seating fixture.
+// Dealer/attendance/config are explicit local prerequisites, not Swing evidence.
+export async function runD2InitialHand(sql,f,total) {
+ assert.equal(process.env.VINPOKER_NATIVE_CROSS_FLOW,'1');
+ assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
+ assert.equal(sql(`SELECT name FROM public.tournaments WHERE id='${f.tour}';`),'Multi-day Final local TEST');
+ const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
+ const call=q=>JSON.parse(sql(`BEGIN;${auth}${q}COMMIT;`));
+ const quote=v=>`'${JSON.stringify(v).replaceAll("'","''")}'::jsonb`;
+ const table=JSON.parse(sql(`SELECT to_jsonb(tt) FROM public.tournament_tables tt JOIN public.tournament_seats s
+   ON s.tournament_table_id=tt.id AND s.is_active WHERE tt.tournament_id='${f.tour}' GROUP BY tt.id
+   HAVING count(*)=3 ORDER BY tt.table_number LIMIT 1;`));
+ assert.ok(table?.table_session_id);
+ let state=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${table.table_session_id}';`));
+ const changed=call(`SELECT public.floor_request_table_control_mode_v4('${table.id}','${state.id}','tracker',${state.revision},${state.control_epoch},'${crypto.randomUUID()}');`);
+ assert.equal(changed.ok,true,JSON.stringify(changed));
+ state=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${state.id}';`));
+ const dealer=crypto.randomUUID(),shift=crypto.randomUUID(),attendance=crypto.randomUUID();
+ const prior=sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');");
+ try {
+  sql(`BEGIN;SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claim.role='authenticated';
+   SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
+   SET LOCAL request.headers='{"x-vinpoker-dealer-intent":"manual","x-vinpoker-dealer-actor":"${f.actor}"}';
+   INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES('${shift}','${f.club}','D2 hand local TEST','00:00','23:59');
+   INSERT INTO public.dealers(id,club_id,full_name,status) VALUES('${dealer}','${f.club}','D2 hand local TEST','active');
+   INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+   VALUES('${attendance}','${dealer}','${shift}',current_date,'checked_in',now(),'assigned');
+   INSERT INTO public.dealer_assignments(table_id,table_session_id,club_id,dealer_id,attendance_id,status,assigned_at)
+   VALUES('${state.game_table_id}','${state.id}','${f.club}','${dealer}','${attendance}','assigned',now());
+   INSERT INTO public.app_settings(key,value) VALUES('tracker_voice_global_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+   INSERT INTO public.tracker_voice_configs(club_id,tournament_id,tournament_table_id,physical_table_id,table_session_id,control_epoch,enabled,configured_mode)
+   VALUES('${f.club}','${f.tour}','${table.id}','${state.game_table_id}','${state.id}',${state.control_epoch},true,'assist');COMMIT;`);
+  const started=call(`SELECT public.start_tracker_hand_v3('${f.tour}','${table.id}','${state.id}',${state.control_epoch},1,now(),'${f.actor}',1);`);
+  assert.equal(started.status,'success',JSON.stringify(started));
+  const hand=JSON.parse(sql(`SELECT to_jsonb(h) FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';`));
+  const players=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY seat_number) FROM public.hand_players p WHERE hand_id='${hand.id}';`));
+  assert.equal(players.length,3);assert.ok(players.every(p=>p.starting_stack===total/8));
+  for(const [p,type,order,amount] of [[players[1],'post_sb',1,100],[players[2],'post_bb',2,200],[players[0],'fold',3,0],[players[1],'fold',4,0]]) {
+   const r=call(`SELECT public.record_action('${hand.id}','${p.player_id}','${type}',${order},${p.entry_number},'preflop',${amount});`);
+   assert.equal(r.status,'success',JSON.stringify(r));
+  }
+  const snapshot=call(`SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand.id}');`);
+  assert.equal(snapshot.ok,true,JSON.stringify(snapshot));
+  const runtime=reduceHand(snapshot.players,snapshot.actions,snapshot.button_seat);
+  const result=await computeVoiceFinishSettlement({handId:hand.id,stateVersion:snapshot.state_version,buttonSeat:snapshot.button_seat,
+   communityCards:snapshot.community_cards,players,actions:snapshot.actions,bettingComplete:isBettingRoundComplete(runtime)});
+  assert.equal(result.settlementOrigin,'engine_fold_win');assert.equal(result.summary.conservation_total,total*3/8);
+  const key='native-d2-finish-'+crypto.randomUUID();
+  const record={hand_number:hand.hand_number,hand_time:hand.created_at,players:result.recordPlayers,actions:result.recordActions,
+   side_pots:result.sidePots,community_cards:snapshot.community_cards,pot_size:result.potSize};
+  const finish=()=>JSON.parse(sql(`BEGIN;SET LOCAL request.jwt.claims='{"role":"service_role"}';SET LOCAL ROLE service_role;
+   SELECT public.commit_tracker_voice_finish_v0('${f.actor}','${f.tour}','${table.id}','${hand.id}','openai_realtime','gpt-live-transcribe',
+   '${key}','ket thuc hand','${snapshot.state_version}','${key}','native-d2-finish','${result.settlementOrigin}','${result.settlementDigest}',${quote(record)});COMMIT;`));
+  const receipt=finish();assert.equal(receipt.ok,true,JSON.stringify(receipt));assert.equal(finish().ok,true);
+  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${hand.id}';`),'completed');
+  assert.equal(Number(sql(`SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`)),total);
+  for(const p of result.recordPlayers) {
+   assert.equal(Number(sql(`SELECT current_stack FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND player_id='${p.player_id}' AND entry_no=${p.entry_number};`)),p.ending_stack);
+  }
+  assert.equal(sql(`SELECT count(*) FROM public.cashier_buyin_movements WHERE tournament_id='${f.tour}';`),'0');
+  console.log('MULTIDAY_SAME_FINAL_THREE_PLAYER_HAND_FINISH_CARRY_CONSERVATION_PASS',JSON.stringify({tour:f.tour,hand:hand.id,total}));
+  assert.ok(f.event&&f.plan,'D2 history requires immutable qualification/plan provenance');
+  const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{
+   encoding:'utf8',timeout:120000,env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_D2:JSON.stringify(f)}});
+  assert.match(worker,/ACTUAL_D2_QUALIFIED_PARENT_HISTORY_WORKER_PUBLIC_PASS/);process.stdout.write(worker);
+ } finally {
+  if(prior==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
+  else sql(`UPDATE public.app_settings SET value='${prior.replaceAll("'","''")}'::jsonb WHERE key='tracker_voice_global_enabled';`);
+ }
+}
+
+export async function runPaidTourHand(sql,f,tables,{breakSource=null}={}){
+ assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
+ assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
+ const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
+ const service=`SET LOCAL request.jwt.claims='{"role":"service_role"}';SET LOCAL ROLE service_role;`;
+ const quote=v=>`'${(typeof v==='object'?JSON.stringify(v):String(v)).replaceAll("'","''")}'`;
+ const session=t=>JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${t.table_session_id}';`));
+ const core=()=>sql(`SELECT md5(jsonb_build_object('cash',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}'),
+ 'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE tournament_id='${f.tour}'),
+ 'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id='${f.tour}'))::text);`);
+ const switchMode=(t,mode)=>{const s=session(t);const r=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_request_table_control_mode_v4('${t.id}','${s.id}','${mode}',${s.revision},${s.control_epoch},'${crypto.randomUUID()}');COMMIT;`));assert.equal(r.ok,true);return r;};
+ const before=core();
+ const primaryId=sql(`SELECT tournament_table_id FROM public.tournament_seats WHERE entry_id='${f.entry}' AND is_active;`);
+ const table=tables.find(t=>t.id===primaryId),otherTable=tables.find(t=>t.id!==primaryId);assert.ok(table&&otherTable);
+ if(breakSource)assert.equal(breakSource.table,otherTable.id,'deferred break must use the other exact staffed table');
+ let breakCall,breakReceipt;
+ const mixed=Boolean(breakSource)&&process.env.VINPOKER_NATIVE_MIXED_BREAK==='1';
+ let mixedMoves,faultName=null;
+ const clearFault=()=>{
+  if(!faultName)return;
+  sql(`BEGIN;DROP TRIGGER IF EXISTS ${faultName} ON public.seat_assignment_history;DROP FUNCTION IF EXISTS floor_private.${faultName}();COMMIT;`);
+  assert.equal(sql(`SELECT to_regprocedure('floor_private.${faultName}()') IS NULL;`),'t');faultName=null;
+ };
+ const entryProof=entry=>sql(`SELECT md5(jsonb_build_object('entry',(SELECT to_jsonb(e) FROM public.tournament_entries e WHERE id='${entry}'),
+ 'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.tournament_seats s WHERE entry_id='${entry}'),
+ 'tickets',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.seat_draw_receipts r WHERE entry_id='${entry}'),
+ 'audit',(SELECT jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text) FROM public.seat_assignment_history r WHERE entry_id='${entry}'))::text);`);
+ const cash=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(c) ORDER BY id)::text) FROM public.cashier_buyin_movements c WHERE tournament_id='${f.tour}';`);
+ const cashBefore=cash();
+ const otherSeats=()=>sql(`SELECT md5(jsonb_agg(to_jsonb(s) ORDER BY id)::text) FROM public.tournament_seats s WHERE tournament_table_id='${otherTable.id}';`);
+ const otherBefore=otherSeats();
+ for(const t of tables){const original=session(t);assert.equal(original.control_mode,'manual');
+  switchMode(t,'tracker');assert.equal(session(t).control_mode,'tracker');switchMode(t,'manual');assert.equal(session(t).control_mode,'manual');assert.ok(session(t).control_epoch>original.control_epoch);
+ }
+ assert.equal(core(),before,'occupied mode transitions must preserve seats/entries/chips/cash');
+ switchMode(table,'tracker');const startedSession=session(table);
+ const globalBefore=sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');");
+ try{
+  sql(`BEGIN;INSERT INTO public.app_settings(key,value) VALUES('tracker_voice_global_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+  INSERT INTO public.tracker_voice_configs(club_id,tournament_id,tournament_table_id,physical_table_id,table_session_id,control_epoch,enabled,configured_mode)
+  SELECT '${f.club}','${f.tour}','${table.id}',game_table_id,id,control_epoch,true,'assist' FROM public.table_sessions WHERE id='${startedSession.id}'
+  ON CONFLICT(tournament_id,tournament_table_id) DO UPDATE SET enabled=true,configured_mode='assist',table_session_id=excluded.table_session_id,control_epoch=excluded.control_epoch;COMMIT;`);
+  let r=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_start_tournament_clock('${f.tour}');COMMIT;`));
+  if(breakSource)assert.equal(r.error,'clock_already_started');else assert.equal(r.ok,true);
+  const button=Number(sql(`SELECT min(seat_number) FROM public.tournament_seats WHERE tournament_table_id='${table.id}' AND is_active;`));
+  const handNumber=Number(sql(`SELECT coalesce(max(hand_number),0)+1 FROM public.tournament_hands WHERE tournament_id='${f.tour}';`));
+  r=JSON.parse(sql(`BEGIN;${auth}SELECT public.start_tracker_hand_v3('${f.tour}','${table.id}','${startedSession.id}',${startedSession.control_epoch},${handNumber},now(),'${f.actor}',${button});COMMIT;`));assert.equal(r.status,'success');
+  const hand=JSON.parse(sql(`SELECT to_jsonb(h) FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';`));
+  const players=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY seat_number) FROM public.hand_players p WHERE hand_id='${hand.id}';`));assert.equal(players.length,4);
+  r=switchMode(table,'manual');assert.equal(r.outcome,'pending');assert.ok(r.blockers.includes('active_hand'));assert.equal(session(table).control_mode,'tracker');
+  const waiting=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_get_table_control_mode_request_v1('${table.id}','${startedSession.id}');COMMIT;`));assert.ok(waiting.request.id);
+  const cancel=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_cancel_table_control_mode_request_v1('${table.id}','${startedSession.id}','${waiting.request.id}');COMMIT;`));
+  const cancelled=cancel();assert.equal(cancelled.ok,true);assert.deepEqual(cancel(),cancelled);
+  assert.equal(session(table).control_mode,'tracker');assert.equal(core(),before);
+  const cleared=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_get_table_control_mode_request_v1('${table.id}','${startedSession.id}');COMMIT;`));assert.equal(cleared.request,null);
+  r=switchMode(table,'manual');assert.equal(r.outcome,'pending');
+  if(breakSource){
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'1');
+   const revision=sql(`SELECT revision FROM public.table_sessions WHERE id='${breakSource.session}';`);
+   const plan=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_plan_break_table_v1('${breakSource.table}',${revision},'fill_lowest_table');COMMIT;`));
+   assert.equal(plan.ok,true);assert.equal(plan.complete,true);assert.equal(plan.moves.length,4);assert.ok(plan.plan_hash);
+   const key=crypto.randomUUID();
+   breakCall=(hash=plan.plan_hash)=>JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_break_table_v5('${breakSource.table}',${revision},'${key}','fill_lowest_table','${hash}');COMMIT;`));
+   breakReceipt=breakCall(plan.plan_hash);assert.equal(breakReceipt.ok,true);assert.equal(breakReceipt.closed,false);
+   assert.equal(breakReceipt.pending_count,4);assert.equal(breakReceipt.moved_count,0);
+   assert.deepEqual(breakCall(plan.plan_hash),breakReceipt);assert.equal(breakCall('different-plan').error,'IDEMPOTENCY_CONFLICT');
+   assert.equal(otherSeats(),otherBefore,'pending break must retain source seats until hand finishes');
+   assert.equal(sql(`SELECT closed_at IS NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'1');
+   assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE source_table_session_id='${breakSource.session}' AND status='pending';`),'4');
+   const fresh=sql(`SELECT revision FROM public.table_sessions WHERE id='${breakSource.session}';`);
+   r=JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${breakSource.table}',${fresh},'${crypto.randomUUID()}');COMMIT;`));assert.equal(r.error,'table_not_empty');
+   console.log('NATIVE_EIGHT_PAID_STAFFED_BREAK_FOUR_PENDING_SOURCE_RETAINED_PASS',hand.id);
+   if(mixed){
+    mixedMoves=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}' AND status='pending';`));
+    assert.equal(mixedMoves.length,4);
+    for(const q of mixedMoves)q.beforeProof=entryProof(q.entry_id);
+    const cancelled=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_cancel_pending_tracker_move_v1('${mixedMoves[0].id}');COMMIT;`));assert.equal(cancelled.status,'cancelled');
+    faultName='native_mixed_'+crypto.randomUUID().replaceAll('-','');assert.match(faultName,/^native_mixed_[a-f0-9]{32}$/);
+    sql(`BEGIN;CREATE FUNCTION floor_private.${faultName}() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+     BEGIN IF NEW.tournament_id='${f.tour}'::uuid AND NEW.entry_id='${mixedMoves[1].entry_id}'::uuid THEN RAISE EXCEPTION 'TEST mixed deferred audit failure';END IF;RETURN NEW;END;$$;
+     REVOKE ALL ON FUNCTION floor_private.${faultName}() FROM PUBLIC,anon,authenticated,service_role;
+     CREATE TRIGGER ${faultName} BEFORE INSERT ON public.seat_assignment_history FOR EACH ROW EXECUTE FUNCTION floor_private.${faultName}();COMMIT;`);
+   }
+  }
+  for(const [player,type,order,amount] of [[players[1],'post_sb',1,100],[players[2],'post_bb',2,200],[players[3],'fold',3,0],[players[0],'fold',4,0],[players[1],'fold',5,0]]){
+   r=JSON.parse(sql(`BEGIN;${auth}SELECT public.record_action('${hand.id}','${player.player_id}','${type}',${order},${player.entry_number},'preflop',${amount});COMMIT;`));assert.equal(r.status,'success');
+  }
+  const snapshot=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand.id}');COMMIT;`));assert.equal(snapshot.ok,true);
+  const runtime=reduceHand(snapshot.players,snapshot.actions,snapshot.button_seat);assert.equal(runtime.players.filter(p=>!p.is_folded).length,1);
+  const settlement=await computeVoiceFinishSettlement({handId:hand.id,stateVersion:snapshot.state_version,buttonSeat:snapshot.button_seat,communityCards:snapshot.community_cards,
+   players,actions:snapshot.actions,bettingComplete:isBettingRoundComplete(runtime)});
+  assert.equal(settlement.settlementOrigin,'engine_fold_win');assert.equal(settlement.summary.conservation_total,80000);
+  const record={hand_number:hand.hand_number,hand_time:hand.created_at,players:settlement.recordPlayers,actions:settlement.recordActions,side_pots:settlement.sidePots,community_cards:snapshot.community_cards,pot_size:settlement.potSize};
+  const key='native-eight-hand-'+crypto.randomUUID();
+  r=JSON.parse(sql(`BEGIN;${service}SELECT public.commit_tracker_voice_finish_v0('${f.actor}','${f.tour}','${table.id}','${hand.id}',
+  'openai_realtime','gpt-live-transcribe','${key}','ket thuc hand','${snapshot.state_version}','${key}','native-eight-finish','${settlement.settlementOrigin}','${settlement.settlementDigest}',${quote(record)}::jsonb);COMMIT;`));assert.equal(r.ok,true);
+  assert.equal(session(table).control_mode,'manual');assert.ok(session(table).control_epoch>startedSession.control_epoch);
+  const pending=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_get_table_control_mode_request_v1('${table.id}','${startedSession.id}');COMMIT;`));assert.equal(pending.request,null);
+  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${hand.id}';`),'completed');
+  assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'8|160000');
+  for(const expected of settlement.recordPlayers){
+   assert.equal(Number(sql(`SELECT chip_count FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND player_id='${expected.player_id}' AND is_active;`)),expected.ending_stack);
+   assert.equal(Number(sql(`SELECT current_stack FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND player_id='${expected.player_id}' AND entry_no=${expected.entry_number};`)),expected.ending_stack);
+  }
+  if(breakSource){
+   if(mixed){
+    const expected=['cancelled','stale','applied','applied'];
+    for(let i=0;i<mixedMoves.length;i++){
+     const q=mixedMoves[i];assert.equal(sql(`SELECT status FROM public.floor_pending_tracker_moves WHERE id='${q.id}';`),expected[i]);
+     assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE entry_id='${q.entry_id}' AND is_active AND chip_count=20000;`),'1');
+     assert.equal(sql(`SELECT table_session_id FROM public.tournament_seats WHERE entry_id='${q.entry_id}' AND is_active;`),i<2?breakSource.session:startedSession.id);
+     if(i<2)assert.equal(entryProof(q.entry_id),q.beforeProof,'cancelled/failed apply must retain original seat, entry, ticket and audit');
+    }
+    assert.equal(sql(`SELECT resolution_reason FROM public.floor_pending_tracker_moves WHERE id='${mixedMoves[1].id}';`),'apply_sqlstate_P0001');
+    assert.equal(sql(`SELECT closed_at IS NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
+    assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'1');
+    assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE table_session_id='${breakSource.session}' AND is_active;`),'2|40000');
+    const fresh=session(otherTable);const rejected=JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${breakSource.table}',${fresh.revision},'${crypto.randomUUID()}');COMMIT;`));assert.equal(rejected.error,'table_not_empty');
+    const queueBeforeReplay=sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}';`);
+    assert.deepEqual(breakCall(),breakReceipt);
+    assert.equal(sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}';`),queueBeforeReplay);
+    clearFault();
+    for(const q of mixedMoves.slice(0,2)){
+     const from=session(otherTable),to=session(table),key=crypto.randomUUID();
+     const move=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.move_player_seat_v5('${q.entry_id}','${breakSource.table}','${from.id}','${table.id}','${to.id}',${q.destination_seat_number},
+      ${from.revision},${to.revision},${from.control_epoch},${to.control_epoch},'TEST explicitly recover remaining mixed break','${key}');COMMIT;`));
+     const moved=move();assert.equal(moved.ok,true);assert.notEqual(moved.queued,true);assert.deepEqual(move(),moved);
+    }
+    const source=session(otherTable),closeKey=crypto.randomUUID();
+    const close=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${breakSource.table}',${source.revision},'${closeKey}');COMMIT;`));
+    const closed=close();assert.equal(closed.ok,true);assert.deepEqual(close(),closed);
+    assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE source_table_session_id='${breakSource.session}' AND status='applied';`),'2','manual recovery preserves cancelled/stale queue audit');
+    console.log('NATIVE_EIGHT_PAID_MIXED_CANCEL_FAULT_APPLY_SOURCE_RETAIN_RECOVER_CLOSE_PASS',hand.id);
+   }else assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE source_table_session_id='${breakSource.session}' AND status='applied';`),'4');
+   assert.equal(sql(`SELECT count(*) FROM public.floor_pending_tracker_moves WHERE tournament_id='${f.tour}' AND status='pending';`),'0');
+   assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE table_session_id='${breakSource.session}' AND is_active;`),'0');
+   assert.equal(sql(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id='${breakSource.session}';`),'t');
+   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE table_session_id='${breakSource.session}' AND released_at IS NULL;`),'0');
+   assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE table_session_id='${startedSession.id}' AND is_active;`),'8|160000');
+   const queue=sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}';`);
+   assert.deepEqual(breakCall(),breakReceipt,'receipt retains original pending outcome after asynchronous completion');
+   assert.equal(sql(`SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.floor_pending_tracker_moves q WHERE source_table_session_id='${breakSource.session}';`),queue);
+   console.log('NATIVE_EIGHT_PAID_STAFFED_DEFERRED_BREAK_FINISH_CLOSE_RELEASE_PASS',hand.id);
+  }else assert.equal(otherSeats(),otherBefore);
+  assert.equal(cash(),cashBefore);
+  assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments a JOIN public.table_sessions s ON s.id=a.table_session_id
+    WHERE a.club_id='${f.club}' AND s.tournament_id='${f.tour}' AND a.status='assigned' AND a.released_at IS NULL;`),breakSource?'1':'2');
+  console.log('NATIVE_PAID_EIGHT_STAFFED_FOUR_PLAYER_FINISH_PENDING_MODE_PASS',hand.id);
+  const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{encoding:'utf8',timeout:120000,
+   env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(f)}});
+  assert.match(worker,/ACTUAL_PAID_PARENT_BASELINE_HISTORY_WORKER_PUBLIC_PASS/);
+  process.stdout.write(worker);
+  assert.equal(cash(),cashBefore);if(!breakSource)assert.equal(otherSeats(),otherBefore);
+ }finally{
+  clearFault();
+  if(globalBefore==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
+  else sql(`UPDATE public.app_settings SET value=${quote(globalBefore)}::jsonb WHERE key='tracker_voice_global_enabled';`);
+  assert.equal(sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');"),globalBefore);
+ }
+}
+
+export async function runPaidTourShowdown(sql,f,table){
+ assert.equal(process.env.VINPOKER_NATIVE_PAID_TOUR,'1');
+ assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
+ const auth=`SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';SET LOCAL ROLE authenticated;`;
+ const service=`SET LOCAL request.jwt.claims='{"role":"service_role"}';SET LOCAL ROLE service_role;`;
+ const quote=v=>`'${(typeof v==='object'?JSON.stringify(v):String(v)).replaceAll("'","''")}'`;
+ const cash=()=>sql(`SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.cashier_buyin_movements r WHERE tournament_id='${f.tour}';`),cashBefore=cash();
+ let s=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${table.table_session_id}';`));
+ let r=JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_request_table_control_mode_v4('${table.id}','${s.id}','tracker',${s.revision},${s.control_epoch},'${crypto.randomUUID()}');COMMIT;`));assert.equal(r.ok,true);
+ s=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${s.id}';`));
+ const globalBefore=sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');");
+ try{
+  sql(`BEGIN;INSERT INTO public.app_settings(key,value) VALUES('tracker_voice_global_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+  INSERT INTO public.tracker_voice_configs(club_id,tournament_id,tournament_table_id,physical_table_id,table_session_id,control_epoch,enabled,configured_mode)
+  VALUES('${f.club}','${f.tour}','${table.id}','${s.game_table_id}','${s.id}',${s.control_epoch},true,'assist')
+  ON CONFLICT(tournament_id,tournament_table_id) DO UPDATE SET enabled=true,configured_mode='assist',table_session_id=excluded.table_session_id,control_epoch=excluded.control_epoch;COMMIT;`);
+  const button=Number(sql(`SELECT min(seat_number) FROM public.tournament_seats WHERE tournament_table_id='${table.id}' AND is_active;`));
+  const handNumber=Number(sql(`SELECT coalesce(max(hand_number),0)+1 FROM public.tournament_hands WHERE tournament_id='${f.tour}';`));
+  r=JSON.parse(sql(`BEGIN;${auth}SELECT public.start_tracker_hand_v3('${f.tour}','${table.id}','${s.id}',${s.control_epoch},${handNumber},now(),'${f.actor}',${button});COMMIT;`));assert.equal(r.status,'success');
+  const hand=JSON.parse(sql(`SELECT to_jsonb(h) FROM public.tournament_hands h WHERE tournament_id='${f.tour}' AND status='in_progress';`));
+  let players=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY seat_number) FROM public.hand_players p WHERE hand_id='${hand.id}';`));assert.equal(players.length,8);
+  const winner=[...players].sort((a,b)=>b.starting_stack-a.starting_stack)[0];
+  const others=[['4d','4h'],['5d','5h'],['6d','6h'],['7d','7h'],['8d','8h'],['9d','9h'],['2s','3s']];
+  let order=0;
+  const action=(p,type,amount)=>{const result=JSON.parse(sql(`BEGIN;${auth}SELECT public.record_action('${hand.id}','${p.player_id}','${type}',${++order},${p.entry_number},'preflop',${amount});COMMIT;`));assert.equal(result.status,'success');};
+  action(players[1],'post_sb',100);action(players[2],'post_bb',200);
+  for(const p of [...players.slice(3),...players.slice(0,3)])action(p,'all_in',p.starting_stack-(p===players[1]?100:p===players[2]?200:0));
+  // Reveal during the canonical all-in runout, before river. The Voice
+  // endpoint deliberately rejects river/showdown reveals without muck policy.
+  for(const p of players){
+   const snapshot=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand.id}');COMMIT;`));assert.equal(snapshot.ok,true);
+   const cards=p.player_id===winner.player_id?['Ac','Kc']:others.shift(),key='native-eight-showdown-hole-'+crypto.randomUUID();
+   r=JSON.parse(sql(`BEGIN;${service}SELECT public.commit_tracker_voice_hole_cards_v0('${f.actor}','${f.tour}','${table.id}','${hand.id}',
+   'openai_realtime','gpt-live-transcribe','${key}','${snapshot.state_version}','${key}','native-eight-showdown-hole',${p.seat_number},${quote(cards)}::jsonb);COMMIT;`));assert.equal(r.ok,true,JSON.stringify(r));
+  }
+  for(const board of [['Tc','Jc','Qc'],['Tc','Jc','Qc','2d'],['Tc','Jc','Qc','2d','3h']]){
+   // Reconstructed schema omits managed Supabase auth schema USAGE. Model
+   // only the official bootstrap grant inside this transaction, restoring it
+   // before COMMIT; application table grants, RLS and actor checks stay real.
+   const authUsage=sql("SELECT has_schema_privilege('authenticated','auth','USAGE');");assert.ok(['t','f'].includes(authUsage));
+   r=JSON.parse(sql(`BEGIN;${authUsage==='f'?'GRANT USAGE ON SCHEMA auth TO authenticated;':''}${auth}
+    SELECT public.update_community_cards('${hand.id}',${quote(board)}::jsonb,'${f.actor}');
+    RESET ROLE;${authUsage==='f'?'REVOKE USAGE ON SCHEMA auth FROM authenticated;':''}COMMIT;`));assert.equal(r.status,'success',JSON.stringify(r));
+   assert.equal(sql("SELECT has_schema_privilege('authenticated','auth','USAGE');"),authUsage);
+  }
+  const snapshot=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tracker_voice_validation_snapshot('${f.tour}','${table.id}','${hand.id}');COMMIT;`));assert.equal(snapshot.ok,true);
+  players=JSON.parse(sql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY seat_number) FROM public.hand_players p WHERE hand_id='${hand.id}';`));
+  const runtime=reduceHand(snapshot.players,snapshot.actions,snapshot.button_seat);
+  const settlement=await computeVoiceFinishSettlement({handId:hand.id,stateVersion:snapshot.state_version,buttonSeat:snapshot.button_seat,communityCards:snapshot.community_cards,
+   players,actions:snapshot.actions,bettingComplete:isBettingRoundComplete(runtime)});
+  assert.equal(settlement.settlementOrigin,'engine_showdown');assert.equal(settlement.summary.conservation_total,160000);
+  assert.equal(settlement.recordPlayers.filter(p=>p.is_eliminated).length,7);assert.equal(settlement.recordPlayers.find(p=>p.player_id===winner.player_id).ending_stack,160000);
+  const key='native-eight-showdown-finish-'+crypto.randomUUID(),record={hand_number:hand.hand_number,hand_time:hand.created_at,players:settlement.recordPlayers,actions:settlement.recordActions,
+   side_pots:settlement.sidePots,community_cards:snapshot.community_cards,pot_size:settlement.potSize};
+  const finish=()=>JSON.parse(sql(`BEGIN;${service}SELECT public.commit_tracker_voice_finish_v0('${f.actor}','${f.tour}','${table.id}','${hand.id}',
+   'openai_realtime','gpt-live-transcribe','${key}','ket thuc hand','${snapshot.state_version}','${key}','native-eight-showdown-finish','${settlement.settlementOrigin}','${settlement.settlementDigest}',${quote(record)}::jsonb);COMMIT;`));
+  r=finish();assert.equal(r.ok,true,JSON.stringify(r));assert.equal(finish().duplicate,true);
+  assert.equal(sql(`SELECT count(*)||'|'||sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'1|160000');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${f.tour}' AND status='busted';`),process.env.VINPOKER_NATIVE_PAID_REENTRY==='1'?'8':'7');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_entries e JOIN public.hand_players p ON p.player_id=e.player_id AND p.entry_number=e.entry_no
+   WHERE p.hand_id='${hand.id}' AND e.tournament_id='${f.tour}' AND e.status='busted';`),'7','terminal hand eliminates seven exact entry generations, excluding the earlier bullet');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_eliminations WHERE hand_id='${hand.id}';`),'7');assert.equal(cash(),cashBefore);
+  const readiness=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tournament_close_readiness_v1('${f.tour}');COMMIT;`));
+  assert.equal(readiness.ok,true);assert.equal(readiness.ready,false);assert.ok(readiness.blockers.includes('active_seats'));
+  const prematureClose=JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament('${f.tour}','TEST terminal winner readiness probe');ROLLBACK;`));
+  assert.equal(prematureClose.ok,false);assert.equal(prematureClose.error,'active_players_remaining');assert.equal(prematureClose.active_players,1);
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'0');assert.equal(cash(),cashBefore);
+  console.log('NATIVE_EIGHT_PAID_ENGINE_SHOWDOWN_SEVEN_ELIMINATIONS_WINNER_CLOSE_BLOCKED_PASS',hand.id,JSON.stringify(readiness.blockers));
+  // Use the existing explicit Floor "leave seat, preserve stack" workflow.
+  // Never bust the winner, fabricate a place, apply payout or reconcile cash.
+  const survivor=JSON.parse(sql(`SELECT to_jsonb(e) FROM public.tournament_entries e WHERE tournament_id='${f.tour}' AND status='seated';`));
+  s=JSON.parse(sql(`SELECT to_jsonb(s) FROM public.table_sessions s WHERE id='${s.id}';`));
+  const leaveKey=crypto.randomUUID();
+  const leave=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.floor_free_sit_player_v1('${survivor.id}',${s.revision},${s.control_epoch},160000,'${leaveKey}','TEST winner leaves completed play with stack preserved');COMMIT;`));
+  const left=leave();assert.equal(left.ok,true);assert.equal(left.stack_preserved,160000);assert.equal(left.payout_applied,false);assert.deepEqual(leave(),left);
+  const closeRevision=sql(`SELECT revision FROM public.table_sessions WHERE id='${s.id}';`),closeKey=crypto.randomUUID();
+  const closeTable=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament_table_v4('${table.id}',${closeRevision},'${closeKey}');COMMIT;`));
+  const tableClosed=closeTable();assert.equal(tableClosed.ok,true);assert.deepEqual(closeTable(),tableClosed);
+  const ready=JSON.parse(sql(`BEGIN;${auth}SELECT public.get_tournament_close_readiness_v1('${f.tour}');COMMIT;`));
+  assert.equal(ready.ok,true);assert.equal(ready.ready,true);assert.deepEqual(ready.blockers,[]);
+  const close=()=>JSON.parse(sql(`BEGIN;${auth}SELECT public.close_tournament('${f.tour}','TEST completed play no payout or reconciliation');COMMIT;`));
+  const closed=close();assert.equal(closed.ok,true);assert.equal(closed.outcome,'closed');assert.equal(closed.reconciled,false);assert.equal(closed.prize_total,0);
+  const repeated=close();assert.equal(repeated.ok,true);assert.equal(repeated.outcome,'already_closed');assert.equal(repeated.report_id,closed.report_id);
+  assert.equal(sql(`SELECT status FROM public.tournaments WHERE id='${f.tour}';`),'completed');
+  assert.equal(sql(`SELECT count(*) FROM public.table_sessions WHERE tournament_id='${f.tour}' AND closed_at IS NULL;`),'0');
+  assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments a JOIN public.table_sessions x ON x.id=a.table_session_id WHERE x.tournament_id='${f.tour}' AND a.released_at IS NULL;`),'0');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_seats WHERE tournament_id='${f.tour}' AND is_active;`),'0');
+  assert.equal(sql(`SELECT current_stack||'|'||status FROM public.tournament_entries WHERE id='${survivor.id}';`),'160000|registered');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='${f.tour}';`),'0');
+  assert.equal(sql(`SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'1');assert.equal(cash(),cashBefore);
+  console.log('NATIVE_EIGHT_PAID_WINNER_STACK_PRESERVED_CANONICAL_TABLE_TOUR_CLOSE_REPLAY_PASS',f.tour);
+  if(process.env.VINPOKER_NATIVE_PAID_HISTORY==='1'){
+   const places=JSON.parse(sql(`SELECT jsonb_agg(e.finished_place ORDER BY e.finished_place) FROM public.tournament_entries e WHERE e.tournament_id='${f.tour}'
+    AND NOT EXISTS(SELECT 1 FROM public.tournament_entries newer WHERE newer.tournament_id=e.tournament_id AND newer.player_id=e.player_id AND newer.entry_no>e.entry_no);`));
+   assert.deepEqual(places,[1,2,3,4,5,6,7,8]);
+   if(process.env.VINPOKER_NATIVE_PAID_REENTRY==='1'){
+    assert.equal(sql(`SELECT count(*) FROM public.tournament_entries e WHERE e.tournament_id='${f.tour}' AND e.finished_place IS NULL AND e.status='busted'
+     AND EXISTS(SELECT 1 FROM public.tournament_entries newer WHERE newer.tournament_id=e.tournament_id AND newer.player_id=e.player_id AND newer.entry_no>e.entry_no);`),'1');
+   }
+   assert.equal(sql(`SELECT finished_place FROM public.tournament_entries WHERE id='${survivor.id}';`),'1');
+   assert.equal(sql(`SELECT detail->'official_results'->>'status' FROM public.tournament_close_report WHERE tournament_id='${f.tour}';`),'finalized');
+   assert.equal(sql(`SELECT count(*) FROM public.player_history_link_errors WHERE club_id='${f.club}';`),'0');
+   console.log('NATIVE_EIGHT_PAID_HISTORY_ENABLED_MEMBER_LINKS_AND_OFFICIAL_PLACES_PASS',f.tour);
+  }
+  const worker=execFileSync(process.execPath,['--experimental-transform-types','tests/trackerSettlement/paidHistoryWorker.native.mjs','--verified'],{encoding:'utf8',timeout:120000,
+   env:{...process.env,VINPOKER_HISTORY_PARENT_HAND:hand.id,VINPOKER_HISTORY_PARENT_BASELINE:JSON.stringify(f),VINPOKER_HISTORY_PARENT_SHOWDOWN:'1'}});
+  assert.match(worker,/ACTUAL_PAID_TERMINAL_SHOWDOWN_HISTORY_WORKER_PUBLIC_VERIFIED_PASS/);process.stdout.write(worker);assert.equal(cash(),cashBefore);
+ }finally{
+  if(globalBefore==='ABSENT')sql("DELETE FROM public.app_settings WHERE key='tracker_voice_global_enabled';");
+  else sql(`UPDATE public.app_settings SET value=${quote(globalBefore)}::jsonb WHERE key='tracker_voice_global_enabled';`);
+  assert.equal(sql("SELECT coalesce((SELECT value::text FROM public.app_settings WHERE key='tracker_voice_global_enabled'),'ABSENT');"),globalBefore);
+ }
+}

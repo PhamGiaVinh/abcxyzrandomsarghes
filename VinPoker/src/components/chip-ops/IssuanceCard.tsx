@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import type {AcquireChipSetupWrite} from '@/lib/chipSetupWriteGate';
 type Props = { actorId: string | null; clubId: string | null; tournamentId: string;
   templates: { id: string; name: string; issued_count: number }[]; coupling: boolean; opsStarted: boolean;
-  busy: boolean; setBusy: (value: boolean) => void; reload: () => void };
+  busy: boolean; setBusy: (value: boolean) => void; reload: () => void;acquireWrite?:AcquireChipSetupWrite };
 async function request(name: string, args: Record<string, unknown>): Promise<unknown> {
   const { data, error } = await waitForManualPlayerResponse<{ data: unknown; error: unknown }>((supabase as any).rpc(name, args));
   if (error) throw Error("ISSUANCE_TRANSPORT_UNVERIFIED");
@@ -20,7 +21,7 @@ export function IssuanceCard(props: Props) {
   if (!props.actorId || !props.clubId) return <p role="alert">Chưa xác minh được tài khoản và CLB để phát chip.</p>;
   return <ScopedIssuanceCard key={JSON.stringify([props.actorId, props.clubId, props.tournamentId])} {...props} actorId={props.actorId} clubId={props.clubId} />;
 }
-function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling, opsStarted, busy, setBusy, reload }: Props & { actorId: string; clubId: string }) {
+function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling, opsStarted, busy, setBusy, reload,acquireWrite }: Props & { actorId: string; clubId: string }) {
   const [states, setStates] = useState<Record<string, { count: number; revision: number }>>({});
   const [intents, setIntents] = useState<Record<string, IssuanceIntent>>({});
   const [blocked, setBlocked] = useState(false);
@@ -29,10 +30,11 @@ function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling
   const [values, setValues] = useState<Record<string, string>>({});
   const [generation, setGeneration] = useState(0);
   const active = useRef(false), alive = useRef(false);
+  const activeRelease=useRef<(()=>void)|null>(null);
   const templateIds = JSON.stringify(templates.map(t => t.id));
   const scope = (templateId: string): IssuanceScope => ({ actorId, clubId, tournamentId, templateId });
   const journalKey = (id: string) => `vinpoker:issuance-pending:${JSON.stringify([actorId, clubId, tournamentId, id])}`;
-  useEffect(() => { alive.current = true; return () => { alive.current = false; if (active.current) setBusy(false); }; }, [setBusy]);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; activeRelease.current?.();activeRelease.current=null; }; }, [setBusy]);
   useEffect(() => {
     let disposed = false;
     setStates({}); setLoadError(null);
@@ -69,6 +71,8 @@ function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling
     const count = Number(values[templateId] ?? state?.count);
     if (!prior && (!state || values[templateId]?.trim() === "" || !validIssuanceCount(count))) { setError("Nhập số bộ nguyên hợp lệ ≥ 0 sau khi server đã xác minh."); return; }
     const i = prior ?? { ...scope(templateId), count, revision: state.revision, requestId: crypto.randomUUID() };
+    const acquired=acquireWrite?.();if(acquireWrite&&!acquired)return;
+    const release=acquired??(()=>setBusy(false));
     try {
       const raw = sessionStorage.getItem(journalKey(templateId));
       if (raw !== null) {
@@ -79,9 +83,9 @@ function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling
       const serialized = JSON.stringify(i);
       sessionStorage.setItem(journalKey(templateId), serialized);
       if (sessionStorage.getItem(journalKey(templateId)) !== serialized) throw Error("ISSUANCE_JOURNAL_WRITE_FAILED");
-    } catch { setBlocked(true); setError("Không lưu được yêu cầu an toàn. Chưa gửi thao tác; cần đọc lại yêu cầu đã lưu."); return; }
+    } catch { release();setBlocked(true); setError("Không lưu được yêu cầu an toàn. Chưa gửi thao tác; cần đọc lại yêu cầu đã lưu."); return; }
     setIntents(old => ({ ...old, [templateId]: i }));
-    active.current = true; setBusy(true); setError(null);
+    active.current = true;activeRelease.current=release;if(!acquireWrite)setBusy(true); setError(null);
     try {
       const result = await request(reconcile ? "get_chip_issuance_receipt_v1" : "chip_ops_set_issuance_v2", issuanceArgs(i));
       if (!alive.current) return;
@@ -91,7 +95,7 @@ function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling
         finish(i, envelope.result);
       } else finish(i, result);
     } catch { if (alive.current) setError("Chưa biết server đã chốt hay chưa. Đối chiếu hoặc gửi lại nguyên yêu cầu; không tạo mã mới."); }
-    finally { active.current = false; if (alive.current) setBusy(false); }
+    finally { active.current = false;if(activeRelease.current===release)activeRelease.current=null;release(); }
   }
   return <Card className="border-border"><CardHeader className="pb-3"><CardTitle className="text-base text-foreground">
     {coupling ? "3. Phát / thu stack (tự động trừ két)" : "3. Số bộ đã phát"}
@@ -101,17 +105,19 @@ function ScopedIssuanceCard({ actorId, clubId, tournamentId, templates, coupling
     </div>}
     {(error || loadError) && <p role="alert" className="text-sm text-destructive">{error || loadError}</p>}
     <Button variant="outline" disabled={busy} onClick={() => { setError(null); setGeneration(g => g + 1); }}>Đọc lại trạng thái và yêu cầu</Button>
-    <Table><TableHeader><TableRow><TableHead>Mẫu stack</TableHead><TableHead>Số bộ</TableHead><TableHead>Thao tác</TableHead></TableRow></TableHeader><TableBody>
+    <Table className="block sm:table"><TableHeader className="hidden sm:table-header-group"><TableRow><TableHead>Mẫu stack</TableHead><TableHead>Số bộ</TableHead><TableHead>Thao tác</TableHead></TableRow></TableHeader><TableBody className="block sm:table-row-group">
       {templates.map(t => { const pending = intents[t.id], state = states[t.id];
         const delta = Number(values[t.id] ?? state?.count) - (state?.count ?? 0);
-        return <TableRow key={t.id}><TableCell>{t.name}</TableCell><TableCell>
+        return <TableRow key={t.id} className="grid grid-cols-1 gap-3 py-3 sm:table-row"><TableCell className="block break-words p-0 font-medium sm:table-cell sm:p-4">{t.name}</TableCell><TableCell className="block p-0 sm:table-cell sm:p-4">
+          <span className="mb-1 block text-xs text-muted-foreground sm:hidden">Số bộ</span>
           <Input aria-label={`Số bộ ${t.name}`} type="number" inputMode="numeric" min={0} step={1} value={pending ? String(pending.count) : values[t.id] ?? String(state?.count ?? t.issued_count)}
+            className="min-w-24"
             disabled={busy || blocked || !!pending || !state} onChange={e => setValues(old => ({ ...old, [t.id]: e.target.value }))} />
           {!state && <span role="status">Chưa xác minh trạng thái server</span>}
           {coupling && state && !pending && Number.isSafeInteger(delta) && delta !== 0 && <p className="text-xs text-warning">{delta > 0 ? `+${delta} bộ → xuất chip khỏi két` : `${delta} bộ → thu chip về két`}</p>}
-        </TableCell><TableCell>
-          {pending && <Button variant="outline" disabled={busy || blocked} onClick={() => void run(t.id, true)}>Đối chiếu {t.name}</Button>}
-          <Button disabled={busy || blocked || (!pending && !state)} onClick={() => void run(t.id, false)}>{pending ? `Gửi lại nguyên yêu cầu ${t.name}` : `Lưu ${t.name}`}</Button>
+        </TableCell><TableCell className="flex flex-wrap gap-2 p-0 sm:table-cell sm:p-4">
+          {pending && <Button className="h-auto min-h-11 whitespace-normal sm:h-10 sm:whitespace-nowrap" variant="outline" disabled={busy || blocked} onClick={() => void run(t.id, true)}>Đối chiếu {t.name}</Button>}
+          <Button className="h-auto min-h-11 whitespace-normal sm:h-10 sm:whitespace-nowrap" disabled={busy || blocked || (!pending && !state)} onClick={() => void run(t.id, false)}>{pending ? `Gửi lại nguyên yêu cầu ${t.name}` : `Lưu ${t.name}`}</Button>
         </TableCell></TableRow>;
       })}
     </TableBody></Table>

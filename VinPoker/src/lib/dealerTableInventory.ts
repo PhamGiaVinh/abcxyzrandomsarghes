@@ -1,4 +1,29 @@
 import type { FloorTableInventoryItem } from "@/lib/floorTableControlV3";
+import type { TournamentWithTables } from "@/types/tournament";
+
+/** Resolve config only for one unambiguous current table/session relation. */
+export function findDealerTableTournament(
+  table: { id: string; club_id?: string; tournament_id?: string | null; table_session_id?: string | null; availability_status?: string },
+  assignmentSession: string | null | undefined,
+  tournaments: readonly TournamentWithTables[] | undefined,
+): TournamentWithTables | undefined {
+  if (table.availability_status === "repair_required") return undefined;
+  if (table.table_session_id && assignmentSession && table.table_session_id !== assignmentSession) return undefined;
+  const session = table.table_session_id ?? assignmentSession;
+  const matches = (tournaments ?? []).flatMap((tour) => {
+    if (table.club_id && tour.club_id !== table.club_id) return [];
+    if (table.tournament_id && tour.id !== table.tournament_id) return [];
+    return tour.tournament_tables.filter((link) => {
+      if (link.game_table_id && link.table_id && link.game_table_id !== link.table_id) return false;
+      if ((link.game_table_id ?? link.table_id) !== table.id) return false;
+      if (link.status != null && link.status !== "active") return false;
+      if (session) return link.status === "active" && link.table_session_id === session;
+      // Legacy metadata has no session authority: never adopt a canonical session.
+      return !link.game_table_id && !link.table_session_id;
+    }).map(() => tour);
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
 
 export type DealerOperationalTable = {
   id: string;

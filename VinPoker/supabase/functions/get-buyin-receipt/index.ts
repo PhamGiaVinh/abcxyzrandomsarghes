@@ -34,6 +34,8 @@ const receiptColumns =
 type AdminClient = SupabaseClient<any>;
 
 const numberOrNull = (value: unknown): number | null => {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
@@ -94,10 +96,15 @@ Deno.serve(async (req) => {
       auth: { persistSession: false },
     });
     const token = authHeader.replace(/^Bearer\s+/i, "");
-    const { data: userData, error: userError } = await userClient.auth.getUser(
-      token,
-    );
-    if (userError || !userData?.user?.id) {
+    let authentication: Awaited<ReturnType<typeof userClient.auth.getUser>>;
+    try { authentication = await userClient.auth.getUser(token); }
+    catch { return jsonResp(req, { error: "AUTHENTICATION_UNAVAILABLE" }, 503); }
+    if (authentication.error) {
+      const unavailable = ![400, 401, 403, 422].includes(authentication.error.status ?? 0);
+      return jsonResp(req, { error: unavailable ? "AUTHENTICATION_UNAVAILABLE" : "UNAUTHORIZED" }, unavailable ? 503 : 401);
+    }
+    const userData=authentication.data;
+    if (!userData?.user?.id) {
       return jsonResp(req, { error: "UNAUTHORIZED" }, 401);
     }
     const callerId = userData.user.id;
@@ -199,6 +206,16 @@ Deno.serve(async (req) => {
       }
     }
 
+    // The registration-key path loads its seat receipt AFTER the initial
+    // identity/authority check. Validate that newly joined row as well.
+    if (registration && receipt && (
+      receipt.registration_id !== registration.id ||
+      receipt.tournament_id !== registration.tournament_id ||
+      receipt.player_id !== registration.player_id
+    )) {
+      return jsonResp(req, { error: "RECEIPT_NOT_FOUND" }, 404);
+    }
+
     const [clubResult, memberResult, profileResult, refundResult, movementResult] = await Promise.all([
       admin.from("clubs").select("name, address, tv_logo_url").eq(
         "id",
@@ -236,11 +253,12 @@ Deno.serve(async (req) => {
     const receivedAmount = movementRows.length
       ? movementRows.reduce((sum: number, row: { applied_amount: number }) => sum + Number(row.applied_amount), 0)
       : null;
-    const remainingAmount = receivedAmount === null || !registration
-      ? null : Math.max(0, Number(registration.total_pay) - receivedAmount);
+    const totalPay = registration ? numberOrNull(registration.total_pay) : null;
+    const remainingAmount = receivedAmount === null || totalPay === null
+      ? null : Math.max(0, totalPay - receivedAmount);
     const paymentState = refundResult.data?.status === "paid" ? "refunded"
       : registration?.status === "confirmed" ? "confirmed"
-        : receivedAmount === null ? "unverified"
+        : remainingAmount === null ? "unverified"
           : remainingAmount === 0 ? "paid_waiting_seat" : "partial";
 
     return jsonResp(req, {
@@ -263,7 +281,7 @@ Deno.serve(async (req) => {
         },
         player_name: memberName || receiptName || profileName || null,
         tournament_name: tournament.name ?? null,
-        total_pay: registration ? numberOrNull(registration.total_pay) : null,
+        total_pay: totalPay,
         completed_at: completedAt,
         completed_at_source: registration?.confirmed_at
           ? "confirmed_at"

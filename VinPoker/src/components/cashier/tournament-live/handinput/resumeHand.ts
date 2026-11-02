@@ -16,6 +16,48 @@ export type ResumeStreet = "preflop" | "flop" | "turn" | "river" | "showdown";
 
 const STREET_SEQUENCE: ResumeStreet[] = ["preflop", "flop", "turn", "river", "showdown"];
 
+/** Validate the persisted deck before claiming the hand or hydrating card UI.
+ * Legacy NULL/empty trailing slots mean undealt, never a hole in a dealt street. */
+export function readResumeCards(board: unknown, rows: unknown,
+  participants: ReadonlyArray<{player_id:string;entry_number:number}>): {
+    communitySlots:(string|null)[]; communityCount:number; playerHoleCards:Record<string,string[]>;
+  } {
+  const badBoard=()=>new Error("Bài chung đã lưu không hợp lệ. Chưa tiếp tục hand; hãy gọi Floor.");
+  const badHole=()=>new Error("Không xác minh được bài tẩy/entry đã lưu của hand.");
+  const rawBoard=board===null?[]:board;
+  if (!Array.isArray(rawBoard)||rawBoard.length>5) throw badBoard();
+  const dealt:string[]=[];const used=new Set<string>();let empty=false;
+  for(const card of rawBoard){
+    if(card===null){empty=true;continue;}
+    if(empty||typeof card!=='string'||!/^[2-9TJQKA][shdc]$/.test(card)||used.has(card))throw badBoard();
+    dealt.push(card);used.add(card);
+  }
+  if(![0,3,4,5].includes(dealt.length))throw badBoard();
+  if(!Array.isArray(rows)||participants.length===0)throw badHole();
+  const expected=new Map<string,number>();
+  for(const player of participants){
+    if(!player.player_id||!Number.isSafeInteger(player.entry_number)||player.entry_number<1||expected.has(player.player_id))throw badHole();
+    expected.set(player.player_id,player.entry_number);
+  }
+  const seen=new Set<string>(),playerHoleCards:Record<string,string[]>={};
+  for(const row of rows){
+    if(!row||typeof row!=='object'||Array.isArray(row)||!('player_id' in row)||typeof row.player_id!=='string'
+      ||!expected.has(row.player_id)||!('entry_number' in row)||expected.get(row.player_id)!==row.entry_number||seen.has(row.player_id)
+      ||!('hole_cards' in row)||row.hole_cards===undefined)throw badHole();
+    const cards=row.hole_cards===null?[]:row.hole_cards;
+    if(!Array.isArray(cards)||(cards.length!==0&&cards.length!==2))throw badHole();
+    const verified:string[]=[];
+    for(const card of cards){
+      if(typeof card!=='string'||!/^[2-9TJQKA][shdc]$/.test(card)||used.has(card))throw badHole();
+      used.add(card);verified.push(card);
+    }
+    seen.add(row.player_id);
+    if(verified.length)playerHoleCards[row.player_id]=verified;
+  }
+  if(seen.size!==expected.size)throw badHole();
+  return {communitySlots:[0,1,2,3,4].map(index=>dealt[index]??null),communityCount:dealt.length,playerHoleCards};
+}
+
 /** Minimal shape of a persisted `hand_actions` row needed to replay a hand. */
 export interface ResumeActionRow {
   player_id: string;

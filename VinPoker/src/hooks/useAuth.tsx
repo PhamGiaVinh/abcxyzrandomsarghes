@@ -46,6 +46,27 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// Bound each base-role read independently so a hung metadata request does not
+// discard a role already confirmed by the server. Abort + observation deadline:
+// even a transport that ignores abort cannot publish late privileges.
+async function readBaseRole<T>(query: PromiseLike<T>, controller: AbortController) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([Promise.resolve(query), new Promise<never>((_, reject) => {
+      onAbort = () => reject(new Error('role_read_aborted'));
+      if (controller.signal.aborted) { onAbort(); return; }
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => controller.abort(), 10000);
+    })]);
+  } catch {
+    return { data: [], error: new Error('role_read_unavailable') };
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) controller.signal.removeEventListener('abort', onAbort);
+  }
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -62,6 +83,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [rolesError, setRolesError] = useState<string | null>(null);
   const roleGeneration = useRef(0);
   const activeUserId = useRef<string | null | undefined>(undefined);
+  const activeToken = useRef<string | undefined>(undefined);
+  const roleReadState = useRef<"idle" | "loading" | "ready" | "error">("idle");
+  const roleRequests = useRef<AbortController[]>([]);
+  const cancelRoleReads = useCallback(() => {
+    const pending = roleRequests.current;
+    roleRequests.current = [];
+    pending.forEach(controller => controller.abort());
+  }, []);
 
   const clearRoles = useCallback(() => {
     setRoles([]);
@@ -75,16 +104,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const fetchRoles = useCallback(async (userId: string, generation: number) => {
+    const controllers = [new AbortController(), new AbortController(), new AbortController()];
+    roleRequests.current = controllers;
     const isCurrentRequest = () => roleGeneration.current === generation;
     setRolesLoading(true);
+    roleReadState.current = "loading";
     setRolesError(null);
     try {
       const [roleResult, ownerResult, dealerResult] = await Promise.all([
-        supabase.from("user_roles").select("role").eq("user_id", userId),
-        supabase.from("clubs").select("id").eq("owner_id", userId).limit(1),
+        readBaseRole(supabase.from("user_roles").select("role").eq("user_id", userId).abortSignal(controllers[0].signal), controllers[0]),
+        readBaseRole(supabase.from("clubs").select("id").eq("owner_id", userId).limit(1).abortSignal(controllers[1].signal), controllers[1]),
         // A user "is a dealer" if linked to a dealers row. Self-read is permitted by
         // the dealers_select_control policy (USING ... OR auth.uid() = user_id).
-        supabase.from("dealers").select("id").eq("user_id", userId).is("deleted_at", null).limit(1),
+        readBaseRole(supabase.from("dealers").select("id").eq("user_id", userId).is("deleted_at", null).limit(1).abortSignal(controllers[2].signal), controllers[2]),
       ]);
       if (!isCurrentRequest()) return;
       if (roleResult.error) throw roleResult.error;
@@ -95,6 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (ownerResult.error || dealerResult.error) {
         setRolesError("Chưa xác minh được đầy đủ quyền CLB. Hãy thử tải lại khi kết nối ổn định.");
       }
+      roleReadState.current = ownerResult.error || dealerResult.error ? "error" : "ready";
       setRolesLoading(false);
 
       // Membership-based navigation affordances are additive and remain fail-closed.
@@ -113,8 +146,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch {
       if (!isCurrentRequest()) return;
       clearRoles();
+      roleReadState.current = "error";
       setRolesError("Không tải được quyền tài khoản. Hãy thử lại khi kết nối ổn định.");
       setRolesLoading(false);
+    } finally {
+      if (roleRequests.current === controllers) roleRequests.current = [];
     }
   }, [clearRoles]);
 
@@ -122,21 +158,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let authEventCount = 0;
     let disposed = false;
 
-    const applySession = (sess: Session | null) => {
+    const applySession = (sess: Session | null, event?: string) => {
       if (disposed) return;
       setSession(sess);
       setUser(sess?.user ?? null);
       setLoading(false);
       setAuthError(null);
       const nextUserId = sess?.user.id ?? null;
-      if (activeUserId.current === nextUserId) return;
+      const sameUser = activeUserId.current === nextUserId;
+      const tokenChanged = activeToken.current !== sess?.access_token;
+      const canRetry = event === "SIGNED_IN" || event === "TOKEN_REFRESHED";
+      if (sameUser && !(nextUserId && canRetry && (
+        roleReadState.current === "error" || (roleReadState.current === "loading" && tokenChanged)
+      ))) return;
 
       activeUserId.current = nextUserId;
+      activeToken.current = sess?.access_token;
       const generation = ++roleGeneration.current;
+      cancelRoleReads();
       clearRoles();
       if (nextUserId) {
         setRolesLoading(true);
         void fetchRoles(nextUserId, generation);
+        if (sameUser) return; // Role recovery must not repeat push/profile side effects.
         setTimeout(() => {
           if (disposed || roleGeneration.current !== generation) return;
           void linkUser(nextUserId);
@@ -148,6 +192,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             .then(() => {});
         }, 0);
       } else {
+        roleReadState.current = "idle";
         setRolesLoading(false);
         setTimeout(() => {
           if (!disposed && roleGeneration.current === generation) void logoutUser();
@@ -155,9 +200,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
       authEventCount += 1;
-      applySession(sess);
+      applySession(sess, event);
     });
 
     supabase.auth.getSession().then(({ data: { session: sess }, error }) => {
@@ -183,16 +228,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       disposed = true;
       roleGeneration.current += 1;
+      cancelRoleReads();
       activeUserId.current = undefined;
+      activeToken.current = undefined;
+      roleReadState.current = "idle";
       subscription.unsubscribe();
     };
-  }, [clearRoles, fetchRoles]);
+  }, [clearRoles, fetchRoles, cancelRoleReads]);
 
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     roleGeneration.current += 1;
+    cancelRoleReads();
     activeUserId.current = null;
+    activeToken.current = undefined;
+    roleReadState.current = "idle";
     setSession(null);
     setUser(null);
     setAuthError(null);

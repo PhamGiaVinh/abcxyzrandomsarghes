@@ -21,7 +21,7 @@
  *     📋 Tiếp theo T29: Nguyễn Tuấn Minh @minhminhh2 ra, Lương Ngọc Khánh @ace23072001 vào (11:54, còn 3 phút)"
  */
 
-import { mention, sendTelegramNotification } from "./telegram.ts";
+import { escapeHtml, mention, sendTelegramNotification } from "./telegram.ts";
 
 // ── Event types ────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ function formatEventLine(event: DealerEvent): string {
 
     case "pre_assign":
       return [
-        `📋 Tiếp theo ${event.tableName}:`,
+        `📋 Tiếp theo ${escapeHtml(event.tableName)}:`,
         `${fmt(event.outName, event.outUsername, event.outTelegramUserId)} ra,`,
         `${fmt(event.inName, event.inUsername, event.inTelegramUserId)} vào`,
         `(${hhmm(event.swingAt)}, còn ${event.minutesLeft} phút)`,
@@ -93,7 +93,7 @@ function buildBatchMessage(events: DealerEvent[]): string {
 
   const uniqueZones = [...new Set(zones)];
   const zoneLabel = uniqueZones.length === 1 && uniqueZones[0]
-    ? ` - ${uniqueZones[0]}`
+    ? ` - ${escapeHtml(uniqueZones[0])}`
     : "";
 
   const header = `Có ${events.length} cập nhật${zoneLabel}:`;

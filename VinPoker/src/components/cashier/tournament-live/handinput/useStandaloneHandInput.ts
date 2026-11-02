@@ -1,13 +1,12 @@
 // Controller hook for the STANDALONE operator console (`/tracker/hand-input`).
 //
-// It is the ENGINE-ONLY subset of HandInputPanel's orchestration: the console is
+// Extracted from the former HandInputPanel's engine orchestration: the console is
 // mounted only when `FEATURES.trackerEngineMode` is on (the page gates it), so the
 // manual-mode branches (advisory nextToAct, manual bet sizing, manual board/street
-// jump) are dropped here — the engine path is unconditional. The embedded
-// HandInputPanel is NOT touched; this hook reuses the SAME pure libraries
-// (trackerEngine, trackerWorkflow, button, resumeHand, potEngine, handFlow) and the
-// SAME 7 Edge payloads (built in handInputEdge.ts), so "write-path unchanged" is
-// provable, not just asserted.
+// jump) are dropped here — the engine path is unconditional. The current
+// HandInputConsole is shared by the embedded tab and full-screen page.
+// Pure libraries/payload builders are shared; manual Finish adds exact
+// intent/receipt fencing rather than calling the legacy bare writer.
 //
 // URL keys are DISTINCT from the panel's `hiTable`: `table` is the authoritative
 // resume key; `hand`/`street`/`actor` are write-only mirrors (never read back, so
@@ -18,13 +17,16 @@ import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import type { Card } from "@/components/shared/CardSlotPicker";
-import { getSeatPositions } from "@/lib/tournament/button";
+import { getBlindSlotSeatPositions } from "@/lib/tournament/button";
 import { nextButtonFromBlindLineage } from "@/lib/tournament/deadButton";
-import { readBlindLineage, readHandBlindLevel, type RecordedBlindLineage } from "@/lib/tournament/readBlindLineage";
+import { readBlindLineageState, readHandBlindLevel, type RecordedBlindLineage } from "@/lib/tournament/readBlindLineage";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { trackerUndoReceiptMatches } from "@/lib/trackerUndoReceipt";
 import {
   replayActions,
   deriveResumeStreet,
   nextActionOrderFrom,
+  readResumeCards,
   type ResumeActionRow,
 } from "./resumeHand";
 import { computePotBreakdown, contributionsFromActions, toSidePotsJson } from "@/lib/tracker-poker/potEngine";
@@ -68,12 +70,16 @@ import {
   createActionWriteGuard,
   createTableLoadGuard,
   isConfirmedActionWrite,
-  isConfirmedCompletedHandReadback,
   isConfirmedRosterWrite,
   resolveTableHandIdentity,
   type TableLoadToken,
 } from "./trackerAsyncGuards";
 import { createSingleFlightGuard } from "@/lib/singleFlight";
+import { isManualFinishIntent, manualFinishReceiptMatches, manualFinishDraftMatches,
+  readManualFinishJournal, listManualFinishJournals, persistManualFinishJournal, settleManualFinishJournal, adoptManualFinishJournals,
+  manualFinishCancellationMatches, type ManualFinishIntent } from "@/lib/trackerManualFinish";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { fingerprintManualCards, normalizeManualCards, parseManualCardIntent, isConfirmedManualCardProof,
   type ManualCardPendingIntent } from "./manualCardIntent";
 import type { SyncPhase } from "./ViewerSyncStatus";
@@ -142,6 +148,7 @@ export interface ActionRecord {
 }
 
 const STREET_ORDER: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
+const LINEAGE_READ_UNAVAILABLE = "Không tải được trạng thái bàn hoặc lịch sử blind. Hãy tải lại bàn trước khi bắt đầu hand tiếp theo.";
 const STREET_LABELS: Record<Street, string> = {
   preflop: "Preflop",
   flop: "Flop",
@@ -193,6 +200,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   const [tableLoadError, setTableLoadError] = useState<string | null>(null);
   const [tableReloadAttempt, setTableReloadAttempt] = useState(0);
   const [tableSelectionNotice, setTableSelectionNotice] = useState<string | null>(null);
+  const [tableContextRead,setTableContextRead]=useState<{scope:string;state:'loading'|'ready'|'error'}|null>(null);
   const [players, setPlayers] = useState<PlayerState[]>([]);
   const [currentStreet, setCurrentStreet] = useState<Street>("preflop");
   const [actions, setActions] = useState<ActionRecord[]>([]);
@@ -203,6 +211,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   // Preceding hand blind positions drive only the next-hand suggestion.
   const [maxSeats, setMaxSeats] = useState<number>(9);
   const [lastBlindLineage, setLastBlindLineage] = useState<RecordedBlindLineage | null>(null);
+  const [blindLineageUnavailable, setBlindLineageUnavailable] = useState(true);
   const [buttonOverridden, setButtonOverridden] = useState(false);
   const [selectedWinners, setSelectedWinners] = useState<string[]>([]);
   const [muckedPlayerIds, setMuckedPlayerIds] = useState<Set<string>>(new Set());
@@ -218,9 +227,13 @@ export function useStandaloneHandInput(tournamentId: string) {
   const [blindsConfirmedLocal, setBlindsConfirmedLocal] = useState(false);
   // P2-3: operator marks this hand as having a dead small blind (no SB posted).
   const [deadSb, setDeadSb] = useState(false);
+  const [resumedBlindSlots,setResumedBlindSlots]=useState<{
+    handId:string;sbSeat:number|null;bbSeat:number;deadSb:boolean;
+  }|null>(null);
   const [sbAmount, setSbAmount] = useState(0);
   const [bbAmount, setBbAmount] = useState(0);
   const [liveLevelNumber, setLiveLevelNumber] = useState<number | null>(null);
+  const liveClockReadSequence=useRef(0);
   // A1 (trackerBlindAutoSeed): the FULL live level from the 25s poll (amounts, not just
   // the number) so the stale-level banner can show next-hand SB/BB, + when the blind
   // snapshot was fetched (provenance shown in BlindSetupPanel). Both are inert extra
@@ -244,12 +257,14 @@ export function useStandaloneHandInput(tournamentId: string) {
   holeCardsDraftSignatureRef.current = holeCardsDraftSignature;
   const [orphanHand, setOrphanHand] = useState<{ id: string; hand_number: number } | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const userAuthGeneration = useRef(0);
   const startScope = JSON.stringify([user?.id, tournamentId]);
   const [startAuthority, setStartAuthority] = useState<{ scope: string; state: "allowed" | "denied" | "loading" | "error" } | null>(null);
   const startCapability = startAuthority?.scope === startScope ? startAuthority.state : "loading";
   useEffect(() => {
     let alive = true;
     let generation = 0;
+    let authRefreshTimer: ReturnType<typeof setTimeout> | undefined;
     const refresh = async () => {
       const current = ++generation;
       const publish = (state: "allowed" | "denied" | "loading" | "error") => {
@@ -258,22 +273,32 @@ export function useStandaloneHandInput(tournamentId: string) {
       publish("loading");
       if (!user?.id || !tournamentId) return;
       try {
-        const actor = await supabase.auth.getUser();
+        const actor = await observeTrackerContextRead(supabase.auth.getUser());
         if (actor.error || actor.data.user?.id !== user.id) { publish("error"); return; }
-        const tour = await supabase.from("tournaments").select("club_id").eq("id", tournamentId).maybeSingle();
+        const tour = await observeTrackerContextRead(supabase.from("tournaments").select("club_id").eq("id", tournamentId).maybeSingle());
         if (tour.error || !tour.data?.club_id) { publish("error"); return; }
-        const permission = await supabase.rpc("is_club_tracker", { _user_id: user.id, _club_id: tour.data.club_id });
+        const permission = await observeTrackerContextRead(supabase.rpc("is_club_tracker", { _user_id: user.id, _club_id: tour.data.club_id }));
         publish(permission.error || typeof permission.data !== "boolean" ? "error" : permission.data ? "allowed" : "denied");
       } catch { publish("error"); }
     };
     void refresh();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id === user?.id) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      userAuthGeneration.current++;
+      if (session?.user?.id === user?.id) {
+        if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
+          generation++;
+          setStartAuthority(null);
+          clearTimeout(authRefreshTimer);
+          // Leave the SDK Auth callback before making another Auth/DB request.
+          authRefreshTimer = setTimeout(() => { if (alive) void refresh(); }, 0);
+        }
+        return;
+      }
       generation++;
       if (alive) { setStartAuthority(null); setUser(session?.user ?? null); }
     });
     window.addEventListener("focus", refresh);
-    return () => { alive = false; generation++; subscription.unsubscribe(); window.removeEventListener("focus", refresh); };
+    return () => { alive = false; generation++; clearTimeout(authRefreshTimer); subscription.unsubscribe(); window.removeEventListener("focus", refresh); };
   }, [startScope, user?.id, tournamentId, tableReloadAttempt]);
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<
@@ -313,6 +338,13 @@ export function useStandaloneHandInput(tournamentId: string) {
   const tableLoadGuardRef = useRef(createTableLoadGuard());
   const actionWriteGuardRef = useRef(createActionWriteGuard());
   const handSubmitGuardRef = useRef(createSingleFlightGuard());
+  const finishOwnsSubmittingRef = useRef(false);
+  const [pendingFinish, setPendingFinish] = useState<ManualFinishIntent | null>(null);
+  const [pendingFinishError, setPendingFinishError] = useState<string | null>(null);
+  const [pendingAllIn,setPendingAllIn]=useState<{playerId:string;displayName:string;stack:number;fingerprint:string}|null>(null);
+  const pendingAllInRef=useRef<typeof pendingAllIn>(null);
+  const [pendingVoid,setPendingVoid]=useState<{handId:string;scope:string;generation:number}|null>(null);
+  const pendingVoidRef=useRef<typeof pendingVoid>(null);
   const actionScopeRef = useRef("");
   const loadedTableSessionRef = useRef<{ tournamentId: string; tableId: string; sessionId: string | null } | null>(null);
   const blockedActionScopeRef = useRef<string | null>(null);
@@ -324,12 +356,31 @@ export function useStandaloneHandInput(tournamentId: string) {
   const rosterMountedRef = useRef(true);
   const rosterFlightRef = useRef(createSingleFlightGuard());
   const voidFlightRef = useRef(createSingleFlightGuard());
+  const undoFlightRef = useRef(createSingleFlightGuard());
+  const undoUnknownScopeRef = useRef<string | null>(null);
+  const [pendingUndoScope, setPendingUndoScope] = useState<string | null>(null);
+  const [undoRecoveryBusy, setUndoRecoveryBusy] = useState(false);
+  const [undoRecoveryError, setUndoRecoveryError] = useState<string | null>(null);
   const voidOwnsSubmittingRef = useRef(false);
   const manualCardsFlightsRef = useRef(new Map<string, ReturnType<typeof createSingleFlightGuard>>());
   const manualCardsOwnsSubmittingRef = useRef(false);
   const manualCardsIntentRef = useRef(new Map<string, ManualCardPendingIntent>());
   const rosterContext = availableTables.find((table) => table.id === tableId);
   const rosterScope = `${user?.id}:${tournamentId}:${rosterContext?.tournamentTableId}:${rosterContext?.tableSessionId}:${rosterContext?.controlEpoch}`;
+  useEffect(()=>{pendingAllInRef.current=null;setPendingAllIn(null);},[tableId,handId,rosterScope]);
+  useEffect(()=>{pendingVoidRef.current=null;setPendingVoid(null);},[tableId,handId,lastHandId,rosterScope]);
+  useEffect(() => {
+    setPendingFinish(null);
+    setPendingFinishError(null);
+    const logicalTable = rosterContext?.tournamentTableId ?? tableId;
+    if (!user?.id || !logicalTable) return;
+    const identity = { actor_id: user.id, tournament_id: tournamentId,
+      tournament_table_id: logicalTable };
+    try {
+      adoptManualFinishJournals(localStorage,sessionStorage,identity);
+      setPendingFinish(listManualFinishJournals(localStorage, identity)[0] ?? null);
+    } catch { setPendingFinishError("Không đọc được yêu cầu Finish đang chờ. Không gửi yêu cầu mới; giữ dữ liệu phục hồi và tải lại bàn."); }
+  }, [user?.id, tournamentId, tableId, rosterContext?.tournamentTableId, handId]);
   if (rosterScopeRef.current !== rosterScope) {
     rosterScopeRef.current = rosterScope;
     rosterGenerationRef.current += 1;
@@ -339,6 +390,10 @@ export function useStandaloneHandInput(tournamentId: string) {
     // survive it. A reload is not proof that an in-flight mutation finished.
     if (manualCardsOwnsSubmittingRef.current) {
       manualCardsOwnsSubmittingRef.current = false;
+      setSubmitting(false);
+    }
+    if (finishOwnsSubmittingRef.current) {
+      finishOwnsSubmittingRef.current = false;
       setSubmitting(false);
     }
   }, [rosterScope, tableId, handId]);
@@ -374,7 +429,14 @@ export function useStandaloneHandInput(tournamentId: string) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    let active = true;
+    const generation = userAuthGeneration.current;
+    void observeTrackerContextRead(supabase.auth.getUser()).then(({ data }) => {
+      if (active && userAuthGeneration.current === generation) setUser(data.user);
+    }).catch(() => {
+      if (active && userAuthGeneration.current === generation) setUser(null);
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -466,11 +528,11 @@ export function useStandaloneHandInput(tournamentId: string) {
     setTableLoadError(null);
     const loadTables = async () => {
       try {
-        const { data: tournament, error: tournamentError } = await supabase
+        const { data: tournament, error: tournamentError } = await observeTrackerContextRead(supabase
           .from("tournaments")
           .select("id")
           .eq("id", tournamentId)
-          .maybeSingle();
+          .maybeSingle());
 
         if (!isCurrentRequest()) return;
         if (tournamentError) {
@@ -485,9 +547,9 @@ export function useStandaloneHandInput(tournamentId: string) {
         }
 
         if (FEATURES.floorDeferredTrackerMoveV1) {
-          const { data: contextData, error: contextError } = await supabase.rpc(
+          const { data: contextData, error: contextError } = await observeTrackerContextRead(supabase.rpc(
             "get_tracker_hand_input_tables_v4" as any, { p_tournament_id: tournamentId },
-          );
+          ));
           if (!isCurrentRequest()) return;
           const context = contextData as { ok?: boolean; tables?: unknown[]; invalid_tables?: unknown[] } | null;
           if (contextError || !context?.ok || !Array.isArray(context.tables)) {
@@ -512,6 +574,7 @@ export function useStandaloneHandInput(tournamentId: string) {
               controlEpoch: row.control_epoch as number | null,
               canManualCards: row.can_manual_cards,
               maxSeats: row.max_seats as number,
+              tableNumber: typeof row.table_number === "number" ? row.table_number : null,
               name: row.table_name,
               playerCount: row.player_count,
               hasLiveHand: row.has_live_hand,
@@ -525,10 +588,10 @@ export function useStandaloneHandInput(tournamentId: string) {
           }
           const lockByTable = new Map<string, unknown>();
           if (FEATURES.trackerMultiTable && user?.id) {
-            const { data: lockData, error: lockError } = await supabase.rpc(
+            const { data: lockData, error: lockError } = await observeTrackerContextRead(supabase.rpc(
               "get_tracker_table_locks" as any,
               { p_tournament_id: tournamentId, p_actor_user_id: user.id },
-            );
+            ));
             if (!isCurrentRequest()) return;
             const locks = lockData as { ok?: boolean; locks?: Array<{ table_id: string }> } | null;
             if (!lockError && locks?.ok && Array.isArray(locks.locks)) {
@@ -546,7 +609,7 @@ export function useStandaloneHandInput(tournamentId: string) {
           return;
         }
 
-        const { data, error: tablesError } = await supabase.rpc("get_tournament_tables", { p_tournament_id: tournamentId });
+        const { data, error: tablesError } = await observeTrackerContextRead(supabase.rpc("get_tournament_tables", { p_tournament_id: tournamentId }));
         if (!isCurrentRequest()) return;
         if (tablesError) {
           setTableLoadState("error");
@@ -567,7 +630,7 @@ export function useStandaloneHandInput(tournamentId: string) {
           { data: canonicalTableRows },
           { data: seatRows, error: seatError },
           { data: liveHands, error: liveHandsError },
-        ] = await Promise.all([
+        ] = await observeTrackerContextRead(Promise.all([
           supabase
             .from("tournament_tables")
             .select("id, table_id")
@@ -582,7 +645,7 @@ export function useStandaloneHandInput(tournamentId: string) {
             .select("table_id")
             .eq("tournament_id", tournamentId)
             .eq("status", "in_progress"),
-        ]);
+        ]));
         if (!isCurrentRequest()) return;
         if (seatError || liveHandsError) {
           setTableLoadState("error");
@@ -600,10 +663,10 @@ export function useStandaloneHandInput(tournamentId: string) {
         // applied the RPC 42883s → we swallow it and just omit lock info (no crash).
         const lockByTable = new Map<string, any>();
         if (FEATURES.trackerMultiTable && user?.id) {
-          const { data: lockData, error: lockErr } = await supabase.rpc("get_tracker_table_locks" as any, {
+          const { data: lockData, error: lockErr } = await observeTrackerContextRead(supabase.rpc("get_tracker_table_locks" as any, {
             p_tournament_id: tournamentId,
             p_actor_user_id: user.id,
-          });
+          }));
           const res = lockData as { ok?: boolean; locks?: any[] } | null;
           if (!lockErr && res?.ok && Array.isArray(res.locks)) {
             res.locks.forEach((l: any) => lockByTable.set(l.table_id, l));
@@ -711,7 +774,9 @@ export function useStandaloneHandInput(tournamentId: string) {
         } else {
           failCount = 0;
           claimedHandLockRef.current = handId;
-          setActionSyncBlocked(false);
+          // Renewing authority does not prove the outcome of an earlier action.
+          const scope=actionScopeRef.current;
+          setActionSyncBlocked(blockedActionScopeRef.current===scope||actionWriteGuardRef.current.isBlocked(scope));
           setIsReadOnly(false);
         }
       } catch {
@@ -732,8 +797,23 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const markSync = useCallback((phase: SyncPhase, label?: string) => {
     setSyncPhase(phase);
-    if (label !== undefined) setSyncLabel(label);
+    if (label !== undefined || phase === "error") setSyncLabel(label ?? null);
   }, []);
+
+  useEffect(() => {
+    setPendingUndoScope(null);
+    setUndoRecoveryError(null);
+    if (!handId) return;
+    try {
+      if (sessionStorage.getItem(`tracker-undo:${tournamentId}:${handId}`) === null) return;
+    } catch { /* Unreadable journal is not proof of an empty journal. */ }
+    const scope = `${tableId}:${handId}`;
+    undoUnknownScopeRef.current = scope;
+    setPendingUndoScope(`${rosterScope}:${handId}`);
+    blockedActionScopeRef.current = scope;
+    setActionSyncBlocked(true);
+    markSync("uncertain", "Còn yêu cầu hoàn tác chưa xác minh; không ghi hành động mới trước khi kiểm tra receipt.");
+  }, [tournamentId, tableId, handId, rosterScope, markSync]);
 
   const reloadAfterActionUncertainty = useCallback(() => {
     if (actionSyncBlocked) window.location.reload();
@@ -771,6 +851,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     setBlindFetchedAt(null);
     setBlindsConfirmedLocal(false);
     setDeadSb(false);
+    setResumedBlindSlots(null);
     setButtonOverridden(false); // P2-5: new hand → the dead-button suggestion drives the button again
     setSentCommunityStreets(new Set());
     setPersistedBoardCount(0);
@@ -1076,6 +1157,9 @@ export function useStandaloneHandInput(tournamentId: string) {
       rosterTokensRef.current.clear();
       const loadToken = tableLoadGuardRef.current.begin(newTableId);
       const isCurrentLoad = () => tableLoadGuardRef.current.isCurrent(loadToken);
+      const contextScope=JSON.stringify([tournamentId,newTableId,user?.id??null]);
+      setTableContextRead({scope:contextScope,state:'loading'});
+      setTableSelectionNotice(null);
       actionScopeRef.current = `${newTableId}:draft`;
       blockedActionScopeRef.current = null;
       setActionSyncBlocked(false);
@@ -1084,6 +1168,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       setHandStarted(false);
       setLastHandId(null);
       setButtonConfirmed(false);
+      setBlindLineageUnavailable(true);
       // P2-5: a fresh table load resets the dead-button anchor → the first hand has no
       // suggestion (operator sets the button); subsequent hands auto-suggest.
       setLastBlindLineage(null);
@@ -1096,17 +1181,20 @@ export function useStandaloneHandInput(tournamentId: string) {
       setTableName(tbl?.name || newTableId.slice(0, 8));
       if (!newTableId) {
         setPlayers([]);
+        setTableContextRead(null);
         return;
       }
 
+      let contextComplete=false;
+      try {
       // P2-5: physical seat capacity for the dead-button ring (read-only; default 9).
-      const { data: tableMeta } = await supabase
+      const { data: tableMeta } = await observeTrackerContextRead(supabase
         .from("tournament_tables")
         .select("max_seats, table_session_id")
         .eq("tournament_id", tournamentId)
         .eq(FEATURES.floorDeferredTrackerMoveV1 && tbl?.tableSessionId ? "id" : "table_id",
           FEATURES.floorDeferredTrackerMoveV1 && tbl?.tableSessionId ? tbl.tournamentTableId! : newTableId)
-        .maybeSingle();
+        .maybeSingle());
       if (!isCurrentLoad()) return;
       const loadedMaxSeats = tbl?.maxSeats ?? (tableMeta as any)?.max_seats ?? 9;
       const loadedSessionId = tbl?.tableSessionId ?? (tableMeta as any)?.table_session_id ?? null;
@@ -1125,12 +1213,18 @@ export function useStandaloneHandInput(tournamentId: string) {
       let loadedSeats: any[] | null = null;
       let error: any = null;
       if (wantAvatar && loadedSessionId && tbl?.tournamentTableId && Number.isInteger(tbl.controlEpoch)) {
-        const r = await supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
+        const r = await observeTrackerContextRead(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
           p_tournament_id: tournamentId, p_tournament_table_id: tbl.tournamentTableId,
           p_table_session_id: loadedSessionId, p_expected_epoch: tbl.controlEpoch,
-        });
+        }));
         if (!isCurrentLoad()) return;
         const snapshot = r.data as any;
+        if (!r.error && snapshot?.ok === false && snapshot.error === 'actor_not_authorized') {
+          setTableSelectionNotice('Quyền hoặc phiên/chế độ bàn đã thay đổi. Quay lại danh sách bàn để xác minh lại trước khi nhập hand mới.');
+          rosterTokensRef.current.clear();
+          setPlayers([]);
+          return;
+        }
         if (r.error || snapshot?.ok !== true || snapshot.table_session_id !== loadedSessionId
           || snapshot.tournament_table_id !== tbl.tournamentTableId || snapshot.control_epoch !== tbl.controlEpoch
           || !Array.isArray(snapshot.seats) || snapshot.seats.length !== loadedMaxSeats
@@ -1152,7 +1246,8 @@ export function useStandaloneHandInput(tournamentId: string) {
           ? seatQuery.filter("tournament_table_id", "eq", tbl.tournamentTableId)
             .filter("table_session_id", "eq", loadedSessionId)
           : seatQuery.eq("table_id", newTableId);
-        const r = await seatQuery.order("seat_number");
+        const r = await observeTrackerContextRead(seatQuery.order("seat_number"))
+          .catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
         if (!isCurrentLoad()) return;
         if (r.error && (r.error as any).code === "42703") {
           setAvatarSupported(false);
@@ -1171,7 +1266,8 @@ export function useStandaloneHandInput(tournamentId: string) {
           ? seatQuery.filter("tournament_table_id", "eq", tbl.tournamentTableId)
             .filter("table_session_id", "eq", loadedSessionId)
           : seatQuery.eq("table_id", newTableId);
-        const r = await seatQuery.order("seat_number");
+        const r = await observeTrackerContextRead(seatQuery.order("seat_number"))
+          .catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
         if (!isCurrentLoad()) return;
         loadedSeats = r.data as any[] | null;
         error = r.error;
@@ -1184,6 +1280,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         return;
       }
       if (!loadedSeats?.length) {
+        contextComplete=true;
         setPlayers([]);
         if (FEATURES.floorDeferredTrackerMoveV1) {
           setAvailableTables((previous) => previous.map((table) =>
@@ -1214,10 +1311,10 @@ export function useStandaloneHandInput(tournamentId: string) {
       const seatPlayerIds = [...new Set(newPlayers.map((p) => p.player_id))];
       const avatarByUser = new Map<string, string | null>();
       if (seatPlayerIds.length) {
-        const { data: seatProfiles } = await supabase
+        const { data: seatProfiles } = await observeTrackerContextRead(supabase
           .from("profiles")
           .select("user_id, avatar_url")
-          .in("user_id", seatPlayerIds);
+          .in("user_id", seatPlayerIds));
         if (!isCurrentLoad()) return;
         (seatProfiles ?? []).forEach((p: any) => avatarByUser.set(p.user_id, p.avatar_url ?? null));
       }
@@ -1239,20 +1336,30 @@ export function useStandaloneHandInput(tournamentId: string) {
         .map((s) => s.seat_number)
         .sort((a, b) => a - b);
 
-      const { data: lastHand } = loadedSessionId
-        ? await supabase.from("tournament_hands")
+      const { data: lastHand, error: lastHandReadError } = loadedSessionId
+        ? await observeTrackerContextRead(supabase.from("tournament_hands")
           .select("id, button_seat, status, is_voided")
           .eq("tournament_id", tournamentId)
           .eq("table_id", handTableId)
           .filter("table_session_id", "eq", loadedSessionId)
           .order("hand_number", { ascending: false })
-          .limit(1).maybeSingle()
-        : { data: null };
+          .limit(1).maybeSingle()).catch(() => ({ data: null, error: new Error("last_hand_read_unavailable") }))
+        : { data: null, error: null };
 
       if (!isCurrentLoad()) return;
-      const previousLineage = lastHand?.id && lastHand.status === "completed" && !lastHand.is_voided
-        ? await readBlindLineage(lastHand.id) : null;
+      const previousRead = lastHandReadError ? { available: false as const }
+        : lastHand?.id && lastHand.status === "completed" && !lastHand.is_voided
+          ? await readBlindLineageState(lastHand.id) : { available: true as const, lineage: null };
       if (!isCurrentLoad()) return;
+      if (!previousRead.available) {
+        setTableSelectionNotice(LINEAGE_READ_UNAVAILABLE);
+        setPlayers([]);
+        setTableId("");
+        toast.error(LINEAGE_READ_UNAVAILABLE);
+        return;
+      }
+      const previousLineage = previousRead.lineage;
+      setBlindLineageUnavailable(false);
       setLastBlindLineage(previousLineage);
       const restoredSuggestion = nextButtonFromBlindLineage({
         maxSeats: loadedMaxSeats,
@@ -1268,16 +1375,13 @@ export function useStandaloneHandInput(tournamentId: string) {
       } else {
         setButtonSeat(lastHand?.button_seat ?? activeNums[0] ?? 1);
         setButtonConfirmed(false);
-        if (lastHand?.id) {
-          toast.warning("Không đủ vị trí blind của hand trước để gợi ý BTN. Hãy chọn BTN thủ công.");
-        }
       }
 
       const identity = await resolveTableHandIdentity({
         loadOrphan: async () => {
           // Physical table identity alone must not resurrect an older session.
           if (!loadedSessionId) return null;
-          const { data, error: orphanError } = await supabase
+          const { data, error: orphanError } = await observeTrackerContextRead(supabase
             .from("tournament_hands")
             .select("id, hand_number")
             .eq("tournament_id", tournamentId)
@@ -1285,15 +1389,15 @@ export function useStandaloneHandInput(tournamentId: string) {
             .filter("table_session_id", "eq", loadedSessionId)
             .eq("status", "in_progress")
             .limit(1)
-            .maybeSingle();
+            .maybeSingle());
           if (orphanError) throw orphanError;
           return data;
         },
         loadNextHandNumber: async () => {
-          const { data, error: nextNumberError } = await supabase.rpc(
+          const { data, error: nextNumberError } = await observeTrackerContextRead(supabase.rpc(
             "get_next_hand_number",
             buildNextHandNumberRequest(tournamentId, handTableId),
-          );
+          ));
           if (nextNumberError || data == null) {
             throw nextNumberError ?? new Error("Could not load the next hand number");
           }
@@ -1317,9 +1421,22 @@ export function useStandaloneHandInput(tournamentId: string) {
         setAutoResumeArmed(identity.hand.id); // A5: fires once seats for THIS table have loaded
       } else {
         setHandNumber(identity.handNumber);
+        if (!restoredSuggestion && lastHand?.id) {
+          toast.warning("Không đủ vị trí blind của hand trước để gợi ý BTN. Hãy chọn BTN thủ công.");
+        }
+        // Reloading the same verified session must not lose recovery of its
+        // latest completed hand. The server still rechecks every void blocker.
+        setLastHandId(lastHand?.status === "completed" && lastHand.is_voided === false
+          ? lastHand.id : null);
+      }
+      contextComplete=true;
+      }catch{
+        if(isCurrentLoad())setTableSelectionNotice("Không tải được trạng thái bàn. Chưa thể xác minh roster hoặc hand hiện tại.");
+      }finally{
+        if(isCurrentLoad())setTableContextRead({scope:contextScope,state:contextComplete?'ready':'error'});
       }
     },
-    [availableTables, tournamentId, resetHand]
+    [availableTables, tournamentId, resetHand,user?.id]
   );
 
   const handlePickTable = useCallback(
@@ -1332,6 +1449,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   );
 
   const backToTableMap = useCallback(() => {
+    tableLoadGuardRef.current.begin("");
+    setTableContextRead(null);
     setTableId("");
     setTableName("");
     setPlayers([]);
@@ -1425,6 +1544,12 @@ export function useStandaloneHandInput(tournamentId: string) {
     [players]
   );
 
+  // Review uses the same action-derived pot math as Finish. Keep the live gross
+  // contribution display separate: it may still include a provisional return.
+  const reviewPotBreakdown = useMemo(() => computePotBreakdown(contributionsFromActions(
+    actions.map((action) => ({ player_id: action.player_id, action_type: action.action_type, action_amount: action.amount })),
+  )), [actions]);
+
   const potBreakdown = useMemo(
     () =>
       computePotBreakdown(
@@ -1477,44 +1602,36 @@ export function useStandaloneHandInput(tournamentId: string) {
   // Dead-button SUGGESTION from the PREVIOUS hand's recorded blind positions. Pre-hand
   // default; stays active until the operator explicitly resets and selects a seat.
   const deadButtonSuggestion = useMemo(
-    () => nextButtonFromBlindLineage({
+    () => blindLineageUnavailable ? null : nextButtonFromBlindLineage({
       maxSeats, occupiedSeats: activeSeatNums,
       previousDealtSeats: lastBlindLineage?.previousDealtSeats ?? [],
       previousButtonSeat: lastBlindLineage?.previousButtonSeat ?? null,
       previousSbPosition: lastBlindLineage?.previousSbPosition ?? null,
       previousBbSeat: lastBlindLineage?.previousBbSeat ?? null,
     }),
-    [maxSeats, activeSeatNums, lastBlindLineage]
+    [maxSeats, activeSeatNums, lastBlindLineage, blindLineageUnavailable]
   );
   const suggestionActive = !!deadButtonSuggestion && !buttonOverridden;
   const rawBlinds = useMemo(() => blindSeats(activeSeatNums, buttonSeat), [activeSeatNums, buttonSeat]);
   // 🔴 CARRY-FORWARD: when the suggestion is active the SB/BB shown to the operator
   // come from the dead-button suggestion (correct under empty seats), NOT blindSeats —
   // which would mislabel the SB when the button/SB sit on empty seats.
-  const blindSbSeat = suggestionActive ? deadButtonSuggestion!.sbSeat : rawBlinds.sbSeat;
-  const blindBbSeat = suggestionActive ? deadButtonSuggestion!.bbSeat : rawBlinds.bbSeat;
+  const activeBlindSlots=handStarted&&resumedBlindSlots?.handId===handId?resumedBlindSlots:null;
+  const blindSbSeat = activeBlindSlots ? activeBlindSlots.sbSeat : suggestionActive ? deadButtonSuggestion!.sbSeat : rawBlinds.sbSeat;
+  const blindBbSeat = activeBlindSlots ? activeBlindSlots.bbSeat : suggestionActive ? deadButtonSuggestion!.bbSeat : rawBlinds.bbSeat;
   // The suggestion auto-applies its dead SB; the operator can still toggle deadSb on.
-  const effectiveDeadSb = (suggestionActive && deadButtonSuggestion!.deadSb) || deadSb;
+  const effectiveDeadSb = (activeBlindSlots ? activeBlindSlots.deadSb : suggestionActive && deadButtonSuggestion!.deadSb) || deadSb;
   // The engine honors the dead-button BB only while the suggestion is active.
-  const bbSeatOverride = suggestionActive ? deadButtonSuggestion!.bbSeat : undefined;
+  const bbSeatOverride = activeBlindSlots ? activeBlindSlots.bbSeat : suggestionActive ? deadButtonSuggestion!.bbSeat : undefined;
   const positionsBySeat = useMemo(() => {
-    const positions = getSeatPositions(activeSeatNums, buttonSeat);
     const sbSeat = handStarted
-      ? actions.find((action) => action.action_type === "post_sb")?.seat_number ?? null
+      ? actions.find((action) => action.action_type === "post_sb")?.seat_number ?? (effectiveDeadSb ? null : blindSbSeat)
       : blindSbSeat;
     const bbSeat = handStarted
-      ? actions.find((action) => action.action_type === "post_bb")?.seat_number ?? null
+      ? actions.find((action) => action.action_type === "post_bb")?.seat_number ?? blindBbSeat
       : blindBbSeat;
-    for (const [seat, label] of positions) {
-      if (label === "BTN" || label === "SB" || label === "BB" || label === "BTN/SB") {
-        positions.set(seat, "");
-      }
-    }
-    if (activeSeatNums.includes(buttonSeat)) positions.set(buttonSeat, activeSeatNums.length === 2 ? "BTN/SB" : "BTN");
-    if (sbSeat != null && activeSeatNums.includes(sbSeat) && sbSeat !== buttonSeat) positions.set(sbSeat, "SB");
-    if (bbSeat != null && activeSeatNums.includes(bbSeat)) positions.set(bbSeat, "BB");
-    return positions;
-  }, [activeSeatNums, buttonSeat, handStarted, actions, blindSbSeat, blindBbSeat]);
+    return getBlindSlotSeatPositions(activeSeatNums, buttonSeat, effectiveDeadSb ? null : sbSeat, bbSeat);
+  }, [activeSeatNums, buttonSeat, handStarted, actions, blindSbSeat, blindBbSeat, effectiveDeadSb]);
   const firstActorSeat = useMemo(() => {
     if (blindBbSeat == null) return firstPreflopActor(activeSeatNums, buttonSeat);
     const ring = [...activeSeatNums].sort((a, b) => a - b);
@@ -1593,13 +1710,25 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   useEffect(() => {
     if (!handStarted) return;
+    let cancelled=false,inFlight=false;
     const id = setInterval(async () => {
-      const { data } = await supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId });
-      const cl = ((data as any)?.current_level ?? null) as ClockLevel | null;
-      setLiveLevelNumber(cl?.level_number ?? null);
-      setLiveLevel(cl); // A1: keep the full level so the banner can show next-hand SB/BB
+      if(inFlight)return;
+      inFlight=true;
+      const sequence=++liveClockReadSequence.current;
+      const scope=actionScopeRef.current,generation=rosterGenerationRef.current,authGeneration=userAuthGeneration.current;
+      try{
+        const { data,error } = await observeTrackerContextRead(supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId }));
+        if(cancelled||sequence!==liveClockReadSequence.current||!rosterMountedRef.current||scope!==actionScopeRef.current
+          ||generation!==rosterGenerationRef.current||authGeneration!==userAuthGeneration.current)return;
+        const cl = ((data as {current_level?:ClockLevel}|null)?.current_level ?? null);
+        if(error||!cl||typeof cl!=='object'||Array.isArray(cl))return;
+        setLiveLevelNumber(cl.level_number ?? null);
+        setLiveLevel(cl);
+      }catch{
+        // A failed background read is not evidence that the verified level vanished.
+      }finally{inFlight=false;}
     }, 25000);
-    return () => clearInterval(id);
+    return () => {cancelled=true;clearInterval(id);};
   }, [handStarted, tournamentId]);
 
 
@@ -1658,7 +1787,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   const sbPosted = useMemo(() => actions.some((a) => a.action_type === "post_sb"), [actions]);
   const bbPosted = useMemo(() => actions.some((a) => a.action_type === "post_bb"), [actions]);
   // P2-3: a dead-SB hand needs only the BB posted.
-  const blindsConfirmed = blindsConfirmedLocal || (bbPosted && (deadSb || sbPosted));
+  const blindsConfirmed = blindsConfirmedLocal || (bbPosted && (effectiveDeadSb || sbPosted));
   const isHeadsUp = players.length === 2;
   const blindLevelMissing = !blindLevelSnapshot || blindLevelSnapshot.level_number == null;
   const blindLevelChanged = hasLevelChangedDuringHand(blindLevelSnapshot, { level_number: liveLevelNumber });
@@ -1669,8 +1798,15 @@ export function useStandaloneHandInput(tournamentId: string) {
   // blind is posted it refreshes the live level for the banner but never touches amounts.
   // Placed AFTER sbPosted/bbPosted so the useCallback deps are initialized (no TDZ).
   const refreshLiveLevel = useCallback(async () => {
-    const { data } = await supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId });
-    const cl = ((data as any)?.current_level ?? null) as ClockLevel | null;
+    const sequence=++liveClockReadSequence.current;
+    const scope=actionScopeRef.current,generation=rosterGenerationRef.current,authGeneration=userAuthGeneration.current;
+    const isCurrent=()=>sequence===liveClockReadSequence.current&&rosterMountedRef.current&&scope===actionScopeRef.current
+      &&generation===rosterGenerationRef.current&&authGeneration===userAuthGeneration.current;
+    try {
+    const { data, error } = await observeTrackerContextRead(supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId }));
+    if(!isCurrent())return;
+    const cl = ((data as {current_level?:ClockLevel}|null)?.current_level ?? null);
+    if(error||!cl||typeof cl!=='object'||Array.isArray(cl))throw new Error('clock_read_unverified');
     setLiveLevelNumber(cl?.level_number ?? null);
     setLiveLevel(cl);
     if (cl && (cl.big_blind ?? 0) > 0 && !blindLevelCanonical && !sbPosted && !bbPosted) {
@@ -1682,6 +1818,9 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.success(`Đã lấy mức blind mới: Level ${snap.level_number ?? "?"}`);
     } else {
       toast.info("Đã cập nhật mức blind hiện tại (ván đã đặt blind — không đổi số).");
+    }
+    } catch {
+      if(isCurrent())toast.error("Không tải được blind hiện tại. Giữ mức đã xác minh; hãy thử lại.");
     }
   }, [tournamentId, blindLevelCanonical, sbPosted, bbPosted]);
 
@@ -1741,11 +1880,30 @@ export function useStandaloneHandInput(tournamentId: string) {
   const startingRef = useRef(false);
   const handleStartHand = async () => {
     if (startingRef.current) return;
+    if (blindLineageUnavailable) { toast.error(LINEAGE_READ_UNAVAILABLE); return; }
     if (startCapability !== "allowed") {
       toast.error(startCapability === "denied" ? "Quyền Floor không bao gồm bắt đầu hand. Cần quyền Tracker của CLB." : "Chưa xác minh được quyền bắt đầu hand. Hãy tải lại trước khi gửi.");
       return;
     }
     if (!tableId || !handNumber || !user?.id) return;
+    // Read the durable journal at the write boundary too: another tab may have
+    // created an uncertain Finish since this render. Starting a new hand is not
+    // a substitute for proving that exact prior intent committed or cancelled.
+    if (pendingFinishError) { toast.error(pendingFinishError); return; }
+    try {
+      const identity = { actor_id: user.id, tournament_id: tournamentId,
+        tournament_table_id: rosterContext?.tournamentTableId ?? tableId };
+      adoptManualFinishJournals(localStorage, sessionStorage, identity);
+      const pending = listManualFinishJournals(localStorage, identity)[0];
+      if (pending) {
+        setPendingFinish(pending);
+        toast.error("Còn yêu cầu Finish chưa xác minh. Đối chiếu hoặc hủy yêu cầu trước khi bắt đầu hand mới.");
+        return;
+      }
+    } catch {
+      const message = "Không đọc được yêu cầu Finish đang chờ. Giữ dữ liệu phục hồi và tải lại bàn trước khi bắt đầu hand mới.";
+      setPendingFinishError(message); toast.error(message); return;
+    }
     if (!buttonConfirmed) {
       toast.error("Chọn ghế nút chia bài (BTN) trước khi bắt đầu hand");
       return;
@@ -1808,7 +1966,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       setLiveLevelNumber(frozenLevel.level_number);
       if (!await claimHandLock(handData.hand_id)) {
         setOrphanHand({ id: handData.hand_id, hand_number: Number(handNumber) });
-        markSync("error");
+        markSync("uncertain");
         return;
       }
       setHandId(handData.hand_id);
@@ -1818,7 +1976,10 @@ export function useStandaloneHandInput(tournamentId: string) {
       markSync("sent", `Hand #${Number(handNumber)} đã bắt đầu`);
     } catch (e: any) {
       toast.error(e.message || "Failed to start hand");
-      markSync("error");
+      // Keep writes fenced until a fresh server read determines whether Start
+      // committed. The uncertain status exposes the existing reload control;
+      // error alone left pre-hand UI disabled with no recovery action.
+      markSync("uncertain");
       if (orphanHand) setOrphanHand(null);
     } finally {
       startingRef.current = false;
@@ -1837,10 +1998,10 @@ export function useStandaloneHandInput(tournamentId: string) {
       const sessionId = rosterContext?.tableSessionId
         ?? (loaded?.tournamentId === tournamentId && loaded.tableId === tableId ? loaded.sessionId : null);
       if (!sessionId) throw new Error("Không xác minh được phiên bàn để tiếp tục hand. Hãy tải lại bàn.");
-      const [handResult, actionResult] = await Promise.all([
+      const [handResult, actionResult, cardResult] = await observeTrackerContextRead(Promise.all([
         supabase
           .from("tournament_hands")
-          .select("id, hand_number, table_id, button_seat, community_cards")
+          .select("id, hand_number, table_id, button_seat, community_cards, tracker_sb_position, tracker_bb_position")
           .eq("id", targetOrphan.id)
           .eq("tournament_id", tournamentId)
           .eq("table_id", tournamentTableId ?? tableId)
@@ -1852,12 +2013,15 @@ export function useStandaloneHandInput(tournamentId: string) {
           .select("player_id, action_type, action_amount, action_order, street")
           .eq("hand_id", targetOrphan.id)
           .order("action_order", { ascending: true }),
-      ]);
+        supabase.from("hand_players").select("player_id, entry_number, hole_cards")
+          .eq("hand_id", targetOrphan.id),
+      ]));
+      if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
       const { data: hand, error: handErr } = handResult;
       const { data: actionRows, error: actErr } = actionResult;
       if (handErr || !hand) throw new Error(handErr?.message || "Không tải được hand đang diễn ra");
       if (actErr) throw new Error(actErr.message);
-      if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
+      if (cardResult.error) throw new Error("Không tải được bài tẩy đã lưu. Chưa tiếp tục hand; hãy thử tải lại bàn.");
       const frozenLevel = await readHandBlindLevel(targetOrphan.id);
       if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
       if (frozenLevel) {
@@ -1867,10 +2031,26 @@ export function useStandaloneHandInput(tournamentId: string) {
         setBbAmount(frozenLevel.big_blind);
       }
       const rows = (actionRows ?? []) as ResumeActionRow[];
+      // Resume this hand's frozen positions, not a new hand's occupied-seat
+      // calculation. An empty frozen SB slot means dead SB; missing legacy
+      // evidence must not silently manufacture another blind.
+      const postedSeat=(type:string)=>rows.filter(row=>row.action_type===type)
+        .map(row=>players.find(player=>player.player_id===row.player_id)?.seat_number);
+      const postedSb=postedSeat('post_sb'),postedBb=postedSeat('post_bb');
+      const sbPosition=hand.tracker_sb_position??postedSb[0];
+      const bbPosition=hand.tracker_bb_position??postedBb[0];
+      const validPosition=(value:unknown):value is number=>typeof value==='number'
+        &&Number.isInteger(value)&&value>=1&&value<=maxSeats;
+      if(!validPosition(sbPosition)||!validPosition(bbPosition)
+        ||!players.some(player=>player.seat_number===bbPosition)
+        ||postedSb.length>1||postedBb.length>1
+        ||postedSb.some(seat=>seat!==sbPosition)||postedBb.some(seat=>seat!==bbPosition)) {
+        throw new Error('Không xác minh được vị trí blind đã lưu của hand. Dừng post blind và gọi Floor.');
+      }
+      const resumedDeadSb=!players.some(player=>player.seat_number===sbPosition);
 
-      const stored = Array.isArray(hand.community_cards) ? (hand.community_cards as unknown[]) : [];
-      const communitySlots: (Card | null)[] = [0, 1, 2, 3, 4].map((i) => (stored[i] as Card) ?? null);
-      const communityCount = stored.filter(Boolean).length;
+      const {communitySlots,communityCount,playerHoleCards:resumedCards}=
+        readResumeCards(hand.community_cards,cardResult.data,players);
 
       const rebuiltPlayers = replayActions(players, rows);
       const rebuiltActions: ActionRecord[] = rows.map((r) => {
@@ -1903,6 +2083,12 @@ export function useStandaloneHandInput(tournamentId: string) {
       setUndoStack([]);
       setSelectedActorId(null);
       if (!await claimHandLock(hand.id)) return false;
+      if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
+      setPlayerHoleCards(resumedCards);
+      holeCardsBroadcastRef.current = Object.keys(resumedCards).length > 0;
+      const contenders = rebuiltPlayers.filter(player => !player.is_folded);
+      setRevealDone(contenders.length > 0 && contenders.every(player => resumedCards[player.player_id]?.length === 2));
+      setResumedBlindSlots({handId:hand.id,sbSeat:resumedDeadSb?null:sbPosition,bbSeat:bbPosition,deadSb:resumedDeadSb});
       setHandId(hand.id);
       setHandStarted(true);
       setOrphanHand(null);
@@ -2020,6 +2206,10 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (!player) return false;
     if (isReadOnly) {
       toast.error("Phiên làm việc đã hết hạn");
+      return false;
+    }
+    if (undoFlightRef.current.isBusy()) {
+      toast.error("Đang xác minh hoàn tác; chờ receipt trước khi ghi hành động mới.");
       return false;
     }
     if (streetRollbackRef.current) {
@@ -2204,7 +2394,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       let data: unknown;
       let error: unknown;
       try {
-        ({ data, error } = await supabase.functions.invoke("tournament-live-update", {
+        ({ data, error } = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
           body: buildRecordActionBody({
             tournamentId,
             handId,
@@ -2216,7 +2406,7 @@ export function useStandaloneHandInput(tournamentId: string) {
             actionOrder: currentOrder,
             metadata,
           }),
-        }));
+        })));
       } catch {
         return blockForAuthoritativeReload();
       }
@@ -2232,7 +2422,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         try {
           const context = asRecord(errorRecord?.context);
           const parseJson = context?.json;
-          const errBody = typeof parseJson === "function" ? await parseJson() : null;
+          const errBody = typeof parseJson === "function" ? await observeTrackerContextRead(Promise.resolve(parseJson.call(context))) : null;
           const errorBody = asRecord(errBody);
           const validation = asRecord(errorBody?.validation);
           rejCode = typeof errorBody?.code === "string" ? errorBody.code : typeof validation?.code === "string" ? validation.code : undefined;
@@ -2245,6 +2435,10 @@ export function useStandaloneHandInput(tournamentId: string) {
         rejCode = typeof dataRecord.code === "string" ? dataRecord.code : undefined;
         rejMsg = typeof dataRecord.error === "string" ? dataRecord.error : undefined;
       }
+      if (actionScopeRef.current !== writeToken.scope) {
+        finishWrite();
+        return false;
+      }
 
       if (error || dataRecord?.error) {
         if (classifyActionWriteFailure({ code: rejCode, message: rejMsg, data }) !== "validation") {
@@ -2253,7 +2447,7 @@ export function useStandaloneHandInput(tournamentId: string) {
         setSelectedActorId(null);
         finishWrite();
         toast.error(friendlyValidationError(rejCode, rejMsg), { description: `Mã lỗi: ${rejCode}` });
-        markSync("error");
+        markSync("error", friendlyValidationError(rejCode, rejMsg));
         return false;
       } else if (rejMsg) {
         toast.error(rejMsg);
@@ -2303,15 +2497,28 @@ export function useStandaloneHandInput(tournamentId: string) {
     );
   };
 
+  const allInFingerprint=()=>JSON.stringify({scope:actionScopeRef.current,roster:rosterScopeRef.current,
+    actor:user?.id,order:nextActionOrder,street:currentStreet,board:communityCards,actions,
+    players:players.map(p=>[p.player_id,p.current_stack,p.current_bet,p.is_folded,p.is_all_in])});
+  const cancelPendingAllIn=()=>{pendingAllInRef.current=null;setPendingAllIn(null);};
+  const confirmPendingAllIn=()=>{
+    const intent=pendingAllInRef.current;cancelPendingAllIn();
+    if(!intent)return;
+    if(!rosterMountedRef.current||intent.fingerprint!==allInFingerprint()||intent.playerId!==effectiveActorId
+      ||isReadOnly||submitting||actionSyncBlocked){toast.error('Hand, người hành động hoặc quyền đã thay đổi. Hãy kiểm tra và xác nhận ALL-IN lại.');return;}
+    void handleAction(intent.playerId,'all_in');setSelectedActorId(null);
+  };
   const handleDockAction = (type: string, betTo?: number) => {
+    if(pendingAllInRef.current)return;
     if (!effectiveActorId) {
       toast.error("Chạm một ghế để chọn người hành động");
       return;
     }
     if (type === "all_in") {
       const who = players.find((p) => p.player_id === effectiveActorId);
-      const msg = `Xác nhận ALL-IN ${who ? formatStack(who.current_stack) : ""}${who ? ` của ${who.display_name}` : ""}? Toàn bộ stack sẽ vào pot.`;
-      if (!confirm(msg)) return;
+      if(!who||isReadOnly||submitting||actionSyncBlocked)return;
+      const intent={playerId:who.player_id,displayName:who.display_name,stack:who.current_stack,fingerprint:allInFingerprint()};
+      pendingAllInRef.current=intent;setPendingAllIn(intent);return;
     }
     handleAction(effectiveActorId, type, undefined, betTo); // racetrack forwards the bet-to total
     setSelectedActorId(null);
@@ -2325,9 +2532,9 @@ export function useStandaloneHandInput(tournamentId: string) {
     void handleAction(playerId, type, amount);
   };
   const handleConfirmBlinds = () => {
-    if (!bbPosted || (!deadSb && !sbPosted)) {
+    if (!bbPosted || (!effectiveDeadSb && !sbPosted)) {
       toast.error(
-        deadSb ? "Hãy post Big Blind trước khi xác nhận" : "Hãy post Small Blind và Big Blind trước khi xác nhận"
+        effectiveDeadSb ? "Hãy post Big Blind trước khi xác nhận" : "Hãy post Small Blind và Big Blind trước khi xác nhận"
       );
       return;
     }
@@ -2444,6 +2651,8 @@ export function useStandaloneHandInput(tournamentId: string) {
   const restoreLastSnapshot = () => {
     const snap = undoStack[undoStack.length - 1];
     if (!snap) return;
+    setEndingStacks({});
+    setEndingStacksManuallyEdited(false);
     setPlayers(snap.players);
     setActions(snap.actions);
     setCurrentStreet(snap.currentStreet);
@@ -2463,52 +2672,198 @@ export function useStandaloneHandInput(tournamentId: string) {
   };
 
   const requestDurableUndo = async (): Promise<{ ok: boolean; error?: string }> => {
-    if (!handId || !tournamentTableId) return { ok: false, error: "Thiếu phiên bàn Tracker." };
+    if (!handId || !tournamentTableId || !user?.id || !rosterContext?.tableSessionId
+      || !Number.isSafeInteger(rosterContext.controlEpoch) || rosterContext.controlEpoch < 1) {
+      return { ok: false, error: "Thiếu phiên bàn Tracker." };
+    }
+    if (actionWriteGuardRef.current.isBusy()
+      || (actionSyncBlocked && undoUnknownScopeRef.current !== actionScopeRef.current)) {
+      return { ok: false, error: "Hành động trước chưa xác minh. Chờ ghi xong hoặc tải lại trước khi hoàn tác." };
+    }
+    if (!undoFlightRef.current.begin()) return { ok: false, error: "Đang kiểm tra hoàn tác trước; vui lòng chờ." };
+    const scope = rosterScopeRef.current, generation = rosterGenerationRef.current;
+    const actionScope = actionScopeRef.current, authGeneration = userAuthGeneration.current;
+    const current = () => rosterMountedRef.current && scope === rosterScopeRef.current
+      && generation === rosterGenerationRef.current && actionScope === actionScopeRef.current
+      && authGeneration === userAuthGeneration.current;
+    const stale = { ok: false, error: "Phiên hoàn tác đã thay đổi. Giữ mã yêu cầu cũ và tải lại để xác minh." };
+    const unknown = (message: string) => {
+      if (current()) {
+        undoUnknownScopeRef.current = actionScope;
+        setPendingUndoScope(`${rosterScope}:${handId}`);
+        blockedActionScopeRef.current = actionScope;
+        setActionSyncBlocked(true);
+        markSync("uncertain", "Chưa xác minh hoàn tác — giữ mã yêu cầu, kiểm tra receipt hoặc tải lại.");
+      }
+      return { ok: false, error: message };
+    };
+    undoUnknownScopeRef.current = actionScope;
+    blockedActionScopeRef.current = actionScope;
+    setActionSyncBlocked(true);
     const storageKey = `tracker-undo:${tournamentId}:${handId}`;
-    type PendingUndo = { expectedActionId: string; expectedSourceRevision: number; idempotencyKey: string };
-    let pending: PendingUndo | null = null;
+    type PendingUndo = { actorId: string; tournamentTableId: string; tableSessionId: string; controlEpoch: number;
+      expectedActionId: string; expectedSourceRevision: number; idempotencyKey: string };
     try {
       const raw = window.sessionStorage.getItem(storageKey);
-      if (raw) pending = JSON.parse(raw) as PendingUndo;
-    } catch {
-      return { ok: false, error: "Không lưu được mã hoàn tác an toàn trong trình duyệt." };
-    }
-    if (!pending) {
-      const [handResult, actionResult] = await Promise.all([
-        supabase.from("tournament_hands").select("source_revision").eq("id", handId).maybeSingle(),
-        supabase.from("hand_actions").select("id").eq("hand_id", handId)
-          .order("action_order", { ascending: false }).order("created_at", { ascending: false })
-          .order("id", { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      const sourceRevision = (handResult.data as unknown as { source_revision?: unknown } | null)?.source_revision;
-      const actionId = actionResult.data?.id;
-      if (handResult.error || actionResult.error || typeof sourceRevision !== "number"
-        || !Number.isSafeInteger(sourceRevision) || typeof actionId !== "string") {
-        return { ok: false, error: "Không xác minh được action cuối và phiên bản máy chủ." };
+      let pending: PendingUndo;
+      let saved = raw;
+      if (raw !== null) {
+        const parsed = JSON.parse(raw) as Partial<PendingUndo> | null;
+        if (!parsed || parsed.actorId !== user.id || parsed.tournamentTableId !== tournamentTableId
+          || parsed.tableSessionId !== rosterContext.tableSessionId || parsed.controlEpoch !== rosterContext.controlEpoch
+          || typeof parsed.expectedActionId !== "string" || !parsed.expectedActionId
+          || typeof parsed.expectedSourceRevision !== "number" || !Number.isSafeInteger(parsed.expectedSourceRevision)
+          || parsed.expectedSourceRevision < 1 || typeof parsed.idempotencyKey !== "string" || !parsed.idempotencyKey) {
+          return unknown("Yêu cầu hoàn tác cũ không khớp người/phiên bàn. Không tạo mã mới; cần xác minh yêu cầu đã lưu.");
+        }
+        pending = parsed as PendingUndo;
+      } else {
+        const [handResult, actionResult] = await observeTrackerContextRead(Promise.all([
+          supabase.from("tournament_hands").select("source_revision").eq("id", handId).maybeSingle(),
+          supabase.from("hand_actions").select("id").eq("hand_id", handId)
+            .order("action_order", { ascending: false }).order("created_at", { ascending: false })
+            .order("id", { ascending: false }).limit(1).maybeSingle(),
+        ]));
+        if (!current()) return stale;
+        const sourceRevision = (handResult.data as unknown as { source_revision?: unknown } | null)?.source_revision;
+        const actionId = actionResult.data?.id;
+        if (handResult.error || actionResult.error || typeof sourceRevision !== "number"
+          || !Number.isSafeInteger(sourceRevision) || sourceRevision < 1 || typeof actionId !== "string") {
+          return { ok: false, error: "Không xác minh được action cuối và phiên bản máy chủ." };
+        }
+        pending = { actorId: user.id, tournamentTableId, tableSessionId: rosterContext.tableSessionId,
+          controlEpoch: rosterContext.controlEpoch, expectedActionId: actionId,
+          expectedSourceRevision: sourceRevision, idempotencyKey: crypto.randomUUID() };
+        saved = JSON.stringify(pending);
+        window.sessionStorage.setItem(storageKey, saved);
+        if (window.sessionStorage.getItem(storageKey) !== saved) throw new Error("undo_journal_unavailable");
       }
-      pending = { expectedActionId: actionId, expectedSourceRevision: sourceRevision, idempotencyKey: crypto.randomUUID() };
-      try {
-        window.sessionStorage.setItem(storageKey, JSON.stringify(pending));
-      } catch {
-        return { ok: false, error: "Không lưu được mã hoàn tác an toàn trong trình duyệt." };
+      if (!current()) return stale;
+      markSync("sending", "Hoàn tác hành động cuối");
+      const { data, error } = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
+        body: buildDeleteLastActionBody({
+          tournamentId, tournamentTableId, handId,
+          expectedActionId: pending.expectedActionId,
+          expectedSourceRevision: pending.expectedSourceRevision,
+          idempotencyKey: pending.idempotencyKey,
+        }),
+      }));
+      if (!current()) return stale;
+      const rejection = (data as { error?: unknown } | null)?.error;
+      // Only a new, first-attempt intent can be released by a canonical prewrite
+      // denial. A previously unknown request may already have committed: keep
+      // its journal even if a later attempt sees a disabled capability.
+      let gateDenied: string | null = null;
+      const denialMessages: Record<string,string> = {
+        uat_capability_disabled:'Undo chưa được bật cho tài khoản/bàn này. Máy chủ đã từ chối; hành động chưa được hoàn tác.',
+        dealer_assignment_not_unique:'Undo yêu cầu tài khoản dealer được gán đúng phiên bàn. Máy chủ đã từ chối; hành động vẫn được giữ nguyên.',
+        actor_not_allowed:'Tài khoản này không có quyền Undo. Máy chủ đã từ chối; hành động vẫn được giữ nguyên.',
+        tracker_lock_not_owned:'Tài khoản này không giữ khóa Tracker của hand. Máy chủ đã từ chối Undo; hành động vẫn được giữ nguyên.',
+        undo_boundary_blind:'Không thể Undo blind bằng thao tác này. Máy chủ đã từ chối; blind vẫn được giữ nguyên.',
+      };
+      const errorContext = (error as unknown as {context?:unknown}|null)?.context;
+      if (raw === null && errorContext instanceof Response && errorContext.status === 409) {
+        const verdict = await errorContext.clone().json().catch(() => null);
+        if (typeof verdict?.code === 'string' && verdict.code === verdict.error
+          && Object.prototype.hasOwnProperty.call(denialMessages,verdict.code)) gateDenied = verdict.code;
       }
-    }
-    const { data, error } = await supabase.functions.invoke("tournament-live-update", {
-      body: buildDeleteLastActionBody({
-        tournamentId, tournamentTableId, handId,
-        expectedActionId: pending.expectedActionId,
-        expectedSourceRevision: pending.expectedSourceRevision,
-        idempotencyKey: pending.idempotencyKey,
-      }),
-    });
-    const rejection = (data as { error?: unknown } | null)?.error;
-    if (error || rejection) {
-      if (error) return { ok: false, error: "Chưa rõ hoàn tác đã ghi hay chưa. Bấm lại để kiểm tra cùng mã yêu cầu." };
+      if (!current()) return stale;
+      if (!gateDenied && (error || rejection || data?.status !== "success" || !trackerUndoReceiptMatches(data?.data, {
+        hand_id: handId, expected_action_id: pending.expectedActionId,
+        expected_source_revision: pending.expectedSourceRevision,
+      }))) {
+        return unknown("Chưa xác minh được receipt hoàn tác. Giữ nguyên mã yêu cầu để kiểm tra lại.");
+      }
+      if (window.sessionStorage.getItem(storageKey) !== saved) return stale;
       window.sessionStorage.removeItem(storageKey);
-      return { ok: false, error: typeof rejection === "string" ? rejection : "Không hoàn tác được hành động." };
+      if (window.sessionStorage.getItem(storageKey) !== null) throw new Error('undo_journal_clear_failed');
+      setPendingUndoScope(null);
+      if (undoUnknownScopeRef.current === actionScope) {
+        undoUnknownScopeRef.current = null;
+        if (blockedActionScopeRef.current === actionScope) blockedActionScopeRef.current = null;
+        setActionSyncBlocked(actionWriteGuardRef.current.isBlocked(actionScope));
+      }
+      if (gateDenied) {
+        const message=denialMessages[gateDenied];
+        markSync('error',message);
+        return {ok:false,error:message};
+      }
+      if (!actionWriteGuardRef.current.isBlocked(actionScope)) markSync("sent", "Đã hoàn tác hành động cuối");
+      return { ok: true };
+    } catch {
+      return unknown("Không xác minh được hoàn tác hoặc journal. Giữ mã yêu cầu đã lưu; không tạo yêu cầu mới.");
+    } finally {
+      undoFlightRef.current.finish();
     }
-    window.sessionStorage.removeItem(storageKey);
-    return { ok: true };
+  };
+
+  const reconcilePendingUndo = async (cancelJournal?: string) => {
+    if (!user?.id || !handId || !tableId || !tournamentTableId
+      || actionWriteGuardRef.current.isBusy() || streetRollbackRef.current || submitting
+      || !undoFlightRef.current.begin()) return;
+    const scope=rosterScopeRef.current,generation=rosterGenerationRef.current;
+    const actionScope=actionScopeRef.current,authGeneration=userAuthGeneration.current;
+    const current=()=>rosterMountedRef.current && scope===rosterScopeRef.current
+      && generation===rosterGenerationRef.current && actionScope===actionScopeRef.current
+      && authGeneration===userAuthGeneration.current;
+    const key=`tracker-undo:${tournamentId}:${handId}`;
+    setUndoRecoveryBusy(true);setUndoRecoveryError(null);
+    try {
+      const saved=sessionStorage.getItem(key);
+      if (!saved) throw new Error("Không đọc được yêu cầu Undo đã lưu; không tạo mã mới.");
+      const pending=JSON.parse(saved) as Record<string,unknown> | null;
+      // Legacy actorless journals may be READ, never adopted for a writer.
+      // The server still derives actor identity and matches its own receipt.
+      if (!pending || (pending.actorId!==undefined && pending.actorId!==user.id)
+        || (pending.tournamentTableId!==undefined && pending.tournamentTableId!==tournamentTableId)
+        || typeof pending.expectedActionId!=="string" || !pending.expectedActionId
+        || typeof pending.idempotencyKey!=="string" || !pending.idempotencyKey
+        || typeof pending.expectedSourceRevision!=="number" || !Number.isSafeInteger(pending.expectedSourceRevision)
+        || pending.expectedSourceRevision<1) throw new Error("Yêu cầu Undo không khớp tài khoản/bàn; giữ dữ liệu phục hồi.");
+      if (cancelJournal!==undefined && (saved!==cancelJournal || pending.actorId!==user.id
+        || pending.tournamentTableId!==tournamentTableId || pending.tableSessionId!==rosterContext?.tableSessionId
+        || pending.controlEpoch!==rosterContext?.controlEpoch))
+        throw new Error("Yêu cầu hoặc phiên bàn đã đổi; không hủy yêu cầu khác với xác nhận.");
+      const actor=await observeTrackerContextRead(supabase.auth.getUser());
+      if (!current()) return;
+      if (actor.error || actor.data.user?.id!==user.id) throw new Error("Không xác minh được tài khoản; giữ yêu cầu Undo.");
+      if (sessionStorage.getItem(key)!==saved) throw new Error("Yêu cầu Undo đã đổi; cần xác nhận lại.");
+      const response=await observeTrackerContextRead(supabase.rpc(cancelJournal===undefined
+        ? "get_tracker_undo_receipt_v1" : "cancel_tracker_undo_intent_v1",{
+        p_tournament_id:tournamentId,p_tournament_table_id:tournamentTableId,p_hand_id:handId,
+        p_expected_action_id:pending.expectedActionId,p_expected_source_revision:pending.expectedSourceRevision,
+        p_idempotency_key:pending.idempotencyKey,
+      }));
+      if (!current()) return;
+      const proof=response.data as Record<string,unknown> | null;
+      const cancellation=proof?.receipt as Record<string,unknown> | null;
+      const cancelled=proof?.outcome==='cancelled' && cancellation?.ok===true && !cancellation.error
+        && cancellation.operation==='cancel_undo_open_hand' && cancellation.cancelled===true
+        && cancellation.actor_id===user.id && cancellation.request_id===pending.idempotencyKey
+        && cancellation.tournament_id===tournamentId && cancellation.tournament_table_id===tournamentTableId
+        && cancellation.hand_id===handId && cancellation.expected_action_id===pending.expectedActionId
+        && cancellation.expected_source_revision===pending.expectedSourceRevision;
+      const recorded=proof?.outcome==='recorded'
+        && trackerUndoReceiptMatches(proof.receipt,{hand_id:handId,expected_action_id:pending.expectedActionId,
+          expected_source_revision:pending.expectedSourceRevision});
+      if (response.error || !proof || proof.ok!==true || proof.actor_id!==user.id
+        || proof.request_id!==pending.idempotencyKey || (!recorded && !cancelled))
+        throw new Error("Chưa có receipt Undo được xác nhận. Giữ nguyên mã; không gửi lệnh ghi mới.");
+      if (sessionStorage.getItem(key)!==saved) throw new Error("Yêu cầu Undo đã đổi; giữ dữ liệu và tải lại bàn.");
+      sessionStorage.removeItem(key);
+      setPendingUndoScope(null);setUndoStack([]);
+      // Never apply a pre-reload snapshot. The existing table loader invalidates
+      // this generation and gates writes until canonical roster/hand is ready.
+      setUndoRecoveryBusy(false);
+      toast.info(cancelled ? "Máy chủ đã hủy yêu cầu Undo; không hoàn tác hành động. Đang tải lại bàn."
+        : "Đã đối chiếu Undo. Đang tải lại trạng thái máy chủ.");
+      await handleTableChange(tableId);
+    } catch (error) {
+      if (current()) setUndoRecoveryError(error instanceof Error ? error.message : "Chưa xác minh được Undo; giữ mã yêu cầu.");
+    } finally {
+      undoFlightRef.current.finish();
+      if (rosterMountedRef.current) setUndoRecoveryBusy(false);
+    }
   };
 
   const handleUndo = async () => {
@@ -2824,6 +3179,10 @@ export function useStandaloneHandInput(tournamentId: string) {
   /** Applies a completed canonical Finish receipt without sending a second record_hand request. */
   const applyVoiceFinishReceipt = useCallback(async (receipt: VoiceFinishCommitReceipt) => {
     if (!handId || receipt.hand_id !== handId) return false;
+    const receiptLoad = tableLoadGuardRef.current.capture(tableId);
+    const receiptGeneration = rosterGenerationRef.current;
+    const currentReceiptScope = () => rosterMountedRef.current && receiptGeneration === rosterGenerationRef.current
+      && tableLoadGuardRef.current.isCurrent(receiptLoad);
     if (FEATURES.floorDeferredTrackerMoveV1
       && availableTables.find((table) => table.id === tableId)?.tableSessionId) {
       setHandId(null);
@@ -2834,17 +3193,31 @@ export function useStandaloneHandInput(tournamentId: string) {
       markSync("sent", `Voice Assist đã lưu Hand #${Number(handNumber)}`);
       return true;
     }
-    const { data: refreshedSeats, error } = await supabase
+    const { data: refreshedSeats, error } = await observeTrackerContextRead(supabase
       .from("tournament_seats")
       .select("seat_number, player_id, is_active, chip_count")
       .eq("tournament_id", tournamentId)
       .eq("table_id", tableId)
-      .order("seat_number");
-    if (error || !refreshedSeats) return false;
+      .order("seat_number")).catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
+    if (!currentReceiptScope()) return true;
+    if (error || !refreshedSeats) {
+      setHandId(null);
+      setHandStarted(false);
+      resetHand({ loadNextHandNumber: false });
+      setLastHandId(receipt.hand_id);
+      setPlayers([]);
+      setBlindLineageUnavailable(true);
+      setButtonConfirmed(false);
+      toast.warning(`Hand đã lưu. ${LINEAGE_READ_UNAVAILABLE}`);
+      return true;
+    }
     const displayOutcome = await ensureRecordedHandDisplayOutcome({
       tournamentId,
       handId: receipt.hand_id,
+      actorId: user?.id ?? "",
+      isCurrent: currentReceiptScope,
     });
+    if (!currentReceiptScope()) return true;
     if (!displayOutcome.ok) {
       toast.warning("Hand đã lưu; outcome hiển thị chưa được server xác minh. Có thể kiểm tra lại trong Lịch sử & sửa hand.");
     }
@@ -2858,14 +3231,18 @@ export function useStandaloneHandInput(tournamentId: string) {
     playTrackerSoundOnce(playedSoundsRef.current, handId, "hand_end", "pot_collect");
     markSync("sent", `Voice Assist đã lưu Hand #${Number(handNumber)}`);
     setLastHandId(receipt.hand_id);
-    const currentLineage = await readBlindLineage(receipt.hand_id);
-    const nextSuggestion = nextButtonFromBlindLineage({
+    const lineageRead = await readBlindLineageState(receipt.hand_id);
+    if (!currentReceiptScope()) return true;
+    const currentLineage = lineageRead.available ? lineageRead.lineage : null;
+    setBlindLineageUnavailable(!lineageRead.available);
+    if (!lineageRead.available) toast.warning(`Hand đã lưu. ${LINEAGE_READ_UNAVAILABLE}`);
+    const nextSuggestion = lineageRead.available ? nextButtonFromBlindLineage({
       maxSeats, occupiedSeats: activeNums,
       previousDealtSeats: currentLineage?.previousDealtSeats ?? [],
       previousButtonSeat: currentLineage?.previousButtonSeat ?? null,
       previousSbPosition: currentLineage?.previousSbPosition ?? null,
       previousBbSeat: currentLineage?.previousBbSeat ?? null,
-    });
+    }) : null;
     if (nextSuggestion) setButtonSeat(nextSuggestion.buttonSeat);
     setButtonConfirmed(Boolean(nextSuggestion));
     setLastBlindLineage(currentLineage);
@@ -3235,10 +3612,10 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error("Chọn người thắng trước");
       return;
     }
-    // Guardrail 2 — a whole-pot manual split re-introduces the side-pot imprecision
-    // auto-settle fixes; WARN (don't block) when side pots exist.
-    if (potBreakdown.sidePots.length > 0) {
-      toast.warning("Hand có side pot — chia nguyên pot thủ công có thể sai. Nên bấm 'Tự chấm bài', hoặc kiểm tra từng stack.");
+    // A whole-pot split cannot preserve per-layer eligibility or an uncalled return.
+    if (potBreakdown.sidePots.length > 0 || potBreakdown.uncalled !== null) {
+      toast.error("Hand có side pot hoặc tiền cược dư. Hãy tự chấm bài hoặc nhập chính xác stack cuối của từng người.");
+      return;
     }
     const map: Record<string, number> = {};
     settleSelectedWinners(engineState.seats, selectedWinners).forEach((r) => {
@@ -3255,6 +3632,9 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const handleSubmitHand = async () => {
     if (!tableId || !handNumber) return;
+    if (pendingFinishError || (pendingFinish && pendingFinish.hand_id !== handId)) {
+      toast.error(pendingFinishError ?? "Còn yêu cầu Finish của hand trước; xác minh hoặc hủy trước khi gửi hand mới."); return;
+    }
     // Workflow v2 HARD-GATE: only submit from submit_ready.
     if (workflowState !== "submit_ready") {
       toast.error("Chưa thể gửi hand — cần hoàn tất đúng quy trình trước.");
@@ -3274,16 +3654,36 @@ export function useStandaloneHandInput(tournamentId: string) {
       return;
     }
     if (endingStacksManuallyEdited && !confirm("Bạn đã chỉnh sửa stack kết thúc thủ công. Xác nhận lưu các số đã chỉnh?")) return;
-    if (!handSubmitGuardRef.current.begin()) return;
+    const sessionId = rosterContext?.tableSessionId;
+    const logicalTableId = rosterContext?.tournamentTableId;
+    if (!user?.id || !handId || tableLoadState !== "ready" || loadedTablesTournamentRef.current !== tournamentId
+      || !sessionId || !logicalTableId || !Number.isSafeInteger(rosterContext?.controlEpoch)
+      || Number(rosterContext?.controlEpoch) < 1) {
+      const reason = "Chưa xác minh được hand/session/epoch để lưu. Hãy tải lại bàn.";
+      toast.error(reason); markSync("error", reason); return;
+    }
+    // Capture before any await, including A→B→A. A late response cannot borrow
+    // the generation that happens to be current when it finally arrives.
+    const receiptLoad = tableLoadGuardRef.current.capture(tableId);
+    const receiptGeneration = rosterGenerationRef.current;
+    const receiptActionScope = actionScopeRef.current;
+    const currentReceiptScope = () => rosterMountedRef.current && receiptGeneration === rosterGenerationRef.current
+      && receiptActionScope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(receiptLoad);
+    if (!handSubmitGuardRef.current.begin()) { toast.info("Đang chờ kết quả Finish trước đó."); return; }
+    finishOwnsSubmittingRef.current = true;
     setSubmitting(true);
     markSync("sending", `Gửi Hand #${Number(handNumber)}`);
     const submittedHandId = handId;
-    const applyRecordedHand = async (recordedHandId: string, recoveredAfterError = false) => {
+    const applyRecordedHand = async (recordedHandId: string, recoveredAfterError = false, committedStacks = endingStacks) => {
+      if (!currentReceiptScope()) return;
       markSync("sending", `Đang xác minh hiển thị Hand #${Number(handNumber)}`);
       const displayOutcome = await ensureRecordedHandDisplayOutcome({
         tournamentId,
         handId: recordedHandId,
+        actorId: user.id,
+        isCurrent: currentReceiptScope,
       });
+      if (!currentReceiptScope()) return;
       toast.success(recoveredAfterError
         ? "Máy chủ đã xác nhận hand được lưu dù kết nối báo lỗi"
         : "Hand recorded successfully");
@@ -3302,37 +3702,93 @@ export function useStandaloneHandInput(tournamentId: string) {
         setLastHandId(recordedHandId);
         return;
       }
-      const { data: refreshedSeats } = await supabase
+      const { data: refreshedSeats, error: seatReadError } = await observeTrackerContextRead(supabase
         .from("tournament_seats")
         .select("seat_number, player_id, is_active")
         .eq("tournament_id", tournamentId)
         .eq("table_id", tableId)
         .eq("is_active", true)
-        .order("seat_number");
+        .order("seat_number")).catch(() => ({ data: null, error: new Error("seat_read_unavailable") }));
       const activeNums = (refreshedSeats ?? [])
         .filter((s) => s.player_id && s.is_active !== false)
         .map((s) => s.seat_number)
         .sort((a, b) => a - b);
-      const currentLineage = await readBlindLineage(recordedHandId);
-      const nextSuggestion = nextButtonFromBlindLineage({
+      const lineageRead = await readBlindLineageState(recordedHandId);
+      if (!currentReceiptScope()) return;
+      const contextAvailable = !seatReadError && !!refreshedSeats && lineageRead.available;
+      const currentLineage = lineageRead.available ? lineageRead.lineage : null;
+      setBlindLineageUnavailable(!contextAvailable);
+      if (!contextAvailable) toast.warning(`Hand đã lưu. ${LINEAGE_READ_UNAVAILABLE}`);
+      const nextSuggestion = contextAvailable ? nextButtonFromBlindLineage({
         maxSeats, occupiedSeats: activeNums,
         previousDealtSeats: currentLineage?.previousDealtSeats ?? [],
         previousButtonSeat: currentLineage?.previousButtonSeat ?? null,
         previousSbPosition: currentLineage?.previousSbPosition ?? null,
         previousBbSeat: currentLineage?.previousBbSeat ?? null,
-      });
+      }) : null;
       if (nextSuggestion) setButtonSeat(nextSuggestion.buttonSeat);
       setButtonConfirmed(Boolean(nextSuggestion));
       setLastBlindLineage(currentLineage);
       setButtonOverridden(false);
-      if (refreshedSeats) {
-        setPlayers((prev) => survivorsAfterHand(prev, activeNums, endingStacks));
+      if (!seatReadError && refreshedSeats) {
+        setPlayers((prev) => survivorsAfterHand(prev, activeNums, committedStacks));
+      } else {
+        setPlayers([]);
       }
       setHandId(null);
       setHandStarted(false);
       resetHand();
     };
+    const identity = { actor_id: user.id, tournament_id: tournamentId, tournament_table_id: logicalTableId, hand_id: submittedHandId };
+    const intentKey = `vinpoker:manual-finish:${user.id}:${tournamentId}:${logicalTableId}:${submittedHandId}`;
+    let intent: ManualFinishIntent | undefined;
+    let priorIntent = false;
+    let writeAttempted = false;
+    const edgeCode = async (response: { data?: unknown; error?: unknown }): Promise<string | null> => {
+      const data = response.data as { code?: unknown; error?: unknown } | null;
+      if (typeof data?.code === "string") return data.code;
+      if (typeof data?.error === "string") return data.error;
+      const context = (response.error as { context?: unknown } | null)?.context;
+      if (context instanceof Response && [409, 422].includes(context.status)) {
+        const value = await context.clone().json().catch(() => null);
+        if (typeof value?.code === "string") return value.code;
+      }
+      return null;
+    };
+    const confirmReceipt = async (proof: unknown, recovered: boolean) => {
+      if (currentReceiptScope() && intent && manualFinishCancellationMatches(proof, intent)) {
+        settleManualFinishJournal(localStorage, intentKey, intent);
+        setPendingFinish(null);
+        toast.info("Yêu cầu Finish cũ đã hủy; hand chưa bị void. Kiểm tra lại trước khi gửi yêu cầu mới.");
+        return true;
+      }
+      if (!currentReceiptScope() || !intent || !manualFinishReceiptMatches(proof, intent)) return false;
+      try { settleManualFinishJournal(localStorage, intentKey, intent); }
+      catch { toast.warning("Máy chủ đã xác nhận Finish, nhưng chưa dọn được mã phục hồi trên trình duyệt. Không gửi một request mới."); }
+      setPendingFinish(null);
+      const committedStacks: Record<string, number> = {};
+      for (const value of intent.payload.players) {
+        const player = value as { player_id?: unknown; ending_stack?: unknown };
+        if (typeof player?.player_id === "string" && typeof player.ending_stack === "number"
+          && Number.isSafeInteger(player.ending_stack) && player.ending_stack >= 0) committedStacks[player.player_id] = player.ending_stack;
+      }
+      await applyRecordedHand(proof.hand_id, recovered, committedStacks);
+      return true;
+    };
+    const readReceipt = () => observeTrackerContextRead(supabase.functions.invoke("tournament-live-update", {
+      body: { tournament_id: tournamentId, action: "get_manual_finish_receipt_v1", finish_intent: intent },
+    }));
     try {
+      const freshActor = await observeTrackerContextRead(supabase.auth.getUser());
+      if (!currentReceiptScope()) return;
+      if (freshActor.error || freshActor.data.user?.id !== user.id) throw new Error("Không xác minh được tài khoản hiện tại; chưa gửi Finish.");
+      adoptManualFinishJournals(localStorage,sessionStorage,{actor_id:user.id,tournament_id:tournamentId,tournament_table_id:logicalTableId});
+      const pendingRequests = listManualFinishJournals(localStorage, { actor_id: user.id,
+        tournament_id: tournamentId, tournament_table_id: logicalTableId });
+      if (pendingRequests.some(request => request.hand_id !== submittedHandId))
+        throw new Error("Còn yêu cầu Finish của hand trước; xác minh hoặc hủy trước khi gửi hand mới.");
+      const saved = localStorage.getItem(intentKey);
+      if (saved !== null) { intent = readManualFinishJournal(saved, identity); priorIntent = true; }
       const edgePlayers: EdgePlayer[] = players.map((p) => ({
         player_id: p.player_id,
         entry_number: p.entry_number,
@@ -3351,14 +3807,15 @@ export function useStandaloneHandInput(tournamentId: string) {
           actions.map((a) => ({ player_id: a.player_id, action_type: a.action_type, action_amount: a.amount }))
         )
       );
-      const { data, error } = await supabase.functions.invoke("tournament-live-update", {
-        body: buildRecordHandBody({
+      const draft = buildRecordHandBody({
           tournamentId,
           tableId,
           handNumber,
-          handTime: new Date().toISOString(),
+          handTime: intent?.payload.hand_time ?? new Date().toISOString(),
           communityCards: communityCards.filter((c): c is Card => c !== null),
-          potSize,
+          // The displayed action total can include an uncalled return. The
+          // canonical pot must equal the contested layers, not that gross total.
+          potSize: submitBreakdown.totalPot,
           players: edgePlayers,
           endingStacks,
           playerHoleCards,
@@ -3370,34 +3827,125 @@ export function useStandaloneHandInput(tournamentId: string) {
             action_order: a.action_order,
             street: a.street,
           })),
-        }),
-      });
-      if (error || data?.error) throw new Error(await readEdgeError(error, data));
-      const recordedHandId = data?.data?.hand_id ?? submittedHandId;
-      if (!recordedHandId) throw new Error("Máy chủ không trả về mã hand đã lưu");
-      await applyRecordedHand(recordedHandId);
-    } catch (e: any) {
-      const { data: completedHand } = submittedHandId
-        ? await supabase
-          .from("tournament_hands")
-          .select("id, status, pot_size")
-          .eq("id", submittedHandId)
-          .eq("tournament_id", tournamentId)
-          .eq("table_id", tournamentTableId ?? tableId)
-          .eq("hand_number", Number(handNumber))
-          .maybeSingle()
-        : { data: null };
-      if (isConfirmedCompletedHandReadback(completedHand, potSize)) {
-        await applyRecordedHand(completedHand.id, true);
+        });
+      const payload: ManualFinishIntent["payload"] = { hand_time: draft.hand_time, players: draft.players,
+        actions: draft.actions, side_pots: draft.side_pots, community_cards: draft.community_cards, pot_size: draft.pot_size };
+      if (intent) {
+        const lookup = await readReceipt();
+        if (!currentReceiptScope()) return;
+        if (await confirmReceipt(lookup.data?.data, true)) return;
+        if (await edgeCode(lookup) !== "receipt_not_found") throw new Error("Chưa xác minh được receipt Finish trước đó; giữ nguyên request ID.");
+        if (intent.table_session_id !== sessionId || intent.control_epoch !== rosterContext.controlEpoch
+          || !manualFinishDraftMatches(intent, payload)) {
+          throw new Error("Context hoặc draft đã đổi; chỉ tra request Finish cũ, không gửi payload mới.");
+        }
       } else {
-        toast.error(e.message || "Failed to record hand");
-        markSync("error");
+        const snapshot = await observeTrackerContextRead(supabase.from("tournament_hands")
+          .select("id,tournament_id,table_id,tournament_table_id,table_session_id,source_revision,status,is_voided")
+          .eq("id", submittedHandId).eq("tournament_id", tournamentId).maybeSingle());
+        if (!currentReceiptScope()) return;
+        const row = snapshot.data as unknown as Record<string, unknown> | null;
+        if (snapshot.error || !row || row.id !== submittedHandId || row.tournament_id !== tournamentId
+          || row.table_id !== logicalTableId || row.tournament_table_id !== logicalTableId
+          || row.table_session_id !== sessionId || row.status !== "in_progress" || row.is_voided !== false
+          || !Number.isSafeInteger(row.source_revision) || Number(row.source_revision) < 1) {
+          throw new Error("Không xác minh được revision/session của hand; chưa gửi Finish.");
+        }
+        const candidate = { ...identity, table_session_id: sessionId, control_epoch: rosterContext.controlEpoch!,
+          source_revision: Number(row.source_revision), request_id: crypto.randomUUID(), payload };
+        if (!isManualFinishIntent(candidate)) throw new Error("Finish intent không hợp lệ; chưa gửi.");
+        intent = candidate;
       }
+      persistManualFinishJournal(localStorage, intentKey, intent);
+      setPendingFinish(intent);
+      if (!currentReceiptScope()) return;
+      writeAttempted = true;
+      const response = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
+        body: { tournament_id: tournamentId, action: "record_manual_hand_v1", finish_intent: intent },
+      }));
+      if (!currentReceiptScope()) return;
+      if (await confirmReceipt(response.data?.data, false)) return;
+      const code = await edgeCode(response);
+      // Only a first definitively zero-write denial can discard its journal.
+      // A rejected retry cannot establish what happened to the original request.
+      if (!priorIntent && code && ["actor_not_allowed", "stale_manual_finish_context", "lock_not_held",
+        "invalid_finish_intent", "SIDE_POTS_TAMPERED", "PAYOUT_POTS_MISMATCH", "MANUAL_FINISH_CONTEXT_REQUIRED", "tracker_correction_pending", "action_conflict"].includes(code)) {
+        settleManualFinishJournal(localStorage, intentKey, intent); intent = undefined;
+        setPendingFinish(null);
+      }
+      if (code === "PAYOUT_POTS_MISMATCH") {
+        throw new Error("Stack cuối chưa khớp quyền hưởng từng pot hoặc tiền cược dư được hoàn. Kiểm tra lại trước khi Finish.");
+      }
+      throw new Error(await readEdgeError(response.error, response.data));
+    } catch (e: any) {
+      if (!currentReceiptScope()) return;
+      if (intent && (priorIntent || writeAttempted)) {
+        try {
+          const lookup = await readReceipt();
+          if (!currentReceiptScope()) return;
+          if (await confirmReceipt(lookup.data?.data, true)) return;
+        } catch { /* Unknown remains pending. Never auto-retry the writer. */ }
+      }
+      if (!currentReceiptScope()) return;
+      toast.error(e.message || "Chưa xác minh được Finish; giữ nguyên request ID để tra lại.");
+      markSync("error", e.message || "Chưa xác minh được Finish; giữ nguyên request ID để tra lại.");
     } finally {
       handSubmitGuardRef.current.finish();
-      setSubmitting(false);
+      if (currentReceiptScope()) { finishOwnsSubmittingRef.current = false; setSubmitting(false); }
     }
   };
+
+  const handleResolvePendingFinish = async (cancel: boolean, confirmedRequestId?: string) => {
+    const intent = pendingFinish;
+    if (!intent || intent.actor_id !== user?.id || intent.tournament_id !== tournamentId
+      || intent.tournament_table_id !== (rosterContext?.tournamentTableId ?? tableId) || !tableId) return;
+    // Confirmation belongs to the accessible product dialog and is bound to
+    // its exact intent. A stale dialog cannot cancel a replacement request.
+    if (cancel && confirmedRequestId !== intent.request_id) return;
+    const generation = rosterGenerationRef.current;
+    const scope = actionScopeRef.current;
+    const token = tableLoadGuardRef.current.capture(tableId);
+    const current = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+      && scope === actionScopeRef.current && tableLoadGuardRef.current.isCurrent(token);
+    if (!handSubmitGuardRef.current.begin()) { toast.info("Đang chờ kết quả Finish trước đó."); return; }
+    finishOwnsSubmittingRef.current = true; setSubmitting(true);
+    try {
+      const actor = await observeTrackerContextRead(supabase.auth.getUser());
+      if (!current()) return;
+      if (actor.error || actor.data.user?.id !== intent.actor_id) throw new Error("Không xác minh được tài khoản; giữ yêu cầu chờ.");
+      adoptManualFinishJournals(localStorage,sessionStorage,{actor_id:intent.actor_id,tournament_id:intent.tournament_id,tournament_table_id:intent.tournament_table_id});
+      const key = `vinpoker:manual-finish:${intent.actor_id}:${intent.tournament_id}:${intent.tournament_table_id}:${intent.hand_id}`;
+      const saved = localStorage.getItem(key);
+      if (!saved || canonicalVoiceJson(JSON.parse(saved)) !== canonicalVoiceJson(intent))
+        throw new Error("Mã yêu cầu đã thay đổi; tải lại bàn.");
+      const response = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
+        body: { tournament_id: intent.tournament_id, action: cancel ? "cancel_manual_finish_v1" : "get_manual_finish_receipt_v1", finish_intent: intent },
+      }));
+      if (!current()) return;
+      const proof = response.data?.data;
+      const committed = manualFinishReceiptMatches(proof, intent);
+      if (!committed && !(cancel && manualFinishCancellationMatches(proof, intent))) {
+        throw new Error(cancel ? "Chưa xác minh được kết quả hủy; giữ nguyên request ID để thử lại."
+          : "Chưa có receipt Finish được xác nhận. Giữ nguyên yêu cầu; không gửi hand mới.");
+      }
+      settleManualFinishJournal(localStorage, key, intent);
+      setPendingFinish(listManualFinishJournals(localStorage, { actor_id: intent.actor_id,
+        tournament_id: intent.tournament_id, tournament_table_id: intent.tournament_table_id })[0] ?? null);
+      toast.info(committed ? "Máy chủ đã xác nhận Finish. Đang tải kết quả đã lưu." : "Đã hủy yêu cầu Finish; không void hand.");
+      // Reload starts a new table generation, so finally's old token no longer
+      // owns UI state. Release this completed request before invalidating it.
+      finishOwnsSubmittingRef.current = false;
+      setSubmitting(false);
+      await handleTableChange(tableId);
+    } catch (error) {
+      if (current()) toast.error(error instanceof Error ? error.message : "Chưa rõ kết quả Finish; giữ yêu cầu chờ.");
+    } finally {
+      handSubmitGuardRef.current.finish();
+      if (current()) { finishOwnsSubmittingRef.current = false; setSubmitting(false); }
+    }
+  };
+  const handleCancelPendingFinish = (confirmedRequestId: string) => handleResolvePendingFinish(true, confirmedRequestId);
+  const handleReconcilePendingFinish = () => handleResolvePendingFinish(false);
 
   const handleVoid = async () => {
     const voidId = handId || lastHandId;
@@ -3409,7 +3957,19 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.error("Đang hoàn tác vòng — chờ xong đã");
       return;
     }
-    if (!confirm("CONFIRM VOID: Toàn bộ chip sẽ hoàn về trạng thái trước hand?")) return;
+    if(submitting||!rosterMountedRef.current||pendingVoidRef.current)return;
+    const intent={handId:voidId,scope:actionScopeRef.current,generation:rosterGenerationRef.current};
+    pendingVoidRef.current=intent;setPendingVoid(intent);
+  };
+  const cancelPendingVoid=()=>{pendingVoidRef.current=null;if(rosterMountedRef.current)setPendingVoid(null);};
+  const confirmPendingVoid=async()=>{
+    const intent=pendingVoidRef.current;cancelPendingVoid();
+    if(!intent)return;
+    if(!rosterMountedRef.current||intent.scope!==actionScopeRef.current||intent.generation!==rosterGenerationRef.current
+      ||intent.handId!==(handId||lastHandId)||submitting||streetRollbackRef.current){
+      if(rosterMountedRef.current)toast.error('Hand hoặc phiên bàn đã thay đổi. Kiểm tra lại trước khi xác nhận Void.');return;
+    }
+    const voidId=intent.handId;
     if (!voidFlightRef.current.begin()) return;
     voidOwnsSubmittingRef.current = true;
     const generation = rosterGenerationRef.current;
@@ -3504,6 +4064,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handStarted, isSummary, isReadOnly, currentStreet, players, actions, engineState, blindsConfirmed, sentCommunityStreets, streetRollback]);
 
+  const tableContextReadState=!tableId?'idle':tableContextRead?.scope===JSON.stringify([tournamentId,tableId,user?.id??null])?tableContextRead.state:'loading';
   return {
     // identity / status
     tournamentId,
@@ -3518,6 +4079,8 @@ export function useStandaloneHandInput(tournamentId: string) {
     tableLoadError,
     retryTableLoad,
     tableSelectionNotice,
+    tableContextReadState,
+    blindLineageUnavailable,
     players,
     activePlayers,
     showdownOrderIds,
@@ -3534,6 +4097,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     setCommunityCards,
     usedCards,
     potSize,
+    reviewPotBreakdown,
     potBreakdown,
     bigBlind,
     positionsBySeat,
@@ -3614,9 +4178,20 @@ export function useStandaloneHandInput(tournamentId: string) {
     handleTableChange,
     handleStartHand,
     startCapability,
+    startDisabledReason: pendingFinishError ?? (pendingFinish
+      ? "Còn yêu cầu Finish chưa xác minh. Đối chiếu hoặc hủy yêu cầu trước khi bắt đầu hand mới."
+      : blindLineageUnavailable ? LINEAGE_READ_UNAVAILABLE : startCapability === "allowed" ? null
+      : startCapability === "denied" ? "Cần quyền Tracker của CLB để bắt đầu hand; quyền Floor không bao gồm thao tác này."
+        : "Chưa xác minh được quyền bắt đầu hand. Hãy tải lại."),
     handleContinueOrphan,
     handleVoidOrphan,
+    pendingVoid,
+    cancelPendingVoid,
+    confirmPendingVoid,
     handleDockAction,
+    pendingAllIn,
+    cancelPendingAllIn,
+    confirmPendingAllIn,
     handleVoiceAction,
     handlePostBlind,
     handleConfirmBlinds,
@@ -3644,6 +4219,27 @@ export function useStandaloneHandInput(tournamentId: string) {
     handleConfirmShowdownResult,
     handleEndingStackChange,
     handleSubmitHand,
+    pendingFinish: pendingFinish?.actor_id === user?.id && pendingFinish?.tournament_id === tournamentId
+      && pendingFinish?.tournament_table_id === (rosterContext?.tournamentTableId ?? tableId)
+      ? pendingFinish : null,
+    pendingFinishError,
+    handleReconcilePendingFinish,
+    handleCancelPendingFinish,
+    pendingUndo: pendingUndoScope === `${rosterScope}:${handId}`,
+    pendingUndoCancellationToken: (() => {
+      if (pendingUndoScope!==`${rosterScope}:${handId}`) return null;
+      try {
+        const saved=sessionStorage.getItem(`tracker-undo:${tournamentId}:${handId}`);
+        const pending=saved ? JSON.parse(saved) : null;
+        return pending?.actorId===user?.id && pending?.tournamentTableId===tournamentTableId
+          && pending?.tableSessionId===rosterContext?.tableSessionId && pending?.controlEpoch===rosterContext?.controlEpoch
+          ? saved : null;
+      } catch { return null; }
+    })(),
+    undoRecoveryBusy,
+    undoRecoveryError: pendingUndoScope === `${rosterScope}:${handId}` ? undoRecoveryError : null,
+    handleReconcilePendingUndo: () => reconcilePendingUndo(),
+    handleCancelPendingUndo: (confirmedJournal: string) => reconcilePendingUndo(confirmedJournal),
     handleVoid,
     handleChipQuickEdit,
     handleSetRosterSeat,

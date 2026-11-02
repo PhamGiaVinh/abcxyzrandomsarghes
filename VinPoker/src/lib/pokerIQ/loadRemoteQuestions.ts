@@ -4,6 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { DrillHand } from "./types";
 import { POKER_IQ_QUESTIONS_KEY, approvedHands, parseQuestionBank } from "./remoteContent";
+import {observeTrackerContextRead} from "@/lib/tournament/observeTrackerContextRead";
 
 /**
  * Fetch the APPROVED authored hands. Safe by construction: any failure (no row,
@@ -25,17 +26,28 @@ export async function loadRemoteApprovedHands(): Promise<DrillHand[]> {
 }
 
 /** Load the FULL bank (drafts + approved) for the authoring panel. */
-export async function loadQuestionBank(): Promise<DrillHand[]> {
+export async function loadQuestionBank(signal?: AbortSignal): Promise<DrillHand[]> {
+  const controller=new AbortController();
+  const abort=()=>controller.abort();
+  signal?.addEventListener('abort',abort,{once:true});
   try {
-    const { data, error } = await supabase
+    if(signal?.aborted)throw new Error('question_bank_read_cancelled');
+    const { data, error } = await observeTrackerContextRead(supabase
       .from("app_settings")
       .select("value")
       .eq("key", POKER_IQ_QUESTIONS_KEY)
-      .maybeSingle();
-    if (error || !data?.value) return [];
-    return parseQuestionBank(data.value);
-  } catch {
-    return [];
+      .abortSignal(controller.signal).maybeSingle());
+    if(error)throw new Error('question_bank_read_unavailable');
+    if(data===null)return [];
+    const raw:unknown=data.value;
+    const parsed=parseQuestionBank(raw);
+    // An editor replaces the entire bank. Never silently drop unreadable rows.
+    if(!Array.isArray(raw)||parsed.length!==raw.length||new Set(parsed.map(h=>h.id)).size!==parsed.length)
+      throw new Error('question_bank_read_invalid');
+    return parsed;
+  } finally {
+    signal?.removeEventListener('abort',abort);
+    controller.abort();
   }
 }
 

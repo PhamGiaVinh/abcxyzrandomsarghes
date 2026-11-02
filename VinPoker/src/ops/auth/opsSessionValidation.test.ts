@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadVerifiedOpsSession,
   type OpsSessionReader,
@@ -34,6 +34,26 @@ function clientWith(input: {
 }
 
 describe("Ops shared-session validation", () => {
+  afterEach(()=>vi.useRealTimers());
+  it.each(['initial storage','Auth server','post-verification storage'])('bounds a hung %s read without accepting a late session',async(stage)=>{
+    vi.useFakeTimers();
+    let release!:(value:unknown)=>void;
+    const held=new Promise(resolve=>{release=resolve;});
+    const getSession=vi.fn().mockResolvedValue({data:{session:firstSession},error:null});
+    const getUser=vi.fn().mockResolvedValue({data:{user:owner},error:null});
+    if(stage==='initial storage')getSession.mockReturnValueOnce(held);
+    else if(stage==='Auth server')getUser.mockReturnValueOnce(held);
+    else getSession.mockResolvedValueOnce({data:{session:firstSession},error:null}).mockReturnValueOnce(held);
+    const client={auth:{getSession,getUser}} as OpsSessionReader<TestSession>;
+    const observed=vi.fn();
+    const result=loadVerifiedOpsSession(client).then(observed);
+    await vi.advanceTimersByTimeAsync(10001);
+    expect(observed).toHaveBeenCalledExactlyOnceWith(null);
+    release(stage==='Auth server'?{data:{user:owner},error:null}:{data:{session:firstSession},error:null});
+    await vi.advanceTimersByTimeAsync(0);
+    await result;
+    expect(observed).toHaveBeenCalledTimes(1);
+  });
   it("accepts the server-confirmed session after a token refresh", async () => {
     const { client, getSession, getUser } = clientWith({
       sessions: [{ session: firstSession }, { session: refreshedSession }],

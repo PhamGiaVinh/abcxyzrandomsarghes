@@ -28,7 +28,8 @@ import {
 export function FeatureTablePoolBox({ clubId, tables, dealers }: { clubId: string | null; tables: any[]; dealers: any[] }) {
   const ver = useFeatureTableVersion();
   const { loading, error, refetch } = useFeatureTableRules(clubId); // P1-B: reads via get_table_dealer_rules
-  const { enabled: enforcementOn } = useFeatureEnforcementEnabled();
+  const { enabled: enforcementOn, loading: enforcementLoading, error: enforcementError,
+    refetch: retryEnforcement } = useFeatureEnforcementEnabled();
   const [manageOpen, setManageOpen] = useState(false);
 
   // in-shift dealer → live state, for the pool availability label
@@ -78,6 +79,13 @@ export function FeatureTablePoolBox({ clubId, tables, dealers }: { clubId: strin
         </div>
       </div>
 
+      {enforcementLoading && <p role="status" className="mb-2 text-[11px] text-muted-foreground">Đang xác minh trạng thái bảo vệ bàn…</p>}
+      {enforcementError && (
+        <div role="alert" className="mb-2 space-y-1 rounded-md border border-warning/40 bg-warning/5 p-2 text-[11px] text-warning">
+          <p>{enforcementError}</p>
+          <button type="button" onClick={() => void retryEnforcement()} className="underline">Thử lại trạng thái bảo vệ</button>
+        </div>
+      )}
       {enforcementOn === false && (
         <div className="mb-2 rounded-md border border-warning/40 bg-warning/5 p-2 text-[11px] text-warning">
           ℹ Cấu hình đã lưu nhưng <b>enforcement đang TẮT</b> — nhóm dealer chưa bảo vệ bàn (bật sau).

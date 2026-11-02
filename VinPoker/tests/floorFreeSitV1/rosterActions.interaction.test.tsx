@@ -46,7 +46,7 @@ vi.mock("@/components/ops/shared/FloorSeatRoster", () => ({
     <button onClick={() => onSeatTap(1)}>Mở Ghế 1</button>,
 }));
 vi.mock("@/components/cashier/tournament-live/OpenTableDialog", () => ({ OpenTableDialog: () => null }));
-vi.mock("@/components/cashier/tournament-live/FloorRedrawDialogV1", () => ({ FloorRedrawDialogV1: () => null }));
+vi.mock("@/components/cashier/tournament-live/FloorRedrawWorkspaceV1", () => ({ FloorRedrawWorkspaceV1: () => null }));
 vi.mock("@/components/cashier/tournament-live/MovePlayerDialog", () => ({ MovePlayerDialog: (props: {
   open: boolean; entryId: string; actorId: string | null; onMoved: () => void;
 }) => {
@@ -55,7 +55,7 @@ vi.mock("@/components/cashier/tournament-live/MovePlayerDialog", () => ({ MovePl
     <button onClick={props.onMoved}>Đặt chờ canonical</button></div> : null;
 } }));
 
-function setup(options: { pendingNetworkFailure?: boolean } = {}) {
+function setup(options: { pendingNetworkFailure?: boolean; pendingMove?: boolean; staleReason?: string | null; rosterError?:boolean; emptyRoster?:boolean; tournamentStatus?:Tournament['status'] } = {}) {
   vi.clearAllMocks();
   sessionStorage.clear();
   fixture.actor = "owner-a";
@@ -81,7 +81,11 @@ function setup(options: { pendingNetworkFailure?: boolean } = {}) {
   fixture.client.requestTableControlMode.mockResolvedValue({ ok: true, data: { outcome: "applied" } });
   fixture.client.cancelTableControlModeRequest.mockResolvedValue({ ok: true, data: { outcome: "cancelled" } });
   if (options.pendingNetworkFailure) fixture.client.getPendingTrackerMoves.mockRejectedValue(new Error("offline"));
-  else fixture.client.getPendingTrackerMoves.mockResolvedValue({ ok: true, data: [] });
+  else fixture.client.getPendingTrackerMoves.mockResolvedValue({ ok: true, data: options.pendingMove || options.staleReason !== undefined ? [{
+    pendingMoveId: "pending-1", entryId: "entry-1", sourceTournamentTableId: "table-1",
+    destinationTournamentTableId: "table-2", destinationSeatNumber: 2, status: options.staleReason !== undefined ? "stale" : "pending",
+    resolutionReason: options.staleReason ?? null, requestedAt: "2026-10-16T00:00:00Z",
+  }] : [] });
   fixture.client.planBreakTable.mockResolvedValue({ ok: true, data: {
     planHash: "plan-hash-1", complete: true,
     sourceTournamentTableId: "table-1", sourceTableNumber: 4, expectedRevision: 3,
@@ -92,8 +96,40 @@ function setup(options: { pendingNetworkFailure?: boolean } = {}) {
     }],
   } });
   fixture.client.breakTournamentTable.mockResolvedValue({ ok: true, data: { ok: true, break_pending: true } });
-  return render(<FloorTableMapPanelV3 actorId="owner-a" tournament={{ id: "tour-1" } as Tournament} refreshTrigger={0} />);
+  if(options.rosterError)fixture.client.getTournamentTableRoster.mockResolvedValue({ok:false,error:'TEST_ROSTER_UNAVAILABLE'});
+  else if(options.emptyRoster)fixture.client.getTournamentTableRoster.mockResolvedValue({ok:true,data:[]});
+  return render(<FloorTableMapPanelV3 actorId="owner-a" tournament={{ id: "tour-1",status:options.tournamentStatus } as Tournament} refreshTrigger={0} />);
 }
+
+it.each(['completed','cancelled'] as const)('does not invite opening a table in a %s tournament',async status=>{
+  setup({emptyRoster:true,tournamentStatus:status});
+  expect(await screen.findByText('Giải đã kết thúc hoặc bị hủy. Chỉ xem trạng thái bàn; không mở bàn, xếp chỗ hoặc redraw.')).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Mở bàn',exact:true})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Redraw',exact:true})).toBeNull();
+  expect(screen.queryByText(/Chọn “Mở bàn”/)).toBeNull();
+  expect(fixture.supabase.rpc).not.toHaveBeenCalled();
+});
+
+it('keeps opening available for a live tournament and retires it when the same tour closes',async()=>{
+  const view=setup({emptyRoster:true,tournamentStatus:'live'});
+  await screen.findByText(/^Chưa có bàn đang hoạt động/);
+  expect(screen.getByRole('button',{name:'Mở bàn',exact:true})).toBeEnabled();
+  view.rerender(<FloorTableMapPanelV3 actorId="owner-a" tournament={{id:'tour-1',status:'completed'} as Tournament} refreshTrigger={0}/>);
+  expect(screen.queryByRole('button',{name:'Mở bàn',exact:true})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Redraw',exact:true})).toBeNull();
+  expect(screen.queryByText(/Chọn “Mở bàn”/)).toBeNull();
+});
+
+it('does not describe an unavailable roster as no active tables',async()=>{
+ setup({rosterError:true});
+ expect(await screen.findByRole('alert')).toHaveTextContent('Không tải được danh sách bàn');
+ expect(screen.queryByText(/^Chưa có bàn đang hoạt động/)).toBeNull();
+});
+it('still explains a genuinely empty roster after a successful read',async()=>{
+ setup({emptyRoster:true});
+ expect(await screen.findByText(/^Chưa có bàn đang hoạt động/)).toBeInTheDocument();
+ expect(screen.queryByRole('alert')).toBeNull();
+});
 
 it("offers a manual participant on an empty canonical seat with the exact session tuple", async () => {
   setup();
@@ -133,6 +169,42 @@ async function submitMode() {
 }
 
 describe("Floor roster mobile actions", () => {
+  it.each(["apply_sqlstate_P0001", "control_mode_changed", null])("shows prior move reason %s without directing another seat change", async (reason) => {
+    const view = setup({ staleReason: reason });
+    try {
+      await openTableSheet();fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      expect(await screen.findByText("Yêu cầu chuyển trước không còn hợp lệ. Kiểm tra ghế hiện tại trước khi tạo yêu cầu mới.")).toBeInTheDocument();
+      if(reason)expect(screen.getByText(`Lý do: ${reason}`)).toBeInTheDocument();
+      expect(screen.queryByText(/Hãy tải lại và chọn ghế mới/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Hủy chuyển", exact: true })).toBeNull();
+      expect(fixture.client.cancelPendingTrackerMove).not.toHaveBeenCalled();expect(fixture.client.movePlayerSeat).not.toHaveBeenCalled();
+    } finally { view.unmount(); }
+  });
+  it("does not announce cancellation or retry when its result cannot be verified", async () => {
+    const view = setup({ pendingMove: true });
+    fixture.client.cancelPendingTrackerMove.mockResolvedValue({ ok: false, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" });
+    try {
+      await openTableSheet();fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Hủy chuyển", exact: true }));
+      await waitFor(() => expect(fixture.errorToast).toHaveBeenCalledWith("Chưa xác nhận được kết quả hủy chuyển. Hãy kiểm tra trạng thái ghế sau khi tải lại; không tự gửi lại yêu cầu."));
+      expect(fixture.successToast).not.toHaveBeenCalled();expect(fixture.client.cancelPendingTrackerMove).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); }
+  });
+  it.each([
+    ["cancelled", "Đã hủy chuyển sau ván."],
+    ["applied", "Người chơi đã chuyển ghế trước khi hủy. Không có thao tác hủy mới."],
+    ["stale", "Yêu cầu chuyển đã hết hiệu lực. Không có thao tác hủy mới."],
+  ])("reports the actual %s cancellation outcome instead of inventing a cancellation", async (status, message) => {
+    const view = setup({ pendingMove: true });
+    fixture.client.cancelPendingTrackerMove.mockResolvedValue({ ok: true, data: { ok: true, status, already_resolved: status !== "cancelled" } });
+    try {
+      await openTableSheet();fireEvent.click(screen.getByRole("button", { name: "Mở Ghế 1" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Hủy chuyển", exact: true }));
+      await waitFor(() => expect(fixture.successToast).toHaveBeenCalledWith(message));
+      expect(fixture.client.cancelPendingTrackerMove).toHaveBeenCalledExactlyOnceWith("pending-1");
+      expect(fixture.client.movePlayerSeat).not.toHaveBeenCalled();expect(fixture.client.queueTrackerMove).not.toHaveBeenCalled();
+    } finally { view.unmount(); }
+  });
   it("allows the table toolbar to wrap inside narrow Floor cards", async () => {
     const redrawEnabled = FEATURES.floorRedrawSeatLockV1;
     FEATURES.floorRedrawSeatLockV1 = true;

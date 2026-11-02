@@ -26,6 +26,8 @@ type Body = {
   expected_source_revision?: unknown;
   expected_source_chain_hash?: unknown;
   expected_outcome_hash?: unknown;
+  expected_request_hash?: unknown;
+  expected_actor_id?: unknown;
 };
 
 type RecordValue = Record<string, unknown>;
@@ -174,10 +176,17 @@ Deno.serve(async (req) => {
     const correctionReason = text(body.correction_reason);
     const edit = parseEdit(body.edit);
     const expectedEndingStacks = parseExpectedTargetEndingStacks(body.expected_target_ending_stacks);
-    if ((mode !== "preview" && mode !== "commit") || !tournamentId || !handId
-      || (mode === "commit" && idempotencyKey.length < 12)
-      || correctionReason.length < 8 || correctionReason.length > 500 || !edit || !expectedEndingStacks) {
+    const receiptMode = mode === "receipt" || mode === "resolve";
+    if ((mode !== "preview" && mode !== "commit" && !receiptMode) || !tournamentId || !handId
+      || ((mode === "commit" || receiptMode) && (idempotencyKey.length < 12 || idempotencyKey.length > 255))
+      || (!receiptMode && (correctionReason.length < 8 || correctionReason.length > 500 || !edit || !expectedEndingStacks))) {
       return publicFailure(req, "invalid_hand_correction_intent", 400);
+    }
+    if (receiptMode && (!text(body.expected_actor_id)
+      || !Number.isSafeInteger(body.expected_source_revision) || Number(body.expected_source_revision) < 1
+      || ![body.expected_source_chain_hash, body.expected_outcome_hash, body.expected_request_hash]
+        .every(value => /^[0-9a-f]{64}$/.test(text(value))))) {
+      return publicFailure(req, "invalid_receipt_intent", 400);
     }
 
     const url = Deno.env.get("SUPABASE_URL");
@@ -186,17 +195,90 @@ Deno.serve(async (req) => {
     if (!url || !anonKey || !serviceKey) throw new Error("hand_correction_runtime_not_configured");
 
     const user = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
-    const { data: authData } = await user.auth.getUser();
-    if (!authData.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
-    const { data: authorizationData, error: authorizationError } = await user.rpc("authorize_tracker_completed_hand_correction_uat_v1", {
-      p_tournament_id: tournamentId,
-      p_hand_id: handId,
-    });
-    const authorizationReceipt = isRecord(authorizationData) ? authorizationData : null;
-    if (authorizationError || authorizationReceipt?.ok !== true) {
+    let authentication: Awaited<ReturnType<typeof user.auth.getUser>>;
+    try { authentication = await user.auth.getUser(); }
+    catch { return publicFailure(req, "authentication_unavailable", 503); }
+    if (authentication.error) {
+      const unavailable = ![400, 401, 403, 422].includes(authentication.error.status ?? 0);
+      return publicFailure(req, unavailable ? "authentication_unavailable" : "unauthorized", unavailable ? 503 : 401);
+    }
+    const authData = authentication.data;
+    if (!authData?.user) return jsonResp(req, { ok: false, message: "Unauthorized" }, 401);
+    if (body.expected_actor_id !== undefined && body.expected_actor_id !== authData.user.id) {
+      return publicFailure(req, "actor_context_changed", 409);
+    }
+    if (receiptMode) {
+      if (body.expected_actor_id !== authData.user.id) return publicFailure(req, "actor_context_changed", 409);
+      try {
+        const { data, error } = await user.rpc("authorize_tournament_live_resettle", { p_tournament_id: tournamentId });
+        if (error || typeof data !== "boolean") return publicFailure(req, "authorization_unavailable", 503);
+        if (!data) return publicFailure(req, "actor_not_authorized", 403);
+      } catch { return publicFailure(req, "authorization_unavailable", 503); }
+      // A past receipt may outlive the latest-hand UAT scope. This read grants no
+      // correction capability and does not claim that its proof is still current.
+      const service = createClient(url, serviceKey);
+      try {
+        if (mode === "resolve") {
+          const { data: resolution, error } = await service.rpc("resolve_tracker_correction_intent_v1", {
+            p_hand_id: handId, p_tournament_id: tournamentId, p_actor_user_id: authData.user.id, p_idempotency_key: idempotencyKey,
+            p_expected_source_revision: body.expected_source_revision, p_expected_source_chain_hash: text(body.expected_source_chain_hash),
+            p_expected_outcome_hash: text(body.expected_outcome_hash), p_expected_request_hash: text(body.expected_request_hash),
+          });
+          if (error) return publicFailure(req, error.message === "idempotency_mismatch" ? error.message : "correction_resolution_unavailable", error.message === "idempotency_mismatch" ? 409 : 503);
+          const r = isRecord(resolution) ? resolution : null;
+          const receipt = r && isRecord(r.receipt) ? r.receipt : null;
+          const found = r?.status === "receipt_found" && receipt?.ok === true && receipt.idempotent === true
+            && Number.isSafeInteger(receipt.settlement_revision) && Number(receipt.settlement_revision) >= 1 && receipt.outcome_hash === body.expected_outcome_hash;
+          const missing = r?.receipt === null && ((r.status === "intent_obsolete" && Number(r.current_source_revision) > Number(body.expected_source_revision))
+            || (r.status === "receipt_not_found" && Number(r.current_source_revision) <= Number(body.expected_source_revision)));
+          if (!r || r.ok !== true || r.actor_id !== authData.user.id || r.tournament_id !== tournamentId || r.hand_id !== handId
+            || r.idempotency_key !== idempotencyKey || r.source_revision !== body.expected_source_revision
+            || r.source_chain_hash !== body.expected_source_chain_hash || r.outcome_hash !== body.expected_outcome_hash || r.request_hash !== body.expected_request_hash
+            || !Number.isSafeInteger(r.current_source_revision) || Number(r.current_source_revision) < 1 || (!found && !missing)) {
+            return publicFailure(req, "correction_resolution_unconfirmed", 502);
+          }
+          return jsonResp(req, { ok: true, status: r.status, actor_id: authData.user.id, tournament_id: tournamentId, hand_id: handId,
+            idempotency_key: idempotencyKey, source_revision: body.expected_source_revision, source_chain_hash: body.expected_source_chain_hash,
+            outcome_hash: body.expected_outcome_hash, request_hash: body.expected_request_hash, current_source_revision: r.current_source_revision,
+            receipt: found && receipt ? { ok: true, idempotent: true, settlement_revision: receipt.settlement_revision, outcome_hash: receipt.outcome_hash } : null });
+        }
+        const { data, error } = await service.from("tournament_settlement_outcomes")
+          .select("hand_id,actor_user_id,request_hash,outcome_hash,public_outcome,settlement_revision,correction_reason,verification_scope")
+          .eq("tournament_id", tournamentId).eq("idempotency_key", idempotencyKey).limit(2);
+        if (error) return publicFailure(req, "receipt_read_unavailable", 503);
+        if (!Array.isArray(data) || data.length > 1) return publicFailure(req, "correction_receipt_unconfirmed", 502);
+        const row = data[0];
+        if (row) {
+          const proof = isRecord(row.public_outcome) ? row.public_outcome : null;
+          if (row.hand_id !== handId || row.actor_user_id !== authData.user.id
+            || row.request_hash !== body.expected_request_hash || row.outcome_hash !== body.expected_outcome_hash
+            || proof?.sourceRevision !== body.expected_source_revision || proof?.sourceChainHash !== body.expected_source_chain_hash
+            || !row.correction_reason || row.verification_scope !== "chain") return publicFailure(req, "idempotency_mismatch", 409);
+          if (!Number.isSafeInteger(row.settlement_revision) || row.settlement_revision < 1) return publicFailure(req, "correction_receipt_unconfirmed", 502);
+        }
+        return jsonResp(req, { ok: true, status: row ? "receipt_found" : "receipt_not_found",
+          actor_id: authData.user.id, tournament_id: tournamentId, hand_id: handId, idempotency_key: idempotencyKey,
+          source_revision: body.expected_source_revision, source_chain_hash: body.expected_source_chain_hash,
+          outcome_hash: body.expected_outcome_hash, request_hash: body.expected_request_hash,
+          receipt: row ? { ok: true, idempotent: true, settlement_revision: row.settlement_revision, outcome_hash: row.outcome_hash } : null });
+      } catch { return publicFailure(req, "receipt_read_unavailable", 503); }
+    }
+    let authorizationReceipt: RecordValue | null;
+    try {
+      const { data, error } = await user.rpc("authorize_tracker_completed_hand_correction_uat_v1", {
+        p_tournament_id: tournamentId, p_hand_id: handId,
+      });
+      if (error) return publicFailure(req, "authorization_unavailable", 503);
+      authorizationReceipt = isRecord(data) ? data : null;
+    } catch { return publicFailure(req, "authorization_unavailable", 503); }
+    if (!authorizationReceipt || typeof authorizationReceipt.ok !== "boolean") {
+      return publicFailure(req, "authorization_unavailable", 503);
+    }
+    if (authorizationReceipt.ok !== true) {
       return publicFailure(req, text(authorizationReceipt?.error) || "actor_not_authorized", 403);
     }
 
+    if (!edit || !expectedEndingStacks) return publicFailure(req, "invalid_hand_correction_intent", 400);
     const service = createClient(url, serviceKey);
     const { data: hands, error: handError } = await service.from("tournament_hands")
       .select("id,tournament_id,hand_number,table_id,button_seat,community_cards,pot_size,side_pots,status,is_voided,updated_at,created_at,source_revision")
@@ -243,6 +325,11 @@ Deno.serve(async (req) => {
         }));
       assertExpectedTargetEndingStacks({ expected: expectedEndingStacks, targetPlayers, outcome: result.privateOutcome });
 
+      const requestHash = await sha256Hex(canonicalJsonV1({
+        contract: "tracker-hand-correction-commit-v1", tournamentId, handId, actorUserId: authData.user.id,
+        sourceRevision: result.privateOutcome.sourceRevision, sourceChainHash: result.privateOutcome.sourceChainHash,
+        outcomeHash: result.privateOutcome.outcomeHash, correctionReason, expectedEndingStacks, edit: result.persistedEdit,
+      }));
       const preview = {
         ok: true,
         status: "preview",
@@ -252,6 +339,7 @@ Deno.serve(async (req) => {
         source_revision: result.privateOutcome.sourceRevision,
         source_chain_hash: result.privateOutcome.sourceChainHash,
         outcome_hash: result.privateOutcome.outcomeHash,
+        request_hash: requestHash,
         public_outcome: result.publicOutcome,
         target_ending_stacks: redactedTargetEndingStacks({ targetPlayers, outcome: result.privateOutcome }),
       };
@@ -262,18 +350,6 @@ Deno.serve(async (req) => {
         return publicFailure(req, "stale_correction_preview");
       }
 
-      const requestHash = await sha256Hex(canonicalJsonV1({
-        contract: "tracker-hand-correction-commit-v1",
-        tournamentId,
-        handId,
-        actorUserId: authData.user.id,
-        sourceRevision: result.privateOutcome.sourceRevision,
-        sourceChainHash: result.privateOutcome.sourceChainHash,
-        outcomeHash: result.privateOutcome.outcomeHash,
-        correctionReason,
-        expectedEndingStacks,
-        edit: result.persistedEdit,
-      }));
       const { data: receipt, error: commitError } = await service.rpc("commit_tracker_hand_correction_outcome", {
         p_hand_id: handId,
         p_actor_user_id: authData.user.id,
@@ -290,6 +366,14 @@ Deno.serve(async (req) => {
         p_correction_reason: correctionReason,
       });
       if (commitError) return publicFailure(req, rpcFailureCode(commitError));
+      if (!isRecord(receipt) || receipt.ok !== true || receipt.correction_reason_recorded !== true
+        || receipt.outcome_hash !== result.privateOutcome.outcomeHash
+        || !Number.isSafeInteger(receipt.settlement_revision)
+        || receipt.settlement_revision !== result.privateOutcome.settlementRevision) {
+        // The transaction may already have committed. Do not retry it or claim
+        // failure/success; the original fingerprint/key can recover its receipt.
+        return publicFailure(req, "correction_commit_response_unverified", 502);
+      }
       return jsonResp(req, {
         ok: true,
         status: "verified",

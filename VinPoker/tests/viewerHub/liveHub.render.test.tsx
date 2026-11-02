@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { fireEvent, render, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -28,7 +29,9 @@ vi.mock("@/components/cashier/tournament-live/viewer-hub/useCompletedHandsFeed",
   useCompletedHandsFeed: () => ({ items: [], loading: false, hasMore: false, loadMore: vi.fn() }),
 }));
 
-vi.mock("@/integrations/supabase/client", () => ({ supabase: {} }));
+vi.mock("@/integrations/supabase/client", () => ({ supabase: {
+  from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+} }));
 
 // A MUTABLE copy of the real flags so we can flip liveEventTabs per test (ON = new
 // 5-tab layout, OFF = legacy stacked felt) while keeping every other real flag.
@@ -41,7 +44,11 @@ import { LiveHub } from "@/components/cashier/tournament-live/viewer-hub/LiveHub
 import { FEATURES } from "@/lib/featureFlags";
 
 const noop = () => {};
-const wrap = (node: ReactNode) => renderToStaticMarkup(<MemoryRouter>{node}</MemoryRouter>);
+function QueryProvider({ children }: { children: ReactNode }) {
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }));
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+const wrap = (node: ReactNode) => renderToStaticMarkup(<QueryProvider><MemoryRouter>{node}</MemoryRouter></QueryProvider>);
 
 beforeEach(() => {
   cleanup();
@@ -49,6 +56,9 @@ beforeEach(() => {
   (FEATURES as Record<string, unknown>).liveHandFeed = true;
   (FEATURES as Record<string, unknown>).liveViewerRPTShell = false;
   (FEATURES as Record<string, unknown>).liveSpotlightPosts = false;
+  // This fixture supplies legacy feeds; realtime projection composition has
+  // its own LiveHub.navigation.test.tsx coverage and canonical snapshot fixture.
+  (FEATURES as Record<string, unknown>).publicSpectatorRealtimeV2 = false;
 });
 
 describe("Viewer Event Hub — header / featured card", () => {
@@ -95,7 +105,7 @@ describe("Viewer Event Hub — header / featured card", () => {
   });
 });
 
-describe("LiveHub — event-tabs layout (liveEventTabs ON)", () => {
+describe("LiveHub — event-tabs layout (liveEventTabs ON, legacy feed)", () => {
   it("renders the 5 tabs and does NOT mount the felt at rest (default = Cập nhật)", () => {
     const html = wrap(
       <LiveHub tournamentId="t1" title="Daily Turbo" onShare={noop}>
@@ -136,11 +146,11 @@ describe("LiveHub — event-tabs layout (liveEventTabs ON)", () => {
     (FEATURES as Record<string, unknown>).liveViewerRPTShell = true;
     const onTabChange = vi.fn();
     const view = render(
-      <MemoryRouter>
+      <QueryProvider><MemoryRouter>
         <LiveHub tournamentId="t1" title="Main Event" activeTab="updates" onTabChange={onTabChange} onShare={noop}>
           <div>VIEWER</div>
         </LiveHub>
-      </MemoryRouter>,
+      </MemoryRouter></QueryProvider>,
     );
 
     expect(view.getByTestId("viewer-rpt-shell")).toBeTruthy();

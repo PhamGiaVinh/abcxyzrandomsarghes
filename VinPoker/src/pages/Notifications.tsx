@@ -39,24 +39,26 @@ export default function Notifications() {
           ) : (
             <ul className="border border-border rounded-lg overflow-hidden">
               {list.map((n) => (
-                <li
-                  key={n.id}
+                <li key={n.id} className="border-b border-border/50 last:border-b-0">
+                <button
+                  type="button"
                   onClick={async () => {
                     if (!n.is_read && !(await markRead(n.id))) return;
                     nav(routeForNotification(n));
                   }}
                   className={cn(
-                    "px-4 py-3 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/40 flex gap-3",
+                    "w-full text-left px-4 py-3 hover:bg-muted/40 flex gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                     !n.is_read && "bg-primary/5 border-l-2 border-l-primary",
                     n.is_read && "opacity-70",
                   )}
                 >
-                  <div className="text-2xl leading-none shrink-0">{ICON_FOR[n.type]}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className={cn("text-sm", !n.is_read && "font-semibold")}>{n.title}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{n.body}</div>
-                    <div className="text-[10px] text-muted-foreground mt-1">{timeAgo(n.created_at)}</div>
-                  </div>
+                  <span aria-hidden="true" className="text-2xl leading-none shrink-0">{ICON_FOR[n.type]}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className={cn("block text-sm", !n.is_read && "font-semibold")}>{n.title}</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">{n.body}</span>
+                    <span className="block text-[10px] text-muted-foreground mt-1">{timeAgo(n.created_at)}</span>
+                  </span>
+                </button>
                 </li>
               ))}
             </ul>

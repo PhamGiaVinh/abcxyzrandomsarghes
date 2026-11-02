@@ -17,18 +17,24 @@ export async function compressImage(
 
   try {
     const bitmap = await createImageBitmap(file);
-    const { width, height } = bitmap;
-    const scale = Math.min(1, maxEdge / Math.max(width, height));
-    const w = Math.max(1, Math.round(width * scale));
-    const h = Math.max(1, Math.round(height * scale));
+    let canvas: HTMLCanvasElement;
+    try {
+      const { width, height } = bitmap;
+      const scale = Math.min(1, maxEdge / Math.max(width, height));
+      const w = Math.max(1, Math.round(width * scale));
+      const h = Math.max(1, Math.round(height * scale));
 
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close?.();
+      canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return file;
+      ctx.drawImage(bitmap, 0, 0, w, h);
+    } finally {
+      // The decoded allocation belongs to this operation, including fallback
+      // paths. Release it before waiting for the asynchronous canvas encoder.
+      bitmap.close?.();
+    }
 
     const outType = file.type === "image/png" ? "image/png" : "image/jpeg";
     const blob: Blob | null = await new Promise((resolve) =>

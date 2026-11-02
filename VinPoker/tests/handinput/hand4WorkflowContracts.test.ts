@@ -20,8 +20,10 @@ describe("Hand #4 resume workflow contracts", () => {
     expect(resumeEnd).toBeGreaterThan(resumeStart);
     const resume = source.slice(resumeStart, resumeEnd);
     expect(resume).toContain('.eq("table_id", tournamentTableId ?? tableId)');
-    const submit = source.slice(source.indexOf("const handleSubmitHand ="), source.indexOf("const handleVoid ="));
-    expect(submit).toContain('.eq("table_id", tournamentTableId ?? tableId)');
+    const submit = source.slice(source.indexOf("const handleSubmitHand ="), source.indexOf("const handleResolvePendingFinish ="));
+    expect(submit).toContain("row.table_id !== logicalTableId");
+    expect(submit).toContain("row.tournament_table_id !== logicalTableId");
+    expect(submit).toContain("row.table_session_id !== sessionId");
   });
   it("distinguishes manual ending-stack edits from engine settlement", () => {
     const source = read("src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts");
@@ -37,7 +39,8 @@ describe("Hand #4 resume workflow contracts", () => {
 
   it("commits the persisted hand identity and only announces a successful resume", () => {
     const source = read("src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts");
-    expect(source).toContain('.select("id, hand_number, table_id, button_seat, community_cards")');
+    expect(source).toContain('.select("id, hand_number, table_id, button_seat, community_cards, tracker_sb_position, tracker_bb_position")');
+    expect(source).toContain('.filter("table_session_id", "eq", sessionId)');
     expect(source).toContain("setHandNumber(Number(hand.hand_number))");
     expect(source).toContain("if (!resumed) return;");
     expect(source).toContain("loadNextHandNumber: false");
@@ -52,7 +55,8 @@ describe("Hand #4 resume workflow contracts", () => {
     expect(tableLoad).toContain('.select("id, button_seat, status, is_voided")');
     expect(tableLoad).toContain('.filter("table_session_id", "eq", loadedSessionId)');
     expect(tableLoad).toContain('lastHand.status === "completed" && !lastHand.is_voided');
-    expect(tableLoad).toContain("readBlindLineage(lastHand.id)");
+    expect(tableLoad).toContain("readBlindLineageState(lastHand.id)");
+    expect(tableLoad).toContain("if (!previousRead.available)");
     expect(tableLoad).toContain("setLastBlindLineage(previousLineage)");
     expect(tableLoad).toContain("previousSbPosition: previousLineage?.previousSbPosition ?? null");
   });
@@ -79,25 +83,31 @@ describe("Hand #4 resume workflow contracts", () => {
     const manualFinish = source.slice(manualStart, source.indexOf("try {", manualStart));
 
     for (const finishPath of [voiceFinish, manualFinish]) {
-      expect(finishPath).toContain("await readBlindLineage(");
+      expect(finishPath).toContain("await readBlindLineageState(");
+      expect(finishPath).toContain("setBlindLineageUnavailable(");
       expect(finishPath).toContain("nextButtonFromBlindLineage({");
       expect(finishPath).toContain("setButtonConfirmed(Boolean(nextSuggestion))");
       expect(finishPath).not.toContain("setButtonSeat(nextButton(activeNums, buttonSeat))");
     }
   });
 
-  it("reconciles an uncertain hand submit by exact readback without retrying the writer", () => {
+  it("reconciles an uncertain hand submit by its exact persisted intent and receipt without retrying the writer", () => {
     const source = read("src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts");
-    const submit = source.slice(source.indexOf("const handleSubmitHand ="), source.indexOf("const handleVoid ="));
+    const submit = source.slice(source.indexOf("const handleSubmitHand ="), source.indexOf("const handleResolvePendingFinish ="));
 
-    expect(submit.match(/supabase\.functions\.invoke\("tournament-live-update"/g)).toHaveLength(1);
+    expect(submit.match(/action: "record_manual_hand_v1"/g)).toHaveLength(1);
+    expect(submit.match(/action: "get_manual_finish_receipt_v1"/g)).toHaveLength(1);
+    expect(submit).toContain("persistManualFinishJournal(localStorage, intentKey, intent)");
+    expect(submit).toContain("manualFinishReceiptMatches(proof, intent)");
     expect(submit).toContain('.from("tournament_hands")');
     expect(submit).toContain('.eq("id", submittedHandId)');
     expect(submit).toContain('.eq("tournament_id", tournamentId)');
-    expect(submit).toContain('.eq("table_id", tableId)');
-    expect(submit).toContain('.eq("hand_number", Number(handNumber))');
-    expect(submit).toContain("isConfirmedCompletedHandReadback(completedHand, potSize)");
-    expect(submit).toContain("await applyRecordedHand(completedHand.id, true)");
+    expect(submit).toContain("row.table_id !== logicalTableId");
+    expect(submit).toContain("row.table_session_id !== sessionId");
+    expect(submit).toContain("Number.isSafeInteger(row.source_revision)");
+    expect(submit).toContain("await applyRecordedHand(proof.hand_id, recovered, committedStacks)");
+    expect(submit.indexOf("persistManualFinishJournal(localStorage, intentKey, intent)"))
+      .toBeLessThan(submit.indexOf('action: "record_manual_hand_v1"'));
   });
 
   it("keeps cashier re-entry, registration VOID, and Tracker flags fail-closed", () => {

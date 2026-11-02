@@ -64,7 +64,7 @@ export default function DealerSwingSummaryStrip({
       <div className="rounded-xl border border-primary/20 bg-gradient-card shadow-card px-4 py-3.5">
         <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
           {/* Coverage block */}
-          <div className="min-w-[260px] flex-1">
+          <div className="min-w-0 basis-full flex-1 sm:min-w-[260px] sm:basis-0">
             <div className="mb-1.5 flex items-center justify-between gap-3">
               <span className="font-display text-[11px] uppercase tracking-wider text-muted-foreground">Sức khoẻ sàn</span>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">
@@ -86,9 +86,9 @@ export default function DealerSwingSummaryStrip({
           </div>
 
           {/* Stat readouts */}
-          <div className="flex items-stretch">
+          <div role="group" aria-label="Chỉ số sàn" className="grid w-full min-w-0 grid-cols-4 gap-y-3 sm:flex sm:w-auto">
             {readouts.map((r, i) => (
-              <div key={r.label} className={cn("px-3.5", i > 0 && "border-l border-border/40")}>
+              <div key={r.label} className={cn("min-w-0 px-2 sm:px-3.5", i > 0 && "border-l border-border/40")}>
                 <div className={cn("text-2xl font-bold leading-none tabular-nums", r.color)}>{r.value}</div>
                 <div className="mt-1.5 text-[10px] leading-tight text-muted-foreground">{r.label}</div>
               </div>

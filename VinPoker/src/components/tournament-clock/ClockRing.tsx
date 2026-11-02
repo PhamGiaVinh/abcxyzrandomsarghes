@@ -13,10 +13,12 @@ export function ClockRing({
   levelLabel,
   secondsLeft,
   nextBreakSecondsLeft,
+  terminal = false,
 }: {
   levelLabel: string;
   secondsLeft: number;
   nextBreakSecondsLeft: number | null;
+  terminal?: boolean;
 }) {
   return (
     <div className="vpc-ring">
@@ -33,7 +35,7 @@ export function ClockRing({
             whiteSpace: "nowrap",
           }}
         >
-          {formatClock(secondsLeft)}
+          {terminal ? '--:--' : formatClock(secondsLeft)}
         </div>
         <div
           className="flex items-center justify-center gap-3"
@@ -48,7 +50,7 @@ export function ClockRing({
             style={{ display: "inline-block", height: 1, width: "8vmin", background: "linear-gradient(90deg, var(--clock-green), transparent)" }}
           />
         </div>
-        <div
+        {!terminal && <div
           className="vpc-ring-break"
           style={{ fontSize: "clamp(15px, 2vmin, 32px)", marginTop: "1.6vmin" }}
         >
@@ -56,7 +58,7 @@ export function ClockRing({
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
             {nextBreakSecondsLeft != null ? formatClock(nextBreakSecondsLeft) : "—"}
           </span>
-        </div>
+        </div>}
       </div>
     </div>
   );

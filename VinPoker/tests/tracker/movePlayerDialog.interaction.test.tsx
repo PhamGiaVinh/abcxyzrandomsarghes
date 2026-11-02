@@ -25,6 +25,40 @@ const moveAck = (requestId: string) => ({ ok: true, entry_id: "entry-1", from_to
   player_name: "TEST Player", reason: "Cân bàn", request_id: requestId });
 
 describe("move dialog exact-session read model", () => {
+  it.each([null,{name:{bad:true},start_time:null},{name:' ',start_time:null},{name:'TEST',start_time:'invalid-date'}])('blocks an unverified tournament metadata response: %j',async(data)=>{
+    fixture.client.from.mockImplementation(()=>{const q={select:()=>q,eq:()=>q,abortSignal:()=>q,single:()=>Promise.resolve({data,error:null})};return q;});
+    const view=render(<MovePlayerDialog {...dialogProps()}/>);
+    try{
+      await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent(/Không xác minh được/));
+      expect(screen.getByRole('button',{name:'Tiếp tục'})).toBeDisabled();
+      expect(fixture.move).not.toHaveBeenCalled();expect(fixture.legacyMove).not.toHaveBeenCalled();
+    }finally{view.unmount();}
+  });
+  it.each(['roster','reservations','metadata'])('bounds a hanging %s read and permits explicit recovery',async(part)=>{
+    vi.useFakeTimers();
+    let resolveLate!:(value:unknown)=>void;
+    const pending=new Promise(resolve=>{resolveLate=resolve;});
+    const defaultFrom=fixture.client.from.getMockImplementation();
+    if(part==='roster')fixture.roster.mockReturnValueOnce(pending);
+    else if(part==='reservations')fixture.pending.mockReturnValueOnce(pending);
+    else fixture.client.from.mockImplementationOnce(()=>{const q={select:()=>q,eq:()=>q,abortSignal:()=>q,single:()=>pending};return q;});
+    const view=render(<MovePlayerDialog {...dialogProps()}/>);
+    try{
+      await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});
+      expect(screen.getByRole('alert')).toHaveTextContent(/Không xác minh được phiên bàn/);
+      expect(fixture.move).not.toHaveBeenCalled();expect(fixture.legacyMove).not.toHaveBeenCalled();
+      await act(async()=>{resolveLate(part==='roster'?{ok:true,data:[{...sourceTable(),tableName:'Late obsolete table'},destinationTable()]}:part==='reservations'?{ok:true,data:[]}:{data:{name:'Late metadata',start_time:null},error:null});});
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByText('Late obsolete table')).not.toBeInTheDocument();
+      if(defaultFrom)fixture.client.from.mockImplementation(defaultFrom);
+      fireEvent.click(screen.getByRole('button',{name:'Tải lại phiên bàn'}));
+      await act(async()=>{});
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button',{name:'Tiếp tục'})).not.toBeDisabled();
+      expect(fixture.roster).toHaveBeenCalledTimes(2);
+      expect(fixture.move).not.toHaveBeenCalled();
+    }finally{view.unmount();vi.useRealTimers();}
+  });
   beforeEach(() => {
     vi.resetAllMocks();
     sessionStorage.clear();
@@ -34,7 +68,7 @@ describe("move dialog exact-session read model", () => {
     fixture.roster.mockResolvedValue({ ok: true, data: [sourceTable(), destinationTable()] });
     fixture.client.rpc.mockResolvedValue({ data: null, error: null });
     fixture.client.from.mockImplementation(() => {
-      const query = { select: () => query, eq: () => query,
+      const query = { select: () => query, eq: () => query, abortSignal: () => query,
         single: () => Promise.resolve({ data: { name: "TEST", start_time: null }, error: null }) };
       return query;
     });
@@ -415,7 +449,7 @@ describe("move dialog exact-session read model", () => {
           status: "active", table_id: null, game_table_id: "physical-2", table_session_id: "session-2" }], error: null }
         : name === "tournament_seats" ? { data: [], error: null }
           : { data: { name: "TEST", start_time: null }, error: null };
-      const query = { select: () => query, eq: () => query, single: () => Promise.resolve(result),
+      const query = { select: () => query, eq: () => query, abortSignal: () => query, single: () => Promise.resolve(result),
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve) };
       return query;
     });

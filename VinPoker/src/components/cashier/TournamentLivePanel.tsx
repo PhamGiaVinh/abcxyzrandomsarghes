@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { tournamentStatusLabel as statusLabel } from "@/lib/tournament/statusPresentation";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { useTournamentParticipationSummary } from "@/hooks/useTournamentParticipationSummary";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -106,7 +108,7 @@ const MODE_TABS: Record<string, string[]> = {
 
 export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onSelectedTournamentChange }: { clubIds: string[]; clubs: { id: string; name: string }[]; mode?: "full" | "tracker" | "floor"; onSelectedTournamentChange?: (id: string | null) => void }) {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [tournaments, setTournaments] = useState<LiveTournament[] | null>(null);
   const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
   useEffect(() => { onSelectedTournamentChange?.(selectedTournamentId); }, [onSelectedTournamentChange, selectedTournamentId]);
@@ -117,6 +119,10 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [participationRefresh, setParticipationRefresh] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const credentialEpoch = sessionReadEpoch(session);
+  const listReadScope = JSON.stringify([user?.id, credentialEpoch, [...clubIds].sort()]);
+  const listRead = useRef({ sequence: 0, controller: null as AbortController | null, scope: listReadScope }).current;
+  listRead.scope = listReadScope;
   const summaryContext = selectedTournament?.id === selectedTournamentId
     && clubIds.includes(selectedTournament.club_id) ? selectedTournament : null;
   const participationScope = JSON.stringify([user?.id, summaryContext?.club_id, selectedTournamentId]);
@@ -132,26 +138,45 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
   }, [clubs]);
 
   const loadTournaments = useCallback(async () => {
+    const sequence = ++listRead.sequence;
+    listRead.controller?.abort();
+    const controller = new AbortController();
+    listRead.controller = controller;
+    const current = () => listRead.sequence === sequence && listRead.scope === listReadScope;
     setLoading(true);
     setRefreshTrigger((previous) => previous + 1);
+    try {
     let q = supabase
       .from("tournaments")
       .select("*")
       .is("deleted_at", null)
-      .in("status", ["upcoming", "registering", "drawing", "active", "live", "break", "final_table"])
+      // Floor also opens completed tours from its landing page to view results.
+      .in("status", ["upcoming", "registering", "drawing", "active", "live", "break", "final_table", ...(mode === "floor" ? ["completed"] : [])])
       .order("created_at", { ascending: false });
     if (clubIds.length) q = q.in("club_id", clubIds);
-    const { data, error } = await q;
-    if (error) {
-      toast.error(error.message);
-      setListError(error.message);
-      setLoading(false);
-      return;
+    const { data, error } = await observeTrackerContextRead(q.abortSignal(controller.signal));
+    if (!current()) return;
+    if (error) throw error;
+    if (!Array.isArray(data) || data.some(row => !row || typeof row.id !== 'string'
+      || typeof row.name !== 'string' || typeof row.club_id !== 'string'
+      || (clubIds.length > 0 && !clubIds.includes(row.club_id)))) {
+      throw new Error('Dữ liệu danh sách giải không hợp lệ. Vui lòng thử lại.');
     }
     setListError(null);
-    setTournaments((data as unknown as LiveTournament[]) ?? []);
-    setLoading(false);
-  }, [clubIds]);
+    setTournaments(data as unknown as LiveTournament[]);
+    } catch (failure) {
+      if (!current()) return;
+      const message = failure instanceof Error ? failure.message
+        : (failure as { message?: string })?.message ?? 'Không tải được danh sách giải';
+      const visibleMessage = message === 'tracker_context_read_timeout'
+        ? 'Hết thời gian tải danh sách giải. Vui lòng thử lại.' : message;
+      toast.error(visibleMessage);
+      setListError(visibleMessage);
+    } finally {
+      controller.abort();
+      if (current()) setLoading(false);
+    }
+  }, [clubIds, listReadScope, listRead, mode]);
 
   const selectTournament = useCallback((id: string) => {
     setSelectedTournamentId(id);
@@ -162,7 +187,10 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
     }
   }, [loadTournaments, tournaments]);
 
-  useEffect(() => { loadTournaments(); }, [loadTournaments]);
+  useEffect(() => {
+    void loadTournaments();
+    return () => { listRead.sequence++; listRead.controller?.abort(); };
+  }, [loadTournaments, listRead]);
 
   useEffect(() => {
     if (!selectedTournamentId) {
@@ -339,6 +367,11 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
 
   return (
     <div className="space-y-4">
+      {selectedTournament&&listError&&<Card role="alert" className="space-y-2 p-4 text-sm">
+        <p className="font-semibold">Danh sách giải chưa được cập nhật</p>
+        <p className="text-muted-foreground">Tên và trạng thái giải đang dùng lần tải thành công trước. Tải lại để xác minh giải đã chọn.</p>
+        <Button size="sm" variant="outline" disabled={loading} onClick={()=>void loadTournaments()}>Tải lại danh sách giải</Button>
+      </Card>}
       <Card className="p-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
@@ -371,7 +404,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
             </Button>
             {FEATURES.closeReport && selectedTournament && (
               <Button size="sm" onClick={() => setCloseReportOpen(true)}>
-                Chốt giải
+                {selectedTournament.status === "completed" ? "Xem báo cáo chốt giải" : "Chốt giải"}
               </Button>
             )}
           </div>
@@ -409,7 +442,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
       )}
 
       {selectedTournament && mode === "floor" && FEATURES.trackerVoiceInput && (
-        <TrackerFloorAlertLane tournamentId={selectedTournament.id} />
+        <TrackerFloorAlertLane key={JSON.stringify([user?.id, sessionReadEpoch(session), selectedTournament.id])} tournamentId={selectedTournament.id} actorId={user?.id} />
       )}
 
       {selectedTournament ? (
@@ -429,6 +462,7 @@ export default function TournamentLivePanel({ clubIds, clubs, mode = "full", onS
                   tournamentId={selectedTournament.id}
                   tournamentName={selectedTournament.name}
                   tournamentDate={(selectedTournament as Tournament & { start_time?: string | null }).start_time ?? null}
+                  tournamentStatus={selectedTournament.status}
                   refreshTrigger={refreshTrigger}
                 />
               </>

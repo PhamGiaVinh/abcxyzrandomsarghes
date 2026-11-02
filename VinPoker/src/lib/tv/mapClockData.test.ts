@@ -34,6 +34,17 @@ const BASE: TvData = {
 };
 
 describe("mapTvDataToClock — owner P0 data-correctness rules", () => {
+  it.each([0,null])('preserves canonical pool %s rather than a legacy GTD/estimate fallback',prizePool=>{
+    expect(mapTvDataToClock({...BASE,prizePool,prizePoolIsCanonical:true,guarantee:100000000}).prizePool).toBe(prizePool===0?'0':'—');
+  });
+  it.each(['finished','cancelled'] as const)('does not advertise a live countdown or next level after %s',status=>{
+    const value=mapTvDataToClock({...BASE,status});
+    expect(value.terminalStatus).toBe(status);
+    expect(value.levelLabel).toBe(status==='finished'?'Finished':'Cancelled');
+    expect(value.nextBreakSecondsLeft).toBeNull();
+    expect(value.nextLevel).toBe('—');
+    expect(value.prizePool).toBe(mapTvDataToClock(BASE).prizePool);
+  });
   it("preserves the canonical chip total instead of reconstructing a rounded average", () => {
     const canonical = { ...BASE, playersRemaining: 3, averageStack: 33333, totalChips: 100000 };
     expect(mapTvDataToClock(canonical).totalChips).toBe("100.000");
@@ -65,8 +76,8 @@ describe("mapTvDataToClock — owner P0 data-correctness rules", () => {
     // 90 × 30,000 = 2,700,000
     expect(mapTvDataToClock({ ...BASE, averageStack: 0, playersRemaining: 0 }).totalChips).toContain("2.700.000");
   });
-  it("players P0-3: falls back to entries when remaining is 0", () => {
-    expect(mapTvDataToClock({ ...BASE, playersRemaining: 0 }).players).toBe(90);
+  it("preserves canonical zero remaining players without reviving historical entries", () => {
+    expect(mapTvDataToClock({ ...BASE, playersRemaining: 0, totalChips: 0 }).players).toBe(0);
   });
   it("nextBreak P0-4: passes null through (component shows —, never 00:00)", () => {
     expect(mapTvDataToClock({ ...BASE, nextBreakSeconds: null }).nextBreakSecondsLeft).toBeNull();

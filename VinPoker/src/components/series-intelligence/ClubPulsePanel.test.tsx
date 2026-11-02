@@ -14,8 +14,8 @@ vi.mock("@/lib/series-intelligence/seriesClubLivePulseRpc", () => ({ getSeriesCl
 vi.mock("@/hooks/useOperatorClubs", () => ({
   useOperatorClubs: () => ({
     loading: false,
-    clubs: [{ id: "legacy-hsop", name: "VinPoker Test" }],
-    scope: [{ club_id: "legacy-hsop", can_owner: true, can_cashier: false, can_floor: false }],
+    clubs: [{ id: "11111111-1111-4111-8111-111111111111", name: "VinPoker Test" }],
+    scope: [{ club_id: "11111111-1111-4111-8111-111111111111", can_owner: true, can_cashier: false, can_floor: false }],
   }),
 }));
 

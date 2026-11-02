@@ -97,7 +97,7 @@ describe("LiveFelt compact (PR-A1, viewer-only)", () => {
     );
     expect(full).toContain("felt-status-bar");
     expect(full).toContain("100/200");
-    expect(full).toContain("A 25");
+    expect(full).toContain("Ante 25");
     expect(full).toContain("Player"); // to-act display name (seat b)
     expect(full).toContain("1.5k"); // pot chips
     expect(full).toContain("7.5 BB"); // pot in BB

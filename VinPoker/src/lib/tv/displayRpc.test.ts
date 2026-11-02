@@ -5,6 +5,10 @@ vi.mock("@/lib/featureFlags", () => ({ FEATURES: state.flags }));
 import { rpcGetTvDisplayState } from "./displayRpc";
 beforeEach(() => { vi.clearAllMocks(); state.rpc.mockResolvedValue({ data: { status: "invalid" }, error: null }); });
 describe("paired TV participation RPC", () => {
+  it.each([null, [], {}, {status:'unknown'}, {status:7}])("keeps malformed envelopes retryable: %j", async (data) => {
+    state.rpc.mockResolvedValueOnce({data,error:null});
+    expect(await rpcGetTvDisplayState('test-only-token')).toEqual({data:null,error:'invalid_tv_display_response'});
+  });
   it("returns malformed assigned aggregates as a read error, not success", async () => {
     state.rpc.mockResolvedValue({ data: { status: "paired", tournament: { id: "tour", average_stack: 20000 } }, error: null });
     const result = await rpcGetTvDisplayState("test-only-token");

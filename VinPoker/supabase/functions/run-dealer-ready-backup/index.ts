@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { authorizeSwingWorkerRequest, isUuid } from "../_shared/internal-trigger-auth.ts";
 import { getDealerOperationalTables } from "../_shared/dealerOperationalTables.ts";
+import { getReadyRestThreshold } from "../_shared/readySwingDuration.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -179,7 +180,11 @@ Deno.serve(async (req) => {
               continue;
             }
 
-            const restDeficit = Math.max(0, (verifyResult.rest_threshold_min ?? 15) - (verifyResult.rest_min ?? 0));
+            if (verifyResult.attendance_id !== dealer.id || !Number.isSafeInteger(verifyResult.rest_min) || verifyResult.rest_min < 0) {
+              errors.push(`verify ${dealer.id}: invalid_rest_result`);
+              consecutiveFailures++;
+              continue;
+            }
 
             const { data: overdueTable, error: overdueErr } = await admin
               .from("dealer_assignments")
@@ -212,6 +217,22 @@ Deno.serve(async (req) => {
               consecutiveFailures++;
               continue;
             }
+
+            const exactTable=operationalTables.find(table=>table.id===overdueTable.table_id
+              && table.table_session_id===overdueTable.table_session_id);
+            if (!exactTable) {
+              errors.push(`swing ${dealer.id}: table_session_binding_required`);
+              consecutiveFailures++;
+              continue;
+            }
+            let restThreshold: number;
+            try { restThreshold=await getReadyRestThreshold(admin,cid,exactTable); }
+            catch {
+              errors.push(`swing ${dealer.id}: ready_rest_policy_unverified`);
+              consecutiveFailures++;
+              continue;
+            }
+            const restDeficit=Math.max(0,restThreshold-verifyResult.rest_min);
 
             const { data: swingResult, error: swingErr } = await admin.rpc("worker_perform_swing", {
               p_assignment_id: overdueTable.id,

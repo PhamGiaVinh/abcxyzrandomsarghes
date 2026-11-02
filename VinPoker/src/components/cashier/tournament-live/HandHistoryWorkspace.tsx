@@ -9,8 +9,9 @@ import { toast } from "sonner";
 import { FEATURES, isTrackerAtomicResettleAvailable } from "@/lib/featureFlags";
 import { HandEditPanel } from "./HandEditPanel";
 import { FloorHandActionReview } from "./FloorHandActionReview";
-import { HistoricalSettlementDisplayControl } from "./HistoricalSettlementDisplayControl";
-import { HistoricalSettlementBatchControl } from "./HistoricalSettlementBatchControl";
+import { HistoricalSettlementDisplayWorkspace as HistoricalSettlementDisplayControl } from "./HistoricalSettlementDisplayWorkspace";
+import { HistoricalSettlementBatchWorkspace as HistoricalSettlementBatchControl } from "./HistoricalSettlementBatchWorkspace";
+import { useCorrectionCommitRecovery } from "./useCorrectionCommitRecovery";
 import type { HistoricalSettlementBatchCandidate } from "@/lib/tracker-poker/historicalSettlementBatch";
 import { buildEditCompletedHandArgs, type HandEditPatch } from "./handEditDiff";
 import {
@@ -18,6 +19,7 @@ import {
   handPlayersHasSnapshotForClient,
 } from "@/lib/tracker-poker/handPlayerNamesClient";
 import { createHandHistoryLoadGuard } from "./handHistoryLoadGuard";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   runClientResettle,
   buildServerSettlementEdit,
@@ -45,14 +47,26 @@ function asPagedQuery<T>(query: unknown): PagedQuery<T> {
 
 async function pageAll<T>(
   makeQuery: (from: number, to: number) => PagedQuery<T>,
+  rowKey?: (row: T) => string | null | undefined,
 ): Promise<{ data: T[]; error: PagedError | null }> {
   const PAGE = 1000;
   let from = 0;
   const acc: T[] = [];
+  const seen = new Set<string>();
   for (;;) {
     const { data, error } = await makeQuery(from, from + PAGE - 1);
     if (error) return { data: [], error };
-    const rows = data || [];
+    if (!Array.isArray(data)) return { data: [], error: { message: "Dữ liệu trang lịch sử không hợp lệ. Hãy thử lại." } };
+    const rows = data;
+    if (rowKey) {
+      for (const row of rows) {
+        const key = rowKey(row);
+        if (typeof key !== "string" || !key || seen.has(key)) {
+          return { data: [], error: { message: "Dữ liệu trang lịch sử bị trùng hoặc thiếu định danh. Hãy thử lại." } };
+        }
+        seen.add(key);
+      }
+    }
     acc.push(...rows);
     if (rows.length < PAGE) break;
     from += PAGE;
@@ -149,6 +163,7 @@ export type HandHistorySelection = {
 };
 
 export type HandHistoryPanelProps = {
+  actorId?: string;
   tournamentId: string;
   initialTableId?: string | null;
   initialHandId?: string | null;
@@ -162,6 +177,7 @@ type TrackerTableOption = {
   id: string;
   physicalId: string | null;
   name: string;
+  sessionId?: string | null;
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -172,6 +188,29 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+async function correctionPreviewErrorMessage(data: unknown, error: unknown): Promise<string> {
+  let code = textValue(record(data)?.code);
+  const context = record(error)?.context as Response | undefined;
+  if (!code && typeof context?.clone === "function") {
+    try {
+      const payload = await observeTrackerContextRead(context.clone().json());
+      code = textValue(record(payload)?.code);
+    } catch (failure) {
+      if (failure instanceof Error && failure.message === "tracker_context_read_timeout") throw failure;
+      // Proxy/non-JSON bodies are not business codes and must not leak into UI.
+    }
+  }
+  const messages: Record<string, string> = {
+    bust_state_change_requires_void: "Bản sửa làm thay đổi trạng thái bị loại/còn chơi. Không có thay đổi nào được lưu; hãy dùng Hoàn tác ván (void) rồi nhập lại theo quy trình.",
+    reentry_boundary: "Bản sửa đi qua lượt re-entry. Chưa có thay đổi nào được lưu; cần đối chiếu đúng lượt vào trước khi sửa.",
+    later_hand_scope_not_supported: "Đã có hand hoàn tất mới hơn trong giải. Chưa có thay đổi nào được lưu; đường sửa này chỉ hỗ trợ hand hoàn tất mới nhất.",
+    stale_source_revision: "Hand vừa thay đổi. Chưa có thay đổi nào được lưu; hãy tải lại rồi xem trước lại.",
+    expected_target_stack_mismatch: "Stack Floor chưa khớp kết quả máy chủ. Chưa có thay đổi nào được lưu; hãy đối chiếu lại bài, action và stack cuối.",
+  };
+  return code && Object.prototype.hasOwnProperty.call(messages, code) ? messages[code]
+    : "Máy chủ chưa chấp nhận bản xem trước. Chưa có thay đổi nào được lưu; hãy kiểm tra dữ liệu và kết nối rồi thử lại.";
 }
 
 const STREET_ORDER = ["preflop", "flop", "turn", "river", "showdown"];
@@ -204,6 +243,7 @@ function formatActionLabel(a: HandRecord["actions"][0]): string {
 }
 
 export function HandHistoryWorkspace({
+  actorId,
   tournamentId,
   initialTableId = null,
   initialHandId = null,
@@ -229,8 +269,13 @@ export function HandHistoryWorkspace({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string>(initialTableId || "all");
   const [tables, setTables] = useState<TrackerTableOption[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [tablesError, setTablesError] = useState<string | null>(null);
+  const [tablesReload, setTablesReload] = useState(0);
   const loadGuardRef = useRef<ReturnType<typeof createHandHistoryLoadGuard> | null>(null);
   if (!loadGuardRef.current) loadGuardRef.current = createHandHistoryLoadGuard();
+  const tableLoadGuardRef = useRef<ReturnType<typeof createHandHistoryLoadGuard> | null>(null);
+  if (!tableLoadGuardRef.current) tableLoadGuardRef.current = createHandHistoryLoadGuard();
   // Đợt G3 — resettle-forward (chips). resettleSupported degrades to false on a 42883
   // (apply RPC not applied) so the flow shows "chưa áp dụng" instead of crashing.
   const [resettleSupported, setResettleSupported] = useState(true);
@@ -251,10 +296,35 @@ export function HandHistoryWorkspace({
       sourceRevision: number;
       sourceChainHash: string;
       outcomeHash: string;
+      requestHash: string;
+      actorId: string;
       scope: string;
     };
     idempotencyKey: string;
   } | null>(null);
+  const previewGenerationRef = useRef(0);
+  const invalidateResettlePreview = useCallback(() => {
+    previewGenerationRef.current++;
+    setResettleBusy(false);
+    setResettleView(null);
+  }, []);
+  const correctionRecovery = useCorrectionCommitRecovery(tournamentId, selectedHandId, (status) => {
+    setResettleView(null); setEditMode(false); void loadHands();
+    if (status === "found") toast.success("Đã tìm thấy receipt sửa hand. Đang tải lại trạng thái hiện tại.");
+    else toast.info("Máy chủ xác nhận yêu cầu cũ đã lỗi thời và không commit. Hãy xem trước lại dữ liệu mới.");
+  }, actorId);
+  const historyActorId = correctionRecovery.actorId;
+  const previewScope = JSON.stringify([tournamentId, selectedTableId, selectedHandId, historyActorId]);
+  const previewScopeRef = useRef(previewScope);
+  if (previewScopeRef.current !== previewScope) {
+    previewScopeRef.current = previewScope;
+    previewGenerationRef.current++;
+  }
+  useEffect(() => {
+    setEditMode(false);
+    invalidateResettlePreview();
+    return () => { previewGenerationRef.current++; };
+  }, [previewScope, invalidateResettlePreview]);
 
   useEffect(() => {
     setSelectedTableId(initialTableId || "all");
@@ -267,203 +337,305 @@ export function HandHistoryWorkspace({
   useEffect(() => {
     if (!tournamentId) return;
     let cancelled = false;
+    const request = tableLoadGuardRef.current!.begin(() => {
+      cancelled = true;
+      setTablesError("Hết thời gian tải danh sách bàn. Hãy thử lại.");
+      setTablesLoading(false);
+    });
+    setTables((current) => current.length ? [] : current);
+    setTablesLoading(true);
+    setTablesError(null);
     void (async () => {
-      const { data: v2Data, error: v2Error } = await supabase.rpc(
-        "list_tracker_tables_v2" as never,
-        { p_tournament_id: tournamentId } as never,
-      );
-      if (cancelled) return;
-      const v2 = record(v2Data as unknown);
-      if (!v2Error && v2?.ok === true && Array.isArray(v2.tables)) {
-        const options = v2.tables.flatMap((item): TrackerTableOption[] => {
+      try {
+        const { data: v2Data, error: v2Error } = await supabase.rpc(
+          "list_tracker_history_tables_v1" as never,
+          { p_tournament_id: tournamentId } as never,
+        );
+        if (cancelled) return;
+        const v2 = record(v2Data as unknown);
+        if (!v2Error && v2?.ok === true && Array.isArray(v2.tables)) {
+          const seen=new Set<string>();
+          const options = v2.tables.map((item): TrackerTableOption => {
+            const row = record(item);
+            const id = textValue(row?.tournament_table_id);
+            if (!id||seen.has(id)||!textValue(row?.physical_table_id)) throw new Error('Dữ liệu định danh bàn không hợp lệ. Hãy tải lại; không suy ra danh sách trống.');
+            seen.add(id);
+            const sessionId=textValue(row?.table_session_id);
+            const name=textValue(row?.table_name)??'Bàn chưa đặt tên';
+            return {
+              id,
+              physicalId: textValue(row?.physical_table_id),
+              sessionId,
+              name: `${name}${row?.table_status==='closed'?' · Đã đóng':''}${sessionId?` · ${sessionId.slice(0,8)}`:''}`,
+            };
+          });
+          setTables(options);
+          setSelectedTableId((current) => {
+            if(options.some(table=>table.id===current))return current;
+            const aliases=options.filter(table=>table.physicalId===current);
+            return aliases.length===1?aliases[0].id:current;
+          });
+          return;
+        }
+
+        // Compatibility only: a transport/authority failure is not an absent RPC.
+        if (!v2Error || !["PGRST202", "42883"].includes(v2Error.code)) {
+          throw new Error(v2Error?.message ?? textValue(v2?.error) ?? "Dữ liệu danh sách bàn không hợp lệ");
+        }
+        const { data: legacyData, error: legacyError } = await supabase.rpc("get_tournament_tables", { p_tournament_id: tournamentId });
+        if (cancelled) return;
+        if (legacyError || !Array.isArray(legacyData)) {
+          throw new Error(legacyError?.message ?? "Dữ liệu danh sách bàn không hợp lệ");
+        }
+        const seen=new Set<string>();
+        const options = legacyData.map((item): TrackerTableOption => {
           const row = record(item);
-          const id = textValue(row?.tournament_table_id);
-          if (!id) return [];
-          return [{
-            id,
-            physicalId: textValue(row?.physical_table_id),
-            name: textValue(row?.table_name) ?? "Bàn chưa đặt tên",
-          }];
+          const physicalId = textValue(row?.table_id);
+          if (!physicalId||seen.has(physicalId)) throw new Error('Dữ liệu định danh bàn không hợp lệ. Hãy tải lại; không suy ra danh sách trống.');
+          seen.add(physicalId);
+          return { id: physicalId, physicalId, name: textValue(row?.table_name) ?? "Bàn chưa đặt tên" };
         });
         setTables(options);
-        setSelectedTableId((current) => options.find((table) => table.physicalId === current)?.id ?? current);
-        return;
+      } catch (error) {
+        if (!cancelled) {
+          setTablesError(error instanceof Error ? error.message : "Không tải được danh sách bàn");
+        }
+      } finally {
+        if (!cancelled) {
+          tableLoadGuardRef.current!.finish(request);
+          setTablesLoading(false);
+        }
       }
-
-      // Environments without Unified Ops V2 still have the legacy read-only table RPC.
-      const { data: legacyData } = await supabase.rpc("get_tournament_tables", { p_tournament_id: tournamentId });
-      if (cancelled) return;
-      const options = (Array.isArray(legacyData) ? legacyData : []).flatMap((item): TrackerTableOption[] => {
-        const row = record(item);
-        const physicalId = textValue(row?.table_id);
-        if (!physicalId) return [];
-        return [{ id: physicalId, physicalId, name: textValue(row?.table_name) ?? "Bàn chưa đặt tên" }];
-      });
-      setTables(options);
     })();
-    return () => { cancelled = true; };
-  }, [supabase, tournamentId]);
+    return () => { cancelled = true; tableLoadGuardRef.current?.invalidate(); };
+  }, [supabase, tablesReload, tournamentId, historyActorId]);
 
+  // Labels/array identity are not a new archive scope. Only actual physical /
+  // logical filter IDs should retire a loaded hand and its unsaved editor.
+  const physicalAliases=tables.filter(table=>table.physicalId===selectedTableId);
+  const selectedTable = tables.find(table=>table.id===selectedTableId)??(physicalAliases.length===1?physicalAliases[0]:undefined);
+  const tableReadKey = JSON.stringify(selectedTableId === "all" ? []
+    : [...new Set([selectedTableId, selectedTable?.id, selectedTable?.physicalId].filter((id): id is string => !!id))]);
+  const archiveSessionId=selectedTableId==='all'?null:selectedTable?.sessionId??null;
+  const ambiguousPhysical=selectedTableId!=='all'&&!selectedTable&&physicalAliases.length>1;
   const loadHands = useCallback(async () => {
     if (!tournamentId) return;
-    const request = loadGuardRef.current!.begin();
+    const request = loadGuardRef.current!.begin(() => {
+      setLoadError("Hết thời gian tải lịch sử hand. Hãy thử lại.");
+      setHands([]);
+      setCompletionStatusByHand(new Map());
+      setCompletionStatusError(false);
+      setLoading(false);
+    });
     const isCurrentLoad = () => loadGuardRef.current!.isCurrent(request);
+    // Never present the prior scope's hand/editor as the newly requested archive.
+    // A refresh also invalidates previews built from the previous source read.
+    setHands([]);
+    setEditMode(false);
+    invalidateResettlePreview();
     setLoading(true);
     setLoadError(null);
+    setCompletionStatusByHand(new Map());
+    setCompletionStatusError(false);
 
-    const { data: handRows, error } = await pageAll<HandQueryRow>((from, to) => {
-      let query = supabase
-        .from("tournament_hands")
-        .select("id, hand_number, hand_time, community_cards, pot_size, status, is_voided, created_at, table_id, button_seat")
-        .eq("tournament_id", tournamentId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(from, to);
-      if (selectedTableId !== "all") {
-        const selectedTable = tables.find((table) => table.id === selectedTableId || table.physicalId === selectedTableId);
-        const tableIds = [...new Set([selectedTableId, selectedTable?.id, selectedTable?.physicalId].filter((id): id is string => !!id))];
-        query = tableIds.length === 1 ? query.eq("table_id", tableIds[0]) : query.in("table_id", tableIds);
-      }
-      return asPagedQuery<HandQueryRow>(query);
-    });
-    if (!isCurrentLoad()) return;
-    if (error || !handRows) {
-      setLoadError(error?.message ?? "Không tải được dữ liệu");
-      setHands([]);
-      setLoading(false);
-      return;
-    }
-
-    const handIds = handRows.map((hand) => hand.id);
-    if (handIds.length === 0) {
-      setHands([]);
-      setLoading(false);
-      return;
-    }
-
-    // E1: prefer the per-hand snapshot (hand_players.player_name) when the migration is
-    // applied; the column is selected only if present (feature-detect). Fall back to the
-    // tournament_seats roster only for old rows the snapshot didn't capture.
-    const snap = await handPlayersHasSnapshotForClient(supabase);
-    if (!isCurrentLoad()) return;
-    const baseHpCols = "id, hand_id, player_id, entry_number, seat_number, starting_stack, ending_stack, is_eliminated, hole_cards";
-    const playerRows: HandPlayerQueryRow[] = [];
-    const actionRows: HandActionQueryRow[] = [];
-    for (const handIdBatch of chunkArray(handIds, 80)) {
-      const [playersRes, actionsRes] = await Promise.all([
-        pageAll<HandPlayerQueryRow>((from, to) => asPagedQuery<HandPlayerQueryRow>(supabase
-          .from("hand_players")
-          .select(snap ? `${baseHpCols}, player_name` : baseHpCols)
-          .in("hand_id", handIdBatch)
-          .order("hand_id", { ascending: true })
-          .order("player_id", { ascending: true })
-          .order("entry_number", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to))),
-        pageAll<HandActionQueryRow>((from, to) => asPagedQuery<HandActionQueryRow>(supabase
-          .from("hand_actions")
-          .select("id, hand_id, player_id, entry_number, street, action_type, action_amount, action_order")
-          .in("hand_id", handIdBatch)
-          .order("hand_id", { ascending: true })
-          .order("action_order", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to))),
-      ]);
+    try {
+      if(ambiguousPhysical)throw new Error('Bàn vật lý có nhiều phiên. Hãy chọn phiên bàn cụ thể.');
+      const { data: handRows, error } = await pageAll<HandQueryRow>((from, to) => {
+        let query = supabase
+          .from("tournament_hands")
+          .select("id, hand_number, hand_time, community_cards, pot_size, status, is_voided, created_at, table_id, button_seat")
+          .eq("tournament_id", tournamentId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, to);
+        if (selectedTableId !== "all") {
+          const tableIds: string[] = JSON.parse(tableReadKey);
+          query = tableIds.length === 1 ? query.eq("table_id", tableIds[0]) : query.in("table_id", tableIds);
+          if(archiveSessionId)query=query.eq('table_session_id',archiveSessionId);
+        }
+        return asPagedQuery<HandQueryRow>(query);
+      }, (hand) => hand?.id);
       if (!isCurrentLoad()) return;
-      const historyError = playersRes.error || actionsRes.error;
-      if (historyError) {
-        setLoadError(historyError.message || "Không tải được chi tiết hand");
+      if (error || !handRows) {
+        setLoadError(error?.message ?? "Không tải được dữ liệu");
         setHands([]);
         setLoading(false);
         return;
       }
-      playerRows.push(...playersRes.data);
-      actionRows.push(...actionsRes.data);
-    }
 
-    const needIds = playerRows.filter((player) => !player.player_name).map((player) => player.player_id);
-    const display = await fetchHandPlayerDisplayForClient(supabase, tournamentId, needIds);
-    if (!isCurrentLoad()) return;
-    const identityMap = new Map<string, { name: string; seat: number }>();
-    const playerIdentityKey = (handId: string, playerId: string, entryNumber: number | null | undefined) => `${handId}:${playerId}:${entryNumber ?? 1}`;
-    playerRows.forEach((player) => {
-      identityMap.set(playerIdentityKey(player.hand_id, player.player_id, player.entry_number), {
-        name: player.player_name || display.get(player.player_id)?.name || `Người chơi ghế ${player.seat_number}`,
-        seat: player.seat_number,
-      });
-    });
-
-    const playerMap = new Map<string, HandRecord["players"]>();
-    playerRows.forEach((player) => {
-      if (!playerMap.has(player.hand_id)) playerMap.set(player.hand_id, []);
-      const identity = identityMap.get(playerIdentityKey(player.hand_id, player.player_id, player.entry_number));
-      playerMap.get(player.hand_id)!.push({
-        player_id: player.player_id,
-        display_name: identity?.name || `Người chơi ghế ${player.seat_number}`,
-        seat_number: player.seat_number,
-        starting_stack: player.starting_stack,
-        ending_stack: player.ending_stack ?? 0,
-        is_eliminated: !!player.is_eliminated,
-        hole_cards: stringArray(player.hole_cards),
-        entry_number: player.entry_number ?? 1,
-      });
-    });
-
-    const actionMap = new Map<string, HandRecord["actions"]>();
-    actionRows.forEach((action) => {
-      if (!actionMap.has(action.hand_id)) actionMap.set(action.hand_id, []);
-      const identity = identityMap.get(playerIdentityKey(action.hand_id, action.player_id, action.entry_number))
-        ?? [...identityMap.entries()].find(([key]) => key.startsWith(`${action.hand_id}:${action.player_id}:`))?.[1];
-      actionMap.get(action.hand_id)!.push({
-        id: action.id,
-        street: action.street || "preflop",
-        display_name: identity?.name || "Người chơi",
-        seat_number: identity?.seat ?? 0,
-        action_type: action.action_type,
-        action_amount: action.action_amount ?? 0,
-        action_order: action.action_order,
-        player_id: action.player_id,
-        entry_number: action.entry_number ?? 1,
-      });
-    });
-
-    const handRecords: HandRecord[] = handRows.map((hand) => ({
-      id: hand.id,
-      table_id: hand.table_id ?? null,
-      hand_number: hand.hand_number,
-      hand_time: hand.hand_time ?? hand.created_at,
-      community_cards: stringArray(hand.community_cards),
-      pot_size: hand.pot_size ?? null,
-      status: hand.status || "completed",
-      is_voided: hand.is_voided || false,
-      created_at: hand.created_at,
-      button_seat: hand.button_seat ?? undefined,
-      players: playerMap.get(hand.id) || [],
-      actions: actionMap.get(hand.id) || [],
-    }));
-
-    setHands(handRecords);
-    if (FEATURES.trackerHistoryCompletionWorker) {
-      const { data: queueStatus, error: queueStatusError } = await supabase.rpc(
-        "get_tracker_historical_display_queue_status" as never,
-        { p_tournament_id: tournamentId } as never,
-      );
-      if (isCurrentLoad()) {
-        const rows = Array.isArray(queueStatus) ? queueStatus as Array<Record<string, unknown>> : [];
-        const validStatuses = new Set<HistoryCompletionStatus>(["missing_blind", "missing_outcome", "stale", "pending", "needs_attention"]);
-        setCompletionStatusByHand(new Map(rows.flatMap((row) =>
-          typeof row.hand_id === "string" && validStatuses.has(row.queue_status as HistoryCompletionStatus)
-            ? [[row.hand_id, row.queue_status as HistoryCompletionStatus] as const]
-            : [])));
-        setCompletionStatusError(!!queueStatusError);
+      const handIds = handRows.map((hand) => hand.id);
+      if (handIds.length === 0) {
+        setHands([]);
+        setLoading(false);
+        return;
       }
-    } else {
+
+      // E1: prefer the per-hand snapshot (hand_players.player_name) when the migration is
+      // applied; the column is selected only if present (feature-detect). Fall back to the
+      // tournament_seats roster only for old rows the snapshot didn't capture.
+      const snap = await handPlayersHasSnapshotForClient(supabase);
+      if (!isCurrentLoad()) return;
+      const baseHpCols = "id, hand_id, player_id, entry_number, seat_number, starting_stack, ending_stack, is_eliminated, hole_cards";
+      const playerRows: HandPlayerQueryRow[] = [];
+      const actionRows: HandActionQueryRow[] = [];
+      for (const handIdBatch of chunkArray(handIds, 80)) {
+        const [playersRes, actionsRes] = await Promise.all([
+          pageAll<HandPlayerQueryRow>((from, to) => asPagedQuery<HandPlayerQueryRow>(supabase
+            .from("hand_players")
+            .select(snap ? `${baseHpCols}, player_name` : baseHpCols)
+            .in("hand_id", handIdBatch)
+            .order("hand_id", { ascending: true })
+            .order("player_id", { ascending: true })
+            .order("entry_number", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to))),
+          pageAll<HandActionQueryRow>((from, to) => asPagedQuery<HandActionQueryRow>(supabase
+            .from("hand_actions")
+            .select("id, hand_id, player_id, entry_number, street, action_type, action_amount, action_order")
+            .in("hand_id", handIdBatch)
+            .order("hand_id", { ascending: true })
+            .order("action_order", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to))),
+        ]);
+        if (!isCurrentLoad()) return;
+        const historyError = playersRes.error || actionsRes.error;
+        if (historyError) {
+          setLoadError(historyError.message || "Không tải được chi tiết hand");
+          setHands([]);
+          setLoading(false);
+          return;
+        }
+        playerRows.push(...playersRes.data);
+        actionRows.push(...actionsRes.data);
+      }
+
+      const knownHandIds = new Set(handIds);
+      const identityError = () => new Error("Không đối chiếu được người chơi và lượt vào của lịch sử hand. Hãy thử lại.");
+      const participantsByPlayer = new Map<string, typeof playerRows>();
+      playerRows.forEach((player) => {
+        if (!knownHandIds.has(player.hand_id)) throw identityError();
+        const key = JSON.stringify([player.hand_id, player.player_id]);
+        const participants = participantsByPlayer.get(key) ?? [];
+        if (participants.some((row) => (row.entry_number ?? 1) === (player.entry_number ?? 1))) throw identityError();
+        participants.push(player);
+        participantsByPlayer.set(key, participants);
+      });
+      const resolvedActionRows = actionRows.map((action) => {
+        if (!knownHandIds.has(action.hand_id)) throw identityError();
+        const participants = participantsByPlayer.get(JSON.stringify([action.hand_id, action.player_id])) ?? [];
+        const matching = action.entry_number == null ? participants
+          : participants.filter((player) => (player.entry_number ?? 1) === action.entry_number);
+        if (matching.length !== 1) throw identityError();
+        return { ...action, entry_number: matching[0].entry_number ?? 1 };
+      });
+
+      const needIds = playerRows.filter((player) => !player.player_name).map((player) => player.player_id);
+      const display = await fetchHandPlayerDisplayForClient(supabase, tournamentId, needIds);
+      if (!isCurrentLoad()) return;
+      const identityMap = new Map<string, { name: string; seat: number }>();
+      const playerIdentityKey = (handId: string, playerId: string, entryNumber: number | null | undefined) => `${handId}:${playerId}:${entryNumber ?? 1}`;
+      playerRows.forEach((player) => {
+        identityMap.set(playerIdentityKey(player.hand_id, player.player_id, player.entry_number), {
+          name: player.player_name || display.get(player.player_id)?.name || `Người chơi ghế ${player.seat_number}`,
+          seat: player.seat_number,
+        });
+      });
+
+      const playerMap = new Map<string, HandRecord["players"]>();
+      playerRows.forEach((player) => {
+        if (!playerMap.has(player.hand_id)) playerMap.set(player.hand_id, []);
+        const identity = identityMap.get(playerIdentityKey(player.hand_id, player.player_id, player.entry_number));
+        playerMap.get(player.hand_id)!.push({
+          player_id: player.player_id,
+          display_name: identity?.name || `Người chơi ghế ${player.seat_number}`,
+          seat_number: player.seat_number,
+          starting_stack: player.starting_stack,
+          ending_stack: player.ending_stack ?? 0,
+          is_eliminated: !!player.is_eliminated,
+          hole_cards: stringArray(player.hole_cards),
+          entry_number: player.entry_number ?? 1,
+        });
+      });
+
+      const actionMap = new Map<string, HandRecord["actions"]>();
+      resolvedActionRows.forEach((action) => {
+        if (!actionMap.has(action.hand_id)) actionMap.set(action.hand_id, []);
+        const identity = identityMap.get(playerIdentityKey(action.hand_id, action.player_id, action.entry_number));
+        actionMap.get(action.hand_id)!.push({
+          id: action.id,
+          street: action.street || "preflop",
+          display_name: identity?.name || "Người chơi",
+          seat_number: identity?.seat ?? 0,
+          action_type: action.action_type,
+          action_amount: action.action_amount ?? 0,
+          action_order: action.action_order,
+          player_id: action.player_id,
+          entry_number: action.entry_number ?? 1,
+        });
+      });
+
+      const handRecords: HandRecord[] = handRows.map((hand) => ({
+        id: hand.id,
+        table_id: hand.table_id ?? null,
+        hand_number: hand.hand_number,
+        hand_time: hand.hand_time ?? hand.created_at,
+        community_cards: stringArray(hand.community_cards),
+        pot_size: hand.pot_size ?? null,
+        status: hand.status || "completed",
+        is_voided: hand.is_voided || false,
+        created_at: hand.created_at,
+        button_seat: hand.button_seat ?? undefined,
+        players: playerMap.get(hand.id) || [],
+        actions: actionMap.get(hand.id) || [],
+      }));
+
+      setHands(handRecords);
+      if (FEATURES.trackerHistoryCompletionWorker) {
+        try {
+          const { data: queueStatus, error: queueStatusError } = await supabase.rpc(
+            "get_tracker_historical_display_queue_status" as never,
+            { p_tournament_id: tournamentId } as never,
+          );
+          if (isCurrentLoad()) {
+            const rows = Array.isArray(queueStatus) ? queueStatus as Array<Record<string, unknown>> : null;
+            const validStatuses = new Set<HistoryCompletionStatus>(["missing_blind", "missing_outcome", "stale", "pending", "needs_attention"]);
+            if (queueStatusError || !rows || rows.some((row) => !row || typeof row !== "object" || Array.isArray(row)
+              || typeof row.hand_id !== "string" || !row.hand_id.trim()
+              || !validStatuses.has(row.queue_status as HistoryCompletionStatus))
+              || new Set(rows.map((row) => row.hand_id)).size !== rows.length) {
+              setCompletionStatusByHand(new Map());
+              setCompletionStatusError(true);
+            } else {
+              setCompletionStatusByHand(new Map(rows.map((row) => [row.hand_id as string, row.queue_status as HistoryCompletionStatus])));
+              setCompletionStatusError(false);
+            }
+          }
+        } catch {
+          if (!isCurrentLoad()) return;
+          setCompletionStatusByHand(new Map());
+          setCompletionStatusError(true);
+        }
+      } else {
+        setCompletionStatusByHand(new Map());
+        setCompletionStatusError(false);
+      }
+      // Queue status can finish after another tournament/table load has already won.
+      if (!isCurrentLoad()) return;
+      setSelectedHandId((current) => current && handRecords.some((hand) => hand.id === current) ? current : null);
+    } catch (error) {
+      if (!isCurrentLoad()) return;
+      setLoadError(error instanceof Error ? error.message : "Không tải được dữ liệu");
+      setHands([]);
       setCompletionStatusByHand(new Map());
       setCompletionStatusError(false);
+    } finally {
+      if (isCurrentLoad()) {
+        loadGuardRef.current!.finish(request);
+        setLoading(false);
+      }
     }
-    setSelectedHandId((current) => current && handRecords.some((hand) => hand.id === current) ? current : null);
-    setLoading(false);
-  }, [selectedTableId, supabase, tables, tournamentId]);
+  }, [selectedTableId, supabase, tableReadKey, archiveSessionId, ambiguousPhysical, tournamentId, historyActorId, invalidateResettlePreview]);
 
   useEffect(() => {
     void loadHands();
@@ -513,37 +685,49 @@ export function HandHistoryWorkspace({
   ) => {
     const target = hands.find((h) => h.id === selectedHandId);
     if (!target) return;
+    try { correctionRecovery.assertNoPending(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Chưa đọc được mã phục hồi."); return; }
+    const previewRequest = ++previewGenerationRef.current;
+    const isCurrentPreview = () => previewGenerationRef.current === previewRequest && previewScopeRef.current === previewScope;
     setResettleBusy(true);
     setResettleView(null);
     try {
       // Full forward chain: target + every later completed, non-voided hand in the
-      // tournament, chronological. The engine needs the WHOLE chain so its final stacks
+      // tournament, in the server's hand-number/UUID order (not import timestamps).
+      // The engine needs the WHOLE chain so its final stacks
       // equal the live chip counts (conservation) for players it doesn't move. All three
       // reads are PAGED with unique total orders — a silently-truncated chain would corrupt
       // the replay + the all-in-cap divergence guard and let conserved-but-wrong chips slip.
-      const handsRes = await pageAll<any>((from, to) =>
+      const handsRes = await observeTrackerContextRead(pageAll<any>((from, to) =>
         supabase
           .from("tournament_hands")
           .select("id, hand_number, table_id, button_seat, created_at")
           .eq("tournament_id", tournamentId)
           .eq("status", "completed")
           .eq("is_voided", false)
-          .gte("created_at", target.created_at)
-          .order("created_at", { ascending: true })
+          .gte("hand_number", target.hand_number)
+          .order("hand_number", { ascending: true })
           .order("id", { ascending: true })
           .range(from, to),
-      );
+      (hand) => hand?.id));
+      if (!isCurrentPreview()) return;
       if (handsRes.error) {
         toast.error("Không tải được chuỗi ván để tính lại: " + (handsRes.error.message ?? ""));
         return;
       }
-      const handRows = handsRes.data;
+      const targetIndex = handsRes.data.findIndex((h: any) => h.id === target.id);
+      if (targetIndex < 0) {
+        toast.error("Không tìm thấy ván gốc trong chuỗi để tính lại.");
+        return;
+      }
+      // Equal hand numbers still have a total UUID order; do not replay predecessors.
+      const handRows = handsRes.data.slice(targetIndex);
       const ids = handRows.map((h: any) => h.id);
       if (ids.length === 0) {
         toast.error("Không tìm thấy ván nào để tính lại.");
         return;
       }
-      const [pRes, aRes] = await Promise.all([
+      const [pRes, aRes] = await observeTrackerContextRead(Promise.all([
         pageAll<any>((from, to) =>
           supabase
             .from("hand_players")
@@ -563,7 +747,8 @@ export function HandHistoryWorkspace({
             .order("action_order", { ascending: true })
             .range(from, to),
         ),
-      ]);
+      ]));
+      if (!isCurrentPreview()) return;
       if (pRes.error || aRes.error) {
         toast.error("Không tải được chi tiết ván để tính lại: " + ((pRes.error || aRes.error)?.message ?? ""));
         return;
@@ -607,13 +792,8 @@ export function HandHistoryWorkspace({
           action_order: a.action_order,
         })),
       });
-      const targetRaw = handRows.find((h: any) => h.id === target.id);
-      if (!targetRaw) {
-        toast.error("Không tìm thấy ván gốc trong chuỗi để tính lại.");
-        return;
-      }
-      const targetRow = toRow(targetRaw);
-      const laterRows = handRows.filter((h: any) => h.id !== target.id).map(toRow);
+      const targetRow = toRow(handRows[0]);
+      const laterRows = handRows.slice(1).map(toRow);
       const { result, entryByPlayer, entryByHandPlayer } = runClientResettle({
         target: targetRow,
         later: laterRows,
@@ -624,7 +804,7 @@ export function HandHistoryWorkspace({
           result, entryByPlayer, entryByHandPlayer, patch, reason,
           targetHandId: target.id, targetRow, laterRows, editedTarget,
           expectedEndingStacks,
-          serverPreview: { sourceRevision: 0, sourceChainHash: "", outcomeHash: "", scope: "blocked" },
+          serverPreview: { sourceRevision: 0, sourceChainHash: "", outcomeHash: "", requestHash: "", actorId: "", scope: "blocked" },
           idempotencyKey: crypto.randomUUID(),
         });
         return;
@@ -634,23 +814,27 @@ export function HandHistoryWorkspace({
         toast.error("Chưa có action, Board hoặc bài để máy chủ xem trước.");
         return;
       }
-      const { data: previewData, error: previewError } = await supabase.functions.invoke("tournament-live-resettle-commit", {
+      const { data: previewData, error: previewError } = await observeTrackerContextRead(supabase.functions.invoke("tournament-live-resettle-commit", {
         body: {
           mode: "preview",
           tournament_id: tournamentId,
+          expected_actor_id: correctionRecovery.actorId,
           hand_id: target.id,
           correction_reason: reason,
           edit: serverEdit,
           expected_target_ending_stacks: expectedEndingStacks,
         },
-      });
+      }));
+      if (!isCurrentPreview()) return;
       const preview = record(previewData);
       if (previewError || preview?.ok !== true || preview.status !== "preview"
         || preview.draft_status !== "READY_TO_APPLY"
         || typeof preview.source_revision !== "number"
         || typeof preview.source_chain_hash !== "string"
-        || typeof preview.outcome_hash !== "string") {
-        toast.error(textValue(preview?.code) ?? previewError?.message ?? "Máy chủ chưa chấp nhận bản xem trước.");
+        || typeof preview.outcome_hash !== "string" || typeof preview.request_hash !== "string") {
+        const message = await correctionPreviewErrorMessage(previewData, previewError);
+        if (!isCurrentPreview()) return;
+        toast.error(message);
         return;
       }
       setResettleView({
@@ -668,12 +852,19 @@ export function HandHistoryWorkspace({
           sourceRevision: preview.source_revision,
           sourceChainHash: preview.source_chain_hash,
           outcomeHash: preview.outcome_hash,
+          requestHash: preview.request_hash,
+          actorId: correctionRecovery.actorId ?? "",
           scope: textValue(preview.scope) ?? "latest_completed_hand_only",
         },
         idempotencyKey: crypto.randomUUID(),
       });
+    } catch (error) {
+      if (!isCurrentPreview()) return;
+      toast.error(error instanceof Error && error.message === "tracker_context_read_timeout"
+        ? "Hết thời gian xem trước. Chưa gửi thay đổi; hãy thử lại khi kết nối ổn định."
+        : "Không thể xem trước. Chưa gửi thay đổi: " + (error instanceof Error ? error.message : "Lỗi kết nối"));
     } finally {
-      setResettleBusy(false);
+      if (isCurrentPreview()) setResettleBusy(false);
     }
   };
 
@@ -712,7 +903,15 @@ export function HandHistoryWorkspace({
           toast.error("Chưa có action, Board hoặc bài để máy chủ tính lại. Không thể đổi chip chỉ từ stack hoặc người thắng chọn tay.");
           return;
         }
-        const { data, error } = await supabase.functions.invoke("tournament-live-resettle-commit", {
+        if (rv.serverPreview.actorId !== correctionRecovery.actorId) {
+          toast.error("Tài khoản đã thay đổi. Hãy xem trước lại hand."); return;
+        }
+        const confirmed = await correctionRecovery.commit({
+          expected_actor_id: rv.serverPreview.actorId, tournament_id: tournamentId, hand_id: rv.targetHandId,
+          idempotency_key: rv.idempotencyKey, expected_source_revision: rv.serverPreview.sourceRevision,
+          expected_source_chain_hash: rv.serverPreview.sourceChainHash, expected_outcome_hash: rv.serverPreview.outcomeHash,
+          expected_request_hash: rv.serverPreview.requestHash,
+        }, async () => await supabase.functions.invoke("tournament-live-resettle-commit", {
           body: {
             mode: "commit",
             tournament_id: tournamentId,
@@ -721,13 +920,14 @@ export function HandHistoryWorkspace({
             edit: serverEdit,
             expected_target_ending_stacks: rv.expectedEndingStacks,
             idempotency_key: rv.idempotencyKey,
+            expected_actor_id: rv.serverPreview.actorId,
             expected_source_revision: rv.serverPreview.sourceRevision,
             expected_source_chain_hash: rv.serverPreview.sourceChainHash,
             expected_outcome_hash: rv.serverPreview.outcomeHash,
           },
-        });
-        if (error || (data as any)?.ok === false) {
-          toast.error((data as any)?.message || error?.message || "Không thể sửa hand và tính lại chip nguyên tử.");
+        }));
+        if (!confirmed) {
+          toast.error("Chưa xác minh được kết quả. Kiểm tra receipt trước khi sửa tiếp.");
           return;
         }
         toast.success("Đã sửa hand và tính lại chip theo receipt máy chủ.");
@@ -824,6 +1024,8 @@ export function HandHistoryWorkspace({
       setResettleView(null);
       setEditMode(false);
       loadHands();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Chưa xác minh được yêu cầu sửa hand. Giữ mã phục hồi.");
     } finally {
       setResettleBusy(false);
     }
@@ -873,8 +1075,16 @@ export function HandHistoryWorkspace({
 
   return (
     <div className="space-y-3">
+      {correctionRecovery.message && (
+        <div role="status" className="space-y-2 rounded-md border p-3 text-sm">
+          <p>{correctionRecovery.message}</p>
+          <Button type="button" variant="outline" className="min-h-11" disabled={correctionRecovery.busy}
+            onClick={() => { void correctionRecovery.recover(); }}>Kiểm tra receipt sửa hand</Button>
+        </div>
+      )}
       {FEATURES.trackerHistoricalSettlementDisplay && enableHistoricalBatchControls && settlementCandidates.length > 0 && (
         <HistoricalSettlementBatchControl
+          actorId={historyActorId}
           tournamentId={tournamentId}
           candidates={settlementCandidates}
           onSelectHand={selectHand}
@@ -888,7 +1098,7 @@ export function HandHistoryWorkspace({
         </Button>
       )}
       <div className={`grid min-w-0 grid-cols-1 gap-3 ${workspaceMode ? "xl:grid-cols-[320px_minmax(0,1fr)]" : "lg:grid-cols-[280px_minmax(0,1fr)]"}`}>
-      <div className={`min-w-0 space-y-2 ${workspaceMode && selectedHandId && !showHandPicker ? "hidden xl:block" : ""}`}>
+      <div className={`min-w-0 space-y-2 ${workspaceMode && selectedHandId && !showHandPicker && !loadError && !tablesError ? "hidden xl:block" : ""}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold"><History className="h-4 w-4 text-emerald-300" /> Lịch sử hand</div>
           <Button size="sm" variant="outline" onClick={loadHands} disabled={loading} className="min-h-11 text-xs">
@@ -902,12 +1112,24 @@ export function HandHistoryWorkspace({
           value={selectedTableId}
           onChange={(event) => selectTable(event.target.value)}
           aria-label="Lọc lịch sử theo bàn"
+          disabled={tablesLoading || !!tablesError}
         >
           <option value="all">Tất cả bàn</option>
+          {ambiguousPhysical&&<option value={selectedTableId} disabled>Chọn phiên bàn cần xem</option>}
           {tables.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
+
+        {tablesLoading && <p role="status" className="text-xs text-muted-foreground">Đang tải danh sách bàn…</p>}
+        {tablesError && (
+          <div role="alert" className="space-y-2 text-xs text-destructive">
+            <p>Không tải được danh sách bàn: {tablesError}</p>
+            <Button size="sm" variant="outline" onClick={() => setTablesReload((current) => current + 1)} disabled={tablesLoading}>
+              Tải lại danh sách bàn
+            </Button>
+          </div>
+        )}
 
         {FEATURES.trackerHistoryCompletionWorker && (
           <>
@@ -927,7 +1149,7 @@ export function HandHistoryWorkspace({
         )}
 
         {loadError && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/30 rounded-lg text-xs text-destructive">
+          <div role="alert" className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/30 rounded-lg text-xs text-destructive">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span className="flex-1 break-all">Không tải được lịch sử hand: {loadError}</span>
             <Button size="sm" variant="outline" onClick={loadHands} disabled={loading} className="h-6 text-[11px] shrink-0">
@@ -1066,6 +1288,7 @@ export function HandHistoryWorkspace({
             {FEATURES.trackerHistoricalSettlementDisplay && !editMode &&
               selectedHand.status === "completed" && !selectedHand.is_voided && (
                 <HistoricalSettlementDisplayControl
+                  actorId={historyActorId}
                   tournamentId={tournamentId}
                   handId={selectedHand.id}
                   handNumber={selectedHand.hand_number}
@@ -1099,23 +1322,24 @@ export function HandHistoryWorkspace({
                 buttonSeat={selectedHand.button_seat ?? 0}
                 saving={savingEdit || resettleBusy}
                 writesEnabled={LEGACY_CORRECTION_WRITES_ENABLED}
-                onCancel={() => { setEditMode(false); setResettleView(null); }}
+                onCancel={() => { setEditMode(false); invalidateResettlePreview(); }}
                 onSave={handleSaveEdit}
                 resettleEnabled={SERVER_CORRECTION_PREVIEW_ENABLED && FEATURES.trackerResettleForward && resettleSupported}
                 onResettle={handleResettle}
-                onEditChange={() => setResettleView(null)}
+                onEditChange={invalidateResettlePreview}
               />
               {SERVER_CORRECTION_PREVIEW_ENABLED && resettleView && (
                 <ResettlePreview
                   view={resettleView}
                   busy={resettleBusy}
+                  confirmationBlocked={!!correctionRecovery.message}
                   players={selectedHand.players.map((p) => ({
                     player_id: p.player_id,
                     display_name: p.display_name,
                     ending_stack: p.ending_stack,
                   }))}
                   onConfirm={handleResettleConfirm}
-                  onClose={() => setResettleView(null)}
+                  onClose={invalidateResettlePreview}
                 />
               )}
               </>
@@ -1154,8 +1378,8 @@ export function HandHistoryWorkspace({
                     <span className="text-muted-foreground">
                       {formatStack(p.starting_stack)}
                       <span className="mx-0.5">→</span>
-                      <span className={p.ending_stack === 0 ? "text-red-400 font-bold" : "text-emerald-400"}>
-                        {formatStack(p.ending_stack ?? 0)}
+                      <span className={selectedHand.status !== "completed" ? "text-muted-foreground" : p.ending_stack === 0 ? "text-red-400 font-bold" : "text-emerald-400"}>
+                        {selectedHand.status !== "completed" ? "Chưa chốt" : formatStack(p.ending_stack ?? 0)}
                       </span>
                     </span>
                     {p.is_eliminated && <span className="text-[10px] text-red-400 font-bold">OUT</span>}
@@ -1218,12 +1442,15 @@ export function HandHistoryWorkspace({
 export function ResettlePreview({
   view,
   busy,
+  confirmationBlocked = false,
   players,
   onConfirm,
   onClose,
 }: {
-  view: { result: ResettleForwardResult; targetHandId?: string; expectedEndingStacks?: ExpectedHandEndStack[] };
+  view: { result: ResettleForwardResult; targetHandId?: string; expectedEndingStacks?: ExpectedHandEndStack[];
+    serverPreview?: { sourceRevision: number; sourceChainHash: string; outcomeHash: string; requestHash: string; actorId: string } };
   busy: boolean;
+  confirmationBlocked?: boolean;
   players: { player_id: string; display_name: string; ending_stack: number }[];
   onConfirm: () => void;
   onClose: () => void;
@@ -1265,6 +1492,11 @@ export function ResettlePreview({
   const ok = result as ResettleOk;
   const changes = resettleChipChanges(ok);
   const noChange = changes.length === 0;
+  const proof = view.serverPreview;
+  const atomicPreview = FEATURES.trackerAtomicResettle && isTrackerAtomicResettleAvailable() && !!proof
+    && Number.isSafeInteger(proof.sourceRevision) && proof.sourceRevision >= 1
+    && [proof.sourceChainHash, proof.outcomeHash, proof.requestHash].every(value => /^[a-f0-9]{64}$/.test(value))
+    && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(proof.actorId);
   const unchangedRows = players.map((player) => ({
     player_id: player.player_id,
     before: player.ending_stack,
@@ -1312,7 +1544,8 @@ export function ResettlePreview({
       </div>
       {noChange ? (
         <div className="text-[11px] text-muted-foreground">
-          Không có thay đổi chip — dùng “Chỉ lưu hiển thị” nếu chỉ muốn sửa lá/hành động.
+          {atomicPreview ? "Stack giữ nguyên. Máy chủ vẫn xác minh và lưu bản sửa hand nguyên tử."
+            : "Stack giữ nguyên; cần preview máy chủ hợp lệ trước khi lưu bản sửa hand."}
         </div>
       ) : (
         <div className="space-y-0.5">
@@ -1336,11 +1569,11 @@ export function ResettlePreview({
       <div className="flex gap-2 pt-0.5">
         <button
           type="button"
-          disabled={busy || noChange || !targetStacks.conserved || !stackCheck.matchesEngine}
+          disabled={busy || confirmationBlocked || (noChange && !atomicPreview) || !targetStacks.conserved || !stackCheck.matchesEngine}
           onClick={onConfirm}
-          className="text-xs font-semibold text-amber-100 border border-amber-500/60 bg-amber-500/15 rounded-lg px-3 py-1.5 hover:bg-amber-500/25 disabled:opacity-40"
+          className="min-h-11 text-xs font-semibold text-amber-100 border border-amber-500/60 bg-amber-500/15 rounded-lg px-3 py-1.5 hover:bg-amber-500/25 disabled:opacity-40"
         >
-          {busy ? "Đang áp dụng…" : "Xác nhận đổi chip"}
+          {busy ? "Đang áp dụng…" : atomicPreview ? "Xác nhận sửa hand" : "Xác nhận đổi chip"}
         </button>
         <button
           type="button"
@@ -1351,7 +1584,9 @@ export function ResettlePreview({
           Huỷ xem trước
         </button>
       </div>
-      <div className="text-[10px] text-amber-300/80">Sẽ lưu hiển thị (lá/hành động) rồi dời chip. Không thay đổi ai bị loại.</div>
+      <div className="text-[10px] text-amber-300/80">{atomicPreview
+        ? "Máy chủ lưu lá/hành động và kết quả trong một transaction; không tự thay đổi ai bị loại."
+        : "Chưa xác minh đường sửa nguyên tử. Không dùng client để tự quyết kết quả hoặc chip."}</div>
     </div>
   );
 }

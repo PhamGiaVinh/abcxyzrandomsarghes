@@ -31,7 +31,7 @@ export function TvPayoutsScreen({ data }: { data: TvData }) {
       <TvHeader data={data} />
       <main className="flex flex-col items-center justify-center gap-[2.6vmin] px-[4vmin] py-[2vmin] lg:min-h-0 lg:flex-1">
         <div className="text-[3.2vmin] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-          {satRows ? "🎟️ Satellite" : t("tv.payoutsTitle")}
+          {satRows ? "🎟️ Satellite" : t("tv.rankAwards")}
         </div>
         {data.currentLevel ? (
           <div className="text-[2.2vmin] tabular-nums text-muted-foreground">
@@ -72,6 +72,7 @@ export function TvPayoutsScreen({ data }: { data: TvData }) {
         {!satRows && banded && grouped && grouped.truncatedCount > 0 ? (
           <div className="text-[2vmin] text-muted-foreground">+{grouped.truncatedCount} hạng khác</div>
         ) : null}
+        {!satRows && prizes.length > 0 && <p className="text-sm text-center text-muted-foreground">{t("tv.rankAwardsHint")}</p>}
         {/* Dòng pool tiền ẨN khi satellite: số VND ngay dưới các dòng "1 vé" trên màn công cộng
             mâu thuẫn với cơ cấu vé vừa tuyên bố. Giải tiền bình thường giữ nguyên. */}
         {!satRows && data.prizePool != null ? (

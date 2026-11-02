@@ -10,6 +10,16 @@ export interface LiveDisplayAction {
   action_amount: number | null;
 }
 
+export function deriveLiveStreet(handNumber:number|null,boardCount:number,revealed:boolean,inProgress:boolean){
+  if(!handNumber)return null;
+  // Players may expose their hole cards before an all-in board has run out.
+  if(revealed&&(!inProgress||boardCount>=5))return 'showdown';
+  if(boardCount>=5)return 'river';
+  if(boardCount===4)return 'turn';
+  if(boardCount>=3)return 'flop';
+  return 'preflop';
+}
+
 export function deriveLiveHandDisplay(args: {
   startingStacks: Map<string, number>;
   actions: LiveDisplayAction[];

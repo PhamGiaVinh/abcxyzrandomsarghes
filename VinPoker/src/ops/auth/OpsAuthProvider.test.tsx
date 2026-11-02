@@ -53,6 +53,22 @@ function deferred<T>() {
 }
 
 describe("OpsAuthProvider session acceptance", () => {
+  it('leaves loading without accepting identity when Auth verification hangs',async()=>{
+    vi.useFakeTimers();
+    try {
+      const verification=deferred<{data:{user:{id:string}};error:null}>();
+      auth.getSession.mockResolvedValue({data:{session:storedSession},error:null});
+      auth.getUser.mockReturnValue(verification.promise);
+      auth.onAuthStateChange.mockReturnValue({data:{subscription:{unsubscribe:vi.fn()}}});
+      render(<OpsAuthProvider><Probe/><GatedDraft/></OpsAuthProvider>);
+      expect(screen.getAllByText('loading')).toHaveLength(2);
+      await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});
+      expect(screen.getAllByText('anonymous')).toHaveLength(2);
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      await act(async()=>verification.resolve({data:{user:storedSession.user},error:null}));
+      expect(screen.getAllByText('anonymous')).toHaveLength(2);
+    }finally{vi.useRealTimers();}
+  });
   afterEach(() => {
     vi.clearAllMocks();
   });

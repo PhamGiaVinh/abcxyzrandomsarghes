@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {execFileSync,spawn} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
+const report=process.argv[2];assert.ok(report,'Provide a new local JSON output path');assert.equal(existsSync(report),false,'Retain and inspect the existing fixture; never duplicate/reset');
+const args=['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55442','PGUSER=postgres','PGDATABASE=vinpoker_ops_guard_main_20261028_v2','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
+const sql=input=>execFileSync('wsl',args,{input,encoding:'utf8',timeout:30000,maxBuffer:2e6}).trim();
+let source=readFileSync(new URL('./canonicalPaidSeating.reviewedSchema.local.pg17.sql',import.meta.url),'utf8').replaceAll('\r','');
+const cut=source.indexOf(' ASSERT (SELECT count(*)=3 AND sum(chip_count)=60000');assert.ok(cut>0);source=source.slice(0,cut);
+assert.ok(source.includes('actors uuid[];entries integer[];'));source=source.replace('actors uuid[];entries integer[];',"actors uuid[];entries integer[];registrations uuid[]:='{}';");
+source=source.replace('FOR i IN 1..3 LOOP','FOR i IN 1..10 LOOP');
+const payment="r:=public.cashier_record_cash_buyin_v1((reg->>'registration_id')::uuid,100000,gen_random_uuid());ASSERT r->>'ok'='true',r::text;ASSERT r->>'seating_state'='seated',r::text;";
+assert.ok(source.includes(payment));source=source.replace(payment,"IF i<=8 THEN "+payment+" ELSE registrations:=array_append(registrations,(reg->>'registration_id')::uuid);END IF;");
+source+=`ASSERT (SELECT count(*)=8 FROM public.tournament_seats WHERE tournament_id=tour AND is_active);PERFORM set_config('test.cashier113',jsonb_build_object('actor',actor,'club',club,'tour',tour,'table',tt,'session',sess,'registrations',registrations)::text,true);END $$;SELECT current_setting('test.cashier113');COMMIT;`;
+const fixture=JSON.parse(sql(source));assert.equal(fixture.registrations.length,2);
+const state={kind:'OWNED_REVIEWED_SCHEMA_TWO_PAID_BUYINS_ONE_FREE_SEAT_NOT_HOSTED',fixture,requests:[randomUUID(),randomUUID()],phase:'FIXTURE_COMMITTED'};
+const save=()=>writeFileSync(report,JSON.stringify(state,null,2)+'\n');save();
+const auth=`SET LOCAL request.jwt.claim.sub='${fixture.actor}';SET LOCAL request.jwt.claims='{"sub":"${fixture.actor}","role":"authenticated"}';SET LOCAL ROLE authenticated;`;
+const pay=i=>`SELECT public.cashier_record_cash_buyin_v1('${fixture.registrations[i]}',100000,'${state.requests[i]}');`;
+const tag='cash113_'+randomUUID().replaceAll('-','').slice(0,16);
+const worker=()=>{const child=spawn('wsl',args,{stdio:['pipe','pipe','pipe']});let output='',error='';child.stdout.on('data',c=>output+=c);child.stderr.on('data',c=>error+=c);const done=new Promise((resolve,reject)=>child.on('exit',code=>code===0?resolve(output):reject(Error(error))));return {child,done,output:()=>output};};
+const wait=async(check,label)=>{for(let i=0;i<100;i++){if(check())return;await new Promise(r=>setTimeout(r,100));}throw Error('Timeout: '+label);};
+const first=worker();let second,released=false;
+const snapshot=()=>JSON.parse(sql(`BEGIN READ ONLY;SELECT jsonb_build_object('movements',(SELECT count(*) FROM public.cashier_buyin_movements WHERE tournament_id='${fixture.tour}'),'cash',(SELECT sum(amount) FROM public.cashier_buyin_movements WHERE tournament_id='${fixture.tour}'),'seats',(SELECT count(*) FROM public.tournament_seats WHERE tournament_id='${fixture.tour}' AND is_active),'distinctSeats',(SELECT count(DISTINCT (table_session_id,seat_number)) FROM public.tournament_seats WHERE tournament_id='${fixture.tour}' AND is_active),'chips',(SELECT sum(chip_count) FROM public.tournament_seats WHERE tournament_id='${fixture.tour}' AND is_active),'confirmed',(SELECT count(*) FROM public.tournament_registrations WHERE tournament_id='${fixture.tour}' AND status='confirmed'),'paidWaiting',(SELECT count(*) FROM public.tournament_registrations WHERE tournament_id='${fixture.tour}' AND status='pending' AND cashier_paid_at IS NOT NULL),'entries',(SELECT count(*) FROM public.tournament_entries WHERE tournament_id='${fixture.tour}'));ROLLBACK;`));
+try{
+ first.child.stdin.write(`BEGIN;SET LOCAL statement_timeout='20s';SET LOCAL application_name='${tag}_first';${auth}${pay(0)}SELECT 'FIRST_PAYMENT_STAGED';\n`);
+ await wait(()=>first.output().includes('FIRST_PAYMENT_STAGED'),'first staged');
+ second=worker();second.child.stdin.end(`BEGIN;SET LOCAL statement_timeout='20s';SET LOCAL application_name='${tag}_second';${auth}${pay(1)}COMMIT;\n`);
+ await wait(()=>sql(`SELECT count(*) FROM pg_stat_activity w JOIN pg_stat_activity h ON h.pid=ANY(pg_blocking_pids(w.pid)) WHERE w.application_name='${tag}_second' AND h.application_name='${tag}_first' AND w.wait_event_type='Lock';`)==='1','actual cashier lock overlap');
+ state.actualLockOverlap=true;save();first.child.stdin.end('COMMIT;\n');released=true;
+ const raw=await Promise.all([first.done,second.done]);state.responses=raw.map(s=>JSON.parse(s.split(/\r?\n/).find(line=>line.startsWith('{'))));save();
+ assert.equal(state.responses[0].ok,true);assert.equal(state.responses[0].seating_state,'seated');assert.equal(state.responses[1].ok,true);assert.equal(state.responses[1].seating_state,'waiting');
+ state.beforeRetry=snapshot();assert.deepEqual(state.beforeRetry,{movements:10,cash:1000000,seats:9,distinctSeats:9,chips:180000,confirmed:9,paidWaiting:1,entries:9});
+ state.retries=[0,1].map(i=>JSON.parse(sql(`BEGIN;${auth}${pay(i)}COMMIT;`)));for(const [i,r] of state.retries.entries()){assert.equal(r.ok,true);assert.equal(r.already_recorded,true);assert.equal(r.movement_id,sql(`SELECT id FROM public.cashier_buyin_movements WHERE registration_id='${fixture.registrations[i]}' AND idempotency_key='cash:${state.requests[i]}';`));}
+ state.changedPayload=JSON.parse(sql(`BEGIN;${auth}SELECT public.cashier_record_cash_buyin_v1('${fixture.registrations[0]}',100001,'${state.requests[0]}');COMMIT;`));assert.equal(state.changedPayload.error,'request_id_reused');
+ const outsider=randomUUID(),otherClub=randomUUID();
+ const outsideAuth=auth.replaceAll(fixture.actor,outsider);
+ state.otherClubActor=JSON.parse(sql(`BEGIN;INSERT INTO auth.users(id)VALUES('${outsider}');INSERT INTO public.clubs(id,name,region,owner_id,status)VALUES('${otherClub}','Other cashier TEST','TEST','${outsider}','approved');INSERT INTO public.club_cashiers(club_id,user_id)VALUES('${otherClub}','${outsider}');${outsideAuth}${pay(0)}ROLLBACK;`));assert.equal(state.otherClubActor.error,'actor_not_allowed');
+ state.afterRetry=snapshot();assert.deepEqual(state.afterRetry,state.beforeRetry);state.phase='CANONICAL_ONE_FREE_SEAT_LOCK_AND_POSTCOMMIT_RETRY_PASS';save();console.log(JSON.stringify({phase:state.phase,actualLockOverlap:true,native:state.afterRetry}));
+}catch(error){state.error=String(error);state.phase='FAILED_RETAINED_FIXTURE';save();throw error;}finally{if(!released&&!first.child.stdin.destroyed)first.child.stdin.end('ROLLBACK;\n');if(second&&!second.child.stdin.destroyed)second.child.stdin.end('ROLLBACK;\n');}

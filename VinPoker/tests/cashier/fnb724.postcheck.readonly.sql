@@ -1,0 +1,30 @@
+\set ON_ERROR_STOP on
+BEGIN READ ONLY;SET LOCAL statement_timeout='10s';
+DO $$ DECLARE f jsonb;o uuid[];b uuid[];s uuid[];BEGIN
+ ASSERT current_database()='vinpoker_fnb719_gate_local' AND host(inet_server_addr())='127.0.0.1' AND inet_server_port()=55441;
+ ASSERT current_setting('data_directory')='/tmp/vinpoker-sol-local-20261016-0e79a729/data';
+ SELECT fixture INTO STRICT f FROM floor_private.fnb724_fixture;
+ ASSERT f->>'test_only'='true' AND f->>'state'='qualified';
+ SELECT array_agg(value::uuid ORDER BY ordinality) INTO o FROM jsonb_array_elements_text(f->'orders') WITH ORDINALITY;
+ SELECT array_agg(value::uuid ORDER BY ordinality) INTO b FROM jsonb_array_elements_text(f->'banks') WITH ORDINALITY;
+ SELECT array_agg(value::uuid ORDER BY ordinality) INTO s FROM jsonb_array_elements_text(f->'shifts') WITH ORDINALITY;
+ ASSERT cardinality(o)=2 AND cardinality(b)=2 AND cardinality(s)=4;
+ ASSERT (SELECT count(*)=100 FROM public.game_tables WHERE club_id=(f->>'club')::uuid);
+ ASSERT (SELECT price_vnd=9000 FROM public.fnb_menu_items WHERE id=(f->>'menu')::uuid);
+ ASSERT (SELECT count(*)=2 FROM public.fnb_orders WHERE id=ANY(o) AND status='paid' AND payment_method='bank_transfer' AND subtotal_vnd=5000 AND cogs_vnd=2000);
+ ASSERT (SELECT on_hand=8 FROM public.fnb_ingredients WHERE id=(f->>'ingredient')::uuid);
+ ASSERT (SELECT count(*)=2 AND sum(delta)=-4 FROM public.fnb_stock_movements WHERE ref_id=ANY(o));
+ ASSERT (SELECT count(*)=2 FROM public.payment_settlements WHERE bank_transaction_id=ANY(b) AND outcome='auto_confirmed');
+ ASSERT (SELECT count(*)=4 FROM public.fnb_cashier_shifts WHERE id=ANY(s) AND status='closed' AND expected_cash_vnd=0 AND counted_cash_vnd=0 AND variance_vnd=0);
+ ASSERT (SELECT frozen_report->>'bank_paid_vnd'='5000' FROM public.fnb_cashier_shifts WHERE id=s[1]);
+ ASSERT (SELECT frozen_report->>'bank_paid_vnd'='0' FROM public.fnb_cashier_shifts WHERE id=s[2]);
+ ASSERT (SELECT frozen_report->>'bank_paid_vnd'='5000' FROM public.fnb_cashier_shifts WHERE id=s[3]);
+ ASSERT (SELECT count(*)=1 FROM floor_private.fnb_shift_order_events722 WHERE order_id=o[1] AND shift_id=s[1] AND kind='sale');
+ ASSERT (SELECT count(*)=1 FROM floor_private.fnb_shift_order_events722 WHERE order_id=o[2] AND shift_id=s[3] AND kind='sale');
+ ASSERT (SELECT count(*)=1 FROM floor_private.fnb_shift_intents722 WHERE actor=(f->>'actor')::uuid AND request_id='724-open-owner' AND response->>'shift_id'=s[4]::text);
+ ASSERT (SELECT count(*)=1 FROM floor_private.fnb_shift_intents722 WHERE actor=(f->>'cashier')::uuid AND request_id='724-open-cashier' AND response->>'shift_id'=s[4]::text);
+ ASSERT (SELECT payload->>'counted'='0' AND response->>'variance_vnd'='0' FROM floor_private.fnb_shift_intents722 WHERE actor=(f->>'actor')::uuid AND request_id='724-close-conflict');
+ ASSERT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND pid<>pg_backend_pid());
+END $$;
+ROLLBACK;
+SELECT 'FNB724_TWO_BANK_ORDERS_FROZEN_PRICING_SEPARATE_CASH_FOUR_CLOSED_SHIFTS_TWO_ACTOR_RECEIPTS_PASS';

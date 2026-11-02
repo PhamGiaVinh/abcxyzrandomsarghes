@@ -1,11 +1,7 @@
 import { useClubPayoutLiability } from "@/hooks/useClubPayoutLiability";
 import { PayoutLiabilityTab, type LivePayoutData } from "../tabs/PayoutLiabilityTab";
-
-const monthStartISO = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
-const todayISO = () => new Date().toISOString().slice(0, 10);
+import { Button } from "@/components/ui/button";
+import { financeBusinessToday } from "@/lib/financeSummaryRead";
 const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /**
@@ -14,9 +10,9 @@ const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
  * hook reports notApplied → the tab degrades to "chưa áp dụng" + mock.
  */
 export function LivePayoutTab() {
-  const from = monthStartISO();
-  const to = todayISO();
-  const { loading, error, notApplied, data } = useClubPayoutLiability({ from, to, clubFilter: "all" });
+  const to = financeBusinessToday();
+  const from = `${to.slice(0, 7)}-01`;
+  const { loading, error, notApplied, data, reload } = useClubPayoutLiability({ from, to, clubFilter: "all" });
 
   const mapped: LivePayoutData | null = data
     ? {
@@ -29,5 +25,9 @@ export function LivePayoutTab() {
       }
     : null;
 
-  return <PayoutLiabilityTab live={{ active: true, loading, error, notApplied, data: mapped }} />;
+  return <div className="space-y-2">
+    <div className="flex justify-end"><Button size="sm" variant="outline" disabled={loading}
+      onClick={() => { void reload(); }}>Tải lại phải-trả giải</Button></div>
+    <PayoutLiabilityTab live={{ active: true, loading, error, notApplied, data: mapped }} />
+  </div>;
 }

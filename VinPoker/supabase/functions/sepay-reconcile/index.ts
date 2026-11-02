@@ -42,8 +42,6 @@ const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
 const MAX_PAGES = 5;                          // cap pages/club/tick (anti-runaway)
 const PAGE_LIMIT = 100;
-const OVERLAP_MS = 60 * 60 * 1000;            // re-pull the last 1h to cover the date boundary
-const FIRST_LOOKBACK_MS = 24 * 60 * 60 * 1000; // first pull (no last_pull_at) → back 24h
 const SETTLE_BATCH = 500;                     // cap settle calls/club/tick
 
 async function sha256(s: string): Promise<Uint8Array> {
@@ -62,25 +60,41 @@ function nonEmpty(v: unknown): string | null {
   const s = String(v).trim();
   return s.length > 0 ? s : null;
 }
-/** SePay amount may be a number or a decimal string → bigint VND (or null). */
+/** Number/decimal string → safely representable rounded VND, otherwise unknown. */
 function parseAmount(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
+  if ((typeof v !== 'number' && typeof v !== 'string') || (typeof v === 'string' && v.trim() === '')) return null;
+  if (typeof v === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(v.trim())) return null;
   const n = typeof v === "number" ? v : Number(String(v).trim());
-  return Number.isFinite(n) ? Math.round(n) : null;
+  const rounded = Math.round(n);
+  return Number.isSafeInteger(rounded) ? rounded : null;
 }
 /** SePay transaction_date "YYYY-MM-DD HH:MM:SS" is VN time, no offset; VN has no DST → +07:00. */
 function parseOccurredAt(v: unknown): string | null {
   if (typeof v !== "string" || v.trim() === "") return null;
-  const d = new Date(v.trim().replace(" ", "T") + "+07:00");
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  const local = v.trim().replace(" ", "T");
+  const d = new Date(local + "+07:00");
+  if (Number.isNaN(d.getTime())) return null;
+  // Date silently rolls impossible days and 24:00 into a different calendar date.
+  const roundTrip = new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 19);
+  return roundTrip === local.slice(0, 19) ? d.toISOString() : null;
 }
-/** VN calendar date (YYYY-MM-DD) for the SePay transaction_date_from filter (date-granular). */
-function vnDateString(epochMs: number): string {
-  return new Date(epochMs + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+/** Provider inclusive datetime in business timezone UTC+7, frozen by DB claim. */
+function vnDateTime(epochMs: number): string {
+  return new Date(epochMs + 7 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function legacySettlementState(value: unknown): "confirmed" | "pending" | "invalid" {
+  if (!value || typeof value !== "object") return "invalid";
+  const result = value as { ok?: boolean; outcome?: string; skipped?: string };
+  if (result.ok !== true) return "invalid";
+  if (["auto_confirmed", "manual_confirmed"].includes(result.outcome ?? "")) return "confirmed";
+  if (["flagged_no_match", "flagged_amount_mismatch", "flagged_not_pending", "flagged_duplicate", "flagged_seating_failed"].includes(result.outcome ?? "")
+    || ["matched", "ignored", "quarantined", "not_api_verified", "not_settleable_shape"].includes(result.skipped ?? "")) return "pending";
+  return "invalid";
 }
 
 /** Map one SePay v2 transaction to the bank_transactions ingest shape (sent to the ingest RPC). */
@@ -101,27 +115,71 @@ function mapTxn(t: Record<string, unknown>) {
   };
 }
 
+/** q is only a provider search hint. Exact active account identity is checked here. */
+async function resolveBankAccount(masterAccount: string, token: string): Promise<string> {
+  const matches = new Set<string>();
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await retryFetch(`${SEPAY_API_BASE}/v2/bank-accounts?q=${encodeURIComponent(masterAccount)}&per_page=${PAGE_LIMIT}&page=${page}`, {
+      method: "GET", headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`sepay_api_${res.status}`);
+    const body = await res.json().catch(() => null);
+    if (!body || !Array.isArray(body.data) || !body.meta?.pagination) throw new Error("sepay_account_payload_invalid");
+    for (const row of body.data) {
+      if (!row || typeof row !== "object") throw new Error("sepay_account_payload_invalid");
+      if (nonEmpty(row.account_number) !== masterAccount || !(row.active === true || row.active === 1)) continue;
+      if (typeof row.id !== "string" || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(row.id)) {
+        throw new Error("sepay_account_payload_invalid");
+      }
+      matches.add(row.id);
+    }
+    const pg = body.meta.pagination;
+    if (typeof pg.has_more !== "boolean") throw new Error("sepay_account_payload_invalid");
+    const hasMore = pg.has_more || (typeof pg.current_page === "number" && typeof pg.last_page === "number" && pg.current_page < pg.last_page);
+    if (!hasMore) {
+      if (matches.size !== 1) throw new Error("sepay_account_not_unique");
+      return [...matches][0];
+    }
+    if (page === MAX_PAGES) throw new Error("sepay_account_page_limit");
+  }
+  throw new Error("sepay_account_page_limit");
+}
+
 /** Pull up to MAX_PAGES of one account's transactions since fromDate. Throws on a non-OK HTTP status
  *  (e.g. 401 bad token) so the caller flags+skips this club. retryFetch handles 429/5xx/network. */
-async function pullClubTransactions(masterAccount: string, token: string, fromDate: string): Promise<Record<string, unknown>[]> {
+async function pullClubTransactions(masterAccount: string, bankAccountId: string, token: string, fromDate: string, toDate: string, startPage: number) {
   const out: Record<string, unknown>[] = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const url = `${SEPAY_API_BASE}/v2/transactions?account_number=${encodeURIComponent(masterAccount)}` +
-      `&transaction_date_from=${fromDate}&limit=${PAGE_LIMIT}&page=${page}`;
+  let total: number | null = null;
+  for (let page = startPage; page < startPage + MAX_PAGES; page++) {
+    const url = `${SEPAY_API_BASE}/v2/transactions?bank_account_id=${encodeURIComponent(bankAccountId)}` +
+      `&transaction_date_from=${encodeURIComponent(fromDate)}&transaction_date_to=${encodeURIComponent(toDate)}` +
+      `&transaction_date_sort=asc&per_page=${PAGE_LIMIT}&page=${page}`;
     const res = await retryFetch(url, {
       method: "GET",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`sepay_api_${res.status}`); // do NOT include the body (may carry account info)
-    const body = await res.json().catch(() => null) as { data?: unknown; meta?: { pagination?: { current_page?: number; last_page?: number; has_more?: boolean } } } | null;
-    const data = Array.isArray(body?.data) ? body!.data as Record<string, unknown>[] : [];
+    const body = await res.json().catch(() => null) as { data?: unknown; meta?: { pagination?: { total?: number; current_page?: number; last_page?: number; has_more?: boolean } } } | null;
+    if (!body || !Array.isArray(body.data)) throw new Error("sepay_api_invalid_payload");
+    const data = body.data as Record<string, unknown>[];
+    if(data.length>PAGE_LIMIT)throw new Error('sepay_api_invalid_payload');
+    if (data.some(row => !row || nonEmpty(row.account_number) !== masterAccount || row.bank_account_id !== bankAccountId)) {
+      throw new Error("sepay_transaction_account_mismatch");
+    }
     out.push(...data);
     const pg = body?.meta?.pagination;
+    if (typeof pg?.has_more !== 'boolean' || !Number.isSafeInteger(pg.total) || pg.total!<0 || pg.total!>2147483647 || (pg.current_page !== undefined && pg.current_page !== page)
+      || (pg.last_page !== undefined && (!Number.isSafeInteger(pg.last_page) || pg.last_page < page))) {
+      throw new Error('sepay_api_invalid_pagination');
+    }
+    if(total!==null&&total!==pg.total)throw new Error('sepay_api_window_changed');
+    total=pg.total!;
     const hasMore = pg?.has_more === true ||
       (typeof pg?.current_page === "number" && typeof pg?.last_page === "number" && pg.current_page < pg.last_page);
-    if (data.length === 0 || !hasMore) break;
+    if (data.length === 0 && hasMore) throw new Error('sepay_api_invalid_pagination');
+    if (!hasMore) return { rows: out, nextPage: page + 1, complete: true, total };
   }
-  return out;
+  return { rows: out, nextPage: startPage + MAX_PAGES, complete: false, total };
 }
 
 Deno.serve(async (req) => {
@@ -135,18 +193,28 @@ Deno.serve(async (req) => {
   if (!authed) return new Response("Unauthorized", { status: 401 });
 
   // 3) Active clubs (service-role RPC; returns only club_id + master_account_number, no secret).
-  const { data: clubs, error: clubsErr } = await admin.rpc("sepay_get_active_payment_clubs");
+  const { data: clubs, error: clubsErr } = await Promise.resolve()
+    .then(() => admin.rpc("sepay_get_active_payment_clubs"))
+    .catch(() => ({ data: null, error: { message: "active_clubs_transport_unavailable" } }));
   if (clubsErr) {
-    console.error("sepay-reconcile: active-clubs query failed:", clubsErr.message);
+    console.error("sepay-reconcile: active-clubs query failed");
     return jsonResponse(500, { ok: false, error: "clubs_query_failed" });
   }
+  // Only an explicit empty array means there are no configured clubs. A null,
+  // malformed or duplicated scope must not produce a healthy no-op or repeated
+  // provider work. Never log the payload: it can contain account information.
+  if (!Array.isArray(clubs) || clubs.some((club) => !club || typeof club !== "object" || Array.isArray(club)
+    || typeof club.club_id !== "string" || !club.club_id.trim() || club.club_id !== club.club_id.trim()
+    || !(club.master_account_number === null || typeof club.master_account_number === "string"))
+    || new Set(clubs.map((club) => club.club_id)).size !== clubs.length) {
+    console.error("sepay-reconcile: active-clubs response unverified");
+    return jsonResponse(503, { ok: false, error: "clubs_query_unverified" });
+  }
 
-  const nowMs = Date.now();
-  const nowIso = new Date(nowMs).toISOString();
   const summary: Array<Record<string, unknown>> = [];
   let totalSettled = 0;
 
-  for (const club of (clubs ?? []) as Array<{ club_id: string; master_account_number: string | null }>) {
+  for (const club of clubs as Array<{ club_id: string; master_account_number: string | null }>) {
     const clubId = club.club_id;
     const master = nonEmpty(club.master_account_number);
     try {
@@ -156,19 +224,11 @@ Deno.serve(async (req) => {
       // fall through to legacy auto-confirm without a movement ledger entry.
       const { data: cashierSettings, error: cashierGateErr } = await admin
         .from("cashier_tour_settings").select("enabled").eq("club_id", clubId).maybeSingle();
-      if (cashierGateErr) throw new Error(`cashier_gate_read_failed:${cashierGateErr.message}`);
-      const cashierEnabled = cashierSettings?.enabled === true;
-
-      // Window: from last_pull_at − overlap, else first pull → back 24h. (Service-role read; non-secret
-      // column only. If it errors, cfg stays undefined → safe 24h fallback.)
-      let fromMs = nowMs - FIRST_LOOKBACK_MS;
-      const { data: cfg } = await admin.from("club_payment_config")
-        .select("last_pull_at").eq("club_id", clubId).maybeSingle();
-      if (cfg?.last_pull_at) {
-        const lp = new Date(cfg.last_pull_at as string).getTime();
-        if (Number.isFinite(lp)) fromMs = lp - OVERLAP_MS;
+      if (cashierGateErr || (cashierSettings !== null && (!cashierSettings || typeof cashierSettings !== "object"
+        || Array.isArray(cashierSettings) || typeof cashierSettings.enabled !== "boolean"))) {
+        throw new Error("cashier_gate_read_failed");
       }
-      const fromDate = vnDateString(fromMs);
+      const cashierEnabled = cashierSettings?.enabled === true;
 
       // Per-club SePay token (Vault, service-role). Never logged.
       const { data: token, error: tokErr } = await admin.rpc("sepay_get_club_api_token", { p_club_id: clubId });
@@ -176,57 +236,88 @@ Deno.serve(async (req) => {
       if (!token) throw new Error("no_api_token");
 
       // Pull (paged, retry, rate-limit-aware) → map → drop rows lacking dedupe identity.
-      const raw = await pullClubTransactions(master, token as string, fromDate);
-      const rows = raw.map(mapTxn).filter((r) => r.provider_txn_id && r.account_number);
+      const bankAccountId = await resolveBankAccount(master, token as string);
+      const { data: claim, error: claimError } = await admin.rpc('sepay_claim_pull_v2', {p_club_id:clubId,p_bank_account_id:bankAccountId});
+      if (claimError) throw new Error('sepay_pull_claim_failed');
+      if (claim?.status === 'busy') { summary.push({club_id:clubId,status:'pending',pull_status:'busy'}); continue; }
+      const fromMs = Date.parse(claim?.window_from), toMs = Date.parse(claim?.window_to);
+      if (claim?.status !== 'claimed' || typeof claim.lease_token !== 'string'
+        || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(claim.lease_token)
+        || !Number.isSafeInteger(claim.next_page) || claim.next_page<1 || claim.next_page>2147483642
+        || !Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs>toMs) throw new Error('sepay_pull_claim_invalid');
+      const pull = await pullClubTransactions(master,bankAccountId,token as string,vnDateTime(fromMs),vnDateTime(toMs),claim.next_page);
+      const rows = pull.rows.map(mapTxn).filter((r) => r.provider_txn_id && r.account_number);
+      if(rows.length!==pull.rows.length)throw new Error('sepay_api_invalid_payload');
 
       // Ingest: verify existing + insert misses + backfill quarantined NULLs, WITHOUT resetting status
       // (matched/ignored preserved) and WITHOUT re-writing already-verified rows. See the ingest RPC.
       if (rows.length > 0) {
         const { error: ingErr } = await admin.rpc("sepay_ingest_verified_transactions", { p_txns: rows });
-        if (ingErr) throw new Error(`ingest_failed:${ingErr.message}`);
+        if (ingErr) throw new Error("ingest_failed");
       }
 
+      // Ingest commits first. A lost checkpoint can only replay deduplicated rows;
+      // only the current DB lease may advance page/window progress.
+      const {data:checkpoint,error:checkpointError}=await admin.rpc('sepay_checkpoint_pull_v2',{
+        p_club_id:clubId,p_lease_token:claim.lease_token,p_expected_page:claim.next_page,p_next_page:pull.nextPage,p_complete:pull.complete,
+        p_provider_total:pull.total,
+      });
+      if(checkpoint?.restart_required===true)throw new Error('sepay_api_window_changed');
+      if(checkpointError||checkpoint?.ok!==true||checkpoint.complete!==pull.complete||checkpoint.next_page!==pull.nextPage) {
+        throw new Error('sepay_pull_checkpoint_unverified');
+      }
       // Worklist: incoming, SePay-API-verified, still unmatched, for this club's master account.
-      const { data: worklist, error: wlErr } = await admin.from("bank_transactions")
-        .select("id")
-        .eq("provider", "sepay")
-        .eq("account_number", master)
-        .eq("status", "unmatched")
-        .eq("transfer_type", "in")
-        .not("api_verified_at", "is", null)
-        .limit(SETTLE_BATCH);
-      if (wlErr) throw new Error(`worklist_failed:${wlErr.message}`);
-
+      // Durable least-recently-attempted selection prevents a failing prefix
+      // monopolizing every tick. No unsafe fallback if the DB contract is absent.
+      const { data: worklist, error: wlErr } = await admin.rpc("sepay_take_settlement_batch_v1", {
+        p_club_id: clubId, p_limit: SETTLE_BATCH,
+      });
+      if (wlErr) throw new Error("worklist_failed");
+      if (!Array.isArray(worklist) || worklist.length > SETTLE_BATCH
+        || worklist.some((row) => !row || typeof row.id !== "string")
+        || new Set(worklist.map((row) => row.id)).size !== worklist.length) {
+        throw new Error("worklist_invalid");
+      }
       let settled = 0;
       let partial = 0;
       let waitingSeat = 0;
       let surplus = 0;
       let seatingReview = 0;
+      let attempted = 0;
+      let failed = 0;
+      let succeeded = 0;
+      let businessPending = 0;
       for (const bt of (worklist ?? []) as Array<{ id: string }>) {
+        attempted++;
+        try {
         if (cashierEnabled) {
           const { data: buyinResult, error: buyinErr } = await admin.rpc("cashier_record_verified_bank_v1", {
             p_bank_transaction_id: bt.id,
             p_auto_confirm: AUTO_CONFIRM,
           });
-          if (buyinErr) { console.error("sepay-reconcile: buy-in recording failed", bt.id, buyinErr.message); continue; }
+          if (buyinErr) { failed++; console.error("sepay-reconcile: buy-in recording failed", bt.id); continue; }
           const buyin = buyinResult as { handled?: boolean; outcome?: string;
             legacy_auto_confirm_allowed?: boolean } | null;
-          if (buyin?.handled) {
-            if (buyin.outcome === "paid_seated") settled++;
-            else if (buyin.outcome === "paid_waiting_seat") waitingSeat++;
-            else if (buyin.outcome === "partial_received") partial++;
-            else if (buyin.outcome === "surplus_received") surplus++;
-            else if (buyin.outcome === "paid_seating_review") seatingReview++;
+          if (buyin?.handled === true) {
+            if (buyin.outcome === "paid_seated") { settled++; succeeded++; }
+            else if (buyin.outcome === "already_recorded") succeeded++;
+            else if (buyin.outcome === "paid_waiting_seat") { waitingSeat++; businessPending++; }
+            else if (buyin.outcome === "partial_received") { partial++; businessPending++; }
+            else if (buyin.outcome === "surplus_received") { surplus++; businessPending++; }
+            else if (buyin.outcome === "paid_seating_review") { seatingReview++; businessPending++; }
+            else failed++;
             continue;
           }
+          if (buyin?.handled !== false) { failed++; continue; }
           // Only the server may classify an unhandled transaction as legacy.
           // Re-entry and pre-V2 VINREG keep their existing auto path; an
           // unhandled priced VINREG can never bypass the movement ledger.
           if (buyin?.legacy_auto_confirm_allowed !== true) {
-            const { error: sErr } = await admin.rpc("settle_bank_transaction", {
+            const { data: flagged, error: sErr } = await admin.rpc("settle_bank_transaction", {
               p_bank_transaction_id: bt.id, p_auto_confirm: false,
             });
-            if (sErr) console.error("sepay-reconcile: settle failed", bt.id, sErr.message);
+            if (sErr || legacySettlementState(flagged) !== "pending") failed++;
+            else businessPending++;
             continue;
           }
         }
@@ -235,36 +326,76 @@ Deno.serve(async (req) => {
           p_bank_transaction_id: bt.id,
           p_auto_confirm: AUTO_CONFIRM,
         });
-        if (sErr) { console.error("sepay-reconcile: settle failed", bt.id, sErr.message); continue; }
-        if ((legacyResult as { outcome?: string } | null)?.outcome === "auto_confirmed") settled++;
+        if (sErr) { failed++; console.error("sepay-reconcile: settle failed", bt.id); continue; }
+        const legacy = legacyResult as { ok?: boolean; outcome?: string; skipped?: string; already_settled?: boolean } | null;
+        const legacyState = legacySettlementState(legacy);
+        if (legacyState === "invalid") { failed++; continue; }
+        if (legacy && legacyState === "confirmed") {
+          if (!legacy.already_settled && legacy.outcome === "auto_confirmed") settled++;
+          succeeded++;
+        }
+        else businessPending++;
+        } catch {
+          failed++;
+          console.error("sepay-reconcile: transaction processing unavailable");
+        }
       }
       totalSettled += settled;
 
       // Record pull state (best-effort observability; service-role write).
-      await admin.from("club_payment_config")
-        .update({ last_pull_at: nowIso, last_pull_status: "ok", last_pull_error: null })
-        .eq("club_id", clubId);
+      // A rejected transport must not discard the already processed batch or
+      // send it through the club/pull error path. Do not retry settlement here.
+      let observationFailed = false;
+      try {
+        const { error } = await admin.from("club_payment_config")
+          .update({ last_pull_status: failed || !pull.complete ? "error" : "ok", last_pull_error: failed ? `settlement_failed:${failed}` : !pull.complete ? 'pull_incomplete' : null })
+          .eq("club_id", clubId);
+        observationFailed = !!error;
+      } catch { observationFailed = true; }
       summary.push({ club_id: clubId, pulled: rows.length, settled, partial, waiting_seat: waitingSeat,
-        surplus, seating_review: seatingReview, status: "ok" });
+        surplus, seating_review: seatingReview, attempted, succeeded, business_pending: businessPending, failed,
+        pull_status: pull.complete ? "ok" : "pending", pull_next_page:pull.nextPage, observation_status: observationFailed ? "error" : "ok",
+        status: failed || observationFailed ? "partial" : businessPending || !pull.complete ? "pending" : "ok" });
     } catch (e) {
-      const msg = (e as Error)?.message ?? String(e);
+      // DB/network exceptions may embed account identifiers, request URLs or
+      // bearer tokens. Persist/return only known operation codes, never details.
+      const detail = (e as Error)?.message ?? "";
+      const msg = ["no_master_account_number", "cashier_gate_read_failed", "token_read_failed",
+        "no_api_token", "sepay_api_invalid_payload", "sepay_api_page_limit", "sepay_account_payload_invalid",
+        "sepay_account_not_unique", "sepay_account_page_limit", "sepay_transaction_account_mismatch",
+        "sepay_pull_claim_failed", "sepay_pull_claim_invalid", "sepay_api_invalid_pagination", "sepay_pull_checkpoint_unverified",
+        "sepay_api_window_changed",
+        "ingest_failed", "worklist_failed", "worklist_invalid"].includes(detail)
+        || /^sepay_api_[1-5][0-9]{2}$/.test(detail) ? detail : "club_processing_unavailable";
       console.error("sepay-reconcile: club failed", clubId, msg);
-      await admin.from("club_payment_config")
-        .update({ last_pull_status: "error", last_pull_error: msg.slice(0, 500) })
-        .eq("club_id", clubId);
-      summary.push({ club_id: clubId, status: "error", error: msg });
+      let observationFailed = false;
+      try {
+        const { error } = await admin.from("club_payment_config")
+          .update({ last_pull_status: "error", last_pull_error: msg.slice(0, 500) })
+          .eq("club_id", clubId);
+        observationFailed = !!error;
+      } catch { observationFailed = true; }
+      summary.push({ club_id: clubId, status: "error", error: msg, observation_status: observationFailed ? "error" : "ok" });
       // continue with the next club
     }
   }
 
   // Paid registrations must keep retrying after Floor opens a table, including
   // when SePay API is unavailable or a cash-only club has no SePay config.
-  const { data: retryResult, error: retryErr } = await admin.rpc("cashier_retry_paid_seating_v1", {
+  const { data: retryResult, error: retryErr } = await Promise.resolve(admin.rpc("cashier_retry_paid_seating_v1", {
     p_auto_confirm: AUTO_CONFIRM, p_limit: 500,
-  });
-  if (retryErr) console.error("sepay-reconcile: paid seating retry failed", retryErr.message);
+  })).catch(() => ({ data: null, error: { message: "paid_seating_retry_transport_failed" } }));
+  if (retryErr) console.error("sepay-reconcile: paid seating retry failed");
   const retry = retryResult as { attempted?: number; seated?: number } | null;
 
-  return jsonResponse(200, { ok: true, clubs: summary.length, settled: totalSettled,
-    auto_confirm: AUTO_CONFIRM, paid_seating_retry: retryErr ? "error" : retry, results: summary });
+  const retryCountsValid = retryResult && typeof retryResult === "object" && (retryResult as { ok?: boolean }).ok === true
+    && ["attempted", "seated", "needs_review"].every((key) => {
+      const value = (retryResult as Record<string, unknown>)[key];
+      return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    });
+  const retryValid = retryCountsValid && (retryResult as { seated: number }).seated + (retryResult as { needs_review: number }).needs_review
+    <= (retryResult as { attempted: number }).attempted;
+  const processingOk = !retryErr && retryValid && summary.every((row) => row.status !== "error" && row.status !== "partial" && row.pull_status !== 'pending' && row.pull_status !== 'busy');
+  return jsonResponse(200, { ok: !!processingOk, clubs: summary.length, settled: totalSettled,
+    auto_confirm: AUTO_CONFIRM, paid_seating_retry: retryErr || !retryValid ? "error" : retry, results: summary });
 });

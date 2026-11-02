@@ -7,10 +7,10 @@ export type DealerSwingUiOutcome =
 
 export function classifyManualSwingOutcome(result: unknown): DealerSwingUiOutcome {
   const row = typeof result === "object" && result !== null
-    ? result as { outcome?: unknown; message?: unknown }
+    ? result as { outcome?: unknown; message?: unknown; detail?: unknown }
     : {};
   const outcome = typeof row.outcome === "string" ? row.outcome : "";
-  const serverMessage = typeof row.message === "string" ? row.message : null;
+  const serverMessage = typeof row.message === "string" && row.message.trim() ? row.message.trim() : null;
 
   if (["swung", "swung_to_break", "swung_to_pool"].includes(outcome)) {
     return { kind: "success", message: "Swing thành công!" };
@@ -28,7 +28,10 @@ export function classifyManualSwingOutcome(result: unknown): DealerSwingUiOutcom
     return { kind: "info", message: serverMessage ?? "Dealer tiếp theo cần nghỉ sớm, sẽ swing tiếp." };
   }
   if (outcome === "error") {
-    return { kind: "error", message: `Lỗi: ${serverMessage ?? "Unknown"}` };
+    if(serverMessage)return {kind:"error",message:`Lỗi: ${serverMessage}`};
+    if(row.detail==='DEALER_REST_REQUIRED')return {kind:"error",message:"Dealer chưa đủ thời gian nghỉ. Chờ đủ lịch nghỉ rồi tải lại trạng thái bàn."};
+    if(row.detail==='DEALER_ACQUISITION_ATTENDANCE_STALE')return {kind:"error",message:"Ca check-in của dealer không còn thuộc ngày vận hành hiện tại. Kiểm tra ca và tải lại trạng thái bàn."};
+    return { kind: "error", message: "Chưa thực hiện được Swing. Hãy tải lại trạng thái bàn để kiểm tra." };
   }
   return {
     kind: "unknown",
@@ -38,14 +41,21 @@ export function classifyManualSwingOutcome(result: unknown): DealerSwingUiOutcom
 
 export function classifyProcessSwingResult(result: unknown): DealerSwingUiOutcome {
   const row = typeof result === "object" && result !== null
-    ? result as { status?: unknown; error_code?: unknown; processed_count?: unknown }
+    ? result as { ok?: unknown; status?: unknown; error_code?: unknown; processed_count?: unknown; metrics?: unknown; dry_run?: unknown }
     : {};
   const status = typeof row.status === "string" ? row.status : "";
-  if (status === "completed") {
-    const count = typeof row.processed_count === "number" && Number.isFinite(row.processed_count)
-      ? row.processed_count
-      : 0;
-    return { kind: "success", message: `Đã xử lý ${count} swing` };
+  if (status === "completed" && row.ok !== false && row.error_code == null) {
+    // The current Edge response has per-club mixed operation metrics, not a
+    // processed_count of dealer changes. Never infer a zero or sum those metrics.
+    if (row.ok === true && row.metrics !== null && typeof row.metrics === 'object' && !Array.isArray(row.metrics) && typeof row.dry_run === 'boolean') {
+      return row.dry_run
+        ? { kind: 'info', message: 'Đã hoàn tất mô phỏng Swing; đây không phải xác nhận đổi dealer.' }
+        : { kind: 'success', message: 'Đợt xử lý Swing đã hoàn tất. Đang cập nhật trạng thái bàn.' };
+    }
+    // Retain the older explicit-count contract only when that count is verified.
+    if (typeof row.processed_count === 'number' && Number.isSafeInteger(row.processed_count) && row.processed_count >= 0 && row.dry_run !== true) {
+      return { kind: "success", message: `Đã xử lý ${row.processed_count} swing` };
+    }
   }
   if (["partial", "locked", "dependency_unavailable", "business_failed"].includes(status)) {
     return {

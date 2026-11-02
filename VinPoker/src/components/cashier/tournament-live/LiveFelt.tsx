@@ -74,13 +74,11 @@ export interface SeatInfo {
   refund_award?: number | null;
   /** Public display-only rank from a fresh verified settlement. */
   hand_rank?: { category: string; best_five: string[]; kickers: string[] } | null;
-  /** UAT wave 2 (compact viewer only): whole-hand chips committed by an ALL-IN seat —
-   * keeps the ALL-IN pill's amount visible after the street sweeps current_bet to 0.
-   * Absent → the pill falls back to current_bet (today's behavior). */
+  /** Whole-hand ALL-IN commitment for display status, never a new seat-side pile
+   * after the current street has been swept into the pot. */
   total_committed?: number;
-  /** liveBetChips (spectator): whole-hand committed chips for a NON-all-in seat, so the
-   * committed-bet disc persists after the street sweeps current_bet to 0. Absent → the
-   * disc falls back to current_bet (today's per-street behavior). */
+  /** Spectator presentation of the current street contribution. Canonical live
+   * and replay parents clear it at the street sweep, independently of total_committed. */
   display_committed_bet?: number;
 }
 
@@ -628,6 +626,10 @@ export function LiveFelt({
       t: Math.min(78, potCenterT + (portrait ? 16 : 15)),
     };
   };
+  // Keep the scaled pile clear of the cards'8px reveal travel as well as the
+  // stationary board. Narrow portrait also needs a reveal gutter: the centered
+  // collect pile otherwise crosses the transformed card edge at 320px.
+  const settlementPotMarginTop = portrait ? 16 : 24;
   const committedSeatStacks = viewerLayout
     ? seats
       .map((seat) => {
@@ -1085,7 +1087,7 @@ export function LiveFelt({
                   // (no blind level) → chips render alone exactly as today: never a fake BB.
                   <div
                     className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none${unified ? ' tracker-seat-plate' : ''}`}
-                    title={`${seat.display_name} · ${seat.chip_count}`}
+                    title={`${seat.display_name} · ${displayedStack(seat)}`}
                     style={unified ? undefined : { background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
                   >
                     <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]${unified ? ' tracker-seat-name' : ''}`} style={unified ? undefined : nameTextStyle}>
@@ -1135,6 +1137,17 @@ export function LiveFelt({
                     so their render is byte-identical even with current_bet now populated. */}
                 {!viewerLayout && seat.is_all_in && (
                   <div className="mt-0.5 text-[8px] font-bold text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
+                )}
+                {viewerLayout && seat.is_all_in && !seat.is_folded && !hideCommittedSeatStacks
+                  && ![seat.current_bet,seat.display_committed_bet].some(value=>typeof value==='number'&&Number.isFinite(value)&&value>0) && (
+                  <div data-testid={`felt-all-in-status-${seat.player_id}`}
+                    className="mt-0.5 max-w-full text-[8px] font-bold text-red-400"
+                    title={t('liveHub.felt.sweptAllIn','Tổng chip đã cược trong hand; đã gom vào pot')}
+                    style={nameShadow}>
+                    {t("liveHub.felt.allIn", "ALL IN")}
+                    {typeof seat.total_committed==='number'&&Number.isFinite(seat.total_committed)&&seat.total_committed>0
+                      ? ` · ${formatGameplayAmount(seat.total_committed)}` : ''}
+                  </div>
                 )}
                 {seat.is_folded && <div className="mt-0.5 text-[8px] text-zinc-300" style={nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
                 {!seat.is_folded && !seat.is_all_in && seat.last_action && (
@@ -1214,8 +1227,8 @@ export function LiveFelt({
             {(settlementPayoutPhase === "pot_collect" || livePotCollectionActive) && (
               <div
                 data-testid="felt-settlement-collect-center"
-                className="absolute -translate-x-1/2 -translate-y-1/2"
-                style={{ left: "50%", top: `${settlementPotPoint(0, 1).t}%` }}
+                className={`absolute -translate-x-1/2${portrait ? " -translate-y-1/2" : ""}`}
+                style={{ left: "50%", top: `${settlementPotPoint(0, 1).t}%`, marginTop: settlementPotMarginTop }}
               >
                 <CenterPotStack compact label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${formatGameplayAmount(displayPot)}`} />
               </div>
@@ -1228,8 +1241,11 @@ export function LiveFelt({
                 <div
                   key={pot.potId}
                   data-testid={`felt-settlement-pot-${pot.kind}-${visibleIndex}`}
-                  className="absolute -translate-x-1/2 -translate-y-1/2"
-                  style={{ left: `${point.l}%`, top: `${point.t}%` }}
+                  // On a scaled landscape felt, half the fixed-height chip pile
+                  // used to rise over the five-card board. Grow downward from
+                  // the existing below-board anchor; portrait keeps its spacing.
+                  className={`absolute -translate-x-1/2${portrait ? " -translate-y-1/2" : ""}`}
+                  style={{ left: `${point.l}%`, top: `${point.t}%`, marginTop: settlementPotMarginTop }}
                 >
                   <CenterPotStack compact
                     label={`${pot.kind === "main" ? t("liveHub.felt.main", "Main") : t("liveHub.felt.side", "Side {{i}}", { i: activePotLayerIndex })} ${formatGameplayAmount(pot.amount)}`}
@@ -1298,9 +1314,8 @@ export function LiveFelt({
         {viewerLayout && !hideCommittedSeatStacks &&
           committedSeatStacks
             .map(({ seat: s, amount: amt, point: pt }) => {
-              // liveBetChips: prefer the whole-hand committed (display_committed_bet) so the
-              // disc persists across street sweeps; fall back to the per-street current_bet
-              // (today's behavior when the field is absent → byte-identical).
+              // Position only the unswept street contribution. The separate ALL-IN
+              // status above retains whole-hand information without duplicating chips.
               // UAT wave 2 (Fix 3, compact only): the ALL-IN pill prefers the seat's
               // WHOLE-HAND committed total (survives street sweeps), and — RPT style —
               // shows the AMOUNT ALONE on the red pill: the red stack already signals

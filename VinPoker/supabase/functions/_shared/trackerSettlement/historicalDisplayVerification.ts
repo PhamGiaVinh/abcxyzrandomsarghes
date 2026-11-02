@@ -123,7 +123,8 @@ function sourceRefundAction(actions: readonly SettlementDbAction[], playerId: st
   const source = [...actions]
     .filter((action) => action.player_id === playerId)
     .sort((left, right) => right.action_order - left.action_order)
-    .find((action) => ["bet", "raise", "all_in"].includes(action.action_type));
+    .find((action) => action.action_amount > 0
+      && ["bet", "raise", "all_in", "post_sb", "post_bb", "post_ante"].includes(action.action_type));
   return source ?? fail("refund_source_action_missing");
 }
 
@@ -225,7 +226,12 @@ export async function verifyHistoricalDisplaySettlement(
   }
 
   const breakdown = computePotBreakdown(contributions);
-  if (breakdown.pots.length === 0 || !Number.isSafeInteger(breakdown.totalPot) || !Number.isSafeInteger(breakdown.totalCommitted)) {
+  const folded = new Set(contributions.filter((row) => row.is_folded).map((row) => entryByPlayerId.get(row.player_id)!));
+  const survivors = players.filter((player) => !folded.has(entryKey(player)));
+  const refundOnly = breakdown.pots.length === 0 && breakdown.totalPot === 0
+    && breakdown.totalCommitted > 0 && breakdown.uncalled?.amount === breakdown.totalCommitted
+    && survivors.length === 1 && survivors[0].player_id === breakdown.uncalled.player_id;
+  if ((!refundOnly && breakdown.pots.length === 0) || !Number.isSafeInteger(breakdown.totalPot) || !Number.isSafeInteger(breakdown.totalCommitted)) {
     fail("historical_empty_or_invalid_pot");
   }
   const storedPot = hand.pot_size == null ? 0 : chip(hand.pot_size, "invalid_historical_pot_size");
@@ -233,7 +239,6 @@ export async function verifyHistoricalDisplaySettlement(
     fail("historical_pot_size_mismatch");
   }
 
-  const folded = new Set(contributions.filter((row) => row.is_folded).map((row) => entryByPlayerId.get(row.player_id)!));
   const awards = new Map<EntryKey, number>();
   const ranksByEntry = new Map<EntryKey, PrivateHandRankV1>();
   const pots: SettledPotV1[] = [];
@@ -291,7 +296,7 @@ export async function verifyHistoricalDisplaySettlement(
     ? [{
       playerId: breakdown.uncalled.player_id,
       amount: refund,
-      sourceActionId: actionId(sourceRefundAction(actions, breakdown.uncalled.player_id)),
+      sourceActionId: actionId(sourceRefundAction(potActions, breakdown.uncalled.player_id)),
     }]
     : [];
   const settlements = players.map((player) => {

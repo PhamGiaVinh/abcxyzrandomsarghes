@@ -25,6 +25,15 @@ const props = {
 };
 
 describe("HandEditPanel action amounts", () => {
+  it("distinguishes gross draft wagers from a saved pot after an uncalled return", () => {
+    render(<HandEditPanel {...props} potSize={100} actions={[
+      ...props.actions.slice(0,2),
+      {player_id:"p1",entry_number:1,street:"preflop",action_type:"fold",action_amount:0,action_order:3},
+    ]}/>);
+    expect(screen.getByText(/Tổng cược nháp \(chưa hoàn cược\):/)).toHaveTextContent("150");
+    expect(screen.queryByText(/Pot từ action nháp:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Pot đã lưu:/)).toHaveTextContent("100");
+  });
   it("shows the exact call requirement and prevents an invalid action correction", () => {
     render(<HandEditPanel {...props} />);
 
@@ -39,7 +48,9 @@ describe("HandEditPanel action amounts", () => {
   it("labels a missing recorded pot without showing a verified zero", () => {
     render(<HandEditPanel {...props} potSize={null} />);
     expect(screen.getByText("Chưa có dữ liệu")).toBeInTheDocument();
-    expect(screen.getByText(/Bản nháp để đối chiếu/)).toBeInTheDocument();
+    expect(screen.getByText(/Đường lưu hiển thị riêng đang tắt/)).toBeInTheDocument();
+    expect(screen.getByText(/chỉ lưu sau khi máy chủ xác nhận đường sửa nguyên tử/)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Lý do sửa — bắt buộc" })).toBeInTheDocument();
   });
 
   it("offers the canonical next BB action when an edited SB call leaves the draft incomplete", () => {

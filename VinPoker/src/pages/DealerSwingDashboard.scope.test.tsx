@@ -3,9 +3,9 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 
-const state = vi.hoisted(() => ({ actorId: "actor-a", ids: ["center", "quads"], v2: true }));
+const state = vi.hoisted(() => ({ actorId: "actor-a", ids: ["center", "quads"], v2: true,error:null as string|null,refresh:vi.fn() }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: state.actorId }, loading: false, isAdmin: false, isClubAdmin: false, isClubOwner: false }) }));
-vi.mock("@/hooks/useOperatorClubs", () => ({ useOperatorClubs: () => ({ clubs: [{ id: "center", name: "CenterPoint" }, { id: "quads", name: "Quads" }], clubIds: ["center", "quads"], dealerClubIds: state.ids }) }));
+vi.mock("@/hooks/useOperatorClubs", () => ({ useOperatorClubs: () => ({ clubs: [{ id: "center", name: "CenterPoint" }, { id: "quads", name: "Quads" }], clubIds: ["center", "quads"], dealerClubIds: state.ids,error:state.error,scopeVerified:!state.error,refresh:state.refresh }) }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { dealerShiftPlanner: true, get shiftPlannerV2() { return state.v2; } } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/components/cashier/DealerSwingTab", () => ({ default: () => <div>Swing</div> }));
@@ -24,7 +24,15 @@ function openPlanner() { fireEvent.mouseDown(screen.getByRole("tab", { name: "X�
 function selectClub(id: string) { fireEvent.change(screen.getByRole("combobox", { name: "dealerPlannerScope.club" }), { target: { value: id } }); }
 
 describe("Dealer planner exact club scope", () => {
-  beforeEach(() => { state.actorId = "actor-a"; state.ids = ["center", "quads"]; state.v2 = true; });
+  beforeEach(() => { state.actorId = "actor-a"; state.ids = ["center", "quads"]; state.v2 = true;state.error=null;state.refresh.mockClear(); });
+  it('shows unknown scope with retry, not missing assignment or operational content, on a scope read error',()=>{
+    state.error='Không tải được phạm vi CLB';state.ids=[];
+    render(<Page/>);
+    expect(screen.queryByText('Bạn chưa được phân công CLB nào')).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent('Không tải được phạm vi CLB');
+    expect(screen.queryByText('Swing')).toBeNull();
+    fireEvent.click(screen.getByRole('button',{name:'Thử lại'}));expect(state.refresh).toHaveBeenCalledTimes(1);
+  });
   it.each([true, false])("requires an explicit club and passes only that club to V2=%s", (v2) => {
     state.v2 = v2;
     render(<Page />); openPlanner();

@@ -83,6 +83,8 @@ export function SeatDrawDialog({
   const { user } = useAuth();
   const [phase, setPhase] = useState<"preview" | "committing" | "done">("preview");
   const [availability, setAvailability] = useState<AvailabilityTable[] | null>(null);
+  const [availabilityError,setAvailabilityError]=useState(false);
+  const [readRevision,setReadRevision]=useState(0);
   const [drawMode, setDrawMode] = useState<DrawMode>("random_balanced");
   const [results, setResults] = useState<DrawResultRow[]>([]);
   const [receipt, setReceipt] = useState<SeatReceiptData | null>(null);
@@ -91,22 +93,25 @@ export function SeatDrawDialog({
   // Load availability fresh on every open (floor state moves fast).
   useEffect(() => {
     if (!open) { setPhase("preview"); setResults([]); setAvailability(null); return; }
+    let current=true;setAvailability(null);setAvailabilityError(false);
     (async () => {
-      const [{ data: tables }, { data: seats }] = await Promise.all([
+      try{
+      const [{ data: tables,error:tableError }, { data: seats,error:seatError }] = await Promise.all([
         supabase.from("tournament_tables")
-          .select("id, table_name, table_number, max_seats, status, table_id")
+          .select("id, table_name, table_number, max_seats, status, table_id, game_table_id, table_session_id")
           .eq("tournament_id", tournamentId),
         supabase.from("tournament_seats")
-          .select("table_id, is_active")
+          .select("table_id, is_active, tournament_table_id, table_session_id")
           .eq("tournament_id", tournamentId)
           .eq("is_active", true),
       ]);
-      setAvailability(computeAvailability(
-        (tables ?? []) as TournamentTableRow[],
-        (seats ?? []) as { table_id: string; is_active: boolean }[],
-      ));
+      if(!current)return;
+      if(tableError||seatError||!Array.isArray(tables)||!Array.isArray(seats))throw new Error('capacity_unverified');
+      setAvailability(computeAvailability(tables as TournamentTableRow[],seats));
+      }catch{if(current)setAvailabilityError(true);}
     })();
-  }, [open, tournamentId]);
+    return()=>{current=false;};
+  }, [open, tournamentId,user?.id,readRevision]);
 
   const cap = availability ? capacityCheck(registrations.length, availability) : null;
 
@@ -200,7 +205,7 @@ export function SeatDrawDialog({
 
               <div>
                 <Label className="text-xs">Bàn đang mở</Label>
-                {availability === null ? (
+                {availabilityError?<div role="alert" className="space-y-2 text-sm text-destructive"><p>Không xác minh được sức chứa bàn. Chưa cho phép bốc thăm.</p><Button variant="outline" onClick={()=>setReadRevision(v=>v+1)}>Tải lại sức chứa</Button></div>:availability === null ? (
                   <Skeleton className="h-16 mt-1" />
                 ) : availability.length === 0 ? (
                   <div className="mt-1 text-xs text-destructive flex items-center gap-1.5">

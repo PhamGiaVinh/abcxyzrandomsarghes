@@ -51,7 +51,11 @@ describe("Floor Table Control V3 writer convergence source guards", () => {
     expect(tableMap).toContain("<FloorTableMapPanelV3");
     expect(v3Map).toContain("getTournamentTableRoster");
     expect(v3Map).toContain("getSeatableEntries");
-    expect(v3Map).toContain("movePlayerSeat");
+    expect(v3Map).toContain("<MovePlayerDialog actorId={actorId}");
+    const moveDialog = read("src/components/cashier/tournament-live/MovePlayerDialog.tsx");
+    expect(moveDialog).toContain("canonical.movePlayerSeatExact(frozen.intent)");
+    expect(moveDialog).toContain("canonical.movePlayerSeatOrQueueExact(frozen.intent)");
+    expect(v3Map).not.toContain("v3.movePlayerSeat(");
     expect(v3Map).toContain("breakTournamentTable");
     expect(v3Map).toContain('role="status"');
     expect(v3Map).toContain('role="alert"');

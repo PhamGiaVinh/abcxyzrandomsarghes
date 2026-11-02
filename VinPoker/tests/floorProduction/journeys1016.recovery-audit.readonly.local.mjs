@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {writeFileSync} from 'node:fs';
+assert.equal(process.env.VINPOKER_JOURNEYS1016_LOCAL,'1');
+const db='vinpoker_ops_cash115_qualified_c';
+const sql=q=>execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${db}`,'psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:`BEGIN READ ONLY;SET LOCAL statement_timeout='10s';${q}ROLLBACK;`,encoding:'utf8',timeout:20000,maxBuffer:4e6}).trim();
+const read=q=>JSON.parse(sql(q));
+const guard=read("SELECT jsonb_build_object('db',current_database(),'host',host(inet_server_addr()),'port',inet_server_port(),'directory',current_setting('data_directory'),'external',(SELECT count(*) FROM pg_extension WHERE extname IN('pg_net','pg_cron','dblink')));");
+assert.deepEqual(guard,{db,host:'127.0.0.1',port:55441,directory:'/tmp/vinpoker-sol-local-20261016-0e79a729/data',external:0});
+const tables=['tournaments','tournament_entries','tournament_seats','tournament_tables','table_sessions','tournament_close_report','tournament_prizes','tournament_prize_payments','tournament_chip_counts','seat_draw_receipts','seat_assignment_history','table_operation_receipts','cashier_buyin_movements','dealer_attendance','dealer_assignments','tournament_hands','tournament_settlement_outcomes','multi_day_final_participations_v1'];
+const fingerprint=()=>read(`SELECT to_jsonb(md5(jsonb_build_array(${tables.map(t=>`(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM public.${t} x)`).join(',')})::text));`);
+
+const before=fingerprint();
+const facts=read("SELECT jsonb_build_object('finish',(SELECT jsonb_build_object('id',id,'tournament',tournament_id,'number',hand_number,'status',status,'pot',pot_size,'revision',source_revision) FROM public.tournament_hands WHERE id='2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8'),'finishReceipt',(SELECT jsonb_agg(r.result) FROM floor_private.floor_table_v3_existing_receipt('febf2b51-fdb7-42ff-886c-b3bb1fffdc3e','record_tracker_manual_hand_v1','1e986bba-e3c6-43be-84f4-01c938826ab0')r),'cash',(SELECT jsonb_build_object('id',id,'tournament',tournament_id,'amount',applied_amount) FROM public.cashier_buyin_movements WHERE id='0ba33eca-829e-44a5-bc77-4f10f1a4271d'),'colorUp',(SELECT jsonb_build_object('id',id,'tournament',tournament_id,'request',idempotency_key,'status',status,'removed',value_removed,'added',value_added,'rounding',rounding_delta) FROM public.color_up_operation WHERE id='5a34b7bf-4ebc-44f5-a632-296e9846f72f'));");
+assert.deepEqual(facts.finish,{id:'2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8',tournament:'c367013a-3ed3-48af-ad48-3915acadc50e',number:2,status:'completed',pot:200,revision:15});
+assert.equal(facts.finishReceipt.length,1);assert.equal(facts.finishReceipt[0].hand_id,facts.finish.id);assert.equal(facts.finishReceipt[0].status,'success');
+assert.equal(facts.cash.id,'0ba33eca-829e-44a5-bc77-4f10f1a4271d');assert.equal(facts.cash.tournament,'fdf91018-09f3-4cdc-b76a-f688eb216cee');assert.equal(facts.cash.amount,115000);
+assert.equal(facts.colorUp.request,'7adebe37-f267-4b9f-a65e-7ab11fc50f01');assert.equal(facts.colorUp.status,'reversed');assert.equal(facts.colorUp.removed,16000);assert.equal(facts.colorUp.added,16000);assert.equal(facts.colorUp.rounding,0);
+const after=fingerprint();assert.equal(before,after);
+writeFileSync('D:/Quy trình/output/reports/journeys1016-retained-recovery-native-local-20261027.json',JSON.stringify({kind:'CURRENT_RETAINED_RECEIPT_READONLY_PLUS_HISTORICAL_UI_AUDIT_NOT_NEW_MUTATION',guard,tables,before,after,unchanged:true,facts},null,2)+'\n');console.log('JOURNEYS1016_RETAINED_FINISH_CASH_COLORUP_READONLY_UNCHANGED_PASS');

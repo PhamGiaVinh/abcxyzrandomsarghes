@@ -4,32 +4,67 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import { saveTournamentConfig, recoverTournamentConfigSave, type TournamentConfigRpc, type TournamentConfigSaveRequest } from "@/lib/tournamentConfigSave";
 import type { Tournament, TournamentWithTables } from "@/types/tournament";
+import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from '@/lib/floorTableControlV3';
+import { assertTournamentDeleted } from '@/lib/tournamentDeleteResult';
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
+
+export function useTournamentConfigTableInventory(clubId: string, actorId: string | undefined) {
+  const supabase = useSupabaseClient();
+  return useQuery({
+    queryKey: ['tournament-config-inventory', actorId, clubId],
+    enabled: !!clubId && !!actorId,
+    queryFn: async () => {
+      const client = createFloorTableControlV3Client(supabase.rpc.bind(supabase) as unknown as FloorTableControlV3Rpc);
+      const result = await client.getClubTableInventory(clubId);
+      if (result.ok === false) throw new Error(result.error);
+      return result.data;
+    },
+    staleTime: 0,
+    retry: false,
+  });
+}
 
 // ─── Query key factory ──────────────────────────────────────────────────────
 
 const tournamentKeys = {
-  all: (clubId?: string) => ["tournaments", clubId] as const,
-  active: (clubId?: string) => ["tournaments", clubId, "active"] as const,
+  // Actor isolates browser cache, not authorization; the server still enforces RLS.
+  // Keep club first so existing mutation invalidation refreshes both list variants.
+  all: (clubId: string | undefined, actorId: string | undefined, epoch: number) => ["tournaments", clubId, actorId, epoch, "all"] as const,
+  active: (clubId: string | undefined, actorId: string | undefined, epoch: number) => ["tournaments", clubId, actorId, epoch, "active"] as const,
 };
 
 // ─── Fetch all tournaments with tables ──────────────────────────────────────
 
-export function useTournaments(clubId: string | undefined) {
+export function useTournaments(clubId: string | undefined, actorId: string | undefined, session: {access_token?: string} | null | undefined) {
   const supabase = useSupabaseClient();
+  const epoch = session?.access_token ? sessionReadEpoch(session) : 0;
   return useQuery({
-    queryKey: tournamentKeys.all(clubId),
-    queryFn: async () => {
-      if (!clubId) return [];
-
-      const { data, error } = await supabase
+    queryKey: tournamentKeys.all(clubId, actorId, epoch),
+    queryFn: async ({signal}) => {
+      if (!clubId || !actorId || !epoch) throw new Error('AUTH_SCOPE_REQUIRED');
+      const controller=new AbortController();
+      const abort=()=>controller.abort();
+      signal.addEventListener('abort',abort,{once:true});
+      if(signal.aborted)abort();
+      try{
+      const { data, error } = await observeTrackerContextRead(supabase
         .from("tournaments")
         .select(
           `
           *,
           tournament_tables (
+            id,
             table_id,
+            game_table_id,
+            table_session_id,
+            status,
+            canonical_game_table:game_tables!tournament_tables_game_table_id_v3_fkey (
+              id,
+              table_name
+            ),
             game_tables!tournament_tables_table_id_fkey (
               id,
               table_name
@@ -38,32 +73,48 @@ export function useTournaments(clubId: string | undefined) {
         `
         )
         .eq("club_id", clubId)
-        .order("created_at", { ascending: false });
+        .abortSignal(controller.signal)
+        .order("created_at", { ascending: false }));
 
       if (error) throw error;
-      return (data ?? []) as unknown as TournamentWithTables[];
+      if(!Array.isArray(data))throw new Error('TOURNAMENT_LIST_READ_INVALID');
+      return data as unknown as TournamentWithTables[];
+      }finally{signal.removeEventListener('abort',abort);controller.abort();}
     },
-    enabled: !!clubId,
+    enabled: !!clubId && !!actorId && !!epoch,
     staleTime: 5 * 60 * 1000,
   });
 }
 
 // ─── Fetch active tournaments only ──────────────────────────────────────────
 
-export function useActiveTournaments(clubId: string | undefined) {
+export function useActiveTournaments(clubId: string | undefined, actorId: string | undefined, session: {access_token?: string} | null | undefined) {
   const supabase = useSupabaseClient();
+  const epoch = session?.access_token ? sessionReadEpoch(session) : 0;
   return useQuery({
-    queryKey: tournamentKeys.active(clubId),
-    queryFn: async () => {
-      if (!clubId) return [];
-
-      const { data, error } = await supabase
+    queryKey: tournamentKeys.active(clubId, actorId, epoch),
+    queryFn: async ({signal}) => {
+      if (!clubId || !actorId || !epoch) throw new Error('AUTH_SCOPE_REQUIRED');
+      const controller=new AbortController();
+      const abort=()=>controller.abort();
+      signal.addEventListener('abort',abort,{once:true});
+      if(signal.aborted)abort();
+      try{
+      const { data, error } = await observeTrackerContextRead(supabase
         .from("tournaments")
         .select(
           `
           *,
           tournament_tables (
+            id,
             table_id,
+            game_table_id,
+            table_session_id,
+            status,
+            canonical_game_table:game_tables!tournament_tables_game_table_id_v3_fkey (
+              id,
+              table_name
+            ),
             game_tables!tournament_tables_table_id_fkey (
               id,
               table_name
@@ -77,12 +128,15 @@ export function useActiveTournaments(clubId: string | undefined) {
         )
         .eq("club_id", clubId)
         .in("status", ["active", "live", "break", "final_table"])
-        .order("name");
+        .abortSignal(controller.signal)
+        .order("name"));
 
       if (error) throw error;
-      return (data ?? []) as unknown as TournamentWithTables[];
+      if(!Array.isArray(data))throw new Error('TOURNAMENT_LIST_READ_INVALID');
+      return data as unknown as TournamentWithTables[];
+      }finally{signal.removeEventListener('abort',abort);controller.abort();}
     },
-    enabled: !!clubId,
+    enabled: !!clubId && !!actorId && !!epoch,
     staleTime: 2 * 60 * 1000,
   });
 }
@@ -90,6 +144,9 @@ export function useActiveTournaments(clubId: string | undefined) {
 // ─── Create tournament ──────────────────────────────────────────────────────
 
 export interface CreateTournamentInput {
+  expected_actor_id: string;
+  request_id: string;
+  recover_only?: boolean;
   club_id: string;
   name: string;
   description?: string;
@@ -105,43 +162,10 @@ export function useCreateTournament() {
 
   return useMutation({
     mutationFn: async (input: CreateTournamentInput) => {
-      const { table_ids, ...tournamentData } = input;
-
-      // 1. Create tournament
-      const { data: tournament, error: tournamentError } = await supabase
-        .from("tournaments")
-        .insert(withTournamentCreateLiveStatus({
-          ...tournamentData,
-          warn_at_minutes: input.warn_at_minutes ?? 5,
-          crit_at_minutes: input.crit_at_minutes ?? 2,
-        }))
-        .select()
-        .single();
-
-      if (tournamentError) throw tournamentError;
-
-      // 2. Link tables
-      if (table_ids.length > 0) {
-        // Remove existing links first (table can only belong to 1 tournament)
-        await supabase
-          .from("tournament_tables")
-          .delete()
-          .in("table_id", table_ids);
-
-        // Create new links
-        const { error: linkError } = await supabase
-          .from("tournament_tables")
-          .insert(
-            table_ids.map((table_id) => ({
-              tournament_id: tournament.id,
-              table_id,
-            }))
-          );
-
-        if (linkError) throw linkError;
-      }
-
-      return tournament;
+      const request = configRequest(input);
+      // Fixed contract boundary until generated types include migration88.
+      const rpc = supabase.rpc.bind(supabase) as unknown as TournamentConfigRpc;
+      return input.recover_only ? recoverTournamentConfigSave(rpc, request) : saveTournamentConfig(rpc, request);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -153,16 +177,25 @@ export function useCreateTournament() {
 
 // ─── Update tournament ──────────────────────────────────────────────────────
 
-export interface UpdateTournamentInput {
+export interface UpdateTournamentInput extends CreateTournamentInput {
   id: string;
-  club_id: string;
-  name?: string;
-  description?: string;
-  swing_duration_minutes?: number;
-  warn_at_minutes?: number;
-  crit_at_minutes?: number;
-  status?: "active" | "completed" | "cancelled";
-  table_ids?: string[];
+  expected_updated_at: string;
+  expected_active_table_ids: string[];
+}
+
+export function configRequest(input: CreateTournamentInput | UpdateTournamentInput): TournamentConfigSaveRequest {
+  return {
+    p_expected_actor_id: input.expected_actor_id,
+    p_tournament_id: 'id' in input ? input.id : null,
+    p_club_id: input.club_id,
+    p_config: {name: input.name, description: input.description ?? null,
+      swing_duration_minutes: input.swing_duration_minutes,
+      warn_at_minutes: input.warn_at_minutes ?? 5, crit_at_minutes: input.crit_at_minutes ?? 2},
+    p_table_ids: [...input.table_ids].sort(),
+    p_expected_updated_at: 'id' in input ? input.expected_updated_at : null,
+    p_expected_active_table_ids: 'id' in input ? [...input.expected_active_table_ids].sort() : [],
+    p_request_id: input.request_id,
+  };
 }
 
 export function useUpdateTournament() {
@@ -171,50 +204,9 @@ export function useUpdateTournament() {
 
   return useMutation({
     mutationFn: async (input: UpdateTournamentInput) => {
-      const { id, club_id, table_ids, ...updateData } = input;
-
-      // 1. Update tournament
-      const { data: tournament, error: tournamentError } = await supabase
-        .from("tournaments")
-        .update({
-          ...updateData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (tournamentError) throw tournamentError;
-
-      // 2. Update table links if provided
-      if (table_ids !== undefined) {
-        // Remove all existing links
-        await supabase
-          .from("tournament_tables")
-          .delete()
-          .eq("tournament_id", id);
-
-        // Create new links
-        if (table_ids.length > 0) {
-          await supabase
-            .from("tournament_tables")
-            .delete()
-            .in("table_id", table_ids);
-
-          const { error: linkError } = await supabase
-            .from("tournament_tables")
-            .insert(
-              table_ids.map((table_id) => ({
-                tournament_id: id,
-                table_id,
-              }))
-            );
-
-          if (linkError) throw linkError;
-        }
-      }
-
-      return tournament;
+      const request = configRequest(input);
+      const rpc = supabase.rpc.bind(supabase) as unknown as TournamentConfigRpc;
+      return input.recover_only ? recoverTournamentConfigSave(rpc, request) : saveTournamentConfig(rpc, request);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -231,14 +223,14 @@ export function useDeleteTournament() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    retry: false,
     mutationFn: async ({ id, club_id }: { id: string; club_id: string }) => {
       const { data, error } = await supabase.rpc("ops_delete_tournament_safe", {
         p_tournament_id: id,
         p_reason: "tournament_hook_delete",
       });
       if (error) throw error;
-      const result = data as { ok?: boolean; error?: string } | null;
-      if (result?.ok === false) throw new Error(result.error ?? "tournament_delete_failed");
+      assertTournamentDeleted(data, id);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({

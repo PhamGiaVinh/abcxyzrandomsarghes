@@ -559,3 +559,19 @@ describe("seriesDateWindow (F&B club-level window)", () => {
     expect(w!.fromLabel).toBe(w!.toLabel); // one dated event → same day both ends
   });
 });
+
+describe('UTC+7 report calendar boundaries', () => {
+  it.each([
+    ['2026-09-30T16:59:59.999Z','2026-q2'],
+    ['2026-09-30T17:00:00.000Z','2026-q3'],
+    ['2026-12-31T16:59:59.999Z','2026-q3'],
+    ['2026-12-31T17:00:00.000Z','2027-q0'],
+  ])('assigns %s to business quarter %s', (instant, expected) => {
+    expect(computeQuarterlySummary([ev({start_time:instant})]).rows[0].key).toBe(expected);
+  });
+  it('uses the full inclusive UTC+7 business day for F&B', () => {
+    const window=seriesDateWindow([ev({start_time:'2026-09-30T17:30:00Z'})]);
+    expect(window).toMatchObject({fromLabel:'01/10/2026',toLabel:'01/10/2026',
+      fromIso:'2026-10-01T00:00:00+07:00',toIso:'2026-10-01T23:59:59.999999+07:00'});
+  });
+});

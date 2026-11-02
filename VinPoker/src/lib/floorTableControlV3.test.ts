@@ -3,6 +3,80 @@ import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "./
 // Test the locked SDK transport itself, with synthetic tokens and custom fetch.
 import { fetchWithAuth } from "../../node_modules/@supabase/supabase-js/src/lib/fetch";
 
+describe("redraw intent reader", () => {
+  const intent={actorId:"actor",tournamentId:"tour",requestId:"request",operation:"apply" as const,batchId:"batch"};
+  const envelope={actor_id:"actor",tournament_id:"tour",request_id:"request",operation:"apply",payload:{batch_id:"batch"},status:"found",
+    result:{ok:true,batch_id:"batch",status:"applied",target_max_seats:9,target_table_count:1,player_count:1,moved_count:1,
+      moves:[{entry_id:"entry",player_name:"Player",from_table_number:31,from_seat_number:2,to_table_number:30,to_seat_number:5}]}};
+  it("accepts only the exact server receipt without calling a writer", async()=>{
+    const rpc=vi.fn().mockResolvedValue({data:envelope,error:null});
+    const client=createFloorTableControlV3Client(rpc,{enabled:true,redrawSeatLockEnabled:true});
+    expect(await client.getRedrawIntent(intent)).toMatchObject({ok:true,data:{status:"found",operation:"apply",plan:{batchId:"batch",status:"applied"}}});
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("floor_get_redraw_intent_v1",{p_tournament_id:"tour",p_operation:"apply",p_request_id:"request",p_payload:{batch_id:"batch"},p_expected_actor:"actor"});
+  });
+  it.each([
+    {actor_id:"other"},{tournament_id:"other"},{request_id:"other"},{operation:"plan"},
+    {payload:{batch_id:"other"}},{payload:{batch_id:"batch",extra:1}},
+    {result:{...envelope.result,batch_id:"other"}},{result:{...envelope.result,status:"planned"}},
+    {result:{...envelope.result,error:"denied"}},
+    {status:"unknown"},
+  ])("rejects mismatched or ambiguous envelopes %j",async(change)=>{
+    const rpc=vi.fn().mockResolvedValue({data:{...envelope,...change},error:null});
+    const client=createFloorTableControlV3Client(rpc,{enabled:true,redrawSeatLockEnabled:true});
+    expect(await client.getRedrawIntent(intent)).toEqual({ok:false,error:"V3_REDRAW_RECEIPT_UNVERIFIED"});
+  });
+  it("keeps unknown separate from a committed result",async()=>{
+    const rpc=vi.fn().mockResolvedValue({data:{...envelope,status:"unknown",result:undefined},error:null});
+    const client=createFloorTableControlV3Client(rpc,{enabled:true,redrawSeatLockEnabled:true});
+    expect(await client.getRedrawIntent(intent)).toEqual({ok:true,data:{status:"unknown"}});
+  });
+  it("canonicalizes plan table order and validates a planned receipt",async()=>{
+    const rpc=vi.fn().mockResolvedValue({data:{...envelope,operation:"plan",payload:{tournament_id:"tour",target_max_seats:9,game_table_ids:["a","b"]},result:{...envelope.result,status:"planned"}},error:null});
+    const client=createFloorTableControlV3Client(rpc,{enabled:true,redrawSeatLockEnabled:true});
+    expect(await client.getRedrawIntent({...intent,operation:"plan",targetMaxSeats:9,gameTableIds:["B","A"]})).toMatchObject({ok:true,data:{status:"found",operation:"plan",plan:{status:"planned"}}});
+    expect(rpc.mock.calls[0][1].p_payload.game_table_ids).toEqual(["a","b"]);
+  });
+  it.each([false,true])("preserves confirmed Continue clock state %s",async(clockResumed)=>{
+    const rpc=vi.fn().mockResolvedValue({data:{...envelope,operation:"continue",payload:{batch_id:"batch",expected_redraw_revision:1},result:{ok:true,batch_id:"batch",redraw_revision:2,clock_resumed:clockResumed}},error:null});
+    const client=createFloorTableControlV3Client(rpc,{enabled:true,redrawSeatLockEnabled:true});
+    expect(await client.getRedrawIntent({...intent,operation:"continue",expectedRedrawRevision:1})).toEqual({ok:true,data:{status:"found",operation:"continue",clockResumed}});
+  });
+  it("does not fetch while the required UI contract is disabled",async()=>{
+    const rpc=vi.fn();const client=createFloorTableControlV3Client(rpc,{enabled:true,redrawSeatLockEnabled:false});
+    expect(await client.getRedrawIntent(intent)).toEqual({ok:false,error:"FLOOR_REDRAW_SEAT_LOCK_V1_DISABLED"});
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("deferred move cancellation terminal outcomes", () => {
+  it.each(["transport", "throw"])("keeps the cancellation outcome unknown after %s failure without retrying", async (kind) => {
+    const rpc = kind === "throw"
+      ? vi.fn().mockRejectedValue(new Error("connection lost after commit"))
+      : vi.fn().mockResolvedValue({ data: null, error: { message: "service unavailable" } });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, deferredTrackerMoveEnabled: true });
+    expect(await client.cancelPendingTrackerMove("pending-a")).toEqual({ ok: false, error: "V3_CANCEL_PENDING_MOVE_OUTCOME_UNKNOWN" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+  it("preserves an explicit server business rejection", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ok: false, error: "actor_not_allowed" }, error: null });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, deferredTrackerMoveEnabled: true });
+    expect(await client.cancelPendingTrackerMove("pending-a")).toEqual({ ok: false, error: "actor_not_allowed" });
+  });
+  it.each(["cancelled", "applied", "stale"])("retains the server %s outcome", async (status) => {
+    const data = { ok: true, status, already_resolved: status !== "cancelled" };
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, deferredTrackerMoveEnabled: true });
+    expect(await client.cancelPendingTrackerMove("pending-a")).toEqual({ ok: true, data });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("floor_cancel_pending_tracker_move_v1", { p_pending_move_id: "pending-a" });
+  });
+  it.each([undefined, null, "pending", "unknown", 1])("does not accept unknown successful cancellation status %s", async (status) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ok: true, status }, error: null });
+    const client = createFloorTableControlV3Client(rpc, { enabled: true, deferredTrackerMoveEnabled: true });
+    expect(await client.cancelPendingTrackerMove("pending-a")).toEqual({ ok: false, error: "V3_CANCEL_PENDING_MOVE_RESPONSE_MALFORMED" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("manual participant exact-session transport", () => {
   const intent = { actorId: "actor-a", tournamentId: "tour-a", tableId: "tt-a", sessionId: "session-a",
     name: "TEST One", seat: 1, revision: 4, epoch: 2, requestId: "request-a" };

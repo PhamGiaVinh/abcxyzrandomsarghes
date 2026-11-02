@@ -10,8 +10,17 @@ import {
   isConfirmedRosterWrite,
 } from "./trackerAsyncGuards";
 import { createSingleFlightGuard } from "@/lib/singleFlight";
+import { friendlyValidationError } from "./validationMessages";
 
 describe("tracker async guards", () => {
+  it.each([
+    ['tracker_action_stack_exceeded','Số chip vượt quá stack còn lại trên server. Hãy tải lại hand trước khi nhập lại.'],
+    ['tracker_action_negative_amount','Số chip không được âm. Hãy kiểm tra lại hành động.'],
+    ['tracker_action_stack_evidence_missing','Chưa xác minh được stack của hand. Gọi Floor kiểm tra dữ liệu trước khi tiếp tục.'],
+  ])('recognizes authoritative %s denial instead of treating it as an unknown commit', (code,message)=>{
+    expect(classifyActionWriteFailure({code,message:code})).toBe('validation');
+    expect(friendlyValidationError(code,code)).toBe(message);
+  });
   it("validates exact roster receipt before applying chip state", () => {
     const context = { tableId: "logical-b", sessionId: "session-b", epoch: 2, seatNumber: 3, chipCount: 20000 };
     const valid = { ok: true, tournament_table_id: "logical-b", table_session_id: "session-b", control_epoch: 2,

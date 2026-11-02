@@ -69,13 +69,47 @@ export function FinanceWorkspaceView({
               ["F&B", summary.revenue.fnb],
             ]} />
             <Breakdown title="Chi phí đã ghi nhận" rows={[
-              ["Lương net", summary.cost.payrollNet],
-              ["Lương part-time đã trả", summary.cost.ptWagePaid],
+              ["Lương net (gồm PT đã trả)", summary.cost.payrollNet],
+              ["Trong đó: PT đã trả", summary.cost.ptWagePaid],
               ["F&B COGS", summary.cost.fnbCogs],
               ["COMP COGS", summary.cost.compCogs],
               ["Chi phí CLB", summary.cost.clubExpenses],
             ]} />
           </div>
+          {summary.staffLive ? (
+            <div className="space-y-2">
+              <Breakdown title="Lương nhân viên đang tạm tính · hiện tại" rows={[
+                ["FT gross tạm tính", summary.staffLive.ftProvisionalGross],
+                ["FT net tạm tính", summary.staffLive.ftProvisionalNet],
+                ["PT chưa trả", summary.staffLive.ptUnpaidBalance],
+              ]} />
+              <p className="text-sm leading-6 text-[#91a49b]">
+                FT kỳ {summary.staffLive.ftPeriod}; PT là số dư chưa trả hiện tại, có thể gồm ca từ kỳ trước.
+                Các khoản này chưa cộng vào chi phí đã ghi nhận trong khoảng báo cáo.
+              </p>
+            </div>
+          ) : (
+            <StateCard title="Chưa xác minh được tổng hợp lương nhân viên ngoài dealer từ backend hiện tại." />
+          )}
+          {summary.dealerFtLive ? (
+            <div className="space-y-2">
+              <Breakdown title="Dealer FT dự tính · kỳ hiện tại chưa ghi nhận" rows={[
+                ["Dealer FT gross dự tính",summary.dealerFtLive.gross],
+                ["Dealer FT net dự tính",summary.dealerFtLive.net],
+              ]}/>
+              <p className="text-sm leading-6 text-[#91a49b]">Kỳ {summary.dealerFtLive.period}; chỉ gồm dealer chưa được ghi nhận trong kỳ. Ca đang mở dự tính theo giờ chuẩn, chưa cộng vào chi phí đã ghi nhận.</p>
+            </div>
+          ) : <StateCard title="Chưa có dữ liệu dự tính dealer FT đã xác minh."/>}
+          {summary.dealerLive ? (
+            <div className="space-y-2">
+              <Breakdown title="Lương dealer PT chưa trả · hiện tại" rows={[
+                ["Chưa chốt (dealer đang hoạt động)",summary.dealerLive.ptActiveUnfinalizedBalance],
+                ["Đã chốt, chưa trả",summary.dealerLive.ptFinalizedUnpaidBalance],
+                ["Tổng PT dealer chưa trả",summary.dealerLive.ptTotalUnpaid],
+              ]}/>
+              <p className="text-sm leading-6 text-[#91a49b]">Số dư hiện tại, có thể gồm ca từ kỳ trước. Chưa cộng vào chi phí đã ghi nhận; chi phí PT được ghi nhận khi trả.</p>
+            </div>
+          ) : <StateCard title="Chưa có dữ liệu lương dealer PT đã xác minh."/>}
           <div className="rounded-2xl border border-amber-300/15 bg-amber-300/8 px-4 py-3 text-sm leading-6 text-amber-100">
             <AlertTriangle className="mr-2 inline h-4 w-4" />
             Escrow và payout liability là khoản nợ phải trả. Contract này chưa trả liability nên màn hình không hiển thị số 0 giả.
@@ -142,5 +176,5 @@ function formatMoney(value: number): string {
 }
 
 function formatRange(range: FinanceRange): string {
-  return `${new Date(range.from).toLocaleDateString("vi-VN")}–${new Date(range.to).toLocaleDateString("vi-VN")}`;
+  return `${new Date(range.from).toLocaleDateString("vi-VN",{timeZone:'Asia/Ho_Chi_Minh'})}–${new Date(range.to).toLocaleDateString("vi-VN",{timeZone:'Asia/Ho_Chi_Minh'})}`;
 }

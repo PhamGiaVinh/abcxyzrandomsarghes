@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FEATURES } from "@/lib/featureFlags";
 import { useAuth } from "@/hooks/useAuth";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,12 +43,13 @@ export interface DealerScore {
 // ── Polling hook ──────────────────────────────────────────────────────────────
 
 function usePollingQuery<T>(
-  queryFn: () => Promise<T[]>,
+  queryFn: (signal: AbortSignal) => Promise<T[]>,
   deps: unknown[],
   intervalMs: number
 ): { data: T[]; loading: boolean; error: string | null; refetch: () => void } {
-  const { user } = useAuth();
-  const scope = JSON.stringify([user?.id ?? null, ...deps]);
+  const { user, session } = useAuth();
+  const readEpoch = sessionReadEpoch(session);
+  const scope = JSON.stringify([user?.id ?? null, readEpoch, ...deps]);
   const currentScope = useRef(scope);
   currentScope.current = scope;
   const [data, setData] = useState<T[]>([]);
@@ -56,23 +59,30 @@ function usePollingQuery<T>(
   const timerRef = useRef<number | null>(null);
   const queryFnRef = useRef(queryFn);
   const generationRef = useRef(0);
+  const flightRef = useRef<{scope:string;controller:AbortController}|null>(null);
   queryFnRef.current = queryFn;
 
   const fetch = useCallback(async () => {
-    const gen = ++generationRef.current;
     const requestedScope = currentScope.current;
+    if(flightRef.current?.scope===requestedScope)return;
+    const flight={scope:requestedScope,controller:new AbortController()};
+    flightRef.current=flight;
+    const gen = ++generationRef.current;
     try {
-      const rows = await queryFnRef.current();
+      const rows = await waitForManualPlayerResponse(queryFnRef.current(flight.controller.signal),15_000);
       if (gen === generationRef.current && requestedScope === currentScope.current) {
         setData(rows);
         setDataScope(requestedScope);
         setError(null);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (gen === generationRef.current && requestedScope === currentScope.current) {
-        setError(e?.message ?? "Unknown error");
+        const message=e&&typeof e==='object'&&'message' in e&&typeof e.message==='string'?e.message:'Không tải được dữ liệu dealer.';
+        setError(message==='MANUAL_PLAYER_OUTCOME_UNKNOWN'?'Quá thời gian tải dữ liệu dealer. Hãy thử lại.':message);
       }
     } finally {
+      flight.controller.abort();
+      if(flightRef.current===flight)flightRef.current=null;
       if (gen === generationRef.current && requestedScope === currentScope.current) setLoading(false);
     }
   }, []);
@@ -86,10 +96,12 @@ function usePollingQuery<T>(
     }, intervalMs);
     return () => {
       generationRef.current += 1;
+      flightRef.current?.controller.abort();
+      flightRef.current=null;
       if (timerRef.current) clearInterval(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, user?.id]);
+  }, [...deps, user?.id, readEpoch]);
 
   return { data: dataScope === scope ? data : [], loading, error, refetch: fetch };
 }
@@ -103,7 +115,7 @@ export function useAllDealers(clubIds: string[]): {
   refetch: () => void;
 } {
   return usePollingQuery<DealerRecord>(
-    async () => {
+    async (signal) => {
       if (!clubIds.length) return [];
       const query = FEATURES.manualPayrollDeductions
         ? supabase.from("dealers").select("id, club_id, full_name, tier, status, employment_type, hourly_rate_vnd, base_rate_vnd, monthly_salary_vnd, standard_hours_per_shift, ot_multiplier, joined_date, notes, phone, telegram_user_id, telegram_username, shift_preference, manual_bhxh_vnd, manual_tax_vnd")
@@ -111,7 +123,7 @@ export function useAllDealers(clubIds: string[]): {
       const { data, error } = await query
         .in("club_id", clubIds)
         .is("deleted_at", null)
-        .order("full_name");
+        .order("full_name").abortSignal(signal);
       if (error) throw error;
       return data ?? [];
     },
@@ -127,14 +139,23 @@ export function useDealerScores(clubId: string): {
   refetch: () => void;
 } {
   return usePollingQuery<DealerScore>(
-    async () => {
-      const { data, error } = await (supabase as any)
-        .from("dealer_scores")
-        .select("*")
-        .eq("club_id", clubId)
-        .order("score", { ascending: false });
+    async (signal) => {
+      if (!clubId) return [];
+      const { data, error } = await supabase.rpc('get_dealer_scores_v1',{p_club_id:clubId}).abortSignal(signal);
       if (error) throw error;
-      return (data ?? []) as DealerScore[];
+      if(!Array.isArray(data))throw new Error('Không xác minh được dữ liệu score dealer.');
+      const ids=new Set<string>();
+      return data.map((value:unknown):DealerScore=>{
+        if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Không xác minh được dữ liệu score dealer.');
+        const row=value as Record<string,unknown>;
+        if(typeof row.dealer_id!=='string'||!row.dealer_id||ids.has(row.dealer_id)||row.club_id!==clubId
+          ||typeof row.full_name!=='string'||typeof row.tier!=='string'
+          ||!(row.employment_type===null||typeof row.employment_type==='string')
+          ||![row.total_hours,row.total_swings,row.score].every(n=>typeof n==='number'&&Number.isFinite(n)))
+          throw new Error('Không xác minh được dữ liệu score dealer.');
+        ids.add(row.dealer_id);
+        return row as unknown as DealerScore;
+      });
     },
     [clubId],
     60_000

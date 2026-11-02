@@ -16,13 +16,16 @@ export function handPlayersHasSnapshotForClient(client: HandPlayerNamesClient): 
   const cached = snapshotProbes.get(client);
   if (cached) return cached;
   const probe = (async () => {
-    try {
-      const { error } = await client.from("hand_players").select("player_name").limit(1);
-      return !error;
-    } catch {
-      return false;
-    }
-  })();
+    const { error } = await client.from("hand_players").select("player_name").limit(1);
+    if (!error) return true;
+    // Only a confirmed absent column selects the legacy read path. Network/auth
+    // failures must reach the workspace error state, not poison this client cache.
+    if (error.code === "42703") return false;
+    throw new Error(error.message || "Không xác minh được dữ liệu snapshot của hand.");
+  })().catch((error: unknown) => {
+    snapshotProbes.delete(client);
+    throw error;
+  });
   snapshotProbes.set(client, probe);
   return probe;
 }

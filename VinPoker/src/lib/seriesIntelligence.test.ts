@@ -31,7 +31,9 @@ describe('Series Intelligence content', () => {
   });
 
   it('contains no forbidden wording', () => {
-    const blob = JSON.stringify(SERIES_INTEL).toLowerCase();
+    const { transparencyBadge, ...claims } = SERIES_INTEL;
+    expect(transparencyBadge).toBe('Dữ liệu: quy tắc + quan sát, không phải dự đoán');
+    const blob = JSON.stringify(claims).toLowerCase();
     for (const term of [
       'profit',
       'lợi nhuận thật',

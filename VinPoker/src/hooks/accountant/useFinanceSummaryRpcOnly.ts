@@ -1,10 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
 import { useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { parseFinanceCore, financeSessionReadEpoch } from "@/lib/financeSummaryRead";
+import { parseFinanceCore, financeSessionReadEpoch, assertFinanceCalendarRange, assertFinanceCalendarScope } from "@/lib/financeSummaryRead";
+import {parseFinanceStaffLive,parseFinanceDealerLive,parseFinanceDealerFtLive,type FinanceDealerFtLive,type FinanceDealerLive,type FinanceStaffLive} from '@/lib/financeSummaryRead';
 
 export interface FinanceSummaryRpc {
+  staffLive?:FinanceStaffLive;
+  dealerLive?:FinanceDealerLive;
+  dealerFtLive?:FinanceDealerFtLive;
   revenue: {
     total: number;
     rake: number;
@@ -27,7 +32,7 @@ export interface FinanceSummaryRpc {
 /**
  * RPC-ONLY finance summary for the accountant workspace. Deliberately NO client-side
  * fallback: failed canonical reads must not become client-calculated balances.
- * The RPC (get_club_finance_summary, accountant scope via 20261236000000) either
+ * The date RPC v2 delegates the unchanged accountant/owner authority to v1 and either
  * answers or raises 42501 — the tab shows the explicit reason, never fake zeros.
  */
 export function useFinanceSummaryRpcOnly(clubId: string | null, from: string, to: string) {
@@ -39,20 +44,25 @@ export function useFinanceSummaryRpcOnly(clubId: string | null, from: string, to
   const activeContext = useRef(context);
   activeContext.current = context;
   const query = useQuery({
-    queryKey: ["accountant", "financeSummary", user?.id??"", epoch, isAdmin, clubId ?? "", from, to, authLoading],
+    queryKey: ["accountant", "financeSummaryV2", user?.id??"", epoch, isAdmin, clubId ?? "", from, to, authLoading],
     enabled,
     staleTime: 60_000,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
     retry: false,
     queryFn: async ({ signal }): Promise<FinanceSummaryRpc> => {
       if (!enabled || activeContext.current !== context) throw new Error("AUTH_REQUIRED");
-      const { data, error } = await supabase.rpc("get_club_finance_summary", {
-        p_from: from,
-        p_to: to,
-        p_club_id: clubId ?? undefined,
-      }).abortSignal(signal);
+      assertFinanceCalendarRange(from,to);
+      const { data, error } = await observeTrackerContextRead(supabase.rpc("get_club_finance_summary_v2" as never, {
+        p_from_date: from,
+        p_to_date: to,
+        p_club_id: clubId,
+      } as never).abortSignal(signal));
       if (activeContext.current !== context) throw new Error("FINANCE_READ_SUPERSEDED");
       if (error) throw error;
-      const {revenue:rev,cost,net}=parseFinanceCore(data);
+      const {data:source,revenue:rev,cost,net}=parseFinanceCore(data);
+      assertFinanceCalendarScope(source,{from,to,clubId});
       return {
         revenue: {
           total: rev.total,
@@ -71,6 +81,9 @@ export function useFinanceSummaryRpcOnly(clubId: string | null, from: string, to
           clubExpenses: cost.clubExpenses ?? 0,
         },
         net,
+        ...(Object.prototype.hasOwnProperty.call(source,'staffLive')?{staffLive:parseFinanceStaffLive(source.staffLive)}:{}),
+    ...(Object.prototype.hasOwnProperty.call(source,'dealerLive')?{dealerLive:parseFinanceDealerLive(source.dealerLive)}:{}),
+    ...(Object.prototype.hasOwnProperty.call(source,'dealerFtLive')?{dealerFtLive:parseFinanceDealerFtLive(source.dealerFtLive)}:{}),
       };
     },
   });

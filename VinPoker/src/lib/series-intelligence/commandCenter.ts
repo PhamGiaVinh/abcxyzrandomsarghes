@@ -1,3 +1,4 @@
+import { financeBusinessToday } from "../financeSummaryRead";
 // Series Intelligence — Owner Command Center (Phase 1 BI, read-only, PURE).
 //
 // Turns the live native `SeriesEvent[]` (from `get_club_series_events` via
@@ -242,8 +243,8 @@ export function avgContributionPerEvent(result: ContributionByTypeResult): {
 // ----------------------------------------------------------------------------
 //
 // Descriptive counting only (Observed Pattern): events / entries / fee revenue / estimated GTD
-// overlay per calendar quarter. Quarter comes from event_date in LOCAL time — same convention as
-// turnoutForecast's quarter feature. Events with no (or unparseable) date are NEVER guessed into
+// overlay per calendar quarter. Quarter comes from event_date in the UTC+7 business calendar; independent of
+// the browser timezone. Events with no (or unparseable) date are NEVER guessed into
 // a quarter; they are counted separately in `undatedCount`.
 
 export interface QuarterlyRow {
@@ -270,8 +271,9 @@ function quarterOf(iso: string | null): { key: string; label: string } | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const q = Math.floor(d.getMonth() / 3);
-  return { key: `${d.getFullYear()}-q${q}`, label: `Quý ${q + 1}/${d.getFullYear()}` };
+  const [year, month] = financeBusinessToday(d).split('-').map(Number);
+  const q = Math.floor((month - 1) / 3);
+  return { key: `${year}-q${q}`, label: `Quý ${q + 1}/${year}` };
 }
 
 export function computeQuarterlySummary(events: SeriesEvent[]): QuarterlySummary {
@@ -324,27 +326,18 @@ export function computeQuarterlySummary(events: SeriesEvent[]): QuarterlySummary
 
 export interface SeriesDateWindow {
   clubId: string;
-  /** Start-of-day (local) of the earliest event, as an ISO instant for the timestamptz RPC. */
+  /** Start-of-day (UTC+7) of the earliest event, as an ISO instant for the timestamptz RPC. */
   fromIso: string;
-  /** End-of-day (local) of the latest event, as an ISO instant. */
+  /** End-of-day (UTC+7) of the latest event, as an ISO instant. */
   toIso: string;
-  fromLabel: string; // dd/mm/yyyy of the earliest event (local)
-  toLabel: string; // dd/mm/yyyy of the latest event (local)
+  fromLabel: string; // dd/mm/yyyy of the earliest event (UTC+7)
+  toLabel: string; // dd/mm/yyyy of the latest event (UTC+7)
 }
 
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-const dmyLabel = (d: Date): string => `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
-const dayStartIso = (d: Date): string => {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.toISOString();
-};
-const dayEndIso = (d: Date): string => {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x.toISOString();
-};
-
+const dmyLabel = (d: Date): string => financeBusinessToday(d).split('-').reverse().join('/');
+const dayStartIso = (d: Date): string => `${financeBusinessToday(d)}T00:00:00+07:00`;
+// fnb_get_report uses inclusive BETWEEN at PostgreSQL microsecond precision.
+const dayEndIso = (d: Date): string => `${financeBusinessToday(d)}T23:59:59.999999+07:00`;
 /**
  * Compute the club + calendar window spanned by the loaded native events, for the club-level F&B read.
  * Returns null when no event has a usable club id + parseable date (never guesses a window). Uses the

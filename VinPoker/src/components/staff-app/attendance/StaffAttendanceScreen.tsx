@@ -15,10 +15,14 @@ function minutesLabel(minutes?: number | null): string {
 
 export function StaffAttendanceScreen() {
   const { staff, isStaff, loading } = useStaffLink();
-  const { rows, isLoading } = useStaffAttendance(staff?.staffId);
+  const { rows, isLoading, isError, scopeError, refetch, isFetching } = useStaffAttendance(staff);
 
   if (loading || isLoading) return <AttendanceSkeleton />;
   if (!isStaff || !staff) return <StaffNotLinkedScreen />;
+  if (isError || scopeError) return <Card role="alert" className="p-4 space-y-2">
+    <p>Không xác minh được lịch sử chấm công.</p><p>{scopeError}</p>
+    {!scopeError && <button type="button" className="underline" disabled={isFetching} onClick={()=>{void refetch();}}>Thử lại</button>}
+  </Card>;
 
   return (
     <div className="space-y-3">

@@ -1,10 +1,11 @@
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Banknote, CalendarDays, ClipboardList, Landmark, Plus, ReceiptText, WalletCards } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { formatShortDate, formatVND } from "@/lib/format";
+import { financeBusinessToday } from "@/lib/financeSummaryRead";
 import { clubExpensesSource } from "@/lib/clubExpenses/dataSource";
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS, type ExpenseCategory, type ExpensePaymentSource, type ExpensePaymentStatus } from "@/lib/clubExpenses/types";
 import { useExpenseClubs } from "@/hooks/clubExpenses/useExpenseClubs";
@@ -20,8 +21,8 @@ import { Textarea } from "@/components/ui/textarea";
 
 function monthBounds(monthKey: string): { from: string; to: string } {
   const [year, month] = monthKey.split("-").map(Number);
-  const from = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
-  const to = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+  const from = new Date(Date.UTC(year, month - 1, 1) - 7 * 60 * 60 * 1000);
+  const to = new Date(Date.UTC(year, month, 1) - 7 * 60 * 60 * 1000);
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
@@ -32,8 +33,7 @@ function shiftMonth(monthKey: string, delta: number): string {
 }
 
 function currentMonthKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return financeBusinessToday().slice(0,7);
 }
 
 export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) {
@@ -50,8 +50,8 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const { from, to } = useMemo(() => monthBounds(monthKey), [monthKey]);
   const clubsQuery = useExpenseClubs(source, allowed);
-  const clubs = clubsQuery.data ?? [];
-  const activeClubId = clubId || clubs[0]?.id || null;
+  const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
+  const activeClubId = clubs.some(c=>c.id===clubId) ? clubId : clubs[0]?.id ?? null;
   const expensesQuery = useClubExpenses(source, activeClubId, from, to);
   const recordExpense = useRecordClubExpense(source, activeClubId, from, to);
 
@@ -63,7 +63,7 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
   // Embedded (accountant workspace): the parent already gates access — never redirect.
   if (!allowed && !embedded) return <Navigate to="/club/admin" replace />;
 
-  const summary = expensesQuery.data;
+  const summary = expensesQuery.isError ? undefined : expensesQuery.data;
   const rows = summary?.rows ?? [];
   const activeClub = clubs.find((c) => c.id === activeClubId);
 
@@ -100,16 +100,20 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
         </Card>
       )}
 
-      {clubs.length === 0 ? (
+      {clubsQuery.isError ? (
+        <Card role="alert" className="p-4 border-destructive/40 text-sm">
+          Không tải được danh sách CLB. <Button variant="outline" size="sm" onClick={()=>void clubsQuery.refetch()}>Thử lại</Button>
+        </Card>
+      ) : clubs.length === 0 ? (
         <Card className="p-6 border-border text-sm text-muted-foreground">Bạn chưa có CLB hoặc quyền thu ngân để ghi chi phí.</Card>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard icon={ReceiptText} label="Tổng chi" value={formatVND(summary?.totalVnd ?? 0)} />
-              <MetricCard icon={Banknote} label="Đã trả" value={formatVND(summary?.paidVnd ?? 0)} />
-              <MetricCard icon={WalletCards} label="Chưa trả" value={formatVND(summary?.unpaidVnd ?? 0)} />
-              <MetricCard icon={ClipboardList} label="Số dòng" value={`${rows.length}`} />
+              <MetricCard icon={ReceiptText} label="Tổng chi" value={summary?formatVND(summary.totalVnd):'Chưa xác minh'} />
+              <MetricCard icon={Banknote} label="Đã trả" value={summary?formatVND(summary.paidVnd):'Chưa xác minh'} />
+              <MetricCard icon={WalletCards} label="Chưa trả" value={summary?formatVND(summary.unpaidVnd):'Chưa xác minh'} />
+              <MetricCard icon={ClipboardList} label="Số dòng" value={summary?`${rows.length}`:'Chưa xác minh'} />
             </div>
 
             <Card className="p-4 border-border bg-card">
@@ -134,7 +138,11 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
                 )}
               </div>
 
-              {expensesQuery.isLoading ? (
+              {expensesQuery.isError || (!summary&&!expensesQuery.isLoading) ? (
+                <div role="alert" className="text-sm text-destructive">
+                  Không xác minh được sổ chi phí. <Button variant="outline" size="sm" onClick={()=>void expensesQuery.refetch()}>Thử lại</Button>
+                </div>
+              ) : expensesQuery.isLoading ? (
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
                 </div>
@@ -171,10 +179,12 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
           </div>
 
           <ExpenseEntryForm
-            disabled={!activeClubId}
+            key={`${source}:${activeClubId}:${monthKey}:${recordExpense.contextKey}`}
+            disabled={!activeClubId||!summary||expensesQuery.isError}
             pending={recordExpense.isPending}
             preview={preview}
-            onSubmit={(input) => recordExpense.mutate(input)}
+            initialInput={recordExpense.pendingInput}
+            onSubmit={(input) => recordExpense.mutateAsync(input)}
           />
         </div>
       )}
@@ -194,30 +204,30 @@ function MetricCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ 
   );
 }
 
+type ExpenseInput=Parameters<ReturnType<typeof useRecordClubExpense>['mutateAsync']>[0];
+
 function ExpenseEntryForm({
   disabled,
   pending,
   preview,
   onSubmit,
+  initialInput,
 }: {
   disabled: boolean;
   pending: boolean;
   preview: boolean;
-  onSubmit: (input: {
-    category: ExpenseCategory;
-    amountVnd: number;
-    incurredAt: string;
-    description?: string;
-    paymentStatus: ExpensePaymentStatus;
-    paymentSource?: ExpensePaymentSource | null;
-  }) => void;
+  onSubmit: (input: ExpenseInput) => Promise<unknown>;
+  initialInput?:ExpenseInput|null;
 }) {
-  const [category, setCategory] = useState<ExpenseCategory>("misc");
-  const [amount, setAmount] = useState("");
-  const [incurredDate, setIncurredDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [paymentStatus, setPaymentStatus] = useState<ExpensePaymentStatus>("unpaid");
-  const [paymentSource, setPaymentSource] = useState<ExpensePaymentSource | "none">("none");
-  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<ExpenseCategory>(initialInput?.category??"misc");
+  const [amount, setAmount] = useState(initialInput?String(initialInput.amountVnd):"");
+  const [incurredDate, setIncurredDate] = useState(()=>initialInput?.incurredAt.slice(0,10)??financeBusinessToday());
+  const [paymentStatus, setPaymentStatus] = useState<ExpensePaymentStatus>(initialInput?.paymentStatus??"unpaid");
+  const [paymentSource, setPaymentSource] = useState<ExpensePaymentSource | "none">(initialInput?.paymentSource??"none");
+  const [description, setDescription] = useState(initialInput?.description??"");
+  const [submitting,setSubmitting]=useState(false),[formError,setFormError]=useState<string|null>(null);
+  const locked=useRef(false),mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
 
   return (
     <Card className="p-4 border-border bg-card h-fit">
@@ -233,11 +243,12 @@ function ExpenseEntryForm({
 
       <form
         className="space-y-3"
-        onSubmit={(event) => {
+        onSubmit={async(event) => {
           event.preventDefault();
           const amountVnd = Number(amount);
-          if (!amountVnd) return;
-          onSubmit({
+          if(disabled||pending||locked.current||!Number.isSafeInteger(amountVnd)||!amountVnd)return;
+          locked.current=true;setSubmitting(true);setFormError(null);
+          try{await onSubmit({
             category,
             amountVnd,
             incurredAt: `${incurredDate}T12:00:00+07:00`,
@@ -245,10 +256,14 @@ function ExpenseEntryForm({
             paymentStatus,
             paymentSource: paymentSource === "none" ? null : paymentSource,
           });
-          setAmount("");
-          setDescription("");
+          if(mounted.current){setAmount("");setDescription("");}
+          }catch(error){if(mounted.current)setFormError(error instanceof Error?error.message:'Chưa xác minh được kết quả ghi chi phí.');}
+          finally{locked.current=false;if(mounted.current)setSubmitting(false);}
         }}
       >
+        <fieldset disabled={pending||submitting} className="space-y-3 min-w-0">
+        {initialInput&&<p className="text-sm text-amber-400">Có lần ghi chưa xác minh. Nội dung đã được giữ lại để thử lại cùng giao dịch.</p>}
+        {formError&&<p role="alert" className="text-sm text-destructive">{formError}</p>}
         <div className="space-y-1.5">
           <Label>Danh mục</Label>
           <Select value={category} onValueChange={(value) => setCategory(value as ExpenseCategory)}>
@@ -301,10 +316,11 @@ function ExpenseEntryForm({
           <Textarea id="expense-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ví dụ: in poster, mua vật tư..." />
         </div>
 
-        <Button type="submit" className="w-full" disabled={disabled || pending || !Number(amount)}>
+        <Button type="submit" className="w-full" disabled={disabled || pending || submitting || !Number.isSafeInteger(Number(amount)) || !Number(amount)}>
           <Landmark className="w-4 h-4 mr-1.5" />
           {preview ? "Ghi preview" : "Ghi chi phí"}
         </Button>
+        </fieldset>
       </form>
     </Card>
   );

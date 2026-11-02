@@ -23,8 +23,8 @@ const STATUS_META: Record<FloorTableRosterIndexStatus, { label: string; classNam
 
 /**
  * A responsive index for Floor tables. It deliberately does not use the old
- * oval table-map glyph: each card exposes its number, control mode and all
- * nine seat positions before the operator opens the full roster.
+ * oval table-map glyph: each card exposes its number, control mode and its canonical
+ * seat positions before the operator opens the full roster.
  */
 export function FloorTableRosterIndex({
   tables,
@@ -40,7 +40,8 @@ export function FloorTableRosterIndex({
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {tables.map((table) => {
           const status = STATUS_META[table.status];
-          const occupied = new Set(table.occupiedSeatNumbers.filter((seat) => seat >= 1 && seat <= 9));
+          const maxSeats = Math.min(table.maxSeats, 9);
+          const occupied = new Set(table.occupiedSeatNumbers.filter((seat) => seat >= 1 && seat <= maxSeats));
           const occupiedCount = occupied.size;
           const tableLabel = table.tableNumber == null ? table.tableName : `Bàn ${table.tableNumber}`;
           const modeLabel = table.controlMode === "tracker" ? "Live Tracker" : "Manual Floor";
@@ -54,7 +55,7 @@ export function FloorTableRosterIndex({
               data-floor-table-number={table.tableNumber ?? undefined}
               onClick={() => onOpen(table.id)}
               className="group min-h-[132px] rounded-2xl border border-border bg-card/60 p-3 text-left transition hover:border-primary/55 hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              aria-label={`${tableLabel}, ${occupiedCount}/9 ghế, ${modeLabel}, ${status.label}. Mở danh sách ghế.`}
+              aria-label={`${tableLabel}, ${occupiedCount}/${maxSeats} ghế, ${modeLabel}, ${status.label}. Mở danh sách ghế.`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -64,12 +65,12 @@ export function FloorTableRosterIndex({
                   )}
                 </div>
                 <span className="shrink-0 font-mono text-sm font-semibold text-foreground">
-                  {occupiedCount}/{Math.min(table.maxSeats, 9)}
+                  {occupiedCount}/{maxSeats}
                 </span>
               </div>
 
-              <div className="mt-3 grid grid-cols-9 gap-1" aria-hidden="true">
-                {Array.from({ length: 9 }, (_, index) => {
+              <div className="mt-3 grid gap-1" style={{ gridTemplateColumns: `repeat(${maxSeats}, minmax(0, 1fr))` }} aria-hidden="true">
+                {Array.from({ length: maxSeats }, (_, index) => {
                   const seat = index + 1;
                   return (
                     <span
@@ -94,7 +95,7 @@ export function FloorTableRosterIndex({
               </div>
 
               <span className="mt-2 block text-xs font-medium text-primary opacity-85 group-hover:opacity-100">
-                Mở danh sách 9 ghế
+                Mở danh sách {maxSeats} ghế
               </span>
             </button>
           );

@@ -19,6 +19,7 @@ import { Loader2, Lock, CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useCloseReport } from "@/hooks/useCloseReport";
 import { describeCloseBlockers } from "@/lib/feltLifecycleReadiness";
+import {TournamentRankingReviewPanel} from './TournamentRankingReviewPanel';
 
 interface Props {
   open: boolean;
@@ -58,18 +59,26 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
   const [step, setStep] = useState<1 | 2>(1);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rankingBlocked,setRankingBlocked]=useState(true);
 
   useEffect(() => {
     if (open) { setStep(1); setTyped(""); reload(); }
   }, [open, reload]);
 
+  // A refreshed report needs a new review; an earlier phrase is not consent to new figures.
+  useEffect(() => {
+    if (loading || error) { setStep(1); setTyped(""); }
+  }, [loading, error]);
+
   const phraseOk = typed.trim().toUpperCase() === CONFIRM_PHRASE;
-  const canConfirm = phraseOk && !busy && !alreadyClosed && !!report && readiness?.ok === true && readiness.ready;
+  const canConfirm = phraseOk && !loading && !error && !busy && !rankingBlocked && !alreadyClosed && !!report && readiness?.ok === true && readiness.ready;
 
   const handleConfirm = async () => {
+    if(!canConfirm)return;
     setBusy(true);
     const res = await closeTournament("close_report");
     setBusy(false);
+    if(res.error==='close_scope_changed')return;
     if (!res.ok) {
       toast.error(`Không chốt được: ${res.error ?? "lỗi không rõ"}`);
       return;
@@ -89,6 +98,9 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
           <DialogDescription className="font-medium text-foreground">{tournamentName}</DialogDescription>
         </DialogHeader>
 
+        <TournamentRankingReviewPanel tournamentId={tournamentId} required={readiness?.blockers.includes('manual_ranking_review_required')??false}
+          enabled={open} onBlockingChange={setRankingBlocked} onRecorded={reload}/>
+
         {loading && (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -96,9 +108,13 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
         )}
 
         {!loading && error && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-            <span>Không tải được báo cáo: {error}</span>
+            <div className="min-w-0 space-y-2">
+              <p>Không tải được báo cáo: {error}</p>
+              <Button variant="outline" size="sm" className="min-h-11" disabled={busy}
+                onClick={()=>{setStep(1);setTyped("");void reload();}}>Thử tải lại báo cáo</Button>
+            </div>
           </div>
         )}
 
@@ -106,7 +122,9 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
           <div className="space-y-3">
             {alreadyClosed && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
-                <CheckCircle2 className="w-4 h-4 text-primary" /> Giải này đã được chốt.
+                <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+                <span>Giải này đã được chốt. Đây là snapshot tại lúc chốt, không phải số dư quầy hiện tại.
+                  Các khoản trả thưởng sau đó xem tại mục Payout.</span>
               </div>
             )}
             {!alreadyClosed && readiness && !readiness.ready && (
@@ -116,10 +134,11 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
             )}
 
             <div className="grid grid-cols-3 gap-2">
-              <Cell label="Tổng entry" value={report.entryCount} hint={`${report.bySource.online} on · ${report.bySource.offline} off · ${report.bySource.reentry} re`} />
+              <Cell label="Đăng ký đã xác nhận" value={report.entryCount} hint={`${report.bySource.online} on · ${report.bySource.offline} off · ${report.bySource.reentry} re`} />
               <Cell label="Re-entry" value={report.reentryCount} />
               <Cell label="Free-rake" value={report.freeRakeUsed} />
             </div>
+            <p className="text-xs text-muted-foreground">Báo cáo đăng ký và thu/chi của riêng giải này; không gộp tiền các flight hoặc nghĩa vụ payout Main Event. Người qualified vào D2 không tạo đăng ký thu phí mới.</p>
 
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border p-3">
@@ -132,8 +151,8 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] font-medium text-muted-foreground mb-1">TIỀN RA</div>
-                <Row label="Prize trả hạng" sub="pass-through" amount={fmt(report.prizeTotal)} />
-                <Row label="Số dư quầy" sub="vào − ra" amount={fmt(report.cashierBalance)} />
+                <Row label={alreadyClosed ? "Prize ghi nhận lúc chốt" : "Prize trả hạng"} sub="pass-through" amount={fmt(report.prizeTotal)} />
+                <Row label={alreadyClosed ? "Số dư quầy lúc chốt" : "Số dư quầy"} sub="vào − ra" amount={fmt(report.cashierBalance)} />
               </div>
             </div>
 
@@ -141,7 +160,7 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2">
                 <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
                 <div className="text-sm">
-                  <div className="font-medium">Số dư quầy khớp — chênh 0₫</div>
+                  <div className="font-medium">{alreadyClosed ? "Lúc chốt: số dư quầy khớp — chênh 0₫" : "Số dư quầy khớp — chênh 0₫"}</div>
                   <div className="text-xs text-muted-foreground">Doanh thu club {fmt(report.clubRevenue)} = tiền vào − tiền ra</div>
                 </div>
               </div>
@@ -149,14 +168,16 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
               <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <div className="font-medium text-warning">Số dư chưa cân — chênh {fmt(Math.abs(report.reconcileDelta))}</div>
+                  <div className="font-medium text-warning">{alreadyClosed ? "Lúc chốt: số dư chưa cân" : "Số dư chưa cân"} — chênh {fmt(Math.abs(report.reconcileDelta))}</div>
                   <div className="text-xs text-muted-foreground">
-                    {report.overlay > 0
+                    {alreadyClosed ? "Chênh lệch đã được lưu tại thời điểm chốt. Đối chiếu các khoản trả thưởng phát sinh sau đó trong Payout; snapshot này không tự cập nhật."
+                    : report.overlay > 0
                       ? `Club bù overlay ${fmt(report.overlay)} (prize > buy-in).`
                       : report.surplusToPool > 0
                         ? `Buy-in dư ${fmt(report.surplusToPool)} so với prize đã trả (payout chưa nhập đủ?).`
                         : "Kiểm tra lại prize/cashout."}
-                    {" "}Vẫn chốt được — sẽ ghi nhận minh bạch.
+                    {!alreadyClosed && <> {readiness?.ready ? "Vẫn chốt được — sẽ ghi nhận minh bạch."
+                      : "Chênh lệch sẽ được ghi nhận sau khi các điều kiện chốt được đáp ứng."}</>}
                   </div>
                 </div>
               </div>
@@ -185,7 +206,7 @@ export default function CloseReportDialog({ open, onOpenChange, tournamentId, to
             <>
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy} className="min-h-[40px]">Huỷ</Button>
               <Button variant="outline" onClick={() => setStep(2)}
-                disabled={!report || loading || !readiness?.ready} className="min-h-[40px]">Tiếp tục</Button>
+                disabled={!report || loading || busy || rankingBlocked || !readiness?.ready} className="min-h-[40px]">Tiếp tục</Button>
             </>
           ) : (
             <>

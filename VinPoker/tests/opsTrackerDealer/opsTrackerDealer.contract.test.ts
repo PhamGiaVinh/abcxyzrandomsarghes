@@ -24,8 +24,16 @@ describe("Ops Tracker and Dealer Control read-only boundaries", () => {
     ];
     for (const adapter of adapters) {
       expect(adapter).toContain('.eq("club_id", clubId)');
-      expect(adapter).not.toMatch(/\.insert\s*\(|\.update\s*\(|\.upsert\s*\(|\.delete\s*\(|\.rpc\s*\(|functions\.invoke|\.channel\s*\(/u);
+      expect(adapter).not.toMatch(/\.insert\s*\(|\.update\s*\(|\.upsert\s*\(|\.delete\s*\(|functions\.invoke|\.channel\s*\(/u);
+      expect(adapter.match(/\.rpc\b/g)).toHaveLength(1);
     }
+    expect(adapters[0]).toContain("client.rpc.bind(client)");
+    expect([...adapters[0].matchAll(/participationRpc\(\s*"([^"]+)"/g)].map(match => match[1]))
+      .toEqual(["get_tournament_participation_counts_v1"]);
+    expect(adapters[0]).toContain("p_tournament_id: row.id");
+    expect([...adapters[1].matchAll(/\.rpc\(\s*"([^"]+)"/g)].map(match => match[1]))
+      .toEqual(["get_club_table_inventory"]);
+    expect(adapters[1]).toContain("p_club_id: clubId");
   });
 
   it("does not import player session, global client, payroll or writer components", () => {

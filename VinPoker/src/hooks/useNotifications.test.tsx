@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   user: { id: "user-a" } as { id: string } | null,
   read: vi.fn(),
   write: vi.fn(),
+  signals: [] as AbortSignal[],
   subscriptions: new Map<string, boolean>(),
   listeners: [] as Array<{ event: string; callback: (payload: { new: Record<string, unknown> }) => void }>,
 }));
@@ -25,6 +26,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       eq: (column: string, value: string | boolean) => { if (column === "user_id") userId = String(value); return query; },
       order: () => query,
       limit: () => query,
+      abortSignal: (signal: AbortSignal) => {state.signals.push(signal);return query;},
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(mutation ? state.write(userId) : state.read(userId, count)).then(resolve, reject),
     };
     return query;
@@ -44,13 +46,29 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   removeChannel: vi.fn((channel: { name: string }) => { state.subscriptions.delete(channel.name); }),
 } }));
 
-import { useNotifications } from "./useNotifications";
+import { routeForNotification, useNotifications } from "./useNotifications";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((finish) => { resolve = finish; });
   return { promise, resolve };
 }
+
+describe('notification destinations match active routes',()=>{
+  for(const type of ['schedule_updated','club_schedule_updated','registration_confirmed','tournament_created'] as const){
+    it(`${type} opens the current tournament list route`,()=>{
+      expect(routeForNotification({type,data:{}})).toBe('/');
+    });
+  }
+  it('group message opens the canonical group route',()=>{
+    expect(routeForNotification({type:'chat_message',data:{group_id:'ad82bc10-27a1-4aab-8efa-2c0d01a621cb'}})).toBe('/group/ad82bc10-27a1-4aab-8efa-2c0d01a621cb');
+  });
+  for(const group_id of [undefined,null,'','../admin','not-a-uuid',42]){
+    it(`malformed group target ${String(group_id)} falls back to inbox`,()=>{
+      expect(routeForNotification({type:'chat_message',data:{group_id}})).toBe('/inbox');
+    });
+  }
+});
 
 describe("notification read scope", () => {
   beforeEach(() => {
@@ -60,6 +78,7 @@ describe("notification read scope", () => {
     state.write.mockResolvedValue({ error: null });
     state.listeners = [];
     state.subscriptions.clear();
+    state.signals=[];
     state.read.mockImplementation((userId: string, count: boolean) => count
       ? { count: 1, error: null }
       : { data: [{ id: `notification-${userId}`, user_id: userId, title: userId, is_read: false }], error: null });
@@ -72,12 +91,37 @@ describe("notification read scope", () => {
       : Promise.resolve(count ? { count: 1, error: null } : { data: [{ id: "new", user_id: userId }], error: null }));
     const hook = renderHook(() => useNotifications());
     await waitFor(() => expect(state.read).toHaveBeenCalledTimes(2));
+    const previousSignals=[...state.signals];
+    expect(previousSignals).toHaveLength(2);expect(previousSignals.every(signal=>!signal.aborted)).toBe(true);
     state.user = { id: "user-b" };
     hook.rerender();
     await waitFor(() => expect(hook.result.current.items[0]?.id).toBe("new"));
+    expect(previousSignals.every(signal=>signal.aborted)).toBe(true);
     await act(async () => { old.resolve({ data: [{ id: "old", user_id: "user-a" }], count: 9, error: null }); });
     expect(hook.result.current.items[0]?.id).toBe("new");
     expect(hook.result.current.unreadCount).toBe(1);
+  });
+
+  it('bounds a hung read, aborts both queries and permits explicit same-scope recovery without losing the last snapshot',async()=>{
+    const hook=renderHook(()=>useNotifications());
+    await waitFor(()=>expect(hook.result.current.items).toHaveLength(1));
+    const held=deferred<unknown>();state.read.mockImplementation(()=>held.promise);
+    vi.useFakeTimers();
+    try{
+      let pending!:Promise<void>;act(()=>{pending=hook.result.current.refresh();});
+      await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});
+      expect(hook.result.current.loading).toBe(false);expect(hook.result.current.error).toBeTruthy();
+      await pending;
+      expect(hook.result.current.items[0]?.id).toBe('notification-user-a');
+      expect(state.signals.slice(-2)).toHaveLength(2);expect(state.signals.slice(-2).every(signal=>signal.aborted)).toBe(true);
+      const calls=state.read.mock.calls.length;await act(async()=>{await vi.advanceTimersByTimeAsync(60000);});
+      expect(state.read).toHaveBeenCalledTimes(calls);
+      state.read.mockImplementation((_actor:string,count:boolean)=>count?{count:2,error:null}:{data:[{id:'recovered',user_id:'user-a'}],error:null});
+      await act(async()=>{await hook.result.current.refresh();});
+      expect(hook.result.current.error).toBeNull();expect(hook.result.current.items[0]?.id).toBe('recovered');
+      await act(async()=>{held.resolve({data:[{id:'late'}],count:9,error:null});});
+      expect(hook.result.current.items[0]?.id).toBe('recovered');expect(hook.result.current.unreadCount).toBe(2);
+    }finally{hook.unmount();vi.useRealTimers();}
   });
 
   it("supports simultaneous bell and page hooks without reusing a subscribed channel", async () => {
@@ -167,6 +211,44 @@ describe("notification read scope", () => {
     expect(hook.result.current.unreadCount).toBe(1);
   });
 
+  it.each(["one", "all"])("bounds a hung mark-read %s without retry or late acknowledgment", async (kind) => {
+    const hook = renderHook(() => useNotifications());
+    await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
+    const held = deferred<{ error: null }>();
+    state.write.mockReturnValue(held.promise);
+    let accepted: boolean | null = null;
+    let pending!: Promise<boolean>;
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        pending = (kind === "one" ? hook.result.current.markRead("notification-user-a") : hook.result.current.markAllRead())
+          .then(value => { accepted = value; return value; });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(10001); });
+      expect(accepted).toBe(false);
+      expect(hook.result.current.error).toMatch(/10 giây/);
+      expect(hook.result.current.items[0]?.is_read).toBe(false);
+      expect(hook.result.current.unreadCount).toBe(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+      expect(state.write).toHaveBeenCalledOnce();
+      state.read.mockImplementation((_actor: string, count: boolean) => count
+        ? { count: 0, error: null }
+        : { data: [{ id: "notification-user-a", user_id: "user-a", is_read: true }], error: null });
+      await act(async () => { await hook.result.current.refresh(); });
+      expect(hook.result.current.error).toBeNull();
+      expect(hook.result.current.unreadCount).toBe(0);
+      const reads = state.read.mock.calls.length;
+      await act(async () => { held.resolve({ error: null }); await pending; });
+      expect(accepted).toBe(false);
+      expect(state.read).toHaveBeenCalledTimes(reads);
+    } finally {
+      hook.unmount();
+      held.resolve({ error: null });
+      await pending;
+      vi.useRealTimers();
+    }
+  });
+
   it("does not refresh or acknowledge another account after an old write returns", async () => {
     const hook = renderHook(() => useNotifications());
     await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
@@ -252,4 +334,21 @@ describe("notification read scope", () => {
     expect(hook.result.current.items[0]?.id).toBe("current");
     expect(hook.result.current.unreadCount).toBe(1);
   });
+
+ it.each([
+  ['null list',null,0],['object list',{},0],['null count',[],null],['fractional count',[],0.5],['negative count',[],-1],
+ ])('rejects a successful malformed %s instead of publishing an empty inbox',async(_case,data,count)=>{
+  const hook=renderHook(()=>useNotifications());
+  await waitFor(()=>expect(hook.result.current.items).toHaveLength(1));
+  state.read.mockImplementation((_actor:string,isCount:boolean)=>isCount?{count,error:null}:{data,error:null});
+  await act(async()=>{await hook.result.current.refresh();});
+  expect(hook.result.current.error).toBeTruthy();
+  expect(hook.result.current.items[0]?.id).toBe('notification-user-a');
+  expect(hook.result.current.unreadCount).toBe(1);
+  state.read.mockImplementation((_actor:string,isCount:boolean)=>isCount?{count:0,error:null}:{data:[],error:null});
+  await act(async()=>{await hook.result.current.refresh();});
+  expect(hook.result.current.error).toBeNull();
+  expect(hook.result.current.items).toEqual([]);expect(hook.result.current.unreadCount).toBe(0);
+  expect(state.write).not.toHaveBeenCalled();
+ });
 });

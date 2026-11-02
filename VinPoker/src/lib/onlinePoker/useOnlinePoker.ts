@@ -27,6 +27,7 @@ import { isHoleCardsOk, type RpcOutcome, type WireLegalActions, type WirePrivate
 import { derivePokerSounds } from './pokerSounds';
 import { deriveMySeatNo, shouldDealSignal, filterLobbyTables, isNewerHandSnap, legalFetchKey, type HandSnapId } from './tableState';
 import { playPokerLiveSound } from '@/lib/pokerLiveSound';
+import {observeTrackerContextRead} from '@/lib/tournament/observeTrackerContextRead';
 
 // ── action fast-path keep-warm (Mức C) ──────────────────────────────────────
 // A local constant, NOT a feature flag (scope kept small — flip here to disable). The ping
@@ -42,8 +43,6 @@ export interface LobbyState {
   tables: LobbyTableSummary[];
   loading: boolean;
   error: string | null;
-  /** Create an open practice table (caller becomes host). Returns the RPC outcome. */
-  createTable: (name: string, sb: string, bb: string, buyin: string, maxSeats?: number) => Promise<RpcOutcome>;
   refresh: () => void;
 }
 
@@ -51,27 +50,39 @@ export function useLobby(): LobbyState {
   const [tables, setTables] = useState<LobbyTableSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
+  const requestRead=useRef<()=>void>(()=>{});
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false,inflight=false,queued=false;
+    let controller:AbortController|null=null;
     if (!RUNTIME_LIVE) {
       setTables(MOCK_TABLES);
       setLoading(false);
       setError(null);
       return;
     }
-    setLoading(true);
-    listTablesLive()
+    const load=async()=>{
+      if(cancelled)return;
+      if(inflight){queued=true;return;}
+      inflight=true;setLoading(true);controller=new AbortController();
+      try {
+        const t=await observeTrackerContextRead(listTablesLive(controller.signal));
       // Hide EMPTY tables from the lobby: an open table with 0 seated players is either a
       // stale leftover (created before the auto-close trigger) or one whose last player
       // just left — never something to join. A freshly created table keeps its host
       // seated (seatedCount >= 1), so this never hides a real table. (No DB write.)
-      .then((t) => { if (!cancelled) { setTables(filterLobbyTables(t)); setError(null); } })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'load_failed'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [tick]);
+        if(!cancelled){setTables(filterLobbyTables(t));setError(null);}
+      }catch(e){
+        if(!cancelled)setError(e instanceof Error?(e.message==='tracker_context_read_timeout'?'lobby_read_timeout':e.message):'load_failed');
+      }finally{
+        controller.abort();inflight=false;
+        if(!cancelled){setLoading(false);if(queued){queued=false;void load();}}
+      }
+    };
+    requestRead.current=()=>{void load();};
+    void load();
+    return () => { cancelled = true;controller?.abort();requestRead.current=()=>{}; };
+  }, []);
 
   // Live: a new/closed table or seat change refreshes the lobby grid.
   useEffect(() => {
@@ -79,22 +90,16 @@ export function useLobby(): LobbyState {
     const channel = supabase
       .channel('op-lobby')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables' }, () => setTick((n) => n + 1))
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables' }, () => requestRead.current())
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats' }, () => setTick((n) => n + 1))
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats' }, () => requestRead.current())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const createTable = useCallback(
-    (name: string, sb: string, bb: string, buyin: string, maxSeats = 9) =>
-      onlinePokerClient.createOpenTable(name, sb, bb, buyin, maxSeats),
-    [],
-  );
+  const refresh = useCallback(() => requestRead.current(), []);
 
-  const refresh = useCallback(() => setTick((n) => n + 1), []);
-
-  return { tables, loading, error, createTable, refresh };
+  return { tables, loading, error, refresh };
 }
 
 // ── single table / hand ──────────────────────────────────────────────────────
@@ -141,10 +146,23 @@ export interface TableHandState {
 }
 
 export function useTableHand(tableId: string): TableHandState {
+  const tableScope=useRef({id:tableId});
+  if(tableScope.current.id!==tableId)tableScope.current={id:tableId};
   const [hand, setHand] = useState<PublicHandView | null>(null);
+  const [handOrigin,setHandOrigin]=useState<object|null>(null);
+  const scopedHand=handOrigin===tableScope.current?hand:null;
   const [seats, setSeats] = useState<LiveSeat[]>([]);
+  const [seatsOrigin,setSeatsOrigin]=useState<object|null>(null);
+  const scopedSeats=seatsOrigin===tableScope.current?seats:[];
   const [uid, setUid] = useState<string | null>(null);
+  const uidRef=useRef<string|null>(null);
+  const identityScope=useRef<object>({});
+  const handMounted=useRef(false);
+  const handRead=useRef<{table:object;identity:object;controller:AbortController}|null>(null);
+  useEffect(()=>{handMounted.current=true;return()=>{handMounted.current=false;handRead.current?.controller.abort();handRead.current=null;};},[]);
   const [hostUserId, setHostUserId] = useState<string | null>(null);
+  const [hostOrigin,setHostOrigin]=useState<object|null>(null);
+  const scopedHost=hostOrigin===tableScope.current?hostUserId:null;
   const [legal, setLegal] = useState<WireLegalActions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +210,7 @@ export function useTableHand(tableId: string): TableHandState {
    * Returns true iff the snapshot was accepted.
    */
   const ingestView = useCallback((view: PublicHandView, snap: HandSnapId): boolean => {
+    if(view.tableId!==tableScope.current.id)return false;
     if (!isNewerHandSnap(snapRef.current, snap)) return false;
     snapRef.current = { handNo: snap.handNo, stateVersion: snap.stateVersion };
     // Opponent-action sound cues, derived purely from prev->next (skips my own seat, which
@@ -204,44 +223,65 @@ export function useTableHand(tableId: string): TableHandState {
     if (dealCheck.fire) { setDealSeats(dealCheck.dealSeats); setDealSignal((n) => n + 1); }
     if (view.handId) prevDealHandIdRef.current = view.handId;
     setHand(view);
+    setHandOrigin(tableScope.current);
     return true;
   }, []);
 
-  // Resolve the caller's uid once (live only) — used to find my seat / host.
+  // A private overlay belongs to an auth generation, not merely to a hand UUID.
   useEffect(() => {
     if (!RUNTIME_LIVE) return;
-    let cancelled = false;
-    supabase.auth.getUser().then(({ data }) => { if (!cancelled) setUid(data?.user?.id ?? null); });
-    return () => { cancelled = true; };
+    let cancelled = false,authEvents=0;
+    const applyIdentity=(next:string|null,force=false)=>{
+      if(cancelled||(!force&&uidRef.current===next))return;
+      identityScope.current={};uidRef.current=next;setUid(next);
+      holesRef.current=null;snapRef.current=null;prevSoundHandRef.current=null;prevDealHandIdRef.current=null;
+      legalKeyRef.current=null;lastLegalOkRef.current=null;legalInflightRef.current=null;
+      setHand(null);setLegal(null);setDealSeats([]);setTick(n=>n+1);
+    };
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((event,session)=>{
+      authEvents++;applyIdentity(session?.user?.id??null,event==='SIGNED_OUT');
+    });
+    void supabase.auth.getUser().then(({ data,error })=>{
+      if(!authEvents)applyIdentity(error?null:data?.user?.id??null,!!error);
+    }).catch(()=>{if(!authEvents)applyIdentity(null,true);});
+    return () => { cancelled = true;identityScope.current={};subscription.unsubscribe(); };
   }, []);
 
   // Load hand (mock while dark; public rail read + private overlay while live).
   useEffect(() => {
-    let cancelled = false;
+    const issuedIdentity=identityScope.current;
     if (!RUNTIME_LIVE) {
       setHand(mockHand(tableId));
+      setHandOrigin(tableScope.current);
       setLoading(false);
       setError(null);
       return;
     }
+    const issuedTable=tableScope.current;
+    if(handRead.current?.table===issuedTable&&handRead.current.identity===issuedIdentity)return;
+    handRead.current?.controller.abort();
+    const run={table:issuedTable,identity:issuedIdentity,controller:new AbortController()};handRead.current=run;
+    const current=()=>handMounted.current&&handRead.current===run&&tableScope.current===issuedTable&&identityScope.current===issuedIdentity;
     setLoading(true);
-    (async () => {
-      const res = await loadHandStateLive(tableId);
+    void observeTrackerContextRead((async () => {
+      const res = await loadHandStateLive(tableId,run.controller.signal);
+      if(!current())return;
       if (!res) {
         // No live hand: clear the VIEW + menu, but KEEP the high-water snapRef — lowering
         // it here would let a late in-flight response of an OLDER hand resurrect that hand.
-        if (!cancelled) { setHand(null); setLegal(null); setError(null); }
+        setHand(null);setHandOrigin(issuedTable);setLegal(null);setError(null);
         return;
       }
       const { wire, stateVersion } = res;
       // Hole cards are fixed for the life of a hand — fetch once per handId and reuse it
       // across polls. The public poll NEVER clears the cache (it carries no holes).
       let priv: { mySeat: number; myHoleCards: string[] } | undefined;
-      if (holesRef.current && holesRef.current.handId === wire.config.handId) {
+      if (uidRef.current&&holesRef.current && holesRef.current.handId === wire.config.handId) {
         priv = holesRef.current.priv;
-      } else {
+      } else if(uidRef.current) {
         try {
           const hc = (await onlinePokerClient.getMyHoleCards(wire.config.handId)) as RpcOutcome;
+          if(!current())return;
           if (isHoleCardsOk(hc)) {
             priv = { mySeat: hc.seat, myHoleCards: hc.cards };
             holesRef.current = { handId: wire.config.handId, priv };
@@ -249,16 +289,15 @@ export function useTableHand(tableId: string): TableHandState {
         } catch { /* not seated / disabled — render public-only, no overlay */ }
       }
       const view = wirePublicToView(wire, priv);
-      if (cancelled) return;
+      if (!current()) return;
       // Sounds + deal signal + setHand live inside the shared SYNCHRONOUS ingest, ordered by
       // the high-water (handNo, stateVersion) guard — a stale poll response is dropped here
-      // even when it slips past `cancelled` (fetch raced the submit fast-path).
+      // even when a current-scope fetch raced the submit fast-path.
       ingestView(view, { handNo: wire.config.handNo, stateVersion });
       setError(null);
-    })()
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'load_failed'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    })())
+      .catch((e) => { if (current()) {setHandOrigin(issuedTable);setHand(null);setError(e instanceof Error ? e.message : 'load_failed');} })
+      .finally(() => { if(current())setLoading(false);if(handRead.current===run)handRead.current=null;run.controller.abort(); });
   }, [tableId, tick, ingestView]);
 
   // Legal-action menu — its OWN effect, ONE edge fetch per (handId, stateVersion) while it
@@ -270,8 +309,8 @@ export function useTableHand(tableId: string): TableHandState {
   //   • off-turn / no hand → menu cleared immediately (key null);
   //   • a response that lands after the key moved on is DROPPED (stale menu never applies).
   const legalKey = legalFetchKey(
-    hand ? { handId: hand.handId, status: hand.status, toActSeat: hand.toActSeat ?? null } : null,
-    hand?.mySeat ?? null,
+    scopedHand ? { handId: scopedHand.handId, status: scopedHand.status, toActSeat: scopedHand.toActSeat ?? null } : null,
+    scopedHand?.mySeat ?? null,
     snapRef.current?.stateVersion ?? null,
   );
   legalKeyRef.current = legalKey;
@@ -280,10 +319,13 @@ export function useTableHand(tableId: string): TableHandState {
     if (legalKey == null) { setLegal(null); return; }
     if (lastLegalOkRef.current === legalKey || legalInflightRef.current === legalKey) return;
     const issuedFor = legalKey;
-    const handId = hand?.handId;
+    const handId = scopedHand?.handId;
     if (!handId) return;
     legalInflightRef.current = issuedFor;
+    const issuedIdentity=identityScope.current;
+    const issuedTable=tableScope.current;
     loadLegalActionsLive(handId).then((lm) => {
+      if(identityScope.current!==issuedIdentity||tableScope.current!==issuedTable)return;
       if (legalInflightRef.current === issuedFor) legalInflightRef.current = null;
       if (legalKeyRef.current !== issuedFor) return; // state moved on — stale menu, drop
       if (lm) { setLegal(lm); lastLegalOkRef.current = issuedFor; }
@@ -296,14 +338,17 @@ export function useTableHand(tableId: string): TableHandState {
 
   // Fast-path ingest of the server's own post-action state (SubmitActionOk.view). The actor
   // sees their move in ONE round trip; the same guard orders it against in-flight polls.
+  const renderIdentity=identityScope.current;
+  const renderTable=tableScope.current;
   const applyServerView = useCallback((view: WirePrivateHandState, stateVersion: number) => {
+    if(identityScope.current!==renderIdentity||tableScope.current!==renderTable)return;
     const priv = { mySeat: view.mySeat, myHoleCards: view.myHoleCards };
     const pv = wirePublicToView(view, priv);
     const applied = ingestView(pv, { handNo: view.config.handNo, stateVersion });
     // Refresh the hole cache only when the snapshot was actually accepted — an out-of-order
     // response must never clobber a newer hand's cached holes.
     if (applied && view.config.handId) holesRef.current = { handId: view.config.handId, priv };
-  }, [ingestView]);
+  }, [ingestView,renderIdentity,renderTable]);
 
   // Keep-warm ping — only while a live table page is mounted, skipped while hidden, ALL
   // errors swallowed (pre-deploy the edge zod-rejects the op; that reject still warms it).
@@ -324,8 +369,9 @@ export function useTableHand(tableId: string): TableHandState {
   useEffect(() => {
     if (!RUNTIME_LIVE) { setSeats([]); setHostUserId(null); return; }
     let cancelled = false;
-    loadSeatsLive(tableId).then((s) => { if (!cancelled) setSeats(s); }).catch(() => {});
-    loadTableHostLive(tableId).then((h) => { if (!cancelled) setHostUserId(h); }).catch(() => {});
+    const issuedTable=tableScope.current;
+    loadSeatsLive(tableId).then((s) => { if (!cancelled) {setSeats(s);setSeatsOrigin(issuedTable);} }).catch(() => {});
+    loadTableHostLive(tableId).then((h) => { if (!cancelled) {setHostUserId(h);setHostOrigin(issuedTable);} }).catch(() => {});
     return () => { cancelled = true; };
   }, [tableId, tick]);
 
@@ -354,7 +400,7 @@ export function useTableHand(tableId: string): TableHandState {
   // progress (the latency-sensitive moment — opponents acting, my menu, the showdown) poll
   // every ~1s; with NO hand (idle table waiting for players) back off to ~3s. The value only
   // flips when a hand appears/disappears, so the interval is not re-created every tick.
-  const pollMs = hand ? 1000 : 3000;
+  const pollMs = scopedHand ? 1000 : 3000;
   useEffect(() => {
     if (!RUNTIME_LIVE) return;
     const id = setInterval(() => {
@@ -372,8 +418,8 @@ export function useTableHand(tableId: string): TableHandState {
   // loadSeatsLive). Deliberately NOT `hand?.mySeat`: a stale completed-hand snapshot keeps
   // mySeat set even after I've left, which used to make the client think I was still
   // seated and block re-joining (P0). Once I leave, my seat row is vacated → mySeatNo null.
-  const mySeatNo = deriveMySeatNo(seats, uid);
-  const amIHost = !!uid && hostUserId === uid;
+  const mySeatNo = deriveMySeatNo(scopedSeats, uid);
+  const amIHost = !!uid && scopedHost === uid;
 
   // Liveness heartbeat (live + seated): ping the server every ~10s so the stale-seat
   // reaper can free this seat if the tab dies. Fires immediately on sitting and on
@@ -403,7 +449,9 @@ export function useTableHand(tableId: string): TableHandState {
     rebuy: (amount) => onlinePokerClient.rebuyOpen(tableId, amount),
   };
 
-  return { hand, seats, mySeatNo, myUserId: uid, hostUserId, amIHost, legal, loading, error, dealSignal, dealSeats, refresh, applyServerView, actions };
+  return { hand:scopedHand, seats:scopedSeats, mySeatNo, myUserId: uid, hostUserId:scopedHost, amIHost,
+    legal:handOrigin===tableScope.current?legal:null, loading, error:handOrigin===tableScope.current?error:null,
+    dealSignal, dealSeats:handOrigin===tableScope.current?dealSeats:[], refresh, applyServerView, actions };
 }
 
 // ── table metadata ─────────────────────────────────────────────────────────
@@ -420,17 +468,18 @@ export function useTableMeta(tableId: string): LiveTableMeta | null {
       }
     : null;
 
-  const [meta, setMeta] = useState<LiveTableMeta | null>(RUNTIME_LIVE ? null : mockMeta);
+  const scope=useRef({id:tableId});if(scope.current.id!==tableId)scope.current={id:tableId};
+  const [snapshot,setSnapshot]=useState<{scope:object;meta:LiveTableMeta|null}|null>(null);
 
   useEffect(() => {
-    if (!RUNTIME_LIVE) { setMeta(mockMeta); return; }
-    let cancelled = false;
-    loadTableMetaLive(tableId)
-      .then((m) => { if (!cancelled) setMeta(m); })
-      .catch(() => { if (!cancelled) setMeta(null); });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!RUNTIME_LIVE) return;
+    let cancelled = false;const issued=scope.current,controller=new AbortController();
+    void observeTrackerContextRead(loadTableMetaLive(tableId,controller.signal))
+      .then((m) => { if (!cancelled&&scope.current===issued) setSnapshot({scope:issued,meta:m?.id===tableId?m:null}); })
+      .catch(() => { if (!cancelled&&scope.current===issued) setSnapshot({scope:issued,meta:null}); })
+      .finally(()=>controller.abort());
+    return () => { cancelled = true;controller.abort(); };
   }, [tableId]);
 
-  return meta;
+  return RUNTIME_LIVE?(snapshot?.scope===scope.current?snapshot.meta:null):mockMeta;
 }

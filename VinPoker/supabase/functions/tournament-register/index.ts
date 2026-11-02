@@ -104,14 +104,7 @@ Deno.serve(async (req) => {
       if (tour.start_time && new Date(tour.start_time as string).getTime() < Date.now() - 60 * 60 * 1000) {
         return j({ error: "Giải đã bắt đầu hoặc kết thúc." }, 400);
       }
-      let freeRakeApplied = false;
       const rakeAmount = Number(tour.rake_amount ?? 0);
-      if (tour.free_rake_enabled) {
-        const { data: consume, error: consumeErr } = await admin.rpc("try_consume_free_rake_slot", {
-          _tournament_id: tour.id,
-        });
-        if (!consumeErr && consume === true) freeRakeApplied = true;
-      }
       const { data: existing, error: existingErr } = await admin
         .from("tournament_registrations")
         .select("id,status,reference_code,total_pay,buy_in,platform_fixed_fee,transfer_proof_image_url,transfer_proof_submitted,committed_at,used_free_rake")
@@ -135,6 +128,19 @@ Deno.serve(async (req) => {
         free_rake_applied: existing.used_free_rake ?? false,
         savings: existing.used_free_rake ? rakeAmount : 0,
       });
+      // A retry/read failure must not spend a second free-rake allocation.
+      // Requests with no existing registration observed reach the quota writer;
+      // this does not make the legacy create sequence atomic across requests.
+      let freeRakeApplied = false;
+      if (tour.free_rake_enabled) {
+        const { data: consume, error: consumeErr } = await admin.rpc("try_consume_free_rake_slot", {
+          _tournament_id: tour.id,
+        });
+        if (consumeErr || typeof consume !== "boolean") {
+          return j({ error: "Không xác minh được suất miễn rake. Vui lòng thử lại sau." }, 503);
+        }
+        if (!consumeErr && consume === true) freeRakeApplied = true;
+      }
       let serviceFee = 0;
       const { data: sf, error: sfErr } = await admin.from("tournaments")
         .select("service_fee_amount").eq("id", tour.id).maybeSingle();
@@ -147,6 +153,9 @@ Deno.serve(async (req) => {
           buy_in: tour.buy_in, platform_fixed_fee: 0, total_pay: totalPay,
           reference_code: refCode, status: "pending", used_free_rake: freeRakeApplied })
         .select("id").single();
+      if (insErr?.code === "23514" && insErr.message === "multi_day_rules_required_before_registration") {
+        return j({ error: "Main Event chưa khóa rules. Vui lòng liên hệ Floor trước khi đăng ký.", code: "MAIN_EVENT_RULES_NOT_READY" }, 409);
+      }
       if (insErr) return j({ error: insErr.message }, 500);
       try {
         await admin.from("notifications").insert({ user_id: uid, type: "registration_confirmed",
@@ -170,6 +179,9 @@ Deno.serve(async (req) => {
       p_tournament_id: tour.id,
       p_player_id: uid,
     });
+    if (regError?.code === "23514" && regError.message === "multi_day_rules_required_before_registration") {
+      return j({ error: "Main Event chưa khóa rules. Vui lòng liên hệ Floor trước khi đăng ký.", code: "MAIN_EVENT_RULES_NOT_READY" }, 409);
+    }
     if (regError) return j({ error: "Registration unavailable" }, 500);
     if (!registration?.ok) return j({ error: registration?.error ?? "Registration unavailable" }, 400);
     const snapshot = registration.price_snapshot as {

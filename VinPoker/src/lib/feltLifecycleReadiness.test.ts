@@ -12,11 +12,39 @@ import {
 import { computeCloseReport } from "./closeReport";
 
 describe("server-sourced close readiness", () => {
-  beforeEach(() => rpc.mockReset());
+  beforeEach(() => { rpc.mockReset(); });
+
+  it.each(['dealer','tournament'] as const)('preserves the real client receiver for %s readiness reads',async(kind)=>{
+    rpc.mockImplementation(function(this:{rpc:unknown}|undefined){
+      if(this?.rpc!==rpc) throw new Error('Supabase RPC receiver lost');
+      return Promise.resolve({data:{ok:true,ready:false,already_closed:false,blockers:['active_hand'],
+        entry_count:0,buy_in_total:0,cash_in_total:0,prize_total:0,club_revenue:0,cashier_balance:0,
+        reconcile_delta:0,reconciled:false},error:null});
+    });
+    const result=kind==='dealer'?await getDealerTourCloseReadiness('tour-test','club-test')
+      :await getTournamentCloseReadiness('tour-test');
+    expect(result).toMatchObject({ready:false,blockers:['active_hand']});
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
 
   it("renders operational blockers in Vietnamese without inventing client authority", () => {
     expect(describeCloseBlockers(["active_hand", "pending_move"]))
       .toBe("Còn hand chưa kết thúc; Còn lệnh chuyển ghế đang chờ Tracker");
+  });
+
+  it.each([
+    ["official_results_not_finished", "Chưa xác định được duy nhất một người thắng"],
+    ["official_results_incomplete", "Thứ hạng đã ghi chưa đầy đủ hoặc không nhất quán; cần kiểm tra trước khi chốt"],
+    ["official_results_evidence_missing", "Thiếu lịch sử thứ tự bust; cần kiểm tra trước khi chốt thứ hạng"],
+    ["official_results_finalization_failed", "Chưa xác minh được thứ hạng cuối; hãy tải lại trạng thái giải"],
+    ["official_results_tournament_missing", "Không tìm thấy giải để kiểm tra thứ hạng"],
+  ])("explains server result blocker %s without suggesting fabricated data", (code, label) => {
+    expect(describeCloseBlockers([code])).toBe(label);
+  });
+
+  it("keeps unknown server blockers visible instead of treating them as ready", () => {
+    expect(describeCloseBlockers(["future_result_blocker"]))
+      .toBe("Trạng thái cần kiểm tra: future_result_blocker");
   });
 
   it("keeps a tour blocked while a Floor session is open", async () => {

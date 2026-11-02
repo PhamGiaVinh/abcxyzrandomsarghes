@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Plus, Save, Ticket, Trash2 } from "lucide-react";
 import { parseSatellitePayout, type SatellitePrizeRow } from "@/lib/satellitePayout";
+import {observeTrackerContextRead} from '@/lib/tournament/observeTrackerContextRead';
 
 // Satellite payout (nhập tay) — giải vé trả GHẾ/vé + 1 phần tiền "bubble", KHÔNG qua payout engine
 // (engine money-only + Σ=pool bắt buộc → không chứa được vé). Owner muốn ĐƠN GIẢN: operator tự nhập,
@@ -21,6 +22,10 @@ const isMissingColumn = (msg?: string) =>
   !!msg && /satellite_payout/i.test(msg) && /(column|does not exist|schema cache|find the)/i.test(msg);
 
 export function SatellitePayoutEditor({ tournamentId }: { tournamentId: string }) {
+  return <TournamentSatellitePayoutEditor key={tournamentId} tournamentId={tournamentId}/>;
+}
+
+function TournamentSatellitePayoutEditor({ tournamentId }: { tournamentId: string }) {
   const [rows, setRows] = useState<SatellitePrizeRow[]>([{ ...EMPTY_ROW }]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -30,37 +35,55 @@ export function SatellitePayoutEditor({ tournamentId }: { tournamentId: string }
   // Stale-request token (mẫu requestSeqRef của useTournamentTvData): đổi giải / "Thử lại" liên tiếp
   // → response cũ về muộn KHÔNG được ghi đè state của request mới.
   const loadSeqRef = useRef(0);
+  const activeRef=useRef(false);
+  const readControllerRef=useRef<AbortController|null>(null);
 
   const load = useCallback(async () => {
+    if(!activeRef.current)return;
+    readControllerRef.current?.abort();
+    const controller=new AbortController();readControllerRef.current=controller;
     const seq = ++loadSeqRef.current;
+    const current=()=>activeRef.current&&seq===loadSeqRef.current&&!controller.signal.aborted;
     setLoading(true);
     setLoadError(null);
-    const { data, error } = await (supabase as any)
-      .from("tournaments")
-      .select("satellite_payout")
-      .eq("id", tournamentId)
-      .maybeSingle();
-    if (seq !== loadSeqRef.current) return; // stale — request mới hơn đang chạy
-    if (error) {
-      // Thiếu cột (CSDL chưa apply) = nhánh tương thích, KHÔNG phải lỗi chung.
-      // Lỗi khác → chặn editor (tránh Lưu đè dữ liệu thật bằng bảng trống).
-      const missing = isMissingColumn(error.message);
-      setDbMissing(missing);
-      setLoadError(missing ? null : (error.message || "Không tải được cơ cấu satellite"));
-      setRows([{ ...EMPTY_ROW }]);
+    try {
+      const { data, error } = await observeTrackerContextRead(Promise.resolve((supabase as any)
+        .from("tournaments")
+        .select("satellite_payout")
+        .eq("id", tournamentId)
+        .abortSignal(controller.signal)
+        .maybeSingle()));
+      if (!current()) return;
+      if (error) {
+        // Preserve the explicit missing-column compatibility branch, not a
+        // general empty-data fallback for network or authorization failures.
+        if(isMissingColumn(error.message)){
+          setDbMissing(true);setRows([{...EMPTY_ROW}]);setDirty(false);return;
+        }
+        throw error;
+      }
+      if(!data||typeof data!=='object'||!Object.prototype.hasOwnProperty.call(data,'satellite_payout'))
+        throw new Error('Không xác minh được cơ cấu satellite của giải. Vui lòng tải lại.');
+      setDbMissing(false);
+      const parsed = parseSatellitePayout(data.satellite_payout);
+      setRows(parsed && parsed.rows.length > 0 ? parsed.rows.map((r) => ({ ...r })) : [{ ...EMPTY_ROW }]);
       setDirty(false);
-      setLoading(false);
-      return;
+    } catch(error:unknown) {
+      if(!current())return;
+      const message=error&&typeof error==='object'&&'message' in error?String(error.message):'';
+      setDbMissing(false);
+      setLoadError(message==='tracker_context_read_timeout'
+        ?'Hết thời gian tải cơ cấu satellite. Vui lòng tải lại.':message||'Không tải được cơ cấu satellite');
+      controller.abort();
+    } finally {
+      if(activeRef.current&&readControllerRef.current===controller)setLoading(false);
     }
-    setDbMissing(false);
-    const parsed = parseSatellitePayout((data as { satellite_payout?: unknown } | null)?.satellite_payout);
-    setRows(parsed && parsed.rows.length > 0 ? parsed.rows.map((r) => ({ ...r })) : [{ ...EMPTY_ROW }]);
-    setDirty(false);
-    setLoading(false);
   }, [tournamentId]);
 
   useEffect(() => {
+    activeRef.current=true;
     void load();
+    return ()=>{activeRef.current=false;readControllerRef.current?.abort();readControllerRef.current=null;};
   }, [load]);
 
   const setRow = (i: number, patch: Partial<SatellitePrizeRow>) => {
@@ -102,14 +125,20 @@ export function SatellitePayoutEditor({ tournamentId }: { tournamentId: string }
         }
         return;
       }
-      if (!data || data.length === 0) {
+      if (Array.isArray(data) && data.length === 0) {
         if (import.meta.env.DEV) console.warn("[save_satellite_payout] zero-row update", { tournamentId, returnedRows: 0 });
         toast.error("Không có quyền lưu — cần tài khoản chủ CLB hoặc quyền điều hành sàn.");
+        return;
+      }
+      if (!Array.isArray(data) || data.length !== 1 || data[0]?.id !== tournamentId) {
+        toast.error("Chưa xác minh được kết quả lưu cơ cấu satellite. Hãy tải lại giải để kiểm tra trước khi lưu lại.");
         return;
       }
       toast.success(payload ? "Đã lưu cơ cấu satellite" : "Đã xoá cơ cấu satellite");
       setDirty(false);
       await load();
+    } catch {
+      toast.error("Chưa xác minh được kết quả lưu cơ cấu satellite. Hãy tải lại giải để kiểm tra trước khi lưu lại.");
     } finally {
       setSaving(false);
     }
@@ -140,7 +169,7 @@ export function SatellitePayoutEditor({ tournamentId }: { tournamentId: string }
         // Lỗi tải THẬT (không phải thiếu cột) → chặn editor: nếu cho sửa trên bảng trống,
         // Lưu sẽ đè dữ liệu thật bằng bảng trống. Chỉ cho Thử lại.
         <div className="space-y-2 py-3 text-center">
-          <p className="text-sm text-destructive">{loadError}</p>
+          <p role="alert" className="text-sm text-destructive">{loadError}</p>
           <Button type="button" size="sm" variant="outline" onClick={() => void load()}>
             Thử lại
           </Button>

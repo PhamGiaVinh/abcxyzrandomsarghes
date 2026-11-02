@@ -67,7 +67,10 @@ export interface PublicTableHistoryItem {
   smallBlind: number | null;
   bigBlind: number | null;
   ante: number | null;
-  result: { status: "pending" } | {
+  result: { status: "pending" } | { status: "needs_attention" } | {
+    status: "refunded";
+    refund: { playerId: string; entryNumber: number; seatNumber: number; name: string; amount: number };
+  } | {
     status: "verified";
     recipients: Array<{
       playerId: string;

@@ -10,8 +10,8 @@ import { TabShell } from "../shared/TabShell";
 export interface LiveOverviewData {
   periodLabel: string;
   retainedRevenue: number; // revenue.total — phí/rake club thực giữ
-  directCosts: number; // cost.payrollNet — lương dealer đã lưu (CHƯA gồm PT)
-  contribution: number; // net — còn lại sau lương (CHƯA gồm bù đắp GTD & CP vận hành)
+  directCosts: number; // cost.payrollNet — lương đã lưu, gồm khoản PT theo nguồn SQL
+  contribution: number; // net — đã trừ lương, COGS và chi phí CLB ghi nhận; chưa gồm overlay GTD
 }
 
 export interface LiveOverviewState {
@@ -39,12 +39,12 @@ export function OverviewTab({
   live,
 }: {
   onNavigate: (id: string) => void;
-  data?: typeof MOCK_OVERVIEW;
+  data?: { [K in keyof typeof MOCK_OVERVIEW]: K extends 'periodLabel' ? string : number };
   live?: LiveOverviewState;
 }) {
   const isLive = !!live?.active;
   const liveData = live?.data ?? null;
-  const showLiveNumbers = isLive && !!liveData;
+  const showLiveNumbers = isLive && !live?.loading && !live?.error && !!liveData;
 
   return (
     <TabShell
@@ -63,29 +63,28 @@ export function OverviewTab({
         </p>
       </div>
 
-      {isLive && (
+      {showLiveNumbers && (
         <div className="flex items-start gap-2.5 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
           <PlugZap className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
           <p className="text-[12px] leading-relaxed text-foreground/85">
             <span className="font-semibold text-primary">Khối "Tiền của club" đang là SỐ THẬT</span>{" "}
             (đọc từ tài chính CLB, Tạm tính — tới hôm nay). Bù đắp GTD, "Tiền giữ hộ" và dự báo bên
-            dưới vẫn là mock, sẽ nối ở các bước sau. Lương PT chưa có trong số này (chờ #656 R2).
+            dưới vẫn là mock, sẽ nối ở các bước sau. Chi phí lương đã gồm khoản PT theo nguồn tài chính.
           </p>
         </div>
       )}
 
       {isLive && live?.error && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
+        <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
           <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0 text-destructive" />
           <p className="text-[12px] leading-relaxed text-foreground/85">
-            Không tải được số thật ({live.error}). Đang hiển thị dữ liệu mẫu thay thế.
+            Không tải được số thật ({live.error}). Không thay số chưa xác minh bằng dữ liệu mẫu.
           </p>
         </div>
       )}
 
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-        {showLiveNumbers ? liveData!.periodLabel : data.periodLabel}
-        {isLive && live?.loading && !liveData && " · đang tải số thật…"}
+        {isLive ? showLiveNumbers ? liveData!.periodLabel : "Chưa xác minh kỳ báo cáo" : data.periodLabel}
       </p>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -93,7 +92,9 @@ export function OverviewTab({
           <h3 className="text-[12px] font-semibold uppercase tracking-wider text-foreground/80">
             Tiền của club {showLiveNumbers && <span className="text-primary/80 normal-case">· số thật</span>}
           </h3>
-          <div className="grid gap-2">
+          {isLive && !showLiveNumbers ? <div role="status" className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+            {live?.loading ? "Đang tải số liệu tài chính…" : "Chưa xác minh số liệu tài chính. Không hiển thị số tiền thay thế."}
+          </div> : <div className="grid gap-2">
             <MoneyCard
               label="Doanh thu giữ lại"
               amount={showLiveNumbers ? liveData!.retainedRevenue : data.retainedRevenue}
@@ -102,11 +103,11 @@ export function OverviewTab({
               sub="Phí giải + phí staking club thực giữ — không gồm tiền pool"
             />
             <MoneyCard
-              label={showLiveNumbers ? "Chi phí lương (đã lưu)" : "Chi phí trực tiếp"}
+              label={showLiveNumbers ? "Chi phí lương (đã lưu, gồm PT)" : "Chi phí trực tiếp"}
               amount={showLiveNumbers ? liveData!.directCosts : data.directCosts}
               state="provisional"
               kind="cost"
-              sub="Chưa gồm lương PT (chờ #656 R2) — xem Cảnh báo"
+              sub={showLiveNumbers ? "Net đã lưu, gồm khoản PT theo nguồn tài chính — không cộng PT lần nữa" : "Chưa gồm lương PT (chờ #656 R2) — xem Cảnh báo"}
             />
             {showLiveNumbers ? (
               <div className="rounded-lg border border-border bg-card/50 px-3 py-2 text-[11px] text-muted-foreground">
@@ -118,13 +119,14 @@ export function OverviewTab({
             <MoneyCard
               label={
                 showLiveNumbers
-                  ? "Còn lại sau lương (chưa trừ bù đắp GTD & CP vận hành chung)"
+                  ? "Biên đóng góp theo báo cáo tài chính"
                   : "Biên đóng góp (chưa trừ chi phí vận hành chung)"
               }
               amount={showLiveNumbers ? liveData!.contribution : data.contribution}
               state="provisional"
+              sub={showLiveNumbers ? "Đã trừ lương (gồm PT), COGS F&B và chi phí CLB đã ghi nhận; chưa gồm bù đắp GTD." : undefined}
             />
-          </div>
+          </div>}
         </div>
 
         <div className="space-y-2">

@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc, type FloorTournamentTableRoster } from "@/lib/floorTableControlV3";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { formatStack } from "@/lib/format";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
 
 type RestoreIntent = Parameters<ReturnType<typeof createFloorTableControlV3Client>["restoreBustedPlayer"]>[0];
 const messages: Record<string, string> = {
   restore_result_dependency: "Giải đã có kết quả chốt hoặc payout. Không thể hoàn tác bust.",
   restore_reentry_dependency: "Người chơi đã có entry mới. Hoàn tác bust và re-entry là hai nghiệp vụ riêng.",
-  restore_stack_evidence_missing: "Không có chứng cứ stack trước bust. Không tự cấp chip mới.",
+  restore_stack_evidence_missing: "Không có chứng cứ stack dương trước bust. Không thể khôi phục với 0 chip hoặc tự cấp chip mới.",
   seat_locked: "Ghế đang khóa. Hãy chọn ghế khác.",
   seat_occupied: "Ghế đã có người. Hãy tải lại danh sách bàn.",
   table_has_active_hand: "Bàn đang chơi hand. Hãy chờ hand kết thúc.",
@@ -29,13 +30,51 @@ type RestoreBustDialogProps = {
 };
 
 export function RestoreBustDialog(props: RestoreBustDialogProps) {
-  // A new actor/entry lifetime must not accept replies from a previous one,
-  // including actor A -> B -> A. Persisted requests remain actor scoped.
-  const scope = JSON.stringify([props.actorId, props.tournamentId, props.target?.entryId ?? null]);
-  return <ScopedRestoreBustDialog key={scope} {...props} scope={scope} />;
+  return <RestoreBustRecovery key={JSON.stringify([props.actorId, props.tournamentId])} {...props} />;
 }
 
+function RestoreBustRecovery(props: RestoreBustDialogProps) {
+  const [recovery, setRecovery] = useState<RestoreBustDialogProps["target"]>(null);
+  const [pendingEntries, setPendingEntries] = useState<string[]>([]);
+  const discover = useCallback(() => {
+    const entries: string[] = [];
+    if (props.actorId) {
+      try {
+        for (let index = 0; index < sessionStorage.length; index += 1) {
+          const key = sessionStorage.key(index);
+          if (!key?.startsWith("vinpoker:restore-bust-pending:")) continue;
+          try {
+            const identity = JSON.parse(key.slice("vinpoker:restore-bust-pending:".length));
+            const saved = JSON.parse(sessionStorage.getItem(key)!);
+            if (Array.isArray(identity) && identity.length === 3
+              && identity[0] === props.actorId && identity[1] === props.tournamentId
+              && typeof identity[2] === "string" && identity[2].length > 0
+              && key === `vinpoker:restore-bust-pending:${JSON.stringify(identity)}`
+              && saved?.actorId === props.actorId && saved?.tournamentId === props.tournamentId
+              && saved?.intent?.entryId === identity[2]) entries.push(identity[2]);
+          } catch { /* Keep malformed journals intact; never adopt another scope. */ }
+        }
+      } catch { /* The dialog still reports inaccessible storage before any write. */ }
+    }
+    setPendingEntries(entries);
+  }, [props.actorId, props.tournamentId]);
+  useEffect(() => { discover(); }, [discover, props.target]);
+  const target = props.target ?? recovery;
+  const scope = JSON.stringify([props.actorId, props.tournamentId, target?.entryId ?? null]);
+  return <>
+    {!target && pendingEntries.map((entryId, index) => <Button key={entryId} variant="outline" className="min-h-12"
+      onClick={() => setRecovery({ entryId, name: "Yêu cầu hoàn tác đã lưu" })}>
+      Đối chiếu hoàn tác bust đang chờ{pendingEntries.length > 1 ? ` (${index + 1})` : ""}
+    </Button>)}
+    <ScopedRestoreBustDialog key={scope} {...props} target={target} scope={scope}
+      onClose={() => { setRecovery(null); discover(); props.onClose(); }} />
+  </>;
+}
+
+/* Each opened entry has its own asynchronous response lifetime. */
 function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, actorId, scope }: RestoreBustDialogProps & { scope: string }) {
+  // A new actor/entry lifetime must not accept replies from a previous one,
+  // including actor A -> B -> A. Persisted requests remain actor scoped.
   const supabase = useSupabaseClient();
   const client = useMemo(() => createFloorTableControlV3Client(
     ((name, args) => (supabase.rpc as unknown as FloorTableControlV3Rpc)(name, args)),
@@ -95,15 +134,33 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
         if (prior) { setTableId(prior.toTournamentTableId); setSeat(String(prior.toSeatNumber)); }
         else if (target.destination) { setTableId(target.destination.tableId); setSeat(String(target.destination.seatNumber)); }
         const entry = entries.data.find((row) => row.entryId === target.entryId);
-        if (!entry) setError(messages.restore_stack_evidence_missing);
-        else setStack(entry.currentStack);
+        if (!entry && !prior) setError(messages.restore_stack_evidence_missing);
+        else if (entry) {
+          setStack(entry.currentStack);
+          if (!Number.isSafeInteger(entry.currentStack) || entry.currentStack <= 0) setError(messages.restore_stack_evidence_missing);
+        }
       }).catch(() => { if (!disposed) setError("Không kết nối được server. Hãy đóng và mở lại để thử."); })
       .finally(() => { if (!disposed) setLoading(false); });
     return () => { disposed = true; };
   }, [client, target, tournamentId, actorId, scope, storageKey, reloadGeneration]);
   const table = tables.find((row) => row.tournamentTableId === tableId);
+  const hasPositiveStack = stack !== null && Number.isSafeInteger(stack) && stack > 0;
   const emptySeats = table ? Array.from({ length: table.maxSeats }, (_, i) => i + 1)
     .filter((n) => !table.seats.some((s) => s.seatNumber === n) && !table.seatLocks.some((s) => s.seatNumber === n)) : [];
+  function journalMatches(intent: RestoreIntent) {
+    const raw = sessionStorage.getItem(storageKey);
+    return raw !== null && canonicalVoiceJson(JSON.parse(raw)) === canonicalVoiceJson({ actorId, tournamentId, intent });
+  }
+  function requireJournal(intent: RestoreIntent) {
+    try { if (journalMatches(intent)) return; } catch { /* preserve unreadable metadata */ }
+    setJournalBlocked(true);
+    throw new Error("restore_journal_changed");
+  }
+  function clearJournal(intent: RestoreIntent) {
+    requireJournal(intent);
+    sessionStorage.removeItem(storageKey);
+    if (sessionStorage.getItem(storageKey) !== null) throw new Error("restore_journal_clear_failed");
+  }
   function acceptReceipt(intent: RestoreIntent, value: unknown) {
     const receipt = value as Record<string, unknown> | null;
     if (receipt?.status === "cancelled") {
@@ -116,8 +173,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
         || payload.expected_table_session_id !== intent.expectedTableSessionId) {
         setError("Chưa xác minh được xác nhận hủy đúng yêu cầu. Giữ nguyên mã để đối chiếu."); return;
       }
-      sessionStorage.removeItem(storageKey);
-      if (sessionStorage.getItem(storageKey) !== null) throw new Error("restore_journal_clear_failed");
+      clearJournal(intent);
       attempts.current.delete(scope); setUnresolved(false); setJournalBlocked(false);
       setReloadGeneration((value) => value + 1);
       return;
@@ -127,13 +183,12 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
       || receipt.table_session_id !== intent.expectedTableSessionId
       || receipt.seat_number !== intent.toSeatNumber
       || typeof receipt.seat_id !== "string" || !receipt.seat_id
-      || typeof receipt.chip_count !== "number" || !Number.isSafeInteger(receipt.chip_count) || receipt.chip_count < 0
+      || typeof receipt.chip_count !== "number" || !Number.isSafeInteger(receipt.chip_count) || receipt.chip_count <= 0
       || typeof receipt.revision !== "number" || !Number.isSafeInteger(receipt.revision) || receipt.revision <= intent.expectedRevision) {
       setError("Phản hồi chưa xác minh đúng entry và phiên bàn. Đang giữ nguyên yêu cầu để đối chiếu.");
       return;
     }
-    sessionStorage.removeItem(storageKey);
-    if (sessionStorage.getItem(storageKey) !== null) throw new Error("restore_journal_clear_failed");
+    clearJournal(intent);
     attempts.current.delete(scope); setUnresolved(false); onRestored(); onClose();
   }
   async function reconcile() {
@@ -141,6 +196,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     if (!intent || pending.current) return;
     pending.current = true; setBusy(true); setError(null);
     try {
+      requireJournal(intent);
       const response = await waitForManualPlayerResponse(client.getRestoreReceipt(intent));
       if (!alive.current) return;
       if (response.ok === false) {
@@ -160,6 +216,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     if (!intent || pending.current || journalBlocked) return;
     pending.current = true; setBusy(true); setError(null);
     try {
+      requireJournal(intent);
       const response = await waitForManualPlayerResponse(client.cancelRestoreRequest(intent));
       if (!alive.current) return;
       if (response.ok === false) { setError(messages[response.error] ?? `Chưa xác nhận hủy (${response.error}).`); return; }
@@ -172,7 +229,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
   }
   async function restore() {
     const prior = attempts.current.get(scope);
-    if (pending.current || journalBlocked || !target || !actorId || (!prior && (verifiedScope !== scope || !table || stack === null || !emptySeats.includes(Number(seat))))) return;
+    if (pending.current || journalBlocked || !target || !actorId || (!prior && (verifiedScope !== scope || !table || !hasPositiveStack || !emptySeats.includes(Number(seat))))) return;
     const key = scope;
     const intent = prior ?? {
       entryId: target.entryId, toTournamentTableId: table.tournamentTableId, toSeatNumber: Number(seat),
@@ -180,10 +237,12 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
       expectedTableSessionId: table.tableSessionId,
     };
     try {
+      if (sessionStorage.getItem(storageKey) !== null && !journalMatches(intent)) throw new Error("restore_journal_changed");
       const serialized = JSON.stringify({ actorId, tournamentId, intent });
       sessionStorage.setItem(storageKey, serialized);
       if (sessionStorage.getItem(storageKey) !== serialized) throw new Error("restore_journal_unverified");
     } catch {
+      setJournalBlocked(true);
       setError("Không lưu được mã yêu cầu an toàn. Chưa gửi hoàn tác bust; hãy kiểm tra bộ nhớ trình duyệt.");
       return;
     }
@@ -203,20 +262,20 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
     } finally { pending.current = false; if (alive.current) setBusy(false); }
   }
   return <Dialog open={target !== null} onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="max-w-md">
-      <DialogHeader><DialogTitle>Hoàn tác bust nhầm</DialogTitle><DialogDescription>
+    <DialogContent className="w-[calc(100%-2rem)] min-w-0 max-w-md [&>*]:min-w-0">
+      <DialogHeader><DialogTitle>Hoàn tác bust nhầm</DialogTitle><DialogDescription className="break-words">
         {target?.name} · Khôi phục entry cũ bằng stack có chứng cứ, không phải re-entry.
       </DialogDescription></DialogHeader>
       {loading ? <p role="status">Đang xác minh bàn và stack…</p> : <>
         {stack !== null && <p>Stack sẽ khôi phục: <strong>{formatStack(stack)} chip</strong></p>}
         <label className="grid gap-1">Bàn
-          <select aria-label="Bàn khôi phục" className="h-12 rounded-md border bg-background px-3" value={tableId} disabled={busy || unresolved || stack === null}
+          <select aria-label="Bàn khôi phục" className="h-12 w-full min-w-0 max-w-full rounded-md border bg-background px-3" value={tableId} disabled={busy || unresolved || stack === null}
             onChange={(event) => { setTableId(event.target.value); setSeat(""); }}>
             <option value="">Chọn bàn</option>{tables.map((row) => <option key={row.tournamentTableId} value={row.tournamentTableId}>{row.tableName}</option>)}
           </select>
         </label>
         <label className="grid gap-1">Ghế trống, không khóa
-          <select aria-label="Ghế khôi phục" className="h-12 rounded-md border bg-background px-3" value={seat} disabled={busy || unresolved || !table}
+          <select aria-label="Ghế khôi phục" className="h-12 w-full min-w-0 max-w-full rounded-md border bg-background px-3" value={seat} disabled={busy || unresolved || !table}
             onChange={(event) => setSeat(event.target.value)}>
             <option value="">Chọn ghế</option>{emptySeats.map((n) => <option key={n} value={n}>Ghế {n}</option>)}
           </select>
@@ -231,7 +290,7 @@ function ScopedRestoreBustDialog({ tournamentId, target, onClose, onRestored, ac
         <p className="text-sm text-muted-foreground">Hủy chỉ chặn yêu cầu chưa chốt. Nếu đã chốt, server trả kết quả đã lưu; không hoàn nguyên chip.</p>
         <Button variant="outline" className="min-h-12" disabled={busy || journalBlocked} onClick={() => void cancelRequest()}>Hủy yêu cầu đang chờ</Button>
       </>}
-      <Button className="min-h-12" disabled={busy || journalBlocked || (!unresolved && (loading || verifiedScope !== scope || stack === null || !table || !seat))} onClick={() => void restore()}>
+      <Button className="min-h-12" disabled={busy || journalBlocked || (!unresolved && (loading || verifiedScope !== scope || !hasPositiveStack || !table || !seat))} onClick={() => void restore()}>
         {busy ? "Đang xác nhận…" : unresolved ? "Kiểm tra lại yêu cầu đã gửi" : "Xác nhận hoàn tác bust"}
       </Button>
     </DialogContent>

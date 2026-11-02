@@ -10,6 +10,7 @@ import { localTodayDate } from "@/lib/dealerApp/clock";
 import { weekSummary } from "@/lib/dealerApp/selectors";
 import { DEALER_GOLD } from "@/lib/dealerApp/constants";
 import { TodayShiftCard } from "./TodayShiftCard";
+import { TableArrivalCard } from "./TableArrivalCard";
 import { QuickActionGrid } from "./QuickActionGrid";
 import { UpcomingShiftList } from "./UpcomingShiftList";
 import { DealerNotLinkedScreen } from "../DealerNotLinkedScreen";
@@ -81,6 +82,7 @@ export function DealerHomeScreen() {
         ))}
       </div>
 
+      <TableArrivalCard key={dealer?.dealerId} dealerId={dealer?.dealerId} />
       <QuickActionGrid />
       <UpcomingShiftList shifts={weekShifts ?? []} today={today} />
     </div>

@@ -1,0 +1,1 @@
+import React from'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import{Toaster}from'sonner';import OpsDealerSwing from'@/pages/ops/OpsDealerSwing';import'D:/wt/vinpoker-ops-local-integration/VinPoker/src/index.css';createRoot(document.getElementById('root')).render(<MemoryRouter><OpsDealerSwing/><Toaster/></MemoryRouter>);

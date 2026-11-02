@@ -20,10 +20,21 @@ import {
   type RawProfile,
 } from "./handFeedDerive";
 import { FEATURES } from "@/lib/featureFlags";
-import { parseReplayPublicSettlement, type ReplayPublicSettlement } from "@/lib/tracker-poker/replaySettlement";
+import { parseReplayPublicSettlement } from "@/lib/tracker-poker/replaySettlement";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { z } from "zod";
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 
 const PAGE_SIZE = 10;
 const POLL_MS = 13_000;
+const publicCatalogSchema = z.object({ items: z.array(z.object({
+  id: z.string().min(1), handNumber: z.number().int().safe().positive(),
+  createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))),
+  board: z.array(z.string()).max(5), pot: z.number().int().safe().nonnegative().nullable(),
+  bigBlind: z.number().int().safe().nonnegative().nullable().optional(),
+  buttonSeat: z.number().int().positive(), tableId: z.string().min(1).nullable(),
+  status: z.string().min(1), isVoided: z.boolean(),
+})) });
 
 export interface CompletedHandsFeedOptions {
   /** Restrict to one table (the viewer's featured table). null = all tables. */
@@ -38,6 +49,8 @@ export interface CompletedHandsFeedData {
   loading: boolean;
   hasMore: boolean;
   loadMore: () => void;
+  error: string | null;
+  reload: () => Promise<void>;
 }
 
 function groupByHand<T extends { hand_id: string }>(rows: T[] | null): Map<string, T[]> {
@@ -59,12 +72,17 @@ export function useCompletedHandsFeed(
   const [allItems, setAllItems] = useState<HandFeedItem[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
-  const settlementCacheRef = useRef(new Map<string, ReplayPublicSettlement>());
+  const activeRead = useRef<AbortController | null>(null);
 
   // Reset paging when the tournament / table scope changes.
   useEffect(() => {
     setPageCount(1);
+    setAllItems([]);
+    setHasMore(false);
+    setError(null);
+    return () => { ++seqRef.current; activeRead.current?.abort(); };
   }, [tournamentId, tableId]);
 
   const fetchFeed = useCallback(async () => {
@@ -72,9 +90,16 @@ export function useCompletedHandsFeed(
       setAllItems([]);
       setHasMore(false);
       setLoading(false);
+      setError(null);
       return;
     }
     const seq = ++seqRef.current;
+    activeRead.current?.abort();
+    const controller = new AbortController();
+    activeRead.current = controller;
+    setLoading(true);
+    try {
+    await observeTrackerContextRead((async () => {
     const want = FEATURES.publicSpectatorRealtimeV2 ? Math.min(100, pageCount * PAGE_SIZE) : pageCount * PAGE_SIZE;
 
     let handRows: Array<RawHandRow & { status?: string; is_voided?: boolean }> = [];
@@ -83,14 +108,16 @@ export function useCompletedHandsFeed(
         p_tournament_id: tournamentId,
         p_tournament_table_id: tableId,
         p_limit: want + 1,
-      } as never);
+      } as never).abortSignal(controller.signal);
       const catalog = (data ?? {}) as unknown as { error?: string; access?: string; items?: Array<{
         bigBlind?: number | null; id: string; handNumber: number; createdAt: string; board: string[]; pot: number | null;
         buttonSeat: number; tableId: string | null; status: string; isVoided: boolean;
       }> };
       if (seq !== seqRef.current) return;
-      if (error || catalog.error) { setLoading(false); return; }
-      handRows = (catalog.items ?? []).map((hand) => ({
+      if (error || catalog.error) throw new Error(error?.message || catalog.error);
+      const parsed = publicCatalogSchema.safeParse(data);
+      if (!parsed.success) throw new Error("invalid_public_hand_catalog");
+      handRows = parsed.data.items.map((hand) => ({
         id: hand.id, hand_number: hand.handNumber, created_at: hand.createdAt, tracker_big_blind: hand.bigBlind,
         community_cards: hand.board, pot_size: hand.pot, button_seat: hand.buttonSeat,
         table_id: hand.tableId ?? "", status: hand.status, is_voided: hand.isVoided,
@@ -104,7 +131,8 @@ export function useCompletedHandsFeed(
         .order("created_at", { ascending: false })
         .limit(want + 1);
       if (tableId) q = q.eq("table_id", tableId);
-      const { data } = await q;
+      const { data, error } = await q.abortSignal(controller.signal);
+      if (error) throw new Error(error.message);
       handRows = (data ?? []) as unknown as RawHandRow[];
     }
     if (seq !== seqRef.current) return;
@@ -117,6 +145,7 @@ export function useCompletedHandsFeed(
       setAllItems([]);
       setHasMore(false);
       setLoading(false);
+      setError(null);
       return;
     }
 
@@ -128,10 +157,14 @@ export function useCompletedHandsFeed(
     let el: RawElimination[] = [];
     if (FEATURES.publicSpectatorRealtimeV2) {
       const publicHands = await Promise.all(ids.map(async (handId) => {
-        const { data } = await supabase.rpc("get_public_tournament_hand_v2" as never, {
+        const { data, error }: PostgrestSingleResponse<unknown> = await supabase.rpc("get_public_tournament_hand_v2" as never, {
           p_tournament_id: tournamentId,
           p_hand_id: handId,
-        } as never);
+        } as never).abortSignal(controller.signal);
+        if (error) throw new Error(error.message);
+        if (data && typeof data === "object" && "error" in data && data.error) {
+          throw new Error(String(data.error));
+        }
         return (data ?? {}) as unknown as {
           players?: Array<{ playerId: string; seatNumber: number; startingStack: number | null; endingStack: number | null; eliminated: boolean; name: string; avatarUrl: string | null; holeCards: string[] }>;
           actions?: Array<{ id: string; playerId: string; street: string | null; actionType: string; amount: number | null; order: number }>;
@@ -157,12 +190,14 @@ export function useCompletedHandsFeed(
         ? "hand_id, player_id, seat_number, starting_stack, ending_stack, hole_cards, is_eliminated, player_name, avatar_url"
         : "hand_id, player_id, seat_number, starting_stack, ending_stack, hole_cards, is_eliminated";
       const [hpResult, haResult, elResult] = await Promise.all([
-        supabase.from("hand_players").select(hpCols).in("hand_id", ids),
+        supabase.from("hand_players").select(hpCols).in("hand_id", ids).abortSignal(controller.signal),
         supabase.from("hand_actions").select(FEATURES.liveViewerPulseV2
           ? "id, hand_id, player_id, street, action_type, action_amount, action_order"
-          : "hand_id, player_id, action_type, action_amount, action_order").in("hand_id", ids).order("action_order"),
-        supabase.from("tournament_eliminations").select("hand_id, player_id, position, prize").in("hand_id", ids),
+          : "hand_id, player_id, action_type, action_amount, action_order").in("hand_id", ids).order("action_order").abortSignal(controller.signal),
+        supabase.from("tournament_eliminations").select("hand_id, player_id, position, prize").in("hand_id", ids).abortSignal(controller.signal),
       ]);
+      const readError = hpResult.error || haResult.error || elResult.error;
+      if (readError) throw new Error(readError.message);
       hp = (hpResult.data ?? []) as unknown as RawHandPlayer[];
       ha = (haResult.data ?? []) as unknown as RawHandAction[];
       el = (elResult.data ?? []) as unknown as RawElimination[];
@@ -180,21 +215,21 @@ export function useCompletedHandsFeed(
       profMap.set(pid, { user_id: pid, display_name: d.name ?? null, avatar_url: d.avatar ?? null }),
     );
 
-    const uncachedHandIds = ids.filter((handId) => !settlementCacheRef.current.has(handId));
-    const settlementRows = await Promise.all(uncachedHandIds.map(async (handId) => {
+    // The public projection intentionally omits source revisions. A hand UUID is
+    // therefore not a freshness key: correction may invalidate its proof between polls.
+    const settlementRows = await Promise.all(ids.map(async (handId) => {
       const { data, error } = await supabase.rpc(
         "get_public_tournament_settlement" as never,
         { p_hand_id: handId } as never,
-      );
-      return [handId, error ? null : parseReplayPublicSettlement(data)] as const;
+      ).abortSignal(controller.signal);
+      return [handId, { proof: error ? null : parseReplayPublicSettlement(data), unavailable: !!error }] as const;
     }));
     if (seq !== seqRef.current) return;
-    settlementRows.forEach(([handId, settlement]) => {
-      if (settlement) settlementCacheRef.current.set(handId, settlement);
-    });
+    const currentSettlements = new Map(settlementRows);
     const settledHands = pageHands.map((hand) => ({
       ...hand,
-      publicSettlement: settlementCacheRef.current.get(hand.id) ?? null,
+      publicSettlement: currentSettlements.get(hand.id)?.proof ?? null,
+      settlementUnavailable: currentSettlements.get(hand.id)?.unavailable ?? false,
     }));
 
     const items = buildHandFeedItems(
@@ -208,6 +243,21 @@ export function useCompletedHandsFeed(
     setAllItems(items);
     setHasMore(more);
     setLoading(false);
+    setError(null);
+    })());
+    } catch (failure: unknown) {
+      if (seq !== seqRef.current) return;
+      controller.abort();
+      // Promise deadlines do not cancel transport: invalidate any late continuation.
+      ++seqRef.current;
+      // Do not present a previous verified winner as the result of a failed refresh.
+      setAllItems([]);
+      setHasMore(false);
+      setError(failure instanceof Error ? failure.message : "Không tải được lịch sử hand.");
+      setLoading(false);
+    } finally {
+      if(activeRead.current === controller)activeRead.current = null;
+    }
   }, [tournamentId, tableId, pageCount, bigPotThresholdBB]);
 
   useEffect(() => {
@@ -245,5 +295,5 @@ export function useCompletedHandsFeed(
 
   const loadMore = useCallback(() => setPageCount((c) => c + 1), []);
   const items = tags.length ? filterByTags(allItems, tags) : allItems;
-  return { items, loading, hasMore, loadMore };
+  return { items, loading, hasMore, loadMore, error, reload: fetchFeed };
 }

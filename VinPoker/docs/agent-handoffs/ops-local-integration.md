@@ -1,0 +1,2570 @@
+# Operations local integration —16/10/2026, NOT RELEASED
+
+## G8 same staffed four-player hand → actual History worker → anonymous verified
+
+Baseline4f6ef96cf clean/previousPROGRESS. Existingowned-parent worker harness now explicitly permits gatednativepaidtour as well as priorUIgate, retaining exactPG/datadir/no pg_net/paidregistrationentrylink/clubtourTEST/ownercreatedcompletedhand/noexistingoutcome/currentpendinggeneration guards. PaidTourHand chooses actual originalpaidentry's table, not randomUUID-order table; other-tableoracle followsactualotherID. Runs unchanged actualscopedworker/verifier/SQL against SAMEcompletedhand, not anotherhandfixture. Worker/outcomequeue atomic/currentrevision/publicanon/retry0/no duplicate/businessfingerprint tests retained.
+
+Initial8b9030/54244 terminal1: child lacked existing --experimental-transform-types flag for TSparameterproperty (beforeworker), corrected. Resume exactretainedhand77afb5b3 then realworker committedverified, but old2playeroracle [-100,100] rejected correct4nets[-100,0,0,100]; preserved proof/audit, noreset/rerun-as-new. Generalize onlyowned-parent netoracle from actual persistedhandplayers; standalone2fixture retains exact[-100,100], participantcount>=2/sum0. Finalwholeprefix127712/46593 terminal0187c62/PGstopped: actualworker/publicverified markers,8paid2staffedtables/chip/TV/mode/Finishallpriorchecks retained. Latesttourde513121-e359-4c0f-a0f1-7b5f872c85c1/hand3b23989c-4f42-4e58-99c4-9955abf7a11b, auditrandomfixtures retained. No productfix/schemachange. No hostedEdge/AuthHTTP/scheduler/provider/browser/375/fulltourproof. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak change; localhold/masterACTIVE. Next correction of this currentproof and republish, then remainingtouroperations; no redundant standaloneworker reruns.
+
+## G8 staffed four-player hand + pending/cancelled mode + post-Finish TV
+
+Baseline474c2b2ba clean/previousPROGRESS. Added paidTourHand.native.mjs to existingtwo-table8paid4dealer/issuance/anonTV+actualinitialassignment journey. Occupiedboth tables canonical immediateManual↔Tracker preserves exactcash/entry/seatJSON, epochadvances. Firsttableactualclock/start4playerhand→Manualpendingactivehand→actualcancel+idempotentreplay/emptyrequest→newpending. Canonicalposts/folds→actualcomputeVoiceFinishSettlement foldwin80000→actualserviceVoiceFinishCOMMIT. ServerappliespendingManual/incrementsepoch/no pending withoutTracker-tabconsumer. Perparticipantseat+entry endingsengineexact; othertableseats/Cashier unchanged,8entries160000overall/2assignmentsretained; anonymousTVafterhand8/160000/issuanceledgerimmutable. GlobalVoice localvaluefinallyrestored; no assignment/action/historyrowfixture rewrites.
+
+Initial5c6e9f/14197 terminal035284e passed; extendedcancel/otherseat/entry/TVproof final9e87e6/20742 terminal0b30be7/PGstopped. Latesttour e2875a08-3cd6-4a34-a885-fc715d298383/club8ef5bbc1-7898-411a-8fd7-58aa659a80d1/completedhand246f5d20-045f-45ff-a2e3-e0113add6734 retained; evidence mapupdated. NewCIpathprepared/notdispatched, lightNode/YAML/diffchecks only. Not mic/provider/HTTP/Auth/browser375/manual95/correction/historypublication/AutoRotation/rest15x3/fulltourproof. No production/push/CI/Edge/frontend/flags/Daybreak change; localhold/masterACTIVE. Next samehand historyworker/currentpublication and correction, then bust/restore/colorup/break/close/end path; do not shrink acceptance.
+
+## G8 actual initial-assignment Edge/RPC/audit joined to eight-paid tour
+
+Baselineeabbc53fb clean/previousPROGRESS. New paidTourInitialAssign.native.mjs executes actual whole assign-dealer handler, actual computeSwingDuration/manualDealerIntentHeaders, actual club-authority/readreceipt/workerwrite SQL and audit INSERT. Auth user discovery/PostgREST bridge modeled; noTelegramtoken/fetchforbidden. Product (not test) builds manual headers after auth; Auto staysOFF and no assignment INSERT fixture. Dedicated NOLOGIN BYPASSRLS role inherits actualservicegrants, droppedfinally, same existingreadycapacitymodel/noapplicationrole/policychange.
+
+Finald17229/29793 polledterminal01974ce/PGstopped:2assignments/2distinctattendance/2exactsessions/2auditrows,2dealersavailable; outsider403zerodelta; exactreplay2returns/no2ndwriter/noauditchange; fullcash/seat/entryfingerprint andissuanceledger unchanged/160000chips. Existing8paid/chip/TVchecks retained. Latesttourbe0bef01-e427-40c2-ac88-d562f423c603/clube4bdd978-7217-4adc-9cfd-7c032679f041 retained; earlierauditkept. Initial failures were TESTbridge schema column (receipt.payload.club notclub_id), SETsessionJSONcast syntax, SQLNULL→JSONnull serialization; notproductbugs/no guard/grant weakening. No sourcebusinesschange. Nodecheck/YAML/diff checks recorded below; CIhelperpathprepared/notdispatched. No liveDB/Edge/frontend/flags/UAT/push/CI/deploychange/localhold/DaybreakOFF/masterACTIVE. Next actual Manual↔Tracker/hand lifecycle on these staffed4-player tables; not Auto/rotation/rest15x3/fulltour/browserproof.
+
+## G8 same-tour eight-stack issuance/replay and anonymous TV consistency
+
+Baseline1767d3165 clean/previousPROGRESS. Extended existing8paid/2tables/4checkins script with localchipset/template/bank metadata, actual chip_ops_set_issuance_v2 quantity8COMMIT/replay and actual currentdenom projection. 1600×100=160000floorchips matches8seatedentries; replay exactreceipt/ledgerfingerprintunchanged. Cash/entries/seats/attendance entireJSON fingerprintunchanged; couplingOFF/bank3000low untouched/0bankledger. Actualanonrole TVv4 paired correcttour/8remaining/160000liveentrystack, zerooperational/ledgerdelta. No color-up here (already dedicatedruntime), no sourcebusinesschange.
+
+Initiala95f10 was ORACLEerror: neverissued highdenom is absent from ledger-derived counts, not explicit0. Corrected to assert absentprojection AND zeroledgerrows; no genericmissing→0 fallback/productchange. Final396326 exit0/PGstopped, ownedfreshclubd18ff7bc-af9b-4ab8-af00-6e32847b903c/tour17799ae3-fd1c-4eb3-ab53-19e10b4f6e79 retained; prior/failedfixtureaudit also retained, notreset. Updated evidence map. Metadata setup occurs afterregistration in this localtest, not SetupUI or requiredsetup-first browserjourney proof. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next supported initialassignment on same fixture then hands/projection lifecycle; fulltour/rest15x3/375/perf/release stillrequired.
+
+## G0 evidence refresh + G8 two-table/eight-paid/four-check-in foundation
+
+Baseline7c79ebd7a clean/previousPROGRESS; get_goalACTIVE, actualfetch3114 terminal0 mainunchangeded3db6ac600710e95fe4408c475941916c23ab19. Read priorG3 proof: main2/10/40 already localqualified (not hosted/rest15x3), no redundant rerun. Added ops-local-evidence-matrix.md distinguishes G0–G9 source/local versus all outstanding hosted/browser/fulltour/performance/release gates.
+
+New gated paidTourRoster.native.mjs uses existing canonical paid/open fixture,7more actualregistration+cashRPCs,4actualdealercheckins+replays, optional exactFloorbalanceRPC (no directentry/seat/payment writes). Actual3433de terminal0/PGstopped:2active exactsessions,4players each,8distinctpaidseatedentries,160000stack,8cashmovements,4checkinattendances,AutoOFF/nohands. Club435b8b6f-1320-466f-927f-9f3e82a778fb/tour14b5a2a0-6599-49a4-b471-d8c1c07ff145 retained with audit; exacttables/sessions in matrix. TESTmetadata onlyauthusers/dealers/shift, no realcontacts/no pg_net; no Autoassignment/rotation/payroll/browser/fulltourclaim. CIpath+commandprepared/notdispatched, Nodecheck/YAMLparse/diffcheckPASS. Privatehelper --paid-tour-roster outsideGit.
+
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploychanges; localhold/AutoOFF/DaybreakOFF/masterACTIVE. Next extend same scoped tour through chip setup/issuance and projections, supported dealer assignment/hand lifecycle, not another unrelated fixture or a smaller definition of done.
+
+## Finish prepare receipt read integrity RED→fix→actual engine compatibility
+
+Baselineb83c17935 clean/previousPROGRESS. Actual prepareTrackerVoiceFinish onlytruthyok/stringdigest accepted13invalid vectors: wrongstate/emptydigest/origin/missingsummary/nullNaNnegativechip/stringtotal/wrongconservation/duplicateparticipants/unknownwinner. Strict currentproof/64hexdigest/origin and summaryshape now required: safe nonnegative chips, positiveintegerseats, unique endingIDs/seats, endingtotal equals serverconservation, winners linked to participant/seat, main/sidepots with knownwinnerIDs. This validates server response only, no client payout recomputation or mutation. Zeroendingstack and nullableplayername positive retained.
+
+Final75receiptunitPASS78.9ms/apiESLint0/diffcheckPASS. Native dedicated journey executes actual prepare_voice_finish Edgecase+actual loader/engine/SQLsnapshot before nextFinish, deep-equals independent engine summary, actual client accepts realproposal, handfingerprint unchanged/mutations0; actualFinish/replay/previousnegative cases retained. dcf140/live33666 polled763c72terminal0/PGstopped. Hosted Auth/HTTP/provider/browser/fulltypebuild/showdown still unproven; native service read role attribute modeled rollback-only as previous checkpoint. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak change; localhold/masterACTIVE. Next standalone workflow regression matrix and schema121 role/receiptnegative coverage, then update missing-evidence map across fullG0–G9.
+
+## Unknown Finish intent actual Edge engine/writer + fold-win workflow bug fixed
+
+Baselinecb842705c clean/previousPROGRESS. Extended dedicated durable fixture to canonical next hand2, SB/BB/fold, actual Edge workflow/router/authoritative loader/settlement builder/serviceRPCwriter. New defect REDa68c62→40187terminal2404ac: actual Edge422 wrong_workflow on sole fold survivor because bettingComplete was checked first (blind winner had no voluntaryaction). Fix returns submit_ready for exactly1liveplayer before betting check; actual settlement engine independently validates foldwin, no pot/rounding change. Final e19e81/live16884 polledterminal0d3c6fa: unknown→oneactualcommit→completed→samekeyEdgerecovery duplicate/no secondwriter, engineendingseats,total40000,cashledgerunchanged. Existingrecovery/mismatch/permissiontests retained.
+
+Migration121 transactional DROP-newfunction/recreate/ROLLBACK rehearsal preserves exactfunctiondefinition+ACL+config; serviceonly/no tableSELECT assertions retained. Initial unknownpath test failure was fixture SELECT table_sessions underauthenticated (fixedprivileged diagnosticread then actualRPC), followed by service role nativefixture lackingBYPASSRLS (read-onlyinspect294c5f/ef9529), NOT productpermissionsbug. Official Supabase RLSdocs confirms hosted service role bypassesRLS: https://supabase.com/docs/guides/database/postgres/row-level-security . Test now models attribute ONLY inside each rolledback SELECTtransaction; objectgrants still enforced, no policy/grant change, roleflag restored/asserted finally. Another harnessmissingstreetForBoard dependency corrected from actualsource before definitiveRED. No fakeworkflow/settlement used.
+
+Nodecheck/diffcheckPASS; no fullDeno/typebuild/browser/HTTP/Auth/provider proof. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak change; localhold/masterACTIVE. Next add standalone workflow regression cases/Finishprepare receipt validation, harden recovery malformed/unavailable/SQLrole-negative and releasepreflight. Fulltour/rest15x3/40worker/375/performance/productionrevision remain required.
+
+## Finish Edge committed receipt recovery fixed locally via narrow service RPC121
+
+Baseline0a1dd05fc clean/previousPROGRESS. Replaced observed Edge422-afterCOMMIT diagnostic with desired200 originalreceipt+duplicate and no snapshot/writer call. First direct service table-read design failed real SQL permission denied (e7363b); kept existing noSELECT grant and implemented narrow SECURITY DEFINER empty-search-path service-only resolve_tracker_voice_finish_intent_v1(actor,intent). CLI candidate20261016141359 moved forward121 after local filecatalog check (only120 present); live catalog NOT checked/NOT approved live. New migration hash2fb5422a31bbccb8bb6bc8460dcc5f9f5a9ad5880321236ccd1b24fcb43d4d0c. Helper rawSQL applies only exactisolatednativeDB when absent; no ledger rewrite. Function returns only unknown/conflict/unavailable/committed+own immutable opaque receipt, never rawroot/transcript/cards. Checks exact actor/key/tour/table/hand/provider/event/transcript/beforestate/settlement, receipt IDs/proof; no currentassignment requirement matching writer's existing replay-before-authority semantics.
+
+Edge verifies canonical hashes from explicitlyselected payload fields, calls resolver BEFORE active snapshot. Unknown continues original snapshot/compute/writer; unavailable503/no writer; mismatch422/no writer. No broad tablegrant. Runtime actualEdgebranch+realRPC: committedsuccess zeroSnapshot,9mismatchvectors,unknownkey+outsider no200,readfailure/missingreceipt503,allfullfingerprintzeroDelta. Existing SQLcommit/replay/cash/seat/entry conservation/client proof retained. Final183cdb/live30322 polledterminal0/PGstopped (earlier17fd38 alsoPASS). CI121chain/path prepared, YAMLparsePASS; Deno2.8 rejected --cached-only flag, NOT typecheckPASS; no dependencyinstall/fullbuild. Auth/HTTP/CORS/provider/browserstill modeled, direct actualRPC ACL assertsserviceonly and no directtableSELECT. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE.
+
+Next qualify unknown-intent positive Edge writer path with real engine/client, receipt failure/revocation/cross-club vectors and migration rollback/postcheck before source qualification. Required fullchecks/release/webtour/performance remain. Do not equate narrow local recovery with wholecampaign completion.
+
+## NEW confirmed Finish Edge recovery gap after durable commit
+
+Baseline910dc18d0 clean/previousPROGRESS. Extended actual durableFinish: samekey/differentdigest or potpayload idempotency_mismatch, outsider actor denied; full committed hand/players/events/seats/entries fingerprint unchanged, cash/stack checks retained. Then executes ACTUAL extracted commit_voice_finish Edge switch case with original committed intent and actual authenticated snapshot SQL. It returns422 hand_not_in_progress before reaching replay: source reads active snapshot before any receipt resolution. SQL idempotent replay works but actual Edge retry does NOT. This is a newly confirmed recovery bug, not fixed, NOT recoveryPASS. Diagnostic deliberately asserts currentbug; must change to desired200 receipt when implementing fix, don't leave it as acceptance oracle.
+
+Native d63a92→livehandle96859 polled a421d7 terminal0/PGstopped, DIAGNOSTIC_FINISH_EDGE_RETRY_BLOCKED_AFTER_COMMIT hand_not_in_progress. Auth/CORS/HTTP modeled; actual branch+SQL/data proved. Scope includes no networkdrop injection yet; exactoriginalretry aftercommittedfixture reproduces same state. No product/schema/live/push/CI/deploy/flag changes. Next design actor/scope/payload-bound read-only receipt resolution BEFORE active snapshot in Edge (own actor/intent only, no service broad exposure), with unauthorized/mismatch/unknown/unavailable and actualcommit recovery tests. Add forwardmigration only via catalog/CLI/runbook if DB seam needed, no historical edit. Localhold/masterACTIVE/fullacceptance remains.
+
+## Paid Finish actual engine + durable COMMIT + fresh replay qualified locally
+
+Baseline516fac6b0 clean/previousPROGRESS. Added gated paidFinishCommit.native.mjs reuses exact existing paid/open/Voice setup segment (unique marker guards), not manual participation/payment fixtures. Canonical SB100/BB200/fold→actual Voice snapshot/sharedengine→actual computeVoiceFinishSettlement foldwin/digest→service canonical Finish actualCOMMIT. Freshconnection replay exact originalreceipt+duplicate:true; full hand/players/events/seats/entries fingerprint unchanged, exactly1canonicalreceipt. Actual client strictFinishAPI accepts original+duplicate against independentlybuilt canonical request. Seat AND entry stacks match engine endings, total40000, Cashier ledger unchanged. New owned localTESTaudit retained/noreset; globalVoice local value restored in finally/asserted (not claim immutable appsettings timestamp).
+
+Final5bb4a2 terminal0/PASS7.51s/PGstopped; earlier7e9980 positive before strongerreplay/entrystack assertions. Nodecheck/YAMLparse/diffcheck PASS; exactCIpath+command prepared NOTdispatched/full10minjobruntime unmeasured. Private helper gained --voice-finish-commit outsideGit. This qualifies prior localFinishreceipt guard with realengine+SQL, NOT hostedEdge/Auth/CORS/provider/browser/mic, response-loss network or showdownFinish. No production/push/CI/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next extend durableFinish recovery/changedpayload/actor denial and actual finish proposal boundary; fullG0–G9 acceptance still required.
+
+## Finish commit receipt binding RED→local fix, runtime pending
+
+Baselineae3e19d37 clean/previousPROGRESS. Actual commitTrackerVoiceFinish onlytruthyok/stringhand accepted13unbound vectors. Added strictok/exacthand/key, nonemptyeventIDs/trace, booleanduplicate and nonduplicate trace binding, exactsettlementorigin/digest from canonical request, valid64hex digest/before/after, before matches API+canonical and distinctafter. SQLduplicate preserves originaltrace, allowed. No server mutation/auth/settlement/rounding/retry change.
+
+Final61receiptunitPASS65ms +apiESLint0; diffcheckPASS. REAL Finish SQL+engine receipt compatibility NOT YET qualified: existing nativejourney still rollback-only and cannot pause for JS authoritative settlement computation. Do not fabricate service settlement/digest simply to pass. Next build/reuse dedicated local paid fixture and actual computeVoiceFinishSettlement between canonical SQL transactions; preserve audit, validate client against real result then receipt recovery. Relevant original SQL/finishAssist.ts/paidJourney.fixture.mjs inspected, no native rerun because current sourceclient not included yet. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE.
+
+## Hole-card receipt binding and real runout SQL compatibility
+
+Baselinefc30cefff clean/previousPROGRESS. Actual client accepted13unbound/malformed redacted receipt vectors (truthyok, root/receiptID missing, wrongkey/trace/player/entry/seat/before/after/duplicatemarker). Bind strictok/redacted, nonemptyeventIDs, exactkey/nonduplicate trace, canonical player+entry+seat, expected beforestate both API+canonical, distinct validafterhash; duplicate originaltrace retained. No server/write/retry/privacy policy change.
+
+Final47receiptunitPASS/52ms +apiESLint0. Native paid Board positive subcase now records two real all-ins on flop via record_action, actual snapshot→actual Edge workflow/core runout_reveal; service-only canonical hole commit writes Kh/Ks to expected frozen participant, actual redacted SQLreceipt through actual client validates against independent requestidentity. Whole subcase/outerfingerprint rollback exact. e73c57 exit0/13PASS2.539s/PGstopped. No fullEdgegrammar/HTTP/Auth/provider/browser/durableCOMMIT or Finishqualification claim; no install/schemachange. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak change; localhold/masterACTIVE. Next Finishproposal/commit receipt binding with actual settlement runtime evidence.
+
+## Action confirmation UI late-result fence RED→fix
+
+Baselinec3ee2d47f clean/previousPROGRESS. Inspected actual handleVoiceAction→handleAction: existing actionScopeRef/writeToken already fences canonical local action application after transport; no hook rewrite. Panel confirmAssist still published old success/error/readback and cleared newer guard. Source-callback RED33PASS3FAIL; added current render scope + validation/connection generation checks before entry and after awaits/catch, own-promise cleanup. Current-scope single-flight/readback positive preserved; no mutation retry/server authority change.
+
+Final79e6c4 terminal0/36lifecyclePASS105.9ms and scopedPanelESLint0/diffcheckPASS. First patch failed matching (atomic/no file change), corrected unique context; not runtime failure or external writer. UI skills reread/minimal state fix/no redesign. Not fullReact/browser/provider/typebuild proof; SQL/API unchanged and not rerun unnecessarily. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next remaining private-hole/finish client receipt integrity boundaries, then source-qualified release gaps; full acceptance remains open.
+
+## Private-hole and Finish UI scope fences RED→fix
+
+Baseline87a872832 clean/previousPROGRESS. Actual extracted hole/finish callback tests reproduced stale receipt apply, mutation after cancelled hashing, stale rejection restoring old UI and clearing newer promise/queue; positive same-scope paths retained. Existing Board fixture generalized only to execute additional actual callbacks. Fix binds both paths to current render scope plus validation/connection generations before entry/send/apply/readback/finalstate; hole queue stops processing after invalidation. Finally clears own settled guard only, old failures cannot resurrect prior attempts. No server effects rolled back or retried by client.
+
+Final921129 terminal0/32lifecyclePASS/101ms + scopedPanelESLint0; diffcheckPASS. Synthetic transport/callback state seams, not actual React/browser/provider or SQL authorization proof. DB/API unchanged, no redundant native rerun. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE. Next inspect action confirmAssist async scope similarly, then remaining hole/finish canonical receipt API validation; full web journey/type/build/perf/release outstanding.
+
+## Board UI async scope and single-flight RED→fix
+
+Baseline6d00337fa clean/previousPROGRESS. Actual extracted confirmBoardAssist callback RED18PASS3FAIL reproduced two mutations during async canonical hashing, old receipt applying to replacement hand, and old hashing continuing into mutation after scope changed. Moved hashing inside single-flight promise; bind Board callback to render scope + validation/connection generations before send/apply/readback/state writes. Finally clears only its own promise; old rejection cannot revive proposal/error after disconnect/scope replacement. No cancellation of already committed server effect, no automatic mutationretry.
+
+Final lifecycle24/24PASS incl positive same-scope commit, stale hash/receipt/failure/readback, newer guard preservation and hashing failure retryable state. Scoped panelESLint0 before indentation-only cleanup; diffcheck PASS. Source-executing callback seams, NOT full React/browser/Auth/provider/375/typebuild. Full React import still limited by missing @google/genai (no install); native SQL/API source unchanged, no redundant rerun. UI skills read; CLI unavailable retained noinstall, no redesign. No production/push/CI/DB/Edge/frontend/flags changes; AutoOFF/DaybreakOFF/localhold/masterACTIVE. Next apply equivalent proven scope-fence analysis to private-hole/finish paths (not yet fixed/qualified).
+
+## Board commit client receipt binding RED→fix→actual SQL compatibility
+
+Baselinece7032be8 clean/previousPROGRESS. Actual client commitTrackerVoiceBoard previously accepted truthyok+any cards array. Source-executing transport test RED19PASS13FAIL reproduced wrong root/key/trace/proof/street/cards/prefix/missingreceipt/invalidduplicate acceptance. Added strict ok, exact root/key, receiptID/trace, boolean duplicate, nonduplicate trace binding, before proof matching canonical request, valid distinct afterhash, exact street/cards/prefix/count/canonical card tokens/unique cards. Duplicate retains originaltrace (SQL contract), NOT wrongroot/key/proof. No server authority/write/retry changes.
+
+Final33unitPASS incl turn/river prefix positive+negative; api ESLint0; native b896b3 terminal0/13PASS2.462s feeds actual Board SQL receipt through actual client with independent root/key/trace request metadata and canonical request, exactly1 invoke. PG stopped/outerrollback exact; old paid Chip/TV/checkin/handoff/action assertions retained. SDK transport modeled, not hostedEdge/provider/browser/fulltypebuild/durableBoardCOMMIT. No liveDB/Edge/frontend/flag/push/CI/deploy changes; localhold/AutoOFF/DaybreakOFF/masterACTIVE. Next inspect hole-card/finish receipt boundaries and scope-safe UI application; do not claim fullgoal.
+
+## Actual Board grammar/canonical builder joined to paid SQL workflow
+
+Baseline95d6c7077 clean/previousPROGRESS. Existing native positive Board path now uses actual routeTrackerVoiceIntent + buildVoiceBoardCanonicalRequest imports, not handwritten payload. Canonical state placeholder is bound to actual SQL snapshot before registration; after rollback, independently recompute actual Edge workflow/shared engine and rebuild canonical request from actual snapshot; deep equality includes transcript/payload hashes, workflow/street/state/cards. Actual router rejects Board during preflop_action and duplicate-card transcript. Actual actionWorkflowForStreet replaces previous throw fallback. Positive RPC/replay/revision/readback and all negative/fingerprint assertions retained.
+
+Native490e74 terminal0/13PASS2.595s/PG stopped. No product/schema change, no new dependency/install. Models PostgREST/Edge orchestration; NOT entire Edge handler/CORS/Auth HTTP, mic/provider/browser or durable Board COMMIT. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. G6/G8 IN_PROGRESS/local-only hold; full goal unchanged. Next: inspect actual Board commit client receipt boundary against real canonical receipt, then close remaining local integration gaps without re-running unchanged suites.
+
+## Positive Board commit at actual enter_flop workflow
+
+Baseline1af2719fa clean/previousPROGRESS. Native paid hand now posts SB100/BB200, call100/check via actual record_action, reads actual Voice validation snapshot; actual Edge workflowForVoiceSnapshot with actual shared handStateCore recomputes enter_flop (fallback action-workflow callback deliberately throws if reached). Trusted service Board root then actual authenticated commit/replay produces persisted Ah/5s/2d, distinct state hash, source_revision strictly above immediate pre-Board revision, exactly one canonical receipt. Subcase rolls back before other prior assertions, full outer fingerprint exact.
+
+Initial5481f1 failure was test-local PLpgSQL ambiguous receipt variable, fixed to captured board_commit field, not product bug. Intermediate44ab92 passed; final stronger revision/readback b1e2ee terminal0/13PASS2.287s/PG stopped. This is real SQL write within rollback + actual workflow computation, NOT durable Board COMMIT, full Edge parser/request pipeline, provider/mic/HTTP/browser or historical proof publication. No product/schema/live/CI/push/deploy/flags/Auto/Daybreak changes. G6/G8 IN_PROGRESS/local-only hold. Next integration: actual parser/canonical request pipeline consuming the real snapshot before Board root registration; retain current positive/negative invariants.
+
+## Canonical dealer handoff invalidates actual Board commit
+
+Baseline9c4852d8c clean; prior turn PROGRESS. Added trusted service-normalized Board root before actual check-in/plan/manual Swing, then actual authenticated commit_tracker_voice_board_v0 after handoff. Current migration70 already fences root assignment/dealer/physical/club and returns voice_assignment_changed. Initial f7d00e RED was WRONG TEST ORACLE (expected action's dealer_assignment_lost), not a product regression; source70 inspection resolved it, no DB fix needed. Correct exact Board rejection plus unchanged hand/actions/all events fingerprint now passes.
+
+Native a9f6bf terminal0/13PASS2.437s, outer rollback exact, PG stopped. Auto remains OFF; no rest rewrites. This proves stale Board commit rejection in actual SQL after canonical handoff, NOT positive Board workflow, provider/Edge, browser or durable COMMIT. No product/schema/live/CI/push/deploy/flag changes. Next: legitimate Board workflow positive control and revision/history invalidation; full campaign ACTIVE/local-only hold.
+
+## Board root replay/conflict/stale/outsider native qualification
+
+Baseline14b4db387 clean; prior turn PROGRESS. Extended existing native paid journey (no product/schema change): actual Board root replay with new trace retains original receipt plus duplicate:true; same key/different transcript rejects idempotency_mismatch; wrong state with fresh key rejects stale_state_version; unknown actor rejected. Exact hand+all Voice events JSON unchanged by replay-denial sequence. Root remains subtransaction rollback before existing action assertions; final whole-journey fingerprint retained.
+
+Native dfc156 terminal0/13PASS2.493s, PG stopped. SQL service-normalized fixture only, not Edge grammar/workflow, microphone, real HTTP loss or durable Board COMMIT proof. Supabase skill read; changelog fetched using PowerShell after web markdown transport unsupported; no Supabase API/library/schema change. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. G6/G8 IN_PROGRESS; local-only hold persists. Next: qualify Board canonical commit through a legitimate workflow state, including assignment/session invalidation, without substituting root registration for commit evidence.
+
+## Board receipt compatibility regression caught before release
+
+Baseline cf907b981 validation guard incorrectly required alert_id:null on Board validated receipts; original SQL deliberately omits that field. Local regression only, never released. Normalize omitted alert_id only for explicit Board validated response; action/alert-opened omissions remain rejected, all request/proof/mode fences retained. Receipt unit RED17/18 then GREEN18/18; scoped api ESLint0 and diffcheck PASS.
+
+Native 77e91f terminal0: 13/13 PASS, actual service Board registration receipt through actual extracted client validator normalizes null and preserves all other fields. Board root subtransaction rolled back before existing action/handoff assertions. This qualifies receipt compatibility, NOT Board workflow legality, Edge parser or provider. Existing paid Chip/TV/check-in/manual Swing/stale action assertions retained; outer rollback fingerprint exact, PG stopped. No production/push/CI/deploy/flags changes. Master ACTIVE; local-only hold and outstanding full tour/provider/browser/performance/release remain.
+
+## Voice validation receipt boundary RED→local binding fix
+
+Baselinefc442945a clean/previousPROGRESS. Actual API validate body previously onlytruthyok/eventIDtype. Source-executing syntheticEdge test2PASS10FAIL reproduced missing/wrongkey/trace/state/mode/result/correction/alert accepted. Added stricttrue/nonemptyIDs+keys+trace/hash/currentexpectedstate+mode/enums/booleans/alertidentity. Exact nonduplicate receipt binds inputkey/trace; server-marked duplicate preserves originalkey/trace per existingSQL provider-eventdedup contract, but must retain proof/mode/requiredfields. No new mutationretry or serverauthorization change.
+
+Final16receiptcasesPASS; sourceapiESLint0/session84065 terminal0, diffcheckPASS. New duplicateproof/mode/missingkey/stringmarker negatives ensure duplicate isn't broadbypass. Extended existing native paidjourney compiles actualvalidate API, consumes realSQLservice receipt with separate requestidentity, verifies SDKrequesthand/state andoneinvoke. Native76a019 exit0/13PASS2.428s/PGstopped/nohandles, all chip/TV/checkin/manualSwing/replay/stalefences retained. SDKEdge transport modeled, NOT actualEdgeparser/HTTP/provider/mic/browser/fulltypebuild. CIunitinvocationprepared/nodispatch. No schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
+## Durable two-color-up dependency/reverse order coupled+OFF local PASS
+
+Baselinedbb7e8fdb clean/previousPROGRESS. Existing committedpaidchip script adds explicitCHAIN mode: secondactualcolorupCOMMIT1000→10000, freshreceipt matches; firstundo whilelateroperationactive rejectsUNDO_DEPENDENCY/exactoperation+ledger+bank+receiptfingerprintunchanged, rejection hasunknown(no committedreceipt). Undo secondactualCOMMIT/freshreceipt, then firstsameundoKey allowed; final200low/0middle/0high, initialpaidcash/seat/table/entryunchanged, immutableoriginalfloor/bankrowIDs retained, compensation8floor/9bankON (OFF0bank). Localcoupling restoredOFF/finalhistoricalreceipt exact, no timestamp/rounding changes.
+
+Coupledexecsession52689 polledterminalexit0/PASS; uncoupled7daf8c exit0/PASS7.17s. No repeat unchanged singlecases; existing CI retains2single and adds2chaininvocations, notdispatched/wholejobduration unknown. AllPGstopped/nohandles, localTESTauditretained. This is multiCOMMITSQL proof, not actualHTTP/browserunknownresult/recoveryUI/fulltour/provider. No productsource/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
+## Paid chip durable recovery coupled AND uncoupled local PASS
+
+Baseline782734a8b clean/previousPROGRESS. Same actualCOMMIT/freshconnection paidchip script now explicit coupled mode only for fresh localTESTclub, canonical coupling setter, restoreOFF in finally evenassertfailure. Bankmetadata seed1000low/100high; exactissuance1 consumes200low only whenON; colorup/undo preserve original2floorledger and original3bankledger rowIDs/fullJSON, appendcompensations (4floor/5banktotal), restorebank800low/100high forON (1000/100OFF). Snapshot now includes actualbankrows during receipt reads/denials. Historicalcolorupreceipt remains exact afterundo and aftercouplingrestoredOFF. No globalflag/Auto/Daybreak changes; localownedclub coupling intentionally toggled and finallyOFF, audit retained.
+
+Final615f9f coupledexit0/PASS8.33s includingPGstartup/shutdown;3cfd00 uncoupledexit0/PASS6.21s on changedtestdependency. Bothserversstopped/nohandles. CIprepares explicitbothmodes/notdispatched. This is durableSQL/readreceipt/conservation evidence, not actualHTTPresponse drop/browserhook/375/fulltour/provider/rest15x3/40worker. No productsource/schema/liveDB/Edge/frontend/flags changes. Localhold/masterACTIVE/fulltour/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
+## Paid Chip real COMMIT → fresh connection receipt/undo recovery local PASS
+
+Baseline79cb3be73 clean/previousPROGRESS; freshfetch origin/main unchangeded3db6ac600710e95fe4408c475941916c23ab19. New exactgated native chipcase reuses canonical paid fixture, localPG17/datadir/nonetwork guards; metadata setup explicit. Coupling staysOFF/noflagwrite. Exactissuance then colorup SELECTs actually autocommit, each SQLcall fresh psql process. After committed response is withheld from recovery path, actual authenticated receipt reader returns exact stored outcome; conflict/unknown/outsider/authorizedotheractor tests zeroledgerdelta,1operation/2ledgerrows, no writerretry. Real undoCOMMIT then freshreader exactundo; originalreceipt stillsame afterundo, exactoriginalrowIDs/fullJSON unchanged,4ledgerrows compensate, original200low/0high and paidcash/entry/seat/tablefingerprintunchanged. LocalTEST data/audit intentionally retained, not cleaned/reset.
+
+Firsta096cf positive; strengthened1ea2ef failedoracle because reasonfilter included new compensations with same reason+reverse=true, NOT product mutation. Fixed oracle to original immutableIDs, final9b2a96 terminalexit0/PASS/PGstopped/nohandles. Nodecheck/YAMLparse/diffcheckPASS; current-schemaCIpath+gated invocation prepared/notdispatched. This proves committedSQLread-recovery, NOT actual droppedHTTP/clienthook/WebLocks/browser375; initial response retained only as testoracle, not delivered to recovery client. PriorcouplingONrollback evidence remains separate, not bothmodes onejourney. No productionapp/schema/DB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
+## Same paid tour: anonymous TV before/after color-up/undo local PASS
+
+Baseline19e2039fb clean/previousPROGRESS. Extended existing integratedSQL chipcase with explicit local displaypairing metadata and actual SETROLEanon/JWTanon get_tv_display_state_v4 reads afterissuance, aftercolorup and afterundo. Allthree assert paired/exacttournamentID/exactclocktourID/remaining2/live_entry_stack40000, independently of physicaldenominationcount changes. No admin read substituted for anonymous caller. Cash/seats/handroster zeroDelta, coupledbank/ledger and Voice/checkin/manualSwing assertions retained. Outerrollback fingerprint adds TVdisplay rows.
+
+Native9aa79b exit0/13PASS2.460s/PGstopped/nohandles. Test-only/firstgreen neworacle, no productbugclaimed. SQLanonymous role is NOT hostedHTTP/anonymousbrowser/renderer375/pairingUI/Storagebytes proof; existing separate twoflight tests remain separate. ExistingCI consumes extendednativecase/notdispatched. No source/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes, localhold/masterACTIVE/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
+## Same paid active tour: actual issuance → coupled color-up → undo PASS
+
+Baseline485e15dd4 clean/previousPROGRESS. Existing standalone chip/concurrency suites already had evidence; added missing cross-module oracle to same real paid2players/activehand/Voice/Swing transaction instead of rerunning unchanged suites. Chipset/denoms/template/bank are explicit local setup metadata fixtures (notSetupUI); actual chip_ops_set_bank_coupling, exactissuancev2(count2/rev0), colorup/replay/undo operate on same tournament. 2x20000 inventory=40000 before/after colorup, rounding0; undo restores400low/0high, bank600low/100high afterissuance, reconciled=true. Exact seats/cash/handplayersJSON unchanged by chipops; active seats still40000. No rounding/payout/payroll policy change.
+
+Initial0c72e7 positive; strengthened numeric oracle to ISDISTINCTFROM (missingrows cannot pass NULL comparison) and outerrollback fingerprint to chipsets/denoms/linkedset/templates/issuance/bank/bankledger/floorledger/colorup/internalreceipts. Final103b22 exit0/13PASS2.340s/PGstopped/nohandles/fullfingerprintstable. Existing sequential action/checkin/manualSwing/staleVoice cases retained in samejourney. CouplingON integrated proof only; priorOFF/concurrency suites separate, not silently combined into fulltour claim. No production/sourcebehavior changes or actualCOMMIT/HTTP/browser/TV/provider proof. ExistingCI consumes extension/notdispatched; localhold/DaybreakOFF/Auto unchanged, masterACTIVE/fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release outstanding.
+
+## Canonical check-in → manual Swing → Voice fence local PASS
+
+Baseline57e983290 clean/previousPROGRESS. Removed incoming standby attendanceINSERT from integrated handoff subcase. Actual authenticated operator_check_in_dealer_v1 creates attendance/dateUTC+7; samekey replay exactreceipt, get_dealer_checkin_receipt_v1 returns committed/exactresult, changedshift samekey conflicts, independent secondcheckin returns already_checked_in/sameattendance. Actual outsider actor_not_allowed/zeroattendance before positive. Assert exactly1row/available/currentserverday/checkintime/NULLlastrelease (fresh neverassigned, no fake rest markers). That actual attendance passes canonicalnext→manualSwing→oldVoicereceiptdenial from prior slice. Dealer/shift metadata and original outgoing assignment remain explicit control-plane fixtures.
+
+Final282b77 exit0/13PASS2.374s/PGstopped/nohandles. Outerrollback fingerprint now includes localnotification sink count; no outboundnetwork/provider/publication. This adds current-day sequential/replay/negative checkin integration, NOT midnight/parallel checkin/rest15x3/40worker/fullUI/COMMITlostresponse proof. Original pure unit cases unchanged but included in native script for integration dependency qualification. ExistingCI consumes extension/notdispatched. Test-only/noapp/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes, localhold/masterACTIVE/fulltour/Voiceprovider/Storagebytes/performance/fullchecks/release outstanding.
+
+## Canonical manual Swing → old Voice receipt rejected, Auto OFF local PASS
+
+Baseline0dee7b3e8 clean/previousPROGRESS. Read actual acquisition guard: authenticated exact-club DealerControl manual path is explicitly allowed while AutoOFF. Separate subcase now seeds fresh never-assigned standby/shift metadata, calls authenticated operator_plan_next_dealer_v1 then operator_perform_swing_v2 with freshly read assignment CAS. No header spoof, service/manual bypass, Auto toggle or resttimestamp rewrite. Verifies exactlyone current exactsession assignment belongs to incoming Dealer, oldassignment released, fresh Owner runtime stillvalid, but old validated Voiceevent cannot write (dealer_assignment_lost), exact hand/action/event zeroDelta. Nested rollback restores originals before existing positive Voice action/replay/stale tests.
+
+Finala1fa3f exit0/13PASS2.236s/PGstopped/nohandles. Expanded outerrollback fingerprint includes shifts/swingrequests/rotation/Auto row along with money/lifecycle/voiceaudit. ActualSQLtransaction canonicalmanualhandoff proof, not browser/Edge/provider/realCOMMITresponse-loss, actualcheckin (standby seed is control-plane fixture), scheduledworker40 or rest15x3 evidence. This closes the previous direct-replacement-fixture gap ONLY at canonical manual SQL boundary; three real rotations/full worker/production remain. Existing CI consumes extendedtest, notdispatched. No app/schema/liveDB/Edge/frontend/flags/Auto/Daybreak changes; localhold/masterACTIVE/fulltour/Storagebytes/Voiceprovider/performance/fullchecks/release remain.
+
+## Validated Voice receipt after assignment revocation — local PASS
+
+Baseline6f763df84 clean/previousPROGRESS. Existing native paid Assist journey now revokes sole exactsession assignment in a rollback subtransaction AFTER service validates immutable event but BEFORE authenticated canonical action. Runtime returns dealer_assignment_missing; record_action rejects dealer_assignment_lost. Full hand/action/event snapshot unchanged by denial; rollback restores original assignment so original positive action/replay/conflict/stale tests still execute. Outer lifecycle/money/audit fingerprint unchanged.
+
+Initialfd6e95 attempted new Dealer acquisition in replacement fixture and correctly hit AUTO_SWING_OFF. Did NOT change guard/role/Auto to evade; changed subcase to explicit revocation only, preserving full replacement via canonicalSwing as outstanding. No claim of fullhandoff/rest test or productbugfix. Final8a517d exit0/13PASS2.359s/PGstopped/nohandles; subsequent string-only diagnostic renames do not change SQL oracle. Trusted normalized fixture/directSQL, not Edgeparser/provider/mic/HTTP/COMMITproof. Existing CI consumes test/notdispatched; localhold/DaybreakOFF/Auto/production unchanged. MasterACTIVE/fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release outstanding.
+
+## Actual local Voice Assist event → canonical action/retry/stale fence PASS
+
+Baselinee760068bf clean/previousPROGRESS. Same paid-activehand native transaction now calls actual service-only event registration with explicit trusted normalized check fixture, then authenticated owner record_action matching immutable event. Canonical source=voice, exactly1action/1finalevent, real revision/hash advance. Replay duplicate=true; changedamount samekey idempotency_key_conflict; suppliedactor mismatch actor_mismatch; exact hand/action snapshot unchanged by replay/denials. New event using priorhash rejects stale_state_version, no extra finalevent/action. Existing Owner/FloorTelegram runtime and outsider denials retained; outerrollback fingerprint includes actions/voiceevents and original scoped money/identity/lifecycle rows.
+
+Initial02f29d failed voice_event_payload_mismatch because fixture used Shadow (correctly nonwritable). Switched explicit local config/event fixture to Assist, preserving guard, NOT productbug/fix. Strengthened firstgreen3c9356 replay oracle (missing JSONid equality was too weak) to explicitduplicate + fullrowsnapshot + conflicts. Final6ef622 exit0/13PASS2.261s, PGstopped/nohandles. This is actualSQL writer execution INSIDE rollback, NOT durableCOMMIT/response-loss or Edgeparser/engine/provider/microphone/receiptE2E proof. No app/schema changes, existing CI consumes extendedtest/nodispatch. Localhold/DaybreakOFF/Auto/liveDB/Edge/frontend/flags unchanged, masterACTIVE/fulltour/rest15x3/40worker/Storagebytes/perf/fullchecks/release outstanding.
+
+## Actual paid active hand → Owner/Floor Voice runtime compatibility PASS
+
+Baseline396fc02ac clean/previousPROGRESS. Extended same native payload journey: selects actual occupied canonical table, closes other empty table via close RPC, creates second registration through service RPC and cash payment via owner RPC, starts actual clock/Tracker hand. Owner nohand remains positive; Owner and exact-club Floor then both read same active hand/hash while sole assigned Dealer.user_id is NULL. Loader accepts both real SQL payloads. Independently compare state hash to actual _tracker_voice_hand_state_version, exacthandID, frozen2players/40000startingstack; outsider remains actual denial. Assignment/Floor/config are explicit local control-plane fixtures, not operational check-in or role-management UI evidence.
+
+Final native1cc370 exit0:13PASS, SQLcase2119ms/suite2143ms. Expanded rollback fingerprint covers session/tables/config/global/dealers/attendance/assignments/Floors/tournament/entries/registrations/cash/seats/hands/operationreceipts; exactunchanged, Floor authrow and TelegramDealer absent afterward. PGstopped/nohandle. Existing CI invocation consumes extension, notdispatched. Test-only/noapp/schemachange. Notactual Voiceactioncommit/provider/microphone/receipt/HTTP/React375 or realpayroll/rest-cycle proof. Localhold/DaybreakOFF/Auto unchanged, campaignACTIVE/fulltour/rest15x3/40worker/Storagebytes/perf/fullchecks/release outstanding.
+
+## Real local runtime SQL → payload validator compatibility PASS
+
+Baselinef1fc8b0a0 clean/previousPROGRESS. Extended existing runtimeApiPayload test with explicit native gate/loopbackPG17/datadir/no-network paid fixture guards. Canonical paid create/open/register flow; actual mode RPC inside rollback, explicit synthetic Telegram-only Dealer/attendance/assignment/config control-plane fixture (NOT check-in/rotation proof). Actual authenticated public runtime returns Owner ok/can_mint/nohand and exact payload accepted by source loader. Same public RPC as player-outsider returns dealer_assignment_missing and loader preserves denial. Exact before/after session/tables/config/global flag/dealers/assignments/operation receipts fingerprint unchanged; synthetic Dealer absent afterward. Paid fixture/audit retained, no deleting/resetting.
+
+Final native helper2c5cb0 exit0:13/13PASS, SQL case1853ms/suite1874ms; PG stopped/no handle. Initial readonly catalog diagnostic incorrectly queried nonexistent table_sessions.status; fixed to closed_at, not product bug. Original native positive was then strengthened with actual outsider+whole rollback fingerprint (test title now actually proved). Current-schema workflow paths+gated invocation prepared; both workflows YAMLparse/node syntax/diffcheckPASS, no dispatch. Live catalog not inspected/changed; actual local definitions are source runtime+session/assignment helper, not permissive stub. No activehand proof/hash compatibility yet, HTTP/Authprovider/voice/mic/receipt/browser375 still unproven. Localhold/DaybreakOFF/Auto unchanged; campaignACTIVE/fulltour/rest15x3/40worker/Storagebytes/perf/fullchecks/release outstanding.
+
+## Voice runtime API payload boundary RED→local validation
+
+Baselinef6eccb3bc clean/previousPROGRESS. Read actual runtime RPC SQL20270114000004 return and original config constraints: boolean flags, modes shadow/assist/auto, amount1/1000, nullable0..1confidence, active hand null or in_progress/hash. Source loader previously only truthy.ok and cast: actual extracted loader with fake RPC gives2PASS10FAIL for malformed/truthy/missing/wrongtable payloads. Now validates these consumed fields at SDK boundary, preserves explicit server denial/network message, rejects malformed with tracker_voice_runtime_malformed; optional canonicaltable if present must match requested. No server permission/API write/model changes or claim of client authorization.
+
+Final12/12PASS21.23ms plus scopedapiESLint0/diffcheckPASS. Positives enabled/disabled/nohand/1000unit/confidence0and1, exact RPC args, canonical object unchanged; negatives assert exact malformed/denial message, not any TypeError. Actual functionbody/SWC with fakeSupabase transport; NOT wholemodule/type/build/realRPC/ACL/browser/provider. Existing Voice workflow invokes new test, no dispatch. Optional missing table field remains compatible per existing type; no proof of full actor/session/epoch response binding. No process/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Localhold/masterACTIVE/fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release remain.
+
+## Voice runtime read deadline — local RED→GREEN
+
+Baseline05a1d61d4 clean/previousPROGRESS. Actual runtime read had no bound; existing sourcecallback test16PASS1FAIL proves no timer scheduled for hanging loader. Reused unchanged observeTrackerContextRead10s, explicit Vietnamese timeout state, late result cannot publish, no automatic read/mutation retry. Connect now uses current-runtime error or neutral unavailable message, not captured runtimeError/dealer-assignment claim for a failed read.
+
+Final18/18PASS68.42ms/sourceESLint0/diffcheckPASS. Tests execute actual observer with controlled timer asserting10000ms, actual runtime callback and actual panelconnect: timeout clears runtime/error, releases connecting without starting mic, late read ignored, explicit retry succeeds and timers clear. Simulated clock/state/provider, NOT real elapsed/network/React/browser/provider/receipt. Workflow adds actual observer dependency path; existing node invocation unchanged/nodispatch. Underlying HTTP not aborted, only observation bounded. Credential/provider connection awaits beyond context read still not globally deadline-qualified. No production DB/Edge/frontend/flags/Auto/Daybreak change/no processes; localhold/masterACTIVE, fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release remain.
+
+## Voice offline/device-change actually stops capture — local RED→GREEN
+
+Baseline49fa18f36 clean/previousPROGRESS. Actual mounted device effect previously only changed labels; new effect+connect source tests baseline11PASS2FAIL confirmed no provider disconnect on offline/devicechange. Effect now invalidates connection/runtime-read generations, clears split amount, cancels pending countdown via existing cancel hook, stops mic test/level and disconnects provider; synchronous status ref prevents same-tick countdown using old listening state. Connect marks connecting before initial runtime await so offline there also cancels before permission. No auto reconnect/retry and no claim to cancel already committed canonical writes.
+
+Final16/16 sourcecallback/effect testsPASS53.52ms, sourceESLint0/diffcheckPASS. Tests cover both interruptions, pending runtime result and retained callbacks ignored, cancel invoked, no additional connection, idle no-op, initial context interruption and previous current/next-hand positives. Modeled state/provider/browser events, NOT React/network/microphone/realprovider/receipt/375 proof. Existing CI invocation consumes tests, no dispatch. Full runtime/actor/session/epoch UI boundary and real credentials/provider remain unaccepted. No processes or production DB/Edge/frontend/flags/Auto/Daybreak changes; localonly/masterACTIVE, fulltour/rest15x3/40worker/Storagebytes/performance/fullchecks/release outstanding.
+
+## Voice panel transcript/disconnect continuation RED → local fence
+
+Baselinefbe9e5fc7 clean/previousPROGRESS. Extended existing source-executing runtime lifecycle tests: actual connect/disconnect callbacks baseline6PASS2FAIL show pending final-transcript refresh creates setFinalAttempt after disconnect, and retained provider callback still publishes after stop. Connection generation now invalidated synchronously at disconnect/table render change/unmount; connect freshly loads runtime before microphone, all provider callbacks and post-refresh/post-disconnect continuations fenced. Event captures exact hand scope and cannot cross hand transition while awaiting refresh. Latest refreshRuntime ref permits continuing microphone across successive hands instead of using the prior hand's captured loader (important compatibility with previous read fence).
+
+Final11/11PASS32.66ms; sourceESLint0/diffcheckPASS. New positives ensure next-hand runtime reader used with one connection, current transcript becomes attempt, stop during initial context load never starts provider. Actual callback/effect source compiled with modeled refs/state/provider/HTTP; NOT full React/Auth/SDK/provider/receipt/375. Existing Voice workflow already invokes extended test, no dispatch. Scope contains tournament/canonicaltable; full actor/session/epoch UI boundary, offline/device-change continuation and stale displayedruntime still not globally proven; DB canonical commit remains authority. No liveDB/Edge/frontend/flags/Auto/Daybreak changes, no handles; localonly/masterACTIVE, fulltour/rest15x3/40worker/Storagebytes/Voiceprovider/performance/fullchecks/release remain.
+
+## Voice panel overlapping runtime reads RED → local fence
+
+Baseline802ffe2e5 clean/previousPROGRESS. Actual refreshRuntime callback unconditionally published late success/rejection: new source-executing Node/SWC tests3/3FAIL reproduced stale success overriding current runtime, stale error clearing it, invalidated request still publishing. Added request generation, render-time tournament/canonicaltable/hand scope generation invalidation, captured callback old-scope refusal and effect cleanup invalidation. Current success/errors still publish; no server authorization/writer/model change, no retry added.
+
+Final6/6PASS13.57ms executes actual callback and actual refresh effect cleanup with modeled state/reads; sourceESLint0/diffcheckPASS. Positive error test initially hit VM Error realm difference; supplied host Error explicitly, no app workaround. Existing Voice workflow invokes new test; no dispatch. Not React render/fulltype/build/HTTP/Auth/provider/browser375 evidence; shared missing @google/genai remains previous collection blocker, no installs. Runtime state may remain previously loaded until new read completes; transcript/connect callback continuations after disconnect and full actor/session/epoch UI scoping remain to audit, not closed by request-order fence. No liveDB/Edge/frontend/flags/Auto/Daybreak changes, no active handles. MasterACTIVE/localonly/fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/perf/release still unaccepted.
+
+## OpenAI provider cancel/reconnect lifecycle RED → local fix
+
+Baseline26e9e1ada clean/previousPROGRESS. Actual OpenAI class had no generation fence across permission/credentials/offer/SDP awaits or callbacks; disconnect could be followed by late stream/peer creation. New generation checks stop late permission tracks before credential mint, suppress stale continuations/events, abort pending SDP, and clear owned resources/handlers synchronously before awaiting AudioContext.close. Meter callbacks also generation-fenced. No model/API/authorization/hand writer change. Official WebRTC guidance fetched https://developers.openai.com/api/docs/guides/voice-webrtc; this is cancellation, NOT graceful final-usage/session.closed proof.
+
+Original Vitest provider suite could not collect: shared node_modules lacks @google/genai. No install/shared mutation; restored original test file. New lightweight node test executes actual SWC-transpiled OpenAI class with synthetic browser/credential/HTTP seams, isolating unrelated missing Gemini SDK; not full module/provider/browser proof. Actual baseline2/2FAIL unexpected_peer after cancellation; final4/4PASS14ms with current-positive transcript, stale channel reconnect and abort/late-response controls. Initial new SDP test used insufficient microtask polling; replaced with exact signaling-start barrier. Scoped sourceESLint0/diffcheckPASS. Existing Voice workflow watches source/tests and now invokes node test, NOT dispatched or whole-job qualified. Need real SDK/typecheck/build/mic/provider/receipt/375 and other campaign acceptance. No PG/process active, no push/liveDB/Edge/frontend/flags/Auto changes; localhold/DaybreakOFF unchanged, campaignACTIVE.
+
+## Archive discovery malformed/scope read integrity RED → local fix
+
+Baseline2421a1c9d clean, previous goal turn PROGRESS. Re-read master G0–G9/code/ship; actual archive parent already has timeout/retry (older handoff gap superseded), so did not reimplement. Actual React tests84977 terminal exit1:6FAIL/11PASS show malformed club scope silently empty/filtered and malformed or crossclub tournament rows trusted. Added narrow read-boundary validation: club array must contain nonempty strings; tournament array requires usable identifiers/name/status/date, unique IDs and nonadmin requested-club membership. Existing RLS remains authority, admin unrestricted discovery preserved; no write/auth/RPC change.
+
+Final21/21 React tests PASS2.68s, scoped ESLint exit0; existing workflow already watches/runs readiness test. Extra empty-scope oracle initially confused query construction with execution; corrected to assert thenable not consumed, not a product/network bug. Positive empty scope/retry/admin other-club and prior timeout/deeplink/actorABA/late-response tests retained. No fulltype/build/browser375/realSDK or production evidence. UI skill influenced explicit retry/error reuse only, no redesign. No PG/helper/run active, push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak unchanged; campaign ACTIVE/localonly. Remaining fulltour/rest15x3/40worker/Voiceprovider/Storagebytes/performance/fullchecks/release unaccepted.
+
+## TV Storage metadata qualification — local PASS, not blob/API proof
+
+Restored original TV-v1 Storage consumer only after exact known closed fixture stub detection; canonical function/ACL/schema usage and existing restrictive policies/immutable-helper digest asserted. Unknown drift fails closed. CI preparation now invokes this bootstrap after its base gate; no dispatch.
+
+Native session52293 terminal exit0: one actual editor/SQL/anonymous TV integration test PASS,12.15s case/14.71s suite. Added real authenticated Storage metadata insert with gateOFF denial42501, exact allowlisted owner success, player-own-path denial42501, immutable UPDATE zero rows, directDELETE guard42501 and unchanged object. Actual save validates existing asset, immutable version retains URL; missing asset rejects specifically tv_layout_asset_missing and preserves head/version snapshots. Initial fixture failures were missing bucket and current statement-level protect_delete; added local metadata bucket only if absent/validate existing, retained delete guard (no bypass). Exact gate row restored OFF and PG stopped.
+
+Limits: SQL metadata is not blob upload/download/HTTP retention, actual Storage API DELETE or browser uploader proof. No production source/migration/flags changed, no push/deploy/build/fulltypecheck. Full campaign still ACTIVE, local-only hold/DaybreakOFF unchanged. Next Storage API bytes/Voice/provider/full-tour/rest15x3/40tables/performance/fullchecks/release remain unaccepted.
+
+## Event-scoped editor publish → two anonymous paid flights local PASS
+
+Baseline646f05479 clean/previousPROGRESS. Existing native TV journey now creates flightB via actual create-with-levels/open/register/cash-pay RPCs (40000 stack/BB1000 versus first flight20000/BB200), same club. Event association and second display pairing are explicit local control-plane fixtures, not management/pairing UI proof. Actual editor publishes first event-scoped revision1; both anonymous v4 displays receive shared branding while tournament/clock IDs, blind levels and live-entry stacks remain flight-specific. Full stored tournament rows unchanged by branding publication; original standalone head/version history fingerprint remains intact, event head is a separate XOR-scoped row.
+
+d27bb0 finalnativePASS8902ms/suite11.97s.4ce149 earliergreen before replacing fixed future date with fixture-relative now+1h to avoid expiry. All prior first publish/response-loss/CAS/actor-denial/gate restore checks retained. Clocks are not run concurrently in this case; no browser375/timing/Storage-byte proof. Existing live-clock paid multflight SQL case remains separate evidence, not silently merged into this claim. Test-only, no app/schema change; existing CI invocation prepared/notrun. PGstopped/nohandle/gateOFFrestored/no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; next Storage asset/version recovery and Voice/provider, fulltour/rest15×3/40/perf/checks/release remain.
+
+## TV stale editor vs second publisher actual CAS/version integrity PASS
+
+Baselinec11e4eb23 clean/previousPROGRESS. Extended existing native TV case: real owner editor reads revision1 and edits local draft; a second writer invocation commits revision2 through actual authenticated save RPC; stale editor submit receives40001/tv_layout_stale_revision with explicit reopen message. No third commit, exact head/version fingerprint unchanged on denial, local draft retained. Version snapshots remain [[1,Native TEST broadcast],[2,Other tab TEST publish]], and actual anonymous TV still shows revision2 brand. Sequential deterministic stale-snapshot interleaving, NOT two concurrent browsers or row-lock contention proof.
+
+6f588d nativePASS6296ms/suite10.01s, all existing gate-closed/first publish response-loss/player denial/restore checks retained. Exact local gate restored OFF afterward, PG stopped/no handle. Test-only, existing CI invocation consumes extended case but not dispatched. No app/schema/flags/live changes, no installs/fulltypebuild/browser375. Master G6 ACTIVE/local-only; next event-scoped multi-flight publish/Storage recovery and Voice/provider, then fulltour/rest15×3/40/perf/checks/release remain.
+
+## Actual TV first publish→resolved response loss→anonymous display local PASS
+
+Baselinebb11f053f clean/previousPROGRESS. New gated paidTvPublish.native.test.tsx uses canonical paid tour/open/registration fixture, real TvBrandingEditor/clock renderer and authenticated SQL save/get RPCs; only upload UI and SDK/Auth transport modeled. Actual commit returns a simulated resolved SDK fetch error, canonical readback confirms it without another write. One layout/revision1/version1; anonymous get_tv_display_state_v4 paired to exact tour shows new branding. Player write denied by actual42501/tv_layout_forbidden, no additional committed version or head/history delta.
+
+Initial71e9e1/78c5cc failed BEFORE commit: local schema snapshot includes centerpoint release table but omits allowed/assert private helpers.8501bd/625667 confirmed table present/no rows, helpers absent, unrelated storage helper present; TV writer hashc1dc34bb649fe67df29c12666d3b91d0 still calls original guard. This is local fixture incompleteness, NOT verified production drift. New tvReleaseGate.bootstrap.mjs strict loopbackPG17/datadir/no-network/schema preflight executes ORIGINAL pending20260924165219 base source only when BOTH helpers absent and no gate data; partial/body/ACL/metadata drift fails. Existing table's browser denial checked; bootstrap does not claim its broader fixture service grants equal production. Original TV writer unchanged, helpers exact source body/definer/owner/stable/path/ACL, gate remains OFF. No stub/no guard removal/new production migration/ledger edit.
+
+Native test first proves CLOSED gate blocks owner and creates no layout. Then explicit local allowlist contains only new TEST club; successful publish/readback; actor denied; afterEach restores exact prior gate row (OFF/empty allowlist/timestamp) and asserts equality.82d1a0 finalPASS5278ms after faithful SQLSTATE/message mapping;8ccf5a initialgreen. Bootstrap present-definition path also qualified on second run. Source helper definitions remain in owned local DB; all test layout/version/pairing audit retained. CI paths+bootstrap+native invocation prepared, NOT dispatched or job-duration/Node22 qualified. Private helper --tv-ui supports it, not committed in owned app repo.
+
+No Storage object/upload/byte recovery, real HTTP/CORS/Auth/browser375 or multi-flight editor publication proof claimed. Existing paid multi-flight anonymous runtime separate evidence. Diff/syntaxPASS/PGstopped/nohandles/no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; next TV asset/version recovery and Voice/provider plus fulltour/rest15×3/40/performance/fullchecks/release gaps.
+
+## TV resolved SDK error/null publish receipt RED→local reconciliation fix
+
+Baselined933a0d03 clean/previousPROGRESS.06e9d2 actual TvBrandingEditor scope suite RED2: save SDK resolves {data:null,error:transport} or empty response AFTER modeled commit; old path says not saved and skips canonical readback (only thrown errors reconciled). Extend existing RPC error type optional code; resolved uncertain results now enter same bounded canonical revision+exact normalized payload readback, never retry writer. SQLSTATE validation/constraint/serialization/syntax-authority/user-raised failures (classes22/23/40/42/P0) and explicit stale-revision message stay definitive denial, not masked by canonical state. No server write/auth/CAS contract change.
+
+e183de final21/21 component/scope PASS plus TV_PUBLISH_RESPONSE_FOCUSED_TYPE_CONTRACT_PASS (actual RPC/observer type, NOT full project typecheck). New tests assert one write/two reads and dialog closes only confirmed matching newer canonical state, plus five definite SQL rejection controls one write/one initialread/no success. Existing actor/tour-change, lost response, old revision, malformed success, timeout, JSONB ordering and fallback-asset-preservation tests retained. SDK/server commit modeled here; native live-equivalent TV publish→anonymous display and Storage recovery remain unproven. Existing UI tokens unchanged; no install/Browserslist update despite warning. No PG/handles/push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; next actual TV runtime integration and remaining Voice/provider/fulltour/rest15×3/40/perf/fullchecks/release.
+
+## Worker republishes BEFORE parent receipt recovery local PASS
+
+Baselined72032c08 clean/previousPROGRESS. Reordered existing full native scenario: initial real historical publication→parent correction/lost receipt→current worker publication WHILE browser journal still unknown→parent unmount/remount→original correction receipt resolution. Persisted intent remains exact until read resolution; full post-worker hand/player/action/entry/seat/count/proof/queue fingerprint and cash unchanged by recovery, one correction key/outcome, no second commit. This tests past mutation receipt independent of newer publication proof, not sequential requests being falsely called concurrent overlap.
+
+0c8710 final2/2 nativePASS parent27639ms/suite42.01s; existing45s integration case bound unchanged, PG stopped/no handle. Test-only change. Prior opposite ordering remains actual evidence on unchanged application source from e9f176; not rerun needlessly. No app/DB/Edge/flag modifications, no push/PR/CI/live frontend/UAT/Auto/Daybreak. SDK/Auth/CORS/WebLocks/browser375 still modeled. Master G6 ACTIVE/local-only; next TV resolved transport-error publish reconciliation (source currently only catch reconciles, SDK can resolve error object—needs repro before bug claim), then Voice/provider/fulltour/rest15×3/40/perf/fullchecks/release.
+
+## Published old proof→parent correction→current proof transition local PASS
+
+Baselinea47ed34dc clean/previousPROGRESS. Added native worker baseline phase pinned to canonical paid fixture actor/tour/club/player/entry/registration relationships, exact TEST club/tour names, positive actual cash movement, frozen hand participant, no existing outcomes; shared exact localPG/datadir/no-network/native UI guards retained. Initial real worker publishes historical proof on SAME hand before parent opens. Parent correction then advances revision, old historical_display proof becomes stale, and a fresh chain proof matches current source revision/hash. Subsequent actual worker publishes current historical proof; anonymous result remains valid throughout supported chain fallback.
+
+d3299d initial assertion demanded pending after correction and failed. Source public history contract explicitly accepts current verified chain proof, so that oracle was WRONG, not evidence of a product bug. Replaced mandatory-label assertion with stronger exact old-historical stale/current-chain revision+hash match/current-historical absent checks. ab8d5c hit30s test budget (31.267s case with two workers/WSL reads), not assertion failure. Dedicated integration test budget45s now justified by measured duration; application10s/read, helper120s and workflow job bounds unchanged. e9f176 final2/2 nativePASS (parent32089ms, suite47.71s), all assertions retained; no app/schema change.
+
+PG stopped/no handles, diff/syntax PASS; no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. SDK/Auth/CORS/WebLocks/browser375 still modeled; full tour/Voiceprovider/TV/rest15×3/40/performance/full checks/release remain. Next receipt recovery while worker has already republished (current ordering recovers before final worker), plus remaining campaign gaps. Master G6 ACTIVE/local-only.
+
+## Same parent-corrected hand → actual worker → current anonymous publication PASS
+
+Baselineecce5015c clean/previousPROGRESS. Existing native worker executable gains narrowly guarded parent-hand test mode: exact local PG17/database/datadir/no-network guards, explicit native UI gate, UUID, no other fault modes, current verified chain correction with exact TEST parent reason and pending current queue. Derives actor/tour/club from actual receipt, never creates another hand or broad backfill. Worker assertions now select historical_display scope explicitly (chain correction proof can legitimately coexist). No production worker source change.
+
+Full parent native journey now remount-recovers correction then invokes actual worker/verifier/DB on EXACT same hand. Current revision stays unchanged, one historical_display proof at that revision, queue completed and real anonymous history returns same hand verified; cash unchanged. Correction key still has one outcome (separate chain and historical scopes are not duplicate commits). Native mode refusal with UI gate OFF and nonexistent/unowned hand checks exact rejection reasons plus unchanged full fingerprint, not any generic process failure.
+
+4cfe5d final2/2 native PASS parent19558ms/total30.40s, unchanged30s per-test bound; initial941380 passed,17b027 added denied cases, final tightened exact rejection oracle/captured stderr.8d8f80 original normal verified worker mode PASS after harness change. Syntax/diff PASS, PG stopped/no handle. HTTP/Authgateway/CORS/WebLocks/browser375 remain modeled/not proven; initial historical proof→parent correction invalidation is not added by this same-hand postcorrection worker case. CI prepared existing native test path only, not run; Node22/wholejobduration unknown. No push/PR/liveDB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; writer completeness/Voiceprovider/TV/fulltour/rest15×3/40/performance/fullchecks/release remain.
+
+## FULL parent editor→actual Edge/SQL→lost receipt→remount recovery local PASS
+
+Baseline1ac0889b8 clean/previousPROGRESS. Fetch succeeded: origin/main still ed3db6ac600710e95fe4408c475941916c23ab19. Expanded existing guarded native correction UI test, with stable mocked SDK client and strict read-only whitelist adapter executing actual authenticated SQL predicates/order/range for real HandHistoryWorkspace, including name snapshot/seat fallback and canonical table/queue RPCs. Canonical paid registration/start/Finish fixture; explicit local correction scope. Actual parent→HandEditPanel/CardSlotPicker2c3d4h+reason→actual client compute→real Edge AST/verifier/authorizationSQL/atomic correction→mask committed receipt502→journal survives→parent remount/actual resolver118→clear receipt. One mutation/outcome, real board persisted/revision advanced, cash unchanged. Full postcommit hand/player/action/entry/seat/count/proof/queue fingerprint unchanged by remount/read recovery.
+
+530728 final2/2 native tests PASS (parent10827ms, existing hook8029ms; wholeVitest21.94s), no timeout expansion.17b4f0 initial passed then stronger board/fullfingerprint assertions added. Real app source/canonical SQL and Edge handler execute together; HTTP/PostgREST/Authprovider/CORS/WebLocks modeled, not hosted browser375. Current local worker publication after this exact parent correction remains separate evidence, not automatically proven. Existing CI native test path consumes second case, not dispatched; total job timing/Node22 still unknown. Test-only change, no app/schema/flag change. No installs/heavytypebuild/Docker.
+
+PG stopped/no live handle, no push/PR/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only. Remaining writer matrix completeness, actual Voice/provider/TV publish/storage, full integrated tour/rest15×3/40worker/performance/required checks/release still required; this is not campaign completion.
+
+## Correction preview hung read RED→bounded local observation
+
+Baseline38cd9d582 clean/previousPROGRESS. e3bdf2 actual rendered parent RED: never-settling server preview keeps editor busy indefinitely with no error. Reuse existing observeTrackerContextRead (10s) around whole paged chain read, detail Promise.all and Edge preview read; catch read errors with explicit no-mutation message, release current busy only, no retry or automatic commit. Deadline is per phase (up to three sequential phases), not a claimed 10s whole workflow; underlying SDK request is not aborted, late result cannot continue settled observation.
+
+e44002 33parent/nochip+17source-callback PASS after fix; c618f9 final25parent cases PASS expands fake-timer fault independently to chain/detail/server, each unlocks editor after10s, displays explicit timeout, ignores released late response, no additional invoke/commit. Test supplies modeled draft/math/SDK; actual parent and shared timeout execute. Extraction harness injects resolved observation only for existing scope tests, not timeout proof. No heavy build/type/browser375/hosted proof. No PG/handle/push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; provider/TV/fulltour/performance/release and full parent SQL integration remain incomplete.
+
+## Rendered parent correction preview cancellation wiring PASS
+
+Baseline0d25e5683 clean/previousPROGRESS. Expanded existing HandHistoryWorkspace render suite with controlled draft editor seam and modeled read/client-calculation/Edge preview. Actual parent handlers and actual ResettlePreview render execute. Start preview→wait server response→select another hand, cancel editor, or click actual Làm mới→reopen editor→release old response: no stale preview appears. Fresh preview then succeeds, Edge body targets current selected hand; every invocation remains preview, never commit. This verifies actual event→generation invalidation wiring beyond prior callback extraction.
+
+fbe1a4 final22/22 parent cases PASS (74671c initial21 hand/cancel; final adds refresh). Test-only change. Editor/cardpicker/settlement compute/transport are mocked in this suite; separate native journey tests those real pieces, but combining reports does NOT establish full parent→hosted Edge→DB/browser E2E. No new application fix/feature flags, no repeated unchanged PG test. UI skills preserved existing controls. Diff check PASS; full type/build/browser375 held. No PG/handle/push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; next remaining writer/read transport/Voice/provider/TV/fulltour/performance/release acceptance.
+
+## History queue malformed/partial read falsely accepted RED→local boundary fix
+
+Baselinec247a7835 clean/previousPROGRESS. Reviewed actual queue-status RPC contract: rows use missing_blind/missing_outcome/stale/pending/needs_attention; successful [] is valid.197a68 parent render RED5cases: null/object/unknown status/missing hand/duplicate hand silently empty or last-write-wins. Null row already hit catch, not a newly found failure. Parent now rejects non-array, malformed used fields, unknown status, duplicate hand IDs, and any RPC error even with partial data. Clears untrusted status map, retains successfully loaded hand rows, shows explicit queue-unavailable warning. No verified proof invented or backend writer change.
+
+5254ee33render/loadguard/nochip+17callback PASS after fix; c5d685 final19parent cases PASS adds data+503 error no pending badge. Controls successful [] and valid pending remain healthy. Input SDK responses modeled, no hosted transport/DB/browser375. UI engineering preserves existing warning/tokens, no dependency/visual overhaul. Full type/build held; unchanged DB not rerun. No PG/handles/push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; parent rendered correction flow/provider/TV/fulltour/perf/release still incomplete.
+
+## Same-client account switch/logout history scope leak RED→local fix
+
+Baseline6ce200355 clean/previousPROGRESS.1aa1ad actual parent render RED: actor A→B with same Supabase client/tournament retains A hand and table inventory because read dependencies omit actor. Bind both table effect and hand load callback to actor ID already supplied by recovery hook; existing cleanup/generation machinery invalidates pending responses and existing load-start clears data/editor/preview. No new role grant/auth policy/journal clearing.
+
+ce3695 24render/loadguard/nochip +17callback PASS after application change. Extended rendered account case to logout as well: bf9dd4 final10/10 parent read cases PASS. Both actor switch and null user remove old hand/options before new reads resolve, ignore A queue completion while B pending, and surface B inventory authority denial explicitly. Modeled SDK/auth hook, not live sign-out/JWT/RLS proof. UI skills scope/loading conventions retained, no redesign/dependency install. Full build/type/browser375 held; no unchanged DB tests rerun. No PG/process handle, push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; parent preview rendered flow, queue payload validation, broader writer/provider/TV/fulltour/performance/release still remain.
+
+## Correction preview late-response scope race RED → local fence
+
+Baseline6baa4d907 clean/previousPROGRESS. e7e255 actual handleResettle callback extraction RED: delayed server preview repopulates old hand preview after invalidation; old finally also clears busy. Added separate preview generation + current tournament/table/hand/actor scope. Every awaited chain/detail/server response checks current token/scope before state or further work; finally cannot change new request busy. Scope change/unmount, load/refresh, editor cancel/edit and preview close invalidate. Preview state only: durable correction intent and mutation receipt recovery unchanged; no backend/flag changes.
+
+62ca2b17/17 actual-source callback tests PASS: scope-only and generation-only invalidation independent, positive current preview publishes/unblocks, stale first chain read cannot invoke server. Modeled reads/state/Edge response, not full React/browser/DB. a33416 also23focused rendered read/loadguard/no-chip tests PASS on application fence; no product deps or visual redesign. Only one TSX component changed, existing UI engineering conventions retained. Full type/build/browser375 remain held; current native SQL suites unaffected/not rerun.
+
+No PG/live handle, no push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. G6/master ACTIVE/local-only; next actual parent preview race render/wiring and account read scope, then provider/TV/fulltour/performance/release. Do not call callback race coverage hosted E2E or all writer completion.
+
+## Parent history UI retained prior tournament while loading: RED → local fix
+
+Baseline4982184e7 clean/previousPROGRESS. Actual HandHistoryWorkspace render regression e19f02 RED: rerender tour A→B with B read pending leaves #1 from A visible. Existing generation guard protects late completion but did not clear already-rendered source. loadHands now clears hand rows, editor and preview at start of each read; it never clears durable correction intent/receipt journal. This also invalidates draft preview on explicit refresh; no mutation/authority/server contract changes.
+
+a706c0 23/23 focused render/loadguard/no-chip preview tests PASS, including pending tournament switch and table filter switch, existing old queue selection/rejected reads/timeouts. Source callback harness initially1cf66d failed four because added setters were absent in extraction dependencies; updated modeled setters and asserts editor/preview clear, c10bed13/13 PASS. Not a backend or runtime failure. UI engineering skill preserved tokens/layout and explicit loading/error behavior; UI skill CLI absent, no install. No full type/build/browser375/hosted proof (local hold). Potential stale in-flight preview completion after selection/scope change remains to examine; read guard does not cover handleResettle's separate requests. No claim that all parent orchestration is qualified.
+
+No PG process started this turn. No push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master ACTIVE/G6 local-only; next preview async-scope guard regression, then remaining writer/provider/fulltour/perf/release.
+
+## Paid active-hand manual card endpoint/receipt scope PASS
+
+Baseline85fed2123 clean/previousPROGRESS. Extended existing savepoint-isolated verified paid fixture after real action/undo: actual authenticated show_tracker_manual_cards_v1 writes 2c/3d for exact frozen participant/session/epoch/revision. Stale epoch rejected; success advances revision, stores exactly one actor/key receipt and exact cards; replay returns original receipt; same key changed cards returns idempotency_conflict. Actual get_tracker_manual_card_receipt_v1 with original fingerprint returns committed and exact expected/committed revision/hand/key, proving read-only past receipt reconciliation (not transport fault injection). Paid player cannot read owner's receipt (not_found) or mutate cards (actor_not_allowed), no extra revision/receipt. Entries/seats/counts/cash fingerprint remains unchanged; savepoint removes card receipt/cards plus previous undo fixtures before canonical Finish/actual worker verification.
+
+4c8881 exit0 all expanded paid hand/worker/source/void cases PASS. git diff --check PASS. Test-only; explicit Dealer/attendance fixture inherited from undo case is control-plane setup, not check-in/Swing proof. No concurrent manual-card request race, browser or hosted PostgREST/Auth proof added here; existing prototype tests are not a substitute. PG stopped/no handles, no push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only; next source writer matrix gaps, parent workspace read orchestration and Voice/provider/TV/fulltour/performance/release remain.
+
+## Paid active-hand canonical undo scope/replay/projections PASS
+
+Baseline179a9725b clean/previousPROGRESS. Existing verified paid fixture now calls real authenticated undo_tracker_last_action_v1 against action inserted via actual record_action on canonical start. No scope→uat_capability_disabled; enabled exact owner scope without Dealer assignment→dealer_assignment_not_unique (whole-hand report authority must NOT expand to undo). Explicit local control-plane-only Dealer/attendance/exact-session assignment fixture then allows undo. Wrong logical table→stale_tracker_context; stale expected revision→stale_source_revision; success deletes one action/increases revision/stores one receipt; same key replay duplicate matches receipt without new revision/effect, changed revision same key request_key_conflict. Active hand has no pending/processing publication job. Full entries/seats/chip counts/cash fingerprint unchanged through action+undo. Savepoint rolls back action, scopes, assignment/attendance/Dealer and correction receipt before normal Finish. Not evidence of check-in or assignment workflow.
+
+Final03a9fe exit0 (after adding wrong-table/stale and projection/fixture cleanup assertions); initial001a88 passed earlier core case. Existing actual worker verified/scope/source/void cases still pass on expanded fixture. git diff --check PASS, PG stopped/no handle. Test-only edit, no migration/application change; existing CI verified invocation consumes it, CI not dispatched. No push/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6 ACTIVE/local-only. Next manual card endpoint on same paid hand and parent/browser/provider/fulltour/perf/release gaps; no completion claim.
+
+## Actual action INSERT/replay/conflict and completed void endpoint local PASS
+
+Baselinebb42c5e23 clean; previous turn PROGRESS, goal API active. Expanded verified paid fixture before canonical Finish with savepoint-isolated authenticated record_action: first INSERT success and revision advance; same key/payload duplicate without revision/count delta; changed amount same key idempotency_key_conflict; spoofed p_user_id actor_mismatch. Savepoint restores original empty actions/revision, then existing canonical Finish/worker computes verified result. No application changes or alternate hand/outcome insert.
+
+Extended actual verified-hand test to call void_last_hand as paid player (not operational role) and owner. Final0dfe81 exit0 PASS after tightening oracle: denied player's full hand/actions/players/tour/entries/seats/cash/counts/proofs/queue fingerprint unchanged INSIDE transaction before rollback. Owner success advances revision, removes verified proof/public winner and restores hand participants' entry/seat/count stacks to starting_stack. Every probe rollback restores full business/source/projection fingerprint. Earlier44cad9 and5bc4c9 passed prior assertions; final strengthens zero-delta proof. Syntax/diff PASS, PG stopped; no live handle.
+
+These are real authenticated DB RPC tests, not hosted Edge/Auth HTTP/browser proof; no concurrent action race/undo capability proof yet. CI existing verified command consumes expanded fixture/test, not dispatched. No push/live DB/Edge/frontend/flags/Auto/Daybreak; local-only remains. Next actual undo/card endpoint scope and parent client read orchestration; full provider/fulltour/performance/release still required, master incomplete.
+
+## Source trigger matrix on genuinely verified paid hand PASS
+
+Baseline36012524e; prior turn PROGRESS. Expanded existing --identity-revision native worker case, no application/schema change. Seven independent rollback-only privileged source probes: hand_actions amount UPDATE and DELETE; hand_players hole_cards and ending_stack UPDATE; tournament_hands board, big blind and void UPDATE. 3ccba8 exit0 PAID_VERIFIED_SOURCE_TRIGGER_MUTATION_MATRIX_PASS: every vector advances revision, removes verified proof and prevents old verified public output; nonvoid vectors also require one queue row for current generation. Each rollback compares original hand/seats/cash plus full action/player rows. Reuses real paid registration/Finish and actual worker/verifier proof, not inserted synthetic outcome. Syntax/diff checks PASS, PG stopped.
+
+Scope: trigger-level source coverage under privileged SQL, NOT authorization or behavior proof of record/add/delete/undo/card/blind/void endpoints. INSERT, participant identity/reparent and all actual endpoint callers remain to cover; no broad writer-matrix completion claim. No push/CI/live DB/Edge/frontend/flags/Auto/Daybreak. Master G6/local-only remains IN_PROGRESS; browser/fulltour/performance/release still incomplete.
+
+## Hand scope revision bypass reproduced; forward120 local regression PASS
+
+Baseline73e08a5e2. Catalog writer scan found existing hand revision trigger omits table_id/tournament_table_id/table_session_id. Actual paid canonical hand and actual worker first produced verified proof. Authenticated owner changing mismatched nonnull table/session is correctly rejected by composite FK; however nullable legacy session plus logical-table reparent succeeded without revision advance, and public history still returned verified (RED0c7fa7; probe rolled back). This is local evidence, not a live finding.
+
+New CLI-generated forward120 pins existing bump/invalidation/enqueue function digests and exact predecessor trigger; adds only the three scope columns to its UPDATE OF list. No new function/grant/policy/backfill, identity inference or chip recalculation. Local application preserves full function catalog. Qualification0cd106 proves dependency/trigger drift fail closed and full metadata rollback. Final0f9761 exit0 proves all three scope vectors (physical table NULL, session NULL, nullable-session logical reparent) advance revision, invalidate old verified proof, enqueue current generation and remove public verified status; no-op updated_at preserves revision/proof, FK rejection remains. Every mutation probe rolls back to original business fingerprint. node --check both changed harnesses and git diff --check PASS.
+
+CI apply/qualification/identity commands prepared only; no dispatch or full typecheck/build. Local PG stopped. No push, production DB/Edge/frontend/flag/Auto/Daybreak changes. Supabase/Postgres guidance used to preserve existing server revision/queue machinery rather than recalculate results. G6/master remain ACTIVE, local-only; remaining full writer coverage, parent workspace/browser/provider/full-tour/performance/release criteria are not complete.
+
+## Real editor cardpicker/reason→actual atomic correction/recovery local PASS
+
+Baseline3873e3bb2 clean/previousPROGRESS. Expanded existing native paid correction journey to render REAL HandEditPanel+CardSlotPicker before preview, click ranks+suits2c/3d/4h, enter actualreason via accessible textbox, click Xemtrướctínhchip, collect actualeditorpatch/expectedstacks and buildServerSettlementEdit. Legacy onSave never called. Actual clientrunClientResettle→realResettlePreview→hookpersist/actualEdge+SQL→missingreceipt→remountresolveroneoutcome remains.55e6ea finalPASS, fullpostcommitbusinessfingerprintstable.361833 firstharnessfailure secondRadixpopover raced previousclose/focus; await act and dialogclosed at each choice fixed2cf18c, no productcardpickerchange/claimthatwaslivebug.
+
+HandEditPanel copy no longer says ALL correctionwriteslocked when atomicpreviewenabled; explains separatedisplaywriterOFF/previewallowed/serverconfirmationrequired. Reason textarea now useId-associated visiblelabel, no palette/layout/authchange. Native test uses accessible reasonname and assertsmisleadingcopyabsent.0559fb15/15editorvalidation/diffPASS.10adb1 earlier2failures: panelcopyassert legitimatelyupdated to newatomicexplanation+accessiblelabel; preexistinghandEditDiff oldPot-prefixassert (diffagainst3873e3bb2empty onsource+testbeforeupdate) was stale: now exact"Pot đã lưu:1000 · Pot từ action nháp:800" numericoracle, no math/source change.
+
+Actualeditor/preview/hook production components run in harness; parentHandHistoryWorkspace fetch/orchestration still not rendered in this nativecase, and hostedbrowser375/HTTPAuthgateway/WebLocks/fulltypebuild notproven. UIskillpreservedexistingcontrols/no installer/configwrites. CIcomponentpath+15checks prepared/notrun/wholejobdurationunmeasured. PGstopped/nohandles/no push/productionDBEdgefrontendflagsUAT/AutoDaybreak; G6/masterACTIVE/local-only. Next parentwiring/source revisionwriter coverage/same-revisionunknown, then provider/fulltour/perf/release. Notcomplete.
+
+## NEW actual preview UI blocked valid no-chip correction; local fix + button→SQL recovery PASS
+
+Baseline61627a398 clean/previousPROGRESS. Screen source audit found noChange disables ResettlePreview confirmation unconditionally, while legacy display-only save is disabled; board/hole correction with unchangedstack cannot reach already-proven atomic backend. New render regressione01442 RED (validserverpreview/buttondisabled). UI now permits no-chip atomic confirmation only with explicit availableatomicfeature + valid server sourceRevision/hash/outcome/requesthash/actor metadata, still blocks busy/unknownjournal/observedstackmismatch/missingorbadproof. Button label"Xác nhận sửa hand"/44pxtarget; corrected copy doesnot send user to removedlegacy"Chỉ lưu hiển thị"; no legacy writer or authority expansion. Parent passes confirmationBlocked for recoverymessage so unknowncommit cannot be clickedagain. Nativefeatureavailability mockedTRUE for TEST only; source/liveflags unchanged.
+
+46094014/14PASS (10nochipUI includingbadmetadata+unknownblock,1manualwinnercontainment,3endstackoracles). Extended nativeintegration from smallbuttonharness to REAL ResettlePreview+productionrecoveryhook, actual clientrunClientResettle on paidhandDBsnapshot and actual Edge/SQL.40b0c2 PASS realenablednochangeconfirmation→journalpersist→SQLcommit→missingreceipt502→disabledconfirm/unknown→remount→actualresolverreceipt→onecommit/no retry/fullpostcommitfingerprintstable. ade41e initialnativepreviewgreen; finalrerun addsunknownbuttonassertion. This tests production preview and hook in harness, STILL NOT fullHandEditPanel/cardpicker/HandHistoryWorkspace data-fetch wiring or realbrowser375/HTTP/authprovider/WebLocks. UIengineering skill preserved existingtokens/layout, no redesign/config/dependency writes. Fulltype/buildheld/notrun; CIpath+tests preparedonly. PGstopped/nohandles/no push/productionDBEdgefrontendflagsUAT/AutoDaybreak; G6/masterACTIVE/local-only. Next full editor interaction andremainingwriter/unknownsame-revision/provider/fulltour/perf/release.
+
+## Actual correction recovery hook UI → Edge → paid PG receipt after remount PASS
+
+Baseline8462720c1 clean/previousPROGRESS. New gated paidCorrectionRecovery.native.test.tsx runs actual production recovery hook/journal in a small React button harness, actual correction Edge AST+compute+actual authorization/source/commit/resolver SQL. Extracted exact existing canonical paid Finish setup into createPaidCompletedHandFixture, shared with worker; no alternate direct entry/hand/outcome fixtures. ActualgetUser/HTTP/CORS/WebLocks remain modeled; NOT full HandHistoryWorkspace/editor or real browser375 proof. Temporary inherited NOLOGIN serviceBYPASS role matches prior native tests, dropped afterall; applicationroles/RLS untouched.
+
+8dfe4c finalPASS: actual preview→persist fingerprint BEFORE sending→realDBcommit→transport nullreceipt→Edge502unknown→hook retains samekey→unmount/remount readsjournal→actualresolve118/SQLreceiptfound→clear exactjournal, one mutation only/oneoutcome, revisionadvanced, original cashledger unchanged. Postcommit→postrecovery fullhand/outcomes/cash/seats/chipcounts fingerprint exact unchanged.874a38 initialgreen; final tightenedoracles rerunreason. Initial7d8a17 Vitest rewrote import.meta.url to httpURL; fixture+Edge test file reads now processcwd-relative knownapp paths (shared Node/Vitest), not appsource.73e1f5 test asserted statusidle beforeasyncSQLcompleted; fixed waitForcondition ratherthan weakeningoracle. d7e44e actualmainworker verifiedPASS on extracted sharedfixture (dependencychange reason, not wholeunchangedsuite).
+
+CI nativegate+pathprepared/notrun; no installs/sharednode_moduleswrites/fullbuild/typecheck. Native test auto-skips without explicitVINPOKER_NATIVE_CORRECTION_UI1 and exact loopbackPG17/dedicatedDB/dir/no-network fixture guards. PGstopped/nohandles/no push/productionDBEdgefrontendflagsUAT/AutoDaybreak. G6/masterACTIVE/local-only. Next expand full HandHistoryWorkspace/editor integration and production browser proof when allowed; same-revision unknown intents/knownprecommitdenials still need policy-safe recovery (no automaticnewkey), writer/provider/fulltour/perf/release remain open. Not complete.
+
+## Real History-vs-correction deadlock reproduced; forward119 local fix and regressions PASS
+
+Baseline3e76ef8e0 clean/previousPROGRESS. Extended actual paid correction overlap with actual scoped queue claim/verifier/v2 worker commit and canonical correction. Barrier prelocks the exact reviewed worker first-lock resource, then observes correction blocked by PID before continuing real worker RPC. Baseline0d2614 reproduces actual PostgreSQL deadlock (explicit NOT_FIXED diagnostic marker), business seats/cash unchanged; retained full pre119 clone vinpoker_ops_history119_before, no reset. Initiald59f4f harness positional scopedclaim signature wrong; namedarguments corrected before actualrepro.
+
+CLIcandidate20261016110956→forward119 (new/unpublished candidate, not historicalsourceedit). Pins historicalcommit fcf8dac1239f25742e1c9566d523aa25 and resolver99 6195d2299ba44449e13179f0e0874415. V2 commit now nonlockinghand lookup only for routing→tournamentFORUPDATE→exacthandFORUPDATE re-read/revalidate→unchangedlease/CAS/hash/outcome/atomicqueue logic. Resolver99 retains handlock but uses plain tournament auth read, removing FORSHARE inversion; no authority expansion/businesswrite. Final localdigests v2 bd4940137cc68d7bee67bac274cbb60b, resolver cf1f072c3cc4633ccf347403bb06a581. Initialprivatecandidate119 touchedonlyv2, then ownunpublishedlocalcandidate was strictly digest-restored to reviewedoldbody and final119applied atomically to both; no production/library/history replay. Need release manifest postchecks updated to BOTH newdigests. Recovery restore BOTH reviewed preflight definitions only after consumerOFF, never replay oldfolder.
+
+d6c082 final TRUEworkerfirst/correction overlap no deadlock; additionally legacyHistoryresolver completes under heldtourlock, then tourholder waits on resolverhandlock, releases cleanly (actual PID barriers), no businessdelta. Concurrent stale settlementrevision may reject correction via CAS/unique conflict, not force success/overwrite. This is selected actualpaidfold/boardcorrection overlap, not all cross-hand scheduling or loadproof. 7db5ed qualification extends existingrunner --history119: reconstructs exact reviewed oldbodies by MD5, injects drift independently for BOTH and verifies failclosed/fullpg_procJSON+definitionrollback; positiveapply reproduces ALL existingmetadata/ACL/config/definitions exactly, no unrelatedfunctiondelta.
+
+Affectedactualmainworker reruns after FINAL119: a91094verified,800fd6lostresponse,de04ddexpiredlease,3df2accorrectionoldrevision allPASS. CI119apply/qualification/fixedoverlap prepared/notrun;10minwholejob/Node22stillunmeasured, no quota/requiredcheck bypass. Local119sourceSHA256preGit502aacd8cc4dcdbdcd49a7c706523af7da0b266ffca310bbb7745949ff9eadeb; normalize/recompute exactbytes beforelive. PGstopped/nohandles/no push/productionDBEdgefrontendflagsUAT/AutoDaybreak. G6/masterACTIVE/local-only. Remaining actual renderedUI→SQL/browser375/fulltypebuild, same-revision unknownintent recovery, broaderwriter matrix/provider/fulltour/perf/release. No fullcampaign completion claim.
+
+## Actual correction/resolver overlap both orders + candidate118 guard qualification PASS
+
+Baseline8b44543f4 clean/previousPROGRESS. New paidCorrectionOverlap.native module (guarded caller paidHistoryWorker --correction-edge --correction-overlap) uses existing canonical paid hand, actual compute/hash/atomic correction writer and resolver118 in TWO distinct psql sessions. Commit-first transaction holds actual correction uncommitted; resolver blocked by that PID (pg_stat_activity+pg_blocking_pids), outside reader sees zero newkeyreceipt, aftercommit resolverfound/newrevision. Resolver-first holds samehandlock at currentrevision/notfound; actualcorrection waits on that PID, afterresolverrelease correctioncommits, rereadfound. No sleep-faked transaction overlap; businessseat/cash JSON unchanged, eachkey exactly1outcome. ac151c terminalPASS both lockorders, no deadlock for THESE paths (not general Historyworker-vs-correction lock inversion). Uses selected board-only edits and real servercalc, NOT directrevision/source writes/insertedverifiedpayloads.
+
+New correctionResolution118.migration qualification tests rollback-only recreation on guardedlocalinstalled118: intentionaldependencybodydrift and duplicatecatalog each rejected; full public/floorprivate pg_proc JSON+definition fingerprint unchanged; positive recreate inside transaction has service-only ACL/definer/emptysearchpath/3slocktimeout; ROLLBACK restores originalfunctions/fullcatalogexact. c82cdbPASS. Initial3c0bcd/78b28e missingsemicolon in pg_get_functiondef reconstruction;50669f JSreplace collapsed SQL$$ in test injection; both corrected harness-only, no migrationguard weakening/source migration change. Qualification doesn't yet cover every malformedrole/crossscope runtime branch; existing actualEdge tests cover owner/outsider andexactfingerprints.
+
+CInewpaths+qualifier+overlap invocationprepared/notrun; Node22/durationstillunknown/no timeoutincrease. PGstopped/nohandles; no app/DBmigration source change thisturn/no push/productionDBEdgefrontendflagsUAT/AutoDaybreak. G6/masterACTIVE/local-only. Next actual full renderedUI→SQL receipt/reload flow, correction known-precommit-denial recovery and writer matrix; fulltype/build/browser375/provider/fulltour/perf/release remain required.
+
+## Correction serialized obsolete resolution candidate118 + UI consumer local PASS, overlap still required
+
+Baseline0ce0c6807 clean/previousPROGRESS. CLI migration new generated20261016105943; moved empty candidate to forward118 after source absence + local catalog function absence. New118 pins actual local correction commit wrappere8cfff114af0a396ce72bf70a2f03f0b/base9d871978a3f3b5ab816177d2ede98a97; adds only service-only empty-search_path resolve_tracker_correction_intent_v1. Plain owner/admin auth reads then locks exacthand, re-reads immutable outcome bytour/key and exact actor/hand/requesthash/originalpre-edit fingerprint/chain correction marker. Found receipt wins even whenrevisionchanged; no receipt+strictlynewerrevision→obsolete; samerevisionnotfoundstaysunknown. No hand/outcome/queue writes or keycancellation/tombstone. Locks only hand (not tour afterwards) to avoid adding opposite rowlock dependency to existing correctiontour→hand / Historyhand→tour paths. Existing cross-writer lock-order discrepancy is NOT thereby fixed or concurrency-qualified.
+
+5cc005 local full118rollback left public/floorprivate function fingerprint identical, then actuallocalapply+servicegrant/auth+anonACLcheckPASS. Newfilename118collision verified locally only; no livecatalog/apply approval. SHA256preGit9bc72b42cebfa90ba3c6946852a95d7b636c144993fd8950e2d669f05a3f148b; LF/CRLFcanonicalhashmustberecomputedbeforeapply. Localhelpermodified onlyprivateworktree; no tracked productionrunnerchanged. Need committed migration drift/rollback/fullcatalog qualification and two-session commit/resolver overlap before acceptance/release.
+
+Edge mode=resolve validates exact response envelope/currentrevision/status and redacts metadata. ActualpaidEdge+SQL9cbd5cPASS found/current+changedrevision, unsentoldkeyobsolete, unsentcurrentkeynotfound, wrongrequesthash409.08325a initial harness psql error.message shape differed from PostgREST; mapped knownSQL idempotency_mismatch in adapter, not loosened servermatching. Deno b67adePASS. UI now invokes resolve, settles only found/obsolete exactproof, obsolete copy doesnotclaimcommitreceipt; missingunknownstaysblocked. bb136112/12journal+hookPASS with malformed/contradictoryobsoleteproofs andterminalclear. CI118apply+pathprepared/notrun. No fulltype/build/browser375/realWebLocks/hostedEdge proof. No push/productionDBEdgefrontendflagsUAT/Auto/Daybreak, PGstopped/nohandles/G6/masterACTIVE/local-only. Next true two-session resolver/commit interleavings +118guardqualification, then fullrenderedUI→SQL recovery and remainingcampaign.
+
+## Correction UI durable intent and read-only recovery wired; local checks, NOT accepted
+
+Baselinee28c5b71c clean/previousPROGRESS. New correctionCommitIntent stores8 metadata fields only (actor/tour/hand/key/revision/sourcehash/outcomehash/requesthash), no card/stack payload. localStorage survives remount; rejects corrupt/replacement journals and stale cleanup. useCorrectionCommitRecovery persists before mutation inside same-origin WebLock; no lock/storage→no mutation. Ref singleflight blocks doubleclick,20s waitForManualPlayerResponse timeout retains unknownintent; receipt read10s bounded and never mutationretry. Exact foundreceipt clears only matchingjournal, notfound/malformed/error retains key. Actor/tour/hand generation+unmount rejects delayedresults; storageevent refreshes other tabs. HandHistoryWorkspace blocks preview with pendingjournal, binds preview+commit expected_actor_id, saves previewrequesthash, strict receipt success instead of permissive nullsuccess, exposes semantic status+44px receipt button. Edge now rejects expected_actor_id mismatch for preview/commit too. No featureflagchange. Existing UI tokens preserved via frontend-ui-engineering; UI CLI absent/noinstall, Impeccable wanted out-of-scope project initialization so fallback used, no design/config files written.
+
+5611aa17/17PASS (journal5/hook5/readrecovery6/containment1): durablebeforemutation/lostresponse/remountread/no duplicate,notfoundkept,oldactorresponseignored,lockmissingfailclosed,hungmutationbounded; transport/Auth/WebLocks modeled.58468f actualEdge+paidSQL alsoPASS after actor-binding guard, Denoed5e2dPASS. Broad5ce65421tests had3FAIL static workspaceCapability assertions;84ff8f confirms ALL3 expected strings already absent at baselinee28c5b71c (TrackerDashboard nav literal/HandHistory editor label/Batch previewfield). Not fixed or hidden; do not claim whole suite green. Readrecovery test adds explicit nullAuth mock for new hook in this read-only fixture, no bypass of mutation test.
+
+Fulltypecheck/build/browser375/actualWebLocks and fullUI→SQL recovery notrun due current local/RAM hold; nativeSQL and mockedhook separate evidence. Known remaining recovery limitation: receipt_not_found cannot safely drop journal/create newkey until serialized server resolution proves oldintent impossible; no such proof added here, so pending stays failclosed (not complete seamlessUX). Also need recovery lifecycle for known precommit denials/obsolete intents, winner-changingcorrection/writer matrix/provider/fulltour/perf/release. CInewpaths+focusedtests prepared only. PGstopped/nohandles/no push/productionDBEdgefrontendflagsUAT/Auto/Daybreak changes, G6/masterACTIVE/local-only.
+
+## Correction commit with missing receipt no longer reports verified
+
+Baseline9bc639fef clean/previousPROGRESS. New fault flag --correction-mask-receipt executes actual correction SQL then returns null/noerror from transport.6933fa RED showed actualEdge200/oktrue/verified/receiptnull. Source now requires record/oktrue/correction_reason_recordedtrue/exactoutcomehash/exact positive settlementrevision before success; missing/malformed receipt returns502correction_commit_response_unverified, never retries mutation.672de2 GREEN actualSQLcommit→ambiguous502→samekey/fingerprint read receipt found; exactoneoutcome, unchanged recovery fingerprints, stale retry remains denied. Normal-path87ce91 terminal followup also checked. Deno a7aa81 PASS. CI fault invocation prepared/notrun. No DB migration/UI change; current UI still must persist intent and invoke receipt after unknown response/reload. No hostedgateway/provider/fulltour proof. PGstopped/nohandles/no push/production/flags/Auto/Daybreak; G6/masterACTIVE/local-only.
+
+## Read-only correction receipt recovery endpoint qualified locally; UI not yet wired
+
+Baselinee158c4dd9 clean/previousPROGRESS. Existing correction commit replay recomputes current state and rejects old preview, so cannot recover unknown commit. Added mode=receipt to actual correction Edge using existing immutable outcomes (no migration): preview exposes original request_hash without changing its canonical hash algorithm; receipt requires actor/tour/hand/key/source revision+hash/outcome+request hash. Re-authorizes owner/admin via existing authorize_tournament_live_resettle (not latest-hand mutation UAT capability), reads exact tournament+key, compares actor/hand, chain verification scope, correction marker, original pre-edit fingerprint from public_outcome and persisted request_hash. Returns only receipt metadata; does NOT assert past proof still current. Null read errors fail503, malformed result502, mismatched fingerprint409, absent receipt explicitnotfound. No source mutation/new key/recompute in receipt mode.
+
+9442c4 RED missing receipt mode400;5fa9e6 initialgreen;437a19 final realEdge+SQL PASS: committed receipt found after revisionchange; wrong request/outcome/source/hash/hand conflict without delta; absentkeynotfound; changedactor409/outsider403 before service reads; disabled correction UAT still allows authorized past receipt read (no new mutation). Initialdde037 harness bool SQL serialization fixed to to_jsonb, NOT auth bug. Deno4b060bPASS, contractf93e222/2. PGstopped/nohandles; no hostedAuth/HTTP/browser/durableUI proof, no push/release/DBflagsAutoDaybreak. G6/masterACTIVE/local-only. Next wire durable correction intent and strict success receipt validation; current HandHistoryWorkspace still memory-only and permissive success, so feature NOT complete.
+
+## Correction Auth outages misclassified as permission failures: reproduced and fixed locally
+
+Baselinefc0264c2b clean/previousPROGRESS. Receipt audit: HandHistoryWorkspace holds key in resettleView only; error leaves view/key, but new preview generates new key, no durable correction receipt lookup found. Atomic success check also accepts missing/invalid receipt unless error or ok===false; these are unresolved UI/recovery findings, not fixed by stale-retry proof. No UI change this turn.
+
+Extended actual correction Edge harness with Auth503 before data reads:8bda20 RED actual401 versus required503. Source now follows existing historical Edge classification: returned/thrown Auth infrastructure error503authentication_unavailable; invalid token401unauthorized; returned/thrown/malformed authorization RPC503authorization_unavailable; genuine no-scope/outsider403.6ba7fe PASS all outage/invalid/scope cases plus actual paid preview/commit/stale replay and unchanged denied fingerprints.3a7b26 initial harness syntax error was corrected before RED, not product evidence. Deno check3c804a PASS, focused contract42eb10 2/2 PASS. Workflow path/Deno check prepared, no CI dispatch. No DB migration/application-role/RLS policy change. PGstopped/nohandles/no push/production/flags/Auto/Daybreak, local-only/masterACTIVE/G6 IN_PROGRESS. Next correction durable intent+receipt resolution design using canonical receipt source, then strict UI success/reload/retry evidence; do not treat absence of receipt as failed commit or invent a new key.
+
+## Actual correction Edge + paid hand + real UAT authority SQL PASS
+
+Baseline c2a66e392 clean/previous turn PROGRESS, goal API confirmed active. New paidCorrectionEdge.native.mjs called through guarded paidHistoryWorker --correction-edge. AST executes actual tournament-live-resettle-commit with actual compute/expected-stack helpers and restricted psql query/RPC adapters. Real authorize RPC under authenticated ROLE/JWT: owner without enabled exact UAT scope403uat_capability_disabled; outsider403actor_not_authorized, both zero service reads and hand/outcome/queue fingerprints unchanged. Exact TEST scope explicitly seeded locally; owner preview200/no mutation→commit200verified/actual receipt/revision increase/exactly1 correction outcome. Repeat old preview409stale_correction_preview/fingerprint unchanged.17510b terminal PASS, PG stopped/no handles. Initial94839e was harness cross-VM object deep-equality prototype mismatch, fixed by data serialization, NOT product auth bug.
+
+getUser identity, CORS and HTTP/PostgREST are modeled; actual SQL roles/grants/UAT and effects are real. No browser editor or hosted gateway proof, no winner-changing/chip-delta correction assertion. Stale retry proves no duplicate, NOT lost-response receipt reconciliation (handler rejects stale preview rather than returning old receipt); retain that separate requirement for UI/receipt audit. CI path+command prepared only, Node22/full duration unverified. No production/push/flags/Auto/Daybreak; G6/master ACTIVE/local-only. Next inspect correction client receipt/recovery path and remaining writer matrix/provider/fulltour/perf evidence.
+
+## Paid-hand correction after worker snapshot → reject old proof → publish current revision PASS
+
+Baseline60ab4b074 clean, previous turn PROGRESS. Located actual correction path tournament-live-resettle-commit→computeAuthoritativeSettlement→commit_tracker_hand_correction_outcome. New --correct-during-commit uses real compute and actual service correction RPC (board-only persisted edit on paid fold) AFTER old worker verification, BEFORE its commit. Asserts correction receipt ok/revision advances, old worker503unresolved1/stale_source_revision or queue_lease_lost, zero historical-display proof from old worker and current queue pending. Next actual worker processes current revision, commits exactly1 current verified historical proof, anonymous history verified; seats/cash unchanged. Final a1088f/13e286 PASS. No direct source revision/action/stack patch. Service correction SQL boundary is real; auth.getUser/UAT authorization API, editor/UI, hosted HTTP and side-effect correction changing winner/chips NOT proven by this test.
+
+Initial87040c/93d2dc/0c0345 failed before correction because schema bootstrap service_role omitted hosted BYPASSRLS;7df24d proved privileged chip rows2 while service query saw none (NOT missing chip writer/product bug). Reused existing readyWorkerCapacity.native pattern: disposable NOLOGIN INHERIT BYPASSRLS role inheriting actual service grants, drop on exit; application roles/RLS untouched. Snapshot stack source is actual tournament_chip_counts, not fixture injection. Reran affected verified/response-loss/expired paths on corrected service transport: aca0bf/b8b6c6/e21db8 PASS. CI correction command prepared only, no dispatch/Node22/duration proof. PGstopped/nohandles, no push/production/flags/Auto/Daybreak. G6/masterACTIVE/local-only. Remaining actual correction Edge auth/full writer matrix, UI stale response/reconnect, provider Voice/TV publish, fulltour/perf/release; no broad completion claim.
+
+## Actual worker expired lease rejection and new-token recovery PASS
+
+Baseline fa53dacdb clean; preceding goal turn PROGRESS. --expired-lease extends actual main-worker/paid Finish/verifier/SQL harness: immediately before first commit, expire ONLY exact processing queue lease (explicit local fault-fixture timestamp, not operational/payroll/rest time). Real commit rejects queue_lease_lost; finish cannot claim success, handler503/unresolved1, zero outcomes and unchanged business fingerprint. Next actual handler reclaims expired job with DIFFERENT token, completes one verified outcome and queue, no business changes/errors. 436dfc/c4b4db terminal PASS, PG stopped/no handles. CI invocation prepared only; no new application/migration behavior. This is expired lease recovery, NOT canonical correction, concurrent reclaim racing already-running commit, real process kill, hosted Edge/HTTP. Correction RPC inspected for next test: historical blind correction only fills missing snapshot, deliberately refuses already-present valid blinds; do not misuse it or directly change hand revision and label that canonical correction. Next inventory proper completed-hand correction endpoint and its authority/receipt before injecting after snapshot. No push/production/flags/Auto/Daybreak, G6 IN_PROGRESS/masterACTIVE/local-only.
+
+## Actual worker lost-response after atomic commit: no duplicate PASS
+
+Previous goal turn made progress (dc513b0be refund fix + actual verified paid hand). This turn starts from clean dc513b0be and extends the same worker harness, not a replacement synthetic outcome test. --lost-commit-response executes actual service SQL commit v2 successfully, then returns a modeled transport error instead of its receipt. Actual worker attempts finish with the old lease; DB refuses to requeue the already completed job. Handler truthfully returns503/unresolved1, DB queue stays completed, exactly1 verified outcome remains public, hand/seats/cash fingerprints unchanged. Retry claims0 and outcome count stays1. c18ac4 terminal PASS; PG stopped, no live handles. This tests ambiguous response after COMMIT, NOT process kill before commit, correction interleaving, hosted HTTP/PostgREST or provider recovery. CI invocation prepared only, not dispatched. No application behavior/migration change this turn; no push/production/flags/Auto/Daybreak. G6 IN_PROGRESS, master ACTIVE/local-only. Next: actual source correction between worker snapshot and commit, then stale/reclaimed lease handling using existing canonical correction contract.
+
+## Actual paid fold → worker → verified anonymous history PASS; refund-source bug fixed locally
+
+Extended the canonical paid Finish payload with optional SB100/BB200/SB fold, frozen player identities and stacks19900/20100. Actual main worker initially returned needs_attention/refund_source_action_missing (fe15b8); retained failed hand6edc8e40-4db0-4df1-81f8-1ac953defbee unchanged. Source lookup only accepted bet/raise/all_in although the pot engine counts forced blinds. Added modern/legacy BB regression: fec91c RED2/15, then909d26 GREEN15/15. Lookup now accepts positive forced contributions from the already normalized read-only actions, preserving original source action IDs; no pot/rounding/source-row changes.
+
+346977 actual canonical paid hand → real worker/verifier → service SQL commit v2 → current queue completed + exactly1 verified outcome + anonymous history verified PASS. Assertions cover BB winner, pot200/refund100, net-100/+100, no invented showdown ranks/private evidence, unchanged hand/seat/cash fingerprints, terminal retry claims0, dark service and out-of-scope canary denied before SQL. New harness --verified invocation prepared in CI, NOT run on GitHub/Node22. HTTP/Auth gateway/CORS/provider transport remains modeled, not hosted Edge or browser proof. No production, push, CI dispatch, flags, Auto or Daybreak changes. Master remains ACTIVE; actual correction/lease/crash worker branches and full tour/performance/release remain outstanding.
+
+##Actual History main worker + verifier + paid hand SQL needs-attention PASS
+
+PreviousgoalturnPROGRESS(localff5cfa84fcleanbaseline). ExistinghistoricalAuthEdgeHandler coversmanualhandlerAuth/syntheticRPC; historyAtomicRecovery coversDBatomiccontracts withsyntheticpayload. Neitherisactualmainworker/verifier/paidtourintegration, soNOTre-run. Newtests/trackerSettlement/paidHistoryWorker.native.mjs reusescanonicalpaidfixture andactualpaidActiveHandRPCjourney, deliberatelyCOMMITssyntheticjourney ratherthanROLLBACK soactualworker'sseparateSQLcallsseescompletedhand. Retainallgenerateddata; noreset/drop. Pot0/actions[] hand intentionallyinsufficientverificationevidence, NOTfakeverifiedpayload.
+
+ActualworkerindexASTtranspiledremovingimportsonly; actualverifier/outcome/pokerengine/normalizer/auth/policy modulesimported. GuardedpsqlbridgeexecutesactualserviceROLE/JWT scopedclaim→snapshot+prioroutcomeSELECT→finishjob; strictRPCargumentallowlist, anycommitRPCunexpected. ActualworkerkeptgloballydisabledINHARNESSE NV, exact1handseparatecanaryscope.6259a1initialPASS;5a9da7finalPASSactualhandlerreturnsclaimed1/completed0/needs_attention1/unresolved0, exacthistorical_empty_or_invalid_pot, DBqueuecurrentrevisionneeds_attention, zeroverifiedoutcomes, anonHistoryneeds_attention; fullhand/seat/moneyJSONunchanged. Darkservicecredential404, canarymissingscope/outofscope400withoutSQL; samehandretryclaimed0(no repeatprocessing).
+
+HarnessissuesNOTproductbugs:Node24strip-onlycan'tloadexistingreadonlyparameterproperty class; --experimental-transform-types(detectedlocal--help)loadsactualmoduleswithoutsourcechange/install.44430eVMhostErrorclassmismatch hidactualoutofscopeerror; injectedhostErrorintoVM(samerealmsemantics),5a9da7PASS. No realCORS/Authgateway/PostgREST/HTTP/cron/Edgeprovider proof; CORSadaptermodeled, credentialsTESTliteralonly,no network/no productionenvreads/applicationroleRLSchanges. NewCIpath+nativeinvocationprepared; CIusesNode22, compatibility/wholejob10mindurationUNVERIFIEDuntilactualCI, no runtimeversionchanged.
+
+PGstopped/nohandles. No workerapplication/migrationchange/push/CI/deploy/productionflags/Auto/Daybreakchange; localhold/masterACTIVE. Stillneedvalidverifiedhandpath+correction/lease/crashthroughactualworker (DBexistingproofnotfullhandler), realVoice/provider/browserfulltour/release/perf. Notcomplete.
+
+##Shared-event flight pause isolation + clock CAS PASS
+
+PreviousgoalturnPROGRESS, baselineb1bd67ec3/ownedTVtestsdirtypreserved. Extendedtwoactualpaidflightsvariant: takeAactualTVclockcontrol_revision, authenticateownerandcallfloor_control_tournament_clock(A,pause,NULL,revision). Exactoldrevisionresume specificallystale_clock_state; fullpausedArowunchangedbyrejectedretry, fullBrowidenticalbefore/afterApause+staleretry. ActualanonTVrereadAis_runningfalse/Btrue.4085d7PASSincludesallpriorpaidhand/move/mode/History/TVcounts/brandoraclesand18tablerollbackfingerprintstable. No manualclocktimestamp/handstate/price/entrypatch, nopolicychange.
+
+ThisislocalSQLclock/TVprojectionproof, NOTbrowseranimation/reconnect/provider/publicHTTP/cross-accountUIperformance orrequiredCI. PreparinglocalcommitofTVintegrationtests only; no push/deploy/productionDB/flags/Auto/Daybreakchange,PGstopped/nohandles/localhold/masterACTIVE. Remainingfullchecks/release/fulltour/rest15x3/375/perf andactualprovider/historyworker paths notaccepted.
+
+##Two canonical paid flights share event brand, isolate TV runtime PASS
+
+PreviousgoalturnPROGRESS; baselineb1bd67ec3/ownedTVtestchangespreserved. Extendedsamepaidhand/move/modejourney withSECONDflight actual91create+level(500/1000ante100duration30), exactTESTinventory→authFlooropen, actualserverpriced50000registration/112payment→1seat40000, actualclockstart. No directentry/price/payment/clocktimestampfixturewrites. Sharedtournament_events association/layout +pairedTVrows areEXPLICITlocalconfigurationfixtures as existingTVtests, NOTeditor/pairingpublishproof.
+
+ac576finitialmultiflightPASS;1df689tightensoracleswithnonNULLclockremaining andsecondledgerexact1×50000/seat1×40000 PASS. ActualanonV4brandingOFF/ON forboth: A4remaining80000/avg20000/BB200, B1remaining40000/avg40000/BB1000; exacttourID+clocktourID, Bremaining>Aremaining+300realclockseconds(no timestampmanipulation); brandingONbothSharedpaid eventbrand. Ainitialclock20min/B30mincreatedthroughcanonicallevels+start. Priorpaidhandhistory/pendingmove/receipt/cashconservationoraclesretained.
+
+Runtimefingerprintexpanded18tablesaddingevent/layout; outerrollbackstableandallPGstopped/nohandles. No application/migrationchange/fullunchangedsuitererun/push/CI/deploy/productionflags/Auto/Daybreak. CurrentproofSQLanonymousnotbrowserHTTP/multiwindowclockvisuals/storage/provider/historyworker/rest15x3/fulltour/perf. MasterACTIVE/localhold.
+
+##TV anonymous matches actual paid tour after Finish/move/mode
+
+PreviousgoalturnPROGRESSlocalcommitb1bd67ec3(cleanbaseline); newownedtestchangesonly. ExtendedpaidActiveHandafteranonymousfrozenhistoryread: explicitlocalpairedtv_displaysconfigurationfixture (NOTpairingUI). ActualSETROLEanon+anonJWT get_tv_display_state_v4 token, includeBrandingfalseANDtrue: paired/exacttour+clock.tournament_id,4remaining/80000live_entry_stack/4confirmedentries/average20000/BB200 forpaidmovevariant.4745a2PASSonfinal117DB afteractualCashier/hand/Finish/move/mode/seat chain. Runtimefingerprintexpanded16tablesincludestv_displays, outerrollbackidentical; noliveheartbeat/controlplanechanges.
+
+ExistingparticipationTv.concurrent usesmanual/nonpaidflightfixtures andwasnotrerun; currentnewproofisONEactualpaidtour, NOTshared-eventmulti-paid-flightisolation, brandingpublish/storage/pairing/browser/HTTP. Publicclock+TVRPCactualDBonly. FullG6andmasterstillIN_PROGRESS; nextshared-eventisolationwithcanonicalpaidparticipantsandexistinglayoutpatternorotherremainingindependentwork. No app/migrationchange/no push/CI/deploy/productionflags/Auto/Daybreakchange,PGstopped/nohandles/localhold.
+
+##Anonymous historical hand stays frozen after paid move/mode/new seating
+
+PreviousgoalturnPROGRESS; baseline5da89db5a/owned117+tests/workflowdirtypreserved. ExtendedactualpaidActiveHandtestafterFinish/move/mode/paidwaiterseating: saveexpectedfrozenhand_players identity/entry/seat/start+endstacks; SETROLEanon/anonJWT/clearsub. Actualget_public_tournament_table_hand_v2returnsoriginalhandID/EXACT2historicalplayers+stacks, notcurrent3/4roster. ActualanonymoushistoryV2onehand/resultpending(no fabricatedverifiedproof), samehandwithotherlogicaltableIDspecificallyhand_out_of_scope.15d23cPASSonfullpaidpendingmovevariant(final117DB), outer15tablefingerprintstable. Canonicalhand/Finish real, manualpayloadpot0mechanicallifecycleonly; no historyworker/provider/webHTTPproofclaimed.
+
+No application/migrationchangeinthisturn. Preparinglocalcommitofqualified117andblocker/Finish/publicreaderregressions; no push/CI/deploy/productionflags/Auto/Daybreakchanges. PGstopped/nohandles/masterACTIVE/localhold. RequiredactualCI/fulltypebuild, realcorrectionresolution/Voice/Historyworker/TV/wholeTOUR/rest15x3/375/perf stillpending.
+
+##117 fresh qualification, NULL-session/healthy-table controls and CI wiring PASS locally
+
+PreviousgoalturnPROGRESS; baseline5da89db5a/owneddirtypreserved. ExtendedexistingseatingMigrations.pg17.mjs --only117. Pre117pristinecash116_qualified (alreadyvalidated116clone) usedWITHOUTreset/drop;1dde97PASSactualunknownpickerbodyrejection/catalogrollbackequality/117apply/existingallpg_procmetadataACLexceptbodypreserved. No unnecessarynewcloneoroldchainreapply.
+
+Correctionvariant952b28covers2legacyidentities(exactsession andexplicitrollback-onlyhand.table_session_idNULL/exactlogicaltable)×3alertstatesopen/ack/inprogress. EachblocksCashierwithoutVoice/noentry; thenactualFlooropenshealthyothertable andpaidcoreseatsTHERE/sameMoney, soonebadtabledoesnotquarantinewholeTour. Beforeterminalpositivealllegacychangesrollback; normalcashseatingstillworks. Handwasactuallycreated/finishedbeforelegacyidentityinjection; NOTreportAPI/normalwriter/productionincidentproof.15tableouterrollbackfingerprintstable. 8a2ffare-runONLYaffectedinitial+reentrymatrixonnew117sharedpickerPASS (newdependencyreason), notwholeunchangedsuite.
+
+Workflow117exactpath+ordered--only117AFTER--only116+legacyvariantprepared; stepnameCash113-117, jobrequiredchecksunchanged.09cdf0YAML/order/bash-nPASS, noGitHubdispatch/fullCI/10minruntimeclaim. New117mustapplyafterold113–116pinneddependencies, no oldmigrationedit. PGstopped/nohandles; no push/deploy/productionDB/flags/Auto/Daybreakchange/localhold/masterACTIVE. RemainingrealcorrectionUIresolution/Voice/History/TV/endtour/fullchecks/release/rest15x3/375/perf.
+
+##NEW correction-alert/no-Voice allocation bypass reproduced, candidate117 local GREEN
+
+PreviousgoalturnPROGRESS; baseline5da89db5a/ownedtests/workflowdirtypreserved. Read actualFloor mode resolver: guards BOTHVoiceconfigandtracker_floor_alerts;113cashpickeronlyVoiceconfig. ActualreportAPI requiresinprogresshand, so doNOTclaimterminallegacyfixtureisreportRPCproof. New --active-hand --legacy-correction variant: actualpaidroster/start/Finish/mode first, then explicitrollback-onlylegacyalertINSERT referencingactualcompletedhand/exactsession, noVoiceconfig. Expectedwaiting REDdf7876: internalpaidcoreactuallycreatedseat/entry/ticket despiteopenalert. Entiretesttransactionrolledback, initialseedretained; notlivebugclaim.
+
+CLI20261016100936→newuncommitted20270128000117_cashier_correction_alert_seating_fence_v1.sql, no117local/originattimecheck. Pinsprivatepicker770a70ad4ae2226a2fdc82adf1e1f9ae; adds sameFlooralertpredicate(open/acknowledged/in_progress,correction_required,exactsession OR unknownsession/exactlogicaltable) withoutresolvingalert orgrantchanges. Sharedpickerprotectsinitialandlegacyreentryseating. c49a40localDDLrollbackfullpg_procequality/apply/metadataexceptbodyPASSoncash115_qualified_c only.543823sameexpectedfixedcaseGREEN;06fb6fextendsall3alertstatusesPASS/noentry/thenrollbackalertsubcaseandnormalpositivecashseatingstillPASS; outer15tablefingerprintunchanged. No directhandstatuscompletion/pricefabrication/guardbypass.
+
+NoVoiceconfigreportflow end-to-end NOTproven, unknownsessionbranchneedsnegativefixture; newpickerdigest/fresh117DDLdriftqualification andCIapply/variantwiringPENDING. Workflowcurrentlythrough116, doNOTclaim117CIcovered. Existing113–116guardsmustapplyBEFORE117, don'teditoldmigrationdigests. Needoldproducerdrain/releasescope, remainingfulljourney/HTTP/provider/perf. PGstopped/nohandles; no push/CI/deploy/productionflags/Auto/Daybreakchange/localhold/masterACTIVE.
+
+##Paid pending-move → Finish → mode → paid waiting seat PASS
+
+PreviousgoalturnPROGRESS; baseline5da89db5a/ownedtestchangespreserved. Added --active-hand --pending-move variant withoutremovingplaincase. Afterthirdcashpaidwaitingduringactualhand, actualFloorreopensotherphysicalNEWsessionManual, fourthplayeractualservicepricedregistration/112cashseatsonlyeligibleManualsource. Authmove_player_seat_v5queuesexactsource/session/epoch/revision→activeTrackerfreeposition; paidmovingentryremainsoneactivesourceseat20000beforeresolution. ManualrequestblockersincludeBOTHactive_hand+pending_move. Existingcancel/re-request remains.
+
+ActualcanonicalFinishthenserverdeferredcallbacks: pendingmoveappliedexactlyonce, movingentryoneactivedestinationseat20000, authFloorticketreaderacceptsnewcurrentticketproof, sessionManualepoch+1; staleTrackerstartdenied. Internalcashierthen seatsalready100000paidwaiter, aggregate4activeseats/80000chips and4immutablecashmovementssum400000. NoextraMoney forwaiter ortransfer. b4f8efinitialvariantPASS; d325dcaddsstrongblocker+ticket/globalcashoraclesPASS, outerrollback15tablefingerprintunchanged. Testlogsnowdistinctvariantlabel; no rerunforlog-onlychange.
+
+Newsourceentry/payment/queuecreatedthroughactualpublicRPCs; nohandINSERT/pendingrowINSERT/fakestatuscompletion. Pot0unchangedstackFinishmechanicallifecycleproofNOTfullpokerwinner/settlement/HTTP/webUAT. Plaincase/stalecancelpreviousproofstillseparate, CInewvariantpreparednotrun. Correction-specificblocker/Voice/provider/History/TV/fulltour/rest15x3/375/perfremain. PGstopped/nohandles; noapp/migration/push/CI/deploy/productionflags/Auto/Daybreakchange/localhold/masterACTIVE.
+
+##Actual mode cancel/re-request + stale Tracker start fence PASS
+
+Baseline5da89db5a; previousgoalturnPROGRESS. ExtendedpaidActiveHand only: readpendingmodeIDthroughauthRPC→cancel→samecancelreplayexact→pendingreadnull; sessionstillTracker/sameepoch. NewManualrequestwaitsactualhandagain; existingactualFinish/mode/singlemoney/seatsequenceunchanged. AfterserverManual/epoch+1, authstart_tracker_hand_v3 witholdsessionepoch/hand2 specificallyreturnsSTALE_TRACKER_CONTEXT; handcountremains1.7e2358PASSand15tableouterrollbackfingerprintstable. No controllerstatepatch/mock/directhandINSERT. No applayer/migrationchange, no unchangedfullsuitererun.
+
+Pendingmoves/correction/Voiceoldcontext/HTTPbrowsercasesstillseparate. Ownedtests/runtime/workflow/handoffdirty, no push/CI/release/production/Auto/Daybreakchanges; PGstopped/nohandles/localhold/masterACTIVE.
+
+##Paid wait → actual canonical Finish → pending mode → seat integration PASS
+
+PreviousgoalturnPROGRESS; baseline5da89db5a/ownedseatlock+activehand/runtime/workflowchangespreserved. ExtendedactualpaidActiveHand SQL beyondpriorstart/waitcase: requestManualduringactualhand returnspending/active_hand; constructcanonicalrecord_tracker_manual_hand_v1 intentfromactualhand_players/sourceRevision/sessionEpoch, no directhandstatusmutation. Payloadunchangedendingstacks/pot0/actions[] usesexistingmanualFinishcontract; mechanicalsafe-boundaryproof, NOTfullpokerwinner/settlementverification. ActualFinishok, SETCONSTRAINTSIMMEDIATE flushessameDBdeferredboundaryascommit, handcompleted/sessionManual/epoch+1. Authreceiptlookup+FinishreplayreturnsEXACTreceipt aftermode. Internalexacttargetcashierseatsalready100000paidwaiterafterboundary; count3/chips60000, wholepaymentJSONunchanged. fe39b1PASSandouterrollback/15tablefingerprintstable.
+
+No app/migrationchange or fullunchangedsuitererun. Modeconsumerisserversidewithoutbrowsertab; teststillNOTHTTP/realbrowser375/Voiceprovider/Historyworker/TVproof. PendingMOVES/correctionblockersandoldcontrollerwritefencesremainseparatecoverage. PGstopped/nohandles; localonlyhold/masterACTIVE/no push/CI/deploy/productionDB/flags/Auto/Daybreakchange.
+
+##Actual paid hand roster blocks third Cashier seat during hand
+
+PreviousgoalturnPROGRESS; baseline5da89db5a, ownedseatlock/runtime/workflowdirtypreserved. NewpaidActiveHand.pg17.sql usesfreshcanonicalfixture: closeotherEMPTYtableviaauthV4, secondplayeractualservicepricedregistration/112cashseatedononlyopentable, actualfloor_start_tournament_clock→occupiedtableManualtoTrackerRPC→start_tracker_hand_v3usingactualbuttonseat. Twoactualpaidplayersfrozenhand_playerscount2/sum40000. Thirdserverpricedregistration+112cash100000duringactualinprogresshand→recorded/paidwaiting, noentry; activeseats/handrosterstill2/40000, onemoneymovement. c97e5fPASSandouterrollback/15tablefingerprintunchanged. No handINSERT/fakecompletion/blindpatch.
+
+810321initialtestattemptfailed tracker_floor_blind_level_unavailable becausefixturetourclocknotstarted; correctoperationsequenceaddedcanonicalclockRPC(sameEdgeuses), no functionguarddisabledorlevelsmanipulated. Thiswasfixturelifecycleomission, notclaimedproductbug. Earlierinitialpaidfixturecommittedretained; handtesttransactionrolledback. Workflowexactnewpath+--active-hand invocationpreparednotdispatched. Pendingmode/move/correctionrelease/consume stillseparateunproven cases; actualhandstartsuccessNOTfinish/proof/Voice/TVacceptance.
+
+No application/migrationchange, no push/CI/deploy/productionDB/flags/Auto/Daybreakchange. PGstopped/nohandles/localhold/masterACTIVE. Nextpendingmode/move/correctionboundary compatibility andremainingcampaignrequirements.
+
+##Currentbaseline5da89db5a; canonical seat-lock paid-wait/unlock runtime PASS
+
+PreviousgoalturnPROGRESS(localcommit5da89db5a, workingtreeclean). AddedpaidSeatLocks.pg17.sql usingfreshcanonicalpaidfixtureidentity, locksALLFREEseats onexacttwoactiveTESTtables through authenticatedfloor_set_table_seat_lock_v1 (originaloccupiedseatcountspreserved). Actualserverpricedsecondplayerregistration→112cash100000returnsrecorded/paidwaiting, noentry. UnlockONEexactseatviaauthRPC→internalcashier_try_seat_paid_v1 seatsONLYthatexactsession/number/chips20000, wholecommittedmoneyrowsunchanged.7bab07PASS, outerrollback; paidJourney.runtime fingerprint expanded15tablesincludesactualseatlocks andstaysidenticalaftertest. No directseatlock/entry/paidmarker fixtureinsert, no fakebusinessresult.
+
+Existingworkflownewpathtrigger+runtime --seat-blockers invocationpreparedlocalonly, notdispatch. No application/migrationcodechangedfrom5da89db5a. Activehand/pendingmove/mode/correction blockersremainNOTprovenbythiscase. CurrentowneddirtyonlynewSQL/runtime/workflow/handoff, sourcebaseline5da89; no push/CI/deploy/productionflags/Auto/Daybreakchanges. PGstopped/nohandles, localhold/masterACTIVE/fulltournotcomplete.
+
+##113–116 CI wiring prepared; all4 native Cash UI cases together PASS
+
+PreviousgoalturnPROGRESS; HEAD757b1f2d9/owneddirtypreserved. ExtendedexistingOperationscurrent-schemaworkflow pathtriggers forexact113–116/Edge/newcashiertests. Newstep after112: clonepre113112qualified→seatingMigrations113–115→only116→freshpaidjourney→closebothorders→restorebothorders→dedicatedreentryoverlapclone→CashUIfinalclone/all4cases→9handlercases→DenoEdgecheck. Existingrequiredtests/steps/10mintimeoutpreserved, noactiondispatch/push. Newguardsexactlocaldatadir OR GITHUB_ACTIONS=true AND exact/var/lib/postgresql/data, retainingloopback55441/PG17/exactDBnames/noNET/envguards. NotgeneralremoteDBoverride. Updatedsharedfixture/reentryoverlap/DDLguardsonly; businessSQLunchanged.
+
+a61299YAMLparse/newstepassertPASS;3ab223bash-n andalltestpathsexistPASS. TheseareCONFIGSTATICproofNOTGitHubCIexecution; newstepdurationwithinexisting10minjobunmeasured. NativeUIcompositetestd48954terminal0 (16.69stest/19.57stotal) ALL4PASSsamecurrent113–115cash112_ui: lostactualpartialCOMMIT→remount/read/singlemoney; neverreceivedcancel→latelegacy/exactblocked; lostcancelCOMMIT→read; fullpaidwaiting→2Flooropens→canonicalseat/ticket/replay/singlemoney. No mocksforSQLbusiness, Authgateway/WebLocks/HTTPstillmodeled. ThisUIdbdoesNOTcontain116; restoreunaffectedinthissuite, don'tcall116UIproof. CInewcloneplanned116butnotexecuted.
+
+AllPGstopped/nohandles. RemainingoldEdgequiescence/legacywritercontrol, blockermatrix, finalsourcechecks/review/fulltypebuild, requiredactualCI whenholdlifted, exactrelease/livefulltour/rest15x3/375/perf. No commit/push/CI/productionDB/Edge/frontend/flags/Auto/Daybreakchanges/localonlyhold/masterACTIVE.
+
+##116 fresh qualification + old-producer release boundary explicit
+
+PreviousgoalturnPROGRESS; HEAD757b1f2d9/owneddirtypreserved. Actual115catalog38df21 digest45f01d53a1dc2953f744ab462dba7d86;116nowpinsit inadditionoldrestore9918b112e18e6c516b4ffe338eabf83f. Currentrestoredprivatebodye671d6c24edf4d4ed631ecec820efae2. ExtendedexistingseatingMigrations.pg17.mjs --only116, strictnewlocalcash116_qualified clonefromcash115_qualified_b (pre116restore, sameactual115body).5723e5PASS: actualunknownrestorebodyandunknown115bodyrejections2, fullpublic/floorprivatecatalogrollbackequality, actualapply andexistingfunctionallpg_procmetadata/ACL/config/ownerpreservedexceptreviewedbody. No businessrerunsunchangedsource; prior80ab56bothordersstillbodyproof.
+
+Sourcewritersearchcurrentfunctions hasno directsource_entry_idINSERT afterEdgeadaptation; this is SOURCEONLY, not liveinventory. OriginaloldEdge(beforethisdiff) performs precheckthenserviceINSERToutsidecanonicaltournamentlock; in-flightoldrequestsareNOTcoveredbynew115serialization. ReleaseMUSTquiesce/drainoldproducer+restoretraffic or centrally fenceoldwriter beforeacceptance; deployingnewEdgealoneisnotproofoldrequestsfinished. Stillneedexplicitlegacywritercompatibility/runtimecontrol, notclaimracefixedforallpossiblewriters. No arbitraryproductionwrite/featuredisableperformed.
+
+AllPGstopped/nohandles. NeedCIisolationguard/wiring/newtestpaths/finalsourcevalidation, remainingblockermatrix, releasecontrol/fullchecks/livejourney/perf. No commit/push/CI/productionDB/Edge/frontend/flags/Auto/Daybreakchange; localonlyhold/masterACTIVE.
+
+##NEW restore/re-entry dependency race reproduced and fixed local116
+
+PreviousgoalturnPROGRESS, HEAD757b1f2d9/owneddirtypreserved. NewrestoreReentry.concurrent.mjs actualfreshpaidfixture→canonicalbust→service115registration versus authV5restore, verifiedtwoPGsessionsClientRead/Lockbarrier. ExpectedfixedREDdec9db: reentryfirststillrestoresoldentry. Actualcatalog127444 confirms pendingreg2c292c11-42e1-4fed-a712-8188163ac366, sourcefffcdc22-cea7-4dac-82b4-b740d0cd6a09 statusseated/1activeseat coexists. Preservefailedfixture, noreset/automaticcancel/refund. Actualprivate restorehelper digest9918b112e18e6c516b4ffe338eabf83f checks laterENTRY only, notpendingregistration; locks tournament beforedependencycheck, sameas115create.
+
+CLI20261016095008→newuncommitted20270128000116_floor_restore_pending_reentry_fence_v1.sql; no116local/originattimecheck. Pinsactualoldrestorebody; extends existingrestore_reentry_dependency guard to pending/confirmedregistration referencingexactsourceentry. Noautocancel/no moneyhistoryrewrite/newlockorder. Bothoperationsuseexistingtournamentserialization. Recoveryforwardrestorewithrestorefeaturedisabled.561d26localDDLrollbackfullpg_proc equality +apply/metadataonlybodychangedPASS. Simplifiedpresencepreconditiontoexplicitto_regprocedure afterward (notpretenddigest); exact115dependencydigest/freshchainqualificationstillpending.
+
+80ab56bothactualoverlapordersPASS: reentryfirst→pricedpendingcreated/oldrestoredeniedrestore_reentry_dependency/zeroactiveoldseat; restorefirst→oldentryrestoredstack20000/registrationdeniedentry_not_reenterable/zerosourcereg. Wholemoneyrowsunchanged. Localcore/TESTsink only, notHTTP/provider/browserwebproof. Newtestfixturescommittedfortrace, noreset/drop. PGstopped/nohandles.
+
+Remaining116freshDDL/digest/ACLqualification+115legacycaller race coverage, remainingseatlock/hand/pending/correctionmatrix, CIguards/wiring/fullchecks/review/release/livefulltour/rest15x3/375/perf. No commit/push/CI/productionDB/Edge/frontend/flags/Auto; DaybreakOFF/localonlyhold/masterACTIVE.
+
+##Paid seating versus canonical close: BOTH true overlap orders PASS
+
+PreviousgoalturnPROGRESS; HEAD757b1f2d9/owneddirtypreserved. Newtests/cashier/paidSeatingClose.concurrent.mjs reusesfreshpaidJourneyfixtureonexactlocalcash115_qualified_c. Eachcase actualauthcanonicalbust→closebothviaV4→serverpricednewplayerregistration→112cashpaid/waiting(noopentables)→reopenphysicalwithNEWsession. No directentry/paidmarker writes. Exacttargetinternalcashier_try_seat_paid_v1 (postgreswithauthenticatedownerclaims, aspriorinternalcoretests; NOTbrowserEXECUTE/globalworker/Edgeauthproof) races authenticatedcloseV4.
+
+712ba6terminal0: holderactualRPCexecutedthenClientRead, waiterconfirmedLockwait. CLOSEfirst: sessionclosed, seatingpaid/waiting, zeroentry. SEATfirst: seatcanonicalsession/chips20000, sessionopen, closeokfalse. BOTHorders immutablemoneywhole-rowJSON unchanged. Oldsessionsnotreused onreopen. AddedstrongerfreshCAScontrol: afterseatfirst fetchlatestrevision andclosewithnewrequest→specifictable_not_empty, notmerelystaleCAS;56c5dePASSseatfirstonly, didnotrerununchangedclosefirst. Retainedallsyntheticjourneydata, noreset/drop. Localnotification sinkonly, no realpush.
+
+AllPGstopped/nohandles, no applicationcodechangesduringthisverification. Pendingrestore/reentryrace, seatlocks/activehand/pending/correctionmatrix, CIguard/wiring, finalreview/fulltypebuild/release/livejourney/rest15x3/375/perf. No commit/push/CI/productionDB/Edge/frontend/flags/Auto; DaybreakOFF/localonlyhold/masterACTIVE.
+
+##Fresh canonical business fixture removes retained-ID dependency
+
+PreviousgoalturnPROGRESS, HEAD757b1f2d9/ownedchangespreserved. NewpaidJourney.fixture.mjs reuses cashPaymentIdentity canonicalseed marker (no secondbusinessframework): auth/club/testdrawer supportfixture, actual91create+levels, actualserviceinitialregistration, exactlytwoTESTinventoryrows→authenticatedFlooropens, actual112cash100000→113seat. No directentry/seat/price/paymentmarker inserts. ExactlocalDB/PG17/datadir/noNETguards; explicit existinglocalHTTPsinkstoresnotificationrequests, nooutboundnetwork/pushproof. Addedexactcash115_qualified_c andexistingreentry115_overlap DBnamesonlytoexistingseedallowlist.
+
+NewpaidJourney.runtime.mjs usesfreshfixtureidentity viaPAID_REGISTRATIONpsqlvariable; reentrySQLderivesownerfromexactclub instead ofhardcodedowner. e0c913PASS: canonicalinitialjourney then115fullfee/replay/negative/fault/pricechange/legacyquarantine/114seat/ticket matrix; reentryouterrollback +14tablefingerprintsunchangedafterinitialcommittedfixture. reentryRegistration.concurrent.mjs nowcreatesfreshpaidfixtureeachrun, nothardcodedoldIDs or resettingexistingclone;2ff557actualholder/waiterLockbarrier+onepending/sameID/price/committedresponse-lossreplayPASS. Earlier9043ca retainedfixtureproofstillvalid separately, no rerun of samefixture.
+
+Harnessfailures:a023e9 selectedallclubinventories (clubcreationautoseedslegacyunpreflightedtables), exactFloorrejectedtable_preflight_required. Correctedselecttoexact2namedTESTinventories; nofloor/preflightguardbypass. ab2bd8initialpaidfixturecommitted, SQLtestfailedbeforeexecution becauseJSescapedpsqlbackslash; preservedfixture, fixedString.raw. Newfreshfixtureusedforchangedrunnerproof, noreset/dropofearlierdata. FixturebuilderdoesnotmakeAuto/runtime40tablecountsproof; onlyexactscoped2tables.
+
+AllPGstopped/nohandles. Thesehelpersdata-independentbutstilllocaldatadir/DBallowlists, NOTCIwiredoractualHTTP/browser. Next wireappropriateisolatedCIguards/qualifiedmigrationchain +close-seat/restore-reentryoverlaps, finalsourcechecks/review. No commit/push/CI/productionDB/Edge/frontend/flags/Auto; DaybreakOFF/localhold/masterACTIVE/fullG0–G9notcomplete.
+
+##113–115 fresh-chain DDL/drift/rollback/ACL qualification PASS
+
+PreviousgoalturnPROGRESS; HEAD757b1f2d9, owned dirty retained. Added tests/cashier/seatingMigrations.pg17.mjs exactlocalPG17/datadir/noNET/envguards. Freshclonecash115_qualified_c from actualpre113cash112_qualified, notpreviouslypatchedUI fixture. Final361681terminal0:113unknownpaidbody rejection1,114unknownoldreentry+pickerdependencyrejections2,115unknownpicker+canonicalreentrydependencyrejections2; each actualSQL alterednormalizedfunctionbody verifieddifferent BEFOREattempt. Failedapply restoresoriginalcatalog, rollbackfingerprint ofALLpublic/floor_privatepg_proc unchanged. Thenactual113→114→115apply succeeds; existingfunctiononlyprosrcchanges, fullpg_procmetadata/ACL/config/owner preserved; additiveauth/anonPUBLICinheritance denied, service115only, emptysearchpath verified.
+
+Pinned114pickerMD5770a70ad4ae2226a2fdc82adf1e1f9ae;115pins samepicker +canonicalreentryb542d17a8b823a3d934a8fb6e29f9f50. Readexactcatalogf7b9cc. Paid113body86e53f9bc81b77e30e8c549c27acaa0f. Onlypreconditions changedafter businessruntimeproof; fullsourcechainqualifiedonfreshclonec.
+
+Testharnessfailures preserved:dd9200returnedhugecatalogexceedingdefaultstdoutbuffer; changedtoDBsidecatalogMD5 (notincreasedRAM). e6e35e113qualified,114driftassertionfailed because originalbodyCRLF meantinjectiondidnothing;114actuallyappliedvalidsource in clonea. DidNOTclaimproductionguardfailure. FixednormalizeCRLF+assertinjectionchanged; freshclonebe8ad40allpass. Thenaddeddependencydigestguardsandfreshclonec361681allpass, noreset/drop ofpriorclones. Clonea113/114only,b113–115oldguards,cfinal113–115; keepseparate. No handles/PGstopped.
+
+Stillneed portablebusinessfixtures/CIwiring, close/paidseat +restore/reentry overlap, widerseatlock/hand/pending matrix, finalreview/fulltypebuild/release/livejourney. TheseDDLproofsdonotreplacebusinessruntimeorwebproof. No commit/push/CI/productionDB/Edge/frontend/flags/Autochange; DaybreakOFF/localhold/masterACTIVE.
+
+##115 real create/create overlap + post-insert fault qualified
+
+Previous goalturnPROGRESS; currentHEAD757b1f2d9 and allowned dirty preserved. Extended reentryCanonicalGap.pg17.sql with rollback-only AFTERINSERT trigger raising TEST_REENTRY_INSERT_FAULT after115insert. Exceptionpropagates, no sourcependingregistration left, subsequentnormalflow succeeds.982a45PASS includes fullfee/replay/negative/fault and expanded14tablefingerprint unchanged (registrations/money/tickets/history/chipcounts/notifications/operationreceipts nowincluded). Earlier historical 'wholefingerprint' assertions covered only7ops tables, notall14; do not overstate old coverage. First54d5b7 fingerprint attempt assumedid onalltables andfailed beforetest; fixed deterministic fullrow ordering instead, no schema/grantschanged.
+
+New tests/cashier/reentryRegistration.concurrent.mjs uses fresh dedicated localclonevinpoker_ops_reentry115_overlap ofcash112_ui, port55441PG17/exactdatadir/noNET/envguards. Canonicalauthenticatedbustcommitted ONLYclone; creates zero fakeprice/paymentrows. ActualtwoPGsessions: holder115RPCwaitsClientReadwithuncommittedregistrationinvisible; secondRPCverifiedLockwait; commit first→onependingregistration, sameID/snapshot, secondalready_registeredtrue. Replayaftercommittedresponseignored returnssameID/price, zeromoney.9043caPASS. Initialc3de5csetupfailed because directtable_sessionsSELECTunderbrowserrolecorrectlydenied; moved diagnosticrevisionreadbeforeSETROLE thenRPCstillauthenticated, no broadenedgrants. Clone now containsbustedsource+onependingTESTregistration; preserveit. Script requiresfreshclone/sourceseated, doNOTrerunagainstusedclone orresetdata.
+
+No activehandles; PGstopped. Stillneeds close/paidseat and restore/reentry overlap,113–115freshDDL/digest/ACL qualification, edgehandlerrealDB/HTTP integration/CI wiring/fullchecks/release and fullmastertour. Hardcoded retained fixture runtime tests are localcanaryproof, NOTportableCIyet; next removefixturedependence viaexistingcanonicalseedpattern beforeCI. No commit/push/CI/productionDB/Edge/frontend/flags/Autochanges; DaybreakOFF/localonlyhold/masterACTIVE.
+
+##115 negative lifecycle/price replay + real-handler control flow qualified locally
+
+Previous goalturnPROGRESS; currentHEAD757b1f2d9, allowned dirty preserved.4c3ce4 extends actual115SQL: latelevel7/close6, completedtour, wrongJWTrole and unrelatedplayer denied withzero newreg; pendingprice103000 preserved after tour rake/service changed to9000/8000. bfdabf adds legacyunpricedpending quarantined as legacy_reentry_price_requires_review without snapshotrewrite, then freshpricedreentry/cash/seating/ticket/replay/fullfees/noFREEslot stillPASS. Eachnegative inrollbacksubtransaction, outerrollback+fullfingerprint unchanged; nofixture reset, PGstopped.
+
+Added tests/cashier/reentryTransport.test.mjs using existing lookuphandler AST/transpile harness pattern: executes ACTUAL Edge handler, stubs only imports/auth/client/validation transport. Not HTTP/RLS/bank/provider proof.9cases: verifiedplayer (ignoreforgedrequestplayer/price), persistedsnapshotresponse, no registrationdirectINSERT/resumenotification, tour/bankread503/noRPC, unknownRPCno retry/no notification, legacypriceexplicitdeny, malformedprice503, auth0/503 unavailable, invalidtoken401. Initialff755a7PASS/2RED found currentauthnetworkfailure misclassified401. Reused lookup's existingstatusclassification inreentryhandler; eb14a7all9PASS, focusedDeno749512PASScached/noinstall.
+
+Still no true115two-session create/replay/restore/pricechange overlaps, faultatomicity, fresh113–115DDL/digest/ACL/CIwiring/fullchecks or release. NativeSQL rollbackfixtures +modeltransport notfullwebtour. Next concurrency/faultqualification, pending-source/break/close locks; keepmasterACTIVE andlocalhold, no productionDB/Edge/frontend/flags/Auto/Daybreak change. No runninghandles.
+
+## Candidate115 server-priced re-entry → cash → canonical seating actual local PASS
+
+Previous turn PROGRESS; HEAD757b1f2d9 unchanged. Read complete actual tournament-reentry Edge: computes price across multiple requests, silently treats servicefee-readfailure as0, inserts no price_snapshot; oldpending response recomputedbreakdown from currentprice. Reused initialregistration serverRPC pattern, not relaxed cashguard. CLI20261016092947 moved to new uncommitted20270128000115_cashier_server_priced_reentry_v1.sql; localcatalog115absent. Service-only additive RPC cashier_create_app_reentry_v1(uuid,uuid): serviceJWT+ACL, locks tournament/latestentry, validates exactplayer/latestbusted/noactiveseat/window/clubgate/price, atmostone live source registration, durablepending replay withstoredsnapshot, legacyunpriced needsreview (no auto-reprice), fullbuyin+rake+service, nofree slot. Newreg + immutableprice atomic. Keeps existingfullfee/window policy. Recoverydisableconsumer/revokeadditive endpoint; preservehistory.
+
+d3d5d9:115DDLrollback absence +localapply PASS onlycash112_ui. Extended reentryCanonicalGap.pg17.sql SERVER_PRICED_REENTRY mode: serviceRPCcreatesregistration/replaysameID+price→authenticated112cashrecord→actualpaidseating→canonicaltuple/entryno+1/stack20000/Floorticket/replay; one100000movement0c60c9PASS. f97493 extends fullprice103000=100000+1000rake+2000service, free-rakeeligible3slots but no waiver/no consumption, browserauthenticateddirectRPCpermissiondenied, one103000movement and exactreplayPASS. OuterROLLBACK + wholefingerprint unchanged, retainedoriginalfixturepreserved. Native notification sink remainslocalonly; noHTTP/servicekey/authgateway/bank/pushproof.
+
+Owned Edge tournament-reentry/index.ts now authenticatedtransport invokes115RPC, no registrationINSERT/source/price computedoutsideDB. Returns persisted snapshot breakdown/committed_at/existingproof, bankreaderrors503 rather than wrongbankfallback, no notificationonresumedregistration; optionalbankbin compatibility remains. NewREGnotification outsideRPC as before, no paidtransactionwidening. Separate Deno check --no-remote --no-lock --node-modules-dir=none supabase/functions/tournament-reentry/index.ts PASSab2381 usingcache/noinstall/sharednode_modulesuntouched. Firstattempt --cached-only invalidCLI, nottypecheckfailure. No fullprojectcheck/build/RAMheavywork.
+
+Still need Edgebehavior tests actualhandler/auth/rpc/networkfailure,115negative actor/tenant/latewindow/active/source/ambiguous/legacyresume/pricingchange/idempotency/concurrency/faultmatrix, fresh113–115DDLpreconditions/rollback/ACLqualification andCIwiring/review. Review115 dependencydigest (currentlyexistenceonly), validate full storedsnapshot before resume.113/114matrix+truecloseoverlapstillpending. No commit/push/CI/deploy/productionDB/flags/Auto/Daybreak changes. PGstopped/nohandles; masterACTIVE/localonlyhold, notfulltouracceptance.
+
+## Candidate114 re-entry canonical seating RED→GREEN; price producer gap confirmed
+
+Previous goal turn PROGRESS. CurrentHEAD757b1f2d9 unchanged, owned dirty only. CLI generated20261016092637 then moved to uncommitted20270128000114_cashier_canonical_reentry_seating_v1.sql, no114inlocal/origin catalog at inspection. Actual helper ACLpostgresonly; actual callers confirm_reentry and retired reenter_tournament_player only.114 pins old helper520a828b16302ef18eb59ca6c7b7dc79 +wrapper2f722587a1cf8ab76622a5319c8c4638; reuses113exactsessionpicker, preserves source/number/chipprojection/core ACL, writes canonicalseat tuple/proofaudit/sessionrevision. Wrapper auth/source/reentrywindow unchanged. No source migration history edited.
+
+Same reentryCanonicalGap.pg17.sql retains defaultBUGdiagnostic and FIXED_REENTRY expectedfixed mode.5bac9e expectedfixed RED before114 (no_table_available).1ed80f114DDLrollback oldbody+metadata equality, then apply+unchangedACL/config/owner/definer PASS on ownedcash112_ui only.6d2718 actual canonicalbust→legacyconfirmreentry→entry_no+1/stack20000/canonicalseat/authorizedFloorticket/replay PASS and outerrollback+wholefingerprintunchanged. No claim HTTP/fullpaidreentry. No productionrelease.
+
+NEW separate actual gapc6394b: tournament-reentry Edge source INSERT has no price_snapshot; exact same localregistration shape passed through authenticatedcashier_record_cash_buyin_v1 returns unverified_registration_price, zero cashmovement. Diagnostic deliberately DOES NOT fabricate price snapshot. Existing legacyconfirmreentry can still seat an unpriced legacy registration; hence114 seating proof is LEGACY confirmation compatibility, not paid journey acceptance. Need canonical server-priced reentry producer/RPC with sourceentry authorization, existingpending idempotency, reentrywindow/fees/no freerake, transaction/receipt and Edge integration; inspect current producer and payment-settlement callers before design. Do not simply relax cash price guard or fill fake snapshot in fixture/UI.
+
+All helpers terminal and ownedPGstopped.114 notfullyqualified: trueclose/seatconcurrency, tenant/seatlock/activehand/pending matrix, faultatomicity, fresh113DDLqualification, exactpicker digest dependency, requiredfullchecks/CI and review pending.113/114 notcommitted. No push/CI/productionDB/Edge/frontend/flags/Auto, DaybreakunchangedOFF; masterACTIVE/localonlyRAMhold. Next address actual reentrypricingproducer gap with red→green and preserve initialpaidproof, then continue fullG0–G9.
+
+## Continuation:113 negative runtime qualified, re-entry separate gap reproduced
+
+Previous goal turn classified PROGRESS (real paid seating RED→GREEN). Read entire G0–G9 plan again (middle recovered separately after initial output truncation), SHIP_AND_TEST; owned dirty paths preserved, no release. Added canonicalPaidSeating.pg17.sql: positive current-session, closed session, NULL-session empty logical table, closed logical table, private helper ACL, positive after rollback. e904b1 PASS and whole fingerprint unchanged. Initial fixture attempts correctly rejected by existing occupied-seat composite FK and actual status CHECK; adjusted fixture to empty table and legal statusclosed after catalog72d431, did not weaken constraints.
+
+Read actual public._assign_reentry_seat(uuid,uuid,uuid,uuid,uuid,text,integer), MD5520a828b16302ef18eb59ca6c7b7dc79, actual7713af. BOTH draw branches require legacytt.table_id; no canonical session seat tuple, ticket audit or session revision. Separate from paid initial function patched113. Added reentryCanonicalGap.pg17.sql diagnostic: actual authenticated floor_bust_player_v3 on retained paid entry, pending registration same shape as tournament-reentry Edge, authenticated confirm_reentry_and_assign_seat returns no_table_available while113 canonical picker has valid capacity.89e903 PASS means BUG REPRODUCED, NOT FIXED; rollback fingerprint identical, no paidfixture damage. Fixture insert localpostgres/serviceJWT, not service-role/Edgeauth proof: native service_role intentionally lacks BYPASSRLS; role attempt76df28 denied as expected, no grant/role changed. Edge source inspected existingpending/reentryregistration production shape; no network/provider/banking/HTTP test.
+
+Next fix reentry helper via pinned forward candidate with same canonical picker, actor/source/registration guards maintained; first add expected-fixed regression separate from diagnostic. Need114 CLI/catalog if independent migration, or reviewed candidate113 atomic extension before qualification (113 not committed/released). Still need tenant/locks/activehand/pending matrix, true close/seating overlap and atomic fault tests, fresh DDL rollback/ACL metadata/drift, full type/build later and release gates. No running handles; PG stopped; local-only hold remains, master NOT COMPLETE.
+
+## Candidate113 paid canonical seating — local RED→GREEN, not release-qualified
+
+Continued from757b1f2d9. CLI-generated candidate20261016091622 moved to catalog forward20270128000113_cashier_canonical_paid_seating_v1.sql (uncommitted). Pins actual paid-confirm MD5, retains pricing/ledger/entry/receipt core; private picker locks tournament→physical→exact session→logical table, validates tenant/alias/open session/capacity and excludes active hand, pending-source moves/mode/correction plus locked/reserved seats. Writes canonical seat tuple, ticket proof audit and session revision. No legacy table-ID backfill.
+
+Local apply6b4c0e succeeded ONLY cash112_ui. First full journeyedc074 reached actual seating then rolled back on missing local net schema: actual notification trigger needs pg_net. Test now has explicit local-only net.http_post sink storing requests, no network/real recipient; business trigger/insertion preserved. Not proof of push delivery.8c4627 full payment→waiting→two canonical Floor opens→seated→idempotent replay, one100000 movement PASS. f5fe6e adds authenticated get_floor_seat_ticket_v1 proof PASS; remaining3 previously qualified tests skipped deliberately.
+
+Retained original RED fixture22ec5d repaired by exact internal seating (1afa0a), same registration8ac7903e-0cc3-43b4-addf-af32d69321d5, one canonical seat20000; SQL EXCEPT checks original money IDs/amount unchanged. Did not reset fixture or charge again. Closed-session rejection and private helper ACL auth/service/anon denied pass e44f19; rollback fingerprint unchanged. All PG handles stopped.
+
+Actual confirm_reentry body delegates to public._assign_reentry_seat; delegate still unaudited/unfixed, do not claim reentry coverage. Candidate113 still requires full negative fixture matrix, true close/seat overlap, fault atomicity, fresh DDL rollback/ACL metadata/drift qualification, CI wiring and review before commit/release. Skipped-candidate locks may remain held to transaction end; review contention before final qualification. No push/CI/deploy/production DB/flags/Auto changes; Daybreak unchanged. Master goal ACTIVE, NOT COMPLETE; full build/typecheck/browser/HTTP/live tour remain unverified under local/RAM hold.
+
+## NEW paid Cashier → canonical Floor seating gap; native UI money recovery qualified
+
+Baseline757b1f2d9 clean, production source unchanged. Owned new opt-in tests/cashier/cashPaymentRecovery.native.test.tsx renders ACTUAL Workbench/helper; strict psql bridge executes actual authenticated table SELECTs/worklist/issues/shift/112 RPC, no fabricated responses. Auth token/gateway and Web Locks are modeled, not actual HTTP/browser. Exact owned PG17/loopback55441/datadir/no net guards; fixture reuses existing marker to create actual canonical91 tour/level, server-priced app registration, drawer. No source-core replacements/reset. Added only exact cash112_ui DB to fixture allowlist.
+
+Native434e83: cancellation of pre-request failure + real tombstone + legacy/exact late denial PASS; lost cancellation COMMIT response→remount/read→settled PASS. Partial loss-after-actual-COMMIT kept one10000 ledger row/journal pending and recovered by actual readonly receipt; initial terminal assertion failed only JSON property order (not product), fixed structural equality.675118: partial-remount/read PASS and full100000/no-table→paid/waiting PASS, original two successful cancel cases deliberately skipped/not rerun. Bridge errors[] assertions passed. No false claim this is fulltour or globalworker.
+
+Extended full-payment case opens TWO physical inventories through authenticated floor_open_tournament_table_v3, then calls exact-target INTERNAL cashier_try_seat_paid_v1 (not global retry job). NEW REAL RED22ec5d: still returns paid/waiting instead of seated. This is not a mock/setup error: both Floor opens succeeded, no price/profile manipulation used to green. Diagnostic2186c8 actual catalog pins public.confirm_registration_and_assign_seat(uuid,uuid,text) MD5 05ed7956ea38e7cbeebb4928a6a90922, ACLpostgres/auth/service, pathpublic. Both picker branches SELECTtt.table_id and require tt.table_id IS NOT NULL; canonical Floor creates active tt with game_table_id+exactsession and legitimate table_idNULL. Thus canonical two-table tour is invisible to paid allocator. Internal helper correctly preserves money; UI112 did not doublecharge or fabricate success.
+
+Retained failing owned fixture in cash112_ui: club a00e76df-23b6-4992-922e-cd62371c4074; owner7853ee71-90bc-4e3b-ab74-f75ad03329fb; tour8e5f7bbd-a466-48c1-b2b8-ef82a2979a86; reg8ac7903e-0cc3-43b4-addf-af32d69321d5. Active logical2083f0f4-e5eb-4d13-bb1b-9efdf945671e/session0879eb0e-af75-4dce-b35a-81e984df795d/physical81ddefae-62f0-437b-9a51-1534747affa8 and logical43c10775-c756-44dd-acd6-1d56059904ea/session9f1af6cf-7981-49d1-a043-4cc552646ee6/physical7443ad63-3f60-4cf8-880e-2d8e01186f50, legacyNULL/closedNULL. Do NOT backfill legacy IDs or reset paid fixture to hide bug.
+
+Next: inspect EXACT full paid-confirm definition/dependencies and confirm_reentry counterpart, seat/session/entry triggers and canonical lock order. Generate NEW forward migration viaCLI/catalog (113 NOTcreated/reserved). Fix canonical paid allocation at DB commit with tenant/session/alias/seat-lock/capacity/activehand fences and identity/ticket/audit conservation, not just client COALESCE or assigning during activehand. Keep pricing/ledger immutability and already-confirmed idempotency. Verify same retained fixture can seat without more money, then regression fresh journey, role/tenant/wrongsession/nulllegacy/locked seat/hand and true close/seat overlap. Exact source in current pg_get_functiondef is authoritative; matching historical confirm source exists archive READ ONLY. Active20270109000000 file's v_table_tour_id is OFFLINE producer, NOT this paid function; don't patch wrong target. Offline/reentry may have same candidate issue, NOT yet proved.
+
+Current new native suite4cases: first3qualified across recorded runs; final case currently RED after newly added two-table continuation. New test file and fixture guard are owned dirty/uncommitted; no CI native wiring yet so don't call allcash acceptance green. Latest private helper --cash112 --cash-ui --existing --full-only reproduces final case; --inspect-paid-seating inspects retained fixture/selector without writes. All handles terminal/PGstopped. No push/productionDB/Edge/frontend/flags/Auto/Daybreak, local-only/RAMhold; masterACTIVE and G8 blocked by this actionable local bug, not goal-blocked.
+
+## Cash112 UI durable journal wired; original RED now GREEN (mock transport)
+
+Baseline9a1a7a1a3, origin/main freshlyfetcheded3db6ac unchanged. Added cashPaymentIntent trust-boundary helper: strict six-field UUID/safe-integer payload, actor+club localStorage journal, verified write/readback, settled markers and compare-before-settle so late replies cannot overwrite newer intent. Shared origin Web Lock covers claim/persist/settle; no pretend localStorage CAS, unsupported locks/storage fail closed. Reused existing20s bounded-response helper and canonical JSON, no installs/new dependencies. Cash UI now calls exact resolve_cashier_cash_buyin_intent_v1 only; close/edit/search/tour selection never drop pending identity. Explicit read/cancel use original stored payload; unknown/malformed/denied/transport result retains it, no automatic mutation retry. Terminal result must match exact intent and status/nestedok; rejected/cancelled never reported as cash received. Canonical worklist refresh owns seating display; no client chip/money arithmetic added.
+
+Actor/session/club/loading scope guards before/after async lock/RPC/settle; unmount invalidates old callback scope. Pending banner survives selection/remount, explicit read unknown remains blocked until cancellation or receipt proves terminal. Cash operation-only path added; generic refund/shift mutation implementation unchanged (not claiming those broader scopes fixed).
+
+Originaladd734 key-loss regression adapted to exact API; finald4f91b19testsPASS =9render+10helper. New render cases: two simultaneous component instances share same origin lock/journal and dispatch onlyone record; late actorA success afterB session ignored withA journal pending/B none; corrupt/unreadable storage and missing Web Locks dispatch zero; close/reopen/remount→readunknown→cancel uses one unchanged intent and no second payment. Existing shift/refund4cases preserved. Web Locks are modeled serially in jsdom, NOT actual two browser tabs/375/browser compatibility proof.59618f was JSON.stringify property-order assertion mistake after canonical durable parse; corrected structural equality, not productfix. Earlieract warning fixed explicit unmount/await; finalrun has no warning.
+
+Edited4files ESLint+affectedSWCsyntaxPASS3d93f5/c4a489 before final tinytestcleanup; final YAML/diffPASSd4f91b; no fulltype/build under RAMhold. CI paths+19tests wired/notdispatched. No backend source change or PG started this turn; prior actual SQL/fiveoverlap proofs retained, not rerun. Next REQUIRED: actual rendered UI→real112 SQL/receipt bridge for lost commit/reconcile/cancel; current mocked result types are not DB integration proof. Also browser real Web Locks/two tabs, stale session/late response/deadline controls, fulltype/build and migration drift/recovery/review/release stillopen. DB112 must precede new frontend; rollback unsafelegacy UI only with cash writes gated off and reviewed target, never erase journals/ledger. No production/push/DBlive/Edge/frontend/flags/Auto/Daybreak changes; masterACTIVE, Cashier/G8 not ACCEPTED.
+
+## Cash112 actual overlap qualified; next is UI journal (STILL RED)
+
+Same product112 SHA2566472bcae99b4ed01b75adbbcfDc595a4e7a3ef23257f98900bb39f5d580f9d39, no server implementation edits this turn. Extended shared fixture with a single explicit marker so concurrency seeds reuse actual authenticated create/drawer and server-priced registration, no fake cash function. New tests/cashier/cashPaymentIdentity.concurrent.mjs guards exact owned DB/loopback55441/PG17/datadir/no net/env overrides. Fresh clone qualified112→cash112_overlap, no reset/drop.718bda first failed before fixtures due inet text formatting /32; use host(inet_server_addr()) for exact127.0.0.1 guard, not relaxed connection validation.
+
+Actual dd87d0 terminal0 FIVE simultaneous holder/waiter cases: record→cancel, cancel→record, legacy→cancel, cancel→legacy, record→legacy. Holder is live ClientRead with transaction open after real RPC; observer sees zero uncommitted cash/receipt. Exact waiter returns real cash_intent_busy before holder commit; legacy waiter observed Lock on held registration, then receives original completion/cancel state. After commit, explicit retry/read gives winner state. Record winner exactly1 movement10000+1receipt; cancel winner0movement+1cancelreceipt; no entry/seating for partial. Retrying legacy cannot add another movement. Original five request IDs in stdout/owned fixture history retained, no synthetic timestamp manipulation. PG stopped/nohandles, no HTTP/PostgREST or migration-in-flight-old-body proof.
+
+Existing workflow now adds112 scoped apply/basic and cloned overlap suite, new paths; YAML/extracted Bash -n/Node syntax/diffPASS016252. Not dispatched, overall10min job runtime remains unmeasured. Foundation basic/freshDDL/role/fault tests from prior turn unchanged/notrerun. UI regressionadd734 remains owned dirty1FAIL/4PASS; do not call cash feature fixed. Next durable actor/payload journal BEFORE dispatch, bounded record/read/cancel and old-scope/late-response fences, close/edit/search/remount/account-change tests. Outer RPC oktrue with status rejected/cancelled is NOT payment success; validate exact returned intent/status/nested result before releasing journal. Unknown/missing/error/permission read NEVER clears journal or mints new key. Read-only reconciliation may prove an old legacy movement but not seating; refresh canonical worklist. Cross-tab journal claims need real coordination, not assumed localStorage CAS; don't weaken conservation/legacy checks to simplify UI.
+
+No production/push/CIrun/DBlive/Edge/frontend/flags/Auto/Daybreak, local-only/RAMhold. Foundation can be locally committed separately from still-RED rendered regression; no release qualification claim until complete UI/integration/drift/review/recovery matrix. MasterACTIVE.
+
+## Cash112 foundation implemented/tested locally; UI regression STILL RED
+
+HEADf6012dab5; owned dirty set from previous turn preserved. Generated CLIcandidate20261016083936 and moved via apply_patch to new local112_cashier_cash_intent_receipts_v1 (no112 in origin/main tree; liveunknown). Official Supabase functions docs consulted, changelog.md fetch unsupported. No dependency upgrade. New authenticated-only resolve_cashier_cash_buyin_intent_v1(intent,action read|record|cancel) binds exact actor/club/tour/registration/integer amount/key, validates role/scope, uses shared bounded club+key mutex and actual registration row lock, existing private receipts. Missing read remains unknown; committed receipt immutable; cancel tombstone cannot erase committed movement. Record retains original cash/seating core and commits receipt atomically. Receipt-save exception propagates so money rolls back. Legacy exact movement may be reconciled/adopted without charging again. Rejected core outcome is durable terminal rejected, not successful cash receipt.
+
+Important legacy integration included NOW, not deferred: pinned existing v1 body13580e9dadd30cce072c016ef0da6cda patched only to call private shared mutex/tombstone/receipt check before prior lookup and bind prior movement actor. Retains old registration-first lock order and old pricing/seating arithmetic. Shared mutex try-lock never waits, new record/cancel registration NOWAIT. Old v1 cannot charge a cancelled exact key after patch. Migration explicitly requires quiescent/drained legacy RPC transactions at release; no claim about calls already executing the PREPATCH body during online migration. UI legacy key-reset remains unfixed, so whole cash feature NOT SOURCE_QUALIFIED/NOT RELEASED.
+
+Basic actualPG3135a0 GREEN after fixing draft ambiguous amount reference with named block qualification (0e7b30 was real draft runtime failure, no falsePASS). Fresh clean full111→cash112_qualified originalguard/apply/DDLrollback/core metadata preservation8a8589 terminal0, then expanded roles/rejections75bd63 terminal0. Actual canonical create→serverpriced app registration→drawer→legacy partial/retained replay controls; exact adoption/no extra movement; unknown→cancel→both new and legacy late-writer denial; new partial+identical receipt/read; changed payload/expected actor/crossclub denial; receipt-write trigger fault rolls back cash+receipt; durable overpayment rejection; fractional/extrafield denial; actual outsider role + anon/service direct function permission denied. Final3movements30000 expected; wholefixtureROLLBACK+seven tablefingerprints unchanged; PG stopped/nohandles. e8668a was accidental attempt to rerun migration on already-applied qualified DB, correctly drift-rejected; private helper now skips DDL with --existing, never drops/resets state.
+
+Next REQUIRED before calling fix complete: true two-session record/cancel and legacy/cancel BOTH orders (holder ClientRead / waiter actual busy or row-lock); receipt fault with entire drawer/registration state fingerprint; drift/grantee/ACL preflights and rollback validation. Then durable client journal before dispatch; original actor/session scope, remount/account change, bounded read-only reconciliation, explicit cancel or proven rejection before new key. Update render regression to exact API and prove original key cannot be lost on close/edit/search/reload; retain before-fix evidenceadd734. UI still usesv1 and regression1FAIL/4PASS, don't commit/push as featurecomplete. No CI112 wiring yet until executable suite exists; no fulltype/build/RAM-heavychecks. Dirtyowned:112 migration/newcash SQL/renderregression/handoff. No production/push/DBlive/Edge/frontend/flags/Auto/Daybreak. MasterACTIVE.
+
+## G2/G8 NEW Cashier unknown-payment identity loss — NOT FIXED
+
+Baselinef6012dab5 clean, main fetcheded3db6ac unchanged. Actual component TourCashierWorkbench cashAttempt is an in-memory UUID cleared on amount edit, row selection, close detail, query and tour changes. mutate catches transport failure but does not establish commit/rejection. Added owned UNCOMMITTED regression in TourCashierWorkbenchShift.test.tsx with explicit open-shift mock: cash10000 loses response, close/reopen same registration, enter same amount, submit → TWO DIFFERENT request UUIDs. add734 terminal1:1FAIL/4PASS, correct assertion failure, not app setup. This is client identity-loss proof, not a confirmed live charge.
+
+Actual ownedcatalog88a71e: cashier_record_cash_buyin_v1 MD5 13580e9dadd30cce072c016ef0da6cda, authenticated only; create_app39980168a154cbbb2f4e603bbb47c8a3 serviceonly; open_shift1fddc72f1d5f488946c7aca451f56833; internaltrySeat3dbd9d075dbd632fa9f508e04be0cb27 postgresonly. Cash movement SELECT is authenticated+RLS is_club_cashier; no extra grant needed merely to read authorized ledger. v1 key namespace is club+cash:UUID, checks registration/amount but NOT expected actor. No intent receipt/cancellation endpoint found. Avoid claiming actor-bound request from existing signature.
+
+New owned tests/cashier/cashPaymentIdentity.pg17.sql is explicitly DIAGNOSTIC_NOT_FIXED, not a fixed-behavior green test.56b6fb terminal0: actual authenticated canonical create91 + level, actual service app/server-priced registration100000, authenticated drawer0, partial10000, same-key replay/no second movement, changed amount/same key request_id_reused, new key10000→received20000/two immutable ledger rows. No entry/seating/paid_at fabricated for partial. Whole transaction rollback plus seven operational fingerprints unchanged; PGstopped/nohandles/no net extension. Firstdf7df2 fixture hit known invalid default live_status upcoming; replaced fixture parent INSERT with canonical create API, no production fix or historical migration edit.
+
+Next executable repair: retain exact actor/club/tour/registration/amount/key in durable client journal BEFORE dispatch; fail closed on storage mismatch and ignore old-scope callbacks. Need actor/payload-bound server intent receipt + read-only reconciliation + cancel-before-commit tombstone using same bounded mutex as writer, so receipt-not-found is never rollback proof and late request cannot charge after cancellation. Reuse existing private receipt pattern after verifying catalog/constraints; preserve original money/seating/pricing calculation. Test original success, partial, response loss, same key/different payload/actor/tenant, receipt-write fault rollback, actual record/cancel both-order races and remount/account change. Legacy v1 compatibility/retirement and in-flight legacy calls must be addressed explicitly before cancellation is called safe; do not hide this with frontend flag or declare success from the new wrapper alone. Generate a NEW migration via CLI/catalog when design is executable;112/113 NOT reserved/created here. No UI retry or new cash key allowed merely because receipt missing; cancellation/definitive rejection is needed to release unknown intent. No new payroll/rest/payout/rounding policy.
+
+Source production implementation unchanged. Only failing rendered regression, diagnosticSQL and this handoff are dirty/owned; do not push or claim fixed until repair/runtime complete. Local-only/RAMhold, no productionDB/Edge/frontend/flags/Auto/Daybreak/push/CI. Full campaign active; this P1-risk gap now precedes continuing paid-tour integration. Existing source tests had no cash unknown-outcome case, so prior4PASS did not cover it.
+
+## G5/G6 scoped Finish → break → close/reopen → anonymous history
+
+Baseline9fbfd0e92 clean, origin/main freshlyfetcheded3db6ac unchanged. Existing deferred SQL fixture extended to combine scoped95 Finish with real public break producer (authenticated SQL role), rather than using privileged bare Finish. Retains existing exact-queue variant; guard permits scoped actual break as alternative, same exact owned DB names and loopback requirement. New positive/negative assertions: source break waits for destination hand; Finish resolves move then mode; ticket and source closure verified; source reopens, destination breaks and reopens; obsolete ticket denied; released old-session assignments stay released. Past Finish replay remains identical read-only receipt, fresh key with old context returns stale_manual_finish_context with no success receipt, old Tracker start returns STALE_TRACKER_CONTEXT. New occupied source changes mode through public RPC and starts a current hand; old receipt replay cannot complete that hand. Anonymous SQL role with anonymous JWT sees exactly the old completed hand in closed-table history, result pending (no worker/proof invented).
+
+Final611231 terminal0 on unchanged actual111 clone: all new markers asserted by native driver; seven operational-table aggregate fingerprints restored after transaction rollback; server stopped/nohandles. Earliera40293 failed because SQL NULL<>success assertion was wrong despite correct backend denial; fixed exact error assertion, NOT productbug. ef6982 was test-oracle direct SELECT under authenticated role correctly denied table_sessions; switched oracle read to existing privileged inspection context, NOT grant/RLS change.8122d4 preceded positive/history additions and private generic colorup marker was misleading on scoped-only mode; corrected private marker, do not count as fresh colorup proof. Final611231 is authoritative expanded-case evidence. Local pg_net absent warning is expected; no notification/cron/HTTP/Voice provider proof.
+
+CI adds this exact scoped-break case to final111 clone; YAML/extractedBash/diffPASS924df5, NOT dispatched, job duration unmeasured. No product migration/permission/policy change, no production/push/DBlive/Edge/frontend/flags/Auto/Daybreak. MasterG5/G6/G8/G9 remain IN_PROGRESS; this is isolated SQL lifecycle proof with fixtures, not paid registration/UI tour/rest15×3/375/performance/release. Next remaining canary consumer/worker integration and scope matrix without rerunning these unchanged assertions.
+
+## G5/G6 compatibility on final Swing111 schema clone
+
+Baselinea405dc77e clean. Actual catalogc93baa/d54a5d confirms the current Swing DB ALREADY includes95/97/98/99, so no migration replay or invented missing-schema fix. Core record_hand body514d remains identical after96 because96 changes grants, not body. Actual relevant digests: manualFinish29c8223e91774dc4767ab72a334e7b56, historicalResolution6195d2299ba44449e13179f0e0874415, atomicSwing110095f0741b34d185ac49053dd12331f80, selector1112acb0165e3e05a000cde66a857597b72; manual authenticated-only/worker service-only ACL retained. This corrects an initial investigation question, not a product bug claim.
+
+New owned clone vinpoker_ops_full111_finish99 FROM ready_capacity_ci preserves all prior test history; no reset/cleanup/reapply. Extended only existing deferred fixture's explicit database allowlist with this exact isolated name, retaining loopback guard/current API flags.7ac8c2 exit0: exact public queued move + real scoped Finish + pending mode/epoch completion + durable receipt/ticket assertions PASS; separate injected ticket-write failure PASS; actual chip colorup/undo/exact issuance/coupling suite PASS on same final candidate. Seven operational-table whole-row aggregate fingerprints unchanged after each transaction rollback. Native PG17 datadir/port55441 guarded, no pg_net/cron/provider/browser, server stopped finally. This is cross-module compatibility, NOT one paid registration tour, rest15×3, actual HTTP/Voice/TV or deployed acceptance.
+
+Existing CI job now clones final111 before running these three compatibility cases; no required checks removed, not dispatched, total job timeout still unmeasured. Initial YAML command at repo root lacked yaml resolution (not source failure); correct app-cwd YAML parse plus extracted Bash -n PASS c4a7e2, diffPASS. No production DB/Edge/frontend/flags/push/Auto/Daybreak changes; local-only/RAMhold remains. Master G5/G6/G8/G9 not ACCEPTED. Next full scoped break/close/reopen path on same candidate and remaining worker/public projection integration, rather than rerunning old independent schemas.
+
+## G2/G9 tournament cache session incarnation fence
+
+Baseline7f35cb565 clean. New4RED/12PASS7ae79d proves same actor with a replacement session still gets previous fresh cache and a retained actor without verified session starts a read. Require explicit session in both readers, add opaque session epoch to key; no session/token or auth-loading caller means read disabled and manual-refetch scope rejected. All seven production callsites pass their existing main/ops verified session, null while auth loading. No additional auth/network subscription. Moved existing finance WeakMap epoch implementation unchanged to sessionReadEpoch.ts for real shared finance+tournament consumers, kept financeSessionReadEpoch re-export compatibility; bearer tokens never in query keys. Server authority unchanged, session object/epoch is cache isolation only, not proof of role access or token validity.
+
+8a1cba31testsPASS (16reader+15financehelper); finala459dc/fa5593 42testsPASS including18reader, financeRPC4, configUI8+5, ops5+2; d19691ClubFinance10PASS. Additional reader controls prove late prior-session response cannot replace current data and query keys contain no bearer; prior actor/logout/dedupe/invalidation controls retained. Existing finance semantics preserved via actual hook regressions. Affected9TS/TSXsyntax/YAML/diffPASS. origin/main fetcheded3db6ac unchanged. Workflow triggers include shared helper; NOT dispatched. Fulltype/build/actualbrowseraccountrefresh stillunverified under local-only/RAMhold. No DB/Edge/frontend/flags/Auto/Daybreak/push changes; no activehandles. Master/G2/G9 still IN_PROGRESS; fulltour/live/375/performance remain open. Next remaining operational read/mutation integration gaps; no claim all caches or live authorization repaired.
+
+## G2/G9 tournament list actor-cache leak repaired locally
+
+Baselineb3fc08598 clean. App QueryClient persists across signout; both tournament readers keyed only by club. New actual React Query hook regressions7e9a85:4FAIL/4PASS before product edit: actorB sees actorA fresh rows in same club; pending actorA query is reused so B never dispatches its own read. This is a deterministic client-cache repro, not proof of a live incident or server authorization bypass.
+
+Require explicit actorId in both readers, separate keys [tournaments,club,actor,all|active], disable reads without actor/club and reject manual refetch missing scope. Updated all seven production call sites (OpsTables has two) using existing main/ops actor context; no new auth provider, request, dependency or permission. Preserve club-prefix mutation invalidation. Added logout/manual-refetch denial and same-actor dedupe/invalidation controls.44tests/5filesPASS4391f1+33039b; OpsTournaments/OpsToday7renderPASS5ad0f6; affected7TS/TSX SWC syntaxPASS, all caller inventory/diff checks reviewed. Full build/typecheck NOT RUN under RAM hold; same-user session refresh/revocation and wider non-tournament caches are not proved by this actor-only fix. Existing workflow already executes reader regressions; no CI dispatch.
+
+Skills frontend-ui-engineering and post-edit React checklist used for scoped server-state identity, no visual redesign. UI Skills CLI absent locally; no installation under hold. No push/liveDB/Edge/frontend/flags/Auto/Daybreak change. Master active, G2/G9 not ACCEPTED; actual web/account-switch/performance and integrated tour remain outstanding. Next inspect remaining read contracts/actor-session scopes without extrapolating this slice to all app auth.
+
+## G4 late config-response recovery contract qualified
+
+Baseline68f060fc9, clean. Existing atomic config implementation inspected rather than rewritten. Two new focused transport regressions PASS BEFORE any product change: after mutation deadline a verified receipt wins over contradictory late writer rejection; after both mutation/read deadlines, a late success does not settle the already-unknown call or cause another mutation, and explicit recovery uses the original actor/request. Full affected file13 tests PASS36a8e1 exit0 (single worker, 1.97s); no new product bug claimed. This proves client Promise/timer/receipt behavior with mocked transport, NOT real HTTP response loss, DB commit or web UAT. Existing native atomic/concurrency proofs remain separate. No full build/typecheck under RAM hold, no push/CI/DBlive/Edge/frontend/flags/UAT change. Master active; G4 web acceptance and G8/G9 still outstanding.
+
+## G3 canonical empty-table dispatcher selector: local RED → GREEN
+
+Baseline 85097cae4. Actual authenticated open-table RPC created a valid cash session with zero attendance/assignments; canonical inventory returned one table but old get_process_swing_due_club_ids omitted its approved AutoON club (RED b8ae09). Forward-only migration 20270128000111 adds canonical in_use exact-session inventory as an OR branch, preserving prior attendance/assignment/rotation predicates, approved/AutoON gates, signature, owner, config and worker-only ACL. Pins prior selector digest 8657d9e571259baf98634a01038a9705 and inventory 8d75ddb69e4639aabaa9b3347b3cc921; new selector digest 2acb0165e3e05a000cde66a857597b72. No assignment, rest, payroll or flag change. Local catalog111 absent from origin/main tree; live collision/dependency checks remain release requirements.
+
+GREEN 4a7308/d6eaa0 terminal0: owned PG17 DDL rollback preserves body/metadata; applied metadata/ACL unchanged; altered definition/dependency, PUBLIC grant and extra grantee all abort and roll back. Expanded actual selector test passes no-session exclusion, open-empty inclusion, AutoOFF exclusion, canonical close exclusion, anon/auth function denial and retained attendance-only eligibility. Club708913cb-d3a2-48c9-8b98-189c436722f0 retained locally. Prior qualification output was lost, so no claim based on that missing output; fresh isolated due111b qualification supplies recorded evidence. PG stopped in finally.
+
+Actual two-session claim/finalize tests ea6bf0 terminal0: held transaction/Lock barrier proves concurrent claim gives claimed+duplicate; same terminal intent gives recorded+idempotent_replay; conflicting terminal intent gives recorded+idempotency_conflict. Original diagnostics immutable; dealer operational fingerprint unchanged. These are SQL ledger proofs, NOT deployed cron/pg_net/HTTP recovery evidence. CI definition now applies111 and runs both modes; NOT dispatched. Node syntax, YAML parse and diff checks passed. No push, live DB, Edge, frontend, flags, Auto or Daybreak changes; master/G3 remain IN_PROGRESS. Full tour, rest15×3, desktop375, performance and full build/typecheck remain outstanding under local-only/RAM hold.
+
+## G3 dispatch context qualified; malformed acquire fail-open fixed locally
+
+Baselinee6a1fa45a clean, origin/main refreshed ed3db6ac600710e95fe4408c475941916c23ab19 unchanged. New --main-dispatch optin seeds isolated enqueued ledger envelopes (NO pg_net/cron/transport proof), then actual wholeworker calls actual claim/finish SQL.56939 and51383 exit0 baseline: correctcontext→received/started/completed events+recordedresult; duplicate returns immediately with only claimRPC/no businessmutation; wrongrequest/unknownrun409; expiredlease fixture409/terminalbusinessfailed; finishreplay idempotent/conflictingterminalstate rejected, recordeddiagnostics unchanged. Browseranon/auth denied actualclaim/finish at functionprivilege boundary (not Authschema setup failure). Actual run-scoped triggers cause claim and finalize SQLerrors: HTTP503 correctcode/no falsecompleted, claimrollback keeps rununclaimed and retryworks; finalizefailure leaves started, duplicate explicitly reportsstarted (not completed). Replaying EXACT captured finalizeargs after removing fault records original observedoutcome, then duplicatecompleted without businessrerun. This is backend finalize RPC recovery capability/test replay, NOT proof that production automatically retries finalization after a crash. Final9441 exit0 requalifies all on newguard source, club365bb21d-a914-4114-9479-4ca6a1b4a935. Triggers/functions removedfinally, network0/no bridgegaps.
+
+Audit did NOT assume archive comments reflect catalog. --lock-authority583568 exit0: actualownedcatalog four legacy overloads allACLpostgres+service only; anon/auth actualrelease/cleanup denied, transactionfingerprintsrestored, fencedservice releasepositive. No legacybrowserlockvulnerability proven here, so NO newDBmigration111. Digests: cleanup e3466c03b4daf9854a31cf18a38b5d70; release(uuid)9fcfe80b35d77785ed7f0c0e4fc46e55; acquire(uuid)12a470a9a844eeb9916b1c38d1913bad; acquire(uuid,int)fb5a3bea3ee6b65f4d2106081f5a22d3. Live ACL still requires releasepreflight, not assumed.
+
+New actualmain missing-token fault RED91192 exit1, clubd3328786-5bf0-4d0a-8e8f-a8360c5db791 preserved: realfencedacquire SQL commits, adapter suppresses ONLY returnedtoken; oldsource acceptedacquiredtrue, skipped everyownershipcheck, created2announcedlocks, returnedcompleted and actuallycalled legacyunconditionalrelease. This is an injected malformed-response invariant failure, NOT a confirmed production incident/provider behavior. Root fix index.ts reuses existingisUuid; requires actualbooleanacquired and UUIDtoken foracquiredtrue BEFORE any businesspass, otherwise business_failed/club_lock_invalid_response. No rawinvalidpayloadlog; acquiredfalse remains legitimateheld. Remove unconditionalrelease fallback; release only when acquired+knownvalidtoken via release_club_lock_if_owner. Missing/corrupt response leaves validserverlease untouched to expire safely, not blindrelease; nativefixture cleanup uses captured REAL SQL token unavailable to application. No newmigration/rest/payroll/payout/rounding changes.
+
+GREEN293074missingtoken/50e9cemalformedtoken/cf153cwrong-acquiredtype: onlyinventoryscope+fencedacquire RPCs, businessfingerprintunchanged/no plan/releasefallback. b48bccheld uses actualotherowneracquire→workerlocked, leavesotherlease.6278reclaimed: test explicitly expires onlyownedCLUBLEASE (not dealerrest timestamps), actualnewownerfencedacquire creates successor; oldactualextend returnsfalse→locked/ownershiplost/no businesswrites, oldtokenreleasefalse preservesnewowner, testcleanup usesnewtoken. These prove control-plane fencing at checked stage, NOT all arbitrary mid-Pass3 commit interleavings. AllPG stopped/no handles. Denoindex checkPASS,18safety/contexttestsPASS,62sourceVitestPASS,Node/YAML/diffPASS. Prior110 atomic/main40 proofs kept; per-table pipeline unchanged, startupguard qualified by current2table happy dispatch, not falsely claiming a fresh40 run on this newsource.
+
+CIdefinition adds dispatch/legacyACL/fivelease modes, NOT dispatched; overall10minjobduration still unverified. Local-only/RAMhold persists, no push/productionDB/Edge/frontend/flags/Auto/Daybreak/UAT change, G3/masterIN_PROGRESS. Next: actualSQL concurrent dispatch claim/finish and producer/due-selector contract (currentenvelopes seeded, not realcron/net); then G4–G7 remaining independent source evidence audit rather than re-running unchanged40. Fullrelease/fulltour/rest15x3/375/perf/fulltypebuild still outstanding. Changelogmarkdown fetch unsupported by webtool; official Supabase functions/security docs checked, no package upgrade.
+
+## G3 110 final-write fault, response loss, overlap and main2/10/40 qualification
+
+Final explicit NULLschedule negative added and qualified0e9458 exit0 (all other negativecases retained); b2dff6 below was earlier pass before this one extra boundary. Product110 remains unchanged06f97b8d1.
+
+Baseline06f97b8d1, PRODUCT UNCHANGED this turn. Origin/main freshly fetched ed3db6ac600710e95fe4408c475941916c23ab19 unchanged. Extended existing native harness only, no dependency/tool upgrade.53859 exit0, clubbcbd641a-6853-4ab5-999c-d4ddf7ff2414: realannouncelead163870ms; realSQL completion failure then separate finalreceipt-write failure BOTH leave actualswaps0/executed0 and handlerpartial/failed2/success0. Uniqueclubscoped triggers/functions removedfinally. Then actualSQL110 commits2; adapter deliberately DROPS only those committed responses (not fakebusinessresult), handlerpartial/FETCH_ERROR/failed2 despite actualexecuted2. Retrying ORIGINAL captured requestargs returns exactcommittedreceipt; next actualworker tick does NOT call executor again or change currentassignmentIDs. ReplayUTC/OFF/conflict/browsergrant checks pass. Runtime netdenied/network0, SQLbridge no gaps/errors except explicitly injected P0001 failures then cleared after exactassertions. This models response loss at SQL-client boundary, NOT actual HTTP/PostgREST/Edge gateway loss. Originalpre110 REDclub472d67c5 remains preserved/unrepaired.
+
+New --execution-overlap actual2SQLsessions/ClientRead+Lock barriers: duplicate/cancelbothorders/OFFbothorders/canonicalclosebothorders/version-first, eightcasesPASS4239 and final50938 after sharedfixture extraction. Schedule-first holder + assignmentNOWAIT thirdconnection proves waiting110 executor has NOT acquiredassignment lock before schedule (rawcancel compatible). Wrong/stale winner rejected/no replacementcreated; execute-first exactlyone replacement+durablereceipt, duplicate exactsameJSON; replay afterOFF/Close remains read-only, closed tables have no live assignment/schedule, no in_transition/deadlock. These are synthetic ALREADY-DUE SQL history fixtures, NOT real3minannouncement/rest15 proof. Shared executionFixture has TWO real consumers: overlap and new --execution-negative. b2dff6 exit0 negatives missing/nullschedule/session, actualcrossclubsession, wrongassignment/incoming, staleschedule/assignmentversion, nullexpectedversion, invalidduration, futureplannedrelief, AutoOFF and actualservice-role/wrongJWTrole rejected at expectedtargetstage; full two-club assignments/schedule/attendance + targetsession/table fingerprints unchanged. Validcontrol actualsuccess transaction then ROLLBACK restores fingerprint. No constraints/ACL/Authsetup weakened.
+
+New110 actualmain10 and40 ramp qualified on exactproduct06f97b8d1:30264 exit0 club7456ee69-cd66-4521-9d37-5b04c758a7b0, reallead162821ms,2batches8+2→10 atomicRPCsuccess/receipt;52535 exit0 club50f62a43-96c3-4d5b-a12a-888bfa2de62a,5batches8→40. Peroriginal schedule exactincoming/table/session/release>=relief, activeuniqueattendance/session counts and no in_transition;40durablecompletions, zero splitcompleteRPCs, no network/adaptererror. Full original IDs stay in ownedDB.40 stdout verbose/truncated by tool but terminal assertions/final40 markers/exit0 authoritative, not rerun. Source batch cap8/rest/duration unchanged. These are isolated cash-session fixtures through actual mainfunction/source/dependencies+PG bridge, NOT deployed Edge/cron/AuthHTTP, multi-flight tournament policy, rest15x3, fulltour or webperformance evidence.
+
+Added actualMAIN40 shortage path (old proof was wholePassR only): first3922 exit1 was ADAPTER GAP complete_dealer_shortage_alert_notification, not productbug. Kept failedclub49657065-39ce-47f3-b0f0-3efd12b86105 intact; allowlisted exactobservedRPC and executed actualSQL, no stub/flag suppression (temporary whitelist typo corrected before any test).88995 exit0 newclubb96120a0-8bd6-4f98-bf23-0c6b3c005eaf:40currentstaffed/40withoutreplacement/0available, classificationcritical_shortage, originalassignments+OT kept over repeat, no lock/swap/force-release/network. Notification token/chat deliberately unconfigured; actual false-delivery completion ledger path exercised, NOT Telegramdelivery proof. Sourcehealthyprocesscompleted is distinct from shortageclassification; tests assert both.
+
+Node/YAML/diffPASS;62source/14safety/Denoindex prior results unchangedproduct/notrerun. CI definition adds negative/overlap, finalreceipt-write+loss2 and main40shortage; NOT dispatched,10minjobduration still unverified, no skippedrequiredtests. No runninghandles; allPGstopped by finally, ownedworktree dirty only this test/CI/handoff set before commit. No push/productionDB/Edge/frontend/flags/Auto/Daybreak/UAT changes. G3IN_PROGRESS/masterACTIVE/local-onlyRAMhold. Remaining: actual dispatch_context claim/duplicate/finalize/lease paths and deployedHTTP/Edge/scheduler, realrest15x3/fulltour/375/perf/fulltypebuild/requiredCI/release. Source inspection nextfiles process-swing/dispatchContext.ts and index743/4578; SQL claim/finish definitions20270104000002_dealer_swing_contract_drift.sql862/957. Current mainnative requests have NO run/request/tick context, so do not claim dispatcher proof. G4–G7source independent work remains available if runtime release held.
+
+## G3 110 atomic scheduled execution local fix; completion fault rollback and recovery GREEN
+
+Baselinec451ddd94, clean start; no changes to historical migrations or original executor/completion functions. New CLIcandidate20261016064633 reserved local110, SHA cfccba4c55250fa0c957a4ca6872d1eef9e6e29bebf7a37fca168201a33b2f1c. New service-only worker_execute_rotation_slot_v1(schedule,expectedScheduleVersion,session,oldAssignment,expectedAssignmentVersion,incoming,nextDue,duration,sendBreak,breakDuration) derives club/table from schedule, binds intent and validates live session/schedule/assignment under physical/session→schedule→assignment locks before existing executor. Keeps existing rest/OT/payroll/executor behavior; throws if inner swap/completion returns failure, so all prior writes roll back. Completion and execution_receipt_v1 in schedule.reason commit with swap. Same intent returns durable original result, different payload conflicts; receipt read allowed with AutoOFF/closed session because it performs no acquisition. Actual SQL role service membership + service JWT required, browser execute revoked. Pins old executor MD5 7d9657b45d7d7ac98dd379d15d4a8b30 and complete5b323b5e2a24a151a320af417a3c6024; collision/drift abort. Source Edge scheduled path requires exactly one matching slot and invokes new RPC; legacy path still uses original worker. Removes separate ignored completion RPC, validates returned schedule receipt before success. Rollout needs DB110 BEFORE Edge; no fallback to split commits on absent RPC.
+
+Actual main fault run54412 exit0, ownedclub00b0ef44-028e-4fc8-bd06-3a04b7c7df8b, REAL163986ms remaining lead, actualSQL trigger failure in completion: swaps0/executed0, bodypartial/swing_execution_rpc_query_failed/success0/failed2. Trigger removed finally, same fixture/old locks next actualhandler tick swaps2+executed2, exactoriginalsessions/IDs/no duplicate/in_transition/network0. No testfixture reset. Earlier pre-fix REDclub472d67c5-3ad3-4ebe-9123-e379e7bbc902 preserved untouched;110 does NOT silently repair that pre-existing partial state. Current trigger fault proves completion failure, not finalreceipt-write failure yet.
+
+Resume of same completed newfixture tests actual SQL durable replay without new swap. Initial cbed3c pass ran new assertions but marker filtered (prefix fixed). Additional timezone probe0be7b8 RED exposed sameinstant falseconflict acrossconnectionTZ in110draft. Fixed comparisons: all nontime payload fields exactJSON, timestamp typed timestamptz equality; stored receipts unchanged, no SETtimezone/payroll changes. Local uncommitted110 function refreshed only in ownedDB with existing receipts retained. 1f7b8f and86756 exit0: ordinary replay, UTCconnection replay, AutoOFF replay return exactoriginalresult; duration and timestamp changes conflict; anon/auth actualfunctionpermissiondenied (not Authnamespace/setup denial); fullassignment/schedule/attendance fingerprint unchanged. No actual HTTP response-loss injection yet, do not claim it.
+
+Final110 fresh vinpoker_ops_exec110b_ddl from109: wholeDDLrollback removes newendpoint, finalapply preserves originalexecutor/completion body/config/owner/ACL, new endpoint anon/authdeny/serviceallow. Both altereddependencyconfig probes reject drift; reapply rejects objectcollision.14c7e4exit0; also actual mainAutoOFF statuscompleted/metrics{} with no planner/swap/network. Earlier exec110_ddl was draft before typedtimestampcomparison; finalexec110b is authoritative. All PG stopped/no activehandles. Deno wholeindex typecheckPASS,62 actualsource VitestPASS (new missing/error/ambiguous/wrongscope reads noRPC, valid schedulednewRPC, legacypreserved),14safetyPASS, Node/YAML/diffPASS. CLI's cli-latest selfupdate reverted, no tooling upgrade/sharednode_modules change.
+
+CI definition adds110 apply + actual two-table fault/recovery test, NOT dispatched; current job10min budget/totalduration unverified (do not remove tests to hide timeout). New main10/40 pipeline and fresh110 two-session duplicate/OFF/close/rawcancel overlap still need qualification; old40 proof predates110 and is NOT proof of new endpoint. Need finalreceipt-write fault, actual lostresponse-afterCOMMIT recovery, new endpoint actor/tenant/stale/early intent negatives and requestpair concurrency. Keep original redpartial fixture for deliberate evidence-based recovery test; do not let PassR cancel its history blindly. No push/productionDB/Edge/frontend/flags/Auto/Daybreak/UAT changes. G2/G3IN_PROGRESS/masterACTIVE/local-onlyRAMhold; fulltour/rest15x3/375/perf/full typebuild/release still unfulfilled.
+
+## G3 NEW actual main completion returned-failure RED; split commit confirmed
+
+Baselinee35052dce/productunchanged. Added opt-in --main-worker --main-execute --main-completion-fault --planner-size=2 to existing whole-source Deno/nativePG harness. Real planner/repeat/locks and REAL163669ms remaining announce lead; actual worker executor commits swaps. Test installs uniquely named BEFORE UPDATE trigger scoped ONLY to syntheticclub472d67c5-3ad3-4ebe-9123-e379e7bbc902/status executed; trigger raises NATIVE_COMPLETION_WRITE_FAULT inside actual complete_rotation_slot, its real exception handler returns error/P0001 and rolls back bookkeeping. Trigger/function dropped in finally even on assertion failure. No fake RPC result; network0/adapterGaps[]/bridgeErrors[]. Terminal84177 exit1: actualSwaps2, actualCompleted0; both real completion receipts error, whole actual handler still statuscompleted/errornull/metrics success2 failed0. Desiredpartial assertionFAIL is bug evidence, NOT green qualification. Existing nofaultmain40 remainspriorproof, not invalidated by this conditionalfault; no production claim.
+
+Preserve ownedclub above: two actual changed assignments and two announced original schedule rows, cannot reset/reseed to hide partial state. No repeated worker invocation yet: PassR currently regards lost lock as cancelled, so recovery semantics must be explicit, not blind retry or double-swap. Old exact assignment/schedule/session/incoming IDs emitted by terminal84177; query ownedDB authoritative. All PG stopped/nohandles; test trigger removed. New faultoptin intentionally RED/notCIwired.
+
+Root cause source index3369–3380 ignores both doneSlots queryerror and complete RPC response after separate committed executor. Merely truthful partial fixes reporting but not transaction split. Next implement atomic scheduled execution/bookkeeping at DB commit with original rest/session policy, compatible physical/session→schedule→assignment lockorder (rawcancel locks schedule→assignment; NEVER append schedule lock after assignment without overlap proof). Capture existing worker_execute_pre_assigned_swing(uuid,uuid,uuid,int,uuid,timestamptz,int,bool,int) exact MD5 7d9657b45d7d7ac98dd379d15d4a8b30 fromownedcatalog;22function source matches. Current helper _dealer_swing_assert_exact_context locks physical→assignment→session; wrapper must acquire compatible parent/session/schedule before helper, no inversion. Consider forward110/newversion requiring exact schedule intent and durable receipt; original legacy/manual path must stay compatible. Returned inner failure must rollback whole swap; unknown response must read canonical receipt, never auto swap twice. Need actual SQL fault/negative/duplicate/OFF/close/cancel overlaps+DDLrollback, wholemain correctedfault+nofault and response-loss. Do not call currentRED fixed.
+
+G2/G3IN_PROGRESS; source/test only, liveDB/Edge/frontend/flags/UAT unchanged/unverified. Main fetcheded3db6ac600710e95fe4408c475941916c23ab19; local-only/RAMhold/no push/CI/live deploy/Auto/Daybreak. Fullgoalnotcomplete.
+
+## G2/G3 109 extended actor, OFF and real overlap qualification
+
+Baseline449326a40; fetch main still ed3db6ac600710e95fe4408c475941916c23ab19, worktree initially clean. Product109 unchanged. Expanded actualSQL actor fixtures: exact-club Floor may cancel but not lock, DealerControl may cancel/lock, foreign-club Floor denied both; all browser roles including Owner/Floor/DealerControl denied worker-only completion108. Terminal72642 exit0 confirms expected actual receipts/status and full ROLLBACK fingerprints. Initial fixture23505 failure was one-owner/multipleclubs invariant, NOT product regression; fixed fixture to use separate foreignowner without weakening DB constraints. Terminal017e3d exit0: actual service automatic-lock with AutoOFF returns AUTO_SWING_OFF and no committed delta; ownerOFF cancellation already qualified. Private SQLrole/JWT mismatch remains defense-in-depth only, no forged-browser-token claim.
+
+New --rotation-auth-overlap uses actual two SQLsessions/pg_stat_activity ClientRead+Lock barriers, 15s transaction timeouts, no sleeps as concurrency proof: revoke-first holds schedule then revokes Floor while waiter cancellation has passed first actorcheck; locked recheck sees revocation,42501 and unchanged assignment/schedule/attendance. Cancellation-first/revoke positive, duplicate cancel→noop, close-first→cancelnoop and cancel-first→canonicalclose both finish without deadlock; closed sessions have no live assignments/nonterminal schedules. Terminal51322 exit0, fivecase markers. CI definition wired NOT dispatched. Private qualifier --109-drift in pre109 completion108DDL changes each target config in transaction;109 rejects both exact-digest mismatch, rollback removes helper/restores exact original functions; terminal017e3d marker BOTH_DIGEST_DRIFT_ROLLBACK_PASS. No unchanged fullproject tests rerun.
+
+All owned PG stopped/no active handle. DB local109 qualified, liveDB/Edge/frontend/flags/UAT untouched/unverified. Local-only/RAM hold persists, masterACTIVE; fulltour/rest15x3/375/perf/full typebuild/requiredCI still pending. Next source/actual-main fault repro: completion RPC returned error/unknown response currently ignored at process-swing/index.ts3376; distinguish executed dealer swap from schedule bookkeeping and recover without a second swap. Do not claim109 releaseapproved/live based on this local qualification.
+
+## G2/G3 schedule actor guard109 — local runtime GREEN, release held
+
+Continued from bbd83cd5c. CLI-created candidate20261016032129 reserved local catalog109 (live collision/catalog still requires release preflight). New forward109 pins exact cancel/lock function digests recorded below, patches only actor checks before original SELECT/FOR UPDATE and after original missing-row branch (never clobber FOUND before its consumer). Internal SECURITY INVOKER/private helper derives club from schedule plus physical-table club match; actual SET ROLE service membership, not JWT role alone, permits worker. Direct postgres SQL only when role=none; never unconditional session_user/current_user privilege. Dealer Control/owner keep manual lock/cancel; exact-club Floor/superadmin may cancel for release workflow, not acquire. Cancellation has no Auto ON check; original acquisition triggers/rest/CAS/lock order/body return semantics retained. Unknown digest aborts transaction. New helper has no PUBLIC/anon/authenticated/service direct EXECUTE. No source historical migrations edited.
+
+Actual native71917 exit0: completion108 remains denied to browser actors; cancel/lock ordinary outsider and contradictory authenticated-role/service-claim outsider now return42501 without in-TX mutation; owner positive lock/cancel and service positive/repeat noop pass. Contradictory claims test is defense-in-depth, NOT evidence of browser JWT forgery. Native24112 exit0 adds real AutoOFF owner cancellation, status cancelled in transaction then ROLLBACK; all actor probes assert assignment/schedule/incoming fingerprints restored. Fresh owned vinpoker_ops_actor109_ddl from completion108DDL: full109 BEGIN/ROLLBACK restores both function bodies/metadata/ACL and removes new helper; final apply preserves existing signatures/owner/path/ACL and private helper ACL denies direct callers. Terminal3208 exit0 marker ROTATION109_DDL_ROLLBACK_METADATA_PRIVATE_ACL_PASS. PG stopped after each run. No live mutation or data deletion.
+
+CI definition now applies109 then completion/cancel/lock actor runtime; NOT dispatched. Remaining109 qualification before release: independent exact diff/caller review, explicit Floor/DealerControl fixtures, scope-swap/close concurrency, digest-drift rollback rejection, auto-OFF automatic-lock denial. Do not call109 production-ready based on current owner/outsider tests. Local-only/RAM hold remains: no push/CI/productionDB/Edge/frontend/flags/Auto/Daybreak change, no Docker/full build. Master goal remains incomplete; fulltour/rest15x3/375/perf/full typecheck and web delivery still outstanding.
+
+## G2/G3 cancellation outsider write RED; lock manual policy distinguished
+
+Baseline2ceb44176 clean/productunchanged. Extended existing native actor harness with --cancel-auth/--lock-auth, actual service upsert predicted row forlock and105adoption forcancel/complete. All actorprobes actualSQL insideBEGIN/ROLLBACK; snapshotsassignment/schedule/incoming unchanged afterrollback. Service positiveactualmutations+cancel/complete noop replay preserved. Initial12810 all-denied output is INVALIDauthorizationevidence: auth.uid precondition DO was run under probedrole, so42501 could originate in Authnamespace instead of targetRPC. Moved claim-resolutionassertion BEFORE SETROLE; now target runs underactualactorrole, and catch explicitly refuses schemaauth permission errors.108completionbody/ACLfix remainsvalid (originalc906ccREDpre-datesprecondition; effectivegrantsverified); corrected standalonecompletion9f83a2exit0 requalifiesrealbrowserdenial+servicepositive.
+
+Authoritative combined85970terminal1: cancel_rotation_slot authenticatedordinaryOUTSIDER actuallyreturns cancelled and rowstatuscancelled inTX (thenROLLBACK), genuine cross-clubbug. Ownercancel succeeds, ordinaryoutside lock returnsP0001 DEALER_MANUAL_ACQUISITION_FORBIDDEN +rowremainspredicted, legitimateownerlock succeeds. Source22 assert_dealer_acquisition_intent EXPLICITLY permits authenticatedsameclubdealercontrol; keep thismanualpolicy, do NOT revokeauthenticatedgrantsglobally just to green tests. Complete remainsworker-only108; tests now reflect these distinctcontracts. Contradictory SQLroleauthenticated/JWTclaimservice_role outsider cancancel/lock infixture: defense-in-depth rolebinding target, NOT proof a browser can forge a valid SupabaseJWT/role pair. Nativeexpecteddenyforcontradictorycontext remainsdesiredRED. Mainnormalroles neveruse thiscontradiction. No claim of liveproductionexposure.
+
+Owned exactdefinitions captured: cancel(uuid,text) MD5 9daf120e3fa846e3468d7a154fb52b56; lock(uuid,int) MD5 fdceb8dbf610ba45a9868dd23fb9ac4a. Bothdefiner/publicsearchpath, ACLpostgres/authenticated/service. Cancel has NO actor/club predicate, directly SELECTscheduleFORUPDATE -> clearsassignment/preassign -> schedulecancelled/no_show. Lock has no explicit actorpredicate but acquisitiontriggers enforce normalJWTactorclub; body usesv_row andpreservesstatus/version/rest/CAS checks. Publicsource callers main/PassR only, generatedtypesbrowser; SQLinternal Floorclose/replan must keepworking. Cancel release MUSTremainpossiblewhileAutoOFF (source22 policy). Lockowner manualwhileOFF supported; automaticworkeracquisition OFF stillblocked.
+
+Next109 (notcreatedyet): preserve authorizedOwner/Floor/worker operations, deriveclub from actualschedule/physical relation and auth.uid server-side, prevent bareJWTroleclaim from overriding actualDBrole. Prefer a sharedinternal actor guard for actualtwo consumers cancel/lock, ACLnotbrowser-exposed, no AutoON acquisition check on cancellation. Inspect/pin function bodies before patch. Read-only precheck before existing schedulelock and recheck AFTER original NOTFOUND branch while rowlocked; do NOT insert PERFORM between SELECT and IFNOTFOUND (would overwrite PLpgSQLFOUND). Preserve existing lockorder/rest/return/atomicrollback semantics and missingrowcontracts. Consider canonicalFloor/tournament operator privilege for internalclose path, not onlydealercontrol; verify exact helperpolicy and ownerpositive. Need actual outsidernegative/ownerpositive/workerpositive, OFFcancel/OFFauto-lock, roleclaimmismatch, DDLrollback/digest/grants/drift and truecancel/close overlaps. Do not edit historical22/108. Existing --completion-auth CI path GREEN, newcancel/lock optins deliberatelyRED/notCIwiredyet. Node/diffPASS; allPGstopped/nohandles/no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. MasterACTIVE/local-onlyhold, fulltour/rest15x3/performance/typebuildstillpending.
+
+## G2/G3 completion RPC cross-club browser write: confirmed local and contained108
+
+Baseline86d342741 clean; fetched main still ed3db6ac600710e95fe4408c475941916c23ab19, no local/main108 filename collision (LIVEcatalog still releasepreflight). Actual --completion-auth REDc906cc: valid service-created announced schedule via105, anonymous denied, authenticated OUTSIDER (new Authuser/no targetclubrole) directly complete_rotation_slot -> executed receipt AND schedule status executed inside transaction. Probe thenROLLBACK, full assignment/schedule/incoming fingerprint unchanged. This confirms ownedcatalog bug, not liveproductionexposure/HTTP/Authgateway proof. Source callers only process-swing index +generatedtypes; no clientworkflow uses this bookkeeping RPC.
+
+New108 CLIcandidate20261016030400, SHA1bca82500888a19c459e26b3f380506a45585354dc681348207d5ac215819d29. Pins exact normalized complete function MD5 5b323b5e2a24a151a320af417a3c6024, servicegrant and reviewedgrantees; REVOKEsPUBLIC/anon/authenticated, retains service_role/owner. Function body/signature/owner/searchpath/return type/data unchanged. Unknownbody/grantee aborts; postcheck effectiveanon/authdeny/serviceallow. Existing public searchpath not hardened here (no hidden bodyrewrite); lock/cancel ACL unchanged and still need their own authorityaudit. Internal definer-owner callers retain owner's execution; no new claim-basedauth check that could break authorizedinternalcalls. Recovery keep restriction when rollingbackEdge, don't silently regrantvulnerablebrowseraccess; captureoldACL for controlledrecovery evidence/alternatives. No productionapply.
+
+GREEN d71a21/692ada/aa360e terminal0: anon, authenticatedoutsider, owner-direct and authenticatedDBrole with forgedserviceJWTclaim all42501denied; auth.uid assertion confirms non-anon actor claims resolved. Proper service/testrole actualcall succeeds and repeatsnoop, transactionrollbacks fingerprintunchanged. Scope is executiongrant, not proof of fullscheduledswap (alreadymain40qualified before108; servicefunction bytes/grant remainunchanged). Fresh owned vinpoker_ops_completion108_ddl from107DDL: fullBEGIN/ROLLBACK restores exactACL/bodymetadata; finalapply+replay succeeds, onlyACL differs. Actual alteredfunctionconfig and unexpectedgrantee probes reject expecteddriftcodes; rollback removesproberole/restoresfunctiondigest/ACL. AllPGstopped/nohandles. Node/YAML/diffPASS; existingCItrigger/apply adds108 and --completion-auth, NOT dispatched. No unchangedproducttest/fullbuild rerun underRAMhold.
+
+Main108 locallyapplied to ready_capacity_ci for qualification only, no migrationledger/liveflagchanges. Beforelive ownerrelease needs exactbody/ACL/catalog collision check against live (not assumedmirror). MasterACTIVE/local-onlyhold/G2-G3notACCEPTED. Next completionreturnedfailure/response-loss + dispatcherclaim/replay/lease tests, lock/cancel authenticated grant authorityruntimeaudit; fullwebtour/rest15x3/375/performance/typebuild/requiredCI stillunmet. No push/productionDB/Edge/frontend/Auto/Daybreak changes.
+
+## G3 actual main scheduled ramp10 ->40 PASS with bounded8-per-tick drain
+
+Baseline74412815f clean/productunchanged. Main qualifier generalized counts to2/10/40; exact original schedules, incoming IDs, activeuniqueattendance/session counts and no in_transition; release timestamp must be>=originalrelief. Scope-transition fixture remains2only. Main40 childbounded600s/4MiB stdout; no production timeout/lease/batch policy changes.23/61 product suites unchanged/notrerun; Node/Deno native/diffchecks PASS.
+
+First10test14007 terminal1 after real announcement wait: actual handler successfullyexecuted8/statuscompleted/errorsnone, test incorrectlyexpected10 in ONEinvocation. Source index2617 deliberately slice(0,8); this was a TEST assumption error, NOT a product failure and no batch-limit change. Kept synthetic club e7dad15c-fd28-4aa7-8f29-1ee29f684001 intact (8executed+2announced). Added bounded monotonic backlog drain through actual repeated handler calls; each must increase actual executed count, fail if stalled, assert exactlyremaining RPCsuccess/completion count. Opt-in --main-resume-club accepts only UUID in exactownedDB with exact Ready capacity TEST<size> clubname, derives ORIGINAL first announced/executed schedule pertable fromDB, no reseed/rewind/config rewrite. Resume5081exit0: initial8executed, actualnexttick2more, total10, sameoriginalIDs/exactsession/releaseproof/no duplicates/no transition. Resume is recovery of preservedtest, not rerun hiding failure; no sourcefix implied. Explicit negative invalidflag combinations prevent reseeding/checkingout/adopting while scheduledexecute/resume.
+
+Fresh40 full actual main82931exit0/PGstopped: initial40 coherent announcedlocks, healthyrepeat unchanged, REAL announcelead waited; actualhandler drained40originals in5batches of8. Forty worker_execute_pre_assigned_swing responses success and forty complete_rotation_slot executed; finalpostcheck initialExecuted0/newExecutions40/completed40/network0. Every original oldassignment released+processed noearlierthanrelief, replacement sameexactphysical/session/incoming,40activeassignments/40uniqueattendance/40uniquesessions, no in_transition. All adaptergaps/SQLerrors empty, perbatchstatuscompleted/noerror. Read-only duringrun confirmed13executed/27announced and separatefuturepredictions (not counted as execution). Rawtoolstdout large/truncated, but final assertedpostcheck/terminal0 authoritative and allrows preserved in ownedDB synthetic club1a5a1071-ecd3-4022-84e9-fad56602e7f2. No post-seed timewarp. Syntheticinitial90minhistory, not realwork/rest15x3; back-to-back internal ticks are NOT actual60scron/HTTP/Edge/Authgateway/dispatcherproof. CLIbridge timings notperformancep95.
+
+Read-only ACL observation while waiting: ownedcatalog complete_rotation_slot and lock/cancel are anonfalse/authenticatedtrue/servicetrue; worker_execute serviceonly. Complete function observed has no explicit actor/club predicate; codecallers only mainindex+generatedtypes. This is NOT yet a confirmedcross-club/livebug: next actual transactional authenticated-outsider repro + liveprovenance review before anyfix. Also previouslynoted unchecked completion read/receipt needs faultinjection/commit-loss qualification. Do not declareallpermissions/bookkeepingdone from happy40pass. Existing daybreak/Auto state untouched.
+
+No activehandles/PGstopped; no push/liveDB/Edge/frontend/flagchanges, local-onlyhold/masterACTIVE/G3IN_PROGRESS. Next dispatcherclaim/replay/leasefault, completionreturnedfailure/response-loss + ACLrepro; main40runtime component nowqualified but fullG8webtour/rest15x3/375/performance/fulltypebuild/requiredCI stillunmet.
+
+## G3 scheduled actual main execution2 after REAL announcement lead PASS
+
+Baselinedf0e27f12 clean/productunchanged. Added explicit --main-worker --main-execute (reject OFF/shortage-scope/fault combination),360s boundedchilddeadline, timer chunks<=30s. Uses ACTUAL worker_execute_pre_assigned_swing and complete_rotation_slot RPCs, actualsourceCAS UPDATE RETURNING projections (rows from real UPDATE CTE, no fabricated lock acknowledgements). Actual get complete function catalog confirms executed outcome/status. Initial attempt failed in testmanifest SELECT of nonexistent announced_at, BEFORE timer/execution; inspected actual catalog, corrected to existing announce_at. Native sql errors now include bounded diagnostic message, no hidden PGfailure; no product change/guard weakening. Initial43637 terminal1/PGstopped, not a business failure or real wait proof.
+
+Authoritative51848 terminal0/PGstopped: maininitialplan+repeat two coherentlocks; actual3min planned-relief boundary, remaining164352ms genuinely awaited (read-only observation2announced/142s then21s remaining). NO schedule/attendance/rest timestamp manipulation after seed; original fixture checkin/work history is synthetic90min, so this proves first scheduled handoff+real announcelead, NOT real90minwork or three rest15 rotations. At relief handleractualcalledagain: statuscompleted/errorsnone/adaptergapsnone/network0, TWO worker_execute_pre_assigned_swing statusssuccess and TWO complete_rotation_slot outcomesexecuted. DB each original scheduleexecuted/reason.new_assignment_id, oldassignmentreleased+processed, incomingcurrentassignment exactoriginalsession/physical/attendance. Metrics actualexec2success2; prior initial2success were announcements, do not sum into4executed.
+
+Synthetic club97f5aaec-6848-497f-836a-53199dc02845 preserved in owned ready_capacity_ci. Independent read-only postcheck after restart (privatehelper --post-execute) PASS: activeassignmentcount2/distinctsession2; both oldreleased_at>=plannedrelief (no earlyexecution), reasonnewassignment links exactclub/session/table/incoming; both outgoinglast_released_at>=relief; no stranded in_transition attendance. PGstoppedagain. No real notificationbot/provider/pg_net, no payrollpolicy changes (actual existingcompbreak outputs retained, not adjusted). Node/Deno native/diff checksPASS; product suites unchanged/notrerun/fullCIbuild hold. Main2 qualifier still deliberately rejects10/40 until ramp added; next2->10->40 scheduledrealhandler tests, dispatcherclaim/replay/leasefault, actual main post-completion response-loss/read failures. Current source complete_rotation_slot response/read is unchecked in mainindex (source observation only, need faultrepro before fix), don't assume nested bookkeeping always succeeded because happy path did.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, no activehandles, local-onlyownerhold/masterACTIVE/G3IN_PROGRESS. Fullwebtour/rest15x3/performance/375/fulltypebuild remainunmet; no campaigncomplete claim.
+
+## G3 shortage scope source fix: canonical sessions, local RED -> GREEN
+
+Baseline22061dfb4 clean. shortageAlert now reuses existing service-only getDealerOperationalTables, fetches physical metadata ONLY for canonicalIDs/club (no legacy physicalstatus filter or shift/liveTournament gating), and exact club/session checks assignment rows. Missing/null/duplicate/foreign metadata or NULL/old/cross-club/duplicate assignments fail snapshot_invalid/queryfailed, never pick latest ambiguous row. Pending durable-open-target count remains separate diagnostic; unopened targets not counted as active. Empty canonical scope still computes dealer/break/supply diagnostics instead of pretending allcounts0. Before publishing collected snapshot, canonicalIDs/session reread must match initial scope; observed close/reopen invalidates. This detects scope changes during multi-query collection, NOT a serializable snapshot or atomic final-read-to-incident commit proof. Repair/quarantine rows excluded by sharedinventory remain excluded; this is not repair of unknown legacydata or full repair-status dashboard proof. No rest/OT/payroll/alertseverity/cooldown/rounding/notification policy changes, no DB migration/grants.
+
+Prior43568desiredRED nowGREEN4934: actual main2plan/locks, actual shortage reader2staffed/2held/4checkedin despite oldphysicalinactive status. Final native93543exit0: samewholemain tick/repeat completed/noerrors andlocksstable; controlled ACTUAL canonicalclose during initial/final inventory reads -> snapshotquery_failed/operational_scope_changed/snapshot_invalid. Then canonicalreopen withoutshift/open-marker/assignment -> fresh1staffed+1empty/needsreplacement. Added physicalstatusactive phantom with NOsession remains excluded. Canonicalclose remaining tables -> true0active/healthy despitephantom. Allsourcequeries/RPCs actualSQL, no fabricatedinventory response, adaptergaps/errors/network0. Controlled late-close interleaving, NOT two-session readTX overlap or productionQuadsproof. AllPGstopped/nohandles.
+
+Nine shortageDeno tests (including new transport boundary cases) +14executionSafety=23PASS; focusedDeno wholeindex graph typecheck/Node/diffPASS. Mock negatives are distinct from native positives; current version of source has actualsession proof.61vitest unchanged/notrerun, no fullproject build/typecheck/CI under RAMhold; native mainoptin stillnotCIwired. No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyhold/masterACTIVE/G3IN_PROGRESS. Next scheduled actualexecute path worker_execute_pre_assigned_swing + complete_rotation_slot; need native CAS UPDATE RETURNING (notfake acknowledgement), real announcement lead or clearly separated fixture-time tests, exact assignment/schedule/rest postconditions, then2->10->40 mainworker. Dispatcherclaim/replay/leasefailure, realrest15x3, fullwebtour/performance stillunmet.
+
+## G3 main-handler healthy plan/repeat qualified; NEW shortage scope RED
+
+Baseline28295c5f9 clean; no product change this turn. SQL bridge extended for observed main path: exact source OR forms, actual TABLE RPC aggregation + single cardinality, scalarSQLNULL->JSONnull, typed smallint severity vs PostgreSQL integer overload resolution, JSONB p_rows BEFORE UUIDarray encoding, actual swing_metrics upsert on verifiedclub/date key, tournament_tables nestedarray/inner filtering, actual table/config/pool/lease/reconcile/shortage reads. All SQL runs same guarded PG/testrole. Adapter now records query/RPC errors/gaps even when worker would treat them nonfatal, test requires none. Initial failures were adapter gaps/errors, not product bugs: missing swing_configs/metrics whitelist; p_rows objectarray accidentally encodedUUIDarray when adapter generalized (restored explicit JSONB); p_severity literalint not smallint; void refresh empty SQLNULL parse. Actual schema-only matview dealer_pool_summary was unpopulated; fixture bootstrap REFRESHes it normally in owned DB before actual concurrent refresh RPC, no production function change. Catalog confirms actual shortageRPC exists, not missing migration.
+
+Native82011exit0: entire actual handler source/dependency graph two-table healthy tick+repeat completed/errorsnone/gapsnone/network0. Actual fenced acquire/extend(alltrue)/release(true), realplanner/persist/twoannouncedlocks, durable runmetrics/swingmetrics, real incidentledger and concurrent matviewrefresh. DB announced rows exactsession/assignment/incoming/outgoing/preassign/relief coherent. Repeat keeps exactslot IDs/relief/version, no outgoingreleased before announcelead. IMPORTANT metrics firsttotal2/success2 count announcements here, NOT executedrotations (no execute RPC called). Duration10s/9.3s includes SQL processbridge, not UI/RPCp95. Inventoryfailure regression+planner recovery/anchor negatives/cancel-reopen requalified75584exit0 after bridge changes; bothPGstopped. Node/Deno native/diffPASS. Whole main still only2, no dispatcherclaims/HTTP/Authgateway/actualexecution40/rest15x3/webproof; nativeoptin notCIwired.
+
+NEW explicit --main-worker --main-shortage-scope desiredRED43568exit1/PGstopped: actual get_dealer_operational_tables_v1 reports2 exact live sessions and mainplanner locks2; actual buildCanonicalShortageSnapshot reportsstatusok with active_staffed0/active_empty0 and allcounts0, no adapter/SQLerrors. Valid fixture deliberately has legacy game_tables.status inactive despite active cash sessions; source shortageAlert.ts still selects physicalstatusactive then gates on legacyshift/liveTournament/pendingoperation/assignment, and never exactsession-filters assignments. This can hide real operational shortage or count old-session rows. Not liveQuads proof. Keep thisoptin regression RED, not CI/default, do not flip physicalstatus to forcePASS.
+
+Next fix shortageAlert.ts using existing getDealerOperationalTables canonical inventory; fetch metadata only for canonical IDs (no physicalstatusfallback), exact table_session_id assignment join, preserve pendingdurable-open-target diagnostic separately (not pretend unopened targets are active). No duplicate assignment guessing; inventory errors/missing metadata must snapshot_invalid/queryfailed, nothealthy0. Update shortageAlert.test.ts transport fixtures deliberately with valid canonicalRPC/session proof and negatives (legacyinactive-but-open, stalephysicalactive/closed, wrongsession, duplicate, inventoryunavailable). Native RED->GREEN plus emptyopen table visibility/close-reopen/quarantine and existing shortageclass/restfeature tests required. Main pendingexecution still needs actual worker_execute_pre_assigned_swing + complete_rotation_slot and UPDATE RETURNING CAS support; do not mistake worker_perform_swing fallback for schedule-driven executor. No sleeps/timewarp done. No activehandles/no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyhold/masterACTIVE/G3IN_PROGRESS.
+
+## G3 actual main-handler failure falsely completed: local fix
+
+Baseline647d91687 clean. New --main-worker opt-in reuses guarded native fixture/Deno SQL adapter. Driver parses ACTUAL index.ts imports with installed TS AST, removes only import declarations, transpiles entire remaining source, passes source+runtime bindings stdin. Deno dynamically imports ACTUAL dependency modules under functions path (all helpers/passes), evaluates strict actual handler source with synthetic createClient/Deno.serve/env boundaries; captures handler and invokes real Request/Response. Not exact ESM entry/HTTP/PostgREST/Auth gateway/cron proof. SDK transport ONLY replaced by existing actual SQL adapter/testrole; no fabricated RPC results. Import PASS15env permissions narrowly added with explicit synthetic5000/10 values; no allenv, secrets or dependency installs.
+
+Initial main smoke failures were harness/env/config/adapter gaps, NOT product bugs: PASS15 module requires two scopedenv reads; fresh fixture had no swing_config so UPDATE affected0 and actual server skippedAuto (test rightly failed coverage). Fixture now INSERTs explicit tournament config45/15/rest15/rotationON ONLY in isolated club. Healthy full path currently reaches missing get_dealer_pool_snapshot/.or adapter support, therefore NOT qualified and not claimed PASS. Added actual pool RPC support after inspecting PG signature JSONB (other setreturning metadata inspected, not implemented speculatively). Main adapter records unknown RPC/table gaps to prevent silent green; no main40 claim.
+
+Concrete RED without adapter gaps: main-worker --planner-fault=dealer-inventory injects PGRST002 before actual dealer read. Actual engine records diagnostic dealer_inventory/PGRST002 and releases actual fenced lease, assignments/attendance/schedules fingerprint unchanged. Response nevertheless statuscompleted/error_codenull because terminal serializer discarded dispatchFinalState/error when dispatchContextNULL. This is actual source failure, not harness-gap assertion; RED31fbd9 exit1/PGstopped. Fix index terminal payload always returns observed dispatchFinalState/errorCode for direct and queued calls; keeps existing HTTP200/ok transport envelope, IDs, ledger behavior and all write paths unchanged. Callers must use business status; user-token/manual auth not runtime qualified here.
+
+GREEN latest98419 exit0, strict-handler inventory failure returns partial/dealer_inventory_query_failed and exactdiagnostic, operational fingerprint unchanged/no planner/network0. Positive main-worker --main-off returnscompleted/errornull/emptymetrics, no pool/planner, operational fingerprint unchanged/network0. Source payload tests exercise all5states with and without ledgercontext;61vitestPASS,14Deno executionSafetyPASS, focused Deno index.ts typecheckPASS, Node bothscripts/diffPASS. Native runs terminal/PGstopped/nohandles. Main harness NOT CIwired yet (Deno cache/runtime portability needs qualification); source payload regression is in existingCI suite. No old fullproject checks/build repeated under RAMhold.
+
+Next healthy fullmainhandler adapter, verifying source query operators/joins/set-returningRPC/single handling and metricswrites against actual schema rather than stubs. Known .or pre_assigned_table_id.is.null,pre_assigned_at.is.null unsupported; upcoming get_escalation_config is TABLE used with .single(), detect_stuck_breaks/end_expired_breaks TABLE; extend_club_lock_lease actual ownership RPC. Need actual main planner/executor40, dispatcher claims/replays, fail/read/recovery and rest15x3/fulltour/performance. All product work stillLOCAL/no push/productionDB/Edge/frontend/flags/Auto/Daybreakchanges; masterACTIVE/G3IN_PROGRESS.
+
+## G3 anchor107 true overlap and post-adoption whole-module repeat
+
+Baseline41f9673e7 clean;107/product bytes unchanged. Added --anchor-overlap to existing guarded native harness, reusing real held transaction + pg_stat_activity ClientRead/Lock barriers. Six cases PASS: duplicatepersist, rawcancel-first/persist-first-cancel, canonicalclose-first/persist-first-close, scheduleversion-first. Holder uncommitted schedule/assignment/session/attendance fingerprints invisible beforeCOMMIT. In schedule-only holders, THIRD connection assignment FORUPDATE NOWAIT succeeds while persist waits on schedule, proving persist has not acquired assignment out-of-order. Actual cancel or actual versionUPDATE then COMMIT; both callers terminate/no deadlock. Stale waiter rejected target/no forecast inserts; duplicate converges one predicted forecast and unchanged announced relief. Canonicalclose cancels all nonterminal rows INCLUDING forecast assignmentNULL. Post-transition late oldplan rejected and full committed fingerprint unchanged. Terminal72803exit0/PGstopped. This is real SQL overlap, not HTTP/network or whole dispatch proof. Existing103-106 overlap branch preserved, not rerun unchanged tests. Added107 opt-in to existingCI after --overlap; no dispatch.
+
+Added --planner-adopt fixture to actual whole PassR/native Deno path: legacy assignment/attendance preassign markers with no schedule, actual105 creates two announced rows during reconciliation. Current producer refetch AFTER adoption anchors same tick successfully (planned4/adopted2/locked0/errors[]), next wholemodule tick planned4/adopted0/locked0/errors[]; same adopted scheduleIDs/assignment/incoming/relief/version preserved/network0. Terminal49029exit0/PGstopped. Native original default scenarios unaffected; flags reject incompatible shortage/fault+adoption. Node syntax bothfiles/Deno native/YAMLparse/diffPASS, no full build/CI under ownerRAMhold. Mainprocess-swing imports/entry inspected for next integration: Deno.serve at598, createClient boundary628/701, actualworkerexecution wrapper652. No implementation substitution/production import changes. Actual mainhandler/dispatcher/executor40, rest15x3, desktop375/fulltour/performance still unmet.
+
+No active commands, no push/liveDB/Edge/frontend/flags/Auto/Daybreak changes. MasterACTIVE/local-onlyhold, G3 IN_PROGRESS. Next mainhandler integration with real imported dependency graph + guarded SQL adapter and explicit transport limitations; do not label existing ready-event40 or planner40 as mainprocess-swing proof.
+
+## G3 locked-anchor repair107: local RED -> GREEN (partial qualification)
+
+Baseline5e70e27c7. Added current announced-slot anchors only when solver snapshot assignment/session/incoming/outgoing/relief matches a refreshed schedule read AFTER reconciliation/adoption. Missing/ambiguous/changed anchor quarantines only its table via existing p_table_ids; excluded from announce too. Forecast payload includes exact locked scheduleID/version/session. Planned metric still counts solver rows, not anchor proof. No solver/rest/OT/payroll policy change.
+
+New migration107 (CLIcandidate20261016020132, local slot collision check; LIVE catalog collision still release preflight) SHA dc69d00e86d97b5a3b4c8bb3df9898c1d8d6c1403a93847b3b2951d0f80488de. Pins exact pre107 upsert MD5 f1df3b68a09450501dc5f66a2644ec5b. Extends87's slot0 predicate, NOT forecast-only fallback: marked anchor must match current assignment session/dealers/relief and exact announced schedule ID/version/ownership. Existing locks/order/setdiff/ACL/signature remain; announced rows not modified. DB107 must precede new Edge; never deploy producer alone against old guard. Recovery contain workers, restore captured reviewed pre107 function/grants and compatible Edge, preserve schedule/audit. Historical87 unchanged.
+
+Native inventory fault/recovery/repeat RED now GREEN (63323/71628/89586 terminal0); persist and one-table lock faults/recovery/repeat GREEN27286.56actualsource transport tests PASS, focusedDeno producer+native checks/Node/diff PASS. Native negatives query ACTUAL upsert for wrong session, assignment, outgoing, incoming, scheduleID, version, markerfalse, relief; only bad table rejected, valid other tables still admitted, full schedule/assignment/session/attendance fingerprint unchanged. First negative run used fixture incoming from another row that solver legitimately assigned to target, so it was NOT actually wrong; corrected test to use actual other locked anchor, plus real assignment/attendance fields (no invented fixture fields). No guard weakening or product fix based on that fixture error.
+
+Actual cancel then stale anchor rejected; canonical owner close -> reopen same physical -> actual new assignment -> old anchor rejected, entire post-transition fingerprint unchanged. Latest40 actual wholemodule persist-fault recovery: planned120/locked40/errors[], healthy repeat planned80/locked0/errors[],40opensessions/40announced, all40lock IDs/relief unchanged. Same40run negative/quarantine/cancel/reopen tests PASS, network0. Terminal21329exit0/PGstopped. Durations include SQL bridge overhead, not performance acceptance. This is PLAN+LOCK/REPEAT, NOT40executed rotations, HTTP dispatcher or rest15x3.
+
+Fresh vinpoker_ops_anchor107_ddl cloned106: full107ROLLBACK restores original digest; final apply ACL anon/auth denied/service granted, exact pre-existing proacl/proconfig/definer metadata unchanged. Native helper terminal75b190exit0/PGstopped. CI existing103-106 path now includes107 apply and path trigger; NOT dispatched. Wholemodule Deno tests still local opt-in/notCI wired; cache/runtime/permissions readiness outstanding.107-specific real two-session overlap (cancel/close both orders), post-adoption native repeat and partial anchor read/quarantine proof remain next. No active handles; no push/production DB/Edge/frontend/flag/Auto/Daybreak changes; fulltype/build/web G8/G9 still pending under owner local/RAM hold. G3 IN_PROGRESS, NOT ACCEPTED.
+
+## G3 shortage/fault recovery: new repeat-plan RED
+
+Baseline34b2eb832; fetched main unchanged ed3db6ac600710e95fe4408c475941916c23ab19. Actual whole PassR/native40 shortage PASS: planned120/locked0/shortage40/OT40, outgoing all remain assigned/unreleased, no incoming reservations/network. Actual TABLE-returning end_breaks_on_demand adapter now aggregates real rows (not scalar), no product change. Three pre-dispatch transport faults initially PASS separately: dealer inventory returns query_failed (PGRST002 is not missing-schema dependency), persist creates no schedule/reservation, one-table lock fails while other table locks. No blind mutation retry; fixtures scoped/synthetic, PG17 isolated, role/RLS unchanged.
+
+Recovery extension finds actual-source/native RED: after inventory fault removed, recovery planned6/locked2/errors[]; next healthy tick planned4/locked0 with rotation_persist_session_rejected for both still-open tables. Terminal70865 exit1, diagnostic proves liveSessions2/announced2; actual upsert receives only slots1/2 with assignment_idNULL. Solver intentionally omits sticky locked slot0, but migration87 requires slot0 assignment anchor for forecasts. Thus valid ongoing planning fails after locking. Not production-live proof. First failed run terminal74896; no process/server was live on revalidation. Final36792 exit1 additionally asserts locked IDs/relief unchanged BEFORE expected healthy errors[] assertion fails, network0. All PG stopped. Node syntax both files/diff checks PASS. Test keeps expected healthy errors[] and deliberately fails; do not call recovery suite PASS. Later persist/lock recovery cases not reached after first recovery RED.
+
+Next repair: provide exact current locked-slot anchor for forecasts and enforce its identity/version/session at commit without weakening87. Account for105 adoption after initial snapshot; no inferred new-session anchor. Keep per-table quarantine/p_table_ids and immutable announced ID/relief. New forward migration only if needed; qualify stale anchor/close-reopen/schedule change/ACL/rollback and true overlap. No product SQL/Edge changes yet. Added opt-in flags --planner-shortage and --planner-fault=dealer-inventory|persist|lock, compact failure diagnostics; not CI wired. Local-only owner hold, Daybreak/Auto unchanged, no push/production writes; G3/G8/G9 not accepted.
+
+## G3 actual whole-module PassR native ramp 2 -> 10 -> 40
+
+Baselinee20956fce clean. New passR.native.mjs imports ACTUAL entire PassR module and its candidate/solver/feature/announce dependencies in Deno (no extracted-function substitutes). Import-only PASS using cached-only/no-config/no-lock/node-modules-dirnone, runtime net denied, source/test read scopes only. Node direct-module import previously unsupportedhttps; no production import changes. Initial PowerShell brace-path command was parsererror/no action; corrected exact filenames. Official Node modulehook docs consulted but no hooks/loader installed; Deno native runtime selected.
+
+Native driver reuses existing fixture/guard/SQL-testrole in readyWorkerCapacity with --planner/--planner-size=2|10|40; manifest synthetic IDs + disposable role passed stdin, no secrets/clientcredentials. Child verifies loopback55441/exactDB/PG17/owneddata_directory/no-pg_net/NOLOGIN-nonsuper-BYPASS testrole. SQL adapter executes ACTUAL PG tables/views/RPCs under inherited service grants, structural joins and requested nestedprojection/inner joins, typed JSONB/UUIDarray arguments. Explicit SQL-env whitelist; Deno runtime netdenied and fetch trap asserts0requests. Node child_process under Deno first failed broad env enumeration then NODE_V8_COVERAGE; didNOT grant allenv. Replaced bridge with native Deno.Command clearEnv+explicitPG/PATH/SystemRoot and allow-run onlywsl/psql. Original app roles/RLS unchanged, no install/sharednode_modules mutation.
+
+Actual PassR+native evidence: 2tables planned6/locked2/errors[]/3525ms;10 planned30/locked10/errors[]/5651ms;40 planned120/locked40/errors[]/13571ms. Phase40 uses strictprojection and validates40 distinct incoming IDs +40 announced rows matching exact live assignment/session/club/table and preassign markers; no mismatches/networkcalls. Previous2/10 were beforeprojection tightening; don't call those exactprotocol equivalence. Sourcecandidate reads dealer views/break/meal/history, count_available RPC, real upsert_rotation_plan and real lock_rotation_slot; no fabricated supply/persist/lock result. Planner context fixture45mins/15rest/3announce/emptygametypes, synthetic cash/manual sessions; not a tournament multi-flight proof or production policy assertion. Durations include SQL subprocess overhead, NOT UI/RPCp95/performance acceptance.
+
+This proves real module PLAN+LOCK at40, NOT40 executedrotations, HTTP/PostgREST/SupabaseAuth gateway, process-swing wholehandler/dispatcher/lease/cron, shortage/fault scenarios, rest15×3 or webtour. SQL bridge not exact DataAPI ACL/overload/schema-empty-projection proof. New script NOT wired CI yet (cached runtime dependency readiness/runnerpermissions needs explicitCIreview); driver flag localoptin, no dispatch. Node syntax bothfiles/Deno check newmodule/diff PASS. One attempted Deno check --cached-only rejected unsupportedflag, corrected supported check command exit0; no claim that failedcommand passed. Native74745/36668 and priorruns terminal; allPG stopped. No product source changes thisturn.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyownerhold/masterACTIVE. Next actualmodule shortage/read-fault/retry/current-vs-stale proof and module-to-executor/dispatcher integration; keep fullG3/G8/G9 requirements intact. Actual40plan+lock is progress, NOT campaigncomplete.
+
+## G3 emergency106 duplicate/raw-cancel/OFF/close true overlap
+
+Baseline785ed8b83 clean;106/product bytes unchanged. Existing native --overlap extended with seven cases: duplicateprep, rawcancelfirst/prepfirstraw, OFFfirst/prepfirstOFF, canonicalclosefirst/prepfirstclose. Actual heldtransaction ClientRead and waiter Lock observed BEFORE holderCOMMIT, uncommitted fingerprints invisible. Duplicate/rawfirst rejects oldIDs/snapshot after firstcancellation; prepfirstraw returnsnoop; OFFfirst zerodelta/AUTO_SWING_OFF, prepfirst thenOFF commits; closefirst rejectsclosed session, prepfirst thenclose releasesfinalassignment. Final no active schedule/preassign marker (except deliberateOFFfirst unchanged), closedcasesclosed. No rest/OT/payroll changes.
+
+Critical order test: rawholder holds ONLY schedule row initially, prepwaiter blocks there. THIRD connection successfully locks targetassignment FORUPDATE NOWAIT while prepwaits, proving prep has NOT lockedassignment first. Then rawholder executes ACTUAL cancelRPC andCOMMIT; bothfinish withoutdeadlock. This tests mid-operation lockorder, not only two completed actions. Terminal19039exit0/PGstopped; previous103-105overlaps retainedPASS. Node/diffPASS; existing CIoverlap picksnewcases, NOT dispatched. No unchanged56suite rerun.
+
+Next actualPassR nativewholemodule path investigated: Node24 --experimental-transform-types available but direct actualmodule import fails ERR_UNSUPPORTED_ESM_URL_SCHEME https (Deno-style dependency import), NOT productbug. Do not patch production imports or stub authority to force testPASS. Use appropriately scoped Deno runtime or an offline TS-transpile harness removing type-only imports, retaining actualruntime module graph; inspect required imports/permissions first. Mainplanner/dispatch40/shortage stillNOTPROVEN; existing ready40 is sequential cash/manualfallback only. FullG8/G9 outstanding. No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges/nohandles; local-onlyhold/masterACTIVE.
+
+## G3 emergency106 atomic preparation / stale-lock fix (partial qualification)
+
+Baseline147db9f53 clean; fetched main unchanged ed3db6ac600710e95fe4408c475941916c23ab19. CLIcandidate20261016011958 -> reserved106, new20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql SHA ca49dca4e164e329fa318a19dfefac3f47ca69fd7e6746691e877401f6547167. Service-only worker_prepare_emergency_replan_v1 exactclub/physical/session/assignment/version/incoming + exactsorted live schedule IDs + bounded reason. Emptysearchpath/3s timeout; requires105/cancel helper. SettingsOFF -> physical/session -> ordered schedule locks -> assignment -> attendance. Schedule-before-assignment matches raw cancel RPC; physical/session serializes canonicalclose/worker. Exact snapshot rejects before mutations, ambiguous ownership/executing rowrepair, neverforce-release seated dealer.
+
+Cancel all requested live rows + legacyfield/ownedincomingmarker release in ONE server transaction. Returned nested cancel error raises so previous cancellation rollsback too. Important existingcontract no_show returns no_show, notcancelled;106 accepts correctterminaloutcome forreason. Checkedout staysunavailable; no rest/OT/payroll/history rewrite. Returns scopedpreparedproof/latestassignmentversion; PassR no longer calls per-slotcancel or id-onlyassignmentUPDATE. Strict allscope/version/incoming/sortedIDs/count/newversion acknowledgement before clearing local fields/solver. RequiresDB106 beforeEdge, missing/error nofallback.
+
+Actual replan/native --emergency-stale REDfrom147 nowGREEN: controllednewlockcommit before RPC, oldtuple rejected EMERGENCY_REPLAN_SNAPSHOT_CHANGED and exactnewlockfingerprintunchanged. Actuallegacy/no-schedule, checkedoutlegacy, scheduledcancel and no_show positivesPASS; exactmarker cleanup. Scopedfault on SECOND cancellation after firstannouncedrow succeeded: innerRPC error ->106raises -> whole assignment/attendance/schedule snapshotunchanged. Native ACL anon/authdeny/servicegrant, forgedauthroleclaimdeny, wrongtenant/table/session/assignment/version/incoming/requestIDs/duplicateIDs/reason/nullsession zero-delta. Allconstraints kept. Controlledinterleaving, nottrue106two-sessionoverlapproof yet.
+
+Owned ready_capacity_ci106 localonly. Fresh clone vinpoker_ops_emergency106_ddl from105DDL: fullBEGIN/ROLLBACK removesnewobject, finalapply definer/emptysearchpath/3smetadataPASS, terminal39837exit0/PGstopped. Native30308exit0/PGstopped; earlier22741/62489also terminal.56source testsPASS/DenofocusedPASS/Node/JSON/YAML/diffPASS; unitverifiedfixture updated to scopedpreparedresponse and asserts supply actually reached/no directupdate (initial old expectation1splitupdate failed, testcorrected). CI106apply+--emergency-stale wirednotdispatched. No fulltype/build/mainEdge40/webtour/rest15/performanceproof;106specificconcurrency/lockorderinclrawcancel stillneedsqualification.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, no activehandles. Local-onlyownerhold/masterACTIVE. Next106duplicate/OFF/close/rawcancel truebarriers, then mainplanner/dispatch40 nativeintegration and remainingG5/G6/G8/G9. Recoverystopworkers/revokenewRPC/restore compatible reviewedEdge; preserve all mutableoperationalhistory/scheduleaudit, neverreintroduce id-onlyclear.
+
+## G3 NEW actual-source/native RED: late emergency clear erases newer lock
+
+Baseline5e13186fc clean. Added explicit --emergency-stale opt-in (notCI/default). Executes actual replanSingleTable + ACTUAL CandidateSnapshotFailure definitions. PG-backed assignment/schedule reads; context seam synthetic but exact cash session/club/physical proven viaactualSQL. Before legacy UPDATE dispatch, another controlled writer commits a different incoming preassign + relief to SAMEassignment, version advances. Oldreplan UPDATE filters ONLYid and clears new lock. After source aborts at intended supply boundary, actual assignment fingerprint differs from committed new-lock fingerprint => desiredRED. This is controlled late-request interleaving, NOT two-session overlap or live Quads proof. Both first/new assignment mutations realPG; no fabricated response on write.
+
+First harness attempt failed because Node strip-only doesn't support TypeScript parameterproperties in actual failureclass; switched to existing installed TypeScript transpile for class definitions, no dependencyinstall/roleconstraintweakening. Second actual test reached intendedRED. Nativefinallystopped/terminal/nohandles. Product source unchanged; explicit diagnostic remainsRED untilfixed, NOT CIwired.
+
+Next: new server emergency preparation/cancellation boundary, not just CASaftercancel or blindthrow aftercommit. Must validate exactclub/physical/session/assignment/version/incoming AND current live schedule identity; serialize physical/session and schedule->assignment->attendance compatibly with existing raw cancel_rotation_slot (schedule-first) and canonicalclose/worker (physicalfirst). Cancellation + legacy marker release + latest assignment snapshot should be one transaction; reject old snapshots without affecting newlycommitted locks. Reuse existingcancel insidetransaction but raise on returned failure to rollback all; do notforce-release assigned dealer/rest/OT/policy changes. Refetch/strictproof before solver, remove id-onlyUPDATE. New106 viaCLI/catalog whenimplemented; positive/no-slot/cancel/unknownresponse/role/tenant/concurrency/close coverage required. Existing104 refuses validlegacylocks, so not sufficient substitute. Mainplanner/dispatch40 and G8/G9 stillpending, local-onlyhold/masterACTIVE/no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges.
+
+## G3 emergency replan failures propagate to dispatch, not fake shortage
+
+Baseline984c9f19f clean. Inspected four process-swing replan callers: relockedfalse counted skipped/no_dealer and not-rested path could continue shortage/OTnotification. Replan ignored announce.errors and returned lock_pending_announce_time; actual-source full-entry transport test RED with announceoutage. Existing generic catch returned ordinary detailerror, so earlier read/cancel guards stillcouldbe misclassified by maincaller. Upsert error/malformedreceipt/rejectedsession separately RED3 returning ordinaryfalse.
+
+Fix reuses existing CandidateSnapshotFailure(statusquery_failed, sanitizedstablecode) for emergency scope/read/cancel/unexpected failures, persist/unverifiedreceipt/rejectedsession and announceerrors. Existing main innercatch rethrows this class, clubcatch recordsdegraded/aborts remainingpasses/releases lease; inspectedactualindex lines4333/4453, not rewritten. Valid inactive assignment remains businessinactive; honest predictedshortage and pendingannounce remainbusinessresults. Locksuccess unchanged. If lockcommitted but laterannounceerror, typedfailure preserves DBcommit/no blindundo and forces canonicalrefetch on nexttick. No guarantee of all-write rollback from Edgeexceptions.
+
+Tests extract ACTUAL CandidateSnapshotFailure + isCandidateSnapshotFailure definitions, not fakeclass or broad reject that could pass on ReferenceError.56 actualsource testsPASS: pending/lockedpositive; announcederrorincllocked+error typed; persisttransport/malformed/rejected typed; priorread/cancel/mapping tests now asserttypedfailures; successfulnull remainsinactive. FocusedDenoPassRcheck/diffPASS. Synthetictransports/upstreamseams, no joinedmainhandler/native/realtime/notificationexecution proof. Native103-105 unchanged/notrerun. Emergency legacyclear stillmulti-request/CASreviewpending and mainplanner40 proof remains; notwholemodulecomplete.
+
+No runninghandles/PGnotstarted, no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next mainworker/dispatcher integration and remainingemergencylegacyclear canonicalboundary; G5/G6/G8/G9 stillunaccepted.
+
+## G3 legacy105 duplicate/OFF/canonical-close true overlap
+
+Baseline0b472f3af clean; product105 bytes unchanged. Expanded existing --overlap with five actual two-session cases: same snapshot duplicate adoption; OFF-first/adoption-first-OFF; canonical operator_close_club_table_v2 first/adoption-first-close. Holder observed ClientRead/live transaction and waiter Lock in pg_stat_activity before COMMIT; uncommitted operational fingerprints remain invisible. Duplicate firstadopted/replayalready_adopted share SAME scheduleID/relief, exactlyone coherent announced row. OFFfirst rejectsAUTO_SWING_OFF/zerodelta; adoptionfirst commits beforeOFF waiter, finalOFF/coherentrow. Closefirst succeeds then staleadoption LEGACY_ADOPTION_SESSION_CHANGED; adoptionfirst thenclose cancels/releases resultingrow. Final exactsessionclosed, no activeassignment/nonterminalschedule, incomingavailable/markerNULL. No new policy, timestamp forcing or production flag changes.
+
+Terminal8065 exit0/PGstopped. Existing103worker/close and104duplicate/OFF overlap retainedPASS in same command; Node/diffPASS. Existing CIoverlap command covers newcases, NOT dispatched. No unchanged49suite/fulltype/build rerun. No deployedworker/planner40/tournamentjourney/rest15/provider/performanceclaim. Next mainPassR/dispatcher actual worker capacity/shortage and emergency final acknowledgement gaps; G3 + fullG8/G9 remainunaccepted. Local-onlyhold/masterACTIVE, no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges/nohandles.
+
+## G3 legacy105 adoption atomic boundary (partial qualification)
+
+Baselinebbb9406e9 clean. Added opt-in --adoption joined actualreconcile/native adapter; originalsource RED: actual schedule INSERTcommits, secondassignmentUPDATE transportfault ignored, returnsadopted1 whileDBplanned_reliefNULL. Actual fingerprintdelta. No production claim. New CLIcandidate20261016010447 -> reserved105 (no owned/root collision), migration20270128000105_dealer_legacy_adoption_atomic_v1.sql finalSHA dda67897862d4555a7272da27963f8f9360b9357b4c176d7d6ded224c15cae6c.
+
+New service-only worker_adopt_legacy_preassignment_v1 exactclub/physical/session/assignment/expectedversion/incoming/planrun. settingsOFF fence -> physical/session/assignment/attendance locks; checkedin active dealer with exact preassignedtable proof, conflict reservations failclosed repair_required. Atomically INSERTannounced + UPDATEassignmentrelief; DB now()+3minute lead unchanged. Canonical existingannounced proof requires exactscope/incoming/outgoing/assignmentrelief/solver + immutable reason.adoption_expected_version. Replay returns already_adopted/no write/no reliefpush; other version not accepted as proof. New creation CAS expectedversion. Existing ambiguous/legacy schedule returns repair_required, not overwritten. No rest/OT/payroll changes.
+
+PassR validlegacy branch now strict atomicRPC receipt + finite serverrelief/exactschedule and scope/version before mirroring; already_adopted doesn'tincrementnewcount. No direct scheduleINSERT or assignmentUPDATE fallback. DB105 must precede Edge. Native actualsource + actualRPC GREEN: SQL BEFORE UPDATEassignment fault rolls back inserted schedule, planner rejects/fingerprintunchanged; positive1coherent announced row, retry0new/fingerprintsame. Native ACL anon/authdeny/serviceallow, roleclaimdeny, wrongclub/table/session/assignment/version/nullsession/nullplan zeroeffect; differentversionaftercommit repair/noeffect. Finaldraft105 proof-version guard refined afterfirst localprototype; refreshed ONLY newownedtestfunction, finalfreshcloneDDL below provesfinalsource, no historical/live migrationedit.
+
+Owned ready_capacity_ci105 onlylocal; fresh vinpoker_ops_adoption105_ddl clone104DDL fullBEGIN/ROLLBACK removesnewobject, then finalapply+definer/emptysearchpath/3smetadataPASS. Commandcombined with rgno-match exited1 due no root105collision, not SQLfailure; output LEGACY105_DDL_ROLLBACK_METADATA_PASS andPGstopped. Native89159exit0/PGstopped; firstprototype88433alsoterminal.49actualsource testsPASS, DenoPassRcheckPASS, Node/JSON/YAML/diffPASS. CI105apply+--adoption wiredNOTdispatched. No fulltype/build/concurrency105/mainplanner40/rest15/webtourproof; adoption existing-schedule proof and conflict/close/OFF overlaps stillneedexpandedqualification.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyhold/masterACTIVE. Next105concurrency+malformed/conflict/nativecases, then mainplanner/dispatchbridge40 and remaining G5/G6/G8/G9 acceptance. Recoveryrevoke newRPC/restore compatible reviewedEdge, retain schedules/audit, neverreturnsplitwrites.
+
+## G3 legacy104 true duplicate/OFF overlap
+
+Baseline113ef2589 clean;104 bytes/product unchanged. Extended existing --overlap with native104 cleanup: same exact legacy snapshot in two connections, first transaction held ClientRead, waiter actually Lock in pg_stat_activity before holderCOMMIT. Exactlyonecleared; waiter rejects LEGACY_PREASSIGN_SNAPSHOT_CHANGED, incomingchecked_out/markerNULL and oneoriginalassignment remains/no acquisition. AutomaticOFF race bothorders: OFF-first holds settingsUPDATE, cleanupwaits then AUTO_SWING_OFF and operational fingerprintunchanged; cleanup-first holds settingsSHARE through commit, OFFwaiter then succeeds, finalOFF/cleanupatomic. Uncommitted fingerprints invisible. No arbitrarysleeps-as-overlap, statement/idle timeouts+finallyend/await.
+
+Full overlap command terminal57402 exit0 also retained103 twoworker/closebothorders PASS; PG stopped. Node/diffPASS. ExistingCIoverlap already picksnewtests, NOT dispatched. No104close/checkout/rotation concurrency claim beyond testedduplicate/OFF. No newSQL/productfix, production/push/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next adoption split-write actualsource/native repro/atomicserverseam, mainplanner/dispatch40/shortage, G5/G6/G8/G9 acceptance.
+
+## G3 legacy104 atomic cleanup + actual planner/native bridge (partial qualification)
+
+Baselinef919ee56f clean. CLIcandidate20261016005612, reserved104 no owned/root collision. New20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql SHA256 b53b68484a8f3af536ef865de00bdc45f1691bd72680860f2583ed7befbd6490. Service-only worker_clear_legacy_preassignment_v1(club,physical,session,assignment,version,incoming). Emptysearchpath/3s lock timeout; postgres owner/objectcollision/dependency guards. Locks existingOFF-at-commit settings intent -> physical -> exact open session -> exact activeassignment/version/incoming -> incomingattendance. Revalidates dealerclub/currentstatus, no live schedule or conflicting assignment/reservation, exact marker ownership. Valid lock returns legacy_lock_valid; ambiguity repair_required, no writes. Both assignment clear and owned attendance marker cleanup now ONE transaction. Checkedout stays checked_out/unavailable (old split code set available); no pay/rest/OT or history calculation. Retry stale rejects; nexttick must refetch, no fabricated idempotent success/newkey.
+
+PassR invalidlegacy branch replaced BOTH table writes with RPC; strict cleared receipt allscope/expectedversion/incoming match before mirroring snapshot. No fallback when RPC missing/error/repair, so DB104 must precede newEdge. Actual-source/native --legacy previousRED nowGREEN: actual incoming SQL BEFORE UPDATE fault makes wholeRPC rollback including firstassignmentwrite, planner rejects; full fingerprint unchanged/no split writes. Then actualsuccess clearsboth, checkedoutunavailable. Native actorclaim/ACL anon+authdeny/servicegrant, wrongclub/table/session/assignment/version/incoming/nullsession zero-delta; stale replay zero-delta; validlock nochange; schedulepresent repair nochange. Synthetic scoped faultDDL BEGIN/ROLLBACK, no production/network. New function applied only owned ready_capacity_ci.
+
+Separate ownedclone vinpoker_ops_legacy104_ddl fullBEGIN/ROLLBACK removesnewobject, actualapply securitymetadataPASS. Nativehandles terminal/PGstopped.43 actualsource testsPASS includes strictRPCreceipt/unavailable/repair/wrongscope/version; DenoPassRcheckPASS; JSON/YAML/syntax/diffPASS. CI104apply+--legacy wired after103, NOT dispatched. No fulltype/build, concurrency104 notyettested, no liveparity/deployedplanner40/realrest15/tourproof. Adoption remains separate multi-request path pending; this migration ONLY cleanup, not fulllegacyplannercompletion.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next104 realworker/close/retry concurrency+additionalidentity cases, then adoption atomicboundary/mainplanner native40 and campaign G5/G6/G8/G9 acceptance. Recovery revoke newRPC/restore compatible reviewedEdge without returning to splitwrites; never rewrite operationalhistory.
+
+## G3 NEW actual-source/native RED: legacy cleanup split commit
+
+Baselinec52aa75f7 clean. Added explicit opt-in --legacy to existing native harness (not default/CI yet). Actual reconcileAndAdopt function stripped from current TS, executes against SQL-backed attendance read and actual first assignment UPDATE COMMIT; inject transport failure before SECOND attendance update dispatch. Actual result {adopted:0,cancelled:1}, DB assignment preassignNULL while incoming stillpre_assigned/tablemarker retained; exact assignment+incoming fingerprint changed, desired zero-delta assertion RED. Not a production observation; synthetic isolated club with explicit legacy fixture, no externalcalls.
+
+Initial seed tried assigning a preassign after incoming alreadycheckedout, correctly blocked by DEALER_ASSIGNMENT_BINDING_ATTENDANCE_NOT_LIVE, NOT productRED; didnotweakenconstraint. Revised fixture preassigns whilecheckedin then setsattendance checkedout (legacy lifecycle drift permitted by schema), constraints remain. New adapter executes actualsource querysequence; second write synthetic transporterror, first writesrealPG. Demonstrates protocol split commit, not a database transaction rollback failure. Fixture evidence retained. Native finallystopped/nohandles. No productpatch yet; --legacy intentionallyfailing, don'twireCI until fixed.
+
+Next: NEW reserved104 viaCLI for service-only exact club/table/session/assignment/version/incoming cleanup. Lock settings/physical/session/assignment/attendance in compatible order, revalidate legacy/no-live-schedule + ownership; update both rows in ONE transaction, preserve ambiguous rows as repair_required. Do not merely throw after first clientUPDATE (alreadycommitted). Keep checkedout dealer unavailable; no automaticready/force-release/newrestpolicy. Add actual second-update SQL fault rollback + positive + tenant/stale/retry/concurrency. Then replace A2 clientmultiwrite with RPC; adoption separate stillrequiresatomicreview. Owner local-onlyhold/masterACTIVE; no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges.
+
+## G3 actual native cancel contract and rollback qualified
+
+Baselinea17db4126 clean. Inspected A2 legacy cleanup/adoption: still multi-request writes, no existing canonical legacy atomic RPC found in active migrations. Do NOT declare solved by transport acknowledgement guards alone. Before designing server seam, expanded existing native negative harness with actual current cancel_rotation_slot contract. Synthetic actual assignments pre-assigned to incoming, actual announced schedule inserted within BEGIN/ROLLBACK. Service-role actual RPC returns cancelled + exact schedule_id; assignment preassign cleared, incoming available/tablemarkerNULL, schedulecancelled. Repeat actual RPC returns noop, confirming noop cannot be treated as fresh cancellation proof.
+
+Second transaction creates scoped BEFORE UPDATE schedule fault trigger then actualcancel. RPC returns error/detail native_cancel_update_fault; assignment preassign, incoming pre_assigned and scheduleannounced all remain, showing function's internal exception rollback is atomic. All fixture transitions/temptrigger/function/schedule rows ROLLBACK. These are DB-native actual-function tests, no fabricated result or live parity assumption. Full --negative also includes prior rest/OT/innerinsert/fault/OFF checks, terminal44750 exit0; PGstopped. Node/diffPASS, no new product source/migration. Existing CInegative command picks newtests up, notdispatched.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next actual-source+native proof for legacy no-schedule partialcleanup and new server atomic seam if confirmed; keep assignment/session/version and attendance/table ownership fences, no broad forced-release or policychange. Main planner/40worker integrated and G8/G9 stillunaccepted.
+
+## G3 emergency replan read/cancel failure boundaries
+
+Baselineaf8543256 clean. Extended actual replanSingleTable source tests: schedule error/null ignored and could clear legacy intent; assignment read error misreported assignment_no_longer_active; cancel transport/noop ignored and clear continued. Initial test adapter update returnedundefined causing testTypeError; fixed chain+explicit boundary afterclear, then confirmed RED5 on actual inspected control flow. No native/live mutation claim from this mock reproduction.
+
+Fix: schedule error/nonarray throws rotation_schedule_snapshot_unavailable before mutation; assignmentError throws explicit rotation_assignment_snapshot_unavailable while successful null remains inactive; each cancellation must acknowledge cancelled with exactslot ID before any legacyclear/newpick. Errors produce existing relocked:false/error detail; no fallback to authority. Positiveinactive noRPC/no clear; verifiedcancel proceeds through clear to deliberately stopped supply boundary.38 actualsource testsPASS/focusedDenoPassRcheckPASS/diffPASS. No fulltype/build/native/fullplanner40 proof. Legacyclear multi-request acknowledgement/CAS/atomicity, adoption write path and final emergency announce errors remain for review; not claiming allplannerfixed.
+
+No runninghandles/nativePGnotstarted. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/masterACTIVE. Next native cancel contract and multi-write legacycleanup/adoption safe-boundary evidence, or full planner bridge; campaign G8/G9 remain unmet.
+
+## G3 PassR reconciliation read/cancel acknowledgement guards
+
+Baseline5cf15e36e clean. Actual reconcileAndAdopt extraction RED2: dealer_attendance read outage/null converted empty map, cancelled announced slot and cleared snapshot. Added error/Array.isArray guard before any reconciliation mutation. Positive verified dealerpre_assigned preserves lock; successful empty dealer rows still cancel stale schedule.
+
+Then actual-source RED5: cancel RPC transport error/null/error/noop/wrong schedule ID all previously counted cancelled and cleared assignment snapshot. Now requires successful {outcome:cancelled,schedule_id:exactrequested} before snapshot mutation/count. Noop is not proof lock was cleared; abort current planner phase so next tick refetches authoritative state. Existing main catches errors/degrades dispatch. Contract source reviewed in archived original cancel_rotation_slot and current close79 requires cancelled; no live parity claim. No server authorization or RPC write semantics changed.
+
+31 actual-source transport testsPASS, focused DenoPassRcheckPASS/diffPASS. Fixtures/queryRPC synthetic, not native planner/runtime/production evidence. Native worker103 tests not rerun because unchanged. Legacy A2 multi-request cleanup/adoption updates and emergency replan still need separate acknowledgement/atomicity review; not claiming entire planner fixed. No push/CI/live DB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyhold/masterACTIVE. Next exact native cancel definition/contract and remaining planner seams/fullcapacity, then G5/G6/G8/G9 acceptance.
+
+## G3 PassR early-break supply read failure no longer becomes zero
+
+Baseline8f57955af clean. Inspected main PassR: count_available_dealers RPC error ignored; non-number coerced0, negative accepted, causing end_breaks_on_demand with manufactured shortage. Actual-source entrypoint extraction tests RED6 on oldsource (null/error/null/-1/string0 invoked release; NaN/Infinity hid invalid input without diagnostic). Not a live/PG mutation reproduction: transports and upstream seams synthetic, actual phase control flow executed.
+
+Fix requires successful nonnegative integer count before computing requestedRelease. Invalid count adds early_break_supply/rotation_available_count_unverified and skips release; continues independently validated normal supply/planner path. Release RPC errors/malformed nonarray result and thrown failures now populate result.errors; caller process-swing/index.ts already records passR.errors as dispatch degradation. Rest floor15 unchanged, no force seated release, no new policy/notification. Verified0 remains eligible for existing demand-driven release, verified1 meets one-table demand/no release. Existing rollback/OT paths unchanged.
+
+Expanded actual-source suite22PASS, including positive0/1 and releaseRPCfailure visible; focused Deno check actual passR filePASS, diffPASS. No newmigration/DBchange, nativePGnotstarted, no fulltype/build/CI/deployedEdge/main40worker proof. Owner local-onlyhold; no push/liveDB/frontend/flags/Auto/Daybreakchanges. Next full actual planner/worker native bridge or remaining source gaps; campaign G3/G8/G9 still unaccepted.
+
+## G3 worker103 real two-session overlap qualification
+
+Baselinebbf7c06a2 clean, product/103 unchanged. Extended existing native harness --overlap, reusing two-session psql pattern from manualSwingCancel.currentSchema.mjs; Windows WSL adapter plus Linux direct. Actual held transaction/barriers observed in pg_stat_activity: holder ClientRead with live xact, waiter wait_event_type Lock before releasing holder. Both statement/idle timeouts15s; finally close/await both handles. No timing sleep masquerading as concurrency.
+
+Two competing workers, same exact assignment/version but different eligible incoming dealers: both candidate orders PASS, one swung, stale waiter actual SWING_ASSIGNMENT_CONTEXT_MISMATCH, uncommitted effects invisible, exactly one released old assignment, two active assignments for two tables, losing candidate still available, zero in_transition. Canonical operator_close_club_table_v2 (actual owner authenticated claims) vs actual worker: close-first and worker-first both overlap PASS. Close-first releases old assignment/session, stale worker rejected; worker-first commits new assignment, close waiter then releases it and closes exact session. Final zero active assignments for physical table and zero assigned/in_transition attendances. No close/reopen/new-session claim in this test.
+
+Terminal93193 exit0, PG stopped finally. Node/diff checks PASS; workflow --overlap command wired not dispatched. No fulltype/build, production, HTTP/cron/planner or realrest15 proof. Next main planner/dispatch capacity+shortage/failure, remaining G5/G6 source gaps; G8/G9 web/provider/performance/finalchecks remain. No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyhold/masterACTIVE.
+
+## G3 worker103 shortage and injected inner-write qualification
+
+Baseline f5daf0194 clean,103 bytes unchanged. Extended opt-in native --negative only, not rerunning unchanged40positive. Actual RPC with two occupied tables and both spare attendances checked out returns no_dealer. Outgoing remains assigned/unreleased/same attendance, first OT marker set; canonical update advances assignment version1->2. Initial assertion incorrectly expected unchangedversion and failed; corrected after observing actual OT mutation (not productfix/no policychange). Repeating with CURRENT expected version returns no_dealer and preserves exact initial overtime_started_at. No forced release/new assignment. This characterizes existing OT marker semantics, not payroll amount or UI shortage behavior.
+
+Added actual database AFTER INSERT fault trigger scoped to a newly seeded synthetic club, inside BEGIN/ROLLBACK. Invokes real service worker103, inner overload returns error/detail native_capacity_insert_fault; asserts exact jsonb snapshots of ALL club assignments/attendance/breaks before vs after unchanged. Trigger/temp function/DDL and attempted operational writes rolled back. This is actual SQL fault injection, not fabricated result; no production trigger. Native --negative terminal7988 exit0: insufficient-rest/transport/OFF, shortageOT and nested insert rollback PASS. PG stopped finally. Node syntax/diffPASS. No product source/SQL changes, full checks/CI still notrun. Existing workflow negative command automatically includes these new cases, not dispatched.
+
+No push/live DB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-only hold, master ACTIVE. Next true concurrent two-worker and close/worker barriers, additional malformed/race_lost boundary cases, main planner dispatch/40 shortage, realrest15×3 and integrated tour/browser/performance/release remain outstanding.
+
+## G3 worker103 atomic rejected-result boundary (partial qualification)
+
+Baseline8d433e602 clean. CLI generated candidate20261016003744, catalog103 unused in owned/root catalogs, reserved forward migration20270128000103_dealer_worker_swing_atomic_result_v1.sql SHA256 9bb8838b598cb444738576a64bf2df97b74ddc7b0c83494bdc97e4891f605f23. Pins prior worker22 normalized function MD5 000dfe42e72accb2ca83df44a3aedac4; postgres owner/short DDL timeouts. Same service-only signature, exact context/settings lock order, emptysearchpath. Wraps perform_swing + bind in PL/pgSQL subtransaction; returned rejected/malformed outcomes trigger private ZX103 rollback and return retained original JSON. Actual thrown errors still propagate. Success swung and existing explicit no_dealer OT branch retained; no rest/payroll/OT policy changed, no direct history repair.
+
+Cause: old outer perform_swing marks outgoing attendance in_transition before calling inner overload; inner catches rest-trigger exception and returns JSON error, so worker22 previously committed outer partial transition. Native RED from8d433e602 now GREEN with103: actual recently released candidate rejected DEALER_REST_REQUIRED/P0001, Edge still500/non_success_outcome, exact full attendance + assignment snapshots unchanged. Pre-dispatch synthetic transport failure in verification and mutation RPC both500 with assignment unchanged; AutoOFF skips with unchanged assignments. Those fault tests are transport injection, not actual HTTP/provider crash. No Edge safe-skip patch retained.
+
+Owned ready_capacity_ci applied103 only locally. Positive rerun required due DB change: actual ready/PG2=3531ms,10=15676ms,40=65082ms; all assignment/session/attendance counts and replay/metrics checks PASS. Terminal44308 exit0/PGstopped. Separate clone vinpoker_ops_worker103_ddl: full103 BEGIN/ROLLBACK restored exact worker22 digest, then actualapply+anon/auth deny/service grant+definer/emptypath assertions PASS. Catalog JSON/YAML/syntax/diff PASS. Workflow103 path/step wired after102: isolated clone, apply103, negative then capacity; NOT dispatched. No fulltype/build, no production or parallel concurrency proof. Explicit no_dealer OT behavior preserved structurally but still requires runtime characterization; no claim arbitrary failed nested side effects all covered. Next runtime error/race_lost injections and shortage/no_dealer conservation + both-order concurrency; main process planner/dispatch40 and realrest15×3 remain.
+
+All PG stopped/no active handles. No push/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-onlyhold/master ACTIVE. Requalification/source integration is not release acceptance.
+
+## G3 NEW RED: worker rest rejection leaves outgoing attendance in_transition
+
+Baseline e2d43aa30. Extended native capacity harness with explicit --negative (not default positive run). Seed two actual operational tables; rotate one through real ready Edge/worker; immediately offer the actually released outgoing attendance to the other overdue table. Actual worker returns {outcome:error,detail:DEALER_REST_REQUIRED,sqlstate:P0001}; Edge500 non_success_outcome. Assignment fingerprint unchanged BUT full attendance snapshot changes the other outgoing dealer from assigned to in_transition. Expected zero-delta regression FAILS, real native PG evidence. Subsequent dispatch sees no_overdue_table because canonical inventory quarantines the damaged assignment/attendance context. Preserve fixtures; no live observation or historical Quads causation claimed.
+
+Earlier attempt using a fresh never-worked dealer with check-in1min was NOT valid inter-swing rest repro: no release marker/history, existing policy allows first work. Do not add a new check-in waiting policy. Initial assignment-only fingerprint gave false confidence; expanded full attendance comparison exposed partial write. Temporary Edge classification of rest error as safe skip was REMOVED before commit, because it would hide this corruption. No product source changes retained this turn. Negative test remains deliberately RED until atomic RPC fix; fault/OFF cases after that assertion are NOT reached/NOT proven. Positive capacity already qualified on unchanged product source, not rerun.
+
+Next concrete action: inspect actual perform_swing overload/exception boundary and worker wrapper22; create NEW catalog-reserved migration via CLI, transactionally roll back inner returned non-success (not merely catch SQL exceptions), preserve exact session/settings lock order and original response/grants. Qualify both rest rejection and forced nested errors with full attendance/assignment/break/receipt snapshots; concurrency both orders and current positive. Only then consider normal safe-rest skip classification. PG stopped finally; no active handles, push/CI/live DB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-only hold/master ACTIVE.
+
+## G3 ready Edge native capacity 2 / 10 / 40
+
+Baseline 03489bbf1; added opt-in readyWorkerCapacity.native.mjs executing the actual ready handler, actual internal-auth/inventory helpers, and actual PG17 queries/RPCs. HTTP/PostgREST replaced with a guarded psql adapter; no fabricated mutation outcomes. Exact owned DB vinpoker_ops_ready_capacity_ci, loopback55441, PG17/data-directory and no-pg_net guards. Synthetic clubs/dealers without contacts; fallback ready path (planner disabled in fixture), not main process-swing planner/dispatcher. Fixtures set overdue/check-in timestamps: NOT evidence of real rest15 rotations.
+
+Initial 2-table attempt failed before rotation: fixture service_role is NOBYPASSRLS, owner sees settings ON while service sees no rows. Confirmed bootstrap creates NOLOGIN service role without hosted bypass attribute. No product bug/Auto fix inferred. Harness now creates a uniquely named disposable NOLOGIN/non-superuser BYPASSRLS role inheriting existing service_role grants, retaining service JWT claims; drops it on exit. Original service role, grants and RLS policies unchanged. Matches server-only admin RLS semantics, not user authorization proof.
+
+Small smoke PASS 2 swings/2 replays, then full phase run PASS: 2=3571ms,10=15868ms,40=62290ms. Each incoming actual handler outcome swung has an exact persisted club/table/attendance assignment; replay skips state_changed. Final active counts, distinct attendance/session counts, released counts and success metrics each equal phase size. This is sequential event processing/capacity, NOT 40 concurrent Edge instances, HTTP latency, true auth server, cron, shortage proof or three rest15 rotations. Private runner stopped PG finally; terminal session25035 exit0. Node syntax and git diff checks PASS. No CI dispatch or workflow integration yet (must adapt CI connection guard explicitly before wiring).
+
+No push/production DB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-only hold remains. Next: shortage/insufficient-rest and dispatch failures on actual path, then main planner/worker capacity; full G3/G8/G9 and release acceptance remain outstanding.
+
+## G3 ready-worker released-history starvation
+
+Baseline5413960f2 clean. Broadercapacityaudit inspectedactualreadyEdge vsoperationalinventory. Genericactivewrong-sessionhypothesis dismissed: inventoryalreadyquarantinesunreleasedinvalidassignmentrows, so nonewselectorRPC/migration added. Actualremainingcandidate: readyquery statusassigned omittedreleased_atNULL, allowingreleasedbutmislabelledhistoricalrow ononeoperationalphysicaltable tooutrankanotherlegitimateoverdueassignment. ActualhandlerwithrealAuth/inventoryhelpers+synthtransport RED picksreleasedhistoryid8notcurrentid9; fixedsinglequery .is('released_at',null). Positivecurrent-only andhistorypresentbothGREEN; no rest/OT/duration/auth/policy changes.
+
+NativePG17 proof inowned102qualified via readyWorkerReleasedHistory.pg17.sql: initialsamephysicaltableduplicatefixture REJECTED byidx_unique_active_assignment, notproductRED; didNOTdropconstraint. Revisedtwo-tablefixture: releasedhistoryassigned onclosedoldsession ofreopenedemptytableA, liveassignmenttableBoverdue. Schemaacceptsrow, actualcanonicalserviceinventorycontainsbothphysical/current-sessionrows, oldSQLchooseshistoryA whilefixedSQLchoosesliveB. Entirefixture/currentdueupdate/newsession/historyrowROLLBACK, PGstopped. No claimcurrentoperationalwritercreatesmalformedhistory; demonstrateslegacy-validstoredstate. Pinnedactual5413960f2 oldhandler --baseline rerun onrevisedtwo-tablefixture RED expectedexit1, currenthandler GREEN. Thisprovesselectionstarvation, notactualperform_swing runtimeorhistoricalQuadsincident.
+
+Deno focusedreadyEdgecheckPASS, Nodecheck/YAML/diffPASS; actualhandlerdefaulttest+nativeSQLstep+DenoCIentrywirednotdispatched. Baselinecomparisonoptionallocalhistoryonly, defaultshallowCItestsnewsource. No 40-tableEdgecapacityattemptclaimed; initialinventorycapacityreviewledtofixfirst. No push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges/nohandles. Local-onlyhold/mastergoalACTIVE; nextisolatedactualreadyhandler/native2->10->40qualification (inclshortage/retry) iffeasiblewithoutDocker, plusreviewatomicreadyRPCactualACL/callersemanticsbeforesecurityclaims. FullG3realrest15×3/deployedworker/tour/performance/fullchecksremainunaccepted.
+
+## G3 actual initial-recovery component -> Edge -> native102/19 qualification
+
+Baselinea002c51b9 clean. Addedopt-in initialAssignmentRecovery.native.test.tsx importingactualcomponent/parser, executingactualassign-dealerhandler inVM, bridgingRPCnames/typednamedargs toactualservice-rolePG17 functions. Authuserdiscovery synthetic, HTTP/PostgREST replacedbyguardedpsql; no fabricatedreceipt/status/authoritydata. Whitelistonlyis_club_dealer_control/read19/resolve102, table/writebranchthrows; explicitVINPOKER_NATIVE_INITIAL_UI=1 plusloopback55441/postgres/exactDB/PG17/owneddata_directoryguards. SQLto_jsonb normalizesPostgRESTJSONscalars; verboseSQLSTATE/message mapsrealPGerrors, notmade-upconflicts. NormaldiscoverySKIPS; workflowexplicitoptinclones102ci fixtureDB, notdispatched.
+
+Ownedhelper initial102-ui-native.mjs cloned102qualified tovinpoker_ops_initial102_ui, native16MBPG+WindowsVitestoneworker, stopfinally. SixjoinedtestsPASS: plainmissingholds thenrealclosedresolverobsoleteclear; actualcommittedreceiptwinsafterfixtureclose/no cachedtables; reallegacyrow/no fullreceipt remainsattention; opensessionoccupied+newmissingkey remainsnonterminal; unrelatedactoractualDBauthoritydeniesbeforeprivateRPC; actualwrongdealer/keyreceipt22023 surfacesconflict/journalheld. EverycaseappDBfingerprint(sessions/assignments/attendance/receipts)unchanged. Read-onlybridgecreatesnooperationalfixture beyondclone/localjournal. Initial4tests failedbecausepsqlbooleantexttreatedJSON/unverified; diagnosispreflightfailed/4skippednotPASS; correctedadaptertoJSONserialization then4PASS, addedactualauthority/conflictnegatives ->6PASS. Thiswasprotocolharnessissue, notproductRED/no productpatch. Testlint0/YAML/diffPASS. No fulltype/build/browser375/realAuthserver/HTTP/deployedworker/rotation/providerclaims.
+
+Allhandlesexit0/PGstopped; no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/fullgoalACTIVE. NextbroaderremainingG3/G5/G6localacceptancematrix andsourcefailures; donotrerununchangedsuitesjustaccumulatePASS. Release102/Edge/frontend/preconditionsandfullG8/G9journey/provider/40Edge/rest15×3/performance/finalchecksremainunaccepted.
+
+## G3 resolver102 Edge/UI consumer and legacy-safe read-only wire
+
+Baseline522dc13a9 clean. Addedexplicitassign-dealer resolveroute to102 serviceRPC afterexpectedactor/exactclubpermission. Whitelistedmetadata/assignmentonly; foundvalidreceipt priority, obsolete/notfound/legacyattention acceptedonlywithnullreceipt, malformed502, lock/context/transport503, permission42501->403, exactidempotency22023->409. ActualUIadded 'Kiểm tra hiệu lực phiên cũ', strictresolutionparsermode+all6intentfields, acceptsobsoleteonlyfromresolverenvelope, comparejournalbefore/afterawait/beforeclear. Parentsettlement distinguishescommittedvsobsolete(toastinfo/no fakeassignedsuccess); latestcallback closesonlymatchingexactsessionmodal andrefetches. Receipt-onlymissingneverclear, legacyattentionkeepsjournal/noretryfromthatresult. No newSQL/permissionchanges thiscommit.
+
+Importantnewcompatibilityfinding: oldEdge ignoreunknownmode, so flatreceipt/resolvewithoutertable+dealer canreachlegacyassignmentpath. Changedread-onlywireto {mode,assignment_intent:{sixfields}} withNOoutertable/dealer; newEdge requiresnested forreceipt/resolve, legacyguard400beforequeries. Assignwritesremainflat/backwardcompatible. ExistinglocalflatreadAPIcallerwouldfailclosed400, never silentlywrite. Optionalactualpinned e140ae0d314a70186c4003bac245c11f5375eaa2 handlercomparison via --legacy-wire provedflatmodeignored/legacyknownreceiptsuccess vsnested400zeroDBqueries. This isVMpathproof, notactualunintendedproductionDMLclaim. Optionalcomparisonlocalfullhistoryonly, notmisreported asCIshallowcheckoutcoverage; defaultVMmatrix coverscurrentflatreadrejection.
+
+Actualcomponent15PASS (prior10+obsoleteexplicitonly/receiptfakeobsolete+wrongsessionhold/legacy+outagehold/foundpriority/lateobsoletechangedjournal), realEdgehandlerVMmatrixPASS includingresolverargs,statusshape/whitelist/role/conflict/timeout/unavailable, optionallegacywirePASS. Deno focusedactualcheckPASS, focusedstrictcomponent/helperTypeScript0, editedcomponent/helper/testsESLint0/diffPASS. Existingworkflowalreadycoverspaths/commands, notdispatched. Actual102nativebytes unchanged/notrerun; EdgeAuth/RPC synthetic andcomponent transport synthetic, no joinedHTTP/native/browser375proof. No fullprojecttype/build/parentfulllintclaim.
+
+No PG/processhandles/no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyhold/fullgoalACTIVE. Next actualcomponent->actualEdgehandler->native102/19 receipt bridge (closedmissing/committed/legacy/tenant), plusbroaderremainingG3/G5/G6matrix. Release102mustprecedeEdge beforefrontend; nestedwiremitigateslegacyartifactmismatchbutdoesnotreplaceexactreleaseprovenance. Fullcampaignrealrotation40Edge/provider/webtour/performance/finalchecksnotaccepted.
+
+## G3 initial-assignment102 serialized obsolete proof foundation
+
+Baseline6d60015d4 clean. Inspected canonicalworker22: request-key advisory(280017/hashtext) -> acquisitionguard ->physicaltable -> exactopensession ->attendance; receiptprioritizesbeforelifecycle. Addedservice-only read/lock resolver withsamekey/physical/sessionorder, actor/currentclubpermission before/afterwait, derivedopen_manual_actor_requestkey, strictnonnull6UUIDintent. Existingreceipt19 lookup underkeylock wins evenafterclosure; conflict raises, neverclearswrongpayload. Missingreceipt locksphysical/exactsession thenholdslegacyassignmentmarker asneedsreview; onlyclosedexactsession/no legacycommit returnsintent_obsolete. Open/busy/supply state notterminal. No assignment/attendance/session/receipt writes ornewtombstone, no existingwriter/reader changes. Reviewedcanonicalopen26 INSERTsnewsessions; strictSETclosed_at=NULL searchinactivemigrations foundnone (notclaimalladmin/directSQLpathsmonotonic).
+
+CLIcandidate20261015235941 reserved102; SHA256 bdf880411f806f90b8200944cff68d486b5d1ac25e1ae387254a8ae0c87fac87. Pins nativequalifiedworkerMD5f69e7e1da758389192a74654ce7eaba1 andreaderMD54ecb325063873acfdba78e5bfc0fbdc1. Emptysearchpath/3slocktimeout/serviceEXECUTEonly; recoverydisablefutureEdge/UIconsumer thenrevoke/dropresolver, preserveallhistory/journals.
+
+OwnedPG17 vinpoker_ops_initial102_qualified clone101final: injectedDDLrollback keepsresolverabsent/dependenciesbyteidentical, successfulapply unchangeddeps; true2connectionwriter-first/resolver-first advisoryblocking (receipt_found vsunknownmissing), actualworkerpositiveok; closeholderphysicallock->resolverwait->latewriteradvisorywait yieldsobsolete thenactualworker table_session_changed/zero newreceipt. Existingreceipt winsafterfixtureclosure. Explicitlegacyassignmentwithoutreceipt/closedfixture remainslegacy_receipt_review_required; role/tenantnegative, ACL/path/owner andreadsfingerprintzeroDMLPASS. Seed/directclose/legacyrows aredisposablefixture transitions, notcanonicalFloorcloseE2E. Twoactualworkercommits+legacyrowretainedonlydedicatedDB. Firstinitial102ci attempt failedfixturetable_number201rangecheck afterDDLapplied, notproductRED; fixedfixture11–14 andqualifiedfreshclone fullPASS. No invariantweakening/guardbypass. PGstoppedfinally/nohandles. Nodecheck/YAML/catalog/hash/diffPASS; workflowclonetestwirednotdispatched. No fulltype/build/HTTP/browser/providerclaim.
+
+Next: wire explicitEdge resolve mode+whitelistedmetadata andUIbutton acceptingobsoleteonlyfromserializedresolver (read-onlyreceiptmissingneverclear). Addwrongpayload/context/latejournal andactualhandler/nativebridge coverage asneeded. No push/liveDB/Edge/frontend/flags/Auto/Daybreakchange, local-onlyhold/mastergoalACTIVE. 102notlive andUIstillconservativelyparksstalemissingintentuntilconsumerwired; G3andfullcampaignnotaccepted.
+
+## G3 standalone initial-assignment journal recovery UI
+
+Baselined7a88c7bb clean. Reusedexistingjournalformat: scopekeyalreadyencodesactor/club/table/session/dealer andvalueisrequestUUID, so noV2migration/duplicateauthoritativejournal. AddedstrictdealerInitialAssignmentIntent enumeration/receiptmetadata/compare-before-clear helper andManualAssignmentRecovery component. Listsallscopedoldintents independentlyofmodal/currenttablecache, perrequestlookup/read-again, explicitretryonlyaftermissing andsecondfreshlookup, sameexact6fieldintent/noautowriter. Knownwriterresponse stillrequirescanonicalreadenvelopebeforeclear. Corruptsame-scopejournalblocks; foreignactor/clubkeysnotread. Multipleolderintentsresolvedindividually, no discard/newkey. NewconfirmAssign blocksdifferentpendingkeybeforewrite andincrementslocaljournalrevisionafterterminalclientobservation; keepssameintentserverreceipt-firstretry. Parentrecoverysettlementuseslatestcallback, clearsmatchingcacheonly, closesmodalonlysamephysical+exactsession, boundedrefetch.
+
+Actualcomponent10PASS: oldformatremount/noautomaticRPC, receipt->explicitretry/readagain/write/readsequence+doubleclick, malformed/readoutagehold, actorABA, replacedjournalCAS, readhanglateignored, corrupt/foreignscope, multipleintentsownclear, lostretryresponse/remountreceipt-only, latestcallback. Actualsourcecallback9PASS (prior8+newsession/dealerblockedwhileotherpending). SyntheticEdge results; no actualHTTP/DB joinedclaim. FocusedstrictrealTypeScript component/helper0diagnostics, editednewfiles/testsESLint0; parentbaseline103errors/3warnings/current103/3 unchanged, NOTfull lintPASS. YAML/diffPASS. Workflowactualcomponentcommand/pathswirednotrun. Reactbestpracticescheck aftertwoTSXedits: existingButton/tokens, keyedscope/mountedasync, noaddedpolling, purposefulorderedread/write/read, wrappedcontrols/breakall; notbrowser375/accessibilityauditproof. UIengineering skillkept existinglayout, addedonlyrecoverysection.
+
+No newDB/Edgecontractchanges thiscommit (usesprecedingreceiptmode), no nativePG/sourceREDclaimfornewcomponent; baselinegap documented andqualificationadded. Stillmissingterminalcancel/obsoleteproof foruncommittedinitialassignmentwhosesessionbecamestale; heldconservatively, no arbitrarylocalerase. Next actualcomponent->Edgehandler->native19receiptbridge andsafe terminalresolutioncontract ifneeded. No runningPG/processhandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, latestlocal-onlyhold/fullgoalACTIVE/G3notaccepted; fulltype/build/browser375/provider/realrotation/40Edge/performance andwebjourneyremainunaccepted.
+
+## G3 initial-assignment Edge read-only receipt and explicit actor/club intent
+
+Baselinee140ae0d3 clean. ActualhandlerVM RED3: receiptmode ignored/returnedlegacy success (newAPIgap), expectedactor ignored accepted200whenactualAuthactorB, tablequeryerror returned404not503. Added explicit assign/receipt modes (unknownmode400), expectedactor/requested_by mismatch403beforeprivilegedqueries, optionalexpectedclubwritebinding andstrictreceipt7identityfields. CurrentconfirmAssign now sendsmodeassign/expectedactor/club explicitly, no keychange. Legacycallers withoutnewfields remain supported undercanonicalUIDpermission. CommonauthorizeClub checksdataexactbool: false403, error/throw/malformed503. Tablequeryerror/throw503, successfulnull404. No permissionpolicychange/rolegrant.
+
+Receiptmode authorizes exactexpectedclub then calls existingservice-only worker_read_initial_assignment_receipt_v1 using actor-prefixedkey andexactclub/table/session/dealer; no activegame_table/session/attendancequery, duration/writer/notification path. Whitelistedmetadata+assignmentID envelope; nullreceipt explicitnotfound/unknown (notterminal); payloadmismatch409, malformed502, readerror/throw503. No newDBmigration, table/directgrantorworkerpolicychange. Reader19 alreadychecksreceiptpayload/dealer; serverAuth remainsexistingauthenticateUser, no dependency/authstackrewrite.
+
+ActualEdgehandler syntheticAuth/RPCmatrixPASS: exactmetadata/params/whitelist, historicalreadzeroFROM, missingreadonly, invalidintent/actorzerodb, false-vs-unavailableauthority, malformed/mismatch/error/throwreceipt, Auth401/503passthrough, legacyreceiptcompatibility+expectedclubdenial/table404. This isVMactualhandler notdeployedHTTP/realAuth/DB/provider. ActualDeno2.8 focusedcheck `deno check --no-lock --node-modules-dir=none supabase/functions/assign-dealer/index.ts` PASS. Firstattempt --cached-only unsupported; discoveredhelp thenusedsupportedflags. Denoauto package-resolution cachednpmdependencies (inclunrelatedprojectdeps), lifecycle scriptsignored; no lock/package/sharednode_moduleschange. No installsinto junction. Testcallback8PASS afternewbodyfields, testESLint0/YAML/diffPASS. Existing103parentlintbaseline notrerun/claimedfullPASS; nofullprojecttype/build/CI. WorkflowactualVMcommand/pathwirednotdispatched.
+
+Next: durablefullintent initialassignment recoveryUI independentofmodal/activecachedsession, readingthisroutebeforeexplicitretry. ExistingUUIDperpayloadjournal stillnotstandalonerecovery; no arbitrarylocaldiscard/cancellationcontractclaimed. Also actualhandler->native19receipt positive/negative bridge canqualifynewwireenvelopewithoutHTTPwhenuseful. No runningPG/processes/no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges; local-onlyhold/mastergoalACTIVE/fullcampaignnotcomplete.
+
+## G3 manual initial-assignment client lifetime and journal readback
+
+Baseline0cc2461be clean. Inspected actual assign-dealer Edge: forcedmanual path alreadychecks storedinitialassignmentreceipt beforecurrentassignment/attendance; shift_id onlydiagnostic inforcedpath, notclaimedshiftbindingbug. ActualnewconfirmAssignsourcecallback RED3: silentstoragewrite stilldispatchedmutation; lateackdeletedreplacedjournal/closedmodal; oldclubacktoastsuccess. Newactor/club/modal/exactsessiongeneration+mountedfence, resetrender-scopeflight,20swriteobserver and10serrorbodyreadobserver; oldawait/catch/finally cannotclose/clearnewflight. Clientchecksselectedclub/tablematch beforedispatch. Preserveexistingrequestscope/key; strictUUIDstoredkeyvalidation, cache-vs-storageconflictbeforewrite, persist/readbackbeforeinvoke, exactkey/cachebeforeclear andverifyremove. Unknownretainssamekey/noautowriterretry. No backend/RPC/assignment/restpolicychange.
+
+ActualReact source-callback8PASS (RED3->GREEN plushanglatesuccess/explicitexactbodyretry/doubleclick, unmountretain, corrupt+supersededkeyzerowrite, actorABA, samephysicaltable/newsessionlateack). Testexecutesactualcallback/ref/effectslice withsyntheticEdge, notrewrittenbusinesslogic/fullpanel/browser/DBproof. TestESLint0; sourcebaseline103errors/3warnings/current103/3 same101any+2noempty+3deps, NOTlintPASS. YAMLparse/diffPASS; newpath+actualvitestcommandwiredlocally. No fulltype/build/actualEdgeHTTP/replayruntimequalification. EarlierSwing18 andnative5sourcebytesunchanged/notrerun.
+
+Remaining manualinitialassigngap: journal isstillUUIDper actor/club/table/session/dealer key, notsinglefullpayloadrecoveryentrypoint; vanishedoldsession/differentdealer canleaveoldintentunreachable. Edge hasnoexplicitread-onlyinitialassignmentmode or expectedactor/clubintentbinding yet. DoNOTclaimcompleteunknownrecovery; next inspect canonicalreceipt API/EdgeVMharness forboundedread-onlyrecovery+actorbinding beforedurableclientcompletion. No runningPG/processhandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges; local-onlyhold/mastergoalACTIVE. FullG8/G9/releaseunaccepted.
+
+## G3 actual hook -> native PG17 recovery integration
+
+Baseline1cf9c873b clean. Added opt-in manualSwingRecovery.native.test.tsx importing actualproductionhook/journal and invoking actual100reader/101v2writer/cancel under authenticatedrole+JWTclaims via guardedpsql adapter. This closes separateReactmock/nativeSQL evidencegap forargumentmapping/JSONBreceipt/reload/cancellation; notPostgREST/HTTP/Authserver/browserlayout. Explicit VINPOKER_NATIVE_SWING_UI=1 plusloopback55441/postgres/exactownedDB/PG17/datadirectoryguards required; normaltestdiscovery SKIPS ratherthanclaimsPASS. ExistingCIstepclones101ci toowned101ui andexplicitlysetsflag, nodispatch. NativeWindowsusesexistingWSLdistro/psql, LinuxCIusespsql; UUID/int/namedargRPCwhitelist. No newpackages/deps.
+
+Privatehelper swing101-ui-native.mjs startedowned16MBPG, clonedfinal101 tovinpoker_ops_swing101_ui, ranWindowsVitestoneworker, stoppedfinally. Fiveactualhook/DBtestsPASS: realwriterCOMMITtheninjectedresponseloss->remountwithoutassignmentcache->exactreceipt/no2ndwriter/onekey; pendingunsentintent->actualcanceltombstone->latev2replay/nooperationalchange; realstaleversionwriterreject/no receipt->actualcancelwithoutlocaldiscard; actualcancelCOMMITthenlostresponse->remountreceipt-onlycancelack; actualSQLactorBwhileintentAdeniedzerowrite, thenonlyAresolvesjournal. ExplicitexpectedSWING_VERSION_CONFLICT andSWING_OPERATOR_FORBIDDEN checked; notanySQLerrorassuccess. JSONBresults notmocked; onlytransportloss/noticecallbacks simulated. Initial4testPASS thenaddedactornegative/strictstaleerror, reran5onexistingdedicatedDB withfreshrequestkeys, notresettingoperationalrows. Testcommitsretained onlythissyntheticclone. ESLinttest0/YAMLparse/diffcheckPASS. No runtimeproductbugRED/newsourcepatch claimed; addedjoinedqualification.
+
+Allprocesshandles terminal/PGstopped. No fullprojecttype/build/web375/HTTP/provider/actualrotation claims; canonicalwriter may produceknownnonrotationoutcome, this qualifiesreceipt-recovery notrest15/dealerreplacement. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Ownerlocal-onlyhold/mastergoalACTIVE. NextbroaderremaininglocalG3/G5/G6matrix, notrerununchangedsuites; campaignG8/G9/release stillunaccepted.
+
+## G3 Swing101 cancellation tombstone and actor-bound writer consumer
+
+Baseline316f70309 clean. Source gap: no safe terminal exit for failed/no-receipt Swing; arbitrary localdiscard could allow latewriter. New localforward101 via CLIcandidate20261015233550 reservedcatalog101, SHA256 fdd9a2e41533c5378156dc2fe4ce55123de885b0978d780b9512cadef5ee1043. cancel_dealer_manual_swing_v1 same7args asreader100: currentauth==expectedactor/currentexactclubauthority, physicaltableFORUPDATE thenexistingreceipt/FKs (same73order). Foundreceipt returnsunchangedexactreader100 result; missing validatesassignment/session/table/club identity, permits changedversion/status, inserts cancelled/requestID tombstone inexistingoperatorreceipt. No assignment/attendance mutation orundo. Lateoriginal/v2writers replaytombstone. No receipt deletion onrecovery; disableconsumer thenrevoke/dropnewentrypoints, preserve tombstones. New operator_perform_swing_v2 expectedactor/club wrapper locksphysicalexactclub and recheckspermission beforedelegating originalwriter unchanged, closing clientAuthcontextconfusion/table-club TOCTOU. Authenticatedonly grants, emptysearchpath,3slocktimeout.
+
+OwnedPG17 finalDB vinpoker_ops_swing101_final clone100qualified: injectedDDLfailure restoresabsence/original100reader+writerbyteidentity; apply; actualtwo-connection ClientRead holder/Lock waiter bothordersPASS: cancel-first latewriter returnscancelled withoperationalfingerprintunchanged, writer-first cancelreturnsoriginalstoredresponse; concurrentplainreader seesuncommittednotfound (notterminal). Exactone receipt, legacywriterreplaycancelled, actor/crossclub negatives/service+anonEXECUTEdeny, samekeychangedversionconflict. Injectedreceiptinsertfailure leavesnotombstone/operationalchanges. Fixtureseed committedonlydedicatedDB fortrueconcurrency; testreceipts retained. Earlier101qualified/ci have firstdraft beforev2extraexpectedclublock; doNOTuseasfinaldefinitionproof. FirstCIcandidate addedfault+legacyreplayproof; finalnewDB tests rerun afterrealSQLchange. No deadlock/bypass encountered; PGstoppedfinally/nohandles. Runtimewriter may returnknownnonrotationoutcome; doesnotproveactualreplacement/rest15journey.
+
+Actualhook nowwritesv2 withactor/club, exposesexplicitcancelbutton and accepts onlyexactservercancelledrequestID (orcommittedoriginalresult) beforejournalclear. Cancellationtimeout/readerror/mismatchedjournal retainsintent; noautocancel/retry. Hook18PASS (prior14+cancelproof/commitpriority/hanglateignored/changedjournalzerodispatch), editedhook/testsESLint0, strictfocusedhook/helperTypeScript0diagnostics. YAML/catalog/hash/nodecheck/diffPASS; workflow101clone/testwired, nodispatch. Parentonlybuttonadded, priorbaseline103errors/3warnings notnewfull lintclaim. No fullprojecttype/build/browser375/actualHTTP/joinedReactDBproof. No sourceRED claimed fornewAPI; directexistinggap+newcontractqualified.
+
+No push/liveDB/Edge/frontend/flags/Auto/Daybreakchange; local-onlyownerhold/mastergoalACTIVE. Next: inspect broaderremainingG3/G5/G6acceptance matrix and portnewrecoverycontracts tolocalintegrationtests asneeded; finalfulltype/build/CI,realprovider/webtour/rest15×3/40Edge/performance20×5 stillunaccepted. Releasepackage100/101needs reviewedmanifest/recovery/livepreconditions beforeanyapply.
+
+## G3 manual Swing durable local consumer for receipt100
+
+Baselinec5f997ad2 clean. Replaced actual in-memory callback with useManualSwingRecovery and strict dealerManualSwingIntent boundary; actual DealerSwingTab passes canonical assignments/RPC adapter and renders recovery notice independent of active assignment list. SessionStorage journal scoped actor/club stores exact seven identity/CAS/key fields, persists/readbacks before firstwriter, compares wholejournal before receipt/retry/clear. One unresolved manual request per actor/club blocks a new manual intent until reconciled. Reload onlyreads local journal; no automaticwriter. Receipt metadata must match allfields and known stored outcome beforeclear/toast/refetch. Explicitretry reads receipt first, only confirmednot_found resends exacttuple once, then rereads. Missing/error/malformed/inprogress staysunknown; no newkey. Read10s/write20s observers, generation/mounted/synchronousflight protections retained. Refetch bounded10s afterknownreceipt, failurewarning doesnotundo knowncommit. Notice offers lookup/reload/explicitsamekeyretry, withwrappedbuttons/requestID forsmallwidth; no redesign/Auto/rest/payrollchanges.
+
+14 actualhooktests PASS withsyntheticRPC: allprevious4 callback scenarios retained, plus persisted-beforewrite/canonicalreceiptgate, remountwithdisappearedassignment, receiptfirstexplicitretryandfoundstopswriter, silentstoragefailure/corruption, journalappearsaftermount/lateoldreceiptnewjournalCAS, malformedmetadata/readoutage/readhangandlatesuccess, actorABA. Replaced source-slice newFunction harness with importedproductionhook, not rewritten mock implementation. Previoussource-onlymemorybugRED remains documented; these newrecovery tests arequalification ofnewcontract, notfabricated baselineRED. Focused realTypeScript hook/helper diagnostics0 (noemit/strict/types[]), newhook/helper/tests ESLint0. Largeparent baseline104errors/3warnings vsnew103/3 (oneanyremoved; remaining101any+2noempty,3deps), NOTfull lintPASS. YAMLparsed/diffcheckPASS; workflowpaths+existingactualvitestcommandcovernewfiles, noCIrun. Native100bytesunchanged/notrerun; React+DBtests areseparate, notactualHTTP/fullpanel/browser375 proof.
+
+Remaining: a definitive failedwriter with no receipt (e.g. staleassignment) remainsconservativelyparked; need serialized terminalresolution/cancellation contract before safelydiscarding itsjournal. Also review expectedactor binding on original writer duringAuthsessionchanges. No arbitrary local discard/newkey added. Thus unknownresult recovery UI exists butnotallG3terminalstatesaccepted. No runningPG/processes/no push/DB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyhold/mastergoalactive; fulltype/build/productiontour/40Edge/rest15rotations stillrequired.
+
+## G3 Manual Swing100 exact read-only receipt foundation
+
+Baselinec88a57b60 clean. Actual source has private dealer_swing_operator_requests but no manual operator read-only receipt endpoint. Added local forward100 generated via CLI candidate20261015232616, collision-checked/reserved20270128000100 in catalog. SHA256 dd4dac547f821922395a9a0781a50b19ae5b01a3bdee7d7d007c8a684a42e83b. Pins actual reviewed operator writer MD5a25a91e02d6f2c0399e5aba1086e4acf; no existing writer changes. New get_dealer_manual_swing_receipt_v1(actor,club,table,session,assignment,version,key) requires auth.uid==actor and current exact club DealerControl IS TRUE. Exact tuple mismatch conflicts; no active-assignment join, so retired rows remain recoverable. STABLE SECDEF emptysearchpath, authenticated EXECUTE only; underlying receipt table still private. Returns metadata/status/response; receipt_not_found is observation only, never terminal rollback proof. Recovery disableconsumer then revoke/dropreader; preserve all receipts/history.
+
+Owned nativePG17 vinpoker_ops_swing100_qualified clone99qualified: injectedDDLfault rollback leaves readerabsent andwriterbyteidentical, successfulapply writerbyteidentical; actual canonicaloperatorwrite storesresult then newreader returns exactresponse, wrongversion/nullkey/actor/outsider/crossclub denied, grants/owner/definer/path/STABLE verified, assignment/attendance/receipt fingerprint unchanged acrossreads/denials. Fixture transactionROLLBACK. InitialtestfailedAUTO_SWING_OFF whilecreatingfixture, notproductRED; fixedfixture to explicit supportedmanual actor intent (guard remainsenabled, noAutoON). One privatehelper attempt failedshellbackquote beforetest; fixed to directnode runtime-only argument, notguardbypass. FinalfulltestPASS. Dedicated initial100ci alsohasreaderapplied andruntime-onlyPASS. BothPGstoppedfinally; nohandles. Cataloghash/YAMLparse/nodecheck/diffcheckPASS. Workflowwired clonedDB+actualcommand, notdispatched. No claim newreader concurrent-with-writer serialized: absent staysunknown, exactsamekeywriterreplay remainsfencedbyexistingDBcontract.
+
+Still no UI durablejournal/recovery entrypoint for disappearedassignment; nextwire actual actor/club storage/CAS/receipt-before-retry flow and test reload/unmount/storagefailure/lateactor/changedjournal. No productionDB/Edge/frontend/flags/Auto/Daybreak changes, no push/CI/fulltype/build. Mastergoalactive/local-onlyhold; G3notaccepted.
+
+## G3 manual Swing frozen in-session intent and lifetime
+
+Baseline38d8b0f70. Actual callback regression previously RED: unknown outcome deleted the request key, then retry used a new key/version from refreshed assignment cache. Keep the full operator_perform_swing argument tuple by actor/club/assignment while outcome is unknown/error. Observe writes through existing20s bounded helper; no automatic retry. Actor/club generation plus mounted lifetime fences prevent stale acknowledgement/error/finally from touching current screen/flight. Synchronous ref still blocks double clicks. Known classified outcomes release the in-memory intent; backend writer, rest15 and assignment policy unchanged.
+
+Actual React source-callback seam4 tests PASS: immutable key/version after unknown, timeout and ignored late success with explicit same-tuple retry, club-switch independent flight, unmount acknowledgement/double-click. Synthetic RPC, NOT full panel/browser/DB/worker proof. Test ESLint0; source baseline105errors/3warnings versus current104errors/3warnings (removed one any; remaining102any+2no-empty and3exhaustive-deps), NOT lint PASS. YAML parsed and diffcheck PASS; workflow path and actual test command wired locally, no dispatch. Fulltype/build not run under RAM hold.
+
+Remaining G3 integrity gap: this intent is memory-only, not reload/remount durable; disappeared/released assignments have no recovery entry point. Need actor-scoped durable journal and exact read-only operator receipt reconciliation before unknown-outcome recovery is accepted. Do not claim complete manual Swing idempotency or production repair. No PG/process left running; no push/CI/DB/Edge/frontend/flag/Auto/Daybreak change. Master goal active; local-only owner hold. Next: inspect existing operator receipt schema/ACL and add narrowly scoped recovery contract with runtime tests before client durable recovery.
+
+## G5 stale roster remains blocked after a null mode-request poll
+
+Baseline05c0c0e15 clean. Workflowinspection foundconfig/modepathtrigger!=explicitunitexecution; addedactualsequentialvitestcommands forconfigform/helper andmodecomponent/journalhelper plusmodefiletriggers. ParsedYAML/executablecommands/existingfiles checkPASS; nodispatch andnoCIclaim. Priorhandoff 'workflowpaths/testschecked' waspathinventoryonly, notprooftheseunitcommandsalreadyran.
+
+ActualnewmodecomponentRED: STALE_STATE -> onChangedfalse -> manualnext4spollrequestnull resetloadedtrue/enabledsave withunchangedoldrosterrevision. AddedawaitingRosterfence: capturestale revision/epoch; null/pendingpollcannotreplacefreshnessproof, skiprefreshwhileawaiting. Clearonlywhenpropsrevision/epochchanges orcallerexplicitlyreturnsfreshrostertrue; thenverifyrequestagain. StaleonChangedobservation bounded10s; unknowncallbackdoesnotunlock. Existingrequestjournal/CAS/serverpolicy unchanged, nostaleintentautomaticallyresent. Positivecontrolnewrevisionpropsunlockaftercanonicalrequestread.
+
+Actualcomponent18+journalhelper4=22PASS, editedESLint0/diffcheckPASS. NotnewDBwrite/authorization/runtimeproof; previousmode49nativebytesunchanged/notrerun. No fulltype/build/browser375/HTTP; callbackdeadlinecodeboundedbutdedicatedhangregressionnotaddedhere. No PG/nohandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, local-onlyownerhold/fullmastergoalactive/incomplete.
+
+## G4 config-save journal replacement and readback integrity
+
+Baseline0d4eda3aa clean. NULLreceipt hypothesis dismissed fromschema: actor/hash/revision fields NOTNULL andEdge suppliesvalidatedactor/CAS; no fabricatednullbug/productpatch. ThenactualTournamentDialogRED2: oldsuccessfulconfigsave removedlaterjournal; no-opstorage setItem stilldispatchedatomicwriter. Existingdurableconfigsavehelper enhancedwithcanonicalwhole-request compare/readbackpersist andexactclear; formusesboth beforewrite/receipt andcleanup. Appeared/changed/corruptjournal blocksdispatch; successcleanupfailure acknowledgesknowncommit butretainsjournal andstaysblockedratherthanunsafeclose/newsave. CancelUIcancloseblockedjournalform toremount/reread preservedcurrentjournal (doesnotcancelDBrequest). Genericunexpectederror treatedunknown, notguaranteedrollback; explicitTournamentConfigSaveError businessdenial stillclearsonlymatchingjournal.
+
+Actualform8PASS +clienthelper11PASS=19. Newtests oldacklaterjournalpreserved/no close, no-opstoragezerowriter, journalappearedaftermountzerowriter+closewithoutdelete, unitpayloadCAS/readbacknormalcleanup. Existingreloadreceipt-only/doubleclick/actorisolation/conflict tests preserved. Editedhelper/testsESLint0; pagebaseline2no-explicit-any/current2sameoffsetlocations, NOTfull lintPASS. DiffcheckPASS. Server88/91 unchanged/nativeatomicproofnotrerun; no newDB/HTTP/browser/fulltype/build qualification. Workflowexistingpaths/testschecked. No runningPG/processes/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-onlyownerhold/fullmastergoalactive; nextremainingintegratedmatrix/evidence, notG4webaccepted.
+
+## TV publish PromiseLike adapter type regression
+
+Baselinedb7b2a6bd clean. RecentTV observer caller passed declared UntypedRpc PromiseLike into helper expectingPromise; SWC/render doesnotchecktypes. Added lightweight realTypeScript noemit/nocache virtualprobe that extractsactualUntypedRpc alias andactualwaitForManualPlayerResponse call fromcomponentAST, importsrealhelper only (notwholegraph). ActualRED TS2345 missingcatch/finally/Symbol.toStringTag. NormalizeonlyTVcallwithPromise.resolve; helpercontractunchanged. ProbeGREEN, affectedTVscope7PASS, sourceESLint0/diffcheckPASS. Workflownewpath/commandwired; nofullcomponent/projecttypecheck/buildclaim. Theprobe intentionallychecksonecallcontract andfailsifnewcallsneedreview; notsyntheticreplacementtypesforactualhelper. No installs/sharednode_moduleswrites/noPG/nohandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Fullmastergoalactive/local-onlyhold; fulltype/buildstillrequiredlater.
+
+## G5 table control-mode lifetime / bounded observation
+
+Baseline8c4e70cc1 clean. Existingmodejournal alreadybeforewrite/clearcomparespayload; no missingCASbuginferred. ActualnewcomponentRED: pendingwrite A->B->A acceptedoldresponse, calledonChanged andremovedrecoveryjournal because scopeRefstringequalsAagain. Reusekeyedactor/tour/logicaltable/exactsessionlifetime wrapper +alivefences forsave/cancel lateerrors/ack/finally. Newtablecontext getsindependentwriteflight; oldunmountedresponsecannotborrownewgeneration orclearcurrentjournal. Keepsfrozenexpectedepoch/revision/key andserverauthority. Existing10sreadobserver and20smutationobserver appliedgetrequest/save/cancel; noautomaticwriterretry. Explicitlocaljournal remainsafterunknownwrite. No DB/RPC/seat/chip/modeconsumer policychange.
+
+Actualcomponent17PASS (prior14+ABAwriteack/readhang-latepending/writehang-preservedjournal) andeditedESLint0/diffcheckPASS. Cancellationdeadlinecodewrapped butno newdedicatedcancelhangtestyet; onChangedcallback itselfnotnewlybounded. Native49/95pendingmove/correction/modebackendtestsbytesunchanged, notrerun. No browser375/fulltypebuild/actualHTTP proof; source-qualifiedscopereliabilityonly. Existingworkflowalreadytracksfile/tests. NoPGneeded/nohandles/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges, latestlocal-onlyownerhold/fullmastergoalactive. Next remainingintegration/provider/worker/browser/finaltypebuild/performance evidence; do notclaimwholeG5accepted.
+
+## G6 TV editor actor/tournament lifetime and bounded publish observation
+
+Baseline4207fba4c clean. Issuancecaller alreadyhasbeforewrite/settlejournalscopechecks; no samebuginferred/no patch there. TV actualnewscopeRED3 after fixingmissingResizeObserver fixture(notproductbug): latepublish afteractor/tournamentchange toastsoldsuccess; hangingread staysloadingforever. Addedkeyedactor/tournamenteditorlifetime+alivefences, bounded10ssettings/readback and20spublishobservation, sharedrefwriterflight/noautowriterretry, blockdialogclosewhilepublishobserved (scopechange stillunmounts). Async read/recoveryerrors handled; invalidreadrevision blocksediting, saveackneedsnewersaferevision. Readbackmatchingoldrevision no longerackspublish. ExistingCAS RPC/payload/layout/UIcomponents preserved; noDB/authpolicy/clockruntimechanges.
+
+New actualJSONBkeyorderRED: matchingnewrevision/layout content withreverseobjectkeys notacknowledged. ReuseexistingcanonicalVoiceJson forlayout comparison. Scope tests7PASS includingactor/tourlatefences, readhang/lateignored, write+readbackhang/noautoresend, unchangedoldrevisionnotack, emptysuccessobjectnotack, reorderedJSONBmatchingnewheadack. Existingrenderer/editor7PASS beforelastcanonical/formatonlyedit; newscope7PASS afterward. Existingtests nowAuthstub +testing-librarywaitFor/awaitact (ratherthanvi.waitFor) removesactwarnings withoutmockingrenderer/assertions. Browserslistagewarning retained/no installupdate. EditedESLint0/YAMLparse/diffPASS. Workflownewpaths/testcommandwired, notremoteCI. No fulltype/build/browser375/anonymousHTTP/storageassetretention proof. No durableTVrequestreceipt/schemaadded; canonicaldesirednewheadnotproofwhichactorrequestcreatedit, CASretained. NoPGneeded/nohandles/no push/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Local-only ownerhold/fullgoalactive; nextremainingintegratedgoalqualification.
+
+## G5 Restore-bust local journal replacement fences
+
+Baselinea8e418228 clean. ActualRestoreBustDialogRED2: lateoldsuccess removedlaterrequestjournal andcalledonRestored/onClose; stale retry overwrotechangedseatpayload andissuedsecondrestore. One initialtest usedColor-upbuttonlabel, correctedtoactualrestorelabelbeforesecondREDconfirmedRPCcount2vs1 (notproductissue). Guardwhole{actorId,tournamentId,intent} viaexistingcanonicalVoiceJson beforepersist/receipt/cancel/clear; mismatch/corruptionblocks andoffersrereadjournal, no oldsuccess callbacks or newwriter. Sharedclearcoversbothcommittedrestoreandcancellationproof. Clientlifetime/generation/deadlines unchanged; no restorestack/entry/seat/RPC/DB mathorpolicychange.
+
+Actualcomponent27PASS (prior23+4new oldack/newkey, samekeydifferentseatbefore retry, supersededreceipt/cancelzerodispatch). Editedsource/testsESLint0 anddiffcheckPASS. Existingserver66–68/93 runtimeunchanged, notrerun; no fulltype/build/browser375/newDBcommit qualification. Existingworkflowincludesexactchangedtest/path. No runningPG/processes/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges. Nextotherclientunknownoutcome/generation gaps andremainingintegratedgoalacceptance; fullmastergoalactive/local-onlyownerhold, notcomplete.
+
+## G5 Color-up local journal replacement fences
+
+Baselinea77b2e3a6 clean. Widerremaininggoalreview foundColorUpTab retainedactor scope/deadlines/unknownrequests but clearIntent unconditionallydeletedcurrentstorage andsubmitIntent overwroteanysame-scopejournal. ActualrenderRED2: oldreceipt clearedlaterkey; stale retry overwrotechangedpayload anddispatchedwriter. Newwholeintentcomparison reusesexistingcanonicalVoiceJson: rejectchanged/corruptjournalbeforewrite, receiptlookup/cancellation; checkexactjournalbeforeclear. Onconflict/storagefailure explicitjournalerror andrereadrecovery; original/laterjournal notdiscarded. No RPC/math/rounding/inventory/DB policychange; doesnotclaimcross-tabdistributedCAS.
+
+ActualColorUpcomponent41PASS (prior37 +4regression oldack/newkey, samekeychangedpayloadbefore retry, supersededreceipt/cancelzerodispatch). Existingvalidreplay/unknown/cancel/lateactor/timeouts preserved. Affectedlintbaseline4errors no-explicit-any andcurrent4sameexistinglocations (offsetonly); NOTlintPASS; testfileclean. DiffcheckPASS; no fulltype/build/browser375 ornewDBtestneeded forclientjournalguard. Existingcanonicalserverchip69/53 localtests unchanged/no rerun. BroaderG5 liveUAT/conservation/tour stillrequired. Nextotherremainingunknown-clientseams/integratedmatrix, notalllocalfeaturecompletion. No runningprocesses/PG/no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchanges; ownerlocal-onlyhold/fullgoalactive.
+
+## History99 actual verifier -> commit -> resolution concurrency
+
+Baselinee7c630b5f clean. New historicalIntentResolution.verified.concurrent.mjs bundles the actual existing server verifier/outcome canonicalization in memory with esbuild (test-only, no dependencyinstall/clientbundlechange), loads DBsnapshot, computes realoutcome/outcomehash/requesthash, executes actual owner_admin commit RPC under serviceRole and99resolution. Dedicated vinpoker_ops_history99_verified clone of final99qualified. Synthetic completed2player hand fixture uses realstoredJSONBboard/hole/actions, 30000x2 starts/30100+29900 ends and200pot. Fixture SQL first failed board/hole text[] vsJSONB; correctedtypes fromschema evidence, not a productRED. Laterpublicproof check initiallyexpectedoutcomeHash; actualpublicRPC intentionallystrips5internalmetadatafields, correctedoracle to exactplayers/pots andhashabsent (no productchange).
+
+True overlap bothorders observed holderClientRead andwaiterLock: commitfirst ->resolutionfound; resolutionfirst ->notfound thenrealcommit, nextreadfound. After sourcechange, pastcommittedrequest remainsreceiptfound (notobsolete); actualsamekeycommit replayidempotent andoneoutcome/key, seats/entriesbyteunchanged. Currentpublicprojection matchesactualverifierplayers/pots; sourceupdate removesoldverifiedpublicprojection, no internalhashleak. Final anon-roleprojection assertions terminalPASS onexacttestsource. No actualHTTP/Edgeauth/browser/provider/workerlease claim. Localtestcommits stayonlydedicatedcopiedfixtureDB; no cleanup/historydeletion onsharedorproductionDB. PGstopsfinally, nohandles.
+
+Workflow99 newverifiedDBclone/test wired; esbuildalreadyexistingdependency. nodecheck/YAMLparse/diffcheckPASS beforefinalanonroleedit. Next fullunknown-lifecycle review plus integrated remaining G0–G9 evidence. This closes local realverifier/commit-vsresolution gap, not wholeHistory/liveacceptance. No push/remoteCI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; local-only hold/fullmastergoalactive.
+
+## History99 explicit serialized resolution consumer
+
+Baseline62cf05c32 clean. Actual handler initialnewmode RED400 -> additive mode resolve now requires fullfingerprint/expectedactor/boundedkey, retains verifiedAuth+currentowner authorization, only invokes service resolve_tracker_historical_display_intent_v1 (noverifier/snapshot/writer). Validates fullreturnedidentity/key/revision/hashes, safecurrentrevision, exactfoundreceipt or null+strictnewerrevisionobsolete; same/futurerevnotfound remainsunknown. Whitelists outputmetadata; backend/transporttimeout503, mismatchedproof502, actor403/keyconflict409. Existingreceipt/commit contracts retained. SQL99 dependency required, not deployed.
+
+Shared historicalCommitResolutionState strictparser +explicit singlehandbutton Đối chiếu revision yêu cầu cũ. Sharedflight/generation/preawaitjournalCAS; invokes resolve only. Found usespastcommitack+canonicalreload; obsolete alone CASsettlesjournal andallowsnewpreview, notverifiedpublication/handundo; notfound/error/malformed preserveoriginalkey. Lateaccountresponse/replacedjournal cannotclear. Batch/automaticpending cannavigate tosinglehandcontrol; no automaticresolve/write/retry added. Keepexistingtokens/components, no redesign/extra dependencies.
+
+29focusedPASS: actualsinglecomponent20, stricthelper5, capability4. Includesfound/obsolete/unknown/malformed, actor/journalchangedlate, fullfingerprintnegativepatches. ActualVMEdgehandler syntheticAuth/RPC matrixPASS includingresolveauthorizationoutage/denial, backendthrow/error, malformed/future/currentrevisioncontradictions and privateRPCfieldstripped. No actualHTTP/Auth/SQL joined test/newsuccessfulverifiercommit-overlap proof; those remain next. AffectedESLint0, helperfocusedtscPASS(notfullproject), diffcheckPASS. Workflowalreadywiresallchangedtests/paths, no remoteCI. No PGneeded/nohandles/no push/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Local-onlyhold; fullmastergoal active/incomplete.
+
+## History99 additive service-only stale intent resolution foundation
+
+Baselinebc75a935f clean. CLI migration new candidate20261015224458 reserved local forward99 after no collision. New resolve_tracker_historical_display_intent_v1 locks hand->tournament->receipt in writer-compatible order, requires service claim/ACL and current owner/admin of exact tournament, validates strict key/CAS/hashes, re-reads exact prior receipt under hand lock. Receipt_found wins even if revision advanced; absent receipt +strictly newer revision yields intent_obsolete; same/future expected revision stays receipt_not_found. No DML or journal clearing. Pins normalized existingwriter fcf8dac1239f25742e1c9566d523aa25 andreader10f5be573cbcddbd10806cd11b98389d to fail on unknown lock/CAS semantics. Emptysearchpath, bounded3s lockwait, service-only EXECUTE. Existingreaders/writers untouched. Recovery drop/revoke additivefunction afterconsumerdisabled; no ledger/history deletions.
+
+NativePG17 firstexpectedmissingRPC RED on dedicatedclone vinpoker_ops_history99_ci; initialfunctionapply/staticGREEN. First rollbackDB qualifieddraft; then nullablepermission predicate made failclosed IS NOT TRUE. Final exactmigration d06bb38e2adaff726a5631666682b678f989ae59790aa51e956daaca7881b9fc applied only in fresh vinpoker_ops_history99_qualified after injectedpreCOMMITfault restoredfunctionabsence and exact priorwriter/reader definitions/ACL/owner/config. StaticactualserviceRole positive, sameRevunknown/staleobsolete, unauthorizedactor andnonserviceclaimdenied, ACLrestricted, actualoldrevisioncommitRPC stale_source_revision withzero outcome/hand/queue deltas. Receiptpriority/mismatchedpayload static uses explicitlysyntheticstoredreceipt, NOTproofactualverifiercommit. FixtureinitialactualserviceRole couldn'tdirectSELECThand (localstub RLS); capture test revision aspostgres before SETROLE, retain realserviceRPC execution; no policyweakening. FinalDDL/static terminalPASS onqualifiedDB; nooperationalfixturewrites persisted bystaticrollback.
+
+True two-session correction/resolution overlap bothorders PASS onhistory99_ci: holderClientRead/barrierwaiterLock observed, correctionfirst returnsobsolete; resolutionfirst seesunknown then aftercorrectioncommit nextreadobsolete. Seats/entries/outcomeaudits unchanged; two synthetic pot-size/source-revision changes persist only dedicated99CI fixture. Does not yet prove commit-first successful realverifierreceipt concurrency. This is backendfoundation only: NO Edge/UI consumer; unresolvedclientjournal stillconservativelyretained. Next add Edge resolution mode/strictproofparser/explicitclientresolve and qualify actualcommit-first case before featureacceptance. Workflow99 clone/order/static/rollback/overlap wired but not dispatched. LocalPGstopped finally/nohandles. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes, local-only owner hold andfullmastergoalactive.
+
+## Historical preview deadline / terminal-intent investigation
+
+Baselinee1f35879f clean; get_goal authoritative active, unchanged full objective. Read exact service receipt reader00006 and writer00004: reader locks matching outcome only; absent receipt does not serialize with in-flight commit. Writer locks hand then tournament then outcome, validates revision/hash afterward. Therefore stale-source terminal resolution must acquire hand lock and re-read exact receipt/current revision atomically; independent receipt-notfound plus later snapshot is not sufficient. No unsafe journal deletion or source-only terminal-success claim added. Next new service-only resolution contract/runtime overlap test needed, keeping existing reader compatible.
+
+Independent actualRED: single-hand preview never releases disabled button when Edge stalls. Now uses existing10s read observer, shared flight guard with commit/recovery, bounded diagnostic-body parsing (including catch fallback); batch diagnostic parsing also bounded. No retries; late timed-out preview cannot advance state. Actualcomponent final27PASS: single14(including stalledinvoke/stallederrorbody) +batch13; capability4PASS before finaldiagnostic addition; affectedESLint0/diffcheckPASS. SyntheticIO, no actualHTTP/DB/browser375/fulltype/build. Existing UI/components/tokens andgenerationguards retained. No DBmigration/serverauth/poker/chip policychange. Work remains G0–G9/liveacceptance, not complete. No runningprocesses/noPG, push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes; local-only owner hold.
+
+## Historical proof read failure is unavailable, not absent
+
+Baselinea4c7fce14 clean. New regression actualRED2: automatic post-Finish helper dispatched preview+commit+receipt after canonical public-proof RPC returned error; batch also proceeded to Edge preview. Now helper throws to existing non-fatal verification_missing boundary and batch returns explicit historical_public_proof_read_unavailable, zero Edge/writer. Empty successful result still permits normal preview. Also removed batch verified classification from already_exists diagnostic alone: bounded canonical readback required, missing proof explicit unconfirmed and readerror unavailable. Found receipt and current-proof semantics remain distinct; no historical journal deletion based on this diagnostic.
+
+Affected26PASS (13helper +13actualbatchcomponent; synthetic IO, not actualHTTP/SQL). Tests include successful currentproof and missingproof after already_exists, plus all scope/persistence/deadline cases. AffectedESLint0/diffcheckPASS before final label-only clarification; no fulltype/build/browser/DB proof. No new migrations/Edge/server writes/policy. Next terminal stale History intent resolution and full integration acceptance; mastergoal active/incomplete. No runningprocesses; no push/CI/liveDB/Edge/frontend/flags/Auto/Daybreak changes. Local-only owner constraint remains.
+
+## Batch historical intent persistence and receipt-only recovery
+
+Baseline23b00c490 clean. Actual new component RED: persisted unresolved request was ignored and batch invoked preview rather than original receipt. Batch gateway now shares strict actor/tournament/hand journal with single-hand and automatic Finish consumer. Preview first resolves pending via exact read-only receipt; no new preview/key/writer for unknown. New confirmed batch commit persists/readbacks immutable intent before writer, includes expected_actor_id, then reconciles original receipt after any response/throw. Existing pending in commit path also only reads. Found receipt clears own CAS journal and separately reads current public proof; absent/stale public proof is not verified. Unknown/error/malformed remains journaled and UI points to single-hand recovery/explicit same-key retry. Reads bounded10s, writes existing20s observation without auto retry. Scope/run ownership guards retained; already-issued server writer cannot be undone. Bulk flag remains OFF; tests alone enable it.
+
+Actual component final10PASS: prior4scope cases + initialunknownreceipt + persist-beforelostwrite/remountreceipt-only + pastreceipt/currentproof false/true + storagefailurezerowriter + stalledreaddeadline/nolatepreview. Existing library4 and capability4PASS (before finaltest-only addition); affectedESLint0/diffcheckPASS before lasttest-only additions. One positive fixture initially selected duplicate text label; fixed role/name selector, not product behavior. Shared parser mocked in component scope tests; helper strictreceipt parser is real; not proof of poker/verifier/HTTP/DB runtime. No fulltype/build/browser375 due local hold. React/Frontend skill review kept existingcomponents/tokens, synchronous intentchecks and bounded sequential flow; no redesign/dependencies. Workflow already covers same changedfile/test paths and exacttests. Next stale-intent terminal resolution and remaining integrated G0–G9 evidence; campaign NOT complete. No runningPG/tool handles, no push/CI/liveDB/Edge/frontend/flag/Auto/Daybreak changes.
+
+## Automatic post-Finish historical journal integration
+
+Baseline2381b2b1f clean; fetch origin/main unchanged ed3db6ac6. Re-read master plan/rules. Prior turn status-only classified no progress; this turn actual RED: existing unresolved journal still invoked preview instead of original receipt. Helper now requires captured actor/current-scope predicate from both manual/Voice Finish callers, reads pending journal before public proof/preview, persists strict shared intent before writer, adds expected_actor_id, and reconciles exact receipt after any commit response/throw/timeout. Existing pending only reads receipt; never automatic writer retry/new key. Found receipt settles CAS journal then separately reads current public proof; historical receipt alone is not current verification. Missing/corrupt/mismatched/error receipts retain journal; scope change prevents late advancement/cleanup. Every observation remains bounded10s. No extra Auth role or server policy change.
+
+Focused final16PASS (12 timeout/preview/commit/readback/storage/scope +4 pending-journal cases); manualFinish actual callback20PASS; affected helper/tests ESLint0, YAML parse and diffcheck PASS. Synthetic IO only, not real Edge/DB/Auth/browser qualification. No fulltype/build due local RAM hold. Batch historical journal and stale pending terminal resolution remain next; whole campaign incomplete. No PG/start/live handle, push/CI/DB/Edge/frontend/flags/Auto/Daybreak changes. Owner local-only hold retained.
+
+## Explicit historical same-intent retry with receipt-first fencing
+
+Baselinede3dd65b0 initiallyclean. Singlecontroladdsconfirmedbutton Kiểm tra rồi gửi lại cùng mã. Sharescommit/recoveryflight, capturesgeneration, validatescurrentjournal/CAS beforeandafterawait. Readsoriginalreceiptfirst; foundack/pastcommitreload/nosecondwriter; unknown/malformed/readerrorstops; onlyexplicitconfirmednot_found permitsoneboundedcommit withunchangedactor/tour/hand/key/revision/hashes thenexactreceiptread. No automaticwriterretry/newpreview/key. Nativeconfirmexistingprojectpattern; UIcomponents/tokens kept. Existingreadonlyreceiptbuttonunchanged. Alreadyissuedserverrequestnotcancelled bynavigation.
+
+Actualcomponent12PASS includesexisting6 plusexplicitread->samekeycommit->readproof, doubleclicksinglewriter, found/readunavailable/userdeclinednoresend, actor/journalchangedwhilelookupzerowriter/nojournaldelete. Priorhelper4+capability4PASS unchangedhelperbytes. AffectedESLintPASS beforefinaltest-onlyaddition, diffPASS; nofulltype/build/realHTTP/DBnewproof. Backendidempotency/CASexistingcontract unchanged; notnewconcurrencyqualification. Stillopen: stalesource/noexistingreceipt terminalresolution remainsparked (no unsafejournaldelete); batch/ensurehelperjournalintegration remainsnext. NoPGneeded/no livehandles. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold; sourcecommitready, fullgoalactive/incomplete.
+
+## Single-hand historical commit journal / receipt-only reconciliation
+
+Baseline792676974 initiallyclean. New historicalCommitIntent.ts trustboundary: strict7fields UUIDactor/tour/hand, boundedkey,positiveCAS/hash64; sessionStoragev1 actor/tour/handkey storesmetadataonly (no cards/chips/credentials), canonicalCAS persist/readback/settle andexactreceiptfound/notfoundvalidation. SingleHistoricalSettlementDisplayControl restorespendingjournalperscope, blocksnewpreview/keyonpending/corruptjournal, persistsbeforewrite, adds expected_actor_id, boundedexisting20swriteobserver+10sreceiptobserver, sharedsingleflightforcommit/recovery. Anycommitresponse/throw followedbyoneREAD oforiginalreceipt; neverautomaticwriterretry. Onlyexactfound settlesjournal andonVerified reloadscurrentprojection, toast sayspastrequestcommitted notcurrentwinnerverified. Latecontextresponsepreservesoldjournal, storagefailurezerowrite, CAScleanupfailurekeepspendingbutacknowledgesknowncommit. Confirmdialogclosesondispatch so recoverycontrolsaccessible. Unknown/notfound stayspending forreceipt-onlybutton; notfound alone NOTproofwritefailed.
+
+Actualcomponent6PASS includespersist-beforelostwrite/remount/receipt-onlyrecovery(no secondwrite), storagefailurezerowrite andprioractor/tour/handlatefences. Stricthelper4PASS CAS/foreignscope/corruption/mismatchedproof/notfoundsemantics/laterrequestpreserved, capability4PASS updatedguardassertions toactualbuilderboundary (notweakened). Combined14PASS; afterdialogchangecomponent6rerunPASS. AffectedESLint initiallyoneeffectdependencywarning ->explicitprimitiveidentitydeps then0warnings/errors. Focusedpurehelper tsc --noEmit --skipLibCheck --targetES2022 --moduleESNext --moduleResolutionBundler --libES2022,DOM PASS; NOTfullprojecttypecheck/build/browserHTTP/DBproof. Workflownewpaths/helpertest wired, parse/diffpendingbeforecommit.
+
+Stillincomplete: confirmedreceipt_not_found withneverexecuted/staleoriginalrequest conservativelyremainsparked; needexplicit same-intentretry/terminalresolution, notunsafejournaldelete. Batch/ensureRecordedHandDisplayOutcome stilllacksharedjournalconsumers. No acceptanceclaimforwholeunknownoutcomecontract. NoDB/PGrunneeded/no newmigration. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold. Next explicitread-firstsamekeyretry/terminalstalehandling thenbatch/helperintegration andtests. Fullgoalactive/incomplete.
+
+## Historical read-only receipt Edge foundation (consumer pending)
+
+Baselinea9b42e2ee initiallyclean. Reusedexistingservice-only get_tracker_historical_display_commit_receipt SQL: it matcheshand/tour/key+storedactor+revision/sourcehash/outcomehash, returns immutablepastcommitmetadata evenaftercurrentrevisionchanges. AdditiveEdge mode receipt requireskey>=12/exactpositiveCAS/hash64/expected_actor_id; verifiedAuthactor mustmatchbeforeauthorizeRPC, currentownerpermissionstillrequired. Onlyauthorize+receiptRPC, noverifier/snapshot/commit/blindcorrection/backfill. Commonvalidcommitpriorreceiptbranchreused. Explicitreceipt_found/not_found envelope pinsactor/tour/hand/key/CAS; validreceipt requiresok/idempotent/safe settlementrevision/matching sourcerevision+outcomehash; malformedproof502, idempotencymismatch409, backendreaderror503. Pastreceipt proof isNOTcurrentverifiedpublication. Existingpreview/commit/correct_blinds compatibilitykept; optionalexpected_actor_id whenprovidednowfencesoldaccount onallmodes.
+
+ActualhandlerVM syntheticAuth/RPC testsinitialRED newmodeunsupported400, thenPASS found/nullnotfound/malformedproof/invalidCAS-key/noactor-beforeRPC/actorchangedzeroRPC/backenderror/idempotencyconflict andexistingauthmatrix. NoDBmigration/grants/newtable; SQLreaderexistingruntimeproofelsewhere, thisisnotdeployedHTTP/realAuth/newDBcommitevidence. No UIconsumer/journal/persistenceyet: stillrequiredforunknowncommitacrossnavigation/reload, single/batch/ensurehelper. Existingworkflowalreadyexecutesexpandedtest/path, nodecheck/diffPASS. NoPGneeded/no livehandles. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold; localfoundationcommitonly, fullgoalactive/incomplete. Next sharedstrictpendingHistoricalCommitIntent/journal+readreceipt-firstconsumer beforeanyretry/newpreviewkey.
+
+## Historical batch scope cancellation / old-run ownership repair
+
+Baselinefb7656d52 initiallyclean. ActualcomponentRED2/2: oldpreviewaftertourchange stillissued2Edgepreviewrequests; oldcommitbatchafterfirstwrite/scopechange stillissuedsecondcommit. Libraryexistingsequentialorchestration has no cancellationboundary. Addedoptional isCurrent fourthargument toexistingpreview/commitbatch functions (defaulttrue, preservesconsumers), checksbeforegateway andafterawait/catchbeforeprogress/results. Batchgatewayperrun checkscurrentbeforeeachRPC andbetweenpublicproofread/Edgepreview, afterEdgecalls; alreadyissuedwrite cannotbeundone butneverdispatchesnextoldscopehand. Componentactor/tourmonotonicgeneration+mountedguard, runobjectidentity ownership, scopefilteredresults; progress/toast/onCommitted/finally fenced, oldfinallycannotclearnewrun. No serverauth/writepayload/math/DB contractchange. ExistingbulkflagstaysOFF, testsONLYsyntheticallyenabletoexercisehiddencommitpath.
+
+Actualcomponent4PASS tourchange/ABA, oldcommitstopsnextwrite, account+tournewrunoldfinallypreservesbusy. Realorchestrationlibrary4existingPASS andcapability4PASS =12targetedPASS; syntheticAuth/RPC/parser, noHTTP/DBsettlementproof. Affectedcomponent/test/libraryESLint0errors, workflownewpaths/commandparsedpending/diffcheckbeforecommit. UIguidancekeepscomponents/tokens/no redesign. NoPGstartedneeded/nohelpersrunning. Unknowncommitreceiptretention/persistence/singlecontrolmessages/automaticensurehelper remainnextunresolvedwork; this isnotcancellationofservertransaction orproofalreadyissuedwritefailed. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold; fulltype/build/browser/fulltour/performance pending, goalactive/incomplete.
+
+## Historical display single-hand control late-response scope fix
+
+Baselinef220c2ede initiallyclean. ServercommitCAS hypothesis dismissed: currentEdge alreadycomparesall3previewrevision/sourcehash/outcomehash beforecommit; no backendchange. ActualHistoricalSettlementDisplayControl renderRED2/2 oldpreviewappearsafterhand/tourA->B andA->B->A. Added monotonicrender-time actor(userAuth)/tour/handgeneration, mountedfence, previewgenerationfilter (synchronouslyhidespreviousscope), beforeawaittokens forpreview/commit, guardsafterdiagnosticawait andfinally; resetpreview/dialog/busy onscopechange. Oldcommitmayfinishserver-side but cannottoast/onVerified/resetstateofnewhand. ExistingUIcomponents/styles unchanged. No authgrant/serverpolicy/math/writecontractchange.
+
+Actualrender4PASS A->B/ABA/accountchange/latecommitack; mockAuth/RPC/parser intentionallytestsUIscopeonly, notsettlementverification. Existingcapabilitytestinitial1FAIL becauseitreadobsoleteHandHistoryPanelwrapper; confirmedgateinHandHistoryWorkspace, correctedfiletargetwithoutchangingassertion ->4PASS. Combined8PASS; affectedcontrol/testESLint0errors, workflownewpaths/commandparsedPASS/diffPASS. Notbrowser375/fulltypebuild/HTTPcommitproof. BatchcontrolhasparallelunfencedrunRef resets and singlecontrolunknowncommit retention/messages remainseparateunresolvedwork; thispatch doesnotclaimstableidempotencyacrossnavigation/reload. NoPG/DBneeded. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold. Next batchscope cancellation+unknowncommit request retention/reconciliation, thenbroaderfinalcandidatequalification; fullgoalactive/incomplete.
+
+## Historical settlement Edge authentication/authorization dependency failures
+
+Baseline0ef14aa7e initiallyclean. Sourceignored getUser.error andmappedauthorizeRPCerror/malformeddata to403. NewactualhandlerVMtest initiallypositivefixturemissedexpectedrevision/hashfields soenteredunimplementedcomputeadapter->500; correctedfixturebeforeproductRED (notproductfailure). ActualRED Autherror+syntheticpartialuser continued200 instead503; this is trust-boundarycounterexample, notclaimrealSupabase returnspartialuser orliveexploit. Sourcealsofalse401withoutuser/false403permissionRPCoutage. Fixauthenticationexpliciterrorstatus classification matchinglive-update: credential400/401/403/422->401; outage/unknown/transport/rate->503authentication_unavailable. AuthorizationRPCthrow/error/malformednonboolean->503authorization_unavailable; onlyconfirmedfalse->403. No serviceclient untilauthenticateduser+confirmedtrue. ActorpassedtoexistingreceiptRPCremainstrustedauthData.user.id, no changeverification/math/commit/ACL/DB/policy.
+
+New historicalAuthEdgeHandler.mjs actualhandler withsyntheticAuth/RPC/CORS adapter anddummyverificationerrorclass; onlyauth/authorization/priorreceiptbranches exercised, notsettlementcomputation/workercommit/realAuthHTTP. MatrixPASS outagewith/withoutpartialuser, throw, unknown/rate, credentialdenials, absentuser/header, authorizationthrow/error/null/0/string/object, confirmedfalse, confirmedtruepriorreceiptroute/actorpin. Workflowexisting95handlerstep adds command/newpaths; no remoteCI. nodecheck/diffPASS, nofulltype/Denoartifact/provider/browserproof. NoPGstartedneeded. Cleanupendpoint has similarlegacyclassification/no frontendcallerfound, notchanged/notclaimedfixed. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold; sourcecommitready, fullG2/G6/webacceptanceincomplete. Nextotherremainingmanifest/writercapability gaps/finalqualification.
+
+## Tracker Edge Auth outage classification repair
+
+Baseline3597168b9 initiallyclean; goalAPIverifiedactive/fullobjectiveintact. Actualtournament-live-update handlerbootstrap previously maps any getUsererror to401, thrownAuthtransportoutsidehandlercatch. NewhandlerRED syntheticAuth503 ->actual401 expected503. Narrowbootstrapfix: awaitgetUser insidecatch; explicitAuth400/401/403/422 ->401, otherstatus/0/undefined/429/server/transport ->503 authentication_unavailable; successfulnouser remains401. Everyfailure failclosedbeforebodyRPC, no authretry/serviceclient/rolegrant. SameverifiedJWTactor/tenant checks unchanged. SharededgebootstrapaffectsManual/Voice actions, noDB/schema change.
+
+ActualhandlerVM/syntheticAuthRPC matrixPASS: status503/0/429/unknown andthrow ->503zeroRPC; invalidcredentialstatus401 etcdenied; validuseraccompaniedAutherror cannotbypass; start/action/Voicevalidate/prepare/finish/board/hole allstopbeforeRPC/no privilegedfallback. Existingmanual75handlerPASS after syntheticdenialfixture updated explicitstatus401 (genericError nowcorrectlyunavailable, notweakened401expectation). ActualFinishcallback20PASS inclfreshAuth503zeroEdgewrite+priorunknownjournalpreserved. NotrealAuth/DataAPI/browser/providerproof. No fulltype/build/Denoartifactcheck. WorkflowexistingEdge/callbackstepsalreadycoverchangedfiles, no extra dispatch. DiffcheckPASS. No privatePGstarted thisturn/no runninghandles. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold. Next remainingG2/G5/G6 runtime/readscope gaps/finalcandidatequalification; fullgoalactive/incomplete.
+
+## True concurrent pending-move cancel versus scoped Finish95
+
+Baseline0bee0a5ca initiallyclean. New scopedFinishMoveCancel.concurrent.mjs guardedloopbackPG17/port55441/postgres/exactdedicated vinpoker_ops_finish_move_ci/noPGoverride. Reusesexistingdeferredfixtureuniquemarker, freshsyntheticprefixes, canonicalrosters/handstart, authenticatedexactqueue+pendingdestinationmanual andfrozen95intent. Twoactualpsqlconnections: cancelholderidleClientRead -> Finishreturnsmanual_finish_busy then sameintentaftercancelCOMMIT succeeds/no move; Finishholder95+constraints idleClientRead -> cancellationobservedwait_event_typeLock -> FinishCOMMIT thenalready_resolved applied. Bothterminalno deadlock. Newconnectionexactreceiptread/replaymatches, exactlyoneFinishreceipt, oneactiveentry atoriginalsource vsdestination,0vs1ticket,total60000,manualepoch+1. Nativefreshdedicatedclone98rollback PASS; fixturecommitsretainedonlyinownDB, notproduction, no deletion. Helper/session89684polledterminalexit0/privatePGstopped. Existingclassic concurrency tests unchanged/notrerun. This testsactualmutex/rowlocks/canonicalAPIs, notHTTP/Edge/browser/pokeroutcomecorrectness/realnotifications.
+
+Workflow98adds dedicatedclone thennewscript, triggerpath; parse/nodecheck/diff pendingbeforecommit. No implementationbugfound/noREDclaim, sourcebusinessunchanged. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange/localhold. Next close/reopen andVoicegenerationpaths orremainingwritercoverage/finalcandidatequalifications; fullwebtour/40Edge/3rest15/performance/fulltypebuild remainmissing. Goalactive/incomplete.
+
+## Scoped Finish/deferred mode failure matrix runtime
+
+Baselinee013c8f18 clean. Reused sameSCOPED_FINISH_MODE_CASE with CANCEL_CASE, STALE_EPOCH_CASE, TICKET_FAILURE_CASE separately. Modeblockerassert nowaccuratelyexpects pending_move absent aftercanonicalcancel (stillactive_hand), presentbeforestale/faultconsumption. Preserveslegacydefaultstrictassertions. Addedmoving_entry identity beforelegacycancelcase reuses e forqueueID, explicitfailed/cancelledpostcondition exactlyoneactiveoriginalsource/session/20000stack andno successmoveaudit, plus existingnoticket/sourceopen/dealerheld/60000conservation/terminalqueuereason asserts. Actualauthenticated95Finish and pendingdestinationmodeapply/receiptreadreplay PASS allthree, originalseat preserved: cancelterminalcancelled; sourceepochmismatchstale; injectedseatassignmentauditfault rollsbackmoveandrecordsapply_sqlstate_P0001. Mode mayapplyafterterminalfailed/cancelledreservation clearsblocker, never claimsplayerarrived. Two runs initialmatrix+strengthenedidentityfingerprint justifiedbynewassertions; allSQLROLLBACK/helperterminalexit0/PGstopped. Localpg_net/fallbackduewarnings unchanged; notEdge/notification/runtimeAuto proof.
+
+Workflow98loop adds threeexactcases; parser/diffcheck pendingbeforecommit. No productimplementationchange/noREDclaim. Next truecancel-vs95Finish/close interleavings orremainingG5G6read/writecoverage, notanotherrepeatofsamepassingmatrix. Fulltype/build/realbrowser/fulltour/40Edge/rest15/performance remainunverified/localreleasehold. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange. Goalactive/incomplete.
+
+## Scoped Finish95 + exact deferred move + pending destination mode integration
+
+Baseline017099246 clean. Extended existing deferredMoveIntent.pg17.sql with explicit SCOPED_FINISH_MODE_CASE requiring exactowned98DB +REAL_FINISH+EXACT_QUEUE, preservesolddefaultcases/barecoreharness. Actualauthenticatedmove_player_seat_v5 queuesexactsession/epoch/reason/request -> authenticatedOwnerrequestdestinationmanualpending bothactive_hand/pending_move -> authenticated95Finish withfrozenactor/request/hand/session/epoch/revision+conservedpayload -> actualservermoveconsumer appliesonce -> destinationmanual/epoch+1. Receiptread/replaypastFinish survivesmove/mode; oldrostertoken cannotoverwrite20100stack. Existingassertions verifyuniqueactiveentry/sourceclear+ordinarysourceopen (notexplicitbreak), dealerassignmentnotreleasedbyordinarymove,60000totalchips andoneaudit/exactreason/ticket. AddedSEAT_TICKET_CASE runtime verifiesmatchingcurrententryseat/proof andterminalhandtriggerreplay no duplicate ticket. Bothinitialidentityproducer andfinalauthenticatedproducer/ticketcase nativePASS, transactionROLLBACK/PGstopped/helpers terminal. Legacyfixture triggerwarns pg_net schema absent andfallbackduecomputed; this isnotnotification/realworker/Auto evidence anddoesnotcontactexternalnetwork inisolatedDB. No clock/restpolicy changes.
+
+Workflow98step adds exactcombination withtickets; YAMLwiring/diff review pendingbeforecommit. No productbugfound/noREDclaim, newintegrationevidenceonly. No repeatedfulltype/build/browser/Edge/provider/40table/3rest15/performanceproof. No push/CI/liveDB/Edge/frontend/flags/Auto/Daybreakchange, localhold. Next mixedsource/destinationpendingmodefailure/cancel/close interleavings andremainingG5/G6 evidence; fullgoalactive/incomplete.
+
+## Canonical correction -> queued mode -> denied Finish -> dismiss -> Finish integration
+
+Extended actualmanualFinishModeBoundary optional CORRECTION_CASE=true (defaultpreserved). ScopedFloor813 wholehandreport viareport_tracker_wrong_hand_v1 andactualUATlocalrow -> Ownerrequestmanualpending activehand+correction -> Tracker95Finish actualP0001 tracker_correction_pending (noticeobserved) -> no receipt andexacthand+players/actions/seats/entries/chips/queue/outcomes/receipts fingerprint unchanged -> Floor813 canonicaltransitiondismiss withaudit -> constraints mode stillTracker whilehandactive -> samefrozen95intentFinishsuccess -> servermode manual/epoch+1 -> originalreceiptread/replay preserved/newkeyoldepochrejected. FinalnativePG17 PASS, transactionROLLBACK/privatePGstopped/helperterminal. Additionalruns expandedfingerprint and exposedstderrnotice toidentify actualP0001 ratherthanassumingJSONB; not redundantgreenhunting. No productionUATscopesenabled.
+
+NewactualEdgehandlerRED P0001returned500 vs409. Narrowfix onlyrecord_manual_hand_v1+exactP0001/message ->409 businesscode+humanFloorblocker; unknownP0001/transportstill500, noautomutationretry. Hook firstdefinitivecorrectiondenial clearsonlynewzero-writejournal; previouslyunknownintentretained. ActualEdge95handlerPASS negativecode/message+legacy75handlerPASS, callback19PASS includingfirstdenialvspriorunknownretention. SyntheticAuth/RPC/callbacktests notdeployedHTTP/browserproof. No migration/productpolicy change. Workflow98step optionalcorrectiontestwired/YAMLparsedPASS/diffPASS. Fulltype/build/notrun. Localcommitpackage, no push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Next deferredmove ordering with95Finish andpendingmode, broaderG5/G6remainingintegration/40Edge/provider/performance stillunproven. Goalactive/incomplete.
+
+## Actual scoped manual Finish -> queued mode server consumer integration
+
+Baseline2ce103123 initiallyclean. New manualFinishModeBoundary.pg17.sql extends evidence beyond prior terminalUPDATE modeconsumer tests: exactfull98localfixture activehand/ownTrackerlock -> Owner811 floor_request_table_control_mode_v4 manual pending(active_hand) -> Tracker814 record_tracker_manual_hand_v1 conserved unchangedstackpayload -> SET CONSTRAINTS ALL IMMEDIATE runs actualdeferredserverconsumer -> mode manual/epoch+1 withoutclient. Exactoriginalreceipt read/replay survivesmodechange; newrequestoldintentepoch rejectedstale, fullseatrow/chips snapshotunchanged. Finalversion explicitlysets authenticated role for Floor/Finish/receipt/replay/stalewrite calls; metadata/fixtureassertionspostgresonly. Both initialidentity-only and finalauthenticatedruntimePASS; finalone authoritative. This is singletransactionruntime/triggerproof, not browser/HTTP/two-sessionoverlap orrealhandpokerverification. AllfixturesROLLBACK; helperboundary-onlyterminalexit0/PGstopped.
+
+Workflow98step gains explicitnewSQL+triggerpath, no requiredcheckweakening. No productbug found inthisspecificintegration, noimplementationchanged/noREDclaim. Currentuncommittedtest/workflow/handoff only. No push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF/localhold. Next correctionpending/deferredmove blocker with exact95Finish and staleclient/Voice integrationmatrix; fulltype/build/webjourney/performance remainmissing. Goalactive/incomplete.
+
+## History98 local package rollback/precedence qualification
+
+98SQL unchangedhash12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938. Freshowned vinpoker_ops_history98_rollback cloned97CI; new historyAttention.migrationRollback.mjs actualinjectedpreCOMMITfault leavesexactRPCdefinition/ACL/owner/config unchanged, thenoriginalapply preservesmetadata PASS. ExtendedhistoryNeedsAttentionSQL actualanon currentattention/privateerrornegative/stalerevisionnegative/queueACL plus syntheticstoredmatchingproofpriority andsubsequentinputrevisioninvalidatesproof PASS. SyntheticINSERTproof is projectionprecedencefixture only, notworkercommitorpokerverificationevidence; allfixturesROLLBACK. Helperterminalexit0/privatePGstopped afterpollsession27766terminal, no livehandles. No duplicatecreate/apply rerun.
+
+Workflow98 follows97clone, runsmigrationrollback/apply, staticSQL and existing25UI/parsertests; YAMLparse/order/envPASS, catalog/nodecheck/diffPASS. SourceUIlintpreviousPASS; oneunionconsumer uses verifiednarrow before recipients. No requiredCI/actionlint/fulltypebuild/browser375/realworker or productionproof. Local package cancommit; notACCEPTED/fullG6. No Edge/flagsneededforreadprojection butDB98mustbe includedbeforeownerexpectsnewstatus; oldfrontends safelyrenderpending untilcompatibleUI. Existingcontrolplane missingrequired_reviewers/localreleasehold unchanged; no push/CI/liveDB/frontend/Auto/Daybreakchange. Next broaderG5/G6 integration/writercoverage gaps, fullcandidate type/build onlywhenresourcesallowed, actualwebjourney/performance stillpending.
+
+## New G6 public needs-attention collapse — reproduced and initial local repair
+
+Baseline3c31bf75c clean. Actualpublichistorysource currentlyunder viewer-hub (oldhandoffpathmissing, discoveredrealpath beforeediting). PublicRPC/md5 ce58ef27d2bb7bee89cae93a837ede48 andUIparser collapse queue needs_attention to pending. New guarded historyNeedsAttention.pg17.sql on owned97CI, realanoncaller/currentrevisionqueue -> expectedRED HISTORY_NEEDS_ATTENTION_COLLAPSED_TO_PENDING; alltransactionrollback, nativehelperexit0 onlyexpectedREDwrapper/PGstopped. No stale-responsebug newlyproven; existinggeneration/coalescing/timeouttestsalreadycoverreadorder. Do notclaimthosefixedagain.
+
+CLIcandidate20261015215404 -> unusedlocalforward98. Sourcehash12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938 catalogregistered; pinscurrentpublicRPC fullnormalizeddefinitionMD5 andsingleCASEseam, retains exactowner/ACL/config. Adds genericneeds_attention only ifcurrenthandrevisionqueue saysneeds_attention andnoverifiedproofalreadywins; no privatecode/queuegrant/calculation/write/backfill. Actualfreshowned vinpoker_ops_history98_ci clone97 ->98apply/staticSQLPASS currentattention/anonread/privateerrorabsent/stalerevisionattentionnotpublished/queueACLnotbroadened. Initialpatchverificationfailed lasttestanchor andappliednone; correctedpatch, notproductfailure. DBfixturesROLLBACK; helperterminalexit0/PGstopped. Do notrerunone-time--greenhelper againstexisting98DB.
+
+UItypes/parserpreserve needs_attention withoutprivatefields/recipients, TableHistoryPanel distinctgenericlabel. Actualparser13+panel12=25testsPASS withsyntheticRPC/render, notbrowser/liveproof. Migration98uncommitted, DDLrollback/verifiedpositivecontrol/workflow/exactdiffqualificationstillpending. No push/CI/deploy/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Fulltype/build/375/provider/fulltour/performance unverified. Next98rollback+verifiedpriority/nootherprojectionchanges andworkflowintegration, thencommitlocalpackage. BroaderG6writer/integratedjourney remainsincomplete.
+
+## Finish97 source package local checkpoint / release still blocked
+
+CLIcandidate20261015213838 moved to unused localforward20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql; hash1eb303d909b98b13dd0cf52ca61cbd7cdba8c0c7c0611c8347f8a002953b5cdf ownergatedcatalogregistered. Freshowned vinpoker_ops_finish97_ci clone96qualified: migrationpreCOMMITfault restores all public/floor_private functiondefinitions/owner/ACL/config exactly, newendpoint absent; then original97apply+ACLpostcheck/staticfault/replay/positivecommit andtruebothorderconcurrency PASS. Firstrollbackharness replacement used JS $$ replacement semantics -> invalid DO $ syntax; corrected replacementcallback, original failedmigrationrollbackleftnoendpoint; sameunappliedDBguardverified andfinalPASS. Testharnessfailure notproductfailure/not initialPASS. Expanded staticfingerprint hands/players/actions/seats/entries/chips/queue/outcomes unchanged bycancel PASS. PrivatePGstopped/helpers terminalexit0. Workflownew97step wired after96clone/static/overlap/Edge/callback/render; YAMLparsedstepPASS, notremoteCI/exactworkflow-shapedpre72runtime proof.
+
+Finalsourcecallbacks18PASS including directstorage stalehand discovery beforeReacteffect; no newFinish can bypass priorhandjournal. Existingconsole4render+actualroster7PASS on prior UI bytes except addedsubmitstoragegate (callbacks coverit). EdgehandlerPASS prior unchangedroutebytes. Sharedhelper/console/test ESLint0errors; fullhookbaseline/current66diagnostics (63errors+3warnings), noaddedmessages, NOTfullhooklintPASS. Diffcheck/catalogPASS. SWCsyntaxpreviousUIbytesPASS, fulltype/build/browser/375/provider/integratedtour NOTRUN underlocalhold. Reactreviewskill used to review primitiveeffectdeps, nativebutton/busystate and existingtokens; no additionalredesign/dependency.
+
+validate-control-plane.mjs currentlyFAIL workflow missing required_reviewers. No diff to vbackerworkflowmain.yml inthispackage; keepguard, notreleasePASS. Earlier attempted nonexistent scripts/security/check-control-plane.mjs was commandlookupfailure, corrected to actual scripts/deploy/validate-control-plane.mjs; no safetychange. No approved97recovery/livepackage orindependentreview, currentlocalqualification notproductionready. No push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Next review broaderG5/G6 remainingwriter/integration gaps and finalcandidatefulltype/build whenresourcesallowed; release/realcanary/performance remain pending. Goalactive/incomplete.
+
+## Missing-hand journal recovery and actual console render tests
+
+Added listManualFinishJournals using Storage key enumeration restricted actor/tour/logicaltable prefix, validates keyhand+fullintent; doesnotparse otheractor/tour values. Hook discovers priorhand independentlyofcurrenthandID/epoch (canonical logicaltable fallback selectedtable), showscorruptionerror and blocks newFinish, retains scopefilter synchronously, cancels frozenoldhand aftercurrenthandabsent, then discovers nextpendingrequest. Sharedbanner worksoutside submit_ready. Initialnewhelpertest failed missingfunction (unimplementedfeature, not preexistingruntimebug); implemented then17actualsourcecallbacktestsPASS including scopeddiscovery/corruption and nohand/changedepochcancel. NewactualHandInputConsole render4PASS (bothlayouts/buttonclick/busydisabled/corruptalert), synthetichook/presentations; existingactualrosterhook7PASS, routerfuturewarnings only. Not viewport/browser/DBwebproof or fulltypebuild.
+
+Stilluncommittedcandidate. Timestampmigrationmust be moved to newlyreservedcatalogposition after95 beforequalification; currentprivateDB has exactdraftbody. Remainingcatalog/workflow/DDLrollback/fullstatefingerprints, fineractualhookjournalrender and finaldiff review. No repeatednativeDBtest thisturn because SQL unchanged. Allcommandsterminal, PGstopped; no push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Goalactive/incomplete.
+
+## Cancellation UI consumer draft and callback verification
+
+Uncommitted shared HandInputConsole banner/button uses existing Button/tokens, applies both embedded/fullscreen presentations. Hook restores exact actor/tour/table/hand journal independently of workflow submit_ready, tracks newpendingintent, and hides otheridentity pending state synchronously. Explicit confirmed cancellation captures preawait generation/action/tabletoken, revalidates freshactor, checks exact canonical journal, uses sharedFinish singleflight and frozenintent, preserves journal on unknown/busy/error, only CASclears after exactcancel/commitproof and reloadscanonicaltable. No handvoid or replacementFinish write. Submit/readrecovery now also recognizes separate cancellationproof and clears only originaljournal without applying completedhand. Browserconfirm is existingprojectpattern, no newdependency/redesign.
+
+Actualhookcallbacks extracted viaSWCAST tests15PASS: existing12 plus validterminalcancel/no outcome, unknowncancel retains frozenkey thenexactcancel/reload, alreadycommittedproof/reload, ABA latecancel retainsjournal. ActualEdgehandler guardsPASS; SWCsyntaxPASS bothmodifiedUI files. Not fullReactrender/a11y/375/browser/fulltypebuild acceptance; no repeated heavychecks. UI can currently discover journal only when canonical samehandID/table is loaded; recovery after handID disappears remains unresolved and must not be called complete. Draftmigrationstilltimestamp/notcatalogregistered, DDLrollback/fullstatefingerprint/workflowqualification pending. No commit/releasequalification. No push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Next actualUI render/errorcontrols and missinghandjournal recovery, thencatalog/workflow/DDLrollback qualification.
+
+## Cancellation native overlap/fault and Edge consumer draft
+
+Current uncommitted draft SQL unchanged since initialapply. Expanded cancellationSQL actual PG17 PASS injected BEFOREINSERT receiptfault/no tombstone, subsequent cancellation/replay/latewriter plus actual positive Finish-first -> cancellation returns exact success/no handmutation. Extended existing manualFinishIntent.concurrent.mjs ONLY explicit --cancellation/exactcandidateDB: held uncommitted cancel -> writerbusy; held uncommitted writer -> cancelbusy; real ClientRead/xact barrier, missingreceiptbeforecommit, afterCOMMIT newconnections read/replay bothAPIs sameproof/exactlyone receipt, hand active vscompleted respectively. Bothorders PASS, terminalhelperexit0/PGstopped. These concurrency fixtures commit only in owned localDB; staticfixturesROLLBACK.
+
+Shared cancellation proof guard requires exact intent/actor/request/session/epoch/revision and cancelled status, rejects mixed commit/totals/error fields. Edge adds cancel_manual_finish_v1 to samecallerJWT path and routes exactcancelRPC; writer/read/cancel accept separate terminal proofs, never misclassify cancellation as commit. Actualhandler VM/syntheticAuthRPC tests PASS cancellation eachroute, mixedproof502, exactRPCrouting, alreadycommittedsuccess, foreignactorzerocalls; callback12PASS preserved. Not deployedHTTP/React/fulltypebuild. UI cancellation and journal reconciliation still unfinished, workflow/catalog/newreserved97/DDLrollback/fullstate fingerprints pending. No commit/releasequalification yet. No push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Next UI explicit cancel and cancelledreceipt handling (do not merelyclearjournal on networkloss).
+
+## Durable manual Finish cancellation draft — native PG17 initial proof
+
+Uncommitted CLI candidate20261015213838 now implements cancel_tracker_manual_finish_v1(jsonb), pinned95 definitions, actor/JWT+club+declared hand identity, private empty search_path, authenticated-only. Reuses95 request advisory mutex and actor/operation/request receipt namespace; exact receipt-first replay returns already committed outcome or cancellation tombstone. New cancellation writes receipt only, no void/chip/hand mutation. Old95 writer sees tombstone before core and cannot later commit this request. Recovery must preserve tombstones; revoke endpoint rather than delete receipts.
+
+Private helper finish-cancel-native.mjs created exact isolated vinpoker_ops_finish_cancel_candidate clone of96qualified, applied draft once, ran new manualFinishCancellation.pg17.sql: native PASS ACL/foreign actor denial/cancel/read/replay/changedpayload conflict/late writer fencing/unchanged full hand row; SQLfixtures ROLLBACK, helperterminalexit0/PGstopped. No concurrency/receiptfault/DDLrollback/fullstate conservation proof yet. Draft keeps CLI timestamp, not catalogregistered/reserved97, not qualified release migration. Do not rerun one-timecreate/apply helper on existingDB. Next add actual two-session both-order races, committed-first and fault rollback, then shared cancellation proof/Edge/UI explicit resolution. No push/CI/liveDB/Edge/frontend/flags/Auto; DaybreakOFF. Goal incomplete.
+
+## Manual Finish receipt terminal-status guard
+
+On baseline472d66c98, actual callback regression reproduced accepting a matching receipt with status cancelled as committed (11PASS/1FAIL). Shared proof guard now requires status success, including its TypeScript receipt type. Regression covers cancelled/pending/missing status, keeps unresolved journal, and never acknowledges the hand. Final callback12PASS and actual Edge handler guard/RPC-routing harness PASS; synthetic dependencies, not browser/HTTP/DB acceptance. No SQL or production change. Full typecheck/build not run under local resource hold.
+
+CLI-created empty candidate20261015213838_tracker_manual_finish_cancellation_receipt_v1.sql remains untracked, not executable/qualified97. Durable cancellation RPC/tombstone and UI resolution remain unfinished; do not clear an unknown journal without terminal server proof. Next implement cancellation using same actor/operation/request advisory lock and receipt namespace, then actual concurrency/rollback and consumer tests. No push/CI/deploy/live DB/flags/Auto; Daybreak OFF. Goal remains active and incomplete.
+
+## Bare Finish96 retirement locally qualified; embedded inventory corrected
+
+Onfca326a28 actualsource inventory found NO current HandInputPanel.tsx: HandInputConsole owns useStandaloneHandInput and both embeddedtab/fullscreen entrypoints share it. Previoushandoff assumption "embedded not migrated" was stalecomment-derived, now superseded; no second implementation needed. Only live source bareRPC consumer was Edge case record_hand (builder action retained only as draft schema). Edge expectedretirement test RED200→422, now returns MANUAL_FINISH_CONTEXT_REQUIRED beforeanyRPC. Updatedoldcompletion/v3 sourcecontracts to assert zero bareRPC consumers and newintent/JWT scope;13 completion/startauthority tests PASS, newactualEdgehandler matrix PASS. Comments at hook/page/builder corrected, no presentation change.
+
+CLIcandidate20261015212920 -> source96 c7e745378c1525fe7df19d7385a3e3ca6b9ff07a9c410b46643cad7e08ee18bd; pins94core andboth95definitions/currentgrants; revokes ONLY direct tenarg public/auth/anon/service EXECUTE, preservingpostgresinternalcall and oldsevenarg alreadyauthenticateddenied/servicecompat. No body/data/rounding changes. Fullqualified95clone→96 expectedepochRED beforeapply, afterapply barecallpermissiondenied; actualnew95intentstatic+realduplicate/epochoverlap/recovery PASS. DedicatedVoice94clone→95→96 Owner/FloorFinish/replay/faultrollback PASS, clubs0. New96DDLpreCOMMITfault rollsbackexactcoredefinition+ACL andretains95auth, no receipts/clubs. Nativehelpers terminalexit0/PGstopped/nohandles.
+
+Workflow96 clone95ci→expectedRED→retire→baredenial/newintent+concurrency plusdedicatedVoicecompat; parsedYAML/catalog/control/diffcheckPASS, notremoteCI/actionlint/fulltypebuild/browserproof.11actualsourcecallbacktests PASS aftercommentonlyUIchanges. New96 releaseorder MUST confirm95DB/Edge/UI served before applyingretirement; oldtabs thenexplicitreload, nofallbackunsafegrant. No live runner/approval/recoverymanifest prepared, no production/push/dispatch/Edge/frontend/flags/Docker. Localonlyhold/DaybreakOFF/Auto unchanged. Remaining: conservative unresolvednotfound+changedcontext terminalresolution, strongerFinishrender/type/build, fullrelease/G8/G9. Notcampaigncomplete.
+
+## Standalone Finish UI wired to exact intent/receipt (local only)
+
+Ondcb1ee81b, standalone handleSubmitHand now requires verified canonical hand/table/session/epoch andfreshactor; snapshots handrevision before firstmutation. Reuses shared recordpayload builder but freezes payload/UUID/time in actor/tour/table/hand sessionStorage journal with readbackverification/CAS. Pendingintent firstreads95receipt; explicituserretry may resend ONLY samecontext/samepayload/samekey, neverautomaticwriterretry ornewkey afterunknown. First knownzero-writedenial canclearitsjournal; priorunknown retrydenial cannot. Mutation20s/read10s bounded with existinghelpers. No bareRPC/fallbackcompleted+pot acceptance in standalone. Capturegeneration/actionscope/tabletoken before await fencesABA; stale response doesn'tapply/clearjournal. Postcommit UI uses frozenreceiptendingstacks, not changed draft.
+
+Sharedmodule adds journalparse/persist/draftmatch/settle boundaries; Edgeguards unchanged. Actualsourcecallback test usesSWCAST selecteddeclaration (initialraw byte-span extraction failed on thissource and was replaced, not aproductFAIL).11 tests PASS: positive, lostresponse→exactreceipt/no writerretry, explicitreplay preservesUUID/time, changed draft/epoch readonlyreconcile, ABA late reply, mismatchedproof, storagefailurezerowriter, firstdenialclear, doubleclick, corruptjournal, journalCAS andcleanupfailureafterverifiedcommit. Lastcleanupfailure test RED10PASS/1FAIL beforefix; confirmedserverproofnowcontinuesUIack withwarning iflocaljournalcannotclean, neverdowngradescommittedwrite. Existingactualrosterhook7render tests PASS, routerfuturewarnings only.
+
+SharedmoduleESLint0errors; fullhookbaseline/candidate both63errors+3warnings, diffdiagnosticsnone (NOT lintPASS). SWCsyntax anddiffcheckPASS. No fulltype/build/FinishReactrender/browser375/remoteCI proof. Existingworkflow gainscallbacktrigger/command; stillneedfinalYAMLcheck. EmbeddedHandInputPanel notswitched yet; bareAPIretirement cannothappen untilremainingcallers inventory/migration. Conservative unresolvedintent withnotfound+changedcontext blocksresend andrequiresfurtherresolutionUX/serverterminalproof; do notcallallunknownoutcomesfinished. No production/push/dispatch/DB/Edge/frontend/flags/Docker, localhold/DaybreakOFF/Auto unchanged. Next expandedactualFinishrender/typevalidation asresourcespermit, embeddedcaller/retirement/terminalunknown path andreleasecompatibilitymatrix. No G6/fullcampaignacceptance.
+
+## Finish95 Edge routes / shared intent-proof boundary locally verified
+
+On2b86b699d added src/lib/trackerManualFinish.ts boundary shape +exactreceipt matching, reusing canonicalVoiceJson order-independent serialization (Deno .ts import supported by appconfig). Used actualEdge actions record_manual_hand_v1/get_manual_finish_receipt_v1, samecallerJWT anonclient only, no servicekey/delegation, actor+tour envelope mustmatch frozenintent. Write uses existing server reconcileSidePots and refuses tampered frozenpots (cannot silently rewrite a receipted intent); legacy record_hand warn/off behavior unchanged. Readreceipt doesnotrecompute historicalpayload. Routes95RPCs, JSONBdenial→409, unknown/mismatchedproof→502, RPCerror→500; no writerretry/fallback. Completeintent+hand/session/epoch/revision/actor/request/totals required, not completed+pot readback.
+
+New manualFinish95EdgeHandler.mjs executesactualhandler via existing VM/stripTS pattern with syntheticAuth/RPC, realsharedvalidators+serverreconcile. PASS validwrite/read/JWTforwarding, actor/tour/UUID/epoch/revision/payload negatives beforeRPC, tamperedpots rejection, missingheader/user, businessdenial classification, unknown/mismatchedproof/totals/revision, backenderror, no automaticretry; JSONBobject keyreorderpositive. Existing manual75EdgeHandler PASS after handlerchange. ESLint sharedmoduleexit0, workflownewmodule/testtriggers+command parsedPASS, diffcheckPASS. Not realAuth/deployedHTTP/DBcommit/browser/fulltypebuild/remoteCI proof. Existingauthbootstrap classifies getUser errors401 broadly; not changed bythisnewroute, no claim503authproof.
+
+Next UI stablefrozenintent/requestkey/journal, receipt-first reconciliation, preawaitactor/tour/sessiongenerationfence; thenoldbareAPIretirement. OldAPIepochdiagnostic remains expectedRED/uncommitted;95DBbytes unchanged/priortests preserved. No production/push/dispatch/DB/Edge/frontend/flags/Docker, ownerlocalhold/DaybreakOFF/Auto unchanged. No goalcompletion claim.
+
+## Finish95 foundation exact bytes qualified locally; consumer still pending
+
+Final95 sourcehash bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb tested from freshcleanunified→94→minimalfixture→95 in vinpoker_ops_finish95_qualified. ExpandedactualSQL PASS ACLmetadata (authenticatedyes/anonservicePublicinheritanceno), crossclub/actor/session/revision/epoch/malformedkey/payload refusal, beforeaftersnapshotunchanged, receiptfault fullrollback, positive/exactreplay/changedpayloadconflict, receiptreadmissing/changedpayload/foreignactor denials andpastcommitread aftergenerationchange. No latermigrationbytes change.
+
+New actualtwo-session manualFinishIntent.concurrent.mjs: samekey holder uncommitted causes secondwrite busy, receiptread notfound; firstCOMMIT thennewconnection exactreceipt/exactlyoneeffect/replay. Epochupdate first (fixturegenerationwriter) keeps readlock live, Finishreturnsbusy nonblocking; aftercommitoldintentstale/no receipt. Finishfirst holds session/share, epochupdateobservedwaitingLock; finishCOMMIT thenepochadvance, newconnectionreceiptstillprovespastcommit. Nativequalified and exactworkflow-shaped72/94clone→95 fixture bothPASS. NewDDLpreCOMMITfault oncleanVoice94clone leaves neithernewendpoint norreceipt, core94digestunchanged/clubs0. Allhelpers terminalexit0/PGstopped/nohandles.
+
+Workflow95 step clonedfrom94ci, invokesstatic+concurrency tests withnewtriggerpaths; YAMLparsed/env/commands verified, node--check/catalog/control/diffcheckPASS. Not remoteActions/actionlint/fulltype/build/DataAPI/browserproof. Foundation may be locallycommitted; bareAPI/authenticatedoldcaller deliberatelyunchanged, so legacyepochdiagnostic remains expectedRED/uncommitted untilconsumer+retirement. Next Edge/API wiring andstableclientintent/receipt reconciliation+preawaitUIgeneration; then separatelegacyretirement andcompatibilityrelease. No production/push/dispatch/Edge/frontend/flags/Docker, ownerlocalhold/DaybreakOFF/Auto unchanged. No G6/webcompletion claim.
+
+## Manual Finish95 additive intent/receipt draft implemented (UNCOMMITTED)
+
+CLI candidate20261015210151 initially generated in repo-rootsupabase by wrongworkingdir, moved immediately viaapply_patch to application localforward95; no otherroot source touched. Draft95new APIs record_tracker_manual_hand_v1(jsonb)/get_tracker_manual_finish_receipt_v1(jsonb), actor/JWT-derivedauthority, exacthand/tour/tt/session/epoch/sourceRevision and frozenpayload/requestUUID. Existing flooroperationreceipt helper/table reused; samekeypayload replay/conflict and actorboundreconciliation aftergenerationchange. Canonical core94 unchanged; bareAPI NOT retired, so oldclientgap stillopen. Coretournamentmutex trylocked before lifecycle NOWAIT locks; boundedlocktimeout/subtransaction rollback prevents waitcycle/partialreceipt. No newreceiptframework/table/grants beyond exactnewauthenticatedRPCs; anon/service/Public revoked.
+
+Initial actual95 apply to finish94_unified succeeded buttest failed column table_id variable ambiguity; retained failedcandidateDB, no labelPASS. Fixed variable v_table_id, fresh cleanunified→94→existingminimalfixture→95 in vinpoker_ops_finish95_unified: new actual manualFinishIntent.pg17.sql PASS wrongactor/session/revision and epochchange denial, no-delta snapshots, injectedreceiptfault atomicrollback, ownpositive, replay, payloadconflict, exactlyone receipt, receiptread after epochchange. Allfixtures rollback, PGstopped/helpers terminalexit0/nohandles. Then changed auth check NOT is_club_tracker to IS NOT TRUE (failclosednullablehelper); finalsourcehash bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb, catalogregistered; thatlastbytechange not yet rerun actualfreshapply. Candidate fullyuncommitted/notqualified.
+
+Next: finalexact95 freshapply/test, ACL/tenant/malformed/readreceiptnegative/unknowncommit/newconnection/concurrency/DDLrollback matrix; wireworkflow, then Edge/newstableUIintent with preawait scope guard; separate bareAPIretirement afterconsumercompatibility. Do not rerun one-timeapply helper on already95populatedDB (collisionguard shouldstay). Existingepochdiagnostic stilluncommittedexpectedRED foroldpath. No production/push/CI/deploy/Edge/frontend/flags/Docker, local-onlyhold/DaybreakOFF/Auto unchanged. Fullcampaign notaccepted.
+
+## Next manual Finish exact intent / epoch counterexample (not fixed)
+
+Baseline refreshed main ed3db6ac600710e95fe4408c475941916c23ab19; HEAD68cbf22656e7bffba514fc4821d0ec861fb0d5ed clean initially. Actualget_goal active/fullscope intact. New uncommitted diagnostic recordHandEpochIntent.pg17.sql on exactfullschema94fixture: ownTrackerlock remains, fixture controller epoch advances+1, old bare tenarg record_hand still completes. IntendedRED STALE_CONTROLLER_EPOCH_MANUAL_FINISH_ACCEPTED observed. This uses directfixture generation invalidation, NOT evidence a particular lifecycleRPC allows modechange midhand. Alltransactionrollback/privatePGstopped/helperterminalexit0 (expectedRED, not SQLPASS).94 ownlockfix still valid, doesnotclaim staleepochfixed.
+
+Caller trace: buildRecordHandBody has no handID/session/epoch/revision/requestID/actor intent; handTime built anew at every submit. Error recovery reads submittedhand id/status/pot and isConfirmedCompletedHandReadback only compares completed+pot. That does not prove identical board/actions/endingstacks or ownrequestcommit. applyRecordedHand captures UI generation after response, allowing A→B→A late-response ambiguity; capture must be before await and checked before applying. Do not merely make potmatch stricter/refetch and call intent fencing solved.
+
+Executable next repair contract (technical decisions, no productpolicy change): canonical manual Finish intent carries actor/tournament/tournamenttable/exacthand/exactsession/epoch/sourceRevision/stableUUID plus frozen payload including handTime. Validate server actor/tenant/session/control mode/ownlock/revision at commit; payload/request fingerprint receipt atomic with existing record_hand writer. Reuse existing floor receipt locking/storage and client stable-intent patterns from manual cards/player instead of unrelated restore framework. Readreceipt actor-bound +expectedpayload proves pastcommit after sessionclose; samekeydifferentpayload conflicts, lostresponse keeps key and reconciles first. Voice service delegation/atomicreceipt stays unchanged. Bare manual API must eventually be retired/restricted AFTER newconsumer deployed; source95foundation→frontend→retirement (or reviewed scoped failclosedwindow), not silently infer currentcontext. No newmigration/API created yet.
+
+Lock audit start: core tracker_unified_ops_lock_tournament uses advisoryhash('tracker-unified-ops:'||tour,0), then tour/table/hand rowlocks. Newcontext wrapper must use same mutex and bounded/try lifecycle locks, avoid taking physical/session then waiting on tournament mutex held by an opposite writer. Test genuine interleavings with mode/takeover/finish; catch locktimeout with transactionrollback, no partialreceipt. Extend existing harness; preserve expectedRED diagnostic separate from eventual GREEN regression. Requiredtests: oldepoch/oldsession/reusedhandnumber/stalerevision/crossactor/crossclub zero-delta; ownpositive; samekeyreplay/differentpayload; lostresponse; receiptfault; Owner/FloorVoice; A→B→A UI response. Still unfinished/releaseblocked byownerlocalhold. No production/push/CI/Edge/frontend/flags/Docker, Daybreak/Auto unchanged.
+
+## Finish94 local qualification and workflow wiring
+
+94 migration unchanged e15068894a124c376c2ffe8681d043af47838ca90177b19113fef9f434a7088c, resultingtenargrecord_hand normalizeddefinitionMD5 514d543b756792fcfc3277faa325d991. Fresh dedicatedclone vinpoker_voice_finish94_20261016 from cleanassignment72, original94 applied once; existing canonical Owner and Floor Finish/replay/receiptfailure rollback suites PASS, clubs0 aftertransactions. Existing harness adds explicit --manual-finish94 flag for ONLY exactdedicatedOwner/Finish/assignment72clone, pinsnewdigest ratherthan weakening old16006fec guard. Existing modes retain olddigest/name. --manual-finish94-lock-fixture only enables fixture-only dedicatedciDB, doesnotchange helpers/authorization.
+
+New workflowstep: clone72→94→Owner/Floor Voice; separate clone72→realfixture→expectedmanualRED→94→zerodeltadenial/ownlockpositive→bothordertakeoveroverlap. Actual sameworkflow-shaped manual sequence nativePASS in vinpoker_ops_finish94_ci; priorfullunifiednative andDDLfaultrollback proofs retained. node--check bothmjs, parsedYAMLstep/commands, catalog/control/diffcheckPASS. Not remoteCI/actionlint/fulltype/build/browser/providerproof. Source/runtime qualifies ONLY other-hand-lock manualFinish boundary; wider expectedsession/epoch/handID intent remains unresolved. No approvedlive94runner/recovery package yet. Source package readyforlocalcommit, not release/live acceptance. Allhelpers terminalexit0/ownedPGstopped/nohandles. Localonlyhold/no push/deploy/productionDB/Edge/flags/Docker; Daybreak/Auto unchanged. Next staleintent identity fence and final localcoverage/release matrix, not a claim G6 complete.
+
+## Finish94 takeover concurrency and DDL rollback proof (still uncommitted)
+
+Candidate94 bytes unchanged. New tests/trackerSettlement/recordHandLockAuthority.concurrent.mjs guarded exactownedfinish94_unified/loopback/postgres/noPGoverride, two psql sessions with pg_stat_activity actualClientRead+Lock barriers. CanonicalOwner takeover first -> Trackerfinish waits then lock_not_held andhandstaysactive/Ownerlock; Trackerfinish first -> takeover waits then hand_not_in_progress, handcompleted/unlocked. Initial two harness assertions used obsolete textual response expectations; actualRPC returns {ok:true,forced:true} / error hand_not_in_progress. Corrected to exactJSON assertions, no productrelaxation. Final both-order overlap PASS. Dedicatedfixture commits retained; static test now explicitly resets ownfixture hand active in rollbacktransaction for independence.
+
+Separate freshunified cleanclone vinpoker_ops_finish94_rollback: injected exception beforeCOMMIT, full functiondefinition+ACL+definer/config fingerprint unchanged andclubs0. ActualDDLrollback PASS; no source bodychange. Helpers terminalexit0/PGstopped/nohandles. Still NOT sourcequalified: Voice positive and workflowintegration/pinneddependency changes pending, wider expectedsession/epoch/handID intentgap not solved by94. Uncommitted migration/test/concurrency/catalog/handoff preserved, HEAD030643dde. No production/push/deploy/flags/Docker, ownerlocalhold intact. Next Voice currentharness compatibility then requiredworkflowexactchain; no rerun already94applyDB.
+
+## Manual Finish94 fullcandidate reproduction and initial repair (UNCOMMITTED)
+
+Created owned vinpoker_ops_finish94_unified clone from clean unified68560; all sourcepackages through92 included except20/21/50 external scheduler. Original fixture attempt correctly denied AUTO_SWING_OFF while seeding dealerattendance; transaction rolledback, no guard bypass/Auto intent. Removed unnecessary Dealer/attendance/assignment fixture rows, retained real clubTracker/Owner/Floor identities, exacttable/session, entries/seats/handroster with existing transformations. Existing hand fixture lockholder812 is an auth identity, NOT claimed assignedDealer in this reducedfullschema fixture. Actualtenarg record_hand still accepted Tracker814 while lock812 held: expectedRED on fullcandidate, not onlypre71fixture.
+
+CLI candidate20261015205122 -> localforward94; source-only ownergated cataloghash e15068894a124c376c2ffe8681d043af47838ca90177b19113fef9f434a7088c. Pins candidate record_hand digest16006fec6f3b9274581de471a9dc296a and metadata unchanged. Inserts ownlock check after SELECThandFORUPDATE and before participant/projection writes; manual nonservice returns lock_not_held, reviewed serviceVoice context path unchanged. No grants/default/signature/role/payout/rounding changes. Actual94 apply onfullschema PASS; expanded regression deniesotherlock with before/after hands/players/actions/seats/entries/chips/queue/outcomes fingerprint unchanged, ownfixturelock positive completes/unlocks. SQL rollback restoresfixtures, PGstopped/helpers terminalexit0/nohandles.
+
+NOT sourcequalified/released yet: migration/test/catalog/handoff uncommitted, no workflow wiring, concurrent takeover/finish and DDLrollback/Voice compatibility stilltodo. Does not close wider expectedhandID/session/epoch intent gap; migration94 only owns-lock-at-commit invariant. No fulltype/build/live/browser/CI claim. Next exactoverlap+rollback+Voicepositive, thencommitqualifiedpackage; do not executeone-timeapply helper again against already94installedDB. No production/push/deploy/flags/Docker, local-only ownerhold remains.
+
+## New local authenticated record_hand lock-authority counterexample (NOT FIXED)
+
+On030643dde source clean initially. Current unifiedcatalog: sevenarg legacy record_hand service-only/no browsercaller found; tenarg canonical authenticated, service direct EXECUTE denied, service-delegated Voice branch context checked by71/72. Manual authenticated branch is_club_tracker validates club, resolves activehand/session/projection/conservation, but no own-hand-lock check found. Edge tournament-live-update/record_hand forwards callerJWT and tenargs; buildRecordHandBody sends table/handnumber, no expected handID/session/epoch, so legacy manual path remains distinct from fullyfenced Voice receipt.
+
+Added uncommitted tests/trackerSettlement/recordHandLockAuthority.pg17.sql, guarded loopbackPG17/exactownedcardfixture/ROLLBACK. Set currenthand lock to assignedDealer812, authenticatedclubTracker814 supplies conserved unchanged-stacks/currentroster payload. Actual expectedRED TRACKER_WITHOUT_HAND_LOCK_FINISH_ACCEPTED: core returned oktrue despite other actor lock. No setup-error mislabeled. Runs against card56 fixture with58/59, not full71/72 clone; actualunifiedcoremanualbranch inspected but full integratedruntime reproduction is next before finalpatch. No livefailure claim. Privatehelper terminalexit0 onlydiagnosticwrapper, SQLRED; PGstopped/nohandles, allmutationrollback. Source implementation untouched, no migration created. Next qualify on fullcandidate schema, expecteddenial/fingerprint and ownlockpositive controls, then narrowly fence canonical manual finish without replacing Voice/delegated semantics or breaking Owner/Floor supported takeover. No production/push/CI/deploy/flags/Docker. GoalACTIVE/incomplete.
+
+## G6 actual retained-schema cleanup writer regression
+
+Currentcatalog cleanup_orphan_hands is authenticated guarded, anon/service execute false; Edge tournament-live-cleanup forwards validated caller JWT using anonclient (not service bypass), no frontendcaller found. Actual body voids stale in_progress rows then deletes actions/eliminations and clears participant terminal fields; it does NOT DELETE the hand. Clarifies maintenance row in prior provisional matrix. apply_resettle_forward/edit_completed_hand execute false for all anon/auth/service in this localcatalog (disabled legacy path, not assumed functional). Legacy record_hand overload serviceonly vs newer authenticated; further actor semantics audit remains.
+
+Added tests/trackerSettlement/orphanCleanupRevision.pg17.sql on exact retained-schema owned cardfixture (loopbackPG17/hard DBname guard/transactionROLLBACK). Completedhand snapshot unchanged; invalidwindow/outsider denied without handrevision/statusdelta; authorized staleactivehand void advancesrevision/unlocks and cancels all pending/processing generations. Actual native test PASS, no product fix needed/no RED claim. Existing workflow post58 step executes sameSQL; trigger/YAML/envwiring parsed PASS and diffcheck PASS, no remoteCI/liveproof. Privatehelper terminalexit0/PGstopped/nohandles. Source implementation remains e5ed97951; test/handoff/workflow newdelta. No production/push/deploy/flags/Auto/Daybreak change. FullG6 worker/provider/anonymousHTTP journey still incomplete, not ACCEPTED.
+
+## G6 current local writer inventory / dismissed stale-source hypothesis
+
+SourceHEAD e5ed979512890c0956bad4f5355a657bf19a8934, clean initially. Actual unifiedPG17 metadata confirms action/player row revision triggers INSERT/DELETE/UPDATE; hand BEFORE UPDATE trigger covers tournament_id/hand_number/button/board/pot/sidepots/status/void/frozenblind fields; AFTER hand write enqueues generation, statement transition trigger invalidates affected identity chain. Function inventory via direct literal DML regex identifies22 function signatures; not exhaustive (dynamicSQL/qualified variants/delegated wrappers require further tracing), no assertion every writer role/endpoint/runtime covered.
+
+|Input seam|Current concrete writers/trigger|Evidence already available / remaining|
+|---|---|---|
+|Action add/delete/undo|record_action, delete_last_action, undo_last_action; hand_actions revision trigger|Card/Voice canonical tests prior; endpoint/role matrix still incomplete|
+|Board/hole/participant|_tracker_card_board_source_v1, _tracker_card_hole_source_v1; hand_players revision trigger|56/70–75 prior runtime; new currentmetadata confirms trigger; full consumer matrix pending|
+|Blind snapshot|capture_tracker_blind_positions, correct_tracker_historical_hand_blinds|server-owned guard/current hash; prior queue/blind tests; live not verified|
+|Hand creation/completion/edit|start_hand/v2/v3, record_hand two overloads, edit_completed_hand, apply_resettle_forward|revision/enqueue/identity invalidation metadata; actual mixed canonical journey still missing|
+|Void|void_last_hand; hand status/is_voided trigger|59 prior functional/overlap proof; live not verified|
+|Result commit|commit_tournament_settlement_outcome|atomic queue/outcome failure/recovery prior proof, real verifier pipeline still missing|
+|Lock-only metadata|heartbeat_lock, takeover_hand_lock|DML inventory hits are not automatically outcome-input changes; distinguish lock fields from source proof inputs|
+|Cleanup|cleanup_orphan_hands|maintenance DELETE seam needs lifecycle/queue dependency review; no deletion executed|
+
+Investigation initially suspected old-hand revision gap from predecessor00004 COALESCE(NEW.hand_id,OLD.hand_id). Current actual function body instead handles DISTINCT OLD+NEW and canonical sorted locks from00009_tracker_history_reparent_invalidation_v1.sql. Isolated originalcardfixture authenticated reparent test PASS BEFORE any fix (old/new revision +currentpending queue). Not a new confirmed bug; no product patch/migration needed. Existing handIdentityReparent.concurrent and handIdentityCanonicalLock.concurrent tests already cover related ordering; redundant exploratory SQL removed rather than committed. Private metadata/repro helpers terminalexit0/PGstopped, fixture transaction rolled back, no activehandles. No production/push/CI/DBlive/Edge/frontend/flags/Docker. Next complete inventory of remaining writer delegates/roles and cleanup lifecycle; do not extrapolate this narrow positive to fullG6 acceptance.
+
+## Busted read deadline and late-response fence
+
+Onf2dab31d3 new hung-read rendered regression RED(1FAIL/18PASS): no terminal error after20seconds. Candidate bounds entire entries/prizes/seats/profile pipeline to20s, sets read unavailable and fences late response; cleanup clears timer on settle/scope change/unmount. No mutation retry/new request key/permission change. Final21 rendered cockpit tests PASS: primary and fallbackprofile hang/late response, successful-read timer cleanup plus prior scope/error/canonicalrestore/clock matrix. ESLint editedtwofiles/diffcheck PASS. Not cancellation of underlying HTTP transport, fulltype/build/browser375/CI/prod proof. Local-only ownerhold, no push/deploy/DB/Edge/flags/Docker. Next93 release manifest/runner preparation and remaining integrated local evidence gaps; campaign still incomplete.
+
+## Cockpit busted read integrity and actor isolation repaired locally
+
+On0ee6435ab, inspection confirmed ent/prize/seat Supabase errors were ignored and busted effect did not depend on actor/auth. New rendered regressions initially3RED/13PASS; one false-positive seat-error test was caused by missing mock.in(), corrected mock then proper4RED/12PASS (three ignored read errors plus stale actor request). Candidate checks each primary read and profile lookup error, scopes stored rows to actor/auth/tournament/tab/flag and clears on unverified/logout, prevents old request response consumption and avoids follow-up profile read after scope cancellation. Successful empty still valid, no mutation/permission/business-policy changes. Existing frontend skill's explicit error/state boundaries applied without redesign.
+
+Final18 cockpit rendered tests PASS including profile failure, successfulempty and no reads while authunverified/logout; editedtwofile ESLint exit0 and diffcheck PASS. Not fulltype/build/browser375/remoteCI proof. No DB/Edge/frontend deployment/flags/push/dispatch/Docker; Daybreak/Auto unchanged. Next other affected local client async seams and scope/deadline gaps;93 release manifest/runner and full integrated acceptance still pending. No activecommandhandles.
+
+## Legacy restore93 forward containment qualified in local PG17
+
+CLI generated candidate20261015203628, moved to local source slot20270128000093_floor_legacy_restore_exact_session_required_v1.sql (not live reservation/approval). Pins old function definition digest77d5d7871bccb4a9469b6816ff77333e, postgres owner and canonicalv5 existence before replacing only legacy bare API with SECURITY INVOKER/empty path/exact_session_required; PUBLIC/anon/service revoked, authenticated explicit. No session inference, operational writes or audit changes. Consumer cockpit canonical switch already a69053c4771bd338f7c359bf0deb457170be6c99 must precede retirement on release. New exact hash registered under existing owner-gated source catalog, no catalog-check/hook relaxed. SQL hash ed747bda61c670c1422e96066722f1d5cd3c6beea29dafd85dd29d350562a569.
+
+Actual unifiedclone native PG17 original93 apply PASS; manual+registered optional legacy guard denial/unchanged entry/session/seats/chips/tickets/audit/receipt snapshot and canonicalv5 evidenced restore/replay/conflict/ticket/fault rollback assertions PASS. Separate workflow-shaped floor66_native_clean clone: original bareAPI RED legacy_restore_without_exact_session_accepted; injected preCOMMIT fault rolled back full legacy function definition+ACL; original migration commit and both manual+registered GREEN, retired API privilege/invoker checks PASS, clubs0. Private helpers terminalexit0/PGstopped. Default existing test mode retained. Existing workflow now new93 trigger and RED→apply→manual+registered step; YAML parsed/wiring verified locally, not remoteCI. Catalog and migration-control PASS, diffcheck PASS. Fulltype/build not run for SQL/workflow change, no web acceptance. Native isolated PG not HTTPDataAPI or live Supabase advisor proof.
+
+Next: production release manifest/runner/recovery capture for93 remains unprepared and ownerlocal-only hold persists; do not applylive. Continue integrated local gaps (remaining consumers, capability/unknown outcomes) and final coverage map; no pretending missing fulltype/build/requiredCI/Voice provider/40Edge/3rest15/webtour/performance are accepted. No push/dispatch/production DB/Edge/frontend/flag changes; Daybreak/Auto unchanged.
+
+## Canonical cockpit restore caller repaired locally; legacy endpoint containment pending
+
+Baseline main refreshed ed3db6ac600710e95fe4408c475941916c23ab19, owned HEAD before edits78a0a603d. OpsTournamentCockpit no longer uses its custom unfenced restore mutation/sheet or treats current_stack as recovery evidence. It reuses existing RestoreBustDialog (server evidence, exact-session v5, stable intent/receipt recovery). Local seat inventory emptiness no longer prevents opening authoritative dialog; actor/auth/tournament change clears selection; row removed only on canonical verified-success callback. No UI redesign or new restore framework (frontend skill reuse).
+
+New rendered cockpit regression RED on prior source (restore disabled with empty local inventory); GREEN after binding to canonical dialog. 12 cockpit tests PASS (including actor/tournament clearing and original clock scope cases);23 existing dialog tests PASS. ESLint two edited TSX files exit0; diffcheck PASS. Full typecheck/build/375/browser NOT RUN per local RAM/release freeze. No production/push/CI dispatch/flags, Daybreak/Auto unchanged.
+
+Separately, actual unified local DB legacy API bypass was reproduced: initial modern-only fixture rejected invalid_destination_table (not bypass proof); adding valid legacy table_id alias reaches old writer and fails intended guard with legacy_restore_without_exact_session_accepted. Helper legacy-restore-red.mjs terminalexit0 means EXPECTED RED observed, not SQLPASS. Optional LEGACY_RESTORE_GUARD_CASE in manualEntryRestore.currentSchema.sql remains uncommitted pending forward backend repair; default canonical tests unchanged. DB vinpoker_ops_floor66_unified clubs0 verified after rollback, private PG stopped. Next: CLI-generated forward migration candidate/catalog reservation to fail-close old bare API without inferring current session, actual manual+registered GREEN, denial zero-delta/rollback/grants proof and workflow wiring. No migration created/applied this turn; not a backend fix/live proof.
+
+## Unified ops smoke / next concrete legacy restore gap
+
+On78a0a603d, unified clone now exact checkin after reversible archive of oldfixture DB. Actual checkinreceipt/config88/exactqueue+realfinish+ticket/cancel/staleepoch all PASS, finalclubs0, driverexit0/PGstopped. Caller audit found OpsTournamentCockpit still uses oldbare restore RPC/customsheet. Actual unifiedcatalog function77d5d7871bccb4a9469b6816ff77333e authenticatedcallable, oldseat-chip copy, noexpectedSession/requestID. This proves API/caller contract gap, NOT exploited corruption/livefailure. Next targetedDB legacyrepro then reuse existingcanonical RestoreBustDialog inCockpit and forwardcontain oldRPC ifneeded. ReadUIskills beforeediting; no historicalmigrationchanges/productionapply. No implementationedits thisturn, no activehandles, ownerlocalfreeze remains. Rootcheckpoint details.
+
+## Unified local schema compatibility and color-up test ABI
+
+Clean floor49 template to vinpoker_ops_unified_local_68560:32 previously separate missing migrations15/16/24/52-61/63-77/87/90-92 applied unchanged with all guards, clubs0.62 and other Floor/config/auth packages already in template;20/21/50 schedulers intentionally excluded, no fake cron/network. This is local object compatibility, not complete live release manifest/ledger parity. On unifiedclone actual84/85 auth,86tenant,68manual+registered restore all PASS. Old16 colorup test then failed at legacy issuance:69 intentionally retires twoarg API with EXACT_ISSUANCE_INTENT_REQUIRED, not a product regression.
+
+Extended same colorUpCurrentSchema SQL optional EXACT_ISSUANCE_CASE flag; default legacy16 path retained. New mode asserts retiredAPI refusal then issues via exactv2/revision0/requestUUID/fixtureactor before all existing colorup/undo/dependency/bank/ledger assertions. Initial auth.uid expression hit omitted managed authschema usage; fixture actor literal matches authenticated fixture and server still verifies it, no grant bypass. Updated default test on16/52-55 branch PASS and exactmode on unified69+allpackages PASS; rollback/clubs0 preserved. Existing69 workflow now executes exactmode and existing SQL trigger verified, parsedYAMLcommand/diffcheck PASS. No remoteCI/typebuild claim. Private helper runs terminalexit0/allPGstopped/nohandles; no source production behavior changed, no push/deploy/flags. Next broader unified functional matrix/release gaps. Supabase skill kept versioned intent and original denial assertion, not weakening retired writer.
+
+## New actual-schema tenant86 direct-write regression
+
+Added tests/tournamentConfig/tableWriteScope.currentSchema.sql on real captured helpers/RLS/table/session constraints; no authorization function doubles. Exact guarded loopbackPG17 TEST database, allfixtures/grants rollback. Positive Owner insert/update and assignedDealerControl update/delete. Negative crossclub insert/update/delete/reparent, foreign physical/session and contradictorysameclubaliases; anonread preserved/write denied. RED on pre86 primarycard56 fails exact cross_club_update_allowed; GREEN on integratedfloor49 clone, clubs0 after rollback. Existing current-schema workflow now executes isolatedclone test after86; existing directorytrigger covers newfile. ParsedYAML trigger/command and diffcheck PASS; not remoteCI/HTTPDataAPI/full tenant audit. Supabase leastprivilege/RLS skill informed actualrole checks, no productiongrant change. All private nativehelper runs terminalexit0/PGstopped. Localfreeze remains, no push/deploy/flags.
+
+## New recovered-schema auth regression (84/85)
+
+Added tests/cashier/authority84_85.currentSchema.sql: real captured helpers/RLS, transaction rollback, managed auth-schema USAGE grant fixture only. Public profile positive; anon eight private columns/wildcard denied; anon helper denied; Cashier/owner own scope positive; unrelated subject denied; unassigned self empty; trusted service subject positive. RED on pre84 primarycard56 clone fails exact private_profile_column_exposed:phone (not setup). GREEN on integratedfloor49 clone and on pre13/14 workflow-shaped post82/83 clone +original84/85, clubs0 after rollback. Existing workflow gets triggers/exact clone/apply/test commands; parsedYAML trigger/command check and diffcheck PASS, not remoteCI/actionlint. No production permission/source helper change, type/build not needed for SQL-test-only delta. All native helpers terminalexit0/PGstopped. Supabase/Postgres skill kept least-privilege role assertions on actual schema rather than mock auth helpers. Next actual86 direct tenant matrix still missing, not inferred. Local-only freeze remains.
+
+## Latest Tracker76/77 native read/rollback proof
+
+Same5afad7543.75overlap prototype rollback→76clone actualapply/rolelifecycle matrix PASS.77helper canonicalDDL/postcheck/role matrix PASS thenROLLBACK (not persistentinstall); separate77race observedbackendwait/release deniesroster PASS. Separate76rollback injectedprecommitfault restores allfunction bodies/owners/ACL and absence, then actualcommit PASS. Existing LinuxCI=true localharness only, noActions. All drivers terminalexit0/PGstopped/nohandles, no implementation/live/push/CI/flags/Docker change. Next integrated84-86 rolematrix/unifiedrelease/residualG7/G9. Master incomplete.
+
+## Latest G7 source triage/manual75 native coverage
+
+Same5afad7543. Current App GTO retirement/#1569, PlayerActionSheet existing move clarification/#1572 and legacy schedule evidence disclosure/#1577 verified present; no rewrite, other owning worktrees untouched. Registration queue separate from seat movement; F8 unavailable metadata not false approval/date. No webacceptance from source audit. Clean73base→manual75payload_ci existing Linux local harness(CI=true,not remoteActions): fullmigration rollback+commit postcheck PASS, manualactor/payload receipt matrix PASS, cleanclubs0; separate75overlap committed/readonly baseline SQL exit0. Drivers terminalexit0/PGstopped/nohandles.76/77 source transferred butnotapplied; next existing76prototype/read tests/77race. No implementation/live/push/CI/flags/Docker change. Fullgoal incomplete.
+
+## Latest legacy60/61 runtime
+
+Same5afad7543. Cleanfloor49→legacy61_clean original60/61 guards/apply, actual roster legacyreentry/stack cases+postchecks+stale firstarrival exit0. Canonical Cashier reenter object/grants preserved; retired writer paths refused. Not paid Cashier E2E or atomicledger proof. Finalclubs0, retains diagnostic lr01_canonical_snapshot table only in clone. Driver terminalexit0/PGstopped/nohandles, no implementation/live/push/CI/flags/Docker. Next manual75-77/G7 source inventory and unifiedrelease gaps; fullgoal incomplete.
+
+## Latest publicclock90/void59 native evidence
+
+Same5afad7543. Cleanfloor32 to publicclock90: originalguard/apply, actualanon role clock/count/chip/flight/pause/payoutfreshness/deletion PASS, finalclubs0. Not anonymousHTTP/browser or actualpublicationworker. Fixturecard56_overlap after58 now59; readonlypostcheck/base+11negativecases+bustedlockedseat SQL PASS, separate completedvoid59 defaultstack overlap PASS. Syntheticcompleted fixture only, other overlaps not inferred. Drivers terminalexit0/PGstopped/nohandles. No implementation/live/push/CI/flags/Docker changes. Next60/61/manual75-77/G7/unifiedrelease matrix; fullgoal incomplete.
+
+## Latest Voice72/73 native lifecycle/ordering coverage
+
+Same5afad7543. Clean71→72 originalapply, base/finish PASS; seven attendance states ×card/finish zero-write PASS. Actual threeconnection revoke/sessionwait, busyNOWAIT, canonicalSwingfirst SQL PASS in72overlap. Clean72→73base +49/73 originalguards; Voicefirst replay/revokephysicalwait, Swingfirst, pendingmode+correctionblocker actualSQL PASS in exact qualifiedclones. All drivers terminalexit0/PGstopped/noactivehandles. No microphone/provider/Edge/HTTP or fullreleasepackage proof implied. Clean72/73base retained, fixtureclones notclean. Next TV90/manual75–77/history59–61 and unified release ordering. No implementation/live/push/CI/flags/Docker change; full goal incomplete.
+
+## Latest G6 publication and Voice70/71 evidence
+
+Same5afad7543. Separate58_historyruntime actual history SQL/lease/reclaim/proof cases exit0 and publication↔identity true lock overlap PASS (old outcome stale/currentrev queued), synthetic worker payload not actual verifier/Edge. Clean56→voice_release71 +70/71 and existing guarded reviewed identity28 localqualification. Six authority variants PASS: card/actionreplay, staleepoch zero-write, revokedFloor zero-write, canonicalOwner/Floor finish retry+rollback. Clean71clubs0 retained; no microphone/provider/device proof,72/73 nativecoverage next. All drivers terminalexit0/PGstopped/noactivehandles, no sourceimplementation changes or prod/push/CI/Edge/flags/Docker. Rootcheckpoint exact details; master incomplete.
+
+## Latest G6 native card/history evidence
+
+Same5afad7543. Fresh exact-schema card56 primary +13/56: actual authority/revision/completionqueue/cardVoice wrappers and readonly postcheck PASS; separate fixture-rich56 overlap board/hole bothorder barriers PASS.58 on overlap: identity/tournament/chainrange SQL+postcheck PASS; separate identity rowlock, canonical lockorder, opposite reparent statement overlap PASS. Clean primaryclubs0 retained. Separate history_atomic_native_local +24/58 actual historyAtomicRecovery PASS rollbackfault/success/outcome+queue atomicity and committed-discardedresponse/newconnection recovery/noreclaim/noduplicate. Synthetic outcome only, not verifier/worker/publication/browser proof. All helpers terminalexit0, all owned PG stopped; historyatomic clone retains synthetic committed outcome, do not use as clean. Next publication58/Voice70–73 exactworkflowchain; full goal incomplete. No live/push/CI/Edge/flags/Docker change.
+
+## Latest actual restore66–68 RED/GREEN coverage
+
+Same5afad7543. Clean floor49→floor66_native_clean +15 then three intended behavioral REDs:66 lockedwalkin accepted;67 manualrestorable entry missing;68 currentticket unusable. Original66/67/68 applied sequentially, actual manualSeatSessionFence and manualEntryRestore SQL(manual+registered) GREEN: canonical backlink/ticket/savedstack, replay/conflict and audit/receipt injected rollback. Separate concurrency seat66 SAME_KEY/TWO_ACTORS/authrevoke waits/coremutex/close-reopen PASS; restore68 SAME_KEY/TWO_ACTORS PASS. Clean native66 clubs0, all PG stopped, no activehandles.52–55 atomicproof is separate baseline chain, not installed here; production dependency ordering still needs unifiedmanifest. No implementation/source change or live/push/CI/Edge/flags/Docker. Next G6 card56/identity58/historyatomic/Voice exact workflow chain, full goal incomplete.
+
+## Latest restore/chip package atomicity and mode49
+
+Same5afad7543. Fresh exact-schema vinpoker_ops_restore_chip_atomic_local +canonical15/16: existing52–55 atomic PGtest1PASS (exact dependency9objects+authority, failure rollbackDDL+receipt, priorreceipt preserved, exactcommit/replay). No full restore-bust UI/entry journey claim. Clean floor48→floor49_clean original49 guard/apply PASS, separate mode49 overlap publiccorrection/cancel/canonicalfinish/expiry suite PASS. Actual local pg_cron=false;50 scheduler NOT RUN, no fake/install/config. Does not imply live scheduler unavailable. All drivers terminalexit0, all owned PG stopped, no activehandles. Next actual restore66–68 or card56/Voice/history chain; full goal incomplete. No production/push/CI/Edge/flag/Docker changes.
+
+## Latest native deferred/mode and37–48 coverage
+
+Same5afad7543, no implementation edits. Deferred SQL eight variants including realfinish/cancel/staleepoch/badreceipt PASS; actual deferred overlap and mode publiccorrectionresolve/replay/cancel-correction-terminal-canonicalfinish/close-reopen expiry PASS in separate clones.37–47 apply+objectpostcheck/legacy lifecycle PASS; closedattendance5scenarios and break ticket/read/balanced/auditfailure4variants PASS; realfinish+ticket/readpolicy SQL PASS. Clean floor47 clubs0.48 apply +exactqueue/realfinish/reasonfailure/ticketfailure/readticket4variants PASS; separate exactqueue overlap response-loss recovery/foreignclubACL PASS. Moveclose overlap bothorders and mixed legacy2/3/4vs5 bothorders PASS, staleoperations refused. Clean floor48 clubs0. All drivers terminal exit0, all owned PG stopped; no activehandles. Original release ledger-fault tests not implied by this apply evidence. Concurrency clones intentionally retain fixtures; clean floor36/47/48 templates safe after revalidation. Next49/50 then restore15/52/chip53. No production/push/CI/Docker/Auto; full goal incomplete.
+
+## Latest native Floor roster/seat coverage
+
+Same5afad7543, no source implementation edits. Clean clones floor32_clean/floor36_clean both verified clubs0.27 equalblind/28–30 exact-session latephysical+stalestack cases/31 closed-session participation SQL exit0. Separate30 roster overlap and31 participationTV actual overlap/shared-event flight isolation PASS.32 eightfunctionrollback PASS.33 tuple/twofunctionrollback,34/35/62 actual assignment default/malformedalias/freesit/chipprojection20001 SQL PASS,35 rollback+reapply,36 manual-entry rollback+reapply, manual/tracker lockedseat/freesit variants and34 wrapperreceipt rollback all PASS. No deferredmove realfinish/mode/provider/browser claim yet. All helpers terminal exit0 and PG stopped; no production/CI/Docker/flags changes. Next ordered37–47/48 and real deferred/mode, restore52/chip53. Private artifacts/logs stay outside Git; root checkpoint details. Full campaign incomplete.
+
+## Latest native chip and series coverage
+
+Same5afad7543. Clean template verified;92 baseline partial-commit diagnostic reproduced, unchanged92 migration +functional SQL exit0, separate true overlap PASS same-key/receipt/stale reorder/concurrentinsert. Chip clone vinpoker_ops_chip69_ci:16+actual colorUpCurrentSchema SQL exit0;69 stale retry RED expected marker, unchanged69 apply, intent SQL couplingOFF andON/fault injection exit0; actual barriers SAME_KEY/TWO_ACTORS/COLOR_UP/BANK_SYNC PASS. All helpers terminal exit0 and all owned servers stopped. Existing tests, no schema guard change/new implementation; no live/push/CI/Docker/flag change. Private scripts/logs artifact folder. Reorder/chip clones retain synthetic fixtures, clean config88_clock89_clean still canonical next template. Next ordered Floor27–36/62/deferredmode and chip52/53, then history/Voice/TV. Full campaign not complete, no web acceptance implied.
+
+## Latest G4 native runtime —88/89/91 qualified locally
+
+Same5afad7543, no implementation edits. Verified next80_ci clubs0, retained fixture-rich87 DB as vinpoker_ops_persist87_archive and recreated exact checkin from clean pre87 template.22/23/25/26 applied and actual OFF/emptyreservation/resthistory/openname suites exit0 (initial offCommit ENOENT companion fixture transport fixed, not source failure).24 not applied.88 atomicconfig actual create/update/actor/CAS/receipt/child-rollback PASS; true two-actor CAS+open/config/close overlaps PASS.89 clock actual stale/empty/outsider/positive/singleaudit PASS; start/delete level-row overlap both orders PASS. Clean snapshot vinpoker_ops_config88_clock89_clean captured BEFORE concurrency, verified clubs0.91 clone vinpoker_ops_tournament_create91 actual functional SQL/rollback exit0 and separate create91_overlap true blocking same-key/oneparent+level+receipt/newconnection recovery PASS. All helpers terminal exit0, all owned PG stopped. Main checkin now retains random config/clock fixture commits; clean88/89 template remains for next ordered suite. No production/CI/deploy/flags changes. Next92 then Floor/chips/history. Full G4 web acceptance/type/build/campaign incomplete; root checkpoint contains exact state.
+
+## Latest G3 actual native runtime evidence
+
+Same5afad7543, no implementation edits. Inventory17 functional SQL and17–19 apply succeeded; separate inventory_overlap clone actual assignment +close/reopen overlap PASS.78 applied; combined79/81 atomic receipt-failure rollback test1PASS and exact combined transaction applied to isolated main (no79-only window);80 applied. Next80 current-schema actor/rest/receipt/catalog PASS and two-actor/identical-request true-overlap PASS in separate clones.87 RED exact intended assertion, unchanged87 apply, GREEN current-session/close-reopen and all overlap cases PASS: close/persist both orders; lock/persist both; swing/persist both; two planners reversed table order. All owned PG servers stopped, no live/Edge/flags/CI changes, no fullG3 acceptance.
+
+Fixture warning:87 concurrent ran early and COMMITTED randomized fixtures in local vinpoker_ops_checkin. Existing CI runs87 last. For next ordered suites, verify vinpoker_ops_next80_ci clone has clubs0 (its functional test rolled back), retain current checkin under reversible archive name, clone clean pre87 next80_ci back to exact guarded name. Do not delete fixtures or rerun87 unnecessarily. Main local ledger only79/81; raw78/80/87 applies are not production receipts. Next22–26 then88/89/91/config runtime. Private helper/log root unchanged. Detailed checkpoint in root reports.
+
+## Superseding native runtime checkpoint — exact-byte transport fixed
+
+No source implementation changed from5afad7543. Prior83 precondition failure was local export transport: Windows core.autocrlf=true affects git archive. Export via git -c core.autocrlf=false archive, verified82 canonical SHA25604f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289, fixes test setup without touching historical migrations/guards or pinned schema. Original CRLF probe database retained under vinpoker_ops_crlf_transport. Fresh exact-schema checkin:82/83 atomic tests1PASS each and both functional SQL exit0. Guards prove rollback/receipt/owner/ACL behavior; no payroll formula change. Then84/85/13/14/86 apply guards exit0 and actual checkin SQL exit0, clubs0 after rollback.51 receipt reconciliation SQL exit0. True two-session checkin overlap in separate clone vinpoker_ops_checkin_overlap_local PASS (observed database barriers, one attendance/exact receipt). No full profiles/tenant DataAPI proof implied by apply. Linux Node18.19.1 test runtime, not required CI Node22 equivalence. Private scripts/logs under artifact folder and owned WSL parent above. All owned PG servers terminally stopped; no active handles. No push/dispatch/production/flags changes; local freeze remains. Continue next exact-schema workflow suites, no need rerun payroll on same bytes.
+
+## Latest local DB evidence — native PG17, payroll82/83
+
+On HEAD5afad754300c9c80a8310e4998fa67ca1bb68925, recovered exact schema hash d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a validated/restored via unchanged existing baseline script. Private artifact/helper/logs D:\wt\vinpoker-schema-local-0e79a729; isolated WSL PG17.11 data /tmp/vinpoker-sol-local-20261016-0e79a729/data, loopback55441/vinpoker_ops_checkin,16MB shared buffers/10 connections. No Docker/live mutation.82 SQL runtime exit0 with rollback fixture.83 baseline return-type defect reproduced;83 apply correctly rejected precondition drift. Function MD5 a3d98e5f7907875a0a57ac989a0f2099, SELECT-only CR removal MD5 c2a77f3d6e04802d527342bd78cfb54c (exact expected83); ACL anon=false/authenticated=true. Do not call83 applied/PASS or normalize pinned artifact/function silently. Next additive repair needs reviewed CRLF/LF equivalence tests and semantic-drift rejection, preserving historical migrations. All owned PG processes stopped after tests. No source implementation changed this turn; this handoff is intentionally uncommitted checkpoint. Full campaign incomplete.
+
+Owner currently requests local code/tests/commits only, no push/CI dispatch/deploy/Docker. This local integration does not authorize any production migration, grant, Edge or flag change. Daybreak/Auto unchanged. Master G0–G9 acceptance remains the full actual tour, not this tree.
+
+Worktree D:\wt\vinpoker-ops-local-integration, branch codex/ops-local-integration, baseline origin/main ed3db6ac600710e95fe4408c475941916c23ab19. Separate from original owned branches; merge commits preserve their lineage. No changes to other writers or main. No node_modules install or Docker launched here.
+
+## Integrated source inputs
+
+| Package | Exact source | What is actually included |
+|---|---|---|
+| History local | bb40c5e87ee7fd15a6ee2e4839d9e58f7ad80898 | reject/deadline/coalescing/scope/cursor fixes and local tests |
+| Swing config local | f32aad194e1b0a69c50afeafb6ffa0b85848e77e | scoped config reads and unverified operational UI guard; expanded UI test still memory-blocked |
+| Owner-authorized release |4fc8a18b89c5c7c9d9543bd5349bd2d363ce4765 | shared deploy workflow replaces native reviewer capability with owner dispatch on main; no blanket historical apply change |
+| Payroll82/83 |f3d844cb306ee9166c981692071fc1c5053dd012 | includes ancestor27914f893b2e90b930dd916935ba0e6522e1e7f5; read authority and return type, not wage calculation |
+| Profiles84 |b3bb4c0d64ac025a27790bce252c8b8c6d6ae7eb | public-profile compatibility UI plus grant migration; UI compatibility must ship before reducing grants |
+| Cashier85 |07207fd130c5184b06eb03090a8b43e6643a1591 | actor-bound club helper |
+| Tenant86 |1fa4bb6cb2855501d64f73b63a6b6b312c137874 | tournament-table tenant write guard; not atomic create91 |
+| Cashier lookup |4acb51459025ca64deb0291aa961239570ce5efe | UI/Edge scope/error fix plus explicit deployment contract/selection |
+| Dealer next/close80/81 |1f6c04e6a3d68212ee79ba91d7bb8a0422cdcc03 | manual next intent/forecast UI+RPC;78/79 source already baseline,79/81 release remains atomic |
+| Dealer persist87/canonical read |56c30902f8de5384e1460e13857a4f7adea4bafb | exact-session DB commit fence, scoped canonical inventory and planner; not3 real rotations/40Edge |
+| Tournament config88 |da0587e7d042b91325e9f62733a7cd252d4df5bd | atomic save with receipt, preserve canonical read and87 planner changes |
+| Clock readiness89 |c0bc03c98d71b8e6da7d7a5c51de7870fda13722 | clock start/readiness plus qualified isolated apply tooling; no live apply |
+| Public clock90 |c4f3e3a0b7d31e512427b644d85ad5fc28c1f27f | public projection prerequisite, not settlement worker proof |
+| Public clock consumer |3ed5f7a9bbabad45715bae0bde659a33166099f6 | truthful read states |
+| Felt RPC receiver |8439633a2ca4df203bb2b873f31353c98cdb3c51 | receiver-bound Supabase RPC invocation |
+| Tracker lineage |ab797730f997fdec3fa22479b0d4f1dabe659284 | read integrity and canonical unknown-result recovery |
+| Atomic create91 |e5e3cc9fa871e818dec99fc20a8693fee794a923 | parent+levels transaction and original request recovery |
+| Gallery reorder92 |d2c6b83c861d002b87d448df7e0a35031f44dafa | atomic gallery permutation, receipt and scoped unknown response recovery |
+
+## Conflict resolution and verification
+
+Catalog conflicts combined distinct82/83/84/85/86 entries with original hashes unchanged. Current-schema workflow conflict combined both payroll82/83 and tournament86 triggers. No historical SQL edited. Shared production workflow auto-merged Cashier selection with the owner-only guard; verify no hunk lost before release.
+
+Actual integration checks: migration catalog PASS; migration control PASS10reservations; diff --check PASS. git diff --exit-code against each original branch confirms exact82–86 SQL files unchanged. Integrated policy/deployment-plan Node run25736 terminalSUCCESS:56PASS/1SKIP,~80seconds; actual assertions include Cashier explicit critical selection/ACL and owner-only release plus retained receipt/source contracts. Private supplied recovery fixture remainsSKIP, notPASS. No active test process left and no reason to rerun unchangedbytes. These checks do NOT prove production DB parity or runtime compatibility of the whole stack. Plan suite creates small disposable git fixtures, not production changes. C drive free only~59MB at read; avoid new caches/downloads/backups there.
+
+Original evidence remains scoped: History23mock/parser testsPASS; Swing finalhook16PASS, expandedUI7cases hitheapOOM; ownerpolicy32PASS/1SKIP beforeintegration; originalsecurity PG runtime belongs to prior qualified source, not a fresh integrated DB test. No full typecheck/build/browser/DB runtime run in this integration under current RAM/Docker limits. Do not report SOURCE_QUALIFIED or ACCEPTED for the integrated candidate.
+
+## Owner-authorized campaign apply workflows — local followup
+
+Scoped removal of native required_reviewers capability checks now covers only dealer-rest78, dealer-close79-81, dealer-next80, clock-level89, tournament-create91 and series-reorder92. Owner initial/rerun actor, manual dispatch/main, exact PR/SHA/CI, environment binding, serialization, recovery and atomic apply checks remain.79/81 exception still defaults NOT_APPROVED. Historical workflows outside this scope unchanged. No environment settings changed and no workflow dispatched.
+
+New policy regression failed on original source at dealer-rest78, then passed after removal. Six protected-apply suites:24PASS sequential; new policy test:1PASS. An initial combined invocation failed to start a thread, not a product assertion failure; sequential execution reached terminal success. These are local Node/source-validation tests, not DB execution, actionlint, full typecheck/build or live proof. Baseline fetched again unchanged at ed3db6ac600710e95fe4408c475941916c23ab19. Earlier statements below about pending native-reviewer removal describe pre-followup state and are superseded by this section.
+
+## Still outside this tree / next order
+
+G5/G6 integrated UI verification: mode-picker/seat-roster/control-mode3files20renderPASS. PublicTournamentClock readState8PASS and originalVoicegate5PASS in one13test run. These prove mocked client states only, not real pending-move consumer, mode/Swing DB overlap, multi-flight anonymous TV or microphone/provider receipt.
+
+Voice gate hung-read regression: added2render cases; before fix6PASS/1FAIL (new previous-table timeout control already passed, hung-read case correctly failed). Wrapped the existing runtime loader in shared20sboundedwait, leaving server authorization/mint/commit/provider unchanged. Final7gate testsPASS,2.54s, including explicit retry after timeout, no auto retry, and late response/previous-table timeout fences. Underlying RPC not cancelled. Separate ESLint exit0,0errors/1existing FastRefresh export warning; no claim of warning-free lint. Earlier combined shell command exit1 came from invalid PowerShell rg wildcard path, not ESLint; standalone command verified exit. Existing Voice workflow already triggers voice component directory and runs this gate test; no workflow edit/dispatch. No DB/Edge/frontend/flags/UAT changes. Gate-open is not real Voice or owner/Telegram role acceptance.
+
+Tournament delete response integrity followup: actual hook repro8FAIL/3PASS; Ops delete seam6FAIL/3PASS. Both accepted null/incomplete/mismatched result as success. Reviewed source RPC explicitly returns ok:true/deleted:true/tournament_id. Added small shared proof validator used by hook and Ops deletion only; explicit blockers/transport errors retained, malformed/mismatched proof throws tournament_delete_unverified, hook never invalidates success cache without proof and disables inherited automatic retries. No server deletion policy, grants, RPC arguments, SQL, data or generic assertMutationOk semantics changed. Unknown proof does not establish rollback; no automatic retry/reconciliation implemented.
+
+Final3files25testsPASS (13hook including retry/wiring +9Ops seam +3existinggeneric mutation),3.66s. Corrected it.each fixture wrapping so literal[] is an actual payload rather than zero test arguments. Wiring-test initial URL construction failed in Vitest browser context, fixed to existing cwd-path convention; actual missing-trigger assertion thenRED, after wiringPASS. Targeted ESLint helper/newhooktest/Opscontracttest exit0. Both workflow YAML parsed and actual trigger+commands checked; no actionlint/remoteCI/typecheck/build/DB/live claim. Existing checks kept; historical workflow label updated to accurately name canonical config routing and deletion proof. No production deletes or other production mutation executed.
+
+G2/G4 current integration checks: TournamentConfigPage atomicSave5+canonicalRead5=10renderPASS; UnifiedLookupTab6+PlayerProfile publicRead2=8renderPASS; TournamentManagerShared createIntegrity7renderPASS. These test real UI/hooks with fake RPCs, not authenticated Edge/live ACL or PostgreSQL atomicity. No rerun of previously unchanged lightweight pure logic suites.
+
+Integration mismatch found in G2 migration86 workflow: it explicitly executes useTournaments.atomicity.repro.test.tsx, whose old3diagnostic cases asserted the legacy partial-write bug remained and mocked only from(), not the new migration88 rpc(). Actual run3FAIL due missingrpc.bind and missingnewCASinput, not a newly demonstrated DB regression. Converted that same testfile to6actual canonical hook regression cases: create/update rejection, oneRPCsuccess, exactCAS/table fences, lost-response receipt recovery and recovery-only. Inputs now satisfy current types, direct from() forbidden, failed mutation cannot trigger success invalidation.6PASS and targetedESLint exit0. Existing workflow still executes file and retains PG86/type/build checks unchanged; not bypassed or marked remotePASS. Historical diagnostic bytes remain in Git before this commit; new fake-RPC tests do not prove transaction rollback. Workflow's legacy step label is historical, not a claim that the old client writes still exist.
+
+Additional source concern to reproduce next: useDeleteTournament currently accepts null/malformed RPC data as success, while the only reviewed ops_delete_tournament_safe definition returns explicit {ok:true,deleted:true,tournament_id}. No deletion executed and no production bug claim yet; add a focused actual-hook counterexample before changing behavior. Do not expand into delete policy or data cleanup. No fulltype/build/DB/Edge/frontend/flag/UAT change in this turn.
+
+G5 local integrated verification/fix: RestoreBustDialog existing23render casesPASS on35c295f9d integration. ColorUpTab existing32casesPASS, but source audit and5newrender cases reproduce infinite read/loading and frozen submit/receipt/cancel/reverse busy state. Before fix5FAIL/32SKIP in focused repro. Reused existing generic bounded-wait implementation waitForManualPlayerResponse (also used by restore) without editing it:20s total read snapshot,20s per explicit mutation/receipt/cancel request. Snapshot publishes only after successful bounded read; expired read lifetime prevents late data, chained queries or read-error toasts. Mutation timeout preserves exact durable intent/key, releases busy, ignores late success, and permits explicit read-only reconciliation; no automatic retry or newkey. No chip arithmetic, rounding, receipt-validation, ledger or server write contract changed. HTTP may still complete; timeout never establishes rejection or rollback.
+
+Candidate final37Color-up render casesPASS,3.59s including5timeout cases with exact-journal preservation/late-result fencing/read-only receipt recovery. Existing restore23PASS is separate evidence, not DB conservation. Existing CI already triggers ColorUpTab source/test in dealer-checkin-current-schema and floor-table-control-v3-contract-disposable-db and executes this exact testfile; no workflow edit or dispatch needed. DiffcheckPASS. No full typecheck/build/PG/live UI claim. Actual DB couplingON/OFF, concurrency/undo/conservation, crossclub runtime and fulltour still open.
+
+Archive parent bounded read followup: TrackerHandHistory now reuses20s guard across club-scope and tournament-list reads, fences expired/previous actor work, exposes explicit in-page retry while preserving URL deep link, and clears previous result before retry. Existing auth/role/server scope policy unchanged. Actual RED9PASS/2FAIL before fix, candidate11PASS in existing readiness render suite including actor A/B/A and denied/anonymous/auth-error controls. Targeted ESLint page/test/guard/test exit0. Fetch origin completed; main still ed3db6ac600710e95fe4408c475941916c23ab19. No broad parent API redesign or server grant change. Underlying HTTP not aborted; timers bound UI wait only.
+
+Resource change justified closing older Swing UI verification gap: physical free RAM1165992KB vs earlier283280KB. One isolated current-integration run DealerSwingTab.readState.test.tsx terminalSUCCESS7PASS,7.62s. This supersedes earlier expanded UI7cases OOM/UNRUN, not actual assignment/rotation or backend proof. No active handles. Full project build/typecheck still not run, owner local-only release freeze remains.
+
+Current remaining acceptance map (source/test evidence is not live acceptance):
+
+| Goal | Locally prepared/evidence | Still required to ACCEPT |
+|---|---|---|
+|G0|owned integration, fresh unchanged main, local checkpoints|refresh exact live manifest before release; do not reuse old aliases/flags as current truth|
+|G1|owner-only scoped release guards/tests and package manifests|quota/required remote checks/recovery and owner release window; no bypass|
+|G2|82–86/Cashier compatibility integrated, original scoped evidence retained|combined DB/auth/Edge and actual served actor/tenant verification|
+|G3|78–81/87 integrated, next/session13tests and Swing UI7PASS|integrated PG interleavings, actual3rest15 rotations and40tables via isolated Edge|
+|G4|88/89/91/92 prepared, lightweight logic/transport tests retained|integrated atomic DB failures/concurrency and actual create/config tour through UI|
+|G5|existing lifecycle/bust/chip implementations retained|cross-module runtime mode/move/close/restore/ledger couplingON/OFF, desktop375|
+|G6|History read callback/effect/render guards verified locally|writer matrix/realworker, canonical Voice provider receipt, TV anonymous multi-flight/runtime|
+|G7|F1–F9 routed to source packages and explicit gaps|required evidence per finding; no close by source-only inference|
+|G8|older canary identity known, not clean acceptance|isolated approved TEST payment/payroll/notification manifest and whole13checkpoint journey|
+|G9|History error/retry/deadline tests, scoped lint|fulltype/build/requiredCI, five screens20samples each, finalruntime/release review|
+
+Next move beyond this History slice: audit/test remaining integrated UI/read contracts in G2–G5 against existing suites; do not rerun unchanged completed cases. Keep backend/whole-tour acceptance open. No Docker, push, CI dispatch, production DB/Edge/frontend/flag changes in this local campaign phase.
+
+History bounded-read followup: existing handHistoryLoadGuard now supports optional20s deadline, finish cleanup, invalidation-before-timeout callback and stale-generation finish protection. Workspace hand/detail/queue load and independent table-inventory read both use it; timeout shows explicit retryable error, late completion cannot change state, unmount/superseding read clears timers. No mutation retries or HTTP cancellation claim: underlying read may remain in flight, but its response is fenced. Parent archive tournament-list read remains a separate deadline gap.
+
+Actual RED before source change:7PASS/4FAIL across new guard/render cases (timeout not reported and finish missing). After source change11PASS across5guard+6render tests, terminal exit0,6.50s. Actual callback/effect suite13PASS with updated fake guard seam; later wiring assertion1PASS after adding guard-source/test trigger and actual Vitest argument. YAML syntaxPASS, diffcheckPASS; not full typecheck/build/actionlint/CI/browser/DB. Frontend skill kept errors/retry explicit and CI/CD skill scoped trigger/test wiring. No install, Docker, push, dispatch, DB/Edge/frontend/flag changes. This supersedes only earlier no-deadline gap for the workspace and table reads, not the overall G9/no-infinite-loading acceptance for all routes.
+
+History render verification now available: physical free RAM read544796KB vs previous283280KB, so one bounded rerun on current bd0f86f95 product bytes was justified. Vitest session73903 terminal exit0: tests/tracker/handHistoryReadRecovery.test.tsx4/4PASS,30.33s; only React Router future warnings. This supersedes earlier four-case memory-blocked status, NOT full browser/typecheck/build/DB evidence. No active test handle remains.
+
+Added read-only CI trigger paths for workspace/recovery tests, actual render-test argument and separate in-process Node callback command to ops-v3-tracker-dealer.yml. New workflow-wiring regression RED before edit, PASS after; actual parsed YAML confirms trigger and both commands. No remote run dispatched. Existing12callback/effect tests remain lastPASS on unchanged product bytes; new wiring test1PASS, not a claim of13test single-run evidence. Skill used for CI wiring only, no deployment. Tracker archive parent source already gates data by actor scope and hides/unmounts panel while scope reloads; this is source reasoning, not a tested cross-account runtimePASS. Workspace/table inventory still lacks bounded read deadline; retain as a concrete remaining G9 gap.
+
+History table inventory followup: source previously fell back on any V2 authority/transport/malformed response and ignored legacy errors. Now fallback only on explicit missing-RPC codes PGRST202/42883, otherwise show read error/retry and disable unverified filter. Clear previous table options on scope/reload, retain cancellation fence, handle rejected promise, and expose loading separately. Empty initial options are not replaced with another empty array, avoiding an extra dependent hand reload. Actual source-effect regression before fix6PASS/4FAIL; after fix final12PASS (4existing hand callback +8inventory cases, fake reads/state). Added one companion render retry case;4React cases total still UNRUN under RAM constraint. Two TSX syntax parses/diffcheckPASS. No typecheck/build/actual browser/SDK/DB qualification and no production changes. UI skill influenced only explicit loading/error/retry states; no redesign. Server ACL and SQL untouched; owner/admin role behavior still needs actual authorized browser verification.
+
+Subsequent History verification: new lightweight Node/SWC callback tests now execute the actual parsed loadHands callback with fake dependencies/state. `node tests/tracker/handHistoryReadRecovery.callback.test.mjs` runs in-process to avoid a worker under resource pressure. First3cases PASS on d78a79f36 source; same test with HISTORY_SOURCE_REVISION=13f140a623d960955378c75d0734f6f8061a84c1 reproduces3real failures: uncaught detail rejection, uncaught queue rejection, stale tail selecting null instead of b. Added current-success positive control. This supersedes only the earlier failed callback-extraction experiment, not the React/render/typecheck/DB gaps. SWC byte spans are relative to tree.span.start; extracting by global offset1 was the previous diagnostic error. The Node test must be explicitly included in the final verification command; Vitest's TS-only glob will not discover this mjs file. Do not substitute these fake-read callback checks for actual transport or browser proof.
+
+History authorized workspace followup: actual needs_attention consumer already exists in HandHistoryWorkspace via get_tracker_historical_display_queue_status; do not add it to the anonymous public projection by inference. Source audit found rejected read promises escaped loadHands, and an old queue response could still run the selection/loading tail after a newer load. Local fix catches hand/detail rejection, treats queue rejection as unavailable without discarding loaded hands, clears old queue badges at new load, and fences final selection/loading by generation. No writes/permissions/SQL changed.
+
+Three new React regression cases added in tests/tracker/handHistoryReadRecovery.test.tsx. Attempted run failed at process startup with native memory allocation error before assertions (free physical memory283280KB); NOT PASS and no runtime baseline assertion proof. A separate lightweight callback experiment also hit memory limits; a subsequent SWC extraction diagnostic failed due source-span extraction, not a product assertion; discarded rather than counting it as evidence. Actual SWC parse of both changed TSX files PASS syntax only; diff--checkPASS. Must run the three React cases before source qualification. Never-settling requests and independent table-inventory read recovery remain separate unverified gaps; this fix is not the whole G6/G9 acceptance.
+
+Dealer integration phase2 completed locally through merge1816da6ebbf3a8123e468502a0aed19c24b16ded. Resolved catalog addition conflicts by preserving80/81/87 plus82–86; Ops CI test list conflict kept both baseline UI tests and canonical/session tests. Source check confirms configsLoading/configsError/Retry config refetch survived merges. Exact SQL80/81/87 unchanged versus source branches. Catalog/control/diff checks PASS. Actual25Node protected-transport/atomic-plan tests PASS (not PostgreSQL execution); actual13Vitest next-intent/table-session tests PASS. Original56policy/plan tests above belong to phase1, not a fresh qualification of this larger candidate. No build/type/DB/browser/live rotation proof. Existing apply workflows still require native reviewer; owner approved removal, but scoped followup remains before private release.
+
+- Dealer78–81/87 now present, but isolated DB interleavings and actual3rest15 rotations/40Edge not rerun on integrated stack. Preserve rest15 and exact-session fences; do not infer backend safety from config UI guard.
+Phase3 now integrated through mergec4a0e39ff7bbe8e12128e24f7e6d2f9d8924ad7c. All8inputs above merged locally, resolving additive catalog/CI tests/triggers and preserving88before89 runtime preparation. E2E fixture keeps both create and schedule surfaces; schedule retains required AuthProvider. E2E spec keeps two separate complete width loops. Six locales combine createAtomic and admin.scheduleReorder/scheduleUpload without duplicate top-level admin keys; legacy disclosure retained. Both89/92 Floor contract triggers/actionlint/transport test steps retained. Workflow YAML parse and E2E syntax-only transpile PASS, not typecheck/browser. Catalog/control PASS, exactSQL88–92 unchanged. Actual38Node transport/plan tests PASS and43Vitest tests across6lightweight config/create/readiness/lineage/outcome files PASS. No current process left.
+
+- These source packages are now present, but full typecheck/build/browser/DB runtime and complete dependency audit still pending. Current owner waiver of native reviewer must be scoped into relevant apply workflows; existing tests still assert that old requirement, so theirPASS does not mean private release unblocked. No indiscriminate removal of other controls.
+- History worker/Voice/TV actual runtime/provider/anonymous multflight and legacy-data evidence remain missing; no synthetic verified outcome, copied current-seat identity, broad backfill or fabricated blind levels.
+- Remaining F1–F9 only close with required evidence. GTO/upload/disclosure merged baseline is not new live proof. Public history needs_attention is not provided by its current public projection; investigate actual intended authorized consumer before designing a contract change.
+- When memory allows, run final Swing UI once; full typecheck/build and actual integrated runtime before release. Do not rerun known identical tests just for counters. Continue light source integration/audit meanwhile.
+
+After quotas/resources and owner release scope are ready, run required checks on ONE final candidate, then compatibility-ordered DB/Edge/frontend/flags and actual web/RPC/DB tour. Do not push this accumulated tree unreviewed or merge into main automatically. No claim that a local merge equals completion.
+# 2026-10-16 — Same staffed paid-tour hand correction and republication
+
+Extended the existing eight-paid/two-table/four-dealer journey, not a separate
+correction fixture. After actual History worker verification, the existing actual
+correction Edge handler runs scope/actor/preview/commit/stale-retry/receipt tests.
+The old historical-display proof is invalidated, the new source generation queues,
+and the actual worker republishes one current verified proof. Anonymous history
+returns verified; a second worker run claims zero. Seats and Cashier fingerprint
+stay unchanged. No product SQL/Edge edits in this increment.
+
+Native command: `node candidate111-integration-native.mjs --cash112 --portable115 --paid-tour-roster --existing`.
+Terminal result `09ec23`: exit0, PG stopped. Club
+`2ad25813-9229-424e-be60-9947416bb97b`, tournament
+`9ac980bf-46d7-4694-a416-228647c667e8`, hand
+`47a21e20-5a9f-45aa-b893-e868af468158`. Fixtures/audit retained.
+Node syntax and diff whitespace checks pass. Local-only: no push, CI dispatch,
+deployment, production apply or flag changes. HTTP/Auth/CORS remain modeled.
+Next is the remaining same-tour bust/restore, color-up/undo, break/close/end;
+hosted/browser, real rotations, full typechecks/build and performance remain open.
+# 2026-10-16 — Integrated paid-tour bust/restore and color-up/undo
+
+G5/G8 IN_PROGRESS. Extended `paidTourRoster.native.mjs` after the same staffed
+four-player hand/correction/worker proof. Canonical bust with evidenced20000,
+exact replay, restorable read, actual pending re-entry (transaction rollback)
+blocking restore, then durable v5 restore/replay/key-payload conflict. Eight
+original entries remain, seats/entries total160000, anonymous TV8/160000.
+Canonical color-up1600×100→160×1000, fresh receipt recovery, payload conflict,
+undo/fresh receipt and historical receipt preserved. Original conversion ledger
+rows immutable; compensation appended; issuance unchanged, couplingOFF/no bank
+ledger. Cashier, hands/proofs and dealer assignments unchanged.
+
+Final run `75a3e3`/41625→`cb4be8`: exit0/PG stopped. Club
+`11f9f323-1e68-4726-b12d-7425f3a33042`, tour
+`7fe7d995-cc96-4884-846a-99754b447f94`, hand
+`15f77ef2-4152-4406-a938-7a04237c8ff9`. Syntax/diff checks pass.
+Earlier color-up extension failed before mutation because harness assumed an
+issuance ledger row; source shows issuance is separate, conversion ledger starts
+empty. Fixed oracle, not product schema. Failed tour/audit retained, no reset.
+
+No production DB/Edge/frontend/flags/UAT/push/CI dispatch. Daybreak/Auto unchanged.
+Local hold remains. Same-tour couplingON is not proven (separate dedicated native
+coverage exists). Next: canonical break/close/reopen/end with audit and receipts;
+real rest15 rotations, hosted/browser375/provider/performance/full checks/release
+still required for master completion. No command remains running.
+# 2026-10-16 — Same paid-tour break, close/reopen and stale-session fence
+
+G5/G8 IN_PROGRESS, baseline029814820. Extended canonical same-tour journey:
+complete4-move hashed break preview → actual v5 break → replay identical receipt
+and wrong-hash conflict/no delta. Eight entries/160000 now on one table; source
+has no seats/pending moves, session closed and dealer assignment released.
+Reopen same physical table via canonical RPC creates a new session with no
+inherited assignment. Old Tracker context returns STALE_TRACKER_CONTEXT.
+Canonical empty v4 close/replay closes the new session. Cashier/hands/proofs,
+chip ledger and anonymous TV8/160000 unchanged. No direct seat/session writes.
+
+Native command unchanged: `node candidate111-integration-native.mjs --cash112 --portable115 --paid-tour-roster --existing`.
+Run3dcf0b/29019→19cf5b terminal0, PG stopped. Retained club
+`3ef8b56b-f206-471a-b455-02afa4d0c954`, tour
+`50bddf40-6807-4b04-8a80-630f29c25fc6`, hand
+`9a0ff4a1-3eae-4f87-87c2-7987bb29d027`; remaining active table
+`bd596cd1-771f-4105-afca-00481bd97225`, session
+`33b55171-fb54-4e53-ae4c-7dbe09ad72ed`. Syntax/diff checks pass.
+
+No product edits, live DB/Edge/frontend/flags/UAT/push/CI/deploy changes.
+Local-only resource hold and DaybreakOFF/AutoOFF retained. No running command.
+This is ordinary immediate break, not same-tour deferred active-hand break.
+Still8players: final supported tournament completion is NOT proven. Next inspect
+actual terminal-hand/finish and close readiness, without fabricating eliminations
+or bypassing payout/payroll blockers. Real rotations/hosted/browser375/provider,
+full checks/build/release/performance also remain open. Master ACTIVE.
+# 2026-10-16 — Same paid tour reaches canonical close after actual showdown
+
+G5/G6/G8 IN_PROGRESS, baselineb47fc825f. Added `runPaidTourShowdown` to existing
+hand harness, called after same8-paid/staffed/hand-correction/chip/break journey.
+Eight genuine frozen players post blinds/all-in via record_action; hole cards
+are committed in all-in runout BEFORE river (existing muck guard unchanged).
+Manual canonical board writer persists flop/turn/river. Actual settlement engine
+computes royal-flush winner,7zero stacks and160000 conservation; actual Finish
+commits7eliminations and replay is duplicate. Premature close returns
+active_players_remaining1/no report. Existing Floor free-sit preserves winner
+stack160000 (registered, NOT busted/no payout); empty v4 table close releases
+assignment. Readiness then has no blockers. Actual close_tournament + replay
+produce one immutable report, completed status, no sessions/seats/assignments,
+no prize payments, unchanged Cashier; reconciled=false explicitly retained.
+
+Finald0dcec/46580→4229d8 terminal0/PGstopped. Retained club
+`e7003c8a-2577-4452-aa12-470cb84daeed`, tournament
+`d9b1fd8f-b276-4750-882d-8c7e906292f8`, fold hand
+`7bba8bdf-f522-4556-a6e3-24f993b49146`, showdown hand
+`a972a7f6-4069-4e65-94c0-3697215f2b1f`. Syntax/diff checks pass.
+
+Failures were not discarded/reset: first native manual board hit missing auth
+schema USAGE. Read-only49ff53 proves all3reconstructed roles lack it; official
+[Supabase bootstrap](https://github.com/supabase/postgres/blob/develop/migrations/db/init-scripts/00000000000001-auth-schema.sql)
+grants it. Harness models only authenticated USAGE within each board transaction,
+revokes before COMMIT and asserts original privilege restored; no RLS/table grants
+changed. Next reveal-after-river hit intended muck guard; corrected test order.
+Then close succeeded but final roster JSON assumed nonempty; SQL aggregate now
+explicitly returns[] for successful zero rows (SQL errors still throw).
+
+NOT master acceptance: this local fixture does not enable player-history or prove
+official final places/tied-elimination policy. No payout/reconciliation performed.
+Showdown History worker/projection, anonymous post-close TV, real rest15rotations,
+hosted/375/provider/fulltypechecks/build/performance/release remain. Next verify
+same terminal hand via worker and projections, then inspect existing supported
+history-enabled result path without inventing ranks or replaying archives.
+No product SQL/Edge/UI changes; no productionDB/Edge/frontend/flags/UAT/push/CI/
+deploy. Local-only hold, DaybreakOFF/AutoOFF and masterACTIVE retained. No live job.
+# 2026-10-16 — Closed tour terminal hand History worker and anonymous TV
+
+G6/G8 IN_PROGRESS, baseline2336be5da. Same eight-paid terminal showdown now goes
+through actual worker/verifier/SQL AFTER canonical tournament close. Explicit
+native paid-parent/showdown gate retains all exact loopback/datadir/no-net/paid
+entry/owner/hand identity checks; no outcome exists before initial claim.
+Fixture-specific royal-flush oracle asserts main159200+side700 to AcKc winner,
+refund100,8nets/current generation, winner160000. Public proof has one winning
+rank, not losing-player ranks/private evidence. Anonymous table history verified;
+worker retry claims0/no second proof. Closed-tour path does NOT run another
+correction against an already closed tournament. Existing fold/correction and
+nonparent standalone oracles unchanged.
+
+After close + worker, actual anon TV RPC returns paired/correcttour/completed,
+1remaining registered survivor/160000 live-entry stack; active roster is[].
+Finaled8e22/64033→0342d8 terminal0/PGstopped. Retained club
+`2e7532be-74f0-4473-9369-1f64910f74e3`, tour
+`1491afed-131a-4d39-99c7-170c0adf8a55`, fold hand
+`c9a6193b-4bc2-4792-b8bf-122b14905ce2`, terminal showdown
+`cbc8092f-7ace-4ff0-8e4f-a68cced14623`. Syntax/diff checks pass.
+
+No product/runtime definitions, production DB/Edge/frontend/flags/UAT/push/CI/
+deployment changes. Local resource hold, DaybreakOFF/AutoOFF remain. No live job.
+Master still ACTIVE: official final-place/history-enabled path NOT qualified;
+read-only source trace finds auto-finalize gated by player_history_enabled and
+registration_closed_at. Current native fixture has neither enabled/closed before
+play. Only producer located for registration_closed_at is payout-generation
+(archive READ ONLY); no direct frontend setter found. Verify exact runtime
+definitions/caller before classifying or fixing this gap, never replay archive
+or generate a payout merely to force a close. Same-tour deferred break, real
+rest15rotations, hosted40,375/mic/provider/Storage/fullchecks/performance/release
+are still required. Next: runtime audit of official finalization dependencies.
+# 2026-10-16 — Confirmed/fixed local restore provisional-history corruption (122)
+
+G5/G6 SOURCE_QUALIFIED locally; master IN_PROGRESS. Runtime catalog audit8d2084/
+2288ec confirms restore implementation retained bust_order and did not guard
+finished_place. New exact regression fails recorded pre122 body with restored
+bust_order1 instead ofNULL (initiale9ed5d; final exact test baseline1bdc5f).
+This is a product bug, not a fixture/transport failure.
+
+New forward migration `20270128000122_floor_restore_provisional_history_order_v1.sql`
+(CLI generated20261016151453, source/local slot122 scan) requires old normalized
+function digest e671d6c24edf4d4ed631ecec820efae2. It clears ONLY provisional
+bust_order during canonical restore, never decrements tournament bust_seq, and
+rejects target with official finished_place both before and after entry lock.
+Shared implementation covers old/new public wrappers; ABI/owner/ACL/path unchanged.
+New normalized function digest5d79a4a9e1d8b4da447a3e95a01104f7.
+Local fileSHA2564d827ee6a44ea38014ee58751a4d5744589175b5f01cf75bcd7c2b25d308b74a.
+Not live catalog reservation or approval; no historical migration/ledger edit.
+
+`restoreHistoryOrder.native.mjs`: actual paid2entry fixture, own temporary history
+opt-in restored in finally; canonical bust/replay→restore/replay→null provisional
+order→later bust order2>1. Outsider/stale revision/payload conflict zero delta;
+canonical explicit finalize with1survivor yields targetplace2; restore then returns
+restore_result_dependency with entries/seats/sessions unchanged. Cashier unchanged.
+No payout or hand-inserted rank; actual auto-finalize/registration-close UI path
+still not qualified. Failed baseline audit retained, not repaired/reset.
+
+Final1bdc5f/22259→0cddd7 terminal0/PGstopped: exact final regression fails recorded
+baseline then passes fixed; unknown-body migration rejected, transactional DDL
+rollback and metadata/ACL checks pass via existing seatingMigrations --only122.
+Earlier8f4b43 also rehearsed recorded definition/ACL compensation then ROLLBACK.
+Latest focused tour6346b256-72df-4813-a0d8-0f8974e31166, entry
+68e0b6ff-67a8-4c78-a9e2-6eaee6e2b276. Full same8paid integration AFTER122:
+d025f6/58634→40a290 terminal0/PGstopped; tour52c474d0-7d31-4c70-8d99-a52b8d07d941,
+terminalhand86442476-2e98-4619-b3ad-3a3903610c95, closes/history/TV still pass.
+Syntax/YAMLparse/diff checks pass; CI paths/ordered runtime commands prepared,
+NOT dispatched. Fetch origin/main still ed3db6ac600710e95fe4408c475941916c23ab19.
+
+ProductionDB/Edge/frontend/flags/UAT unchanged; no push/CI/deploy. Local resource
+hold, DaybreakOFF/AutoOFF/masterACTIVE retained, no live command. Release still
+needs independent critical review, exact live catalog/recovery/required checks
+and owner scope under runbook. Existing restored legacy orders are NOT backfilled;
+require evidence-led disposition. Next official finalization/registration-close
+flow, simultaneous-elimination policy evidence, and remaining original gaps
+(realrotations/hosted40/375/provider/Storage/fullchecks/performance/release).
+# 2026-10-16 — Confirmed/fixed local canonical-close missing official places (123)
+
+G5/G6 local SOURCE_QUALIFIED; master IN_PROGRESS, baseline2200f5e73. Canonical
+paid2entry/history-enabled repro80ec0b: captured bust_order1, one survivor leaves
+seat with stack preserved, all sessions closed, close_tournament succeeds/status
+completed but both finished_placeNULL. Original auto-finalizer waits for
+registration_closed_at, and canonical close had no finalization caller. No payout
+was generated to bypass that dependency. Exact final regression also fails the
+recorded pre123 catalog (6c5801 marker), not merely a static/mocked test.
+
+New forward123 (CLI generated20261016152408; source/local slot only) adds an
+internal read-only official-results classifier shared by readiness and a BEFORE
+INSERT close-report trigger. Trigger rechecks owner/Cashier/exactclub/actor and
+locks tournament→entries. Captured complete field is finalized through EXISTING
+public.finalize_tournament_results, same transaction as report/status; existing
+complete official places are preserved without recomputation. Partial/range/
+duplicate/survivor/evidence problems fail closed, not auto-repaired. Disabled
+history/empty field retain existing close behavior. New detail.official_results
+records finalized/preserved; no new browser/service helper grants.
+Original financial close function and ranking algorithm definitions unchanged.
+Precondition digests: close5b007d2e26b9e735db6c88fb58034982,
+finalizer05f8be81b2c5414bf35d745c54133cdb,
+blocker1c77052afa745bcbe1e3496c5779c024. FileSHA256
+8a5ce9fca6af9793ef5a8b91a224fffbf00d182f4b0728a072c3df7e546c33c8.
+
+Final migration/suite6c5801/47626→31b1bb terminal0/PGstopped:3dependency drift
+denials, full DDL rollback, original ABI/owner/ACL/path metadata preserved,
+compensation restores recorded blocker + drops only new objects then rollback.
+Six runtime cases: new places1/2; preserve complete official rows byte-for-byte;
+missing order/readinessblocked+zero delta; partial legacy result/readinessblocked
+inside rollback-only fault fixture; error AFTER ranking before report completion
+rolls back places/report/tour; actual two-session close overlap yields1report.
+Stronger Owner+different Cashier overlap e26553 terminal0/PGstopped, tour
+ef06b133-7fb1-40ea-a150-9892522ba767. Outsider denied/no state delta; all3external
+roles lack EXECUTE on both new helpers. Cashier/payment history unchanged/no prize
+payments. These are2player manual-bust result tests, not tied-showdown policy proof.
+
+Full8paid integration under123:2863ee/33883→ee093f terminal0/PGstopped, club
+20cac0a0-66c9-4e90-9bb2-0c7720e4d74b, tourda252af6-0f92-4726-abbc-9d58e28cd049,
+terminalhand72459d0b-5fba-4b7d-8041-7472982a8f29; fold correction, restore, chip
+undo, break/reopen, actual showdown/close, both workers/public history/anonTV pass.
+This8player fixture has history flag OFF, NOT8player official-ranking acceptance.
+Syntax/YAML/diff pass; CI order123 after122 +6scenarios prepared NOTdispatched.
+Fetch origin/main unchangeded3db6ac600710e95fe4408c475941916c23ab19.
+
+No liveDB/Edge/frontend/flags/UAT/push/deploy; local resource hold/DaybreakOFF/
+AutoOFF/masterACTIVE. No live commands. Independent critical review, livecatalog/
+recovery/required checks/release remain. Source-only123 has NOT repaired prior
+completed reports with missing places. Remaining: Vietnamese labels for new
+readiness codes; history-enabled8player/re-entry/tied elimination evidence;
+legacy-finalizer vs close interleaving (only close-vs-close tested); original real
+rest15rotations/hosted40/browser375/provider/Storage/performance/fullchecks/web.
+# 2026-10-16 — Vietnamese official-result blockers and real dialog gate tests
+
+G5/G6 IN_PROGRESS, baseline691a6cf63, previous turnPROGRESS. Display-only labels
+for the five official-result readiness codes from123 now explain unfinished
+winner, incomplete/conflicting places, missing bust history, failed verification
+and missing tournament. No permission/read/mutation/state/subscription changes.
+Unknown codes stay visible instead of silently meaning ready. UI skills used
+for actionable error copy; ui-skills CLI absent, no install/design rewrite.
+
+Local2a2af6/21477→ef19de terminal0:12readiness+3actualSDK transport tests PASS.
+27be6c terminal0:4real CloseReportDialog/jsdom tests PASS with mocked read hook:
+three server result blockers display Vietnamese status and disable continuation;
+previously typed CHOT GIAI cannot submit after readiness becomes blocked.
+No close mutation invoked in blocked cases. Not hosted/browser/mobile proof.
+ESLint575fcb exit0, YAMLparsed4fb00 exit0, diffcheckPASS. Existing workflow
+paths/targeted3file command prepared, not dispatched. No rerun of native tour
+because production change is labels only and123 backend is unchanged.
+
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; local resource hold and
+Daybreak/Auto policy unchanged. Full project typecheck/build/browser375 remain
+unrun under resource hold; no claim of frontend release or full UI acceptance.
+No running command. Next legacy-finalizer vs close interleaving and history-
+enabled full-tour/re-entry/tied-elimination evidence, then original hosted40,
+real rotations, provider/Storage/performance/required checks/release gaps.
+# 2026-10-16 — History-enabled eight-paid tour and legacy-finalizer overlap
+
+G5/G6/G8 IN_PROGRESS, baselinef58124289. Native official close harness now runs
+actual public legacy finalizer vs canonical close in BOTH staged transaction
+orders, Owner vs different Cashier. Holder reaches actual ClientRead after its
+function returns; waiter is observed in Lock before holder COMMIT. Both succeed,
+one close report, places1/2, no Cashier/payment change. Holder's in-transaction
+entry fingerprint equals final rows, proving later writer did not rewrite them.
+Readback RESET ROLE happens only AFTER authenticated writer returns (test oracle,
+not authorization bypass). 136e8c/3642→836187 terminal0/PGstopped. Tours
+90bbd0ee-e070-4418-9b46-46c7ebc21bc6 (finalizer first) and
+bae8b5f9-5ec9-46f8-b3f5-b64b70a127d2 (close first). Not a forced mid-statement
+partial-row-lock/deadlock proof; that independent review risk remains.
+
+Existing paid fixture gets optional playerHistoryEnabled boolean, defaultfalse
+unchanged. Explicit native paid-history mode configures ONLY its fresh owned
+club historyON/AutoOFF before FIRST paid entry, synthetic profile metadata with
+no real contact/payment info, then uses actual trigger/member linking/Cashier
+writers. No INSERT of operational entries/seats/payments/member links/ranks.
+All8entries link to8distinct members in sameclub/player, link-errors0.
+Same entire journey passes: two staffed sessions→modes→fold/correction/worker→
+bust/restore(re-entry fence)→chip colorup/undo→break/reopen→actual8player showdown→
+winner leaves seat preserving160000→canonical close123 finalizes unique1–8,
+royal winnerplace1→terminal actualworker/currentproof/anonTVcompleted.
+Own club opt-in metadata retained with fixture/audit, not a global/live flag.
+
+3dd550/31517→9cdd8f terminal0/PGstopped. Retained club
+814961c6-8ddc-42f2-a4d2-d30fa87123fd, tour
+204e5c1d-d857-47a0-9a86-6687b9b37b33, foldhand
+f72ce3c3-1b73-43a0-a62c-44356f62d060, terminalhand
+e05897b1-eff6-4da7-86d9-ecad0b243dfa. Syntax/diff/YAML49d3e9PASS. CI2overlap
+commands +explicit historyON journey prepared only, NOTdispatched. Product SQL/
+Edge/UI unchanged. No rerun of unchanged old historyOFF journey or full checks.
+
+Not master acceptance: synthetic Auth/profile transport, no desktop375/browser,
+manual initial assignment (not Auto), no realrest15rotations, metadata chipsetup
+follows paid registrations (not exact setup-first UI order).1–8 mechanical ranks
+do not validate fairness/tie policy for7same-hand eliminations or re-entry cases.
+Need inspect per-member read projection/role boundaries and retain same-hand
+starting-stack/bust-order/rank evidence, not silently choose/change tie policy.
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; localhold/DaybreakOFF/Auto policy,
+masterACTIVE unchanged; no live commands. Remaining original hosted40/provider/
+Storage/performance/fullchecks/criticalreview/livecatalog/recovery/release gaps.
+# 2026-10-16 — Member history read/tenant proof; simultaneous ranking concern
+
+G2/G6/G8 IN_PROGRESS, baseline8174102ad. New gated `paidMemberHistory.native.mjs`
+is called after the same closed/history-enabled8paid journey and also provides
+an explicit read-only resume entrypoint. Exact loopbackPG17/datadir/no-net,
+owned test names/completed/historyON/AutoOFF and8canonical paid member bindings
+are checked before reading. Owner and each linked player read exact participation,
+rank/buy-in/paid amount; missing official prize staysNULL, not fabricated0.
+Each player denied another member; current owner denied owned foreign-club member;
+anon EXECUTE revoked. Getters run BEGIN READ ONLY (writes would fail), and entries/
+cash/hands/proofs/report/chip-ledger fingerprint unchanged. Synthetic Auth/profile
+transport remains modeled, not hosted login/Data API/browser evidence.
+
+Foreign negative fixture is REQUIRED, never skipped. Caller creates a separate
+owned paid1/history-enabled fixture through existing canonical fixture/RPCs;
+no direct member/entry/payment/rank inserts. Its two open native sessions are
+retained for audit, AutoOFF/no real contacts/no outbound transport; not main tour.
+Initial resumed probe3b12ab reached24positive/negative reads then lacked a foreign
+fixture. First full retry3a6a5a correctly hit global unique-display-name guard.
+Fixed TEST metadata names to Paid TEST +fullUUID (not weakened uniqueness/no old
+profile overwrite). Failed fixtures/audit retained; no operational data reset.
+
+Finalb5f81e/2657→c2790e terminal0/PGstopped. Same full journey+member reader PASS:
+clubf0d47a93-a965-472c-b0b7-78a5fa65fde2,
+tour6989f521-5cbc-4504-8ee9-6cdec506f226,
+foldhandce49ee21-8c3f-4a94-9c0e-f25fd6707c21,
+terminalhand8e5f1001-df97-4aaf-a4ac-4c6efacecd7f. Syntax/diff/YAML6ae31cPASS.
+CI path prepared only, no dispatch. No product SQL/Edge/UI changes.
+
+IMPORTANT BUSINESS/RELEASE HOLD for simultaneous elimination, NOT acceptance:
+Actual persisted finalhand shows seat5starting19900→place4 while seat1starting20000
+→place8; seven eliminations are ordered by update/bust_seq/seat iteration, not a
+confirmed house rule. Full observation logged under
+NATIVE_SIMULTANEOUS_ELIMINATION_OBSERVATION_NOT_POLICY_ACCEPTANCE, sums160000.
+Targeted VBacker search found no explicit same-hand rule. This invalidates any
+interpretation of unique1–8 mechanical ranks as business/payout correctness.
+Do NOT release123/history finalization for this case or rewrite existing places
+until owner chooses policy. No new ranking/payout/rounding rule implemented.
+Owner async question sent: stack-priority + equal-stack tie/prize split, OR keep
+payout policy and require manual review/block automatic close for such groups.
+For comparison only, [PokerStars official rules](https://www.pokerstars.com/help/articles/rules-table-master/)
+describe starting-stack priority, equal-stack tie and combined-prize split; this
+is NOT automatically VinPoker policy. No official claim that TDA is identical.
+
+No liveDB/Edge/frontend/flags/UAT/push/CI/deploy; localhold/DaybreakOFF/masterACTIVE,
+no live commands. Next get house decision for this subproblem; continue safe
+independent original gaps (same-tour deferred move/re-entry, realrotations/hosted40,
+375/provider/Storage/performance/fullchecks/criticalreview/livecatalog/recovery/
+release) without silently changing money/result policy or marking goal complete.
+
+## 2026-10-16 — Paid deferred move/source close regression
+
+Continued d73a512dc; fetch confirms origin/main unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+Test-only extension of paidActiveHand.pg17.sql: pending receipt replay; fresh
+source close denied table_not_empty/no session or queue delta; after canonical
+Finish and mode/epoch advance, original move replay unchanged, changed reason
+returns IDEMPOTENCY_CONFLICT, one applied queue/one active seat. Empty source
+actual close_v4/replay and closed/no active seats/pending moves/unreleased
+assignments verified in a rollback-only savepoint. No dealer assigned on that
+source, so this does NOT establish release of a previously staffed deferred source.
+paidJourney.runtime.mjs rollback fingerprint now includes floor_pending_tracker_moves.
+Native helper: --cash112 --portable115 --active-hand --pending-move --existing.
+Final run a0dff5 terminal0, PG stopped; both CANONICAL_PAID_MOVE_FINISH_MODE_WAITING_SEAT_ROLLBACK_PASS
+and PAID_DEFERRED_MOVE_SOURCE_CLOSE_REPLAY_CONFLICT_ROLLBACK_PASS. Node syntax/diff
+checks pass. Earlier d931a1 passed before added fingerprint; final rerun verifies it.
+No product SQL/Edge/UI change. Four-paid rollback fixture, NOT durable same8player
+staffed deferred break, concurrent consumer, browser/Auth/HTTP or hosted evidence.
+No push/CI/build/fulltypecheck/production DB/Edge/frontend/flags/Auto/UAT; Daybreak
+OFF/local resource hold unchanged. Same-hand ranking business/release hold stays;
+no answer inferred from continuation. Goal ACTIVE, original acceptance gaps remain.
+
+## 2026-10-16 — Same8paid staffed deferred-break integration completed locally
+
+Baseline4bd26fb7c; no product migration/SQL/Edge/UI modified. Existing roster test
+has explicit VINPOKER_NATIVE_DEFERRED_BREAK=1 variant. Reuses runPaidTourHand for
+second actual4player fold hand, next hand number from canonical DB. Break source
+is exact other table, with one real native handler-created dealer assignment.
+Actual complete4move/hash preview → break_v5 COMMIT returns4pending/0moved/notclosed;
+source seats/dealer remain, fresh close denied table_not_empty. Actual Voice Finish
+settlement COMMIT applies4moves before pending Manual/epoch switch, auto-closes
+source and releases that assignment; destination8/160000, zero pending/source seats.
+Break receipt replay after asynchronous completion remains original pending
+receipt; changed hash conflicts, queue unchanged. No second move, cash/chip ledger
+preserved. Reopen new incarnation/no old assignment, old writer rejected. Same
+tour continues terminal8player showdown/close/current worker proof/anonTV/member
+role+tenant checks. Three hands now, not a replacement isolated break fixture.
+
+Harness issues distinguished from product bugs, failures retained/no data reset:
+c67381/37076→07fb12: repeated clock-start expected success incorrectly. Second
+hand now explicitly requires clock_already_started; first still requires success.
+eb4195/47254→9b4ba6: correction test re-inserted its prior disabled same-table
+capability. Native fixture can reactivate ONLY exact same disabled scope/same club;
+enabled/drifted rows do not silently pass. No product grants/auth weakening.
+5d9617/38029→571d06: old-proof fingerprint incorrectly treated chain and
+historical_display equally. Source tracker_mark_prior_settlements_stale explicitly
+invalidates prior chain proofs on later-hand changes. Now asserts prior target-only
+historical_display rows/cash/hands unchanged, and prior chain rows change ONLY
+status verified→stale and updated_at; all other chain fields immutable.
+Showdown independent oracle extended for two real SBfold transfers: starts
+[19800,6×20000,20200], pots158400+1400/refund200 vs original one-hand159200+700/100.
+No settlement/payout/ranking algorithm changed. Private helper grants expanded
+three-hand run240s budget only; original120s retained otherwise. No timeout masked.
+
+Final command: VINPOKER_NATIVE_DEFERRED_BREAK=1 node candidate111-integration-native.mjs
+--cash112 --portable115 --paid-tour-roster --paid-history-roster --existing.
+d6bb72/session55718→321f13 full success markers/PG stopped. Club
+b24bc168-0bea-41e6-96a3-e700defddb44; tourcb970403-16e7-407b-9620-19097bffb0db;
+firsthand14eacbb3-8cdc-4c04-8b72-747a80f29135;
+deferredhand7bc11227-1084-4b70-8fb5-081d10a5bd2e;
+terminalhand5db15f78-322b-45ff-928f-183bafd066f4. Native metadata/audit retained.
+Node syntax4files, YAMLparse, diff checks PASSb819d4. Existing CI historyON roster
+command now selects deferred variant, default historyOFF immediate variant kept;
+CI NOT dispatched,10min suite budget/Node22/full typecheck/build NOT verified.
+
+Same-hand ranking observation persists:19800stack→place4 vs20000→place8.
+Unique ranks remain mechanical evidence, NOT house-policy/payout acceptance;
+123/history finalization release hold still needs owner decision. No liveDB/Edge/
+frontend/flags/UAT/push/Auto/deploy, DaybreakOFF/local resource hold unchanged.
+Goal ACTIVE/PROGRESS; next independent gap is same-tour canonical paid re-entry
+and dependent chip/entry identity, not rerun this successful deferred path blindly.
+
+## 2026-10-16 — Same-tour paid re-entry/current versus historical bullet proof
+
+Baselinee05896591; fetch main unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+New explicit native-only VINPOKER_NATIVE_PAID_REENTRY=1 requires historyON and
+deferred lifecycle variant. After mistaken bust/restore, actual second bust then
+service-only cashier_create_app_reentry_v1 creates server-priced registration;
+repeat keeps same registration/price. Actual cash intent100000 COMMIT/replay and
+changed-amount conflict prove exactly1 new movement and old8cash rows unchanged.
+New entry_no2 differs from old entry; same player/member, registration source_entry
+bound to old bullet, canonical seat entry_number2/stack20000, old bullet busted0/
+no active seat. Fresh restore of old bullet denied restore_reentry_dependency;
+replay of prior successful restore receipt does not reverse later re-entry.
+9entries/900000 cash vs8active distinctplayers/160000 live chips. Issuance and
+conversion ledger not rewritten. AnonTV remaining8/confirmed9/live160000.
+Not actual bank transport/new issuance or couplingON evidence; existing variant
+couplingOFF and internal app registration modeled Auth remain explicit limitations.
+
+Same tour then color-up/undo, staffed deferred break/Finish/assignment release,
+correction workers/new session/stale writer fence, final8player showdown/close,
+anonTV and member history. Native reader proves9 exact paid participations for
+8members, both old+new bullets visible to Owner/self; unrelated member/club denied.
+Old bullet keeps NULL official place/prize, latest participation only gets rank;
+exact terminal hand joins entry_no and eliminates7 current bullets. Total8busted
+entries includes the earlier bullet and must not be mistaken for8current losers.
+Prior runtime d4db61/96743→3ab4ae failed only stale harness count7allbusted vs8;
+retained fixture, no product/data reset. Revised oracle asserts BOTH total8 and
+exact hand's7 generation-bound eliminations, not a relaxed lower bound.
+Current results use existing algorithm; simultaneous-hand house-policy hold still
+open, e.g19800stack→place5 vs20000→place8. Do not release123 on this observation.
+
+Final command envVINPOKER_NATIVE_DEFERRED_BREAK=1 VINPOKER_NATIVE_PAID_REENTRY=1
+node candidate111-integration-native.mjs --cash112 --portable115 --paid-tour-roster
+--paid-history-roster --existing.35c313/session62104→a1af81 terminal0/full success
+markers/PGstopped. Club4c4bc2ac-4ccb-4b0a-ac08-813c6a074b0a;
+tour230d1ab0-54d5-48ad-80c9-7afcab25ed70; oldentry44b973e8-b07d-41de-b65d-329ffd088450;
+newentryad5d38d4-7b82-4259-ab86-812f462c5e73; terminalhand6112f016-26a8-4959-9fd2-56a824df54d8.
+Node syntax3files/YAML/diff PASSbb5703. Existing CI historyON/deferred command
+now opts re-entry; default immediate/no-reentry coverage retained. No CI dispatch,
+fulltypecheck/build/Node22/10min CI suite budget acceptance or browser proof.
+Test-only source, no product SQL/migration/Edge/UI changed. No liveDB/Edge/frontend/
+flags/Auto/push/deploy/UAT; DaybreakOFF/localhold unchanged. Goal ACTIVE/PROGRESS.
+Remaining original gaps include mixed deferred cancellation/failure/concurrency,
+setup-first UI, realrotations/hosted40/provider/Storage/performance/fullchecks and
+review/recovery/livecatalog/release. Do not rerun this passing local tour blindly.
+
+## 2026-10-16 — Canonical Finish/cancel real overlap and truthful Floor result
+
+Baselinef1eb45521; origin/main fetched unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+Audit found prior deferred suite already covered apply+cancel and separate ticket
+failure, and producer/start overlap, but not canonical Finish vs cancel overlap.
+Added paidDeferredCancel.concurrent.mjs reusing paidJourney+paidActiveHand SQL
+canonical setup. Captures exact generated Finish intent in pg_temp before writer,
+commits owned local fixture; no direct hand/entry/seat/payment insert. Four paid
+registrations,3active entries/60000 chips, one paid waiting registration; two
+actual hand players, one queued outsider, pending Manual request. Not staffed or
+actual poker provider/settlement proof (manual no-op Finish, original fixture).
+Cancel-first: holder idle with real uncommitted tournament lock; Finish uses
+NOWAIT by contract, returns manual_finish_busy without changing hand/players/
+actions/entries/seats/sessions/queue/cash or creating receipt. Then holder commits
+and explicit caller retry SAME intent/key completes; move cancelled/source retained.
+Finish-first: real writer and immediate constraint consumer execute while holder
+transaction stays open; cancel blocks on real Lock barrier until commit, then
+reports already_resolved/applied. Exact seat/stack/entry IDs/frozen2-player hand/
+Manual epoch advance/no pending mode/cash unchanged; Finish and cancel retries
+no second effect. Outsider cancel denied/no delta; cancelled occupied source
+cannot close. Both connections roll back/close in finally, bounded timeouts.
+Initial1723db/31190→4d83c1 barrier expectation failed; diagnostics4bdadb/30418→d3f825
+confirmed deliberate NOWAIT/manual_finish_busy, NOT product deadlock. Corrected
+expectation based on reviewed95 contract, not removing overlap assertion. First
+both-orderPASSa5a6d8; final strengthened full fingerprint b4a7da/98722→243792,
+terminal0/PGstopped. Tours779e3414-1415-4e9d-a3f2-dace81e8562f and
+6e589c7c-02fe-4b14-bef0-983d82b5e0ac, retained audit. No DB function/ACL change.
+
+Actual source finding FLOOR-DEFERRED-CANCEL-UI-01: Floor cancellation button used
+unconditional success copy even for DB's applied/stale terminal return. SDK generic
+mutation parser also accepted unknown status. Added actual component regressions
+plus SDK cases: before fix7RED/7PASS/74SKIP (f27c6d terminal1). Candidate method
+accepts only cancelled/applied/stale, unknown successful status becomes explicit
+malformed error. Existing run success callback now displays actual terminal fact;
+unknown outcome shows Vietnamese verification error, read refresh/no automatic retry.
+Same RPC/ID/count/actor/server authorization/seat/chip write path unchanged.
+Final affected two files88/88PASS3c0c4f; added unknown-result UI case afterward,
+focused6PASS/36SKIP2f673b. No claim full89test rerun on final test-only extension.
+ESLint four affected files0errors/1warning4a5d64; exact HEAD stdin baseline proves
+same readSequence cleanup warning8d554d, not introduced by this diff. Syntax/YAML/
+diff pass. UI skill used explicit result/error states only; no layout redesign.
+UI-root CLI absent, existing frontend-ui-engineering fallback, no install.
+CI native race command/path prepared and existing UI suites already included;
+no dispatch/fulltypecheck/build/browser375/deployment/production DB/Edge/flags/UAT.
+Resource localhold and DaybreakOFF unchanged; no Auto/payroll/rest/payout change.
+Same-hand ranking policy/release hold still open. Goal ACTIVE/PROGRESS; mixed
+multi-move cancel+per-entry apply fault in same batch remains a distinct gap.
+
+## 2026-10-16 — Mixed break partial failure retains staffed source; explicit recovery
+
+Baseline72d87b7c0; fetched main unchanged ed3db6ac600710e95fe4408c475941916c23ab19.
+Explicit VINPOKER_NATIVE_MIXED_BREAK=1 requires owned history/deferred journey.
+Same4pending staffed break: cancel one through actual RPC; inject P0001 in
+seat_assignment_history BEFORE INSERT for ONE exact owned tour/entry only.
+Native-only uniquely named floor_private trigger function SECURITY INVOKER,
+empty path/revoked PUBLIC/anon/auth/service. No auth/RLS bypass. Exact trigger/
+function removed and absence checked before supported manual recovery, also
+cleanup in finally. Not a production migration; no live DDL or broad reset.
+Actual Voice Finish completes hand and mode while moves become cancelled/stale/
+applied/applied. Fault reason apply_sqlstate_P0001. Original entry, all source-seat
+rows, tickets and assignment audit remain byte-equivalent for cancelled+faulted
+entries, each one active20000; applied entries each one destination20000. Source
+2active/40000, exact assignment unreleased/session open; fresh close denied.
+Original break receipt replay remains original pending result and changes no
+queue rows. After dropping fault, explicit canonical v5 moves each remaining
+entry with fresh exact session/epoch/revisions/new intent and receipt replay;
+then actual close_v4/replay releases source. Prior cancelled/stale queue rows
+stay as history (only2 old queue rows applied), not relabelled into success.
+Full same tour then new session/stale writer, terminal showdown/close, workers,
+anonTV and Owner/self/tenant member history;8live/160000,9paid/900000 preserved.
+No transport/provider/bank/payroll/real rotation proof; no full automatic healing
+claim: recovery deliberately requires explicit supported Floor operations.
+
+Final658475/session10470→8096be terminal0/full markers/PGstopped, first run PASS.
+Club05a81af8-6f6c-4143-accb-4df15b44a738; tour37eaef84-e62a-40b8-b246-bd55d3ebaec1;
+mixedhandbcf29a1a-2f20-4fd0-9f2b-0e550d52b93e;
+terminalhand9db9292f-3d89-450e-ad4c-c7727fd827f5. Command private helper --cash112
+--portable115 --paid-tour-roster --paid-history-roster --existing with native
+DEFERRED_BREAK/PAID_REENTRY/MIXED_BREAK=1. Fault objects cleaned; metadata/audit retained.
+Native mjs syntax/YAML/diffPASS9bc201. CI positive all-applied command retained;
+separate mixed command prepared only. Existing10min CI suite budget/Node22/full
+typecheck/build unverified; no timeout/required-check weakening or dispatch.
+
+Display follow-up: old stale move warning unconditionally told operator to choose
+another seat, even though the old failed intent is historical and may already
+have been recovered by a later canonical move. It also omitted resolutionReason.
+3render regressions RED64cd81; minimal copy now says inspect current seat before
+new intent and shows exact server reason (or no fabricated reason for legacyNULL).
+No move/cancel automatically invoked. Final45/45component testsPASS25b51c;
+ESLint0errors/1previously verified readSequence warning. UI skill applied explicit
+error context only; existing tokens/ARIA status retained, no redesign/CLI install.
+This does NOT prove a browser375 recovery journey. No product SQL/Edge changes,
+no liveDB/frontend/flags/Auto/push/deploy/UAT. DaybreakOFF/local resource hold stays.
+Same-hand ranking policy release hold still open (19800→place6 vs20000→place8).
+Goal ACTIVE/PROGRESS, original hosted/real rotations/provider/Storage/performance/
+fullchecks/review/recovery/livecatalog/release evidence still required.
+
+## 2026-10-16 23:50+07 — External baseline READ ONLY; do not pursue cancelled run
+
+Source8d7d8a07f clean; repo PhamGiaVinh/-vinpoker- remains private. PR1564 OPEN/
+Draft/head e4c719342447b46e02b4e4248cce47473e1177a7, not merged. Mained3db6ac600710e95fe4408c475941916c23ab19.
+No build/test reruns, dispatch/upload/push/release/flag/data mutation this turn.
+
+FRONTEND: confirmed exact Davinci/vinpoker projectprj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk,
+rootVinPoker/Vite/Node24.x. Aliasvinpoker.vercel.app still READY
+dpl_2kN8DwMQN7xGXGF3NQGyzg7ACjyG, created2026-10-14T15:25:25Z, URL
+vinpoker-9dactbwtf-davinci-s-projects.vercel.app. Public version.json HTTP200
+version1791991490366. CLI inspect JSON omits provenance; raw authenticated GET
+deployment metadata confirms githubCommitShafd84b43470574b006a9ee339e5257090f0188b4c,
+refHEAD/gitDirty1. Investigated instead of treating dirty flag as code corruption:
+actual run38586908627 completedSUCCESS onfd84, frontend checks/build/deploy/shell/
+receipt steps allSUCCESS; GitHub deployment7069802513 inreceipt-vinpoker-frontend
+forfd84 hasSUCCESS2026-10-14T15:32:57Z. The exact fd84 Vite config writes tracked
+public/version.json with Date.now() at build, explaining possible dirty metadata.
+Receipt+marker establish reviewed older rollout, NOT new8d fixes or byte-level
+attestation of every served asset, current feature behavior or owner UAT.
+
+CI/GATES: old38597705008 completed/cancelled updated2026-10-15T13:39:45Z, not
+WAITING. Latest main run38764287884 completedFAILURE oned3 (push). Failed step
+Preserve auditable plan artifact/check116523328862 says Artifact storage quota
+has been hit. Control-plane tooling checkSUCCESS, target-source/live-contract
+preflight and all deploy jobsSKIPPED. Do not claim target checks green or retry
+without resource change. Failure is historical15Oct; no upload probe this turn
+to establish present billing/quota recovery. Environmentdealer-swing-production-critical
+currently onlybranch_policy/custom_branch_policies,0requiredreviewers. Actual MAIN
+workflow still requires native required_reviewers for critical Edge; OWNED local
+workflow already has owner-initial+triggering/main dispatch guard replacing it
+(23added/8removed vs main), not released. Do not mistake local candidate for
+installed policy or bypass either guard. No environment change/self approval.
+
+RECOVERY/QUOTA: repo API lists959unexpired artifacts,sum7182734214bytes. Largest10
+are encrypted database recovery snapshots (~393–463MB each); protected-name
+heuristic must include recovery, not just backup/schema/baseline. No deletion or
+backup download. This repo byte sum is not account billing usage. Exact pinned
+Operations recovery run38275767630 remainsSUCCESS/head09cff8a829caf3f514a615b231ab96f4ed238757;
+schema11769592517(576104bytes) andprovenance11769907350(367bytes), neither expired,
+bothexpire2027-01-10T16:12:31Z. Workflow pins schemasha256
+d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a.
+Do not delete these or recovery snapshots based on age/size alone; exact redundant
+targets require retained independently verified recovery and reference inventory.
+
+DB: Supabase connector exactprojectorlesggcjamwuknxwcpk ACTIVE_HEALTHY/PG17.6.1.121.
+Only BEGIN READ ONLY metadata queries. Ledger max20270128000077;70–77 names match
+voice actor/epoch,finish,assignment,swinglock,publicvisibility,manualcards,inputread,
+rosterread. No >=78 ledger rows. Actualrecord_tracker_manual_hand_v1(jsonb) absent;
+floor_private.felt_official_results_close_status_v1(uuid) absent. Selected catalog:
+private restore(uuid,uuid,int,bigint,bigint,uuid,uuid) MD59918b112e18e6c516b4ffe338eabf83f,
+postgres/SECDEF/emptysearchpath/postgres-onlyACL; livebreak_v5 MD5d4d372db955d7144efdd9c954b55b1a5,
+cancel_pending_move MD563ec62f6e04122425df7b9cb3b49a73f, bothpostgres/SECDEF/empty
+path/authenticatedEXECUTE. Public legacy restore5arg remains77d5d7871bccb4a9469b6816ff77333e,
+SECDEF/search_pathpublic/authenticatedEXECUTE; metadata only, not an exploit proof.
+Source122 requires private restore preconditione671d6c24edf4d4ed631ecec820efae2,
+so currentlive9918 is NOT a safe standalone122 target: reconcile reviewed ordered
+dependencies first, never remove digest guard or replay archive.
+
+EDGE metadata (not source SHA or operational acceptance):75functions total.
+process-swing374/JWTfalse;assign-dealer143/false;checkout-dealer95/true;
+mass-assign107/true;ready-trigger57/false;cashier-lookup-player50/true;
+tournament-reentry24/true;historical-settlement16/true;worker11/false;
+dispatcher8/false;tournament-live-update70/true;tracker-voice-session16/true.
+AlllistedACTIVE. Actual Voice client uses tournament-live-update; absence of a
+separate voice-action/finish slug is NOT missing-endpoint evidence. No function
+invoke/deploy or flags/job/data mutation; source attestation/canary still required.
+
+Sources: freshGitHub API/run/check annotations/environment/artifacts/receipts,
+Vercel project+alias+deployment read, Supabase project/catalog/function inventory.
+Tool evidence020404/2310a4/a6d55d/336d55/a8d574/e46b2a/1edb8d/2c222b/31f867/e3fdc9/5000bf;
+Supabase metadata read responses retained in conversation. No secret/binary backup
+contents printed. Vercel skill required project/provenance verification; Supabase
+skill kept queries read-only. G0/G1 progress, not whole-goal completion. Localhold/
+DaybreakOFF/noAuto unchanged; fullchecks/release/hostedtour/realrest15/performance
+and same-hand ranking house-policy decision remain. No verified wait handle left.
+
+## 2026-10-17 00:00+07 — Protected recovery set, actual receipt and TV acceptance gap
+
+Baseline1ac564113 (last implementation8d7d8a07f), clean owned worktree. Previous
+turnPROGRESS; this turn fresh read-only recovery/TV evidence changes next action,
+NOT another native tour rerun. No artifact cleanup tool exists in owned deploy
+scripts; did not create a speculative deletion framework or delete by age/name.
+
+Minimum KEEP set, NOT proof every other artifact is redundant:
+11769592517 reviewed-operations-schema +11769907350 provenance, recoveryrun38275767630,
+bothunexpiredto2027-01-10 (existing CI content hashd23cfa75... not ZIP digest).
+11572064109 reviewed-pre-release-schema +11572343786 provenance, recoveryrun37828303515,
+bothunexpiredto2027-01-06; current protected-nine workflows pin content hash
+703aed6b620cd24f34c31d4545b2d7e97e4a488f89fe81dfc1a36b175d259223.
+That recovery run overallFAILURE is NOT failed recovery: job Recover immutable
+pre-release TEST schema (no live database access)SUCCESS; unrelated owner capture
+validator failed. Existing workflows explicitly verify successful recovery JOB
+and exact original source SHA; no new bug or reason to relax checks.
+11879603235 encrypted-database-recovery-38533693043,463060426bytes,unexpiredto
+2026-11-13T08:24:38Z, GitHubZIPdigest3b0f80b88bd29016900b8243a01a02050af1ca953c5d97f3af3dd0672ae173da.
+11881236944 restore-verification receipt,415bytes/unexpired, ZIPdigest
+d66d5a80307ecdfeb3fa88334a66485dd529f03bd3f4973873eaa3e58a8708cc.
+Actual38533693043 all4jobsSUCCESS incl download/decrypt/isolated restore.
+Read ONLY415-byte receipt ZIP in memory using existingfflate (no installs/files/
+encrypted DB download): schemaVersion1/kindvinpoker-restore-verification,
+sourceSha35bae88d984eea297145684ac0ad1af37b235a82,
+snapshotAt2026-10-14T08:17:35.247890Z,
+ciphertextSha25690b9966611d98f4ecca222c3a5423e798a0d78004dd0fc9d79b62ab3643f44f6,
+isolatedRestorePASS/tableCountMatchPASS/productionMutationfalse. Ciphertext digest
+is NOT GitHub ZIP digest. This is original historical verification, not fresh
+restore or current pre-apply backup. No backup deletion/retention change/restore
+execution. Distinct historical backups cannot be declared redundant by size/age
+without dependency/recovery review. Evidencefc0650/4ac887/aa5d1f/55c64a.
+
+Live Supabase BEGIN READ ONLY exactcanary5540693c-5701-41e8-85d3-601d9f1a8812:
+Quads Poker Club33333333-3333-3333-3333-333333333333,auto_swing_enabledfalse,
+player_history_enabledtrue,2open table sessions. Branding getter scoped to this
+tournament/event yields0published layout rows and no own-project publicStorage
+asset URLs. This is NOT proof all club branding is absent, any object is missing,
+or upload capability is broken; it means no existing canary publication can
+stand in for first-publish/bytes/retention/recovery acceptance. Did not publish,
+upload, invoke workers, use pairing tokens, start rotations or edit flags/data.
+Source local+native tests remain qualified only within their recorded scope.
+
+No code/runtime changes this turn, no fulltypecheck/build/CI dispatch/push/release,
+no permissions/config changes; Daybreak not activated. Code Review connector
+only exposes PR CI diagnostics, not independent source review, so no review PASS
+invented. Remaining required fullchecks/hosted tour/realrest15/provider/asset/
+performance cannot be replaced by more local mocks. Resource local-only hold and
+same-hand house-policy decision still require owner direction before final release.
+Goal remains ACTIVE, not COMPLETE. Do not repeatedly re-probe unchanged artifacts
+or rerun passing native tour to manufacture progress; revalidate actual blockers
+and use blocked audit if no new permitted substantive action remains.
+
+## 17 Oct — owner-supplied tracker findings verified and repaired locally
+
+Owner supplied attachment 3e225bb3-62e1-4dea-b85d-22103ebba6e7 and requested
+verification plus local fixes, not release. Baseline8844cf2f3 clean; fetched
+origin/main remains ed3db6ac600710e95fe4408c475941916c23ab19. No agents or
+production mutations, dependency installs, Docker, push, CI or heavy build used.
+
+Finding disposition against CURRENT owned source (not production attestation):
+- Tournament-wide latest-hand bug: already corrected by loadLatestLiveHand,
+  which scopes table before limit; current request/scope guards prevent late
+  reads replacing a newly selected table. Added three query-order regressions.
+- Optimistic unconfirmed action: old HandInputPanel no longer exists. Current
+  controller commits players/actions only after canonical success; uncertain
+  response blocks further writes. Added two actual-controller delayed success/
+  transport failure tests; no write-path changes.
+- Resume-only-handId: already rebuilds persisted board, street, players, actions,
+  next max action order and lock before enabling hand. Existing resume tests pass.
+- Modulo positions: live display already uses occupied seats, but replayEngine
+  still used raw modulo. Three replay regressions FAILED before fix, including
+  seats2/5/9 producing BTN/BTN/SB and wraparound yielding undefined labels. Reuse
+  existing getSeatPositions once per replay; no settlement or chip changes.
+- Missing action notification: confirmed in legacy/non-public-V2 live branch.
+  Added exact displayed-hand subscription, existing one-second coordinator for
+  coalescing, subscribe refresh and cleanup. Never subscribes to raw actions in
+  public V2, never broadens grants or publishes private data. Rendered parent
+  regression FAILED before fix and now proves scoped callback refresh/cleanup.
+  Actual hosted publication/RLS/network delivery still requires web acceptance.
+- History50/error-as-empty: already replaced by HandHistoryWorkspace pageAll
+  range queries, explicit load error/retry and stale-read guards. Manual refresh
+  remains; automatic history refresh/feed/search/replay expansion are separate
+  product enhancements, not silently implemented in this correctness repair.
+
+Additional confirmed bug: post-commit manual Finish calls handleTableChange;
+both ordinary/avatar seat reads could reject or never settle, unlike other
+bounded context reads. Use observeTrackerContextRead and existing fail-closed
+error path. Confirmed Finish remains finished when reload fails, no second writer.
+Six old manual Finish tests initially failed: their fixture still used record_hand,
+non-UUID IDs and lacked exact session/epoch/intent proof. Updated fixture to real
+canonical record_manual_hand_v1 receipt and completed-hand readback, not weaker
+production validation. This exposed the two real seat-read rejection/timeout
+failures; after source fix the controller suite57/57 passes.
+
+Final sequential focused run67046, terminal exit0: 10 suites /167 tests PASS
+(replay30, replaybets8, positions10, viewer4+2, queryscope3, resume12,
+controller57, historyrecovery25, asyncguards16). Initial RED runs: bbdb23 replay3;
+85da15 action subscription1; 2f2c97 post-commit seat failures2. New/edited test
+files ESLint clean; git diff --check clean. Existing production-file lint debt
+unchanged vs exact HEAD: viewer21 errors/3 warnings, controller63/4, replay2/0.
+Not a full lint/typecheck/build, native DB rerun, browser375 or production PASS.
+Frontend skill preserved existing UI; Supabase guidance kept subscriptions scoped
+and server/RLS authoritative. No ranking/payout/rest/flags/Daybreak changes.
+
+## 17 Oct — cross-flow local investigation requested by owner
+
+Scope: verify sequential ITM out/payout; Multi-day bag/Chip Master/flight merge;
+online SePay buy-in seating/receipt; dealer closure while working/resting/payroll.
+No production access/write, provider/email delivery, CI/push/build or policy edit.
+Owned source baseline a37d1000c clean. Only focused native regression/diagnostic
+tests added. Test fixtures remain synthetic local history, never production data.
+
+Native transport: existing private candidate111-integration-native.mjs helper,
+--cash112 --portable115 --existing, exact local PG17/datadir/127.0.0.1:55441.
+Added allowlisted --cross-domain-itm/bank/multiday/dealer entry points; each starts
+the exact cluster and stops in finally. Native configuration remains low memory.
+
+ITM final runtime72818c exit0 / PG stopped: FOUR canonical paid entries,3 prize
+slots; actual Floor bust/replay. First out4 is not-in-money; second out3 is ITM
+while TWO survivors remain: finalize and immediate payment are refused until
+the tournament reaches its winner. This is an explicit operational limitation,
+not a passed live-ITM payout feature. Final ranks4/3/2/1; place3 pays100000 to
+the EXACT out3 player's recipient_ref once, replay already_paid. Fixture
+tournament298e13c3-f3e0-4039-a8b6-3cd967da6bac. Earlier three-entry smoke d70f85
+was strengthened rather than used to claim in-money payout during ongoing play.
+This is sequential Manual/Floor out, not simultaneous Tracker-hand ranking or
+bank transfer proof. No automatic money payment upon bust. Discovered native
+qualified schema lacks get_tournament_payout_recipients(uuid), although the UI
+calls it and its old SQL is in archive. Did not replay archive or infer live
+absence: UI payout read integration remains a GAP, not PASS.
+
+Multi-day runtime52904 exit0 is an EXPLICIT DIAGNOSTIC, not feature success.
+Two policies, each with two flights for the SAME canonical paid player. Rules
+configured before flight registrations; actual Cashier payment + Floor opening/
+mode + tokenized Tracker roster initialization provide real entry/session/chips.
+Dealer assignment is a synthetic fixture precondition, not Auto evidence.
+Actual End Flight→record bag/retry→Chip Master seal→lock day→qualification lock
+produces20000 SELECT_LARGEST and40000 SUM_STACKS. Bagging doesn't add payments.
+Both Final Day seating calls FAIL with multi_day_final_table_unavailable:
+canonical Floor tables have game_table_id,legacy table_idNULL; existing RPC
+still requires table_id and compares session.game_table_id against it. No Final
+entry written. Repro events efd35107-c5b5-4ab4-8d56-7bb45534cd5b and
+d47509a8-2467-466a-aed9-35013d10e4eb. Default test remains a failing regression;
+only explicit --diagnose-canonical-id-gap accepts/prints REPRO_..._NOT_PASS.
+Global Multi-day test release configuration restored in finally; no business
+rows deleted. Native fixture corrections (status/flight label/real roster setup/
+manual Dealer actor claims) were made instead of weakening runtime guards.
+No production SQL or historical migration was changed. This requires a NEW
+reviewed canonical-session-compatible migration, not backfilling table_id by hand.
+
+Bank final runtime6322ca exit0 / PG stopped (also checks service-only EXECUTE): actual server-priced app registration,
+unverified transfer refused; Auto argument OFF refused; verified40000 partial
+does not seat; verified60000 completes100000 → current canonical session/entry,
+one receipt and one receipt-linked in-app notification; repeated transfers do
+not double money/entry. Entire bank case/global SePay settings roll back. Local
+auth.uid baseline initially caused an artificial actor_not_allowed: it reads
+only legacy request.jwt.claim.sub. Test now uses official Supabase Auth
+20220224000811 JSON-claims fallback inside the same rollback transaction,
+without injecting a human JWT into a service request. Model restored on rollback.
+Reference https://github.com/supabase/auth/blob/master/migrations/20220224000811_update_auth_functions.up.sql
+This proves DB money/seating/receipt path, NOT bank API/webhook/reconcile HTTP,
+email delivery or a fiscal invoice. Traced path inserts notifications with
+receipt_code; no invoice-email dispatch identified in that path.
+
+Dealer runtime94ddae exit0 / PG stopped: actual operator_close_club_table_v2
+on assigned and on_break fixtures. Exact time facts/checkout/worked/OT preserved,
+assignment released, assigned→available, resting stays on_break; payroll read
+before/after identical. Separate closed23:30→00:30+07 attendance spanning month
+end allocates0.5hours to each date and60000 gross total at fixture60000/hour,
+not duplicated. Both cases fully roll back. This is not a real15-minute Auto
+rotation, payroll statement finalization/payment or every employment policy.
+Open-shift payroll remains its existing standard-shift estimate, not proven
+actual elapsed labor; no rest/wage/OT/rounding changes made.
+
+Additional Tracker findings from prior turn remain in a37d1000c (167 focused
+tests): gap-seat replay labels, action events, post-Finish seat-read bounding.
+No new claim of exhaustive bug freedom. Same-hand elimination policy is still
+unresolved. Master goal remains blocked for release/full acceptance; owner now
+authorized these additional local investigations, not production rollout.

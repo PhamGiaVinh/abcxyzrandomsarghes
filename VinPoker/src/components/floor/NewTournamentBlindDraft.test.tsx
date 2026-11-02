@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
-  rpc: vi.fn(async () => ({ data: { ok: true }, error: null })),
+  rpc: vi.fn(),
   flags: { multiDayTournaments: true, blindTemplates: true, blindDraftSuggest: true },
 }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: h.flags }));
-vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ isAdmin: true, isClubOwner: true }) }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 'e9100000-0000-4000-8000-000000000001' }, isAdmin: true, isClubOwner: true }) }));
 vi.mock("@/components/LiveStateEditor", () => ({ LiveStateEditor: () => null }));
 vi.mock("@/components/cashier/tournament-live/BlindEditorPanel", () => ({ BlindEditorPanel: () => null }));
 vi.mock("@/components/FomoPrice", () => ({ FomoPrice: () => null }));
@@ -19,7 +19,12 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
 import { NewTournamentDialog } from "./TournamentManagerShared";
 
 beforeEach(() => {
-  h.rpc.mockClear();
+  localStorage.clear();
+  h.rpc.mockReset().mockImplementation(async (_name, request) => ({ data: {
+    ok: true, event_id: 'e9100000-0000-4000-8000-000000000041', final_tournament_id: 'e9100000-0000-4000-8000-000000000042',
+    actor_id: request.p_expected_actor_id, club_id: request.p_club_id, request_id: request.p_request_id,
+    flight_count: request.p_config.flight_count, level_count: request.p_levels.length,
+  }, error: null }));
   h.flags.blindDraftSuggest = true;
   Element.prototype.scrollIntoView ||= () => {};
 });
@@ -41,7 +46,7 @@ describe("blind draft in tournament setup", () => {
     expect(h.rpc).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(created).toHaveBeenCalledOnce());
-    expect(h.rpc).toHaveBeenCalledWith("create_tournament_event_with_flights", expect.objectContaining({
+    expect(h.rpc).toHaveBeenCalledWith("create_tournament_event_with_flights_v2", expect.objectContaining({
       p_levels: expect.arrayContaining([expect.objectContaining({ level_number: 1, big_blind: 600 })]),
     }));
   });

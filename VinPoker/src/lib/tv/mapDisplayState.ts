@@ -38,6 +38,7 @@ export interface TvDisplayTournament {
 export interface TvDisplayStatePayload {
   participation_counts?: { total_entries: number; live_entry_stack?: number };
   status: TvDisplayStatus;
+  main_event?: { id: string; name: string; guarantee_amount: number | null } | null;
   display?: TvDisplayConfig;
   tournament?: TvDisplayTournament | null;
   clock?: ClockRpcPayload | null;
@@ -74,6 +75,7 @@ export function mapDisplayStateToTvData(
       prize_pool: t.prize_pool,
       starting_stack: null,
       guarantee_amount: null,
+      main_event: payload.main_event,
       buy_in: null,
       rake_amount: null,
       satellite_payout: null,

@@ -139,6 +139,12 @@ RESET ROLE;
 SELECT pg_temp.assert_true((SELECT version=2 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070'),'stale retry does not bump plan version twice');
 -- Canonical close with an announced replacement must not strand that incoming
+-- Normal forecast slots have no assignment yet and never lock a dealer. They
+-- must be cancelled on close, not misclassified as malformed slot0 links.
+INSERT INTO public.dealer_rotation_schedule(id,club_id,table_id,assignment_id,slot_index,planned_relief_at,plan_run_id,solver_version)
+VALUES('e1800000-0000-4000-8000-000000000072','e1800000-0000-4000-8000-000000000002',
+ 'e1800000-0000-4000-8000-000000000013',NULL,1,now()+interval '45 minutes',
+ 'e1800000-0000-4000-8000-000000000071','forecast-close TEST');
 -- attendance or carry the previous incarnation's plan into a reopen.
 -- Browser cannot SELECT table_sessions directly. Supply its already-loaded
 -- expected revision from fixture setup, without granting any new privilege.
@@ -155,6 +161,29 @@ BEGIN
  END;
 END $$;
 SAVEPOINT malformed_null_link;
+-- A forecast is legitimate only while predicted with no concrete assignment.
+-- Reject a wrongly locked forecast and preserve the preceding slot0 cancellation.
+SAVEPOINT malformed_forecast_lock;
+UPDATE public.dealer_rotation_schedule SET status='announced'
+ WHERE id='e1800000-0000-4000-8000-000000000072';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected();
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT status='announced' AND version=2 FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000070'),'malformed forecast rejection rolls preceding slot0 cancellation back');
+SELECT pg_temp.assert_true((SELECT closed_at IS NULL FROM public.table_sessions WHERE id='e1800000-0000-4000-8000-000000000023'),
+ 'malformed forecast lock cannot close session');
+ROLLBACK TO SAVEPOINT malformed_forecast_lock;
+SAVEPOINT malformed_forecast_assignment;
+UPDATE public.dealer_rotation_schedule SET assignment_id=(SELECT id FROM public.dealer_assignments
+ WHERE table_id='e1800000-0000-4000-8000-000000000011' AND released_at IS NULL)
+ WHERE id='e1800000-0000-4000-8000-000000000072';
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_close_scope_rejected();
+RESET ROLE;
+SELECT pg_temp.assert_true((SELECT current_state='pre_assigned' FROM public.dealer_attendance
+ WHERE id='e1800000-0000-4000-8000-000000000043'),'malformed forecast assignment preserves incoming dealer');
+ROLLBACK TO SAVEPOINT malformed_forecast_assignment;
 UPDATE public.dealer_rotation_schedule SET assignment_id=NULL WHERE id='e1800000-0000-4000-8000-000000000070';
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.expect_close_scope_rejected();
@@ -275,6 +304,8 @@ SELECT pg_temp.assert_true((SELECT current_state='available' AND pre_assigned_ta
 SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.dealer_rotation_schedule
  WHERE id='e1800000-0000-4000-8000-000000000070' AND status IN ('predicted','announced','executing')),
  'closed incarnation cannot retain actionable rotation plan');
+SELECT pg_temp.assert_true((SELECT status='cancelled' AND assignment_id IS NULL FROM public.dealer_rotation_schedule
+ WHERE id='e1800000-0000-4000-8000-000000000072'),'normal future forecast cancelled without fabricating assignment');
 -- Legacy reservation without a schedule, created with the real acquisition
 -- triggers enabled. Closing must still release it after Auto is switched OFF.
 SET LOCAL request.jwt.claim.role='service_role';

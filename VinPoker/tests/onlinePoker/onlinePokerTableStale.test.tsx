@@ -4,16 +4,17 @@
 // stale board), a tableId switch (clears held result), and a new hand needing my action
 // (clears held result). #329 cinematic must still fire on a valid live all-in.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-const h = vi.hoisted(() => ({ useTableHand: vi.fn(), useTableMeta: vi.fn(), useParams: vi.fn() }));
+const h = vi.hoisted(() => ({ useTableHand: vi.fn(), useTableMeta: vi.fn(), useParams: vi.fn(), buyins: vi.fn(), actor: 'u1' }));
+vi.mock('@/lib/onlinePoker/client', () => ({ loadBuyinsLive: (...args: unknown[]) => h.buyins(...args) }));
 
 vi.mock('@/lib/onlinePoker/useOnlinePoker', () => ({
   useTableHand: (id: string) => h.useTableHand(id),
   useTableMeta: (id: string) => h.useTableMeta(id),
 }));
-vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }));
+vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: h.actor } }) }));
 vi.mock('react-router-dom', async (orig) => {
   const actual = await (orig() as Promise<Record<string, unknown>>);
   return { ...actual, useParams: () => h.useParams() };
@@ -56,10 +57,50 @@ const thState = (over: any = {}) => ({ hand: null, seats: [], mySeatNo: null, my
 
 const renderTable = () => render(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
 
-beforeEach(() => { h.useParams.mockReturnValue({ tableId: 't1' }); });
+beforeEach(() => { h.actor = 'u1'; h.useParams.mockReturnValue({ tableId: 't1' }); h.buyins.mockReset().mockResolvedValue([]); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('OnlinePokerTable — PR C stale-table cleanup', () => {
+  it.each(['table', 'actor'])('ignores an old ledger response after %s changes', async (kind) => {
+    h.useTableMeta.mockReturnValue(meta()); h.useTableHand.mockReturnValue(thState());
+    let resolveOld!: (rows: unknown[]) => void;
+    h.buyins.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; })).mockResolvedValueOnce([]);
+    const { rerender } = renderTable(); fireEvent.click(screen.getByRole('button', { name: 'Cài đặt bàn' }));
+    if (kind === 'table') h.useParams.mockReturnValue({ tableId: 't2' });
+    else h.actor = 'u2';
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(await screen.findByText('Chưa có lịch sử buy-in.')).toBeInTheDocument();
+    await act(async () => { resolveOld([{ userId: 'u1', displayName: 'LATE OLD PLAYER', total: '9999', count: 1, lastAt: '' }]); });
+    expect(screen.queryByText('LATE OLD PLAYER')).not.toBeInTheDocument();
+    expect(screen.getByText('Chưa có lịch sử buy-in.')).toBeInTheDocument();
+    expect(h.buyins).toHaveBeenCalledTimes(2);
+  });
+  it('shows a failed ledger read, retries only on request, and distinguishes verified empty', async () => {
+    h.useTableMeta.mockReturnValue(meta()); h.useTableHand.mockReturnValue(thState());
+    h.buyins.mockRejectedValueOnce(new Error('503')).mockResolvedValueOnce([]);
+    renderTable(); fireEvent.click(screen.getByRole('button', { name: 'Cài đặt bàn' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Không tải được lịch sử buy-in');
+    expect(h.buyins).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại lịch sử buy-in' }));
+    expect(await screen.findByText('Chưa có lịch sử buy-in.')).toBeInTheDocument();
+    expect(h.buyins).toHaveBeenCalledTimes(2);
+  });
+
+  it('never carries a previous table ledger into a loading or failed new table', async () => {
+    h.useTableMeta.mockReturnValue(meta()); h.useTableHand.mockReturnValue(thState());
+    h.buyins.mockResolvedValueOnce([{ userId: 'u1', displayName: 'OLD TABLE PLAYER', total: '5000', count: 1, lastAt: '' }]);
+    const { rerender } = renderTable(); fireEvent.click(screen.getByRole('button', { name: 'Cài đặt bàn' }));
+    expect(await screen.findByText('OLD TABLE PLAYER')).toBeInTheDocument();
+    let rejectNew!: (error: Error) => void;
+    h.buyins.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectNew = reject; }));
+    h.useParams.mockReturnValue({ tableId: 't2' });
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.queryByText('OLD TABLE PLAYER')).not.toBeInTheDocument();
+    expect(screen.getByText('Đang tải lịch sử buy-in…')).toBeInTheDocument();
+    await act(async () => { rejectNew(new Error('503')); });
+    expect(screen.queryByText('OLD TABLE PLAYER')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Không tải được lịch sử buy-in');
+  });
   it('a valid live all-in completion still plays the #329 cinematic', async () => {
     h.useTableMeta.mockReturnValue(meta('open'));
     h.useTableHand.mockReturnValue(thState({ hand: allInDone(), seats: [seat(1, 'u1'), seat(2, 'u2')], mySeatNo: 1 }));

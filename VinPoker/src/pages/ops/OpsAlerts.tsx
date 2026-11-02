@@ -3,15 +3,17 @@ import { FloorVoiceAlertInbox } from "@/components/floor/FloorVoiceAlertInbox";
 import { useTournaments } from "@/hooks/useTournaments";
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
+import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
 
 export default function OpsAlerts() {
   const navigate = useNavigate();
+  const { user, session, loading: authLoading } = useOpsAuth();
   const { selectedClubId } = useOpsWorkspace();
   const { floorClubIds, isSuperAdmin, loading: scopeLoading, scopeError } = useOpsCapabilities();
   const activeClub = selectedClubId && (isSuperAdmin || floorClubIds.includes(selectedClubId))
     ? selectedClubId
     : undefined;
-  const { data: tournaments, isLoading, error } = useTournaments(activeClub);
+  const { data: tournaments, isLoading, error } = useTournaments(activeClub, user?.id, authLoading ? null : session);
 
   return (
     <div className="ios-in space-y-4 pt-2">

@@ -4,6 +4,7 @@ import { formatClock } from "@/lib/tv/format";
 
 export function TvTimer({ data }: { data: TvData }) {
   const { t } = useTranslation();
+  const terminal = data.status === 'finished' || data.status === 'cancelled';
 
   const isPaused =
     (data.status === "live" || data.status === "final_table") && !data.isRunning;
@@ -22,12 +23,12 @@ export function TvTimer({ data }: { data: TvData }) {
   return (
     <div className="flex min-w-0 flex-col items-center justify-center gap-[1vmin]">
       <div className="text-[3.5vmin] font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-        {t("tv.level")} {data.currentLevel?.levelNumber ?? "—"}
+        {terminal ? t(`tv.${data.status}`) : <>{t("tv.level")} {data.currentLevel?.levelNumber ?? "—"}</>}
       </div>
       <div
         className={`font-mono text-[clamp(4rem,26vmin,30rem)] font-bold leading-none tabular-nums ${timerClass}`}
       >
-        {formatClock(data.remainingSeconds)}
+        {terminal ? '--:--' : formatClock(data.remainingSeconds)}
       </div>
       {isPaused ? (
         <div className="text-[2.4vmin] font-semibold uppercase tracking-widest text-amber-400">

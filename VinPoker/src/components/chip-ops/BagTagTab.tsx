@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { chipOpsRpcErrorMessage } from "@/lib/chipOpsErrors";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,16 +29,11 @@ const ERR: Record<string, string> = {
   BAG_CODE_TAKEN: "Mã bao đã dùng cho người khác.",
   NO_ACTIVE_SEAT: "Người chơi không còn ghế (đã bị loại?).",
   DAY_NOT_FOUND: "Chưa có ngày này.",
+  HAND_IN_PROGRESS: "Còn hand đang chơi. Hoàn tất hoặc hủy hand đúng quy trình trước khi niêm bao/chốt ngày.",
   race_lost: "Số liệu vừa thay đổi, tải lại và thử lại.", INVALID_INPUT: "Dữ liệu chưa hợp lệ.",
 };
-async function callRpc(fn: string, args: Record<string, unknown>): Promise<any | null> {
-  try {
-    const { data, error } = await sb.rpc(fn, args);
-    if (error) { toast.error("Tính năng Bag & Tag chưa bật trên máy chủ."); return null; }
-    if (data && data.error) { toast.error(ERR[data.error] ?? data.error); return null; }
-    return data ?? {};
-  } catch { toast.error("Có lỗi xảy ra, thử lại."); return null; }
-}
+type BagIntent = { p_tournament_id: string; p_day_number: number; p_operation: 'record'|'unseal'|'close'|'reopen';
+  p_payload: Record<string, unknown>; p_request_id: string; p_expected_actor: string };
 
 interface ReconPlayer { player_id: string; player_name: string | null; table_name: string | null; seat_number: number | null; expected: number; counted: number; variance: number; sealed: boolean; bag_code: string | null }
 interface Bag { id: string; player_id: string; bag_code: string | null; stack_value: number; total_value: number; sealed: boolean }
@@ -48,19 +47,96 @@ interface BagState {
 type Edit = { bagCode: string; total: string };
 
 export function BagTagTab({ tournamentId, clubId }: { tournamentId: string; clubId: string | null }) {
+  const {user}=useAuth();
+  const [journalGeneration,setJournalGeneration]=useState(0);
+  return <ScopedBagTagTab key={`${user?.id??'anonymous'}:${clubId}:${tournamentId}:${journalGeneration}`} tournamentId={tournamentId} clubId={clubId}
+    actorId={user?.id??null} rereadJournal={()=>setJournalGeneration(v=>v+1)}/>;
+}
+
+function ScopedBagTagTab({ tournamentId, clubId, actorId, rereadJournal }: { tournamentId: string; clubId: string | null; actorId:string|null; rereadJournal:()=>void }) {
+  const storageKey=`vinpoker:bag-tag-pending:${actorId}:${clubId}:${tournamentId}`;
+  const [saved]=useState(()=>{
+    try{
+      const raw=sessionStorage.getItem(storageKey);if(raw===null)return {intent:null,error:false};
+      const value=JSON.parse(raw) as BagIntent;
+      if(!value||Object.keys(value).sort().join(',')!=='p_day_number,p_expected_actor,p_operation,p_payload,p_request_id,p_tournament_id'
+        ||value.p_tournament_id!==tournamentId||value.p_expected_actor!==actorId
+        ||!Number.isSafeInteger(value.p_day_number)||value.p_day_number<1
+        ||!['record','unseal','close','reopen'].includes(value.p_operation)
+        ||typeof value.p_request_id!=='string'||!value.p_request_id.trim()
+        ||!value.p_payload||typeof value.p_payload!=='object'||Array.isArray(value.p_payload))throw new Error('invalid_bag_intent');
+      return {intent:value,error:false};
+    }catch{return {intent:null,error:true};}
+  });
+  const [pending,setPending]=useState<BagIntent|null>(saved.intent);
+  const [journalError,setJournalError]=useState(saved.error);
+  const writing=useRef(false);
   const [day, setDay] = useState(1);
   const [state, setState] = useState<BagState | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [readError,setReadError]=useState(false);
+  const generation=useRef(0);
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [busy, setBusy] = useState(false);
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [signoffOpen, setSignoffOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const matchesJournal=(intent:BagIntent)=>{
+    const raw=sessionStorage.getItem(storageKey);
+    return raw!==null&&canonicalVoiceJson(JSON.parse(raw))===canonicalVoiceJson(intent);
+  };
+  const resolveIntent=async(intent:BagIntent,action:'write'|'read'|'cancel')=>{
+    if(writing.current||journalError)return;
+    writing.current=true;setBusy(true);
+    try{
+      if(!matchesJournal(intent)){setJournalError(true);return;}
+      const {data,error}=await waitForManualPlayerResponse(Promise.resolve(sb.rpc('chip_ops_bag_intent_v1',{...intent,p_action:action})));
+      if(!alive.current)return;
+      if(error){toast.error(chipOpsRpcErrorMessage(error));return;}
+      if(typeof data?.error==='string'){toast.error(ERR[data.error]??data.error);return;}
+      if(data?.status!=='committed'||!data.result||typeof data.result!=='object'||Array.isArray(data.result))return;
+      const expected={tournament_id:intent.p_tournament_id,day_number:intent.p_day_number,operation:intent.p_operation,payload:intent.p_payload};
+      if(data.actor_id!==intent.p_expected_actor||data.request_id!==intent.p_request_id
+        ||canonicalVoiceJson(data.intent)!==canonicalVoiceJson(expected))return;
+      const result=data.result;
+      if(result.status!=='ok'&&result.status!=='cancelled'&&!(typeof result.error==='string'&&result.error.trim()))return;
+      if(!matchesJournal(intent)){setJournalError(true);return;}
+      sessionStorage.removeItem(storageKey);
+      if(sessionStorage.getItem(storageKey)!==null){setJournalError(true);return;}
+      setPending(null);
+      if(result.error)toast.error(ERR[result.error]??result.error);
+      else toast.success('Đã xác minh thao tác đóng bao.');
+      await reload();
+    }catch(error){if(alive.current)toast.error(chipOpsRpcErrorMessage(error));}
+    finally{writing.current=false;if(alive.current)setBusy(false);}
+  };
+  const submitIntent=(operation:BagIntent['p_operation'],payload:Record<string,unknown>)=>{
+    if(writing.current||pending||journalError||!actorId||!clubId)return;
+    const intent:BagIntent={p_tournament_id:tournamentId,p_day_number:day,p_operation:operation,p_payload:payload,
+      p_request_id:crypto.randomUUID(),p_expected_actor:actorId};
+    try{
+      if(sessionStorage.getItem(storageKey)!==null)throw new Error('pending_bag_request');
+      sessionStorage.setItem(storageKey,JSON.stringify(intent));
+      if(!matchesJournal(intent))throw new Error('bag_journal_unverified');
+    }catch{setJournalError(true);return;}
+    setPending(intent);void resolveIntent(intent,'write');
+  };
 
   const reload = useCallback(async () => {
     if (!tournamentId) return;
+    const request=++generation.current;
+    const current=()=>alive.current&&generation.current===request;
     setLoading(true);
-    const s = await callRpc("get_bag_tag_state", { p_tournament_id: tournamentId, p_day_number: day });
-    if (s && !s.error) {
+    setReadError(false);setState(null);setEdits({});setSignoffOpen(false);setReason('');
+    try {
+    const {data:s,error}=await waitForManualPlayerResponse(Promise.resolve(sb.rpc("get_bag_tag_state", { p_tournament_id: tournamentId, p_day_number: day })));
+    if(!current())return;
+    if(error||!s||s.error||s.tournament_id!==tournamentId||s.day_number!==day
+      ||!s.day||!['open','locked'].includes(s.day.status)||!Number.isSafeInteger(s.day.version)
+      ||!Array.isArray(s.players)||!Array.isArray(s.bags)||!Array.isArray(s.days)
+      ||!s.reconciliation||!Array.isArray(s.reconciliation.players)||typeof s.reconciliation.all_zero!=='boolean')throw new Error('bag_state_unverified');
+    {
       setState(s as BagState);
       const init: Record<string, Edit> = {};
       for (const p of (s.players || [])) {
@@ -70,7 +146,8 @@ export function BagTagTab({ tournamentId, clubId }: { tournamentId: string; club
       }
       setEdits(init);
     }
-    setLoading(false);
+    }catch{if(current())setReadError(true);}
+    finally{if(current())setLoading(false);}
   }, [tournamentId, day]);
   useEffect(() => { reload(); }, [reload]);
 
@@ -88,25 +165,33 @@ export function BagTagTab({ tournamentId, clubId }: { tournamentId: string; club
   const seal = async (pid: string) => {
     const e = edits[pid] || { bagCode: "", total: "" };
     const totalNum = e.total.trim() === "" ? null : Number(e.total);
-    if (totalNum !== null && (!Number.isFinite(totalNum) || totalNum < 0)) { toast.error("Số chip không hợp lệ."); return; }
-    setBusy(true);
-    const r = await callRpc("chip_ops_record_bag", { p_tournament_id: tournamentId, p_day_number: day, p_player_id: pid, p_bag_code: e.bagCode.trim() || null, p_total_value: totalNum, p_seal: true });
-    if (r?.status === "ok") { toast.success("Đã niêm bao."); reload(); }
-    setBusy(false);
+    if (totalNum !== null && (!Number.isSafeInteger(totalNum) || totalNum < 0)) { toast.error("Số chip không hợp lệ."); return; }
+    submitIntent('record',{player_id:pid,bag_code:e.bagCode.trim()||null,total_value:totalNum,seal:true});
   };
-  const unseal = async (bagId: string) => { setBusy(true); const r = await callRpc("chip_ops_unseal_bag", { p_bag_id: bagId }); if (r?.status === "ok") { toast.success("Đã mở bao để đóng lại."); reload(); } setBusy(false); };
-  const lockDay = async () => { setBusy(true); const r = await callRpc("chip_ops_close_day", { p_tournament_id: tournamentId, p_day_number: day, p_old_version: state?.day?.version ?? 0, p_force_signoff: false, p_signoff_reason: null }); if (r?.status === "ok") { toast.success("Đã khoá ngày."); reload(); } setBusy(false); };
-  const forceLock = async () => { if (!reason.trim()) { toast.error("Nhập lý do."); return; } setBusy(true); const r = await callRpc("chip_ops_close_day", { p_tournament_id: tournamentId, p_day_number: day, p_old_version: state?.day?.version ?? 0, p_force_signoff: true, p_signoff_reason: reason.trim() }); if (r?.status === "ok") { toast.success("Đã khoá ngày (có ký duyệt)."); setSignoffOpen(false); setReason(""); reload(); } setBusy(false); };
-  const reopen = async () => { setBusy(true); const r = await callRpc("chip_ops_reopen_day", { p_tournament_id: tournamentId, p_day_number: day, p_old_version: state?.day?.version ?? 0 }); if (r?.status === "ok") { toast.success("Đã mở lại ngày."); reload(); } setBusy(false); };
+  const unseal=(bagId:string)=>submitIntent('unseal',{bag_id:bagId});
+  const lockDay=()=>submitIntent('close',{old_version:state?.day.version??0,force_signoff:false,signoff_reason:null});
+  const forceLock=()=>{if(!reason.trim()){toast.error('Nhập lý do.');return;}submitIntent('close',{old_version:state?.day.version??0,force_signoff:true,signoff_reason:reason.trim()});};
+  const reopen=()=>submitIntent('reopen',{old_version:state?.day.version??0});
 
   if (!tournamentId || !clubId) return <Card className="border-border"><CardContent className="py-8 text-sm text-muted-foreground">Chọn một giải để đóng kho.</CardContent></Card>;
+  if(journalError)return <Card><CardContent className="py-6 space-y-3" role="alert"><p>Không đọc hoặc lưu được yêu cầu đóng bao. Chưa cho phép thao tác; không xoá dữ liệu chờ.</p><Button onClick={rereadJournal}>Đọc lại yêu cầu</Button></CardContent></Card>;
+  if(pending)return <Card><CardContent className="py-6 space-y-3" role="alert">
+    <p>Chưa xác minh kết quả yêu cầu đóng bao ngày {pending.p_day_number}. Không gửi lại thao tác mới.</p>
+    <Button disabled={busy} onClick={()=>void resolveIntent(pending,'read')}>Kiểm tra kết quả</Button>
+    <Button disabled={busy} variant="outline" onClick={()=>void resolveIntent(pending,'cancel')}>Hủy nếu chưa thực hiện</Button>
+  </CardContent></Card>;
+  if(readError)return <Card><CardContent className="py-6 space-y-3" role="alert">
+    <p>Không xác minh được dữ liệu đóng bao. Chưa cho phép thao tác; hãy tải lại.</p>
+    <Button onClick={()=>void reload()}>Tải lại</Button>
+  </CardContent></Card>;
+  const verified=state?.day_number===day;
 
   const dayOptions = Array.from(new Set([...(state?.days ?? []), day, 1])).sort((a, b) => a - b);
   const maxDay = Math.max(1, ...(state?.days ?? [1]));
 
   // "đủ / thiếu / dư" badge for a bagged total vs the player's stack
   const SufficiencyBadge = ({ bagged, stack }: { bagged: number; stack: number }) => {
-    if (!Number.isFinite(bagged)) return null;
+    if (!Number.isSafeInteger(bagged) || bagged < 0) return <Badge variant="destructive">Số chip không hợp lệ.</Badge>;
     const diff = bagged - stack;
     if (diff === 0) return <Badge className="gap-1 border-primary/30 bg-primary/15 text-primary"><CheckCircle2 className="h-3.5 w-3.5" /> Đủ</Badge>;
     if (diff < 0) return <Badge variant="destructive" className="gap-1">Thiếu {fmt(-diff)}</Badge>;
@@ -125,14 +210,14 @@ export function BagTagTab({ tournamentId, clubId }: { tournamentId: string; club
           </Select>
           <Button variant="ghost" size="sm" onClick={() => setDay(maxDay + 1)}><Plus className="h-4 w-4" /> Ngày mới</Button>
           <div className="ml-auto flex items-center gap-2">
-            {locked
+            {loading||!verified?<span className="text-sm text-muted-foreground">Chưa xác minh</span>:locked
               ? <Badge variant="outline" className="gap-1 text-warning"><Lock className="h-3.5 w-3.5" /> Đã khoá{state?.day?.signed_off ? " · ký duyệt" : ""}</Badge>
               : <Badge variant="outline" className="gap-1 text-primary"><Unlock className="h-3.5 w-3.5" /> Đang mở</Badge>}
           </div>
         </CardContent>
       </Card>
 
-      {loading ? (
+      {loading||!verified ? (
         <Card className="border-border"><CardContent className="space-y-3 py-6"><Skeleton className="h-6 w-1/3" /><Skeleton className="h-40 w-full" /></CardContent></Card>
       ) : (
         <>
@@ -238,7 +323,7 @@ export function BagTagTab({ tournamentId, clubId }: { tournamentId: string; club
         </>
       )}
 
-      <Dialog open={signoffOpen} onOpenChange={setSignoffOpen}>
+      <Dialog open={signoffOpen&&!loading&&verified} onOpenChange={setSignoffOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Khoá ngày khi còn chênh lệch</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">Vẫn còn người chưa đóng đủ chip. TD ghi lý do để khoá có ký duyệt (lưu vào nhật ký).</p>

@@ -6,12 +6,12 @@ import { useFinanceSummaryRpcOnly } from "@/hooks/accountant/useFinanceSummaryRp
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { financeReadErrorKey } from "@/lib/financeSummaryRead";
+import { financeReadErrorKey, financeBusinessToday } from "@/lib/financeSummaryRead";
 import { useTranslation } from "react-i18next";
 
 function currentYM(): { year: number; month: number } {
-  const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  const date=financeBusinessToday();
+  return { year:Number(date.slice(0,4)),month:Number(date.slice(5,7)) };
 }
 
 function shiftYM(year: number, month: number, delta: number): { year: number; month: number } {
@@ -21,16 +21,16 @@ function shiftYM(year: number, month: number, delta: number): { year: number; mo
 
 /**
  * Báo cáo — read-only monthly P&L for the accountant (Tạm tính view of the same
- * get_club_finance_summary the owner cockpit reads; includes the clubExpenses cost line).
+ * calendar-date finance RPC the owner cockpit reads; includes the clubExpenses cost line).
  * No write controls; numbers of an un-closed period are provisional by doctrine.
  */
 export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
   const { t } = useTranslation();
   const [ym, setYM] = useState(currentYM);
   const { from, to } = useMemo(() => {
-    const f = new Date(Date.UTC(ym.year, ym.month - 1, 1));
-    const t = new Date(Date.UTC(ym.year, ym.month, 1));
-    return { from: f.toISOString(), to: t.toISOString() };
+    const month=String(ym.month).padStart(2,'0');
+    const last=new Date(Date.UTC(ym.year,ym.month,0)).toISOString().slice(0,10);
+    return { from:`${ym.year}-${month}-01`,to:last };
   }, [ym]);
   const q = useFinanceSummaryRpcOnly(clubId, from, to);
   const s = q.data;

@@ -24,6 +24,7 @@ export function TvChrome({
   useWakeLock();
   const { isFullscreen, isSupported, enter } = useFullscreen();
   const [promptDismissed, setPromptDismissed] = useState(false);
+  const [fullscreenFailed, setFullscreenFailed] = useState(false);
   const [cursorIdle, setCursorIdle] = useState(false);
 
   useEffect(() => {
@@ -54,14 +55,20 @@ export function TvChrome({
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-[2.5vmin] bg-background/80 backdrop-blur-sm">
           <button
             type="button"
-            onClick={() => {
-              enter();
-              setPromptDismissed(true);
+            onClick={async () => {
+              setFullscreenFailed(false);
+              const entered = await enter();
+              if (!entered) setFullscreenFailed(true);
             }}
             className="rounded-full border border-primary/60 bg-primary/10 px-[3vmin] py-[1.4vmin] text-[2.6vmin] font-semibold text-primary transition-colors hover:bg-primary/20"
           >
             {t("tv.fullscreenPrompt")}
           </button>
+          {fullscreenFailed ? (
+            <p role="alert" className="max-w-[80vw] text-center text-[1.8vmin] text-foreground">
+              {t("tv.fullscreenFailed")}
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={() => setPromptDismissed(true)}

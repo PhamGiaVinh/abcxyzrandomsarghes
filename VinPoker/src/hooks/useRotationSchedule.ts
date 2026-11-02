@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 export type RotationScheduleStatus =
   | "predicted"
@@ -125,61 +126,53 @@ export function useRotationSchedule(
   clubIdsOrId: string[] | string,
   pollFallbackMs = 60_000
 ): UseRotationScheduleResult {
-  const clubIds = useMemo(
-    () => (Array.isArray(clubIdsOrId) ? clubIdsOrId : clubIdsOrId ? [clubIdsOrId] : []),
-    [Array.isArray(clubIdsOrId) ? [...clubIdsOrId].sort().join(",") : clubIdsOrId]
-  );
-
-  const [rows, setRows] = useState<RotationScheduleRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const pollTimerRef = useRef<number | null>(null);
+  const { user, session } = useAuth();
+  const clubKey = [...new Set(Array.isArray(clubIdsOrId) ? clubIdsOrId : clubIdsOrId ? [clubIdsOrId] : [])].sort().join(",");
+  const clubIds = useMemo(() => clubKey ? clubKey.split(",") : [], [clubKey]);
+  // Includes session replacement without placing credentials in channel names/logs.
+  const scopeKey = JSON.stringify([user?.id ?? null, session?.access_token ?? null, clubKey]);
+  const scope = useRef({ key: scopeKey, generation: 0 });
+  if (scope.current.key !== scopeKey) scope.current = { key: scopeKey, generation: scope.current.generation + 1 };
+  const scopeGeneration = scope.current.generation;
+  const latest = useRef({ clubIds, enabled: !!user && clubIds.length > 0, generation: scopeGeneration });
+  latest.current = { clubIds, enabled: !!user && clubIds.length > 0, generation: scopeGeneration };
+  const [snapshot, setSnapshot] = useState<{ generation: number; rows: RotationScheduleRow[]; loading: boolean; error: string | null }>({ generation: scopeGeneration, rows: [], loading: !!user && clubIds.length > 0, error: null });
+  const mounted = useRef(false);
   const generationRef = useRef(0);
   /** Unique per-hook-instance id to prevent channel name collision. */
   const instanceId = useRef(Math.random().toString(36).slice(2, 8)).current;
-  const clubIdsRef = useRef(clubIds);
-  useEffect(() => { clubIdsRef.current = clubIds; }, [clubIds]);
-
   const refetch = useCallback(async () => {
+    if (!mounted.current) return;
     const gen = ++generationRef.current;
-    const ids = clubIdsRef.current;
-    if (!ids.length) {
-      setRows([]);
-      setLoading(false);
+    const { clubIds: ids, enabled, generation } = latest.current;
+    if (!enabled) {
+      setSnapshot({ generation, rows: [], loading: false, error: null });
       return;
     }
+    const current = () => mounted.current && generation === latest.current.generation && gen === generationRef.current;
     try {
       const { data, error: err } = await fetchLiveScheduleRows(ids);
-      if (gen !== generationRef.current) return;
+      if (!current()) return;
       if (err) {
         const msg = (err as any)?.message || JSON.stringify(err);
         console.error("[useRotationSchedule] error:", msg);
-        setError(msg);
-        setRows([]);
+        setSnapshot({ generation, rows: [], loading: false, error: msg });
       } else {
-        setError(null);
-        setRows(data ?? []);
+        setSnapshot({ generation, rows: data ?? [], loading: false, error: null });
       }
     } catch (e) {
-      if (gen !== generationRef.current) return;
+      if (!current()) return;
       const msg = (e as Error)?.message || "Unknown error";
       console.error("[useRotationSchedule] threw:", msg);
-      setError(msg);
-      setRows([]);
-    } finally {
-      if (gen === generationRef.current) setLoading(false);
+      setSnapshot({ generation, rows: [], loading: false, error: msg });
     }
   }, []);
 
   useEffect(() => {
-    if (clubIds.length === 0) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-
-    refetch();
+    mounted.current = true;
+    let active = true;
+    void refetch();
+    if (!latest.current.enabled) return () => { mounted.current = false; };
 
     const ids = [...clubIds].sort().join("+");
     const channel = supabase.channel(`rotation-schedule:${ids}:${instanceId}`);
@@ -187,7 +180,7 @@ export function useRotationSchedule(
     channel.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "dealer_rotation_schedule" },
-      () => { refetch(); }
+      () => { if (active) void refetch(); }
     );
 
     channel.subscribe((status) => {
@@ -199,15 +192,21 @@ export function useRotationSchedule(
       }
     });
 
-    channelRef.current = channel;
-    pollTimerRef.current = window.setInterval(refetch, pollFallbackMs);
+    const timer = window.setInterval(() => { if (active) void refetch(); }, pollFallbackMs);
 
     return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      active = false;
+      mounted.current = false;
+      void supabase.removeChannel(channel);
+      clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [[...clubIds].sort().join(","), pollFallbackMs]);
+  }, [scopeGeneration, pollFallbackMs, refetch]);
+
+  const visible = snapshot.generation === scopeGeneration && latest.current.enabled;
+  const rows = useMemo(() => visible ? snapshot.rows : [], [visible, snapshot.rows]);
+  const loading = latest.current.enabled && (!visible || snapshot.loading);
+  const error = visible ? snapshot.error : null;
 
   const byTableId = useMemo(() => {
     const map: Record<string, RotationTableSlots> = {};

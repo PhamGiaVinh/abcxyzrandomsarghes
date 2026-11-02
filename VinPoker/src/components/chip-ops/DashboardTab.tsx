@@ -7,9 +7,13 @@ import { ChipDisc } from "./ChipDisc";
 import { AlertTriangle, Crown, Users, Gauge, CheckCircle2 } from "lucide-react";
 import { deriveTournamentChipMetrics } from "@/lib/chipOpsMetrics";
 import { parseParticipationSummary } from "@/lib/tournamentParticipation";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 // Reads are open-SELECT tournament tables + the server-authoritative inventory (passed in).
-const sb = supabase as any;
+const sb = supabase;
+type ParticipationRead = (name: "get_tournament_participation_counts_v1", args: {p_tournament_id: string}) => {
+  abortSignal(signal: AbortSignal): PromiseLike<{data: unknown; error: unknown}>;
+};
 const fmt = (n: number) => (n ?? 0).toLocaleString("vi-VN");
 
 interface InvDenom { denomination_id: string; value: number; color: string | null; issued_count_total: number; current_count?: number }
@@ -36,23 +40,32 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
     if (!tournamentId) { setM(null); return; }
     let active = true;
     let requestInFlight = false;
+    let currentRead: AbortController | null = null;
     const load = async () => {
       if (requestInFlight) return;
+      if (navigator.onLine === false) { if (active) { setLoading(false); setLoadError(true); } return; }
       requestInFlight = true;
+      const controller = new AbortController();
+      currentRead = controller;
+      const ensureCurrent = () => { if (controller.signal.aborted || !active) throw new Error("chip_dashboard_read_cancelled"); };
       setLoading(true);
       try {
+      const next = await observeTrackerContextRead((async (): Promise<Metrics> => {
       const { data: t, error: tournamentError } = await sb.from("tournaments")
         .select("status,players_remaining,average_stack,current_level,current_blinds,starting_stack")
-        .eq("id", tournamentId).maybeSingle();
+        .eq("id", tournamentId).abortSignal(controller.signal).maybeSingle();
+      ensureCurrent();
       if (tournamentError) throw tournamentError;
-      const { data: participationData, error: participationError } = await sb.rpc("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId });
+      const { data: participationData, error: participationError } = await (sb.rpc as unknown as ParticipationRead)("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }).abortSignal(controller.signal);
+      ensureCurrent();
       if (participationError) throw participationError;
       const participation = parseParticipationSummary(participationData, tournamentId);
-      let lvl: any = null;
+      let lvl: {small_blind: number | null; big_blind: number | null; ante: number | null; is_break: boolean | null} | null = null;
       if (t?.current_level != null) {
         const { data: l, error: levelError } = await sb.from("tournament_levels")
           .select("small_blind,big_blind,ante,is_break")
-          .eq("tournament_id", tournamentId).eq("level_number", t.current_level).maybeSingle();
+          .eq("tournament_id", tournamentId).eq("level_number", t.current_level).abortSignal(controller.signal).maybeSingle();
+        ensureCurrent();
         if (levelError) throw levelError;
         lvl = l;
       }
@@ -60,7 +73,9 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
         .select("player_name,chip_count")
         .eq("tournament_id", tournamentId)
         .eq("is_active", true)
+        .abortSignal(controller.signal)
         .order("chip_count", { ascending: false });
+      ensureCurrent();
       if (seatsError) throw seatsError;
       const normalizedSeats = (activeSeats ?? []) as Array<{ player_name?: string | null; chip_count?: number | null }>;
       const seatStacks = normalizedSeats.map((seat) => (
@@ -78,9 +93,7 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
       }, null);
       const leaderName = leader?.player_name ?? null;
       const leaderChips = leader?.chip_count != null ? Number(leader.chip_count) : null;
-      if (!active) return;
-      setLoadError(false);
-      setM({
+      return {
         status: t?.status ?? null, players_remaining: participation.counts.remaining, average_stack: participation.averageStack,
         participation_stack: participation.counts.live_entry_stack,
         current_level: t?.current_level ?? null, current_blinds: t?.current_blinds ?? null,
@@ -89,12 +102,18 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
         active_seat_count: chipMetrics.activeSeatCount,
         table_chip_total: chipMetrics.tableChipTotal,
         roster_quality: chipMetrics.rosterQuality,
-      });
-      setLoading(false);
+      };
+      })());
+      if (!active || controller.signal.aborted) return;
+      setLoadError(false);
+      setM(next);
       } catch {
         if (active) { setLoading(false); setLoadError(true); }
       } finally {
+        controller.abort();
+        if (currentRead === controller) currentRead = null;
         requestInFlight = false;
+        if (active) setLoading(false);
       }
     };
     void load();
@@ -105,10 +124,13 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
       if (document.visibilityState === "visible") void load();
     };
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onVisibility);
     return () => {
       active = false;
+      currentRead?.abort();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onVisibility);
     };
   }, [tournamentId]);
 
@@ -125,9 +147,11 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
   const tableChipTotal = m?.table_chip_total ?? 0;
   const computedAvg = m?.average_stack ?? null;
   const bb = m?.big_blind ?? null;
+  const terminal = m?.status === 'completed' || m?.status === 'cancelled';
+  const expectedClosedSeats = terminal && m.active_seat_count === 0 && (m.status === 'cancelled' || (playersLeft !== null && playersLeft <= 1));
   const countOf = (d: InvDenom) => d.current_count ?? d.issued_count_total;
   const currentByValue = new Map(inv.denominations.map((d) => [d.value, countOf(d)]));
-  const dueDenoms = bb ? denoms.filter((d) => d.value < bb && (currentByValue.get(d.value) ?? 0) > 0) : [];
+  const dueDenoms = bb && !terminal ? denoms.filter((d) => d.value < bb && (currentByValue.get(d.value) ?? 0) > 0) : [];
 
   return (
     <div className="operations-typography min-w-0 space-y-4">
@@ -141,7 +165,7 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
           sub={m ? `${m.active_seat_count} ghế đang active` : "Đang tải roster"} />
         <StatCard label="Average stack" icon={<Gauge className="h-3.5 w-3.5" />}
           value={computedAvg != null ? fmt(computedAvg) : "—"}
-          sub={m?.roster_quality === "partial" ? "Ghế đang active và entry hợp lệ chưa khớp; AVG dùng entry hợp lệ" : playersLeft != null ? `${fmt(m?.participation_stack ?? 0)} ÷ ${playersLeft}` : ""} />
+          sub={expectedClosedSeats ? 'Giải đã đóng; không còn ghế hoạt động.' : m?.roster_quality === "partial" ? "Ghế đang active và entry hợp lệ chưa khớp; AVG dùng entry hợp lệ" : playersLeft != null ? `${fmt(m?.participation_stack ?? 0)} ÷ ${playersLeft}` : ""} />
         <StatCard label="Người còn lại" icon={<Users className="h-3.5 w-3.5" />}
           value={playersLeft != null ? fmt(playersLeft) : "—"} />
         <StatCard label="Chip leader" icon={<Crown className="h-3.5 w-3.5" />}
@@ -185,7 +209,7 @@ export function DashboardTab({ tournamentId, inv, denoms }: { tournamentId: stri
                   <ChipDisc value={d.value} color={d.color} size={52} />
                   <div className="font-display text-sm font-bold tabular-nums text-foreground">{fmt(d.current_count ?? d.issued_count_total)}</div>
                   <div className="text-center text-[11px] leading-tight text-muted-foreground">
-                    T{fmt(d.value)}{bb && d.value < bb ? <><br /><span className="text-warning">color-up</span></> : null}
+                    T{fmt(d.value)}{bb && !terminal && d.value < bb ? <><br /><span className="text-warning">color-up</span></> : null}
                   </div>
                 </div>
               ))}

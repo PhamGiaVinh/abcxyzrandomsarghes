@@ -27,6 +27,8 @@ const desktop = readFileSync(
   "utf8",
 );
 const phone = readFileSync(resolve(root, "src/pages/ops/OpsDealerSwing.tsx"), "utf8");
+const manualRecovery = readFileSync(resolve(root, "src/components/cashier/dealer-swing/useManualSwingRecovery.ts"), "utf8");
+const manualActorMigration = readFileSync(resolve(migrationsDir, "20270128000101_dealer_manual_swing_cancel_actor_v1.sql"), "utf8");
 const processSwing = readFileSync(
   resolve(root, "supabase/functions/process-swing/index.ts"),
   "utf8",
@@ -99,9 +101,16 @@ describe("Dealer Swing mutation authorization containment", () => {
   });
 
   it("routes browser clients through the operator wrapper only", () => {
-    expect(desktop).toContain('("operator_perform_swing"');
+    // Desktop now journals intent through the actor-bound v2 wrapper. Verify
+    // that whole call chain, not a legacy RPC literal in the parent component.
+    expect(desktop).toContain('useManualSwingRecovery({ actorId: user?.id ?? null, clubId: activeClubId');
+    expect(manualRecovery).toContain('rpc("operator_perform_swing_v2", manualSwingReaderArgs(intent))');
+    expect(manualRecovery).toContain('rpc("get_dealer_manual_swing_receipt_v1", manualSwingReaderArgs(intent!))');
+    expect(manualActorMigration).toContain('auth.uid() IS DISTINCT FROM p_actor_user_id');
+    expect(manualActorMigration).toContain('RETURN public.operator_perform_swing(p_table_id,p_table_session_id,p_assignment_id,p_expected_version,p_request_id)');
     expect(phone).toContain('("operator_perform_swing"');
     expect(desktop).not.toContain('supabase.rpc("perform_swing"');
+    expect(manualRecovery).not.toMatch(/rpc\(\s*["'](?:perform_swing|worker_perform_swing)["']/);
     expect(phone).not.toContain('("perform_swing"');
   });
 

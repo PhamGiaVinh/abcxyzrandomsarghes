@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {readFileSync,writeFileSync} from 'node:fs';
+assert.equal(process.env.VINPOKER_CONFIG1003_LOCAL,'1');
+const tour='46cab483-91e7-4220-aacf-e17bdf05269c',actor='675fe35e-60a8-4452-bb90-e79486d54da6';
+const tables=['tournaments','tournament_entries','tournament_seats','tournament_tables','table_sessions','tournament_close_report','tournament_prizes','tournament_prize_payments','tournament_chip_counts','seat_draw_receipts','seat_assignment_history','table_operation_receipts','cashier_buyin_movements','dealer_attendance','dealer_assignments','tournament_hands','tournament_settlement_outcomes','multi_day_final_participations_v1','tournament_state_transitions','audit_logs'];
+const hash=(excludeTarget=false)=>`md5(jsonb_build_array(${tables.map(t=>`(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM public.${t} x${excludeTarget&&t==='tournaments'?` WHERE id<>'${tour}'`:excludeTarget&&t==='tournament_state_transitions'?` WHERE tournament_id<>'${tour}'`:excludeTarget&&t==='audit_logs'?` WHERE entity_id IS DISTINCT FROM '${tour}'::uuid`:''})`).join(',')})::text)`;
+const row=`(SELECT jsonb_build_object('id',id,'name',name,'start_time',start_time,'buy_in',buy_in,'starting_stack',starting_stack,'minutes_per_level',minutes_per_level,'late_reg_close_level',late_reg_close_level,'status',status,'current_level',current_level,'current_blinds',current_blinds,'players_remaining',players_remaining) FROM public.tournaments WHERE id='${tour}')`;
+const migration=readFileSync('supabase/migrations/20270128000297_ops_live_clock_authority_v1.sql','utf8');
+const q=`BEGIN;
+SET LOCAL lock_timeout='2s';SET LOCAL statement_timeout='10s';
+DO $$ BEGIN
+ASSERT current_database()='vinpoker_ranking860_local';
+ASSERT md5(replace(pg_get_functiondef('public.ops_update_tournament_live(uuid,text,integer,integer,text,text)'::regprocedure),chr(13),''))='73569e2ce7904d3708cbb278ec558aea';
+ASSERT host(inet_server_addr())='127.0.0.1' AND inet_server_port()=55441;
+ASSERT current_setting('data_directory')='/tmp/vinpoker-sol-local-20261016-0e79a729/data';
+ASSERT (SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database())='VINPOKER_RANKING860_OWNED_LOCAL_SOURCE_vinpoker_ops_cash115_qualified_c_HEAD_ef6a26948';
+ASSERT NOT EXISTS(SELECT FROM pg_extension WHERE extname IN('pg_net','pg_cron','dblink'));
+ASSERT (SELECT club_id='a8e7d1b7-fdaa-45ad-b0a1-f894b6315760' AND status='live' FROM public.tournaments WHERE id='${tour}');
+END $$;
+SELECT jsonb_build_object('phase','before','hash',${hash()},'otherFacts',${hash(true)},'row',${row});
+${migration}
+${migration}
+SET LOCAL request.jwt.claim.sub='${actor}';SET LOCAL request.jwt.claim.role='authenticated';SET LOCAL request.jwt.claims='{"sub":"${actor}","role":"authenticated"}';SET LOCAL ROLE authenticated;
+SELECT jsonb_build_object('phase','rpc','result',public.ops_update_tournament_live(t.id,t.status::text,t.players_remaining,t.current_level,'2.000 / 4.000 · ante 4.000','1003 rollback TEST unchanged live form')) FROM public.tournaments t WHERE id='${tour}';
+SELECT jsonb_build_object('phase','legacyLevelChange','result',public.ops_update_tournament_live(t.id,t.status::text,t.players_remaining,t.current_level+1,NULL,'1003 stale legacy level TEST')) FROM public.tournaments t WHERE id='${tour}';
+SELECT jsonb_build_object('phase','pause','result',public.floor_control_tournament_clock('${tour}','pause',NULL,public.get_tournament_clock('${tour}')->>'control_revision'));
+SELECT jsonb_build_object('phase','resume','result',public.floor_control_tournament_clock('${tour}','resume',NULL,public.get_tournament_clock('${tour}')->>'control_revision'));
+SELECT jsonb_build_object('phase','canonicalMissingLevel','result',public.floor_control_tournament_clock('${tour}','next_level',NULL,public.get_tournament_clock('${tour}')->>'control_revision'));
+RESET ROLE;
+SELECT jsonb_build_object('phase','inside','functionHash',md5(replace(pg_get_functiondef('public.ops_update_tournament_live(uuid,text,integer,integer,text,text)'::regprocedure),chr(13),'')),'otherFacts',${hash(true)},'row',${row});
+ROLLBACK;
+BEGIN READ ONLY;SELECT jsonb_build_object('phase','after','functionHash',md5(replace(pg_get_functiondef('public.ops_update_tournament_live(uuid,text,integer,integer,text,text)'::regprocedure),chr(13),'')),'hash',${hash()},'row',${row});ROLLBACK;`;
+const output=execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ranking860_local','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:q,encoding:'utf8',timeout:60000,maxBuffer:3e6});
+writeFileSync('D:/Quy trình/output/reports/floor1003-clock-authority-candidate-raw-local-20261027.txt',output);
+const rows=output.trim().split(/\r?\n/).map(s=>JSON.parse(s));const [before,rpc,legacy,pause,resume,missing,inside,after]=rows;
+assert.deepEqual(rpc.result,{ok:true,tournament_id:tour,status:'live'});assert.deepEqual(inside.row,before.row);assert.equal(inside.otherFacts,before.otherFacts);
+assert.deepEqual(legacy.result,{ok:false,error:'clock_level_control_required'});assert.equal(pause.result.ok,true);assert.equal(resume.result.ok,true);assert.deepEqual(missing.result,{ok:false,error:'target_level_missing'});assert.equal(inside.functionHash,'5f9825d3cda43cdbb5861e8007177455');assert.equal(after.functionHash,'73569e2ce7904d3708cbb278ec558aea');
+assert.deepEqual(after.row,before.row);assert.equal(after.hash,before.hash);
+writeFileSync('D:/Quy trình/output/reports/floor1003-native-update-local-20261027.json',JSON.stringify({kind:'CANDIDATE297_NATIVE_METADATA_PRESERVES_CLOCK_LEGACY_LEVEL_DENIED_CANONICAL_CONTROLS_WORK_ROLLBACK',tables,rows,unchanged:true},null,2)+'\n');
+console.log('CONFIG1003_CANDIDATE297_CLOCK_AUTHORITY_20_GROUPS_ROLLBACK_PASS');

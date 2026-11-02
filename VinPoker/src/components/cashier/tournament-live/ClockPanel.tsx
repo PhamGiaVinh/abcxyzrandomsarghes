@@ -2,8 +2,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
+import { waitForManualPlayerResponse } from '@/lib/floorManualPlayerIntent';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { TournamentBuyCloseControl } from "./TournamentBuyCloseControl";
 import { toast } from "sonner";
 import { Play, Pause, SkipForward, SkipBack, Minus, Plus, RefreshCw, Timer } from "lucide-react";
 import {
@@ -57,6 +60,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
   const [storedClock, setClock] = useState<ClockData | null>(null);
   const clock = loadedScope === scope ? storedClock : null;
   const [readError, setReadError] = useState(false);
+  const [unknownActionScope,setUnknownActionScope]=useState<string|null>(null);
   const [loading, setLoading] = useState(false);
   const [localRemaining, setLocalRemaining] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
@@ -79,13 +83,14 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
     setLoading(true);
     try {
       if (!user?.id) return;
-      const { data, error } = await supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId });
+      const { data, error } = await observeTrackerContextRead(supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId }));
       if (!current()) return;
       if (error) throw error;
       const c = data as unknown as ClockData;
       if (!c || c.tournament_id !== tournamentId || !Number.isFinite(c.remaining_seconds)
         || typeof c.is_running !== "boolean") throw new Error("Clock context unavailable");
       setClock(c);
+      setUnknownActionScope(null);
       setLoadedScope(scope);
       setLocalRemaining(c.remaining_seconds);
       setIsRunning(c.is_running);
@@ -114,7 +119,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
     actionRef.current = operation;
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("tournament-live-clock", {
+      const { data, error } = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-clock", {
         body: {
           tournament_id: tournamentId,
           action,
@@ -123,17 +128,31 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
             ? { expected_control_revision: expectedControlRevision }
             : {}),
         },
-      });
+      }));
       if (!current()) return;
       if (error || data?.error) {
+        if(action==='next_level')setAutoNextLevel(false);
         toast.error(data?.error || error?.message);
         await loadClock();
         return;
       }
+      if (!data||typeof data!=='object'||Array.isArray(data)||data.status!=='success'
+        ||!data.clock||typeof data.clock!=='object'||Array.isArray(data.clock)
+        ||data.clock.tournament_id!==tournamentId||typeof data.clock.is_running!=='boolean'
+        ||!Number.isFinite(data.clock.remaining_seconds)||typeof data.clock.control_revision!=='string'
+        ||!data.clock.control_revision) {
+        if(action==='next_level')setAutoNextLevel(false);
+        toast.error('Chưa xác minh được kết quả thao tác đồng hồ. Đang tải lại trạng thái.');
+        await loadClock();return;
+      }
       toast.success("OK");
       await loadClock();
     } catch (e: unknown) {
-      if (current()) toast.error(e instanceof Error ? e.message : t("tournamentLive.clock.refresh"));
+      if (current()) {
+        if(action==='next_level')setAutoNextLevel(false);
+        setUnknownActionScope(scope);setLoadedScope(null);setIsRunning(false);
+        toast.error(e instanceof Error ? e.message : t("tournamentLive.clock.refresh"));
+      }
     } finally {
       if (current()) setLoading(false);
       if (actionRef.current === operation) actionRef.current = null;
@@ -206,6 +225,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
       </div>
 
       {readError && <p role="alert">{t("tv.loadError")}</p>}
+      {unknownActionScope===scope&&<p role="alert">Chưa xác minh được kết quả thao tác đồng hồ. Tải lại trạng thái trước khi thao tác tiếp.</p>}
       {loading && !clock && <p role="status">{t("common.loading")}</p>}
       {clock && (
         <div className="space-y-3">
@@ -293,6 +313,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
           )}
         </div>
       )}
+      <TournamentBuyCloseControl tournamentId={tournamentId} />
     </Card>
   );
 }

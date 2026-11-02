@@ -8,15 +8,18 @@
  * Map to the live Patch-3 RPCs:
  *   - READ:  get_table_dealer_rules(p_club_id)  → hydrateFromRules() fills the cache
  *            (P1-B: NEVER select dealer_table_profiles/_pool_members directly — RLS blocks floor)
- *   - WRITE: set_table_dealer_mode + set_table_dealer_pool  (saveProfileToDb), then refetch
+ *   - WRITE: save_table_dealer_profile_v2 (one actor-bound atomic receipt).
  * The enforcement kill-switch app_settings('dealer_feature_tables_enabled') is read separately
  * (useFeatureEnforcementEnabled) for the honest "config saved but enforcement OFF" banner.
  *
  * Mirrors ADR-012: base mode (normal|feature) + a separate is_final flag; "special" =
  * feature OR final; FINAL takes precedence over FEATURE for the badge/border (DR-8a).
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import {z} from 'zod';
+import {waitForManualPlayerResponse} from '@/lib/floorManualPlayerIntent';
+import {dealerFeatureArgs,type DealerFeatureIntent} from '@/lib/dealerFeatureProfileIntent';
 
 export type DealerTableMode = "normal" | "feature";
 
@@ -155,80 +158,121 @@ export function hydrateFromRules(rules: RulesResult | null): void {
   emit();
 }
 
-async function fetchAndHydrate(clubId: string): Promise<void> {
-  const { data, error } = await supabase.rpc("get_table_dealer_rules", { p_club_id: clubId });
-  if (error) throw new Error(error.message);
-  hydrateFromRules(data as unknown as RulesResult | null);
-}
+let rulesReadGeneration = 0;
 
-/** Load this club's feature/final rules into the cache (on mount + clubId change). */
+/** Load only the current panel's response into the shared cache. */
 export function useFeatureTableRules(clubId: string | null | undefined): {
-  loading: boolean;
-  error: string | null;
-  refetch: () => Promise<void>;
+  loading: boolean; error: string | null; refetch: () => Promise<void>;
 } {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const context = useMemo(() => ({ clubId }), [clubId]);
+  const currentContext = useRef(context);
+  currentContext.current = context;
+  const mounted = useRef(false);
+  const sequence = useRef(0);
+  const [state, setState] = useState({ context, loading: false, error: null as string | null });
   const refetch = useCallback(async () => {
-    if (!clubId) return;
-    setLoading(true);
-    setError(null);
+    if (!clubId || !mounted.current || currentContext.current !== context) return;
+    const request = ++sequence.current;
+    const isCurrent = () => mounted.current && currentContext.current === context && sequence.current === request;
+    setState({ context, loading: true, error: null });
     try {
-      await fetchAndHydrate(clubId);
+      await fetchAndHydrate(clubId, isCurrent);
+      if (isCurrent()) setState({ context, loading: false, error: null });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
+      if (isCurrent()) setState({ context, loading: false, error: e instanceof Error ? e.message : String(e) });
     }
-  }, [clubId]);
-
-  useEffect(() => { void refetch(); }, [refetch]);
-
-  return { loading, error, refetch };
-}
-
-/** Persist a table profile via the live RPCs, then re-hydrate the cache. Throws on RPC error. */
-export async function saveProfileToDb(tableId: string, clubId: string, p: FeatureTableProfile): Promise<void> {
-  const { error: e1 } = await supabase.rpc("set_table_dealer_mode", {
-    p_table_id: tableId,
-    p_table_mode: p.tableMode,
-    p_is_final: p.isFinal,
-    p_allow_override: p.allowOverride,
-  });
-  if (e1) throw new Error(e1.message);
-
-  // pool order encodes priority (index): get_table_dealer_rules returns pool ordered by priority asc.
-  const members = p.pool.map((m, i) => ({ dealer_id: m.dealerId, is_primary: m.isPrimary, priority: i }));
-  const { error: e2 } = await supabase.rpc("set_table_dealer_pool", {
-    p_table_id: tableId,
-    p_members: members,
-  });
-  if (e2) throw new Error(e2.message);
-
-  await fetchAndHydrate(clubId); // refresh cache → emit → badge/box/dialog reflect saved state
-}
-
-/** Read the enforcement kill-switch app_settings('dealer_feature_tables_enabled') for the honest
- *  "config saved but enforcement OFF" banner. Readable by floor (app_settings "public read" RLS).
- *  Canonical truthiness: JSONB boolean → value === true || value === 'true'. */
-export function useFeatureEnforcementEnabled(): { enabled: boolean | null; loading: boolean } {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  }, [clubId, context]);
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      const { data } = await supabase
-        .from("app_settings")
-        .select("value")
-        .eq("key", "dealer_feature_tables_enabled")
-        .maybeSingle();
-      if (!alive) return;
-      const v = (data as { value?: unknown } | null)?.value;
-      setEnabled(v === true || v === "true");
-      setLoading(false);
-    })();
-    return () => { alive = false; };
+    mounted.current = true;
+    void refetch();
+    return () => { mounted.current = false; sequence.current += 1; };
+  }, [refetch]);
+  return { loading: state.context === context ? state.loading : !!clubId,
+    error: state.context === context ? state.error : null, refetch };
+}
+const profileRpc=supabase.rpc.bind(supabase) as unknown as (name:string,args:Record<string,unknown>)=>PromiseLike<{data:unknown;error:unknown}>;
+export async function saveProfileToDb(intent:DealerFeatureIntent){
+ const r=await waitForManualPlayerResponse(Promise.resolve(profileRpc('save_table_dealer_profile_v2',dealerFeatureArgs(intent))));
+ if(r.error)throw r.error;return r.data;
+}
+export async function readProfileSaveReceipt(intent:DealerFeatureIntent){
+ const r=await waitForManualPlayerResponse(Promise.resolve(profileRpc('get_table_dealer_profile_receipt_v2',{p_club_id:intent.clubId,p_request_id:intent.requestId,p_expected_actor:intent.actorId})));
+ if(r.error)throw r.error;return r.data;
+}
+export async function cancelProfileSave(intent:DealerFeatureIntent){
+ const r=await waitForManualPlayerResponse(Promise.resolve(profileRpc('cancel_table_dealer_profile_v2',dealerFeatureArgs(intent))));
+ if(r.error)throw r.error;return r.data;
+}
+const Rule=z.object({table_id:z.string().uuid(),table_mode:z.enum(['normal','feature']),is_final:z.boolean(),allow_override:z.boolean(),
+ display_label:z.string().nullable(),pool:z.array(z.object({dealer_id:z.string().uuid(),name:z.string(),priority:z.number().int(),is_primary:z.boolean()}))});
+const RuleRead=z.object({club_id:z.string().uuid(),as_of:z.string(),tables:z.array(Rule).refine(t=>new Set(t.map(r=>r.table_id)).size===t.length)});
+async function fetchAndHydrate(clubId: string, isCurrent: () => boolean): Promise<void> {
+ const generation = ++rulesReadGeneration;
+ const r = await waitForManualPlayerResponse(Promise.resolve(profileRpc('get_table_dealer_rules', { p_club_id: clubId })));
+ if (r.error) throw r.error;
+ const data = RuleRead.parse(r.data);
+ if (data.club_id !== clubId || !isCurrent() || generation !== rulesReadGeneration) {
+   throw Error('DEALER_PROFILE_READ_SCOPE_INVALID');
+ }
+ hydrateFromRules({ club_id: data.club_id, as_of: data.as_of, tables: data.tables.map(t => ({
+   table_id: t.table_id, table_mode: t.table_mode, is_final: t.is_final,
+   allow_override: t.allow_override, display_label: t.display_label,
+   pool: t.pool.map(p => ({ dealer_id: p.dealer_id, name: p.name, priority: p.priority, is_primary: p.is_primary })),
+ })) });
+}
+
+/** A dialog loads its own verified snapshot; an old credential cannot hydrate the shared cache. */
+export async function loadFeatureTableProfile(clubId:string,tableId:string,isCurrent:()=>boolean):Promise<FeatureTableProfile>{
+ await fetchAndHydrate(clubId, isCurrent);
+ return getProfile(tableId);
+}
+/** Display-only read of the server enforcement switch. The database enables
+ *  enforcement only for JSON boolean true; a successful missing row means OFF.
+ *  Failed/malformed reads remain unknown and never decide assignment authority. */
+export function useFeatureEnforcementEnabled(): {
+  enabled: boolean | null; loading: boolean; error: string | null; refetch: () => Promise<void>;
+} {
+  const [state, setState] = useState<{ enabled: boolean | null; loading: boolean; error: string | null }>({
+    enabled: null, loading: true, error: null,
+  });
+  const generation = useRef(0);
+  const active = useRef<AbortController | null>(null);
+  const refetch = useCallback(async () => {
+    const current = ++generation.current;
+    active.current?.abort();
+    const controller = new AbortController();
+    active.current = controller;
+    setState({ enabled: null, loading: true, error: null });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancel = () => {};
+    const stopped = new Promise<never>((_, reject) => {
+      cancel = () => reject(new Error("feature_enforcement_read_cancelled"));
+      controller.signal.addEventListener("abort", cancel, { once: true });
+      timer = setTimeout(() => controller.abort(), 15_000);
+    });
+    try {
+      const packet = await Promise.race([Promise.resolve(supabase.from("app_settings")
+        .select("value").eq("key", "dealer_feature_tables_enabled").abortSignal(controller.signal).maybeSingle()), stopped]);
+      if (packet.error) throw packet.error;
+      const data: unknown = packet.data;
+      let enabled: boolean;
+      if (data === null) enabled = false;
+      else if (data && typeof data === "object" && !Array.isArray(data) && typeof (data as { value?: unknown }).value === "boolean") {
+        enabled = (data as { value: boolean }).value;
+      } else throw new Error("feature_enforcement_invalid_response");
+      if (current === generation.current) setState({ enabled, loading: false, error: null });
+    } catch {
+      if (current === generation.current) setState({ enabled: null, loading: false,
+        error: "Không xác minh được trạng thái bảo vệ bàn. Hãy thử lại." });
+    } finally {
+      clearTimeout(timer);
+      controller.signal.removeEventListener("abort", cancel);
+      if (active.current === controller) active.current = null;
+    }
   }, []);
-  return { enabled, loading };
+  useEffect(() => {
+    void refetch();
+    return () => { generation.current += 1; active.current?.abort(); active.current = null; };
+  }, [refetch]);
+  return { ...state, refetch };
 }

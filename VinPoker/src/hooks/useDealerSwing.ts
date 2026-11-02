@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useLiveClock } from "@/hooks/useLiveClock";
@@ -262,6 +263,12 @@ function useRealtimeQuery<T>(
     }
 
     refetch();
+
+    // One-shot readers reuse actor/club fencing without creating an idle
+    // channel or adding polling to screens that previously read on demand.
+    if (selectedTables.length === 0) {
+      return () => { active = false; generationRef.current += 1; };
+    }
 
     const ids = selectedClubs.join("+");
     const tables = selectedTables.join("+");
@@ -807,23 +814,14 @@ export interface ShiftBreakPolicy {
 }
 
 export function useSwingConfigs(clubIds: string[]) {
-  const [data, setData] = useState<SwingConfig[] | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!clubIds.length) { setData([]); return; }
-    setLoading(true);
-    const { data: d } = await supabase
+  return useRealtimeQuery<SwingConfig>({
+    queryFn: async () => supabase
       .from("swing_config")
       .select("*")
-      .in("club_id", clubIds);
-    setData(d ?? []);
-    setLoading(false);
-  }, [clubIds.join(",")]);
-
-  useEffect(() => { load(); }, [load]);
-
-  return { data, loading, refetch: load };
+      .in("club_id", clubIds),
+    realtimeTables: [],
+    clubIds,
+  });
 }
 
 export function useSwingMetrics(clubIds: string[]) {
@@ -1018,7 +1016,7 @@ export interface NextDealerPrediction {
   currentState: string | null;
   workedMinutes: number;
   swingDueAt: string | null;
-  minutesUntilSwing: number;
+  minutesUntilSwing: number | null;
   nextDealerName: string | null;
   nextDealerId: string | null;
   confidence: "confirmed" | "predicted";
@@ -1080,56 +1078,71 @@ function useOvertimeDealers(clubIds: string[]) {
 }
 
 export function useNextDealerPredictions(clubIds: string[], assignments: DealerAssignment[] = []) {
-  const [data, setData] = useState<Record<string, NextDealerPrediction> | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const load = useCallback(async () => {
-    if (clubIds.length === 0) { setData({}); setLoading(false); return; }
-    const cid = clubIds[0];
-    const assignmentByTableId = new Map(assignments.map((assignment) => [assignment.table_id, assignment]));
-    setLoading(true);
-    const { data: rows, error } = await supabase
-      .rpc("get_table_assignments_with_next", { p_club_id: cid });
-    if (error) {
-      console.error("[useNextDealerPredictions] RPC error:", {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-      });
-      setData(null);
-    } else {
-      const arr = (rows as any[]) ?? [];
-      const map: Record<string, NextDealerPrediction> = {};
-      for (const r of arr) {
-        map[r.table_id] = {
-          tableId: r.table_id,
-          tableName: r.table_name,
-          currentDealerName: r.current_dealer,
-          currentState: null,
-          workedMinutes: 0,
-          swingDueAt: null,
-          minutesUntilSwing: r.minutes_until_swing,
-          nextDealerName: r.next_dealer,
-          nextDealerId: null,
-          confidence: r.next_dealer ? "confirmed" : "predicted",
-          preAssignStatus: assignmentByTableId.get(r.table_id)?.pre_assign_status ?? "none",
-        };
+  const { user, session } = useAuth();
+  const scope = [...new Set(clubIds)].sort();
+  const credential = useMemo(() => ({ actor: user?.id, token: session?.access_token, key: crypto.randomUUID() }),
+    [user?.id, session?.access_token]);
+  const assignmentKey=JSON.stringify(assignments.map(a=>[a.id,a.table_id,a.table_session_id,a.attendance_id,a.status,
+    a.released_at,a.pre_assigned_attendance_id,a.swing_due_at,a.swing_processed_at]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
+  // A new observation generation prevents an A->closed->A round trip from
+  // resurrecting the old cached prediction while its replacement is loading.
+  const assignmentGeneration=useMemo(()=>({key:assignmentKey,token:crypto.randomUUID()}),[assignmentKey]);
+  const query = useQuery({
+    queryKey: ["next-dealer-predictions", user?.id, credential.key, scope,assignmentGeneration.token],
+    enabled: !!user && scope.length > 0,
+    retry: false,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    queryFn: async ({ signal }) => {
+      if (!user || !scope.length) return {};
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      signal.addEventListener("abort", cancel, { once: true });
+      if (signal.aborted) cancel();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const reads = Promise.all(scope.map(async (club) => {
+          const response = await supabase.rpc("get_table_assignments_with_next", { p_club_id: club }).abortSignal(controller.signal);
+          if (response.error) throw response.error;
+          if (!Array.isArray(response.data)) throw new Error("Invalid next dealer response");
+          return response.data;
+        }));
+        const batches = await Promise.race([reads, new Promise<never>((_, reject) => {
+          timer = setTimeout(() => { controller.abort(); reject(new Error("next_dealer_read_timeout")); }, 15_000);
+        })]);
+        const map: Record<string, NextDealerPrediction> = {};
+        for (const value of batches.flat() as unknown[]) {
+          if (!value || typeof value !== "object") throw new Error("Invalid next dealer row");
+          const r = value as Record<string, unknown>;
+          const nullableName = (name: unknown): name is string | null => name === null || typeof name === "string";
+          const nullableMinutes = (minutes: unknown): minutes is number | null => minutes === null || (typeof minutes === "number" && Number.isFinite(minutes));
+          if (typeof r.table_id !== "string" || !r.table_id || typeof r.table_name !== "string"
+            || !nullableName(r.current_dealer) || !nullableName(r.next_dealer)
+            || !nullableMinutes(r.minutes_until_swing)
+            || Object.prototype.hasOwnProperty.call(map, r.table_id)) throw new Error("Invalid or duplicate next dealer row");
+          map[r.table_id] = {
+            tableId: r.table_id, tableName: r.table_name, currentDealerName: r.current_dealer,
+            currentState: null, workedMinutes: 0, swingDueAt: null, minutesUntilSwing: r.minutes_until_swing,
+            nextDealerName: r.next_dealer, nextDealerId: null,
+            confidence: r.next_dealer ? "confirmed" : "predicted", preAssignStatus: "none",
+          };
+        }
+        return map;
+      } finally {
+        clearTimeout(timer); controller.abort(); signal.removeEventListener("abort", cancel);
       }
-      setData(map);
-    }
-    setLoading(false);
-  }, [clubIds.join(","), assignments]);
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
-  }, [load]);
-
-  const refetch = useCallback(() => { load(); }, [load]);
-
-  return { data, loading, refetch };
+    },
+  });
+  const data = useMemo(() => {
+    if (!user || query.isError || query.isPlaceholderData || !query.data) return null;
+    const byTable = new Map(assignments.map((assignment) => [assignment.table_id, assignment]));
+    return Object.fromEntries(Object.entries(query.data).map(([id, row]) => [id, {
+      ...row, preAssignStatus: byTable.get(id)?.pre_assign_status ?? "none",
+    }]));
+  }, [user, query.data, query.isError,query.isPlaceholderData, assignments]);
+  return { data, loading: !!user && scope.length > 0 && (query.isPending||query.isPlaceholderData),
+    error: query.isError ? "Không xác minh được dự đoán dealer. Kiểm tra kết nối và quyền CLB rồi tải lại." : null,
+    refetch: query.refetch };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

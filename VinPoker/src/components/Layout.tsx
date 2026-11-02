@@ -81,7 +81,9 @@ export const Layout = () => {
     typeof userMetadata?.display_name === "string"
       ? userMetadata.display_name
       : user?.email ?? null;
-  const { count: unreadCount } = useUnreadChats();
+  const { count: unreadCount, error: unreadError } = useUnreadChats();
+  const unreadBadge = unreadError ? "!" : unreadCount > 99 ? "99+" : unreadCount;
+  const inboxLabel = `${t("layout.inbox")}${unreadError ? `: ${unreadError}` : unreadCount > 0 ? `: ${unreadBadge}` : ""}`;
   const adminPending = useAdminPendingCounts();
   const location = useLocation();
   const nav = useNavigate();
@@ -90,6 +92,8 @@ export const Layout = () => {
   const isViewerFocusRoute = (FEATURES.liveViewerRPTShell && /^\/live\/[^/]+\/?$/.test(location.pathname))
     || /^\/clock\/[^/]+\/?$/.test(location.pathname);
   const isFloorFocusRoute = /^\/floor(?:\/|$)/.test(location.pathname);
+  const isDirectChatRoute = /^\/dm\/[^/]+\/?$/.test(location.pathname);
+  const isTournamentDetailRoute = /^\/tournament\/[^/]+\/?$/.test(location.pathname);
 
   if (!showShell) return <Outlet />;
 
@@ -148,9 +152,9 @@ export const Layout = () => {
                     <DropdownMenuItem onClick={() => nav("/inbox")} className="gap-2.5 cursor-pointer">
                       <MessageCircle className="w-4 h-4" />
                       {t("layout.inbox", "Tin nhắn")}
-                      {unreadCount > 0 && (
-                        <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
-                          {unreadCount > 99 ? "99+" : unreadCount}
+                      {(unreadError || unreadCount > 0) && (
+                        <span aria-label={unreadError ?? undefined} title={unreadError ?? undefined} className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                          {unreadBadge}
                         </span>
                       )}
                     </DropdownMenuItem>
@@ -220,12 +224,13 @@ export const Layout = () => {
               <NavLink
                 to="/inbox"
                 className="relative px-2.5 py-1.5 rounded-lg border border-border hover:border-primary/60 text-muted-foreground hover:text-primary hidden md:inline-flex items-center gap-1.5 transition-colors"
-                title={t("layout.inbox")}
+                title={unreadError ?? t("layout.inbox")}
+                aria-label={inboxLabel}
               >
                 <MessageCircle className="w-4 h-4" />
-                {unreadCount > 0 && (
+                {(unreadError || unreadCount > 0) && (
                   <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
-                    {unreadCount > 99 ? "99+" : unreadCount}
+                    {unreadBadge}
                   </span>
                 )}
               </NavLink>
@@ -438,16 +443,17 @@ export const Layout = () => {
             ? "mx-auto min-w-0 w-full max-w-[1600px] flex-1 pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:py-4 animate-fade-in"
             : "flex-1 mx-auto w-full max-w-[1400px] px-4 md:px-6 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-8 animate-fade-in"}
       >
+        {isDirectChatRoute && <RegisteredBadge placement="inline" />}
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>
       </main>
       <DuplicateNameGuard />
-      {!isViewerFocusRoute && !isFloorFocusRoute && <InstallPWAButton />}
+      {!isViewerFocusRoute && !isFloorFocusRoute && !isDirectChatRoute && !isTournamentDetailRoute && <InstallPWAButton />}
 
       {!isViewerFocusRoute && !isFloorFocusRoute && (
       <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-border/60 bg-background/95 backdrop-blur-xl md:hidden pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
-        <RegisteredBadge />
+        {!isDirectChatRoute && <RegisteredBadge />}
         <div className="mx-auto grid h-[68px] max-w-3xl grid-cols-5 items-stretch">
           {mobileTabsData.slice(0, 2).map((tab) => (
             <NavLink

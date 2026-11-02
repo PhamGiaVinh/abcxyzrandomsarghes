@@ -1,6 +1,13 @@
 {
+  "clubDetailRead": {"error":"クラブのデータを読み込めませんでした。再試行してください。","retry":"再読み込み","loading":"クラブのデータを読み込み中…"},
+  "rankingReview": {"title":"フロアによる順位確認","note":"同じハンドで敗退したグループ内でのみ順位を交換できます。この確認では大会終了や賞金支払を記録しません。","storage":"要求を安全に読み込み、または保存できませんでした。ページを再読み込みし、以前の要求を照合してから続けてください。","readError":"順位一覧を確認できません。再読み込みしてから確定してください。","unknown":"結果は未確認です。元の要求は照合用に保持されています。新しい要求を作成しないでください。","changed":"データまたは条件が変わり、この要求は拒否されました。最新の順位を確認してください。","recorded":"順位確認を記録しました。大会終了の状態を更新しています。","historical":"以前の要求を照合しましたが、元データが変更されています。現在の順位を再確認してください。","loading":"順位を確認中…","pending":"未確認の要求を保持しています。新しい要求を送信しないでください。","check":"保存済み要求を照合","retrySame":"保存済みの同じ要求を再送","reload":"順位を再読み込み","notReady":"勝者が一人であり、ハンドと敗退順の証拠が揃っている必要があります。","approved":"確認の記録が保存されています。大会終了の条件は別途確認されます。","up":"グループ内で{{name}}の順位を上げる","down":"グループ内で{{name}}の順位を下げる","confirm":"フロアが選んだ順序を確定","group":"同一ハンド敗退グループ {{group}}","reference":"エントリー識別子 {{reference}}"},
+  "publicScheduleRead": { "loading": "大会日程を読み込み中…", "error": "大会日程を読み込めないため、日程の有無を確認できません。再試行してください。", "retry": "大会日程を再読み込み" },
+  "trackerSkipRevealNote": "「公開せずに続ける」を選んだ場合のみ、ホールカードは視聴画面に表示されず、ショーダウン結果を手動で選ぶ必要があります。",
+  "baggedFlightRelease": { "title": "バッグ保管済みテーブルの解放", "note": "バッグ処理をロックし照合した後、対象のテーブルセッションのみを閉じます。チップ、エントリーと履歴を保持し、敗退処理、チップ発行や賞金支払いは行いません。", "refresh": "テーブル状態を更新", "loading": "テーブルセッションを確認中…", "readError": "テーブル状態を確認できません。更新してセッションと座席を確認してください。", "unknown": "結果を確認できません。元のリクエストを保持しています。進行中のハンド、移席、訂正、保留中のモード変更を確認し、同じリクエストで再試行してください。", "recover": "保存済みの解放リクエストを確認", "peer": "別のフライトに未確認の解放リクエストがあります。", "bagFirst": "テーブル解放前にチップ管理でバッグ処理をロックしてください。", "released": "対象のテーブルセッションを解放しました。チップはバッグ内に保持されています。", "release": "このテーブルを解放", "confirm": "テーブルセッションの解放を確認", "cancel": "キャンセル" },
+  "mainEventCreate": { "guaranteeLabel": "メインイベント全体の保証額（VND）", "guaranteeNote": "メインイベント全体で一つの保証額です。フライト数で乗算せず、賞金プールへの入金として扱いません。未公表なら空欄にしてください。", "guaranteeMissing": "メインイベントの保証額は未公表", "guaranteeNone": "メインイベントの保証なし", "guaranteeValue": "メインイベント全体の保証額：{{amount}}", "invalidMoney": "サービス料と保証額は安全な数値範囲内の非負整数VNDで入力してください。" },
   "legacyScheduleEvidence": "この画像の出典・版・審査情報はここでは確認できません。最新の日程はクラブにご確認ください。",
-  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
+  "createAtomic": { "signin": "大会を作成する前にログインしてください。", "storageError": "保留中の作成リクエストを読み取りまたは保存できません。新しいリクエストは送信されていません。", "unknown": "作成結果を確認できていません。再試行の前に前回のリクエストを確認してください。", "check": "前回のリクエストを確認", "retry": "同じリクエストを再送信", "pending": "前回の作成リクエストの結果が未確認です。別の大会を作成する前に確認してください。再送信では編集後の値ではなく、元の値を使用します。" },
+  "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "チップデータを読み込めません。在庫とチップバンクの状態は未確認です。", "permission": "この大会のクラブ所有者またはチップ管理者の権限が必要です。", "retry": "再読み込み" },
   "cashierOverviewRead": { "error": "統計を読み込めませんでした。更新して再試行してください。" },
   "liveStateSummary": {
@@ -18,7 +25,10 @@
   "floorReadiness": { "unavailable": "参加者数は未確認です" },
   "clockControl": { "loadError": "タイマー操作を読み込めませんでした。" },
   "stack_projection_mismatch": "座席・参加記録・チップ記録が一致しません",
-  "participation": {"repairRequired":"データ修復が必要","repairHint":"これらの記録は確認用に保持され、現在の座席数や操作には使用されません。","loadError":"プレイヤーを読み込めません。更新してください。","stale":"古いデータを表示中です。操作は一時停止しています。","reasons":{"missing_entry":"参加記録なし","entry_identity_mismatch":"参加情報が不一致","entry_not_live":"参加記録は非アクティブ","missing_table_session":"テーブルまたはセッションなし","closed_session":"テーブルセッション終了","inactive_table":"テーブルは非アクティブ","table_session_mismatch":"テーブルとセッションが不一致","seat_out_of_range":"座席が定員外","duplicate_entry_seat":"参加記録に複数の有効座席","duplicate_seat_position":"座席位置が重複","duplicate_entry_generation":"参加回数が重複","missing_active_seat":"着席記録に有効な座席なし"}},
+  "participation": {
+    "bagged": "バッグ済み",
+    "baggedHint": "バッグ済みのスタックは確認用です。これらのプレイヤーは着席待ちではありません。",
+    "noBagged": "条件に一致するバッグ済みエントリーはありません。","repairRequired":"データ修復が必要","repairHint":"これらの記録は確認用に保持され、現在の座席数や操作には使用されません。","loadError":"プレイヤーを読み込めません。更新してください。","stale":"古いデータを表示中です。操作は一時停止しています。","reasons":{"missing_entry":"参加記録なし","entry_identity_mismatch":"参加情報が不一致","entry_not_live":"参加記録は非アクティブ","missing_table_session":"テーブルまたはセッションなし","closed_session":"テーブルセッション終了","inactive_table":"テーブルは非アクティブ","table_session_mismatch":"テーブルとセッションが不一致","seat_out_of_range":"座席が定員外","duplicate_entry_seat":"参加記録に複数の有効座席","duplicate_seat_position":"座席位置が重複","duplicate_entry_generation":"参加回数が重複","missing_active_seat":"着席記録に有効な座席なし"}},
   "trackerCards": { "deck": "カードの種類", "fourColor": "4色", "classic": "クラシック" },
   "fnb": {
     "navCounter": "F&B · Quầy",
@@ -89,6 +99,8 @@
     "international": "国際大会"
   },
   "documentsPage": {
+    "readError": "資料を読み込めませんでした。もう一度お試しください。",
+    "retry": "再試行",
     "title": "ドキュメント",
     "subtitle": "公式ガイド、動画、参考ファイル。",
     "tabVideos": "動画",
@@ -1270,6 +1282,7 @@
     "photo": "📷 画像",
     "searchUsers": "表示名でユーザーを検索して会話を始める...",
     "searching": "検索中...",
+    "searchFail": "検索結果を読み込めませんでした。もう一度お試しください。",
     "noResultsFor": "「{{q}}」に一致する人が見つかりません",
     "inboxLabel": "受信ボックス · {{n}}",
     "noDM": "メッセージはありません。上のユーザーを探して会話を始めてください。",
@@ -1831,6 +1844,10 @@
       "telegramChatIdHint": "Enter your Telegram group Chat ID to receive swing notifications"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "検索結果を読み込めませんでした。データは未確認です。再試行してください。",
+    "detailsUnavailable": "ディールまたはプロフィール履歴をすべて読み込めませんでした。データは未確認です。再試行してください。"
+  },
   "financeRead": {
     "forbidden": "このクラブの財務レポートを閲覧する権限がありません。",
     "missingBackend": "サーバーに必要なレポートのバージョンがありません。数値を確認できません。",
@@ -2227,6 +2244,9 @@
     "registeredCount": "登録済み: {{registered}} / {{max}}"
   },
   "playerHistory": {
+    "loading": "確認済みの結果を読み込み中…",
+    "loadError": "プレイヤー履歴を読み込めません。結果は未確認です。",
+    "retry": "再試行",
     "playerFallback": "プレイヤー",
     "prizeCount": "大会数",
     "totalCashout": "総キャッシュアウト",
@@ -2462,6 +2482,8 @@
     "register": "登録する"
   },
   "tournamentRegister": {
+"cancelUnverified": "キャンセル結果を確認できません。再試行する前に登録状況を再読み込みしてください。キャンセル済みとは限りません。",
+    "proofUnverified": "証明書の送信を確認できません。再試行前に登録状況を再読み込みしてください。",
     "title": "トレーニングトーナメントに登録",
     "regError": "登録エラー",
     "copied": "{{label}}をコピーしました",
@@ -2582,6 +2604,9 @@
     "closeAria": "閉じる"
   },
   "bulkCreate": {
+    "pendingBatch": "{{count}} 件の大会作成リクエストは未確認です。新しい一括作成の前に処理記録を確認してください。",
+    "checkReceipt": "一括処理の記録を確認",
+    "cancelPendingBatch": "未確定のリクエストを取り消す（作成済み大会は保持）",
     "adminOnly": "スーパー管理者のみアクセス可能",
     "noPending": "処理待ちの画像はありません",
     "errorPrefix": "エラー: {{msg}}",
@@ -2700,8 +2725,8 @@
     "photos": { "empty": "写真はまだありません", "soon": "イベント写真は近日公開" },
     "breakdown": {
       "title": "ハンド分析",
-      "pot": "ポット",
-      "potHint": "このストリートまでのポット",
+      "pot": "累計ベット",
+      "potHint": "このストリートまでの累計ベット。未コール分の返却前で、分配されるポットとは異なります。",
       "player": "プレイヤー"
     },
     "map": {
@@ -2917,17 +2942,17 @@
       "scoreLabel": "Poker IQ",
       "confidence": "信頼度：{{level}}",
       "interpretation": "規律ある基礎があり、中規模ディープスタックに向いています。",
-      "nextHook": "A-に近づくには：アグレッシブな相手への対応を改善しましょう。",
+      "nextHook": "下に示すスキル分野の練習を続けましょう。",
       "whyTitle": "システムがそう判断する理由",
       "weakest": "最も弱い：{{category}} {{score}} — {{insight}}",
       "strengthsTitle": "強み",
       "weaknessesTitle": "改善点",
       "trainingKicker": "練習プラン",
-      "trainingGoal": "次の目標：A-",
+      "trainingGoal": "次の目標：最も弱いスキル分野を強化する",
       "step1": "{{drill}} ドリルを完了",
       "step2": "中規模ディープスタックを2回プレイ",
       "step3": "認証プロフィールを解除",
-      "cta": "{{drill}} を練習して A- を解除",
+      "cta": "{{drill}} を練習する",
       "ctaSub": "この分野が最もスコアを下げています。",
       "eventsTitle": "あなたに合う大会",
       "eventAvoidPrefix": "当面は避ける",

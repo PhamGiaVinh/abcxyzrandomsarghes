@@ -10,7 +10,7 @@ afterEach(cleanup);
 const props = {
   tours: [{ id: "flight-a", event_id: "event", phase: "flight", name: "TEST · Flight A" }],
   loading: false, error: null, flightMeta: {}, finalMeta: {}, eventMeta: {},
-  reload: vi.fn(), deleteTour: vi.fn(), setTourStatus: vi.fn(), startTournament: vi.fn(),
+  reload: vi.fn(), deleteTour: vi.fn(), startTournament: vi.fn(),
   multiClub: false, clubNameMap: {}, clubs: [], clubIds: [], onSelect: vi.fn(),
 } satisfies FloorBoardProps;
 
@@ -33,4 +33,18 @@ it("does not publish a partial total when one flight has no verified count", () 
   ]} flightMeta={{ "flight-a": { entrants: 8, survivors: 2, itm: 10, target: 1, ready: false } }} />);
   expect(screen.queryByText(/8 entrant/)).toBeNull();
   expect(screen.getByText(/Chưa xác minh/)).toBeTruthy();
+});
+
+it("shows one whole-event GTD even when the event has two flights",()=>{
+ render(<MultiDayTournamentsBoard {...props} tours={[...props.tours,
+  {id:'flight-b',event_id:'event',phase:'flight',name:'TEST · Flight B'}]}
+  eventMeta={{event:{name:'TEST',itm_percent:15,guarantee_amount:2500000}}}/>);
+ expect(screen.getAllByText(/GTD Main Event:/)).toHaveLength(1);
+ expect(screen.getByText(/GTD Main Event:/).textContent).toContain('2.500.000');
+});
+
+it.each([{value:null,expected:'Chưa có GTD Main Event'},{value:0,expected:'Main Event không cam kết GTD'}])(
+ "distinguishes missing event GTD from explicit zero: $expected",({value,expected})=>{
+ render(<MultiDayTournamentsBoard {...props} eventMeta={{event:{name:'TEST',itm_percent:15,guarantee_amount:value}}}/>);
+ expect(screen.getByText(expected)).toBeInTheDocument();
 });

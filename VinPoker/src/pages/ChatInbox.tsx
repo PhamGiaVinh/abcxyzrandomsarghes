@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,8 @@ import { Loader2, MessageCircle, Inbox, Search, ArchiveRestore, UserSearch, Send
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { GroupList } from "@/components/groups/GroupList";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { useInboxReadLane } from "@/hooks/useInboxReadLane";
 
 type ChatRow = {
   id: string;
@@ -24,33 +26,44 @@ type ChatRow = {
 };
 
 const ChatInbox = () => {
+  const {user,session,loading}=useAuth();
+  if(loading)return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if(!user)return <Navigate to="/auth" replace />;
+  return <ScopedChatInbox key={JSON.stringify([user.id,sessionReadEpoch(session)])}/>;
+};
+
+const ScopedChatInbox = () => {
   const { t } = useTranslation();
   const { user, loading, isClubAdmin, isAdmin } = useAuth();
-  const { perChat } = useUnreadChats();
+  const { perChat, error: unreadError, refresh: refreshUnread } = useUnreadChats();
   const [chats, setChats] = useState<ChatRow[]>([]);
   const [tournaments, setTournaments] = useState<Record<string, any>>({});
   const [clubs, setClubs] = useState<Record<string, any>>({});
   const [profiles, setProfiles] = useState<Record<string, any>>({});
   const [lastMsg, setLastMsg] = useState<Record<string, any>>({});
-  const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const unarchiveFlight = useRef({ busy: false, generation: 0, mounted: true });
+  const [unarchivePending, setUnarchivePending] = useState<string | null>(null);
+  const [unarchiveBlocked, setUnarchiveBlocked] = useState(false);
+  const [unarchiveError, setUnarchiveError] = useState<string | null>(null);
+  useEffect(() => {
+    const flight = unarchiveFlight.current;
+    flight.mounted = true;
+    return () => { flight.mounted = false; };
+  }, []);
 
-  const load = async () => {
-    if (!user) return;
-    try {
-      setError(null);
+  const {busy,refresh:load} = useInboxReadLane(user?.id ?? null, async signal => {
+      const unarchiveRead = { generation: unarchiveFlight.current.generation, safe: !unarchiveFlight.current.busy };
       const { data: cs, error: chatErr } = await supabase
         .from("booking_chats")
         .select("id,tournament_id,club_id,player_id,status,payment_confirmed,updated_at,archived_at")
-        .order("updated_at", { ascending: false });
-      if (chatErr) throw chatErr;
-      const list = (cs ?? []) as ChatRow[];
-      setChats(list);
+        .order("updated_at", { ascending: false }).abortSignal(signal);
+      if (chatErr || !Array.isArray(cs)) throw new Error("booking_read_failed");
+      const list = cs as ChatRow[];
 
       if (list.length === 0) {
-        setBusy(false);
-        return;
+        return {list,tours:[],clubs:[],profiles:[],messages:[],unarchiveRead};
       }
 
       const tIds = Array.from(new Set(list.map((c) => c.tournament_id)));
@@ -59,47 +72,50 @@ const ChatInbox = () => {
       const chatIds = list.map((c) => c.id);
 
       const [tRes, cRes, pRes, mRes] = await Promise.all([
-        supabase.from("tournaments").select("id,name,start_time").in("id", tIds),
-        supabase.from("clubs").select("id,name,owner_id").in("id", cIds),
-        supabase.from("profiles").select("user_id,display_name,phone").in("user_id", pIds),
+        supabase.from("tournaments").select("id,name,start_time").in("id", tIds).abortSignal(signal),
+        supabase.from("clubs").select("id,name,owner_id").in("id", cIds).abortSignal(signal),
+        supabase.from("profiles").select("user_id,display_name,phone").in("user_id", pIds).abortSignal(signal),
         supabase
           .from("chat_messages")
           .select("chat_id,content,kind,created_at,sender_id")
           .in("chat_id", chatIds)
           .order("created_at", { ascending: false })
-          .limit(500),
+          .limit(500).abortSignal(signal),
       ]);
-
-      setTournaments(Object.fromEntries((tRes.data ?? []).map((t: any) => [t.id, t])));
-      setClubs(Object.fromEntries((cRes.data ?? []).map((c: any) => [c.id, c])));
-      setProfiles(Object.fromEntries((pRes.data ?? []).map((p: any) => [p.user_id, p])));
+      if ([tRes,cRes,pRes,mRes].some(result=>result.error||!Array.isArray(result.data))) throw new Error("booking_details_failed");
+      return {list,tours:tRes.data,clubs:cRes.data,profiles:pRes.data,messages:mRes.data,unarchiveRead};
+    }, value => {
+      setChats(value.list);
+      setTournaments(Object.fromEntries(value.tours.map(t => [t.id,t])));
+      setClubs(Object.fromEntries(value.clubs.map(c => [c.id,c])));
+      setProfiles(Object.fromEntries(value.profiles.map(p => [p.user_id,p])));
       // Pick latest message per chat
       const latest: Record<string, any> = {};
-      for (const m of (mRes.data ?? []) as any[]) {
+      for (const m of value.messages) {
         if (!latest[m.chat_id]) latest[m.chat_id] = m;
       }
       setLastMsg(latest);
-    } catch (e: any) {
-      console.error("Inbox load error:", e);
-      setError(e.message ?? t("chatInbox.loadFail"));
-    } finally {
-      setBusy(false);
-    }
-  };
+      setError(null);
+      if (value.unarchiveRead.safe && value.unarchiveRead.generation === unarchiveFlight.current.generation
+        && !unarchiveFlight.current.busy) {
+        setUnarchiveBlocked(false);
+        setUnarchiveError(null);
+      }
+    }, () => setError(t("chatInbox.loadFail")));
 
   useEffect(() => {
     if (loading) return;
-    if (!user) { setBusy(false); return; }
-    setBusy(true);
-    load();
+    if (!user) return;
     // Polling instead of Realtime to avoid holding a WebSocket per inbox tab.
     // The actual chat page (BookingChat) keeps its per-chat realtime subscription.
-    const interval = window.setInterval(load, 15_000);
-    const onVis = () => { if (document.visibilityState === "visible") load(); };
+    const onVis = () => { if (document.visibilityState === "visible" && navigator.onLine) void load(); };
+    const interval = window.setInterval(onVis, 15_000);
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("online", onVis);
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("online", onVis);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user?.id]);
@@ -126,9 +142,34 @@ const ChatInbox = () => {
   const canUnarchive = isClubAdmin || isAdmin;
 
   const unarchive = async (chatId: string) => {
-    const { error } = await supabase.from("booking_chats").update({ archived_at: null }).eq("id", chatId);
-    if (error) { console.error(error); return; }
-    load();
+    const chat = chats.find(row => row.id === chatId);
+    const flight = unarchiveFlight.current;
+    if (!canUnarchive || !chat?.archived_at || flight.busy || unarchiveBlocked) return;
+    flight.busy = true; flight.generation += 1;
+    setUnarchivePending(chatId); setUnarchiveBlocked(true); setUnarchiveError(null);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let confirmed = false;
+    try {
+      const result = await Promise.race([
+        Promise.resolve(supabase.from("booking_chats").update({ archived_at: null })
+          .eq("id", chatId).eq("archived_at", chat.archived_at)
+          .select("id,archived_at").abortSignal(controller.signal).maybeSingle()),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => {
+          controller.abort(); reject(new Error("unarchive_response_unknown"));
+        }, 15000); }),
+      ]);
+      if (!flight.mounted) return;
+      if (result.error || result.data?.id !== chatId || result.data.archived_at !== null) throw new Error("unarchive_not_confirmed");
+      confirmed = true;
+    } catch {
+      if (flight.mounted) setUnarchiveError(t("chatInbox.unarchiveUnknown"));
+    } finally {
+      clearTimeout(timer); controller.abort(); flight.busy = false;
+      if (flight.mounted) setUnarchivePending(null);
+    }
+    // Never retry the write. Only a read started after this attempt may unlock it.
+    if (confirmed && flight.mounted) void load();
   };
 
   return (
@@ -140,6 +181,15 @@ const ChatInbox = () => {
         </div>
         <div className="text-xs text-muted-foreground">{t("chatInbox.bookingsCount", { n: chats.length })}</div>
       </div>
+
+      {unreadError && (
+        <div role="status" className="rounded-lg border border-destructive/40 bg-card p-3 text-sm space-y-2">
+          <p>{unreadError}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => { void refreshUnread({ silent: true }); }}>
+            {t("chatInbox.retry")}
+          </Button>
+        </div>
+      )}
 
       <Tabs defaultValue="dm" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
@@ -157,6 +207,9 @@ const ChatInbox = () => {
         </TabsContent>
 
         <TabsContent value="bookings" className="mt-3 space-y-4">
+          {unarchiveError && <div role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm space-y-2">
+            <p>{unarchiveError}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={()=>{void load();}}>{t("chatInbox.retry")}</Button>
+          </div>}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -167,12 +220,15 @@ const ChatInbox = () => {
             />
           </div>
 
-          {busy ? (
+          {error && chats.length > 0 && <div role="status" className="rounded-lg border border-destructive/40 bg-card p-3 space-y-2">
+            <p className="text-sm">{error}</p><Button type="button" variant="outline" size="sm" onClick={()=>{void load();}}>{t("chatInbox.retry")}</Button>
+          </div>}
+          {busy && chats.length === 0 ? (
             <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-          ) : error ? (
+          ) : error && chats.length === 0 ? (
             <Card className="p-6 text-center border-destructive/40">
               <p className="text-sm text-destructive">{error}</p>
-              <button onClick={() => { setBusy(true); load(); }} className="mt-3 text-xs underline text-primary">{t("chatInbox.retry")}</button>
+              <button onClick={() => { void load(); }} className="mt-3 text-xs underline text-primary">{t("chatInbox.retry")}</button>
             </Card>
           ) : chats.length === 0 ? (
             <Card className="p-10 text-center gradient-card">
@@ -200,7 +256,7 @@ const ChatInbox = () => {
                     <p className="text-xs text-muted-foreground mt-1">{t("chatInbox.autoArchiveHint")}</p>
                   </Card>
                 ) : (
-                  <Section t={t} title={t("chatInbox.sectionArchived")} items={archived} tournaments={tournaments} clubs={clubs} profiles={profiles} unread={perChat} userId={user.id} lastMsg={lastMsg} archived canUnarchive={canUnarchive} onUnarchive={unarchive} />
+                  <Section t={t} title={t("chatInbox.sectionArchived")} items={archived} tournaments={tournaments} clubs={clubs} profiles={profiles} unread={perChat} userId={user.id} lastMsg={lastMsg} archived canUnarchive={canUnarchive} onUnarchive={unarchive} unarchiveBlocked={unarchiveBlocked} unarchivePending={unarchivePending} />
                 )}
               </TabsContent>
             </Tabs>
@@ -217,39 +273,45 @@ const DirectMessagesTab = ({ userId }: { userId: string }) => {
   const { t } = useTranslation();
   const nav = useNavigate();
   const [searchQ, setSearchQ] = useState("");
-  const [searchResults, setSearchResults] = useState<{ user_id: string; display_name: string; avatar_url?: string | null }[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [searchRetry, setSearchRetry] = useState(0);
+  const [search, setSearch] = useState<{query:string;loading:boolean;error:boolean;results:{user_id:string;display_name:string;avatar_url?:string|null}[]}>({query:"",loading:false,error:false,results:[]});
+  const currentSearch = search.query === searchQ.trim();
+  const searchResults = currentSearch ? search.results : [];
+  const searching = searchQ.trim().length >= 2 && (!currentSearch || search.loading);
+  const searchError = currentSearch && search.error;
   const [chats, setChats] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<Record<string, any>>({});
   const [lastMsgs, setLastMsgs] = useState<Record<string, any>>({});
-  const [busy, setBusy] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
 
-  const loadChats = async () => {
-    setBusy(true);
-    const { data: cs } = await supabase
-      .from("direct_chats")
-      .select("id,user_a,user_b,last_message_at,user_a_last_read_at,user_b_last_read_at")
-      .or(`user_a.eq.${userId},user_b.eq.${userId}`)
-      .order("last_message_at", { ascending: false });
-    const list = cs ?? [];
-    setChats(list);
-    if (list.length === 0) { setBusy(false); return; }
-    const otherIds = list.map((c: any) => c.user_a === userId ? c.user_b : c.user_a);
-    const chatIds = list.map((c: any) => c.id);
-    const [{ data: profs }, { data: msgs }] = await Promise.all([
-      supabase.from("profiles").select("user_id,display_name,avatar_url").in("user_id", otherIds),
-      supabase.from("direct_messages").select("chat_id,content,kind,created_at,sender_id")
-        .in("chat_id", chatIds).order("created_at", { ascending: false }).limit(500),
-    ]);
-    setProfiles(Object.fromEntries((profs ?? []).map((p: any) => [p.user_id, p])));
-    const latest: Record<string, any> = {};
-    for (const m of (msgs ?? []) as any[]) if (!latest[m.chat_id]) latest[m.chat_id] = m;
-    setLastMsgs(latest);
-    setBusy(false);
-  };
+  const {busy,refresh:loadChats} = useInboxReadLane(userId, async signal => {
+      const { data: cs, error: chatError } = await supabase
+        .from("direct_chats")
+        .select("id,user_a,user_b,last_message_at,user_a_last_read_at,user_b_last_read_at")
+        .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+        .order("last_message_at", { ascending: false }).abortSignal(signal);
+      if (chatError || !Array.isArray(cs)) throw new Error("direct_chat_read_failed");
+      const list = cs;
+      if (list.length === 0) return {list,profiles:[],messages:[]};
+      const otherIds = list.map((c: any) => c.user_a === userId ? c.user_b : c.user_a);
+      const chatIds = list.map((c: any) => c.id);
+      const [{ data: profs, error: profileError }, { data: msgs, error: messageError }] = await Promise.all([
+        supabase.from("profiles").select("user_id,display_name,avatar_url").in("user_id", otherIds).abortSignal(signal),
+        supabase.from("direct_messages").select("chat_id,content,kind,created_at,sender_id")
+          .in("chat_id", chatIds).order("created_at", { ascending: false }).limit(500).abortSignal(signal),
+      ]);
+      if (profileError || messageError || !Array.isArray(profs) || !Array.isArray(msgs)) throw new Error("direct_chat_details_failed");
+      return {list,profiles:profs,messages:msgs};
+    }, value => {
+      const latest: Record<string, any> = {};
+      for (const m of value.messages) if (!latest[m.chat_id]) latest[m.chat_id] = m;
+      setChats(value.list);
+      setProfiles(Object.fromEntries(value.profiles.map(p => [p.user_id,p])));
+      setLastMsgs(latest);
+      setReadError(null);
+    }, () => setReadError(t("chatInbox.loadFail")));
 
   useEffect(() => {
-    loadChats();
     const ch = supabase.channel("dm-inbox")
       .on("postgres_changes", { event: "*", schema: "public", table: "direct_chats" }, () => loadChats())
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, () => loadChats())
@@ -261,20 +323,31 @@ const DirectMessagesTab = ({ userId }: { userId: string }) => {
   // Debounced user search
   useEffect(() => {
     const q = searchQ.trim();
-    if (q.length < 2) { setSearchResults([]); return; }
-    setSearching(true);
-    const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("user_id,display_name,avatar_url")
-        .ilike("display_name", `%${q}%`)
-        .neq("user_id", userId)
-        .limit(20);
-      setSearchResults((data ?? []).filter((p: any) => p.display_name));
-      setSearching(false);
+    if (q.length < 2) { setSearch({query:q,loading:false,error:false,results:[]}); return; }
+    let active = true;
+    const controller = new AbortController();
+    setSearch({query:q,loading:true,error:false,results:[]});
+    const debounce = setTimeout(async () => {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const interrupted = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener("abort", () => reject(new Error("search_cancelled")), {once:true});
+        deadline = setTimeout(() => controller.abort(), 15_000);
+      });
+      try {
+        const result = await Promise.race([supabase.from("profiles")
+          .select("user_id,display_name,avatar_url").ilike("display_name", `%${q}%`).neq("user_id", userId)
+          .limit(20).abortSignal(controller.signal), interrupted]);
+        if (!active || controller.signal.aborted) return;
+        if (result.error || !Array.isArray(result.data)) throw new Error("profile_search_failed");
+        setSearch({query:q,loading:false,error:false,results:result.data.filter(p => p.display_name)});
+      } catch {
+        if (active) setSearch({query:q,loading:false,error:true,results:[]});
+      } finally {
+        clearTimeout(deadline);
+      }
     }, 300);
-    return () => clearTimeout(t);
-  }, [searchQ, userId]);
+    return () => {active=false;clearTimeout(debounce);controller.abort();};
+  }, [searchQ, userId, searchRetry]);
 
   return (
     <div className="space-y-3">
@@ -292,6 +365,11 @@ const DirectMessagesTab = ({ userId }: { userId: string }) => {
         <Card className="p-2 max-h-72 overflow-y-auto">
           {searching ? (
             <div className="text-center py-3 text-xs text-muted-foreground">{t("chatInbox.searching")}</div>
+          ) : searchError ? (
+            <div role="status" className="p-3 space-y-2">
+              <p className="text-sm text-destructive">{t("chatInbox.searchFail")}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setSearchRetry(n => n + 1)}>{t("chatInbox.retry")}</Button>
+            </div>
           ) : searchResults.length === 0 ? (
             <div className="text-center py-3 text-xs text-muted-foreground">{t("chatInbox.noResultsFor", { q: searchQ })}</div>
           ) : (
@@ -320,11 +398,15 @@ const DirectMessagesTab = ({ userId }: { userId: string }) => {
         </Card>
       )}
 
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">{t("chatInbox.inboxLabel", { n: chats.length })}</div>
-      {busy ? (
+      {readError && <div role="status" className="rounded-lg border border-destructive/40 bg-card p-3 space-y-2">
+        <p className="text-sm">{readError}</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => { void loadChats(); }}>{t("chatInbox.retry")}</Button>
+      </div>}
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{readError && chats.length === 0 ? t("chatInbox.tabDM") : t("chatInbox.inboxLabel", { n: chats.length })}</div>
+      {busy && chats.length === 0 ? (
         <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
       ) : chats.length === 0 ? (
-        <Card className="p-8 text-center">
+        !readError && <Card className="p-8 text-center">
           <MessageCircle className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
           <p className="text-sm text-muted-foreground">{t("chatInbox.noDM")}</p>
         </Card>
@@ -383,7 +465,7 @@ const formatRelTime = (iso?: string) => {
   return new Date(iso).toLocaleDateString();
 };
 
-const Section = ({ t, title, items, tournaments, clubs, profiles, unread, userId, lastMsg, highlight, archived, canUnarchive, onUnarchive }: any) => (
+const Section = ({ t, title, items, tournaments, clubs, profiles, unread, userId, lastMsg, highlight, archived, canUnarchive, onUnarchive, unarchiveBlocked, unarchivePending }: any) => (
   <div className="space-y-2">
     {!archived && <div className="text-xs uppercase tracking-wider text-muted-foreground">{title} · {items.length}</div>}
     {items.length === 0 && !archived && <div className="text-sm text-muted-foreground py-2">{t("chatInbox.noConversations")}</div>}
@@ -432,9 +514,11 @@ const Section = ({ t, title, items, tournaments, clubs, profiles, unread, userId
               size="sm"
               variant="ghost"
               className="absolute top-1 right-1 h-7 px-2 text-[10px]"
+              disabled={unarchiveBlocked}
+              aria-busy={unarchivePending === c.id}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUnarchive(c.id); }}
             >
-              <ArchiveRestore className="w-3 h-3 mr-1" /> {t("chatInbox.unarchive")}
+              <ArchiveRestore className="w-3 h-3 mr-1" /> {t(unarchivePending === c.id ? "chatInbox.unarchiving" : "chatInbox.unarchive")}
             </Button>
           )}
         </div>

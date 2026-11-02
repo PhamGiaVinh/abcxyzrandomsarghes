@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {LegacyGroupNotificationRedirect} from '@/components/notifications/LegacyGroupNotificationRedirect';
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { installToastSounds } from "@/lib/toastSound";
 
@@ -150,6 +151,10 @@ const DevTrackerUnifiedOpsPreview = import.meta.env.DEV
 const DevPayrollStatementPreview = import.meta.env.DEV
   ? lazy(() => import("./dev/PayrollStatementPreview"))
   : null;
+const DevPayoutNativePreview = import.meta.env.DEV
+  ? lazy(() => import("./dev/PayoutNativePreview"))
+  : null;
+const DevKitchenLayoutPreview=import.meta.env.DEV?lazy(()=>import('./dev/KitchenLayoutPreview')):null;
 // The diagnostic is bundled only by a deliberate Preview UAT build variable.
 // Production builds do not register the route or import its chunk.
 const DevTrackerVoiceV0Preview = trackerVoiceUatEnabled
@@ -226,6 +231,12 @@ const App = () => {
   if (import.meta.env.DEV && window.location.pathname === "/__dev/dealer-tablet" && DevDealerTabletPreview) {
     return <BrowserRouter><Suspense fallback={<RouteLoader />}><DevDealerTabletPreview /></Suspense></BrowserRouter>;
   }
+
+  if (import.meta.env.DEV && window.location.pathname === "/__dev/payout-native" && DevPayoutNativePreview) {
+    return <Suspense fallback={<RouteLoader />}><DevPayoutNativePreview /></Suspense>;
+  }
+  if(import.meta.env.DEV&&window.location.pathname==='/__dev/kitchen-layout'&&DevKitchenLayoutPreview)
+    return <Suspense fallback={<RouteLoader/>}><DevKitchenLayoutPreview/></Suspense>;
 
   if (import.meta.env.DEV && window.location.pathname === "/__dev/hand-correction" && DevHandCorrectionPreview) {
     return <BrowserRouter><Suspense fallback={<RouteLoader />}><DevHandCorrectionPreview /></Suspense></BrowserRouter>;
@@ -334,6 +345,7 @@ const App = () => {
               </Route>
               <Route element={<Layout />}>
                 <Route path="/" element={<Tournaments />} />
+                <Route path="/tournaments" element={<Navigate to="/" replace />} />
                 <Route path="/tournament/:id" element={<TournamentDetail />} />
                 <Route path="/live" element={<LiveCenter />} />
                 <Route path="/live/:tournamentId" element={<TournamentLiveTracker />} />
@@ -348,6 +360,7 @@ const App = () => {
                 <Route path="/inbox" element={<ChatInbox />} />
                 <Route path="/dm/:userId" element={<DirectChat />} />
                 <Route path="/group/:groupId" element={<GroupChat />} />
+                <Route path="/chat/groups/:groupId" element={<LegacyGroupNotificationRedirect />} />
                 <Route path="/invite/:token" element={<GroupInvite />} />
                 <Route path="/series/:id" element={<SeriesDetail />} />
                 <Route path="/account" element={<Account />} />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,18 +14,27 @@ import { LiveStateBanner } from "@/components/LiveStateBanner";
 import { TournamentRegisterModal } from "@/components/TournamentRegisterModal";
 import { LivestreamPlayer } from "@/components/LivestreamPlayer";
 import { FEATURES } from "@/lib/featureFlags";
+import {observeTrackerContextRead} from '@/lib/tournament/observeTrackerContextRead';
 
 
 const TournamentDetail = () => {
+  const {id}=useParams();
+  const {user}=useAuth();
+  return <ScopedTournamentDetail key={JSON.stringify([id,user?.id])}/>;
+};
+const ScopedTournamentDetail = () => {
   const { t: tr } = useTranslation();
   const { id } = useParams();
   const [sp] = useSearchParams();
   const livestreamMode = sp.get("from") === "livestream";
   const nav = useNavigate();
   const { user } = useAuth();
+  const actorId=user?.id;
+  const readGeneration=useRef(0),readController=useRef<AbortController|null>(null);
+  const readFlight=useRef(false),refreshQueued=useRef(false);
+  const [readError,setReadError]=useState(false);
   const [t, setT] = useState<any>(null);
   const [count, setCount] = useState(0);
-  const [myReg, setMyReg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitting] = useState(false);
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -34,69 +43,100 @@ const TournamentDetail = () => {
   const [myEliminated, setMyEliminated] = useState(false); // latest entry busted + no active seat
   const [registerMode, setRegisterMode] = useState<"register" | "reentry">("register");
 
-  const load = async () => {
+  const load = useCallback(async ():Promise<void> => {
+    if(readFlight.current){refreshQueued.current=true;return;}
+    readFlight.current=true;
+    let failed=false;
+    const generation=++readGeneration.current;
+    readController.current?.abort();
+    const controller=new AbortController();readController.current=controller;
+    const current=()=>generation===readGeneration.current&&!controller.signal.aborted;
+    const read=async<T extends {error?:unknown}>(query:PromiseLike<T>)=>{
+      const result=await observeTrackerContextRead(query);
+      if(!current())throw new Error('detail_read_superseded');
+      if(result.error)throw result.error;
+      return result;
+    };
     setLoading(true);
-    const { data } = await supabase.from("tournaments")
+    setReadError(false);
+    try{
+    const { data } = await read(supabase.from("tournaments")
       .select("*, club:clubs(id,name,region,address)")
-      .eq("id", id!).maybeSingle();
+      .eq("id", id!).abortSignal(controller.signal).maybeSingle());
     setT(data);
-    const { count: c } = await supabase.from("stack_registrations")
-      .select("*", { count: "exact", head: true })
-      .eq("tournament_id", id!).in("status", ["pending", "confirmed"]);
-    setCount(c ?? 0);
-    if (user) {
-      const { data: r } = await supabase.from("stack_registrations")
-        .select("*").eq("tournament_id", id!).eq("user_id", user.id).maybeSingle();
-      setMyReg(r);
+    if(!data)return;
+    const {data:summary}=await read(supabase.rpc('get_public_tournament_registration_summary_v1' as never,
+      {p_tournament_id:id} as never).abortSignal(controller.signal));
+    const value:unknown=summary;
+    if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('registration_count_unavailable');
+    const result=value as Record<string,unknown>;
+    if(result.ok!==true||result.tournament_id!==id||result.source!=='canonical_registration_v1'
+      ||typeof result.registration_count!=='number'||!Number.isSafeInteger(result.registration_count)||result.registration_count<0)throw new Error('registration_count_unavailable');
+    setCount(result.registration_count);
+    if (actorId) {
       if (FEATURES.dynamicReentry) {
         // Re-entry ON: a player can hold a confirmed INITIAL reg AND a pending re-entry → scope each
         // (and only reference source_entry_id here, where STAGE B's column is guaranteed applied).
-        const { data: r2 } = await supabase.from("tournament_registrations")
+        const { data: r2 } = await read(supabase.from("tournament_registrations")
           .select("id, status, reference_code, total_pay")
-          .eq("tournament_id", id!).eq("player_id", user.id)
+          .eq("tournament_id", id!).eq("player_id", actorId)
           .is("source_entry_id", null)
-          .in("status", ["pending", "confirmed"]).maybeSingle();
+          .in("status", ["pending", "confirmed"]).abortSignal(controller.signal).maybeSingle());
         setMyReg2(r2);
-        const { data: rr } = await supabase.from("tournament_registrations")
-          .select("id, status").eq("tournament_id", id!).eq("player_id", user.id)
+        const { data: rr } = await read(supabase.from("tournament_registrations")
+          .select("id, status").eq("tournament_id", id!).eq("player_id", actorId)
           .not("source_entry_id", "is", null).eq("status", "pending")
-          .order("committed_at", { ascending: false }).limit(1).maybeSingle();
+          .order("committed_at", { ascending: false }).limit(1).abortSignal(controller.signal).maybeSingle());
         setMyReentry(rr);
-        const { data: en } = await supabase.from("tournament_entries")
-          .select("status").eq("tournament_id", id!).eq("player_id", user.id)
-          .order("entry_no", { ascending: false }).limit(1).maybeSingle();
-        const { data: seat } = await supabase.from("tournament_seats")
-          .select("id").eq("tournament_id", id!).eq("player_id", user.id).eq("is_active", true).limit(1).maybeSingle();
+        const { data: en } = await read(supabase.from("tournament_entries")
+          .select("status").eq("tournament_id", id!).eq("player_id", actorId)
+          .order("entry_no", { ascending: false }).limit(1).abortSignal(controller.signal).maybeSingle());
+        const { data: seat } = await read(supabase.from("tournament_seats")
+          .select("id").eq("tournament_id", id!).eq("player_id", actorId).eq("is_active", true).limit(1).abortSignal(controller.signal).maybeSingle());
         setMyEliminated(en?.status === "busted" && !seat);
       } else {
-        const { data: r2 } = await supabase.from("tournament_registrations")
+        const { data: r2 } = await read(supabase.from("tournament_registrations")
           .select("id, status, reference_code, total_pay")
-          .eq("tournament_id", id!).eq("player_id", user.id)
+          .eq("tournament_id", id!).eq("player_id", actorId)
           .in("status", ["pending", "confirmed"])
-          .maybeSingle();
+          .abortSignal(controller.signal).maybeSingle());
         setMyReg2(r2);
       }
     }
-    setLoading(false);
-  };
+    }catch{failed=true;if(current())setReadError(true);}
+    finally{
+      if(generation===readGeneration.current){
+      const refresh=current()&&!failed&&refreshQueued.current;
+      readFlight.current=false;refreshQueued.current=false;
+      if(current())setLoading(false);
+      controller.abort();
+      if(readController.current===controller)readController.current=null;
+      if(refresh)void load();
+      }else controller.abort();
+    }
+  },[id,actorId]);
 
-  useEffect(() => { load(); }, [id, user?.id]);
+  useEffect(() => { void load();return()=>{
+    readController.current?.abort();readController.current=null;
+    readFlight.current=false;refreshQueued.current=false;
+  }; }, [load]);
 
   useEffect(() => {
     if (!id) return;
     const channel = supabase
       .channel(`tournament-${id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tournaments", filter: `id=eq.${id}` }, (payload) => {
-        setT((prev: any) => prev ? { ...prev, ...payload.new } : prev);
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tournaments", filter: `id=eq.${id}` }, () => {
+        void load();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "stack_registrations", filter: `tournament_id=eq.${id}` }, () => {
-        supabase.from("stack_registrations").select("*", { count: "exact", head: true })
-          .eq("tournament_id", id).in("status", ["pending", "confirmed"])
-          .then(({ count: c }) => setCount(c ?? 0));
+        void load();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tournament_registrations", filter: `tournament_id=eq.${id}` }, () => {
+        void load();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [id]);
+  }, [id,load]);
 
   const openChat = () => {
     if (!user) { nav("/auth"); return; }
@@ -104,7 +144,11 @@ const TournamentDetail = () => {
   };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if(readError)return <div role="alert" className="p-6 space-y-2"><p>Không tải được thông tin giải hoặc trạng thái đăng ký. Chưa thể xác minh thao tác.</p><Button onClick={()=>void load()}>Thử lại</Button></div>;
   if (!t) return <p className="text-center py-20 text-muted-foreground">{tr("tournamentDetail.notFound")}</p>;
+  const reentryClosed=t.registration_closed_at!=null||t.live_status==='finished'
+    ||['completed','cancelled'].includes(t.status)
+    ||!(t.current_level==null||Number(t.current_level)<=Number(t.late_reg_close_level??6));
 
   return (
     <div className={livestreamMode ? "space-y-4 pb-32 md:pb-4" : "space-y-4 pb-40 md:pb-4"}>
@@ -120,7 +164,7 @@ const TournamentDetail = () => {
           <Info icon={Coins} label={tr("tournamentDetail.buyIn")} value={<FomoPrice tournament={t} />} />
           <Info icon={Layers} label={tr("tournamentDetail.startingStack")} value={formatStack(t.starting_stack)} />
           <Info icon={MapPin} label={tr("tournamentDetail.location")} value={t.location || t.club?.address || "—"} />
-          <Info icon={Users} label={tr("tournamentDetail.registered")} value={tr("tournamentDetail.players", { n: Math.max(t.current_players ?? 0, count) })} />
+          <Info icon={Users} label={tr("tournamentDetail.registered")} value={tr("tournamentDetail.registrationCount", { n: count })} />
         </div>
       </Card>
 
@@ -177,8 +221,13 @@ const TournamentDetail = () => {
       {!livestreamMode && (
         <div className="fixed inset-x-0 z-30 px-4 pb-3 pt-2 bg-gradient-to-t from-background via-background/95 to-transparent bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-4">
           <div className="mx-auto max-w-3xl space-y-2">
-            {FEATURES.dynamicReentry && (myReentry || myEliminated)
-              && (t.current_level == null || Number(t.current_level) <= Number(t.late_reg_close_level ?? 6)) ? (
+            {FEATURES.dynamicReentry && (myReentry || myEliminated) ? (reentryClosed ? (
+              <p role="status" className="rounded-lg border border-border bg-card p-3 text-sm">
+                {myReentry
+                  ? tr('tournamentDetail.pendingReentryClosed','Yêu cầu mua lại đang chờ nhưng cửa mua lại đã đóng. Liên hệ Cashier để kiểm tra; không chuyển khoản thêm.')
+                  : tr('tournamentDetail.reentryClosed','Cửa mua lại đã đóng.')}
+              </p>
+            ) : (
               <>
                 {t.current_level != null && Number(t.current_level) === Number(t.late_reg_close_level ?? 6) && (
                   <div className="text-[11px] text-warning text-center">Cửa đăng ký sắp đóng — thanh toán ngay.</div>
@@ -187,7 +236,7 @@ const TournamentDetail = () => {
                   {myReentry ? "⏳ Tiếp tục thanh toán (mua lại)" : "Mua lại"}
                 </Button>
               </>
-            ) : myReg2?.status === "confirmed" ? (
+            )) : myReg2?.status === "confirmed" ? (
               <Button disabled size="lg" className="w-full" variant="secondary">
                 ✅ {tr("tournamentDetailPage.registeredCheckin")}
               </Button>

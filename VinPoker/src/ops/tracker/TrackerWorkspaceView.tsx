@@ -87,6 +87,9 @@ export function TrackerWorkspaceView({
           ))}
         </div>
       )}
+      {model&&!loading&&!errorCode&&<p className="text-xs text-[#91a49b]" title="Thời điểm màn hình đọc xong, không phải thời điểm dữ liệu server thay đổi.">
+        Đã đọc dữ liệu lúc <time aria-label="Thời điểm đọc snapshot" dateTime={model.loadedAt}>{new Date(model.loadedAt).toLocaleTimeString('vi-VN')}</time>
+      </p>}
     </div>
   );
 }

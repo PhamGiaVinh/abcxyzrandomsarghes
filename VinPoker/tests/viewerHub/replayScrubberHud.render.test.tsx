@@ -239,6 +239,20 @@ describe("ReplayScrubber B1 HUD (additive `hud` prop)", () => {
     vi.useRealTimers();
   });
 
+  it('reports manual seek even when already on the playback terminal frame',()=>{
+    vi.useFakeTimers();
+    try{
+      const onFrame=vi.fn();
+      const view=render(<ReplayScrubber hand={verifiedHand} onFrame={onFrame} hud showdownPresentation={presentationFor(verifiedHand)}/>);
+      fireEvent.click(view.getByTitle('Phát'));
+      for(let step=0;step<verifiedHand.actions.length;step++)act(()=>vi.advanceTimersByTime(1000));
+      expect(onFrame.mock.calls.at(-1)?.[1]).toBe('playback');
+      fireEvent.click(view.getByTitle('Tới cuối (showdown)'));
+      expect(onFrame.mock.calls.at(-1)?.[0].index).toBe(verifiedHand.actions.length);
+      expect(onFrame.mock.calls.at(-1)?.[1]).toBe('scrub');
+    }finally{vi.useRealTimers();}
+  });
+
   it("direct showdown jump collects committed chips before presenting the verified pot", () => {
     vi.useFakeTimers();
     const onRunoutPresentation = vi.fn();

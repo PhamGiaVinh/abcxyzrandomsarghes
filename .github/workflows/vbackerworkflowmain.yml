@@ -30,6 +30,11 @@ on:
         required: true
         default: false
         type: boolean
+      deploy_cashier_lookup_player:
+        description: "Deploy critical Edge function cashier-lookup-player"
+        required: true
+        default: false
+        type: boolean
       deploy_render_payroll_statement:
         description: "Deploy critical Edge function render-payroll-statement"
         required: true
@@ -132,6 +137,7 @@ jobs:
           DEPLOY_TOURNAMENT_LIVE_CLOCK: ${{ inputs.deploy_tournament_live_clock || false }}
           DEPLOY_TOURNAMENT_LIVE_UPDATE: ${{ inputs.deploy_tournament_live_update || false }}
           DEPLOY_OPS_CLUB_ACCOUNTS: ${{ inputs.deploy_ops_club_accounts || false }}
+          DEPLOY_CASHIER_LOOKUP_PLAYER: ${{ inputs.deploy_cashier_lookup_player || false }}
           DEPLOY_RENDER_PAYROLL_STATEMENT: ${{ inputs.deploy_render_payroll_statement || false }}
           DEPLOY_SEND_PAYROLL_STATEMENT: ${{ inputs.deploy_send_payroll_statement || false }}
           DEPLOY_FRONTEND: ${{ inputs.deploy_frontend || false }}
@@ -157,6 +163,7 @@ jobs:
           [[ "$DEPLOY_TOURNAMENT_LIVE_CLOCK" == "true" ]] && selected+=("tournament-live-clock")
           [[ "$DEPLOY_TOURNAMENT_LIVE_UPDATE" == "true" ]] && selected+=("tournament-live-update")
           [[ "$DEPLOY_OPS_CLUB_ACCOUNTS" == "true" ]] && selected+=("ops-club-accounts")
+          [[ "$DEPLOY_CASHIER_LOOKUP_PLAYER" == "true" ]] && selected+=("cashier-lookup-player")
           [[ "$DEPLOY_RENDER_PAYROLL_STATEMENT" == "true" ]] && selected+=("render-payroll-statement")
           [[ "$DEPLOY_SEND_PAYROLL_STATEMENT" == "true" ]] && selected+=("send-payroll-statement")
           selected_csv="$(IFS=,; echo "${selected[*]-}")"
@@ -404,24 +411,32 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   validate-critical-environment:
-    name: Require protected critical environment
+    name: Verify owner-authorized critical release
     if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.critical_functions != '[]'
     needs:
       - plan
       - target-preflight
     runs-on: ubuntu-latest
     steps:
-      - name: Fail closed unless required reviewers are configured
+      - name: Require owner dispatch of the preflighted release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          environment_json="$(gh api "repos/${GITHUB_REPOSITORY}/environments/${CRITICAL_ENVIRONMENT}")"
-          jq -e '
-            .protection_rules
-            | any(.type == "required_reviewers" and ((.reviewers // []) | length > 0))
-          ' <<<"$environment_json" >/dev/null
+          node --input-type=module <<'NODE'
+          const e = process.env;
+          if (e.RELEASE_EVENT !== 'workflow_dispatch' || e.RELEASE_REF !== 'refs/heads/main' ||
+              !e.REPOSITORY_OWNER || e.INITIAL_ACTOR !== e.REPOSITORY_OWNER ||
+              e.TRIGGERING_ACTOR !== e.REPOSITORY_OWNER) {
+            throw new Error('Critical release requires the repository owner on main, including reruns');
+          }
+          console.log('OWNER_AUTHORIZED_CRITICAL_RELEASE');
+          NODE
 
   deploy-critical-edge:
     name: Deploy critical Edge ${{ matrix.function }}

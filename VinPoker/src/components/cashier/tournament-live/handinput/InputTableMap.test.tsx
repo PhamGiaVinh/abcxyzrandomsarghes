@@ -7,6 +7,18 @@ import { InputTableMap } from "./InputTableMap";
 afterEach(cleanup);
 
 describe("InputTableMap", () => {
+  it("uses the canonical number rather than a digit from the event name", () => {
+    const tables=[{id:"d2-7",physicalTableId:"physical-7",tournamentTableId:"tt-7",
+      name:"Linked Main Event D2 TEST 7",tableNumber:7,playerCount:4,hasLiveHand:false}];
+    render(<InputTableMap tables={tables} activeTableId={null} onSelect={vi.fn()}/>);
+    expect(screen.getByRole("button",{name:"7 Linked Main Event D2 TEST 7 4 người chơi"})).toBeVisible();
+  });
+  it.each([undefined,null,0,101,3.5,Number.NaN])("does not invent a number for missing or malformed metadata: %s", (tableNumber) => {
+    const tables=[{id:"legacy",physicalTableId:"physical",tournamentTableId:null,
+      name:"Flight 2026 D2",tableNumber,playerCount:0,hasLiveHand:false}];
+    render(<InputTableMap tables={tables} activeTableId={null} onSelect={vi.fn()}/>);
+    expect(screen.getByRole("button",{name:"— Flight 2026 D2 0 người chơi"})).toBeVisible();
+  });
   it("shows repair-required instead of claiming an empty tournament", () => {
     render(<InputTableMap tables={[]} activeTableId={null} onSelect={vi.fn()}
       loadState="ready" loadError="1 bàn cần sửa dữ liệu phiên." />);

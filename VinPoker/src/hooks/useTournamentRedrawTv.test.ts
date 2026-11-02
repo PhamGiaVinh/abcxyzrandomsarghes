@@ -22,6 +22,15 @@ const validBatch = {
 };
 
 describe("parseTournamentRedrawTvBatch", () => {
+  it('accepts explicit initial D2 seating without inventing a previous table/seat',()=>{
+    const initial={...validBatch,kind:'initial_d2',moves:[{...validBatch.moves[0],from_table_number:null,from_seat_number:null}]};
+    const parsed=parseTournamentRedrawTvBatch(initial);
+    expect(parsed).not.toBeNull();expect(parsed).not.toBe('empty');
+    if(!parsed||parsed==='empty')return;
+    expect(parsed.kind).toBe('initial_d2');expect(parsed.moves[0].fromSeatNumber).toBeNull();
+    expect(parseTournamentRedrawTvBatch({...initial,kind:undefined})).toBeNull();
+    expect(parseTournamentRedrawTvBatch({...initial,moves:[{...initial.moves[0],from_table_number:9}]})).toBeNull();
+  });
   it("parses the sanitized old-to-new TV projection", () => {
     expect(parseTournamentRedrawTvBatch(validBatch)).toEqual({
       batchId: "batch-a",
@@ -43,6 +52,11 @@ describe("parseTournamentRedrawTvBatch", () => {
   it("distinguishes no applied batch from a malformed response", () => {
     expect(parseTournamentRedrawTvBatch({ batch_id: null, moves: [] })).toBe("empty");
     expect(parseTournamentRedrawTvBatch(null)).toBeNull();
+    for (const invalid of [{}, {moves:[]}, {batch_id:null}, {batch_id:null,moves:[validBatch.moves[0]]}]) {
+      expect(parseTournamentRedrawTvBatch(invalid)).toBeNull();
+    }
+    expect(parseTournamentRedrawTvBatch({...validBatch,applied_at:'not-a-date'})).toBeNull();
+    expect(parseTournamentRedrawTvBatch({...validBatch,batch_id:''})).toBeNull();
   });
 
   it("fails closed for a seat outside 8-max or duplicate target", () => {

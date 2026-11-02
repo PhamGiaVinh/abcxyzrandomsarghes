@@ -37,11 +37,10 @@ export function categoryScores(hands: DrillHand[], answers: DrillAnswer[]): Cate
   }));
 }
 
-/** Poker IQ = mean of the categories that actually have answers. */
+/** Mean of the supplied answered categories; a valid score of zero counts. */
 export function totalScore(categoryScores: CategoryScore[]): number {
-  const scored = categoryScores.filter((c) => c.score > 0);
-  if (scored.length === 0) return 0;
-  return Math.round(scored.reduce((s, c) => s + c.score, 0) / scored.length);
+  if (categoryScores.length === 0) return 0;
+  return Math.round(categoryScores.reduce((s, c) => s + c.score, 0) / categoryScores.length);
 }
 
 /**

@@ -18,9 +18,10 @@ function levelStr(l: TvLevel | null): string {
 }
 
 export function mapTvDataToClock(d: TvData): TournamentClockData {
-  // P0-3 — Players: remaining players; fall back to entries before play has busted anyone
-  // (or when players_remaining is null/0 pre-start).
-  const players = d.playersRemaining || d.totalEntries || 0;
+  const terminalStatus = d.status === 'finished' || d.status === 'cancelled' ? d.status : undefined;
+  // Canonical participation already includes waiting players. Zero is a valid
+  // remaining count, not permission to resurrect busted historical entries.
+  const players = d.playersRemaining;
 
   // Canonical participation reads supply the exact total. Reconstructing it from
   // a rounded average loses chips. Preserve the old estimate for legacy/mock data only.
@@ -29,18 +30,21 @@ export function mapTvDataToClock(d: TvData): TournamentClockData {
       ? d.averageStack * d.playersRemaining
       : d.totalEntries * (d.startingStack || 0));
 
-  // P0-2 — Prize pool: tournaments.prize_pool is stale/manual/often 0, so NEVER present it
-  // as authoritative. Precedence: a real positive prize_pool → GTD (guarantee) → an estimate
-  // from buy-ins (Σ confirmed buy-ins, else entries × max(0, buy_in − rake)). Hidden ("—")
-  // when none is available.
+  // Legacy/mock P0-2: a raw row may be stale/manual. Keep its historical
+  // precedence: positive prize_pool → GTD → estimate. Current authenticated
+  // and paired TV read models explicitly mark their canonical value; zero and
+  // unknown must survive that composition instead of becoming gross buy-ins.
+  // Legacy estimates use confirmed buy-ins, else entries × (buy_in − rake).
+  // Unknown canonical values render "—"; canonical zero renders "0".
   const estimate =
     d.totalBuyIns != null && d.totalBuyIns > 0
       ? d.totalBuyIns
       : d.buyIn != null
         ? d.totalEntries * Math.max(0, d.buyIn - (d.rakeAmount ?? 0))
         : null;
-  const prizePoolValue =
-    d.prizePool != null && d.prizePool > 0
+  const prizePoolValue = d.prizePoolIsCanonical
+    ? (d.prizePool != null && Number.isFinite(d.prizePool) && d.prizePool >= 0 ? d.prizePool : null)
+    : d.prizePool != null && d.prizePool > 0
       ? d.prizePool
       : d.guarantee != null && d.guarantee > 0
         ? d.guarantee
@@ -64,14 +68,19 @@ export function mapTvDataToClock(d: TvData): TournamentClockData {
     prizePool: prizePoolValue != null ? money(prizePoolValue) : "—",
     totalChips: totalChips > 0 ? formatChips(totalChips) : "—",
     averageStack,
-    levelLabel: d.currentLevel ? `Level ${d.currentLevel.levelNumber}` : d.isBreak ? "Break" : "—",
+    terminalStatus,
+    levelLabel: terminalStatus ? terminalStatus === 'finished' ? 'Finished' : 'Cancelled'
+      : d.currentLevel ? `Level ${d.currentLevel.levelNumber}` : d.isBreak ? "Break" : "—",
     secondsLeft: d.remainingSeconds,
     // P0-4 — nextBreakSeconds is already number|null; pass it through, never `|| 0`.
-    nextBreakSecondsLeft: d.nextBreakSeconds,
+    nextBreakSecondsLeft: terminalStatus ? null : d.nextBreakSeconds,
     currentLevel: levelStr(d.currentLevel),
-    nextLevel: levelStr(d.nextLevel),
+    nextLevel: terminalStatus ? '—' : levelStr(d.nextLevel),
     payouts,
-    footerNote: d.eventNote ?? d.sponsorText ?? "",
+    footerNote: [d.eventNote ?? d.sponsorText,
+      d.mainEventGuarantee != null && d.mainEventGuarantee > 0
+        ? `Main Event GTD (all flights): ${money(d.mainEventGuarantee)}` : null,
+    ].filter(Boolean).join(' · '),
     brandName: d.brandName ?? undefined,
     clubBackgroundUrl: d.clubCoverUrl ?? null,
     clubLogoUrl: d.clubLogoUrl ?? null,

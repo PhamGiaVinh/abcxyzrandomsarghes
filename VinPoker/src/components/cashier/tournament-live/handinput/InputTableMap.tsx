@@ -18,6 +18,8 @@ export interface InputTableSummary {
   /** Server read capability hint; never substitutes for mutation authority. */
   canManualCards?: boolean;
   maxSeats?: number;
+  /** Canonical display metadata; never infer physical identity from a name. */
+  tableNumber?: number | null;
   name: string;
   /** Active players currently seated at this table. */
   playerCount: number;
@@ -122,8 +124,9 @@ export function InputTableMap({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
         {tables.map((tbl) => {
           const isActive = activeTableId === tbl.id;
-          const num = tbl.name.match(/\d+/);
-          const label = num ? num[0] : tbl.name.slice(0, 2).toUpperCase();
+          const number = tbl.tableNumber;
+          const label = typeof number === "number" && Number.isInteger(number) && number >= 1 && number <= 100
+            ? String(number) : "—";
           return (
             <button
               key={tbl.id}

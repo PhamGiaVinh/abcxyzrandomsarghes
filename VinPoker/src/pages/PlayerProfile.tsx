@@ -11,10 +11,17 @@ import { BackButton } from "@/components/BackButton";
 import { Star, Flag, Phone, Calendar, MapPin, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 const fmt = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
 
 const PlayerProfile = () => {
+  const { userId } = useParams();
+  const { user, session } = useAuth();
+  return <ScopedPlayerProfile key={JSON.stringify([userId, user?.id, sessionReadEpoch(session)])} />;
+};
+
+const ScopedPlayerProfile = () => {
   const { t } = useTranslation();
   const { userId } = useParams();
   const { user, isAdmin } = useAuth() as any;
@@ -46,69 +53,132 @@ const PlayerProfile = () => {
   const [eventProofs, setEventProofs] = useState<Map<string, any[]>>(new Map());
   const [results, setResults] = useState<any[]>([]);
   const [pubProfile, setPubProfile] = useState<any>(null);
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [summaryError, setSummaryError] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryAttempt, setSummaryAttempt] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
+    const controller = new AbortController();
+    let active = true;
+    setPubProfile(null);
+    setSummaryError(false);
+    setSummaryLoading(true);
+    const deadline = window.setTimeout(() => {
+      active = false;
+      controller.abort();
+      setSummaryError(true);
+      setSummaryLoading(false);
+    }, 15_000);
     fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-public-profile?userId=${userId}`, {
       headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "" },
+      signal: controller.signal,
     })
-      .then((r) => r.json())
-      .then((d) => setPubProfile(d))
-      .catch(() => {});
-  }, [userId]);
+      .then((r) => { if (!r.ok) throw new Error('Public profile unavailable'); return r.json(); })
+      .then((d) => {
+        if (!active) return;
+        if (d?.profile?.user_id !== userId || !d.player || !d.backer || !Array.isArray(d.ratings)
+          || !['dealsCreated', 'dealsCompleted', 'itmCount', 'avgRoi'].every(k => typeof d.player[k] === 'number' && Number.isFinite(d.player[k]))
+          || !['totalStaked', 'totalReturned', 'netPnl', 'activeCount'].every(k => typeof d.backer[k] === 'number' && Number.isFinite(d.backer[k]))) {
+          throw new Error('Invalid public profile');
+        }
+        setPubProfile(d);
+      })
+      .catch(() => { if (active) setSummaryError(true); })
+      .finally(() => { clearTimeout(deadline); if (active) setSummaryLoading(false); });
+    return () => { active = false; clearTimeout(deadline); controller.abort(); };
+  }, [userId, summaryAttempt]);
 
 
   useEffect(() => {
     if (!userId) return;
-    const load = async () => {
-      const [{ data: p }, { data: s }, { data: r }, { data: ev }, { data: res }] = await Promise.all([
-        supabase.from("profiles").select("user_id,display_name,region,phone,avatar_url").eq("user_id", userId).maybeSingle(),
-        supabase.from("player_stats").select("*").eq("player_id", userId).maybeSingle(),
-        supabase.from("backer_reviews").select("*").eq("player_id", userId).order("created_at", { ascending: false }),
-        supabase.from("player_upcoming_events").select("*").eq("player_id", userId).gte("event_date", new Date().toISOString()).order("event_date", { ascending: true }),
-        supabase.from("player_results").select("*").eq("player_id", userId).order("event_date", { ascending: false }).limit(50),
-      ]);
-      setProfile(p);
-      setStats(s);
-      setReviews(r ?? []);
-      setUpcoming(ev ?? []);
-      setResults(res ?? []);
-      const evIds = (ev ?? []).map((x: any) => x.id);
-      if (evIds.length) {
-        const { data: pr } = await supabase.from("event_proofs").select("*").in("event_id", evIds);
-        const m = new Map<string, any[]>();
-        (pr ?? []).forEach((x: any) => {
-          const arr = m.get(x.event_id) ?? [];
-          arr.push(x);
-          m.set(x.event_id, arr);
-        });
-        setEventProofs(m);
-      }
-      const bIds = [...new Set((r ?? []).map((x: any) => x.backer_id))];
-      if (bIds.length) {
-        const { data: bp } = await supabase.from("profiles").select("user_id,display_name").in("user_id", bIds);
-        setReviewerNames(new Map((bp ?? []).map((x: any) => [x.user_id, x.display_name])));
-      }
-      if (user?.id) {
-        const { data: ints } = await supabase
-          .from("backing_interests")
-          .select("status")
-          .eq("player_id", userId)
-          .eq("interested_user_id", user.id)
-          .eq("status", "contacted")
-          .limit(1);
-        setContacted((ints ?? []).length > 0);
-      }
+    let active = true;
+    const controller = new AbortController();
+    setLoading(true);
+    setReadError(false);
+    const deadline = window.setTimeout(() => {
+      active = false;
+      controller.abort();
+      setReadError(true);
       setLoading(false);
+    }, 15_000);
+    const load = async () => {
+      try {
+        const profileRead = user?.id
+          ? supabase.from("profiles").select("user_id,display_name,region,phone,avatar_url")
+            .eq("user_id", userId).abortSignal(controller.signal).maybeSingle()
+          : supabase.from("profiles").select("user_id,display_name,region,avatar_url")
+            .eq("user_id", userId).abortSignal(controller.signal).maybeSingle();
+        const replies = await Promise.all([
+          profileRead,
+          supabase.from("player_stats").select("*").eq("player_id", userId).abortSignal(controller.signal).maybeSingle(),
+          supabase.from("backer_reviews").select("*").eq("player_id", userId).order("created_at", { ascending: false }).abortSignal(controller.signal),
+          supabase.from("player_upcoming_events").select("*").eq("player_id", userId).gte("event_date", new Date().toISOString()).order("event_date", { ascending: true }).abortSignal(controller.signal),
+          supabase.from("player_results").select("*").eq("player_id", userId).order("event_date", { ascending: false }).limit(50).abortSignal(controller.signal),
+        ]);
+        if (!active) return;
+        if (replies.some(reply => reply.error)) throw new Error('Profile read unavailable');
+        const [{ data: p }, { data: s }, { data: r }, { data: ev }, { data: res }] = replies;
+        if (![r, ev, res].every(Array.isArray) || (p !== null && (!p || p.user_id !== userId))) throw new Error('Invalid profile read');
+        setProfile(p);
+        setStats(s);
+        setReviews(r ?? []);
+        setUpcoming(ev ?? []);
+        setResults(res ?? []);
+        const evIds = (ev ?? []).map((x: any) => x.id);
+        if (evIds.length) {
+          const { data: pr, error } = await supabase.from("event_proofs").select("*").in("event_id", evIds).abortSignal(controller.signal);
+          if (!active) return;
+          if (error || !Array.isArray(pr)) throw new Error('Proof read unavailable');
+          const m = new Map<string, any[]>();
+          (pr ?? []).forEach((x: any) => {
+            const arr = m.get(x.event_id) ?? [];
+            arr.push(x);
+            m.set(x.event_id, arr);
+          });
+          setEventProofs(m);
+        }
+        const bIds = [...new Set((r ?? []).map(x => x.backer_id))];
+        if (bIds.length) {
+          const { data: bp, error } = await supabase.from("profiles").select("user_id,display_name").in("user_id", bIds).abortSignal(controller.signal);
+          if (!active) return;
+          if (error || !Array.isArray(bp)) throw new Error('Reviewer read unavailable');
+          setReviewerNames(new Map((bp ?? []).map((x: any) => [x.user_id, x.display_name])));
+        }
+        if (user?.id) {
+          const { data: ints, error } = await supabase
+            .from("backing_interests")
+            .select("status")
+            .eq("player_id", userId)
+            .eq("interested_user_id", user.id)
+            .eq("status", "contacted")
+            .limit(1).abortSignal(controller.signal);
+          if (!active) return;
+          if (error || !Array.isArray(ints)) throw new Error('Contact read unavailable');
+          setContacted((ints ?? []).length > 0);
+        }
+      } catch {
+        if (active) setReadError(true);
+      } finally {
+        clearTimeout(deadline);
+        if (active) setLoading(false);
+      }
     };
     load();
-  }, [userId, user?.id]);
+    return () => { active = false; clearTimeout(deadline); controller.abort(); };
+  }, [userId, user?.id, readAttempt]);
 
   const reportScam = () => {
     toast.success(t("playerProfile.reportRecorded"));
   };
 
   if (loading) return <div className="text-center py-12 text-muted-foreground">{t("playerProfile.loading")}</div>;
+  if (readError) return <div role="alert" className="text-center py-12 space-y-3">
+    <p>{t('playerProfile.loadError')}</p>
+    <Button variant="outline" onClick={() => setReadAttempt(n => n + 1)}>{t('playerProfile.retry')}</Button>
+  </div>;
   if (!profile) return <div className="text-center py-12 text-muted-foreground">{t("playerProfile.notFound")}</div>;
 
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : "—";
@@ -146,7 +216,7 @@ const PlayerProfile = () => {
             {stats.backing_description && (
               <p className="text-sm whitespace-pre-wrap">{stats.backing_description}</p>
             )}
-            {contacted && profile.phone ? (
+            {user?.id && contacted && profile.phone ? (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 border border-success/30">
                 <Phone className="w-4 h-4 text-success" />
                 <span className="text-sm">{t("playerProfile.contactZalo")} <strong>{profile.phone}</strong></span>
@@ -250,6 +320,11 @@ const PlayerProfile = () => {
         </Card>
       )}
 
+      {summaryLoading && <p role="status" className="text-sm text-muted-foreground">{t('playerProfile.summaryLoading')}</p>}
+      {summaryError && <div role="alert" className="space-y-2 text-sm">
+        <p>{t('playerProfile.summaryError')}</p>
+        <Button variant="outline" onClick={() => setSummaryAttempt(n => n + 1)}>{t('playerProfile.retry')}</Button>
+      </div>}
       {pubProfile && (
         <Card>
           <CardHeader>

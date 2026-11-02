@@ -14,13 +14,14 @@ function harness(failedTable, deferred) {
   let deferredUsed = false;
   const responses = {
     tournament_registrations: { data: [{ id: 'reg', status: 'confirmed', player_id: 'player', confirmed_by: null }], error: null },
-    tournament_entries: { data: [{ id: 'entry', registration_id: 'reg', status: 'seated', current_stack: 20000 }], error: null },
-    seat_draw_receipts: { data: [{ registration_id: 'reg', status: 'issued', receipt_code: 'ticket' }], error: null },
+    tournament_entries: { data: [{ id: 'entry', registration_id: 'reg', player_id: 'player', status: 'seated', current_stack: 20000 }], error: null },
+    seat_draw_receipts: { data: [{ entry_id: 'entry', registration_id: 'reg', status: 'issued', receipt_code: 'ticket' }], error: null },
     profiles: { data: [], error: null },
   };
   if (failedTable) responses[failedTable] = { data: null, error: { message: `${failedTable}:503` } };
   const context = {
-    tournamentId: 'tour', seqRef: { current: 0 }, setLoading() {},
+    tournamentId: 'tour', seqRef: { current: 0 }, reading: { current: null }, setLoading() {},
+    observeTrackerContextRead: operation => operation,
     setRows: rows => published.push(rows), setLastRefreshed() {}, setReadError() {},
     toast: { error: message => errors.push(message) }, useCallback: fn => fn,
     supabase: { from: table => {
@@ -34,7 +35,7 @@ function harness(failedTable, deferred) {
     } },
   };
   const load = new Function(...Object.keys(context), `${body}; return load;`)(...Object.values(context));
-  return { load, published, errors, responses, invalidate: () => { ++context.seqRef.current; } };
+  return { load, published, errors, responses, invalidate: () => { ++context.seqRef.current; context.reading.current = null; } };
 }
 
 for (const table of ['tournament_registrations', 'tournament_entries', 'seat_draw_receipts', 'profiles']) {
@@ -65,13 +66,14 @@ test('newer failure cannot be overwritten by an older successful response', asyn
   let resolve;
   const h = harness(null, new Promise(done => { resolve = done; }));
   const old = h.load(); await new Promise(done => setImmediate(done));
+  h.invalidate(); // The real scope cleanup retires the coalesced prior read.
   h.responses.tournament_entries = { data: null, error: { message: '503' } };
   await h.load(); resolve({ data: [], error: null }); await old;
   assert.equal(h.published.length, 0); assert.equal(h.errors.length, 1);
 });
 test('explicit retry recovers after partial failure without manufacturing an empty queue', async () => {
   const h = harness('seat_draw_receipts'); await h.load();
-  h.responses.seat_draw_receipts = { data: [{ registration_id: 'reg', status: 'issued', receipt_code: 'ticket' }], error: null };
+  h.responses.seat_draw_receipts = { data: [{ entry_id: 'entry', registration_id: 'reg', status: 'issued', receipt_code: 'ticket' }], error: null };
   await h.load(); assert.equal(h.errors.length, 1);
   assert.equal(h.published.length, 1); assert.equal(h.published[0][0].receipt.receipt_code, 'ticket');
 });

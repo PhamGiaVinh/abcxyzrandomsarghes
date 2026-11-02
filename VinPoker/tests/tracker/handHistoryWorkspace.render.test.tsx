@@ -51,7 +51,10 @@ function tournamentQuery() {
   };
   query.select.mockReturnValue(query);
   query.order.mockReturnValue(query);
-  query.in.mockReturnValue(query);
+  query.in.mockImplementation((column: string, values: string[]) => {
+    if (column === "club_id") response.data = response.data.filter((row) => values.includes(row.club_id));
+    return query;
+  });
   latestTournamentQuery = query;
   return query;
 }
@@ -74,7 +77,7 @@ describe("Tracker hand history workspace", () => {
   it("renders the tournament-first workflow and opens the server-backed hand archive", async () => {
     render(<MemoryRouter initialEntries={["/tracker/history?t=tour-live"]}><TrackerHandHistory /></MemoryRouter>);
 
-    expect(await screen.findByRole("heading", { name: "Lịch sử & sửa hand" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Lịch sử & đối chiếu hand" })).toBeInTheDocument();
     expect(screen.getByText("TEST — Felt UAT", { selector: "h2" })).toBeInTheDocument();
     expect(screen.getByTestId("hand-history-panel")).toHaveAttribute("data-tournament", "tour-live");
     expect(screen.getByTestId("hand-history-panel")).toHaveAttribute("data-workspace", "true");

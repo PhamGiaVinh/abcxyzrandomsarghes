@@ -4,7 +4,7 @@ import {
   parseSeriesClubLivePulseV1,
   type SeriesClubPulseMetricKey,
 } from "@/lib/series-intelligence/seriesClubLivePulseV1";
-import { deriveDealerAssignmentState, deriveOpsTableCapacityQ0 } from "./opsLiveOperationsAdapter";
+import { deriveDealerAssignmentState, deriveOpsTableCapacityQ0, loadOpsLiveOperations } from "./opsLiveOperationsAdapter";
 import { buildOpsIntelligenceReadModelV1, deriveHeadlineStatus } from "./opsIntelligenceReadModel";
 
 const CLUB_ID = "10000000-0000-4000-8000-000000000001";
@@ -32,6 +32,61 @@ function operations(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Ops Intelligence read model", () => {
+  it.each([
+    [null,'physical-a',['physical-a']],
+    ['physical-a','physical-b',[]],
+  ])('resolves canonical physical link legacy=%s canonical=%s without masking conflicts', (legacy,canonical,expected)=>{
+    const capacity=deriveOpsTableCapacityQ0(['physical-a','physical-b'],[{tournament_tables:[
+      {table_id:legacy,game_table_id:canonical,status:'active'},
+    ]}] as never);
+    expect(capacity.activeTableIds).toEqual(expected);
+    expect(capacity.operationalTableCount).toBe(expected.length);
+  });
+  it.each([false,true])('requests canonical tournament links and reports conflicts as unverified (conflict=%s)',async(conflict)=>{
+    const selections:Record<string,string>={};
+    const client={rpc:async()=>({data:[{game_table_id:'c474ac95-6896-445d-81ba-dd6d752528df',table_number:2,table_name:'Paid journey TEST 2',
+      operational_status:'available',availability_status:'in_use',table_session_id:'session-current',session_type:'tournament',
+      control_mode:'tracker',control_epoch:1,revision:1,tournament_id:'46cab483-91e7-4220-aacf-e17bdf05269c',
+      tournament_table_id:'logical-current',tournament_table_status:'active',active_dealer_assignment_id:null}],error:null}),from:(table:string)=>{
+      const data=table==='game_tables'?[{id:'c474ac95-6896-445d-81ba-dd6d752528df',table_name:'Paid journey TEST 2',status:'active',current_blind_level:1}]
+        :table==='tournaments'?[{id:'46cab483-91e7-4220-aacf-e17bdf05269c',name:'Cash identity local TEST',status:'live',current_level:1,average_stack:30000,
+          tournament_tables:[{id:'logical-current',table_session_id:'session-current',table_id:conflict?'another-physical-id':null,game_table_id:'c474ac95-6896-445d-81ba-dd6d752528df',status:'active'}]}]:[];
+      const query=Promise.resolve({data,error:null}) as Promise<unknown>&Record<string,(value:string)=>unknown>;
+      for(const method of ['eq','is','in','order'])query[method]=()=>query;
+      query.select=(value:string)=>{selections[table]=value;return query;};return query;
+    }} as never;
+    const result=await loadOpsLiveOperations(client,CLUB_ID,{q0CapacityTruth:true});
+    expect(selections.tournaments).toContain('game_table_id');
+    if(conflict){
+      expect(result.availability).toBe('partial');expect(result.reasonCode).toBe('OPS_LIVE_TABLE_IDENTITY_UNVERIFIED');
+      expect(result.countComparisonEligible).toBe(false);expect(result.rows).toHaveLength(0);
+    }else{
+      expect(result.openTableCount).toBe(1);expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].tournamentId).toBe('46cab483-91e7-4220-aacf-e17bdf05269c');
+    }
+  });
+  it.each(['game_tables','tournaments','dealer_assignments','dealer_attendance'])(
+    'does not accept a null successful %s payload as an exact empty source',async(malformedTable)=>{
+      const client={rpc:async()=>({data:[],error:null}),from:(table:string)=>{
+        const query=Promise.resolve({data:table===malformedTable?null:[],error:null}) as Promise<unknown>&Record<string,()=>unknown>;
+        for(const method of ['select','eq','is','in','order'])query[method]=()=>query;
+        return query;
+      }} as never;
+      const result=await loadOpsLiveOperations(client,CLUB_ID,{q0CapacityTruth:true});
+      expect(result.availability).toBe(malformedTable==='game_tables'?'unavailable':'partial');
+      expect(result.reasonCode).toMatch(/READ_FAILED/);
+      if(malformedTable==='game_tables')expect(result.openTableCount).toBeNull();
+      if(malformedTable==='dealer_attendance')expect(result.dealersOnDutyCount).toBeNull();
+    });
+  it('retains exact empty arrays as successful empty operation sources',async()=>{
+    const client={rpc:async()=>({data:[],error:null}),from:()=>{
+      const query=Promise.resolve({data:[],error:null}) as Promise<unknown>&Record<string,()=>unknown>;
+      for(const method of ['select','eq','is','in','order'])query[method]=()=>query;
+      return query;
+    }} as never;
+    expect(await loadOpsLiveOperations(client,CLUB_ID,{q0CapacityTruth:true}))
+      .toMatchObject({availability:'exact',reasonCode:null,rows:[],openTableCount:0,dealersOnDutyCount:0});
+  });
   it("keeps a successful zero count distinct from missing", () => {
     const model = buildOpsIntelligenceReadModelV1({ clubId: CLUB_ID, pulse: { value: pulse(), observedAt: OBSERVED_AT }, pulseError: null, operations: operations(), supplemental: [], verifiedTrackerAlertCount: null });
     expect(model.metrics.find((item) => item.metricId === "entries_today")).toMatchObject({ value: 0, availability: "exact" });

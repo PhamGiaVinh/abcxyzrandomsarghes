@@ -2,13 +2,25 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCallback, useMemo, useState } from "react";
 
-const state = vi.hoisted(() => ({ reads: vi.fn(), channels: vi.fn(), removed: vi.fn(), pick: "new-tour" }));
+type ListQuery = {
+  select: () => ListQuery; is: () => ListQuery; in: () => ListQuery; order: () => ListQuery;
+  abortSignal: (signal: AbortSignal) => ListQuery;
+  then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) => Promise<unknown>;
+};
+const state = vi.hoisted(() => ({ reads: vi.fn(), rpc: vi.fn(), channels: vi.fn(), removed: vi.fn(), pick: "new-tour" }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
-  from: () => ({ select: () => ({ is: () => ({ in: () => ({ order: () => ({ in: state.reads }) }) }) }) }),
+  from: () => {
+    const query: ListQuery = { select: () => query, is: () => query, in: () => query, order: () => query,
+      abortSignal: () => query,
+      then: (resolve, reject) => Promise.resolve().then(() => state.reads()).then(resolve, reject) };
+    return query;
+  },
+  rpc: state.rpc,
   channel: (name: string) => { state.channels(name); const channel = { on: () => channel, subscribe: () => channel }; return channel; },
   removeChannel: state.removed,
 } }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "owner" } }) }));
+vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: { id: "owner" }, session: null, loading: false }) }));
 vi.mock("@/components/floor/FloorTournamentsLanding", () => ({
   FloorTournamentsLanding: ({ onSelect }: { onSelect: (id: string) => void }) =>
     <button onClick={() => onSelect(state.pick)}>Vào tour TEST vừa tạo</button>,
@@ -24,7 +36,15 @@ const scope = ["club"];
 const clubs = [{ id: "club", name: "TEST" }];
 const oldTour = { id: "old-tour", club_id: "club", name: "Old TEST", status: "live" };
 const newTour = { id: "new-tour", club_id: "club", name: "New TEST", status: "active" };
-beforeEach(() => { state.reads.mockReset(); state.channels.mockReset(); state.removed.mockReset(); state.pick = "new-tour"; });
+beforeEach(() => {
+  state.reads.mockReset(); state.channels.mockReset(); state.removed.mockReset(); state.pick = "new-tour";
+  state.rpc.mockReset().mockImplementation((name: string, args: { p_tournament_id: string }) =>
+    Promise.resolve(name === "get_tournament_participation_counts_v1" ? { data: {
+      tournament_id: args.p_tournament_id, average_stack: 0,
+      counts: { total_entries: 0, re_entries: 0, remaining: 0, seated: 0, waiting: 0, busted: 0,
+        anomaly_entries: 0, anomaly_seats: 0, live_entry_stack: 0, seated_stack: 0, waiting_stack: 0 },
+    }, error: null } : { data: null, error: { message: "Unexpected fixture RPC" } }));
+});
 afterEach(cleanup);
 
 describe("Floor resolves a newly created tournament against the canonical server list", () => {
@@ -56,6 +76,7 @@ describe("Floor resolves a newly created tournament against the canonical server
     await waitFor(() => expect(state.reads).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Vào tour TEST vừa tạo" }));
     expect(screen.getByRole("status")).toHaveTextContent("Đang tải giải đã chọn");
+    await waitFor(() => expect(state.reads).toHaveBeenCalledTimes(2));
     await act(async () => { finish({ data: [newTour, oldTour], error: null }); });
     expect(await screen.findByText("Bàn của new-tour")).toBeVisible();
     expect(state.reads).toHaveBeenCalledTimes(2);

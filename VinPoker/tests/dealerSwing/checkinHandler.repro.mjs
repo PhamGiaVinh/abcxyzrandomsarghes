@@ -19,8 +19,9 @@ function harness(rpc, stored = new Map(), overrides = {}) {
   const scopeEnd = source.indexOf('  const loadCheckinDealers =', scopeStart);
   const scopeCode = ts.transpileModule(source.slice(scopeStart, scopeEnd), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   let unmount = () => {};
-  const renderScope = new Function('useRef', 'useEffect', 'user', 'activeClubId', scopeCode);
-  const changeScope = (actor, club) => renderScope(() => scope, effect => { unmount = effect() ?? (() => {}); }, { id: actor }, club);
+  const candidateRead = new AbortController();
+  const renderScope = new Function('useRef', 'useEffect', 'user', 'activeClubId', 'checkinReadController', scopeCode);
+  const changeScope = (actor, club) => renderScope(() => scope, effect => { unmount = effect() ?? (() => {}); }, { id: actor }, club, { current: candidateRead });
   changeScope('actor', 'club');
   const context = {
     activeClubId: 'club', eligibleCheckinShifts: [{ id: 'shift' }], checkinShiftId: 'shift',
@@ -39,7 +40,7 @@ function harness(rpc, stored = new Map(), overrides = {}) {
     ...overrides,
   };
   const run = new Function(...Object.keys(context), `${body}; return doCheckin;`)(...Object.values(context));
-  return { run, effects, scope, keys, changeScope, unmount: () => unmount() };
+  return { run, effects, scope, keys, changeScope, candidateRead, unmount: () => unmount() };
 }
 for (const [label, overrides] of [
   ['loading', { checkinCandidatesLoading: true }],
@@ -106,6 +107,7 @@ test('unmount invalidates an awaited check-in completion', async () => {
   const h = harness(() => new Promise(resolve => { finish = resolve; }));
   const pending = h.run();
   h.unmount();
+  assert.equal(h.candidateRead.signal.aborted, true);
   finish({ data: { ok: true, outcome: 'checked_in' }, error: null });
   await pending;
   assert.equal(h.keys.current.size, 1);

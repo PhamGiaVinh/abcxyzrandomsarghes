@@ -822,6 +822,8 @@ function joinTranscript(current: string, next: string): string {
 
 export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptionProvider {
   readonly kind = "openai_realtime" as const;
+  private generation = 0;
+  private signaling: AbortController | null = null;
   private peer: RTCPeerConnection | null = null;
   private stream: MediaStream | null = null;
   private channel: RTCDataChannel | null = null;
@@ -835,11 +837,17 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
   constructor(private readonly options: OpenAIRealtimeProviderOptions) {}
 
   async connect(handlers: VoiceProviderHandlers): Promise<void> {
+    void this.disconnect();
+    const generation = ++this.generation;
+    const current = () => this.generation === generation;
     this.handlers = handlers;
     handlers.onStatus("requesting_permission");
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    try {
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
+    if (!current()) { stream.getTracks().forEach((track) => track.stop()); return; }
+    this.stream = stream;
     const audioTrack = this.stream.getAudioTracks()[0];
     handlers.onInputDevice?.({
       deviceId: audioTrack?.getSettings().deviceId ?? null,
@@ -848,24 +856,30 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     this.startLevelMeter(this.stream);
     handlers.onStatus("connecting");
     const credential = await this.options.getSessionCredential();
+    if (!current()) return;
     const peer = new RTCPeerConnection();
     this.peer = peer;
     for (const track of this.stream.getTracks()) peer.addTrack(track, this.stream);
     const channel = peer.createDataChannel("oai-events");
     this.channel = channel;
-    channel.addEventListener("message", (message) => this.handleProviderMessage(message.data));
-    channel.addEventListener("open", () => handlers.onStatus("listening"));
-    channel.addEventListener("close", () => handlers.onStatus("offline"));
+    channel.addEventListener("message", (message) => { if (current()) this.handleProviderMessage(message.data); });
+    channel.addEventListener("open", () => { if (current()) handlers.onStatus("listening"); });
+    channel.addEventListener("close", () => this.finishConnection(generation,"offline"));
     peer.addEventListener("connectionstatechange", () => {
+      if (!current()) return;
       if (peer.connectionState === "disconnected") handlers.onStatus("recovering", "Kết nối microphone đang khôi phục.");
-      if (peer.connectionState === "failed") handlers.onStatus("error", "Kết nối Voice bị lỗi. Hãy kết nối lại.");
+      if (peer.connectionState === "failed") this.finishConnection(generation,"error", "Kết nối Voice bị lỗi. Hãy kết nối lại.");
     });
     this.stream.getAudioTracks().forEach((track) => {
-      track.addEventListener("ended", () => handlers.onStatus("offline", "Microphone đã ngắt khỏi thiết bị."), { once: true });
+      track.addEventListener("ended", () => this.finishConnection(generation,"offline", "Microphone đã ngắt khỏi thiết bị."), { once: true });
     });
 
     const offer = await peer.createOffer();
+    if (!current()) return;
     await peer.setLocalDescription(offer);
+    if (!current()) return;
+    const signaling = new AbortController();
+    this.signaling = signaling;
     const response = await fetch("https://api.openai.com/v1/realtime/calls", {
       method: "POST",
       headers: {
@@ -873,12 +887,24 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
         "Content-Type": "application/sdp",
       },
       body: offer.sdp,
+      signal: signaling.signal,
     });
+    if (!current()) return;
     if (!response.ok) throw new Error("openai_realtime_connect_failed");
-    await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
+    const sdp = await response.text();
+    if (!current()) return;
+    await peer.setRemoteDescription({ type: "answer", sdp });
+    } catch (error) {
+      if (!current()) return;
+      await this.disconnect();
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
+    ++this.generation;
+    this.signaling?.abort();
+    this.signaling = null;
     this.channel?.close();
     this.peer?.close();
     this.stream?.getTracks().forEach((track) => track.stop());
@@ -886,7 +912,8 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     this.levelFrame = null;
     this.mediaSource?.disconnect();
     this.analyser?.disconnect();
-    await this.audioContext?.close().catch(() => undefined);
+    const audioContext = this.audioContext;
+    const handlers = this.handlers;
     this.mediaSource = null;
     this.analyser = null;
     this.audioContext = null;
@@ -894,11 +921,24 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     this.peer = null;
     this.stream = null;
     this.partialTranscripts.clear();
-    this.handlers?.onStatus("idle");
     this.handlers = null;
+    handlers?.onStatus("idle");
+    await audioContext?.close().catch(() => undefined);
+  }
+
+  /** Terminal transport loss must also stop capture, not only change its label.
+   * Cleanup increments the generation before closing the channel; a reconnect
+   * supersedes this final status and any late transcription callbacks. */
+  private finishConnection(generation:number,status:'offline'|'error',message?:string):void {
+    if(this.generation!==generation)return;
+    const handlers=this.handlers,closedGeneration=generation+1;
+    void this.disconnect().then(()=>{
+      if(this.generation===closedGeneration)handlers?.onStatus(status,message);
+    });
   }
 
   private startLevelMeter(stream: MediaStream): void {
+    const generation = this.generation;
     try {
       const audioContext = new AudioContext();
       const analyser = audioContext.createAnalyser();
@@ -911,7 +951,7 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
       this.mediaSource = source;
       const samples = new Float32Array(analyser.fftSize);
       const sample = () => {
-        if (!this.analyser || !this.handlers) return;
+        if (this.generation !== generation || !this.analyser || !this.handlers) return;
         this.analyser.getFloatTimeDomainData(samples);
         let energy = 0;
         for (const value of samples) energy += value * value;
@@ -933,6 +973,7 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
     } catch {
       return;
     }
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
     const type = typeof event.type === "string" ? event.type : "";
     const isFinal = type === "conversation.item.input_audio_transcription.completed";
     const isPartial = type === "conversation.item.input_audio_transcription.delta";
@@ -946,9 +987,9 @@ export class OpenAIRealtimeTranscriptionProvider implements RealtimeTranscriptio
       transcript = `${this.partialTranscripts.get(itemId) ?? ""}${nextDelta}`;
       this.partialTranscripts.set(itemId, transcript);
     } else {
-      transcript = typeof event.transcript === "string"
-        ? event.transcript
-        : this.partialTranscripts.get(itemId) ?? "";
+      // Only the provider's explicit final text may become a final proposal.
+      // A malformed completion must never promote an interim fragment.
+      transcript = typeof event.transcript === "string" ? event.transcript : "";
       this.partialTranscripts.delete(itemId);
     }
     if (!transcript) return;

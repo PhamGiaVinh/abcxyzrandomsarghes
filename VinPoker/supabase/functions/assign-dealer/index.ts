@@ -29,11 +29,76 @@ Deno.serve(async (req) => {
     const authResult = await authenticateUser(req);
     if (authResult instanceof Response) return authResult;
     const uid = authResult.uid;
-    const admin = createClient(url, service, { global: { headers: manualDealerIntentHeaders(uid) } });
-
-    const body = await req.json().catch(() => ({}));
-    const { table_id, table_session_id, force_dealer_id, requested_by, idempotency_key, return_suggestions_only, shift_id } = body ?? {};
+    const wire = await req.json().catch(() => ({}));
+    const mode = wire?.mode;
+    // Nested read-only packet is deliberately incompatible with legacy handlers:
+    // they see no outer table_id/force_dealer_id and stop before any writer.
+    const body = mode === "receipt" || mode === "resolve" ? wire?.assignment_intent : wire;
+    if ((mode === "receipt" || mode === "resolve") && (!body || typeof body !== "object" || Array.isArray(body)))
+      return json({error: "EXACT_ASSIGNMENT_RECEIPT_INTENT_REQUIRED"}, 400);
+    const { table_id, table_session_id, force_dealer_id, requested_by, idempotency_key, return_suggestions_only, shift_id,
+      expected_actor_id, expected_club_id } = body ?? {};
     if (!table_id) return json({ error: "table_id required" }, 400);
+    if (mode !== undefined && mode !== "assign" && mode !== "receipt" && mode !== "resolve") return json({ error: "INVALID_ASSIGNMENT_MODE" }, 400);
+    if ((expected_actor_id !== undefined && expected_actor_id !== uid)
+        || (requested_by != null && requested_by !== uid)) return json({ error: "ASSIGNMENT_ACTOR_MISMATCH" }, 403);
+    const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+    if (expected_club_id !== undefined && !uuid(expected_club_id)) return json({ error: "INVALID_EXPECTED_CLUB" }, 400);
+    if ((mode === "receipt" || mode === "resolve") && (expected_actor_id !== uid || return_suggestions_only === true
+        || ![expected_club_id, table_id, table_session_id, force_dealer_id, idempotency_key].every(uuid)))
+      return json({ error: "EXACT_ASSIGNMENT_RECEIPT_INTENT_REQUIRED" }, 400);
+    const admin = createClient(url, service, { global: { headers: manualDealerIntentHeaders(uid) } });
+    const authorizeClub = async (clubId: string): Promise<Response | null> => {
+      try {
+        const {data, error} = await admin.rpc("is_club_dealer_control", {_user_id: uid, _club_id: clubId});
+        if (error || (data !== true && data !== false)) return json({error: "DEALER_AUTHORITY_UNVERIFIED"}, 503);
+        return data === true ? null : json({error: "Forbidden — not a dealer controller"}, 403);
+      } catch { return json({error: "DEALER_AUTHORITY_UNVERIFIED"}, 503); }
+    };
+    if (mode === "resolve") {
+      const denied = await authorizeClub(expected_club_id);
+      if (denied) return denied;
+      try {
+        const {data: resolved, error} = await admin.rpc("resolve_dealer_initial_assignment_intent_v1", {
+          p_actor_user_id: uid, p_club_id: expected_club_id, p_table_id: table_id,
+          p_table_session_id: table_session_id, p_dealer_id: force_dealer_id, p_request_id: idempotency_key,
+        });
+        if (error) {
+          if (error.code === "42501") return json({error: "DEALER_AUTHORITY_REVOKED"}, 403);
+          if (error.code === "22023" && error.message === "INITIAL_ASSIGNMENT_IDEMPOTENCY_CONFLICT")
+            return json({error: "IDEMPOTENCY_CONFLICT"}, 409);
+          return json({error: "ASSIGNMENT_RESOLUTION_UNVERIFIED"}, 503);
+        }
+        const status = resolved?.status;
+        const receipt = resolved?.receipt;
+        const found = status === "receipt_found" && receipt?.outcome === "ok" && uuid(receipt?.assignment_id);
+        const missing = ["receipt_not_found", "intent_obsolete", "legacy_receipt_review_required"].includes(status)
+          && receipt === null;
+        if (!found && !missing) return json({error: "ASSIGNMENT_RESOLUTION_MALFORMED"}, 502);
+        return json({mode: "resolve", status, expected_actor_id: uid, expected_club_id,
+          table_id, table_session_id, force_dealer_id, idempotency_key,
+          assignment: found ? {id: receipt.assignment_id, status: "success"} : null});
+      } catch { return json({error: "ASSIGNMENT_RESOLUTION_UNVERIFIED"}, 503); }
+    }
+    // Historical read only: do not require an active table/session/attendance,
+    // compute a new duration, invoke a writer or send any notifications.
+    if (mode === "receipt") {
+      const denied = await authorizeClub(expected_club_id);
+      if (denied) return denied;
+      try {
+        const {data: receipt, error} = await admin.rpc("worker_read_initial_assignment_receipt_v1", {
+          p_request_key: `open_manual_${uid}_${idempotency_key}`, p_club_id: expected_club_id,
+          p_table_id: table_id, p_table_session_id: table_session_id, p_dealer_id: force_dealer_id,
+        });
+        if (error) return json({error: "ASSIGNMENT_RECEIPT_UNVERIFIED"}, 503);
+        if (receipt?.outcome === "idempotency_mismatch") return json({error: "IDEMPOTENCY_CONFLICT"}, 409);
+        if (receipt !== null && (receipt?.outcome !== "ok" || !uuid(receipt?.assignment_id)))
+          return json({error: "ASSIGNMENT_RECEIPT_MALFORMED"}, 502);
+        return json({mode: "receipt", status: receipt === null ? "receipt_not_found" : "receipt_found",
+          expected_actor_id: uid, expected_club_id, table_id, table_session_id, force_dealer_id, idempotency_key,
+          assignment: receipt === null ? null : {id: receipt.assignment_id, status: "success"}});
+      } catch { return json({error: "ASSIGNMENT_RECEIPT_UNVERIFIED"}, 503); }
+    }
 
     console.log(`[assign-dealer] table=${table_id} force=${force_dealer_id} shift=${shift_id} idemp=${idempotency_key}`);
 
@@ -44,16 +109,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: table, error: te } = await admin
+    const { data: table, error: te } = await Promise.resolve(admin
       .from("game_tables")
       .select("id, club_id, table_name, table_type, status, shift_id")
       .eq("id", table_id)
-      .maybeSingle();
-    if (te || !table) return json({ error: "Table not found" }, 404);
+      .maybeSingle()).catch(() => ({data: null, error: {message: "table read unavailable"}}));
+    if (te) return json({error: "TABLE_READ_UNVERIFIED"}, 503);
+    if (!table) return json({ error: "Table not found" }, 404);
+    if (expected_club_id !== undefined && table.club_id !== expected_club_id)
+      return json({error: "ASSIGNMENT_CLUB_MISMATCH"}, 403);
 
-    const { data: isControl, error: controlError } = await admin.rpc("is_club_dealer_control", { _user_id: uid, _club_id: table.club_id });
-    if (controlError) return json({ error: "DEALER_AUTHORITY_UNVERIFIED" }, 503);
-    if (!isControl) return json({ error: "Forbidden — not a dealer controller" }, 403);
+    const denied = await authorizeClub(table.club_id);
+    if (denied) return denied;
     let manualKey: string | undefined;
     if (force_dealer_id && !return_suggestions_only) {
       if (!table_session_id || typeof idempotency_key !== "string" || !/^[0-9a-f-]{36}$/i.test(idempotency_key)) {

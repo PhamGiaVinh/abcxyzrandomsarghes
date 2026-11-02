@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+assert.equal(process.env.VINPOKER_EARLYITM1162_LOCAL,'1');
+const output='D:/Quy trình/output/reports/earlyitm1162-individual-rank-attempt6-native-local-20261027.json';assert.equal(existsSync(output),false);
+let sql=readFileSync('D:/Quy trình/output/reports/earlyitm1161-lifecycle-gap-executed-attempt3-local-20261027.sql','utf8');
+const candidate=readFileSync('supabase/pending-migrations/20261027155124_multiday_individual_rank_confirmation_v1.sql','utf8');
+const extension=readFileSync('tests/cashier/earlyItm1162.individual-rank.extension.sql','utf8');
+const anchor=" r:=public.record_multi_day_prize_payment_v1(event,p,'cash',md5('LOCAL1161 no final individual rank'),gen_random_uuid());";
+assert.equal(sql.split(anchor).length,2);
+const start='-- Transaction-private business qualification only, not persistent gate activation.';assert.equal(sql.split(start).length,2);
+// Callback replacements retain SQL dollar-quoted bodies and regex end anchors.
+sql=sql.replace(start,()=>candidate+'\n'+start).replace(anchor,()=>extension+'\n'+anchor);
+sql=sql.replace("'individualFinalizationAvailable',false",()=>"'legacyPaymentStillBlocked',true");
+sql=sql.replace("SELECT current_setting('test.early1161')::jsonb;",()=>"SELECT current_setting('test.early1161')::jsonb;SELECT current_setting('test.early1162')::jsonb;");
+sql=sql.replace("SELECT jsonb_build_object('rollbackProtectedGroups',41,'unchanged',true);",()=>"DO $$ BEGIN ASSERT to_regclass('private.multi_day_individual_results_v1') IS NULL;ASSERT to_regclass('private.multi_day_individual_rank_requests_v1') IS NULL;ASSERT to_regprocedure('public.confirm_multi_day_individual_ranks_v1(uuid,text,uuid[],uuid)') IS NULL;ASSERT to_regprocedure('public.get_multi_day_individual_rank_receipt_v1(uuid,uuid)') IS NULL;END $$;SELECT jsonb_build_object('rollbackProtectedGroups',41,'unchanged',true,'candidateRemoved',true);");
+const path='D:/Quy trình/output/reports/earlyitm1162-individual-rank-executed-attempt6-local-20261027.sql';assert.equal(existsSync(path),false);writeFileSync(path,sql);
+const args=['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ranking860_local','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
+const raw=execFileSync('wsl',args,{input:sql,encoding:'utf8',timeout:60000,maxBuffer:4e6});
+const observations=raw.split(/\r?\n/).filter(x=>x.startsWith('{')).map(JSON.parse);assert.equal(observations.at(-1).candidateRemoved,true);
+writeFileSync(output,JSON.stringify({kind:'INDIVIDUAL_RANK_CANDIDATE_OUTER_ROLLBACK_NOT_PAYMENT_ACCEPTANCE',observations,executed:path,durablyApplied:false,fullR03Accepted:false},null,2)+'\n');
+console.log('EARLYITM1162_NATIVE_INDIVIDUAL_RANK_CANDIDATE_ROLLBACK_PASS_NOT_PAYMENT');

@@ -27,7 +27,7 @@ Deno.test("ready trigger honors OFF, verified inventory and exact-session commit
       await denied.json();
     }
     for (const credential of ["header", "worker", "service"]) {
-    for (const scenario of ["off", "settings_error", "no_table", "planner_error", "planner_on", "unknown", "success"]) {
+    for (const scenario of ["off", "settings_error", "no_table", "eligibility_error", "eligibility_denied", "planner_error", "planner_on", "unknown", "success", "tour_policy", "cash_policy", "policy_error", "policy_invalid", "wrong_verify", "malformed_rest"]) {
       let mutations = 0;
       globalThis.fetch = (input, init) => {
         const url = new URL(input instanceof Request ? input.url : String(input));
@@ -39,10 +39,22 @@ Deno.test("ready trigger honors OFF, verified inventory and exact-session commit
         if (route === "club_settings") return scenario === "settings_error" ? reply({ message: "fixture" }, 503)
           : reply([{ auto_swing_enabled: scenario !== "off" }]);
         if (route === "get_dealer_operational_tables_v1") return reply(scenario === "no_table" ? []
-          : [{ id: table, table_session_id: session, table_type: "cash", table_name: "TEST" }]);
-        if (route === "atomic_dealer_ready_check") return reply({ attendance_id: attendance, rest_threshold_min: 15, rest_min: 20 });
-        if (route === "swing_config") return scenario === "planner_error" ? reply({ message: "fixture" }, 503)
-          : reply([{ rotation_planner_enabled: scenario === "planner_on" }]);
+          : [{ id: table, table_session_id: session, table_type: scenario==='tour_policy'?'tournament':'cash', tournament_id:scenario==='tour_policy'?club:null, table_name: "TEST" }]);
+        if (route === "atomic_dealer_ready_check") return reply({ attendance_id: scenario==='wrong_verify'?club:attendance, rest_threshold_min: 20, rest_min: scenario==='malformed_rest'?null:15 });
+        if (route === "get_dealer_pool_eligible_attendance_v1") return scenario==='eligibility_error'
+          ? reply({message:'fixture'},503):reply(scenario==='eligibility_denied'?[]:[{attendance_id:attendance}]);
+        if (route === "swing_config") {
+          if(url.searchParams.get('select')==='break_duration_minutes,min_inter_swing_rest_minutes'){
+            assertEquals(url.searchParams.get('table_type'),scenario==='tour_policy'?'eq.tournament':'eq.cash');
+            if(scenario==='policy_error')return reply({message:'fixture'},503);
+            if(scenario==='policy_invalid')return reply([{break_duration_minutes:'20',min_inter_swing_rest_minutes:15}]);
+            return reply(scenario==='tour_policy'?[]:[{break_duration_minutes:scenario==='cash_policy'?20:15,min_inter_swing_rest_minutes:15}]);
+          }
+          return scenario === "planner_error" ? reply({ message: "fixture" }, 503)
+            : reply([{ rotation_planner_enabled: scenario === "planner_on" }]);
+        }
+        if (route === 'tournaments') return reply([{swing_duration_minutes:30}]);
+        if (route === "swing_configs") return reply([]);
         if (route === "dealer_assignments") {
           assertEquals(url.searchParams.get("table_id"), `in.(${table})`);
           return reply([{ id: "assignment-fixture", version: 1, table_id: table, table_session_id: session }]);
@@ -52,8 +64,9 @@ Deno.test("ready trigger honors OFF, verified inventory and exact-session commit
           assertEquals(intent.p_table_session_id, session);
           assertEquals(intent.p_expected_version, 1);
           assertEquals(intent.p_next_attendance_id, attendance);
+          assertEquals(intent.p_rest_deficit_minutes,scenario==='cash_policy'?5:0);
           mutations++;
-          return reply({ outcome: scenario === "unknown" ? "unrecognized" : "swung" });
+          return reply({ outcome: scenario === "unknown" ? "unrecognized" : "swung", rest_deficit_minutes:0 });
         }
         if (route === "cron_metrics") return reply(null, 201);
         throw new Error(`unexpected fixture route ${route}`);
@@ -65,8 +78,8 @@ Deno.test("ready trigger honors OFF, verified inventory and exact-session commit
           "x-idempotency-key": `ready_${credential}_${scenario}` },
         body: JSON.stringify({ club_id: club, attendance_id: attendance }),
       }));
-      assertEquals(response.status, scenario.endsWith("_error") ? 503 : scenario === "unknown" ? 500 : 200, scenario);
-      assertEquals(mutations, ["unknown", "success"].includes(scenario) ? 1 : 0, scenario);
+      assertEquals(response.status, scenario.endsWith("_error")||scenario==='policy_invalid' ? 503 : ["unknown","wrong_verify","malformed_rest"].includes(scenario) ? 500 : 200, scenario);
+      assertEquals(mutations, ["unknown", "success","tour_policy","cash_policy"].includes(scenario) ? 1 : 0, scenario);
       await response.json();
     }
     }

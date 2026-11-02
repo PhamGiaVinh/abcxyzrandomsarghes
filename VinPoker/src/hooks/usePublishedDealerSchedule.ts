@@ -58,6 +58,13 @@ export function usePublishedDealerSchedule(
     setDaysByDate({});
     setLoading(true);
     setError(null);
+    const deadline = setTimeout(() => {
+      if (generation !== generationRef.current || controller.signal.aborted) return;
+      setDaysByDate({});
+      setLoading(false);
+      setError("Hết thời gian tải lịch đã phát hành. Vui lòng tải lại.");
+      controller.abort();
+    }, 10_000);
 
     void (async () => {
       try {
@@ -117,7 +124,7 @@ export function usePublishedDealerSchedule(
             .abortSignal(controller.signal),
           supabase
             .from("dealer_attendance")
-            .select("dealer_id, check_in_time")
+            .select("dealer_id, shift_date, check_in_time")
             .eq("status", "checked_in")
             .in("dealer_id", dealerIds)
             .abortSignal(controller.signal),
@@ -135,11 +142,13 @@ export function usePublishedDealerSchedule(
         const dealerNames = new Map<string, string>(
           (dealersRes.data ?? []).map((row) => [row.id, row.full_name ?? "Dealer"]),
         );
-        const payrollStarts = new Map<string, string>(
-          (attendanceRes.data ?? [])
-            .filter((row): row is typeof row & { check_in_time: string } => typeof row.check_in_time === "string")
-            .map((row) => [row.dealer_id, row.check_in_time]),
-        );
+        const payrollStarts = new Map<string, string>();
+        for (const row of attendanceRes.data ?? []) {
+          if (typeof row.check_in_time !== "string") continue;
+          const key = JSON.stringify([row.dealer_id, row.shift_date]);
+          if (payrollStarts.has(key)) throw new Error("Không xác minh được ca: dealer có nhiều lượt check-in đang mở trong cùng ngày vận hành.");
+          payrollStarts.set(key, row.check_in_time);
+        }
         // Late is shown only when the persisted event is readable. Never infer a
         // status badge solely from the clock.
         const lateAssignmentIds = new Set<string>(
@@ -152,7 +161,10 @@ export function usePublishedDealerSchedule(
           const day = next[row.work_date];
           if (!day || day.runId !== row.run_id) continue;
 
-          const payrollStartAt = payrollStarts.get(row.dealer_id) ?? null;
+          // A dealer's current attendance is not evidence for tomorrow's plan or
+          // another operating day. Keep the persisted arrival marker authoritative.
+          const payrollStartAt = row.status === "checked_in"
+            ? payrollStarts.get(JSON.stringify([row.dealer_id, row.work_date])) ?? null : null;
           let state: PublishedScheduleState;
           if (row.status === "checked_in") state = payrollStartAt ? "in_pool" : "waiting";
           else if (row.status === "confirmed") state = "confirmed";
@@ -178,11 +190,13 @@ export function usePublishedDealerSchedule(
         setDaysByDate({});
         setError((caught as Error)?.message || "Không tải được lịch đã phát hành.");
       } finally {
+        clearTimeout(deadline);
         if (generation === generationRef.current && !controller.signal.aborted) setLoading(false);
       }
     })();
 
     return () => {
+      clearTimeout(deadline);
       controller.abort();
       generationRef.current += 1;
     };

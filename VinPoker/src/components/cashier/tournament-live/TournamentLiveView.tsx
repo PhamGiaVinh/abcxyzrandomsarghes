@@ -8,9 +8,9 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Users, Coins, Clock, Layers, WifiOff, RefreshCw, AlertTriangle, Volume2, VolumeX, Bot, Radio, History } from "lucide-react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, PostgrestSingleResponse } from "@supabase/supabase-js";
 import { displayCard } from "@/components/shared/CardSlotPicker";
-import { getSeatPositions } from "@/lib/tournament/button";
+import { getHandSeatPositions } from "@/lib/tournament/button";
 import { useAuth } from "@/hooks/useAuth";
 import { parseTournamentParticipation, parseParticipationSummary } from "@/lib/tournamentParticipation";
 import { TdAiAssistantPanel } from "@/components/td-ai/TdAiAssistantPanel";
@@ -57,7 +57,7 @@ import {
   replayRunoutPhaseDuration,
   type ReplayRunoutPresentation,
 } from "@/lib/tracker-poker/replayRunoutTimeline";
-import { deriveLiveHandDisplay } from "@/lib/tracker-poker/liveDisplay";
+import { deriveLiveHandDisplay,deriveLiveStreet } from "@/lib/tracker-poker/liveDisplay";
 import {
   appendTableMotionEvents,
   deriveReplayTableMotionEvents,
@@ -71,9 +71,10 @@ import { resolveViewerIdentity } from "./viewer-hub/viewerIdentity";
 import { resolveReplayCandidates, type ReplayTarget, type ReplayTargetState } from "./viewer-hub/replayTarget";
 import { deriveReplayHeaderMetadata } from "./viewer-hub/replayMetadata";
 import { PublicSnapshotCoordinator } from "./viewer-hub/publicSnapshotCoordinator";
-import { parsePublicTableCurrentResponse } from "./viewer-hub/publicTableHistory";
+import { parsePublicTableCurrentResponse,parsePublicParticipationSummary } from "./viewer-hub/publicTableHistory";
 import { loadPublicCurrentTable } from "./viewer-hub/loadPublicCurrentTable";
 import { TableHistoryPanel } from "./viewer-hub/TableHistoryPanel";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 const SOUND_KINDS = new Set<string>([
   "fold", "check", "call", "bet", "raise", "all_in", "post_sb", "post_bb", "post_ante",
@@ -263,6 +264,7 @@ function TournamentLiveViewContent({
   const [replayMotionEpoch, setReplayMotionEpoch] = useState(0);
   const [replaySelectedPotIndex, setReplaySelectedPotIndex] = useState(0);
   const [replayTargetState, setReplayTargetState] = useState<ReplayTargetState>({ kind: "idle" });
+  const [replayResolveAttempt,setReplayResolveAttempt]=useState(0);
   // Snapshot of the LIVE table the moment replay was entered. The live machinery
   // keeps advancing in the background while the felt is frozen on the replay frame;
   // comparing against this baseline tells us when to surface "live đã có diễn biến
@@ -275,6 +277,7 @@ function TournamentLiveViewContent({
   const readScope = `${user?.id ?? "anonymous"}:${tournamentId}:${liveTableScope ?? ""}:${spectator}`;
   const readScopeRef = useRef(readScope);
   readScopeRef.current = readScope;
+  const liveReadRef=useRef<{scope:string;controller:AbortController;promise:Promise<void>}|null>(null);
   const initialLoadedRef = useRef(false);
   const pollingRef = useRef<number | null>(null);
   const zeroRefetchDoneRef = useRef(false);
@@ -318,23 +321,33 @@ function TournamentLiveViewContent({
     if (source !== "playback") setReplayMotionEpoch((current) => current + 1);
   }, []);
 
-  const loadAllData = useCallback(async () => {
-    if (readScopeRef.current !== readScope) return;
+  const loadAllData = useCallback(():Promise<void> => {
+    if (readScopeRef.current !== readScope) return Promise.resolve();
+    const existing=liveReadRef.current;
+    if(existing?.scope===readScope&&!existing.controller.signal.aborted)return existing.promise;
+    existing?.controller.abort();
+    const controller=new AbortController();
+    const owned={scope:readScope,controller,promise:Promise.resolve()};
+    liveReadRef.current=owned;
+    const execute=async()=>{
     const seq = ++requestSeqRef.current;
-    const currentRequest = () => seq === requestSeqRef.current && readScopeRef.current === readScope;
+    const currentRequest = () => !controller.signal.aborted&&seq === requestSeqRef.current && readScopeRef.current === readScope;
+    const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>supabase.rpc(name as never,args as never).abortSignal(controller.signal);
     const usePublicCurrentHand = spectator && FEATURES.publicSpectatorRealtimeV2;
-
+    try {
+    await observeTrackerContextRead((async()=>{
     const [currentHandRes, seatsRes, handsRes, clockRes, tournamentRes] = await Promise.all([
       usePublicCurrentHand
-        ? loadPublicCurrentTable((name, args) => (supabase.rpc as any)(name, args), tournamentId, liveTableScope, FEATURES.publicSpectatorLastHandHistory)
+        ? loadPublicCurrentTable(async(name, args) => await readRpc(name,args), tournamentId, liveTableScope, FEATURES.publicSpectatorLastHandHistory)
         : Promise.resolve({ data: null, error: null }),
-      usePublicCurrentHand ? Promise.resolve({ data: null, error: null }) : (supabase.rpc as any)(
+      usePublicCurrentHand ? Promise.resolve({ data: null, error: null }) : readRpc(
         "get_tournament_participation_v1", { p_tournament_id: tournamentId }),
-      usePublicCurrentHand ? Promise.resolve({ data: [], error: null }) : loadLatestLiveHand(tournamentId, liveTableScope),
-      supabase.rpc("get_tournament_clock", { p_tournament_id: tournamentId }),
+      usePublicCurrentHand ? Promise.resolve({ data: [], error: null }) : loadLatestLiveHand(tournamentId, liveTableScope).abortSignal(controller.signal),
+      readRpc("get_tournament_clock", { p_tournament_id: tournamentId }),
       usePublicCurrentHand
-        ? supabase.from("tournaments").select("players_remaining, average_stack").eq("id", tournamentId).single()
-        : (supabase.rpc as any)("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }),
+        ? readRpc(
+          "get_public_tournament_clock_summary",{p_tournament_id:tournamentId})
+        : readRpc("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }),
     ]);
 
     if (!currentRequest()) return;
@@ -370,6 +383,12 @@ function TournamentLiveViewContent({
       : (handsRes.data ?? []) as HandSource[];
     let seatRows: any[] = [];
     let participationSummary: ReturnType<typeof parseParticipationSummary> | null = null;
+    const publicParticipationSummary=usePublicCurrentHand?parsePublicParticipationSummary(tournamentRes.data,tournamentId):null;
+    if(usePublicCurrentHand&&!publicParticipationSummary){
+      if(!initialLoadedRef.current){setFatalError("Không xác minh được số người chơi và stack trung bình.");setLoading(false);}
+      else setSoftErrorAt(new Date());
+      return;
+    }
     if (!usePublicCurrentHand) {
       try {
         const projection = parseTournamentParticipation(seatsRes.data, tournamentId);
@@ -679,7 +698,8 @@ function TournamentLiveViewContent({
               (wantBetChips &&
                 stackConsumed({ player_id: hp.player_id, chip_count: stackOf.get(hp.player_id) ?? 0 })),
           }));
-          liveToActId = nextToAct({
+          const liveFlow = flowPlayers.filter((p) => !p.is_folded);
+          liveToActId = liveFlow.length <= 1 ? null : nextToAct({
             players: flowPlayers,
             buttonSeat: nextButtonSeat,
             actedThisStreet: acted,
@@ -693,7 +713,6 @@ function TournamentLiveViewContent({
           // misleading — betting is closed. Null it and let the status bar say
           // "Đang chạy board" instead.
           if (wantBetChips) {
-            const liveFlow = flowPlayers.filter((p) => !p.is_folded);
             const eligibleFlow = liveFlow.filter((p) => !p.is_all_in && p.current_stack > 0);
             const maxStreetBet = Math.max(0, ...Object.values(streetBets));
             const isRunoutLive =
@@ -747,6 +766,7 @@ function TournamentLiveViewContent({
       }
     }
 
+    if(!currentRequest())return;
     const capturedBlind = nextHandId && liveHandBlindRef.current?.handId === nextHandId
       ? liveHandBlindRef.current.bigBlind
       : 0;
@@ -805,10 +825,9 @@ function TournamentLiveViewContent({
     if (participationSummary) {
       setPlayersRemaining(participationSummary.counts.remaining);
       setAverageStack(participationSummary.averageStack);
-    } else if (tournamentRes.data) {
-      const tournament = tournamentRes.data as any;
-      setPlayersRemaining(tournament.players_remaining || 0);
-      setAverageStack(tournament.average_stack || 0);
+    } else if (publicParticipationSummary) {
+      setPlayersRemaining(publicParticipationSummary.playersRemaining);
+      setAverageStack(publicParticipationSummary.averageStack);
     }
 
     initialLoadedRef.current = true;
@@ -816,6 +835,19 @@ function TournamentLiveViewContent({
     setSoftErrorAt(null);
     setLastUpdatedAt(new Date());
     setLoading(false);
+    })());
+    } catch (failure: unknown) {
+      if (!currentRequest()) return;
+      if (!initialLoadedRef.current) {
+        setFatalError(failure instanceof Error ? failure.message==='tracker_context_read_timeout'?'Chưa tải được dữ liệu bàn trong thời gian chờ. Hãy thử lại.':failure.message : "Không tải được dữ liệu live tracker.");
+        setLoading(false);
+      } else {
+        setSoftErrorAt(new Date());
+      }
+    } finally {controller.abort();if(liveReadRef.current===owned)liveReadRef.current=null;}
+    };
+    owned.promise=execute();
+    return owned.promise;
   }, [tournamentId, spectator, liveTableScope, readScope]);
 
   const stopPolling = useCallback(() => {
@@ -895,8 +927,8 @@ function TournamentLiveViewContent({
     setLiveBaseline(null);
     setLoading(true);
     loadAllData();
-    return () => { requestSeqRef.current += 1; };
-  }, [tournamentId, loadAllData]);
+    return () => { requestSeqRef.current += 1;if(liveReadRef.current?.scope===readScope){liveReadRef.current.controller.abort();liveReadRef.current=null;} };
+  }, [tournamentId, loadAllData,readScope]);
 
   useEffect(() => {
     if (!tournamentId) return;
@@ -960,6 +992,24 @@ function TournamentLiveViewContent({
       stopPolling();
     };
   }, [tournamentId, loadAllData, spectator, startPolling, stopPolling]);
+
+  // Legacy action writes need not update tournament_hands. Listen only to the
+  // displayed hand; public V2 already receives its safe server broadcast.
+  useEffect(() => {
+    if (!handId || mode !== "live" || (spectator && FEATURES.publicSpectatorRealtimeV2)) return;
+    const coordinator = new PublicSnapshotCoordinator(loadAllData, 1_000);
+    const channel = supabase.channel(`live-hand-actions:${tournamentId}:${handId}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "hand_actions", filter: `hand_id=eq.${handId}`,
+      }, () => coordinator.request())
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") coordinator.request();
+      });
+    return () => {
+      coordinator.stop();
+      void supabase.removeChannel(channel);
+    };
+  }, [tournamentId, handId, mode, spectator, loadAllData]);
 
   useEffect(() => {
     if (!isRunning || localRemaining <= 0) return;
@@ -1191,16 +1241,11 @@ function TournamentLiveViewContent({
     return [...c, ...Array(Math.max(0, 5 - c.length)).fill("")];
   }, [communityCards]);
 
-  // Street derived from board size; showdown once any hole cards are revealed.
+  // Live label follows the authoritative board/status, not the replay cursor.
   const currentStreet = useMemo(() => {
-    if (!handNumber) return null;
-    if (seats.some((s) => s.hole_cards && s.hole_cards.length > 0)) return "showdown";
-    const n = communityCards.length;
-    if (n >= 5) return "river";
-    if (n === 4) return "turn";
-    if (n >= 3) return "flop";
-    return "preflop";
-  }, [handNumber, seats, communityCards]);
+    return deriveLiveStreet(handNumber,communityCards.length,
+      seats.some((s) => !!s.hole_cards?.length),handInProgress);
+  }, [handNumber, seats, communityCards,handInProgress]);
 
   const bigBlind = liveHandBigBlind;
   const formatBB = useCallback(
@@ -1403,7 +1448,7 @@ function TournamentLiveViewContent({
     (n: number) => formatViewerBB(n, replayBigBlind),
     [replayBigBlind]
   );
-  const replayHeaderMetadata = useMemo(() => deriveReplayHeaderMetadata(selectedReplayHand), [selectedReplayHand]);
+  const replayHeaderMetadata = useMemo(() => deriveReplayHeaderMetadata(selectedReplayHand, replayTargetState,selectedReplayFrame), [selectedReplayHand, replayTargetState,selectedReplayFrame]);
 
   // Keep the displayed level tied to this hand, even after the live clock advances.
   const compactFelt = spectator && FEATURES.liveFeltCompact;
@@ -1503,15 +1548,17 @@ function TournamentLiveViewContent({
     setReplayRunoutPresentation(null);
     setReplayMotionEpoch((epoch) => epoch + 1);
     setReplayTargetState({ kind: "loading" });
+    const controller=new AbortController();
+    const publicRead=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>supabase.rpc(name as never,args as never).abortSignal(controller.signal);
     const resolve = async () => {
       const publicReplay = spectator && FEATURES.publicSpectatorRealtimeV2;
       if (requestedReplayTarget.handId) {
         if (publicReplay && requestedReplayTarget.tableId) {
-          const { data, error } = await supabase.rpc("get_public_tournament_table_hand_v2" as never, {
+          const { data, error } = await publicRead("get_public_tournament_table_hand_v2", {
             p_tournament_id: tournamentId,
             p_tournament_table_id: requestedReplayTarget.tableId,
             p_hand_id: requestedReplayTarget.handId,
-          } as never);
+          });
           if (cancelled) return;
           const hand = data as PublicHandResponse;
           if (error) {
@@ -1525,9 +1572,9 @@ function TournamentLiveViewContent({
           return;
         }
         if (publicReplay) {
-          const { data, error } = await supabase.rpc("get_public_tournament_hand_v2" as never, {
+          const { data, error } = await publicRead("get_public_tournament_hand_v2", {
             p_tournament_id: tournamentId, p_hand_id: requestedReplayTarget.handId,
-          } as never);
+          });
           if (cancelled) return;
           const hand = data as PublicHandResponse;
           if (error) { setReplayTargetState({ kind: "query_error" }); return; }
@@ -1540,7 +1587,7 @@ function TournamentLiveViewContent({
           .eq("tournament_id", tournamentId)
           .eq("id", requestedReplayTarget.handId)
           .eq("is_voided", false)
-          .maybeSingle();
+          .abortSignal(controller.signal).maybeSingle();
         if (cancelled) return;
         if (error) {
           setReplayTargetState({ kind: "query_error" });
@@ -1551,11 +1598,11 @@ function TournamentLiveViewContent({
       }
 
       if (publicReplay) {
-        const { data, error } = await supabase.rpc("get_public_tournament_hand_catalog_v2" as never, {
+        const { data, error } = await publicRead("get_public_tournament_hand_catalog_v2", {
           p_tournament_id: tournamentId,
           p_tournament_table_id: requestedReplayTarget.tableId,
           p_limit: 101,
-        } as never);
+        });
         if (cancelled) return;
         const catalog = data as PublicHandCatalogResponse;
         if (error || catalog?.access === "revoked") { setReplayTargetState({ kind: "query_error" }); return; }
@@ -1577,7 +1624,7 @@ function TournamentLiveViewContent({
         .order("id", { ascending: false })
         .limit(2);
       if (requestedReplayTarget.tableId) query = query.eq("table_id", requestedReplayTarget.tableId);
-      const { data, error } = await query;
+      const { data, error } = await query.abortSignal(controller.signal);
       if (cancelled) return;
       if (error) {
         setReplayTargetState({ kind: "query_error" });
@@ -1585,9 +1632,11 @@ function TournamentLiveViewContent({
         setReplayTargetState(resolveReplayCandidates(requestedReplayTarget, data ?? []));
       }
     };
-    void resolve();
-    return () => { cancelled = true; };
-  }, [requestedReplayTarget, spectator, tournamentId]);
+    void observeTrackerContextRead(resolve()).catch(()=>{
+      if(!cancelled){cancelled=true;setReplayTargetState({kind:"query_error"});}
+    }).finally(()=>controller.abort());
+    return () => { cancelled = true;controller.abort(); };
+  }, [requestedReplayTarget, spectator, tournamentId,replayResolveAttempt]);
 
   useEffect(() => {
     if (requestedReplayTarget) enterReplay();
@@ -1629,16 +1678,13 @@ function TournamentLiveViewContent({
     const handMatchesView =
       handNumber != null && (handTableId == null || handTableId === effectiveTableId);
     if (!handMatchesView || active.length === 0) return visibleSeats;
-    // Gap-robust labels: getSeatPositions orders the OCCUPIED seats clockwise
-    // from the button, so non-contiguous seats (e.g. 1,3,5,7 after eliminations)
-    // still get the correct BTN/SB/BB/UTG… Raw getPosition (seat−btn mod count)
-    // mislabels once seats have gaps.
-    const posBySeat = getSeatPositions(active.map((s) => s.seat_number), buttonSeat);
+    // Actual blind posts also cover a dead SB/button; occupied seats alone do not.
+    const posBySeat = getHandSeatPositions(active, buttonSeat, actions);
     return visibleSeats.map((s) => ({
       ...s,
       position: s.is_active ? posBySeat.get(s.seat_number) ?? "" : "",
     }));
-  }, [visibleSeats, handNumber, handTableId, effectiveTableId, buttonSeat]);
+  }, [visibleSeats, handNumber, handTableId, effectiveTableId, buttonSeat, actions]);
 
   const activeSeatsToRender = useMemo(
     () => positionedSeats.filter((s) => s.is_active),
@@ -2037,6 +2083,7 @@ function TournamentLiveViewContent({
             replayTarget={requestedReplayTarget}
             replayTargetState={replayTargetState}
             onSelectReplayTarget={onReplayTargetChange}
+            onRetryReplayTarget={()=>setReplayResolveAttempt(attempt=>attempt+1)}
             onLoadStart={(id) => {
               setReplayHandId(id);
               setReplayHand(null);
@@ -2070,9 +2117,13 @@ function TournamentLiveViewContent({
         ? "grid grid-cols-1 gap-3 min-[1200px]:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)] min-[1200px]:items-start"
         : spectator ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 min-[1200px]:grid-cols-[minmax(0,1fr)_280px] gap-3"}>
         <div className="min-w-0">
-          {spectator && !isReplay && (tableDisplayState === "waiting" || tableDisplayState === "inactive" || tableDisplayState === "closed") ? (
+          {isReplay && !selectedReplayHand ? (
+            <div role="status" className="grid min-h-72 place-items-center rounded-[28px] border border-border bg-card/55 px-5 text-center">
+              <div><History className="mx-auto h-7 w-7 text-muted-foreground" /><p className="mt-3 text-sm font-bold text-foreground">Replay chưa sẵn sàng</p><p className="mt-1 text-xs text-muted-foreground">Đang chờ dữ liệu hand. Nếu tải lỗi, chọn lại hand ở bộ chọn phía trên để thử lại.</p></div>
+            </div>
+          ) : spectator && !isReplay && (tableDisplayState === "waiting" || tableDisplayState === "inactive" || tableDisplayState === "closed") ? (
             <div className="grid min-h-72 place-items-center rounded-[28px] border border-[hsl(var(--viewer-neon)_/_0.28)] bg-card/55 px-5 text-center">
-              <div><Users className="mx-auto h-7 w-7 text-[hsl(var(--viewer-neon))]" /><p className="mt-3 text-sm font-bold text-foreground">{tableDisplayState === "waiting" ? "Đang chờ ván đầu" : tableDisplayState === "inactive" ? "Bàn chưa hoạt động" : "Phiên bàn đã đóng"}</p><p className="mt-1 text-xs text-muted-foreground">Trạng thái được xác nhận từ bàn hiện tại.</p></div>
+              <div><Users className="mx-auto h-7 w-7 text-[hsl(var(--viewer-neon))]" /><p className="mt-3 text-sm font-bold text-foreground">{tableDisplayState === "waiting" ? "Đang chờ ván bài" : tableDisplayState === "inactive" ? "Bàn chưa hoạt động" : "Phiên bàn đã đóng"}</p><p className="mt-1 text-xs text-muted-foreground">Trạng thái được xác nhận từ bàn hiện tại.</p></div>
             </div>
           ) : spectator && FEATURES.liveViewerPulseV2 && !isReplay && activeSeatsToRender.length === 0 ? (
             <div className="grid min-h-72 place-items-center rounded-[28px] border border-[hsl(var(--viewer-neon)_/_0.28)] bg-card/55 px-5 text-center">

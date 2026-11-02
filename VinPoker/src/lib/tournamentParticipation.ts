@@ -24,7 +24,7 @@ export interface ParticipationEntry {
   seat_number: number | null;
   finished_place: number | null;
   status: string;
-  participation_status: "seated" | "waiting" | "busted" | "finished" | "cancelled" | "anomaly";
+  participation_status: "seated" | "waiting" | "bagged" | "busted" | "finished" | "cancelled" | "anomaly";
   anomaly_reason: string | null;
 }
 
@@ -89,7 +89,7 @@ export function parseTournamentParticipation(value: unknown, tournamentId: strin
     if (!record(e) || ![e.id, e.player_id, e.player_name, e.status].every(text)
       || ![e.entry_no, e.current_stack].every(integer) || ![e.seat_number, e.finished_place].every(nullableInteger)
       || !nullableText(e.anomaly_reason)
-      || !["seated", "waiting", "busted", "finished", "cancelled", "anomaly"].includes(String(e.participation_status))) {
+      || !["seated", "waiting", "bagged", "busted", "finished", "cancelled", "anomaly"].includes(String(e.participation_status))) {
       throw new Error("invalid_participation_entry");
     }
   }

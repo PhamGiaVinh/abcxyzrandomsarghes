@@ -62,6 +62,13 @@ afterEach(() => cleanup());
 describe("ShowdownInputPanel — revealOnly skip escape (UAT wave 2)", () => {
   const revealCommon = { ...common, selectedWinners: [] as string[], revealOnly: true, onRevealAndContinue: noop };
 
+  it("does not claim every contender is all-in when a covering player retains chips", () => {
+    const html = renderToStaticMarkup(<ShowdownInputPanel {...revealCommon} />);
+    expect(html).not.toContain("Tất cả đã all-in");
+    expect(html).toContain("Đã hết lượt cược");
+    expect(html).toContain("chạy nốt board");
+  });
+
   it("no onSkipReveal → markup byte-identical to today's revealOnly panel (tripwire)", () => {
     const plain = renderToStaticMarkup(<ShowdownInputPanel {...revealCommon} />);
     expect(plain).not.toContain("Tiếp tục không lật");
@@ -70,6 +77,7 @@ describe("ShowdownInputPanel — revealOnly skip escape (UAT wave 2)", () => {
 
   it("with onSkipReveal → the amber escape block + exact warning copy render", () => {
     const html = renderToStaticMarkup(<ShowdownInputPanel {...revealCommon} onSkipReveal={noop} />);
+    expect(html).toContain("Nếu chọn");
     expect(html).toContain("Tiếp tục không lật (không có thông tin bài)");
     expect(html).toContain("Bài sẽ không hiển thị trên viewer. Bạn vẫn phải chấm kết quả thủ công ở Showdown.");
   });
@@ -99,9 +107,8 @@ describe("ShowdownInputPanel — revealOnly skip escape (UAT wave 2)", () => {
   });
 
   it("disabled while submitting", () => {
-    const html = renderToStaticMarkup(<ShowdownInputPanel {...revealCommon} onSkipReveal={noop} submitting />);
-    const btnChunk = html.split("Tiếp tục không lật")[0];
-    expect(btnChunk.slice(-400)).toContain('disabled=""');
+    const {getByRole}=render(<ShowdownInputPanel {...revealCommon} onSkipReveal={noop} submitting />);
+    expect(getByRole('button',{name:'Tiếp tục không lật (không có thông tin bài)',exact:true})).toBeDisabled();
   });
 
   it("escape stays available even when the live players are NOT resolved (its purpose)", () => {

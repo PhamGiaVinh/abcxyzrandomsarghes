@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { chipOpsRpcErrorMessage } from "@/lib/chipOpsErrors";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
+import { canonicalVoiceJson } from "@/lib/trackerVoice/canonicalRequest";
+import { assertCurrentChipDenominations } from "@/lib/chipInventoryRead";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,13 +37,14 @@ const ERR: Record<string, string> = {
   INVENTORY_NEGATIVE: "Chip đã được dùng bởi thao tác sau; không đủ tồn để hoàn tác.",
   BANK_NEGATIVE: "Kho không đủ chip để hoàn tác. Cần đối chiếu các thao tác sau.",
 };
-async function callRpc(fn: string, args: Record<string, unknown>): Promise<any | null> {
+async function callRpc(fn: string, args: Record<string, unknown>, isCurrent: () => boolean): Promise<any | null> {
   try {
     const { data, error } = await sb.rpc(fn, args);
+    if (!isCurrent()) return null;
     if (error) { toast.error(chipOpsRpcErrorMessage(error)); return null; }
     if (data && data.error) { toast.error(ERR[data.error] ?? data.error); return null; }
     return data ?? {};
-  } catch (error) { toast.error(chipOpsRpcErrorMessage(error)); return null; }
+  } catch (error) { if (isCurrent()) toast.error(chipOpsRpcErrorMessage(error)); return null; }
 }
 
 interface Denom { denomination_id: string; value: number; color: string | null; current_count: number }
@@ -49,12 +53,12 @@ interface HistoryOp {
   removed_count: number; target_added: number; rounding_delta: number;
 }
 
-export function ColorUpTab({ tournamentId, clubId, onOpenSetup }: { tournamentId: string; clubId: string | null; onOpenSetup?: () => void }) {
+export function ColorUpTab({ tournamentId, clubId, onOpenSetup, onInventoryChanged }: { tournamentId: string; clubId: string | null; onOpenSetup?: () => void; onInventoryChanged?: () => void }) {
   const { user } = useAuth();
   const [journalGeneration, setJournalGeneration] = useState(0);
   const scope = `${user?.id ?? "anonymous"}:${clubId}:${tournamentId}`;
   return <ScopedColorUpTab key={`${scope}:${journalGeneration}`} scope={scope} actorId={user?.id ?? null} tournamentId={tournamentId} clubId={clubId}
-    onOpenSetup={onOpenSetup} onRereadJournal={() => setJournalGeneration((value) => value + 1)} />;
+    onOpenSetup={onOpenSetup} onInventoryChanged={onInventoryChanged} onRereadJournal={() => setJournalGeneration((value) => value + 1)} />;
 }
 
 interface MutationIntent {
@@ -62,9 +66,12 @@ interface MutationIntent {
   args: Record<string, unknown>;
 }
 
-function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJournal, onOpenSetup }: { tournamentId: string; clubId: string | null; scope: string; actorId: string | null; onRereadJournal: () => void; onOpenSetup?: () => void }) {
+function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJournal, onOpenSetup, onInventoryChanged }: { tournamentId: string; clubId: string | null; scope: string; actorId: string | null; onRereadJournal: () => void; onOpenSetup?: () => void; onInventoryChanged?: () => void }) {
+  const removedFieldId = useId();
+  const targetFieldId = useId();
+  const addedFieldId = useId();
   const storageKey = `vinpoker:color-up-pending:${scope}`;
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [denoms, setDenoms] = useState<Denom[]>([]);
   const [bigBlind, setBigBlind] = useState<number | null>(null);
@@ -95,8 +102,13 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
   });
   const [uncertain, setUncertain] = useState<MutationIntent | null>(savedRequest.intent);
   const [journalError, setJournalError] = useState(savedRequest.error);
-  const clearIntent = () => {
+  const journalMatches = (intent: MutationIntent) => {
+    const raw = sessionStorage.getItem(storageKey);
+    return raw !== null && canonicalVoiceJson(JSON.parse(raw)) === canonicalVoiceJson(intent);
+  };
+  const clearIntent = (intent: MutationIntent) => {
     try {
+      if (!journalMatches(intent)) throw new Error("intent_journal_changed");
       sessionStorage.removeItem(storageKey);
       if (sessionStorage.getItem(storageKey) !== null) throw new Error("intent_clear_unverified");
     } catch {
@@ -116,34 +128,52 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
   const reload = useCallback(async () => {
     if (!tournamentId) return;
     const generation = ++readGeneration.current;
-    const current = () => alive.current && generation === readGeneration.current;
+    let accepting = true;
+    const current = () => accepting && alive.current && generation === readGeneration.current;
     setLoading(true);
     setReadError(null);
     try {
-      const inv = await callRpc("get_current_chip_inventory", { p_tournament_id: tournamentId });
-      if (!current()) return;
-      if (!inv || !Array.isArray(inv.denominations)) throw new Error("inventory_unverified");
-      const { data: t, error: tournamentError } = await sb.from("tournaments").select("current_level").eq("id", tournamentId).maybeSingle();
-      if (!current()) return;
-      if (tournamentError || !t) throw new Error("tournament_unverified");
-      let bb: number | null = null;
-      if (t.current_level != null) {
-        const { data: l, error: levelError } = await sb.from("tournament_levels").select("big_blind").eq("tournament_id", tournamentId).eq("level_number", t.current_level).maybeSingle();
+      const snapshot = await waitForManualPlayerResponse((async () => {
+        const inv = await callRpc("get_current_chip_inventory", { p_tournament_id: tournamentId }, current);
         if (!current()) return;
-        if (levelError) throw levelError;
-        bb = l?.big_blind ?? null;
-      }
-      const h = await callRpc("get_color_up_history", { p_tournament_id: tournamentId });
-      if (!current()) return;
-      if (!h || !Array.isArray(h.operations)) throw new Error("history_unverified");
-      setDenoms(inv.denominations.map((d: any) => ({ denomination_id: d.denomination_id, value: d.value, color: d.color, current_count: Number(d.current_count) })));
-      setCurrentLevel(t.current_level ?? null);
-      setBigBlind(bb);
-      setHistory(h.operations);
+        if (!inv || !Array.isArray(inv.denominations)) throw new Error("inventory_unverified");
+        assertCurrentChipDenominations(inv.denominations);
+        const inventoryDenoms: Denom[] = inv.denominations;
+        const { data: t, error: tournamentError } = await sb.from("tournaments").select("current_level").eq("id", tournamentId).maybeSingle();
+        if (!current()) return;
+        if (tournamentError || !t) throw new Error("tournament_unverified");
+        let bb: number | null = null;
+        if (t.current_level != null) {
+          const { data: l, error: levelError } = await sb.from("tournament_levels").select("big_blind").eq("tournament_id", tournamentId).eq("level_number", t.current_level).maybeSingle();
+          if (!current()) return;
+          if (levelError) throw levelError;
+          bb = l?.big_blind ?? null;
+        }
+        const h = await callRpc("get_color_up_history", { p_tournament_id: tournamentId }, current);
+        if (!current()) return;
+        if (!h || !Array.isArray(h.operations)) throw new Error("history_unverified");
+        if (h.operations.some((op: HistoryOp | null) => !op
+          || typeof op.id !== "string" || !op.id.trim()
+          || !["confirmed", "reversed"].includes(op.status)
+          || !Number.isSafeInteger(op.level_number)
+          || !Number.isSafeInteger(op.denom_removed_value) || op.denom_removed_value <= 0
+          || !Number.isSafeInteger(op.denom_target_value) || op.denom_target_value <= 0
+          || !Number.isSafeInteger(op.removed_count) || op.removed_count <= 0
+          || !Number.isSafeInteger(op.target_added) || op.target_added < 0
+          || !Number.isSafeInteger(op.rounding_delta))) throw new Error("history_unverified");
+        return { denoms: inventoryDenoms,
+          currentLevel: t.current_level ?? null, bigBlind: bb, history: h.operations };
+      })());
+      if (!current() || !snapshot) return;
+      setDenoms(snapshot.denoms);
+      setCurrentLevel(snapshot.currentLevel);
+      setBigBlind(snapshot.bigBlind);
+      setHistory(snapshot.history);
     } catch {
       if (current()) setReadError("Không xác minh được tồn chip hoặc lịch sử. Chưa cho phép thao tác; hãy tải lại.");
     } finally {
       if (current()) setLoading(false);
+      accepting = false;
     }
   }, [tournamentId]);
   useEffect(() => { reload(); }, [reload]);
@@ -187,7 +217,7 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
         || data.request_key !== args.p_idempotency_key || !data.payload
         || Object.keys(data.payload).length !== Object.keys(payload).length
         || !Object.entries(payload).every(([key, value]) => data.payload[key] === value)) return false;
-      if (!clearIntent()) return false;
+      if (!clearIntent(intent)) return false;
       toast.success("Đã hủy yêu cầu chưa chốt. Không thay đổi tồn chip.");
       void reload();
       return true;
@@ -198,9 +228,10 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
         ? Number.isSafeInteger(data.removed_count) && data.removed_count > 0
           && Number.isSafeInteger(data.target_added) && data.target_added === intent.args.p_target_added
         : data.color_up_operation_id === intent.args.p_operation_id && (data.reversed === true || data.idempotent === true))) return false;
-    if (!clearIntent()) return false;
+    if (!clearIntent(intent)) return false;
     toast.success(intent.fn === "chip_ops_color_up" ? "Đã color-up." : "Đã hoàn tác color-up.");
     setRemovedId(""); setTargetId(""); setAdded("");
+    onInventoryChanged?.();
     void reload();
     return true;
   };
@@ -210,14 +241,15 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     setBusy(true);
     const args = intent.args;
     try {
-      const { data, error } = await sb.rpc(cancel ? "cancel_chip_color_up_request_v1" : "get_chip_color_up_receipt_v1", {
+      if (!journalMatches(intent)) { setJournalError(true); throw new Error("intent_journal_changed"); }
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(sb.rpc(cancel ? "cancel_chip_color_up_request_v1" : "get_chip_color_up_receipt_v1", {
         p_tournament_id: tournamentId,
         p_operation: intent.fn === "chip_ops_color_up" ? "color_up" : "reverse_color_up",
         p_request_key: args.p_idempotency_key,
         p_payload: intent.fn === "chip_ops_color_up"
           ? { tournament: args.p_tournament_id, removed: args.p_denom_removed, target: args.p_denom_target, added: args.p_target_added, level: args.p_level_number }
           : { operation: args.p_operation_id },
-      });
+      })));
       if (!alive.current) return;
       if (error) toast.error(chipOpsRpcErrorMessage(error));
       else if (data?.error) toast.error(ERR[data.error] ?? data.error);
@@ -237,18 +269,21 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     setBusy(true);
     // Persist before sending: browser reload may follow an already committed mutation.
     try {
+      const prior = sessionStorage.getItem(storageKey);
+      if (prior !== null && !journalMatches(intent)) throw new Error("intent_journal_changed");
       const serialized = JSON.stringify(intent);
       sessionStorage.setItem(storageKey, serialized);
       if (sessionStorage.getItem(storageKey) !== serialized) throw new Error("intent_storage_unverified");
     } catch {
       writing.current = false;
       setBusy(false);
+      setJournalError(true);
       toast.error("Không lưu được mã yêu cầu an toàn. Chưa gửi thao tác chip; hãy kiểm tra bộ nhớ trình duyệt.");
       return;
     }
     setUncertain(intent);
     try {
-      const { data, error } = await sb.rpc(intent.fn, intent.args);
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(sb.rpc(intent.fn, intent.args)));
       if (!alive.current) return;
       if (error) {
         setUncertain(intent);
@@ -293,7 +328,7 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
     </CardContent></Card>;
   }
   if (loading) {
-    return <Card className="border-border"><CardContent className="space-y-3 py-6"><Skeleton className="h-6 w-1/3" /><Skeleton className="h-24 w-full" /></CardContent></Card>;
+    return <Card className="border-border"><CardContent className="space-y-3 py-6" role="status" aria-busy="true" aria-label="Đang tải tồn chip và lịch sử color-up"><Skeleton className="h-6 w-1/3" /><Skeleton className="h-24 w-full" /></CardContent></Card>;
   }
   const pendingRecovery = uncertain && <Card><CardContent className="space-y-2 py-4" role="alert">
     <p className="text-sm">Chưa xác minh được thao tác vừa gửi. Đang giữ nguyên mã và dữ liệu; chưa được tạo thao tác chip mới.</p>
@@ -323,9 +358,9 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label className="text-xs">Rút mệnh giá</Label>
+              <Label htmlFor={removedFieldId} className="text-xs">Rút mệnh giá</Label>
               <Select value={removedId} onValueChange={setRemovedId}>
-                <SelectTrigger><SelectValue placeholder="Chọn mệnh giá rút" /></SelectTrigger>
+                <SelectTrigger id={removedFieldId}><SelectValue placeholder="Chọn mệnh giá rút" /></SelectTrigger>
                 <SelectContent>
                   {sorted.map((d) => (
                     <SelectItem key={d.denomination_id} value={d.denomination_id} disabled={d.current_count <= 0}>
@@ -338,9 +373,9 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Race lên</Label>
+              <Label htmlFor={targetFieldId} className="text-xs">Race lên</Label>
               <Select value={targetId} onValueChange={setTargetId}>
-                <SelectTrigger><SelectValue placeholder="Chọn mệnh giá nhận" /></SelectTrigger>
+                <SelectTrigger id={targetFieldId}><SelectValue placeholder="Chọn mệnh giá nhận" /></SelectTrigger>
                 <SelectContent>
                   {sorted.filter((d) => !removed || d.value > removed.value).map((d) => (
                     <SelectItem key={d.denomination_id} value={d.denomination_id}>T{fmt(d.value)}</SelectItem>
@@ -367,9 +402,9 @@ function ScopedColorUpTab({ tournamentId, clubId, scope, actorId, onRereadJourna
               <div className="text-sm text-muted-foreground">Giá trị rút: <b className="tabular-nums text-foreground">{fmt(valueRemoved)}</b></div>
 
               <div>
-                <Label className="text-xs">Số chip T{fmt(target.value)} race ra (gợi ý {fmt(suggested)})</Label>
+                <Label htmlFor={addedFieldId} className="text-xs">Số chip T{fmt(target.value)} race ra (gợi ý {fmt(suggested)})</Label>
                 <div className="flex items-center gap-3">
-                  <Input type="number" inputMode="numeric" value={added} onChange={(e) => setAdded(e.target.value)} className="w-32" />
+                  <Input id={addedFieldId} type="number" inputMode="numeric" value={added} onChange={(e) => setAdded(e.target.value)} className="w-32" />
                   <span className={`text-sm ${rounding === 0 ? "text-primary" : withinTol ? "text-warning" : "text-destructive"}`}>
                     {rounding === 0 ? "khớp ✓" : withinTol ? `dư ${fmt(Math.abs(rounding))} — trao 1 chip cho high card` : "sai số lớn ✗"}
                   </span>

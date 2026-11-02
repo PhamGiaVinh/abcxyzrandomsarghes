@@ -12,16 +12,31 @@ on:
       - "VinPoker/src/App.tsx"
       - "VinPoker/tests/gtoRetirement.source.test.mjs"
       - "VinPoker/e2e/gto-retirement.mock.spec.ts"
+      - "VinPoker/src/pages/PublicTournamentClock*"
       - "VinPoker/src/components/ops/shared/**"
       - "VinPoker/src/components/cashier/tournament-live/OpenTableDialog.tsx"
       - "VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx"
       - "VinPoker/src/components/cashier/tournament-live/PlayerActionSheet*"
       - "VinPoker/src/components/admin/MediaClubSchedules*"
+      - "VinPoker/src/lib/seriesReorder*"
+      - "VinPoker/e2e/operations-responsive.mock.spec.ts"
+      - "VinPoker/e2e/fixtures/operations-responsive.tsx"
       - "VinPoker/src/components/LegacyScheduleEvidenceNote*"
       - "VinPoker/src/pages/ClubDetail*"
       - "VinPoker/src/pages/Tournaments.tsx"
       - "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx"
       - "VinPoker/src/lib/floorTableControlV3.ts"
+      - "VinPoker/src/lib/feltLifecycleReadiness*"
+      - "VinPoker/src/lib/tournament/readBlindLineage.ts"
+      - "VinPoker/src/lib/tournament/observeTrackerContextRead.ts"
+      - "VinPoker/src/lib/tracker-poker/recordedHandDisplayOutcome.ts"
+      - "VinPoker/tests/trackerSettlement/recordedHandDisplayOutcome.test.ts"
+      - "VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts"
+      - "VinPoker/src/components/cashier/tournament-live/handinput/StandaloneHandInputConsole.tsx"
+      - "VinPoker/src/components/cashier/tournament-live/handinput/RacetrackHandInputConsole.tsx"
+      - "VinPoker/tests/handinput/readBlindLineage*"
+      - "VinPoker/tests/handinput/voidResponseRecovery.hook.test.tsx"
+      - "VinPoker/tests/handinput/hand4WorkflowContracts.test.ts"
       - "VinPoker/src/lib/floorPendingMoveIntent.ts"
       - "VinPoker/src/components/cashier/OfflineBuyInPanel.tsx"
       - "VinPoker/src/components/TournamentRegisterModal.test.tsx"
@@ -29,6 +44,22 @@ on:
       - "VinPoker/src/components/floor/useFloorTournaments*.test.tsx"
       - "VinPoker/src/components/floor/MultiDayTournamentsBoard*"
       - "VinPoker/src/hooks/useTournaments.ts"
+      - "VinPoker/src/lib/sessionReadEpoch.ts"
+      - "VinPoker/src/hooks/useTournamentsRead.test.tsx"
+      - "VinPoker/src/lib/tournamentDeleteResult.ts"
+      - "VinPoker/tests/opsFloorCashier/opsMutations.contract.test.ts"
+      - "VinPoker/src/types/tournament.ts"
+      - "VinPoker/src/pages/TournamentConfigPage*"
+      - "VinPoker/src/lib/dealerTableInventory*"
+      - "VinPoker/src/components/cashier/DealerSwingTab.tsx"
+      - "VinPoker/src/components/cashier/dealer-swing/swingTableView*"
+      - "VinPoker/supabase/functions/process-swing/passes/passR-rotation-planner.ts"
+      - "VinPoker/tests/dealerSwing/passRTournamentRead.repro.test.ts"
+      - "VinPoker/tests/dealerSwing/rotationScope.bootstrap.sql"
+      - "VinPoker/supabase/tests/dealer_rotation_plan_diff.sql"
+      - "VinPoker/supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql"
+      - "VinPoker/src/components/floor/TournamentManagerShared*"
+      - "VinPoker/src/lib/tournamentCreate*"
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
@@ -95,15 +126,33 @@ jobs:
         run: >-
           npx vitest run
           src/ops/opsMutations.test.ts
+          tests/opsFloorCashier/opsMutations.contract.test.ts
           src/components/TournamentRegisterModal.test.tsx
           src/components/floor/useFloorTournaments.test.tsx
           src/components/floor/useFloorTournaments.readScope.test.tsx
           src/components/floor/MultiDayTournamentsBoard.test.tsx
           src/pages/CashierDashboard.tourEntry.test.tsx
+          src/pages/PublicTournamentClock.readState.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
           src/components/admin/MediaClubSchedules.uploadOutcome.test.tsx
+          src/components/admin/MediaClubSchedules.reorder.test.tsx
+          src/lib/seriesReorder.test.ts
           src/components/LegacyScheduleEvidenceNote.test.tsx
           src/pages/ClubDetail.scheduleEvidence.test.tsx
+          src/hooks/useTournamentsRead.test.tsx
+          src/pages/TournamentConfigPage.canonicalRead.test.tsx
+          src/lib/dealerTableInventory.test.ts
+          src/components/cashier/dealer-swing/swingTableView.session.test.ts
+          tests/dealerSwing/passRTournamentRead.repro.test.ts
+          src/lib/feltLifecycleReadiness.test.ts
+          src/lib/feltLifecycleReadiness.rpcClient.test.ts
+          tests/handinput/readBlindLineage.readIntegrity.test.ts
+          tests/trackerSettlement/recordedHandDisplayOutcome.test.ts
+          tests/handinput/readHandBlindLevel.test.ts
+          tests/handinput/voidResponseRecovery.hook.test.tsx
+          tests/handinput/hand4WorkflowContracts.test.ts
+          src/components/floor/TournamentManagerShared.createIntegrity.test.tsx
+          src/lib/tournamentCreate.test.ts
           tests/opsFloorCashier
 
       - name: Run focused Quant Q0 source tests
@@ -164,6 +213,18 @@ jobs:
       - name: Build production source (flags remain default-off)
         working-directory: VinPoker
         run: npm run build
+
+      - name: Verify isolated rotation persist scope and quarantined row fingerprint
+        working-directory: VinPoker
+        env:
+          ROTATION_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$ROTATION_PG_CONTAINER" createdb -h 127.0.0.1 -U postgres vinpoker_rotation_scope_ci
+          docker exec "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -c "SELECT current_database(), current_user, inet_server_addr(), current_setting('server_version_num'), (SELECT count(*) FROM pg_tables WHERE schemaname='public') AS public_table_count;"
+          docker exec -i "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f - < tests/dealerSwing/rotationScope.bootstrap.sql
+          docker exec -i "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f - < supabase/migrations/20270103000000_upsert_rotation_plan_diff.sql
+          docker exec -i "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -f - < supabase/tests/dealer_rotation_plan_diff.sql
+          docker exec "$ROTATION_PG_CONTAINER" psql -h 127.0.0.1 -U postgres -d vinpoker_rotation_scope_ci -X -v ON_ERROR_STOP=1 -c "SELECT md5(pg_get_functiondef('public.upsert_rotation_plan(uuid,uuid,jsonb,uuid[])'::regprocedure)) AS tested_function_md5;"
 
       - name: Install Chromium for responsive mock-session verification
         working-directory: VinPoker

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, BellRing, Check, Loader2, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { HandHistoryWorkspace } from "./HandHistoryWorkspace";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import {
@@ -13,10 +14,13 @@ import {
   type TrackerFloorAlertStatus,
 } from "@/lib/tracker-floor-alerts/trackerFloorAlertsRead";
 import { useTrackerFloorAlertLocations } from "@/lib/tracker-floor-alerts/useTrackerFloorAlertLocations";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { useFloorAlertTransition } from "./useFloorAlertTransition";
 
 type FloorAlertStatus = TrackerFloorAlertStatus;
 interface TrackerFloorAlertLaneProps {
   tournamentId: string;
+  actorId?: string;
 }
 
 function nextTransition(status: FloorAlertStatus): { action: string; label: string } | null {
@@ -26,8 +30,20 @@ function nextTransition(status: FloorAlertStatus): { action: string; label: stri
   return null;
 }
 
-export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLaneProps) {
+export function TrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAlertLaneProps) {
+  return <ScopedTrackerFloorAlertLane key={JSON.stringify([tournamentId, actorId])} tournamentId={tournamentId} actorId={actorId} />;
+}
+
+function ScopedTrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAlertLaneProps) {
   const supabase = useSupabaseClient();
+  const alive = useRef(true);
+  const readEpoch = useRef(0);
+  const readFlight = useRef<{ promise: Promise<void>; queued: boolean } | null>(null);
+  useEffect(() => {
+    const epoch = readEpoch.current;
+    alive.current = true;
+    return () => { alive.current = false; readEpoch.current = epoch + 1; readFlight.current = null; };
+  }, []);
   const [searchParams, setSearchParams] = useSearchParams();
   const targetAlertId = searchParams.get("alert");
   const [alerts, setAlerts] = useState<TrackerFloorAlert[]>([]);
@@ -35,18 +51,45 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
   const [error, setError] = useState<string | null>(null);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [reviewAlert, setReviewAlert] = useState<TrackerFloorAlert | null>(null);
+  const [confirmation,setConfirmation]=useState<{alert:TrackerFloorAlert;action:'resolve'|'dismiss';note:string|null}|null>(null);
   const locationFor = useTrackerFloorAlertLocations(supabase, alerts);
+  const transitionRecovery = useFloorAlertTransition(actorId, tournamentId);
 
   const reload = useCallback(async () => {
-    setError(null);
-    const result = await listTrackerFloorAlerts(supabase, tournamentId);
-    if ("error" in result) {
-      setError(result.error);
-      setLoading(false);
-      return;
+    if (!alive.current) return;
+    if (readFlight.current) {
+      readFlight.current.queued = true;
+      return readFlight.current.promise;
     }
-    setAlerts([...result.alerts]);
-    setLoading(false);
+    const epoch = readEpoch.current;
+    const current = () => alive.current && readEpoch.current === epoch;
+    const flight = { promise: Promise.resolve(), queued: false };
+    readFlight.current = flight;
+    flight.promise = (async () => {
+      try {
+        do {
+          flight.queued = false;
+          const result = await observeTrackerContextRead(listTrackerFloorAlerts(supabase, tournamentId));
+          if (!current()) return;
+          // Notifications invalidate successful snapshots, not evidence that
+          // verification failed. Keep stale rows read-only during the follow-up.
+          if ("error" in result) setError(result.error);
+          else {
+            if (flight.queued) continue;
+            setAlerts([...result.alerts]); setError(null);
+          }
+          setLoading(false);
+        } while (flight.queued && current());
+      } catch {
+        if (current()) {
+          setError("Không tải được cảnh báo hiện tại. Dữ liệu cũ chưa được xác minh; hãy làm mới.");
+          setLoading(false);
+        }
+      } finally {
+        if (readFlight.current === flight) readFlight.current = null;
+      }
+    })();
+    return flight.promise;
   }, [supabase, tournamentId]);
 
   useEffect(() => {
@@ -79,8 +122,14 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
     if (target?.hand_id) setReviewAlert(target);
   }, [alerts, loading, targetAlertId]);
 
-  const transition = async (alert: TrackerFloorAlert, action: string, note: string | null = null) => {
-    if (transitioningId) return;
+  const transition = async (alert: TrackerFloorAlert, action: string, note: string | null = null, confirmed=false) => {
+    if (!alive.current || transitioningId || error || transitionRecovery.blocked) return;
+    if (action==='resolve' && (!locationFor(alert) || locationFor(alert)?.unavailable)) {
+      toast.error('Chưa xác minh được bàn/hand. Hãy làm mới trước khi đánh dấu đã xử lý.');return;
+    }
+    if (!confirmed && (action==='dismiss' || action==='resolve'&&alert.correction_required)) {
+      setConfirmation({alert,action,note});return;
+    }
     if (action === "dismiss") {
       if (!alert.hand_id || !locationFor(alert)?.handVoided) return;
       const { data: hand, error: handError } = await supabase.from("tournament_hands")
@@ -88,33 +137,21 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
         .eq("id", alert.hand_id)
         .eq("tournament_id", alert.tournament_id)
         .maybeSingle();
+      if (!alive.current) return;
       if (handError || hand?.is_voided !== true) {
         toast.error("Không xác minh được hand đã void trên máy chủ. Cảnh báo vẫn giữ nguyên.");
         return;
       }
     }
-    if (action === "dismiss" && !window.confirm(
-      "Hand này đã VOID trên máy chủ. Đóng cảnh báo sẽ mở lại Voice cho bàn; transcript cũ không được tự phát lại. Bạn đã kiểm tra toàn bộ ván và muốn tiếp tục?",
-    )) return;
-    if (action === "resolve" && alert.correction_required && !window.confirm(
-      "Chỉ đánh dấu đã xử lý sau khi action/hand canonical đã được sửa và kiểm tra. Thao tác này mở lại Voice cho bàn. Tiếp tục?",
-    )) return;
     setTransitioningId(alert.id);
-    const { data, error: rpcError } = await supabase.rpc("transition_tracker_floor_alert" as never, {
-      p_alert_id: alert.id,
-      p_expected_version: alert.version,
-      p_transition: action,
-      p_note: note,
-      p_idempotency_key: `floor-alert:${crypto.randomUUID()}`,
-    } as never);
-    const payload = data as unknown as { ok?: boolean; error?: string } | null;
-    if (rpcError || !payload?.ok) {
-      toast.error(payload?.error ?? rpcError?.message ?? "Không cập nhật được cảnh báo.");
-    } else {
-      if (action === "dismiss") toast.success("Đã đóng cảnh báo hand void. Dealer hãy tải lại trạng thái Voice; không phát lại transcript cũ.");
-      await reload();
-    }
-    setTransitioningId(null);
+    try {
+      const confirmed = await transitionRecovery.run(alert.id, alert.version, action as "acknowledge" | "start" | "resolve" | "dismiss", note);
+      if (!alive.current) return;
+      if (confirmed) {
+        if (action === "dismiss") toast.success("Đã đóng cảnh báo hand void. Dealer hãy tải lại trạng thái Voice; không phát lại transcript cũ.");
+        await reload();
+      }
+    } finally { if (alive.current) setTransitioningId(null); }
   };
 
   return (
@@ -136,6 +173,11 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
       </header>
 
       <div className="space-y-3 p-4" aria-live="polite">
+        {transitionRecovery.message && <p role="alert" className="text-xs text-amber-100">{transitionRecovery.message}</p>}
+        {transitionRecovery.pending && <Button type="button" variant="outline" className="min-h-11"
+          disabled={transitionRecovery.busy} onClick={() => void transitionRecovery.recover().then(confirmed => {
+            if (confirmed && alive.current) void reload();
+          })}>Kiểm tra lại yêu cầu cũ</Button>}
         {loading && (
           <div className="flex min-h-20 items-center justify-center gap-2 text-xs text-zinc-400">
             <Loader2 className="h-4 w-4 animate-spin" /> Đang tải cảnh báo
@@ -172,9 +214,9 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
                     {alert.dealer_name || (alert.dealer_id ? "Dealer" : "Floor / Owner")} · {new Date(alert.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-amber-100">
-                    {location?.tableNumber != null ? `Bàn ${location.tableNumber}` : "Đang tải bàn"}
-                    {location?.handNumber != null ? ` · Hand #${location.handNumber}` : ""}
-                    {location?.handVoided ? " · ĐÃ VOID" : ""}
+                    {location?.unavailable ? 'Không xác minh được bàn/hand — hãy làm mới' : location?.tableNumber != null ? `Bàn ${location.tableNumber}` : "Đang tải bàn"}
+                    {!location?.unavailable && location?.handNumber != null ? ` · Hand #${location.handNumber}` : ""}
+                    {!location?.unavailable && location?.handVoided ? " · ĐÃ VOID" : ""}
                   </p>
                   {alert.alert_kind === "wrong_action" && !alert.source_action_id && (
                     <p className="mt-1 text-xs text-zinc-300">Action sai chưa được chỉ rõ; xem toàn bộ nhật ký ván trước khi sửa.</p>
@@ -201,7 +243,7 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
                     </Button>
                   )}
                   {alert.correction_required && location?.handVoided && alert.hand_id && (
-                    <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={transitioningId === alert.id} onClick={() => void transition(alert, "dismiss", `Hand ${alert.hand_id} đã void; Floor kiểm tra và đóng cảnh báo.`)}>
+                    <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={!!error || transitionRecovery.blocked || transitioningId === alert.id} onClick={() => void transition(alert, "dismiss", `Hand ${alert.hand_id} đã void; Floor kiểm tra và đóng cảnh báo.`)}>
                       Hand đã void: đóng cảnh báo
                     </Button>
                   )}
@@ -210,7 +252,8 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
                       type="button"
                       size="sm"
                       className="min-h-11"
-                      disabled={transitioningId === alert.id}
+                      disabled={!!error || transitionRecovery.blocked || transitioningId === alert.id
+                        || primary.action==='resolve'&&(!location || location.unavailable)}
                       onClick={() => void transition(alert, primary.action)}
                     >
                       {transitioningId === alert.id && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
@@ -223,6 +266,27 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
           );
         })}
       </div>
+      <AlertDialog open={!!confirmation} onOpenChange={(open)=>{if(!open)setConfirmation(null);}}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmation?.action==='dismiss'?'Đóng cảnh báo hand đã void?':'Xác nhận đã xử lý hand?'}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmation?.action==='dismiss'
+              ?'Hand này đã VOID trên máy chủ. Đóng cảnh báo sẽ mở lại Voice cho bàn; transcript cũ không được tự phát lại. Bạn đã kiểm tra toàn bộ ván và muốn tiếp tục?'
+              :'Chỉ đánh dấu đã xử lý sau khi action/hand canonical đã được sửa và kiểm tra. Thao tác này mở lại Voice cho bàn. Tiếp tục?'}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Giữ cảnh báo</AlertDialogCancel>
+            <AlertDialogAction disabled={!!error||transitionRecovery.blocked||!!transitioningId} onClick={()=>{
+              const target=confirmation;setConfirmation(null);if(!target)return;
+              const current=alerts.find(item=>item.id===target.alert.id);
+              if(!current||current.version!==target.alert.version||current.status!==target.alert.status){
+                toast.error('Cảnh báo đã thay đổi. Hãy làm mới và kiểm tra lại trước khi xác nhận.');return;
+              }
+              void transition(current,target.action,target.note,true);
+            }}>Xác nhận đã kiểm tra</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={!!reviewAlert} onOpenChange={(open) => { if (!open) {
         setReviewAlert(null);
         if (targetAlertId) setSearchParams((current) => {
@@ -244,6 +308,7 @@ export function TrackerFloorAlertLane({ tournamentId }: TrackerFloorAlertLanePro
           </DialogHeader>
           {reviewAlert?.hand_id && (
             <HandHistoryWorkspace
+              actorId={actorId}
               key={reviewAlert.hand_id}
               tournamentId={reviewAlert.tournament_id}
               initialTableId={reviewAlert.tournament_table_id ?? reviewAlert.physical_table_id}

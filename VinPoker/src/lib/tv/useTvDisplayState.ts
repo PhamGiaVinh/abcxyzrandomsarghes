@@ -9,6 +9,7 @@ import {
   type TvDisplayStatePayload,
 } from "@/lib/tv/mapDisplayState";
 import type { TvData } from "@/types/tv";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 export type TvDisplayViewState =
   | "loading"
@@ -36,6 +37,13 @@ export function useTvDisplayState(displayToken: string | undefined) {
   const [state, setState] = useState<TvDisplayViewState>("loading");
   const [payload, setPayload] = useState<TvDisplayStatePayload | null>(null);
   const [offline, setOffline] = useState(false);
+  const [payloadToken, setPayloadToken] = useState(displayToken);
+  const scopeRef = useRef(displayToken);
+  scopeRef.current = displayToken;
+  const mountedRef = useRef(false);
+  const inFlightRef = useRef<{
+    token: string; controller: AbortController; queued: boolean; promise: Promise<void>;
+  } | null>(null);
 
   const anchorRef = useRef<ClockAnchor | null>(null);
   const requestSeqRef = useRef(0);
@@ -49,11 +57,10 @@ export function useTvDisplayState(displayToken: string | undefined) {
 
   const nowMs = useLiveClock();
 
-  const fetchState = useCallback(async () => {
+  const readSnapshot = useCallback(async (seq: number, signal: AbortSignal) => {
     if (!displayToken) return;
-    const seq = ++requestSeqRef.current;
-    const { data, error } = await rpcGetTvDisplayState(displayToken);
-    if (seq !== requestSeqRef.current) return;
+    const { data, error } = await rpcGetTvDisplayState(displayToken, signal);
+    if (seq !== requestSeqRef.current || scopeRef.current !== displayToken) return;
 
     if (error) {
       errorsRef.current += 1;
@@ -64,7 +71,7 @@ export function useTvDisplayState(displayToken: string | undefined) {
       return;
     }
     errorsRef.current = 0;
-    setOffline(false);
+    setOffline(navigator.onLine === false);
 
     const parsed = parseDisplayStatePayload(data);
     setPayload(parsed);
@@ -91,11 +98,51 @@ export function useTvDisplayState(displayToken: string | undefined) {
     }
   }, [displayToken]);
 
+  const fetchState = useCallback((): Promise<void> => {
+    if (!mountedRef.current || !displayToken || scopeRef.current !== displayToken) return Promise.resolve();
+    if (document.visibilityState !== "visible" || navigator.onLine === false) return Promise.resolve();
+    const current = inFlightRef.current;
+    if (current?.token === displayToken) {
+      current.queued = true;
+      return current.promise;
+    }
+    const seq = ++requestSeqRef.current;
+    const job = { token: displayToken, controller: new AbortController(), queued: false, promise: Promise.resolve() };
+    inFlightRef.current = job;
+    job.promise = (async () => {
+      try {
+        await observeTrackerContextRead(readSnapshot(seq, job.controller.signal));
+      } catch {
+        if (seq === requestSeqRef.current && scopeRef.current === displayToken) {
+          errorsRef.current += 1;
+          setOffline(true);
+          if (latestRef.current.state === "loading") setState("error");
+        }
+      } finally {
+        job.controller.abort();
+        // Ignore a late transport even if it does not honor AbortSignal.
+        if (seq === requestSeqRef.current) requestSeqRef.current += 1;
+        if (inFlightRef.current === job) {
+          inFlightRef.current = null;
+          if (job.queued && scopeRef.current === displayToken) void fetchState();
+        }
+      }
+    })();
+    return job.promise;
+  }, [displayToken, readSnapshot]);
+
   // Poll loop with dynamic cadence (setTimeout chain, not setInterval).
   useEffect(() => {
+    mountedRef.current = true;
+    errorsRef.current = 0;
+    latestRef.current = { state: "loading", isRunning: false };
+    setPayloadToken(displayToken);
+    setOffline(navigator.onLine === false);
+    setPayload(null);
+    anchorRef.current = null;
     if (!displayToken) {
       setState("invalid");
-      return;
+      return () => { mountedRef.current = false; };
     }
     let cancelled = false;
 
@@ -123,26 +170,42 @@ export function useTvDisplayState(displayToken: string | undefined) {
       if (document.visibilityState === "visible") void fetchState();
     };
     document.addEventListener("visibilitychange", onVisibility);
+    const onOnline = () => { void fetchState(); };
+    const onOffline = () => { setOffline(true); };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
 
     return () => {
+      mountedRef.current = false;
       cancelled = true;
       requestSeqRef.current += 1;
+      const job = inFlightRef.current;
+      if (job?.token === displayToken) {
+        job.queued = false;
+        job.controller.abort();
+        inFlightRef.current = null;
+      }
       if (timerRef.current != null) window.clearTimeout(timerRef.current);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
     };
   }, [displayToken, fetchState]);
 
   // Broadcast: dashboard sends {event:'config'} on tv-display:{id} after saves.
-  const displayId = payload?.display?.id ?? null;
+  const currentPayload = payloadToken === displayToken ? payload : null;
+  const displayId = currentPayload?.display?.id ?? null;
   useEffect(() => {
     if (!displayId) return;
+    let active = true;
     const channel = supabase
       .channel(`tv-display:${displayId}`)
       .on("broadcast", { event: "config" }, () => {
-        void fetchState();
+        if (active) void fetchState();
       })
       .subscribe();
     return () => {
+      active = false;
       supabase.removeChannel(channel);
     };
   }, [displayId, fetchState]);
@@ -175,14 +238,15 @@ export function useTvDisplayState(displayToken: string | undefined) {
   }, [display, nowMs, fetchState]);
 
   const data: TvData | null = useMemo(() => {
-    if (!payload) return null;
-    return mapDisplayStateToTvData(payload, display);
-  }, [payload, display]);
+    if (!currentPayload) return null;
+    return mapDisplayStateToTvData(currentPayload, display);
+  }, [currentPayload, display]);
 
   latestRef.current = {
     state,
     isRunning: anchorRef.current?.isRunning ?? false,
   };
 
-  return { state, data, payload, offline, refetch: fetchState };
+  return { state: payloadToken === displayToken ? state : displayToken ? "loading" as const : "invalid" as const,
+    data, payload: currentPayload, offline: payloadToken === displayToken && offline, refetch: fetchState };
 }

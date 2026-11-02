@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { FEATURES } from "@/lib/featureFlags";
@@ -7,13 +7,15 @@ import { mapFnbError } from "@/lib/fnbErrors";
 import { buildVietQrPayload } from "@/lib/vietqr";
 import { normalizeBankNameToBin } from "@/lib/vietnamBanks";
 import {
-  useFnbGuestLookup, useFnbGuestOrderStatus, fnbGuestCreateOrder,
+  useFnbGuestLookup, useFnbGuestOrderStatus, fnbGuestCreateOrder, fnbGuestReadReceipt, fnbGuestAbandonIntent,
   type FnbGuestItem, type FnbGuestBank, type FnbGuestCreateResult,
 } from "@/hooks/useFnbGuest";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Plus, Minus, Utensils, Wallet, QrCode, CheckCircle2, Clock, ArrowLeft } from "lucide-react";
+import {clearResolvedFnbGuestIntent,fnbGuestIntentKey,parseFnbGuestIntent,saveFnbGuestIntent,isFnbGuestAbandonReceipt,FNB_GUEST_MAX_QTY,FNB_GUEST_MAX_LINES,type FnbGuestIntent} from '@/lib/fnbGuestIntent';
+import {fnbGuestCreateOutcome} from '@/lib/fnbMutationOutcome';
 
 /**
  * F&B GUEST QR ordering (/fnb/order?t=<token>) — the guest's phone flow. Chrome-less, SESSIONLESS
@@ -26,15 +28,15 @@ export default function FnbTableOrder() {
   const token = params.get("t");
   if (!FEATURES.fnbModule || !FEATURES.fnbGuestOrder) return <Navigate to="/" replace />;
   if (!token) return <GuestShell><ErrorState msg="Thiếu mã QR — vui lòng quét lại mã trên bàn." /></GuestShell>;
-  return <GuestOrderInner token={token} />;
+  return <GuestOrderInner key={token} token={token} />;
 }
 
 const LS_KEY = (token: string) => `fnb.guest.order.${token}`;
 
-type Phase = "welcome" | "menu" | "review" | "wait";
+type Phase = "welcome" | "menu" | "review" | "wait" | "abandoned";
 
 function GuestOrderInner({ token }: { token: string }) {
-  const { data: lookup, isLoading, error } = useFnbGuestLookup(token);
+  const { data: lookup, isLoading, isFetching, error, refetch } = useFnbGuestLookup(token);
 
   const [phase, setPhase] = useState<Phase>("welcome");
   const [seat, setSeat] = useState<number | null>(null);
@@ -45,51 +47,117 @@ function GuestOrderInner({ token }: { token: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<FnbGuestCreateResult | null>(null);
   const crid = useRef<string>(crypto.randomUUID());
+  const alive=useRef(true);
+  const busy=useRef(false);
+  const [recovery,setRecovery]=useState<string|null>(null);
+  const [retryIntent,setRetryIntent]=useState<FnbGuestIntent|null>(null);
+  const [pendingIntent,setPendingIntent]=useState<FnbGuestIntent|null>(null);
+
+  const recover=useCallback(async(intent:FnbGuestIntent,closeRequest=false)=>{
+    if(busy.current)return;
+    busy.current=true;setSubmitting(true);setRetryIntent(null);
+    try{
+      const result=await (closeRequest?fnbGuestAbandonIntent(intent):fnbGuestReadReceipt(intent));
+      if(!alive.current)return;
+      if(result.kind==='found'||result.kind==='abandoned'){
+        saveFnbGuestIntent(localStorage,{...intent,resolved:true,receipt:result.receipt});
+        setPendingIntent(null);setRecovery(null);
+        if(result.kind==='found'){setCreated(result.receipt);setPhase('wait');}
+        else{setCreated(null);setPhase('abandoned');}
+      }else {
+        if(result.kind==='missing')setRetryIntent(intent);
+        setRecovery(result.kind==='missing'?'Server chưa ghi nhận receipt. Bạn có thể gửi lại đúng đơn đã lưu, không tạo đơn khác.':'Chưa xác minh được đơn đã gửi. Không gửi đơn mới trong lúc này.');
+      }
+    }catch{if(alive.current)setRecovery('Không lưu hoặc đọc được yêu cầu đã gửi. Vui lòng báo nhân viên; không đặt lại đơn.');}
+    finally{busy.current=false;if(alive.current)setSubmitting(false);}
+  },[]);
 
   // Resume an in-flight order across a refresh (localStorage). If found, jump straight to the wait screen.
   useEffect(() => {
+    alive.current=true;
     try {
+      const journal=localStorage.getItem(fnbGuestIntentKey(token));
+      if(journal){
+        const intent=parseFnbGuestIntent(journal,token);
+        if(intent.resolved){
+          if(isFnbGuestAbandonReceipt(intent.receipt,intent.requestId))setPhase('abandoned');
+          else{setCreated(intent.receipt as FnbGuestCreateResult);setPhase('wait');}
+        }
+        else {setPendingIntent(intent);setRecovery('Đang kiểm tra đơn đã gửi…');void recover(intent);}
+        return ()=>{alive.current=false;};
+      }
       const raw = localStorage.getItem(LS_KEY(token));
       if (raw) {
         const saved = JSON.parse(raw) as FnbGuestCreateResult;
-        if (saved?.order_id) { setCreated(saved); setPhase("wait"); }
+        const parsed=fnbGuestCreateOutcome(saved,saved.payment_method);
+        if(parsed.kind!=='confirmed')throw Error('INVALID_SAVED_ORDER');
+        setCreated(parsed.result);setPhase('wait');
       }
-    } catch { /* ignore */ }
-  }, [token]);
+    } catch {setRecovery('Không đọc được đơn đã lưu. Vui lòng báo nhân viên; không đặt lại đơn.');}
+    return ()=>{alive.current=false;};
+  }, [token,recover]);
 
   const items = useMemo(() => lookup?.items ?? [], [lookup]);
   const lines = useMemo(() => items.filter((m) => cart[m.id]), [items, cart]);
   const subtotal = lines.reduce((s, m) => s + m.price_vnd * cart[m.id], 0);
 
-  const add = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+  const add = (id: string) => setCart((c) => {
+    if((c[id]??0)>=FNB_GUEST_MAX_QTY||(!c[id]&&Object.keys(c).length>=FNB_GUEST_MAX_LINES))return c;
+    return {...c,[id]:(c[id]??0)+1};
+  });
   const dec = (id: string) => setCart((c) => {
     const n = (c[id] ?? 0) - 1; const x = { ...c }; if (n <= 0) delete x[id]; else x[id] = n; return x;
   });
 
-  const submit = async () => {
-    if (lines.length === 0 || submitting) return;
-    setSubmitting(true);
+  const sendIntent = async (intent:FnbGuestIntent) => {
+    if(busy.current)return;
+    try{saveFnbGuestIntent(localStorage,intent);}catch{setRecovery('Không lưu được yêu cầu. Chưa gửi đơn; vui lòng kiểm tra bộ nhớ trình duyệt.');return;}
+    setPendingIntent(intent);
+    busy.current=true;
+    setSubmitting(true);setRetryIntent(null);
+    try{
     const { res, errorCode } = await fnbGuestCreateOrder({
-      token, seat, customerName: name.trim() || null, note: note.trim() || null,
-      lines: lines.map((m) => ({ menu_item_id: m.id, qty: cart[m.id] })),
-      paymentMethod: method, clientRequestId: crid.current,
+      token:intent.token, seat:intent.seat, customerName:intent.customerName, note:intent.note,
+      lines:intent.lines.map(line=>({menu_item_id:line.menu_item_id,qty:line.qty})),paymentMethod:intent.paymentMethod, clientRequestId:intent.requestId,
     });
-    setSubmitting(false);
-    if (errorCode || !res) { alert(mapFnbError(errorCode ?? "")); return; }
+    if(!alive.current)return;
+    if (errorCode || !res) {setRecovery(errorCode==='FNB_MUTATION_UNKNOWN'?'Chưa xác minh được đơn đã gửi. Không gửi đơn mới trong lúc này.':mapFnbError(errorCode??''));return;}
+    saveFnbGuestIntent(localStorage,{...intent,resolved:true,receipt:res});
+    setPendingIntent(null);
     setCreated(res);
-    try { localStorage.setItem(LS_KEY(token), JSON.stringify(res)); } catch { /* ignore */ }
-    setPhase("wait");
+    setPhase("wait");setRecovery(null);
+    }catch{if(alive.current)setRecovery('Chưa xác minh được đơn đã gửi. Vui lòng kiểm tra lại; không đặt đơn mới.');}
+    finally{busy.current=false;if(alive.current)setSubmitting(false);}
+  };
+  const submit = () => {
+    if(lines.length===0||busy.current||recovery)return;
+    void sendIntent({version:1,token,requestId:crid.current,seat,customerName:name.trim()||null,note:note.trim()||null,
+      lines:lines.map(m=>({menu_item_id:m.id,qty:cart[m.id]})),paymentMethod:method});
   };
 
   const startOver = () => {
-    try { localStorage.removeItem(LS_KEY(token)); } catch { /* ignore */ }
+    try {clearResolvedFnbGuestIntent(localStorage,token);localStorage.removeItem(LS_KEY(token));} catch {setRecovery('Không xóa được đơn đã lưu. Chưa thể đặt đơn khác.');return;}
     setCreated(null); setCart({}); setName(""); setNote(""); setMethod("cash");
+    setPendingIntent(null);setRetryIntent(null);setRecovery(null);
     crid.current = crypto.randomUUID();
     setPhase("menu");
   };
 
   if (isLoading) return <GuestShell><div className="flex items-center gap-2 text-muted-foreground py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Đang tải…</div></GuestShell>;
-  if (error || !lookup) return <GuestShell><ErrorState msg={mapFnbError((error as any)?.message ?? "TOKEN_INVALID")} /></GuestShell>;
+  if (error || !lookup) return <GuestShell><ErrorState msg={mapFnbError(error ?? 'TOKEN_INVALID')} />
+    <Button variant="outline" disabled={isFetching} onClick={()=>void refetch()}>Tải lại thực đơn</Button></GuestShell>;
+  if(recovery)return <GuestShell title={lookup.table_name}><div role="alert" className="space-y-4"><p>{recovery}</p>
+    <Button disabled={submitting} onClick={()=>{
+      try{const raw=localStorage.getItem(fnbGuestIntentKey(token));if(raw)void recover(parseFnbGuestIntent(raw,token));}
+      catch{setRecovery('Không đọc được đơn đã lưu. Vui lòng báo nhân viên.');}
+    }}>Kiểm tra đơn đã gửi</Button>
+    {retryIntent&&<Button disabled={submitting} variant="outline" onClick={()=>void sendIntent(retryIntent)}>Gửi lại đúng đơn đã lưu</Button>}
+    {pendingIntent&&<Button disabled={submitting} variant="outline" onClick={()=>void recover(pendingIntent,true)}>Đóng yêu cầu cũ để chọn lại món</Button>}
+    </div></GuestShell>;
+  if(phase==='abandoned')return <GuestShell title={lookup.table_name}><div role="status" className="space-y-4">
+    <p>Yêu cầu cũ đã được đóng trên server, không tạo thành đơn. Bạn có thể chọn lại món.</p>
+    <Button onClick={startOver}>Chọn lại món</Button>
+  </div></GuestShell>;
 
   // ── wait screen (owns its own polling) ──────────────────────────────────────────────────────
   if (phase === "wait" && created) {
@@ -195,11 +263,12 @@ function MenuScreen({ lookup, cart, add, dec, subtotal, count, onBack, onNext }:
           <CatChip key={c.id} active={activeCat === c.id} onClick={() => setActiveCat(c.id)}>{c.name}</CatChip>
         ))}
       </div>
+      <p className="text-xs text-muted-foreground">Tối đa {FNB_GUEST_MAX_QTY} phần mỗi món và {FNB_GUEST_MAX_LINES} món khác nhau trong một đơn.</p>
       {shown.length === 0 ? (
         <div className="text-sm text-muted-foreground py-8 text-center">Chưa có món trong mục này.</div>
       ) : (
         <div className="space-y-2">
-          {shown.map((m) => <MenuRow key={m.id} item={m} qty={cart[m.id] ?? 0} add={() => add(m.id)} dec={() => dec(m.id)} />)}
+          {shown.map((m) => <MenuRow key={m.id} item={m} qty={cart[m.id] ?? 0} canAdd={(cart[m.id]??0)<FNB_GUEST_MAX_QTY&&(!!cart[m.id]||Object.keys(cart).length<FNB_GUEST_MAX_LINES)} add={() => add(m.id)} dec={() => dec(m.id)} />)}
         </div>
       )}
       {count > 0 && (
@@ -213,7 +282,7 @@ function MenuScreen({ lookup, cart, add, dec, subtotal, count, onBack, onNext }:
   );
 }
 
-function MenuRow({ item, qty, add, dec }: { item: FnbGuestItem; qty: number; add: () => void; dec: () => void }) {
+function MenuRow({ item, qty, canAdd, add, dec }: { item: FnbGuestItem; qty: number; canAdd:boolean; add: () => void; dec: () => void }) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
       {item.image_url ? <img src={item.image_url} alt="" className="w-14 h-14 rounded-md object-cover shrink-0" /> : null}
@@ -223,10 +292,10 @@ function MenuRow({ item, qty, add, dec }: { item: FnbGuestItem; qty: number; add
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         {qty > 0 && <>
-          <Button size="icon" variant="outline" className="h-8 w-8" onClick={dec}><Minus className="w-4 h-4" /></Button>
+          <Button aria-label={`Giảm ${item.name}`} size="icon" variant="outline" className="h-8 w-8" onClick={dec}><Minus className="w-4 h-4" /></Button>
           <span className="w-6 text-center font-mono">{qty}</span>
         </>}
-        <Button size="icon" className="h-8 w-8" onClick={add}><Plus className="w-4 h-4" /></Button>
+        <Button aria-label={`Thêm ${item.name}`} disabled={!canAdd} size="icon" className="h-8 w-8" onClick={add}><Plus className="w-4 h-4" /></Button>
       </div>
     </div>
   );
@@ -241,17 +310,23 @@ const CatChip = ({ active, onClick, children }: { active: boolean; onClick: () =
 
 // ── wait screen: cash → "server coming"; bank → VietQR + poll ──────────────────────────────────
 function WaitScreen({ token, created, onReorder }: { token: string; created: FnbGuestCreateResult; onReorder: () => void }) {
-  const { data: status } = useFnbGuestOrderStatus(token, created.order_id);
+  const { data: status, error, isLoading, isFetching, refetch } = useFnbGuestOrderStatus(token, created.order_id);
+  if(error)return <div role="alert" className="space-y-3 py-10 text-center">
+    <p>Không tải được trạng thái đơn. Đơn đã ghi nhận trước đó; không đặt lại để tránh trùng.</p>
+    <Button variant="outline" disabled={isFetching} onClick={()=>void refetch()}>Tải lại trạng thái</Button>
+  </div>;
+  if(isLoading)return <div role="status" className="py-10 text-center text-muted-foreground">Đang kiểm tra trạng thái đơn…</div>;
   const st = status?.order?.order_status ?? "pending";
-  // status RPC re-returns the bank payload for pending bank orders; fall back to the create response.
-  const bank: FnbGuestBank | null = status?.bank ?? created.bank;
+  // Never replace invoice instructions with current club-bank configuration,
+  // or resurrect cached instructions when the server cannot verify the proof.
+  const bank: FnbGuestBank | null = status?.bank_source==='snapshot' ? status.bank : null;
 
   if (st === "paid" || st === "shipped") {
     return (
       <div className="text-center space-y-3 py-10">
         <CheckCircle2 className="w-16 h-16 text-success mx-auto" />
-        <div className="text-xl font-bold">Đã nhận đơn!</div>
-        <div className="text-sm text-muted-foreground">Món của bạn đang được chuẩn bị. Cảm ơn bạn!</div>
+        <div className="text-xl font-bold">{st==='shipped'?'Đã giao món!':'Đã nhận đơn!'}</div>
+        <div className="text-sm text-muted-foreground">{st==='shipped'?'Đơn đã được giao. Cảm ơn bạn!':'Món của bạn đang được chuẩn bị. Cảm ơn bạn!'}</div>
         <Button variant="outline" className="mt-2" onClick={onReorder}>Gọi thêm món</Button>
       </div>
     );
@@ -260,9 +335,9 @@ function WaitScreen({ token, created, onReorder }: { token: string; created: Fnb
     return (
       <div className="text-center space-y-3 py-10">
         <Clock className="w-14 h-14 text-muted-foreground mx-auto" />
-        <div className="text-lg font-bold">Đơn đã hết hạn</div>
+        <div className="text-lg font-bold">{st==='cancelled'?'Đơn đã hủy':'Đơn đã hết hạn'}</div>
         <div className="text-sm text-muted-foreground">
-          {created.payment_method === "bank_transfer"
+          {st==='cancelled'?'Đơn đã được hủy. Nếu đã thanh toán, vui lòng liên hệ nhân viên trước khi đặt lại.':created.payment_method === "bank_transfer"
             ? "Nếu bạn đã chuyển khoản, đơn sẽ được xác nhận trong ít phút — vui lòng báo nhân viên. Hoặc gọi lại đơn mới."
             : "Đơn chưa được thu tiền kịp thời. Vui lòng gọi lại."}
         </div>
@@ -282,6 +357,10 @@ function WaitScreen({ token, created, onReorder }: { token: string; created: Fnb
       </div>
     );
   }
+  if(status?.bank_source!=='snapshot')return <div role="alert" className="space-y-3 py-10 text-center">
+    <p>Chưa xác minh được thông tin ngân hàng của đơn. Vui lòng liên hệ nhân viên, không chuyển khoản hoặc đặt lại đơn.</p>
+    <Button variant="outline" disabled={isFetching} onClick={()=>void refetch()}>Tải lại trạng thái</Button>
+  </div>;
 
   // bank pending → VietQR
   const payload = (() => {
@@ -292,17 +371,18 @@ function WaitScreen({ token, created, onReorder }: { token: string; created: Fnb
       return buildVietQrPayload({ bin, accountNumber: bank.account_number, amount: created.subtotal_vnd, memo: created.reference_code.toUpperCase() });
     } catch { return null; }
   })();
+  const hasQr=!!payload||!!bank?.qr_code_url;
 
   return (
     <div className="space-y-3 py-2 text-center">
-      <div className="text-lg font-bold">Quét mã để chuyển khoản</div>
-      <div className="text-sm text-muted-foreground">Mở app ngân hàng, quét mã dưới đây. Số tiền và nội dung đã điền sẵn.</div>
+      <div className="text-lg font-bold">{hasQr?'Quét mã để chuyển khoản':'Đơn chuyển khoản đang chờ'}</div>
+      <div className="text-sm text-muted-foreground">{hasQr?'Mở app ngân hàng, quét mã dưới đây. Số tiền và nội dung đã điền sẵn.':'Giữ mã đơn và nhờ nhân viên kiểm tra thông tin thanh toán.'}</div>
       <div className="flex justify-center">
         {payload
           ? <div className="bg-white p-3 rounded-xl"><QRCodeSVG value={payload} size={216} level="M" marginSize={2} /></div>
           : bank?.qr_code_url
             ? <img src={bank.qr_code_url} alt="QR" className="w-56 h-56 rounded-xl object-contain bg-white p-2" />
-            : <div className="text-sm text-destructive py-8">Không tạo được mã QR — vui lòng chọn tiền mặt.</div>}
+            : <div className="text-sm text-destructive py-8">Không tạo được mã QR. Vui lòng nhờ nhân viên kiểm tra đơn đang chờ; không đặt lại đơn.</div>}
       </div>
       <Card className="p-3 text-left text-sm space-y-1">
         <Row k="Ngân hàng" v={bank?.bank_name ?? "—"} />
@@ -314,7 +394,7 @@ function WaitScreen({ token, created, onReorder }: { token: string; created: Fnb
       <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang chờ xác nhận thanh toán… (tự động, có thể mất vài phút)
       </div>
-      <Button variant="ghost" className="text-xs" onClick={onReorder}>Huỷ / gọi lại</Button>
+      <p className="text-xs text-muted-foreground">Muốn hủy hoặc đổi cách thanh toán, vui lòng liên hệ nhân viên. Đơn vẫn đang chờ trên server.</p>
     </div>
   );
 }

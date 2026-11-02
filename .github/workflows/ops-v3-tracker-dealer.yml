@@ -31,6 +31,10 @@ on:
       - "VinPoker/src/pages/TrackerDashboard.test.tsx"
       - "VinPoker/src/pages/TrackerHandHistory.tsx"
       - "VinPoker/src/pages/TrackerHandHistory.readiness.test.tsx"
+      - "VinPoker/src/components/cashier/tournament-live/HandHistoryWorkspace.tsx"
+      - "VinPoker/src/components/cashier/tournament-live/handHistoryLoadGuard.ts"
+      - "VinPoker/tests/tracker/handHistoryLoadGuard.test.ts"
+      - "VinPoker/tests/tracker/handHistoryReadRecovery*"
       - "VinPoker/src/hooks/useNotifications.tsx"
       - "VinPoker/src/hooks/useNotifications.test.tsx"
       - "VinPoker/src/components/NotificationBell.tsx"
@@ -115,6 +119,8 @@ jobs:
           src/pages/ops/OpsTournamentCockpit.clockScope.test.tsx
           src/pages/TrackerDashboard.test.tsx
           src/pages/TrackerHandHistory.readiness.test.tsx
+          tests/tracker/handHistoryReadRecovery.test.tsx
+          tests/tracker/handHistoryLoadGuard.test.ts
           tests/trackerPoker/trackerHistoryAccess.test.ts
           src/hooks/useNotifications.test.tsx
           src/components/NotificationBell.test.tsx
@@ -148,6 +154,10 @@ jobs:
           src/components/chip-ops/DashboardTab.test.tsx
           src/lib/chipOpsMetrics.test.ts
           --maxWorkers=1 --minWorkers=1
+
+      - name: Test History read recovery callbacks and inventory
+        working-directory: VinPoker
+        run: node tests/tracker/handHistoryReadRecovery.callback.test.mjs
 
       - name: Test bounded History canary release transport
         working-directory: VinPoker

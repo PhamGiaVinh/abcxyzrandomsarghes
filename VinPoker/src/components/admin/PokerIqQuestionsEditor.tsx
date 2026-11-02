@@ -160,21 +160,27 @@ function buildHand(f: EditForm): DrillHand {
 export function PokerIqQuestionsEditor() {
   const [bank, setBank] = useState<DrillHand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [readError,setReadError]=useState(false);
+  const [readAttempt,setReadAttempt]=useState(0);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<EditForm>(emptyForm());
   const [isNew, setIsNew] = useState(true);
 
   useEffect(() => {
-    (async () => {
-      setBank(await loadQuestionBank());
-      setLoading(false);
+    let alive=true;const controller=new AbortController();setLoading(true);setReadError(false);
+    void (async () => {
+      try{const rows=await loadQuestionBank(controller.signal);if(alive)setBank(rows);}
+      catch{if(alive){setBank([]);setReadError(true);}}
+      finally{if(alive)setLoading(false);}
     })();
-  }, []);
+    return()=>{alive=false;controller.abort();};
+  }, [readAttempt]);
 
   const approvedCount = useMemo(() => bank.filter((h) => h.reviewStatus === "approved").length, [bank]);
 
   const persist = async (next: DrillHand[], successMsg: string) => {
+    if(loading||readError||saving)return false;
     setSaving(true);
     const { error } = await saveQuestionBank(next);
     setSaving(false);
@@ -277,17 +283,17 @@ export function PokerIqQuestionsEditor() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={importSamples} disabled={saving}>
+          <Button variant="outline" size="sm" onClick={importSamples} disabled={saving||loading||readError}>
             <BookOpen className="h-4 w-4 mr-1" />Nhập câu mẫu
           </Button>
-          <Button size="sm" onClick={openNew} className="gradient-neon text-primary-foreground border-0">
+          <Button size="sm" onClick={openNew} disabled={saving||loading||readError} className="gradient-neon text-primary-foreground border-0">
             <Plus className="h-4 w-4 mr-1" />Câu hỏi mới
           </Button>
         </div>
       </div>
 
       {/* Stats + flag state */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+      {!loading&&!readError&&<div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
           Tổng: <strong className="text-foreground">{bank.length}</strong>
         </span>
@@ -297,7 +303,7 @@ export function PokerIqQuestionsEditor() {
         <span className="rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-warning">
           Nháp: <strong>{bank.length - approvedCount}</strong>
         </span>
-      </div>
+      </div>}
 
       {FEATURES.pokerIqRemoteQuestions ? (
         <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 p-2.5 text-xs text-success">
@@ -312,7 +318,12 @@ export function PokerIqQuestionsEditor() {
       )}
 
       {/* List */}
-      {loading ? (
+      {readError ? (
+        <div role="alert" className="space-y-3 rounded-lg border border-border p-4 text-sm">
+          <p>Chưa xác minh được bộ câu hỏi. Không thể lưu hoặc nhập câu mẫu trước khi tải lại thành công.</p>
+          <Button variant="outline" onClick={()=>setReadAttempt(n=>n+1)}>Thử tải lại câu hỏi</Button>
+        </div>
+      ) : loading ? (
         <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
       ) : bank.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-10 text-center">

@@ -42,10 +42,10 @@ export function buildOpsIntelligenceOverviewV1(input: OverviewInputV1) {
     source("history", "Series / lịch sử", "Tổng quan không tải history hoặc suy rằng outcome đã final.", null, "unavailable", "HISTORY_NOT_MOUNTED"),
     source("context", "Phạm vi lịch", "Daily: event_id null. Festival: tournament_events.id; con: tournaments.event_id.", input.context, context ? "exact" : "unavailable", context ? null : input.contextReason ?? "CONTEXT_READ_UNAVAILABLE"),
   ];
-  const pulseMetrics = ["players_playing_now", "entries_today", "open_tables", "dealers_on_duty"].map((id): OverviewMetricV1 => {
+  const pulseMetrics = ["players_playing_now", "entries_today", "open_tables", "dealers_on_duty", "unique_players_today"].map((id): OverviewMetricV1 => {
     const metric = core.metrics.find((row) => row.metricId === id);
     const exact = metric?.availability === "exact";
-    return { id, label: metric?.label ?? ({ players_playing_now: "Người đang chơi", entries_today: "Lượt vào hôm nay", open_tables: "Bàn đang mở", dealers_on_duty: "Dealer đang trực" }[id] ?? id), definition: "Quan sát Club Pulse toàn CLB, không phải tổng riêng của festival đang chọn.", value: exact ? metric.value : null, grain: "TOÀN CLB", availability: metric?.availability ?? "unavailable", asOf: metric?.asOf ?? null, observedAt: input.pulse?.observedAt ?? null, reason: exact ? null : "CLUB_PULSE_METRIC_UNAVAILABLE" };
+    return { id, label: metric?.label ?? ({ players_playing_now: "Người đang chơi", entries_today: "Lượt vào hôm nay", open_tables: "Bàn đang mở", dealers_on_duty: "Dealer đang trực", unique_players_today: "Người chơi duy nhất hôm nay" }[id] ?? id), definition: id === "unique_players_today" ? "Người có lượt đăng ký confirmed ở các giải bắt đầu hôm nay theo múi giờ CLB; loại trùng toàn CLB, không cộng số người giữa các flight." : "Quan sát Club Pulse toàn CLB, không phải tổng riêng của festival đang chọn.", value: exact ? metric.value : null, grain: "TOÀN CLB", availability: metric?.availability ?? "unavailable", asOf: metric?.asOf ?? null, observedAt: input.pulse?.observedAt ?? null, reason: exact ? null : "CLUB_PULSE_METRIC_UNAVAILABLE" };
   });
   const scopedMetrics = [...pulseMetrics];
   if (input.scope.kind !== "club") {
@@ -61,7 +61,8 @@ export function buildOpsIntelligenceOverviewV1(input: OverviewInputV1) {
     return row.availability !== "exact" && target ? [{ id: row.id, title: `${row.label}: ${row.availability === "unavailable" ? "chưa đọc được" : "cần kiểm tra"}`, severity: "warning", reason: row.reason ?? "SOURCE_PARTIAL", source: row.id, scope: input.scope, tab: target.tab, retryContext: target.retryContext }] : [];
   });
   if (!resolved.valid) actions.push({ id: "scope", title: "Phạm vi đã chọn chưa xác minh được", severity: "warning", reason: "SELECTED_SCOPE_UNAVAILABLE", source: "context", scope: input.scope, tab: "overview" });
-  if ((scopedMetrics[4].value ?? 0) > 0) actions.push({ id: "sepay-actionable", title: `${scopedMetrics[4].value} giao dịch cần xử lý`, severity: "warning", reason: "SEPAY_ACTIONABLE", source: "sepay", scope: { kind: "club" }, tab: "health" });
+  const actionable = scopedMetrics.find((metric) => metric.id === "sepay-actionable")?.value;
+  if ((actionable ?? 0) > 0) actions.push({ id: "sepay-actionable", title: `${actionable} giao dịch cần xử lý`, severity: "warning", reason: "SEPAY_ACTIONABLE", source: "sepay", scope: { kind: "club" }, tab: "health" });
   for (const alert of core.alerts.filter((row) => row.kind === "dealer_assignment_missing" || row.kind === "dealer_rotation_overdue")) {
     const tableId = alert.alertId.split(":")[1];
     const row = input.operations.rows.find((item) => item.tableId === tableId);

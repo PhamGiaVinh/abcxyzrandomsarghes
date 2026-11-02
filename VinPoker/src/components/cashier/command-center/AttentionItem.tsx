@@ -7,6 +7,7 @@ interface Props {
   item: AttentionItemData;
   onSwing?: (tableId: string) => void;
   onAssign?: (tableId: string) => void;
+  onPlanNext?: (tableId: string) => void;
   onSendToBreak?: (attendanceId: string) => void;
   onFocusTable?: (tableId: string) => void;
 }
@@ -33,7 +34,7 @@ const TAG_MAP: Record<string, string> = {
  * (Swing / Gán / Cho nghỉ) plus a quiet "Xem". PRESENTATION ONLY — every action
  * is the same parent handler as before; tokenized so it recolours in warm.
  */
-export default function AttentionItem({ item, onSwing, onAssign, onSendToBreak, onFocusTable }: Props) {
+export default function AttentionItem({ item, onSwing, onAssign, onPlanNext, onSendToBreak, onFocusTable }: Props) {
   const isCritical = item.severity === "critical";
   const accent = isCritical ? "text-destructive" : "text-warning";
 
@@ -64,10 +65,16 @@ export default function AttentionItem({ item, onSwing, onAssign, onSendToBreak, 
             Chốt khẩn cấp <ChevronRight className="ml-0.5 h-3 w-3" />
           </Button>
         )}
-        {(item.type === "empty_table" || item.type === "missing_next_dealer") && item.tableId && onAssign && (
+        {item.type === "empty_table" && item.tableId && onAssign && (
           <Button size="sm" className="h-9 flex-1 bg-primary px-3 text-xs font-bold text-primary-foreground hover:bg-primary/90"
             onClick={() => onAssign(item.tableId!)}>
             Gán dealer <ChevronRight className="ml-0.5 h-3 w-3" />
+          </Button>
+        )}
+        {item.type === "missing_next_dealer" && item.tableId && onPlanNext && (
+          <Button size="sm" className="h-9 flex-1 bg-primary px-3 text-xs font-bold text-primary-foreground hover:bg-primary/90"
+            onClick={() => onPlanNext(item.tableId!)}>
+            Chọn dealer kế tiếp <ChevronRight className="ml-0.5 h-3 w-3" />
           </Button>
         )}
         {item.type === "break_due" && item.attendanceId && onSendToBreak && (

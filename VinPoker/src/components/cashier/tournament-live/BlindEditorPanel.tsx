@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { waitForManualPlayerResponse } from '@/lib/floorManualPlayerIntent';
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,11 @@ const SAVE_LIVE = FEATURES.blindEditorSave;
  * Save is disabled with "Cần bật RPC" and NEVER calls the RPC (no silent fail,
  * no wipe). The running clock (ClockPanel) only READS this structure.
  */
-export function BlindEditorPanel({
+export function BlindEditorPanel(props: {tournamentId:string;tournamentStatus?:string}) {
+  const ended = ["completed", "finished", "cancelled"].includes(props.tournamentStatus ?? "");
+  return <ScopedBlindEditor key={JSON.stringify([props.tournamentId, ended])} {...props}/>;
+}
+function ScopedBlindEditor({
   tournamentId,
   tournamentStatus,
 }: {
@@ -40,34 +45,54 @@ export function BlindEditorPanel({
   tournamentStatus?: string;
 }) {
   const [rows, setRows] = useState<LevelRow[]>([]);
+  const tournamentEnded = ["completed", "finished", "cancelled"].includes(tournamentStatus ?? "");
   const [currentLevel, setCurrentLevel] = useState<number | null>(null);
   const [clubId, setClubId] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError,setLoadError]=useState<string|null>(null);
+  const alive=useRef(true),generation=useRef(0),writing=useRef(false);
 
   const load = useCallback(async () => {
+    const sequence=++generation.current;
     setInitialLoading(true);
+    setLoadError(null);
     try {
-      const [levelsRes, tourRes] = await Promise.all([
+      const [levelsRes, tourRes] = await waitForManualPlayerResponse(Promise.all([
         supabase
           .from("tournament_levels")
           .select("level_number, small_blind, big_blind, ante, duration_minutes, is_break")
           .eq("tournament_id", tournamentId)
           .order("level_number"),
         supabase.from("tournaments").select("current_level, club_id").eq("id", tournamentId).single(),
-      ]);
-      if (levelsRes.error) { toast.error("Không tải được cấu trúc blind: " + levelsRes.error.message); return; }
-      setRows((levelsRes.data ?? []).map((r: any) => ({
-        small_blind: Number(r.small_blind) || 0,
-        big_blind: Number(r.big_blind) || 0,
-        ante: Number(r.ante) || 0,
-        duration_minutes: Number(r.duration_minutes) || 0,
-        is_break: !!r.is_break,
+      ]));
+      if(!alive.current||sequence!==generation.current)return;
+      if (levelsRes.error) throw levelsRes.error;
+      if (tourRes.error) throw tourRes.error;
+      if (!tourRes.data) throw new Error('Không xác minh được giải.');
+      if (!Array.isArray(levelsRes.data) || levelsRes.data.some((raw: unknown) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return true;
+        const row = raw as Record<string, unknown>;
+        return typeof row.is_break !== 'boolean'
+          || ['small_blind', 'big_blind', 'ante', 'duration_minutes'].some((field) =>
+            typeof row[field] !== 'number' || !Number.isInteger(row[field]));
+      })) throw new Error('Không xác minh được cấu trúc blind.');
+      setRows(levelsRes.data.map((r: LevelRow) => ({
+        small_blind: r.small_blind,
+        big_blind: r.big_blind,
+        ante: r.ante,
+        duration_minutes: r.duration_minutes,
+        is_break: r.is_break,
       })));
       setCurrentLevel((tourRes.data as any)?.current_level ?? null);
       setClubId((tourRes.data as any)?.club_id ?? null);
+    } catch {
+      if(alive.current&&sequence===generation.current){
+        setRows([]);setCurrentLevel(null);setClubId(null);
+        setLoadError('Không tải được cấu trúc blind hoặc thông tin giải. Tải lại trước khi sửa.');
+      }
     } finally {
-      setInitialLoading(false);
+      if(alive.current&&sequence===generation.current)setInitialLoading(false);
     }
   }, [tournamentId]);
 
@@ -77,7 +102,7 @@ export function BlindEditorPanel({
       duration_minutes: l.duration_minutes, is_break: l.is_break,
     })));
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { alive.current=true;void load();return()=>{alive.current=false;}; }, [load]);
 
   const update = (i: number, field: keyof LevelRow, value: number | boolean) =>
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
@@ -107,29 +132,39 @@ export function BlindEditorPanel({
   };
 
   const save = async () => {
-    if (!SAVE_LIVE) return;
+    if (tournamentEnded || !SAVE_LIVE || initialLoading || loadError || writing.current || !alive.current) return;
     const err = validate();
     if (err) { toast.error(err); return; }
     const isLive = tournamentStatus === "live" || tournamentStatus === "active" || tournamentStatus === "break";
     if (isLive && !window.confirm("Giải đang chạy — thay toàn bộ cấu trúc blind? Đồng hồ sẽ đọc cấu trúc mới.")) return;
-    setSaving(true);
+    writing.current=true;setSaving(true);
     try {
-      const { data, error } = await supabase.rpc("update_blind_structure", {
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(supabase.rpc("update_blind_structure", {
         p_tournament_id: tournamentId,
         p_levels: rows.map((r, i) => ({ level_number: i + 1, ...r })),
-      });
-      if (error || (data as any)?.error) { toast.error((data as any)?.error || error?.message); return; }
+      })));
+      if(!alive.current)return;
+      if(error)throw error;
+      if (!data || typeof data!=='object' || Array.isArray(data)
+        || !('status' in data) || data.status!=='success'
+        || !('levels_saved' in data) || data.levels_saved!==rows.length) {
+        toast.error('Chưa xác minh được kết quả lưu blind. Kiểm tra lại dữ liệu trước khi gửi thao tác khác.');return;
+      }
       toast.success(`Đã lưu ${rows.length} level`);
-      load();
-    } catch (e: any) {
-      toast.error(e.message || "Lỗi");
+      await load();
+    } catch {
+      if(alive.current)toast.error('Chưa xác minh được kết quả lưu blind. Kiểm tra lại dữ liệu trước khi gửi thao tác khác.');
     } finally {
-      setSaving(false);
+      writing.current=false;if(alive.current)setSaving(false);
     }
   };
 
   return (
     <Card className="p-4 space-y-4">
+      {tournamentEnded && <p role="status" className="text-sm text-muted-foreground">Giải đã kết thúc hoặc bị hủy. Chỉ xem cấu trúc blind.</p>}
+      {loadError&&<div role="alert" className="space-y-2 text-destructive"><p>{loadError}</p>
+        <Button variant="outline" onClick={()=>void load()}>Tải lại cấu trúc blind</Button></div>}
+      <fieldset className="space-y-4 min-w-0" disabled={tournamentEnded||initialLoading||!!loadError||saving}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <div className="font-semibold">Cấu trúc blind</div>
@@ -145,7 +180,7 @@ export function BlindEditorPanel({
             <Plus className="w-3.5 h-3.5 mr-1" /> Level
           </Button>
           {SAVE_LIVE ? (
-            <Button size="sm" onClick={save} disabled={saving || initialLoading}>
+            <Button size="sm" onClick={save} disabled={saving || initialLoading || !!loadError}>
               <Save className="w-3.5 h-3.5 mr-1" /> Lưu
             </Button>
           ) : (
@@ -156,8 +191,8 @@ export function BlindEditorPanel({
         </div>
       </div>
 
-      {FEATURES.blindTemplates && clubId && (
-        <BlindTemplateBar clubId={clubId} currentRows={rows} onLoad={loadLevels} />
+      {!tournamentEnded && FEATURES.blindTemplates && clubId && (
+        <BlindTemplateBar key={clubId} clubId={clubId} currentRows={rows} onLoad={loadLevels} />
       )}
 
       {!SAVE_LIVE && (
@@ -206,6 +241,7 @@ export function BlindEditorPanel({
           })}
         </div>
       )}
+      </fieldset>
     </Card>
   );
 }
@@ -227,17 +263,34 @@ function BlindTemplateBar({
   const [saveOpen, setSaveOpen] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saveUnknown,setSaveUnknown]=useState(false);
+  const templateWriting=useRef(false);
+  const [templateReadError,setTemplateReadError]=useState(false);
+  const [templateLoading,setTemplateLoading]=useState(true);
+  const templateAlive=useRef(true),templateRead=useRef(0);
 
   const loadTemplates = useCallback(async () => {
-    const { data } = await (supabase as any)
+    const sequence=++templateRead.current;
+    setTemplateLoading(true);setTemplateReadError(false);setTemplates([]);
+    try {
+    const { data,error } = await waitForManualPlayerResponse(Promise.resolve((supabase as any)
       .from("blind_structure_templates")
       .select("id, club_id, name, levels")
       .eq("club_id", clubId)
-      .order("name");
-    setTemplates((data ?? []) as BlindTemplate[]);
+      .order("name")));
+    if(!templateAlive.current||sequence!==templateRead.current)return;
+    if(error||!Array.isArray(data)||data.some(raw=>!raw||typeof raw!=='object'||Array.isArray(raw)
+      ||typeof raw.id!=='string'||!raw.id||raw.club_id!==clubId||typeof raw.name!=='string'||!raw.name.trim())
+      ||new Set(data.map(row=>row.id)).size!==data.length)throw new Error('BLIND_TEMPLATES_INVALID');
+    setTemplates(data as BlindTemplate[]);
+    } catch {
+      if(templateAlive.current&&sequence===templateRead.current){setTemplates([]);setTemplateReadError(true);}
+    } finally {
+      if(templateAlive.current&&sequence===templateRead.current)setTemplateLoading(false);
+    }
   }, [clubId]);
 
-  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+  useEffect(() => { templateAlive.current=true;void loadTemplates();return()=>{templateAlive.current=false;}; }, [loadTemplates]);
 
   const applyChoice = (val: string) => {
     if (val.startsWith("preset:")) {
@@ -245,30 +298,50 @@ function BlindTemplateBar({
       if (p) { onLoad(p.levels); toast.success(`Đã tải mẫu chuẩn "${p.name}"`); }
     } else if (val.startsWith("tpl:")) {
       const tpl = templates.find((x) => x.id === val.slice(4));
-      if (tpl) { onLoad((tpl.levels ?? []) as BlindLevel[]); toast.success(`Đã tải mẫu "${tpl.name}"`); }
+      if (tpl) {
+        const levels:unknown=tpl.levels;
+        if (!Array.isArray(levels)||levels.length===0||levels.some(raw=>{
+          if(!raw||typeof raw!=='object'||Array.isArray(raw))return true;
+          const row=raw as Record<string,unknown>;
+          return typeof row.is_break!=='boolean'
+            ||['small_blind','big_blind','ante','duration_minutes'].some(field=>
+              typeof row[field]!=='number'||!Number.isSafeInteger(row[field])||Number(row[field])<0)
+            ||(!row.is_break&&Number(row.big_blind)<=0);
+        })) {
+          toast.error('Mẫu blind không hợp lệ. Giữ nguyên cấu trúc đang sửa.');return;
+        }
+        onLoad(levels as BlindLevel[]); toast.success(`Đã tải mẫu "${tpl.name}"`);
+      }
     }
   };
 
   const saveTemplate = async () => {
+    if(templateWriting.current||saveUnknown)return;
     const nm = name.trim();
     if (!nm) { toast.error("Đặt tên cho mẫu"); return; }
     if (currentRows.length === 0) { toast.error("Chưa có level nào để lưu"); return; }
-    setBusy(true);
+    templateWriting.current=true;setBusy(true);
     try {
-      const { error } = await (supabase as any).from("blind_structure_templates").insert({
+      const { error } = await waitForManualPlayerResponse(Promise.resolve((supabase as any).from("blind_structure_templates").insert({
         club_id: clubId, name: nm, levels: normalizeLevels(currentRows),
-      });
+      })));
       if (error) { toast.error(error.message); return; }
       toast.success(`Đã lưu mẫu "${nm}"`);
       setSaveOpen(false); setName(""); loadTemplates();
+    } catch {
+      setSaveUnknown(true);
+      toast.error('Chưa xác minh được kết quả lưu mẫu. Kiểm tra danh sách mẫu trước khi tạo lại.');
     } finally {
-      setBusy(false);
+      templateWriting.current=false;setBusy(false);
     }
   };
 
   return (
     <div className="flex items-center gap-2 flex-wrap rounded-md border border-border/60 bg-muted/30 px-2 py-2">
       <span className="text-xs text-muted-foreground">Mẫu cấu trúc:</span>
+      {templateLoading&&<span role="status" className="text-xs text-muted-foreground">Đang tải mẫu CLB…</span>}
+      {templateReadError&&<div role="alert" className="text-xs text-destructive"><p>Không tải được danh sách mẫu blind.</p>
+       <Button type="button" variant="outline" size="sm" onClick={()=>void loadTemplates()}>Tải lại mẫu blind</Button></div>}
       <Select onValueChange={applyChoice}>
         <SelectTrigger className="h-8 w-[210px] text-xs"><SelectValue placeholder="Tải cấu trúc có sẵn…" /></SelectTrigger>
         <SelectContent>
@@ -294,7 +367,8 @@ function BlindTemplateBar({
             <Label>Tên mẫu</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Tour A, Turbo 15'…" />
             <p className="text-xs text-muted-foreground">Lưu {currentRows.length} level hiện tại để tái dùng khi tạo giải.</p>
-            <Button onClick={saveTemplate} disabled={busy} className="w-full">{busy ? "Đang lưu…" : "Lưu mẫu"}</Button>
+            {saveUnknown&&<p role="alert" className="text-sm text-destructive">Chưa xác minh được kết quả lưu mẫu. Kiểm tra danh sách mẫu trước khi tạo lại.</p>}
+            <Button onClick={saveTemplate} disabled={busy||saveUnknown} className="w-full">{busy ? "Đang lưu…" : "Lưu mẫu"}</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -1,14 +1,18 @@
-import { useRef, useState } from "react";
+import {observeScheduleAnalysis} from '@/lib/scheduleAnalysisRead';
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Trash2, ImagePlus, Wand2, CheckCircle2, AlertCircle, Images } from "lucide-react";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import {useScheduleBatchCreate} from '@/hooks/useScheduleBatchCreate';
+import {ScheduleBatchRecovery} from './ScheduleBatchRecovery';
+import {useAuth} from '@/hooks/useAuth';
+import {parseTournamentSchedule} from '@/lib/parsedTournamentSchedule';
 import type { ClubRow } from "./TournamentManagerShared";
 
 // Bulk-create regular tournaments from a schedule IMAGE (by day / by week) on the Floor.
@@ -19,8 +23,8 @@ import type { ClubRow } from "./TournamentManagerShared";
 
 type Status = "pending" | "processing" | "done" | "error";
 interface ParsedTour {
-  tempId: string; name: string; start_time: string; buy_in: number;
-  starting_stack: number; game_type: "nlh" | "plo" | "mixed"; venue?: string | null;
+  tempId: string; name: string; start_time: string; buy_in: number | "";
+  starting_stack: number | ""; game_type: "nlh" | "plo" | "mixed"; venue?: string | null;
   selected: boolean; source_image: string;
 }
 interface UploadedImage { id: string; file: File; url: string; status: Status; error?: string; count: number; }
@@ -48,44 +52,79 @@ const dayKey = (iso: string) => {
   return isNaN(d.getTime()) ? "Chưa rõ ngày" : d.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit" });
 };
 
-export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated }: { clubs: ClubRow[]; defaultClubId: string; multiClub: boolean; onCreated: () => void }) {
+type BulkScheduleProps={clubs:ClubRow[];defaultClubId:string;multiClub:boolean;onCreated:()=>void};
+export function BulkScheduleDialog(props:BulkScheduleProps) {
+  const {user}=useAuth();
+  return <ScopedBulkScheduleDialog key={JSON.stringify([user?.id,props.defaultClubId])} {...props}/>;
+}
+function ScopedBulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated }:BulkScheduleProps) {
   const [open, setOpen] = useState(false);
   const [clubId, setClubId] = useState(defaultClubId);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [parsed, setParsed] = useState<ParsedTour[]>([]);
-  const [creating, setCreating] = useState(false);
+  const batch=useScheduleBatchCreate(),creating=batch.busy;
   const inputRef = useRef<HTMLInputElement>(null);
+  const processingRef=useRef(false),removedImages=useRef(new Set<string>());
+  const previewUrls=useRef(new Map<string,string>());
+  const analysisRef=useRef<AbortController|null>(null);
+  useEffect(()=>{
+    const urls=previewUrls.current;
+    return()=>{analysisRef.current?.abort();urls.forEach(url=>URL.revokeObjectURL(url));urls.clear();};
+  },[]);
+  const discardImagePreviews=()=>{
+    previewUrls.current.forEach(url=>URL.revokeObjectURL(url));previewUrls.current.clear();setImages([]);
+  };
 
   const onFiles = (files: FileList | null) => {
+    if(batch.blocked||batch.busy)return;
     if (!files) return;
     const arr: UploadedImage[] = Array.from(files).filter((f) => f.type.startsWith("image/")).map((f) => ({
       id: crypto.randomUUID(), file: f, url: URL.createObjectURL(f), status: "pending" as Status, count: 0,
     }));
+    arr.forEach(img=>previewUrls.current.set(img.id,img.url));
     setImages((prev) => [...prev, ...arr]);
   };
   const removeImage = (id: string) => {
+    removedImages.current.add(id);
+    const url=previewUrls.current.get(id);
+    if(url){URL.revokeObjectURL(url);previewUrls.current.delete(id);}
     setImages((prev) => prev.filter((i) => i.id !== id));
     setParsed((prev) => prev.filter((p) => p.source_image !== id));
   };
 
   const processAll = async () => {
+    if(processingRef.current)return;
     const todo = images.filter((i) => i.status === "pending" || i.status === "error");
     if (!todo.length) { toast.info("Không có ảnh mới để phân tích"); return; }
-    for (const img of todo) {
+    processingRef.current=true;
+    const analysis=new AbortController();
+    analysisRef.current=analysis;
+    try { for (const img of todo) {
+      if(analysis.signal.aborted)break;
+      if(removedImages.current.has(img.id))continue;
       setImages((prev) => prev.map((i) => (i.id === img.id ? { ...i, status: "processing", error: undefined } : i)));
       try {
-        const b64 = await fileToBase64(img.file);
-        const { data, error } = await supabase.functions.invoke("parse-tournament-schedule", { body: { image_base64: b64, image_mime: img.file.type } });
+        const result = await observeScheduleAnalysis(analysis.signal, async (signal) => {
+          const b64 = await fileToBase64(img.file);
+          if (signal.aborted || removedImages.current.has(img.id)) return null;
+          return supabase.functions.invoke("parse-tournament-schedule", {
+            signal, body: { image_base64: b64, image_mime: img.file.type },
+          });
+        });
+        if (!result) continue;
+        const { data, error } = result;
+        if(analysis.signal.aborted)break;
+        if(removedImages.current.has(img.id))continue;
         if (error) throw new Error(error.message);
         if ((data as any)?.error) throw new Error((data as any).error);
-        const tours = ((data as any)?.tournaments ?? []) as any[];
+        const tours = parseTournamentSchedule(data);
         const np: ParsedTour[] = tours.map((tt) => ({
           tempId: crypto.randomUUID(),
           name: tt.name ?? "",
           start_time: tt.start_time ?? "",
-          buy_in: Number(tt.buy_in) || 0,
-          starting_stack: Number(tt.starting_stack) || 20000,
-          game_type: (["nlh", "plo", "mixed"].includes(tt.game_type) ? tt.game_type : "nlh") as ParsedTour["game_type"],
+          buy_in: tt.buy_in,
+          starting_stack: tt.starting_stack,
+          game_type: tt.game_type,
           venue: tt.venue ?? null,
           selected: true,
           source_image: img.id,
@@ -93,44 +132,48 @@ export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated 
         setParsed((prev) => [...prev, ...np]);
         setImages((prev) => prev.map((i) => (i.id === img.id ? { ...i, status: "done", count: tours.length } : i)));
       } catch (e: any) {
+        if(analysis.signal.aborted)break;
+        if(removedImages.current.has(img.id))continue;
         setImages((prev) => prev.map((i) => (i.id === img.id ? { ...i, status: "error", error: e.message } : i)));
         toast.error("Phân tích lỗi: " + e.message);
       }
     }
+    } finally {processingRef.current=false;analysisRef.current=null;}
   };
 
   const updateRow = (id: string, patch: Partial<ParsedTour>) => setParsed((prev) => prev.map((p) => (p.tempId === id ? { ...p, ...patch } : p)));
   const removeRow = (id: string) => setParsed((prev) => prev.filter((p) => p.tempId !== id));
 
   const createAll = async () => {
+    if(batch.blocked||creating||processingRef.current)return;
     const rows = parsed.filter((p) => p.selected);
     if (!rows.length) return toast.error("Chọn ít nhất 1 giải");
     if (!clubId) return toast.error("Chọn câu lạc bộ");
-    if (rows.find((r) => !r.name.trim() || !r.start_time)) return toast.error("Mỗi giải cần có tên + thời gian");
-    setCreating(true);
-    try {
+    if (rows.some(r => typeof r.buy_in !== 'number' || !Number.isSafeInteger(r.buy_in) || r.buy_in < 0
+      || typeof r.starting_stack !== 'number' || !Number.isSafeInteger(r.starting_stack) || r.starting_stack <= 0)) {
+      toast.error("Mỗi giải cần buy-in nguyên từ 0 và stack nguyên lớn hơn 0");return;
+    }
+    if (rows.find((r) => !r.name.trim() || !r.start_time || !Number.isFinite(new Date(r.start_time).getTime()))) return toast.error("Mỗi giải cần có tên + thời gian");
       // `schedule_upload_id` (a client-generated tag used only by the push-notification grouping
       // trigger) is intentionally NOT written: migration 20260516123400 — which adds
       // tournaments.schedule_upload_id — is NOT applied to the live DB, so sending it made the whole
       // insert fail with "Could not find the 'schedule_upload_id' column ... in the schema cache".
       // Nothing reads this column in the app. Re-add it once that migration is applied (owner-gated).
-      const payload = rows.map((r) => withTournamentCreateLiveStatus({
+      const payload = rows.map((r) => ({
         name: r.name.trim(),
         start_time: new Date(r.start_time).toISOString(),
-        buy_in: r.buy_in,
-        starting_stack: r.starting_stack,
+        buy_in: Number(r.buy_in),
+        starting_stack: Number(r.starting_stack),
         game_type: r.game_type,
         location: r.venue ?? null,
         club_id: clubId,
       }));
-      const { error } = await (supabase as any).from("tournaments").insert(payload as any);
-      if (error) { toast.error(error.message); return; }
+      const ids=await batch.submit(payload);if(!ids)return;
       toast.success(`Đã tạo ${rows.length} giải từ ảnh lịch`);
       setParsed([]);
-      setImages([]);
+      discardImagePreviews();
       setOpen(false);
       onCreated();
-    } finally { setCreating(false); }
   };
 
   const selectedCount = parsed.filter((p) => p.selected).length;
@@ -142,12 +185,14 @@ export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated 
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" className="gap-1 border-primary/40 text-primary"><Images className="w-4 h-4" /> Tạo từ ảnh lịch</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto">
+      <DialogContent className="grid-cols-1 max-w-3xl max-h-[88vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Tạo hàng loạt từ ảnh lịch</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
+        <ScheduleBatchRecovery batch={batch} onRecovered={()=>{setParsed([]);discardImagePreviews();setOpen(false);onCreated();}}/>
+        <fieldset disabled={batch.blocked||batch.busy} className="min-w-0 space-y-3">
+          <DialogDescription className="text-xs text-muted-foreground">
             Tải ảnh lịch giải (theo ngày / theo tuần) → AI đọc → sửa lại → tạo. Giải tạo ra là giải thường — sửa được + chỉnh cấu trúc blind như bình thường.
-          </p>
+          </DialogDescription>
+          <p className="text-sm text-muted-foreground">Chỉ tạo lịch giải, chưa có cấu hình blind. Sau khi lưu, mở cấu hình giải để bổ sung blind trước khi bắt đầu clock.</p>
           {multiClub && (
             <div>
               <Label className="text-xs">Câu lạc bộ</Label>
@@ -186,7 +231,7 @@ export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated 
                   </div>
                 ))}
               </div>
-              <Button size="sm" onClick={processAll} disabled={images.every((i) => i.status === "done" || i.status === "processing")} className="gap-1">
+              <Button size="sm" onClick={processAll} disabled={images.some(i=>i.status==='processing')||images.every((i) => i.status === "done" || i.status === "processing")} className="gap-1">
                 <Wand2 className="h-4 w-4" /> Phân tích bằng AI
               </Button>
             </>
@@ -196,7 +241,7 @@ export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold">Xem &amp; sửa ({selectedCount}/{parsed.length})</span>
-                <Button size="sm" onClick={createAll} disabled={creating} className="gap-1 gradient-neon text-primary-foreground border-0">
+                <Button size="sm" onClick={createAll} disabled={creating||batch.blocked||images.some(i=>i.status==='processing')} className="gap-1 gradient-neon text-primary-foreground border-0">
                   {creating && <Loader2 className="h-4 w-4 animate-spin" />} Tạo {selectedCount} giải
                 </Button>
               </div>
@@ -212,8 +257,8 @@ export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated 
                       </div>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <div><Label className="text-[10px]">Thời gian</Label><Input type="datetime-local" value={toLocalInputValue(p.start_time)} onChange={(e) => updateRow(p.tempId, { start_time: e.target.value ? new Date(e.target.value).toISOString() : "" })} className="h-8" /></div>
-                        <div><Label className="text-[10px]">Buy-in</Label><Input type="number" value={p.buy_in} onChange={(e) => updateRow(p.tempId, { buy_in: Number(e.target.value) })} className="h-8" /></div>
-                        <div><Label className="text-[10px]">Stack</Label><Input type="number" value={p.starting_stack} onChange={(e) => updateRow(p.tempId, { starting_stack: Number(e.target.value) })} className="h-8" /></div>
+                        <div><Label className="text-[10px]">Buy-in</Label><Input type="number" value={p.buy_in} onChange={(e) => updateRow(p.tempId, { buy_in: e.target.value === "" ? "" : Number(e.target.value) })} className="h-8" /></div>
+                        <div><Label className="text-[10px]">Stack</Label><Input type="number" value={p.starting_stack} onChange={(e) => updateRow(p.tempId, { starting_stack: e.target.value === "" ? "" : Number(e.target.value) })} className="h-8" /></div>
                         <div><Label className="text-[10px]">Loại</Label>
                           <Select value={p.game_type} onValueChange={(v: any) => updateRow(p.tempId, { game_type: v })}>
                             <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
@@ -228,7 +273,7 @@ export function BulkScheduleDialog({ clubs, defaultClubId, multiClub, onCreated 
               <p className="text-[11px] text-muted-foreground">Tạo xong, mỗi giải sửa được (tên/giờ/buy-in) + chỉnh cấu trúc blind ở danh sách giải như giải thường.</p>
             </div>
           )}
-        </div>
+        </fieldset>
       </DialogContent>
     </Dialog>
   );

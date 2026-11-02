@@ -1,6 +1,11 @@
 \set ON_ERROR_STOP on
 -- Isolated restored current schema only. No fixture function or production connection.
 BEGIN;
+\if :{?EXACT_ISSUANCE_CASE}
+SELECT set_config('vinpoker.test_colorup_exact_issuance','true',true);
+\else
+SELECT set_config('vinpoker.test_colorup_exact_issuance','false',true);
+\endif
 CREATE FUNCTION pg_temp.assert_true(ok boolean,message text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS NOT TRUE THEN RAISE EXCEPTION 'color_up_test_failed: %',message; END IF; END $$;
 INSERT INTO auth.users(id) VALUES('e1600000-0000-4000-8000-000000000001');
@@ -18,7 +23,14 @@ INSERT INTO public.chip_bank(club_id,denomination_id,on_hand_count) SELECT 'e160
 SELECT set_config('request.jwt.claim.sub','e1600000-0000-4000-8000-000000000001',true);
 SET LOCAL ROLE authenticated;
 DO $$ DECLARE first_result jsonb; retry jsonb; second_result jsonb; r jsonb; BEGIN
-  r:=public.chip_ops_set_issuance('e1600000-0000-4000-8000-000000000008',1);
+  IF current_setting('vinpoker.test_colorup_exact_issuance')::boolean THEN
+    r:=public.chip_ops_set_issuance('e1600000-0000-4000-8000-000000000008',1);
+    PERFORM pg_temp.assert_true(r->>'error'='EXACT_ISSUANCE_INTENT_REQUIRED','retired issuance cannot bypass exact intent');
+    r:=public.chip_ops_set_issuance_v2('e1600000-0000-4000-8000-000000000008',1,0,
+      'e1600000-0000-4000-8000-000000000069','e1600000-0000-4000-8000-000000000001');
+  ELSE
+    r:=public.chip_ops_set_issuance('e1600000-0000-4000-8000-000000000008',1);
+  END IF;
   PERFORM pg_temp.assert_true(r->>'status'='ok','issuance succeeds on actual tables');
   r:=public.chip_ops_set_bank_coupling('e1600000-0000-4000-8000-000000000002',true);
   PERFORM pg_temp.assert_true(r->>'status'='ok','TEST coupling enabled');

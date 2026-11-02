@@ -1,0 +1,26 @@
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import type {ReactNode} from 'react';
+const h=vi.hoisted(()=>({read:vi.fn(),submit:vi.fn(),session:{access_token:"LOCAL_TEST"},menuError:false,reload:vi.fn(),signals:[] as AbortSignal[]}));
+vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:'read-test-actor'},session:h.session,loading:false})}));
+vi.mock('@/hooks/useFnbStockInIntent',()=>({useFnbStockInIntent:()=>({pending:null,blocked:false,busy:false,message:null,readOnlyRecovery:false,submit:h.submit,recover:vi.fn(),retry:vi.fn()})}));
+vi.mock('@tanstack/react-query',()=>({useQueryClient:()=>({invalidateQueries:vi.fn()})}));
+vi.mock('@/hooks/useFnbMenu',()=>({useFnbMenu:()=>({data:{ingredients:[{id:'ing-a',name:'Ingredient TEST',stock_unit:'unit',purchase_unit:null,units_per_purchase:1,is_active:true}]},isLoading:false,isError:h.menuError,refetch:h.reload})}));
+vi.mock('sonner',()=>({toast:{error:vi.fn(),success:vi.fn()}}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:h.submit,from:()=>{let club='';const q={select:()=>q,eq:(_key:string,value:string)=>{club=value;return q;},order:()=>q,limit:()=>q,abortSignal:(signal:AbortSignal)=>{h.signals.push(signal);return q;},then:(resolve:(x:unknown)=>unknown,reject:(x:unknown)=>unknown)=>h.read(club).then(resolve,reject)};return q;}}}));
+vi.mock('@/components/ui/select',()=>({Select:({children,value,onValueChange}:{children:ReactNode;value:string;onValueChange:(v:string)=>void})=><select aria-label="TEST ingredient" value={value} onChange={e=>onValueChange(e.target.value)}><option value=""/>{children}</select>,SelectTrigger:()=>null,SelectValue:()=>null,SelectContent:({children}:{children:ReactNode})=><>{children}</>,SelectItem:({children,value}:{children:ReactNode;value:string})=><option value={value}>{children}</option>}));
+import {StockInForm} from './StockInForm';
+beforeEach(()=>{h.menuError=false;h.signals=[];h.reload.mockReset();h.read.mockReset().mockResolvedValue({data:[],error:null});h.submit.mockReset().mockResolvedValue({data:{on_hand:1,avg_unit_cost:0},error:null});});
+afterEach(()=>{cleanup();vi.useRealTimers();});
+it('does not present an error history as verified empty',async()=>{h.read.mockResolvedValue({data:null,error:{message:'offline'}});render(<StockInForm clubId="club-a"/>);await screen.findByText(/Chưa có chuyển động kho|Không tải được lịch sử kho/);expect(screen.getByRole('alert')).toHaveTextContent('Không tải được lịch sử kho');expect(screen.queryByText('Chưa có chuyển động kho.')).not.toBeInTheDocument();});
+it('does not turn blank purchase cost into zero but accepts explicit zero',async()=>{
+ render(<StockInForm clubId="club-a"/>);fireEvent.change(screen.getByRole('combobox'),{target:{value:'ing-a'}});fireEvent.change(screen.getByLabelText(/Số lượng mua/),{target:{value:'1'}});fireEvent.click(screen.getByRole('button',{name:'Nhập kho'}));await act(async()=>{});expect(h.submit).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText(/Giá 1 đơn vị mua/),{target:{value:'0'}});fireEvent.click(screen.getByRole('button',{name:'Nhập kho'}));await waitFor(()=>expect(h.submit).toHaveBeenCalledTimes(1));expect(h.submit.mock.calls[0][1]).toMatchObject({qty_purchase:1,unit_cost_purchase:0});
+});
+it('preserves verified empty movement history',async()=>{render(<StockInForm clubId="club-a"/>);expect(await screen.findByText('Chưa có chuyển động kho.')).toBeInTheDocument();expect(screen.queryByRole('alert')).not.toBeInTheDocument();});
+it('bounds movement history and discards late rows until explicit retry',async()=>{
+ vi.useFakeTimers();let finish!:(x:unknown)=>void;h.read.mockImplementationOnce(()=>new Promise(r=>{finish=r;}));render(<StockInForm clubId="club-a"/>);await act(async()=>{});await act(async()=>{await vi.advanceTimersByTimeAsync(10001);});expect(screen.getByRole('alert')).toHaveTextContent('Không tải được lịch sử kho');expect(h.signals[0].aborted).toBe(true);await act(async()=>{finish({data:[{id:'late',ingredient_id:'ing-a',delta:99,reason:'stock_in',balance_after:99}],error:null});});expect(screen.queryByText('+99')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Thử tải lại lịch sử kho'}));await act(async()=>{});expect(screen.getByText('Chưa có chuyển động kho.')).toBeInTheDocument();
+});
+it('blocks unavailable catalogue actions while preserving entered cost and quantity',async()=>{
+ const v=render(<StockInForm clubId="club-a"/>);await screen.findByText('Chưa có chuyển động kho.');fireEvent.change(screen.getByRole('combobox'),{target:{value:'ing-a'}});fireEvent.change(screen.getByLabelText(/Số lượng mua/),{target:{value:'2'}});fireEvent.change(screen.getByLabelText(/Giá 1 đơn vị mua/),{target:{value:'3000'}});h.menuError=true;v.rerender(<StockInForm clubId="club-a"/>);expect(screen.getByRole('alert')).toHaveTextContent('Không tải được thực đơn');expect(screen.queryByRole('button',{name:'Nhập kho'})).not.toBeInTheDocument();expect(h.submit).not.toHaveBeenCalled();h.menuError=false;v.rerender(<StockInForm clubId="club-a"/>);expect(screen.getByLabelText(/Số lượng mua/)).toHaveValue(2);expect(screen.getByLabelText(/Giá 1 đơn vị mua/)).toHaveValue(3000);
+});

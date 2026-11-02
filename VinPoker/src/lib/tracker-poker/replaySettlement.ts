@@ -156,7 +156,7 @@ export function parseReplayPublicSettlement(value: unknown): ReplayPublicSettlem
     pots.push({ potId, kind: raw.kind, amount, winnerIds, allocations });
   }
   if (!unique(pots.map((pot) => pot.potId))) return null;
-  if (pots.filter((pot) => pot.kind === "main").length !== 1) return null;
+  if (pots.length > 0 && pots.filter((pot) => pot.kind === "main").length !== 1) return null;
   if (safeSum(pots.map((pot) => pot.amount)) === null) return null;
 
   const refunds: ReplaySettlementRefund[] = [];
@@ -196,6 +196,8 @@ export function parseReplayPublicSettlement(value: unknown): ReplayPublicSettlem
     handRanks.push({ playerId, category, bestFive, kickers });
   }
   if (!unique(handRanks.map((rank) => rank.playerId))) return null;
+  if (pots.length === 0 && !(players.length >= 2 && refunds.length === 1 && refunds[0].amount > 0
+    && handRanks.length === 0 && players.every((player) => player.potAward === 0 && player.netDelta === 0))) return null;
 
   return {
     schemaVersion: REPLAY_SETTLEMENT_SCHEMA_V1,

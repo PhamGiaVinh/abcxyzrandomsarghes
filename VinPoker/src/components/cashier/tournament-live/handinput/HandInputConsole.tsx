@@ -12,10 +12,17 @@ import { useStandaloneHandInput } from "./useStandaloneHandInput";
 import { StandaloneHandInputConsole } from "./StandaloneHandInputConsole";
 import { RacetrackHandInputConsole } from "./RacetrackHandInputConsole";
 import { TrackerInputCardProvider } from "@/components/tracker/TrackerCardStyle";
+import { PendingFinishControls } from './PendingFinishControls';
+import {AllInConfirmation} from './AllInConfirmation';
+import {VoidConfirmation} from './VoidConfirmation';
 
 export function HandInputConsole({ tournamentId }: { tournamentId: string }) {
   const hook = useStandaloneHandInput(tournamentId);
-  return <TrackerInputCardProvider>{FEATURES.trackerRacetrackUi ? (
+  return <TrackerInputCardProvider>
+    <PendingFinishControls hook={hook}/>
+    <AllInConfirmation hook={hook}/>
+    <VoidConfirmation hook={hook}/>
+    {FEATURES.trackerRacetrackUi ? (
     <RacetrackHandInputConsole hook={hook} />
   ) : (
     <StandaloneHandInputConsole hook={hook} />

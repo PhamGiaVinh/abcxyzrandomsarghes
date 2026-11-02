@@ -19,6 +19,7 @@ import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
 import { OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 type OpsSupabaseClient = SupabaseClient<Database>;
 type CashierTab = "queue" | "receipts" | "status";
@@ -68,22 +69,26 @@ export default function OpsCashier() {
   useEffect(() => {
     if (!user || !clubId || capabilities.loading || capabilities.scopeError) return;
     let active = true;
+    const controller = new AbortController();
     setState({ loading: true, error: null, registrations: [], tournaments: [] });
-    void Promise.all([
-      loadRegistrations(client, clubId),
-      loadTournamentStatuses(client, clubId),
-    ]).then(([registrations, tournaments]) => {
+    void observeTrackerContextRead(Promise.all([
+      loadRegistrations(client, clubId, controller.signal),
+      loadTournamentStatuses(client, clubId, controller.signal),
+    ])).then(([registrations, tournaments]) => {
       if (active) setState({ loading: false, error: null, registrations, tournaments });
     }).catch((error: unknown) => {
+      controller.abort();
       if (!active) return;
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : "Không tải được dữ liệu Cashier.",
+        error: error instanceof Error && error.message === "tracker_context_read_timeout"
+          ? "Quá thời gian tải dữ liệu Cashier. Chọn làm mới để thử lại."
+          : error instanceof Error ? error.message : "Không tải được dữ liệu Cashier.",
         registrations: [],
         tournaments: [],
       });
     });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [capabilities.loading, capabilities.scopeError, client, clubId, revision, user]);
 
   const pending = useMemo(
@@ -186,30 +191,36 @@ export default function OpsCashier() {
   );
 }
 
-async function loadRegistrations(client: OpsSupabaseClient, clubId: string): Promise<RegistrationRow[]> {
+async function loadRegistrations(client: OpsSupabaseClient, clubId: string, signal: AbortSignal): Promise<RegistrationRow[]> {
   const { data, error } = await client
     .from("tournament_registrations")
     .select("id, reference_code, status, total_pay, player_id, tournament_id, committed_at")
     .eq("club_id", clubId)
     .in("status", ["pending", "confirmed"])
     .order("committed_at", { ascending: false })
-    .limit(150);
+    .limit(150)
+    .abortSignal(signal);
+  if (signal.aborted) throw new Error("cashier_read_aborted");
   if (error) throw error;
-  const rows = (data ?? []) as any[];
+  if (!Array.isArray(data)) throw new Error("Không xác minh được danh sách đăng ký Cashier. Chọn làm mới để thử lại.");
+  const rows = data as any[];
   const playerIds = [...new Set(rows.map((row) => row.player_id).filter(Boolean))];
   const tournamentIds = [...new Set(rows.map((row) => row.tournament_id).filter(Boolean))];
   const [profilesResult, tournamentsResult] = await Promise.all([
     playerIds.length
-      ? client.from("profiles").select("user_id, display_name, phone").in("user_id", playerIds)
+      ? client.from("profiles").select("user_id, display_name, phone").in("user_id", playerIds).abortSignal(signal)
       : Promise.resolve({ data: [], error: null }),
     tournamentIds.length
-      ? client.from("tournaments").select("id, name").eq("club_id", clubId).in("id", tournamentIds)
+      ? client.from("tournaments").select("id, name").eq("club_id", clubId).in("id", tournamentIds).abortSignal(signal)
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (profilesResult.error) throw profilesResult.error;
   if (tournamentsResult.error) throw tournamentsResult.error;
-  const profiles = new Map((profilesResult.data ?? []).map((row: any) => [row.user_id, row]));
-  const tournaments = new Map((tournamentsResult.data ?? []).map((row: any) => [row.id, row.name]));
+  if (!Array.isArray(profilesResult.data) || !Array.isArray(tournamentsResult.data)) {
+    throw new Error("Không xác minh được thông tin người chơi hoặc giải đấu. Chọn làm mới để thử lại.");
+  }
+  const profiles = new Map(profilesResult.data.map((row: any) => [row.user_id, row] as const));
+  const tournaments = new Map(tournamentsResult.data.map((row: any) => [row.id, row.name] as const));
   return rows.map((row) => ({
     id: row.id,
     status: row.status,
@@ -222,15 +233,17 @@ async function loadRegistrations(client: OpsSupabaseClient, clubId: string): Pro
   }));
 }
 
-async function loadTournamentStatuses(client: OpsSupabaseClient, clubId: string): Promise<TournamentStatusRow[]> {
+async function loadTournamentStatuses(client: OpsSupabaseClient, clubId: string, signal: AbortSignal): Promise<TournamentStatusRow[]> {
   const { data, error } = await client
     .from("tournaments")
     .select("id, name, status, start_time, buy_in")
     .eq("club_id", clubId)
     .order("created_at", { ascending: false })
-    .limit(80);
+    .limit(80)
+    .abortSignal(signal);
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({
+  if (!Array.isArray(data)) throw new Error("Không xác minh được trạng thái giải đấu. Chọn làm mới để thử lại.");
+  return data.map((row: any) => ({
     id: row.id,
     name: row.name,
     status: row.status,

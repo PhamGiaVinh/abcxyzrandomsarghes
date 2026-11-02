@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
@@ -42,14 +42,25 @@ const PUSH_CATEGORIES: { key: string; label: string; desc: string }[] = [
 
 
 export default function NotificationSettings() {
+  const { user, loading } = useAuth();
+  if (loading) return <p role="status">Đang xác minh phiên đăng nhập…</p>;
+  if (!user) return <p role="alert">Đăng nhập để xem và thay đổi tùy chọn thông báo.</p>;
+  return <NotificationSettingsScope key={user.id} />;
+}
+function NotificationSettingsScope() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const userId = user?.id;
   const [enabled, setEnabled] = useState(true);
   const [prefs, setPrefs] = useState<Prefs>({});
   const [pushPrefs, setPushPrefs] = useState<Record<string, boolean>>({});
+  const [pushPreferencesAvailable, setPushPreferencesAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [emailAvailable, setEmailAvailable] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const active = useRef(true), saveLock = useRef(false);
+  useEffect(() => { active.current = true;return () => { active.current = false; }; }, []);
 
   // Web Push state
   const [pushPerm, setPushPerm] = useState<"granted" | "denied" | "default">("default");
@@ -65,6 +76,7 @@ export default function NotificationSettings() {
   const refreshPush = async () => {
     if (!pushSupported || isPreviewHost) return;
     const s = await getSubscriptionState();
+    if (!active.current) return;
     setPushPerm(s.permission);
     setPushOptedIn(s.optedIn);
   };
@@ -98,56 +110,88 @@ export default function NotificationSettings() {
   };
   useEffect(() => {
     let disposed = false;
-    setEmailAvailable(false); setPrefs({}); setPushPrefs({}); setEnabled(false); setPreferenceError(null);
-    if (!user) { setLoading(false); return; }
+    setEmailAvailable(false); setPushPreferencesAvailable(false); setPrefs({}); setPushPrefs({}); setEnabled(false); setPreferenceError(null);
+    if (!userId) { setLoading(false); return; }
     setLoading(true);
     (async () => {
       try {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .maybeSingle();
       if (disposed) return;
       if (error) { setPreferenceError("Không tải được tùy chọn thông báo. Hãy tải lại trang."); return; }
+      if (!data) { setPreferenceError("Không tìm thấy hồ sơ để xác minh tùy chọn thông báo. Hãy tải lại trang."); return; }
       if (data) {
         const emailEnabled = "email_notifications_enabled" in data ? data.email_notifications_enabled : null;
         const emailPrefs = "email_prefs" in data ? data.email_prefs : null;
         setEmailAvailable("email_notifications_enabled" in data && "email_prefs" in data);
         setEnabled(typeof emailEnabled === "boolean" ? emailEnabled : false);
         setPrefs(emailPrefs && typeof emailPrefs === "object" && !Array.isArray(emailPrefs) ? emailPrefs as Prefs : {});
-        setPushPrefs(((data as any).push_prefs as Record<string, boolean>) ?? {});
+        if ('push_prefs' in data) {
+          const raw = data.push_prefs;
+          if (raw !== null && (!raw || typeof raw !== 'object' || Array.isArray(raw))) {
+            setPreferenceError('Không xác minh được tùy chọn loại push. Hãy tải lại trang trước khi thay đổi.');
+            return;
+          }
+          const verified: Record<string, boolean> = {};
+          for (const [key, value] of Object.entries(raw ?? {})) {
+            if (typeof value !== 'boolean') {
+              setPreferenceError('Không xác minh được tùy chọn loại push. Hãy tải lại trang trước khi thay đổi.');
+              return;
+            }
+            verified[key] = value;
+          }
+          setPushPrefs(verified);
+          setPushPreferencesAvailable(true);
+        }
       }
       } catch {
         if (!disposed) setPreferenceError("Không kết nối được để tải tùy chọn thông báo.");
       } finally { if (!disposed) setLoading(false); }
     })();
     return () => { disposed = true; };
-  }, [user?.id]);
+  }, [userId]);
 
+  const persistPreference = async (payload: Record<string, unknown>, verified: () => void) => {
+    if (!user || loading || preferenceError || saveLock.current || !active.current) return;
+    saveLock.current = true;setSaving(true);
+    try {
+      // Optional email columns vary by environment; verify an affected actor row,
+      // not merely an error-free UPDATE response with zero affected records.
+      const writer = supabase.from('profiles') as unknown as { update(value: Record<string, unknown>): {
+        eq(column: string, value: string): { select(columns: string): { maybeSingle(): PromiseLike<{ data: { user_id: string } | null; error: unknown }> } };
+      } };
+      const result = await writer.update(payload).eq('user_id', user.id).select('user_id').maybeSingle();
+      if (!active.current) return;
+      if (result.error || result.data?.user_id !== user.id) throw new Error('preference_save_unverified');
+      verified();
+    } catch {
+      if (active.current) setPreferenceError('Chưa xác minh được việc lưu tùy chọn. Hãy tải lại trang để đọc trạng thái từ server trước khi tiếp tục.');
+    } finally { saveLock.current = false;if (active.current) setSaving(false); }
+  };
   const togglePushPref = async (key: string, val: boolean) => {
-    if (!user || loading || preferenceError) return;
+    if (!pushPreferencesAvailable) return;
     const next = { ...pushPrefs, [key]: val };
-    setPushPrefs(next);
-    if (!user) return;
-    const { error } = await supabase.from("profiles").update({ push_prefs: next } as any).eq("user_id", user.id);
-    if (error) toast.error(t("notifSettings.saveFailed", { msg: error.message }));
+    await persistPreference({ push_prefs: next }, () => setPushPrefs(next));
   };
 
   const save = async (next: { enabled?: boolean; prefs?: Prefs }) => {
     if (!user || !emailAvailable || preferenceError) return;
-    const payload: any = {};
+    const payload: Record<string, unknown> = {};
     if (next.enabled !== undefined) payload.email_notifications_enabled = next.enabled;
     if (next.prefs) payload.email_prefs = next.prefs;
-    const { error } = await supabase.from("profiles").update(payload).eq("user_id", user.id);
-    if (error) toast.error(t("notifSettings.saveFailed", { msg: error.message }));
-    else toast.success(t("notifSettings.saved"));
+    await persistPreference(payload, () => {
+      if (next.enabled !== undefined) setEnabled(next.enabled);
+      if (next.prefs) setPrefs(next.prefs);
+      toast.success(t("notifSettings.saved"));
+    });
   };
 
   const togglePref = (key: keyof Prefs, val: boolean) => {
     const next = { ...prefs, [key]: val };
-    setPrefs(next);
-    save({ prefs: next });
+    void save({ prefs: next });
   };
 
   if (loading) return <div className="container mx-auto p-6">{t("notifSettings.loading")}</div>;
@@ -217,6 +261,7 @@ export default function NotificationSettings() {
       <Card className="p-4 space-y-3">
         <Label className="text-base font-semibold">{t("notifSettings.pushByCategory")}</Label>
         <p className="text-xs text-muted-foreground">{t("notifSettings.pushByCategoryDesc")}</p>
+        {!pushPreferencesAvailable && !preferenceError && <p className="text-sm text-muted-foreground">Tùy chọn loại push chưa có backend trong môi trường này. Chưa thể thay đổi.</p>}
         {PUSH_CATEGORIES.map((c) => (
           <div key={c.key} className="flex items-start justify-between gap-4 py-1.5 border-b border-border last:border-0">
             <div>
@@ -224,8 +269,9 @@ export default function NotificationSettings() {
               <p className="text-xs text-muted-foreground mt-0.5">{t(c.desc)}</p>
             </div>
             <Switch
-              checked={pushPrefs[c.key] !== false}
-              disabled={!!preferenceError}
+              aria-label={t(c.label)}
+              checked={pushPreferencesAvailable && pushPrefs[c.key] !== false}
+              disabled={saving || !pushPreferencesAvailable || !!preferenceError}
               onCheckedChange={(v) => togglePushPref(c.key, v)}
             />
           </div>
@@ -240,11 +286,11 @@ export default function NotificationSettings() {
           <p className="text-sm text-muted-foreground">{t("notifSettings.emailMasterDesc")}</p>
         </div>
         <Switch
+          aria-label={t("notifSettings.emailMasterLabel")}
           checked={enabled}
-          disabled={!emailAvailable || !!preferenceError}
+          disabled={saving || !emailAvailable || !!preferenceError}
           onCheckedChange={(v) => {
-            setEnabled(v);
-            save({ enabled: v });
+            void save({ enabled: v });
           }}
         />
       </Card>
@@ -258,7 +304,8 @@ export default function NotificationSettings() {
               <p className="text-xs text-muted-foreground mt-1">{t(c.desc)}</p>
             </div>
             <Switch
-              disabled={!enabled}
+              aria-label={t(c.label)}
+              disabled={saving || !enabled || !emailAvailable || !!preferenceError}
               checked={prefs[c.key] ?? false}
               onCheckedChange={(v) => togglePref(c.key, v)}
             />

@@ -31,6 +31,9 @@ export default function PokerIQ() {
   // questions the Super Admin authored (shape-guarded, append/override by id). On
   // any failure we keep the static bank, so the drill always works.
   const [hands, setHands] = useState<DrillHand[]>(DRILL_HANDS);
+  // A remote update is available for the next run, never a new answer key for
+  // the question currently displayed or a result the player already finished.
+  const [runHands, setRunHands] = useState<DrillHand[]>(DRILL_HANDS);
   useEffect(() => {
     if (!FEATURES.pokerIqRemoteQuestions) return;
     let cancelled = false;
@@ -47,14 +50,14 @@ export default function PokerIQ() {
   const [answers, setAnswers] = useState<DrillAnswer[]>([]);
 
   const result = useMemo(
-    () => (phase === "result" ? computeDrillResult(hands, answers) : null),
-    [phase, hands, answers],
+    () => (phase === "result" ? computeDrillResult(runHands, answers) : null),
+    [phase, runHands, answers],
   );
 
   const handleAnswer = (answer: DrillAnswer) => {
     const next = [...answers.filter((a) => a.handId !== answer.handId), answer];
     setAnswers(next);
-    if (idx + 1 >= hands.length) {
+    if (idx + 1 >= runHands.length) {
       setPhase("result");
     } else {
       setIdx(idx + 1);
@@ -62,6 +65,7 @@ export default function PokerIQ() {
   };
 
   const restart = () => {
+    setRunHands(hands);
     setAnswers([]);
     setIdx(0);
     setPhase("playing");
@@ -109,7 +113,7 @@ export default function PokerIQ() {
 
           {phase === "playing" && (
             <div className="py-2">
-              <HandQuestion key={hands[idx].id} hand={hands[idx]} index={idx} total={hands.length} onAnswer={handleAnswer} />
+              <HandQuestion key={runHands[idx].id} hand={runHands[idx]} index={idx} total={runHands.length} onAnswer={handleAnswer} />
             </div>
           )}
 

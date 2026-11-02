@@ -45,7 +45,7 @@ export function settleManualPlayerIntent(storage: Pick<Storage, "getItem" | "set
   if (storage.getItem(key) !== settled) throw new Error("MANUAL_PLAYER_JOURNAL_SETTLE_FAILED");
 }
 /** A hung transport is an unknown outcome, never a reason to issue another key. */
-export async function waitForManualPlayerResponse<T>(response: Promise<T>, timeoutMs = 20000): Promise<T> {
+export async function waitForManualPlayerResponse<T>(response: PromiseLike<T>, timeoutMs = 20000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([response, new Promise<never>((_, reject) => {

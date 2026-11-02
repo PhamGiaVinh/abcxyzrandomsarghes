@@ -1,0 +1,42 @@
+name: Cashier club scope authority
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000085_cashier_club_scope_authority_v1.sql'
+      - 'VinPoker/tests/cashier/clubScopeAuthority.disposable.sql'
+      - '.github/workflows/cashier-club-scope-authority.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres-17:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: fixture-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: git diff --check
+      - run: node scripts/security/check-migration-catalog.mjs && node scripts/security/check-sensitive-credential-context.mjs
+        working-directory: VinPoker
+      - name: Actual migration actor, tenant and trusted service checks
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cashier/clubScopeAuthority.disposable.sql
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: postgres
+          PGUSER: postgres
+          PGPASSWORD: fixture-only

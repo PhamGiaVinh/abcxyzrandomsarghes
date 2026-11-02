@@ -39,6 +39,7 @@ export interface TvTournamentRow {
   prize_pool: number | null;
   starting_stack: number | null;
   guarantee_amount: number | null;
+  main_event?: { guarantee_amount: number | null } | null;
   buy_in: number | null;
   rake_amount: number | null;
   satellite_payout: unknown;
@@ -141,6 +142,8 @@ export function mapTvData(sources: TvDataSources): TvData {
   const { clock, tournament, displayRemainingSeconds } = sources;
   const currentLevel = mapClockLevel(clock.current_level);
   const levels = mapLevelRows(sources.levels);
+  const status = mapTournamentStatus(tournament.status);
+  const terminal = status === 'finished' || status === 'cancelled';
 
   return {
     tournamentName: tournament.name,
@@ -151,13 +154,13 @@ export function mapTvData(sources: TvDataSources): TvData {
       : undefined,
     brandName: tournament.club?.tv_brand_name ?? tournament.club?.name ?? null,
     eventNote: null, // no schema column yet — hidden by contract
-    status: mapTournamentStatus(tournament.status),
-    isRunning: clock.is_running ?? false,
-    isBreak: clock.is_break ?? currentLevel?.isBreak ?? false,
-    remainingSeconds: displayRemainingSeconds,
+    status,
+    isRunning: !terminal && (clock.is_running ?? false),
+    isBreak: !terminal && (clock.is_break ?? currentLevel?.isBreak ?? false),
+    remainingSeconds: terminal ? 0 : displayRemainingSeconds,
     currentLevel,
-    nextLevel: mapClockLevel(clock.next_level),
-    nextBreakSeconds: computeNextBreak(levels, currentLevel?.levelNumber, displayRemainingSeconds),
+    nextLevel: terminal ? null : mapClockLevel(clock.next_level),
+    nextBreakSeconds: terminal ? null : computeNextBreak(levels, currentLevel?.levelNumber, displayRemainingSeconds),
     playersRemaining: tournament.players_remaining ?? 0,
     totalEntries: sources.totalEntries,
     reEntries: sources.reEntries,
@@ -165,7 +168,11 @@ export function mapTvData(sources: TvDataSources): TvData {
     totalChips: sources.totalChips,
     totalBuyIns: sources.totalBuyIns,
     prizePool: tournament.prize_pool != null ? Number(tournament.prize_pool) : null,
+    prizePoolIsCanonical: true,
     guarantee: tournament.guarantee_amount != null ? Number(tournament.guarantee_amount) : null,
+    mainEventGuarantee: typeof tournament.main_event?.guarantee_amount === 'number'
+      && Number.isSafeInteger(tournament.main_event.guarantee_amount) && tournament.main_event.guarantee_amount >= 0
+      ? tournament.main_event.guarantee_amount : null,
     prizes: mapPrizes(sources.prizes),
     sponsorText: null,
     startingStack: tournament.starting_stack != null ? Number(tournament.starting_stack) : 0,

@@ -1,6 +1,13 @@
 {
+  "clubDetailRead": {"error":"Could not load club data. Please retry.","retry":"Retry loading","loading":"Loading club data…"},
+  "rankingReview": {"title":"Floor ranking confirmation","note":"Swap places only within the same-hand bust group. This confirmation does not close the tournament or record prize payments.","storage":"The request could not be safely read or saved. Reload and reconcile the previous request before continuing.","readError":"The ranking list could not be verified. Reload before confirming.","unknown":"The result is unverified. The original request is retained for reconciliation; do not create another request.","changed":"The data or conditions changed and this request was rejected. Check the latest rankings.","recorded":"Ranking confirmation recorded. Refreshing the closing status.","historical":"The previous request was reconciled, but its source changed. Check and confirm the current ranking again.","loading":"Verifying rankings…","pending":"An unverified request is retained. Do not send a new request.","check":"Check saved request","retrySame":"Resend the same saved request","reload":"Reload rankings","notReady":"Confirmation requires one winner and complete hand and bust-order evidence.","approved":"A confirmation receipt is saved. Closing conditions are checked separately.","up":"Rank {{name}} higher within the group","down":"Rank {{name}} lower within the group","confirm":"Confirm Floor-selected order","group":"Same-hand bust group {{group}}","reference":"Entry reference {{reference}}"},
+  "publicScheduleRead": { "loading": "Loading tournament schedules…", "error": "Tournament schedules could not be loaded. Their availability is unverified. Please retry.", "retry": "Retry loading schedules" },
+  "trackerSkipRevealNote": "Only if you choose “Continue without revealing”: hole cards will not appear on the viewer, and you must select the showdown result manually.",
+  "baggedFlightRelease": { "title": "Release bagged tables", "note": "Close the exact table session only after bagging is locked and reconciled. Preserve chips, entries and history; this is not a bust, chip issue or prize payment.", "refresh": "Refresh table state", "loading": "Verifying table sessions…", "readError": "Table state is unverified. Refresh and check the session/seats before proceeding.", "unknown": "The result is unverified. The original request is retained; check active hands, moves, corrections or pending mode changes before retrying that same request.", "recover": "Check saved release request", "peer": "Another flight has an unverified release request.", "bagFirst": "Lock bagging in Chip Master before releasing tables.", "released": "Exact table session released; chips remain in the bags.", "release": "Release this table", "confirm": "Confirm table session release", "cancel": "Cancel" },
+  "mainEventCreate": { "guaranteeLabel": "Whole Main Event GTD (VND)", "guaranteeNote": "One commitment for the whole Main Event, not multiplied by flights or treated as funded prize-pool money. Leave blank if unreported.", "guaranteeMissing": "Main Event GTD not reported", "guaranteeNone": "No Main Event guarantee", "guaranteeValue": "Main Event GTD: {{amount}}", "invalidMoney": "Service fee and GTD must be non-negative whole VND within the safe numeric range." },
   "legacyScheduleEvidence": "Source, version and review information for this image is not available here. Confirm the latest schedule with the club.",
-  "admin": { "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
+  "createAtomic": { "signin": "Sign in before creating a tournament.", "storageError": "The pending create request could not be read or saved. No new request was sent.", "unknown": "The create result is not verified. Check the previous request before trying again.", "check": "Check previous request", "retry": "Retry same request", "pending": "A previous create request is unresolved. Check it before creating another tournament. Retrying uses the original values, not the edited form." },
+  "admin": { "scheduleReorder": { "complete": "Schedule image order saved.", "conflict": "The order was not saved. Check the latest gallery before trying again.", "unknown": "A previous reorder has not been verified. Do not repeat it; check its result first.", "check": "Check previous reorder", "readFailed": "The latest gallery could not be loaded. Reload before making another change." }, "scheduleUpload": { "complete": "Series schedule images published.", "partial": "Published {{published}} of {{total}} images. Review the failed items before trying again.", "unknown": "Publication could not be verified. Some images may already be saved. Reload and check before uploading again." } },
   "chipOpsRead": { "error": "Chip data could not be loaded. Inventory and bank status are unverified.", "permission": "Chip Master or club owner access is required for this tournament.", "retry": "Retry loading" },
   "cashierOverviewRead": { "error": "Statistics could not be loaded. Refresh to retry." },
   "liveStateSummary": {
@@ -18,7 +25,10 @@
   "floorReadiness": { "unavailable": "Entrant count not verified" },
   "clockControl": { "loadError": "Could not load clock controls." },
   "stack_projection_mismatch": "Seat, entry and chip projection stacks disagree",
-  "participation": {"repairRequired":"Data repair required","repairHint":"These records are retained for investigation, not counted as current seats or available for actions.","loadError":"Could not load players. Please refresh.","stale":"Showing stale data; actions are temporarily disabled.","reasons":{"missing_entry":"Seat has no entry","entry_identity_mismatch":"Entry identity does not match","entry_not_live":"Entry is no longer live","missing_table_session":"Missing table or session","closed_session":"Table session is closed","inactive_table":"Table is inactive","table_session_mismatch":"Table/session mismatch","seat_out_of_range":"Seat exceeds capacity","duplicate_entry_seat":"Entry has multiple active seats","duplicate_seat_position":"Duplicate seat position","duplicate_entry_generation":"Duplicate entry generation","missing_active_seat":"Seated entry has no valid active seat"}},
+  "participation": {
+    "bagged": "Bagged",
+    "baggedHint": "Bagged stacks are shown for reference; these players are not waiting for seats.",
+    "noBagged": "No matching bagged entries.","repairRequired":"Data repair required","repairHint":"These records are retained for investigation, not counted as current seats or available for actions.","loadError":"Could not load players. Please refresh.","stale":"Showing stale data; actions are temporarily disabled.","reasons":{"missing_entry":"Seat has no entry","entry_identity_mismatch":"Entry identity does not match","entry_not_live":"Entry is no longer live","missing_table_session":"Missing table or session","closed_session":"Table session is closed","inactive_table":"Table is inactive","table_session_mismatch":"Table/session mismatch","seat_out_of_range":"Seat exceeds capacity","duplicate_entry_seat":"Entry has multiple active seats","duplicate_seat_position":"Duplicate seat position","duplicate_entry_generation":"Duplicate entry generation","missing_active_seat":"Seated entry has no valid active seat"}},
   "trackerCards": { "deck": "Card deck", "fourColor": "4 colors", "classic": "Classic" },
   "fnb": {
     "navCounter": "F&B · Counter",
@@ -167,6 +177,8 @@
     "reEntries": "Re-entries",
     "prizePool": "Prize pool",
     "payouts": "Payouts",
+    "rankAwards": "Rank awards",
+    "rankAwardsHint": "Additional entitlements, if any, are reconciled separately in Cashier.",
     "breakTitle": "Break",
     "paused": "Paused",
     "live": "Live",
@@ -176,6 +188,7 @@
     "demo": "Demo",
     "fullscreenPrompt": "Tap to go fullscreen",
     "fullscreenSkip": "Skip",
+    "fullscreenFailed": "Could not enter fullscreen. Try again or choose Skip.",
     "loading": "Loading tournament data…",
     "notFound": "Tournament not found",
     "notFoundHint": "Check the TV link",
@@ -213,6 +226,8 @@
     "international": "International"
   },
   "documentsPage": {
+    "readError": "Documents could not be loaded. Please try again.",
+    "retry": "Try again",
     "title": "Documents",
     "subtitle": "Official guides, videos and reference files.",
     "tabVideos": "Videos",
@@ -576,6 +591,9 @@
     "clubNotFound": "Club not found."
   },
   "leaderboardPage": {
+    "loading": "Loading leaderboard",
+    "loadError": "Could not load the leaderboard. Results are unverified.",
+    "retry": "Retry loading",
     "title": "Leaderboard",
     "overall": "Overall",
     "byClub": "By Club",
@@ -1189,6 +1207,10 @@
     "cancelReg": "Cancel Registration"
   },
   "playerProfile": {
+    "loadError": "Could not load the player profile. Data is unverified.",
+    "retry": "Retry loading",
+    "summaryLoading": "Loading activity summary…",
+    "summaryError": "Could not verify the activity summary. Missing data does not mean zero.",
     "loading": "Loading...",
     "notFound": "Player not found.",
     "reportScam": "Report scam",
@@ -1307,6 +1329,9 @@
     "startingStack": "Starting stack",
     "location": "Location",
     "registered": "Registered",
+    "registrationCount": "{{n}} registrations",
+    "reentryClosed": "Re-entry is closed.",
+    "pendingReentryClosed": "Your re-entry request is pending, but re-entry is now closed. Contact the cashier for review; do not send another transfer.",
     "players": "{{n}} players",
     "description": "Description",
     "viewClub": "View Club",
@@ -1391,6 +1416,8 @@
     "tabArchived": "Archived",
     "noArchived": "No archived conversations yet.",
     "autoArchiveHint": "Chats from tournaments ended over 30 days ago will move here automatically.",
+    "unarchiveUnknown": "The unarchive result could not be confirmed. Reload the list to check; this action will not be retried automatically.",
+    "unarchiving": "Unarchiving…",
     "sectionActive": "Active",
     "sectionClosed": "Closed",
     "sectionArchived": "Archived",
@@ -1404,6 +1431,7 @@
     "photo": "📷 Photo",
     "searchUsers": "Search users by display name to start a chat...",
     "searching": "Searching...",
+    "searchFail": "Search results could not be loaded. Please try again.",
     "noResultsFor": "No one matches \"{{q}}\"",
     "inboxLabel": "Inbox · {{n}}",
     "noDM": "No messages yet. Find a user above to start.",
@@ -1507,7 +1535,8 @@
     "defaultLabel": "Upload proof image",
     "onlyImg": "Only JPG, PNG, WEBP",
     "max5": "Max 5MB",
-    "uploadedOk": "Image uploaded"
+    "uploadedOk": "Image uploaded",
+    "previewUnavailable": "Image preview unavailable. The stored reference has not been removed."
   },
   "livestream": {
     "title": "Live broadcast",
@@ -2042,6 +2071,10 @@
       "prF": "Coming in PR F"
     }
   },
+  "cashierLookup": {
+    "searchUnavailable": "Search results could not be loaded. Data is unverified; try again.",
+    "detailsUnavailable": "Deal or profile history could not be fully loaded. Data is unverified; try again."
+  },
   "financeRead": {
     "forbidden": "You do not have permission to view this club's financial report.",
     "missingBackend": "The server does not have the required report version. Figures cannot be verified.",
@@ -2486,6 +2519,9 @@
     "registeredCount": "Registered: {{registered}} / {{max}}"
   },
   "playerHistory": {
+    "loading": "Loading verified results…",
+    "loadError": "Unable to load player history. Results are not verified.",
+    "retry": "Try again",
     "playerFallback": "Player",
     "prizeCount": "Events",
     "totalCashout": "Total cashout",
@@ -2721,6 +2757,8 @@
     "register": "Register"
   },
   "tournamentRegister": {
+"cancelUnverified": "Cancellation is not verified. Reload the registration status before retrying; do not assume it was cancelled.",
+    "proofUnverified": "Proof submission is not verified. Reload the registration status before retrying.",
     "title": "Register for training tournament",
     "regError": "Registration error",
     "copied": "Copied {{label}}",
@@ -2841,6 +2879,9 @@
     "closeAria": "Close"
   },
   "bulkCreate": {
+    "pendingBatch": "A request for {{count}} tournaments is unconfirmed. Check its receipt before creating another batch.",
+    "checkReceipt": "Check batch receipt",
+    "cancelPendingBatch": "Cancel uncommitted request (keep created tournaments)",
     "adminOnly": "Super admin access only",
     "noPending": "No images pending",
     "errorPrefix": "Error: {{msg}}",
@@ -2912,6 +2953,13 @@
     "submit": "Send request"
   },
   "tournamentConfig": {
+    "unknownSave": "Save outcome is not confirmed. Keep this request and check its result; do not create the tournament again.",
+    "checkSave": "Check save result",
+    "inventoryUnavailable": "Table inventory is not verified. Reload it before saving.",
+    "retryInventory": "Reload inventory",
+    "tableLifecycleNotice": "Newly selected tables open in Manual mode. Deselecting requests a safe close; table history is preserved.",
+    "invalidJournal": "The previous save request cannot be read. Verify server state before sending a new request.",
+    "atomicSaveDescription": "Save configuration and table changes in one transaction while preserving table history.",
     "loading": "Loading...",
     "noPermission": "You don't have permission to manage swing configuration.",
     "selectClubFromUrl": "Select a club from the URL to manage tournaments.",
@@ -2967,8 +3015,8 @@
     "photos": { "empty": "No photos yet", "soon": "Event photos coming soon", "photoAlt": "Tournament photo" },
     "breakdown": {
       "title": "Hand breakdown",
-      "pot": "Pot",
-      "potHint": "Pot through this street",
+      "pot": "Wagers",
+      "potHint": "Cumulative wagers through this street, before uncalled returns; not the awarded pot.",
       "player": "Player"
     },
     "map": {
@@ -3059,6 +3107,7 @@
       "loading": "Loading hands…",
       "empty": "No completed hands yet",
       "noMatch": "No content matches these filters",
+      "noLoadedMatch": "No matching hand in the loaded results. Load more to keep searching.",
       "more": "Show more",
       "hand": "Hand #{{n}}",
       "pot": "POT",
@@ -3277,17 +3326,17 @@
       "scoreLabel": "Poker IQ",
       "confidence": "Confidence: {{level}}",
       "interpretation": "You have a disciplined base and fit mid-field deepstacks well.",
-      "nextHook": "To get closer to A-: handle aggressive opponents better.",
+      "nextHook": "Keep practising the skill area highlighted below.",
       "whyTitle": "Why the system says this",
       "weakest": "Weakest: {{category}} {{score}} — {{insight}}",
       "strengthsTitle": "Strengths",
       "weaknessesTitle": "To improve",
       "trainingKicker": "Training path",
-      "trainingGoal": "Next goal: A-",
+      "trainingGoal": "Next goal: strengthen your weakest skill area",
       "step1": "Finish the {{drill}} drill",
       "step2": "Play 2 mid-field deepstacks",
       "step3": "Unlock your Verified Profile",
-      "cta": "Train {{drill}} to unlock A-",
+      "cta": "Practise {{drill}}",
       "ctaSub": "This area is pulling your score down the most.",
       "eventsTitle": "Events that fit you",
       "eventAvoidPrefix": "Avoid for now",

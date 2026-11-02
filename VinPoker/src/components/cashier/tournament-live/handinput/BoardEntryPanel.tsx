@@ -28,7 +28,7 @@ interface BoardEntryPanelProps {
   /** Persist via the existing handleUpdateCommunityCards path. */
   onSubmit: () => void;
   submitting?: boolean;
-  /** ≥2 players all-in before the river — show the manual-runout note (Layer 1). */
+  /** Betting is closed after an all-in; the covering player may retain chips. */
   allInRunout?: boolean;
 }
 
@@ -51,7 +51,7 @@ export function BoardEntryPanel({
 
       {allInRunout && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
-          All-in nhiều người: hiện Floor vẫn nhập từng street để cập nhật viewer (hệ thống chưa tự chia hết bài).
+          Runout sau all-in: Nhập từng street để cập nhật viewer.
         </div>
       )}
 

@@ -1,4 +1,5 @@
-import type { ReplayHand } from "@/lib/tracker-poker/replayEngine";
+import type { ReplayHand,ReplayFrame } from "@/lib/tracker-poker/replayEngine";
+import type { ReplayTargetState } from './replayTarget';
 
 export interface ReplayHeaderMetadata {
   handNumber: number | null;
@@ -7,16 +8,18 @@ export interface ReplayHeaderMetadata {
   potSize: number | null;
 }
 
-/** Build header metadata from one immutable replay snapshot. */
-export function deriveReplayHeaderMetadata(hand: ReplayHand | null): ReplayHeaderMetadata {
+/** Payload facts come only from the immutable snapshot; a resolved target can
+ * supply its verified identity while that snapshot is still loading. When a
+ * timeline is selected, its running/post-refund pot must match the felt. */
+export function deriveReplayHeaderMetadata(hand: ReplayHand | null, target?: ReplayTargetState, frame?:ReplayFrame|null): ReplayHeaderMetadata {
   if (!hand) {
-    return { handNumber: null, playerCount: null, averageStack: null, potSize: null };
+    return { handNumber: target?.kind === 'resolved' ? target.handNumber : null, playerCount: null, averageStack: null, potSize: null };
   }
 
   const stacks = hand.players
     .map((player) => player.starting_stack)
     .filter((stack) => Number.isFinite(stack));
-  const storedPotSize = hand.stored_pot_size;
+  const storedPotSize = frame===undefined?hand.stored_pot_size:frame?.potSize;
 
   return {
     handNumber: hand.hand_number,

@@ -175,13 +175,14 @@ function buildPulseSource(
 }
 
 function buildPulseMetrics(pulse: SeriesClubLivePulseV1, observedAt: string): readonly OpsMetricV1[] {
-  const keys = ["entriesToday", "playersPlayingNow", "runningEvents", "openTables", "dealersOnDuty"] as const;
+  const keys = ["entriesToday", "playersPlayingNow", "runningEvents", "openTables", "dealersOnDuty", "uniquePlayersToday"] as const;
   return Object.freeze(keys.map((key) => {
     const metric = pulse[key];
     return Object.freeze({
       metricId: metric.metricId,
       label: {
         entriesToday: "Lượt vào giải hôm nay",
+        uniquePlayersToday: "Người chơi duy nhất hôm nay",
         playersPlayingNow: "Người đang chơi",
         runningEvents: "Giải đang chạy",
         openTables: "Bàn đang mở",

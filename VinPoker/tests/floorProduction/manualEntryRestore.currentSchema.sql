@@ -11,6 +11,11 @@ DO $$ BEGIN
    RAISE EXCEPTION 'manual_restore_isolated_runtime_required'; END IF;
 END $$;
 BEGIN;
+\if :{?LEGACY_RESTORE_GUARD_CASE}
+SELECT set_config('vinpoker.test_legacy_restore_guard','true',true);
+\else
+SELECT set_config('vinpoker.test_legacy_restore_guard','false',true);
+\endif
 -- Transaction-local fault hooks, installed only after the isolated-PG guard.
 CREATE FUNCTION public.manual_restore68_test_fault() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -83,6 +88,39 @@ BEGIN
  PERFORM set_config('role','none',true);
  SELECT revision INTO rev FROM public.table_sessions WHERE id=sess;
  PERFORM set_config('role','authenticated',true);
+ IF current_setting('vinpoker.test_legacy_restore_guard')::boolean THEN
+   -- Valid legacy alias shape: modern-only rows make the old RPC reject before
+   -- reaching its unfenced writer, which would not reproduce this bypass.
+   UPDATE public.tournament_tables SET table_id=game_table_id WHERE id=tt;
+   PERFORM set_config('role','none',true);
+   SELECT jsonb_build_object('entry',(SELECT to_jsonb(e) FROM public.tournament_entries e WHERE id=entry),
+     'session',(SELECT to_jsonb(s) FROM public.table_sessions s WHERE id=sess),
+     'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.tournament_seats s),
+     'chips',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.player_id,c.entry_number) FROM public.tournament_chip_counts c),
+     'tickets',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.seat_draw_receipts r),
+     'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.seat_assignment_history a),
+     'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.request_id) FROM public.table_operation_receipts r)) INTO before_state;
+   PERFORM set_config('role','authenticated',true);
+   replayed:=public.restore_busted_player_to_seat(entry,tt,1,NULL,'legacy_guard_TEST');
+   IF replayed->>'ok'='true' THEN RAISE EXCEPTION 'legacy_restore_without_exact_session_accepted'; END IF;
+   IF replayed->>'error' IS DISTINCT FROM 'exact_session_required' THEN
+     RAISE EXCEPTION 'legacy_restore_wrong_denial: %',replayed; END IF;
+   PERFORM set_config('role','none',true);
+   IF NOT has_function_privilege('authenticated','public.restore_busted_player_to_seat(uuid,uuid,integer,uuid,text)','EXECUTE')
+     OR has_function_privilege('anon','public.restore_busted_player_to_seat(uuid,uuid,integer,uuid,text)','EXECUTE')
+     OR has_function_privilege('service_role','public.restore_busted_player_to_seat(uuid,uuid,integer,uuid,text)','EXECUTE')
+     OR (SELECT prosecdef FROM pg_proc WHERE oid='public.restore_busted_player_to_seat(uuid,uuid,integer,uuid,text)'::regprocedure) THEN
+     RAISE EXCEPTION 'legacy_restore_retired_acl_wrong'; END IF;
+   SELECT jsonb_build_object('entry',(SELECT to_jsonb(e) FROM public.tournament_entries e WHERE id=entry),
+     'session',(SELECT to_jsonb(s) FROM public.table_sessions s WHERE id=sess),
+     'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM public.tournament_seats s),
+     'chips',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.player_id,c.entry_number) FROM public.tournament_chip_counts c),
+     'tickets',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.seat_draw_receipts r),
+     'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.seat_assignment_history a),
+     'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.request_id) FROM public.table_operation_receipts r)) INTO after_state;
+   IF after_state IS DISTINCT FROM before_state THEN RAISE EXCEPTION 'legacy_restore_denial_changed_state'; END IF;
+   PERFORM set_config('role','authenticated',true);
+ END IF;
  restored:=public.floor_restore_busted_player_to_seat_v5(entry,tt,1,rev,epoch,restore_key,sess);
  IF restored->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'manual_restore_writer_failed: %',restored; END IF;
  ticket:=public.get_current_floor_seat_ticket_v1('f7670000-0000-4000-8000-000000000003',entry,(restored->>'seat_id')::uuid);

@@ -3,6 +3,7 @@ import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {MediaClubSchedules} from './MediaClubSchedules';
 const mocks=vi.hoisted(()=>({upload:vi.fn(),insert:vi.fn(),success:vi.fn(),error:vi.fn(),warning:vi.fn()}));
+vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:'ee920000-0000-4000-8000-000000000001'}})}));
 vi.mock('@/lib/featureFlags',()=>({FEATURES:{clubSeriesSchedule:true}}));
 vi.mock('@/lib/compressImage',()=>({compressImage:vi.fn(async(file:File)=>file)}));
 vi.mock('sonner',()=>({toast:{success:mocks.success,error:mocks.error,warning:mocks.warning}}));
@@ -11,7 +12,7 @@ vi.mock('@/integrations/supabase/client',()=>({supabase:{
  from:(table:string)=>table==='clubs'?{select:()=>({eq:()=>({order:async()=>({data:[{id:'club-test',name:'Upload TEST',region:'TEST',daily_schedule_image_url:null,weekly_schedule_image_url:null}],error:null})})})}:{select:()=>({in:()=>({order:async()=>({data:[],error:null})})}),insert:mocks.insert},
 }}));
 afterEach(cleanup);
-beforeEach(()=>{vi.clearAllMocks();mocks.upload.mockResolvedValue({error:null});mocks.insert.mockResolvedValue({error:null});});
+beforeEach(()=>{vi.clearAllMocks();sessionStorage.clear();mocks.upload.mockResolvedValue({error:null});mocks.insert.mockResolvedValue({error:null});});
 async function uploadTwo(){
  render(<MediaClubSchedules/>);
  const label=(await screen.findByText('Tải nhiều ảnh')).closest('label');

@@ -4,13 +4,14 @@ import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext
 export type TournamentRedrawTvMove = {
   ordinal: number;
   playerName: string;
-  fromTableNumber: number;
-  fromSeatNumber: number;
+  fromTableNumber: number | null;
+  fromSeatNumber: number | null;
   toTableNumber: number;
   toSeatNumber: number;
 };
 
 export type TournamentRedrawTvBatch = {
+  kind?: 'initial_d2';
   batchId: string;
   redrawRevision: number;
   tournamentName: string;
@@ -54,66 +55,115 @@ export function getTournamentRedrawPageIndex(
 
 export function useTournamentRedrawTv(tournamentId: string | undefined, enabled: boolean) {
   const supabase = useSupabaseClient();
-  const [data, setData] = useState<TournamentRedrawTvBatch | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "stale" | "empty" | "error">("loading");
-  const seq = useRef(0);
-  const lastGood = useRef<TournamentRedrawTvBatch | null>(null);
-
-  const refresh = useCallback(async () => {
-    if (!enabled || !tournamentId) return;
-    const request = ++seq.current;
-    const { data: raw, error } = await (supabase.rpc as unknown as (
-      name: "get_public_tournament_redraw_v1",
-      args: { p_tournament_id: string },
-    ) => Promise<{ data: unknown; error: unknown | null }>)("get_public_tournament_redraw_v1", { p_tournament_id: tournamentId });
-    if (request !== seq.current) return;
-    if (error) {
-      setState(lastGood.current ? "stale" : "error");
-      return;
-    }
-    const parsed = parseTournamentRedrawTvBatch(raw);
-    if (parsed === "empty") {
-      setData(null);
-      setState("empty");
-    } else if (!parsed) {
-      setData(null);
-      setState("error");
-    } else {
-      lastGood.current = parsed;
-      setData(parsed);
-      setState("ready");
-    }
-  }, [enabled, supabase, tournamentId]);
+  type ReadState = "loading" | "ready" | "stale" | "empty" | "error";
+  const [snapshot, setSnapshot] = useState<{
+    tournamentId: string | undefined;
+    client: typeof supabase;
+    data: TournamentRedrawTvBatch | null;
+    state: ReadState;
+  }>({ tournamentId, client: supabase, data: null, state: "loading" });
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const refresh = useCallback(() => refreshRef.current(), []);
 
   useEffect(() => {
-    if (!enabled) return;
-    lastGood.current = null;
-    setData(null);
-    setState("loading");
-    void refresh();
-    const id = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 4_000);
-    const visible = () => { if (document.visibilityState === "visible") void refresh(); };
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      seq.current += 1;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", visible);
+    let alive = true;
+    let timer: number | undefined;
+    let controller: AbortController | undefined;
+    let inFlight: Promise<void> | null = null;
+    let lastGood: TournamentRedrawTvBatch | null = null;
+    const publish = (data: TournamentRedrawTvBatch | null, state: ReadState) => {
+      if (alive) setSnapshot({ tournamentId, client: supabase, data, state });
     };
-  }, [enabled, refresh]);
+    const canPoll = () => document.visibilityState === "visible" && navigator.onLine !== false;
+    const schedule = () => {
+      if (alive && enabled && tournamentId) {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => { void read(); }, 4_000);
+      }
+    };
+    const read = (): Promise<void> => {
+      if (!alive || !enabled || !tournamentId) return Promise.resolve();
+      if (inFlight) return inFlight;
+      window.clearTimeout(timer);
+      if (!canPoll()) { schedule(); return Promise.resolve(); }
+      const requestController = new AbortController();
+      controller = requestController;
+      inFlight = Promise.resolve().then(async () => {
+        if (!alive) return;
+        let deadline: number | undefined;
+        let cancel: (() => void) | undefined;
+        try {
+          const interrupted = new Promise<never>((_, reject) => {
+            cancel = () => reject(new Error("redraw_read_cancelled"));
+            requestController.signal.addEventListener("abort", cancel, { once: true });
+            deadline = window.setTimeout(() => requestController.abort(), 15_000);
+          });
+          const query = (supabase.rpc as unknown as (
+            name: "get_public_tournament_redraw_v1",
+            args: { p_tournament_id: string },
+          ) => { abortSignal: (signal: AbortSignal) => PromiseLike<{ data: unknown; error: unknown }> })(
+            "get_public_tournament_redraw_v1", { p_tournament_id: tournamentId },
+          );
+          const response = await Promise.race([
+            query.abortSignal(requestController.signal),
+            interrupted,
+          ]);
+          if (!alive) return;
+          if (response.error) throw response.error;
+          const parsed = parseTournamentRedrawTvBatch(response.data);
+          if (parsed === "empty" || !parsed) {
+            lastGood = null;
+            publish(null, parsed === "empty" ? "empty" : "error");
+          } else {
+            lastGood = parsed;
+            publish(parsed, "ready");
+          }
+        } catch {
+          publish(lastGood, lastGood ? "stale" : "error");
+        } finally {
+          window.clearTimeout(deadline);
+          if (cancel) requestController.signal.removeEventListener("abort", cancel);
+          inFlight = null;
+          schedule();
+        }
+      });
+      return inFlight;
+    };
+    refreshRef.current = read;
+    publish(null, enabled && tournamentId ? "loading" : "empty");
+    void read();
+    const resume = () => { if (canPoll()) void read(); };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      controller?.abort();
+      if (refreshRef.current === read) refreshRef.current = async () => {};
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+    };
+  }, [enabled, supabase, tournamentId]);
 
-  return { data, state, refresh };
+  const sameScope = snapshot.tournamentId === tournamentId && snapshot.client === supabase;
+  return {
+    data: enabled && tournamentId && sameScope ? snapshot.data : null,
+    state: !enabled || !tournamentId ? "empty" as const : sameScope ? snapshot.state : "loading" as const,
+    refresh,
+  };
 }
 
 export function parseTournamentRedrawTvBatch(value: unknown): TournamentRedrawTvBatch | "empty" | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
-  if (row.batch_id == null) return "empty";
+  if (row.kind !== undefined && row.kind !== 'initial_d2') return null;
+  if (row.batch_id === null) return Array.isArray(row.moves) && row.moves.length === 0 ? "empty" : null;
   if (
-    typeof row.batch_id !== "string"
+    typeof row.batch_id !== "string" || !row.batch_id.trim()
     || typeof row.redraw_revision !== "number" || !Number.isSafeInteger(row.redraw_revision) || row.redraw_revision < 1
     || typeof row.tournament_name !== "string" || !row.tournament_name.trim()
     || (row.target_max_seats !== 8 && row.target_max_seats !== 9)
-    || typeof row.applied_at !== "string"
+    || typeof row.applied_at !== "string" || !Number.isFinite(Date.parse(row.applied_at))
     || !Array.isArray(row.moves)
   ) return null;
   const moves: TournamentRedrawTvMove[] = [];
@@ -125,8 +175,10 @@ export function parseTournamentRedrawTvBatch(value: unknown): TournamentRedrawTv
     if (
       typeof move.player_name !== "string" || !move.player_name.trim()
       || typeof move.ordinal !== "number" || !Number.isSafeInteger(move.ordinal) || move.ordinal < 1
-      || !validTable(move.from_table_number) || !validTable(move.to_table_number)
-      || !validSeat(move.from_seat_number) || !validSeat(move.to_seat_number)
+      || (row.kind === 'initial_d2'
+        ? move.from_table_number !== null || move.from_seat_number !== null
+        : !validTable(move.from_table_number) || !validSeat(move.from_seat_number))
+      || !validTable(move.to_table_number) || !validSeat(move.to_seat_number)
       || move.to_seat_number > row.target_max_seats
     ) return null;
     const target = `${move.to_table_number}:${move.to_seat_number}`;
@@ -136,13 +188,14 @@ export function parseTournamentRedrawTvBatch(value: unknown): TournamentRedrawTv
     moves.push({
       ordinal: move.ordinal,
       playerName: move.player_name,
-      fromTableNumber: move.from_table_number,
-      fromSeatNumber: move.from_seat_number,
+      fromTableNumber: row.kind === 'initial_d2' ? null : move.from_table_number as number,
+      fromSeatNumber: row.kind === 'initial_d2' ? null : move.from_seat_number as number,
       toTableNumber: move.to_table_number,
       toSeatNumber: move.to_seat_number,
     });
   }
   return {
+    ...(row.kind === 'initial_d2' ? { kind: 'initial_d2' as const } : {}),
     batchId: row.batch_id,
     redrawRevision: row.redraw_revision,
     tournamentName: row.tournament_name,

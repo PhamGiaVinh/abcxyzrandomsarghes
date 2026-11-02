@@ -7,7 +7,7 @@
 // Action-amount convention matches T3A/T4: action_amount = chips ADDED this
 // street (never a raise-to total), so running pot = Σ contributing amounts.
 
-import { getPosition } from "@/lib/tournament/button";
+import { getHandSeatPositions } from "@/lib/tournament/button";
 import {
   computePotBreakdown,
   contributionsFromActions,
@@ -59,6 +59,18 @@ export interface ReplayHand {
   actions: ReplayHandAction[];
   /** Fresh, public-safe settlement returned by get_public_tournament_settlement. */
   publicSettlement?: ReplayPublicSettlement | null;
+  /** Read-only verified result from the exact hand in public table History. */
+  publicHistoryResult?: {
+    status: "verified";
+    recipients: Array<{
+      playerId: string;
+      seatNumber: number | null;
+      name: string;
+      potAward: number;
+      netDelta: number;
+      potKinds: Array<"main" | "side">;
+    }>;
+  } | null;
 }
 
 export interface ReplayFrame {
@@ -222,7 +234,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
   const actions = [...(hand.actions || [])].sort((a, b) => a.action_order - b.action_order);
   const N = actions.length;
   const players = hand.players || [];
-  const totalPlayers = players.length;
+  const positions = getHandSeatPositions(players, hand.button_seat, actions);
   const community = hand.community_cards || [];
 
   const pad5 = (cards: string[]): string[] => [
@@ -274,6 +286,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
       : breakdown.totalCommitted;
     const legacySettlementMismatch = !verifiedSettlement && !!showdown && !showdown.payoutMatches;
     const payoutVerified = verifiedSettlement !== null;
+    const fullyRefunded = verifiedSettlement !== null && verifiedSettlement.pots.length === 0;
     const settledPlayers = new Map(verifiedSettlement?.players.map((player) => [player.playerId, player]) ?? []);
     const settledRanks = new Map(verifiedSettlement?.handRanks.map((rank) => [rank.playerId, rank]) ?? []);
     const settledWinnerIds = verifiedSettlement
@@ -288,14 +301,14 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
         player_id: p.player_id,
         display_name: p.display_name,
         seat_number: p.seat_number,
-        chip_count: Math.max(0, st.chip),
+        chip_count: fullyRefunded && settledPlayer ? p.starting_stack + settledPlayer.netDelta : Math.max(0, st.chip),
         is_active: true,
         table_id: null,
-        position: getPosition(p.seat_number, hand.button_seat, totalPlayers),
+        position: positions.get(p.seat_number) ?? "",
         avatar_url: p.avatar_url ?? null,
-        last_action: st.folded || st.allIn ? undefined : st.last,
-        last_action_type: st.folded || st.allIn ? undefined : st.lastType,
-        last_action_amount: st.folded || st.allIn ? undefined : st.lastAmount,
+        last_action: fullyRefunded || st.folded || st.allIn ? undefined : st.last,
+        last_action_type: fullyRefunded || st.folded || st.allIn ? undefined : st.lastType,
+        last_action_amount: fullyRefunded || st.folded || st.allIn ? undefined : st.lastAmount,
         is_folded: st.folded,
         is_all_in: st.allIn,
         hole_cards: reveal ? p.hole_cards : undefined,
@@ -312,7 +325,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
           ? { category: settledRank.category, best_five: [...settledRank.bestFive], kickers: [...settledRank.kickers] }
           : undefined,
         // trackBets only — absent keys keep flag-off frames deep-equal to today's.
-        ...(trackBets ? { current_bet: st.streetBet, display_committed_bet: st.streetBet } : {}),
+        ...(trackBets ? { current_bet: fullyRefunded ? 0 : st.streetBet, display_committed_bet: fullyRefunded ? 0 : st.streetBet } : {}),
         ...(trackBets && st.allIn ? { total_committed: st.totalBet } : {}),
       };
     });

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 export function useFullscreen(): {
   isFullscreen: boolean;
   isSupported: boolean;
-  enter: () => Promise<void>;
+  enter: () => Promise<boolean>;
   exit: () => Promise<void>;
 } {
   const [isFullscreen, setIsFullscreen] = useState(
@@ -24,8 +24,10 @@ export function useFullscreen(): {
   const enter = useCallback(async () => {
     try {
       await document.documentElement.requestFullscreen();
+      return document.fullscreenElement != null;
     } catch {
-      // Rejected outside a user gesture or by kiosk policy — ignore.
+      // Keep the user gesture retry available when the browser rejects.
+      return false;
     }
   }, []);
 

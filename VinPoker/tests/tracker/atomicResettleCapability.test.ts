@@ -19,16 +19,21 @@ describe("tracker atomic resettle capability gate", () => {
   });
 
   it("checks capability before the atomic Edge invocation", () => {
-    const guard = handHistorySource.indexOf("if (!isTrackerAtomicResettleAvailable())");
-    const invoke = handHistorySource.indexOf('supabase.functions.invoke("tournament-live-resettle-commit"');
+    // The earlier preview is read-only and intentionally available while the
+    // write capability is dark. Check the confirm/write callback, not preview.
+    const confirm = handHistorySource.indexOf("const handleResettleConfirm =");
+    expect(confirm).toBeGreaterThan(-1);
+    const guard = handHistorySource.indexOf("if (!isTrackerAtomicResettleAvailable())", confirm);
+    const invoke = handHistorySource.indexOf('supabase.functions.invoke("tournament-live-resettle-commit"', confirm);
     expect(guard).toBeGreaterThan(-1);
     expect(invoke).toBeGreaterThan(guard);
+    expect(handHistorySource.slice(invoke, invoke + 160)).toContain('mode: "commit"');
   });
 
   it("does not send client-selected winners or mucks to the atomic writer", () => {
     const manualWinnerGuard = handHistorySource.indexOf("rv.editedTarget.manualWinnerIds");
     const serverEdit = handHistorySource.indexOf("const serverEdit = buildServerSettlementEdit(rv.patch)");
-    const invoke = handHistorySource.indexOf('supabase.functions.invoke("tournament-live-resettle-commit"');
+    const invoke = handHistorySource.indexOf('supabase.functions.invoke("tournament-live-resettle-commit"', serverEdit);
     expect(manualWinnerGuard).toBeGreaterThan(-1);
     expect(serverEdit).toBeGreaterThan(manualWinnerGuard);
     expect(invoke).toBeGreaterThan(serverEdit);

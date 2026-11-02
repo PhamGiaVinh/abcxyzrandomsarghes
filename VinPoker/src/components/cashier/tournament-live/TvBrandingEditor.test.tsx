@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 beforeAll(() => {
@@ -46,16 +46,27 @@ const { rpc, client, saveFailure, lostResponseCommitted, submittedState, brandin
 });
 
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "test-owner" } }) }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: true } }));
-vi.mock("@/components/ProofUploader", () => ({ ProofUploader: () => <div>Image upload</div> }));
+vi.mock("@/components/ProofUploader", () => ({ ProofUploadWorkspace: () => <div>Image upload</div> }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-import { TvBrandingEditor } from "./TvBrandingEditor";
+import { TvBrandingEditor, TvBrandingEditorWorkspace } from "./TvBrandingEditor";
 import { toast } from "sonner";
 
 afterEach(() => { cleanup(); rpc.mockClear(); saveFailure.value = false; lostResponseCommitted.value = false; submittedState.value = null; brandingLayout.value = {}; brandingAssets.value = { logo_url: null, background_url: null }; });
 
 describe("TvBrandingEditor publish boundary", () => {
+  it('maps only displayed assets and still submits the canonical stored URL',async()=>{
+    brandingAssets.value.logo_url='https://canonical.test/logo.png';
+    render(<TvBrandingEditorWorkspace tournamentId="flight-1" actorId="test-owner" sessionEpoch={0}
+      assetPreviewUrl={url=>url?'http://127.0.0.1:54329/local-logo.png':null}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
+    const clock=await screen.findByLabelText('VinPoker tournament clock');
+    await waitFor(()=>expect(Array.from(clock.querySelectorAll('img')).some(img=>img.getAttribute('src')==='http://127.0.0.1:54329/local-logo.png')).toBe(true));
+    await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'})));
+    expect(rpc).toHaveBeenCalledWith('save_tv_tournament_layout_v1',expect.objectContaining({p_logo_url:'https://canonical.test/logo.png'}));
+  });
   it("keeps the editor discoverable while server RPCs remain the authority boundary", async () => {
     render(<TvBrandingEditor tournamentId="flight-1" />);
 
@@ -89,8 +100,8 @@ describe("TvBrandingEditor publish boundary", () => {
     expect(rpc).not.toHaveBeenCalledWith("save_tv_tournament_layout_v1", expect.anything());
 
     fireEvent.change(screen.getByLabelText("Brand name"), { target: { value: "Final brand" } });
-    fireEvent.click(screen.getByRole("button", { name: /Publish TV layout/i }));
-    await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("save_tv_tournament_layout_v1", expect.objectContaining({
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Publish TV layout/i })));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("save_tv_tournament_layout_v1", expect.objectContaining({
       p_tournament_id: "flight-1", p_expected_revision: 7, p_brand_name: "Final brand",
     })));
   });
@@ -100,8 +111,8 @@ describe("TvBrandingEditor publish boundary", () => {
     render(<TvBrandingEditor tournamentId="flight-1" />);
     fireEvent.click(await screen.findByRole("button", { name: /Edit TV layout/i }));
     expect(await screen.findByText(/Draft 16:9 preview/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /Publish TV layout/i }));
-    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("response was lost")));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Publish TV layout/i })));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("response was lost")));
     expect(screen.getByRole("button", { name: /Publish TV layout/i })).toBeEnabled();
   });
 
@@ -112,8 +123,8 @@ describe("TvBrandingEditor publish boundary", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Edit TV layout/i }));
     await screen.findByText(/Draft 16:9 preview/i);
     fireEvent.change(screen.getByLabelText("Brand name"), { target: { value: "Committed brand" } });
-    fireEvent.click(screen.getByRole("button", { name: /Publish TV layout/i }));
-    await vi.waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("published")));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Publish TV layout/i })));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("published")));
     expect(rpc).toHaveBeenCalledWith("get_tv_tournament_branding_v1", { p_tournament_id: "flight-1" });
   });
 
@@ -140,9 +151,9 @@ describe("TvBrandingEditor publish boundary", () => {
     render(<TvBrandingEditor tournamentId="flight-1" />);
     fireEvent.click(await screen.findByRole("button", { name: /Edit TV layout/i }));
     const publish = screen.getByRole("button", { name: /Publish TV layout/i });
-    await vi.waitFor(() => expect(publish).toBeEnabled());
-    fireEvent.click(publish);
-    await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("save_tv_tournament_layout_v1", expect.objectContaining({
+    await waitFor(() => expect(publish).toBeEnabled());
+    await act(async () => fireEvent.click(publish));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("save_tv_tournament_layout_v1", expect.objectContaining({
       p_tournament_id: "flight-1",
       p_logo_url: brandingAssets.value.logo_url,
       p_bg_url: brandingAssets.value.background_url,

@@ -42,15 +42,20 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ from: FROM, to, subject: body.subject, html: body.html }),
     });
-    const data = await r.json().catch(() => ({}));
+    const data:unknown = await r.json().catch(() => null);
     if (!r.ok) {
-      console.error("Resend error", r.status, data);
-      return j({ error: "Email send failed", details: data }, 502);
+      console.error("email_provider_rejected", r.status);
+      return j({ error: "Email send failed" }, 502);
     }
-    return j({ success: true, id: (data as any).id });
-  } catch (e: any) {
-    console.error(e);
-    return j({ error: e?.message ?? "internal" }, 500);
+    if(!data||typeof data!=='object'||Array.isArray(data)||!('id' in data)
+      ||typeof data.id!=='string'||!data.id.trim()){
+      console.error('email_provider_ack_unverified');
+      return j({error:'Email acknowledgement unverified'},502);
+    }
+    return j({ success: true, id: data.id });
+  } catch {
+    console.error('email_send_unverified');
+    return j({ error: 'Email send unverified' }, 500);
   }
 });
 

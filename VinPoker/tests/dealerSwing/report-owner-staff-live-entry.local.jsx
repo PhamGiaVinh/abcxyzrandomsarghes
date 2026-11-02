@@ -1,0 +1,1 @@
+import React from'react';import{createRoot}from'react-dom/client';import OpsFinanceWorkspace from'@/ops/finance/OpsFinanceWorkspace';import'@/index.css';createRoot(document.getElementById('root')).render(<main className="p-3"><OpsFinanceWorkspace/></main>);

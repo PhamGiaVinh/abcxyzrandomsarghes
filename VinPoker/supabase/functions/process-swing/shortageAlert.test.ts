@@ -1,6 +1,7 @@
 import { assertEquals, assertMatch } from "jsr:@std/assert@1";
 import {
   classifyShortage,
+  buildCanonicalShortageSnapshot,
   decideShortageAlert,
   dedupeActiveAttendance,
   formatShortageTelegram,
@@ -8,6 +9,66 @@ import {
   shortageSeverity,
   type CanonicalShortageSnapshot,
 } from "./shortageAlert.ts";
+
+// Malformed/failed transport boundaries only. Positive scope behavior is also
+// exercised against actual PostgreSQL by --main-worker --main-shortage-scope.
+const operational = { id: "table-a", table_session_id: "session-a", table_name: "TEST A", table_type: "cash", tournament_id: null };
+function snapshotClient(inventory: { data: unknown; error: unknown }, overrides: Record<string, unknown> = {}) {
+  const queried: string[] = [];
+  const rows: Record<string, unknown> = {
+    game_tables: [{ id: "table-a", table_name: "TEST A", game_type: null, tour_tier: null }],
+    dealer_open_operations: [], dealer_attendance: [], dealer_assignments: [], ...overrides,
+  };
+  return { queried, rpc: async (name: string) => { assertEquals(name, "get_dealer_operational_tables_v1"); return inventory; },
+    from(name: string) {
+      queried.push(name);
+      if (!(name in rows)) throw new Error(`Unexpected query ${name}`);
+      const query = { select: () => query, eq: () => query, in: () => query, is: () => query, gt: () => query,
+        then: (resolve: (r: unknown) => unknown) => Promise.resolve({ data: rows[name], error: null }).then(resolve) };
+      return query;
+    },
+  };
+}
+const scopeOptions = { minInterSwingRestMinutes: 15, clubBreakDurationMinutes: 15, preAnnounceMinutes: 3 };
+
+Deno.test("shortage snapshot fails closed on unavailable or malformed canonical inventory", async () => {
+  for (const response of [
+    { data: null, error: { code: "PGRST202" } }, { data: null, error: null },
+    { data: [operational, operational], error: null },
+    { data: [{ ...operational, table_session_id: null }], error: null },
+  ]) {
+    const client = snapshotClient(response);
+    const result = await buildCanonicalShortageSnapshot(client, "club-a", scopeOptions);
+    assertEquals(classifyShortage(result), "snapshot_invalid");
+    assertMatch(result.error_code ?? "", /^shortage_snapshot_operational_inventory_/);
+    assertEquals(client.queried, []);
+  }
+});
+
+Deno.test("missing, duplicate or foreign operational metadata never becomes healthy empty", async () => {
+  for (const rows of [[], null, [null], [{ id: "foreign-table" }], [operational, operational]]) {
+    const result = await buildCanonicalShortageSnapshot(snapshotClient({ data: [operational], error: null }, { game_tables: rows }), "club-a", scopeOptions);
+    assertEquals(result.status, "query_failed"); assertEquals(classifyShortage(result), "snapshot_invalid");
+  }
+  for (const table of ["dealer_open_operations", "dealer_attendance", "dealer_assignments"]) {
+    const result = await buildCanonicalShortageSnapshot(snapshotClient({ data: [operational], error: null }, { [table]: null }), "club-a", scopeOptions);
+    assertEquals(result.status, "query_failed"); assertEquals(classifyShortage(result), "snapshot_invalid");
+  }
+});
+
+Deno.test("shortage snapshot refuses ambiguous, cross-club and stale-session assignments", async () => {
+  const assignment = { id: "assignment-a", club_id: "club-a", table_id: "table-a", table_session_id: "session-a" };
+  for (const rows of [
+    [null],
+    [{ ...assignment, table_session_id: "session-old" }], [{ ...assignment, table_session_id: null }],
+    [{ ...assignment, club_id: "club-b" }], [{ ...assignment, table_id: "foreign-table" }],
+    [assignment, { ...assignment, id: "assignment-b" }],
+  ]) {
+    const result = await buildCanonicalShortageSnapshot(snapshotClient({ data: [operational], error: null }, { dealer_assignments: rows }), "club-a", scopeOptions);
+    assertEquals(result.status, "query_failed"); assertEquals(result.error_code, "shortage_snapshot_assignment_scope_query_failed");
+    assertEquals(classifyShortage(result), "snapshot_invalid");
+  }
+});
 
 function snapshot(overrides: Partial<CanonicalShortageSnapshot> = {}): CanonicalShortageSnapshot {
   return {

@@ -29,6 +29,13 @@ const blockerLabels: Record<string, string> = {
   pending_move: "Còn lệnh chuyển ghế đang chờ Tracker",
   active_dealer_assignment: "Còn Dealer chưa được giải phóng",
   legacy_dealer_assignment: "Có assignment Dealer cũ chưa rõ phiên bàn",
+  official_results_not_finished: "Chưa xác định được duy nhất một người thắng",
+  official_results_incomplete: "Thứ hạng đã ghi chưa đầy đủ hoặc không nhất quán; cần kiểm tra trước khi chốt",
+  official_results_evidence_missing: "Thiếu lịch sử thứ tự bust; cần kiểm tra trước khi chốt thứ hạng",
+  manual_ranking_review_required: "Floor cần xác nhận thứ hạng những người bust cùng hand trước khi chốt",
+  ranking_hand_evidence_pending: "Bằng chứng hand hoặc elimination chưa đầy đủ; cần đối chiếu Tracker trước khi chốt",
+  official_results_finalization_failed: "Chưa xác minh được thứ hạng cuối; hãy tải lại trạng thái giải",
+  official_results_tournament_missing: "Không tìm thấy giải để kiểm tra thứ hạng",
 };
 
 export function describeCloseBlockers(blockers: readonly string[]): string {
@@ -73,20 +80,23 @@ export async function getDealerTourCloseReadiness(tourId: string, clubId: string
   const rpc = supabase.rpc as unknown as (
     name: string, args: Record<string, string>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc("get_dealer_tour_close_readiness_v1", {
+  const { data, error } = await rpc.call(supabase, "get_dealer_tour_close_readiness_v1", {
     p_tour_id: tourId, p_club_id: clubId,
   });
   if (error) throw new Error(`Không kiểm tra được phiên bàn: ${error.message}`);
   return parseBase(data);
 }
 
-export async function getTournamentCloseReadiness(tournamentId: string): Promise<TournamentCloseReadiness> {
+export async function getTournamentCloseReadiness(tournamentId: string, signal?: AbortSignal): Promise<TournamentCloseReadiness> {
   const rpc = supabase.rpc as unknown as (
     name: string, args: Record<string, string>,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc("get_tournament_close_readiness_v1", {
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null }> & {
+    abortSignal: (signal: AbortSignal) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+  };
+  const request = rpc.call(supabase, "get_tournament_close_readiness_v1", {
     p_tournament_id: tournamentId,
   });
+  const { data, error } = await (signal ? request.abortSignal(signal) : request);
   if (error) throw new Error(`Không kiểm tra được trạng thái giải: ${error.message}`);
   const base = parseBase(data);
   if (!base.ok) return { ...base, entryCount: 0, buyInTotal: 0, cashInTotal: 0,

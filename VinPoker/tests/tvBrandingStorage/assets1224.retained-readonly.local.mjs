@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {existsSync,writeFileSync} from 'node:fs';
+assert.equal(process.env.VINPOKER_ASSETS1224_LOCAL,'1');
+const output='D:/Quy trình/output/reports/tv1224-retained-assets-local-20261028.json';assert.equal(existsSync(output),false);
+const guard=`DO $$ BEGIN ASSERT current_database()='vinpoker_ops_cash115_qualified_c' AND host(inet_server_addr())='127.0.0.1' AND inet_server_port()=55441;ASSERT current_setting('data_directory')='/tmp/vinpoker-sol-local-20261016-0e79a729/data';ASSERT NOT EXISTS(SELECT 1 FROM pg_extension WHERE extname IN('pg_net','pg_cron','dblink'));END $$;`;
+const read=q=>JSON.parse(execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_cash115_qualified_c','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:'BEGIN READ ONLY;'+guard+q+';ROLLBACK;',encoding:'utf8',timeout:20000,maxBuffer:8e6}));
+const tables=['public.tv_tournament_layouts','public.tv_tournament_layout_versions','storage.objects','floor_private.tv258_blob_fixture','public.tournaments','public.tournament_entries','public.tournament_seats','public.tournament_prize_payments','public.cashier_buyin_movements'];
+const fingerprint=()=>read('SELECT to_jsonb(md5(jsonb_build_array('+tables.map(t=>'(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM '+t+' x)').join(',')+')::text))');
+const before=fingerprint();
+const layouts=read(`SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]') FROM public.tv_tournament_layouts x WHERE tournament_id IN('c367013a-3ed3-48af-ad48-3915acadc50e','4cd3af4d-7e1d-4042-855f-04fb6777e580','782a5196-5ea1-44ed-8a27-1b872d5f88d9','fdf91018-09f3-4cdc-b76a-f688eb216cee') OR event_id='dbb49f8d-7d47-4c2c-afd9-f57062c9971d'`);
+const allVersions=read("SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]') FROM public.tv_tournament_layout_versions x");
+const objects=read("SELECT coalesce(jsonb_agg(jsonb_build_object('name',name,'metadata',metadata)),'[]') FROM storage.objects WHERE bucket_id='backing-proofs'");
+const blobs=read("SELECT coalesce(jsonb_agg(jsonb_build_object('name',name,'bytes',encode(bytes,'base64'),'sha256',sha256,'mimetype',mimetype)),'[]') FROM floor_private.tv258_blob_fixture");
+const prefix='https://orlesggcjamwuknxwcpk.supabase.co/storage/v1/object/public/backing-proofs/';
+const references=[];
+for(const layout of layouts){for(const [kind,row] of [['current',layout],...allVersions.filter(v=>v.layout_id===layout.id).map(v=>['version',v])]){for(const slot of ['logo_url','background_url']){if(!row[slot])continue;const canonical=row[slot].startsWith(prefix),name=canonical?row[slot].slice(prefix.length):null,obj=objects.find(x=>x.name===name),blob=blobs.find(x=>x.name===name);const bytes=blob?Buffer.from(blob.bytes,'base64'):null;references.push({kind,layoutId:layout.id,revision:row.revision,slot,canonicalOrigin:canonical,objectMetadataPresent:!!obj,localModeledBytesPresent:!!blob,byteLength:bytes?.length??null,byteHashMatches:bytes?createHash('sha256').update(bytes).digest('hex')===blob.sha256:null,metadataSizeMatches:bytes&&obj?Number(obj.metadata?.size)===bytes.length:null});}}}
+const after=fingerprint();assert.equal(after,before);const result={kind:'READ_ONLY_EXISTING_LAYOUT_METADATA_AND_RETAINED_LOCAL_BLOB_MODEL_NOT_HOSTED_ASSET_ACCEPTANCE',layouts:layouts.map(x=>({id:x.id,tournament:x.tournament_id,event:x.event_id,revision:x.revision})),references,before,after,unchanged:true,writers:0,hostedStorage:false,wholeJourney:false};
+writeFileSync(output,JSON.stringify(result,null,2));console.log(JSON.stringify({layouts:layouts.length,references:references.length,missingMetadata:references.filter(r=>!r.objectMetadataPresent).length,missingModeledBytes:references.filter(r=>!r.localModeledBytesPresent).length,unchanged:true}));

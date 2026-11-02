@@ -35,17 +35,20 @@ export async function previewHistoricalSettlementBatch(
   candidates: readonly HistoricalSettlementBatchCandidate[],
   gateway: HistoricalSettlementBatchGateway,
   onProgress?: (completed: number, total: number, result: HistoricalSettlementPreviewResult) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<HistoricalSettlementPreviewResult[]> {
   const queue = uniqueCandidates(candidates);
   const results: HistoricalSettlementPreviewResult[] = [];
 
   for (const candidate of queue) {
+    if (!isCurrent()) break;
     let result: HistoricalSettlementPreviewResult;
     try {
       result = await gateway.preview(candidate);
     } catch {
       result = { kind: "blocked", candidate, code: "preview_request_failed" };
     }
+    if (!isCurrent()) break;
     results.push(result);
     onProgress?.(results.length, queue.length, result);
   }
@@ -57,6 +60,7 @@ export async function commitHistoricalSettlementBatch(
   previews: readonly HistoricalSettlementPreviewResult[],
   gateway: HistoricalSettlementBatchGateway,
   onProgress?: (completed: number, total: number, result: HistoricalSettlementCommitResult) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<HistoricalSettlementCommitResult[]> {
   const queue = previews.filter(
     (result): result is Extract<HistoricalSettlementPreviewResult, { kind: "ready" }> => result.kind === "ready",
@@ -64,12 +68,14 @@ export async function commitHistoricalSettlementBatch(
   const results: HistoricalSettlementCommitResult[] = [];
 
   for (const preview of queue) {
+    if (!isCurrent()) break;
     let result: HistoricalSettlementCommitResult;
     try {
       result = await gateway.commit(preview);
     } catch {
       result = { kind: "blocked", candidate: preview.candidate, code: "commit_request_failed" };
     }
+    if (!isCurrent()) break;
     results.push(result);
     onProgress?.(results.length, queue.length, result);
   }

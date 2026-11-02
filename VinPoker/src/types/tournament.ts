@@ -35,7 +35,15 @@ export interface TournamentTable {
 
 export interface TournamentWithTables extends Tournament {
   tournament_tables: {
-    table_id: string;
+    id?: string;
+    table_id: string | null;
+    game_table_id?: string | null;
+    table_session_id?: string | null;
+    status?: string;
+    canonical_game_table?: {
+      id: string;
+      table_name: string;
+    } | null;
     game_tables?: {
       id: string;
       table_name: string;

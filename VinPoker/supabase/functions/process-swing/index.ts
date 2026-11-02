@@ -15,6 +15,7 @@ import {
 } from "../_shared/pickNextDealer.ts";
 import { getFeatureTablePoolIds } from "../_shared/featureTableGate.ts"; // Patch 5b: feature/final pool gate
 import { scaleLockTimeoutSeconds } from "../_shared/lockTimeout.ts";
+import { isUuid } from "../_shared/internal-trigger-auth.ts";
 import {
   sendTelegramNotification,
   getClubTelegramChatId,
@@ -370,6 +371,7 @@ interface StalePreAssignRow {
 
 interface LockAcquisitionResult {
   acquired: boolean;
+  lock_token?: unknown;
 }
 
 interface DealerAttendanceState {
@@ -839,8 +841,8 @@ Deno.serve(async (req: Request) => {
       // Worst-case runs (80–200s) can exceed the old hardcoded 120s lease, which the
       // 60s cron then reclaims → two concurrent runners (FM-1). Best-effort table
       // count; on ANY error fall back to BASE (today's behavior), never shorter.
-      // NOTE: this only shrinks the FM-1 overrun window — it does NOT fix the
-      // unconditional release_club_lock (FM-2). Fencing/tokens = B2.2.
+      // Lease sizing does not replace ownership checks. An acquired lease
+      // must have a valid token, and release must use that exact token.
       let lockTimeoutSec: number = SWING_THRESHOLDS.BASE_LOCK_TIMEOUT_SECONDS;
       try {
         const activeTableCount = (await getTableIdsForClub(admin, cid)).length;
@@ -869,14 +871,17 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        if (!lockResult || typeof lockResult !== "object" || !("acquired" in lockResult)) {
-          console.error(`[process-swing] \u274C Invalid lock result for ${cid}:`, JSON.stringify(lockResult));
+        const lockResponse = lockResult as Partial<LockAcquisitionResult> | null;
+        if (!lockResponse || typeof lockResult !== "object" || Array.isArray(lockResult)
+          || typeof lockResponse.acquired !== "boolean"
+          || (lockResponse.acquired && !isUuid(lockResponse.lock_token))) {
+          console.error(`[process-swing] Invalid fenced lock result for ${cid}`);
           markDispatchOutcome("business_failed", "club_lock_invalid_response");
           clubsSkippedError++;
           continue;
         }
 
-        const acquired = (lockResult as LockAcquisitionResult).acquired === true;
+        const acquired = lockResponse.acquired;
         if (!acquired) {
           console.log(`[process-swing] \U0001F512 Club ${cid} locked by another instance`);
           markDispatchOutcome("locked", "club_lock_held");
@@ -884,7 +889,7 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        lockToken = (lockResult as { lock_token?: string | null }).lock_token ?? null;
+        lockToken = lockResponse.lock_token as string; // UUID validated before accepting acquired=true.
         lockAcquired = true;
       } catch (err) {
         console.error(`[process-swing] \u274C Lock acquisition exception for ${cid}:`, err);
@@ -3304,9 +3309,27 @@ if (tier2Count > 0) {
               clubDealerIds: cidDealerIds,
             });
 
-            const { data: rpcResult, error: rpcErr } = await admin.rpc(
-              "worker_execute_pre_assigned_swing",
-              {
+            let executionSlot: { id: string; version: number } | null = null;
+            if (scheduleDriven) {
+              const { data: slots, error: slotsError } = await admin
+                .from("dealer_rotation_schedule")
+                .select("id,version,in_attendance_id,table_id,club_id")
+                .eq("assignment_id", assignment.id)
+                .eq("club_id", cid)
+                .in("status", ["announced", "executing"]);
+              if (slotsError || !Array.isArray(slots) || slots.length !== 1
+                || slots[0].table_id !== assignment.table_id
+                || slots[0].in_attendance_id !== assignment.pre_assigned_attendance_id) {
+                recordDispatchSafetyOutcome(cid, slotsError
+                  ? assessCoreQueryFailure("rotation_execution_schedule", slotsError)
+                  : assessSwingExecutionFailure("rotation_execution_schedule_unverified"));
+                clubHadPass3Error = true;
+                metrics.failed++;
+                continue;
+              }
+              executionSlot = slots[0];
+            }
+            const executionArgs = {
                 p_table_id:             assignment.table_id,
                 p_table_session_id:     assignment.table_session_id,
                 p_old_assignment_id:    assignment.id,
@@ -3316,7 +3339,21 @@ if (tier2Count > 0) {
                 p_duration_minutes:     swingDurResult.durationMinutes,
                 p_send_to_break:        breakDecision.shouldBreak,
                 p_break_duration_minutes: validatedBreakDuration,
-              }
+            };
+            const { data: rpcResult, error: rpcErr } = await admin.rpc(
+              executionSlot ? "worker_execute_rotation_slot_v1" : "worker_execute_pre_assigned_swing",
+              executionSlot ? {
+                p_schedule_id: executionSlot.id,
+                p_expected_schedule_version: executionSlot.version,
+                p_table_session_id: executionArgs.p_table_session_id,
+                p_old_assignment_id: executionArgs.p_old_assignment_id,
+                p_expected_assignment_version: executionArgs.p_expected_version,
+                p_next_attendance_id: executionArgs.p_next_attendance_id,
+                p_swing_due_at: executionArgs.p_swing_due_at,
+                p_duration_minutes: executionArgs.p_duration_minutes,
+                p_send_to_break: executionArgs.p_send_to_break,
+                p_break_duration_minutes: executionArgs.p_break_duration_minutes,
+              } : executionArgs,
             );
 
             if (rpcErr) {
@@ -3348,6 +3385,13 @@ if (tier2Count > 0) {
 
             switch (rpcResult?.status) {
               case "success":
+                if (executionSlot && (rpcResult.rotation_schedule_id !== executionSlot.id
+                  || rpcResult.rotation_completion !== "executed")) {
+                  recordDispatchSafetyOutcome(cid, assessSwingExecutionFailure("rotation_execution_receipt_unverified"));
+                  clubHadPass3Error = true;
+                  metrics.failed++;
+                  break;
+                }
                 metrics.success++;
                 cycleExcludedIds.add(assignment.pre_assigned_attendance_id);
                 {
@@ -3365,20 +3409,8 @@ if (tier2Count > 0) {
                   }
                 }
 
-                // Scheduler bookkeeping: the announced slot is now executed.
-                if (scheduleDriven) {
-                  const { data: doneSlots } = await admin
-                    .from("dealer_rotation_schedule")
-                    .select("id")
-                    .eq("assignment_id", assignment.id)
-                    .in("status", ["announced", "executing"]);
-                  for (const slot of doneSlots ?? []) {
-                    await admin.rpc("complete_rotation_slot", {
-                      p_schedule_id: slot.id,
-                      p_new_assignment_id: rpcResult?.new_assignment_id ?? null,
-                    });
-                  }
-                }
+                // Scheduled execution already committed its completion and
+                // receipt atomically. Never split this into a second RPC.
 
                 // Patch 2: send a present-tense completion confirmation now that
                 // the pre-assigned swing has actually committed (refresh guard passed).
@@ -4499,16 +4531,10 @@ if (tier2Count > 0) {
           console.warn(`[process-swing] run_metrics insert skipped (non-fatal) club=${cid}:`, metricsErr);
         }
 
-        if (lockAcquired) {
+        if (lockAcquired && lockToken) {
           try {
-            // B2.2b: token-scoped release \u2014 only deletes OUR lock (fixes FM-2: an overran
-            // worker can no longer delete a successor's lock). Falls back to the legacy
-            // unconditional release only if somehow no token (defensive; should not happen).
-            if (lockToken) {
-              await admin.rpc("release_club_lock_if_owner", { p_club_id: cid, p_lock_token: lockToken });
-            } else {
-              await admin.rpc("release_club_lock", { p_club_id: cid });
-            }
+            // A stale invocation must never delete a successor's lease.
+            await admin.rpc("release_club_lock_if_owner", { p_club_id: cid, p_lock_token: lockToken });
           } catch (releaseErr) {
             console.error(`[process-swing] \u274C Lock release failed for ${cid}:`, releaseErr);
           }
@@ -4587,8 +4613,10 @@ if (tier2Count > 0) {
     return new Response(
       JSON.stringify({
         ok: true,
-        status: dispatchContext ? dispatchFinalState : "completed",
-        error_code: dispatchContext ? dispatchErrorCode : null,
+        // Direct internal/manual invocations have no dispatch ledger context,
+        // but must report the same observed business failures as queued runs.
+        status: dispatchFinalState,
+        error_code: dispatchErrorCode,
         run_id: dispatchContext?.runId ?? null,
         request_id: dispatchContext?.requestId ?? null,
         execution_time_ms: totalExecutionMs,

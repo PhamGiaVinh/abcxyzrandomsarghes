@@ -116,7 +116,7 @@ export function buildPayrollFinanceSummary(
   }
   if (open.length > 0) {
     if (approvalRiskLevel === "ready") approvalRiskLevel = "review";
-    riskReasons.push(`${open.length} ca chưa checkout — chi phí có thể đang tăng sai`);
+    riskReasons.push(`${open.length} ca chưa checkout — giờ tạm tính theo ca chuẩn, cần đối chiếu trước khi duyệt`);
   }
   if (capped.length > 0) {
     if (approvalRiskLevel === "ready") approvalRiskLevel = "review";

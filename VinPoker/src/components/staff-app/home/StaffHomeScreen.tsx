@@ -17,11 +17,15 @@ function minutesLabel(minutes?: number | null): string {
 
 export function StaffHomeScreen() {
   const { staff, isStaff, loading } = useStaffLink();
-  const { rows, openAttendance, isLoading } = useStaffAttendance(staff?.staffId);
-  const { checkIn, checkOut, isPending } = useStaffAttendanceActions(staff?.staffId);
+  const { rows, openAttendance, isLoading, isError, scopeError, refetch, isFetching } = useStaffAttendance(staff);
+  const { checkIn, checkOut, isPending } = useStaffAttendanceActions(staff);
 
-  if (loading) return <HomeSkeleton />;
+  if (loading || isLoading) return <HomeSkeleton />;
   if (!isStaff || !staff) return <StaffNotLinkedScreen />;
+  if (isError || scopeError) return <Card role="alert" className="p-4 space-y-2">
+    <p>Không xác minh được trạng thái chấm công. Chưa thể check-in/out.</p><p>{scopeError}</p>
+    {!scopeError && <button type="button" className="underline" disabled={isFetching} onClick={()=>{void refetch();}}>Thử lại</button>}
+  </Card>;
 
   const firstName = staff.fullName.trim().split(/\s+/).slice(-1)[0] || staff.fullName;
   const latestClosed = rows.find((r) => r.status === "checked_out");
@@ -56,12 +60,12 @@ export function StaffHomeScreen() {
           </div>
           <button
             type="button"
-            disabled={isPending}
-            onClick={() => (isOpen ? checkOut.mutate() : checkIn.mutate())}
+            disabled={isPending || isFetching}
+            onClick={() => { if (!isFetching) { if (isOpen) checkOut.mutate(); else checkIn.mutate(); } }}
             className="mt-4 w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold inline-flex items-center justify-center gap-2 disabled:opacity-60"
           >
             {isOpen ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
-            {isOpen ? "Check-out" : "Check-in"}
+            {isPending ? "Đang gửi chấm công…" : isFetching ? "Đang xác minh ca…" : isOpen ? "Check-out" : "Check-in"}
           </button>
         </div>
       </Card>

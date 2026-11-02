@@ -73,6 +73,8 @@ function LiveFeltPreviewContent() {
   const stepParam = params.get("step");
   const step = stepParam == null ? frames.length - 1 : Math.max(0, Math.min(frames.length - 1, Number(stepParam) || 0));
   const requestedPotIndex = Math.max(0, Number(params.get("pot")) || 0);
+  const [selectedPotIndex,setSelectedPotIndex]=useState(requestedPotIndex);
+  useEffect(()=>{setSelectedPotIndex(requestedPotIndex);},[hand,requestedPotIndex]);
 
   const [frame, setFrame] = useState<ReplayFrame>(frames[step]);
   const [runout, setRunout] = useState<ReplayRunoutPresentation | null>(null);
@@ -112,16 +114,16 @@ function LiveFeltPreviewContent() {
     locale: "vi",
   }), [fixture, frame, frames.length, hand]);
   const visiblePresentation = useMemo(
-    () => selectVerifiedPotLayerPresentation(verifiedPresentation, runout?.potAwardIndex ?? requestedPotIndex),
-    [requestedPotIndex, runout?.potAwardIndex, verifiedPresentation],
+    () => selectVerifiedPotLayerPresentation(verifiedPresentation, runout?.potAwardIndex ?? selectedPotIndex),
+    [selectedPotIndex, runout?.potAwardIndex, verifiedPresentation],
   );
   useTrackerRunoutSounds(runout, play, muted, Boolean(visiblePresentation.winners.some(winner => winner.bestFive.length === 5)));
 
-  const staticPayoutPresentation = play ? runout : visiblePresentation.enabled
+  const staticPayoutPresentation = play && runout ? runout : visiblePresentation.enabled
     ? createReplayRunoutPresentation(
         `${visiblePresentation.handId}:${visiblePresentation.frameIndex}:dev-fixture`,
         "static",
-        requestedPotIndex,
+        selectedPotIndex,
       )
     : null;
 
@@ -149,7 +151,7 @@ function LiveFeltPreviewContent() {
       collectCommittedChips={frame.index === frames.length - 1 && hand.actions.some((action) => action.action_type === "all_in")}
       bestFiveFocus={visiblePresentation.enabled ? visiblePresentation.focus : null}
       showdownPresentation={visiblePresentation.enabled ? visiblePresentation : null}
-      bestFiveFocusPhase={play ? replayRunoutFocusPhase(runout?.phase ?? null) : "static"}
+      bestFiveFocusPhase={replayRunoutFocusPhase(staticPayoutPresentation?.phase ?? null)}
       replayRunoutPhase={staticPayoutPresentation?.phase ?? null}
       replayRunoutPresentation={staticPayoutPresentation}
       chipPush={chipPush}
@@ -188,7 +190,8 @@ function LiveFeltPreviewContent() {
       {play && (
         <div className="mt-3">
           <ReplayScrubber hand={hand} onFrame={handleFrame} hud trackBets={viewerLayout && compact}
-            showdownPresentation={verifiedPresentation} onRunoutPresentation={setRunout} />
+            showdownPresentation={verifiedPresentation} onRunoutPresentation={setRunout}
+            selectedPotIndex={selectedPotIndex} onSelectedPotIndexChange={setSelectedPotIndex}/>
           {params.get("autoplay") !== "0" && <AutoPlay speed={speed} />}
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,14 +14,29 @@ import { toast } from "sonner";
 import { ProofUploader } from "./ProofUploader";
 
 const fmt = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
+type ReadableResult = Pick<Tables<"player_results">,
+  "id" | "tournament_name" | "event_date" | "buy_in" | "prize" | "venue" |
+  "position" | "total_entries" | "proof_url" | "verified_by_admin">;
+
+function isReadableResult(value: unknown): value is ReadableResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return ["id", "tournament_name", "event_date"].every(key => typeof row[key] === "string")
+    && ["buy_in", "prize"].every(key => typeof row[key] === "number" && Number.isFinite(row[key]))
+    && ["venue", "proof_url"].every(key => row[key] === null || typeof row[key] === "string")
+    && ["position", "total_entries"].every(key => row[key] === null || (typeof row[key] === "number" && Number.isFinite(row[key])))
+    && typeof row.verified_by_admin === "boolean";
+}
 
 export const ResultsManager = () => {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<ReadableResult[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>(initial());
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState(false);
 
   function initial() {
     return {
@@ -37,12 +53,21 @@ export const ResultsManager = () => {
 
   const load = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("player_results")
-      .select("*")
-      .eq("player_id", user.id)
-      .order("event_date", { ascending: false });
-    setResults(data ?? []);
+    setLoading(true);
+    setReadError(false);
+    try {
+      const { data, error } = await supabase
+        .from("player_results")
+        .select("*")
+        .eq("player_id", user.id)
+        .order("event_date", { ascending: false });
+      if (error || !Array.isArray(data) || !data.every(isReadableResult)) throw new Error("RESULTS_READ_FAILED");
+      setResults(data);
+    } catch {
+      setReadError(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -98,7 +123,14 @@ export const ResultsManager = () => {
         </Button>
       </div>
 
-      {results.length === 0 ? (
+      {loading ? (
+        <p role="status" className="text-xs text-muted-foreground py-3 text-center">Đang tải kết quả…</p>
+      ) : readError ? (
+        <div role="alert" className="space-y-2 text-sm">
+          <p>Không tải được kết quả. Hãy thử lại.</p>
+          <Button size="sm" variant="outline" onClick={() => { void load(); }}>Thử tải lại</Button>
+        </div>
+      ) : results.length === 0 ? (
         <p className="text-xs text-muted-foreground py-3 text-center">{t("results.empty")}</p>
       ) : (
         <div className="space-y-2">

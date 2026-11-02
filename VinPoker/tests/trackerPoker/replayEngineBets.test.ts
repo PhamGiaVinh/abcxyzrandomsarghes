@@ -37,6 +37,23 @@ function hand(partial: Partial<ReplayHand>): ReplayHand {
 const seatOf = (frames: ReturnType<typeof buildReplayFrames>, k: number, id: string) =>
   frames[k].seats.find((s) => s.player_id === id)!;
 
+it("returns a fully refunded blind only in the final server-verified frame", () => {
+  const h = hand({ players: PLAYERS.slice(0, 2), actions: [A("P2", "post_bb", 100), A("P1", "fold", 0)],
+    publicSettlement: { schemaVersion: "settlement-outcome-v1", status: "verified",
+      players: [{ playerId: "P1", potAward: 0, refund: 0, netDelta: 0 }, { playerId: "P2", potAward: 0, refund: 100, netDelta: 0 }],
+      pots: [], refunds: [{ playerId: "P2", amount: 100, sourceActionId: "bb" }], handRanks: [] },
+  });
+  const frames = buildReplayFrames(h, { trackBets: true });
+  expect(seatOf(frames, 1, "P2")).toMatchObject({ chip_count: 9900, current_bet: 100 });
+  expect(seatOf(frames, 2, "P2")).toMatchObject({ chip_count: 10000, current_bet: 0, display_committed_bet: 0, pot_winner: false, refund_award: 100 });
+  expect(seatOf(frames, 2, "P2").last_action).toBeUndefined();
+  expect(frames[2].potSize).toBe(0);
+  expect(frames[2].seats.reduce((sum, seat) => sum + seat.chip_count, 0)).toBe(20000);
+  const unverified = buildReplayFrames({ ...h, publicSettlement: null }, { trackBets: true });
+  expect(seatOf(unverified, 2, "P2").chip_count).toBe(9900);
+  expect(seatOf(unverified, 2, "P2").refund_award).toBeUndefined();
+});
+
 describe("trackBets absent — byte-identical frames", () => {
   it("frames deep-equal the no-options baseline; no bet keys anywhere", () => {
     const h = hand({

@@ -35,7 +35,7 @@ Deno.test("backup HTTP handler rejects untrusted requests before privileged clie
     const table = "00000000-0000-4000-8000-000000000002";
     const session = "00000000-0000-4000-8000-000000000003";
     const attendance = "00000000-0000-4000-8000-000000000004";
-    for (const scenario of ["off", "settings_error", "inventory_error", "lock_error", "locked", "planner_error", "overdue_error", "unknown_outcome", "success"]) {
+    for (const scenario of ["off", "settings_error", "inventory_error", "lock_error", "locked", "planner_error", "overdue_error", "unknown_outcome", "success", "tour_policy", "cash_policy", "policy_error", "policy_invalid", "wrong_verify", "malformed_rest"]) {
       const calls: URL[] = [];
       globalThis.fetch = (input, init) => {
         const url = new URL(input instanceof Request ? input.url : String(input));
@@ -52,18 +52,25 @@ Deno.test("backup HTTP handler rejects untrusted requests before privileged clie
           ? reply({ message: "fixture error" }, 503) : reply([{ auto_swing_enabled: scenario !== "off" }]);
         if (route === "get_dealer_operational_tables_v1") return scenario === "inventory_error"
           ? reply({ message: "fixture error" }, 503)
-          : reply([{ id: table, table_session_id: session, table_type: "cash", table_name: "TEST" }]);
+          : reply([{ id: table, table_session_id: session, table_type: scenario==='tour_policy'?'tournament':'cash',tournament_id:scenario==='tour_policy'?club:null, table_name: "TEST" }]);
         if (route === "try_acquire_cron_lock") return scenario === "lock_error"
           ? reply({ message: "fixture error" }, 503) : reply(scenario !== "locked");
-        if (route === "swing_config") return scenario === "planner_error"
-          ? reply({ message: "fixture error" }, 503) : reply([{ rotation_planner_enabled: false }]);
+        if (route === "swing_config") {
+          if(url.searchParams.get('select')==='break_duration_minutes,min_inter_swing_rest_minutes'){
+            assertEquals(url.searchParams.get('table_type'),scenario==='tour_policy'?'eq.tournament':'eq.cash');
+            if(scenario==='policy_error')return reply({message:'fixture'},503);
+            if(scenario==='policy_invalid')return reply([{break_duration_minutes:'20',min_inter_swing_rest_minutes:15}]);
+            return reply(scenario==='tour_policy'?[]:[{break_duration_minutes:scenario==='cash_policy'?20:15,min_inter_swing_rest_minutes:15}]);
+          }
+          return scenario === "planner_error" ? reply({ message: "fixture error" }, 503) : reply([{ rotation_planner_enabled: false }]);
+        }
         if (route === "dealer_attendance") {
           assertEquals(url.searchParams.get("dealers.club_id"), `eq.${club}`);
           assertEquals(url.searchParams.get("check_out_time"), "is.null");
           assertEquals(url.searchParams.get("status"), "eq.checked_in");
           return reply([{ id: attendance, dealer_id: "dealer-fixture" }]);
         }
-        if (route === "atomic_dealer_ready_check") return reply({ verified: true, rest_threshold_min: 15, rest_min: 20 });
+        if (route === "atomic_dealer_ready_check") return reply({ verified: true, attendance_id:scenario==='wrong_verify'?club:attendance,rest_threshold_min: 20, rest_min: scenario==='malformed_rest'?null:15 });
         if (route === "dealer_assignments") {
           assertEquals(url.searchParams.get("table_id"), `in.(${table})`);
           return scenario === "overdue_error" ? reply({ message: "fixture error" }, 503)
@@ -74,6 +81,7 @@ Deno.test("backup HTTP handler rejects untrusted requests before privileged clie
           assertEquals(intent.p_table_session_id, session);
           assertEquals(intent.p_expected_version, 1);
           assertEquals(intent.p_next_attendance_id, attendance);
+          assertEquals(intent.p_rest_deficit_minutes,scenario==='cash_policy'?5:0);
           return reply({ outcome: scenario === "unknown_outcome" ? "unknown" : "swung" });
         }
         if (route === "release_cron_lock") return reply(true);
@@ -84,10 +92,10 @@ Deno.test("backup HTTP handler rejects untrusted requests before privileged clie
         headers: { authorization: "Bearer backup-handler-test-fixture", "content-type": "application/json" },
         body: JSON.stringify({ club_id: club }),
       }));
-      const shouldFail = scenario.endsWith("_error") || scenario === "unknown_outcome";
+      const shouldFail = scenario.endsWith("_error") || ["unknown_outcome","policy_invalid","wrong_verify","malformed_rest"].includes(scenario);
       assertEquals(result.status, shouldFail ? 500 : 200, scenario);
       assertEquals(calls.filter((url) => url.pathname.endsWith("/worker_perform_swing")).length,
-        ["unknown_outcome", "success"].includes(scenario) ? 1 : 0, scenario);
+        ["unknown_outcome", "success","tour_policy","cash_policy"].includes(scenario) ? 1 : 0, scenario);
       if (scenario === "off") assertEquals(calls.some((url) => url.pathname.endsWith("/get_dealer_operational_tables_v1")), false);
       await result.json();
     }

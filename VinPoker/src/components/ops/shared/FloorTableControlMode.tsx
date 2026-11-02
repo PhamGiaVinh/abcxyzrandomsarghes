@@ -5,6 +5,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from "@/components/ui/button";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { floorOpsErrorMessage } from "@/lib/floorOpsErrors";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import type { FloorTableControlMode } from "@/lib/floorTableControlMode";
 import { FloorTableModePicker } from "@/components/ops/shared/FloorTableModePicker";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "@/lib/floorTableControlV3";
@@ -20,21 +22,23 @@ type ControlTable = {
   control_epoch?: number;
 };
 
-export function FloorTableControlModeControl({
-  actorId,
-  tournamentId,
-  table,
-  onChanged,
-  disabledReason,
-  expanded = true,
-}: {
+type ModeControlProps = {
   actorId: string | null;
   tournamentId: string;
   table: ControlTable;
   onChanged: () => void | boolean | Promise<void | boolean>;
   disabledReason?: string | null;
   expanded?: boolean;
-}) {
+};
+
+export function FloorTableControlModeControl(props: ModeControlProps) {
+  return <ScopedFloorTableControlMode key={JSON.stringify([props.actorId, props.tournamentId,
+    props.table.tt_id, props.table.table_session_id])} {...props} />;
+}
+
+function ScopedFloorTableControlMode({ actorId, tournamentId, table, onChanged, disabledReason, expanded = true }: ModeControlProps) {
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const supabase = useSupabaseClient();
   const client = useMemo(() => createFloorTableControlV3Client(
     supabase.rpc.bind(supabase) as unknown as FloorTableControlV3Rpc,
@@ -63,6 +67,7 @@ export function FloorTableControlModeControl({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const awaitingRoster = useRef<{ revision: number; epoch: number | undefined } | null>(null);
 
   useEffect(() => {
     setSelected(attempt.current?.scope === scope ? attempt.current.args.controlMode : table.floor_control_mode);
@@ -92,13 +97,13 @@ export function FloorTableControlModeControl({
       return;
     }
     const refresh = async () => {
-      if (running || busyRef.current || document.visibilityState === "hidden" || !navigator.onLine) return;
+      if (running || busyRef.current || awaitingRoster.current || document.visibilityState === "hidden" || !navigator.onLine) return;
       running = true;
       const generation = mutationGeneration.current;
       try {
-        const result = await client.getTableControlModeRequest({
+        const result = await observeTrackerContextRead(client.getTableControlModeRequest({
           tournamentTableId: table.tt_id, tableSessionId: sessionId,
-        });
+        }));
         if (disposed || scopeRef.current !== scope || generation !== mutationGeneration.current) return;
         if (result.ok === false) throw new Error(result.error);
         const request = result.data.request;
@@ -144,6 +149,14 @@ export function FloorTableControlModeControl({
     };
   }, [client, scope, validReadContext, table.tt_id, table.table_session_id]);
 
+  useEffect(() => {
+    const stale = awaitingRoster.current;
+    if (stale && (stale.revision !== table.floor_control_revision || stale.epoch !== table.control_epoch)) {
+      awaitingRoster.current = null;
+      void refreshRequest.current?.();
+    }
+  }, [table.floor_control_revision, table.control_epoch]);
+
   const changed = selected !== table.floor_control_mode;
   const selectedSummary = selected === "tracker"
     ? "Live Tracker: Tracker quản lý chip; chỉ cho phép loại khi chip đã về 0."
@@ -163,22 +176,25 @@ export function FloorTableControlModeControl({
       setRecovery(attempt.current);
       savePendingFloorModeIntent(attempt.current);
       ++mutationGeneration.current;
-      const result = await client.requestTableControlMode(attempt.current.args);
-      if (scopeRef.current !== scope) return;
+      const submitted = attempt.current;
+      const result = await waitForManualPlayerResponse(client.requestTableControlMode(submitted.args));
+      if (!alive.current || scopeRef.current !== scope) return;
       if (result.ok === false) {
         // Existing receipt is checked before STALE_STATE by the reviewed RPC.
         // This definitive rejection permits a fresh intent only after refresh.
         if (result.error === "STALE_STATE") {
+          awaitingRoster.current = { revision: table.floor_control_revision, epoch: table.control_epoch };
           clearPendingFloorModeIntent(attempt.current);
           attempt.current = null;
           setRecovery(null);
           setConfirmOpen(false);
           setRequestState({ scope, loaded: false, pending: null,
             error: "Phiên bàn đã thay đổi. Đang tải lại trước khi tạo yêu cầu mới." });
-          if ((await onChanged()) === true && scopeRef.current === scope) {
+          if ((await observeTrackerContextRead(Promise.resolve(onChanged()))) === true && alive.current && scopeRef.current === scope) {
             // The caller confirmed a fresh canonical roster; verify pending
             // state again after releasing the write guard.
             busyRef.current = false;
+            awaitingRoster.current = null;
             await refreshRequest.current?.();
           }
         }
@@ -209,10 +225,10 @@ export function FloorTableControlModeControl({
       setConfirmOpen(false);
       onChanged();
     } catch {
-      if (scopeRef.current === scope) toast.error("Chưa xác minh được kết quả. Giữ yêu cầu để thử lại, không tạo thao tác mới.");
+      if (alive.current && scopeRef.current === scope) toast.error("Chưa xác minh được kết quả. Giữ yêu cầu để thử lại, không tạo thao tác mới.");
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (alive.current) setBusy(false);
     }
   };
 
@@ -222,16 +238,16 @@ export function FloorTableControlModeControl({
     setBusy(true);
     try {
       ++mutationGeneration.current;
-      const result = await client.cancelTableControlModeRequest({ tournamentTableId: table.tt_id,
-        tableSessionId: table.table_session_id, modeRequestId: pending.id });
-      if (scopeRef.current !== scope) return;
+      const result = await waitForManualPlayerResponse(client.cancelTableControlModeRequest({ tournamentTableId: table.tt_id,
+        tableSessionId: table.table_session_id, modeRequestId: pending.id }));
+      if (!alive.current || scopeRef.current !== scope) return;
       if (result.ok === false || result.data.outcome !== "cancelled") {
         toast.error("Chưa xác minh được việc hủy yêu cầu. Hãy tải lại."); return;
       }
       setRequestState({ scope, loaded: true, error: null, pending: null });
       onChanged();
-    } catch { if (scopeRef.current === scope) toast.error("Không xác minh được việc hủy yêu cầu."); }
-    finally { busyRef.current = false; setBusy(false); }
+    } catch { if (alive.current && scopeRef.current === scope) toast.error("Không xác minh được việc hủy yêu cầu."); }
+    finally { busyRef.current = false; if (alive.current) setBusy(false); }
   };
 
   return (

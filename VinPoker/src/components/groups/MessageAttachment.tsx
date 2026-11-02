@@ -9,6 +9,7 @@ interface Props {
   type: string | null;
   name?: string | null;
   size?: number | null;
+  onLoadError?: () => void;
 }
 
 const fmtSize = (b?: number | null) => {
@@ -26,7 +27,7 @@ const iconFor = (name?: string | null) => {
   return FileIcon;
 };
 
-export const MessageAttachment = ({ url, type, name, size }: Props) => {
+export const MessageAttachment = ({ url, type, name, size, onLoadError }: Props) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -38,11 +39,11 @@ export const MessageAttachment = ({ url, type, name, size }: Props) => {
           onClick={() => setOpen(true)}
           className="block max-w-[260px] rounded-lg overflow-hidden border border-border/40 bg-muted/40"
         >
-          <img src={url} alt={name ?? "image"} className="block w-full max-h-[280px] object-cover" loading="lazy" />
+          <img src={url} alt={name ?? "image"} onError={onLoadError} className="block w-full max-h-[280px] object-cover" loading="lazy" />
         </button>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent className="max-w-3xl p-2">
-            <img src={url} alt={name ?? "image"} className="w-full max-h-[80vh] object-contain rounded" />
+            <img src={url} alt={name ?? "image"} onError={onLoadError} className="w-full max-h-[80vh] object-contain rounded" />
             <div className="flex justify-end pt-2">
               <Button asChild size="sm" variant="secondary">
                 <a href={url} download={name ?? undefined} target="_blank" rel="noreferrer">

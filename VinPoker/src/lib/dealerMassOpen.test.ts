@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  dealerEdgeErrorMessage,
   isCurrentMassOpenRequest,
   readOpenOperationProgress,
   resolveMassOpenGate,
   shouldContinueOpenOperation,
 } from "./dealerMassOpen";
+
+describe("dealer Edge error text boundary", () => {
+  it.each([null, undefined, [], 42, "raw", {error:{code:"nested"}}, {error:false}, {error:"  ",message:[] }])("uses SDK fallback for malformed body %j", body => {
+    expect(dealerEdgeErrorMessage(body,"SDK failure")).toBe("SDK failure");
+  });
+  it("preserves the exact conflict code used by assignment reconciliation", () => {
+    expect(dealerEdgeErrorMessage({error:"IDEMPOTENCY_CONFLICT",message:"other"},"SDK failure")).toBe("IDEMPOTENCY_CONFLICT");
+  });
+  it("accepts a text message when the error field is malformed", () => {
+    expect(dealerEdgeErrorMessage({error:{code:"nested"},message:"Try the same request"},"SDK failure")).toBe("Try the same request");
+  });
+});
 
 describe("dealer mass-open client contract", () => {
   it("fails closed, including a missing server RPC", () => {

@@ -49,6 +49,11 @@ function publicPlayerName(name: string, playerId: string, fallback: string): str
 export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare }: HandFeedCardProps) {
   const { t, i18n } = useTranslation();
   const replayTarget: ReplayTarget = { handId: item.handId, tableId: item.tableId, handNumber: item.handNumber };
+  const verificationLabel = item.verificationStatus === "verified"
+    ? t("liveHub.handFeed.proofVerified", "Đã xác minh kết quả")
+    : item.verificationStatus === "unavailable"
+      ? t("liveHub.handFeed.proofUnavailable", "Không tải được xác minh")
+      : t("liveHub.handFeed.proofUnverified", "Chưa xác minh kết quả");
 
   if (rpt) {
     const created = new Date(item.createdAt);
@@ -82,6 +87,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
               </time>
             )}
           </header>
+          <p data-testid="hand-verification-state" className="text-[10px] text-muted-foreground">{verificationLabel}</p>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-[hsl(var(--viewer-neon)_/_0.18)] bg-[hsl(var(--viewer-neon)_/_0.06)] px-3 py-2">
             {item.bigBlind > 0 && (
@@ -202,6 +208,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
       </div>
 
       {/* pot */}
+      <p data-testid="hand-verification-state" className="mb-2 text-[10px] text-muted-foreground">{verificationLabel}</p>
       <div className="mb-2 flex items-baseline gap-2">
         <span className="tracker-num text-lg font-bold text-primary">{formatViewerBBOrUnavailable(item.potChips, item.bigBlind)}</span>
         {item.sidePotCount > 0 && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -18,9 +18,14 @@ import { BlindDraftBuilder } from "@/components/cashier/tournament-live/BlindDra
 import { formatDateTime, formatVND } from "@/lib/format";
 import { BLIND_PRESETS, type BlindLevel, type BlindTemplate } from "@/lib/blindPresets";
 import { isValidBlindDraft } from "@/lib/blindDraftSuggest";
-import { withTournamentCreateLiveStatus } from "@/lib/tournamentCreateCompatibility";
+import { createTournament, recoverTournamentCreate, readTournamentCreateJournal, tournamentCreateJournalKey, TournamentCreateError, type TournamentCreateRequest } from "@/lib/tournamentCreate";
 import { useAuth } from "@/hooks/useAuth";
-import { tournamentStatusLabel } from "@/lib/tournament/statusPresentation";
+import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
+import {loadTournamentEditContext,parseTournamentEditRequest,readTournamentEditJournal,tournamentEditJournalKey,
+ retainTournamentEdit,verifyRetainedTournamentEdit,clearTournamentEdit,submitTournamentEdit,recoverTournamentEdit,TournamentEditError,
+ type TournamentEditConfig,type TournamentEditContext,type TournamentEditRequest,type TournamentEditRpc} from '@/lib/tournamentEdit';
+import {waitForManualPlayerResponse} from '@/lib/floorManualPlayerIntent';
+import {TournamentLifecycleControls} from './TournamentLifecycleControls';
 
 // Shared building blocks for the Floor tournament boards (Daily + Multi-day) and the
 // legacy TournamentManagerPanel. Extracted verbatim so both surfaces reuse one source
@@ -321,14 +326,30 @@ export const NewTournamentDialog = ({
   clubs: ClubRow[]; defaultClubId: string; multiClub: boolean; onCreated: () => void;
   lockMode?: "single" | "multi" | "satellite";
 }) => {
+  const { user, session } = useAuth();
+  const actorId = user?.id;
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [clubId, setClubId] = useState(defaultClubId);
   const [f, setF] = useState({ name: "", start_time: "", buy_in: 1000000, rake_amount: 0, service_fee_amount: 0, guarantee_amount: "", starting_stack: 20000, location: "", description: "", game_type: "nlh", minutes_per_level: 20, late_reg_close_level: 6 });
+  const invalidCreateMoney = (FEATURES.tournamentServiceFee && (!Number.isSafeInteger(Number(f.service_fee_amount)) || Number(f.service_fee_amount) < 0))
+    || (f.guarantee_amount.trim() !== "" && (!Number.isSafeInteger(Number(f.guarantee_amount)) || Number(f.guarantee_amount) < 0));
   const [blindChoice, setBlindChoice] = useState("none");
   const [draftLevels, setDraftLevels] = useState<BlindLevel[]>([]);
   const [clubTemplates, setClubTemplates] = useState<BlindTemplate[]>([]);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"single" | "multi" | "satellite">(lockMode ?? "single");
+  const createKind = mode === "multi" ? "multi" : "single";
+  const createBusyRef = useRef(false);
+  const mounted = useRef(true);
+  const createScope = useRef("");
+  createScope.current = `${user?.id ?? ""}:${clubId}:${createKind}:${sessionReadEpoch(session)}`;
+  const [pendingCreate, setPendingCreate] = useState(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    try { setPendingCreate(!!actorId && localStorage.getItem(tournamentCreateJournalKey(actorId, clubId, createKind)) !== null); }
+    catch { setPendingCreate(true); }
+  }, [open, actorId, clubId, createKind]);
   const [itmPercent, setItmPercent] = useState("");
   const [flightCount, setFlightCount] = useState(3);
   const [finalStart, setFinalStart] = useState("");
@@ -357,77 +378,80 @@ export const NewTournamentDialog = ({
     return [];
   };
 
-  const submitMultiDay = async () => {
-    if (busy) return;
+  const submit = async (retryOriginal = false) => {
+    if (busy || createBusyRef.current) return;
+    if (!user) return toast.error(t("createAtomic.signin"));
     if (!clubId) return toast.error("Chọn câu lạc bộ");
-    if (!f.name) return toast.error("Nhập tên Main Event");
-    if (!finalStart) return toast.error("Chọn giờ Final Day");
-    if (!flightCount || flightCount < 1 || flightCount > 11) return toast.error("Số flight 1–11 (A–K)");
-    if (blindChoice === "draft" && !isValidBlindDraft(draftLevels)) return toast.error("Review the blind draft before creating this event.");
-    setBusy(true);
+    const scope = createScope.current;
+    const key = tournamentCreateJournalKey(user.id, clubId, createKind);
+    let request: TournamentCreateRequest;
+    let recovering = false;
     try {
-      const levels = resolveLevels(blindChoice);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC 20261025000000, not in generated types
-      const { data, error } = await (supabase.rpc as any)("create_tournament_event_with_flights", {
-        p_club_id: clubId,
-        p_name: f.name,
-        p_itm_percent: Number(itmPercent) || 0,
-        p_buy_in: Number(f.buy_in),
-        p_rake_amount: Number(f.rake_amount) || 0,
-        p_starting_stack: Number(f.starting_stack),
-        p_game_type: f.game_type,
-        p_minutes_per_level: Number(f.minutes_per_level),
-        p_late_reg_close_level: Number(f.late_reg_close_level),
-        p_flight_count: Number(flightCount),
-        p_final_start_time: new Date(finalStart).toISOString(),
-        p_flight_start_times: f.start_time ? Array.from({ length: Number(flightCount) }, () => new Date(f.start_time).toISOString()) : null,
-        p_levels: levels.length ? levels : null,
-      });
-      const res = (data ?? null) as { ok?: boolean; error?: string } | null;
-      if (error || !res?.ok) { toast.error(res?.error || error?.message || "Tạo Main Event lỗi"); return; }
-      toast.success(`Đã tạo "${f.name}" — ${flightCount} flight (${flightLabels}) + Final Day`);
-      setOpen(false);
-      onCreated();
-    } finally { setBusy(false); }
-  };
-
-  const submit = async () => {
-    if (busy) return;
-    if (FEATURES.multiDayTournaments && mode === "multi") return submitMultiDay();
-    if (!f.name || !f.start_time) return toast.error("Please fill all required fields");
-    if (!clubId) return toast.error("Chọn câu lạc bộ");
-    if (blindChoice === "draft" && !isValidBlindDraft(draftLevels)) return toast.error("Review the blind draft before creating this tournament.");
-    setBusy(true);
-    try {
-      const { data: created, error } = await supabase.from("tournaments").insert(withTournamentCreateLiveStatus({
-        club_id: clubId, name: f.name, start_time: new Date(f.start_time).toISOString(),
-        ...(FEATURES.satelliteAwardsV1 ? { operations_mode: mode === "satellite" ? "satellite" : "standard" } : {}),
-        buy_in: Number(f.buy_in), rake_amount: Number(f.rake_amount) || 0,
-        ...(FEATURES.tournamentServiceFee ? { service_fee_amount: Number(f.service_fee_amount) || 0 } : {}),
-        guarantee_amount: parseGtd(f.guarantee_amount),
-        starting_stack: Number(f.starting_stack),
-        location: f.location, description: f.description, game_type: f.game_type,
-        minutes_per_level: Number(f.minutes_per_level), late_reg_close_level: Number(f.late_reg_close_level),
-      })).select("id").single();
-      if (error) { toast.error(error.message); return; }
-      if (FEATURES.blindTemplates && blindChoice !== "none" && created?.id) {
-        const levels = resolveLevels(blindChoice);
-        if (levels.length) {
-          const { error: lvlErr } = await (supabase as any)
-            .from("tournament_levels")
-            .insert(levels.map((l) => ({ tournament_id: created.id, ...l })));
-          if (lvlErr) {
-            toast.error("Tournament created, but blind levels were not saved: " + lvlErr.message + ". Set them in the Blind tab before opening play.");
-            setOpen(false);
-            onCreated();
-            return;
-          }
-        }
+      const raw = localStorage.getItem(key);
+      recovering = raw !== null;
+      if (raw !== null) request = readTournamentCreateJournal(raw, user.id, clubId, createKind);
+      else {
+        if (!f.name || (createKind === "multi" ? !finalStart : !f.start_time)) return toast.error("Please fill all required fields");
+        if (blindChoice === "draft" && !isValidBlindDraft(draftLevels)) return toast.error("Review the blind draft before creating this tournament.");
+        if (invalidCreateMoney) return toast.error(t("mainEventCreate.invalidMoney"));
+        request = { p_club_id: clubId, p_expected_actor_id: user.id, p_request_id: crypto.randomUUID(),
+          p_levels: FEATURES.blindTemplates ? resolveLevels(blindChoice) : [], p_config: createKind === "multi" ? {
+            name: f.name, itm_percent: Number(itmPercent) || 0, buy_in: Number(f.buy_in),
+            rake_amount: Number(f.rake_amount) || 0, starting_stack: Number(f.starting_stack),
+            ...(FEATURES.tournamentServiceFee ? { service_fee_amount: Number(f.service_fee_amount) } : {}),
+            guarantee_amount: parseGtd(f.guarantee_amount), location: f.location, description: f.description,
+            game_type: f.game_type, minutes_per_level: Number(f.minutes_per_level),
+            late_reg_close_level: Number(f.late_reg_close_level), flight_count: Number(flightCount),
+            final_start_time: new Date(finalStart).toISOString(),
+            flight_start_times: f.start_time ? Array.from({ length: Number(flightCount) }, () => new Date(f.start_time).toISOString()) : null,
+          } : {
+            name: f.name, start_time: new Date(f.start_time).toISOString(),
+            ...(FEATURES.satelliteAwardsV1 ? { operations_mode: mode === "satellite" ? "satellite" : "standard" } : {}),
+            buy_in: Number(f.buy_in), rake_amount: Number(f.rake_amount) || 0,
+            ...(FEATURES.tournamentServiceFee ? { service_fee_amount: Number(f.service_fee_amount) || 0 } : {}),
+            guarantee_amount: parseGtd(f.guarantee_amount), starting_stack: Number(f.starting_stack),
+            location: f.location, description: f.description, game_type: f.game_type,
+            minutes_per_level: Number(f.minutes_per_level), late_reg_close_level: Number(f.late_reg_close_level),
+          } };
+        localStorage.setItem(key, JSON.stringify(request));
+        if (localStorage.getItem(key) !== JSON.stringify(request)) throw new Error("Pending request could not be saved");
       }
+    } catch { toast.error(t("createAtomic.storageError")); return; }
+    createBusyRef.current = true;
+    setBusy(true);
+    const rpc = (name: string, args: Record<string, unknown>) => supabase.rpc(name as never, args as never);
+    try {
+      if (recovering) {
+        try { await recoverTournamentCreate(rpc, request, createKind); }
+        catch (error) {
+          if (!retryOriginal) throw error;
+          // Explicit user retry only, after checking the original receipt.
+          // Reuse the persisted payload and key, even if form fields changed.
+          await createTournament(rpc, request, createKind);
+        }
+      } else await createTournament(rpc, request, createKind);
+      // Journal cleanup cannot turn an authoritative commit into a failed create.
+      let stillPending = true;
+      try {
+        if (localStorage.getItem(key) === JSON.stringify(request)) localStorage.removeItem(key);
+        stillPending = localStorage.getItem(key) !== null;
+      } catch { /* Keep the original identity available for later receipt recovery. */ }
+      if (!mounted.current || createScope.current !== scope) return;
+      setPendingCreate(stillPending);
       toast.success("Tournament created");
       setOpen(false);
       onCreated();
-    } finally { setBusy(false); }
+    } catch (error) {
+      let stillPending = true;
+      try {
+        if (!recovering && error instanceof TournamentCreateError && !error.unknownOutcome
+          && localStorage.getItem(key) === JSON.stringify(request)) localStorage.removeItem(key);
+        stillPending = localStorage.getItem(key) !== null;
+      } catch { /* Storage failure is not permission to create a fresh request. */ }
+      if (!mounted.current || createScope.current !== scope) return;
+      setPendingCreate(stillPending);
+      toast.error(error instanceof TournamentCreateError && !error.unknownOutcome ? error.message : t("createAtomic.unknown"));
+    } finally { createBusyRef.current = false; if (mounted.current) setBusy(false); }
   };
 
   const triggerLabel = lockMode === "satellite" ? "Create Satellite" : lockMode === "multi" ? "Create Multi-day" : lockMode === "single" ? "Tạo giải thường" : "Tạo giải";
@@ -484,8 +508,9 @@ export const NewTournamentDialog = ({
             <div><Label>Phí dịch vụ (VND)</Label><Input type="number" value={f.service_fee_amount} onChange={e => setF({ ...f, service_fee_amount: +e.target.value })} /></div>
           )}
           <p className="text-xs text-muted-foreground -mt-1">Người chơi trả: <span className="text-primary font-medium">{formatVND((Number(f.buy_in) || 0) + (Number(f.rake_amount) || 0) + (FEATURES.tournamentServiceFee ? (Number(f.service_fee_amount) || 0) : 0))}</span> <span className="opacity-70">(buy-in + rake{FEATURES.tournamentServiceFee ? " + phí dịch vụ" : ""})</span></p>
-          <div><Label>GTD cam kết (VND)</Label><Input type="number" min={0} value={f.guarantee_amount} onChange={e => setF({ ...f, guarantee_amount: e.target.value })} placeholder="Để trống nếu chưa có GTD" /></div>
-          <p className="text-[11px] text-muted-foreground -mt-1">Cam kết của floor. Để trống = chưa có GTD (sẽ hiện “thiếu GTD”), không suy ra từ prize pool.</p>
+          <div><Label>{createKind === "multi" ? t("mainEventCreate.guaranteeLabel") : "GTD cam kết (VND)"}</Label><Input type="number" min={0} value={f.guarantee_amount} onChange={e => setF({ ...f, guarantee_amount: e.target.value })} placeholder="Để trống nếu chưa có GTD" /></div>
+          {invalidCreateMoney && <p role="alert" className="text-sm text-destructive">{t("mainEventCreate.invalidMoney")}</p>}
+          <p className="text-[11px] text-muted-foreground -mt-1">{createKind === "multi" ? t("mainEventCreate.guaranteeNote") : "Cam kết của floor. Để trống = chưa có GTD (sẽ hiện “thiếu GTD”), không suy ra từ prize pool."}</p>
           <div className="grid grid-cols-2 gap-2">
             <div><Label htmlFor="tour-starting-stack">Starting stack</Label><Input id="tour-starting-stack" type="number" value={f.starting_stack} onChange={e => { setF({ ...f, starting_stack: +e.target.value }); setDraftLevels([]); if (blindChoice === "draft") setBlindChoice("none"); }} /></div>
             <div><Label>Minutes / level</Label><Input type="number" value={f.minutes_per_level} onChange={e => { setF({ ...f, minutes_per_level: +e.target.value }); setDraftLevels([]); if (blindChoice === "draft") setBlindChoice("none"); }} /></div>
@@ -523,7 +548,11 @@ export const NewTournamentDialog = ({
               />}
             </>
           )}
-          <Button onClick={submit} disabled={busy} className="w-full gradient-neon text-primary-foreground border-0">{busy ? "Đang tạo…" : "Create"}</Button>
+          <Button onClick={() => void submit()} disabled={busy} className="w-full gradient-neon text-primary-foreground border-0">{busy ? "Đang tạo…" : pendingCreate ? t("createAtomic.check") : "Create"}</Button>
+          {pendingCreate && <>
+            <p role="status" className="text-xs text-muted-foreground">{t("createAtomic.pending")}</p>
+            <Button variant="outline" onClick={() => void submit(true)} disabled={busy} className="w-full">{t("createAtomic.retry")}</Button>
+          </>}
         </div>
       </DialogContent>
     </Dialog>
@@ -547,89 +576,135 @@ export const BlindStructureDialog = ({ tournament }: { tournament: any }) => {
 };
 
 // ── Edit dialog ─────────────────────────────────────────────────────────────────────
-export const EditTournamentDialog = ({ tournament, onSaved }: { tournament: any; onSaved: () => void }) => {
+export const EditTournamentDialog = (props: { tournament: any; onSaved: () => void }) => {
+  const {user,session,loading}=useAuth();
+  return <ScopedEditTournamentDialog key={JSON.stringify([user?.id,sessionReadEpoch(session),loading,props.tournament.club_id,props.tournament.id])} {...props}/>;
+};
+const ScopedEditTournamentDialog = ({ tournament, onSaved }: { tournament: any; onSaved: () => void }) => {
+  const {user,loading:authLoading}=useAuth();
+  const writing=useRef(false),alive=useRef(false);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const [open, setOpen] = useState(false);
-  const toLocalInput = (iso: string) => {
+  const toForm = (config:TournamentEditConfig) => {
+    const iso=config.start_time;
     const d = new Date(iso);
     const off = d.getTimezoneOffset();
-    return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
+    return {name:config.name,game_type:config.game_type,start_time:new Date(d.getTime() - off * 60000).toISOString().slice(0,16),
+      buy_in:String(config.buy_in),rake_amount:String(config.rake_amount),service_fee_amount:String(config.service_fee_amount),
+      guarantee_amount:config.guarantee_amount===null?'':String(config.guarantee_amount),starting_stack:String(config.starting_stack),
+      minutes_per_level:String(config.minutes_per_level),late_reg_close_level:String(config.late_reg_close_level),
+      location:config.location??'',description:config.description??''};
   };
   const [f, setF] = useState({
-    name: tournament.name,
-    start_time: toLocalInput(tournament.start_time),
-    buy_in: tournament.buy_in,
-    rake_amount: tournament.rake_amount ?? 0,
-    service_fee_amount: tournament.service_fee_amount ?? 0,
-    guarantee_amount: tournament.guarantee_amount != null ? String(tournament.guarantee_amount) : "",
-    starting_stack: tournament.starting_stack,
-    location: tournament.location ?? "",
-    description: tournament.description ?? "",
-    game_type: tournament.game_type ?? "nlh",
-    minutes_per_level: tournament.minutes_per_level ?? 20,
-    late_reg_close_level: tournament.late_reg_close_level ?? 6,
+    name:'',start_time:'',buy_in:'',rake_amount:'',service_fee_amount:'',guarantee_amount:'',starting_stack:'',
+    location:'',description:'',game_type:'',minutes_per_level:'',late_reg_close_level:'',
   });
   const [saving, setSaving] = useState(false);
+  const [context,setContext]=useState<TournamentEditContext|null>(null);
+  const [contextLoading,setContextLoading]=useState(false);
+  const [contextError,setContextError]=useState<string|null>(null);
+  const [storageError,setStorageError]=useState<string|null>(null);
+  const [pending,setPending]=useState<TournamentEditRequest|null>(null);
+  const [revision,setRevision]=useState(0);
   const [blindChoice, setBlindChoice] = useState("none");
   const [clubTemplates, setClubTemplates] = useState<BlindTemplate[]>([]);
-  const canPickBlinds = FEATURES.blindTemplates && FEATURES.blindEditorSave;
+  const [templateError,setTemplateError]=useState(false);
+  const canPickBlinds = FEATURES.blindTemplates && FEATURES.blindEditorSave&&context?.canEditBlinds===true;
+  const rpc:TournamentEditRpc=(name,args)=>supabase.rpc(name as never,args as never);
+  useEffect(()=>{
+    if(!open||!user?.id||authLoading)return;
+    let active=true;const controller=new AbortController();
+    setContext(null);setContextLoading(true);setContextError(null);setStorageError(null);setBlindChoice('none');
+    try{
+      const raw=localStorage.getItem(tournamentEditJournalKey(user.id,tournament.club_id,tournament.id));
+      const saved=raw===null?null:readTournamentEditJournal(raw,user.id,tournament.club_id,tournament.id);
+      setPending(saved);
+      if(saved){setF(toForm(saved.p_config));setContextLoading(false);return;}
+    }catch{
+      setStorageError('Không đọc được journal lần lưu trước. Giữ dữ liệu và đối chiếu trước khi lưu thêm.');setContextLoading(false);return;
+    }
+    void loadTournamentEditContext((name,args)=>supabase.rpc(name as never,args as never).abortSignal(controller.signal),tournament.id,tournament.club_id,user.id)
+      .then(value=>{if(active){setContext(value);setF(toForm(value.state.config));}})
+      .catch(()=>{if(active)setContextError('Không xác minh được cấu hình giải. Tải lại thông tin trước khi sửa.');})
+      .finally(()=>{controller.abort();if(active)setContextLoading(false);});
+    return()=>{active=false;controller.abort();};
+    // The keyed outer component owns actor/session/tour lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[open,revision]);
   useEffect(() => {
     if (!canPickBlinds || !open || !tournament.club_id) return;
-    let cancelled = false;
-    supabase
+    let cancelled = false;const controller=new AbortController();setTemplateError(false);setClubTemplates([]);
+    void waitForManualPlayerResponse(Promise.resolve(supabase
       .from("blind_structure_templates")
       .select("id, club_id, name, levels")
-      .eq("club_id", tournament.club_id)
-      .then(({ data }) => { if (!cancelled) setClubTemplates((data ?? []) as unknown as BlindTemplate[]); });
-    return () => { cancelled = true; };
+      .eq("club_id", tournament.club_id).abortSignal(controller.signal)))
+      .then(({data,error})=>{
+        if(cancelled)return;
+        if(error||!Array.isArray(data)||data.some(row=>row.club_id!==tournament.club_id||!Array.isArray(row.levels)||typeof row.name!=='string'))throw new Error('template_read_unverified');
+        setClubTemplates(data as unknown as BlindTemplate[]);
+      }).catch(()=>{if(!cancelled)setTemplateError(true);}).finally(()=>controller.abort());
+    return () => { cancelled = true;controller.abort(); };
   }, [canPickBlinds, open, tournament.club_id]);
   const resolveLevels = (choice: string): BlindLevel[] => {
     if (choice.startsWith("preset:")) return BLIND_PRESETS.find((p) => p.key === choice.slice(7))?.levels ?? [];
     if (choice.startsWith("tpl:")) return (clubTemplates.find((t) => t.id === choice.slice(4))?.levels ?? []) as BlindLevel[];
     return [];
   };
-  const save = async () => {
-    if (!f.name || !f.start_time) return toast.error("Please fill all required fields");
-    setSaving(true);
-    const { error } = await supabase.from("tournaments").update({
-      name: f.name,
-      start_time: new Date(f.start_time).toISOString(),
-      buy_in: Number(f.buy_in),
-      rake_amount: Number(f.rake_amount) || 0,
-      ...(FEATURES.tournamentServiceFee ? { service_fee_amount: Number(f.service_fee_amount) || 0 } : {}),
-      guarantee_amount: parseGtd(f.guarantee_amount),
-      starting_stack: Number(f.starting_stack),
-      location: f.location,
-      description: f.description,
-      game_type: f.game_type,
-      minutes_per_level: Number(f.minutes_per_level),
-      late_reg_close_level: Number(f.late_reg_close_level),
-    }).eq("id", tournament.id);
-    if (error) { setSaving(false); toast.error(error.message); return; }
-    if (canPickBlinds && blindChoice !== "none") {
-      const levels = resolveLevels(blindChoice);
-      if (levels.length) {
-        const { error: blindErr } = await supabase.rpc("update_blind_structure", {
-          p_tournament_id: tournament.id,
-          p_levels: levels.map((l, i) => ({ level_number: i + 1, ...l })),
-        });
-        if (blindErr) { setSaving(false); toast.error("Lưu giải OK nhưng nạp cấu trúc blind lỗi: " + blindErr.message); return; }
+  const save = async (retryOriginal=false) => {
+    if(!user?.id||authLoading||writing.current||!alive.current)return;
+    if(storageError||contextLoading||(!pending&&!context))return;
+    writing.current=true;setSaving(true);
+    let request:TournamentEditRequest|null=pending;
+    let retained=false;
+    try{
+      if(!request){
+        const integer=(value:string)=>{if(!value.trim())throw new Error('required_number');const n=Number(value);if(!Number.isSafeInteger(n)||n<0)throw new Error('invalid_number');return n;};
+        const levels=blindChoice==='none'?null:resolveLevels(blindChoice).map((level,i)=>({level_number:i+1,small_blind:level.small_blind,
+          big_blind:level.big_blind,ante:level.ante,duration_minutes:level.duration_minutes,is_break:level.is_break}));
+        if(levels&&(!canPickBlinds||levels.length===0||(blindChoice.startsWith('tpl:')&&templateError)))throw new Error('unverified_template');
+        request=parseTournamentEditRequest({p_tournament_id:tournament.id,p_club_id:tournament.club_id,p_expected_actor_id:user.id,p_request_id:crypto.randomUUID(),
+          p_expected_state:context!.state,p_config:{...f,start_time:new Date(f.start_time).toISOString(),buy_in:integer(f.buy_in),rake_amount:integer(f.rake_amount),
+            service_fee_amount:FEATURES.tournamentServiceFee?integer(f.service_fee_amount):context!.state.config.service_fee_amount,
+            guarantee_amount:f.guarantee_amount.trim()===''?null:integer(f.guarantee_amount),starting_stack:integer(f.starting_stack),
+            minutes_per_level:integer(f.minutes_per_level),late_reg_close_level:integer(f.late_reg_close_level)},p_levels:levels},user.id,tournament.club_id,tournament.id);
+        retainTournamentEdit(localStorage,request);retained=true;setPending(request);
+        await submitTournamentEdit(rpc,request);
+      }else{
+        verifyRetainedTournamentEdit(localStorage,request);retained=true;
+        if(retryOriginal)await submitTournamentEdit(rpc,request);else await recoverTournamentEdit(rpc,request);
       }
+      if(!alive.current)return;
+      try{clearTournamentEdit(localStorage,request);}catch{toast.error('Đã xác minh lần lưu nhưng chưa dọn được journal. Giữ nguyên dữ liệu để đối chiếu.');}
+      setPending(null);toast.success('Saved');setOpen(false);onSaved();
+    }catch(error){
+      if(!alive.current)return;
+      if(request&&!retained){setStorageError('Không xác minh được journal đúng yêu cầu. Giữ nguyên dữ liệu và tải lại trước khi thao tác tiếp.');toast.error('Chưa gửi yêu cầu: journal chưa được xác minh.');return;}
+      if(error instanceof TournamentEditError&&error.unknownOutcome){
+        if(request)setPending(request);
+        toast.error('Chưa xác minh được lần lưu trước. Giữ nguyên yêu cầu và kiểm tra receipt; không tạo lần lưu khác.');
+      }else if(request){
+        try{clearTournamentEdit(localStorage,request);setPending(null);}catch{setStorageError('Không đối chiếu được journal. Chưa thể gửi yêu cầu khác.');}
+        setContext(null);setContextError('Yêu cầu không được lưu. Tải lại cấu hình để kiểm tra quyền, phiên bản và dữ liệu trước khi thử tiếp.');
+        toast.error('Không lưu được cấu hình và blind; tải lại thông tin trước khi thử tiếp.');
+      }else toast.error('Kiểm tra tên, thời gian, các số nguyên không âm và cấu trúc blind đã chọn. Chưa gửi yêu cầu lưu.');
+    }finally{
+      writing.current=false;if(alive.current)setSaving(false);
     }
-    setSaving(false);
-    toast.success("Saved");
-    setOpen(false);
-    onSaved();
   };
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={next=>{if(!writing.current&&!authLoading&&user?.id)setOpen(next);}}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon"><Pencil className="w-4 h-4 text-primary" /></Button>
+        <Button aria-label="Sửa thông tin giải" disabled={authLoading||!user} variant="ghost" size="icon"><Pencil className="w-4 h-4 text-primary" /></Button>
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Edit Tournament</DialogTitle></DialogHeader>
-        <div className="space-y-2">
-          <Label>Name</Label><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-          <Label>Start time</Label><Input type="datetime-local" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
+        <DialogHeader><DialogTitle>Edit Tournament</DialogTitle><DialogDescription>Cấu hình và blind lưu cùng một lần; không thay giá đã chốt của đăng ký trước.</DialogDescription></DialogHeader>
+        {contextLoading&&<p role="status">Đang xác minh cấu hình…</p>}
+        {storageError&&<p role="alert">{storageError}</p>}
+        {contextError&&<div role="alert"><p>{contextError}</p><Button variant="outline" onClick={()=>setRevision(n=>n+1)} disabled={saving}>Tải lại thông tin</Button></div>}
+        {pending&&<p role="status">Còn yêu cầu lưu chưa đối chiếu. Các trường đang khóa theo đúng payload cũ.</p>}
+        <fieldset disabled={saving||contextLoading||!context||!!pending||!!storageError} className="space-y-2 min-w-0">
+          <Label>Name</Label><Input aria-label="Name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
+          <Label>Start time</Label><Input aria-label="Start time" type="datetime-local" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
           <Label>Game type</Label>
           <Select value={f.game_type} onValueChange={v => setF({ ...f, game_type: v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -638,25 +713,27 @@ export const EditTournamentDialog = ({ tournament, onSaved }: { tournament: any;
             </SelectContent>
           </Select>
           <div className="grid grid-cols-2 gap-2">
-            <div><Label>Buy-in (VND)</Label><Input type="number" value={f.buy_in} onChange={e => setF({ ...f, buy_in: +e.target.value })} /></div>
-            <div><Label>Rake / phí giải (VND)</Label><Input type="number" value={f.rake_amount} onChange={e => setF({ ...f, rake_amount: +e.target.value })} /></div>
+            <div><Label>Buy-in (VND)</Label><Input aria-label="Buy-in (VND)" type="number" value={f.buy_in} onChange={e => setF({ ...f, buy_in: e.target.value })} /></div>
+            <div><Label>Rake / phí giải (VND)</Label><Input aria-label="Rake / phí giải (VND)" type="number" value={f.rake_amount} onChange={e => setF({ ...f, rake_amount: e.target.value })} /></div>
           </div>
           {FEATURES.tournamentServiceFee && (
-            <div><Label>Phí dịch vụ (VND)</Label><Input type="number" value={f.service_fee_amount} onChange={e => setF({ ...f, service_fee_amount: +e.target.value })} /></div>
+            <div><Label>Phí dịch vụ (VND)</Label><Input aria-label="Phí dịch vụ (VND)" type="number" value={f.service_fee_amount} onChange={e => setF({ ...f, service_fee_amount: e.target.value })} /></div>
           )}
-          <p className="text-xs text-muted-foreground -mt-1">Người chơi trả: <span className="text-primary font-medium">{formatVND((Number(f.buy_in) || 0) + (Number(f.rake_amount) || 0) + (FEATURES.tournamentServiceFee ? (Number(f.service_fee_amount) || 0) : 0))}</span> <span className="opacity-70">(buy-in + rake{FEATURES.tournamentServiceFee ? " + phí dịch vụ" : ""})</span></p>
+          <p className="text-xs text-muted-foreground -mt-1">Giá cấu hình: <span className="text-primary font-medium">{[f.buy_in,f.rake_amount,f.service_fee_amount].every(value=>value.trim()!==''&&Number.isSafeInteger(Number(value))&&Number(value)>=0)
+            ?formatVND(Number(f.buy_in)+Number(f.rake_amount)+Number(f.service_fee_amount)):'Chưa đủ thông tin'}</span> <span className="opacity-70">(buy-in + rake + phí dịch vụ nếu có)</span></p>
           <div><Label>GTD cam kết (VND)</Label><Input type="number" min={0} value={f.guarantee_amount} onChange={e => setF({ ...f, guarantee_amount: e.target.value })} placeholder="Để trống nếu chưa có GTD" /></div>
           <p className="text-[11px] text-muted-foreground -mt-1">Cam kết của floor. Để trống = chưa có GTD (sẽ hiện “thiếu GTD”), không suy ra từ prize pool.</p>
           <div className="grid grid-cols-2 gap-2">
-            <div><Label>Starting stack</Label><Input type="number" value={f.starting_stack} onChange={e => setF({ ...f, starting_stack: +e.target.value })} /></div>
-            <div><Label>Minutes / level</Label><Input type="number" value={f.minutes_per_level} onChange={e => setF({ ...f, minutes_per_level: +e.target.value })} /></div>
+            <div><Label>Starting stack</Label><Input aria-label="Starting stack" type="number" value={f.starting_stack} onChange={e => setF({ ...f, starting_stack: e.target.value })} /></div>
+            <div><Label>Minutes / level</Label><Input aria-label="Minutes / level" type="number" value={f.minutes_per_level} onChange={e => setF({ ...f, minutes_per_level: e.target.value })} /></div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div><Label>Late reg close at level</Label><Input type="number" value={f.late_reg_close_level} onChange={e => setF({ ...f, late_reg_close_level: +e.target.value })} /></div>
+            <div><Label>Late reg close at level</Label><Input aria-label="Late reg close at level" type="number" value={f.late_reg_close_level} onChange={e => setF({ ...f, late_reg_close_level: e.target.value })} /></div>
             <div />
           </div>
-          <Label>Location</Label><Input value={f.location} onChange={e => setF({ ...f, location: e.target.value })} />
-          <Label>Description</Label><Textarea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} rows={2} />
+          <Label>Location</Label><Input aria-label="Location" value={f.location} onChange={e => setF({ ...f, location: e.target.value })} />
+          <Label>Description</Label><Textarea aria-label="Description" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} rows={2} />
+          {templateError&&<p role="status">Không tải được mẫu CLB. Chỉ dùng cấu trúc hiện tại hoặc mẫu chuẩn đã xác minh.</p>}
           {canPickBlinds && (
             <>
               <Label>Cấu trúc blind</Label>
@@ -682,10 +759,11 @@ export const EditTournamentDialog = ({ tournament, onSaved }: { tournament: any;
               </p>
             </>
           )}
-          <Button onClick={save} disabled={saving} className="w-full gradient-neon text-primary-foreground border-0">
-            <Save className="w-4 h-4 mr-1" />{saving ? "Saving..." : "Save Changes"}
+        </fieldset>
+          <Button onClick={()=>void save()} disabled={saving||contextLoading||!!storageError||(!pending&&!context)} className="w-full gradient-neon text-primary-foreground border-0">
+            <Save className="w-4 h-4 mr-1" />{saving ? "Saving..." : pending?'Kiểm tra lần lưu trước':"Save Changes"}
           </Button>
-        </div>
+          {pending&&<Button variant="outline" disabled={saving||!!storageError} onClick={()=>void save(true)}>Gửi lại đúng yêu cầu cũ</Button>}
       </DialogContent>
     </Dialog>
   );
@@ -693,7 +771,7 @@ export const EditTournamentDialog = ({ tournament, onSaved }: { tournament: any;
 
 // ── TournamentCard — the per-tournament card, shared by every Floor board ────────────
 export function TournamentCard({
-  tour, flightMeta, finalMeta, multiClub, clubName, reload, onDelete, onSetStatus, onStart, onSelect, legacyMultiDayActions = true,
+  tour, flightMeta, finalMeta, multiClub, clubName, reload, onDelete, onStart, onSelect, legacyMultiDayActions = true,
 }: {
   tour: any;
   flightMeta?: FlightMeta;
@@ -702,7 +780,6 @@ export function TournamentCard({
   clubName?: string;
   reload: () => void;
   onDelete: (id: string) => void;
-  onSetStatus: (id: string, status: "scheduled" | "live" | "finished" | "cancelled") => void;
   onStart: (id: string) => void;
   /** When provided, the card title becomes a button that enters the tournament's operational tabs. */
   onSelect?: (id: string) => void;
@@ -744,22 +821,14 @@ export function TournamentCard({
           </Button>
         </div>
       </div>
-      <Select value={t2.status} onValueChange={(v) => onSetStatus(t2.id, v as any)}>
-        <SelectTrigger className="h-8 text-xs"><SelectValue>{tournamentStatusLabel(t2.status, t)}</SelectValue></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="scheduled">{t("clubAdmin.scheduled")}</SelectItem>
-          <SelectItem value="live">{t("clubAdmin.live")}</SelectItem>
-          <SelectItem value="finished">{t("clubAdmin.finished")}</SelectItem>
-          <SelectItem value="cancelled">{t("clubAdmin.cancelled")}</SelectItem>
-        </SelectContent>
-      </Select>
+      <TournamentLifecycleControls tournament={t2} onChanged={reload}/>
       <LiveStateEditor tournament={t2} onSaved={reload} />
       {onSelect && (
         <Button size="sm" variant="ghost" className="w-full h-8 text-xs text-primary hover:bg-primary/10" onClick={() => onSelect(t2.id)}>
           Vào giải (vận hành) →
         </Button>
       )}
-      {t2.status !== "live" && (
+      {!["live","completed","cancelled","finished"].includes(t2.status) && (
         <Button size="sm" variant="outline" className="w-full h-9 text-xs border-primary/50 text-primary hover:bg-primary/10" onClick={() => onStart(t2.id)}>
           <Play className="w-3.5 h-3.5 mr-1" /> Bắt đầu giải (chạy đồng hồ + lên live)
         </Button>

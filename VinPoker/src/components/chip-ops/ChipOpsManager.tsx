@@ -19,6 +19,13 @@ import { BankAuditTab } from "./BankAuditTab";
 import { ColorUpTab } from "./ColorUpTab";
 import { BagTagTab } from "./BagTagTab";
 import { IssuanceCard } from "./IssuanceCard";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import {useChipSetupMetadata} from './useChipSetupMetadata';
+import { CreateChipSetControl } from "./CreateChipSetControl";
+import { TemplateSaveControl } from './TemplateSaveControl';
+import type {ChipTemplateSaveScope} from '@/lib/chipTemplateSaveIntent';
+import { createChipSetupWriteGate, type AcquireChipSetupWrite } from '@/lib/chipSetupWriteGate';
+import { assertCurrentChipDenominations } from '@/lib/chipInventoryRead';
 
 // The chip_ops_* tables/RPCs are applied live but not yet in the generated Database types,
 // so all reads/writes go through this loosely-typed client. Strictly additive feature.
@@ -50,25 +57,9 @@ const ERR: Record<string, string> = {
   TOURNAMENT_NOT_FOUND: "Không tìm thấy giải.",
   TEMPLATE_NOT_FOUND: "Không tìm thấy mẫu stack.",
   INVALID_INPUT: "Dữ liệu nhập chưa hợp lệ.",
+  CHIP_SET_BINDING_CHANGED_RELOAD: 'Liên kết bộ chip đã thay đổi. Hãy đọc lại trước khi thao tác.',
+  CHIP_SET_BINDING_SCOPE_INVALID: 'Liên kết bộ chip không nhất quán với CLB. Cần kiểm tra dữ liệu.',
 };
-
-async function callRpc(fn: string, args: Record<string, unknown>): Promise<any | null> {
-  try {
-    const { data, error } = await sb.rpc(fn, args);
-    if (error) {
-      toast.error("Tính năng chưa sẵn sàng trên máy chủ.");
-      return null;
-    }
-    if (data && data.error) {
-      toast.error(ERR[data.error] ?? data.error);
-      return null;
-    }
-    return data ?? {};
-  } catch {
-    toast.error("Có lỗi xảy ra, thử lại.");
-    return null;
-  }
-}
 
 export function ChipOpsManager() {
   const { t } = useTranslation();
@@ -91,28 +82,46 @@ export function ChipOpsManager() {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [inv, setInv] = useState<Inventory | null>(null);
   const [coupling, setCoupling] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyState, setBusyState] = useState<{key:string;value:boolean}|null>(null);
   const [readError, setReadError] = useState<{ scope: { key: string }; code: string } | null>(null);
   const [loadedScope, setLoadedScope] = useState<{ key: string } | null>(null);
   const scopeKey = JSON.stringify([authorityScope, tournamentId, tour?.club_id]);
+  const busy=busyState?.key===scopeKey&&busyState.value;
+  const setBusy=useCallback((value:boolean)=>setBusyState({key:scopeKey,value}),[scopeKey]);
+  const [creationBlock,setCreationBlock]=useState<{key:string;blocked:boolean}|null>(null);
+  const creationBlocked=creationBlock?.key===scopeKey&&creationBlock.blocked;
+  const onCreationBlock=useCallback((blocked:boolean)=>setCreationBlock({key:scopeKey,blocked}),[scopeKey]);
+  const [templateBlock,setTemplateBlock]=useState<{key:string;blocked:boolean}|null>(null);
+  const templateBlocked=templateBlock?.key===scopeKey&&templateBlock.blocked;
+  const onTemplateBlock=useCallback((blocked:boolean)=>setTemplateBlock({key:scopeKey,blocked}),[scopeKey]);
+  const [metadataBlock,setMetadataBlock]=useState<{key:string;blocked:boolean}|null>(null);
+  const metadataBlocked=metadataBlock?.key===scopeKey&&metadataBlock.blocked;
+  const onMetadataBlock=useCallback((blocked:boolean)=>setMetadataBlock({key:scopeKey,blocked}),[scopeKey]);
   const scopeRef = useRef({ key: scopeKey });
   if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
+  const acquireWrite=useMemo(()=>{
+    const scope=scopeRef.current;
+    return createChipSetupWriteGate(value=>{if(scopeRef.current===scope)setBusy(value);});
+  },[setBusy]);
   const requestRef = useRef(0);
-  useEffect(() => () => { requestRef.current += 1; }, []);
+  const workspaceRead = useRef<AbortController | null>(null);
+  useEffect(() => () => { requestRef.current += 1; workspaceRead.current?.abort(); }, [scopeKey]);
 
   // load tournaments (RLS-scoped)
   useEffect(() => {
     let active = true;
     setToursSnapshot(null);
     if (!user?.id || authLoading || rolesLoading || authError || rolesError || !allowed) return;
-    sb.from("tournaments").select("id,name,club_id,start_time").is("deleted_at", null)
-      .order("start_time", { ascending: false }).limit(200)
+    const controller = new AbortController();
+    observeTrackerContextRead(sb.from("tournaments").select("id,name,club_id,start_time").is("deleted_at", null)
+      .order("start_time", { ascending: false }).limit(200).abortSignal(controller.signal))
       .then(({ data, error }: any) => {
         if (!active) return;
         if (error || !Array.isArray(data)) { setReadError({ scope: scopeRef.current, code: "READ_FAILED" }); return; }
         setToursSnapshot({ scope: authorityScope, rows: data.map((row: any) => ({ id: row.id, name: row.name, club_id: row.club_id })) });
-      }).catch(() => { if (active) setReadError({ scope: scopeRef.current, code: "READ_FAILED" }); });
-    return () => { active = false; };
+      }).catch(() => { if (active) setReadError({ scope: scopeRef.current, code: "READ_FAILED" }); })
+      .finally(() => controller.abort());
+    return () => { active = false; controller.abort(); };
   }, [user?.id, allowed, authLoading, rolesLoading, authError, rolesError, authorityScope]);
 
   const reload = useCallback(async (tid: string) => {
@@ -120,27 +129,34 @@ export function ChipOpsManager() {
     if (!user?.id || !allowed || authLoading || rolesLoading || authError || rolesError || !tour?.club_id || tour.id !== tid) return;
     const scope = scopeRef.current;
     const request = ++requestRef.current;
-    const isCurrent = () => scopeRef.current === scope && requestRef.current === request;
+    workspaceRead.current?.abort();
+    const controller = new AbortController();
+    workspaceRead.current = controller;
+    const isCurrent = () => scopeRef.current === scope && requestRef.current === request && !controller.signal.aborted;
     setLoading(true);
     setReadError(null);
     try {
+      const snapshot = await observeTrackerContextRead((async () => {
       const t = tours.find((x) => x.id === tid);
       const clubId = t?.club_id ?? null;
 
       // Independent, server-authorized reads share the same captured scope.
       // Publish only after every metadata and inventory read has been verified.
       const readInventory = async () => {
-        const current = await sb.rpc("get_current_chip_inventory", { p_tournament_id: tid });
-        return current.error?.code === "PGRST202"
-          ? sb.rpc("get_issued_chip_inventory", { p_tournament_id: tid })
-          : current;
+        const current = await sb.rpc("get_current_chip_inventory", { p_tournament_id: tid }).abortSignal(controller.signal);
+        if (!isCurrent()) throw new Error("chip_workspace_read_cancelled");
+        if (current.error?.code === "PGRST202") {
+          const issued = await sb.rpc("get_issued_chip_inventory", { p_tournament_id: tid }).abortSignal(controller.signal);
+          return { ...issued, legacyIssued: true };
+        }
+        return { ...current, legacyIssued: false };
       };
       const [binding, sets, templateRows, inventory, bank] = await Promise.all([
-        sb.from("tournament_chip_set").select("chip_set_id").eq("tournament_id", tid).maybeSingle(),
-        clubId ? sb.from("chip_set").select("id,name").eq("club_id", clubId).order("created_at", { ascending: true }) : Promise.resolve({ data: [] }),
-        sb.from("stack_template").select("id,name,stack_value").eq("tournament_id", tid).order("stack_value", { ascending: true }),
+        sb.from("tournament_chip_set").select("chip_set_id").eq("tournament_id", tid).abortSignal(controller.signal).maybeSingle(),
+        clubId ? sb.from("chip_set").select("id,name").eq("club_id", clubId).abortSignal(controller.signal).order("created_at", { ascending: true }) : Promise.resolve({ data: [] }),
+        sb.from("stack_template").select("id,name,stack_value").eq("tournament_id", tid).abortSignal(controller.signal).order("stack_value", { ascending: true }),
         readInventory(),
-        sb.rpc("get_chip_bank", { p_club_id: clubId }),
+        sb.rpc("get_chip_bank", { p_club_id: clubId }).abortSignal(controller.signal),
       ]);
       if (!isCurrent()) return;
       if (binding.error || sets.error || !Array.isArray(sets.data)) throw new Error("READ_FAILED");
@@ -149,12 +165,13 @@ export function ChipOpsManager() {
       const { data: tplRaw, error: templateError } = templateRows;
       if (templateError || !Array.isArray(tplRaw)) throw new Error("READ_FAILED");
       if (inventory.error || !inventory.data || inventory.data.error || !Array.isArray(inventory.data.denominations)) throw new Error(inventory.data?.error ?? "READ_FAILED");
+      if (!inventory.legacyIssued) assertCurrentChipDenominations(inventory.data.denominations);
       if (bank.error || !bank.data || bank.data.error || typeof bank.data.coupling_enabled !== "boolean") throw new Error(bank.data?.error ?? "READ_FAILED");
       const tplIds = (tplRaw ?? []).map((x: any) => x.id);
       const [denomRows, lineRows, issueRows] = await Promise.all([
-        csId ? sb.from("chip_set_denomination").select("id,value,color,label,display_order").eq("chip_set_id", csId).order("value", { ascending: true }) : Promise.resolve({ data: [], error: null }),
-        tplIds.length ? sb.from("stack_template_line").select("stack_template_id,denomination_id,count").in("stack_template_id", tplIds) : Promise.resolve({ data: [], error: null }),
-        tplIds.length ? sb.from("stack_template_issuance").select("stack_template_id,issued_count").in("stack_template_id", tplIds) : Promise.resolve({ data: [], error: null }),
+        csId ? sb.from("chip_set_denomination").select("id,value,color,label,display_order").eq("chip_set_id", csId).abortSignal(controller.signal).order("value", { ascending: true }) : Promise.resolve({ data: [], error: null }),
+        tplIds.length ? sb.from("stack_template_line").select("stack_template_id,denomination_id,count").in("stack_template_id", tplIds).abortSignal(controller.signal) : Promise.resolve({ data: [], error: null }),
+        tplIds.length ? sb.from("stack_template_issuance").select("stack_template_id,issued_count").in("stack_template_id", tplIds).abortSignal(controller.signal) : Promise.resolve({ data: [], error: null }),
       ]);
       if (!isCurrent()) return;
       if (denomRows.error || lineRows.error || issueRows.error || !Array.isArray(denomRows.data) || !Array.isArray(lineRows.data) || !Array.isArray(issueRows.data)) throw new Error("READ_FAILED");
@@ -166,17 +183,22 @@ export function ChipOpsManager() {
         issued_count: Number(issu.find((s) => s.stack_template_id === x.id)?.issued_count ?? 0),
       }));
 
-      setBoundChipSetId(csId);
-      setClubChipSets((setsRaw ?? []).map((s: any) => ({ id: s.id, name: s.name })));
-      setDenoms(nextDenoms);
-      setTemplates(nextTemplates);
-      setInv(inventory.data as Inventory);
-      setCoupling(bank.data.coupling_enabled);
+      return { csId, setsRaw, nextDenoms, nextTemplates, inventory: inventory.data as Inventory, coupling: bank.data.coupling_enabled };
+      })());
+      if (!snapshot || !isCurrent()) return;
+      setBoundChipSetId(snapshot.csId);
+      setClubChipSets((snapshot.setsRaw ?? []).map((s: any) => ({ id: s.id, name: s.name })));
+      setDenoms(snapshot.nextDenoms);
+      setTemplates(snapshot.nextTemplates);
+      setInv(snapshot.inventory);
+      setCoupling(snapshot.coupling);
       setLoadedScope(scope);
     } catch (error) {
       if (isCurrent()) setReadError({ scope, code: error instanceof Error ? error.message : "READ_FAILED" });
     } finally {
       if (isCurrent()) setLoading(false);
+      controller.abort();
+      if (workspaceRead.current === controller) workspaceRead.current = null;
     }
   }, [tours, user?.id, allowed, authLoading, rolesLoading, authError, rolesError, tour, scopeKey]);
 
@@ -246,29 +268,37 @@ export function ChipOpsManager() {
             {loading ? <LoadingCard /> : (
               <>
                 <ChipSetCard
+                  key={JSON.stringify([authorityScope,tournamentId])}
+                  actorId={user?.id??null} creationBusy={busy||!!templateBlocked||!!metadataBlocked} onCreationBlock={onCreationBlock} acquireWrite={acquireWrite}
+                  recoveryBusy={busy||!!creationBlocked||!!templateBlocked} onMetadataBlock={onMetadataBlock}
                   tour={tour}
                   boundChipSetId={boundChipSetId}
                   clubChipSets={clubChipSets}
                   denoms={denoms}
-                  busy={busy} setBusy={setBusy}
+                  busy={busy||!!creationBlocked||!!templateBlocked||!!metadataBlocked} setBusy={setBusy}
                   reload={() => reload(tournamentId)}
                 />
-                {boundChipSetId && denoms.length > 0 && (
+                {tour?.club_id && user?.id && (
                   <TemplatesCard
-                    tournamentId={tournamentId}
+                    key={JSON.stringify(['template',authorityScope,tournamentId])}
+                    scope={{actorId:user.id,clubId:tour.club_id,tournamentId}}
+                    chipSetId={boundChipSetId}
+                    onPendingChange={onTemplateBlock}
+                    acquireWrite={acquireWrite}
                     denoms={denoms}
                     templates={templates}
-                    busy={busy} setBusy={setBusy}
+                    busy={busy||!!creationBlocked||!!metadataBlocked}
                     reload={() => reload(tournamentId)}
                   />
                 )}
                 {templates.length > 0 && (
                   <IssuanceCard
+                    acquireWrite={acquireWrite}
                     actorId={user?.id ?? null} clubId={tour?.club_id ?? null} tournamentId={tournamentId}
                     templates={templates}
                     coupling={coupling}
                     opsStarted={!!(inv && (((inv as any).ledger_delta_value ?? 0) !== 0 || ((inv as any).rounding_total ?? 0) !== 0))}
-                    busy={busy} setBusy={setBusy}
+                    busy={busy||!!creationBlocked||!!templateBlocked||!!metadataBlocked} setBusy={setBusy}
                     reload={() => reload(tournamentId)}
                   />
                 )}
@@ -278,7 +308,7 @@ export function ChipOpsManager() {
           </TabsContent>
 
           <TabsContent value="colorup" className="mt-4">
-            <ColorUpTab tournamentId={tournamentId} clubId={tour?.club_id ?? null} onOpenSetup={() => setActiveTab("setup")} />
+            <ColorUpTab tournamentId={tournamentId} clubId={tour?.club_id ?? null} onOpenSetup={() => setActiveTab("setup")} onInventoryChanged={() => { void reload(tournamentId); }} />
           </TabsContent>
           <TabsContent value="bagtag" className="mt-4">
             <BagTagTab tournamentId={tournamentId} clubId={tour?.club_id ?? null} />
@@ -301,69 +331,78 @@ function LoadingCard() {
 }
 
 // ---------- Chip set + denominations ----------
-function ChipSetCard({ tour, boundChipSetId, clubChipSets, denoms, busy, setBusy, reload }: {
+function ChipSetCard({ tour, boundChipSetId, clubChipSets, denoms, busy, setBusy, reload,actorId,creationBusy,onCreationBlock,acquireWrite,recoveryBusy,onMetadataBlock }: {
   tour: TourRow | null; boundChipSetId: string | null; clubChipSets: { id: string; name: string }[];
   denoms: Denom[]; busy: boolean; setBusy: (b: boolean) => void; reload: () => void;
+  actorId:string|null;creationBusy:boolean;onCreationBlock:(v:boolean)=>void;
+  acquireWrite:AcquireChipSetupWrite;
+  recoveryBusy:boolean;onMetadataBlock:(pending:boolean)=>void;
 }) {
-  const [newSetName, setNewSetName] = useState("");
   const [pickSetId, setPickSetId] = useState("");
   const [dValue, setDValue] = useState("");
   const [dColor, setDColor] = useState("#1e88e5");
 
   const boundName = clubChipSets.find((s) => s.id === boundChipSetId)?.name;
+  const metadata=useChipSetupMetadata({scope:actorId&&tour?.club_id?{actorId,clubId:tour.club_id,tournamentId:tour.id}:null,
+    busy:recoveryBusy,acquireWrite,onPendingChange:onMetadataBlock,onResolved:receipt=>{
+      if(receipt.outcome==='applied'){
+        toast.success(receipt.payload.operation==='bind'?'Đã gán bộ chip.':receipt.payload.operation==='add'?'Đã thêm mệnh giá.':'Đã xoá mệnh giá.');
+        if(receipt.payload.operation==='add')setDValue('');reload();
+      }else if(receipt.outcome==='cancelled')toast.success('Đã hủy yêu cầu bộ chip chưa thực hiện.');
+      else{toast.error(ERR[receipt.error]??('Yêu cầu bị từ chối: '+receipt.error));reload();}
+    }});
+  const locked=busy||metadata.blocked;
+  const pendingPayload=metadata.pending?.payload;
+  let pendingLabel='';
+  if(pendingPayload?.operation==='bind')pendingLabel='Gán bộ chip';
+  else if(pendingPayload?.operation==='add')pendingLabel='Thêm mệnh giá '+fmt(pendingPayload.value);
+  else if(pendingPayload?.operation==='delete'){
+    const value=denoms.find(d=>d.id===pendingPayload.denomination_id)?.value;
+    pendingLabel='Xoá mệnh giá '+(value===undefined?pendingPayload.denomination_id:fmt(value));
+  }
 
-  const createSet = async () => {
-    if (!tour?.club_id || !newSetName.trim()) return;
-    setBusy(true);
-    const r = await callRpc("chip_ops_create_chip_set", { p_club_id: tour.club_id, p_name: newSetName.trim() });
-    if (r?.chip_set_id) {
-      const b = await callRpc("chip_ops_bind_tournament_chip_set", { p_tournament_id: tour.id, p_chip_set_id: r.chip_set_id });
-      if (b) { toast.success("Đã tạo & gán bộ chip."); setNewSetName(""); reload(); }
-    }
-    setBusy(false);
+  const bindExisting = () => {
+    if (!tour || !pickSetId || locked) return;
+    metadata.submit({operation:'bind',chip_set_id:pickSetId,expected_chip_set_id:boundChipSetId});
   };
-  const bindExisting = async () => {
-    if (!tour || !pickSetId) return;
-    setBusy(true);
-    const b = await callRpc("chip_ops_bind_tournament_chip_set", { p_tournament_id: tour.id, p_chip_set_id: pickSetId });
-    if (b) { toast.success("Đã gán bộ chip."); reload(); }
-    setBusy(false);
-  };
-  const addDenom = async () => {
+  const addDenom = () => {
+    if(locked)return;
     const v = Number(dValue);
-    if (!boundChipSetId || !Number.isFinite(v) || v <= 0) { toast.error("Nhập mệnh giá > 0."); return; }
-    setBusy(true);
-    const r = await callRpc("chip_ops_add_denomination", { p_chip_set_id: boundChipSetId, p_value: v, p_color: dColor, p_label: null, p_display_order: denoms.length });
-    if (r) { toast.success("Đã thêm mệnh giá."); setDValue(""); reload(); }
-    setBusy(false);
+    if (!boundChipSetId || !Number.isSafeInteger(v) || v <= 0) { toast.error("Nhập mệnh giá nguyên > 0."); return; }
+    metadata.submit({operation:'add',chip_set_id:boundChipSetId,value:v,color:dColor,label:null,display_order:denoms.length});
   };
-  const delDenom = async (id: string) => {
-    setBusy(true);
-    const r = await callRpc("chip_ops_delete_denomination", { p_denomination_id: id });
-    if (r) { toast.success("Đã xoá mệnh giá."); reload(); }
-    setBusy(false);
+  const delDenom = (id: string) => {
+    if(locked||!boundChipSetId)return;
+    metadata.submit({operation:'delete',chip_set_id:boundChipSetId,denomination_id:id});
   };
 
   return (
     <Card className="border-border">
       <CardHeader className="pb-3"><CardTitle className="text-base text-foreground">1. Bộ chip</CardTitle></CardHeader>
       <CardContent className="space-y-4">
+        <CreateChipSetControl scope={actorId&&tour?.club_id?{actorId,clubId:tour.club_id,tournamentId:tour.id}:null}
+          bound={!!boundChipSetId} busy={creationBusy} setBusy={setBusy} acquireWrite={acquireWrite} onPendingChange={onCreationBlock} onCommitted={reload}/>
+        {metadata.error&&<p role="alert" className="text-sm text-warning">{metadata.error}</p>}
+        {metadata.pending&&<div className="space-y-2 rounded-lg border border-warning/30 p-3">
+          <p className="break-words text-sm">Yêu cầu đang chờ: {pendingLabel}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={recoveryBusy||metadata.working} onClick={metadata.lookup}>Đối chiếu bộ chip</Button>
+            <Button variant="outline" disabled={recoveryBusy||metadata.working} onClick={metadata.retry}>Gửi lại nguyên thay đổi</Button>
+            <Button variant="outline" disabled={recoveryBusy||metadata.working} onClick={metadata.cancel}>Hủy yêu cầu bộ chip</Button>
+          </div>
+        </div>}
+        {!metadata.pending&&metadata.error&&<Button variant="outline" disabled={recoveryBusy||metadata.working} onClick={metadata.readAgain}>Đọc lại yêu cầu bộ chip</Button>}
         {!boundChipSetId ? (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Giải này chưa có bộ chip. Tạo bộ mới hoặc gán bộ có sẵn của CLB.</p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="flex-1"><Label className="text-xs">Tạo bộ chip mới</Label>
-                <Input value={newSetName} onChange={(e) => setNewSetName(e.target.value)} placeholder="VD: Bộ chip giải A" /></div>
-              <Button onClick={createSet} disabled={busy || !newSetName.trim()}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Tạo & gán</Button>
-            </div>
             {clubChipSets.length > 0 && (
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="flex-1"><Label className="text-xs">Hoặc gán bộ có sẵn</Label>
-                  <Select value={pickSetId} onValueChange={setPickSetId}>
+                  <Select value={pickSetId} onValueChange={setPickSetId} disabled={locked}>
                     <SelectTrigger><SelectValue placeholder="Chọn bộ chip" /></SelectTrigger>
                     <SelectContent>{clubChipSets.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                   </Select></div>
-                <Button variant="secondary" onClick={bindExisting} disabled={busy || !pickSetId}><Link2 className="w-4 h-4" /> Gán</Button>
+                <Button variant="secondary" onClick={bindExisting} disabled={locked || !pickSetId}><Link2 className="w-4 h-4" /> Gán</Button>
               </div>
             )}
           </div>
@@ -378,16 +417,16 @@ function ChipSetCard({ tour, boundChipSetId, clubChipSets, denoms, busy, setBusy
                     <TableRow key={d.id}>
                       <TableCell><span className="inline-block h-4 w-4 rounded-full border border-border" style={{ backgroundColor: d.color ?? "transparent" }} aria-hidden /></TableCell>
                       <TableCell className="tabular-nums">{fmt(d.value)}</TableCell>
-                      <TableCell className="text-right"><Button size="icon" variant="ghost" disabled={busy} onClick={() => delDenom(d.id)} aria-label="Xoá"><Trash2 className="w-4 h-4 text-destructive" /></Button></TableCell>
+                      <TableCell className="text-right"><Button size="icon" variant="ghost" disabled={locked} onClick={() => delDenom(d.id)} aria-label="Xoá"><Trash2 className="w-4 h-4 text-destructive" /></Button></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             ) : <p className="text-sm text-muted-foreground">Chưa có mệnh giá. Thêm các mệnh giá (VD 100, 500, 1000, 5000).</p>}
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end border-t border-border pt-3">
-              <div><Label className="text-xs">Màu</Label><input type="color" value={dColor} onChange={(e) => setDColor(e.target.value)} className="h-10 w-12 rounded border border-border bg-transparent p-1" /></div>
-              <div className="flex-1"><Label className="text-xs">Mệnh giá</Label><Input type="number" inputMode="numeric" value={dValue} onChange={(e) => setDValue(e.target.value)} placeholder="VD: 5000" /></div>
-              <Button onClick={addDenom} disabled={busy || !dValue}><Plus className="w-4 h-4" /> Thêm mệnh giá</Button>
+              <div><Label className="text-xs">Màu</Label><input type="color" disabled={locked} value={dColor} onChange={(e) => setDColor(e.target.value)} className="h-10 w-12 rounded border border-border bg-transparent p-1" /></div>
+              <div className="flex-1"><Label className="text-xs">Mệnh giá</Label><Input type="number" inputMode="numeric" disabled={locked} value={dValue} onChange={(e) => setDValue(e.target.value)} placeholder="VD: 5000" /></div>
+              <Button onClick={addDenom} disabled={locked || !dValue}><Plus className="w-4 h-4" /> Thêm mệnh giá</Button>
             </div>
           </div>
         )}
@@ -397,29 +436,11 @@ function ChipSetCard({ tour, boundChipSetId, clubChipSets, denoms, busy, setBusy
 }
 
 // ---------- Stack templates ----------
-function TemplatesCard({ tournamentId, denoms, templates, busy, setBusy, reload }: {
-  tournamentId: string; denoms: Denom[]; templates: TemplateRow[]; busy: boolean; setBusy: (b: boolean) => void; reload: () => void;
+function TemplatesCard({ scope,chipSetId,onPendingChange,denoms, templates, busy, reload,acquireWrite }: {
+  scope:ChipTemplateSaveScope;chipSetId:string|null;onPendingChange:(pending:boolean)=>void;
+  denoms: Denom[]; templates: TemplateRow[]; busy: boolean; reload: () => void;
+  acquireWrite:AcquireChipSetupWrite;
 }) {
-  const [name, setName] = useState("");
-  const [stackValue, setStackValue] = useState("");
-  const [counts, setCounts] = useState<Record<string, string>>({});
-
-  const liveSum = useMemo(
-    () => denoms.reduce((acc, d) => acc + (Number(counts[d.id]) || 0) * d.value, 0),
-    [counts, denoms],
-  );
-  const target = Number(stackValue) || 0;
-  const hasLines = denoms.some((d) => (Number(counts[d.id]) || 0) > 0);
-  const canSave = !!name.trim() && target > 0 && hasLines && liveSum === target;
-
-  const save = async () => {
-    const lines = denoms.filter((d) => (Number(counts[d.id]) || 0) > 0).map((d) => ({ denomination_id: d.id, count: Number(counts[d.id]) }));
-    setBusy(true);
-    const r = await callRpc("chip_ops_save_stack_template", { p_tournament_id: tournamentId, p_name: name.trim(), p_stack_value: target, p_lines: lines });
-    if (r?.status === "ok") { toast.success("Đã lưu mẫu stack."); setName(""); setStackValue(""); setCounts({}); reload(); }
-    setBusy(false);
-  };
-
   const denomName = (id: string) => { const d = denoms.find((x) => x.id === id); return d ? fmt(d.value) : id; };
 
   return (
@@ -441,31 +462,7 @@ function TemplatesCard({ tournamentId, denoms, templates, busy, setBusy, reload 
           </Table>
         )}
 
-        <div className="space-y-3 border-t border-border pt-3">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex-1"><Label className="text-xs">Tên mẫu</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: 30K mix" /></div>
-            <div className="flex-1"><Label className="text-xs">Giá trị stack</Label><Input type="number" inputMode="numeric" value={stackValue} onChange={(e) => setStackValue(e.target.value)} placeholder="VD: 30000" /></div>
-          </div>
-          <div>
-            <Label className="text-xs">Số chip mỗi mệnh giá</Label>
-            <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {denoms.map((d) => (
-                <div key={d.id} className="flex items-center gap-2">
-                  <span className="inline-block h-3.5 w-3.5 rounded-full border border-border" style={{ backgroundColor: d.color ?? "transparent" }} aria-hidden />
-                  <span className="w-14 shrink-0 text-xs tabular-nums text-muted-foreground">{fmt(d.value)}</span>
-                  <Input type="number" inputMode="numeric" min={0} value={counts[d.id] ?? ""} onChange={(e) => setCounts((c) => ({ ...c, [d.id]: e.target.value }))} placeholder="0" className="h-9" />
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Tổng đang nhập: <span className={`font-semibold tabular-nums ${target > 0 && liveSum === target ? "text-primary" : liveSum > 0 ? "text-warning" : "text-muted-foreground"}`}>{fmt(liveSum)}</span>{target > 0 && <span className="text-muted-foreground"> / {fmt(target)}</span>}</span>
-            <Button onClick={save} disabled={busy || !canSave}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Lưu mẫu</Button>
-          </div>
-          {target > 0 && hasLines && liveSum !== target && (
-            <p className="text-xs text-warning">Tổng chip ({fmt(liveSum)}) phải bằng đúng giá trị stack ({fmt(target)}) mới lưu được.</p>
-          )}
-        </div>
+        <TemplateSaveControl scope={scope} chipSetId={chipSetId} denoms={denoms} busy={busy} acquireWrite={acquireWrite} onPendingChange={onPendingChange} onCommitted={reload}/>
       </CardContent>
     </Card>
   );

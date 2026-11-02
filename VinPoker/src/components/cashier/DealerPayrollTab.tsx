@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react";
+import { startLiveReportRefresh } from '@/lib/liveReportRefresh';
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { useOperatorClubs } from "@/hooks/useOperatorClubs";
 import { useFtPayrollStatements } from "@/hooks/useFtPayrollStatements";
 import { usePayrollStatementTelegramDelivery } from "@/hooks/usePayrollStatementTelegramDelivery";
@@ -24,12 +26,14 @@ import { formatVND } from "@/lib/format";
 import { exportToExcel, type ExcelColumn } from "@/lib/exportExcel";
 import {
   useDealerPayroll, type DealerPayrollRow,
-  savePayroll, addPayrollAdjustment, loadPayrollAdjustments, getSavedPayroll, deletePayrollAdjustment,
+  savePayrollWithIntent, getPayrollSaveReceipt, cancelUnresolvedPayrollSave,
+  addPayrollAdjustment, loadPayrollAdjustments, getSavedPayroll, deletePayrollAdjustment,
   submitPayroll, approvePayroll, lockPayroll, rejectPayroll, resubmitPayroll,
   preparePayment, markPaid, reconcilePayment, getPaymentRecord,
-  getPayrollAuditLog,
+  getPayrollAuditLog, SAVED_PAYROLL_FIELDS,
   type PayrollAdjustmentRow, type SavedPayrollRecord, type PaymentRecord,
 } from "@/hooks/useDealerPayroll";
+import {readPayrollSaveIntent,persistPayrollSaveIntent,clearPayrollSaveIntent,type PayrollSaveIntent} from '@/lib/payrollSaveIntent';
 import {
   Users, RefreshCw, Download, Calculator, Save, Plus, Trash2, Loader2, Moon, Eye,
   AlertTriangle, CheckCircle2, TrendingUp, ChevronDown, ChevronUp, ShieldAlert,
@@ -67,15 +71,6 @@ const ADJ_TYPE_COLORS: Record<AdjType, string> = {
   OTHER: "border-border text-muted-foreground",
   TIPS: "border-warning text-warning",
 };
-
-const SAVED_PAYROLL_FIELDS = [
-  "monthly_salary_vnd", "hourly_rate_vnd", "ot_multiplier", "total_shifts",
-  "total_hours", "regular_hours", "ot_hours", "base_salary_vnd",
-  "regular_pay_vnd", "ot_pay_vnd", "gross_pay_vnd", "total_adjustments_vnd",
-  "tips_amount_vnd", "bhxh_deduction_vnd", "bhyt_deduction_vnd",
-  "bhtn_deduction_vnd", "pit_deduction_vnd", "net_pay_vnd",
-  "net_pay_after_tax_vnd",
-] as const;
 
 function mergeSavedPayrollRows(
   liveRows: DealerPayrollRow[],
@@ -116,7 +111,7 @@ function mergeSavedPayrollRows(
 
       row.employment_type = saved.employment_type === "full_time" ? "full_time" : "part_time";
       for (const field of SAVED_PAYROLL_FIELDS) {
-        row[field] = Number(saved[field] ?? 0);
+        row[field] = saved[field] as number;
       }
       return row;
     })
@@ -291,9 +286,9 @@ function MetricCard({ label, value, sub, variant = "default" }: {
   };
   return (
     <div className="bg-card border border-border rounded-lg p-2.5 flex flex-col gap-1 min-w-0">
-      <span className="text-[11px] text-muted-foreground uppercase tracking-wider truncate">{label}</span>
-      <span className={`text-base font-semibold ${variantStyles[variant]} truncate`}>{value}</span>
-      {sub && <span className="text-[10px] text-muted-foreground truncate">{sub}</span>}
+      <span className="text-[11px] text-muted-foreground uppercase tracking-wider break-words">{label}</span>
+      <span className={`text-base font-semibold ${variantStyles[variant]} break-words`}>{value}</span>
+      {sub && <span className="text-[10px] text-muted-foreground break-words">{sub}</span>}
     </div>
   );
 }
@@ -330,7 +325,15 @@ interface DealerPayrollTabProps {
   hideApprovalActions?: boolean;
 }
 
-export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }: DealerPayrollTabProps) {
+export default function DealerPayrollTab(props: DealerPayrollTabProps) {
+  const { user, loading, session } = useAuth();
+  if (loading) return <p role="status">Đang xác minh phiên đăng nhập…</p>;
+  if (!user) return <p role="alert">Đăng nhập để xem bảng lương.</p>;
+  if (props.clubIds.length === 0) return <p role="status">Chưa có phạm vi CLB để tải bảng lương.</p>;
+  return <DealerPayrollScope key={`${user.id}:${sessionReadEpoch(session)}:${[...props.clubIds].sort().join(':')}`} {...props}/>;
+}
+
+function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayrollTabProps) {
   const { user, isAdmin } = useAuth();
   const { scope: operatorScope } = useOperatorClubs();
   const monthOptions = useMemo(() => getMonthYearOptions(), []);
@@ -340,6 +343,19 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
 
   const { data: payrollRows, period, loading, error, fetchPayroll } = useDealerPayroll(clubIds);
   const activeClubId = clubFilter || clubIds[0] || "";
+  const savedReadScope = `${user?.id ?? ''}:${activeClubId}:${currentRange?.start ?? ''}:${currentRange?.end ?? ''}`;
+  const savedReadScopeRef = useRef(savedReadScope);
+  savedReadScopeRef.current = savedReadScope;
+  const savedReadGeneration = useRef(0);
+  const activeRef = useRef(true);
+  useEffect(() => { activeRef.current=true;return () => { activeRef.current=false; }; },[]);
+  const [verifiedSavedScope, setVerifiedSavedScope] = useState<string | null>(null);
+  const [savedReadError, setSavedReadError] = useState<string | null>(null);
+  const [pendingSaveIntent,setPendingSaveIntent]=useState<PayrollSaveIntent|null>(null);
+  const [recoveryBusy,setRecoveryBusy]=useState(false);
+  const recoveryLockRef=useRef(false);
+  const backgroundReadPaused = useRef(false);
+  const actorId=user?.id;
 
   // ── Saved payroll state ──────────────────────────────────────────────────
   const [savedPeriodId, setSavedPeriodId] = useState<string | null>(null);
@@ -402,6 +418,18 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
   const [adjAmount, setAdjAmount] = useState("");
   const [adjReason, setAdjReason] = useState("");
   const [adjSaving, setAdjSaving] = useState(false);
+  const adjustmentScopeGeneration = useRef(0);
+  useEffect(() => {
+    adjustmentScopeGeneration.current += 1;
+    setPaymentBusy(false);
+    setPaymentRef("");
+    setReconRef("");
+    setAdjDialogOpen(false);
+    setAdjustingDealerId(null);
+    setAdjAmount("");
+    setAdjReason("");
+    setAdjSaving(false);
+  }, [savedReadScope]);
 
   // Filter + search state
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
@@ -410,8 +438,25 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
   // ── Fetch payroll & check saved ──────────────────────────────────────────
 
   const refreshAll = useCallback(async () => {
-    if (!activeClubId || !currentRange) return;
+    if (!actorId || !activeClubId || !currentRange) return;
+    const generation = ++savedReadGeneration.current;
+    const scope = savedReadScope;
+    const current = () => generation === savedReadGeneration.current && scope === savedReadScopeRef.current;
+    setVerifiedSavedScope(null);
+    setSavedReadError(null);
+    setRecoveryBusy(true);
+    try {
+    const pending=readPayrollSaveIntent(sessionStorage,{actorId,clubId:activeClubId,year:currentRange.year,month:currentRange.month});
+    setPendingSaveIntent(pending);
+    if(pending){
+      const receipt=await getPayrollSaveReceipt(pending);
+      if(!current())return;
+      if(!receipt)return; // Absence is unresolved, never permission to resubmit.
+      clearPayrollSaveIntent(sessionStorage,pending,receipt);
+      setPendingSaveIntent(null);
+    }
     await fetchPayroll(activeClubId, currentRange.start, currentRange.end);
+    if (!current()) return;
     const {
       periodId, status, records,
       submittedBy: sBy, submittedAt: sAt,
@@ -422,6 +467,7 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
       paidBy: pdBy, paidAt: pdAt,
       reconciledBy: rcBy, reconciledAt: rcAt,
     } = await getSavedPayroll(activeClubId, currentRange.year, currentRange.month);
+    if (!current()) return;
     setSavedPeriodId(periodId);
     setPayrollStatus(status);
     setSubmittedByMeta(sBy);
@@ -444,33 +490,40 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
     for (const r of records) { recordMap[r.dealer_id] = r; }
     setSavedRecords(recordMap);
     if (periodId) {
-      // Adjustments load is isolated: the known ambiguous-embed error must not
-      // block payment-record loading below.
-      try {
-        setAdjustments(await loadPayrollAdjustments(periodId));
-      } catch {
-        setAdjustments({});
-      }
-      try {
-        setPaymentRecord(await getPaymentRecord(periodId));
-      } catch {
-        setPaymentRecord(null);
-      }
+      // Unknown adjustments/payment state is not an empty ledger. Keep the
+      // operational screen blocked until all financial reads are verified.
+      const nextAdjustments = await loadPayrollAdjustments(periodId);
+      if (!current()) return;
+      const nextPayment = await getPaymentRecord(periodId);
+      if (!current()) return;
+      setAdjustments(nextAdjustments);
+      setPaymentRecord(nextPayment);
     } else {
       setAdjustments({});
       setPaymentRecord(null);
     }
-  }, [activeClubId, currentRange, fetchPayroll]);
+    if (current()) setVerifiedSavedScope(scope);
+    } catch {
+      if (current()) setSavedReadError('Không xác minh được trạng thái kỳ lương. Chưa thể chỉnh sửa hoặc chốt lương; hãy tải lại.');
+    } finally {if(current())setRecoveryBusy(false);}
+  }, [actorId,activeClubId, currentRange, fetchPayroll, savedReadScope]);
 
   useEffect(() => {
     if (!activeClubId || !currentRange) return;
-    refreshAll();
+    let initial = true;
+    const stop = startLiveReportRefresh(async () => {
+      if (initial || (!backgroundReadPaused.current && !transitionLockRef.current && !recoveryLockRef.current)) {
+        initial = false;
+        await refreshAll();
+      }
+    });
+    return () => { savedReadGeneration.current += 1; stop(); };
   }, [activeClubId, currentRange, refreshAll]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
   const displayRows = useMemo(
-    () => savedPeriodId && Object.keys(savedRecords).length > 0
+    () => savedPeriodId
       ? mergeSavedPayrollRows(payrollRows, savedRecords)
       : payrollRows,
     [payrollRows, savedPeriodId, savedRecords],
@@ -530,7 +583,7 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
   }), [displayRows, adjustments]);
 
   const anomalyGroups = useMemo(() => ([
-    { label: "Ca chưa checkout — chi phí có thể đang tăng sai", items: anomalies.open, level: "danger" as const },
+    { label: "Ca chưa checkout — giờ tạm tính theo ca chuẩn", items: anomalies.open, level: "danger" as const },
     { label: "Ca chạm trần 24h — có thể quên checkout", items: anomalies.capped, level: "danger" as const },
     { label: "Chênh lệch điều chỉnh — thực lãnh có thể không đáng tin", items: anomalies.mismatches, level: "danger" as const },
     { label: "FT 0 giờ vẫn có lương — xác nhận chính sách lương tháng", items: anomalies.zeroHours, level: "warning" as const },
@@ -547,21 +600,51 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
 
   // ── Save payroll ──────────────────────────────────────────────────────────
 
+  const saveLockRef = useRef(false);
   const handleSave = useCallback(async () => {
-    if (!user || !activeClubId || !currentRange || !payrollRows.length) return;
+    if (!user || !activeClubId || !currentRange || !payrollRows.length || saveLockRef.current
+      || verifiedSavedScope !== savedReadScope || error || savedReadError) return;
+    const scope = savedReadScope;
+    saveLockRef.current = true;
     setSaving(true);
     try {
-      const result = await savePayroll(activeClubId, currentRange.year, currentRange.month, payrollRows);
+      const intentScope={actorId:user.id,clubId:activeClubId,year:currentRange.year,month:currentRange.month};
+      const existing=readPayrollSaveIntent(sessionStorage,intentScope);
+      if(existing){setPendingSaveIntent(existing);setVerifiedSavedScope(null);return;}
+      const intent=persistPayrollSaveIntent(sessionStorage,intentScope);
+      setPendingSaveIntent(intent);
+      const result = await savePayrollWithIntent(intent,payrollRows);
+      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
+      clearPayrollSaveIntent(sessionStorage,intent,result);
+      setPendingSaveIntent(null);
       setSavedPeriodId(result.periodId);
       setPayrollStatus("draft");
       toast.success(`Đã lưu bảng lương — ${result.savedCount} dealer`);
       await refreshAll();
     } catch (e: any) {
+      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
+      setVerifiedSavedScope(null);
+      setSavedReadError('Chưa xác minh được kết quả lưu bảng lương. Hãy tải lại kỳ lương để đọc trạng thái từ server; không gửi lại thao tác khi chưa kiểm tra.');
       toast.error(e?.message ?? "Lỗi lưu bảng lương");
     } finally {
-      setSaving(false);
+      saveLockRef.current = false;
+      if (activeRef.current && scope === savedReadScopeRef.current) setSaving(false);
     }
-  }, [user, activeClubId, currentRange, payrollRows, refreshAll]);
+  }, [user, activeClubId, currentRange, payrollRows, refreshAll,verifiedSavedScope,savedReadScope,error,savedReadError]);
+
+  const cancelPendingSave=useCallback(async()=>{
+    if(!pendingSaveIntent||recoveryLockRef.current||saving)return;
+    const scope=savedReadScope;recoveryLockRef.current=true;setRecoveryBusy(true);
+    try {
+      const receipt=await cancelUnresolvedPayrollSave(pendingSaveIntent);
+      if(!activeRef.current||scope!==savedReadScopeRef.current)return;
+      clearPayrollSaveIntent(sessionStorage,pendingSaveIntent,receipt);setPendingSaveIntent(null);
+      toast.success(receipt.outcome==='saved'?'Đã xác minh bảng lương đã lưu; không hoàn tác.':'Đã hủy request chưa commit. Không hoàn tác bảng lương.');
+      await refreshAll();
+    } catch {
+      if(activeRef.current&&scope===savedReadScopeRef.current)setSavedReadError('Chưa xác minh được kết quả yêu cầu. Giữ nguyên request và kiểm tra lại.');
+    } finally {recoveryLockRef.current=false;if(activeRef.current&&scope===savedReadScopeRef.current)setRecoveryBusy(false);}
+  },[pendingSaveIntent,saving,savedReadScope,refreshAll]);
 
   // ── Status helpers ──────────────────────────────────────────────────────────
 
@@ -585,44 +668,58 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
 
   // ── Submit / Approve / Lock ─────────────────────────────────────────────
 
+  const transitionLockRef = useRef(false);
+  backgroundReadPaused.current = saving || recoveryBusy || paymentBusy || adjSaving
+    || adjDialogOpen || auditLogOpen || !!legacyPreview || !!exporting || !!pendingSaveIntent;
+  const runStatusTransition = useCallback(async (
+    mutate: () => Promise<unknown>,
+    confirmed: () => void,
+    failureMessage: string,
+  ) => {
+    if (transitionLockRef.current || verifiedSavedScope !== savedReadScope || error || savedReadError) return;
+    const scope = savedReadScope;
+    transitionLockRef.current = true;
+    try {
+      await mutate();
+      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
+      confirmed();
+    } catch (failure: unknown) {
+      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
+      toast.error(failure instanceof Error ? failure.message : failureMessage);
+    } finally {
+      transitionLockRef.current = false;
+    }
+  }, [verifiedSavedScope, savedReadScope, error, savedReadError]);
+
   const handleSubmit = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    try {
-      await submitPayroll(savedPeriodId);
+    await runStatusTransition(() => submitPayroll(savedPeriodId), () => {
       setPayrollStatus("submitted");
       setSubmittedByMeta(user.id);
       setSubmittedAtMeta(new Date().toISOString());
       toast.success("Đã gửi duyệt");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi gửi duyệt");
-    }
-  }, [user, savedPeriodId]);
+    }, "Lỗi gửi duyệt");
+  }, [user, savedPeriodId, runStatusTransition]);
 
   const handleApprove = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    try {
-      await approvePayroll(savedPeriodId);
+    await runStatusTransition(() => approvePayroll(savedPeriodId), () => {
       setPayrollStatus("approved");
       setApprovedByMeta(user.id);
       setApprovedAtMeta(new Date().toISOString());
       toast.success("Đã phê duyệt");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi phê duyệt");
-    }
-  }, [user, savedPeriodId]);
+    }, "Lỗi phê duyệt");
+  }, [user, savedPeriodId, runStatusTransition]);
 
   const handleLock = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    try {
-      await lockPayroll(savedPeriodId);
+    await runStatusTransition(() => lockPayroll(savedPeriodId), () => {
       setPayrollStatus("locked");
       setLockedByMeta(user.id);
       setLockedAtMeta(new Date().toISOString());
       toast.success("Đã khoá sổ");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi khoá sổ");
-    }
-  }, [user, savedPeriodId]);
+    }, "Lỗi khoá sổ");
+  }, [user, savedPeriodId, runStatusTransition]);
 
   const handleReject = useCallback(async (reason: string) => {
     if (!user || !savedPeriodId) return;
@@ -630,46 +727,43 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
       toast.error("Vui lòng nhập lý do từ chối");
       return;
     }
-    try {
-      await rejectPayroll(savedPeriodId, reason);
+    await runStatusTransition(() => rejectPayroll(savedPeriodId, reason), () => {
       setPayrollStatus("rejected");
       setRejectedBy(user.id);
       setRejectedAt(new Date().toISOString());
       setStoredRejectionReason(reason);
       setRejectionReason("");
       toast.success("Đã từ chối bảng lương");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi từ chối");
-    }
-  }, [user, savedPeriodId]);
+    }, "Lỗi từ chối");
+  }, [user, savedPeriodId, runStatusTransition]);
 
   const handleResubmit = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    try {
-      await resubmitPayroll(savedPeriodId);
+    await runStatusTransition(() => resubmitPayroll(savedPeriodId), () => {
       setPayrollStatus("draft");
       setRejectedBy(null);
       setRejectedAt(null);
       setStoredRejectionReason(null);
       toast.success("Đã chuyển về nháp");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi chuyển về nháp");
-    }
-  }, [user, savedPeriodId]);
+    }, "Lỗi chuyển về nháp");
+  }, [user, savedPeriodId, runStatusTransition]);
 
   const handlePreparePayment = useCallback(async () => {
     if (!user || !savedPeriodId || paymentBusy) return;
+    const scope = savedReadScope;
+    const current = () => activeRef.current && scope === savedReadScopeRef.current;
     setPaymentBusy(true);
     try {
       await preparePayment(savedPeriodId, paymentMethod);
+      if (!current()) return;
       toast.success("Đã chuẩn bị chi trả");
       await refreshAll();
     } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi chuẩn bị chi trả");
+      if (current()) toast.error(e?.message ?? "Lỗi chuẩn bị chi trả");
     } finally {
-      setPaymentBusy(false);
+      if (current()) setPaymentBusy(false);
     }
-  }, [user, savedPeriodId, paymentMethod, paymentBusy, refreshAll]);
+  }, [user, savedPeriodId, paymentMethod, paymentBusy, refreshAll, savedReadScope]);
 
   const handleMarkPaid = useCallback(async () => {
     if (!user || !savedPeriodId || paymentBusy) return;
@@ -677,33 +771,39 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
       toast.error("Vui lòng nhập mã/tham chiếu thanh toán");
       return;
     }
+    const scope = savedReadScope;
+    const current = () => activeRef.current && scope === savedReadScopeRef.current;
     setPaymentBusy(true);
     try {
       await markPaid(savedPeriodId, paymentRef.trim());
+      if (!current()) return;
       toast.success("Đã ghi nhận chi trả");
       setPaymentRef("");
       await refreshAll();
     } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi ghi nhận chi trả");
+      if (current()) toast.error(e?.message ?? "Lỗi ghi nhận chi trả");
     } finally {
-      setPaymentBusy(false);
+      if (current()) setPaymentBusy(false);
     }
-  }, [user, savedPeriodId, paymentRef, paymentBusy, refreshAll]);
+  }, [user, savedPeriodId, paymentRef, paymentBusy, refreshAll, savedReadScope]);
 
   const handleReconcile = useCallback(async () => {
     if (!user || !savedPeriodId || paymentBusy) return;
+    const scope = savedReadScope;
+    const current = () => activeRef.current && scope === savedReadScopeRef.current;
     setPaymentBusy(true);
     try {
       await reconcilePayment(savedPeriodId, reconRef.trim() || undefined);
+      if (!current()) return;
       toast.success("Đã đối soát");
       setReconRef("");
       await refreshAll();
     } catch (e: any) {
-      toast.error(e?.message ?? "Lỗi đối soát");
+      if (current()) toast.error(e?.message ?? "Lỗi đối soát");
     } finally {
-      setPaymentBusy(false);
+      if (current()) setPaymentBusy(false);
     }
-  }, [user, savedPeriodId, reconRef, paymentBusy, refreshAll]);
+  }, [user, savedPeriodId, reconRef, paymentBusy, refreshAll, savedReadScope]);
 
   const openAuditLog = useCallback(async () => {
     if (!savedPeriodId) return;
@@ -760,6 +860,10 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
 
   const handleAddAdjustment = useCallback(async () => {
     if (!adjustingDealerId || !user || !savedPeriodId) return;
+    const scope = savedReadScope;
+    const generation = adjustmentScopeGeneration.current;
+    const current = () => activeRef.current && scope === savedReadScopeRef.current
+      && generation === adjustmentScopeGeneration.current;
     const record = savedRecords[adjustingDealerId];
     if (!record) {
       toast.error("Vui lòng lưu bảng lương trước khi thêm điều chỉnh");
@@ -773,27 +877,35 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
     setAdjSaving(true);
     try {
       await addPayrollAdjustment(record.id, adjType, amount, adjReason || adjType, user.id);
+      if (!current()) return;
       toast.success("Đã thêm điều chỉnh");
       setAdjDialogOpen(false);
       await refreshAll();
     } catch (e: any) {
+      if (!current()) return;
       toast.error(e?.message ?? "Lỗi thêm điều chỉnh");
     } finally {
-      setAdjSaving(false);
+      if (current()) setAdjSaving(false);
     }
-  }, [adjustingDealerId, user, savedPeriodId, savedRecords, adjType, adjAmount, adjReason, refreshAll]);
+  }, [adjustingDealerId, user, savedPeriodId, savedRecords, adjType, adjAmount, adjReason, refreshAll, savedReadScope]);
 
   // ── Delete adjustment ─────────────────────────────────────────────────────
 
   const handleDeleteAdjustment = useCallback(async (adjId: string) => {
+    const scope = savedReadScope;
+    const generation = adjustmentScopeGeneration.current;
+    const current = () => activeRef.current && scope === savedReadScopeRef.current
+      && generation === adjustmentScopeGeneration.current;
     try {
       await deletePayrollAdjustment(adjId);
+      if (!current()) return;
       toast.success("Đã xóa điều chỉnh");
       await refreshAll();
     } catch (e: any) {
+      if (!current()) return;
       toast.error(e?.message ?? "Lỗi xóa điều chỉnh");
     }
-  }, [refreshAll]);
+  }, [refreshAll, savedReadScope]);
 
   // ── Export ─────────────────────────────────────────────────────────────────
 
@@ -893,7 +1005,8 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
       case "regular_hours":   return <span className={`${baseRight} text-foreground`}>{formatHours(r.regular_hours)}</span>;
       case "ot_hours":        return <span className={`${baseRight} ${r.ot_hours > 0 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{r.ot_hours > 0 ? formatHours(r.ot_hours) : "—"}</span>;
       case "base_pay": {
-        const isProrated = isFullTime && r.monthly_salary_vnd > 0 && r.total_shifts < (r.standard_shifts_per_month ?? 26);
+        const isProrated = isFullTime && r.monthly_salary_vnd > 0 && r.standard_shifts_per_month > 0
+          && r.total_shifts < r.standard_shifts_per_month;
         return (
           <div className={`${baseRight} text-foreground`}>
             <div>
@@ -903,7 +1016,7 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
             </div>
             {isProrated && (
               <div className="text-[10px] text-warning leading-tight">
-                {formatVNDShort(r.monthly_salary_vnd)}×{r.total_shifts}/{r.standard_shifts_per_month ?? 26}
+                {formatVNDShort(r.monthly_salary_vnd)}×{r.total_shifts}/{r.standard_shifts_per_month}
               </div>
             )}
           </div>
@@ -982,8 +1095,22 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
 
   // ── Main render ────────────────────────────────────────────────────────────
 
+  if(pendingSaveIntent)return <div className="space-y-3 p-4">
+    <p role="alert">{saving?'Đang lưu bảng lương…':'Chưa xác minh được kết quả lưu bảng lương. Không gửi thêm thao tác lưu.'}</p>
+    <p className="break-all text-xs text-muted-foreground">Request: {pendingSaveIntent.requestId}</p>
+    {savedReadError&&<p className="text-sm">{savedReadError}</p>}
+    <Button variant="outline" disabled={saving||recoveryBusy} onClick={()=>void refreshAll()}>Kiểm tra kết quả lưu</Button>
+    <Button variant="outline" disabled={saving||recoveryBusy} onClick={()=>void cancelPendingSave()}>Hủy request chưa xác minh</Button>
+    <p className="text-xs text-muted-foreground">Nếu server đã lưu, hủy request chỉ trả kết quả đã lưu; không hoàn tác kỳ lương.</p>
+  </div>;
+  if (activeClubId && currentRange && (verifiedSavedScope !== savedReadScope || error)) {
+    return <div className="space-y-3 p-4">
+      <p role={savedReadError || error ? 'alert' : 'status'}>{savedReadError ?? error ?? 'Đang xác minh trạng thái kỳ lương…'}</p>
+      {(savedReadError || error) && <Button variant="outline" onClick={() => void refreshAll()}>Tải lại kỳ lương</Button>}
+    </div>;
+  }
   return (
-    <div className="h-full flex flex-col gap-3">
+    <div className="min-h-full flex flex-col gap-3">
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         {clubs.length > 1 && (
@@ -1097,7 +1224,7 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
               <MetricCard
                 label="Trạng thái bảng lương"
                 value={finance.statusLabel}
-                sub={savedPeriodId ? "Đã lưu vào hệ thống" : "Chưa lưu — số liệu tính trực tiếp"}
+                sub={savedPeriodId ? "Đã lưu vào hệ thống" : "Chưa lưu — tạm tính, chưa chốt giờ công"}
                 variant={payrollStatus === "locked" ? "default" : payrollStatus === "approved" ? "success" : "warning"}
               />
               <MetricCard
@@ -1342,35 +1469,35 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
                   {filteredFt.map(renderRow)}
                   <TableRow className="border-t-2 border-success/30 bg-success/5">
                     <TableCell className="font-bold text-success text-xs" colSpan={3}>FT subtotal</TableCell>
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(ftDealers.reduce((s, d) => s + d.total_hours, 0))}</TableCell>
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(ftDealers.reduce((s, d) => s + d.regular_hours, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(filteredFt.reduce((s, d) => s + d.total_hours, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(filteredFt.reduce((s, d) => s + d.regular_hours, 0))}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-destructive">
-                      {(() => { const total = ftDealers.reduce((s, d) => s + d.ot_hours, 0); return total > 0 ? formatHours(total) : "—"; })()}
+                      {(() => { const total = filteredFt.reduce((s, d) => s + d.ot_hours, 0); return total > 0 ? formatHours(total) : "—"; })()}
                     </TableCell>
                     <TableCell />
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatVND(ftDealers.reduce((s, d) => s + d.regular_pay_vnd, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold">{formatVND(filteredFt.reduce((s, d) => s + d.regular_pay_vnd, 0))}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-destructive">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.ot_pay_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.ot_pay_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs font-semibold text-success">{formatVND(ftDealers.reduce((s, d) => s + d.gross_pay_vnd, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold text-success">{formatVND(filteredFt.reduce((s, d) => s + d.gross_pay_vnd, 0))}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.tips_amount_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.tips_amount_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-muted-foreground">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.bhxh_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.bhxh_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-muted-foreground">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.bhyt_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.bhyt_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-muted-foreground">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.bhtn_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.bhtn_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-muted-foreground">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.pit_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.pit_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs font-bold text-success">{formatVND(ftDealers.reduce((s, d) => s + d.net_pay_after_tax_vnd, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-bold text-success">{formatVND(filteredFt.reduce((s, d) => s + d.net_pay_after_tax_vnd, 0))}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold">
-                      {(() => { const t = ftDealers.reduce((s, d) => s + d.total_adjustments_vnd, 0); return t !== 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredFt.reduce((s, d) => s + d.total_adjustments_vnd, 0); return t !== 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                   </TableRow>
                 </TableBody>
@@ -1402,25 +1529,25 @@ export default function DealerPayrollTab({ clubIds, clubs, hideApprovalActions }
                   {filteredPt.map(renderRow)}
                   <TableRow className="border-t-2 border-warning/30 bg-warning/5">
                     <TableCell className="font-bold text-warning text-xs" colSpan={3}>PT subtotal</TableCell>
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(ptDealers.reduce((s, d) => s + d.total_hours, 0))}</TableCell>
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(ptDealers.reduce((s, d) => s + d.regular_hours, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(filteredPt.reduce((s, d) => s + d.total_hours, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold">{formatHours(filteredPt.reduce((s, d) => s + d.regular_hours, 0))}</TableCell>
                     <TableCell />
                     <TableCell />
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatVND(ptDealers.reduce((s, d) => s + d.regular_pay_vnd, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold">{formatVND(filteredPt.reduce((s, d) => s + d.regular_pay_vnd, 0))}</TableCell>
                     <TableCell />
-                    <TableCell className="text-right font-mono text-xs font-semibold text-success">{formatVND(ptDealers.reduce((s, d) => s + d.gross_pay_vnd, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold text-success">{formatVND(filteredPt.reduce((s, d) => s + d.gross_pay_vnd, 0))}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold">
-                      {(() => { const t = ptDealers.reduce((s, d) => s + d.tips_amount_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredPt.reduce((s, d) => s + d.tips_amount_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs text-muted-foreground">—</TableCell>
                     <TableCell className="text-right font-mono text-xs text-muted-foreground">—</TableCell>
                     <TableCell className="text-right font-mono text-xs text-muted-foreground">—</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold text-muted-foreground">
-                      {(() => { const t = ptDealers.reduce((s, d) => s + d.pit_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredPt.reduce((s, d) => s + d.pit_deduction_vnd, 0); return t > 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs font-bold text-success">{formatVND(ptDealers.reduce((s, d) => s + d.net_pay_after_tax_vnd, 0))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-bold text-success">{formatVND(filteredPt.reduce((s, d) => s + d.net_pay_after_tax_vnd, 0))}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold">
-                      {(() => { const t = ptDealers.reduce((s, d) => s + d.total_adjustments_vnd, 0); return t !== 0 ? formatVND(t) : "—"; })()}
+                      {(() => { const t = filteredPt.reduce((s, d) => s + d.total_adjustments_vnd, 0); return t !== 0 ? formatVND(t) : "—"; })()}
                     </TableCell>
                   </TableRow>
                 </TableBody>

@@ -1,0 +1,1 @@
+import React from'react';import{createRoot}from'react-dom/client';import{MemoryRouter}from'react-router-dom';import ClubFinanceDashboard from'@/pages/ClubFinanceDashboard';import'@/index.css';createRoot(document.getElementById('root')).render(<main className="p-3"><MemoryRouter><ClubFinanceDashboard/></MemoryRouter></main>);

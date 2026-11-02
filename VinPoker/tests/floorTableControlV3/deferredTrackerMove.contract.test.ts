@@ -8,6 +8,8 @@ const handStartSql = readFileSync(resolve(process.cwd(), "supabase/migrations/20
 const trackerHook = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts"), "utf8");
 const trackerEdge = readFileSync(resolve(process.cwd(), "supabase/functions/tournament-live-update/index.ts"), "utf8");
 const ui = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx"), "utf8");
+const moveDialog = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/MovePlayerDialog.tsx"), "utf8");
+const adapter = readFileSync(resolve(process.cwd(), "src/lib/floorTableControlV3.ts"), "utf8");
 
 describe("deferred Floor move into active Tracker table", () => {
   it("reserves one destination seat and waits for terminal hand state", () => {
@@ -50,11 +52,16 @@ describe("deferred Floor move into active Tracker table", () => {
     expect(trackerEdge).toContain('supabase.rpc("start_tracker_hand_v3"');
   });
 
-  it("queues only after a direct move reports an active hand", () => {
-    expect(ui).toContain('direct.error !== "table_has_active_hand"');
-    expect(ui).toContain('direct.error !== "destination_table_has_active_hand"');
-    expect(ui).toContain('moveDestination.controlMode !== "tracker"');
-    expect(ui).toContain("return v3.queueTrackerMove(args)");
+  it("delegates move-or-queue to the exact-session server operation without a second browser writer", () => {
+    expect(ui).toContain("<MovePlayerDialog actorId={actorId}");
+    expect(moveDialog).toContain("canonical.movePlayerSeatOrQueueExact(frozen.intent)");
+    expect(moveDialog).toContain("canonical.movePlayerSeatExact(frozen.intent)");
+    expect(adapter).toContain('movePlayerSeatOrQueueExact: (args: FloorExactMoveIntent) => call("move_player_seat_v5"');
+    for (const fence of ["p_from_table_session_id", "p_to_table_session_id", "p_expected_source_epoch", "p_expected_destination_epoch", "p_request_id"]) {
+      expect(adapter).toContain(fence);
+    }
+    expect(moveDialog).not.toContain("queueTrackerMove(");
+    expect(ui).not.toContain("v3.queueTrackerMove(");
     expect(ui).toContain("v3.cancelPendingTrackerMove");
   });
 });

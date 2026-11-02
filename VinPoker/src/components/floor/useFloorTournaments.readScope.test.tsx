@@ -1,7 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ read: vi.fn(), metaRead: vi.fn(), multiDay: false, actor: "owner", loading: false, invoke: vi.fn(), rpc: vi.fn(), error: vi.fn(), events: [] as Array<() => void> }));
+const state = vi.hoisted(() => ({ read: vi.fn(), metaRead: vi.fn(), multiDay: false, actor: "owner", loading: false, invoke: vi.fn(), rpc: vi.fn(), error: vi.fn(), events: [] as Array<() => void>, signals: [] as AbortSignal[] }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: state.actor ? { id: state.actor } : null, loading: state.loading }) }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (s: string) => s }) }));
 vi.mock("sonner", () => ({ toast: { error: state.error, success: vi.fn() } }));
@@ -14,7 +14,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
       in: (_key: string, values: string[]) => { clubs = values; return query; },
       eq: () => query,
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => state.metaRead(table, clubs).then(resolve, reject),
-      order: () => state.read(clubs) };
+      order: () => ({ abortSignal: (signal: AbortSignal) => { state.signals.push(signal); return state.read(clubs); } }) };
     return query;
   },
   channel: () => { const channel = { on: (_event: string, _filter: unknown, callback: () => void) => {
@@ -29,6 +29,7 @@ beforeEach(() => {
   state.read.mockReset(); state.actor = "owner"; state.loading = false;
   state.invoke.mockReset(); state.rpc.mockReset(); state.error.mockReset();
   state.events = [];
+  state.signals = [];
   state.multiDay = false; state.metaRead.mockReset();
 });
 
@@ -61,6 +62,16 @@ it("does not publish guessed readiness when a metadata read fails", async () => 
   await waitFor(() => expect(state.metaRead).toHaveBeenCalled());
   expect(result.current.eventMeta).toEqual({});
   expect(result.current.flightMeta).toEqual({});
+});
+
+it.each([2500000,0,null,undefined,'2500000',-1,0.5])('reads only canonical event GTD without guessing from an invalid value %s',async(value)=>{
+ state.multiDay=true;
+ state.read.mockResolvedValue({data:[{id:'tour-a',club_id:'a',event_id:'event-a'}],error:null});
+ state.metaRead.mockResolvedValue({data:[{id:'event-a',name:'TEST',itm_percent:15,guarantee_amount:value}],error:null});
+ const {result}=renderHook(()=>useFloorTournaments(['a']));
+ await waitFor(()=>expect(result.current.eventMeta['event-a']).toBeDefined());
+ expect(result.current.eventMeta['event-a'].guarantee_amount).toBe(value===null?null
+  : typeof value==='number'&&Number.isSafeInteger(value)&&value>=0?value:undefined);
 });
 
 it("does not replace club B's list with a late club A response", async () => {
@@ -171,4 +182,27 @@ it("coalesces a Realtime burst to one active read and one trailing refresh", asy
   await act(async () => resolvers[1]({ data: [{ id: "latest-a", club_id: "a" }], error: null }));
   expect(result.current.tours.map(tour => tour.id)).toEqual(["latest-a"]);
   expect(state.read).toHaveBeenCalledTimes(2);
+});
+
+it("bounds a hung landing read, ignores its late result and recovers only on explicit reload", async () => {
+  vi.useFakeTimers();
+  try {
+    let finishOld!: (value: unknown) => void;
+    state.read.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+      .mockResolvedValue({ data: [{ id: "recovered", club_id: "a" }], error: null });
+    const { result } = renderHook(() => useFloorTournaments(["a"]));
+    await act(async () => {});
+    expect(result.current.loading).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_001); });
+    expect(result.current.loading).toBe(false);
+    expect(state.signals[0].aborted).toBe(true);
+    expect(result.current.error).toBeTruthy();
+    expect(result.current.tours).toEqual([]);
+    expect(state.read).toHaveBeenCalledTimes(1);
+    await act(async () => finishOld({ data: [{ id: "late", club_id: "a" }], error: null }));
+    expect(result.current.tours).toEqual([]);
+    await act(async () => { await result.current.reload(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.tours.map(row => row.id)).toEqual(["recovered"]);
+  } finally { vi.useRealTimers(); }
 });

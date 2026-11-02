@@ -46,7 +46,8 @@ describe("BoardEntryPanel (Street Gate board entry)", () => {
     const html = renderToStaticMarkup(
       <BoardEntryPanel street="turn" communityCards={empty} usedCards={new Set()} onCardChange={noop} onSubmit={noop} allInRunout />
     );
-    expect(html).toContain("All-in nhiều người");
-    expect(html).toContain("chưa tự chia hết bài");
+    expect(html).not.toContain("All-in nhiều người");
+    expect(html).toContain("Runout sau all-in");
+    expect(html).toContain("Nhập từng street để cập nhật viewer");
   });
 });

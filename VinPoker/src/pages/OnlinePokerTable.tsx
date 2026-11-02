@@ -135,20 +135,24 @@ export default function OnlinePokerTable() {
   const [submitting, setSubmitting] = useState(false);
   const [bustOpen, setBustOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [buyins, setBuyins] = useState<BuyinSummary[]>([]);
+  const buyinScope = JSON.stringify([user?.id ?? null, tableId]);
+  const [buyinRead, setBuyinRead] = useState<{ scope: string; status: 'loading' | 'ready' | 'error'; rows: BuyinSummary[] } | null>(null);
+  const [buyinRetry, setBuyinRetry] = useState(0);
+  const buyins = buyinRead?.scope === buyinScope ? buyinRead.rows : [];
+  const buyinStatus = buyinRead?.scope === buyinScope ? buyinRead.status : 'loading';
   const bustHandledRef = useRef(false);
   const [muted, setMuted] = useState<boolean>(isPokerSoundMuted());
 
-  // Buy-in history — loaded each time the settings sheet opens (append-only ledger;
-  // degrades to [] when the ledger migration isn't applied yet).
+  // Scope the append-only ledger to the current actor/table. Failed reads are not empty.
   useEffect(() => {
-    if (!settingsOpen || !RUNTIME_LIVE || !tableId) return;
+    if (!settingsOpen || !RUNTIME_LIVE || !tableId || !user?.id) return;
     let alive = true;
+    setBuyinRead({ scope: buyinScope, status: 'loading', rows: [] });
     loadBuyinsLive(tableId)
-      .then((b) => { if (alive) setBuyins(b); })
-      .catch(() => { if (alive) setBuyins([]); });
+      .then((rows) => { if (alive) setBuyinRead({ scope: buyinScope, status: 'ready', rows }); })
+      .catch(() => { if (alive) setBuyinRead({ scope: buyinScope, status: 'error', rows: [] }); });
     return () => { alive = false; };
-  }, [settingsOpen, tableId]);
+  }, [settingsOpen, tableId, user?.id, buyinScope, buyinRetry]);
   const toggleMute = () => { const v = !muted; setPokerSoundMuted(v); setMuted(v); markPokerSoundGesture(); };
 
   // UI-4 — optional felt skin (emerald default / premium burgundy+gold), persisted locally.
@@ -641,9 +645,15 @@ export default function OnlinePokerTable() {
 
             {/* buy-in history — informal record of how many chips each player has bought in
                 (sit + rebuy) over this table's lifetime; survives a leave→re-sit. */}
-            {buyins.length > 0 && (
+            {RUNTIME_LIVE && user && (
               <div>
                 <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lịch sử buy-in</div>
+                {buyinStatus === 'loading' && <p role="status" className="text-sm text-muted-foreground">Đang tải lịch sử buy-in…</p>}
+                {buyinStatus === 'error' && <div role="alert" className="space-y-2 text-sm">
+                  <p>Không tải được lịch sử buy-in.</p>
+                  <Button size="sm" variant="outline" aria-label="Thử lại lịch sử buy-in" onClick={() => setBuyinRetry((n) => n + 1)}>Thử lại</Button>
+                </div>}
+                {buyinStatus === 'ready' && buyins.length === 0 && <p className="text-sm text-muted-foreground">Chưa có lịch sử buy-in.</p>}
                 <div className="space-y-1.5">
                   {buyins.map((b) => (
                     <div key={b.userId} className="flex items-center gap-2 text-sm">
@@ -653,7 +663,7 @@ export default function OnlinePokerTable() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-1.5 text-[11px] text-muted-foreground">Tổng chip mỗi người đã buy-in (gồm rebuy) tại bàn này.</div>
+                {buyins.length > 0 && <div className="mt-1.5 text-[11px] text-muted-foreground">Tổng chip mỗi người đã buy-in (gồm rebuy) tại bàn này.</div>}
               </div>
             )}
 

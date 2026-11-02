@@ -88,6 +88,6 @@ describe("buildHandEditSummary — VN diff lines", () => {
     const e = clone(base); e.actions = e.actions.filter((a) => a.action_order !== 3);
     const s = buildHandEditSummary(base, e);
     expect(s.some((l) => l.includes("Xoá hành động #3"))).toBe(true);
-    expect(s.some((l) => l.startsWith("Pot hiển thị:"))).toBe(true);
+    expect(s).toContain("Pot đã lưu: 1000 · Pot từ action nháp: 800");
   });
 });

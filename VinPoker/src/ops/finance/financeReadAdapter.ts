@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { financeBusinessToday, parseFinanceStaffLive,parseFinanceDealerLive,parseFinanceDealerFtLive,type FinanceDealerFtLive,type FinanceDealerLive, type FinanceStaffLive } from '@/lib/financeSummaryRead';
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
 
 export type FinanceRange = {
   from: string;
@@ -23,6 +25,9 @@ export type FinanceSummaryRead = {
     clubExpenses: number;
   };
   net: number;
+  staffLive?: FinanceStaffLive;
+  dealerLive?:FinanceDealerLive;
+  dealerFtLive?:FinanceDealerFtLive;
 };
 
 type OpsClient = SupabaseClient<Database>;
@@ -32,11 +37,11 @@ export async function loadFinanceSummary(
   clubId: string,
   range: FinanceRange,
 ): Promise<FinanceSummaryRead> {
-  const result = await client.rpc("get_club_finance_summary", {
+  const result = await observeTrackerContextRead(client.rpc("get_club_finance_summary", {
     p_club_id: clubId,
     p_from: range.from,
     p_to: range.to,
-  });
+  }));
   if (result.error) throw new Error("FINANCE_SUMMARY_RPC_UNAVAILABLE");
   return parseFinanceSummary(result.data);
 }
@@ -50,32 +55,45 @@ export function parseFinanceSummary(value: Json): FinanceSummaryRead {
 
   return {
     revenue: {
-      total: readAmount(value.revenue, "total"),
+      total: readSignedAmount(value.revenue, "total"),
       rake: readAmount(value.revenue, "rake"),
       serviceFee: readAmount(value.revenue, "serviceFee"),
       stakingFees: readAmount(value.revenue, "stakingFees"),
       payoutFees: readAmount(value.revenue, "payoutFees"),
-      fnb: readAmount(value.revenue, "fnb"),
+      fnb: readSignedAmount(value.revenue, "fnb"),
     },
     cost: {
       payrollNet: readAmount(value.cost, "payrollNet"),
       ptWagePaid: readAmount(value.cost, "ptWagePaid"),
-      fnbCogs: readAmount(value.cost, "fnbCogs"),
-      compCogs: readAmount(value.cost, "compCogs"),
-      clubExpenses: readAmount(value.cost, "clubExpenses"),
+      fnbCogs: readSignedAmount(value.cost, "fnbCogs"),
+      compCogs: readSignedAmount(value.cost, "compCogs"),
+      clubExpenses: readSignedAmount(value.cost, "clubExpenses"),
     },
     net: value.net,
+    ...(Object.prototype.hasOwnProperty.call(value,'staffLive') ? {staffLive:parseFinanceStaffLive(value.staffLive)} : {}),
+    ...(Object.prototype.hasOwnProperty.call(value,'dealerLive')?{dealerLive:parseFinanceDealerLive(value.dealerLive)}:{}),
+    ...(Object.prototype.hasOwnProperty.call(value,'dealerFtLive')?{dealerFtLive:parseFinanceDealerFtLive(value.dealerFtLive)}:{}),
   };
 }
 
+
 export function currentMonthFinanceRange(now = new Date()): FinanceRange {
-  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  // This consumer is month-to-now, not an inclusive whole-calendar-day report.
+  const from = new Date(financeBusinessToday(now).slice(0,7)+'-01T00:00:00+07:00');
   return { from: from.toISOString(), to: now.toISOString() };
 }
 
 function readAmount(record: Record<string, Json | undefined>, key: string): number {
   const value = record[key];
   if (!isUnsignedAmount(value)) throw new Error("FINANCE_SUMMARY_MALFORMED");
+  return value;
+}
+
+// Refunds reverse revenue and unconsumed inventory cost in their own reporting
+// period. The canonical server can therefore return negative F&B movements.
+function readSignedAmount(record: Record<string, Json | undefined>, key: string): number {
+  const value = record[key];
+  if (!isSignedAmount(value)) throw new Error("FINANCE_SUMMARY_MALFORMED");
   return value;
 }
 

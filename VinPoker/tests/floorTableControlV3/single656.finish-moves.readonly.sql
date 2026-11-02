@@ -1,0 +1,31 @@
+\set ON_ERROR_STOP on
+BEGIN READ ONLY;
+DO $$ BEGIN
+ ASSERT current_database()='vinpoker_ops_cash115_qualified_c' AND inet_server_port()=55441;
+ ASSERT current_setting('data_directory')='/tmp/vinpoker-sol-local-20261016-0e79a729/data';
+ ASSERT EXISTS(SELECT 1 FROM public.tournament_hands WHERE id='2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8' AND status='completed' AND source_revision=15 AND hand_number=2 AND pot_size=200 AND NOT is_voided);
+ ASSERT (SELECT count(*)=5 AND sum(action_amount)=300 FROM public.hand_actions WHERE hand_id='2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8');
+ ASSERT (SELECT jsonb_agg(jsonb_build_array(seat_number,starting_stack,ending_stack) ORDER BY seat_number)='[[6,20000,20000],[7,19900,19900],[8,20100,20000],[9,20000,20100]]'::jsonb FROM public.hand_players WHERE hand_id='2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8');
+ ASSERT (SELECT count(*)=2 FROM public.tournament_hands WHERE tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e');
+ ASSERT NOT EXISTS(SELECT 1 FROM public.tournament_hands WHERE tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e' AND status='in_progress');
+ ASSERT (SELECT count(*)=4 AND count(DISTINCT entry_id)=4 AND count(DISTINCT destination_seat_number)=4 FROM public.floor_pending_tracker_moves WHERE tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e' AND break_request_id='67c99009-229c-4e70-906d-0be1ba3b055e' AND status='applied' AND resolution_reason='hand_finished' AND resolved_at IS NOT NULL);
+ ASSERT NOT EXISTS(SELECT 1 FROM public.floor_pending_tracker_moves WHERE tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e' AND status='pending');
+ ASSERT (SELECT count(*)=4 FROM public.floor_pending_tracker_moves q JOIN public.tournament_seats s ON s.entry_id=q.entry_id AND s.table_session_id=q.destination_table_session_id AND s.seat_number=q.destination_seat_number AND s.is_active AND s.chip_count=20000 WHERE q.break_request_id='67c99009-229c-4e70-906d-0be1ba3b055e');
+ ASSERT (SELECT count(*)=8 AND sum(chip_count)=160000 FROM public.tournament_seats WHERE table_session_id='b792f67f-4110-4cf4-bf9f-2bb55a6d4ed5' AND is_active);
+ ASSERT NOT EXISTS(SELECT 1 FROM public.tournament_seats WHERE table_session_id='0aab12d1-b855-4014-9f22-1dc59719c7e2' AND is_active);
+ ASSERT EXISTS(SELECT 1 FROM public.table_sessions WHERE id='0aab12d1-b855-4014-9f22-1dc59719c7e2' AND closed_at IS NOT NULL AND close_reason='floor_break_v5_completed');
+ ASSERT EXISTS(SELECT 1 FROM public.tournament_tables WHERE id='174d8c97-ed28-4170-9053-813ccb50ec89' AND table_session_id='0aab12d1-b855-4014-9f22-1dc59719c7e2' AND status='closed');
+ ASSERT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE id='dfebfb3c-d6bc-437b-a400-0d0b6a9f086a' AND table_session_id='0aab12d1-b855-4014-9f22-1dc59719c7e2' AND status='completed' AND released_at IS NOT NULL);
+ ASSERT EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id='e03c9a69-7c3d-4431-aa98-a801015dfae5' AND status='checked_in' AND current_state='available' AND check_out_time IS NULL);
+ ASSERT EXISTS(SELECT 1 FROM public.dealer_assignments WHERE id='cbf19368-cf31-492c-8616-1e5b0a122191' AND table_session_id='b792f67f-4110-4cf4-bf9f-2bb55a6d4ed5' AND status='assigned' AND released_at IS NULL);
+ ASSERT EXISTS(SELECT 1 FROM public.table_sessions WHERE id='b792f67f-4110-4cf4-bf9f-2bb55a6d4ed5' AND closed_at IS NULL AND control_epoch=4 AND control_mode='tracker');
+ ASSERT (SELECT count(*)=1 FROM floor_private.floor_table_v3_existing_receipt('febf2b51-fdb7-42ff-886c-b3bb1fffdc3e','record_tracker_manual_hand_v1','1e986bba-e3c6-43be-84f4-01c938826ab0') r WHERE r.result->>'hand_id'='2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8' AND r.result->>'status'='success');
+ ASSERT (SELECT count(*)=8 AND sum(applied_amount)=800000 FROM public.cashier_buyin_movements WHERE tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e');
+ ASSERT (SELECT count(*)=8 FROM public.tournament_seats s JOIN public.tournament_entries e ON e.id=s.entry_id AND e.tournament_id=s.tournament_id AND e.player_id=s.player_id AND e.entry_no=s.entry_number JOIN public.tournament_chip_counts c ON c.tournament_id=e.tournament_id AND c.player_id=e.player_id AND c.entry_number=e.entry_no WHERE s.tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e' AND s.is_active AND s.chip_count=e.current_stack AND s.chip_count=c.chip_count);
+ ASSERT EXISTS(SELECT 1 FROM public.tournament_settlement_outcomes o CROSS JOIN LATERAL public.get_tournament_historical_display_source_hash(o.hand_id) s WHERE o.hand_id='4f120026-cf38-4db3-bb05-ae6feaabf59a' AND o.source_revision=19 AND o.verification_scope='historical_display' AND o.status='verified' AND o.source_revision=s.source_revision AND o.source_chain_hash=s.source_chain_hash);
+ ASSERT EXISTS(SELECT 1 FROM public.tournament_settlement_outcomes WHERE hand_id='4f120026-cf38-4db3-bb05-ae6feaabf59a' AND source_revision=19 AND verification_scope='chain' AND status='stale' AND idempotency_key='32cd5536-9f25-47f3-84bf-c5198e89555d');
+ ASSERT EXISTS(SELECT 1 FROM public.tracker_historical_display_queue WHERE hand_id='2ee4ebe0-f8bd-49a5-b3ed-dd0a2ea4e4a8' AND source_revision=15 AND status='pending');
+ ASSERT EXISTS(SELECT 1 FROM public.tracker_correction_uat_scopes WHERE id='0353ced4-dbb7-469b-9423-294b62ba3e84' AND NOT enabled AND expires_at IS NULL);
+END $$;
+ROLLBACK;
+SELECT 'SINGLE656_FINISH_ONCE_FOUR_MOVES_APPLIED_SOURCE_CLOSED_DEALER_RELEASE_NO_CHECKOUT_160K_PASS';

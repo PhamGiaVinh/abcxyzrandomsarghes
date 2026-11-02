@@ -843,7 +843,7 @@ describe("TrackerVoicePanel", () => {
 
   it("refreshes the authoritative state version before validating the next Assist transcript", async () => {
     const provider = new MockRealtimeTranscriptionProvider();
-    const stateAfterPriorAction = "b".repeat(64);
+    const stateAfterPriorAction = "c".repeat(64);
     const initialRuntime = {
       ...runtimeFixture,
       active_hand: { ...runtimeFixture.active_hand },
@@ -857,6 +857,7 @@ describe("TrackerVoicePanel", () => {
     };
     const loadRuntimeOverride = vi.fn()
       .mockResolvedValueOnce(initialRuntime)
+      .mockResolvedValueOnce({...runtimeFixture,active_hand:{...runtimeFixture.active_hand,state_version:"b".repeat(64)}})
       .mockResolvedValue(refreshedRuntime);
     const validateEventOverride = vi.fn(async (input) => ({
       ...validatedReceipt,
@@ -878,10 +879,11 @@ describe("TrackerVoicePanel", () => {
     fireEvent.click(assist);
     fireEvent.click(screen.getByRole("button", { name: "Cho phép microphone" }));
     await screen.findByText("Microphone đã kết nối");
+    expect(loadRuntimeOverride).toHaveBeenCalledTimes(2); // mount + connection authority check
     act(() => provider.emit("seat three call", { final: true, id: "after-prior-action" }));
 
     await screen.findByRole("button", { name: "Xác nhận action" });
-    expect(loadRuntimeOverride).toHaveBeenCalledTimes(2);
+    expect(loadRuntimeOverride).toHaveBeenCalledTimes(3); // final transcript must read newer state
     expect(validateEventOverride).toHaveBeenCalledWith(expect.objectContaining({
       expectedStateVersion: stateAfterPriorAction,
     }));
@@ -1033,4 +1035,25 @@ describe("TrackerVoicePanel", () => {
     }
     expect(handleDockAction).not.toHaveBeenCalled();
   });
+});
+
+
+describe('Voice split amounts across interrupted capture',()=>{
+ it.each(['paused','recovering','offline','error'] as const)('does not join a pre-interruption Raise to an amount after %s',async(status)=>{
+  const provider=new MockRealtimeTranscriptionProvider();
+  let handlers:Parameters<typeof provider.connect>[0]|undefined;
+  const connect=provider.connect.bind(provider);
+  vi.spyOn(provider,'connect').mockImplementation(async(next)=>{handlers=next;await connect(next);});
+  const validate=vi.fn(async()=>validatedReceipt);
+  renderPanel(hookFixture(),provider,validate);
+  fireEvent.click(screen.getByRole('button',{name:'Cho phép microphone'}));
+  await screen.findByText('Microphone đã kết nối');
+  act(()=>provider.emit('seat three raise',{final:true,id:'before-gap'}));
+  await screen.findByText('Đã nhận lệnh Raise/Bet, đang chờ số chip.');
+  act(()=>{handlers!.onStatus(status);handlers!.onStatus('listening');});
+  act(()=>provider.emit('6000',{final:true,id:'after-gap'}));
+  await screen.findByText('Chưa nhận ra một lệnh Voice duy nhất.');
+  expect(screen.queryByText('Player A · raise tới 6.000')).not.toBeInTheDocument();
+  expect(validate).not.toHaveBeenCalled();
+ });
 });

@@ -22,6 +22,8 @@ import {
 import { routeTrackerVoiceIntent } from "../../../src/lib/trackerVoice/intentRouter.ts";
 import { resolveNextVoiceHoleCardsSeatNumber } from "../../../src/lib/trackerVoice/holeCardsParser.ts";
 import { computeVoiceFinishSettlement } from "../_shared/trackerSettlement/finishAssist.ts";
+import { isManualFinishIntent, manualFinishReceiptMatches, manualFinishCancellationMatches } from "../../../src/lib/trackerManualFinish.ts";
+import { trackerUndoReceiptMatches } from "../../../src/lib/trackerUndoReceipt.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,6 +77,9 @@ function workflowForVoiceSnapshot(snapshot: VoiceSnapshot):
   const boardCount = snapshot.community_cards.length;
   const livePlayers = runtime.players.filter((player) => !player.is_folded);
   const bettingComplete = isBettingRoundComplete(runtime);
+  // A sole survivor wins by folds without taking a gratuitous final check.
+  // The settlement engine independently validates the persisted fold-win.
+  if (livePlayers.length === 1) return "submit_ready";
   if (
     boardCount < 5
     && livePlayers.length >= 2
@@ -89,8 +94,7 @@ function workflowForVoiceSnapshot(snapshot: VoiceSnapshot):
       : null;
   }
   if (
-    livePlayers.length === 1
-    || (boardCount === 5 && livePlayers.length >= 2)
+    boardCount === 5 && livePlayers.length >= 2
   ) return "submit_ready";
   if (boardCount === 0 && runtime.street === "preflop") return "enter_flop";
   if (boardCount === 3 && runtime.street === "flop") return "enter_turn";
@@ -215,8 +219,20 @@ Deno.serve(async (req) => {
     { global: { headers: { Authorization: authHeader } } }
   );
 
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  const authenticationUnavailable = () => new Response(JSON.stringify({
+    error: "Authentication unavailable", code: "authentication_unavailable",
+  }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  let verification: Awaited<ReturnType<typeof supabase.auth.getUser>>;
+  try { verification = await supabase.auth.getUser(); }
+  catch { return authenticationUnavailable(); }
+  const user = verification.data?.user;
+  if (verification.error) {
+    // A failed Auth dependency is not evidence that the caller lost access.
+    // Unknown/transport/rate-limit/server errors remain fail-closed unavailable.
+    if (![400, 401, 403, 422].includes(verification.error.status ?? 0)) return authenticationUnavailable();
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   const body = await req.json();
   const { tournament_id, action } = body;
@@ -289,36 +305,28 @@ Deno.serve(async (req) => {
       return validationError("ACTOR_MISMATCH", "Tài khoản đã đổi; không áp intent của tài khoản trước.");
     }
     switch (action) {
-      case "record_hand": {
-        const { table_id, hand_number, hand_time, players, actions, side_pots, community_cards, pot_size } = body;
-
-        // Server never trusts client side_pots — recompute from the action stream.
-        let authoritativeSidePots: any = side_pots || "[]";
-        if (VALIDATION_MODE !== "off" && Array.isArray(actions)) {
-          const recon = reconcileSidePots(actions as ActionRow[], side_pots);
-          authoritativeSidePots = recon.serverSidePots; // authoritative, always
-          if (recon.tampered) {
-            logValidationReject({ validation_code: "SIDE_POTS_TAMPERED" });
-            if (VALIDATION_MODE === "enforce") {
-              return validationError("SIDE_POTS_TAMPERED", "side_pots không khớp với chuỗi hành động trên server.");
-            }
-            validationNote = { code: "SIDE_POTS_TAMPERED", overridden: true };
-          }
+      case "record_manual_hand_v1":
+      case "get_manual_finish_receipt_v1":
+      case "cancel_manual_finish_v1": {
+        const intent = body.finish_intent;
+        if (!isManualFinishIntent(intent) || intent.actor_id !== user.id || intent.tournament_id !== tournament_id) {
+          return validationError("MANUAL_FINISH_CONTEXT_REQUIRED", "Finish thiếu intent gốc hoặc tài khoản đã thay đổi.");
         }
-
-        result = await supabase.rpc("record_hand", {
-          p_tournament_id: tournament_id,
-          p_table_id: table_id,
-          p_hand_number: hand_number,
-          p_hand_time: hand_time,
-          p_players: players,
-          p_actions: actions,
-          p_side_pots: authoritativeSidePots,
-          p_community_cards: community_cards || "[]",
-          p_pot_size: pot_size || 0,
-          p_created_by: user.id,
-        });
+        if (action === "record_manual_hand_v1") {
+          // A receipt binds the frozen intent: never silently rewrite its pots.
+          // Use the same server reconciliation as legacy Finish, without changing rounding.
+          const recon = reconcileSidePots(intent.payload.actions as ActionRow[], intent.payload.side_pots);
+          if (recon.tampered) return validationError("SIDE_POTS_TAMPERED", "side_pots không khớp chuỗi hành động trên server.");
+        }
+        result = await supabase.rpc(action === "record_manual_hand_v1"
+          ? "record_tracker_manual_hand_v1" : action === "cancel_manual_finish_v1"
+            ? "cancel_tracker_manual_finish_v1" : "get_tracker_manual_finish_receipt_v1", { p_intent: intent });
         break;
+      }
+      case "record_hand": {
+        // A stale client must not infer today's hand/session from a reusable
+        // table and hand number. Voice uses its own scoped service receipt.
+        return validationError("MANUAL_FINISH_CONTEXT_REQUIRED", "Phiên bản Finish cũ đã ngừng ghi. Tải lại bàn để dùng intent có session/epoch và request ID.");
       }
       case "void_hand": {
         const { hand_id } = body;
@@ -366,31 +374,21 @@ Deno.serve(async (req) => {
         );
       }
       case "start_hand": {
-        const { table_id, hand_number, hand_time, button_seat,
+        const { hand_number, hand_time, button_seat,
           table_session_id, tournament_table_id, control_epoch } = body;
-        if ((table_session_id !== undefined || tournament_table_id !== undefined || control_epoch !== undefined)
-          && (typeof table_session_id !== "string" || typeof tournament_table_id !== "string"
-            || !Number.isInteger(control_epoch) || control_epoch < 1)) {
+        if (typeof table_session_id !== "string" || typeof tournament_table_id !== "string"
+          || !Number.isInteger(control_epoch) || control_epoch < 1) {
           return validationError("INVALID_TRACKER_CONTEXT", "Phiên bàn Tracker không hợp lệ. Hãy tải lại bàn.");
         }
         const normalizedButtonSeat =
           Number.isInteger(button_seat) && button_seat >= 1 && button_seat <= 10
             ? button_seat
             : 1;
-        result = table_session_id
-          ? await supabase.rpc("start_tracker_hand_v3", {
+        result = await supabase.rpc("start_tracker_hand_v3", {
             p_tournament_id: tournament_id,
             p_tournament_table_id: tournament_table_id,
             p_table_session_id: table_session_id,
             p_control_epoch: control_epoch,
-            p_hand_number: hand_number,
-            p_hand_time: hand_time || new Date().toISOString(),
-            p_created_by: user.id,
-            p_button_seat: normalizedButtonSeat,
-          })
-          : await supabase.rpc("start_hand", {
-            p_tournament_id: tournament_id,
-            p_table_id: table_id,
             p_hand_number: hand_number,
             p_hand_time: hand_time || new Date().toISOString(),
             p_created_by: user.id,
@@ -1032,6 +1030,57 @@ Deno.serve(async (req) => {
         ) {
           return validationError("VOICE_FINISH_REQUEST_INVALID", "Voice Finish thiếu dữ liệu chạm xác nhận.");
         }
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        if (!serviceKey || !supabaseUrl) throw new Error("tracker_voice_service_not_configured");
+        const service = createClient(supabaseUrl, serviceKey, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+        // Resolve only this authenticated actor's immutable intent before asking
+        // for an active hand: a successful Finish has already closed that hand.
+        const receiptUnavailable = () => new Response(JSON.stringify({
+          error: "Không xác minh được receipt Finish. Giữ nguyên request và thử đọc lại.",
+          code: "voice_finish_receipt_unavailable",
+        }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (voice_request?.intentDomain !== "finish_hand"
+          || voice_request.envelope?.expectedStateVersion !== expected_state_version
+          || !["engine_fold_win", "engine_showdown"].includes(voice_request.payload?.settlementOrigin)
+          || typeof voice_request.payload?.settlementDigest !== "string"
+          || !/^[0-9a-f]{64}$/.test(voice_request.payload.settlementDigest)) {
+          return validationError("IDEMPOTENCY_CONFLICT", "Request Finish thiếu intent settlement gốc.");
+        }
+        const originalRequest = await buildVoiceFinishCanonicalRequest({
+          rawTranscript: final_transcript, expectedStateVersion: expected_state_version,
+          payload: {
+            settlementOrigin: voice_request.payload.settlementOrigin,
+            settlementDigest: voice_request.payload.settlementDigest,
+          },
+        });
+        if (!voiceCanonicalRequestsMatch(voice_request, originalRequest)) {
+          return validationError("IDEMPOTENCY_CONFLICT", "Request Finish không khớp hash intent gốc.");
+        }
+        const { data: resolution, error: resolutionError } = await service.rpc("resolve_tracker_voice_finish_intent_v1", {
+          p_actor_user_id: user.id,
+          p_intent: {
+            tournament_id, tournament_table_id, hand_id, idempotency_key,
+            state_version: expected_state_version, final_transcript,
+            provider_name: providerForVoiceRequest(provider_name),
+            provider_model: typeof provider_model === "string" ? provider_model : null,
+            provider_event_id: typeof provider_event_id === "string" ? provider_event_id : null,
+            settlement_origin: voice_request.payload.settlementOrigin,
+            settlement_digest: voice_request.payload.settlementDigest,
+          },
+        });
+        if (resolutionError || !resolution || !["unknown", "conflict", "committed"].includes(resolution.status)) return receiptUnavailable();
+        if (resolution.status === "conflict") return validationError("IDEMPOTENCY_CONFLICT", "Request Finish không khớp intent đã lưu.");
+        if (resolution.status === "committed") {
+          if (resolution.receipt?.ok !== true || resolution.receipt.hand_id !== hand_id
+            || resolution.receipt.idempotency_key !== idempotency_key
+            || resolution.receipt.state_version_before !== expected_state_version
+            || resolution.receipt.settlement_digest !== voice_request.payload.settlementDigest) return receiptUnavailable();
+          result = { data: resolution.receipt, error: null };
+          break;
+        }
         const { data: rawSnapshot, error: snapshotError } = await supabase.rpc(
           "get_tracker_voice_validation_snapshot",
           {
@@ -1087,12 +1136,6 @@ Deno.serve(async (req) => {
         if (!voiceCanonicalRequestsMatch(voice_request, canonicalRequest)) {
           return validationError("finish_proposal_stale", "Đề xuất Finish không còn khớp settlement server.");
         }
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        if (!serviceKey || !supabaseUrl) throw new Error("tracker_voice_service_not_configured");
-        const service = createClient(supabaseUrl, serviceKey, {
-          auth: { persistSession: false, autoRefreshToken: false },
-        });
         result = await service.rpc("commit_tracker_voice_finish_v0", {
           p_actor_user_id: user.id,
           p_tournament_id: tournament_id,
@@ -1192,7 +1235,40 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "record_manual_hand_v1" && result.error?.code === "P0001"
+      && result.error.message === "tracker_correction_pending") {
+      // This explicit PostgreSQL exception rolls the entire RPC statement back.
+      // Other database/transport errors still have unknown outcomes.
+      return new Response(JSON.stringify({ error: "Bàn đang chờ Floor xử lý báo sai hand; chưa thể Finish.",
+        code: "tracker_correction_pending" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     if (result.error) throw result.error;
+    if (action === "undo_last_action_v1") {
+      const proof = result.data;
+      if (proof?.ok === false && typeof proof.error === "string") {
+        return new Response(JSON.stringify({ error: proof.error, code: proof.error }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!trackerUndoReceiptMatches(proof, body)) {
+        return new Response(JSON.stringify({ error: "undo_receipt_unconfirmed", code: "undo_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+    if (action === "record_manual_hand_v1" || action === "get_manual_finish_receipt_v1" || action === "cancel_manual_finish_v1") {
+      const proof = result.data;
+      if (proof && typeof proof.error === "string") {
+        return new Response(JSON.stringify({ error: proof.error, code: proof.error }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!manualFinishReceiptMatches(proof, body.finish_intent) && !manualFinishCancellationMatches(proof, body.finish_intent)) {
+        return new Response(JSON.stringify({ error: "manual_finish_receipt_unconfirmed", code: "manual_finish_receipt_unconfirmed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     // `start_hand` returns a JSONB policy denial for an unclassified Manual
     // table. Do not wrap that as a successful Edge response: older callers
     // otherwise set local `handStarted=true` even though no hand was inserted.

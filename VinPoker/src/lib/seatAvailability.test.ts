@@ -12,6 +12,18 @@ const tbl = (over: Partial<TournamentTableRow>): TournamentTableRow => ({
 });
 
 describe("computeAvailability", () => {
+  it('includes canonical Floor tables whose legacy physical alias is null',()=>{
+    const table=tbl({table_id:null,game_table_id:'physical',table_session_id:'current'});
+    expect(computeAvailability([table],[]).map(t=>t.freeSeats)).toEqual([9]);
+  });
+  it('counts canonical seats by exact tournament table/session, not physical alias or old session',()=>{
+    const table=tbl({game_table_id:'physical',table_session_id:'current'});
+    const seats:ActiveSeatRow[]=[
+      {table_id:'physical',tournament_table_id:'tt-1',table_session_id:'current',is_active:true},
+      {table_id:'physical',tournament_table_id:'tt-1',table_session_id:'old',is_active:true},
+    ];
+    expect(computeAvailability([table],seats).map(t=>[t.activeCount,t.freeSeats])).toEqual([[1,8]]);
+  });
   it("counts only active seats per tournament table", () => {
     const tables = [tbl({}), tbl({ id: "tt-2", table_name: "Bàn 2", table_number: 2, table_id: "gt-2" })];
     const seats: ActiveSeatRow[] = [

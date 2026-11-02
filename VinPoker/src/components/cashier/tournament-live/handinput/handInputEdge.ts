@@ -1,11 +1,10 @@
 // Centralized builders for the 7 `tournament-live-update` Edge payloads.
 //
-// WHY THIS EXISTS: the standalone operator console (`/tracker/hand-input`) reuses
-// the EXACT same write-path as the embedded HandInputPanel. To make "write-path
-// unchanged" provable — not just asserted — every Edge body the console sends is
-// built here, byte-for-byte identical to the literals in HandInputPanel.tsx. A
-// parity test (`tests/handinput/handInputEdge.parity.test.ts`) pins these against
-// the panel's shapes, so any future drift in either path fails the build.
+// Historical payload shapes extracted from the former HandInputPanel. Embedded
+// and full-screen consoles now share useStandaloneHandInput. The record_hand
+// builder supplies the draft schema inside the new exact Finish intent; it is
+// NOT permission to call the retired bare Edge action. standaloneEdge.parity
+// tests pin builder outputs, not the availability of obsolete write endpoints.
 //
 // These are PURE functions: no Supabase, no Date, no React. `hand_time` is passed
 // in by the caller (the panel uses `new Date().toISOString()` at call time) so the

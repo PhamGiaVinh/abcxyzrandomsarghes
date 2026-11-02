@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
@@ -84,31 +84,44 @@ const useStatusLabel = () => {
 };
 
 const MyDeals = () => {
+  const { user, loading } = useAuth();
+  return <MyDealsScope key={`${loading ? 'loading' : 'ready'}:${user?.id ?? 'signed-out'}`} />;
+};
+
+const MyDealsScope = () => {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const nav = useNavigate();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [ratedDealIds, setRatedDealIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState<TabKey>("A");
+  const active = useRef(true);
+  const loadGeneration = useRef(0);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; loadGeneration.current += 1; };
+  }, []);
 
   useEffect(() => {
     if (!authLoading && !user) nav("/auth");
   }, [authLoading, user, nav]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || authLoading || !active.current) return;
+    const generation = ++loadGeneration.current;
+    const current = () => active.current && generation === loadGeneration.current;
     setLoading(true);
+    setLoadError(false);
+    try {
     const { data, error } = await supabase
       .from("staking_deals")
       .select("*")
       .eq("player_id", user.id)
       .order("created_at", { ascending: false });
-    if (error) {
-      toast.error(error.message);
-      setLoading(false);
-      return;
-    }
+    if (!current()) return;
+    if (error) throw error;
     const rows = (data ?? []) as Deal[];
     const tIds = Array.from(new Set(rows.map((d) => d.tournament_id).filter(Boolean) as string[]));
     const bIds = Array.from(new Set(rows.map((d) => d.backer_id).filter(Boolean) as string[]));
@@ -120,6 +133,9 @@ const MyDeals = () => {
         ? supabase.from("profiles").select("user_id, display_name, avatar_url").in("user_id", bIds)
         : Promise.resolve({ data: [] } as any),
     ]);
+    if (!current()) return;
+    if (tRes.error) throw tRes.error;
+    if (bRes.error) throw bRes.error;
     const tMap = new Map<string, any>((tRes.data ?? []).map((t: any) => [t.id, t]));
     const bMap = new Map<string, any>((bRes.data ?? []).map((p: any) => [p.user_id, p]));
     setDeals(rows.map((d) => ({
@@ -130,20 +146,26 @@ const MyDeals = () => {
     // Load my ratings for these deals
     const dealIds = rows.map((d) => d.id);
     if (dealIds.length) {
-      const { data: rated } = await supabase.from("deal_ratings")
+      const { data: rated, error: ratingError } = await supabase.from("deal_ratings")
         .select("deal_id").eq("rater_id", user.id).in("deal_id", dealIds);
+      if (!current()) return;
+      if (ratingError) throw ratingError;
       setRatedDealIds(new Set((rated ?? []).map((r: any) => r.deal_id)));
     } else {
       setRatedDealIds(new Set());
     }
-    setLoading(false);
-  }, [user]);
+    } catch {
+      if (current()) setLoadError(true);
+    } finally {
+      if (current()) setLoading(false);
+    }
+  }, [user, authLoading]);
 
   useEffect(() => { load(); }, [load]);
 
   // Realtime: refresh on any change to my deals
   useEffect(() => {
-    if (!user) return;
+    if (!user || authLoading) return;
     const ch = supabase
       .channel(`my-deals-${user.id}`)
       .on("postgres_changes",
@@ -152,7 +174,7 @@ const MyDeals = () => {
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [user, load]);
+  }, [user, authLoading, load]);
 
   const grouped = useMemo(() => {
     const g: Record<TabKey, Deal[]> = { A: [], B: [], C: [], D: [], E: [] };
@@ -185,29 +207,8 @@ const MyDeals = () => {
     return g;
   }, [deals]);
 
-  // Auto-cleanup: silently delete listings that closed registration with 0% sold
-  // so the user's list stays tidy across sessions (mirrors handleCancel guards).
-  useEffect(() => {
-    if (!user) return;
-    const nowMs = Date.now();
-    const stale = deals.filter((d) => {
-      if (d.status !== "listing" || d.backer_id) return false;
-      const filled = Number((d as any).filled_percent ?? 0);
-      const deadlineRaw = (d as any).registration_deadline;
-      const deadlineMs = deadlineRaw ? new Date(deadlineRaw).getTime() : null;
-      return filled <= 0 && deadlineMs !== null && !isNaN(deadlineMs) && deadlineMs <= nowMs;
-    });
-    if (stale.length === 0) return;
-    (async () => {
-      await supabase
-        .from("staking_deals")
-        .delete()
-        .in("id", stale.map((d) => d.id))
-        .eq("player_id", user.id)
-        .eq("status", "listing")
-        .is("backer_id", null);
-    })();
-  }, [deals, user]);
+  // Reading this page must not delete expired listings or their history.
+  // Explicit cancellation remains a separate user action below.
 
   const handleCancel = async (deal: Deal) => {
     if (deal.status !== "listing" || deal.backer_id) {
@@ -228,6 +229,12 @@ const MyDeals = () => {
   };
 
   if (authLoading) return <div className="staking-scope text-muted-foreground">{t("myDeals.loading")}</div>;
+  if (loadError) return (
+    <Alert role="alert" className="staking-scope">
+      <AlertDescription>Không tải được danh sách deal. Chưa thể xác minh dữ liệu và thao tác.</AlertDescription>
+      <Button variant="outline" onClick={() => void load()}>Thử tải lại deal</Button>
+    </Alert>
+  );
 
   return (
     <div className="staking-scope space-y-6">

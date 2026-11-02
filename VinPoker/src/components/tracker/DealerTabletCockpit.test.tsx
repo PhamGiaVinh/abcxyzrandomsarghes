@@ -1,6 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
+// Layout tests model the enclosing app AuthProvider; server scope checks below
+// still use their own RPC fixtures and do not infer authority from this actor.
+vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:'local-layout-actor'},session:null})}));
 vi.mock("@/integrations/supabase/client", () => {
   const query = {
     select: vi.fn(), eq: vi.fn(), order: vi.fn(), maybeSingle: vi.fn(),
@@ -76,10 +79,10 @@ describe("Dealer tablet modes", () => {
 });
 
 describe("Dealer tablet server context", () => {
-  const row = { tournament_id: "tournament", tournament_table_id: "table", table_session_id: "session", control_epoch: 1, control_mode: "tracker", tournament_table_status: "active", session_closed_at: null, table_number: null };
+  const row = { tournament_table_id: "table", table_session_id: "session", control_epoch: 1, control_mode: "tracker", can_manual_cards: true, table_number: null };
   const boundProps = { ...props, hook: { ...hook, tournamentId: "tournament", tournamentTableId: "table" } as StandaloneHandInput };
   function respond(rows: unknown[], allowed = true) {
-    vi.mocked(supabase.rpc).mockImplementation((async (name: string) => ({ data: name === "get_floor_tournament_table_roster_v3" ? rows : { ok: allowed, error: allowed ? undefined : "STALE_TRACKER_CONTEXT" }, error: null })) as never);
+    vi.mocked(supabase.rpc).mockImplementation((async (name: string) => ({ data: name === "get_tracker_hand_input_tables_v4" ? { ok: true, tables: rows } : { ok: allowed, error: allowed ? undefined : "STALE_TRACKER_CONTEXT" }, error: null })) as never);
   }
   it("places server-scoped bag entry on the dealer tablet only for flights", async () => {
     respond([row]);
@@ -93,11 +96,13 @@ describe("Dealer tablet server context", () => {
     respond([row]);
     render(<DealerTabletCockpit {...boundProps} />);
     await screen.findByText("Manual writer");
+    expect(supabase.rpc).not.toHaveBeenCalledWith("get_floor_tournament_table_roster_v3", expect.anything());
     expect(supabase.rpc).toHaveBeenCalledWith("validate_tracker_table_writer_context_v3", { p_tournament_id: "tournament", p_tournament_table_id: "table", p_table_session_id: "session", p_control_epoch: 1 });
   });
   it.each([
-    [{ ...row, control_mode: "manual" }], [{ ...row, session_closed_at: "2026-09-16" }],
-    [{ ...row, tournament_id: "other" }], [row, row],
+    [{ ...row, control_mode: "manual" }], [{ ...row, can_manual_cards: false }],
+    [{ ...row, tournament_table_id: "other" }], [row, row],
+    [{ ...row, control_epoch: 0 }], [{ ...row, table_session_id: null }],
   ])("denies invalid or ambiguous session context before writer validation", async (...rows) => {
     respond(rows);
     render(<DealerTabletCockpit {...boundProps} />);

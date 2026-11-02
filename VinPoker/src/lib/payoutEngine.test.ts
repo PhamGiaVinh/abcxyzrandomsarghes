@@ -10,6 +10,31 @@ import {
 
 const M = 1_000_000;
 
+describe('linked Main Event TEST preset feasibility (read-only calculations)',()=>{
+  it('does not silently reduce the four server-derived paid ranks when the current funding is insufficient',()=>{
+    // Actual TEST: two flights of 8, each ceil(8 * 15%) = 2 paid ranks.
+    // Reserve the 11 other participation floors and one nonselected bag floor:
+    // 1.6M direct - 12 * 110k = 280k for the four ranked awards.
+    // This fraction represents the server's four ranks, NOT a new ITM policy.
+    const result=computePayouts({entries:16,prizePool:280_000,floor:110_000,
+      itmPercent:4/16,archetype:'MULTI',roundingUnit:100_000});
+    expect(result.itmPlaces).toBeLessThan(4);
+    expect(result.warnings).toContain('N_CLAMPED');
+    expect(result.rows.reduce((total,row)=>total+row.amount,0)).toBe(280_000);
+  });
+  it.each(['DAILY','INTL','MULTI','TRITON'] as const)('%s preserves the four ranked awards in the hypothetical funded-GTD scenario',archetype=>{
+    // Feasibility only: no overlay or prize rows are written by this test.
+    // GTD 2.5M less 11 other floors and one nonselected-bag floor = 1.18M.
+    const result=computePayouts({entries:16,prizePool:1_180_000,floor:110_000,
+      itmPercent:4/16,archetype,roundingUnit:100_000});
+    expect(result.itmPlaces).toBe(4);
+    expect(result.rows.every(row=>row.amount>=110_000)).toBe(true);
+    expect(result.rows.reduce((total,row)=>total+row.amount,0)).toBe(1_180_000);
+    expect(result.warnings).not.toContain('N_CLAMPED');
+    expect(result.sumCheck).toBe(true);
+  });
+});
+
 /** Buy-in 1m + rake 200k (the sheet's reference buy-in): pool/entry = 1M, floor = minCashX × 1.2M. */
 function ref(entries: number, itmPercent: number, archetype: PayoutArchetype, minCashX: number): PayoutInput {
   const buyIn = 1_000_000;

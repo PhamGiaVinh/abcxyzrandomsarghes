@@ -1,9 +1,10 @@
 // Public viewer "Hand Breakdown" — a broadcast-style street-by-street action
 // table (PREFLOP / FLOP / TURN / RIVER / SHOWDOWN, present streets only). Each
-// column shows the CUMULATIVE pot through that street and the actions on it
+// column shows CUMULATIVE wagers through that street and the actions on it
+// (including uncalled bets; this is not the settled/awarded pot).
 // (position badge + avatar/name + action label + amount in big blinds). A
-// per-hand positive-net WIN INDICATOR (+chips (xBB)) is shown only for completed
-// hands (where ending_stack is known) — never a negative number for losers.
+// per-hand positive-net WIN INDICATOR (+x BB) is shown only when both stack
+// snapshots are known and valid — never infer missing starting_stack as zero.
 //
 // Presentational only — no data fetching, no logic beyond pure derivation. Pure
 // grouping lives in lib/tracker-poker/handBreakdown.ts. Spectator-only: the
@@ -13,7 +14,7 @@
 import { useTranslation } from "react-i18next";
 import { Trophy } from "lucide-react";
 import { deriveHandBreakdown, type BreakdownAction } from "@/lib/tracker-poker/handBreakdown";
-import { getSeatPositions } from "@/lib/tournament/button";
+import { getHandSeatPositions } from "@/lib/tournament/button";
 import { formatViewerBBOrUnavailable } from "@/lib/tracker-poker/viewerAmounts";
 
 export interface HandBreakdownPlayer {
@@ -80,24 +81,22 @@ export function HandBreakdown({
   if (streets.length === 0) return null;
 
   const playerById = new Map(players.map((p) => [p.player_id, p]));
-  const posBySeat = getSeatPositions(
-    players.map((p) => p.seat_number),
-    buttonSeat,
-  );
+  const posBySeat = getHandSeatPositions(players, buttonSeat, actions);
 
   // Positive-net winners only (completed hand → ending_stack known). Split pots
   // → several positive nets, each shown. Losers (net ≤ 0) are never shown.
-  const winners = players
+  const winners = showdownResult === 'needs_resettle' ? [] : players
     .map((p) => {
-      if (p.ending_stack == null) return null;
-      const net = p.ending_stack - (p.starting_stack ?? 0);
+      if (typeof p.starting_stack !== 'number' || !Number.isFinite(p.starting_stack) || p.starting_stack < 0
+        || typeof p.ending_stack !== 'number' || !Number.isFinite(p.ending_stack) || p.ending_stack < 0) return null;
+      const net = p.ending_stack - p.starting_stack;
       return net > 0 ? { player: p, net } : null;
     })
     .filter((w): w is { player: HandBreakdownPlayer; net: number } => w !== null)
     .sort((a, b) => b.net - a.net);
 
   const fallbackName = t("liveHub.breakdown.player", "Player");
-  const potHint = t("liveHub.breakdown.potHint", "Pot đến street này");
+  const potHint = t("liveHub.breakdown.potHint", "Tổng cược đến street này, chưa trừ cược được hoàn; không phải pot được chia.");
 
   return (
     <div className="mt-3 space-y-2">
@@ -105,6 +104,7 @@ export function HandBreakdown({
         <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
         {t("liveHub.breakdown.title", "Phân tích ván")}
       </div>
+      <p className="text-[10px] text-muted-foreground">{potHint}</p>
 
       {showdownResult && (
         <div className={`w-fit rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
@@ -147,12 +147,12 @@ export function HandBreakdown({
             key={col.street}
             className="overflow-hidden rounded-xl border border-border/50 bg-card/50 shadow-[0_0_18px_rgba(0,0,0,0.18)]"
           >
-            <div className="flex items-center justify-between gap-1 border-b border-border/40 bg-secondary/30 px-2.5 py-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border/40 bg-secondary/30 px-2.5 py-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
                 {STREET_LABELS[col.street] ?? col.street}
               </span>
               <span className="tracker-num text-[10px] text-muted-foreground" title={potHint}>
-                {t("liveHub.breakdown.pot", "Pot")} {formatViewerBBOrUnavailable(col.potChips, bigBlind)}
+                {t("liveHub.breakdown.pot", "Cược lũy kế")} {formatViewerBBOrUnavailable(col.potChips, bigBlind)}
               </span>
             </div>
 

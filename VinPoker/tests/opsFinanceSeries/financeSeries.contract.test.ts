@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseFinanceSummary } from "@/ops/finance/financeReadAdapter";
+import { parseFinanceSummary, currentMonthFinanceRange } from "@/ops/finance/financeReadAdapter";
 import { FINANCE_SERIES_BUTTON_MANIFEST } from "@/ops/coverage/financeSeriesButtonManifest";
 import { getOpsModule } from "@/ops/registry/opsModuleRegistry";
 
@@ -9,6 +9,16 @@ const root = resolve(import.meta.dirname, "../..");
 const source = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("Ops Finance and Series read boundaries", () => {
+  it.each([
+    ['2026-10-01T00:30:00.123+07:00','2026-10-01T00:00:00+07:00'],
+    ['2027-01-01T00:30:00.123+07:00','2027-01-01T00:00:00+07:00'],
+    ['2024-02-29T23:59:59.999+07:00','2024-02-01T00:00:00+07:00'],
+    ['2026-10-24T10:15:22.123Z','2026-10-01T00:00:00+07:00'],
+  ])('keeps the UTC+7 month start and exact as-of cutoff at %s',(now,start)=>{
+    const instant=new Date(now),range=currentMonthFinanceRange(instant);
+    expect(range.from).toBe(new Date(start).toISOString());
+    expect(range.to).toBe(instant.toISOString());
+  });
   it("mounts Ops-native read workspaces", () => {
     const app = source("src/OpsApp.tsx");
     expect(app).toContain('<OpsModuleGate capability="finance"><OpsFinanceWorkspace /></OpsModuleGate>');

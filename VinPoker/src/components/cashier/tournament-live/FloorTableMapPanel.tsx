@@ -1,3 +1,4 @@
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -88,9 +89,10 @@ export function FloorTableMapPanel({
   refreshTrigger: number;
   onParticipationChanged?: () => void;
 }) {
-  const { user } = useAuth();
-  if (FEATURES.floorTableControlV3) {
-    return <FloorTableMapPanelV3 actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
+  const { user, session } = useAuth();
+  // Terminal tours use the read-only roster even with live V3 operations off.
+  if (FEATURES.floorTableControlV3 || ["completed", "finished", "cancelled"].includes(tournament.status)) {
+    return <FloorTableMapPanelV3 sessionEpoch={session ? sessionReadEpoch(session) : undefined} actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
   }
   return <FloorTableMapPanelLegacy actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
 }
@@ -209,16 +211,13 @@ function FloorTableMapPanelLegacy({
         .sort((a, b) => (a.table_number ?? 1e9) - (b.table_number ?? 1e9));
       setTables(built);
 
-      // A seat's table_id may reference EITHER game_tables.id (older draw seats) OR
-      // tournament_tables.id (seats created by move_player_seat / manual inserts) —
-      // the live DB carries both conventions. Normalize every id to the table's
-      // canonical key (game_tables.id = tournament_tables.table_id) so occupancy
-      // shows regardless of which convention the seat used.
+      // Group by the logical table even when its legacy physical link is null.
+      // Older seats can still reference the physical ID; keep their payloads intact.
       const canonicalByAny: Record<string, string> = {};
       for (const t of built) {
+        canonicalByAny[t.tt_id] = t.tt_id;
         if (t.table_id) {
-          canonicalByAny[t.table_id] = t.table_id; // game_tables.id → itself
-          canonicalByAny[t.tt_id] = t.table_id;    // tournament_tables.id → game_tables.id
+          canonicalByAny[t.table_id] = t.tt_id;
         }
       }
       const seats = (seatsRes.data?.data ?? []) as MapSeat[];
@@ -279,7 +278,7 @@ function FloorTableMapPanelLegacy({
   }, [tid]);
 
   const enriched = useMemo(() => (tables ?? []).map((t) => {
-    const seats = seatsByTable[t.table_id] ?? [];
+    const seats = seatsByTable[t.tt_id] ?? [];
     return {
       table: t,
       seats,
@@ -396,9 +395,9 @@ function FloorTableMapPanelLegacy({
     <Card className="p-3 sm:p-4 space-y-3">
       {/* Sticky summary */}
       <div className="sticky top-0 z-10 -mx-3 sm:-mx-4 px-3 sm:px-4 pb-2 bg-card/95 backdrop-blur space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="font-semibold flex items-center gap-2"><LayoutGrid className="h-4 w-4" /> Danh sách bàn</div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {FEATURES.floorTableOps && canMove && (
               <Button data-testid="floor-open-table-dialog" size="sm" className="h-9" onClick={() => setOpenTableOpen(true)} title="Tạo thêm bàn mới">
                 <Plus className="h-4 w-4 mr-1" /> Tạo thêm bàn
@@ -491,13 +490,13 @@ function FloorTableMapPanelLegacy({
         open={detailTable !== null}
         onOpenChange={(v) => { if (!v) setDetailTableId(null); }}
         table={detailTable}
-        seats={detailTable ? (seatsByTable[detailTable.table_id] ?? []) : []}
+        seats={detailTable ? (seatsByTable[detailTable.tt_id] ?? []) : []}
         onSeatTap={(s) => setSelected(s)}
         tournamentId={tid}
         tournamentName={tournament.name}
         tournamentDate={(tournament as Tournament & { start_time?: string | null }).start_time ?? null}
         unlinkedActiveSeatCount={detailTable
-          ? (seatsByTable[detailTable.table_id] ?? []).filter((seat) => !entryBySeat[seat.seat_id]).length
+          ? (seatsByTable[detailTable.tt_id] ?? []).filter((seat) => !entryBySeat[seat.seat_id]).length
           : 0}
         canManageTableControl={canMove}
         onChanged={load}

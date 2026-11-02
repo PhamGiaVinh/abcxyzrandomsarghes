@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { observeTrackerContextRead } from "./observeTrackerContextRead";
 
 export interface RecordedBlindLineage {
   previousDealtSeats: number[];
@@ -60,7 +61,10 @@ export async function readBlindLineage(handId: string): Promise<RecordedBlindLin
       .select("player_id,entry_number,seat_number")
       .eq("hand_id", handId),
   ]);
-  if (handResult.error || actionResult.error || playerResult.error || !handResult.data) return null;
+  if (handResult.error || actionResult.error || playerResult.error) {
+    throw handResult.error ?? actionResult.error ?? playerResult.error;
+  }
+  if (!handResult.data) return null;
   const hand = handResult.data as unknown as {
     button_seat: number | null;
     status: string;
@@ -88,4 +92,12 @@ export async function readBlindLineage(handId: string): Promise<RecordedBlindLin
   if (hand.button_seat == null || sb == null || bb == null || postedBb == null
     || previousDealtSeats.length < 2 || !previousDealtSeats.includes(bb)) return null;
   return { previousDealtSeats, previousButtonSeat: hand.button_seat, previousSbPosition: sb, previousBbSeat: bb };
+}
+
+export type BlindLineageRead = { available: true; lineage: RecordedBlindLineage | null } | { available: false };
+
+/** A follow-up read cannot turn an already committed Finish into a failed writer. */
+export async function readBlindLineageState(handId: string): Promise<BlindLineageRead> {
+  try { return { available: true, lineage: await observeTrackerContextRead(readBlindLineage(handId)) }; }
+  catch { return { available: false }; }
 }

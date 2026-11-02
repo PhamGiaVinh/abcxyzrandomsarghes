@@ -34,6 +34,20 @@ export interface TvDisplayRow {
   created_at: string;
 }
 
+function isDisplayRow(value: unknown): value is TvDisplayRow {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === "string" && row.id.length > 0
+    && (row.club_id === null || typeof row.club_id === "string")
+    && (row.display_number === null || (typeof row.display_number === "number" && Number.isFinite(row.display_number)))
+    && typeof row.display_token === "string" && row.display_token.length > 0
+    && typeof row.theme === "string" && typeof row.created_at === "string"
+    && ["unpaired", "paired", "revoked"].includes(row.status as string)
+    && ["clock", "break_screen", "announcement", "payouts", "multi_board"].includes(row.layout as string)
+    && ["name", "zone", "assigned_tournament_id", "announcement", "last_seen_at", "paired_at"]
+      .every((key) => row[key] === null || typeof row[key] === "string");
+}
+
 const ROW_COLUMNS =
   "id, club_id, display_number, name, zone, display_token, assigned_tournament_id, layout, announcement, theme, status, last_seen_at, paired_at, created_at";
 
@@ -47,7 +61,11 @@ export async function listClubDisplays(
     .eq("club_id", clubId)
     .neq("status", "unpaired")
     .order("display_number", { ascending: true });
-  return { data: (data as TvDisplayRow[]) ?? [], error: error?.message ?? null };
+  if (error) return { data: [], error: error.message };
+  if (!Array.isArray(data) || !data.every(isDisplayRow)) {
+    return { data: [], error: "Không xác minh được danh sách TV. Vui lòng tải lại." };
+  }
+  return { data, error: null };
 }
 
 export async function claimDisplay(
@@ -93,7 +111,11 @@ export async function updateDisplay(
     p_name: next.name,
     p_zone: next.zone,
   });
-  return { data: error ? null : data as TvDisplayRow, error: error?.message ?? null };
+  if (error) return { data: null, error: error.message };
+  if (!isDisplayRow(data) || data.id !== row.id || data.club_id !== row.club_id || data.status !== "paired") {
+    return { data: null, error: "Không xác minh được cấu hình TV đã lưu. Vui lòng tải lại để kiểm tra." };
+  }
+  return { data, error: null };
 }
 
 
