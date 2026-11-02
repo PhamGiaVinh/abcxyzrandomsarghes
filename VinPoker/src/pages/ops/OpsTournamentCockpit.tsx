@@ -26,8 +26,8 @@ import type { MockTable } from "@/components/ops/mock/opsData";
 import type { TournamentLeaderboardPlayer } from "@/types/tournament";
 import type { FloorTournamentSection } from "@/ops/floor/floorTournamentSections";
 import { useTournamentOps } from "@/ops/workspace/TournamentOpsProvider";
-import { MultiDayFloorEventWorkspace } from "@/components/floor/MultiDayFloorEventPanel";
-import { TvBrandingEditorWorkspace } from "@/components/cashier/tournament-live/TvBrandingEditor";
+import { MultiDayFloorEventWorkspace } from "@/components/floor/MultiDayFloorEventWorkspace";
+import { TvBrandingEditorWorkspace } from "@/components/cashier/tournament-live/TvBrandingEditorWorkspace";
 import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 type UnappliedFloorRpcResult = { data: unknown; error: { message?: string; code?: string } | null };

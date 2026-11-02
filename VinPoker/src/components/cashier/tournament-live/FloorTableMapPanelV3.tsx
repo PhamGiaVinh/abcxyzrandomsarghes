@@ -32,7 +32,7 @@ import {
 } from "@/lib/floorTableControlV3";
 import type { Tournament } from "@/types/tournament";
 import { OpenTableDialog } from "./OpenTableDialog";
-import { FloorRedrawDialogV1 } from "./FloorRedrawDialogV1";
+import { FloorRedrawWorkspaceV1 } from "./FloorRedrawWorkspaceV1";
 import { RestoreBustDialog } from "./RestoreBustDialog";
 import { AddPlayerDialog } from "./AddPlayerDialog";
 import { MovePlayerDialog } from "./MovePlayerDialog";
@@ -92,18 +92,18 @@ function v3ErrorMessage(error: string): string {
  * V3-only Floor map.  It never reads a legacy table_id or invokes an Edge
  * writer: all data and mutations pass through the fixed typed V3 adapter.
  */
-type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null; onParticipationChanged?: () => void };
+type FloorPanelProps = { tournament: Tournament; refreshTrigger: number; actorId: string | null; sessionEpoch?: number; onParticipationChanged?: () => void };
 
 // Entering/leaving a terminal state also discards any open writer.
 export function FloorTableMapPanelV3(props: FloorPanelProps) {
-  return <ScopedFloorTableMapPanelV3 key={JSON.stringify([props.actorId, props.tournament.id,
+  return <ScopedFloorTableMapPanelV3 key={JSON.stringify([props.actorId, props.sessionEpoch, props.tournament.id,
     ["completed", "finished", "cancelled"].includes(props.tournament.status)])} {...props} />;
 }
 
 function ScopedFloorTableMapPanelV3({
   tournament,
   refreshTrigger,
-  actorId,
+  actorId, sessionEpoch,
   onParticipationChanged,
 }: {
   tournament: Tournament;
@@ -477,7 +477,9 @@ function ScopedFloorTableMapPanelV3({
         onClose={() => setRestoreTarget(null)}
         onRestored={() => { setEntrySelection(null); onParticipationChanged?.(); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
       {FEATURES.floorRedrawSeatLockV1 && (
-        <FloorRedrawDialogV1
+        <FloorRedrawWorkspaceV1
+          actorId={sessionEpoch === undefined ? undefined : actorId ?? undefined}
+          sessionEpoch={sessionEpoch}
           open={redrawOpen}
           onOpenChange={setRedrawOpen}
           tournamentId={tournament.id}

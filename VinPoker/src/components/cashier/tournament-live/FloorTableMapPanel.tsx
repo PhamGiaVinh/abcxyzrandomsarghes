@@ -1,3 +1,4 @@
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -88,10 +89,10 @@ export function FloorTableMapPanel({
   refreshTrigger: number;
   onParticipationChanged?: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   // Terminal tours use the read-only roster even with live V3 operations off.
   if (FEATURES.floorTableControlV3 || ["completed", "finished", "cancelled"].includes(tournament.status)) {
-    return <FloorTableMapPanelV3 actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
+    return <FloorTableMapPanelV3 sessionEpoch={session ? sessionReadEpoch(session) : undefined} actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
   }
   return <FloorTableMapPanelLegacy actorId={user?.id ?? null} tournament={tournament} refreshTrigger={refreshTrigger} onParticipationChanged={onParticipationChanged} />;
 }
