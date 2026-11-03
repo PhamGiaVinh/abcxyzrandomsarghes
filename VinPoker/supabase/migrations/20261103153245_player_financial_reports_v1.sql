@@ -262,7 +262,7 @@ BEGIN
    'unavailableCount',unavailable,'paidBuys',paid_buys,'tournaments',tours,'visits',visits,'lastPaidAt',last_paid,
    'averageSpend',CASE WHEN unavailable=0 AND paid_buys>0 THEN round(cost/paid_buys,0) END,
    'activeTournaments',(SELECT count(DISTINCT e.tournament_id) FROM public.tournament_entries e JOIN public.tournaments t ON t.id=e.tournament_id
-    WHERE t.club_id=p_club_id AND t.deleted_at IS NULL AND t.status NOT IN ('completed','cancelled') AND e.status='playing'
+    WHERE t.club_id=p_club_id AND t.deleted_at IS NULL AND t.status NOT IN ('completed','cancelled') AND e.status='seated'
      AND private.club_financial_customer_ref_v1(p_club_id,e.player_id,e.member_id)=s.customer_ref)) value
   FROM summary s
  ) SELECT coalesce(jsonb_agg(value ORDER BY value->>'name',value->>'customerRef'),'[]') INTO customers FROM rows;

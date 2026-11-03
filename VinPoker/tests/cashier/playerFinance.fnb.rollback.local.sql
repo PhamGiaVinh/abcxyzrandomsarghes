@@ -22,6 +22,7 @@ DO $$DECLARE actor uuid:=gen_random_uuid();club uuid:=gen_random_uuid();tour uui
  response:=public.fnb_create_order(club,'counter',NULL,'LOCAL FNB customer',NULL,jsonb_build_array(jsonb_build_object('menu_item_id',menu,'qty',2)),request,physical,actor);
  ASSERT response->>'status'='ok',response::text;order_id:=(response->>'order_id')::uuid;
  r:=public.get_owner_player_financial_report_v1(club,member);
+ ASSERT (r->'selected'->>'activeTournaments')::integer=1,'seated live entry must count as active tournament';
  ASSERT (r->'fnb'->>'pending')::numeric=10000 AND (r->'fnb'->>'paid')::numeric=0,r::text;
  response:=public.fnb_mark_paid(order_id,gen_random_uuid()::text);ASSERT response->>'status'='ok',response::text;
  response:=public.fnb_mark_paid(order_id,gen_random_uuid()::text);ASSERT response->>'idempotent'='true',response::text;
