@@ -1,5 +1,5 @@
 import { afterAll,beforeAll,beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), success:vi.fn(),error:vi.fn(),signals:[] as AbortSignal[],
   auth:{user:{id:'actor-a'},session:{access_token:'local-session-a'},loading:false,rolesLoading:false,authError:null as string|null,rolesError:null as string|null} }));
@@ -39,6 +39,55 @@ beforeEach(() => {
 });
 
 describe("BankAuditTab", () => {
+  it('shows each face value once and sums all color variants, including zero and signed counts',async()=>{
+    const denominations=[
+      {denomination_id:'five-thousand-red',value:5000,color:'#ff0000',on_hand_count:-4,version:1},
+      {denomination_id:'hundred-blue',value:100,color:'#0000ff',on_hand_count:8,version:2},
+      {denomination_id:'hundred-purple',value:100,color:'#ff00ff',on_hand_count:12,version:3},
+      {denomination_id:'five-hundred-green',value:500,color:'#00ff00',on_hand_count:7,version:4},
+      {denomination_id:'thousand-blue',value:1000,color:'#0000ff',on_hand_count:0,version:5},
+      {denomination_id:'thousand-yellow',value:1000,color:'#ffff00',on_hand_count:0,version:6},
+      {denomination_id:'five-thousand-orange',value:5000,color:'#ff8800',on_hand_count:1,version:7},
+    ];
+    h.rpc.mockResolvedValue({data:{denominations,coupling_enabled:false},error:null});
+    render(<BankAuditTab clubId="club-a" tournamentId="tour-a"/>);
+    const list=await screen.findByRole('list');
+    const items=within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    expect(items.map(item=>item.textContent)).toEqual(['20T100','7T500','0T1.000','-3 (ghi nợ)T5.000']);
+    expect(denominations.map(row=>row.on_hand_count)).toEqual([-4,8,12,7,0,0,1]);
+    expect(h.rpc.mock.calls.map(([name])=>name)).toEqual(['get_chip_bank']);
+  });
+
+  it('keeps deficit warnings when color variants offset each other',async()=>{
+    h.rpc.mockResolvedValue({data:{denominations:[
+      {denomination_id:'blue',value:100,color:'#0000ff',on_hand_count:8,version:1},
+      {denomination_id:'red',value:100,color:'#ff0000',on_hand_count:-8,version:2},
+    ],coupling_enabled:false},error:null});
+    render(<BankAuditTab clubId="club-a" tournamentId="tour-a"/>);
+    expect(within(await screen.findByRole('list')).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('listitem')).toHaveTextContent('0T100');
+    expect(screen.getByText(/Có mệnh giá đang/)).toBeInTheDocument();
+  });
+
+  it('retains the selected underlying ID and version for manual adjustment of a grouped value',async()=>{
+    h.rpc.mockImplementation(async(name:string,args:Record<string,unknown>)=>{
+      if(name==='get_chip_bank')return {data:{denominations:[
+        {denomination_id:'blue',value:100,color:'#0000ff',on_hand_count:8,version:3},
+        {denomination_id:'purple',value:100,color:'#ff00ff',on_hand_count:12,version:7},
+      ],coupling_enabled:false},error:null};
+      return {data:appliedReceipt(args),error:null};
+    });
+    render(<BankAuditTab clubId="club-a" tournamentId="tour-a"/>);
+    await screen.findByRole('list');
+    fireEvent.keyDown(screen.getAllByRole('combobox')[0],{key:'Enter'});
+    fireEvent.click(await screen.findByRole('option',{name:'T100 · tồn 12'}));
+    fireEvent.change(screen.getByRole('spinbutton'),{target:{value:'2'}});
+    fireEvent.click(screen.getByRole('button',{name:'Thu'}));
+    await waitFor(()=>expect(h.rpc.mock.calls.filter(([name])=>name===WRITE)).toHaveLength(1));
+    expect(h.rpc.mock.calls.find(([name])=>name===WRITE)![1]).toMatchObject({p_denomination_id:'purple',p_old_version:7,p_count:2});
+  });
+
   it.each(['bank','ledger'])('bounds a hung %s snapshot, aborts it and requires explicit read recovery',async(kind)=>{
     h.rpc.mockImplementation(()=>kind==='bank'?new Promise(()=>{}):Promise.resolve({data:{denominations:[],coupling_enabled:false},error:null}));
     if(kind==='ledger')h.from.mockImplementation(()=>({select:()=>({eq:()=>({order:()=>({limit:()=>{

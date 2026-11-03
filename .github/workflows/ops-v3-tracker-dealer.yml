@@ -64,6 +64,7 @@ on:
       - "VinPoker/src/hooks/useTournamentParticipationSummary*"
       - "VinPoker/src/lib/tournamentParticipation*"
       - "VinPoker/src/components/chip-ops/DashboardTab*"
+      - "VinPoker/src/components/chip-ops/BankAuditTab*"
       - "VinPoker/src/lib/chipOpsMetrics*"
       - "VinPoker/scripts/ops/tracker-history-canary-transport*"
       - ".github/workflows/tracker-history-scoped-http-canary.yml"
@@ -152,6 +153,7 @@ jobs:
           src/components/cashier/tournament-live/RegistrationQueuePanel.readState.test.tsx
           src/components/tracker/DealerTabletCockpit.test.tsx
           src/components/chip-ops/DashboardTab.test.tsx
+          src/components/chip-ops/BankAuditTab.test.tsx
           src/lib/chipOpsMetrics.test.ts
           --maxWorkers=1 --minWorkers=1
 

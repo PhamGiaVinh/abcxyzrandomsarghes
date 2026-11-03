@@ -185,6 +185,16 @@ function ScopedBankAuditTab({actorId,clubId,tournamentId}:{actorId:string;clubId
 
   const valueOf = (id: string) => bank.find((d) => d.denomination_id === id)?.value ?? 0;
   const hasDeficit = useMemo(() => bank.some((d) => d.on_hand_count < 0), [bank]);
+  // Club overview groups equal face values; commands keep the original IDs and versions.
+  const bankByValue = useMemo(() => {
+    const totals = new Map<number, Pick<BankDenom, "value" | "color" | "on_hand_count">>();
+    for (const row of bank) {
+      const total = totals.get(row.value);
+      if (total) total.on_hand_count += row.on_hand_count;
+      else totals.set(row.value, { value: row.value, color: row.color, on_hand_count: row.on_hand_count });
+    }
+    return [...totals.values()].sort((a, b) => a.value - b.value);
+  }, [bank]);
 
   const submit = async (mode:'apply'|'lookup'='apply') => {
     if (!alive.current || adjustmentInFlight.current || journalError) return;
@@ -340,9 +350,9 @@ function ScopedBankAuditTab({actorId,clubId,tournamentId}:{actorId:string;clubId
           ) : bank.length === 0 ? (
             <p className="text-sm text-muted-foreground">Chưa có mệnh giá trong CLB (hoặc tính năng két chưa bật trên máy chủ). Tạo bộ chip ở tab <b className="text-foreground">Setup stack</b> trước.</p>
           ) : (
-            <div className="flex flex-wrap gap-5">
-              {bank.map((d) => (
-                <div key={d.denomination_id} className="flex w-20 flex-col items-center gap-2">
+            <div role="list" className="flex flex-wrap gap-5">
+              {bankByValue.map((d) => (
+                <div role="listitem" key={d.value} className="flex w-20 flex-col items-center gap-2">
                   <ChipDisc value={d.value} color={d.color} size={48} />
                   <div className="font-display text-sm font-bold"><OnHand n={d.on_hand_count} /></div>
                   <div className="text-[11px] text-muted-foreground">T{fmt(d.value)}</div>
