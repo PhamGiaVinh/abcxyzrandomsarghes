@@ -22,6 +22,28 @@ beforeEach(()=>{
  }));
 });
 afterEach(()=>{cleanup();vi.useRealTimers();});
+it('loads TV using the parent-event foreign key when the event also points to a final tournament',async()=>{
+ h.fetch.mockImplementation(async(input:RequestInfo|URL)=>{
+  const url=new URL(String(input));
+  const select=url.searchParams.get('select')??'';
+  let data:unknown=[];
+  if(url.pathname.endsWith('/tournaments')&&select.includes('main_event:')){
+   if(!select.includes('main_event:tournament_events!tournaments_event_id_fkey(')){
+    return new Response(JSON.stringify({code:'PGRST201',message:'More than one relationship between tournaments and tournament_events'}),{status:300});
+   }
+   data={name:'TEST TV',status:'live',prize_pool:0,main_event:{guarantee_amount:2500000},club:null};
+  }else if(url.pathname.endsWith('/rpc/get_tournament_clock')){
+   data={remaining_seconds:600,is_running:false};
+  }else if(url.pathname.endsWith('/rpc/get_tournament_participation_counts_v1')){
+   data={tournament_id:tour,counts:{total_entries:0,re_entries:0,remaining:0,seated:0,waiting:0,busted:0,
+    anomaly_entries:0,anomaly_seats:0,live_entry_stack:0,seated_stack:0,waiting_stack:0},average_stack:0,prize_pool:0};
+  }else if(url.pathname.endsWith('/tournaments'))data=null;
+  return new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
+ });
+ const {result}=renderHook(()=>useTournamentTvDataCore(tour,{userId:'TEST_OWNER',authLoading:false}));
+ await waitFor(()=>expect(result.current.state).toBe('ready'));
+ expect(result.current.data?.mainEventGuarantee).toBe(2500000);
+});
 it('delivers abort to the actual SDK transport on unmount',async()=>{
  const view=renderHook(()=>useTournamentTvDataCore(tour,{userId:'TEST_OWNER',authLoading:false}));
  await waitFor(()=>expect(h.fetch).toHaveBeenCalledTimes(1));

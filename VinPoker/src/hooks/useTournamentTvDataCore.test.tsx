@@ -137,7 +137,7 @@ describe("TV canonical participation and scope", () => {
       main_event:{guarantee_amount:2500000}}});
     const {result}=renderHook(()=>useTournamentTvDataCore(a,{userId:'owner',authLoading:false}));
     await waitFor(()=>expect(result.current.state).toBe('ready'));
-    expect(state.select).toHaveBeenCalledWith('tournaments',expect.stringContaining('main_event:tournament_events(guarantee_amount)'));
+    expect(state.select).toHaveBeenCalledWith('tournaments',expect.stringContaining('main_event:tournament_events!tournaments_event_id_fkey(guarantee_amount)'));
     expect(result.current.data?.mainEventGuarantee).toBe(2500000);
     expect(result.current.data?.guarantee).toBe(0);
     expect(result.current.data?.prizePool).toBe(0);

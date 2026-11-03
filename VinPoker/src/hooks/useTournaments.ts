@@ -73,6 +73,7 @@ export function useTournaments(clubId: string | undefined, actorId: string | und
         `
         )
         .eq("club_id", clubId)
+        .is("deleted_at", null)
         .abortSignal(controller.signal)
         .order("created_at", { ascending: false }));
 
@@ -127,6 +128,7 @@ export function useActiveTournaments(clubId: string | undefined, actorId: string
         `
         )
         .eq("club_id", clubId)
+        .is("deleted_at", null)
         .in("status", ["active", "live", "break", "final_table"])
         .abortSignal(controller.signal)
         .order("name"));
