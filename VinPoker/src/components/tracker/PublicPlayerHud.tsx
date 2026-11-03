@@ -72,7 +72,9 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
         });};
         // Clear private data synchronously; spread the subsequent public checks
         // so a global revocation does not send every spectator to Edge at once.
-        if(reason!=='open')revalidationTimer=setTimeout(read,250+Math.random()*2500);else read();
+        // Permission events fan out to every open HUD. Clear immediately above,
+        // but spread the bounded recheck so it cannot starve live-table reads.
+        if(reason!=='open')revalidationTimer=setTimeout(read,250+Math.random()*10000);else read();
       };
       load();unsubscribe=observePublicHudRevocation(tournamentId,load);
     }).catch(()=>{if(!controller.signal.aborted)setError(true);});

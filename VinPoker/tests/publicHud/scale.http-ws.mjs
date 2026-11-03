@@ -137,7 +137,7 @@ for(const scenario of ['concentrated','distributed']){
    state.hudActive=false;
    if(state.verifyAfterRead){
     state.verifyAfterRead=false;const epoch=state.hudEpoch;
-    track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch)await verifyHud('coalesced-access-verify');})());
+    track((async()=>{await sleep(250+Math.random()*10000);if(epoch===state.hudEpoch)await verifyHud('coalesced-access-verify');})());
    }
   };
   const openHud=async(phase='user-open')=>{
@@ -191,10 +191,10 @@ for(const scenario of ['concentrated','distributed']){
    state.hudController?.abort();state.hudController=null;state.hudActive=false;state.verifyAfterRead=false;
    const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
    // Same clear-now, jittered verification policy as the actual HUD component.
-   track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch&&Date.now()<end)await openHud('revocation-revalidate');})());
+   track((async()=>{await sleep(250+Math.random()*10000);if(epoch===state.hudEpoch&&Date.now()<end)await openHud('revocation-revalidate');})());
   }).subscribe(s=>{
    state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
-   if(state.accessOnline){if(state.accessJoined){state.accessReconnect++;track((async()=>{await sleep(250+Math.random()*2500);await verifyHud('reconnect-verify');})());}state.accessJoined=true;}
+   if(state.accessOnline){if(state.accessJoined){state.accessReconnect++;track((async()=>{await sleep(250+Math.random()*10000);await verifyHud('reconnect-verify');})());}state.accessJoined=true;}
   });
   // Admit at most 50 new viewers/second, then hold the entire target audience
   // for the full measured duration. Mass reconnect remains simultaneous.

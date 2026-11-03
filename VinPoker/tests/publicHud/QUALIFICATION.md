@@ -68,11 +68,19 @@ https://supabase.com/docs/guides/functions/limits and
 https://github.com/supabase/edge-runtime/blob/v1.73.13/crates/base/src/worker/supervisor/strategy_per_request.rs.
 The original `per_worker` probe failures are retained: cumulative worker CPU
 retirement caused `WorkerAlreadyRetired`/HTTP500 under concurrent HUD reads.
+In `per_worker`, pool size bounds worker count, not concurrent HTTP requests;
+the same numeric CPU caps are cumulative per worker rather than per request.
 The v1.77.9 `per_request` 1,000-viewer probe 41741167295 also failed during
 global withdrawal/revalidation, despite all initial HUD reads succeeding. Its
 request backlog remained while PostgreSQL was largely idle. The policy comparison
 tests worker reuse/retirement and cancellation handling with unchanged caps;
 it does not relax timeout, latency, recovery or error acceptance gates.
+The first v1.77.9 `per_worker` probe 41742090760 also failed under the global
+revalidation burst. The UI and matching harness now spread permission/reconnect
+HUD rechecks over 250–10,250ms, while clearing revoked data synchronously.
+Initial user opens remain immediate; table delivery and every acceptance gate
+are unchanged. This bounded access recheck delay is distinct from the 5-second
+server projection freshness target and adds no HUD polling.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 
