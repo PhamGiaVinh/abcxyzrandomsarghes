@@ -22,6 +22,7 @@ on:
       - "VinPoker/src/components/cashier/tournament-live/TournamentLiveView.tsx"
       - "VinPoker/src/components/cashier/tournament-live/ClockPanel*"
       - "VinPoker/src/components/LiveStateEditor*"
+      - "VinPoker/src/components/floor/TournamentLifecycleControls*"
       - "VinPoker/src/lib/tournament/clockControlState*"
       - "VinPoker/src/i18n/locales/**"
       - "VinPoker/tests/viewerHub/tournamentLiveViewBlindContext.test.tsx"
@@ -146,6 +147,7 @@ jobs:
           src/lib/tournament/statusPresentation.test.ts
           src/hooks/useTournamentParticipationSummary.test.tsx
           src/components/LiveStateEditor.test.tsx
+          src/components/floor/TournamentLifecycleControls.test.tsx
           src/lib/tournamentParticipation.test.ts
           src/hooks/useTournamentTvDataCore.test.tsx
           src/components/cashier/tournament-live/handinput/useStandaloneRosterIntent.test.tsx
@@ -214,9 +216,9 @@ jobs:
           src/pages/ops/OpsDealerSwing.readState.test.tsx
 
       # The legacy Floor/SuperAdmin summary is outside the targeted ops config.
-      - name: Lint chip-bank inventory display and regression tests
+      - name: Lint chip-bank display and clock navigation regressions
         working-directory: VinPoker
-        run: npx eslint src/components/chip-ops/BankAuditTab.tsx src/components/chip-ops/BankAuditTab.test.tsx
+        run: npx eslint src/components/chip-ops/BankAuditTab.tsx src/components/chip-ops/BankAuditTab.test.tsx src/components/floor/TournamentLifecycleControls.tsx src/components/floor/TournamentLifecycleControls.test.tsx
 
       - name: Type-check complete application
         working-directory: VinPoker

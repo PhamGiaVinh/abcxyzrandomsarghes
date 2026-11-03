@@ -23,7 +23,7 @@ function ScopedLifecycleControls({tournament,onChanged}:Props){
   <p>Trạng thái giải: <span className="font-medium">{tournamentStatusLabel(tournament.status,t)}</span></p>
   <p className="text-xs text-muted-foreground">Bắt đầu, tạm dừng và tiếp tục tại Đồng hồ. Kết thúc qua Chốt giải để kiểm tra bàn, hand và kết quả; không đổi trạng thái trực tiếp.</p>
   <div className="flex flex-wrap gap-2">
-   {ready?<Button asChild size="sm" variant="outline"><Link to={clock}>Đồng hồ &amp; bắt đầu giải</Link></Button>
+   {ready?<Button asChild size="sm" variant="outline"><Link reloadDocument to={clock}>Đồng hồ &amp; bắt đầu giải</Link></Button>
     :<Button size="sm" variant="outline" disabled>Đồng hồ &amp; bắt đầu giải</Button>}
    {FEATURES.closeReport&&<Button size="sm" variant="outline" disabled={!ready} onClick={()=>setCloseOpen(true)}>
     {tournament.status==='completed'?'Xem báo cáo chốt giải':'Chốt giải'}

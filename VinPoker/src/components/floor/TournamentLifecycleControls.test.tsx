@@ -14,6 +14,10 @@ it('observes status and directs clock operations to the exact scoped workspace, 
  render(<MemoryRouter><TournamentLifecycleControls tournament={tour} onChanged={vi.fn()}/></MemoryRouter>);
  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
  expect(screen.getByRole('link',{name:'Đồng hồ & bắt đầu giải'})).toHaveAttribute('href','/ops/floor/tournaments/tour-a/clock?club=club-a');
+ let intercepted:boolean|undefined;
+ document.addEventListener('click',event=>{intercepted=event.defaultPrevented;event.preventDefault();},{once:true});
+ fireEvent.click(screen.getByRole('link',{name:'Đồng hồ & bắt đầu giải'}));
+ expect(intercepted).toBe(false);
  expect(screen.getByText('tournamentLive.statusLabels.registering')).toBeInTheDocument();expect(f.close).not.toHaveBeenCalled();
 });
 it('opens the existing close report and refreshes only on its confirmed completion',async()=>{

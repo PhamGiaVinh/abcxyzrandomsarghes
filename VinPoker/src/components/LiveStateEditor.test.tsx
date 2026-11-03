@@ -30,6 +30,13 @@ it("reads lazily and never offers direct duplicate-state writes", async () => {
   expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   expect(state.from).not.toHaveBeenCalled();
   expect(screen.getByRole("link")).toHaveAttribute("href", "/ops/floor/tournaments/a/clock?club=club");
+  let intercepted: boolean | undefined;
+  document.addEventListener('click', event => {
+    intercepted = event.defaultPrevented;
+    event.preventDefault(); // Suppress jsdom navigation after observing the React Router handler.
+  }, { once: true });
+  fireEvent.click(screen.getByRole('link'));
+  expect(intercepted).toBe(false); // /ops must load ops.html instead of the main app's 404 route.
 });
 
 it("removes A state immediately when switching to B, including a late A read", async () => {
