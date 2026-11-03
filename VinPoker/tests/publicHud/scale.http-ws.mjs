@@ -93,7 +93,11 @@ for(const scenario of ['concentrated','distributed']){
    const components=message.payload.components??['tables'];
    if(components.includes('tables')||components.includes('visibility'))track(read());
   }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());}});
-  client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{state.hudEpoch++;state.frozen=null;state.revocations++;stats.revocationClears++;track(openHud());}).subscribe(s=>{state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;});
+  client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
+   const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
+   // Same clear-now, jittered verification policy as the actual HUD component.
+   track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch&&Date.now()<end)await openHud();})());
+  }).subscribe(s=>{state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;});
   if(i%25===24)await sleep(25);
  }
  try{await until(async()=>clients.every(c=>c.online&&c.accessOnline),60000,'Not every viewer joined both live channels');}

@@ -1,4 +1,4 @@
-import {render,screen,waitFor} from '@testing-library/react';
+import {act,render,screen,waitFor} from '@testing-library/react';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 const mock=vi.hoisted(()=>({rpc:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:mock.rpc}}));
@@ -7,6 +7,17 @@ import {PublicPaidWinnings} from './PublicPaidWinnings';
 const paid=(playerId:string,totalWinnings:number)=>({data:{playerId,totalWinnings,complete:true,scope:'cashier-confirmed'},error:null});
 beforeEach(()=>mock.rpc.mockReset());
 describe('public paid winnings',()=>{
+ it('freezes HUD winnings until the window is reopened',async()=>{
+  mock.rpc.mockReturnValue({abortSignal:async()=>paid('a',2000000)});
+  const view=render(<PublicPaidWinnings playerId="a" live={false}/>);
+  expect(await screen.findByText('2.000.000 ₫')).toBeInTheDocument();
+  vi.useFakeTimers();
+  try{await act(async()=>{await vi.advanceTimersByTimeAsync(60000);});expect(mock.rpc).toHaveBeenCalledTimes(1);}
+  finally{vi.useRealTimers();view.unmount();}
+  mock.rpc.mockReturnValue({abortSignal:async()=>paid('a',3000000)});
+  const reopened=render(<PublicPaidWinnings playerId="a" live={false}/>);
+  expect(await screen.findByText('3.000.000 ₫')).toBeInTheDocument();expect(mock.rpc).toHaveBeenCalledTimes(2);reopened.unmount();
+ });
  it('reads actual paid winnings and fails closed on a mismatched player',async()=>{
   mock.rpc.mockReturnValue({abortSignal:async()=>paid('a',2000000)});
   const view=render(<PublicPaidWinnings playerId="a"/>);

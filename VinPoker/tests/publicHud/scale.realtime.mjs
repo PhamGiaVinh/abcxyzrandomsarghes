@@ -14,7 +14,17 @@ export async function configureLocalRealtime(project){
  for(let attempt=0;attempt<60;attempt++){
   try{
    const {stdout}=await run('docker',['exec',`supabase_realtime_${project}`,'/app/bin/realtime','rpc',code],{timeout:5000,maxBuffer:1024*1024});
-   if(stdout.includes('HUD_SCALE_LIMITS_OK'))return;
+   if(stdout.includes('HUD_SCALE_LIMITS_OK')){
+    // Initialize the real Broadcast logical publication before subscribers race
+    // first-tenant setup. No fake send/channel is installed by this fixture.
+    await run('docker',['exec','-e','PGPASSWORD=postgres',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-v','ON_ERROR_STOP=1','-c',
+     `DO $$ BEGIN
+      IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-hud-scale-disposable' THEN RAISE EXCEPTION 'fixture_scope_required';END IF;
+      IF NOT EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime_messages_publication') THEN CREATE PUBLICATION supabase_realtime_messages_publication FOR TABLE realtime.messages;END IF;
+      IF NOT EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime_messages_publication' AND schemaname='realtime' AND tablename='messages') THEN RAISE EXCEPTION 'broadcast_publication_not_ready';END IF;
+     END $$;`],{timeout:5000,maxBuffer:1024*1024});
+    return;
+   }
   }catch{/* Do not expose admin command output or tenant credentials. */}
   await new Promise(resolve=>setTimeout(resolve,1000));
  }

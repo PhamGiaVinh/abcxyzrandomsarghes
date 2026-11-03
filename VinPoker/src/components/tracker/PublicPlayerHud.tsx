@@ -50,25 +50,29 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
     const controller = new AbortController();
     scopeController.current=controller;
     let unsubscribe:(()=>void)|undefined;
-    let pending=new AbortController(),attempt=0;
+    let pending=new AbortController(),attempt=0,revalidationTimer:ReturnType<typeof setTimeout>|undefined;
     void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud,observePublicHudRevocation}) => {
       if(controller.signal.aborted)return;
       let frozen:PreparedPublicPlayerHudData|null=null;
       const load=(reason:'verify'|'revoked'='verify')=>{
+        clearTimeout(revalidationTimer);
         pending.abort();pending=new AbortController();const owned=++attempt;
         if(reason==='revoked'){frozen=null;setResult(null);}
         setError(false);setPreparing(false);
-        void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen?.accessSnapshot).then(value=>{
+        const read=()=>{void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen?.accessSnapshot).then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
             if(!frozen||value.accessChanged){frozen=value;setResult(value);}
           }
         }).catch(reason=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
-        });
+        });};
+        // Clear private data synchronously; spread the subsequent public checks
+        // so a global revocation does not send every spectator to Edge at once.
+        if(reason==='revoked')revalidationTimer=setTimeout(read,250+Math.random()*2500);else read();
       };
       load();unsubscribe=observePublicHudRevocation(tournamentId,load);
     }).catch(()=>{if(!controller.signal.aborted)setError(true);});
-    return () => {controller.abort();pending.abort();unsubscribe?.();};
+    return () => {controller.abort();pending.abort();clearTimeout(revalidationTimer);unsubscribe?.();};
   }, [tournamentId, playerId]);
   // Scope on render as well as cleanup: never flash the previous person's statistics.
   const complete = result?.playerId === playerId && result?.tournamentId === tournamentId ? result : null;
@@ -107,7 +111,7 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
       </div>
       <p className="text-xs text-muted-foreground">Toàn bộ lịch sử công khai: {complete?.lifetimeHands?.toLocaleString('vi-VN') ?? '—'} hand qua tất cả tour, không giới hạn số hand. HANDS là số ván đủ bằng chứng để tính chỉ số. Mỗi tỷ lệ dùng số cơ hội riêng; mẫu nhỏ chưa đại diện phong cách chơi. *TAF = bet/raise trên các quyết định bet/raise/call/fold ở river. WTSD và W$SD tính theo các ván thấy flop/showdown.</p>
       {!!complete?.omittedHands && <p className="text-xs text-amber-400">Bỏ qua {complete?.omittedHands} ván lịch sử thiếu bằng chứng hành động preflop.</p>}
-      <PublicPaidWinnings playerId={playerId!}/><section className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">Kết quả công khai đã xác minh từ hồ sơ; được trình bày riêng với tiền thưởng Cashier đã trả.</p><h4 className="mt-5 text-sm">Last 5 Tournaments</h4>{current.recentResults?.length ? <><RecentResultChart results={current.recentResults}/><ol className="mt-3 space-y-3">{current.recentResults.map((r,i)=><li key={`${r.event_date}-${i}`} className="flex justify-between gap-3 border-t border-border pt-2 text-xs"><span>{r.tournament_name}<span className="block text-muted-foreground">{r.event_date}</span></span><span className="text-right font-mono">{r.position == null ? '—' : `#${r.position}`}{r.total_entries ? ` / ${r.total_entries}` : ''}<span className="block text-primary">{formatChips(r.prize)} ₫</span></span></li>)}</ol></> : <p className="mt-3 text-sm text-muted-foreground">Chưa có kết quả công khai đã xác minh.</p>}</section>
+      <PublicPaidWinnings playerId={playerId!} live={false}/><section className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">Kết quả công khai đã xác minh từ hồ sơ; được trình bày riêng với tiền thưởng Cashier đã trả.</p><h4 className="mt-5 text-sm">Last 5 Tournaments</h4>{current.recentResults?.length ? <><RecentResultChart results={current.recentResults}/><ol className="mt-3 space-y-3">{current.recentResults.map((r,i)=><li key={`${r.event_date}-${i}`} className="flex justify-between gap-3 border-t border-border pt-2 text-xs"><span>{r.tournament_name}<span className="block text-muted-foreground">{r.event_date}</span></span><span className="text-right font-mono">{r.position == null ? '—' : `#${r.position}`}{r.total_entries ? ` / ${r.total_entries}` : ''}<span className="block text-primary">{formatChips(r.prize)} ₫</span></span></li>)}</ol></> : <p className="mt-3 text-sm text-muted-foreground">Chưa có kết quả công khai đã xác minh.</p>}</section>
       <p className="text-xs text-muted-foreground">Ô — nghĩa là chưa có cơ hội hoặc dữ liệu đã xác minh, không phải 0%. Không suy ra tiền thắng từ thay đổi stack.</p>
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent className="operations-typography max-h-[90svh] max-w-xl overflow-y-auto border-border bg-card p-5 text-foreground"><DialogTitle>Giải thích chỉ số HUD</DialogTitle><DialogDescription>Bấm tên chỉ số để xem định nghĩa, cách tính và số cơ hội thực tế.</DialogDescription><PublicPlayerHudHelp selected={helpMetric} metrics={metrics} hands={complete?.analytics.handsObserved ?? 0} onSelect={setHelpMetric}/></DialogContent></Dialog>
     </>}

@@ -1,4 +1,4 @@
-import {render,screen,waitFor,cleanup,fireEvent} from '@testing-library/react';
+import {act,render,screen,waitFor,cleanup,fireEvent} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
@@ -6,6 +6,17 @@ const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')
 vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;return()=>{};}}));
 vi.mock('@/components/PublicPaidWinnings',()=>({PublicPaidWinnings:()=> <section>Total Winnings</section>}));
 afterEach(()=>{cleanup();load.mockReset();});
+it('clears a revoked HUD immediately before its jittered access check',async()=>{
+ const random=vi.spyOn(Math,'random').mockReturnValue(0);
+ try{
+  load.mockResolvedValue(result('a'));
+  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
+  load.mockResolvedValue({...result('a'),name:'REVALIDATED'});
+  act(()=>access.callback!('revoked'));
+  expect(screen.queryByText('TEST a')).not.toBeInTheDocument();expect(load).toHaveBeenCalledTimes(1);
+  await screen.findByText('REVALIDATED');expect(load).toHaveBeenCalledTimes(2);
+ }finally{random.mockRestore();}
+});
 it('keeps opened counters on reconnect and replaces them only after access revocation',async()=>{
  load.mockResolvedValue({...result('a'),accessSnapshot:'1:2:',accessChanged:false});
  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
