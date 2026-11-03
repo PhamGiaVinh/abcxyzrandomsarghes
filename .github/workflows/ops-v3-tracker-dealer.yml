@@ -29,6 +29,8 @@ on:
       - "VinPoker/tests/viewerHub/tournamentLiveViewInitialization.test.tsx"
       - "VinPoker/src/pages/TrackerDashboard.tsx"
       - "VinPoker/src/pages/DealerSwingDashboard*"
+      - "VinPoker/src/hooks/useAuth*"
+      - "VinPoker/src/hooks/useOperatorClubs*"
       - "VinPoker/src/pages/TrackerDashboard.test.tsx"
       - "VinPoker/src/pages/TrackerHandHistory.tsx"
       - "VinPoker/src/pages/TrackerHandHistory.readiness.test.tsx"
@@ -113,6 +115,8 @@ jobs:
           src/ops/auth/OpsAuthProvider.test.tsx
           src/ops/auth/OpsCapabilityProvider.refocus.test.tsx
           src/ops/auth/opsSessionValidation.test.ts
+          src/hooks/useAuth.test.tsx
+          src/hooks/useOperatorClubs.test.tsx
           src/pages/ops/TourCashierWorkbenchShift.test.tsx
           tests/viewerHub/tournamentLiveViewBlindContext.test.tsx
           tests/viewerHub/tournamentLiveViewInitialization.test.tsx
