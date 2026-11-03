@@ -53,9 +53,16 @@ The local runtime uses `per_request` supervision and an explicitly recorded
 pool per function. The bounded diagnostic settings are 8, 16 or 64 (default 16);
 pin one setting before running both full qualification scenarios. Earlier
 64-worker failures are retained. This tunes isolated two-core resource use,
-not application workload or hosted quotas. The CLI-generated gateway, image, 256MB per worker,
+not application workload or hosted quotas. The exact CLI-generated gateway, 256MB per worker,
 CPU soft/hard 1000/2000ms, wall/HTTP limits, secrets and bind mounts are retained.
-Only policy and pool parallelism change; no production setting changes. This
+The runtime image is pinned to stable `v1.77.9` at OCI index digest
+`sha256:6b850a2ccf0bf50ecac9accff8098095cd191c389c2a53c59b857aa0f53a8343`.
+It includes the upstream worker-pool notification fix:
+https://github.com/supabase/edge-runtime/pull/763. The CLI stays on 2.101.0;
+before/after image IDs are recorded, while gateway code, environment, mounts
+and configured resource/time caps are verified unchanged (apart from the
+explicit policy/pool options). Earlier v1.73.13 failures remain retained.
+No production setting changes. This
 matches per-request CPU accounting, not the topology of the hosted service:
 https://supabase.com/docs/guides/functions/limits and
 https://github.com/supabase/edge-runtime/blob/v1.73.13/crates/base/src/worker/supervisor/strategy_per_request.rs.

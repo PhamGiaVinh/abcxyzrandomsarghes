@@ -1,6 +1,6 @@
-// Local-only runtime topology. Keep the CLI's exact generated gateway, image,
-// function limits, secrets and mounts; reset CPU accounting per request rather
-// than retiring a worker after cumulative CPU across concurrent requests.
+// Local-only runtime topology. Keep the exact CLI gateway, limits, secrets and
+// mounts, with a pinned stable runtime that fixes stale worker-pool wakeups.
+// This is not a change to the hosted runtime or a hosted-capacity claim.
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -10,6 +10,7 @@ import {parseEnv} from 'node:util';
 const [mode,root,project]=process.argv.slice(2);
 const parallelism=Number(process.env.PUBLIC_HUD_SCALE_EDGE_PARALLELISM??16);
 assert.ok([8,16,64].includes(parallelism),'Bounded isolated pool setting required');
+const runtimeImage='ghcr.io/supabase/edge-runtime:v1.77.9@sha256:6b850a2ccf0bf50ecac9accff8098095cd191c389c2a53c59b857aa0f53a8343';
 assert.ok(['capture','apply'].includes(mode));
 assert.match(root??'',/^\/tmp\/vinpoker-hud-stack-[A-Za-z0-9]+$/);
 assert.match(project??'',/^hud-scale-[a-z0-9-]+$/);
@@ -31,6 +32,9 @@ if(mode==='capture'){
  writeFileSync(file,JSON.stringify(value),{mode:0o600});
 }else{
  const original=JSON.parse(readFileSync(file,'utf8'));assert.equal(original.Name,'/'+name);
+ execFileSync('docker',['pull',runtimeImage],{stdio:['ignore','pipe','pipe']});
+ const targetImage=JSON.parse(execFileSync('docker',['image','inspect',runtimeImage],{encoding:'utf8',stdio:['ignore','pipe','pipe']}))[0];
+ assert.ok(targetImage.RepoDigests.some(value=>value.endsWith('@'+runtimeImage.split('@')[1])),'Pinned public runtime digest differs');
  const shell=original.Config.Entrypoint[2];assert.equal(shell.split('--policy=per_worker').length,2);
  assert.ok(original.HostConfig.NetworkMode.includes(project));
  const request=(method,path,body)=>new Promise((resolve,reject)=>{
@@ -47,19 +51,19 @@ if(mode==='capture'){
  try{const current=inspect();assert.equal(current.Id,original.Id);await request('DELETE',`/containers/${original.Id}?force=true`);}catch(error){
   if(error?.code!=='ENOENT'&&!String(error?.stderr??'').includes('No such object'))throw error;
  }
- const config={...original.Config,Image:original.Image,Entrypoint:['sh','-c',shell.replace('--policy=per_worker',`--policy=per_request --max-parallelism=${parallelism}`)],
+ const config={...original.Config,Image:runtimeImage,Entrypoint:['sh','-c',shell.replace('--policy=per_worker',`--policy=per_request --max-parallelism=${parallelism}`)],
   HostConfig:original.HostConfig,NetworkingConfig:{EndpointsConfig:{[original.HostConfig.NetworkMode]:{Aliases:[name]}}}};
  const created=await request('POST','/containers/create?name='+encodeURIComponent(name),config);
  assert.match(created.Id,/^[a-f0-9]{64}$/);
  await request('POST',`/containers/${created.Id}/start`);
- const actual=inspect();assert.equal(actual.Id,created.Id);assert.equal(actual.Image,original.Image);
+ const actual=inspect();assert.equal(actual.Id,created.Id);assert.equal(actual.Image,targetImage.Id);
  assert.deepEqual(actual.Config.Entrypoint,config.Entrypoint);assert.ok(JSON.stringify(actual.Config.Env)===JSON.stringify(original.Config.Env),'Disposable environment changed');
  assert.ok(JSON.stringify(actual.HostConfig.Binds)===JSON.stringify(original.HostConfig.Binds),'Disposable bind mounts changed');
  assert.equal(actual.HostConfig.NetworkMode,original.HostConfig.NetworkMode);
  for(const key of ['Memory','MemorySwap','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','Ulimits'])assert.deepEqual(actual.HostConfig[key],original.HostConfig[key]);
  execFileSync('docker',['exec',`supabase_kong_${project}`,'kong','reload'],{stdio:['ignore','pipe','pipe']});
- writeFileSync('output/hud-scale/runtime-policy.json',JSON.stringify({kind:'ISOLATED_RUNTIME_CONFIGURATION_NOT_HOSTED_TOPOLOGY',image:original.Config.Image,imageId:original.Image,
+ writeFileSync('output/hud-scale/runtime-policy.json',JSON.stringify({kind:'ISOLATED_RUNTIME_CONFIGURATION_NOT_HOSTED_TOPOLOGY',image:runtimeImage,imageId:actual.Image,originalImage:original.Config.Image,originalImageId:original.Image,
   policy:'per_request',maxParallelismPerFunction:parallelism,workerLimits:'unchanged CLI gateway: 256MB, CPU soft1000ms/hard2000ms, wall400s',
   actualConfigurationVerified:true,resourceCaps:Object.fromEntries(['Memory','MemorySwap','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','Ulimits'].map(key=>[key,actual.HostConfig[key]])),
-  originalGatewaySha256:digest(shell),gatewaySha256:digest(actual.Config.Entrypoint[2]),reason:'per_worker CPU retirement/WorkerAlreadyRetired under concurrent HUD reads'},null,2));
+  originalGatewaySha256:digest(shell),gatewaySha256:digest(actual.Config.Entrypoint[2]),reason:'Stable v1.77.9 worker-pool notification fix (supabase/edge-runtime#763); per-request CPU accounting'},null,2));
 }
