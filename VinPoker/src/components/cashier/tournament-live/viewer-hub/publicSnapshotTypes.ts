@@ -113,6 +113,7 @@ export interface PublicRankingRow {
 }
 
 export interface PublicPayoutRow {
+  paymentConfirmed?: boolean;
   fromPlace: number;
   toPlace: number;
   amountPerPlayer: number;

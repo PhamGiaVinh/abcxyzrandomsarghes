@@ -10,6 +10,8 @@
     "src/components/cashier/tournament-live/viewer-hub/RealtimePayoutPanel.test.tsx",
     "src/components/cashier/tournament-live/viewer-hub/usePublicSpectatorSnapshot.ts",
     "src/components/cashier/tournament-live/viewer-hub/usePublicSpectatorSnapshot.test.tsx",
-    "src/components/ops/shared/FloorPayoutResults.tsx"
+    "src/components/ops/shared/FloorPayoutResults.tsx",
+    "src/components/ops/shared/FloorPayoutResults.test.tsx",
+    "src/components/cashier/tournament-live/viewer-hub/PrizesPanel.tsx"
   ]
 }

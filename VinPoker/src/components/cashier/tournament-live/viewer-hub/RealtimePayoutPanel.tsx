@@ -2,12 +2,12 @@ import { Crown, Loader2, Trophy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { PublicFreshness, PublicPayoutRow } from "./publicSnapshotTypes";
 
-export function RealtimePayoutPanel({ rows, freshness, loading, published }: { rows: PublicPayoutRow[]; freshness?: PublicFreshness; loading: boolean; published: boolean }) {
+export function RealtimePayoutPanel({ rows, freshness, loading, published, requirePaymentConfirmation = true }: { rows: PublicPayoutRow[]; freshness?: PublicFreshness; loading: boolean; published: boolean; requirePaymentConfirmation?: boolean }) {
   const { t } = useTranslation();
   if (loading) return <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   if (!published || rows.length === 0) return <div className="rounded-2xl border border-border/55 bg-card/45 py-12 text-center text-sm text-muted-foreground">Chưa công bố cơ cấu</div>;
   const champion = freshness?.state === "current"
-    ? rows.find((row) => row.fromPlace === 1 && row.toPlace === 1 && row.resultStatus === "official" && row.playerName?.trim())
+    ? rows.find((row) => row.fromPlace === 1 && row.toPlace === 1 && row.resultStatus === "official" && row.playerName?.trim() && (!requirePaymentConfirmation || row.paymentConfirmed === true))
     : undefined;
   return (
     <section className="overflow-hidden rounded-2xl border border-border/55 bg-card/55" aria-label="Cơ cấu giải thưởng">
@@ -25,7 +25,7 @@ export function RealtimePayoutPanel({ rows, freshness, loading, published }: { r
       <div className="divide-y divide-border/35">
         {rows.map((row) => <div key={`${row.fromPlace}:${row.toPlace}`} className={`grid min-h-[60px] grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-2 px-3 text-sm sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:px-4 ${row.fromPlace === 1 ? "bg-amber-400/10" : ""}`}>
           <span className="inline-flex items-center gap-1 font-bold">{row.fromPlace <= 3 && <Trophy className="h-3.5 w-3.5 text-amber-400" />}{row.fromPlace === row.toPlace ? `#${row.fromPlace}` : `#${row.fromPlace}–${row.toPlace}`}</span>
-          <span className="flex min-w-0 items-center gap-2 font-semibold text-foreground">{row.resultStatus === "official" && row.avatarUrl && <img src={row.avatarUrl} alt="" className="hidden h-8 w-8 rounded-full object-cover sm:block" />}<span className="truncate">{row.resultStatus === "official" ? row.playerName || "—" : "—"}</span></span>
+          <span className="flex min-w-0 items-center gap-2 font-semibold text-foreground">{row.resultStatus === "official" && (!requirePaymentConfirmation || row.paymentConfirmed === true) && row.avatarUrl && <img src={row.avatarUrl} alt="" className="hidden h-8 w-8 rounded-full object-cover sm:block" />}<span className="truncate">{row.resultStatus === "official" && (!requirePaymentConfirmation || row.paymentConfirmed === true) ? row.playerName || "—" : "—"}</span></span>
           <span className={`tracker-num whitespace-nowrap text-xs font-extrabold sm:text-sm ${row.fromPlace <= 3 ? "text-amber-200" : "text-foreground"}`}>{new Intl.NumberFormat("vi-VN").format(row.amountPerPlayer)}</span>
         </div>)}
       </div>

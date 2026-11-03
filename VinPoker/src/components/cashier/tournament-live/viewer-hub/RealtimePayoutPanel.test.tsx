@@ -4,9 +4,18 @@ import { RealtimePayoutPanel } from "./RealtimePayoutPanel";
 import type { PublicFreshness, PublicPayoutRow } from "./publicSnapshotTypes";
 
 afterEach(cleanup);
-const rows: PublicPayoutRow[] = [{ fromPlace: 1, toPlace: 1, amountPerPlayer: 4000000, playerName: "Người thắng", avatarUrl: null, resultStatus: "official" }];
+const rows: PublicPayoutRow[] = [{ fromPlace: 1, toPlace: 1, amountPerPlayer: 4000000, playerName: "Người thắng", avatarUrl: null, resultStatus: "official", paymentConfirmed: true }];
 const current: PublicFreshness = { state: "current", sourceRevision: "1", projectedSourceRevision: "1", sourceChangedAt: null, publishedAt: null, serverCheckedAt: "2026-11-03T00:00:00Z", oldestPendingAt: null };
 describe("published payout champion", () => {
+  it.each([false, undefined])("withholds names and champion without cashier confirmation (%s)", (paymentConfirmed) => {
+    render(<RealtimePayoutPanel rows={[{ ...rows[0], paymentConfirmed }]} freshness={current} loading={false} published />);
+    expect(screen.queryByText("Người thắng")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nhà vô địch")).not.toBeInTheDocument();
+  });
+  it("shows the internal Floor result before payment only on the explicit internal surface", () => {
+    render(<RealtimePayoutPanel rows={[{ ...rows[0], paymentConfirmed: false }]} freshness={current} loading={false} published requirePaymentConfirmation={false} />);
+    expect(screen.getAllByText("Người thắng")).toHaveLength(2);
+  });
   it("shows the server-confirmed champion and amount", () => {
     render(<RealtimePayoutPanel rows={rows} freshness={current} loading={false} published />);
     expect(screen.getByText("Nhà vô địch")).toBeInTheDocument();
