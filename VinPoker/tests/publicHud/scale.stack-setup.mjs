@@ -6,6 +6,7 @@ const status=parse(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const secrets=parse(readFileSync(process.env.PUBLIC_HUD_WORKER_ENV_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(!/^hud-scale-[a-z0-9-]+$/.test(project)||status.API_URL!=='http://127.0.0.1:54321')throw Error('Isolated stack scope invalid');
+if(sql("SELECT position('fixture_messages' IN pg_get_functiondef('realtime.send(jsonb,text,text,boolean)'::regprocedure))=0;")!=='t')throw Error('Genuine Supabase realtime.send required');
 // Supabase owns _realtime under its existing admin role. Configure only the
 // disposable container; never grant/alter BYPASSRLS or change application roles.
 execFileSync('docker',['exec','-e','PGPASSWORD=postgres',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-v','ON_ERROR_STOP=1','-c',
@@ -24,6 +25,10 @@ sql(`CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS pg_ne
  REVOKE ALL ON FUNCTION public.fixture_provision_hud_workers_v1(text,text,text) FROM PUBLIC,anon,authenticated;
  GRANT EXECUTE ON FUNCTION public.fixture_provision_hud_workers_v1(text,text,text) TO service_role;
  NOTIFY pgrst,'reload schema';`);
+// Provisioning Vault and cron is an administrator operation, separate from the
+// application RPCs being qualified. Use the existing local admin, not a new role.
+execFileSync('docker',['exec','-e','PGPASSWORD=postgres',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-v','ON_ERROR_STOP=1','-c',
+ 'ALTER FUNCTION public.fixture_provision_hud_workers_v1(text,text,text) OWNER TO supabase_admin;'],{stdio:'pipe'});
 execFileSync('docker',['restart',`supabase_realtime_${project}`],{stdio:'pipe'});
 let lastStatus=0;
 for(let i=0;i<60;i++){
@@ -35,5 +40,9 @@ const response=await fetch(status.API_URL+'/rest/v1/rpc/fixture_provision_hud_wo
  method:'POST',headers:{apikey:status.SERVICE_ROLE_KEY,Authorization:`Bearer ${status.SERVICE_ROLE_KEY}`,'Content-Type':'application/json'},
  body:JSON.stringify({p_hud:secrets.PUBLIC_HUD_WORKER_SECRET,p_spectator:secrets.PUBLIC_SPECTATOR_WORKER_SECRET,p_url:`http://supabase_kong_${project}:8000`}),signal:AbortSignal.timeout(10000),
 });
-if(!response.ok)throw Error(`Isolated worker provisioning failed (${response.status}); response withheld to protect fixture credentials`);
+if(!response.ok){
+ const value=await response.json().catch(()=>({}));
+ const permission=typeof value.message==='string'?value.message.match(/^permission denied for (schema|table|function|database) ([a-z0-9_.]+)/):null;
+ throw Error(`Isolated worker provisioning failed (${response.status}, code ${/^[A-Z0-9]{5}$/.test(value.code)?value.code:'unknown'}${permission?', '+permission[0]:''}); remaining response withheld`);
+}
 console.log(JSON.stringify({phase:'real-edge-cron-realtime-ready',project,limits:{localConnections:2000,localEventsPerSecond:20000},productionChanged:false}));

@@ -1,6 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.105.4';
-import { handleOptions, jsonResp } from '../_shared/cors.ts';
+import { handleOptions, jsonResp as baseJsonResp } from '../_shared/cors.ts';
 import {readPublicHudAggregate,readPublicHudCompatibility} from './aggregate.ts';
+function jsonResp(req:Request,data:unknown,status=200){
+  const response=baseJsonResp(req,data,status);
+  response.headers.set('Cache-Control','no-store');response.headers.set('Vary','Origin');
+  return response;
+}
 
 Deno.serve(async req => {
   const preflight = handleOptions(req);
