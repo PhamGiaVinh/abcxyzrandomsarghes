@@ -57,15 +57,15 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
         pending.abort();pending=new AbortController();const owned=++attempt;
         if(reason==='revoked'){frozen=null;setResult(null);}
         setError(false);setPreparing(false);
-        void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal).then(value=>{
+        void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen?.accessSnapshot).then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
-            if(!frozen||frozen.accessRevision!==value.accessRevision){frozen=value;setResult(value);}
+            if(!frozen||value.accessChanged){frozen=value;setResult(value);}
           }
         }).catch(reason=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
         });
       };
-      unsubscribe=observePublicHudRevocation(tournamentId,load);
+      load();unsubscribe=observePublicHudRevocation(tournamentId,load);
     }).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return () => {controller.abort();pending.abort();unsubscribe?.();};
   }, [tournamentId, playerId]);

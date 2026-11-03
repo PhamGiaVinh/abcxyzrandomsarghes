@@ -860,6 +860,7 @@ function TournamentLiveViewContent({
     } catch (failure: unknown) {
       if (!currentRequest()) return;
       if(failure instanceof Error&&failure.message==='public_snapshot_superseded')return;
+      if(usePublicCurrentHand)reportPublicTournamentRead(supabase,tournamentId,false);
       if (!initialLoadedRef.current) {
         initialReadFailedRef.current=true;
         setFatalError(failure instanceof Error ? failure.message==='tracker_context_read_timeout'?'Chưa tải được dữ liệu bàn trong thời gian chờ. Hãy thử lại.':failure.message : "Không tải được dữ liệu live tracker.");

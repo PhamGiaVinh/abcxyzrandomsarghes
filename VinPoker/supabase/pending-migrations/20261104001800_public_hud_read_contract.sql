@@ -23,11 +23,12 @@ BEGIN
   RETURN jsonb_build_object('name',coalesce(identity->>'name','Người chơi'),'avatarUrl',identity->'avatarUrl');
 END $$;
 
-CREATE FUNCTION public.get_public_player_hud_summary_v1(p_tournament_id uuid,p_player_id uuid)
+CREATE FUNCTION public.get_public_player_hud_summary_v1(p_tournament_id uuid,p_player_id uuid,p_access_snapshot text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 DECLARE context jsonb; cfg tracker_analytics_v1.config; total tracker_analytics_v1.player_totals; pending boolean;
 BEGIN
   IF p_tournament_id IS NULL OR p_player_id IS NULL THEN RAISE EXCEPTION 'invalid_scope'; END IF;
+  IF p_access_snapshot IS NOT NULL AND length(p_access_snapshot)>8192 THEN RAISE EXCEPTION 'invalid_access_snapshot'; END IF;
   context:=tracker_analytics_v1.public_context(p_tournament_id,p_player_id);
   IF context IS NULL THEN RETURN jsonb_build_object('access','revoked'); END IF;
   SELECT * INTO cfg FROM tracker_analytics_v1.config WHERE singleton;
@@ -47,7 +48,11 @@ BEGIN
   RETURN context||jsonb_build_object('access','public','scope','all-public-tournaments',
     'tournamentId',p_tournament_id,'playerId',p_player_id,'version',cfg.version,
     'revision',coalesce(total.revision,0)::text,'computedAt',coalesce(total.computed_at,cfg.backfill_started_at),
-    'accessRevision',coalesce((SELECT event_id FROM tracker_analytics_v1.access_revocations ORDER BY event_id DESC LIMIT 1),0)::text,
+    'accessSnapshot',pg_current_snapshot()::text,
+    'accessChanged',CASE WHEN p_access_snapshot IS NULL THEN false ELSE EXISTS(
+      SELECT 1 FROM tracker_analytics_v1.access_revocations
+      WHERE source_txid>=pg_snapshot_xmin(p_access_snapshot::pg_snapshot)
+       AND NOT pg_visible_in_snapshot(source_txid,p_access_snapshot::pg_snapshot)) END,
     'state',CASE WHEN pending THEN 'updating' ELSE 'current' END,
     'coverageComplete',true,'counters',jsonb_build_object(
       'numerators',coalesce(total.numerators,tracker_analytics_v1.zeros()),
@@ -129,8 +134,8 @@ BEGIN
     'handHistory',rows,'nextCursor',CASE WHEN has_more THEN jsonb_build_object('playedAt',last_row->'playedAt','handId',last_row->>'handId') ELSE NULL END);
 END $$;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA tracker_analytics_v1 FROM PUBLIC,anon,authenticated,service_role;
-REVOKE ALL ON FUNCTION public.get_public_player_hud_summary_v1(uuid,uuid),
+REVOKE ALL ON FUNCTION public.get_public_player_hud_summary_v1(uuid,uuid,text),
   public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_public_player_hud_summary_v1(uuid,uuid),
+GRANT EXECUTE ON FUNCTION public.get_public_player_hud_summary_v1(uuid,uuid,text),
   public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid) TO anon,authenticated,service_role;
 COMMIT;

@@ -8,14 +8,14 @@ export function observePublicHudRevocation(tournamentId:string,revalidate:(reaso
 
 export interface PublicHudHistoryCursor {playedAt:string|null;handId:string}
 export interface PreparedPublicPlayerHudData extends PublicPlayerHudData {
-  revision:string;accessRevision:string;metricVersion:string;computedAt:string;updateState:'current'|'updating';
+  revision:string;accessSnapshot:string;accessChanged:boolean;metricVersion:string;computedAt:string;updateState:'current'|'updating';
   nextHistoryCursor:PublicHudHistoryCursor|null;
 }
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const keys=['vpip','pfr','threeBet','foldToThreeBet','fourBet','fiveBet','wtsd','wsd','wwsf','flopCbet','turnCbet','foldToCbet','checkRaise','aggressionFrequency','ats','flopFoldCbet','flopCallCbet','flopRaiseCbet','turnFoldCbet','turnCallCbet','turnRaiseCbet','riverAggression'];
-async function read(tournamentId:string,playerId:string,mode:'summary'|'history',signal:AbortSignal,cursor?:PublicHudHistoryCursor){
+async function read(tournamentId:string,playerId:string,mode:'summary'|'history',signal:AbortSignal,cursor?:PublicHudHistoryCursor,accessSnapshot?:string){
   if(signal.aborted)throw Error('aborted');
-  const {data,error}=await supabase.functions.invoke('public-player-hud',{body:{tournament_id:tournamentId,player_id:playerId,mode,cursor},signal});
+  const {data,error}=await supabase.functions.invoke('public-player-hud',{body:{tournament_id:tournamentId,player_id:playerId,mode,cursor,access_snapshot:accessSnapshot},signal});
   if(error)throw error;
   if(signal.aborted)throw Error('aborted');
   if(data?.access==='revoked')throw Error('PUBLIC_HUD_ACCESS_REVOKED');
@@ -35,15 +35,15 @@ export async function loadPublicHudHistoryPage(tournamentId:string,playerId:stri
   if(next&&cursor&&next.handId===cursor.handId&&next.playedAt===cursor.playedAt)throw Error('PUBLIC_HUD_REPEATED_CURSOR');
   return {hands:data.handHistory,nextCursor:next};
 }
-export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal):Promise<PreparedPublicPlayerHudData>{
+export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal,accessSnapshot?:string):Promise<PreparedPublicPlayerHudData>{
   if(requestSignal.aborted)throw Error('aborted');
   const controller=new AbortController(),abort=()=>controller.abort();
   requestSignal.addEventListener('abort',abort,{once:true});
   try{
     // Two bounded independent reads. No raw-history traversal or retry loop.
-    const [summary,history]=await Promise.all([read(tournamentId,playerId,'summary',controller.signal),loadPublicHudHistoryPage(tournamentId,playerId,controller.signal)]);
+    const [summary,history]=await Promise.all([read(tournamentId,playerId,'summary',controller.signal,undefined,accessSnapshot),loadPublicHudHistoryPage(tournamentId,playerId,controller.signal)]);
     if(summary.scope!=='all-public-tournaments'||summary.coverageComplete!==true||summary.version!=='public-hud-projection-v1'||
-      !/^\d+$/.test(summary.revision)||!/^\d+$/.test(summary.accessRevision)||!Number.isFinite(Date.parse(summary.computedAt))||!Number.isSafeInteger(summary.analytics?.handsObserved)||summary.analytics.handsObserved<0||
+      !/^\d+$/.test(summary.revision)||typeof summary.accessSnapshot!=='string'||!/^\d+:\d+:(\d+(,\d+)*)?$/.test(summary.accessSnapshot)||typeof summary.accessChanged!=='boolean'||!Number.isFinite(Date.parse(summary.computedAt))||!Number.isSafeInteger(summary.analytics?.handsObserved)||summary.analytics.handsObserved<0||
       !Number.isSafeInteger(summary.counters?.publicHands)||summary.counters.publicHands<0||!Number.isSafeInteger(summary.counters?.omittedHands)||
       summary.counters.omittedHands<0||summary.counters.publicHands!==summary.analytics.handsObserved+summary.counters.omittedHands)throw Error('PUBLIC_HUD_INVALID_SUMMARY');
     for(const key of keys){const m=summary.analytics.metrics?.[key];
@@ -56,6 +56,6 @@ export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:s
       sampledTournamentHands:history.hands.length,truncated:history.nextCursor!==null,handHistory:history.hands,
       totalWinnings:summary.totalWinnings,recentResults:summary.recentResults,analytics:summary.analytics,
       lifetimeHands:summary.counters.publicHands,omittedHands:summary.counters.omittedHands,lifetimeAsOf:summary.computedAt,
-      metricVersion:summary.version,revision:summary.revision,accessRevision:summary.accessRevision,computedAt:summary.computedAt,updateState:summary.state,nextHistoryCursor:history.nextCursor};
+      metricVersion:summary.version,revision:summary.revision,accessSnapshot:summary.accessSnapshot,accessChanged:summary.accessChanged,computedAt:summary.computedAt,updateState:summary.state,nextHistoryCursor:history.nextCursor};
   }finally{controller.abort();requestSignal.removeEventListener('abort',abort);}
 }

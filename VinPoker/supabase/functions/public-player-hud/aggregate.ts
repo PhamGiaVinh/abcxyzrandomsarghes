@@ -3,9 +3,13 @@ import type {PublicHudCounters} from '../_shared/publicHudContribution.ts';
 
 interface RpcClient {rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:unknown}>}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export async function readPublicHudAggregate(client:RpcClient,tournamentId:string,playerId:string,mode:'summary'|'history',cursor?:unknown):Promise<Record<string,unknown>>{
+export async function readPublicHudAggregate(client:RpcClient,tournamentId:string,playerId:string,mode:'summary'|'history',cursor?:unknown,accessSnapshot?:unknown):Promise<Record<string,unknown>>{
   if(typeof tournamentId!=='string'||typeof playerId!=='string'||!UUID.test(tournamentId)||!UUID.test(playerId))throw Error('PUBLIC_SCOPE_INVALID');
   const args:Record<string,unknown>={p_tournament_id:tournamentId,p_player_id:playerId};
+  if(mode==='summary'&&accessSnapshot!==undefined){
+    if(typeof accessSnapshot!=='string'||accessSnapshot.length>8192||!/^\d+:\d+:(\d+(,\d+)*)?$/.test(accessSnapshot))throw Error('PUBLIC_ACCESS_SNAPSHOT_INVALID');
+    args.p_access_snapshot=accessSnapshot;
+  }
   if(mode==='history'&&cursor!==undefined&&cursor!==null){
     if(typeof cursor!=='object')throw Error('PUBLIC_CURSOR_INVALID');
     const value=cursor as {playedAt?:unknown;handId?:unknown};

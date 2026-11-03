@@ -27,7 +27,7 @@ async function until(fn,timeout,label){const start=Date.now();while(Date.now()-s
 const percentile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*p))]:null;
 const reports=[];
 for(const scenario of ['concentrated','distributed']){
- const offset={summary:stats.summary.length,realtime:stats.realtime.length,projection:stats.projection.length};
+ const offset={summary:stats.summary.length,realtime:stats.realtime.length,projection:stats.projection.length,reconnects:stats.reconnects};
  const tourCount=scenario==='concentrated'?1:20,expected=new Map(),clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,started=0;
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
@@ -83,7 +83,7 @@ for(const scenario of ['concentrated','distributed']){
  let restarted=false;
  while(Date.now()<end){
   if(!restarted&&Date.now()-started>duration*500){
-   restarted=true;reconnecting=true;
+   restarted=true;reconnecting=true;for(const c of clients)c.online=false;
    await run('docker',['restart',`supabase_realtime_${project}`]);
    await until(async()=>clients.every(c=>c.online),60000,'Mass reconnect failed');reconnecting=false;
   }
@@ -97,10 +97,11 @@ for(const scenario of ['concentrated','distributed']){
  await Promise.all(writers);await Promise.allSettled([...tasks]);
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
- const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),errors:{...stats.errors},reconnects:stats.reconnects};
+ const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects};
  reports.push(report);writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:viewers===1000&&duration===1800,reports},null,2));
  console.log(JSON.stringify(report));
  assert.ok(report.httpSummarySamples>=viewers);assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
+ assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');
  assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');assert.ok(report.healthyRealtimeP95Ms<=3000,'Realtime p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
 }

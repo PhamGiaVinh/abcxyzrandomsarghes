@@ -6,8 +6,12 @@ const status=parse(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const secrets=parse(readFileSync(process.env.PUBLIC_HUD_WORKER_ENV_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(!/^hud-scale-[a-z0-9-]+$/.test(project)||status.API_URL!=='http://127.0.0.1:54321')throw Error('Isolated stack scope invalid');
+// Supabase owns _realtime under its existing admin role. Configure only the
+// disposable container; never grant/alter BYPASSRLS or change application roles.
+execFileSync('docker',['exec',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-v','ON_ERROR_STOP=1','-c',
+ `DO $$ BEGIN IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-hud-scale-disposable' THEN RAISE EXCEPTION 'fixture_scope_required';END IF; END $$;
+ UPDATE _realtime.tenants SET max_concurrent_users=2000,max_events_per_second=20000,max_joins_per_second=5000,max_bytes_per_second=100000000;`],{stdio:'pipe'});
 sql(`CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS pg_net;CREATE EXTENSION IF NOT EXISTS supabase_vault WITH SCHEMA vault;
- UPDATE _realtime.tenants SET max_concurrent_users=2000,max_events_per_second=20000,max_joins_per_second=5000,max_bytes_per_second=100000000;
  CREATE FUNCTION public.fixture_provision_hud_workers_v1(p_hud text,p_spectator text,p_url text) RETURNS boolean
  LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$ BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' OR shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-hud-scale-disposable'

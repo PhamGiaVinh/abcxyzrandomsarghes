@@ -16,9 +16,10 @@ Deno.serve(async req => {
     const input = JSON.parse(body);
     // Never use service_role or forward Authorization, even for an operator caller.
     const client = createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-    if(input.mode==='summary'||input.mode==='history') return jsonResp(req,await readPublicHudAggregate(client,input.tournament_id,input.player_id,input.mode,input.cursor));
+    if(input.mode==='summary'||input.mode==='history') return jsonResp(req,await readPublicHudAggregate(client,input.tournament_id,input.player_id,input.mode,input.cursor,input.access_snapshot));
     return jsonResp(req,await readPublicHudCompatibility(client,input));
-  } catch {
+  } catch(error) {
+    if(error instanceof Error&&error.message==='PUBLIC_HUD_RELOAD_REQUIRED')return jsonResp(req,{error:'PUBLIC_HUD_RELOAD_REQUIRED'},409);
     return jsonResp(req,{error:'PUBLIC_HUD_UNAVAILABLE'},400);
   }
 });

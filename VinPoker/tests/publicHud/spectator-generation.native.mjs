@@ -24,6 +24,15 @@ const message=jsonSql("SELECT payload FROM realtime.fixture_messages WHERE event
 assert.deepEqual(message.components,['tables','visibility']);assert.equal(message.tournamentId,tour);
 assert.equal(jsonSql(`${service} SELECT to_jsonb(public.flush_public_spectator_broadcast_v2(100));`),0);
 assert.equal(sql("SELECT count(*) FROM realtime.fixture_messages WHERE event='revoked' AND topic='public:player-hud-access-v1';"),'1');
+sql(`INSERT INTO spectator_projection_v2.broadcast_pending_v1(tournament_id,component,revision,source_txid)
+ SELECT '${tour}','tables',n::text,(1000000000+n)::text::xid8 FROM generate_series(1,1100) n;`);
+assert.equal(jsonSql(`${service} SELECT to_jsonb(public.flush_public_spectator_broadcast_v2(1));`),1);
+assert.equal(sql('SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1;'),'600');
+assert.equal(jsonSql(`${service} SELECT to_jsonb(public.flush_public_spectator_broadcast_v2(1));`),1);
+assert.equal(sql('SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1;'),'100');
+assert.equal(jsonSql(`${service} SELECT to_jsonb(public.flush_public_spectator_broadcast_v2(1));`),1);
+assert.equal(sql('SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1;'),'0');
+assert.ok(Number(sql('SELECT max(event_id) FROM tracker_analytics_v1.access_revocations;'))>0);
 const snapshot=jsonSql(`SET ROLE anon; SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['payout'],'{}');`);
 assert.equal(snapshot.sections.payout.maskChecked,true);
 // Source transactions holding different rows must not wait for each other's

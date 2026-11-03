@@ -107,12 +107,35 @@ try{
   const expired=claimed.find(j=>j.kind==='hand');
   assert.ok((await client.rpc('get_public_hud_job_source_v1',{p_kind:'hand',p_entity:expired.entity_id,p_generation:expired.generation,p_lease:expired.lease_token})).error);
   await drain();assert.equal(state().a.public_hands,2);assert.equal(state().a.winnings,500);
+  const previousSummary=summary();
+  sql(`UPDATE public.player_results SET prize=600 WHERE id='${hand}';`);
+  const updatingSummary=summary();
+  assert.equal(updatingSummary.revision,previousSummary.revision);
+  assert.equal(updatingSummary.totalWinnings,500);assert.equal(updatingSummary.recentResults[0].prize,500);
+  await drain();assert.equal(summary().totalWinnings,600);assert.equal(summary().recentResults[0].prize,600);
   sql(`DELETE FROM public.hand_players WHERE hand_id='${second}' AND player_id='${a}';`);
   assert.equal(summary().state,'unavailable');
   assert.equal(jsonSql(`SET ROLE anon; SELECT public.get_public_player_hud_history_v1('${tour}','${a}');`).handHistory.some(h=>h.handId===second),false);
   await drain();assert.equal(state().a.public_hands,1);
   sql(`INSERT INTO public.hand_players(hand_id,tournament_id,player_id,seat_number,starting_stack) VALUES('${second}','${tour}','${a}',1,1000);`);
   await drain();assert.equal(state().a.public_hands,2);
+  // Allocation order is deliberately opposite to commit order. MAX(identity)
+  // would miss A; PostgreSQL snapshot visibility must detect its late commit.
+  const early=sqlAsync(`BEGIN;SELECT tracker_analytics_v1.mark_access_revocation();
+    SELECT pg_advisory_xact_lock(911040015);SELECT pg_sleep(2);COMMIT;`);
+  let earlyStarted=false;
+  for(let i=0;i<30;i++){
+    if(sql('SELECT pg_try_advisory_xact_lock(911040015);')==='f'){earlyStarted=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,20));
+  }
+  assert.equal(earlyStarted,true);
+  sql('SELECT tracker_analytics_v1.mark_access_revocation();');
+  const openedBetweenCommits=summary();
+  const maxBefore=sql('SELECT max(event_id) FROM tracker_analytics_v1.access_revocations;');
+  await early;
+  assert.equal(sql('SELECT max(event_id) FROM tracker_analytics_v1.access_revocations;'),maxBefore);
+  const verified=jsonSql(`SET ROLE anon;SELECT public.get_public_player_hud_summary_v1('${tour}','${a}','${openedBetweenCommits.accessSnapshot}');`);
+  assert.equal(verified.accessChanged,true);
   assert.throws(()=>sql("SET ROLE anon; SELECT public.claim_public_hud_jobs_v1(1);"),/permission denied/);
   console.log(JSON.stringify({kind:'NATIVE_POSTGRESQL_NOT_HTTP_OR_LOAD_TEST',checks:['classification','idempotent-retry','stale-lease','void','restore','settlement-revoke','settlement-reverify','eligibility-revoke','eligibility-restore','unchanged-source-revision','result-edit','result-revoke','visibility-revoke','visibility-restore','backfill','warming','anonymous-summary','verified-stack','immediate-revocation','anon-denial'],passed:true}));
 }finally{
