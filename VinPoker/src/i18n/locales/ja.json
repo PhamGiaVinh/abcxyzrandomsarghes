@@ -2720,7 +2720,7 @@
   "liveHub": {
     "tabs": { "updates": "速報", "tablesLive": "ライブテーブル", "leaders": "ランキング", "handHistory": "ハンド履歴", "prizes": "賞金", "structure": "ストラクチャー", "photos": "写真", "back": "戻る" },
     "watch": { "title": "ライブテーブル", "replay": "ハンドリプレイ" },
-    "prizes": { "empty": "賞金構成はまだありません", "total": "賞金総額", "position": "順位", "amount": "賞金", "rank": "#{{n}}" },
+    "prizes": { "empty": "賞金構成はまだありません", "total": "賞金総額", "position": "順位", "amount": "賞金", "rank": "#{{n}}", "champion": "優勝者" },
     "structure": { "empty": "ブラインド構成はまだありません", "level": "Lv", "blinds": "ブラインド (SB/BB)", "ante": "アンティ", "time": "分", "break": "休憩" },
     "photos": { "empty": "写真はまだありません", "soon": "イベント写真は近日公開" },
     "breakdown": {

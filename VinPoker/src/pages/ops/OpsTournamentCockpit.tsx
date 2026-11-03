@@ -29,6 +29,7 @@ import { useTournamentOps } from "@/ops/workspace/TournamentOpsProvider";
 import { MultiDayFloorEventWorkspace } from "@/components/floor/MultiDayFloorEventWorkspace";
 import { TvBrandingEditorWorkspace } from "@/components/cashier/tournament-live/TvBrandingEditorWorkspace";
 import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { FloorPayoutResults } from "@/components/ops/shared/FloorPayoutResults";
 
 type UnappliedFloorRpcResult = { data: unknown; error: { message?: string; code?: string } | null };
 /**
@@ -633,7 +634,8 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
                 })}
               </div>
             ))}
-          <DesktopNote text="Chỉ xem — sửa cơ cấu trên máy tính." />
+          <FloorPayoutResults tournamentId={id} />
+          <DesktopNote text="Sửa cơ cấu trên máy tính. Ghi nhận đã trao tiền ở Cashier → Trả thưởng giải." />
         </div>
       )}
 
