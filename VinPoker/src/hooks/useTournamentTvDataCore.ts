@@ -366,7 +366,7 @@ export function useTournamentTvDataCore(
 
   const data: TvData | null = useMemo(() => {
     if (!raw || rawScope !== scopeKey || rawClient !== supabase) return null;
-    return mapTvData({ ...raw, displayRemainingSeconds: display });
+    return mapTvData({ ...raw, tournamentId, displayRemainingSeconds: display });
   }, [raw, display, rawScope, scopeKey, rawClient, supabase]);
 
   return { state: state === "ready" && (rawScope !== scopeKey || rawClient !== supabase) ? "loading" as const : state, data, realtimeStatus, refetch: loadAll };

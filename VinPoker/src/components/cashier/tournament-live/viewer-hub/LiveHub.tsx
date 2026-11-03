@@ -443,6 +443,7 @@ function LiveHubContent({
 
           <TabsContent value="history" className="mt-3 min-w-0 focus-visible:outline-none sm:mt-4">
             {realtimeEnabled ? <RealtimeTablesGrid appearance={appearance.data}
+              tournamentId={tournamentId}
               catalog={publicSnapshot?.sections.tables?.catalog ?? []}
               tables={publicSnapshot?.sections.tables?.items ?? []}
               freshness={publicSnapshot?.sections.tables?.freshness}

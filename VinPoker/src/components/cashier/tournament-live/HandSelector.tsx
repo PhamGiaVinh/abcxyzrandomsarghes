@@ -78,6 +78,7 @@ export function HandSelector({
   const loadScopeRef = useRef(loadScope);
   loadScopeRef.current = loadScope;
   const lastRequestedHandRef = useRef<{ row: HandRow; scope: string } | null>(null);
+  const legacyPublicTarget = spectator && !tableId && replayTargetState.kind === "resolved" && replayTargetState.tableId === null && !!replayTarget?.handId && replayTarget.handId === replayTargetState.handId;
   const resolvingReplayTable = !tableId && !!replayTarget && replayTargetState.kind === "loading";
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export function HandSelector({
         if (!tableId) {
           setHands([]);
           if (resolvingReplayTable) return;
+          if (legacyPublicTarget) { handsScopeRef.current = listScope; setLoadingList(false); return; }
           setListError("Chọn bàn để xem lịch sử hand.");
           setLoadingList(false);
           return;
@@ -162,7 +164,7 @@ export function HandSelector({
     return () => {
       cancelled = true;
     };
-  }, [tournamentId, tableId, spectator, resolvingReplayTable, listAttempt, listScope]);
+  }, [tournamentId, tableId, spectator, resolvingReplayTable, legacyPublicTarget, listAttempt, listScope]);
 
   const loadHand = useCallback(
     async (row: HandRow) => {
@@ -174,16 +176,16 @@ export function HandSelector({
       setLoadError(null);
       try {
         if (spectator) {
-          if (!tableId) throw new Error("Chưa chọn bàn cho replay.");
+          if (!tableId && !(legacyPublicTarget && replayTarget?.handId === row.id)) throw new Error("Chưa chọn bàn cho replay.");
           const [{ data: publicData, error: publicError }, { data: settlementData, error: settlementError }] = await observeTrackerContextRead(Promise.all([
-            supabase.rpc("get_public_tournament_table_hand_v2" as never, {
+            tableId ? supabase.rpc("get_public_tournament_table_hand_v2" as never, {
               p_tournament_id: tournamentId, p_tournament_table_id: tableId, p_hand_id: row.id,
-            } as never),
+            } as never) : supabase.rpc("get_public_tournament_hand_v2" as never, {p_tournament_id:tournamentId,p_hand_id:row.id} as never),
             supabase.rpc("get_public_tournament_settlement" as never, { p_hand_id: row.id } as never),
           ]));
           if (!isCurrentLoad()) return;
           const safe = (publicData ?? {}) as PublicReplayPayload;
-          if (publicError || !safe.id) throw new Error(publicError?.message || "Hand không thuộc bàn hoặc không còn được công khai.");
+          if (publicError || safe.id !== row.id) throw new Error(publicError?.message || "Hand không thuộc bàn hoặc không còn được công khai.");
           onSelectHand(row.id, {
             hand_id: safe.id,
             hand_number: safe.handNumber ?? row.hand_number,
@@ -283,7 +285,7 @@ export function HandSelector({
         if (isCurrentLoad()) setLoadingHand(false);
       }
     },
-    [onLoadStart, onSelectHand, spectator, tableId, tournamentId, loadScope]
+    [onLoadStart, onSelectHand, spectator, tableId, tournamentId, loadScope, legacyPublicTarget, replayTarget?.handId]
   );
   const loadHandRef = useRef(loadHand);
   loadHandRef.current = loadHand;
@@ -356,13 +358,13 @@ export function HandSelector({
 
       setLoadError(null);
       void (async () => {
-        if (spectator && tableId) {
-          const { data, error } = await observeTrackerContextRead(supabase.rpc("get_public_tournament_table_hand_v2" as never, {
+        if (spectator) {
+          const { data, error } = await observeTrackerContextRead(tableId ? supabase.rpc("get_public_tournament_table_hand_v2" as never, {
             p_tournament_id: tournamentId, p_tournament_table_id: tableId, p_hand_id: replayTargetState.handId,
-          } as never));
+          } as never) : supabase.rpc("get_public_tournament_hand_v2" as never, {p_tournament_id:tournamentId,p_hand_id:replayTargetState.handId} as never));
           if (cancelled) return;
           const hand = data as PublicReplayPayload;
-          if (error || !hand?.id) {
+          if (error || hand?.id !== replayTargetState.handId) {
             setLoadError(error?.message || "Không tìm thấy hand được yêu cầu.");
             return;
           }
@@ -422,7 +424,7 @@ export function HandSelector({
       >
         {loadingList && <option value="">Đang tải...</option>}
         {!loadingList && listError && <option value="">Không tải được lịch sử hand</option>}
-        {!loadingList && !listError && hands.length === 0 && <option value="">Chưa có hand đã xong</option>}
+        {!loadingList && !listError && hands.length === 0 && <option value={legacyPublicTarget ? replayTarget?.handId ?? "" : ""}>{legacyPublicTarget && replayTargetState.kind === "resolved" ? `Hand #${replayTargetState.handNumber} (lịch sử)` : "Chưa có hand đã xong"}</option>}
         {hands.map((h) => (
           <option key={h.id} value={h.id}>
             Hand #{h.hand_number}

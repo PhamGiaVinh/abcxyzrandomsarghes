@@ -1,4 +1,6 @@
 project_id = "orlesggcjamwuknxwcpk"
+[functions.public-player-hud]
+verify_jwt = false
 [functions.process-swing-on-dealer-ready]
 verify_jwt = false
 
