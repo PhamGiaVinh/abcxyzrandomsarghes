@@ -3,7 +3,7 @@ import {afterEach,expect,it,vi} from 'vitest';
 import {TournamentLiveView} from './TournamentLiveView';
 
 const {rpc,hand,target,auth,signals,liveSignals,events}=vi.hoisted(()=>({
- liveSignals:[] as AbortSignal[],events:[] as (()=>void)[],signals:[] as AbortSignal[],rpc:vi.fn(),auth:{user:null,isStaffOps:false,isClubAdmin:false},
+ liveSignals:[] as AbortSignal[],events:[] as ((event?:unknown)=>void)[],signals:[] as AbortSignal[],rpc:vi.fn(),auth:{user:null,isStaffOps:false,isClubAdmin:false},
  target:{handId:'hand',tableId:'table',handNumber:32},
  hand:{hand_id:'hand',hand_number:32,button_seat:2,community_cards:['2c','3d','7s','9c','Kc'],big_blind:200,small_blind:100,ante:0,players:[],actions:[]},
 }));
@@ -17,7 +17,7 @@ vi.mock('./LiveFelt',()=>({LiveFelt:({toActId}:{toActId?:string|null})=> <div da
 // explicitly rather than claiming this unit test is browser/DB acceptance.
 vi.mock('./HandSelector',()=>({HandSelector:({onSelectHand,replayTargetState,onRetryReplayTarget}:{onSelectHand:(id:string,h:unknown)=>void;replayTargetState:{kind:string};onRetryReplayTarget?:()=>void})=><><p data-testid="target-state">{replayTargetState.kind}</p>{replayTargetState.kind==='query_error'&&<button onClick={onRetryReplayTarget}>Thử tìm lại hand</button>}<button onClick={()=>onSelectHand('hand',hand)}>Deliver replay</button></>}));
 vi.mock('./ReplayScrubber',()=>({ReplayScrubber:()=>null}));
-afterEach(()=>{cleanup();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;vi.useRealTimers()});
+afterEach(async()=>{cleanup();await Promise.resolve();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;vi.useRealTimers()});
 
 it.each([false,true])('does not spotlight an actor after a fold has ended betting: folded=%s',async(folded)=>{
  const players=[{playerId:'p1',seatNumber:1,entryNumber:1,name:'PLAYER1',startingStack:58800,endingStack:null,holeCards:[],eliminated:false,avatarUrl:null},
@@ -107,7 +107,7 @@ it('ends initial viewer loading when a core public read never settles',async()=>
 it('shares an ongoing initial read with realtime refresh bursts instead of superseding it',async()=>{
  rpc.mockImplementation(()=>new Promise(()=>{}));vi.useFakeTimers();
  render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
- await act(async()=>{events.forEach(fn=>{fn();fn();fn();});await vi.advanceTimersByTimeAsync(1001);});
+ await act(async()=>{events.forEach(fn=>{const event={payload:{tournamentId:'tour',components:['tables']}};fn(event);fn(event);fn(event);});await vi.advanceTimersByTimeAsync(1001);});
  expect(rpc.mock.calls.filter(([name])=>name==='get_public_tournament_table_live_or_last_hand_v2')).toHaveLength(1);
 });
 it('recovers the core read explicitly after timeout and never publishes its late response',async()=>{

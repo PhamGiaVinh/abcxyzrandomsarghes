@@ -37,6 +37,7 @@ $$;
 CREATE TABLE tracker_analytics_v1.hand_contributions (
   hand_id uuid NOT NULL, player_id uuid NOT NULL, tournament_id uuid NOT NULL,
   version text NOT NULL, source_fingerprint text NOT NULL,
+  settlement_evidence jsonb NOT NULL,
   source_revision bigint NOT NULL, played_at timestamptz, hand_number integer NOT NULL,
   table_id uuid, session_id uuid,
   numerators bigint[] NOT NULL, denominators bigint[] NOT NULL, missing_proof bigint[] NOT NULL,
@@ -149,6 +150,7 @@ RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
   IF p_entity IS NULL THEN RETURN; END IF;
   IF p_kind='hand' AND NOT EXISTS(SELECT 1 FROM public.tournament_hands WHERE id=p_entity AND status='completed')
+    AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.jobs WHERE kind='hand' AND entity_id=p_entity)
     AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.hand_contributions WHERE hand_id=p_entity) THEN RETURN; END IF;
   INSERT INTO tracker_analytics_v1.jobs(kind,entity_id,priority) VALUES(p_kind,p_entity,CASE WHEN p_backfill THEN 10 ELSE 0 END)
   ON CONFLICT(kind,entity_id) DO UPDATE SET generation=tracker_analytics_v1.jobs.generation+1,
@@ -160,7 +162,7 @@ BEGIN
       SELECT player_id,false AS blocked FROM public.hand_players WHERE hand_id=p_entity
       UNION ALL SELECT c.player_id,NOT EXISTS(
         SELECT 1 FROM public.tournament_hands h JOIN public.hand_players hp ON hp.hand_id=h.id
-        WHERE h.id=p_entity AND h.tournament_id=c.tournament_id AND hp.player_id=c.player_id
+        WHERE h.id=p_entity AND h.tournament_id=c.tournament_id AND hp.tournament_id=c.tournament_id AND hp.player_id=c.player_id
           AND h.status='completed' AND NOT coalesce(h.is_voided,false))
       FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=p_entity
     ) affected GROUP BY affected.player_id
@@ -179,7 +181,14 @@ END $$;
 
 CREATE FUNCTION tracker_analytics_v1.hand_changed() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-BEGIN PERFORM tracker_analytics_v1.enqueue('hand',coalesce(NEW.id,OLD.id)); RETURN coalesce(NEW,OLD); END $$;
+BEGIN
+  IF TG_OP='INSERT' AND NEW.status<>'completed' THEN RETURN NEW; END IF;
+  -- A new in-progress hand has no contribution. If a completed hand was
+  -- reopened, its removal job remains present until subtraction commits.
+  IF TG_OP='UPDATE' AND NEW.status<>'completed' AND OLD.status<>'completed'
+    AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.jobs WHERE kind='hand' AND entity_id=NEW.id) THEN RETURN NEW; END IF;
+  PERFORM tracker_analytics_v1.enqueue('hand',coalesce(NEW.id,OLD.id));RETURN coalesce(NEW,OLD);
+END $$;
 CREATE TRIGGER hud_hand_changed AFTER INSERT OR DELETE OR UPDATE OF source_revision,tournament_id,hand_time,hand_number,status,is_voided
   ON public.tournament_hands FOR EACH ROW EXECUTE FUNCTION tracker_analytics_v1.hand_changed();
 CREATE FUNCTION tracker_analytics_v1.outcome_changed() RETURNS trigger

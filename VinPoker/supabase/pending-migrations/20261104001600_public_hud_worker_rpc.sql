@@ -41,7 +41,7 @@ BEGIN
     SELECT * INTO h FROM public.tournament_hands WHERE id=p_entity;
     IF NOT FOUND THEN RETURN jsonb_build_object('fingerprint',tracker_analytics_v1.hand_fingerprint(p_entity),'hand',NULL); END IF;
     SELECT coalesce(jsonb_agg(jsonb_build_object('player_id',player_id,'seat_number',seat_number,'starting_stack',starting_stack)
-      ORDER BY seat_number,player_id,entry_number),'[]'::jsonb) INTO players FROM public.hand_players WHERE hand_id=p_entity;
+      ORDER BY seat_number,player_id,entry_number),'[]'::jsonb) INTO players FROM public.hand_players WHERE hand_id=p_entity AND tournament_id=h.tournament_id;
     SELECT coalesce(jsonb_agg(jsonb_build_object('player_id',player_id,'street',street,'action_type',action_type,
       'action_amount',action_amount,'action_order',action_order) ORDER BY action_order,id),'[]'::jsonb)
       INTO actions FROM public.hand_actions WHERE hand_id=p_entity;
@@ -94,10 +94,10 @@ BEGIN
   IF jsonb_array_length(p_rows)<>(SELECT count(DISTINCT x->>'playerId') FROM jsonb_array_elements(p_rows) x) THEN RAISE EXCEPTION 'duplicate_contribution'; END IF;
   IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_rows) x WHERE NOT EXISTS(
     SELECT 1 FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id
-    WHERE hp.hand_id=p_entity AND hp.player_id=(x->>'playerId')::uuid AND h.status='completed' AND NOT coalesce(h.is_voided,false)))
+    WHERE hp.hand_id=p_entity AND hp.tournament_id=h.tournament_id AND hp.player_id=(x->>'playerId')::uuid AND h.status='completed' AND NOT coalesce(h.is_voided,false)))
     THEN RAISE EXCEPTION 'contribution_out_of_scope'; END IF;
   IF EXISTS(SELECT 1 FROM public.tournament_hands WHERE id=p_entity AND status='completed' AND NOT coalesce(is_voided,false))
-    AND (SELECT count(DISTINCT player_id) FROM public.hand_players WHERE hand_id=p_entity)<>jsonb_array_length(p_rows)
+    AND (SELECT count(DISTINCT player_id) FROM public.hand_players WHERE hand_id=p_entity AND tournament_id=source.tournament_id)<>jsonb_array_length(p_rows)
     THEN RAISE EXCEPTION 'incomplete_contributions'; END IF;
   FOR player IN SELECT id FROM (
     SELECT player_id id FROM tracker_analytics_v1.hand_contributions WHERE hand_id=p_entity
@@ -119,9 +119,15 @@ BEGIN
     IF NOT tracker_analytics_v1.valid_vector(n) OR NOT tracker_analytics_v1.valid_vector(d) OR NOT tracker_analytics_v1.valid_vector(m)
       OR observed NOT IN (0,1) OR omitted NOT IN (0,1) OR observed+omitted<>1 OR (row->>'publicHands')::bigint<>1
       OR EXISTS(SELECT 1 FROM generate_series(1,22) i WHERE n[i]>d[i] OR m[i]>observed) THEN RAISE EXCEPTION 'invalid_counters'; END IF;
-    INSERT INTO tracker_analytics_v1.hand_contributions(hand_id,player_id,tournament_id,version,source_fingerprint,
+    INSERT INTO tracker_analytics_v1.hand_contributions(hand_id,player_id,tournament_id,version,source_fingerprint,settlement_evidence,
       source_revision,played_at,hand_number,table_id,session_id,numerators,denominators,missing_proof,public_hands,observed_hands,omitted_hands)
-      VALUES(p_entity,player,tour,v_version,p_fingerprint,source.source_revision,source.hand_time,source.hand_number,
+      VALUES(p_entity,player,tour,v_version,p_fingerprint,jsonb_build_object(
+        'policyEligible',EXISTS(SELECT 1 FROM public.tournaments WHERE id=tour AND deleted_at IS NULL AND status IN ('live','final_table','completed','finished')),
+        'latest',(SELECT jsonb_build_object('sourceRevision',o.source_revision::text,'settlementRevision',o.settlement_revision::text,'status',o.status,'schemaVersion',o.public_outcome->>'schemaVersion')
+          FROM public.tournament_settlement_outcomes o WHERE o.hand_id=p_entity ORDER BY o.settlement_revision DESC,o.id DESC LIMIT 1),
+        'publicVerified',(SELECT jsonb_build_object('sourceRevision',o.source_revision::text,'settlementRevision',o.settlement_revision::text,'status',o.status,'schemaVersion',o.public_outcome->>'schemaVersion')
+          FROM public.tournament_settlement_outcomes o WHERE o.hand_id=p_entity AND o.source_revision=source.source_revision AND o.status='verified' ORDER BY o.settlement_revision DESC,o.id DESC LIMIT 1)),
+        source.source_revision,source.hand_time,source.hand_number,
         source.tournament_table_id,source.table_session_id,n,d,m,1,observed,omitted);
     PERFORM tracker_analytics_v1.apply_hand_delta(player,tour,v_version,n,d,m,1,observed,omitted,1);
   END LOOP;

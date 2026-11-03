@@ -3,7 +3,7 @@ import type {PublicHudCounters} from '../_shared/publicHudContribution.ts';
 
 interface RpcClient {rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:unknown}>}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export async function readPublicHudAggregate(client:RpcClient,tournamentId:string,playerId:string,mode:'summary'|'history',cursor?:unknown){
+export async function readPublicHudAggregate(client:RpcClient,tournamentId:string,playerId:string,mode:'summary'|'history',cursor?:unknown):Promise<Record<string,unknown>>{
   if(typeof tournamentId!=='string'||typeof playerId!=='string'||!UUID.test(tournamentId)||!UUID.test(playerId))throw Error('PUBLIC_SCOPE_INVALID');
   const args:Record<string,unknown>={p_tournament_id:tournamentId,p_player_id:playerId};
   if(mode==='history'&&cursor!==undefined&&cursor!==null){

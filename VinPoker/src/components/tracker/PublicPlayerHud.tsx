@@ -48,13 +48,22 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
     if (!playerId) return;
     const controller = new AbortController();
     scopeController.current=controller;
-    void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud}) => {
-      if (controller.signal.aborted) throw new Error('aborted');
-      return loadPreparedPublicPlayerHud(tournamentId,playerId,controller.signal);
-    }).then(value => {
-      if (!controller.signal.aborted) setResult(value);
-    }).catch(reason => { if (!controller.signal.aborted) { setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);controller.abort(); } });
-    return () => controller.abort();
+    let unsubscribe:(()=>void)|undefined;
+    let pending=new AbortController(),attempt=0;
+    void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud,observePublicHudRevocation}) => {
+      if(controller.signal.aborted)return;
+      const load=()=>{
+        pending.abort();pending=new AbortController();const owned=++attempt;
+        setResult(null);setError(false);setPreparing(false);
+        void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal).then(value=>{
+          if(!controller.signal.aborted&&owned===attempt)setResult(value);
+        }).catch(reason=>{
+          if(!controller.signal.aborted&&owned===attempt){setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
+        });
+      };
+      unsubscribe=observePublicHudRevocation(tournamentId,load);
+    }).catch(()=>{if(!controller.signal.aborted)setError(true);});
+    return () => {controller.abort();pending.abort();unsubscribe?.();};
   }, [tournamentId, playerId]);
   // Scope on render as well as cleanup: never flash the previous person's statistics.
   const complete = result?.playerId === playerId && result?.tournamentId === tournamentId ? result : null;

@@ -9,7 +9,7 @@ const { rpc, removeChannel, channel } = vi.hoisted(() => {
 });
 
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
-  const client = { rpc, channel: () => channel, removeChannel };
+  const client = { rpc:(...args:unknown[])=>({abortSignal:()=>rpc(...args)}), channel: () => channel, removeChannel };
   return { useSupabaseClient: () => client };
 });
 
@@ -17,9 +17,22 @@ afterEach(() => {
   cleanup();
   rpc.mockReset();
   removeChannel.mockClear();
+  channel.on.mockClear();
 });
 
 describe("public spectator table scope", () => {
+  it('does not restore a withdrawn snapshot from a late pre-invalidation reply',async()=>{
+    const tournamentId='5a51bec5-4da0-4dd9-861a-cc4e7678478c';
+    let finish!:(value:unknown)=>void;
+    rpc.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;})).mockResolvedValue({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(1));
+    const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
+    act(()=>changed({payload:{tournamentId,components:['visibility'],revisions:{visibility:'2'}}}));
+    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:2500});
+    await act(async()=>{finish({data:{ok:true,access:'public',tournamentId,sections:{}},error:null});});
+    expect(result.current.snapshot?.access).toBe('revoked');
+  });
   it("keeps the catalog visible while loading details for the visible tables", async () => {
     const tournamentId = "5a51bec5-4da0-4dd9-861a-cc4e7678478c";
     const tableId = "1ceaeb99-fecd-4ff2-9451-964399f954d0";

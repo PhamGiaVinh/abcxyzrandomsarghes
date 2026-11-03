@@ -4,10 +4,14 @@ DO $$ BEGIN
   IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
   IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
 END $$;
-CREATE SCHEMA auth;
-CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('request.jwt.claim.role',true) $$;
+CREATE SCHEMA IF NOT EXISTS auth;
+DO $bootstrap$ BEGIN
+ IF to_regprocedure('auth.role()') IS NULL THEN
+  EXECUTE $definition$ CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT current_setting('request.jwt.claim.role',true) $$ $definition$;
+ END IF;
+END $bootstrap$;
 GRANT USAGE ON SCHEMA auth TO anon,authenticated,service_role;
-CREATE EXTENSION pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA spectator_projection_v2;
 CREATE TABLE spectator_projection_v2.publications(tournament_id uuid,component text,payload jsonb,
   PRIMARY KEY(tournament_id,component));

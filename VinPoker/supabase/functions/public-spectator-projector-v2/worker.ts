@@ -1,0 +1,36 @@
+import {reducePublicSpectatorPayload} from '../_shared/publicSpectatorReducer.ts';
+interface Client {rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:unknown}>}
+interface WorkGroup {tournament_id:string;component:'tables'|'ranking'|'payout'|'visibility';group_key:string;fencing_token:string}
+export async function processPublicSpectatorJobs(client:Client,deadline=Date.now()+5_000){
+  const call=(name:string,args:Record<string,unknown>)=>{
+    if(Date.now()>=deadline)throw Error('deadline_exceeded');
+    return client.rpc(name,args);
+  };
+  if((await call('absorb_public_spectator_generations_v2',{p_limit:100})).error)throw Error('generation_absorb_failed');
+  if((await call('flush_public_spectator_broadcast_v2',{p_limit:100})).error)throw Error('broadcast_flush_failed');
+  const claimed=await call('claim_public_spectator_projection_v2',{p_limit:50});
+  if(claimed.error||!Array.isArray(claimed.data))throw Error('claim_failed');
+  const jobs=claimed.data as WorkGroup[],results:Array<{key:string;published:boolean;error?:string}>=[];
+  let cursor=0;
+  async function run(){
+    while(cursor<jobs.length&&Date.now()<deadline){
+      const job=jobs[cursor++],key=`${job.tournament_id}:${job.component}:${job.group_key}`;
+      try{
+        const source=await call('get_public_spectator_projection_source_v2',{p_tournament_id:job.tournament_id,p_component:job.component,p_fencing_token:job.fencing_token});
+        if(source.error||!source.data)throw Error('source_failed');
+        const value=source.data as {sourceVector:Record<string,string>;payload:unknown};
+        const published=await call('publish_public_spectator_projection_v2',{p_tournament_id:job.tournament_id,p_component:job.component,p_group_key:job.group_key,
+          p_fencing_token:job.fencing_token,p_source_vector:value.sourceVector,p_payload:reducePublicSpectatorPayload(job.component,value.payload)});
+        if(published.error)throw Error('publish_failed');
+        results.push({key,published:published.data===true});
+      }catch(reason){
+        const error=reason instanceof Error?reason.message:'unknown';
+        if(Date.now()<deadline)try{await call('fail_public_spectator_projection_v2',{p_tournament_id:job.tournament_id,p_component:job.component,p_group_key:job.group_key,p_fencing_token:job.fencing_token,p_error:error});}catch{/* Lease recovers interrupted failure reports. */}
+        results.push({key,published:false,error});
+      }
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(4,jobs.length)},()=>run()));
+  if(Date.now()<deadline)try{await call('flush_public_spectator_broadcast_v2',{p_limit:100});}catch{/* Outbox remains for next dispatch. */}
+  return {claimed:jobs.length,processed:results.length,results};
+}

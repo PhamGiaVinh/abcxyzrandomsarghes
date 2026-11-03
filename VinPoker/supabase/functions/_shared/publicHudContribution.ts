@@ -1,4 +1,4 @@
-import { classifyTrackerPlayerAnalytics, TRACKER_PLAYER_ANALYTICS_VERSION, type TrackerAnalyticsHand } from './trackerPlayerAnalytics.ts';
+import { classifyTrackerPlayerAnalytics, TRACKER_PLAYER_ANALYTICS_VERSION, type TrackerAnalyticsHand,type TrackerAnalyticsMetric } from './trackerPlayerAnalytics.ts';
 import { publicStreetMetrics } from '../public-player-hud/metrics.ts';
 
 // The order is a storage contract. Changing it requires a new projection version
@@ -37,7 +37,7 @@ export function classifyPublicHudHand(hand: TrackerAnalyticsHand): PublicHudHand
     counters.publicHands=1;
     if(!complete) return {...counters,playerId,omittedHands:1};
     const base=classifyTrackerPlayerAnalytics(playerId,[hand]);
-    const metrics={...base.metrics,...publicStreetMetrics(playerId,[hand])};
+    const metrics:Record<string,TrackerAnalyticsMetric>={...base.metrics,...publicStreetMetrics(playerId,[hand])};
     for(const [index,key] of PUBLIC_HUD_METRIC_KEYS.entries()) {
       const value=metrics[key];
       if(!value) throw new Error('PUBLIC_HUD_CLASSIFIER_VERSION_MISMATCH');

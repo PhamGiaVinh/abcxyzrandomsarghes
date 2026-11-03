@@ -1,5 +1,10 @@
 import {supabase} from '@/integrations/supabase/client';
 import type {PublicPlayerHand,PublicPlayerHudData} from './publicPlayerHud';
+import {observePublicHudAccess} from '@/components/cashier/tournament-live/viewer-hub/publicHudAccess';
+
+export function observePublicHudRevocation(tournamentId:string,revalidate:()=>void){
+  return observePublicHudAccess(supabase,revalidate);
+}
 
 export interface PublicHudHistoryCursor {playedAt:string|null;handId:string}
 export interface PreparedPublicPlayerHudData extends PublicPlayerHudData {

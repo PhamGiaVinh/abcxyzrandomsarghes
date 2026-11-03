@@ -1,0 +1,49 @@
+name: Public HUD isolated real HTTP and WebSocket load
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/public-hud-scale.yml'
+      - 'VinPoker/tests/publicHud/scale*'
+  workflow_dispatch:
+    inputs:
+      qualification:
+        description: 'Full 1000 viewers, 1M hands, two 30-minute scenarios'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: public-hud-scale-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  real-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    defaults:
+      run:
+        working-directory: VinPoker
+    env:
+      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || '100' }}
+      PUBLIC_HUD_SCALE_VIEWERS: ${{ inputs.qualification && '1000' || '10' }}
+      PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.101.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Real isolated PostgreSQL, cron, Edge HTTP and Realtime WebSockets
+        run: bash tests/publicHud/scale.stack.sh
+      - name: Sanitized qualification evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-real-stack-${{ github.sha }}
+          path: VinPoker/output/hud-scale/
+          retention-days: 7

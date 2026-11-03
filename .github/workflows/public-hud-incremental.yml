@@ -8,8 +8,11 @@ on:
       - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
       - 'VinPoker/supabase/functions/public-player-hud/**'
       - 'VinPoker/supabase/pending-migrations/20261104001*.sql'
+      - 'VinPoker/supabase/pending-migrations/20261104002000_public_hud_dispatch_health.sql'
       - 'VinPoker/src/lib/preparedPublicPlayerHud*'
       - 'VinPoker/src/components/tracker/PublicPlayerHud*'
+      - 'VinPoker/src/components/cashier/tournament-live/**'
+      - 'VinPoker/supabase/functions/public-spectator-projector-v2/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -42,9 +45,18 @@ jobs:
           cache: npm
           cache-dependency-path: VinPoker/package-lock.json
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check both worker entrypoints
+        run: deno check supabase/functions/public-hud-projector-v1/index.ts supabase/functions/public-spectator-projector-v2/index.ts
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize
+      - name: Compact generations, concurrent writers and durable revocation
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_generation_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_generation_ci node tests/publicHud/spectator-generation.native.mjs --initialize
       - name: Classifier, aggregate API and frozen HUD behavior
-        run: npx --no-install vitest run tests/publicHud src/lib/preparedPublicPlayerHud.test.ts src/components/tracker/PublicPlayerHud.test.tsx --maxWorkers=1
+        run: npx --no-install vitest run tests/publicHud src/lib/preparedPublicPlayerHud.test.ts src/components/tracker/PublicPlayerHud.test.tsx src/components/cashier/tournament-live/LiveTrackerCountdown.test.tsx src/components/cashier/tournament-live/viewer-hub src/components/cashier/tournament-live/TournamentLiveView.replayLoading.test.tsx --maxWorkers=1
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit

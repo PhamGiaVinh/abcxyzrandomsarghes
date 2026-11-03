@@ -13,7 +13,8 @@ BEGIN
     WHERE p.tournament_id=p_tournament AND p.component='ranking';
   SELECT r INTO identity FROM jsonb_array_elements(coalesce(ranking->'items','[]'::jsonb)) r WHERE r->>'playerId'=p_player::text LIMIT 1;
   IF identity IS NULL THEN
-    IF NOT EXISTS(SELECT 1 FROM public.hand_players WHERE player_id=p_player AND tournament_id=p_tournament) THEN RETURN NULL; END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.hand_players hp JOIN public.tournament_hands h ON h.id=hp.hand_id AND h.tournament_id=hp.tournament_id
+      WHERE hp.player_id=p_player AND hp.tournament_id=p_tournament) THEN RETURN NULL; END IF;
     SELECT jsonb_build_object('name',hp.player_name,'avatarUrl',hp.avatar_url) INTO identity
       FROM tracker_analytics_v1.hand_contributions c JOIN public.hand_players hp ON hp.hand_id=c.hand_id AND hp.player_id=c.player_id
       WHERE c.player_id=p_player AND c.tournament_id=p_tournament
