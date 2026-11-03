@@ -1,0 +1,50 @@
+name: Public HUD incremental PostgreSQL
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/public-hud-incremental.yml'
+      - 'VinPoker/tests/publicHud/**'
+      - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
+      - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
+      - 'VinPoker/supabase/functions/public-player-hud/**'
+      - 'VinPoker/supabase/pending-migrations/20261104001*.sql'
+      - 'VinPoker/src/lib/preparedPublicPlayerHud*'
+      - 'VinPoker/src/components/tracker/PublicPlayerHud*'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vinpoker_hud_test_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_ci
+      PGPASSWORD: postgres
+      NODE_OPTIONS: --max-old-space-size=6144
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Native PostgreSQL trigger, lease, backfill and public read contracts
+        run: node tests/publicHud/incremental.native.mjs --initialize
+      - name: Classifier, aggregate API and frozen HUD behavior
+        run: npx --no-install vitest run tests/publicHud src/lib/preparedPublicPlayerHud.test.ts src/components/tracker/PublicPlayerHud.test.tsx --maxWorkers=1
+      - name: Typecheck application
+        run: npx --no-install tsc -p tsconfig.app.json --noEmit

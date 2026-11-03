@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { PublicPlayerHudData } from '@/lib/publicPlayerHud';
@@ -7,6 +7,7 @@ import { formatChips } from '@/lib/tv/format';
 import {PlayerHandHistory} from './PlayerHandHistory';
 import {PublicPlayerHudHelp} from './PublicPlayerHudHelp';
 import {PUBLIC_HUD_METRIC_INFO,type PublicHudMetricKey} from '@/lib/publicPlayerHudMetrics';
+import type {PreparedPublicPlayerHudData} from '@/lib/preparedPublicPlayerHud';
 
 type MetricDisplayProps={label:string;metric?:TrackerAnalyticsMetric;metricKey:PublicHudMetricKey;onExplain:(key:PublicHudMetricKey)=>void};
 function Ring({label,metric,metricKey,onExplain}:MetricDisplayProps) {
@@ -36,34 +37,54 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
   const [helpOpen,setHelpOpen]=useState(false);
   const [helpMetric,setHelpMetric]=useState<PublicHudMetricKey>('vpip');
   const explain=(key:PublicHudMetricKey)=>{setHelpMetric(key);setHelpOpen(true);};
-  const [progress,setProgress]=useState(0);
-  const [preview, setPreview] = useState<PublicPlayerHudData | null>(null);
-  const [result, setResult] = useState<PublicPlayerHudData | null>(null);
+  const [result, setResult] = useState<PreparedPublicPlayerHudData | null>(null);
+  const [historyLoading,setHistoryLoading]=useState(false);
+  const [historyError,setHistoryError]=useState(false);
+  const [preparing,setPreparing]=useState(false);
   const [error, setError] = useState(false);
+  const scopeController=useRef<AbortController|null>(null);
   useEffect(() => {
-    setResult(null); setPreview(null); setError(false);setProgress(0);setHelpOpen(false);
+    setResult(null);setError(false);setPreparing(false);setHistoryError(false);setHistoryLoading(false);setHelpOpen(false);
     if (!playerId) return;
     const controller = new AbortController();
-    void import('@/lib/publicPlayerHud').then(({loadPublicPlayerHud}) => {
+    scopeController.current=controller;
+    void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud}) => {
       if (controller.signal.aborted) throw new Error('aborted');
-      return loadPublicPlayerHud(tournamentId,playerId,controller.signal,hands=>{if(!controller.signal.aborted)setProgress(hands);},data=>{if(!controller.signal.aborted)setPreview(data);});
+      return loadPreparedPublicPlayerHud(tournamentId,playerId,controller.signal);
     }).then(value => {
       if (!controller.signal.aborted) setResult(value);
-    }).catch(() => { if (!controller.signal.aborted) { setPreview(null); setError(true); controller.abort(); } });
+    }).catch(reason => { if (!controller.signal.aborted) { setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);controller.abort(); } });
     return () => controller.abort();
   }, [tournamentId, playerId]);
   // Scope on render as well as cleanup: never flash the previous person's statistics.
   const complete = result?.playerId === playerId && result?.tournamentId === tournamentId ? result : null;
-  const current = complete ?? (preview?.playerId === playerId && preview?.tournamentId === tournamentId ? preview : null);
+  const current = complete;
   const metrics = complete?.analytics.metrics ?? {};
   return <Dialog open={playerId != null} onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="operations-typography max-h-[90svh] max-w-xl overflow-y-auto border-border bg-card p-5 text-foreground">
     <DialogTitle className="flex items-center gap-4 pr-8"><Avatar className="h-16 w-16"><AvatarImage src={current?.avatarUrl ?? undefined} alt="" /><AvatarFallback>{current?.name.slice(0,2) ?? '?'}</AvatarFallback></Avatar><span>{current?.name ?? 'Thống kê người chơi'}</span></DialogTitle>
     <DialogDescription>Chỉ số cộng dồn toàn bộ hand hoàn tất được công khai qua tất cả tour. Lịch sử stack và replay chỉ thuộc tour đang xem.</DialogDescription>
-    {error && <p role="alert">Không tải đủ thống kê công khai. Hãy đóng và mở lại để thử.</p>}
+    {error && <p role="alert">{preparing?'Thống kê đang được chuẩn bị. Hãy đóng và mở lại sau.':'Không tải đủ thống kê công khai. Hãy đóng và mở lại để thử.'}</p>}
     {!current ? !error && <p role="status">Đang tải hồ sơ và lịch sử tour…</p> : <>
       <PlayerHandHistory tournamentId={tournamentId} hands={current.handHistory ?? []}/>
+      {current.nextHistoryCursor&&<button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm disabled:opacity-50" onClick={async()=>{
+        setHistoryLoading(true);setHistoryError(false);
+        const scope=current;
+        const signal=scopeController.current?.signal;
+        if(!signal||signal.aborted){setHistoryLoading(false);return;}
+        try{
+          const {loadPublicHudHistoryPage}=await import('@/lib/preparedPublicPlayerHud');
+          const page=await loadPublicHudHistoryPage(tournamentId,scope.playerId,signal,scope.nextHistoryCursor??undefined);
+          if(signal.aborted)return;
+          setResult(previous=>previous===scope?{...previous,handHistory:[...previous.handHistory,...page.hands.filter(h=>!previous.handHistory.some(old=>old.handId===h.handId))],nextHistoryCursor:page.nextCursor}:previous);
+        }catch(reason){
+          if(signal.aborted)return;
+          if(reason instanceof Error&&reason.message==='PUBLIC_HUD_ACCESS_REVOKED')setResult(previous=>previous===scope?null:previous);
+          setHistoryError(true);
+        }finally{if(!signal.aborted)setHistoryLoading(false);}
+      }}>{historyLoading?'Đang tải…':'Xem thêm 50 hand trong tour'}</button>}
+      {historyError&&<p role="alert" className="text-sm">Không tải được lịch sử. Hãy thử lại hoặc đóng và mở lại hồ sơ.</p>}
+      <p className="text-xs text-muted-foreground">Bản thống kê lúc mở{current.computedAt?` · ${new Date(current.computedAt).toLocaleString('vi-VN')}`:''}. Đóng và mở lại để nhận bản mới.{current.updateState==='updating'?' Máy chủ đang cập nhật.':''}</p>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Chỉ số cộng dồn · Tất cả tour</h3><button type="button" onClick={()=>setHelpOpen(true)} className="min-h-11 rounded-md border border-border px-3 text-xs font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Giải thích các chỉ số</button></div>
-      {!complete && !error && <p role="status" className="text-sm text-muted-foreground">Đang tổng hợp chỉ số tất cả tour… {progress>0 ? `${progress.toLocaleString('vi-VN')} hand đã xử lý` : ''} Bạn có thể xem lịch sử và replay trong lúc chờ.</p>}
       <div className="grid grid-cols-4 gap-2"><Ring label="VPIP" metric={metrics.vpip} metricKey="vpip" onExplain={explain} /><Ring label="PFR" metric={metrics.pfr} metricKey="pfr" onExplain={explain} /><Ring label="ATS" metric={metrics.ats} metricKey="ats" onExplain={explain} /><Ring label="3-BET" metric={metrics.threeBet} metricKey="threeBet" onExplain={explain} /></div>
       <div className="grid grid-cols-1 gap-4 rounded-lg bg-muted/40 p-3 sm:grid-cols-3">
         <section className="space-y-3"><h3 className="text-center text-sm font-bold">FLOP</h3><Bar label="C-Bet" metric={metrics.flopCbet} metricKey="flopCbet" onExplain={explain} /><Bar label="Fold CB" metric={metrics.flopFoldCbet} metricKey="flopFoldCbet" onExplain={explain} /><Bar label="Call CB" metric={metrics.flopCallCbet} metricKey="flopCallCbet" onExplain={explain} /><Bar label="Raise CB" metric={metrics.flopRaiseCbet} metricKey="flopRaiseCbet" onExplain={explain} /></section>
