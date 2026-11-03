@@ -1,0 +1,1283 @@
+{
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "sourceSha": "ae7b4c1f3a26c07d67ec954cae46b3b5e33f4311",
+  "manifestSha256": "70382982a76f195d915720a117d88a31daae788358d656b93d0db1d15c2f9a76",
+  "status": "READONLY_PARTIAL_PREFIX120_AND_POSTCATALOG_VERIFIED",
+  "committed": 120,
+  "pending": 158,
+  "finalCommitted": {
+    "version": "20261103040730",
+    "name": "notification_push_outbox_actual_predecessor_v1",
+    "sha256": "432c6f8d9dea256431bfb4123be9f882b571b152c8907c9dea7f1cb206891277",
+    "postCatalogSha256": "17d29434cde16438228bcf153ae4d69455e13c40d37470c0b12c536d7ad55aa1"
+  },
+  "readOnly": true,
+  "productionContinuation": false,
+  "remaining": [
+    {
+      "order": 121,
+      "version": "20270128000198",
+      "name": "tracker_undo_receipt_read_v1",
+      "path": "supabase/migrations/20270128000198_tracker_undo_receipt_read_v1.sql",
+      "sha256": "e210ca02435fcfbd3e9a0201aaa2ace4d01f180717847158835a20526a04929c",
+      "action": "APPLY"
+    },
+    {
+      "order": 122,
+      "version": "20270128000199",
+      "name": "tracker_correction_entry_projection_v1",
+      "path": "supabase/migrations/20270128000199_tracker_correction_entry_projection_v1.sql",
+      "sha256": "8756b8b7af62411057af5c76fb8e5b979e9f84bbd4ddf018b272d429a9d4549f",
+      "action": "APPLY"
+    },
+    {
+      "order": 123,
+      "version": "20270128000200",
+      "name": "booking_message_actor_integrity_v1",
+      "path": "supabase/migrations/20270128000200_booking_message_actor_integrity_v1.sql",
+      "sha256": "7db6b6ec6b4a50d33f0e034accea8f8fa68e8f32b5611ff6c61de6e55f981b9a",
+      "action": "APPLY"
+    },
+    {
+      "order": 124,
+      "version": "20270128000201",
+      "name": "tournament_edit_atomic_v1",
+      "path": "supabase/migrations/20270128000201_tournament_edit_atomic_v1.sql",
+      "sha256": "ee561b45e5e2f3a5f80efdec511d38b0b732aef0a37e06e189032b921f1789e9",
+      "action": "APPLY"
+    },
+    {
+      "order": 125,
+      "version": "20270128000202",
+      "name": "tracker_void_audit_snapshot_v1",
+      "path": "supabase/migrations/20270128000202_tracker_void_audit_snapshot_v1.sql",
+      "sha256": "c493e006e6af9bc7078ac81bd07183641f284eda7ebb97a249def9d91fec95b4",
+      "action": "APPLY"
+    },
+    {
+      "order": 126,
+      "version": "20270128000203",
+      "name": "tournament_blind_parent_lock_v1",
+      "path": "supabase/migrations/20270128000203_tournament_blind_parent_lock_v1.sql",
+      "sha256": "26e20afc8ef38f3f194e8f71ee255a72559b784af474bae5e079cb1943fd8ae6",
+      "action": "APPLY"
+    },
+    {
+      "order": 127,
+      "version": "20270128000204",
+      "name": "tournament_blind_legacy_lock_order_v1",
+      "path": "supabase/migrations/20270128000204_tournament_blind_legacy_lock_order_v1.sql",
+      "sha256": "d99053054727cf3a934b928027889cb6478b9dc0aa9a342644613c2d1d175f23",
+      "action": "APPLY"
+    },
+    {
+      "order": 128,
+      "version": "20270128000205",
+      "name": "public_history_avoid_short_query_jit_v1",
+      "path": "supabase/migrations/20270128000205_public_history_avoid_short_query_jit_v1.sql",
+      "sha256": "0afed306b18cd56801144754a619fa59211746e2b58ab8461cbe34f466ecdcf4",
+      "action": "APPLY"
+    },
+    {
+      "order": 129,
+      "version": "20270128000206",
+      "name": "dealer_fallback_rest_compensation_v1",
+      "path": "supabase/migrations/20270128000206_dealer_fallback_rest_compensation_v1.sql",
+      "sha256": "10ac53498c92743a9d23624947090877f3b3461b5780cf1decc1623c3c0254e3",
+      "action": "APPLY"
+    },
+    {
+      "order": 130,
+      "version": "20270128000207",
+      "name": "private_chat_attachment_bucket_v1",
+      "path": "supabase/migrations/20270128000207_private_chat_attachment_bucket_v1.sql",
+      "sha256": "130ef36d6340cc2c8843640719b098f53a38898e87435635c8c5dea6b86d576b",
+      "action": "APPLY"
+    },
+    {
+      "order": 131,
+      "version": "20270128000208",
+      "name": "main_event_child_live_status_v1",
+      "path": "supabase/migrations/20270128000208_main_event_child_live_status_v1.sql",
+      "sha256": "e2b60875ce9c3ce91191fc4e9e8049619eb8ac229bbfc4bb714d509c03390a8e",
+      "action": "APPLY"
+    },
+    {
+      "order": 132,
+      "version": "20270128000209",
+      "name": "main_event_create_receipt_v1",
+      "path": "supabase/migrations/20270128000209_main_event_create_receipt_v1.sql",
+      "sha256": "e169654236fc38722aef393d73acd949f70515a27baa2e2ba947368a55190a77",
+      "action": "APPLY"
+    },
+    {
+      "order": 133,
+      "version": "20270128000210",
+      "name": "main_event_shared_create_config_v1",
+      "path": "supabase/migrations/20270128000210_main_event_shared_create_config_v1.sql",
+      "sha256": "253002707e87fb7cc310c49dcd63343d5808f65f7769d50de40d0b3a1d5058ae",
+      "action": "APPLY"
+    },
+    {
+      "order": 134,
+      "version": "20270128000211",
+      "name": "tv_main_event_guarantee_projection_v1",
+      "path": "supabase/migrations/20270128000211_tv_main_event_guarantee_projection_v1.sql",
+      "sha256": "e51c7c3009477025862138eae74acf7547ed072eda3db9a5a7ad2a292df08965",
+      "action": "APPLY"
+    },
+    {
+      "order": 135,
+      "version": "20270128000212",
+      "name": "multiday_bagged_table_release_v1",
+      "path": "supabase/migrations/20270128000212_multiday_bagged_table_release_v1.sql",
+      "sha256": "152fd39600028313ecd87ac10456158ff990e6beb645c9e6f89b7e55eb88b28a",
+      "action": "APPLY"
+    },
+    {
+      "order": 136,
+      "version": "20270128000213",
+      "name": "multiday_bagged_table_context_v1",
+      "path": "supabase/migrations/20270128000213_multiday_bagged_table_context_v1.sql",
+      "sha256": "2ee9e954a0b9564c8a35b7df8d2465ac5fd4f4848cb83efe4f89ebd2d3d127cb",
+      "action": "APPLY"
+    },
+    {
+      "order": 137,
+      "version": "20270128000214",
+      "name": "tracker_input_canonical_table_number_v1",
+      "path": "supabase/migrations/20270128000214_tracker_input_canonical_table_number_v1.sql",
+      "sha256": "c910c111c75f213ae8afe99b5946c45aaff7e1c143cf58584c38f77e40a2e162",
+      "action": "APPLY"
+    },
+    {
+      "order": 138,
+      "version": "20270128000215",
+      "name": "multiday_canonical_seat_relocation_v1",
+      "path": "supabase/migrations/20270128000215_multiday_canonical_seat_relocation_v1.sql",
+      "sha256": "b15c026017f2277381ea31462cc0fcf3ab32fdfc303de8e7462c6347e937fcc1",
+      "action": "APPLY"
+    },
+    {
+      "order": 139,
+      "version": "20270128000216",
+      "name": "multiday_payout_configuration_preview_v1",
+      "path": "supabase/migrations/20270128000216_multiday_payout_configuration_preview_v1.sql",
+      "sha256": "ddbe68fbe8150455f9a1d2931c4d6842dce4ceaab51bebecd2d60c6316fe2d50",
+      "action": "APPLY"
+    },
+    {
+      "order": 140,
+      "version": "20270128000217",
+      "name": "multiday_prize_configuration_atomic_v1",
+      "path": "supabase/migrations/20270128000217_multiday_prize_configuration_atomic_v1.sql",
+      "sha256": "0d6711fa6dc42fe76094f912d53a523dc9c6f6f4361c891b5c441a257dd49c81",
+      "action": "APPLY"
+    },
+    {
+      "order": 141,
+      "version": "20270128000218",
+      "name": "multiday_overlay_verified_bank_scope_v1",
+      "path": "supabase/migrations/20270128000218_multiday_overlay_verified_bank_scope_v1.sql",
+      "sha256": "940676345d4d260d0a9852c54e1b26094f6469b4d3d84dcf4122e720c2a4191e",
+      "action": "APPLY"
+    },
+    {
+      "order": 142,
+      "version": "20270128000219",
+      "name": "multiday_final_tv_funded_pool_v1",
+      "path": "supabase/migrations/20270128000219_multiday_final_tv_funded_pool_v1.sql",
+      "sha256": "67b0a3ca57c6369d6aad7a2b0ec3cff85c5f6449c01ded573a366563f8e41a51",
+      "action": "APPLY"
+    },
+    {
+      "order": 143,
+      "version": "20270128000220",
+      "name": "tournament_tv_pool_shared_projection_v1",
+      "path": "supabase/migrations/20270128000220_tournament_tv_pool_shared_projection_v1.sql",
+      "sha256": "4a2052deddd7d4460895afd76861ef139b4f09c7661e5db4cd4faa384c812f1d",
+      "action": "APPLY"
+    },
+    {
+      "order": 144,
+      "version": "20270128000221",
+      "name": "new_club_canonical_table_pool_v1",
+      "path": "supabase/migrations/20270128000221_new_club_canonical_table_pool_v1.sql",
+      "sha256": "9efb31e748ad063a211be5338a7c8336ff5ab9c769e556a561dad93c6e54b47d",
+      "action": "APPLY"
+    },
+    {
+      "order": 145,
+      "version": "20270128000222",
+      "name": "dealer_pool_club_operating_day_v1",
+      "path": "supabase/migrations/20270128000222_dealer_pool_club_operating_day_v1.sql",
+      "sha256": "97fbfa6961ec1e5cd8c1b5aab84cd3b543be85c90ff8906be714dc3442c92cba",
+      "action": "APPLY"
+    },
+    {
+      "order": 146,
+      "version": "20270128000223",
+      "name": "chip_bank_adjust_receipt_v2",
+      "path": "supabase/migrations/20270128000223_chip_bank_adjust_receipt_v2.sql",
+      "sha256": "d69ab7ff481b10b5e40f9b1c0701493b5dda573e1e39f6d0ab85a32a0b468f3e",
+      "action": "APPLY"
+    },
+    {
+      "order": 147,
+      "version": "20270128000224",
+      "name": "tracker_history_tables_canonical_v1",
+      "path": "supabase/migrations/20270128000224_tracker_history_tables_canonical_v1.sql",
+      "sha256": "49aab084f941832cd774b0435a34d3c6e56669ff420ac263e152bf9b754e1cd0",
+      "action": "APPLY"
+    },
+    {
+      "order": 148,
+      "version": "20270128000225",
+      "name": "cashier_sepay_intent_receipt_v1",
+      "path": "supabase/migrations/20270128000225_cashier_sepay_intent_receipt_v1.sql",
+      "sha256": "91c436d0c1ab11a53455423c7d4735653d840558892c400903c3b8d8d5db7c10",
+      "action": "APPLY"
+    },
+    {
+      "order": 149,
+      "version": "20270128000226",
+      "name": "cashier_manual_bank_allocation_v1",
+      "path": "supabase/migrations/20270128000226_cashier_manual_bank_allocation_v1.sql",
+      "sha256": "4cf446c67e7f4cdcc4f1c61ad1e659d8ed05dde82bfb16d59d17cd0b5c33881f",
+      "action": "APPLY"
+    },
+    {
+      "order": 150,
+      "version": "20270128000227",
+      "name": "cashier_manual_bank_waiting_retry_v1",
+      "path": "supabase/migrations/20270128000227_cashier_manual_bank_waiting_retry_v1.sql",
+      "sha256": "1c5a2eb7c3b85d62d348410a76ce9ae79e2ed1e480768b41a6474fc5579e6ea6",
+      "action": "APPLY"
+    },
+    {
+      "order": 151,
+      "version": "20270128000228",
+      "name": "fnb_guest_intent_receipt_v1",
+      "path": "supabase/migrations/20270128000228_fnb_guest_intent_receipt_v1.sql",
+      "sha256": "6692efee8b44848013ef57aa9ec68c8e2c3be81bef9084b93635fb434dde89a7",
+      "action": "APPLY"
+    },
+    {
+      "order": 152,
+      "version": "20270128000229",
+      "name": "fnb_guest_order_receipt_read_v1",
+      "path": "supabase/migrations/20270128000229_fnb_guest_order_receipt_read_v1.sql",
+      "sha256": "eb10429e399561376a93d32b913311aa46271dd2896b85cdccafa82717623f2d",
+      "action": "APPLY"
+    },
+    {
+      "order": 153,
+      "version": "20270128000230",
+      "name": "fnb_guest_abandon_intent_v1",
+      "path": "supabase/migrations/20270128000230_fnb_guest_abandon_intent_v1.sql",
+      "sha256": "5e4a0e86c42c9103605c360047a278c45655c9a9f7d0b04889f01b98531f2c56",
+      "action": "APPLY"
+    },
+    {
+      "order": 154,
+      "version": "20270128000231",
+      "name": "fnb_guest_status_bank_snapshot_v1",
+      "path": "supabase/migrations/20270128000231_fnb_guest_status_bank_snapshot_v1.sql",
+      "sha256": "1e9174911c0d0b50fabb55987d2ef665da3a3e223804f618d08c776c902ecec2",
+      "action": "APPLY"
+    },
+    {
+      "order": 155,
+      "version": "20270128000232",
+      "name": "public_tournament_registration_summary_v1",
+      "path": "supabase/migrations/20270128000232_public_tournament_registration_summary_v1.sql",
+      "sha256": "5bc0e58db17b2e0f9267b2518649837b6714624236cd870ee9efa686b189896c",
+      "action": "APPLY"
+    },
+    {
+      "order": 156,
+      "version": "20270128000233",
+      "name": "cashier_reentry_closed_registration_guard_v1",
+      "path": "supabase/migrations/20270128000233_cashier_reentry_closed_registration_guard_v1.sql",
+      "sha256": "ba174f4857e77bf2125e2b7c91d7d9581a9690b38e8a1f21d647182e8592c3a3",
+      "action": "APPLY"
+    },
+    {
+      "order": 157,
+      "version": "20270128000234",
+      "name": "tournament_create_money_integrity_v1",
+      "path": "supabase/migrations/20270128000234_tournament_create_money_integrity_v1.sql",
+      "sha256": "0dc866d4d66b1925baaa0d48295af5be777cd6591239012f4f945dbb303fc6bc",
+      "action": "APPLY"
+    },
+    {
+      "order": 158,
+      "version": "20270128000235",
+      "name": "fnb_shipping_transition_integrity_v1",
+      "path": "supabase/migrations/20270128000235_fnb_shipping_transition_integrity_v1.sql",
+      "sha256": "9602bd4cc8086e5ddde1a271f9384ab9fdb91d409049c3c07a1b00b1119b6488",
+      "action": "APPLY"
+    },
+    {
+      "order": 159,
+      "version": "20270128000236",
+      "name": "tracker_source_table_privileges_v1",
+      "path": "supabase/migrations/20270128000236_tracker_source_table_privileges_v1.sql",
+      "sha256": "9e715b26aab3980eeafd7f2b441133b987fe00cc108b73c68a4dc64efc271d05",
+      "action": "APPLY"
+    },
+    {
+      "order": 160,
+      "version": "20270128000237",
+      "name": "tournament_guarantee_write_integrity_v1",
+      "path": "supabase/migrations/20270128000237_tournament_guarantee_write_integrity_v1.sql",
+      "sha256": "18dedd70e00b7bc38ecfc86051674731883ec5b1600bf2173be7c8aa14f03655",
+      "action": "APPLY"
+    },
+    {
+      "order": 161,
+      "version": "20270128000238",
+      "name": "tournament_fee_write_integrity_v1",
+      "path": "supabase/migrations/20270128000238_tournament_fee_write_integrity_v1.sql",
+      "sha256": "f6592f4cde981ea447b969f283054df99656da2de15763c17a98564d33a6d315",
+      "action": "APPLY"
+    },
+    {
+      "order": 162,
+      "version": "20270128000239",
+      "name": "tournament_player_count_write_integrity_v1",
+      "path": "supabase/migrations/20270128000239_tournament_player_count_write_integrity_v1.sql",
+      "sha256": "b162212e2d5f852014ba03a463396002fe1c5f1323e25321088bf61f96e4e9d2",
+      "action": "APPLY"
+    },
+    {
+      "order": 163,
+      "version": "20270128000240",
+      "name": "tournament_blind_level_integrity_v1",
+      "path": "supabase/migrations/20270128000240_tournament_blind_level_integrity_v1.sql",
+      "sha256": "8d4eac7603420abb7fcbf71a50acf6ae42ebad7176cb70bd053215858d31e1e1",
+      "action": "APPLY"
+    },
+    {
+      "order": 164,
+      "version": "20270128000241",
+      "name": "tournament_blind_replace_shape_v1",
+      "path": "supabase/migrations/20270128000241_tournament_blind_replace_shape_v1.sql",
+      "sha256": "e37871d9615b6fc8ace57ba20ce3c83addefe36b32304eb597b9cb95bb4df17c",
+      "action": "APPLY"
+    },
+    {
+      "order": 165,
+      "version": "20270128000242",
+      "name": "d2_initial_draw_archive_read_v1",
+      "path": "supabase/migrations/20270128000242_d2_initial_draw_archive_read_v1.sql",
+      "sha256": "68c9db5c1a7374e9549784866b6cd5880562f8a409ebb59976dbe2bef4770751",
+      "action": "APPLY"
+    },
+    {
+      "order": 166,
+      "version": "20270128000243",
+      "name": "clock_adjust_read_consistency_v1",
+      "path": "supabase/migrations/20270128000243_clock_adjust_read_consistency_v1.sql",
+      "sha256": "4458ddeee1d94608d26f216a10ee49a51ae849e21d27b0b0f7204fdf8f85ae4a",
+      "action": "APPLY"
+    },
+    {
+      "order": 167,
+      "version": "20270128000244",
+      "name": "staking_refund_atomic_v1",
+      "path": "supabase/migrations/20270128000244_staking_refund_atomic_v1.sql",
+      "sha256": "7534c99ec667be9ada5bdfdb917af7941d4c78b4f93b1c493fd80447ad982a93",
+      "action": "APPLY"
+    },
+    {
+      "order": 168,
+      "version": "20270128000245",
+      "name": "staking_funding_atomic_v1",
+      "path": "supabase/migrations/20270128000245_staking_funding_atomic_v1.sql",
+      "sha256": "aad0c7360ad4a096afd550db791dd49478ecd5354bcd13594faa8ee77e72f856",
+      "action": "APPLY"
+    },
+    {
+      "order": 169,
+      "version": "20270128000246",
+      "name": "staking_cancel_integrity_v1",
+      "path": "supabase/migrations/20270128000246_staking_cancel_integrity_v1.sql",
+      "sha256": "68de0db9bfb9c3917a2be1e6dd11d063e383ea41e43b074ebc93d9199c9c10f3",
+      "action": "APPLY"
+    },
+    {
+      "order": 170,
+      "version": "20270128000247",
+      "name": "staking_close_early_atomic_v1",
+      "path": "supabase/migrations/20270128000247_staking_close_early_atomic_v1.sql",
+      "sha256": "2ed08b3a177ecba109f71b03e1542ecbee8333234cbb04664e63bb046f063734",
+      "action": "APPLY"
+    },
+    {
+      "order": 171,
+      "version": "20270128000248",
+      "name": "staking_close_early_audit_action_v1",
+      "path": "supabase/migrations/20270128000248_staking_close_early_audit_action_v1.sql",
+      "sha256": "0e2c9991d7ef8df4626d4d4df558711a9a0c581d68172dbef58c79526745ac81",
+      "action": "APPLY"
+    },
+    {
+      "order": 172,
+      "version": "20270128000249",
+      "name": "staking_commit_atomic_v1",
+      "path": "supabase/migrations/20270128000249_staking_commit_atomic_v1.sql",
+      "sha256": "88a4ac35222995aa432cbd3388753a975543295b2dbc97efbae078d1b4577cd4",
+      "action": "APPLY"
+    },
+    {
+      "order": 173,
+      "version": "20270128000250",
+      "name": "staking_commit_notifications_v1",
+      "path": "supabase/migrations/20270128000250_staking_commit_notifications_v1.sql",
+      "sha256": "f324214bdb5fed05dac160f02aed34835af6ea36d71fc9f40d15924dfda1feb6",
+      "action": "APPLY"
+    },
+    {
+      "order": 174,
+      "version": "20270128000251",
+      "name": "staking_commit_notification_conflicts_v1",
+      "path": "supabase/migrations/20270128000251_staking_commit_notification_conflicts_v1.sql",
+      "sha256": "79ad843245f1a749c893371158873f66cf30fdfca287e9359e85d085d765da76",
+      "action": "APPLY"
+    },
+    {
+      "order": 175,
+      "version": "20270128000252",
+      "name": "staking_purchase_receipt_time_v1",
+      "path": "supabase/migrations/20270128000252_staking_purchase_receipt_time_v1.sql",
+      "sha256": "1f66877e2a98df84dd373353ffd736a2d3c65de29cb94999729944cae3667494",
+      "action": "APPLY"
+    },
+    {
+      "order": 176,
+      "version": "20270128000253",
+      "name": "staking_transfer_receipt_read_v1",
+      "path": "supabase/migrations/20270128000253_staking_transfer_receipt_read_v1.sql",
+      "sha256": "0b24bd520ca7ef28610e7ca95ccb5b5e819c67aaaf149c1131924f0ed835a970",
+      "action": "APPLY"
+    },
+    {
+      "order": 177,
+      "version": "20261103035223",
+      "name": "staking_refund_predecessor_line_endings_v1",
+      "path": "supabase/migrations/20261103035223_staking_refund_predecessor_line_endings_v1.sql",
+      "sha256": "f50e02e4b075941604b32177c11f42edb3cdf5507131a18e6cfc08fa090dbe72",
+      "action": "APPLY"
+    },
+    {
+      "order": 178,
+      "version": "20270128000254",
+      "name": "staking_refund_effect_intents_v1",
+      "path": "supabase/migrations/20270128000254_staking_refund_effect_intents_v1.sql",
+      "sha256": "c8c9cbbb32c911442370f87a53c470606dd6dc698dca815308599a1f9100bac6",
+      "action": "APPLY"
+    },
+    {
+      "order": 179,
+      "version": "20270128000255",
+      "name": "staking_refund_effect_delivery_v1",
+      "path": "supabase/migrations/20270128000255_staking_refund_effect_delivery_v1.sql",
+      "sha256": "11be1fb16eca1983d8802b42838b6f2c6fc8e3e20caedce2530b3d00f2f822e0",
+      "action": "APPLY"
+    },
+    {
+      "order": 180,
+      "version": "20270128000256",
+      "name": "staking_refund_effect_status_v1",
+      "path": "supabase/migrations/20270128000256_staking_refund_effect_status_v1.sql",
+      "sha256": "05a55c861b1e53b4823fd104bd3136751d68136137cac397068e596fdaae2a60",
+      "action": "APPLY"
+    },
+    {
+      "order": 181,
+      "version": "20270128000257",
+      "name": "staking_refund_preview_v1",
+      "path": "supabase/migrations/20270128000257_staking_refund_preview_v1.sql",
+      "sha256": "2919e01d7f58d58d8b2540f74114ed13bc183d882bf92b02742357f01cfaaef5",
+      "action": "APPLY"
+    },
+    {
+      "order": 182,
+      "version": "20261103035328",
+      "name": "staking_funding_predecessor_line_endings_v1",
+      "path": "supabase/migrations/20261103035328_staking_funding_predecessor_line_endings_v1.sql",
+      "sha256": "9c2f495f7adfb6a4b9ee8fc613d7be4850d86a51bc45280d488fc657ed579585",
+      "action": "APPLY"
+    },
+    {
+      "order": 183,
+      "version": "20270128000258",
+      "name": "staking_funding_effect_intents_v1",
+      "path": "supabase/migrations/20270128000258_staking_funding_effect_intents_v1.sql",
+      "sha256": "95d9d7ff4fd1461a0c45dd77426ecb84b1f9830857e9f4b3adc888e684012a23",
+      "action": "APPLY"
+    },
+    {
+      "order": 184,
+      "version": "20270128000259",
+      "name": "staking_funding_effect_delivery_v1",
+      "path": "supabase/migrations/20270128000259_staking_funding_effect_delivery_v1.sql",
+      "sha256": "1cfb1f73e15b662026ac240d775cecb911dc02c753a658398170b10217a4fb1d",
+      "action": "APPLY"
+    },
+    {
+      "order": 185,
+      "version": "20270128000260",
+      "name": "staking_legacy_funding_atomic_v1",
+      "path": "supabase/migrations/20270128000260_staking_legacy_funding_atomic_v1.sql",
+      "sha256": "0149863d3aad8b9876cb4943b22bfa34db7ba60d0b81ecff6db5e8cf259ee236",
+      "action": "APPLY"
+    },
+    {
+      "order": 186,
+      "version": "20270128000261",
+      "name": "staking_funding_receipt_read_v1",
+      "path": "supabase/migrations/20270128000261_staking_funding_receipt_read_v1.sql",
+      "sha256": "2ca6c8426aa72778c3d1ad73ed5915a36616789b1b8d9d99b2e2d388c58fd6de",
+      "action": "APPLY"
+    },
+    {
+      "order": 187,
+      "version": "20270128000262",
+      "name": "staking_funding_receipt_pending_v1",
+      "path": "supabase/migrations/20270128000262_staking_funding_receipt_pending_v1.sql",
+      "sha256": "b32fb4cbcdf177dcce64c45519af305685410afb129f6e95a7f08f4c34082a2a",
+      "action": "APPLY"
+    },
+    {
+      "order": 188,
+      "version": "20270128000263",
+      "name": "staking_listing_archive_v1",
+      "path": "supabase/migrations/20270128000263_staking_listing_archive_v1.sql",
+      "sha256": "342041a22c8a9b1d7f561403d92bdc6b182b70e451b4c64ae6627a75669574ee",
+      "action": "APPLY"
+    },
+    {
+      "order": 189,
+      "version": "20270128000264",
+      "name": "finance_summary_business_dates_v2",
+      "path": "supabase/migrations/20270128000264_finance_summary_business_dates_v2.sql",
+      "sha256": "2a300fafab4b4a3394d9a22653f6a9af00ca89c2036ce96f7d1fdb7ceeb57eec",
+      "action": "APPLY"
+    },
+    {
+      "order": 190,
+      "version": "20270128000265",
+      "name": "tracker_undo_intent_cancellation_v1",
+      "path": "supabase/migrations/20270128000265_tracker_undo_intent_cancellation_v1.sql",
+      "sha256": "5349c0052a2b8bb9e15a2ca3a5a76dba36e7aa0cd7e72c6649d2d4ea191fd9dd",
+      "action": "APPLY"
+    },
+    {
+      "order": 191,
+      "version": "20270128000266",
+      "name": "tracker_source_trigger_privileges_v1",
+      "path": "supabase/migrations/20270128000266_tracker_source_trigger_privileges_v1.sql",
+      "sha256": "914ae7cbe01781f72481edbe97732d6646889d824ef07316f8689b0343834624",
+      "action": "APPLY"
+    },
+    {
+      "order": 192,
+      "version": "20270128000267",
+      "name": "bag_reconciliation_actor_authority_v1",
+      "path": "supabase/migrations/20270128000267_bag_reconciliation_actor_authority_v1.sql",
+      "sha256": "5e117bda549cc1fc9ba4774539638b97fda32fa68462aa4910d9ff810cb9e682",
+      "action": "APPLY"
+    },
+    {
+      "order": 193,
+      "version": "20270128000268",
+      "name": "bag_table_label_canonical_v1",
+      "path": "supabase/migrations/20270128000268_bag_table_label_canonical_v1.sql",
+      "sha256": "97fa9d3aacb5d9428b21163a7870f51a4335ea1a0aa0b694f4a05b021182cc2f",
+      "action": "APPLY"
+    },
+    {
+      "order": 194,
+      "version": "20270128000269",
+      "name": "bag_day_write_serialization_v1",
+      "path": "supabase/migrations/20270128000269_bag_day_write_serialization_v1.sql",
+      "sha256": "90056ce2e662c218d8b646684a40e938ddeabdba991f3b568073d0c0e015b107",
+      "action": "APPLY"
+    },
+    {
+      "order": 195,
+      "version": "20270128000270",
+      "name": "bag_tag_durable_intent_v1",
+      "path": "supabase/migrations/20270128000270_bag_tag_durable_intent_v1.sql",
+      "sha256": "bda250aa4b1a6cc3f47e7f76640653f632c3af5f6391475698bbe147d40ee1df",
+      "action": "APPLY"
+    },
+    {
+      "order": 196,
+      "version": "20270128000271",
+      "name": "legacy_bag_active_hand_guard_v1",
+      "path": "supabase/migrations/20270128000271_legacy_bag_active_hand_guard_v1.sql",
+      "sha256": "fb8a0c1c4feedf795f538d1f35ff0d151997cbd2b4c1a748e99c65ce28f10676",
+      "action": "APPLY"
+    },
+    {
+      "order": 197,
+      "version": "20270128000272",
+      "name": "dealer_acquisition_operating_day_v1",
+      "path": "supabase/migrations/20270128000272_dealer_acquisition_operating_day_v1.sql",
+      "sha256": "22aab1ae3881ed8ac7ba2f5a00893bc9e646c0c22959b7a610d5727ecc3f6e32",
+      "action": "APPLY"
+    },
+    {
+      "order": 198,
+      "version": "20270128000273",
+      "name": "dealer_pool_operating_day_read_v1",
+      "path": "supabase/migrations/20270128000273_dealer_pool_operating_day_read_v1.sql",
+      "sha256": "282f361c5021e63cb8482abffd5320e1df1d0aef0f365de257b36e304fba566b",
+      "action": "APPLY"
+    },
+    {
+      "order": 199,
+      "version": "20270128000274",
+      "name": "floor_dealer_close_reservations_v1",
+      "path": "supabase/migrations/20270128000274_floor_dealer_close_reservations_v1.sql",
+      "sha256": "139ec0a3184046e27de9372360eaf7e98cefb26712e73269c99e3b7da0d3702b",
+      "action": "APPLY"
+    },
+    {
+      "order": 200,
+      "version": "20270128000275",
+      "name": "floor_redraw_entry_tuple_receipts_v1",
+      "path": "supabase/migrations/20270128000275_floor_redraw_entry_tuple_receipts_v1.sql",
+      "sha256": "dcd6bff8a4a5564d04c3d84a76768da3ad00b94f1fe7e2d082588a2e9c2f70bc",
+      "action": "APPLY"
+    },
+    {
+      "order": 201,
+      "version": "20270128000276",
+      "name": "floor_redraw_intent_read_v1",
+      "path": "supabase/migrations/20270128000276_floor_redraw_intent_read_v1.sql",
+      "sha256": "96dd72a9e85680cb5936ef4f3276c7bf7dd2ceb297a3396ced93bdc829c65916",
+      "action": "APPLY"
+    },
+    {
+      "order": 202,
+      "version": "20270128000277",
+      "name": "payout_manual_edit_intent_v1",
+      "path": "supabase/migrations/20270128000277_payout_manual_edit_intent_v1.sql",
+      "sha256": "60b6a5fd625ca4022238b4e8f8b2818f35e174ea7ca2664423229ee13f684fb3",
+      "action": "APPLY"
+    },
+    {
+      "order": 203,
+      "version": "20270128000278",
+      "name": "fnb_order_event_integrity_v1",
+      "path": "supabase/migrations/20270128000278_fnb_order_event_integrity_v1.sql",
+      "sha256": "db6ae642849b117a1c0c36ae373dfb6f57dc9a9aee2a057e2072143652d0f71c",
+      "action": "APPLY"
+    },
+    {
+      "order": 204,
+      "version": "20270128000279",
+      "name": "fnb_cash_shift_integrity_v1",
+      "path": "supabase/migrations/20270128000279_fnb_cash_shift_integrity_v1.sql",
+      "sha256": "c10b8c88f7c6746185538afba22a40e1fefd69becccc4e1a30ec6b2d02c47d97",
+      "action": "APPLY"
+    },
+    {
+      "order": 205,
+      "version": "20270128000280",
+      "name": "fnb_canonical_link_targets_v1",
+      "path": "supabase/migrations/20270128000280_fnb_canonical_link_targets_v1.sql",
+      "sha256": "e344766494695203068fade545342b14e2327bf839285587972a9bde19d2b77a",
+      "action": "APPLY"
+    },
+    {
+      "order": 206,
+      "version": "20270128000281",
+      "name": "fnb_create_recovery_ordering_v1",
+      "path": "supabase/migrations/20270128000281_fnb_create_recovery_ordering_v1.sql",
+      "sha256": "f2594f816985f96384c0e26c494b7e2ccb52891820f716fb1218a05164c72eae",
+      "action": "APPLY"
+    },
+    {
+      "order": 207,
+      "version": "20270128000282",
+      "name": "fnb_create_receipt_read_v1",
+      "path": "supabase/migrations/20270128000282_fnb_create_receipt_read_v1.sql",
+      "sha256": "0447b42d619b4ff234ea765c0ec83b20396a9f533deed60d45d2428ac0c5ec38",
+      "action": "APPLY"
+    },
+    {
+      "order": 208,
+      "version": "20270128000283",
+      "name": "fnb_create_cancel_fence_v1",
+      "path": "supabase/migrations/20270128000283_fnb_create_cancel_fence_v1.sql",
+      "sha256": "71bac8c90ae43aa0324f3441c9b6d08406a2fafe22da12d6e51e86cdc428c45a",
+      "action": "APPLY"
+    },
+    {
+      "order": 209,
+      "version": "20270128000284",
+      "name": "fnb_bank_technical_failure_v1",
+      "path": "supabase/migrations/20270128000284_fnb_bank_technical_failure_v1.sql",
+      "sha256": "69c5329d041eeccccf6dc203f1b5f6a91fbca0aab0f9078738652e56decb050c",
+      "action": "APPLY"
+    },
+    {
+      "order": 210,
+      "version": "20270128000285",
+      "name": "cashier_terminal_receipt_history_v1",
+      "path": "supabase/migrations/20270128000285_cashier_terminal_receipt_history_v1.sql",
+      "sha256": "faa74bf3265c4472f8415c193261e1e5bbdee7c6342735bd2632fcea2d6f0537",
+      "action": "APPLY"
+    },
+    {
+      "order": 211,
+      "version": "20270128000286",
+      "name": "multiday_bag_postwait_authority_v1",
+      "path": "supabase/migrations/20270128000286_multiday_bag_postwait_authority_v1.sql",
+      "sha256": "3d672377a33d3159fe3a702e20028b8e8894ec3709634d4ac8d19481139f9854",
+      "action": "APPLY"
+    },
+    {
+      "order": 212,
+      "version": "20270128000287",
+      "name": "online_create_receipt_v1",
+      "path": "supabase/migrations/20270128000287_online_create_receipt_v1.sql",
+      "sha256": "fcd6d30498026f0c0c9882a7c8ff2c10b52e5d88820a705b36c76395abb287af",
+      "action": "APPLY"
+    },
+    {
+      "order": 213,
+      "version": "20270128000288",
+      "name": "online_create_legacy_boundary_v1",
+      "path": "supabase/migrations/20270128000288_online_create_legacy_boundary_v1.sql",
+      "sha256": "3539a7f6ca2516e2394c43ea9eb0653430409722ff78e5b817a9ba7036131f7e",
+      "action": "APPLY"
+    },
+    {
+      "order": 214,
+      "version": "20270128000289",
+      "name": "dealer_checkout_atomic_v1",
+      "path": "supabase/migrations/20270128000289_dealer_checkout_atomic_v1.sql",
+      "sha256": "55fa863469c72b6ff7059609d3dc3476a47b7f53a5e922b561494af2c41fafc5",
+      "action": "APPLY"
+    },
+    {
+      "order": 215,
+      "version": "20270128000290",
+      "name": "dealer_feature_config_atomic_v1",
+      "path": "supabase/migrations/20270128000290_dealer_feature_config_atomic_v1.sql",
+      "sha256": "23ca3bdb00d2e0d098401d1e6eba153f67de0c2ea822fa07708f97a96c305dc8",
+      "action": "APPLY"
+    },
+    {
+      "order": 216,
+      "version": "20270128000291",
+      "name": "dealer_feature_profile_actor_cancel_v2",
+      "path": "supabase/migrations/20270128000291_dealer_feature_profile_actor_cancel_v2.sql",
+      "sha256": "3ed72d6e9f3d332e762ce09dd843e2b033bfdafc25d3937e6d469b39edbe7c0c",
+      "action": "APPLY"
+    },
+    {
+      "order": 217,
+      "version": "20270128000292",
+      "name": "dealer_swing_fallback_pool_scope_v1",
+      "path": "supabase/migrations/20270128000292_dealer_swing_fallback_pool_scope_v1.sql",
+      "sha256": "e88c694345bfd208c892af9c6364694abb9b024977df4913f568a429f3170630",
+      "action": "APPLY"
+    },
+    {
+      "order": 218,
+      "version": "20270128000293",
+      "name": "dealer_swing_error_atomic_v1",
+      "path": "supabase/migrations/20270128000293_dealer_swing_error_atomic_v1.sql",
+      "sha256": "c8ec6d9808866598809550e6164490677b425147635cee243d6230fa906620ce",
+      "action": "APPLY"
+    },
+    {
+      "order": 219,
+      "version": "20270128000294",
+      "name": "d2_held_seed_read_v1",
+      "path": "supabase/migrations/20270128000294_d2_held_seed_read_v1.sql",
+      "sha256": "92db7550567b3e5fd75f2578d7d6efb3324ad74601b9b7407fc51bc404d58f02",
+      "action": "APPLY"
+    },
+    {
+      "order": 220,
+      "version": "20270128000295",
+      "name": "tracker_hand_tenant_write_guard_v1",
+      "path": "supabase/migrations/20270128000295_tracker_hand_tenant_write_guard_v1.sql",
+      "sha256": "8202e08a3719ed087a403a6b5a50eda27727351a6e99acf9cb6d4033aecbf1d2",
+      "action": "APPLY"
+    },
+    {
+      "order": 221,
+      "version": "20270128000296",
+      "name": "manual_ranking_review_v1",
+      "path": "supabase/migrations/20270128000296_manual_ranking_review_v1.sql",
+      "sha256": "d786e04b14c42eaeb0832b97ea47f992eacd755ad1e94d9022f6a28920c778bd",
+      "action": "APPLY"
+    },
+    {
+      "order": 222,
+      "version": "20261027151355",
+      "name": "fnb_confirmed_stocktake_snapshot_v1",
+      "path": "supabase/migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql",
+      "sha256": "f9b859e0e74b1c21d9051c1fd721ca49a3c78694ef92052385083f63d9cb4daf",
+      "action": "APPLY"
+    },
+    {
+      "order": 223,
+      "version": "20261028200630",
+      "name": "multiday_registration_requires_locked_rules_local",
+      "path": "supabase/migrations/20261028200630_multiday_registration_requires_locked_rules_local.sql",
+      "sha256": "0bdb0ea41985d6527f621efd9ed48345459505be1f75d4db3e3a2c7b566051ae",
+      "action": "APPLY"
+    },
+    {
+      "order": 224,
+      "version": "20261029053635",
+      "name": "multiday_individual_complete_package_v1",
+      "path": "supabase/migrations/20261029053635_multiday_individual_complete_package_v1.sql",
+      "sha256": "f6dfd3a2ae77c115f7f4dbe5722814816898ce80714d58fe6cbf0c4fc60e5ef0",
+      "action": "APPLY"
+    },
+    {
+      "order": 225,
+      "version": "20261029055503",
+      "name": "multiday_unpaid_restore_individual_payment_fence_v1",
+      "path": "supabase/migrations/20261029055503_multiday_unpaid_restore_individual_payment_fence_v1.sql",
+      "sha256": "c63dffcb498ec79139d308066b5aff23c5d2601c80a7661c011a23d7f111c32f",
+      "action": "APPLY"
+    },
+    {
+      "order": 226,
+      "version": "20261029074734",
+      "name": "dealer_expired_rest_marker_completion_v1",
+      "path": "supabase/migrations/20261029074734_dealer_expired_rest_marker_completion_v1.sql",
+      "sha256": "ba09e335b55d9dcb784da1678750e3e6c1ca957cd60a1b600f938f8cce01c61f",
+      "action": "APPLY"
+    },
+    {
+      "order": 227,
+      "version": "20261029082610",
+      "name": "dealer_ready_continuous_rest_anchor_v1",
+      "path": "supabase/migrations/20261029082610_dealer_ready_continuous_rest_anchor_v1.sql",
+      "sha256": "a3b6acd3189eeffe372d5b25b351d673d711bb77b25a049b13d0907855b81939",
+      "action": "APPLY"
+    },
+    {
+      "order": 228,
+      "version": "20261029090402",
+      "name": "finance_rake_event_day_recognition_v1",
+      "path": "supabase/migrations/20261029090402_finance_rake_event_day_recognition_v1.sql",
+      "sha256": "76cc13229a9e5e7e4ee34f5d4760a2db60b1d66e96a1212b3d2c1aa9d91c6a46",
+      "action": "APPLY"
+    },
+    {
+      "order": 229,
+      "version": "20261029092203",
+      "name": "owner_tour_rake_live_read_v1",
+      "path": "supabase/migrations/20261029092203_owner_tour_rake_live_read_v1.sql",
+      "sha256": "5ce78be16ae38ed1c97dacd461ef08c00b4cad878b7def36be5d331bb96c530e",
+      "action": "APPLY"
+    },
+    {
+      "order": 230,
+      "version": "20261029092520",
+      "name": "tour_revenue_buy_close_snapshot_v1",
+      "path": "supabase/migrations/20261029092520_tour_revenue_buy_close_snapshot_v1.sql",
+      "sha256": "84ccfeb427d8c04c5bbd4e7be9747b4763d6d8033937d47a8a178bdb469f9403",
+      "action": "APPLY"
+    },
+    {
+      "order": 231,
+      "version": "20261029092756",
+      "name": "close_tournament_buy_v1",
+      "path": "supabase/migrations/20261029092756_close_tournament_buy_v1.sql",
+      "sha256": "5907f71c1ff881d2046cc8a6a772d3ab6c773a61903dbeec29944973b0ba198f",
+      "action": "APPLY"
+    },
+    {
+      "order": 232,
+      "version": "20261029100324",
+      "name": "tour_revenue_shared_live_source_v1",
+      "path": "supabase/migrations/20261029100324_tour_revenue_shared_live_source_v1.sql",
+      "sha256": "b8385948a49e7bb85745aaaf53c767a3b2e3c210ac4d4d7d0fc1efbac68018ce",
+      "action": "APPLY"
+    },
+    {
+      "order": 233,
+      "version": "20261029100837",
+      "name": "finance_receipt_snapshot_revenue_v1",
+      "path": "supabase/migrations/20261029100837_finance_receipt_snapshot_revenue_v1.sql",
+      "sha256": "f656f7ea305cf6cd3dae5330c8f253ec9f817fe8eb242ca856ac9910173fac4f",
+      "action": "APPLY"
+    },
+    {
+      "order": 234,
+      "version": "20261029102508",
+      "name": "tour_revenue_buy_state_read_v1",
+      "path": "supabase/migrations/20261029102508_tour_revenue_buy_state_read_v1.sql",
+      "sha256": "081c43403281e9d04341707eddfd40fe093d592b4ee1d7d24a46742465709365",
+      "action": "APPLY"
+    },
+    {
+      "order": 235,
+      "version": "20261103041341",
+      "name": "dealer_fallback_session_rest_composition_v2",
+      "path": "supabase/migrations/20261103041341_dealer_fallback_session_rest_composition_v2.sql",
+      "sha256": "e5e7b230b72c57acd1543ab97467008a2a380df0525dfa67ec8a18e39eb54c69",
+      "action": "APPLY"
+    },
+    {
+      "order": 236,
+      "version": "20261029155420",
+      "name": "series_paid_pending_counts_v1",
+      "path": "supabase/migrations/20261029155420_series_paid_pending_counts_v1.sql",
+      "sha256": "f08fc76d4b9e944bcf10641b1b27e07367bf254c50a358b7962fe903bb7590d9",
+      "action": "APPLY"
+    },
+    {
+      "order": 237,
+      "version": "20261029160012",
+      "name": "registration_expiry_skip_paid_v1",
+      "path": "supabase/migrations/20261029160012_registration_expiry_skip_paid_v1.sql",
+      "sha256": "0e409369dc86be05658f90cbb9e21a6c7ab0d3385eddd142f91e532787f771d5",
+      "action": "APPLY"
+    },
+    {
+      "order": 238,
+      "version": "20261030050418",
+      "name": "dealer_table_arrival_ack_v1",
+      "path": "supabase/migrations/20261030050418_dealer_table_arrival_ack_v1.sql",
+      "sha256": "1efe03eb0762996c7bf64cf0bfa156a875d906b395ff2c14328f9063cc46dbf4",
+      "action": "APPLY"
+    },
+    {
+      "order": 239,
+      "version": "20261030090047",
+      "name": "pt_actual_hours_new_payable_boundary_v1",
+      "path": "supabase/migrations/20261030090047_pt_actual_hours_new_payable_boundary_v1.sql",
+      "sha256": "6e07537e0ecfa8b7dc2b291cd0bf917a5e9dfba670dbc79def9d94b57db230bb",
+      "action": "APPLY"
+    },
+    {
+      "order": 240,
+      "version": "20261030090337",
+      "name": "pt_legacy_monthly_overlap_guard_v1",
+      "path": "supabase/migrations/20261030090337_pt_legacy_monthly_overlap_guard_v1.sql",
+      "sha256": "2a8fd2ef75f4990f7be572735683a6ffd017c31e9371529631e848617e82e9a0",
+      "action": "APPLY"
+    },
+    {
+      "order": 241,
+      "version": "20261030090948",
+      "name": "pt_finalized_payment_monthly_overlap_guard_v1",
+      "path": "supabase/migrations/20261030090948_pt_finalized_payment_monthly_overlap_guard_v1.sql",
+      "sha256": "ff1aedf8de2d23047a2509ba30a0bf9b6bb3ae5b53796fc7c1b205bb191c4143",
+      "action": "APPLY"
+    },
+    {
+      "order": 242,
+      "version": "20261030091334",
+      "name": "pt_statement_request_readback_v1",
+      "path": "supabase/migrations/20261030091334_pt_statement_request_readback_v1.sql",
+      "sha256": "d3550bb1c071cc70ddf80b07599d20520b2c95f119b730b7a3390485aff295dc",
+      "action": "APPLY"
+    },
+    {
+      "order": 243,
+      "version": "20261030092830",
+      "name": "pt_attendance_cap_reservation_anchor_v1",
+      "path": "supabase/migrations/20261030092830_pt_attendance_cap_reservation_anchor_v1.sql",
+      "sha256": "dbf04b9496ffec776cdbd97f786b71fb750693337d3e595d53353a9f6e653569",
+      "action": "APPLY"
+    },
+    {
+      "order": 244,
+      "version": "20261030151432",
+      "name": "floor_closed_session_rest_markers_v1",
+      "path": "supabase/migrations/20261030151432_floor_closed_session_rest_markers_v1.sql",
+      "sha256": "cd483e6980c3a0996c04323f626c85533000ba387ce87363e71c20c14173a639",
+      "action": "APPLY"
+    },
+    {
+      "order": 245,
+      "version": "20261030162544",
+      "name": "multiday_live_prize_configuration_cashier_boundary_v1",
+      "path": "supabase/migrations/20261030162544_multiday_live_prize_configuration_cashier_boundary_v1.sql",
+      "sha256": "47ae92efcfc9806ee580b0d0e2c0b87f5f096b88c02ee06224c585d18780f3ef",
+      "action": "APPLY"
+    },
+    {
+      "order": 246,
+      "version": "20261030174722",
+      "name": "series_pulse_ended_flight_exclusion_v1",
+      "path": "supabase/migrations/20261030174722_series_pulse_ended_flight_exclusion_v1.sql",
+      "sha256": "4e05f5f3e71f07b7821f9e2c0c77366bb6fabd3beafec095bdc4687afd108eb7",
+      "action": "APPLY"
+    },
+    {
+      "order": 247,
+      "version": "20261101021500",
+      "name": "floor_closed_session_dealer_rest_current_v2",
+      "path": "supabase/migrations/20261101021500_floor_closed_session_dealer_rest_current_v2.sql",
+      "sha256": "0ab6b7409718ceee919f2be8334bf0ab36f87b7d6479861622cadd0cebd4bbda",
+      "action": "APPLY"
+    },
+    {
+      "order": 248,
+      "version": "20261101022500",
+      "name": "dealer_rest_worker_rpc_service_only_v1",
+      "path": "supabase/migrations/20261101022500_dealer_rest_worker_rpc_service_only_v1.sql",
+      "sha256": "65c37ccd0fba233440fc5795372d1a3511c49763aeeb9b098a599f07ce368cf1",
+      "action": "APPLY"
+    },
+    {
+      "order": 249,
+      "version": "20270128000297",
+      "name": "ops_live_clock_authority_v1",
+      "path": "supabase/migrations/20270128000297_ops_live_clock_authority_v1.sql",
+      "sha256": "c343b8df75a5600b9f6bead341d223df848ba47cfc28bf15b60e68b1b7c3bbe7",
+      "action": "APPLY"
+    },
+    {
+      "order": 250,
+      "version": "20270128000298",
+      "name": "ops_create_lifecycle_compatibility_v1",
+      "path": "supabase/migrations/20270128000298_ops_create_lifecycle_compatibility_v1.sql",
+      "sha256": "51e64b97bf88298dcea8b3e18e504c3d08a92df00198352989bd7b8b9e044e13",
+      "action": "APPLY"
+    },
+    {
+      "order": 251,
+      "version": "20270128000299",
+      "name": "participation_bagged_read_classification_v1",
+      "path": "supabase/migrations/20270128000299_participation_bagged_read_classification_v1.sql",
+      "sha256": "2594ff636d759c1c49702230a57f2aacf6369ec3f93df0cddea1c6c283db8335",
+      "action": "APPLY"
+    },
+    {
+      "order": 252,
+      "version": "20270128000300",
+      "name": "fnb_stock_in_request_binding_v1",
+      "path": "supabase/migrations/20270128000300_fnb_stock_in_request_binding_v1.sql",
+      "sha256": "db1c596c29bab4f5b80bb0e12dfc91d38eddec94573e92f72e489477295bc2ff",
+      "action": "APPLY"
+    },
+    {
+      "order": 253,
+      "version": "20270128000301",
+      "name": "tracker_decided_hand_action_guard_v1",
+      "path": "supabase/migrations/20270128000301_tracker_decided_hand_action_guard_v1.sql",
+      "sha256": "eee78ac780a8aa1cfd0010a56842316787523fd1f6622830990e40c54722f4f5",
+      "action": "APPLY"
+    },
+    {
+      "order": 254,
+      "version": "20270128000302",
+      "name": "tracker_history_refund_only_v1",
+      "path": "supabase/migrations/20270128000302_tracker_history_refund_only_v1.sql",
+      "sha256": "b6735f626950d3b57b0bd6a062f7aa7f4361adf93ccfac103a9e7dacadb31934",
+      "action": "APPLY"
+    },
+    {
+      "order": 255,
+      "version": "20270128000303",
+      "name": "owner_finance_staff_salary_v1",
+      "path": "supabase/migrations/20270128000303_owner_finance_staff_salary_v1.sql",
+      "sha256": "e1e439069bdeee25b7897bea78eac1eca6e60562fa518e8f2423f328d3da0459",
+      "action": "APPLY"
+    },
+    {
+      "order": 256,
+      "version": "20270128000304",
+      "name": "fnb_cancel_snapshot_cost_v1",
+      "path": "supabase/migrations/20270128000304_fnb_cancel_snapshot_cost_v1.sql",
+      "sha256": "5973316357ea0bf9bef848f893fc3f50556a83e03695919cdc4a3b3e39353a48",
+      "action": "APPLY"
+    },
+    {
+      "order": 257,
+      "version": "20270128000305",
+      "name": "staff_salary_period_serialization_v1",
+      "path": "supabase/migrations/20270128000305_staff_salary_period_serialization_v1.sql",
+      "sha256": "b3102ac123bd03cbea662d26a8f169869efce8e53b332218f420073cba4f9e52",
+      "action": "APPLY"
+    },
+    {
+      "order": 258,
+      "version": "20270128000306",
+      "name": "staff_salary_wait_authority_v1",
+      "path": "supabase/migrations/20270128000306_staff_salary_wait_authority_v1.sql",
+      "sha256": "36906bd3eda14e41c9fa2c7df9ec70c0331bf3d28a3a7601ceaf2b8e6ea1cecd",
+      "action": "APPLY"
+    },
+    {
+      "order": 259,
+      "version": "20270128000307",
+      "name": "staff_rejected_unpaid_finance_v1",
+      "path": "supabase/migrations/20270128000307_staff_rejected_unpaid_finance_v1.sql",
+      "sha256": "56b4b56a9e07e013e5c3566caf6a44a4978473437ee7ea23f3ec22bd05606735",
+      "action": "APPLY"
+    },
+    {
+      "order": 260,
+      "version": "20270128000308",
+      "name": "staff_pt_monthly_summary_payment_guard_v1",
+      "path": "supabase/migrations/20270128000308_staff_pt_monthly_summary_payment_guard_v1.sql",
+      "sha256": "8855f0671fd1837b27d8ec1bd5c3376b00503911dfcf482b606b8ee782100d60",
+      "action": "APPLY"
+    },
+    {
+      "order": 261,
+      "version": "20270128000309",
+      "name": "dealer_rejected_unpaid_finance_v1",
+      "path": "supabase/migrations/20270128000309_dealer_rejected_unpaid_finance_v1.sql",
+      "sha256": "b8ae407d6f098bae7c8d6c63a271f372d67f3fc73916dc1edc6e92749face11f",
+      "action": "APPLY"
+    },
+    {
+      "order": 262,
+      "version": "20270128000310",
+      "name": "owner_finance_business_timezone_v1",
+      "path": "supabase/migrations/20270128000310_owner_finance_business_timezone_v1.sql",
+      "sha256": "66ef948558e77efa07db5ab32743843915eee5ffbb80480dfa41fe97bd588fb0",
+      "action": "APPLY"
+    },
+    {
+      "order": 263,
+      "version": "20270128000311",
+      "name": "staff_pt_payment_wait_authority_v1",
+      "path": "supabase/migrations/20270128000311_staff_pt_payment_wait_authority_v1.sql",
+      "sha256": "350e4ffbeab4a40748391df81574b23d03c5621e254ba587cf2cea72b240734f",
+      "action": "APPLY"
+    },
+    {
+      "order": 264,
+      "version": "20270128000312",
+      "name": "dealer_finalized_pt_payment_wait_authority_v1",
+      "path": "supabase/migrations/20270128000312_dealer_finalized_pt_payment_wait_authority_v1.sql",
+      "sha256": "ba15b41c52fb821f9086f147e95ed2f726666f781386b62f9e39216fcbccaa6a",
+      "action": "APPLY"
+    },
+    {
+      "order": 265,
+      "version": "20270128000313",
+      "name": "dealer_direct_pt_payment_wait_authority_v1",
+      "path": "supabase/migrations/20270128000313_dealer_direct_pt_payment_wait_authority_v1.sql",
+      "sha256": "30742798c100c14112de263998f6d830310320d3bdd7727c064363f15df93eae",
+      "action": "APPLY"
+    },
+    {
+      "order": 266,
+      "version": "20270128000314",
+      "name": "dealer_pt_finalize_wait_authority_v1",
+      "path": "supabase/migrations/20270128000314_dealer_pt_finalize_wait_authority_v1.sql",
+      "sha256": "489bacefdb6b54fe1dcc5095ed78bc5c3062f51d489f40b2453884cfcf06d50e",
+      "action": "APPLY"
+    },
+    {
+      "order": 267,
+      "version": "20270128000315",
+      "name": "dealer_pt_policy_wait_authority_v1",
+      "path": "supabase/migrations/20270128000315_dealer_pt_policy_wait_authority_v1.sql",
+      "sha256": "f5f1d7496c1e134278ce50ad9882a6b3be0a7e1aba20b772770a6ca54076fc67",
+      "action": "APPLY"
+    },
+    {
+      "order": 268,
+      "version": "20270128000316",
+      "name": "tracker_manual_payout_pot_eligibility_v1",
+      "path": "supabase/migrations/20270128000316_tracker_manual_payout_pot_eligibility_v1.sql",
+      "sha256": "2df47c6ec9fc9e267e31b84615da817e274037fd6aeacb78e366e5665397324c",
+      "action": "APPLY"
+    },
+    {
+      "order": 269,
+      "version": "20270128000317",
+      "name": "dealer_statement_parent_lock_order_v1",
+      "path": "supabase/migrations/20270128000317_dealer_statement_parent_lock_order_v1.sql",
+      "sha256": "1ef330dfe8cf92ba07b96c679b0761ce688fd8f009f8dbca4d0aec09d6b4791f",
+      "action": "APPLY"
+    },
+    {
+      "order": 270,
+      "version": "20270128000318",
+      "name": "staff_pt_balance_exact_microseconds_v1",
+      "path": "supabase/migrations/20270128000318_staff_pt_balance_exact_microseconds_v1.sql",
+      "sha256": "1859072529afd078461f754ac761e53917b182fea6cf73e067062cda30ad6c83",
+      "action": "APPLY"
+    },
+    {
+      "order": 271,
+      "version": "20270128000319",
+      "name": "dealer_pt_segment_exact_sum_v1",
+      "path": "supabase/migrations/20270128000319_dealer_pt_segment_exact_sum_v1.sql",
+      "sha256": "4763a65e45451e2482a7573b83393807b3282397b2f083ea99c7482cb4b287b8",
+      "action": "APPLY"
+    },
+    {
+      "order": 272,
+      "version": "20270128000320",
+      "name": "owner_dealer_pt_live_projection_v1",
+      "path": "supabase/migrations/20270128000320_owner_dealer_pt_live_projection_v1.sql",
+      "sha256": "220cedf827df78d56455645d8439807c3876327affa7d1bdf1deb19e423ba2c7",
+      "action": "APPLY"
+    },
+    {
+      "order": 273,
+      "version": "20270128000321",
+      "name": "owner_dealer_ft_provisional_projection_v1",
+      "path": "supabase/migrations/20270128000321_owner_dealer_ft_provisional_projection_v1.sql",
+      "sha256": "3176032654551e3f3d67498a9a40cc656fa5d6cf9cacfc3ab65414d57cfd8bda",
+      "action": "APPLY"
+    },
+    {
+      "order": 274,
+      "version": "20270128000322",
+      "name": "owner_dealer_ft_unbooked_rows_projection_v1",
+      "path": "supabase/migrations/20270128000322_owner_dealer_ft_unbooked_rows_projection_v1.sql",
+      "sha256": "06fd2dcf2e5b5fbfb7833a31695eee0d4064d84e46ae7e4bf7b705919f639cb5",
+      "action": "APPLY"
+    },
+    {
+      "order": 275,
+      "version": "20270128000323",
+      "name": "owner_staff_ft_unbooked_rows_projection_v1",
+      "path": "supabase/migrations/20270128000323_owner_staff_ft_unbooked_rows_projection_v1.sql",
+      "sha256": "b3d0973390643840f2517644cee4261819c0e6549d0aa7a19095b201eb14bdae",
+      "action": "APPLY"
+    },
+    {
+      "order": 276,
+      "version": "20270128000324",
+      "name": "owner_staff_inactive_closed_pt_projection_v1",
+      "path": "supabase/migrations/20270128000324_owner_staff_inactive_closed_pt_projection_v1.sql",
+      "sha256": "ec02ee203e9597363af0bcc6be8ea56608f22262251b36c30e5986ac231e93b3",
+      "action": "APPLY"
+    },
+    {
+      "order": 277,
+      "version": "20261102092616",
+      "name": "staff_inactive_ft_earned_days_v1",
+      "path": "supabase/migrations/20261102092616_staff_inactive_ft_earned_days_v1.sql",
+      "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
+      "action": "APPLY"
+    },
+    {
+      "order": 278,
+      "version": "20261102112426",
+      "name": "staff_checkout_before_inactive_v1",
+      "path": "supabase/migrations/20261102112426_staff_checkout_before_inactive_v1.sql",
+      "sha256": "2b9a3fc094e562b149155c8145e8c71621d3f2975695b453c108a305a8cc7ce4",
+      "action": "APPLY"
+    }
+  ],
+  "note": "Owner must review exact partial receipt before any subsequent apply. No automatic retry or resume."
+}
