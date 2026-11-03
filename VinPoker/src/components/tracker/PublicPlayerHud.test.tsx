@@ -23,13 +23,13 @@ it('opens Vietnamese metric help with the actual opportunities and switches expl
   data.analytics.metrics.vpip={...metric,percentage:30,numerator:12,denominator:40,sampleSize:40};
   load.mockResolvedValue(data);render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
   await screen.findByText('TEST a');
-  fireEvent.click(screen.getByRole('button',{name:'Giải thích VPIP',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Giải thích VPIP'}));
   await screen.findByRole('dialog',{name:'Giải thích chỉ số HUD'});
   expect(screen.getByText('12 / 40 × 100 = 30%')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'FLOP · RCB',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'FLOP · RCB'}));
   await screen.findByRole('heading',{name:'Flop — Raise to Continuation Bet'});
   expect(screen.getByText(/Dấu — không có nghĩa là 0%/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'Close',exact:true}));
-  await screen.findByRole('button',{name:'Giải thích VPIP',exact:true});
+  fireEvent.click(screen.getByRole('button',{name:'Close'}));
+  await screen.findByRole('button',{name:'Giải thích VPIP'});
   expect(screen.getByText('TEST a')).toBeInTheDocument();
 });
