@@ -3335,6 +3335,7 @@
     "fnbStatus_expired": "만료됨",
     "fnbMethod_cash": "현금",
     "fnbMethod_bank_transfer": "계좌 이체",
-    "fnbAmount": "주문 금액"
+    "fnbAmount": "주문 금액",
+    "unverified_entry": "수납 증빙 미연결 참가"
   }
 }

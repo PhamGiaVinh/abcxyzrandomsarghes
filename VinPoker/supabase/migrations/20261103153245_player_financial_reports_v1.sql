@@ -187,6 +187,20 @@ BEGIN
    'name',coalesce((SELECT full_name FROM public.club_members WHERE id=ref AND club_id=p_club_id),
     (SELECT display_name FROM public.profiles WHERE user_id=r.player_id),'Khách')));
  END LOOP;
+ -- A played entry without an explicitly linked registration is not proof of
+ -- a free ticket. Preserve the unknown cost instead of publishing a windfall.
+ FOR r IN SELECT e.*,t.name tournament_name FROM public.tournament_entries e
+  JOIN public.tournaments t ON t.id=e.tournament_id AND t.club_id=p_club_id
+  LEFT JOIN public.tournament_registrations z ON z.id=e.registration_id AND z.tournament_id=e.tournament_id
+   AND z.club_id=p_club_id AND z.player_id=e.player_id
+  WHERE e.status IN('seated','busted','finished','bagged') AND z.id IS NULL LOOP
+  ref:=private.club_financial_customer_ref_v1(p_club_id,r.player_id,r.member_id);
+  result:=result||jsonb_build_array(jsonb_build_object('kind','unverified_entry','id',r.id,'customerRef',ref,
+   'playerId',r.player_id,'tournamentId',r.tournament_id,'tournamentName',r.tournament_name,
+   'at',coalesce(r.checked_in_at,r.created_at),'cost',NULL,'rake',NULL,'verified',false,
+   'name',coalesce((SELECT full_name FROM public.club_members WHERE id=ref AND club_id=p_club_id),
+    (SELECT display_name FROM public.profiles WHERE user_id=r.player_id),'Khách')));
+ END LOOP;
  RETURN result;
 END $$;
 REVOKE ALL ON FUNCTION private.club_customer_financial_facts_v1(uuid) FROM PUBLIC,anon,authenticated,service_role;

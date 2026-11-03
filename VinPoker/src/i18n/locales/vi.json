@@ -3722,6 +3722,7 @@
     "fnbStatus_expired": "Hết hạn",
     "fnbMethod_cash": "Tiền mặt",
     "fnbMethod_bank_transfer": "Chuyển khoản",
-    "fnbAmount": "Giá trị đơn"
+    "fnbAmount": "Giá trị đơn",
+    "unverified_entry": "Lượt chơi thiếu phiếu thu"
   }
 }

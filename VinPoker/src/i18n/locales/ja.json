@@ -3339,6 +3339,7 @@
     "fnbStatus_expired": "期限切れ",
     "fnbMethod_cash": "現金",
     "fnbMethod_bank_transfer": "銀行振込",
-    "fnbAmount": "注文金額"
+    "fnbAmount": "注文金額",
+    "unverified_entry": "入金証憑に未連携の参加"
   }
 }

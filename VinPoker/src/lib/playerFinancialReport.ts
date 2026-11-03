@@ -7,7 +7,7 @@ export type CustomerFinance = {
   lastPaidAt: string | null; averageSpend: number | null; activeTournaments: number; fnbNet: number | null;
 };
 export type FinancialFact = {
-  id: string; kind: 'buyin' | 'reentry' | 'prize' | 'prize_reversal' | 'obligation';
+  id: string; kind: 'buyin' | 'reentry' | 'prize' | 'prize_reversal' | 'obligation' | 'unverified_entry';
   tournamentId: string; tournamentName: string; at: string | null; paidAt?: string | null;
   cost?: number | null; rake?: number | null; grossPaid?: number; refunded?: number;
   paidPrize?: number; pendingPrize?: number; rank?: number; verified: boolean;

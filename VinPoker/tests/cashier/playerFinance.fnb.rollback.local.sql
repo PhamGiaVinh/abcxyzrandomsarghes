@@ -28,7 +28,8 @@ DO $$DECLARE actor uuid:=gen_random_uuid();club uuid:=gen_random_uuid();tour uui
  response:=public.fnb_mark_paid(order_id,gen_random_uuid()::text);ASSERT response->>'idempotent'='true',response::text;
  r:=public.get_owner_player_financial_report_v1(club,member);
  ASSERT (r->'fnb'->>'paid')::numeric=10000 AND (r->'fnb'->>'net')::numeric=10000 AND (r->'fnb'->>'pending')::numeric=0,r::text;
- ASSERT (r->'selected'->>'fnbNet')::numeric=10000 AND (r->'selected'->>'cost')::numeric=0 AND r->'selected'->>'roi' IS NULL;
+ ASSERT (r->'selected'->>'fnbNet')::numeric=10000 AND r->'selected'->>'cost' IS NULL AND r->'selected'->>'profit' IS NULL AND r->'selected'->>'roi' IS NULL;
+ ASSERT EXISTS(SELECT 1 FROM jsonb_array_elements(r->'history') x WHERE x->>'kind'='unverified_entry' AND x->>'verified'='false');
  ASSERT jsonb_array_length(r->'fnb'->'orders')=1 AND r->'fnb'->'orders'->0->'items'->0->>'quantity'='2';
  -- Same free-text name without explicit player_ref stays outside this customer.
  response:=public.fnb_create_order(club,'counter',NULL,'LOCAL FNB customer',NULL,jsonb_build_array(jsonb_build_object('menu_item_id',menu,'qty',1)),gen_random_uuid()::text);

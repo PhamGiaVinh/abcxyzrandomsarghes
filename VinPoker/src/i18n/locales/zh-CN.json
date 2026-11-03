@@ -3339,6 +3339,7 @@
     "fnbStatus_expired": "已过期",
     "fnbMethod_cash": "现金",
     "fnbMethod_bank_transfer": "银行转账",
-    "fnbAmount": "订单金额"
+    "fnbAmount": "订单金额",
+    "unverified_entry": "未关联收款凭证的参赛"
   }
 }

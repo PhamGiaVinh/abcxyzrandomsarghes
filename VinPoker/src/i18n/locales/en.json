@@ -3722,6 +3722,7 @@
     "fnbStatus_expired": "Expired",
     "fnbMethod_cash": "Cash",
     "fnbMethod_bank_transfer": "Bank transfer",
-    "fnbAmount": "Order amount"
+    "fnbAmount": "Order amount",
+    "unverified_entry": "Entry without linked receipt"
   }
 }

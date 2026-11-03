@@ -3339,6 +3339,7 @@
     "fnbStatus_expired": "หมดอายุ",
     "fnbMethod_cash": "เงินสด",
     "fnbMethod_bank_transfer": "โอนธนาคาร",
-    "fnbAmount": "ยอดคำสั่งซื้อ"
+    "fnbAmount": "ยอดคำสั่งซื้อ",
+    "unverified_entry": "การเข้าร่วมที่ไม่มีใบรับเงินเชื่อมโยง"
   }
 }
