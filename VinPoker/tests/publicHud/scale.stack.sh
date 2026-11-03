@@ -42,6 +42,8 @@ export PUBLIC_HUD_LOCAL_DATABASE=postgres PUBLIC_HUD_ISOLATED_STACK=vinpoker-hud
 psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -w -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE postgres IS 'vinpoker-hud-scale-disposable';" >/dev/null
 supabase status --workdir "$test_root" -o env >"$test_root/status.env" 2>"$test_root/status.log"
 mkdir -p output/hud-scale
+docker inspect --format '{"name":{{json .Name}},"image":{{json .Config.Image}},"memoryLimitBytes":{{.HostConfig.Memory}},"nanoCpus":{{.HostConfig.NanoCpus}}}' \
+ "supabase_db_$project_id" "supabase_realtime_$project_id" "supabase_edge_runtime_$project_id" >output/hud-scale/runtime-images.jsonl
 export PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/seed.json"
 export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
