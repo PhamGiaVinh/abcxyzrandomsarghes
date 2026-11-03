@@ -150,7 +150,7 @@ try{
   const sourceCount=sql('SELECT count(*) FROM public.tournament_hands;');
   sql('UPDATE tracker_analytics_v1.config SET enabled=false,worker_enabled=false;');
   assert.equal(summary().state,'warming');
-  assert.equal(jsonSql(`${service} SELECT to_jsonb(public.dispatch_public_hud_projection_v1());`),null);
+  assert.equal(jsonSql(`${service} SELECT jsonb_build_object('request',public.dispatch_public_hud_projection_v1());`).request,null);
   sql('UPDATE tracker_analytics_v1.config SET enabled=true;');
   assert.equal(summary().counters.publicHands,2);
   assert.equal(sql('SELECT count(*) FROM public.tournament_hands;'),sourceCount);
