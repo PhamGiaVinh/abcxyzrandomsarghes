@@ -85,7 +85,7 @@ for(const scenario of ['concentrated','distributed']){
     const tables=value.sections.tables;
     if(tables){const remaining=[];for(const expected of state.snapshotExpected){
      const generation=JSON.parse(tables.freshness.projectedSourceRevision).generation;
-     if(tables.freshness.state==='current'&&/^\d+$/.test(generation??'')&&BigInt(generation)>=BigInt(expected.generation)&&Date.parse(tables.freshness.publishedAt)>=expected.at&&state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20))){stats.snapshot.push(Date.now()-expected.at);state.snapshotSamples++;}else remaining.push(expected);
+     if((!expected.deferred||tables.freshness.state==='current')&&/^\d+$/.test(generation??'')&&BigInt(generation)>=BigInt(expected.generation)&&Date.parse(tables.freshness.publishedAt)>=expected.at&&state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20))){stats.snapshot.push(Date.now()-expected.at);state.snapshotSamples++;}else remaining.push(expected);
     }state.snapshotExpected=remaining;}
    }catch{error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
    finally{state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end)track(snapshot([]));}
@@ -172,7 +172,7 @@ for(const scenario of ['concentrated','distributed']){
     hand=value.handId;stats.sourceWrites++;
     if(!reconnecting&&(!revoking||n!==20))for(const c of clients)if(c.tour===uuid('10000000',n)&&c.online&&c.accessOnline){
      const at=Date.parse(value.sourceWrittenAt);c.expected.push({handId:hand,number,step,at});expectedDeliveries++;
-     assert.match(value.generation,/^\d+$/);c.snapshotExpected.push({at,generation:value.generation});snapshotExpected++;
+     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');c.snapshotExpected.push({at,generation:value.generation,deferred:value.generationDeferred});snapshotExpected++;
     }
     if(step===5){
      const completed=hand,written=Date.parse(value.sourceWrittenAt);

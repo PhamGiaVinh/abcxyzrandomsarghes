@@ -103,7 +103,8 @@ BEGIN
    INSERT INTO public.hand_actions(hand_id,player_id,street,action_type,action_amount,action_order) VALUES(hand,who,'preflop',kind,amount,p_step);
   END IF;
  END IF;
- RETURN jsonb_build_object('handId',hand,'generation',(SELECT source_revision::text FROM spectator_projection_v2.entity_markers WHERE tournament_id=p_tournament_id AND component='tables' AND entity_key='generation'),'sourceWrittenAt',clock_timestamp());
+ RETURN jsonb_build_object('handId',hand,'generation',(SELECT source_revision::text FROM spectator_projection_v2.entity_markers WHERE tournament_id=p_tournament_id AND component='tables' AND entity_key='generation'),
+  'generationDeferred',EXISTS(SELECT 1 FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id=p_tournament_id AND component='tables' AND source_txid=pg_current_xact_id()),'sourceWrittenAt',clock_timestamp());
 END $$;
 CREATE FUNCTION public.fixture_scale_visibility_v1(p_tournament_id uuid,p_hidden boolean) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$ BEGIN
