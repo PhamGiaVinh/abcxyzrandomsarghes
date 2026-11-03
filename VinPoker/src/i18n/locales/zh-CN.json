@@ -3318,6 +3318,27 @@
     "player": "玩家",
     "previous": "上一页",
     "next": "下一页",
-    "asOf": "数据时间"
+    "asOf": "数据时间",
+    "fnbNet": "餐饮净支出",
+    "fnbTitle": "客户餐饮",
+    "fnbScope": "仅统计本俱乐部明确关联此玩家ID的订单。餐饮不计入赛事ROI。待付款订单不代表个人欠款账本。",
+    "fnbUnlinked": "俱乐部有{{count}}笔订单未关联玩家ID，未计入个人客户档案。",
+    "fnb_paid": "已支付",
+    "fnb_refunded": "已退款",
+    "fnb_net": "退款后净支出",
+    "fnb_pending": "待付款订单",
+    "fnb_comp": "俱乐部招待",
+    "fnbItems": "菜品 / 数量",
+    "fnbStatus": "状态",
+    "fnbPaidAt": "付款时间",
+    "fnbCancelledAt": "取消 / 退款时间",
+    "fnbStatus_pending": "待付款",
+    "fnbStatus_paid": "已付款",
+    "fnbStatus_shipped": "已送达",
+    "fnbStatus_cancelled": "已取消",
+    "fnbStatus_expired": "已过期",
+    "fnbMethod_cash": "现金",
+    "fnbMethod_bank_transfer": "银行转账",
+    "fnbAmount": "订单金额"
   }
 }

@@ -14,11 +14,12 @@ foreach ($financeFile in @('20261103131615_payout_publication_after_cashier.sql'
  $financeSource = [IO.File]::ReadAllText((Join-Path $financeProject "supabase/migrations/$financeFile"))
  $financeSql += "`n" + [regex]::Replace($financeSource, '(?m)^(BEGIN|COMMIT);\r?$', '')
 }
-$financeSql += "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'playerFinance.rollback.local.sql')) + @'
+$financeSql += "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'playerFinance.rollback.local.sql'))
+$financeSql += "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'playerFinance.fnb.rollback.local.sql')) + @'
 
 ROLLBACK;
 DO $$BEGIN
- ASSERT to_regprocedure('public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer)') IS NULL;
+ ASSERT to_regprocedure('public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer,integer)') IS NULL;
  ASSERT to_regprocedure('public.get_public_player_paid_winnings_v1(uuid)') IS NULL;
  ASSERT md5(replace(pg_get_functiondef('public.get_public_tournament_viewer_snapshot_v2(uuid,uuid[],text[],jsonb)'::regprocedure),chr(13),''))='c23a5810b1307994c1b3428958bd92e0';
 END $$;

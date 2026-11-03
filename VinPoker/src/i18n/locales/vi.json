@@ -3701,6 +3701,27 @@
     "player": "Người chơi",
     "previous": "Trước",
     "next": "Tiếp",
-    "asOf": "Dữ liệu lúc"
+    "asOf": "Dữ liệu lúc",
+    "fnbNet": "F&B thực chi",
+    "fnbTitle": "F&B của khách",
+    "fnbScope": "Chỉ tính đơn gắn ID người chơi tại CLB này. F&B tách riêng, không gộp vào ROI thi đấu. Đơn chờ thanh toán không phải sổ công nợ cá nhân.",
+    "fnbUnlinked": "CLB có {{count}} đơn chưa gắn ID người chơi, chưa tính vào hồ sơ từng khách.",
+    "fnb_paid": "Đã thanh toán",
+    "fnb_refunded": "Đã hoàn tiền",
+    "fnb_net": "Thực chi sau hoàn",
+    "fnb_pending": "Đơn chờ thanh toán",
+    "fnb_comp": "CLB mời",
+    "fnbItems": "Món / số lượng",
+    "fnbStatus": "Trạng thái",
+    "fnbPaidAt": "Thanh toán lúc",
+    "fnbCancelledAt": "Hủy / hoàn lúc",
+    "fnbStatus_pending": "Chờ thanh toán",
+    "fnbStatus_paid": "Đã thanh toán",
+    "fnbStatus_shipped": "Đã giao",
+    "fnbStatus_cancelled": "Đã hủy",
+    "fnbStatus_expired": "Hết hạn",
+    "fnbMethod_cash": "Tiền mặt",
+    "fnbMethod_bank_transfer": "Chuyển khoản",
+    "fnbAmount": "Giá trị đơn"
   }
 }

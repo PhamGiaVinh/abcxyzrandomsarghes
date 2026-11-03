@@ -3318,6 +3318,27 @@
     "player": "ผู้เล่น",
     "previous": "ก่อนหน้า",
     "next": "ถัดไป",
-    "asOf": "ข้อมูล ณ"
+    "asOf": "ข้อมูล ณ",
+    "fnbNet": "ค่า F&B สุทธิ",
+    "fnbTitle": "F&B ของลูกค้า",
+    "fnbScope": "รวมเฉพาะคำสั่งซื้อที่เชื่อม ID ผู้เล่นในคลับนี้ แยกจาก ROI การแข่งขัน คำสั่งซื้อรอชำระไม่ใช่บัญชีหนี้ส่วนบุคคล",
+    "fnbUnlinked": "มี {{count}} คำสั่งซื้อที่ไม่มี ID ผู้เล่น จึงไม่รวมในรายงานรายบุคคล",
+    "fnb_paid": "ชำระแล้ว",
+    "fnb_refunded": "คืนเงินแล้ว",
+    "fnb_net": "ใช้จ่ายสุทธิหลังคืนเงิน",
+    "fnb_pending": "คำสั่งซื้อรอชำระ",
+    "fnb_comp": "คลับเลี้ยง",
+    "fnbItems": "รายการ / จำนวน",
+    "fnbStatus": "สถานะ",
+    "fnbPaidAt": "ชำระเมื่อ",
+    "fnbCancelledAt": "ยกเลิก / คืนเมื่อ",
+    "fnbStatus_pending": "รอชำระ",
+    "fnbStatus_paid": "ชำระแล้ว",
+    "fnbStatus_shipped": "ส่งแล้ว",
+    "fnbStatus_cancelled": "ยกเลิกแล้ว",
+    "fnbStatus_expired": "หมดอายุ",
+    "fnbMethod_cash": "เงินสด",
+    "fnbMethod_bank_transfer": "โอนธนาคาร",
+    "fnbAmount": "ยอดคำสั่งซื้อ"
   }
 }

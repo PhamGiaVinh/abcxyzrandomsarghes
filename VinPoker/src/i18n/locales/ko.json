@@ -3314,6 +3314,27 @@
     "player": "플레이어",
     "previous": "이전",
     "next": "다음",
-    "asOf": "데이터 기준"
+    "asOf": "데이터 기준",
+    "fnbNet": "F&B 순지출",
+    "fnbTitle": "고객 F&B",
+    "fnbScope": "이 클럽에서 플레이어 ID로 연결된 주문만 집계합니다. F&B는 대회 ROI에서 제외합니다. 미결제 주문은 개인 채무 원장이 아닙니다.",
+    "fnbUnlinked": "플레이어 ID가 없는 클럽 주문 {{count}}건은 개별 고객 집계에서 제외됩니다.",
+    "fnb_paid": "결제액",
+    "fnb_refunded": "환불액",
+    "fnb_net": "환불 후 순지출",
+    "fnb_pending": "미결제 주문",
+    "fnb_comp": "클럽 제공",
+    "fnbItems": "메뉴 / 수량",
+    "fnbStatus": "상태",
+    "fnbPaidAt": "결제 시각",
+    "fnbCancelledAt": "취소 / 환불 시각",
+    "fnbStatus_pending": "결제 대기",
+    "fnbStatus_paid": "결제 완료",
+    "fnbStatus_shipped": "전달 완료",
+    "fnbStatus_cancelled": "취소됨",
+    "fnbStatus_expired": "만료됨",
+    "fnbMethod_cash": "현금",
+    "fnbMethod_bank_transfer": "계좌 이체",
+    "fnbAmount": "주문 금액"
   }
 }

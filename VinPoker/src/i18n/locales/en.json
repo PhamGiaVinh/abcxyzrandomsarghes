@@ -3701,6 +3701,27 @@
     "player": "Player",
     "previous": "Previous",
     "next": "Next",
-    "asOf": "Data as of"
+    "asOf": "Data as of",
+    "fnbNet": "Net F&B spend",
+    "fnbTitle": "Customer F&B",
+    "fnbScope": "Only orders explicitly linked to this player ID in this club. F&B is separate from tournament ROI. Pending orders are not a personal debt ledger.",
+    "fnbUnlinked": "{{count}} club orders have no player ID and are excluded from individual customer profiles.",
+    "fnb_paid": "Paid",
+    "fnb_refunded": "Refunded",
+    "fnb_net": "Net after refunds",
+    "fnb_pending": "Pending orders",
+    "fnb_comp": "Complimentary",
+    "fnbItems": "Items / quantity",
+    "fnbStatus": "Status",
+    "fnbPaidAt": "Paid at",
+    "fnbCancelledAt": "Cancelled / refunded at",
+    "fnbStatus_pending": "Pending",
+    "fnbStatus_paid": "Paid",
+    "fnbStatus_shipped": "Delivered",
+    "fnbStatus_cancelled": "Cancelled",
+    "fnbStatus_expired": "Expired",
+    "fnbMethod_cash": "Cash",
+    "fnbMethod_bank_transfer": "Bank transfer",
+    "fnbAmount": "Order amount"
   }
 }

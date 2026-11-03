@@ -3,7 +3,7 @@
 BEGIN;
 SET LOCAL lock_timeout='5s';
 DO $$BEGIN
- IF current_user<>'postgres' OR to_regprocedure('public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer)') IS NOT NULL
+ IF current_user<>'postgres' OR to_regprocedure('public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer,integer)') IS NOT NULL
  OR to_regprocedure('public.get_public_player_paid_winnings_v1(uuid)') IS NOT NULL
  OR to_regprocedure('floor_private.tournament_prize_result_contexts_v1(uuid)') IS NULL
  THEN RAISE EXCEPTION 'player_finance_catalog_or_dependency'; END IF;
@@ -191,22 +191,53 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION private.club_customer_financial_facts_v1(uuid) FROM PUBLIC,anon,authenticated,service_role;
 
+-- Explicit player_ref only: a table/guest name is never sufficient identity.
+-- Pending orders are order amounts, not a customer debt/balance ledger.
+CREATE FUNCTION private.club_customer_fnb_facts_v1(p_club_id uuid)
+RETURNS jsonb LANGUAGE sql STABLE SET search_path='' AS $$
+ SELECT coalesce(jsonb_agg(jsonb_build_object(
+  'id',o.id,'customerRef',private.club_financial_customer_ref_v1(p_club_id,o.player_ref,NULL),
+  'name',coalesce(p.display_name,o.customer_name,'Khách'),'createdAt',o.created_at,
+  'paidAt',o.paid_at,'cancelledAt',o.cancelled_at,'status',o.status,'method',o.payment_method,
+  'isComp',o.is_comp,'amount',o.subtotal_vnd,
+  'paid',CASE WHEN o.paid_at IS NOT NULL AND NOT o.is_comp THEN o.subtotal_vnd ELSE 0 END,
+  'refunded',CASE WHEN o.status='cancelled' AND o.paid_at IS NOT NULL AND NOT o.is_comp THEN o.subtotal_vnd ELSE 0 END,
+  'net',CASE WHEN o.paid_at IS NOT NULL AND NOT o.is_comp AND o.status<>'cancelled' THEN o.subtotal_vnd ELSE 0 END,
+  'pending',CASE WHEN o.status='pending' AND o.paid_at IS NULL AND NOT o.is_comp THEN o.subtotal_vnd ELSE 0 END,
+  'comp',CASE WHEN o.is_comp AND o.paid_at IS NOT NULL AND o.status<>'cancelled' THEN lines.total ELSE 0 END,
+  'verified',o.subtotal_vnd>=0 AND CASE WHEN o.is_comp THEN o.subtotal_vnd=0 ELSE lines.total=o.subtotal_vnd END AND lines.valid AND
+   CASE WHEN o.paid_at IS NOT NULL THEN o.status IN('paid','shipped','cancelled') AND
+    (o.is_comp OR o.payment_method IN('cash','bank_transfer')) AND (o.status<>'cancelled' OR o.cancelled_at IS NOT NULL)
+   ELSE o.status IN('pending','cancelled','expired') END,
+  'items',lines.items) ORDER BY o.created_at DESC,o.id),'[]'::jsonb)
+ FROM public.fnb_orders o LEFT JOIN public.profiles p ON p.user_id=o.player_ref
+ CROSS JOIN LATERAL (
+  SELECT coalesce(sum(i.unit_price_snapshot::numeric*i.qty),0) total,
+   count(*)>0 AND bool_and(i.club_id=p_club_id AND i.qty>0 AND i.unit_price_snapshot>=0) valid,
+   coalesce(jsonb_agg(jsonb_build_object('id',i.id,'name',i.name_snapshot,'quantity',i.qty,'unitPrice',i.unit_price_snapshot) ORDER BY i.id),'[]'::jsonb) items
+  FROM public.fnb_order_items i WHERE i.order_id=o.id
+ ) lines WHERE o.club_id=p_club_id AND o.player_ref IS NOT NULL
+$$;
+REVOKE ALL ON FUNCTION private.club_customer_fnb_facts_v1(uuid) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE FUNCTION public.get_owner_player_financial_report_v1(p_club_id uuid DEFAULT NULL,p_customer_ref uuid DEFAULT NULL,
- p_query text DEFAULT '',p_offset integer DEFAULT 0,p_limit integer DEFAULT 50)
+ p_query text DEFAULT '',p_offset integer DEFAULT 0,p_limit integer DEFAULT 50,p_fnb_offset integer DEFAULT 0)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 DECLARE actor uuid:=auth.uid(); clubs jsonb; facts jsonb; customers jsonb; selected jsonb; history jsonb;
- total_count integer; history_count integer;
+ total_count integer; history_count integer; fnb_facts jsonb; fnb jsonb; fnb_orders jsonb; fnb_count integer;
 BEGIN
- IF actor IS NULL OR p_offset IS NULL OR p_limit IS NULL OR p_offset<0 OR p_offset>100000 OR p_limit NOT BETWEEN 1 AND 100 OR length(coalesce(p_query,''))>100
+ IF actor IS NULL OR p_offset IS NULL OR p_limit IS NULL OR p_fnb_offset IS NULL OR p_fnb_offset NOT BETWEEN 0 AND 100000 OR p_offset<0 OR p_offset>100000 OR p_limit NOT BETWEEN 1 AND 100 OR length(coalesce(p_query,''))>100
  THEN RAISE EXCEPTION 'invalid_request' USING ERRCODE='42501'; END IF;
  SELECT coalesce(jsonb_agg(jsonb_build_object('id',c.id,'name',c.name) ORDER BY c.name,c.id),'[]') INTO clubs
   FROM public.clubs c WHERE c.owner_id=actor OR EXISTS(SELECT 1 FROM public.user_roles u WHERE u.user_id=actor AND u.role='super_admin');
  IF p_club_id IS NULL THEN RETURN jsonb_build_object('clubId',NULL,'clubs',clubs,'customers','[]'::jsonb,'totalCount',0,'history','[]'::jsonb,'totalHistory',0); END IF;
  IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(clubs) c WHERE c->>'id'=p_club_id::text) THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501'; END IF;
  facts:=private.club_customer_financial_facts_v1(p_club_id);
+ fnb_facts:=private.club_customer_fnb_facts_v1(p_club_id);
  WITH roster AS (
   SELECT id customer_ref,full_name name FROM public.club_members WHERE club_id=p_club_id
   UNION SELECT (x->>'customerRef')::uuid,x->>'name' FROM jsonb_array_elements(facts) x
+  UNION SELECT (x->>'customerRef')::uuid,x->>'name' FROM jsonb_array_elements(fnb_facts) x
   UNION SELECT private.club_financial_customer_ref_v1(p_club_id,e.player_id,e.member_id),coalesce(cm.full_name,p.display_name,'Khách') FROM public.tournament_entries e
    JOIN public.tournaments t ON t.id=e.tournament_id AND t.club_id=p_club_id
    LEFT JOIN public.club_members cm ON cm.id=e.member_id AND cm.club_id=p_club_id LEFT JOIN public.profiles p ON p.user_id=e.player_id
@@ -225,6 +256,8 @@ BEGIN
  ), rows AS (
   SELECT jsonb_build_object('customerRef',s.customer_ref,'name',s.name,'cost',CASE WHEN unavailable=0 THEN cost END,
    'rake',CASE WHEN unavailable=0 AND rake_unavailable=0 THEN rake END,'paidPrize',paid,'pendingPrize',pending,
+   'fnbNet',(SELECT CASE WHEN NOT coalesce(bool_or(x->>'verified' IS DISTINCT FROM 'true'),false) THEN coalesce(sum((x->>'net')::numeric),0) END
+    FROM jsonb_array_elements(fnb_facts) x WHERE x->>'customerRef'=s.customer_ref::text),
    'profit',CASE WHEN unavailable=0 THEN paid-cost END,'roi',CASE WHEN unavailable=0 AND cost>0 THEN round((paid-cost)*100/cost,4) END,
    'unavailableCount',unavailable,'paidBuys',paid_buys,'tournaments',tours,'visits',visits,'lastPaidAt',last_paid,
    'averageSpend',CASE WHEN unavailable=0 AND paid_buys>0 THEN round(cost/paid_buys,0) END,
@@ -241,9 +274,20 @@ BEGIN
  SELECT count(*) INTO history_count FROM jsonb_array_elements(facts) x WHERE x->>'customerRef'=p_customer_ref::text;
  SELECT coalesce(jsonb_agg(x),'[]') INTO history FROM (SELECT value x FROM jsonb_array_elements(facts)
   WHERE value->>'customerRef'=p_customer_ref::text ORDER BY value->>'at' DESC NULLS LAST,value->>'id' OFFSET p_offset LIMIT p_limit) q;
+ SELECT count(*) INTO fnb_count FROM jsonb_array_elements(fnb_facts) x WHERE x->>'customerRef'=p_customer_ref::text;
+ SELECT coalesce(jsonb_agg(x),'[]') INTO fnb_orders FROM (SELECT value x FROM jsonb_array_elements(fnb_facts)
+  WHERE value->>'customerRef'=p_customer_ref::text ORDER BY value->>'createdAt' DESC,value->>'id' OFFSET p_fnb_offset LIMIT p_limit) q;
+ SELECT jsonb_build_object('paid',CASE WHEN quality=0 THEN paid END,'refunded',CASE WHEN quality=0 THEN refunded END,
+  'net',CASE WHEN quality=0 THEN net END,'pending',CASE WHEN quality=0 THEN pending END,'comp',CASE WHEN quality=0 THEN comp END,
+  'unavailableCount',quality,'orders',fnb_orders,'totalCount',fnb_count,
+  'unlinkedOrderCount',(SELECT count(*) FROM public.fnb_orders WHERE club_id=p_club_id AND player_ref IS NULL)) INTO fnb
+ FROM (SELECT coalesce(sum((x->>'paid')::numeric),0) paid,coalesce(sum((x->>'refunded')::numeric),0) refunded,
+  coalesce(sum((x->>'net')::numeric),0) net,coalesce(sum((x->>'pending')::numeric),0) pending,coalesce(sum((x->>'comp')::numeric),0) comp,
+  count(*) FILTER(WHERE x->>'verified' IS DISTINCT FROM 'true') quality
+  FROM jsonb_array_elements(fnb_facts) x WHERE x->>'customerRef'=p_customer_ref::text) totals;
  RETURN jsonb_build_object('clubId',p_club_id,'clubs',clubs,'asOf',statement_timestamp(),'metricVersion','cashier-cashflow-v1',
-  'customers',customers,'totalCount',total_count,'selected',selected,'history',history,'totalHistory',history_count);
+  'customers',customers,'totalCount',total_count,'selected',selected,'history',history,'totalHistory',history_count,'fnb',fnb);
 END $$;
-REVOKE ALL ON FUNCTION public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer) FROM PUBLIC,anon,authenticated,service_role;
-GRANT EXECUTE ON FUNCTION public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer,integer) TO authenticated;
 COMMIT;

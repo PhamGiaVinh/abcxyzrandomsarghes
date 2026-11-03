@@ -20,4 +20,12 @@ describe('financial report boundary', () => {
     expect(() => parsePaidWinnings({...paid,totalWinnings:-1},'a')).toThrow();
     expect(parsePaidWinnings({...paid,complete:false,totalWinnings:null},'a').totalWinnings).toBeNull();
   });
+  it('never accepts another customer F&B history or unsafe F&B totals', () => {
+    const fnb={paid:10000,refunded:0,net:10000,pending:0,comp:0,totalCount:1,unavailableCount:0,unlinkedOrderCount:1,
+      orders:[{id:'order-a',customerRef:'person-a',items:[]}]};
+    const selected={customerRef:'person-a',name:'A'};
+    expect(parsePlayerFinancialReport({...report,selected,fnb},'club-a','person-a').fnb?.net).toBe(10000);
+    expect(() => parsePlayerFinancialReport({...report,selected,fnb:{...fnb,orders:[{...fnb.orders[0],customerRef:'person-b'}]}},'club-a','person-a')).toThrow();
+    expect(() => parsePlayerFinancialReport({...report,selected,fnb:{...fnb,net:Number.MAX_SAFE_INTEGER+1}},'club-a','person-a')).toThrow();
+  });
 });

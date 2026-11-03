@@ -3318,6 +3318,27 @@
     "player": "プレイヤー",
     "previous": "前へ",
     "next": "次へ",
-    "asOf": "取得日時"
+    "asOf": "取得日時",
+    "fnbNet": "飲食純支出",
+    "fnbTitle": "顧客の飲食",
+    "fnbScope": "このクラブでプレイヤーIDに紐づく注文のみ。飲食は大会ROIに含めません。未払注文は個人の債務台帳ではありません。",
+    "fnbUnlinked": "プレイヤーIDのない注文{{count}}件は、個別顧客の集計に含みません。",
+    "fnb_paid": "支払済",
+    "fnb_refunded": "返金済",
+    "fnb_net": "返金後純支出",
+    "fnb_pending": "未払注文",
+    "fnb_comp": "クラブ提供",
+    "fnbItems": "品目・数量",
+    "fnbStatus": "状態",
+    "fnbPaidAt": "支払日時",
+    "fnbCancelledAt": "取消・返金日時",
+    "fnbStatus_pending": "支払待ち",
+    "fnbStatus_paid": "支払済",
+    "fnbStatus_shipped": "配達済",
+    "fnbStatus_cancelled": "取消済",
+    "fnbStatus_expired": "期限切れ",
+    "fnbMethod_cash": "現金",
+    "fnbMethod_bank_transfer": "銀行振込",
+    "fnbAmount": "注文金額"
   }
 }

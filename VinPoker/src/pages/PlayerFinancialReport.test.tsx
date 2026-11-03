@@ -18,6 +18,14 @@ describe('club player finance screen',()=>{
   expect(screen.getByText('81,82%')).toBeInTheDocument();
   expect(mock.load.mock.calls.at(-1)?.slice(0,2)).toEqual(['club-a','person-a']);
  });
+ it('keeps F&B spending separate and shows unlinked-order coverage',async()=>{
+  mock.load.mockResolvedValue({...report,selected:customer,fnb:{paid:50000,refunded:10000,net:40000,pending:20000,comp:5000,unavailableCount:0,totalCount:1,unlinkedOrderCount:3,
+   orders:[{id:'order-a',createdAt:'2026-11-03T01:00:00Z',status:'paid',method:'cash',paidAt:'2026-11-03T01:00:00Z',isComp:false,verified:true,paid:50000,refunded:10000,net:40000,items:[{id:'tea',name:'LOCAL Tea',quantity:2,unitPrice:25000}]}]}});
+  render(<MemoryRouter initialEntries={['/?club=club-a&customer=person-a']}><PlayerFinancialReport/></MemoryRouter>);
+  expect(await screen.findByText(/LOCAL Tea/)).toBeInTheDocument();
+  expect(screen.getByText('playerFinance.fnbUnlinked')).toBeInTheDocument();
+  expect(screen.getByText('81,82%')).toBeInTheDocument();
+ });
  it('hides the previous owner data immediately when the session identity changes',async()=>{
   mock.load.mockResolvedValue(report);
   const view=render(<MemoryRouter initialEntries={['/?club=club-a']}><PlayerFinancialReport/></MemoryRouter>);

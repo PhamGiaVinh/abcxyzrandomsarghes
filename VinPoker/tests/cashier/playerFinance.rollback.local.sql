@@ -5,7 +5,7 @@ DO $$DECLARE c record;r jsonb; BEGIN
   r:=public.get_owner_player_financial_report_v1(c.club_id);
   ASSERT r->>'clubId'=c.club_id::text;
  END LOOP;
- ASSERT NOT has_function_privilege('anon','public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer)','execute');
+ ASSERT NOT has_function_privilege('anon','public.get_owner_player_financial_report_v1(uuid,uuid,text,integer,integer,integer)','execute');
  ASSERT NOT has_function_privilege('authenticated','private.club_customer_financial_facts_v1(uuid)','execute');
 END $$;
 -- Synthetic isolated receipt fixtures exercise aggregation without disabling
