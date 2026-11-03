@@ -3,7 +3,7 @@ import { emailStakingRefund } from './emailTemplates.ts';
 interface Client {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>;
   auth: { admin: { getUserById(id: string): PromiseLike<{ data: { user: { email?: string | null } | null } | null; error: unknown }> } };
-  functions: { invoke(name: string, args: { body: unknown }): PromiseLike<{ data: unknown; error: unknown }> };
+  functions: { invoke(name: string, args: { body: Record<string, unknown> }): PromiseLike<{ data: unknown; error: unknown }> };
 }
 const uuid=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);

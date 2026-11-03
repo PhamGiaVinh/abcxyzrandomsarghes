@@ -32,4 +32,3 @@ test('catalog checks and ledger prefix run after serialization; receipt and post
  assert.ok(query.indexOf('backend_post_ledger_contract_drift')<query.lastIndexOf('COMMIT'));
  assert.equal(scanMigrationSource(query).mode,'outer-transaction');
 });
-

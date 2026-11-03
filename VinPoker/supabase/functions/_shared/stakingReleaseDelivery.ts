@@ -4,7 +4,7 @@ import type { ReleaseEffect } from './stakingReleaseEffects.ts';
 interface DeliveryClient {
   rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>;
   auth: { admin: { getUserById(id: string): PromiseLike<{ data: { user: { email?: string | null } | null } | null; error: unknown }> } };
-  functions: { invoke(name: string, options: { body: unknown }): PromiseLike<{ data: unknown; error: unknown }> };
+  functions: { invoke(name: string, options: { body: Record<string, unknown> }): PromiseLike<{ data: unknown; error: unknown }> };
 }
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
