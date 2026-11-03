@@ -62,7 +62,7 @@ jobs:
         run: deno check supabase/functions/public-hud-projector-v1/index.ts supabase/functions/public-spectator-projector-v2/index.ts
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize
-      - name: Exact seven-migration release guards and atomic receipts
+      - name: Exact eight-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |
@@ -70,5 +70,9 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_generation_ci node tests/publicHud/spectator-generation.native.mjs --initialize
       - name: Classifier, aggregate API and frozen HUD behavior
         run: npx --no-install vitest run tests/publicHud src/lib/preparedPublicPlayerHud.test.ts src/components/PublicPaidWinnings.test.tsx src/components/tracker/PublicPlayerHud.test.tsx src/components/cashier/tournament-live/LiveTrackerCountdown.test.tsx src/components/cashier/tournament-live/viewer-hub src/components/cashier/tournament-live/TournamentLiveView.replayLoading.test.tsx --maxWorkers=1
+      - name: Read plan reuse, scope isolation and exact recovery
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_read_plans_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/read-plans.native.mjs --initialize
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit

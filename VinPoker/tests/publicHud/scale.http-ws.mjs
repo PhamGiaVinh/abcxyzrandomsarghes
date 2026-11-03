@@ -111,7 +111,7 @@ for(const scenario of ['concentrated','distributed']){
    if(state.busy){state.pending=true;return;}state.busy=true;
    try{
     const value=await rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});
-    if(!(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'))assert.equal(value.tableId,table);
+    if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
    }catch{state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}

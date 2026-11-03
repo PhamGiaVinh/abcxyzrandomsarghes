@@ -103,7 +103,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The seven migrations `20261104001500` through `20261104002100` are promoted
+The eight migrations `20261104001500` through `20261104002200` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -115,11 +115,22 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-seven exact manifest entries, each SQL and new ledger receipt atomically; stop
+eight exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
 Do not use a normal db push if its dry-run includes unrelated migrations.
+
+Migration 022 wraps two exact existing public SQL reader expressions in
+PL/pgSQL so PostgreSQL can reuse plans per backend. It does not cache results:
+scope, visibility, void/session gates and source values are evaluated on every
+call. Native tests compare public JSON and owner/ACL/OID before and after,
+warm plans before withdrawal/edit/void/session changes, and verify exact
+definition recovery. Native timing is not HTTP or 1,000-viewer acceptance.
+The private captured definitions are inaccessible to browser/service roles.
+`tests/publicHud/read-plans.forward-rollback.sql` is a recovery template for a
+new reviewed/versioned controlled migration if needed; default HUD rollback
+can retain the transparent plan wrappers.
 
 Install observers with reads/worker off; deploy the matching spectator and HUD
 workers before resuming the spectator cron. Verify the exact production
