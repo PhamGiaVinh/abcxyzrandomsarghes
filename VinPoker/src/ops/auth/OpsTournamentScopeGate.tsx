@@ -68,6 +68,7 @@ export function OpsTournamentScopeGate({ children }: { children: ReactNode }) {
           .select("id, club_id, name, status")
           .eq("id", id)
           .eq("club_id", selectedClubId)
+          .is("deleted_at", null)
           .maybeSingle();
         if (cancelled) return;
         const allowed = !error && data?.id === id && data.club_id === selectedClubId;

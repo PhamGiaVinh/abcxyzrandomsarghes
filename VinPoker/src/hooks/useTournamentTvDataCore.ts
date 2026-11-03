@@ -93,7 +93,7 @@ export function useTournamentTvDataCore(
     }
     const { data: tournament, error: tournamentError } = await supabase
       .from("tournaments")
-      .select("name, status, players_remaining, average_stack, prize_pool, starting_stack, guarantee_amount, buy_in, rake_amount, main_event:tournament_events(guarantee_amount), club:clubs(name, cover_url, tv_logo_url, tv_brand_name, tv_bg_url)")
+      .select("name, status, players_remaining, average_stack, prize_pool, starting_stack, guarantee_amount, buy_in, rake_amount, main_event:tournament_events!tournaments_event_id_fkey(guarantee_amount), club:clubs(name, cover_url, tv_logo_url, tv_brand_name, tv_bg_url)")
       .eq("id", tournamentId)
       .abortSignal(signal)
       .maybeSingle();
