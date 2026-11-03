@@ -1,15 +1,24 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RealtimeTablesGrid } from "./RealtimeTablesGrid";
 import type { PublicTableSnapshot } from "./publicSnapshotTypes";
 
 vi.mock("../PokerVisuals", () => ({ PokerCard: ({ card }: { card: string }) => <span>{card}</span>, CardBack: () => <span data-testid="card-back" /> }));
+vi.mock('@/components/tracker/PublicPlayerHud',()=>({PublicPlayerHud:({playerId}:{playerId:string|null})=>playerId?<div role="dialog">HUD {playerId}</div>:null}));
 const makeTable = (id: string): PublicTableSnapshot => ({
   tableId: id, tableSessionId: `session-${id}`, name: `Bàn ${id}`, handId: `hand-${id}`,
   handNumber: 1, buttonSeat: 1, street: "flop", board: ["AS", "KH", "2C"], pot: 1000,
   bigBlind: 200, smallBlind: 100, trackerState: "live", players: [{ entryId: `entry-${id}`,
     playerId: `player-${id}`, entryNumber: 1, seatNumber: 1, name: `Player ${id}`, avatarUrl: null, stack: 2000, holeCards: [], isFolded: false }],
   latestAction: { playerId: `player-${id}`, entryNumber: 1, actionType: "call", amount: 200 },
+});
+it('opens the clicked public player separately from whole-table navigation',()=>{
+  const table=makeTable('hud');const onView=vi.fn();
+  const view=render(<RealtimeTablesGrid tournamentId="t" tables={[table]} catalog={[{tableId:'hud',name:table.name,playerCount:1,searchPlayers:[]}]} onVisibleTableIds={vi.fn()} onView={onView} onHistory={vi.fn()}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Thống kê Player hud'}));
+  expect(screen.getByRole('dialog')).toHaveTextContent('HUD player-hud');expect(onView).not.toHaveBeenCalled();
+  expect(view.container.querySelector('button button')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Xem Bàn hud'}));expect(onView).toHaveBeenCalledWith('hud');
 });
 
 describe("simultaneous public tables", () => {

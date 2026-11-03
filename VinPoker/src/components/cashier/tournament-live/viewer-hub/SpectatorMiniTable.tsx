@@ -8,7 +8,7 @@ import { tableAppearanceStyle, type TableAppearance } from '@/components/tracker
 import type { PublicTableSnapshot } from './publicSnapshotTypes';
 import './realtimeTablesGrid.css';
 
-export function SpectatorMiniTable({ table, appearance }: { table: PublicTableSnapshot; appearance?: TableAppearance }) {
+export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { table: PublicTableSnapshot; appearance?: TableAppearance; onPlayerSelect?: (id: string) => void }) {
   const { t } = useTranslation();
   const playersBySeat = new Map(table.players.map(player => [player.seatNumber, player]));
   const latestActor = table.latestAction ? table.players.find(player => player.playerId === table.latestAction?.playerId && player.entryNumber === table.latestAction.entryNumber) : null;
@@ -41,6 +41,7 @@ export function SpectatorMiniTable({ table, appearance }: { table: PublicTableSn
       const showCards = player.isFolded === false && (table.trackerState === 'live' || (table.trackerState === 'last_completed' && player.holeCards.length > 0));
       const action = player.isFolded ? 'fold' : player.isAllIn ? 'all_in' : player.lastAction?.actionType;
       return <div key={`${player.playerId}:${player.entryNumber}`} className="spectator-mini-seat" style={position} data-seat-number={seatNumber} data-folded={Boolean(player.isFolded)} title={player.name}>
+        {onPlayerSelect && <button type="button" aria-label={`Thống kê ${player.name}`} onClick={() => onPlayerSelect(player.playerId)} className="absolute inset-0 z-10 min-h-11 min-w-11 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />}
         <div className="spectator-mini-portrait">
           <div className="spectator-mini-avatar">{player.avatarUrl ? <img src={player.avatarUrl} alt="" /> : player.name.slice(0, 2).toUpperCase()}</div>
           {showCards && <div className="spectator-mini-holes" aria-label={t('tableAppearance.playerCards', { name: player.name })}>

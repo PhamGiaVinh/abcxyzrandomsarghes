@@ -66,6 +66,7 @@ export function mapDisplayStateToTvData(
   if (payload.status !== "paired" || !payload.tournament || !payload.clock) return null;
   const t = payload.tournament;
   return mapTvData({
+    tournamentId: t.id,
     clock: payload.clock,
     tournament: {
       name: t.name,

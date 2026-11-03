@@ -1,0 +1,40 @@
+name: TV broadcast and public player HUD
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/src/components/tv/**'
+      - 'VinPoker/src/components/tracker/PublicPlayerHud*'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/RealtimeTablesGrid*'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/SpectatorMiniTable*'
+      - 'VinPoker/src/lib/publicPlayerHud*'
+      - 'VinPoker/src/hooks/useTvStackRange*'
+      - 'VinPoker/supabase/functions/public-player-hud/**'
+      - 'VinPoker/tests/publicHud/**'
+      - '.github/workflows/tv-public-hud.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: VinPoker
+    env:
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: public-build-fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: VERCEL=1 npm ci
+      - run: npx vitest run tests/publicHud/metrics.test.ts tests/publicHud/handler.test.ts src/hooks/useTvStackRange.test.ts src/components/tracker/PublicPlayerHud.test.tsx src/components/tv/TvBroadcastBoard.test.tsx src/lib/tv/mapTvData.test.ts src/lib/tv/mapDisplayState.test.ts src/components/cashier/tournament-live/viewer-hub/SpectatorMiniTable.test.tsx src/components/cashier/tournament-live/viewer-hub/RealtimeTablesGrid.test.tsx --maxWorkers=1 --no-file-parallelism
+      - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: npm run build
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check supabase/functions/public-player-hud/index.ts
