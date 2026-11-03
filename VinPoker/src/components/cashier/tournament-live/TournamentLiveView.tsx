@@ -888,17 +888,13 @@ function TournamentLiveViewContent({
     }, POLL_INTERVAL_MS);
   }, [loadAllData]);
 
-  // Live Action Engine MVP (flag-gated, frontend-only): while a hand is in
-  // progress, fast-poll so spectators see each recorded action in near-real-time
-  // — `record_action` only writes `hand_actions`, which fires no
-  // `tournament_hands` realtime event, so the default path refreshes only when
-  // the hand is finalised. Reuses loadAllData (requestSeqRef guard intact).
-  // Never runs in replay mode or when the flag is off → zero behaviour change.
+  // Legacy spectator fallback only. Broadcast V2 covers hand/action/player
+  // source changes and owns healthy/offline verification in the shared hub.
   useEffect(() => {
     // VIEWER-ONLY: `spectator` gate keeps the operator's polling cadence unchanged even
     // with the flag ON. Visibility-aware: a backgrounded tab skips the tick, so it stops
     // hitting the DB every 2.5s while not being watched.
-    if (!FEATURES.liveActionEngine || !spectator) return;
+    if (!FEATURES.liveActionEngine || !spectator || FEATURES.publicSpectatorRealtimeV2) return;
     if (!tournamentId || mode !== "live" || !handInProgress) return;
     const id = window.setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;

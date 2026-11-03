@@ -12,3 +12,11 @@ function safeErrors(body){
 }
 for(const name of ['serve.log','start.log'])if(existsSync(root+'/'+name))console.log(name+' sanitized diagnostics:\n'+safeErrors(readFileSync(root+'/'+name,'utf8')));
 try{console.log('local Edge sanitized diagnostics:\n'+safeErrors(execFileSync('docker',['logs','--tail','100',`supabase_edge_runtime_${project}`],{encoding:'utf8',stdio:['ignore','pipe','pipe']})));}catch{console.log('Local Edge diagnostic unavailable');}
+try{
+ const query=`SELECT jsonb_build_object('hudJobs',(SELECT count(*) FROM tracker_analytics_v1.jobs),
+  'spectatorJobs',(SELECT count(*) FROM spectator_projection_v2.work_groups),
+  'cronFailures',(SELECT jsonb_agg(r) FROM (SELECT status,return_message FROM cron.job_run_details WHERE status='failed' ORDER BY start_time DESC LIMIT 3) r),
+  'httpErrors',(SELECT jsonb_agg(r) FROM (SELECT status_code,error_msg FROM net._http_response ORDER BY created DESC LIMIT 5) r));`;
+ const result=execFileSync('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',query],{encoding:'utf8',env:{...process.env,PGPASSWORD:'postgres'},stdio:['ignore','pipe','pipe']});
+ console.log('Local worker failure state:\n'+safeErrors(result));
+}catch{console.log('Local worker state diagnostic unavailable');}
