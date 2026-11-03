@@ -1,12 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {classifyHistory,atomicStageQuery} from '../../scripts/ops/all-fixes-backend-20261103-release-gate.mjs';
+import {classifyHistory,atomicStageQuery,loadPackage,validateReviewedPrefix120,REVIEWED_PREFIX120_SHA} from '../../scripts/ops/all-fixes-backend-20261103-release-gate.mjs';
 import {scanMigrationSource} from '../../scripts/ops/ops-1359-release-gate.mjs';
 const root=new URL('../../',import.meta.url);
 const baseline=JSON.parse(readFileSync(new URL('scripts/ops/all-fixes-backend-20261103-baseline.json',root),'utf8'));
 const entries=JSON.parse(readFileSync(new URL('scripts/ops/all-fixes-backend-20261103-manifest.json',root),'utf8')).migrations;
 const receipt=e=>({version:e.version,name:e.name,normalized_sql_sha256:e.sha256});
+const reviewedText=readFileSync(new URL('scripts/ops/all-fixes-backend-20261103-prefix120-reviewed.json',root),'utf8');
+test('only explicitly reviewed exact prefix120 can select the158 remaining migrations',()=>{
+ const pkg=loadPackage(),confirmation='REVIEWED_PREFIX120_'+REVIEWED_PREFIX120_SHA;
+ const state=classifyHistory([...baseline,...entries.slice(0,120).map(receipt)],entries);
+ assert.equal(validateReviewedPrefix120(state,pkg,reviewedText,confirmation),120);
+ assert.equal(pkg.entries.slice(120).length,158);
+ assert.equal(pkg.entries[120].version,'20270128000198');
+ assert.throws(()=>validateReviewedPrefix120({committed:119,pending:159},pkg,reviewedText,confirmation),/exact prefix120/);
+ assert.throws(()=>validateReviewedPrefix120({committed:121,pending:157},pkg,reviewedText,confirmation),/exact prefix120/);
+ assert.throws(()=>validateReviewedPrefix120(state,pkg,reviewedText,''),/review confirmation/);
+ assert.throws(()=>validateReviewedPrefix120(state,pkg,reviewedText.replace('"pending": 158','"pending": 157'),confirmation),/receipt mismatch/);
+});
 test('exact untouched483 receipt baseline and exact ordered prefix are recognized',()=>{
  assert.deepEqual(classifyHistory(baseline,entries),{committed:0,pending:278});
  assert.deepEqual(classifyHistory([...baseline,...entries.slice(0,2).map(receipt)].sort((a,b)=>a.version.localeCompare(b.version)),entries),{committed:2,pending:276});
