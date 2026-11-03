@@ -4,6 +4,7 @@ import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
 const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')=>void)}));
 vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;return()=>{};}}));
+vi.mock('@/components/PublicPaidWinnings',()=>({PublicPaidWinnings:()=> <section>Total Winnings</section>}));
 afterEach(()=>{cleanup();load.mockReset();});
 it('keeps opened counters on reconnect and replaces them only after access revocation',async()=>{
  load.mockResolvedValue({...result('a'),accessSnapshot:'1:2:',accessChanged:false});

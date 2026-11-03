@@ -38,6 +38,7 @@ const Account = lazy(() => import("./pages/Account"));
 const Auth = lazy(() => import("./pages/Auth"));
 const ClubAdmin = lazy(() => import("./pages/ClubAdmin"));
 const ClubFinanceDashboard = lazy(() => import("./pages/ClubFinanceDashboard"));
+const PlayerFinancialReport = lazy(() => import("./pages/PlayerFinancialReport"));
 const FinanceWorkspace = lazy(() => import("./pages/FinanceWorkspace"));
 // Accounting Control "Tài chính & Đối soát" — UI-only mock shell; page self-gates on FEATURES.accountingControl.
 const AccountingControl = lazy(() => import("./pages/AccountingControl"));
@@ -385,6 +386,7 @@ const App = () => {
                 <Route element={<FinanceWorkspace />}>
                   <Route path="/finance" element={null} />
                   <Route path="/club/admin/finance" element={<ClubFinanceDashboard />} />
+                  <Route path="/club/admin/player-finance" element={<PlayerFinancialReport />} />
                   <Route path="/club/admin/accounting-control" element={<AccountingControl />} />
                   <Route path="/accountant" element={<AccountantDashboard />} />
                 </Route>

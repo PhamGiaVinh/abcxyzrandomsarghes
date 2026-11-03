@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PublicPaidWinnings } from "@/components/PublicPaidWinnings";
 import { PerformanceCard } from "@/components/PerformanceCard";
 import { InterestDialog } from "@/components/InterestDialog";
 import { BackButton } from "@/components/BackButton";
@@ -196,6 +197,7 @@ const ScopedPlayerProfile = () => {
         </Button>
       </div>
 
+      <PublicPaidWinnings playerId={userId!} />
       {stats ? (
         <PerformanceCard stats={stats} displayName={profile.display_name} />
       ) : (
