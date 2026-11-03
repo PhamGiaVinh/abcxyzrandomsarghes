@@ -13,14 +13,16 @@ const viewers=Number(process.env.PUBLIC_HUD_SCALE_VIEWERS??1000),duration=Number
 if(!Number.isInteger(viewers)||viewers<1||viewers>1000||duration<30||duration>1800)throw Error('Invalid load bounds');
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
-const player=uuid('30000000',1),stats={summary:[],realtime:[],projection:[],errors:{},reconnects:0,sourceWrites:0,revocationClears:0};
+const player=uuid('30000000',1),stats={summary:[],realtime:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 let stopping=false;
 let phases={};
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
 async function post(path,body,privileged=false,phase='other'){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
- const response=await fetch(status.API_URL+path,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
- if(!response.ok)throw Error(`HTTP_${response.status}`);
+ const response=await fetch(status.API_URL+path,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}).catch(error=>{
+  const kind=`${phase}:${error?.name==='TimeoutError'?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
+ });
+ if(!response.ok){const kind=`${phase}:HTTP_${response.status}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
  const value=await response.json();if(path.endsWith('public-player-hud')&&body.mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
 }
@@ -54,6 +56,11 @@ for(const scenario of ['concentrated','distributed']){
  const expireDeliveries=()=>{for(const c of clients){const remaining=[];for(const e of c.expected){if(Date.now()-e.at>10000){missedDeliveries++;stats.realtime.push(Date.now()-e.at);}else remaining.push(e);}c.expected=remaining;}};
  const health=[];
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
+ const resourceTimer=setInterval(()=>{
+  track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
+  const query="SELECT jsonb_build_object('at',clock_timestamp(),'backends',(SELECT jsonb_agg(to_jsonb(s)) FROM (SELECT state,wait_event_type,count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY state,wait_event_type) s),'waitingLocks',(SELECT count(*) FROM pg_locks WHERE NOT granted));";
+  track(run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',query],{env:{...process.env,PGPASSWORD:'postgres'}}).then(({stdout})=>appendFileSync('output/hud-scale/pg-pressure.jsonl',stdout)).catch(()=>error('pg_pressure_sample')));
+ },5000);
  // Wait for the actual cron-dispatched Edge projector; no in-process worker shortcut.
  await until(async()=>{const reply=await rpc('get_public_tournament_viewer_snapshot_v2',{p_tournament_id:uuid('10000000',1),p_table_ids:[uuid('50000000',1)],p_sections:['tables'],p_known_revisions:{}});return reply.sections?.tables?.freshness?.state==='current';},60000,'Initial real worker publication unavailable');
  for(let i=0;i<viewers;i++){
@@ -79,11 +86,10 @@ for(const scenario of ['concentrated','distributed']){
   const openHud=async(phase='user-open')=>{
    const epoch=++state.hudEpoch,expectedRevocation=revoking;
    try{
-    const value=await hud(tour,'summary',undefined,phase);if(epoch!==state.hudEpoch)return;
+    const [value,history]=await Promise.all([hud(tour,'summary',undefined,phase),hud(tour,'history')]);if(epoch!==state.hudEpoch)return;
     state.lastHud=Date.now();
     if(value.access==='public'&&['current','updating'].includes(value.state)&&Number.isSafeInteger(value.counters?.publicHands)){
      state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};
-     const history=await hud(tour,'history');if(epoch!==state.hudEpoch)return;
      if(history.access==='public'&&['current','updating'].includes(history.state)){
       assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);
       assert.ok(history.handHistory.every(h=>h.tableId===table),'History must remain in this tournament/table');
@@ -182,20 +188,20 @@ for(const scenario of ['concentrated','distributed']){
   if(Date.now()-lastHealth>5000){lastHealth=Date.now();track((async()=>{try{const h=await rpc('get_public_hud_projection_health_v1',{},true);health.push({at:Date.now(),jobs:h.jobs,oldestAgeMs:h.oldestLiveChangeAt?Math.max(0,Date.now()-Date.parse(h.oldestLiveChangeAt)):0,expiredLeases:h.expiredLeases,failedJobs:h.failedJobs});}catch{error('health_read');}})());}
   if(Date.now()-lastProgress>60000){
    lastProgress=Date.now();console.log(JSON.stringify({phase:'load-progress',scenario,elapsedSeconds:Math.floor((Date.now()-started)/1000),viewers,sourceWrites:stats.sourceWrites-offset.sourceWrites,projectionSamples:stats.projection.length-offset.projection.length,errors:stats.errors}));
-   track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
   }
   await sleep(250);
  }
  await Promise.all(writers);
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
- expireDeliveries();await Promise.allSettled([...tasks]);
+ expireDeliveries();clearInterval(resourceTimer);await Promise.allSettled([...tasks]);
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
  report.httpPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
+ report.transportErrors={...stats.transportErrors};save('running');
  console.log(JSON.stringify(report));
  assert.ok(report.httpSummarySamples>=viewers);assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');

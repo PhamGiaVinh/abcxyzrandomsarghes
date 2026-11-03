@@ -29,6 +29,13 @@ them. Restarting the local Realtime container forces all viewer sockets to
 reconnect. Anonymous summary/history requests use actual HTTP Edge functions;
 table reads use PostgREST. The test creates no browser windows.
 
+The HUD displays the prepared total of verified public prize results. Cashier's
+confirmed-payment component remains on the player profile with its existing
+payment/publication rules; HUD opening does not invoke that lifetime financial
+reader. New HUD windows read summary and history in parallel. Reconnect checks
+summary access only and preserves the frozen object if the access scope did not
+change. Known invalidation clears it before waiting for replacement history.
+
 ## Evidence and limits
 
 - `seed.json`: machine/PG version, disk footprint and source writer p95 before

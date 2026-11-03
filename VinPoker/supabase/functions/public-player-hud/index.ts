@@ -4,7 +4,7 @@ import {readPublicHudAggregate,readPublicHudCompatibility} from './aggregate.ts'
 const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_ANON_KEY');
 // Anonymous, stateless client shared within the Edge isolate. No caller session
 // or Authorization header is ever installed on this client.
-const publicClient=url&&key?createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}}):null;
+const publicClient=url&&key?createClient(url,key,{accessToken:async()=>key,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}}):null;
 function jsonResp(req:Request,data:unknown,status=200){
   const response=baseJsonResp(req,data,status);
   response.headers.set('Cache-Control','no-store');response.headers.set('Vary','Origin');

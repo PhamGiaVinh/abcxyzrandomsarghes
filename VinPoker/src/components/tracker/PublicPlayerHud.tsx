@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import {PublicPaidWinnings} from '@/components/PublicPaidWinnings';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { PublicPlayerHudData } from '@/lib/publicPlayerHud';
@@ -60,9 +59,11 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
         pending.abort();pending=new AbortController();requestActive=false;const owned=++attempt;
         if(reason==='revoked'){frozen=null;setResult(null);}
         setError(false);setPreparing(false);
-        const read=()=>{requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen??undefined).then(value=>{
+        const read=()=>{requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen??undefined,()=>{
+          if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);}
+        }).then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
-            if(!frozen||value.accessChanged){frozen=value;setResult(value);}
+            if(!frozen||(value!==frozen&&value.accessChanged)){frozen=value;setResult(value);}
           }
         }).catch(reason=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
@@ -114,7 +115,7 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
       </div>
       <p className="text-xs text-muted-foreground">Toàn bộ lịch sử công khai: {complete?.lifetimeHands?.toLocaleString('vi-VN') ?? '—'} hand qua tất cả tour, không giới hạn số hand. HANDS là số ván đủ bằng chứng để tính chỉ số. Mỗi tỷ lệ dùng số cơ hội riêng; mẫu nhỏ chưa đại diện phong cách chơi. *TAF = bet/raise trên các quyết định bet/raise/call/fold ở river. WTSD và W$SD tính theo các ván thấy flop/showdown.</p>
       {!!complete?.omittedHands && <p className="text-xs text-amber-400">Bỏ qua {complete?.omittedHands} ván lịch sử thiếu bằng chứng hành động preflop.</p>}
-      <PublicPaidWinnings playerId={playerId!} live={false}/><section className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">Kết quả công khai đã xác minh từ hồ sơ; được trình bày riêng với tiền thưởng Cashier đã trả.</p><h4 className="mt-5 text-sm">Last 5 Tournaments</h4>{current.recentResults?.length ? <><RecentResultChart results={current.recentResults}/><ol className="mt-3 space-y-3">{current.recentResults.map((r,i)=><li key={`${r.event_date}-${i}`} className="flex justify-between gap-3 border-t border-border pt-2 text-xs"><span>{r.tournament_name}<span className="block text-muted-foreground">{r.event_date}</span></span><span className="text-right font-mono">{r.position == null ? '—' : `#${r.position}`}{r.total_entries ? ` / ${r.total_entries}` : ''}<span className="block text-primary">{formatChips(r.prize)} ₫</span></span></li>)}</ol></> : <p className="mt-3 text-sm text-muted-foreground">Chưa có kết quả công khai đã xác minh.</p>}</section>
+      <section className="rounded-lg border border-border bg-card p-4"><h3 className="flex flex-wrap justify-between gap-2 text-sm font-semibold"><span>Total Winnings</span><strong className="font-mono text-primary">{current.totalWinnings==null?'—':`${formatChips(current.totalWinnings)} ₫`}</strong></h3><p className="mt-2 text-xs text-muted-foreground">Giải thưởng từ kết quả công khai đã xác minh. Tiền Cashier đã trả được hiển thị ở hồ sơ người chơi.</p><a className="mt-2 inline-block text-xs text-primary underline" href={`/player/${encodeURIComponent(playerId!)}`} target="_blank" rel="noopener noreferrer">Xem hồ sơ người chơi</a></section><section className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">Kết quả công khai đã xác minh từ hồ sơ; được trình bày riêng với tiền thưởng Cashier đã trả.</p><h4 className="mt-5 text-sm">Last 5 Tournaments</h4>{current.recentResults?.length ? <><RecentResultChart results={current.recentResults}/><ol className="mt-3 space-y-3">{current.recentResults.map((r,i)=><li key={`${r.event_date}-${i}`} className="flex justify-between gap-3 border-t border-border pt-2 text-xs"><span>{r.tournament_name}<span className="block text-muted-foreground">{r.event_date}</span></span><span className="text-right font-mono">{r.position == null ? '—' : `#${r.position}`}{r.total_entries ? ` / ${r.total_entries}` : ''}<span className="block text-primary">{formatChips(r.prize)} ₫</span></span></li>)}</ol></> : <p className="mt-3 text-sm text-muted-foreground">Chưa có kết quả công khai đã xác minh.</p>}</section>
       <p className="text-xs text-muted-foreground">Ô — nghĩa là chưa có cơ hội hoặc dữ liệu đã xác minh, không phải 0%. Không suy ra tiền thắng từ thay đổi stack.</p>
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent className="operations-typography max-h-[90svh] max-w-xl overflow-y-auto border-border bg-card p-5 text-foreground"><DialogTitle>Giải thích chỉ số HUD</DialogTitle><DialogDescription>Bấm tên chỉ số để xem định nghĩa, cách tính và số cơ hội thực tế.</DialogDescription><PublicPlayerHudHelp selected={helpMetric} metrics={metrics} hands={complete?.analytics.handsObserved ?? 0} onSelect={setHelpMetric}/></DialogContent></Dialog>
     </>}

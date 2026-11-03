@@ -3,10 +3,26 @@ import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
 const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')=>void)}));
+const paid=vi.hoisted(()=>vi.fn());
 vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;return()=>{};}}));
-vi.mock('@/components/PublicPaidWinnings',()=>({PublicPaidWinnings:()=> <section>Total Winnings</section>}));
+vi.mock('@/components/PublicPaidWinnings',()=>({PublicPaidWinnings:()=> {paid();return <section>Cashier reader</section>;}}));
 beforeEach(()=>{vi.spyOn(Math,'random').mockReturnValue(0);});
-afterEach(()=>{cleanup();load.mockReset();vi.restoreAllMocks();});
+afterEach(()=>{cleanup();load.mockReset();paid.mockReset();vi.restoreAllMocks();});
+it('uses cached verified winnings without mounting the cashier history reader',async()=>{
+ load.mockResolvedValue({...result('a'),totalWinnings:500});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
+ expect(await screen.findByText('500 ₫')).toBeInTheDocument();expect(paid).not.toHaveBeenCalled();
+ expect(screen.getByRole('link',{name:'Xem hồ sơ người chơi'})).toHaveAttribute('href','/player/a');
+});
+it('clears known invalidated data while replacement history is still loading',async()=>{
+ load.mockResolvedValueOnce({...result('a'),accessSnapshot:'1:2:'});
+ let finish!:(value:unknown)=>void;
+ load.mockImplementationOnce((_t,_p,_signal,_frozen,onChanged)=>{onChanged();return new Promise(resolve=>{finish=resolve;});});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
+ act(()=>access.callback!('verify'));await waitFor(()=>expect(load).toHaveBeenCalledTimes(2));
+ expect(screen.queryByText('TEST a')).not.toBeInTheDocument();
+ finish({...result('a'),name:'AFTER REVALIDATION',accessChanged:true});await screen.findByText('AFTER REVALIDATION');
+});
 it('clears a revoked HUD immediately before its jittered access check',async()=>{
  const random=vi.spyOn(Math,'random').mockReturnValue(0);
  try{

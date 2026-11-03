@@ -24,11 +24,24 @@ it('checks reconnect access with one summary read and preserves the opened revis
   expect(await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen)).toBe(frozen);
   expect(invoke).toHaveBeenCalledTimes(1);expect(invoke.mock.calls[0][1].body).toMatchObject({mode:'summary',access_snapshot:'1:2:'});
 });
+it('never reuses another player or tournament snapshot',async()=>{
+  const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);invoke.mockClear();
+  for(const different of [{...frozen,playerId:t},{...frozen,tournamentId:p}])await expect(loadPreparedPublicPlayerHud(t,p,new AbortController().signal,different)).rejects.toThrow('PUBLIC_HUD_SCOPE_UNAVAILABLE');
+  expect(invoke).not.toHaveBeenCalled();
+});
 it('reloads bounded history only when the old access scope was invalidated',async()=>{
   const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);invoke.mockClear();
   invoke.mockImplementation((_n,{body})=>Promise.resolve({data:body.mode==='summary'?{...summary(),revision:'43',accessChanged:true}:history(),error:null}));
   const updated=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen);
   expect(updated.revision).toBe('43');expect(invoke.mock.calls.map(c=>c[1].body.mode)).toEqual(['summary','history']);
+});
+it('signals known access invalidation before waiting for replacement history',async()=>{
+  const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);
+  let finish!:(value:unknown)=>void;const invalidated=vi.fn();
+  invoke.mockImplementation((_n,{body})=>body.mode==='summary'?Promise.resolve({data:{...summary(),accessChanged:true},error:null}):new Promise(resolve=>{finish=resolve;}));
+  const next=loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen,invalidated);
+  await vi.waitFor(()=>expect(invalidated).toHaveBeenCalledTimes(1));
+  finish({data:history(),error:null});await next;
 });
 it('does not fall back to raw scans for warming, revoked or incompatible snapshots',async()=>{
   for(const data of [{access:'public',state:'warming'},{access:'revoked'},{...summary(),version:'incompatible'}]){

@@ -18,7 +18,11 @@ export async function readPublicHudAggregate(client:RpcClient,tournamentId:strin
     args.p_after_hand=value.handId;args.p_after_time=value.playedAt;
   }
   const reply=await client.rpc(mode==='summary'?'get_public_player_hud_summary_v1':'get_public_player_hud_history_v1',args);
-  if(reply.error||!reply.data||typeof reply.data!=='object')throw Error('PUBLIC_HUD_UNAVAILABLE');
+  if(reply.error||!reply.data||typeof reply.data!=='object'){
+    const code=(reply.error as {code?:unknown}|null)?.code;
+    if(typeof code==='string'&&/^[A-Z0-9_]{5,24}$/.test(code))console.warn('public-player-hud RPC unavailable',mode,code);
+    throw Error('PUBLIC_HUD_UNAVAILABLE');
+  }
   const value=reply.data as Record<string,unknown>;
   if(value.access!=='public'||!['current','updating'].includes(String(value.state)))return value;
   if(value.tournamentId!==tournamentId||value.playerId!==playerId)throw Error('PUBLIC_SCOPE_MISMATCH');

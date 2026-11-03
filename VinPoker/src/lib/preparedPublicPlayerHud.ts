@@ -35,8 +35,9 @@ export async function loadPublicHudHistoryPage(tournamentId:string,playerId:stri
   if(next&&cursor&&next.handId===cursor.handId&&next.playedAt===cursor.playedAt)throw Error('PUBLIC_HUD_REPEATED_CURSOR');
   return {hands:data.handHistory,nextCursor:next};
 }
-export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal,frozen?:PreparedPublicPlayerHudData):Promise<PreparedPublicPlayerHudData>{
+export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal,frozen?:PreparedPublicPlayerHudData,onAccessChanged?:()=>void):Promise<PreparedPublicPlayerHudData>{
   if(requestSignal.aborted)throw Error('aborted');
+  if(frozen&&(frozen.tournamentId!==tournamentId||frozen.playerId!==playerId))throw Error('PUBLIC_HUD_SCOPE_UNAVAILABLE');
   const controller=new AbortController(),abort=()=>controller.abort();
   requestSignal.addEventListener('abort',abort,{once:true});
   try{
@@ -55,6 +56,7 @@ export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:s
     if(summary.totalWinnings!==null&&(!Number.isSafeInteger(summary.totalWinnings)||summary.totalWinnings<0))throw Error('PUBLIC_HUD_INVALID_WINNINGS');
     if(!Array.isArray(summary.recentResults)||summary.recentResults.length>5||!Array.isArray(summary.analytics.unavailableMetrics))throw Error('PUBLIC_HUD_INVALID_SUMMARY');
     if(frozen&&!summary.accessChanged)return frozen;
+    if(frozen&&summary.accessChanged)onAccessChanged?.();
     const history=initial?.[1]??await loadPublicHudHistoryPage(tournamentId,playerId,controller.signal);
     return {tournamentId,playerId,name:summary.name,avatarUrl:summary.avatarUrl??null,
       sampledTournamentHands:history.hands.length,truncated:history.nextCursor!==null,handHistory:history.hands,
