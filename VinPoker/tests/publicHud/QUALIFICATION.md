@@ -49,8 +49,11 @@ an advanced generation and a current projection; rounded timestamps alone are
 insufficient. Coalesced reads may finish within the bounded 10-second tail,
 without dropping late/missing samples from the latency/error denominator.
 
-The pinned local runtime uses `per_request` supervision and at most 64 reusable
-workers per function. The CLI-generated gateway, image, 256MB per worker,
+The local runtime uses `per_request` supervision and an explicitly recorded
+pool per function. The bounded diagnostic settings are 8, 16 or 64 (default 16);
+pin one setting before running both full qualification scenarios. Earlier
+64-worker failures are retained. This tunes isolated two-core resource use,
+not application workload or hosted quotas. The CLI-generated gateway, image, 256MB per worker,
 CPU soft/hard 1000/2000ms, wall/HTTP limits, secrets and bind mounts are retained.
 Only policy and pool parallelism change; no production setting changes. This
 matches per-request CPU accounting, not the topology of the hosted service:

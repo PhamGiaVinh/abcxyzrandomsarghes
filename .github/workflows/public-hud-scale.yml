@@ -5,6 +5,9 @@ on:
       qualification:
         type: boolean
         default: false
+      edge_parallelism:
+        type: string
+        default: '16'
   pull_request:
     paths:
       - '.github/workflows/public-hud-scale.yml'
@@ -19,6 +22,11 @@ on:
         description: 'Diagnostic 1000 real viewers against small history, two 30-second scenarios'
         type: boolean
         default: false
+      edge_parallelism:
+        description: 'Isolated per-function worker pool; recorded, not a hosted quota'
+        type: choice
+        options: ['16', '8', '64']
+        default: '16'
 permissions:
   contents: read
 concurrency:
@@ -35,6 +43,7 @@ jobs:
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || '100' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
+      PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4

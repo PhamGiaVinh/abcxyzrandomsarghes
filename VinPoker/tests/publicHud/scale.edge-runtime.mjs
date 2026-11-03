@@ -8,6 +8,8 @@ import {createHash} from 'node:crypto';
 import http from 'node:http';
 import {parseEnv} from 'node:util';
 const [mode,root,project]=process.argv.slice(2);
+const parallelism=Number(process.env.PUBLIC_HUD_SCALE_EDGE_PARALLELISM??16);
+assert.ok([8,16,64].includes(parallelism),'Bounded isolated pool setting required');
 assert.ok(['capture','apply'].includes(mode));
 assert.match(root??'',/^\/tmp\/vinpoker-hud-stack-[A-Za-z0-9]+$/);
 assert.match(project??'',/^hud-scale-[a-z0-9-]+$/);
@@ -45,7 +47,7 @@ if(mode==='capture'){
  try{const current=inspect();assert.equal(current.Id,original.Id);await request('DELETE',`/containers/${original.Id}?force=true`);}catch(error){
   if(error?.code!=='ENOENT'&&!String(error?.stderr??'').includes('No such object'))throw error;
  }
- const config={...original.Config,Image:original.Image,Entrypoint:['sh','-c',shell.replace('--policy=per_worker','--policy=per_request --max-parallelism=64')],
+ const config={...original.Config,Image:original.Image,Entrypoint:['sh','-c',shell.replace('--policy=per_worker',`--policy=per_request --max-parallelism=${parallelism}`)],
   HostConfig:original.HostConfig,NetworkingConfig:{EndpointsConfig:{[original.HostConfig.NetworkMode]:{Aliases:[name]}}}};
  const created=await request('POST','/containers/create?name='+encodeURIComponent(name),config);
  assert.match(created.Id,/^[a-f0-9]{64}$/);
@@ -57,7 +59,7 @@ if(mode==='capture'){
  for(const key of ['Memory','MemorySwap','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','Ulimits'])assert.deepEqual(actual.HostConfig[key],original.HostConfig[key]);
  execFileSync('docker',['exec',`supabase_kong_${project}`,'kong','reload'],{stdio:['ignore','pipe','pipe']});
  writeFileSync('output/hud-scale/runtime-policy.json',JSON.stringify({kind:'ISOLATED_RUNTIME_CONFIGURATION_NOT_HOSTED_TOPOLOGY',image:original.Config.Image,imageId:original.Image,
-  policy:'per_request',maxParallelismPerFunction:64,workerLimits:'unchanged CLI gateway: 256MB, CPU soft1000ms/hard2000ms, wall400s',
+  policy:'per_request',maxParallelismPerFunction:parallelism,workerLimits:'unchanged CLI gateway: 256MB, CPU soft1000ms/hard2000ms, wall400s',
   actualConfigurationVerified:true,resourceCaps:Object.fromEntries(['Memory','MemorySwap','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','Ulimits'].map(key=>[key,actual.HostConfig[key]])),
   originalGatewaySha256:digest(shell),gatewaySha256:digest(actual.Config.Entrypoint[2]),reason:'per_worker CPU retirement/WorkerAlreadyRetired under concurrent HUD reads'},null,2));
 }
