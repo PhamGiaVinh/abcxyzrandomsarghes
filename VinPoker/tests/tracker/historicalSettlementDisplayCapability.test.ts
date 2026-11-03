@@ -4,12 +4,16 @@ import { describe, expect, it } from "vitest";
 import { FEATURES } from "@/lib/featureFlags";
 
 const panel = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HandHistoryWorkspace.tsx"), "utf8");
-const control = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.tsx"), "utf8");
-const batchControl = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementBatchControl.tsx"), "utf8");
+const wrapper = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.tsx"), "utf8");
+const batchWrapper = readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementBatchControl.tsx"), "utf8");
+const control = wrapper + readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementDisplayWorkspace.tsx"), "utf8");
+const batchControl = batchWrapper + readFileSync(resolve(process.cwd(), "src/components/cashier/tournament-live/HistoricalSettlementBatchWorkspace.tsx"), "utf8");
 const commitIntent = readFileSync(resolve(process.cwd(), "src/lib/tracker-poker/historicalCommitIntent.ts"), "utf8");
 
 describe("historical settlement display capability", () => {
   it("enables the historical Edge caller only outside the legacy edit path", () => {
+    expect(wrapper).toContain("<HistoricalSettlementDisplayWorkspace {...props} actorId={user?.id} />");
+    expect(batchWrapper).toContain("<HistoricalSettlementBatchWorkspace {...props} actorId={user?.id} />");
     expect(FEATURES.trackerHistoricalSettlementDisplay).toBe(true);
     expect(FEATURES.trackerHistoricalSettlementBulk).toBe(false);
     expect(panel).toContain("FEATURES.trackerHistoricalSettlementDisplay && !editMode");
