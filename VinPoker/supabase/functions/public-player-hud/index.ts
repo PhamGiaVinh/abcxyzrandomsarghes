@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.105.4';
 import { handleOptions, jsonResp } from '../_shared/cors.ts';
-import { readPublicPlayerHud } from './handler.ts';
+import { readPublicPlayerHud,readPublicPlayerHudManifest } from './handler.ts';
 
 Deno.serve(async req => {
   const preflight = handleOptions(req);
@@ -16,7 +16,8 @@ Deno.serve(async req => {
     const input = JSON.parse(body);
     // Never use service_role or forward Authorization, even for an operator caller.
     const client = createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-    return jsonResp(req,await readPublicPlayerHud(client,input.tournament_id,input.player_id));
+    if(input.mode==='manifest') return jsonResp(req,await readPublicPlayerHudManifest(client,input.tournament_id,input.player_id,input.as_of));
+    return jsonResp(req,await readPublicPlayerHud(client,input.tournament_id,input.player_id,{mode:input.mode==='lifetime'?'lifetime':undefined,after:input.after,asOf:input.as_of}));
   } catch {
     return jsonResp(req,{error:'PUBLIC_HUD_UNAVAILABLE'},400);
   }

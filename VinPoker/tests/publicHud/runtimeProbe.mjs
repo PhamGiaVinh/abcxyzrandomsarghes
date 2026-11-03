@@ -11,9 +11,10 @@ if(!tournamentId||!playerId) throw new Error('Explicit public test tournament/pl
 const directory=await fs.mkdtemp(path.join(os.tmpdir(),'vinpoker-hud-runtime-'));
 const bundle=path.join(directory,'handler.mjs');
 await build({entryPoints:['supabase/functions/public-player-hud/handler.ts'],bundle:true,platform:'node',format:'esm',outfile:bundle,logLevel:'silent'});
-const {readPublicPlayerHud}=await import(pathToFileURL(bundle));
+const {readPublicPlayerHud,readPublicPlayerHudManifest}=await import(pathToFileURL(bundle));
 const client=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-const result=await readPublicPlayerHud(client,tournamentId,playerId);
+if(process.env.PUBLIC_HUD_TEST_MODE==='manifest'){const value=await readPublicPlayerHudManifest(client,tournamentId,playerId);console.log(JSON.stringify({probe:'actual-anon-lifetime-manifest',...value}));process.exit(0);}
+const result=await readPublicPlayerHud(client,tournamentId,playerId,process.env.PUBLIC_HUD_TEST_MODE==='lifetime'?{mode:'lifetime'}:{});
 if(result.tournamentId!==tournamentId||result.playerId!==playerId) throw new Error('Scope mismatch');
 console.log(JSON.stringify({probe:'actual-anon-RLS-read',tournamentId,playerId,name:result.name,hands:result.analytics.handsObserved,
-  sample:result.sampledTournamentHands,handHistory:result.handHistory,metrics:result.analytics.metrics,totalWinnings:result.totalWinnings,recentResultCount:result.recentResults?.length??null}));
+  scope:result.scope,nextCursor:result.nextCursor,sample:result.sampledTournamentHands,handHistory:result.handHistory,metrics:result.analytics.metrics,totalWinnings:result.totalWinnings,recentResultCount:result.recentResults?.length??null}));
