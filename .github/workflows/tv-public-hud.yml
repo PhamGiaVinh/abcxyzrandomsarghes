@@ -14,6 +14,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: tv-public-hud-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -21,6 +24,7 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      NODE_OPTIONS: --max-old-space-size=4096
       VITE_SUPABASE_URL: https://example.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: public-build-fixture
     steps:
