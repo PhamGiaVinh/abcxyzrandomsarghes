@@ -78,6 +78,16 @@ complete its final current HUD epoch and verify its reconnected access channel,
 with all pending requests/timers drained. The Edge RPC adapter propagates the
 request-local signal while keeping its independent five-second timeout and
 fixed anonymous credentials. One caller cannot cancel another.
+The current driver sends these distinct HTTP POSTs through native Node HTTP
+keepalive to reduce generator CPU/stream overhead on the shared test machine.
+Its explicit pool allows 6,000 sockets and 1,000 idle sockets; actual active,
+idle and queued counts are recorded. Both transports in the local diagnostic
+comparison request identity encoding and parse the complete JSON body. Native
+HTTP uses identity encoding in the load too. Its independent launch-to-parse
+10-second deadline includes socket queueing and body receipt; truncated bodies
+fail. `generator-transport.json` compares the two generators on a fixed local
+echo workload and is not application-capacity evidence. Prior fetch-based
+failures remain retained; application read/latency/recovery targets are intact.
 
 ## Evidence and limits
 

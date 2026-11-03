@@ -60,6 +60,8 @@ jobs:
           deno-version: v2.x
       - name: Check public HUD and both worker entrypoints
         run: deno check supabase/functions/public-player-hud/index.ts supabase/functions/public-hud-projector-v1/index.ts supabase/functions/public-spectator-projector-v2/index.ts
+      - name: Native HTTP load transport cancellation and response integrity
+        run: node --test tests/publicHud/scale.http.native.mjs
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize
       - name: Exact nine-migration release guards and atomic receipts
