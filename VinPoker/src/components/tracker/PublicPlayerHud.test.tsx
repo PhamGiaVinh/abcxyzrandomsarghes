@@ -45,8 +45,8 @@ it('keeps tour history visible while lifetime metrics load, without showing the 
  resolve(data);await screen.findByText('99%');
  expect(screen.queryByText(/Bạn có thể xem lịch sử và replay/)).not.toBeInTheDocument();
 });
-it('preserves loaded tour history if lifetime aggregation fails',async()=>{
+it('clears the preview if a later scope or consistency check fails',async()=>{
  load.mockImplementation((_t:unknown,_p:unknown,_s:unknown,_progress:unknown,onCurrent:(data:unknown)=>void)=>{onCurrent(result('a'));return Promise.reject(new Error('read failed'));});
  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
- await screen.findByRole('alert');expect(screen.getByText('TEST a')).toBeInTheDocument();expect(screen.queryByText('0%')).not.toBeInTheDocument();
+  await screen.findByRole('alert');expect(screen.queryByText('TEST a')).not.toBeInTheDocument();expect(screen.queryByText('0%')).not.toBeInTheDocument();
 });

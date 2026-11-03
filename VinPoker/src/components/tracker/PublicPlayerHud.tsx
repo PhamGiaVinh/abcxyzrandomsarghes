@@ -49,7 +49,7 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
       return loadPublicPlayerHud(tournamentId,playerId,controller.signal,hands=>{if(!controller.signal.aborted)setProgress(hands);},data=>{if(!controller.signal.aborted)setPreview(data);});
     }).then(value => {
       if (!controller.signal.aborted) setResult(value);
-    }).catch(() => { if (!controller.signal.aborted) { setError(true); controller.abort(); } });
+    }).catch(() => { if (!controller.signal.aborted) { setPreview(null); setError(true); controller.abort(); } });
     return () => controller.abort();
   }, [tournamentId, playerId]);
   // Scope on render as well as cleanup: never flash the previous person's statistics.
@@ -59,7 +59,7 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
   return <Dialog open={playerId != null} onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="operations-typography max-h-[90svh] max-w-xl overflow-y-auto border-border bg-card p-5 text-foreground">
     <DialogTitle className="flex items-center gap-4 pr-8"><Avatar className="h-16 w-16"><AvatarImage src={current?.avatarUrl ?? undefined} alt="" /><AvatarFallback>{current?.name.slice(0,2) ?? '?'}</AvatarFallback></Avatar><span>{current?.name ?? 'Thống kê người chơi'}</span></DialogTitle>
     <DialogDescription>Chỉ số cộng dồn toàn bộ hand hoàn tất được công khai qua tất cả tour. Lịch sử stack và replay chỉ thuộc tour đang xem.</DialogDescription>
-    {error && <p role="alert">Không tải đủ thống kê công khai. Hãy đóng và mở lại để thử.{current && ' Lịch sử tour đã tải vẫn xem được bên dưới.'}</p>}
+    {error && <p role="alert">Không tải đủ thống kê công khai. Hãy đóng và mở lại để thử.</p>}
     {!current ? !error && <p role="status">Đang tải hồ sơ và lịch sử tour…</p> : <>
       <PlayerHandHistory tournamentId={tournamentId} hands={current.handHistory ?? []}/>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Chỉ số cộng dồn · Tất cả tour</h3><button type="button" onClick={()=>setHelpOpen(true)} className="min-h-11 rounded-md border border-border px-3 text-xs font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Giải thích các chỉ số</button></div>
