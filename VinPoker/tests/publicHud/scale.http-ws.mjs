@@ -55,7 +55,7 @@ for(const scenario of ['concentrated','distributed']){
    const components=message.payload.components??['tables'];
    if(components.includes('tables')||components.includes('visibility'))track(read());
   }).subscribe(s=>{state.online=s==='SUBSCRIBED';if(state.online){if(state.joined)stats.reconnects++;state.joined=true;track(read());}});
-  client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'changed'},()=>{state.frozen=null;track(openHud());}).subscribe();
+  client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{state.frozen=null;track(openHud());}).subscribe();
   if(i%25===24)await sleep(25);
  }
  await until(async()=>clients.every(c=>c.joined),60000,'Not all 1,000 WebSocket clients joined');

@@ -1,5 +1,10 @@
 name: Public HUD isolated real HTTP and WebSocket load
 on:
+  workflow_call:
+    inputs:
+      qualification:
+        type: boolean
+        default: false
   pull_request:
     paths:
       - '.github/workflows/public-hud-scale.yml'

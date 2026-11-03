@@ -47,6 +47,7 @@ BEGIN
   RETURN context||jsonb_build_object('access','public','scope','all-public-tournaments',
     'tournamentId',p_tournament_id,'playerId',p_player_id,'version',cfg.version,
     'revision',coalesce(total.revision,0)::text,'computedAt',coalesce(total.computed_at,cfg.backfill_started_at),
+    'accessRevision',coalesce((SELECT event_id FROM tracker_analytics_v1.access_revocations ORDER BY event_id DESC LIMIT 1),0)::text,
     'state',CASE WHEN pending THEN 'updating' ELSE 'current' END,
     'coverageComplete',true,'counters',jsonb_build_object(
       'numerators',coalesce(total.numerators,tracker_analytics_v1.zeros()),
@@ -55,8 +56,8 @@ BEGIN
       'handsObserved',coalesce(total.observed_hands,0),'publicHands',coalesce(total.public_hands,0),'omittedHands',coalesce(total.omitted_hands,0)),
     'totalWinnings',CASE WHEN total.result_count>0 AND total.winnings<=9007199254740991 THEN total.winnings ELSE NULL END,
     'recentResults',(SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM (
-      SELECT tournament_name,event_date,position,total_entries,prize FROM public.player_results
-      WHERE player_id=p_player_id AND verified_by_admin ORDER BY event_date DESC,id LIMIT 5) r));
+      SELECT tournament_name,event_date,position,total_entries,prize FROM tracker_analytics_v1.result_contributions
+      WHERE player_id=p_player_id AND version=cfg.version ORDER BY event_date DESC,result_id LIMIT 5) r));
 END $$;
 
 CREATE FUNCTION tracker_analytics_v1.safe_integer(value jsonb) RETURNS numeric

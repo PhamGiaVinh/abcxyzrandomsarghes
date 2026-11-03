@@ -2,8 +2,18 @@ import {render,screen,waitFor,cleanup,fireEvent} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
-vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:()=>void)=>{ready();return()=>{};}}));
+const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')=>void)}));
+vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;ready('verify');return()=>{};}}));
 afterEach(()=>{cleanup();load.mockReset();});
+it('keeps opened counters on reconnect and replaces them only after access revocation',async()=>{
+ load.mockResolvedValue({...result('a'),accessRevision:'1'});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
+ load.mockResolvedValue({...result('a'),name:'NEW SNAPSHOT',accessRevision:'1'});
+ access.callback!('verify');await waitFor(()=>expect(load).toHaveBeenCalledTimes(2));
+ expect(screen.getByText('TEST a')).toBeInTheDocument();expect(screen.queryByText('NEW SNAPSHOT')).not.toBeInTheDocument();
+ load.mockResolvedValue({...result('a'),name:'NEW SNAPSHOT',accessRevision:'2'});
+ access.callback!('verify');await screen.findByText('NEW SNAPSHOT');
+});
 const metric={percentage:null,numerator:0,denominator:0,sampleSize:0,metricVersion:'test'};
 const result=(id:string)=>({tournamentId:'t',playerId:id,name:`TEST ${id}`,avatarUrl:null,sampledTournamentHands:0,truncated:false,handHistory:[],totalWinnings:null,recentResults:[],analytics:{handsObserved:0,metrics:Object.fromEntries(['vpip','pfr','ats','threeBet','flopCbet','flopFoldCbet','flopCallCbet','flopRaiseCbet','turnCbet','turnFoldCbet','turnCallCbet','turnRaiseCbet','wtsd','wsd','riverAggression'].map(k=>[k,metric]))}});
 it('shows unknown values rather than fake 0% for a new player',async()=>{

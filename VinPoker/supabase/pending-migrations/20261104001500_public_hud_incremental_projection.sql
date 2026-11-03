@@ -82,9 +82,10 @@ CREATE TABLE tracker_analytics_v1.player_totals (
 );
 CREATE TABLE tracker_analytics_v1.result_contributions (
   result_id uuid NOT NULL, player_id uuid NOT NULL, prize bigint NOT NULL CHECK(prize>=0), version text NOT NULL,
+  tournament_name text,event_date date,position integer,total_entries integer,
   PRIMARY KEY(result_id,version)
 );
-CREATE INDEX hud_result_player ON tracker_analytics_v1.result_contributions(player_id);
+CREATE INDEX hud_result_player ON tracker_analytics_v1.result_contributions(player_id,version,event_date DESC,result_id);
 
 CREATE TABLE tracker_analytics_v1.jobs (
   kind text NOT NULL CHECK(kind IN ('hand','result','visibility')),
@@ -112,6 +113,11 @@ CREATE INDEX hud_pending_player ON tracker_analytics_v1.job_players(player_id,ha
 CREATE TABLE tracker_analytics_v1.visibility_barriers (
   tournament_id uuid PRIMARY KEY, changed_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+-- Append-only committed access watermark: no shared source-writer row lock.
+CREATE TABLE tracker_analytics_v1.access_revocations(event_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,source_txid xid8 UNIQUE NOT NULL DEFAULT pg_current_xact_id());
+CREATE FUNCTION tracker_analytics_v1.mark_access_revocation() RETURNS void LANGUAGE sql SET search_path='' AS $$
+ INSERT INTO tracker_analytics_v1.access_revocations DEFAULT VALUES ON CONFLICT(source_txid) DO NOTHING
+$$;
 
 -- Only derived counters change here. Every aggregate mutation follows a stable
 -- player/tournament lock order established by the publishing RPC.

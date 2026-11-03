@@ -14,9 +14,20 @@ on:
       - 'VinPoker/src/components/cashier/tournament-live/**'
       - 'VinPoker/supabase/functions/public-spectator-projector-v2/**'
   workflow_dispatch:
+    inputs:
+      real_stack:
+        description: 'Isolated real HTTP/WebSocket run'
+        type: choice
+        options: [off, smoke, qualification]
+        default: off
 permissions:
   contents: read
 jobs:
+  real-stack:
+    if: github.event_name == 'workflow_dispatch' && inputs.real_stack != 'off'
+    uses: ./.github/workflows/public-hud-scale.yml
+    with:
+      qualification: ${{ inputs.real_stack == 'qualification' }}
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20

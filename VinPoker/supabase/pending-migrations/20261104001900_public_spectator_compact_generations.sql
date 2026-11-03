@@ -40,6 +40,7 @@ ALTER TABLE spectator_projection_v2.deferred_generations_v1 ENABLE ROW LEVEL SEC
 ALTER TABLE tracker_analytics_v1.revocation_broadcast_v1 ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON spectator_projection_v2.deferred_generations_v1,tracker_analytics_v1.revocation_broadcast_v1 FROM PUBLIC,anon,authenticated,service_role;
 CREATE FUNCTION tracker_analytics_v1.queue_revocation_v1() RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
+ SELECT tracker_analytics_v1.mark_access_revocation();
  INSERT INTO tracker_analytics_v1.revocation_broadcast_v1 DEFAULT VALUES ON CONFLICT DO NOTHING
 $$;
 REVOKE ALL ON FUNCTION tracker_analytics_v1.queue_revocation_v1() FROM PUBLIC,anon,authenticated,service_role;
@@ -187,20 +188,20 @@ END $dispatch$;
 
 CREATE FUNCTION public.flush_public_spectator_broadcast_v2(p_limit integer DEFAULT 100) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE row record; components jsonb; revisions jsonb; locked_ids jsonb; revocations jsonb; sent integer:=0;
+DECLARE row record; components jsonb; revisions jsonb; revocations jsonb; sent integer:=0;
 BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501'; END IF;
  IF p_limit NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION 'invalid_limit'; END IF;
  -- One tournament advisory lock prevents two flushers splitting a component set.
  FOR row IN SELECT DISTINCT tournament_id FROM spectator_projection_v2.broadcast_pending_v1 ORDER BY tournament_id LIMIT p_limit LOOP
   IF NOT pg_try_advisory_xact_lock(hashtextextended('public-broadcast:'||row.tournament_id::text,0)) THEN CONTINUE; END IF;
-  WITH locked AS MATERIALIZED (SELECT * FROM spectator_projection_v2.broadcast_pending_v1 WHERE tournament_id=row.tournament_id ORDER BY component FOR UPDATE SKIP LOCKED)
-   SELECT jsonb_agg(DISTINCT component ORDER BY component),jsonb_object_agg(component,revision ORDER BY changed_at,source_txid),
-    jsonb_agg(jsonb_build_array(component,source_txid::text)) INTO components,revisions,locked_ids FROM locked;
+  WITH locked AS MATERIALIZED (SELECT * FROM spectator_projection_v2.broadcast_pending_v1 WHERE tournament_id=row.tournament_id ORDER BY component,source_txid LIMIT 500 FOR UPDATE SKIP LOCKED),
+   removed AS (DELETE FROM spectator_projection_v2.broadcast_pending_v1 p USING locked l
+    WHERE p.tournament_id=l.tournament_id AND p.component=l.component AND p.source_txid=l.source_txid RETURNING p.*)
+   SELECT jsonb_agg(DISTINCT component ORDER BY component),jsonb_object_agg(component,revision ORDER BY changed_at,source_txid)
+    INTO components,revisions FROM removed;
   IF components IS NULL THEN CONTINUE; END IF;
   PERFORM realtime.send(jsonb_build_object('tournamentId',row.tournament_id,'components',components,'revisions',revisions),'changed','public:tournament-viewer-v2:'||row.tournament_id::text,false);
-  DELETE FROM spectator_projection_v2.broadcast_pending_v1 p WHERE p.tournament_id=row.tournament_id
-    AND EXISTS(SELECT 1 FROM jsonb_array_elements(locked_ids) x WHERE x->>0=p.component AND x->>1=p.source_txid::text);
   sent:=sent+1;
  END LOOP;
  IF pg_try_advisory_xact_lock(hashtextextended('public-hud-revocation',0)) THEN

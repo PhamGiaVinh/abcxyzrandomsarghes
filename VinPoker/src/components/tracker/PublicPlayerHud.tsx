@@ -52,13 +52,17 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
     let pending=new AbortController(),attempt=0;
     void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud,observePublicHudRevocation}) => {
       if(controller.signal.aborted)return;
-      const load=()=>{
+      let frozen:PreparedPublicPlayerHudData|null=null;
+      const load=(reason:'verify'|'revoked'='verify')=>{
         pending.abort();pending=new AbortController();const owned=++attempt;
-        setResult(null);setError(false);setPreparing(false);
+        if(reason==='revoked'){frozen=null;setResult(null);}
+        setError(false);setPreparing(false);
         void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal).then(value=>{
-          if(!controller.signal.aborted&&owned===attempt)setResult(value);
+          if(!controller.signal.aborted&&owned===attempt){
+            if(!frozen||frozen.accessRevision!==value.accessRevision){frozen=value;setResult(value);}
+          }
         }).catch(reason=>{
-          if(!controller.signal.aborted&&owned===attempt){setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
+          if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
         });
       };
       unsubscribe=observePublicHudRevocation(tournamentId,load);

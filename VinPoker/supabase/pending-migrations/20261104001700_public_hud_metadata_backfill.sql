@@ -31,7 +31,8 @@ BEGIN
     END IF;
     IF source.id IS NOT NULL AND source.verified_by_admin THEN
       IF source.prize<0 OR source.prize<>trunc(source.prize) OR source.prize>9007199254740991 THEN RAISE EXCEPTION 'invalid_verified_prize'; END IF;
-      INSERT INTO tracker_analytics_v1.result_contributions VALUES(p_entity,source.player_id,source.prize,v_version);
+      INSERT INTO tracker_analytics_v1.result_contributions(result_id,player_id,prize,version,tournament_name,event_date,position,total_entries)
+      VALUES(p_entity,source.player_id,source.prize,v_version,source.tournament_name,source.event_date,source.position,source.total_entries);
       UPDATE tracker_analytics_v1.player_totals SET winnings=winnings+source.prize,result_count=result_count+1,
         revision=nextval('tracker_analytics_v1.revision_seq'),computed_at=clock_timestamp()
         WHERE player_id=source.player_id AND player_totals.version=v_version;
