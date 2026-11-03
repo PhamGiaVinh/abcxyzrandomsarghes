@@ -70,7 +70,9 @@ private schema/worker and independent shadow coverage before cutover, retaining
 the prior version. Do not overwrite v1 counters with a new algorithm.
 
 Rollback disables the new read/worker switches and cron schedules first,
-restores the reviewed previous Edge/frontend revision and the captured spectator
-function definitions as a controlled migration. Retain all source and audit
+restores the reviewed previous spectator worker/frontend revision and captured
+spectator function definitions as a controlled migration. Keep the bounded
+public HUD compatibility adapter; never restore its lifetime raw-scan endpoint.
+Retain all source and audit
 rows and derived evidence for diagnosis. A disabled/unprepared read is explicit
 unavailable/warming; it must never silently scan lifetime raw history.
