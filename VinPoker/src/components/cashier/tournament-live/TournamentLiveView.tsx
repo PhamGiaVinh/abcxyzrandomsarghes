@@ -1,5 +1,5 @@
 import { useTournamentTableAppearance } from "@/components/tracker/useTournamentTableAppearance";
-import { PublicPlayerHud } from '@/components/tracker/PublicPlayerHud';
+import { lazy, Suspense } from 'react';
 import { useState, useEffect, useMemo, useRef, useCallback, type ComponentProps } from "react";
 import { TrackerViewerCardProvider, TrackerCardStyleToggle } from "@/components/tracker/TrackerCardStyle";
 import { FEATURES } from "@/lib/featureFlags";
@@ -76,6 +76,8 @@ import { parsePublicTableCurrentResponse,parsePublicParticipationSummary } from 
 import { loadPublicCurrentTable } from "./viewer-hub/loadPublicCurrentTable";
 import { TableHistoryPanel } from "./viewer-hub/TableHistoryPanel";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+
+const PublicPlayerHud = lazy(() => import('@/components/tracker/PublicPlayerHud').then(module => ({default: module.PublicPlayerHud})));
 
 const SOUND_KINDS = new Set<string>([
   "fold", "check", "call", "bet", "raise", "all_in", "post_sb", "post_bb", "post_ante",
@@ -2172,7 +2174,7 @@ function TournamentLiveViewContent({
               hideUnrecordedHoleCards={spectator && !isReplay && tableDisplayState === "last_completed"}
             />
           )}
-          {spectator && <PublicPlayerHud tournamentId={tournamentId} playerId={hudPlayerId} onClose={() => setHudPlayerId(null)} />}
+          {spectator && hudPlayerId && <Suspense fallback={<p role="status">Đang mở hồ sơ người chơi…</p>}><PublicPlayerHud tournamentId={tournamentId} playerId={hudPlayerId} onClose={() => setHudPlayerId(null)} /></Suspense>}
           {isReplay && selectedReplayHand && !(spectator && FEATURES.liveReplayHud) && (
             <ReplayScrubber
               key={selectedReplayHand.hand_id ?? `hand-${selectedReplayHand.hand_number}`}

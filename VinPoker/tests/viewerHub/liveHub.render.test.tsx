@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useState, type ReactNode } from "react";
+import { lazy, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { fireEvent, render, cleanup } from "@testing-library/react";
@@ -27,6 +27,10 @@ vi.mock("@/components/cashier/tournament-live/viewer-hub/useLiveTrackerData", ()
 
 vi.mock("@/components/cashier/tournament-live/viewer-hub/useCompletedHandsFeed", () => ({
   useCompletedHandsFeed: () => ({ items: [], loading: false, hasMore: false, loadMore: vi.fn() }),
+}));
+
+vi.mock("@/components/cashier/tournament-live/viewer-hub/usePublicSpectatorSnapshot", () => ({
+  usePublicSpectatorSnapshot: () => ({ snapshot: null, loading: false, networkError: false }),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
@@ -106,6 +110,22 @@ describe("Viewer Event Hub — header / featured card", () => {
 });
 
 describe("LiveHub — event-tabs layout (liveEventTabs ON, legacy feed)", () => {
+  it("does not load viewer code on the overview and keeps the event header while a replay chunk loads", async () => {
+    let finish!: (value: { default: (props: { spectator?: boolean; initialReplayHandNumber?: number | null }) => ReactNode }) => void;
+    const load = vi.fn(() => new Promise<{ default: (props: { spectator?: boolean; initialReplayHandNumber?: number | null }) => ReactNode }>(resolve => { finish = resolve; }));
+    const Viewer = lazy(load);
+    const hub = (hand: number | null) => <QueryProvider><MemoryRouter>
+      <LiveHub tournamentId="t1" title="Daily Turbo" initialReplayHandNumber={hand} onShare={noop}><Viewer /></LiveHub>
+    </MemoryRouter></QueryProvider>;
+    const view = render(hub(null));
+    expect(load).not.toHaveBeenCalled();
+    view.rerender(hub(7));
+    expect(view.getByText("Daily Turbo")).toBeInTheDocument();
+    expect(await view.findByRole("status")).toHaveTextContent("Đang mở bàn");
+    finish({ default: ({ spectator, initialReplayHandNumber }) => <div>FELT {String(spectator)} #{initialReplayHandNumber}</div> });
+    expect(await view.findByText("FELT true #7")).toBeInTheDocument();
+  });
+
   it("renders the 5 tabs and does NOT mount the felt at rest (default = Cập nhật)", () => {
     const html = wrap(
       <LiveHub tournamentId="t1" title="Daily Turbo" onShare={noop}>

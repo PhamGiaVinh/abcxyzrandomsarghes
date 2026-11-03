@@ -33,3 +33,20 @@ it('opens Vietnamese metric help with the actual opportunities and switches expl
   await screen.findByRole('button',{name:'Giải thích VPIP'});
   expect(screen.getByText('TEST a')).toBeInTheDocument();
 });
+
+it('keeps tour history visible while lifetime metrics load, without showing the tour-only percentages',async()=>{
+ let resolve!:(value:unknown)=>void;
+ const data=result('a');data.analytics.metrics.vpip={...metric,percentage:99,numerator:99,denominator:100,sampleSize:100};
+ load.mockImplementation((_t:unknown,_p:unknown,_s:unknown,_progress:unknown,onCurrent:(data:unknown)=>void)=>{onCurrent(data);return new Promise(done=>{resolve=done;});});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
+ await screen.findByText('TEST a');
+ expect(screen.getByText(/Bạn có thể xem lịch sử và replay/)).toBeInTheDocument();
+ expect(screen.queryByText('99%')).not.toBeInTheDocument();
+ resolve(data);await screen.findByText('99%');
+ expect(screen.queryByText(/Bạn có thể xem lịch sử và replay/)).not.toBeInTheDocument();
+});
+it('preserves loaded tour history if lifetime aggregation fails',async()=>{
+ load.mockImplementation((_t:unknown,_p:unknown,_s:unknown,_progress:unknown,onCurrent:(data:unknown)=>void)=>{onCurrent(result('a'));return Promise.reject(new Error('read failed'));});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
+ await screen.findByRole('alert');expect(screen.getByText('TEST a')).toBeInTheDocument();expect(screen.queryByText('0%')).not.toBeInTheDocument();
+});

@@ -54,29 +54,52 @@ export function combinePublicHudAnalytics(pages:PublicPlayerHudData['analytics']
   for(const key of unavailable) if(metrics[key]) metrics[key]={...metrics[key],numerator:0,denominator:0,sampleSize:0,percentage:null};
   return {handsObserved:pages.reduce((n,p)=>n+p.handsObserved,0),metrics,unavailableMetrics:[...unavailable]};
 }
-export async function loadPublicPlayerHud(tournamentId:string,playerId:string,signal:AbortSignal,onProgress?:(hands:number)=>void):Promise<PublicPlayerHudData> {
-  const current=await loadPublicPlayerHudPage(tournamentId,playerId,signal);
-  if(current.scope!=='current-tournament') throw new Error('PUBLIC_HUD_PAGE_MISMATCH');
-  const manifest=async(asOf?:string)=>{
-    const {data,error}=await supabase.functions.invoke('public-player-hud',{body:{tournament_id:tournamentId,player_id:playerId,mode:'manifest',as_of:asOf},signal});
-    if(error) throw error;
-    if(data?.tournamentId!==tournamentId||data?.playerId!==playerId||!Number.isFinite(Date.parse(data.asOf))||(asOf&&data.asOf!==asOf)||!/^[a-f0-9]{64}$/.test(data.digest)) throw new Error('PUBLIC_HUD_INVALID_MANIFEST');
-    return data as {asOf:string;digest:string};
-  };
-  if(signal.aborted) throw new Error('aborted');
-  const before=await manifest();
-  let analytics:PublicPlayerHudData['analytics']={handsObserved:0,metrics:{},unavailableMetrics:[]};
-  let after:string|undefined,asOf=before.asOf,total=0,omitted=0;
-  do {
-    if(signal.aborted) throw new Error('aborted');
-    const page=await loadPublicPlayerHudPage(tournamentId,playerId,signal,{mode:'lifetime',after,asOf});
-    if(page.scope!=='all-public-tournaments' || (asOf && page.asOf!==asOf) || (page.nextCursor && after && page.nextCursor<=after)) throw new Error('PUBLIC_HUD_PAGE_MISMATCH');
-    asOf=page.asOf;
-    analytics=combinePublicHudAnalytics([analytics,page.analytics]);
-    total+=page.sampledTournamentHands;omitted+=page.omittedHands??0;onProgress?.(total);
-    after=page.nextCursor??undefined;
-  } while(after);
-  const checked=await manifest(asOf);
-  if(checked.digest!==before.digest) throw new Error('PUBLIC_HUD_HISTORY_CHANGED');
-  return {...current,analytics,lifetimeHands:total,lifetimeAsOf:asOf,omittedHands:omitted};
+export async function loadPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal,onProgress?:(hands:number)=>void,onCurrent?:(data:PublicPlayerHudData)=>void):Promise<PublicPlayerHudData> {
+  if(requestSignal.aborted) throw new Error('aborted');
+  const controller=new AbortController();
+  const signal=controller.signal;
+  const abort=()=>controller.abort();
+  requestSignal.addEventListener('abort',abort,{once:true});
+  try {
+    // These independent reads share no cursor. Publish only the current-tour
+    // history early; lifetime counters remain hidden until both manifests agree.
+    const currentTask=loadPublicPlayerHudPage(tournamentId,playerId,signal).then(current=>{
+      if(current.scope!=='current-tournament') throw new Error('PUBLIC_HUD_PAGE_MISMATCH');
+      if(signal.aborted) throw new Error('aborted');
+      onCurrent?.(current);
+      return current;
+    });
+    const lifetimeTask=(async()=>{
+      const manifest=async(asOf?:string)=>{
+        const {data,error}=await supabase.functions.invoke('public-player-hud',{body:{tournament_id:tournamentId,player_id:playerId,mode:'manifest',as_of:asOf},signal});
+        if(error) throw error;
+        if(data?.tournamentId!==tournamentId||data?.playerId!==playerId||!Number.isFinite(Date.parse(data.asOf))||(asOf&&data.asOf!==asOf)||!/^[a-f0-9]{64}$/.test(data.digest)) throw new Error('PUBLIC_HUD_INVALID_MANIFEST');
+        return data as {asOf:string;digest:string};
+      };
+      if(signal.aborted) throw new Error('aborted');
+      const before=await manifest();
+      let analytics:PublicPlayerHudData['analytics']={handsObserved:0,metrics:{},unavailableMetrics:[]};
+      let after:string|undefined,asOf=before.asOf,total=0,omitted=0;
+      do {
+        if(signal.aborted) throw new Error('aborted');
+        const page=await loadPublicPlayerHudPage(tournamentId,playerId,signal,{mode:'lifetime',after,asOf});
+        if(page.scope!=='all-public-tournaments' || (asOf && page.asOf!==asOf) || (page.nextCursor && after && page.nextCursor<=after)) throw new Error('PUBLIC_HUD_PAGE_MISMATCH');
+        asOf=page.asOf;
+        analytics=combinePublicHudAnalytics([analytics,page.analytics]);
+        if(signal.aborted) throw new Error('aborted');
+        total+=page.sampledTournamentHands;omitted+=page.omittedHands??0;onProgress?.(total);
+        after=page.nextCursor??undefined;
+      } while(after);
+      const checked=await manifest(asOf);
+      if(checked.digest!==before.digest) throw new Error('PUBLIC_HUD_HISTORY_CHANGED');
+      if(signal.aborted) throw new Error('aborted');
+      return {analytics,lifetimeHands:total,lifetimeAsOf:asOf,omittedHands:omitted};
+    })();
+    const [current,lifetime]=await Promise.all([currentTask,lifetimeTask]);
+    return {...current,...lifetime};
+  } finally {
+    // A failure in either branch must cancel the sibling read too.
+    controller.abort();
+    requestSignal.removeEventListener('abort',abort);
+  }
 }
