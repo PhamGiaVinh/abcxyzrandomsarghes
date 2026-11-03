@@ -15,7 +15,7 @@ SELECT jsonb_build_object(
  'capturedRollbackDefinitions',(SELECT count(*) FROM spectator_projection_v2.compact_generation_originals_v1),
  'boundedCurrentHandIndexes',(SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexname IN ('idx_public_hand_live_latest_v1','idx_public_hand_completed_latest_v1')),
  'capturedReadPlans',(SELECT count(*) FROM spectator_projection_v2.read_plan_originals_v1),
- 'readPlanDefinitionsMatch',(SELECT count(*)=2 AND bool_and(md5(replace(pg_get_functiondef(signature::regprocedure),chr(13),''))=wrapped_definition_hash) FROM spectator_projection_v2.read_plan_originals_v1),
+ 'readPlanDefinitionsMatch',(SELECT count(*)=4 AND bool_and(md5(replace(pg_get_functiondef(signature::regprocedure),chr(13),''))=wrapped_definition_hash) FROM spectator_projection_v2.read_plan_originals_v1),
  'readPlanPrivateBrowserGrants',(SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema='spectator_projection_v2' AND table_name='read_plan_originals_v1' AND grantee IN ('anon','authenticated','PUBLIC','service_role')),
  'dispatcherUrlReady',coalesce(current_setting('app.supabase_url',true)='https://orlesggcjamwuknxwcpk.supabase.co',false),
  'workerVaultCredentialPresent',EXISTS(SELECT 1 FROM vault.decrypted_secrets WHERE name='PUBLIC_HUD_WORKER_SECRET' AND length(decrypted_secret)>0),

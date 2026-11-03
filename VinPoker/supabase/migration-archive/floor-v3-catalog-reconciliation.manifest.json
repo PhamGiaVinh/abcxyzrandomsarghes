@@ -9868,6 +9868,12 @@
       "filename": "20261104002200_public_tracker_read_plan_reuse.sql",
       "sha256": "b9f59c22a9004aa888f88c45523e8f55f204f6345ae46a9131212fb5aa137eae",
       "reason": "Tracker public read plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002300",
+      "filename": "20261104002300_tracker_participation_read_plan_reuse.sql",
+      "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
+      "reason": "Tracker canonical participation plan reuse; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [

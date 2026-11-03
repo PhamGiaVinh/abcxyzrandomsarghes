@@ -23,10 +23,7 @@ let baselineWriter;
 initialize({seedHistoricalSource(){
  sql(readFileSync('tests/publicHud/spectator-generation.fixture.sql','utf8'));
  sql(readFileSync('tests/publicHud/scale-runtime.fixture.sql','utf8'));
- const functionSlice=(file,begin,end)=>{const source=readFileSync(file,'utf8'),start=source.indexOf(begin),stop=source.indexOf(end,start);assert.ok(start>=0&&stop>start);return source.slice(start,stop);};
- sql(functionSlice('supabase/migrations/20270128000031_tournament_participation_current_scope_v1.sql','CREATE OR REPLACE FUNCTION floor_private.tournament_participation_v1','REVOKE ALL ON FUNCTION floor_private.tournament_participation_v1'));
- sql(functionSlice('supabase/migrations/20270128000090_public_clock_projection_v1.sql','CREATE FUNCTION public.get_public_tournament_clock_summary','CREATE FUNCTION public.get_public_tournament_results'));
- sql(functionSlice('supabase/migrations/20260608000001_tournament_live_tracker.sql','CREATE OR REPLACE FUNCTION public.get_tournament_clock','-- 13. CREATE RPC'));
+ sql(readFileSync('tests/publicHud/scale.clock-readers.fixture.sql','utf8'));
  sql(`CREATE FUNCTION public.fixture_scale_uuid(prefix text,n bigint) RETURNS uuid LANGUAGE sql IMMUTABLE AS $$ SELECT (prefix||'-0000-4000-8000-'||lpad(to_hex(n),12,'0'))::uuid $$;
   INSERT INTO public.tournaments(id) SELECT public.fixture_scale_uuid('10000000',i) FROM generate_series(1,20) i;
   INSERT INTO public.table_sessions(id,tournament_id) SELECT public.fixture_scale_uuid('60000000',i),public.fixture_scale_uuid('10000000',i) FROM generate_series(1,20) i;

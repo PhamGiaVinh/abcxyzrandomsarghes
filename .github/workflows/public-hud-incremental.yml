@@ -62,7 +62,7 @@ jobs:
         run: deno check supabase/functions/public-hud-projector-v1/index.ts supabase/functions/public-spectator-projector-v2/index.ts
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize
-      - name: Exact eight-migration release guards and atomic receipts
+      - name: Exact nine-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |

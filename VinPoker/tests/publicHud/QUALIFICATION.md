@@ -103,7 +103,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The eight migrations `20261104001500` through `20261104002200` are promoted
+The nine migrations `20261104001500` through `20261104002300` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -115,7 +115,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-eight exact manifest entries, each SQL and new ledger receipt atomically; stop
+nine exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -131,6 +131,19 @@ The private captured definitions are inaccessible to browser/service roles.
 `tests/publicHud/read-plans.forward-rollback.sql` is a recovery template for a
 new reviewed/versioned controlled migration if needed; default HUD rollback
 can retain the transparent plan wrappers.
+
+Migration 023 applies the same guarded plan-only reuse to the measured private
+participation helper used by the public clock summary. Its exact canonical
+definition and display dependency are pinned; its private ACL stays unchanged.
+The scale fixture includes all four exact production clock/participation/display
+reader definitions instead of the older pre-display participation body. Native
+tests compare participation JSON for display changes, waiting, busted, bagged
+and finished entries; the actual anonymous/authenticated clock caller observes
+new stack/count values, the other tour and withdrawal after warming both plans.
+The public clock-summary CTE materializes that STABLE participation value once
+per tournament within the request snapshot, instead of repeating it for each
+selected counter. It keeps its SQL language, result shape, OID, owner and ACL.
+The recovery template restores all four captured reader definitions.
 
 Install observers with reads/worker off; deploy the matching spectator and HUD
 workers before resuming the spectator cron. Verify the exact production
