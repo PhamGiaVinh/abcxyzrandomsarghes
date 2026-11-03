@@ -24,15 +24,16 @@ DO $$DECLARE tour uuid:='f2766bdd-5c30-4dee-bb3e-812f32d37172';club uuid;actor u
  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
  r:=public.get_owner_player_financial_report_v1(club,member);s:=r->'selected';
  ASSERT (s->>'cost')::numeric=0 AND s->>'roi' IS NULL,s::text;
- INSERT INTO public.cashier_buyin_movements(club_id,tournament_id,registration_id,shift_id,direction,method,purpose,amount,applied_amount,actor_id,idempotency_key)
- VALUES(club,tour,reg,shift,'in','cash','buyin',60000,60000,actor,'LOCAL-FINANCE-1-'||reg);
+ INSERT INTO public.cashier_buyin_movements(club_id,tournament_id,registration_id,shift_id,direction,method,purpose,amount,applied_amount,actor_id,idempotency_key,created_at)
+ VALUES(club,tour,reg,shift,'in','cash','buyin',60000,60000,actor,'LOCAL-FINANCE-1-'||reg,now()-interval '1 day');
  r:=public.get_owner_player_financial_report_v1(club,member);s:=r->'selected';
  ASSERT (s->>'cost')::numeric=60000 AND s->>'rake' IS NULL AND (s->>'roi')::numeric=-100,s::text;
  INSERT INTO public.cashier_buyin_movements(club_id,tournament_id,registration_id,shift_id,direction,method,purpose,amount,applied_amount,actor_id,idempotency_key)
  VALUES(club,tour,reg,shift,'in','cash','buyin',50000,50000,actor,'LOCAL-FINANCE-2-'||reg);
  r:=public.get_owner_player_financial_report_v1(club,member);s:=r->'selected';
  ASSERT (s->>'cost')::numeric=110000 AND (s->>'rake')::numeric=10000 AND (s->>'profit')::numeric=-110000 AND (s->>'roi')::numeric=-100,s::text;
- ASSERT (s->>'paidBuys')::integer=1 AND (s->>'visits')::integer=1 AND (s->>'averageSpend')::numeric=110000;
+ ASSERT (s->>'paidBuys')::integer=1 AND (s->>'visits')::integer=2 AND (s->>'averageSpend')::numeric=110000;
+ ASSERT (s->>'lastPaidAt')::timestamptz>now()-interval '1 hour','last collection must include the second-day top-up';
  ASSERT jsonb_array_length(r->'history')=1 AND jsonb_array_length(r->'history'->0->'movements')=2,'receipt join multiplied cost';
  INSERT INTO public.cashier_refund_requests(id,club_id,tournament_id,registration_id,amount,status,reason,requested_by,paid_by,paid_at)
  VALUES(refund,club,tour,reg,110000,'paid','LOCAL fixture refund',actor,actor,now());

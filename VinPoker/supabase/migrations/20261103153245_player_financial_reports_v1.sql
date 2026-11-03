@@ -262,9 +262,7 @@ BEGIN
    count(*) FILTER(WHERE x->>'verified'='false') unavailable,
    count(*) FILTER(WHERE x->>'kind' IN ('buyin','reentry') AND x->>'rake' IS NULL) rake_unavailable,
    count(*) FILTER(WHERE x->>'kind' IN ('buyin','reentry') AND (x->>'grossPaid')::numeric>0) paid_buys,
-   count(DISTINCT x->>'tournamentId') FILTER(WHERE x->>'kind' IN ('buyin','reentry') AND (x->>'grossPaid')::numeric>0) tours,
-   count(DISTINCT ((x->>'paidAt')::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) visits,
-   max(x->>'paidAt') last_paid
+   count(DISTINCT x->>'tournamentId') FILTER(WHERE x->>'kind' IN ('buyin','reentry') AND (x->>'grossPaid')::numeric>0) tours
   FROM (SELECT customer_ref,max(name) name FROM roster WHERE customer_ref IS NOT NULL GROUP BY customer_ref) z
   LEFT JOIN LATERAL jsonb_array_elements(facts) x ON x->>'customerRef'=z.customer_ref::text GROUP BY z.customer_ref
  ), rows AS (
@@ -273,7 +271,13 @@ BEGIN
    'fnbNet',(SELECT CASE WHEN NOT coalesce(bool_or(x->>'verified' IS DISTINCT FROM 'true'),false) THEN coalesce(sum((x->>'net')::numeric),0) END
     FROM jsonb_array_elements(fnb_facts) x WHERE x->>'customerRef'=s.customer_ref::text),
    'profit',CASE WHEN unavailable=0 THEN paid-cost END,'roi',CASE WHEN unavailable=0 AND cost>0 THEN round((paid-cost)*100/cost,4) END,
-   'unavailableCount',unavailable,'paidBuys',paid_buys,'tournaments',tours,'visits',visits,'lastPaidAt',last_paid,
+   'unavailableCount',unavailable,'paidBuys',paid_buys,'tournaments',tours,
+   'visits',(SELECT count(DISTINCT ((m->>'at')::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
+    FROM jsonb_array_elements(facts) f CROSS JOIN LATERAL jsonb_array_elements(coalesce(f->'movements','[]')) m
+    WHERE f->>'customerRef'=s.customer_ref::text AND m->>'kind'='buyin' AND (m->>'amount')::numeric>0),
+   'lastPaidAt',(SELECT max((m->>'at')::timestamptz)
+    FROM jsonb_array_elements(facts) f CROSS JOIN LATERAL jsonb_array_elements(coalesce(f->'movements','[]')) m
+    WHERE f->>'customerRef'=s.customer_ref::text AND m->>'kind'='buyin' AND (m->>'amount')::numeric>0),
    'averageSpend',CASE WHEN unavailable=0 AND paid_buys>0 THEN round(cost/paid_buys,0) END,
    'activeTournaments',(SELECT count(DISTINCT e.tournament_id) FROM public.tournament_entries e JOIN public.tournaments t ON t.id=e.tournament_id
     WHERE t.club_id=p_club_id AND t.deleted_at IS NULL AND t.status NOT IN ('completed','cancelled') AND e.status='seated'
