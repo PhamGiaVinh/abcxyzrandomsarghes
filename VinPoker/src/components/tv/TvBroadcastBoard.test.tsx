@@ -21,3 +21,7 @@ it('renders configured ranks and chip/BB values without fake currency conversion
  expect(screen.getByRole('heading',{name:'Places Paid'}).nextElementSibling).toHaveTextContent('2');
  expect(screen.getByText('50.000 (14 BB)')).toBeInTheDocument();expect(screen.getByText('1.000.000')).toBeInTheDocument();
 });
+it('counts actual paying positions rather than filling gaps or duplicating rows',()=>{
+ render(<TvBroadcastBoard data={{...data,prizes:[{position:1,amount:1000000},{position:3,amount:500000},{position:3,amount:500000}]}}/>);
+ expect(screen.getByRole('heading',{name:'Places Paid'}).nextElementSibling).toHaveTextContent('2');
+});

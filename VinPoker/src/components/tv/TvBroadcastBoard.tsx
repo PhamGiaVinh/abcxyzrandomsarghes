@@ -10,13 +10,13 @@ import { useTvStackRange } from '@/hooks/useTvStackRange';
 export function TvBroadcastBoard({ data }: { data: TvData }) {
   const clock = mapTvDataToClock(data);
   const range = useTvStackRange(data.tournamentId, data.playersRemaining, data.totalChips);
-  const paid = data.prizes.length ? Math.max(...data.prizes.map(p => p.position)) : null;
+  const paid = data.prizes.length ? new Set(data.prizes.filter(p => p.amount > 0 && Number.isSafeInteger(p.position) && p.position > 0).map(p => p.position)).size : null;
   const stack = (value: number | null | undefined) => {
     if (value == null) return '—';
     const bb = bigBlindsOf(value, data.currentLevel?.bigBlind);
     return `${formatChips(value)}${bb == null ? '' : ` (${bb} BB)`}`;
   };
-  return <section className="tv-broadcast" aria-label="Bảng thông số giải đấu" style={data.clubCoverUrl ? {backgroundImage:`linear-gradient(#171305ed,#171305ed),url("${data.clubCoverUrl}")`,backgroundSize:'cover'} : undefined}>
+  return <section className="tv-broadcast" aria-label="Bảng thông số giải đấu" style={data.clubCoverUrl ? {backgroundImage:`linear-gradient(#171305ed,#171305ed),url("${data.clubCoverUrl}")`,backgroundSize:'cover',backgroundPosition:data.brandingLayout ? `${data.brandingLayout.backgroundX}% ${data.brandingLayout.backgroundY}%` : 'center'} : undefined}>
     {data.brandingLayout && <TvBrandingOverlay layout={data.brandingLayout} logoUrl={data.clubLogoUrl} brandName={data.brandName ?? data.clubName} />}
     <header className="tv-broadcast-title">
       {data.clubLogoUrl && !data.brandingLayout && <img src={data.clubLogoUrl} alt={data.clubName} />}
