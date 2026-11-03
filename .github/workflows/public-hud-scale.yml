@@ -8,6 +8,9 @@ on:
       edge_parallelism:
         type: string
         default: '16'
+      edge_policy:
+        type: string
+        default: 'per_worker'
   pull_request:
     paths:
       - '.github/workflows/public-hud-scale.yml'
@@ -27,6 +30,11 @@ on:
         type: choice
         options: ['16', '8', '64']
         default: '16'
+      edge_policy:
+        description: 'Official isolated runtime supervision; unchanged CPU/wall caps'
+        type: choice
+        options: ['per_worker', 'per_request']
+        default: 'per_worker'
 permissions:
   contents: read
 concurrency:
@@ -44,6 +52,7 @@ jobs:
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
       PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
+      PUBLIC_HUD_SCALE_EDGE_POLICY: ${{ inputs.edge_policy || 'per_worker' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4

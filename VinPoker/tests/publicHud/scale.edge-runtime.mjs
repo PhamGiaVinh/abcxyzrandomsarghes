@@ -10,6 +10,8 @@ import {parseEnv} from 'node:util';
 const [mode,root,project]=process.argv.slice(2);
 const parallelism=Number(process.env.PUBLIC_HUD_SCALE_EDGE_PARALLELISM??16);
 assert.ok([8,16,64].includes(parallelism),'Bounded isolated pool setting required');
+const policy=process.env.PUBLIC_HUD_SCALE_EDGE_POLICY??'per_worker';
+assert.ok(['per_worker','per_request'].includes(policy),'Official isolated supervision policy required');
 const runtimeImage='ghcr.io/supabase/edge-runtime:v1.77.9@sha256:6b850a2ccf0bf50ecac9accff8098095cd191c389c2a53c59b857aa0f53a8343';
 assert.ok(['capture','apply'].includes(mode));
 assert.match(root??'',/^\/tmp\/vinpoker-hud-stack-[A-Za-z0-9]+$/);
@@ -51,7 +53,7 @@ if(mode==='capture'){
  try{const current=inspect();assert.equal(current.Id,original.Id);await request('DELETE',`/containers/${original.Id}?force=true`);}catch(error){
   if(error?.code!=='ENOENT'&&!String(error?.stderr??'').includes('No such object'))throw error;
  }
- const config={...original.Config,Image:runtimeImage,Entrypoint:['sh','-c',shell.replace('--policy=per_worker',`--policy=per_request --max-parallelism=${parallelism}`)],
+ const config={...original.Config,Image:runtimeImage,Entrypoint:['sh','-c',shell.replace('--policy=per_worker',`--policy=${policy} --max-parallelism=${parallelism}`)],
   HostConfig:original.HostConfig,NetworkingConfig:{EndpointsConfig:{[original.HostConfig.NetworkMode]:{Aliases:[name]}}}};
  const created=await request('POST','/containers/create?name='+encodeURIComponent(name),config);
  assert.match(created.Id,/^[a-f0-9]{64}$/);
@@ -63,7 +65,7 @@ if(mode==='capture'){
  for(const key of ['Memory','MemorySwap','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','Ulimits'])assert.deepEqual(actual.HostConfig[key],original.HostConfig[key]);
  execFileSync('docker',['exec',`supabase_kong_${project}`,'kong','reload'],{stdio:['ignore','pipe','pipe']});
  writeFileSync('output/hud-scale/runtime-policy.json',JSON.stringify({kind:'ISOLATED_RUNTIME_CONFIGURATION_NOT_HOSTED_TOPOLOGY',image:runtimeImage,imageId:actual.Image,originalImage:original.Config.Image,originalImageId:original.Image,
-  policy:'per_request',maxParallelismPerFunction:parallelism,workerLimits:'unchanged CLI gateway: 256MB, CPU soft1000ms/hard2000ms, wall400s',
+  policy,maxParallelismPerFunction:parallelism,workerLimits:'unchanged CLI gateway: 256MB, CPU soft1000ms/hard2000ms, wall400s',
   actualConfigurationVerified:true,resourceCaps:Object.fromEntries(['Memory','MemorySwap','NanoCpus','CpuQuota','CpuPeriod','PidsLimit','Ulimits'].map(key=>[key,actual.HostConfig[key]])),
-  originalGatewaySha256:digest(shell),gatewaySha256:digest(actual.Config.Entrypoint[2]),reason:'Stable v1.77.9 worker-pool notification fix (supabase/edge-runtime#763); per-request CPU accounting'},null,2));
+  originalGatewaySha256:digest(shell),gatewaySha256:digest(actual.Config.Entrypoint[2]),reason:'Stable v1.77.9 worker-pool notification fix (supabase/edge-runtime#763); compare official supervision policies with the same caps'},null,2));
 }

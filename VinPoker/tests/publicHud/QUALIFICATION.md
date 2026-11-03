@@ -49,8 +49,8 @@ an advanced generation and a current projection; rounded timestamps alone are
 insufficient. Coalesced reads may finish within the bounded 10-second tail,
 without dropping late/missing samples from the latency/error denominator.
 
-The local runtime uses `per_request` supervision and an explicitly recorded
-pool per function. The bounded diagnostic settings are 8, 16 or 64 (default 16);
+The local runtime records an explicit official supervision policy (`per_worker`
+or `per_request`, default `per_worker`) and pool per function. The bounded diagnostic settings are 8, 16 or 64 (default 16);
 pin one setting before running both full qualification scenarios. Earlier
 64-worker failures are retained. This tunes isolated two-core resource use,
 not application workload or hosted quotas. The exact CLI-generated gateway, 256MB per worker,
@@ -62,12 +62,17 @@ https://github.com/supabase/edge-runtime/pull/763. The CLI stays on 2.101.0;
 before/after image IDs are recorded, while gateway code, environment, mounts
 and configured resource/time caps are verified unchanged (apart from the
 explicit policy/pool options). Earlier v1.73.13 failures remain retained.
-No production setting changes. This
-matches per-request CPU accounting, not the topology of the hosted service:
+No production setting changes. Neither isolated policy proves the topology or
+capacity of the hosted service:
 https://supabase.com/docs/guides/functions/limits and
 https://github.com/supabase/edge-runtime/blob/v1.73.13/crates/base/src/worker/supervisor/strategy_per_request.rs.
 The original `per_worker` probe failures are retained: cumulative worker CPU
 retirement caused `WorkerAlreadyRetired`/HTTP500 under concurrent HUD reads.
+The v1.77.9 `per_request` 1,000-viewer probe 41741167295 also failed during
+global withdrawal/revalidation, despite all initial HUD reads succeeding. Its
+request backlog remained while PostgreSQL was largely idle. The policy comparison
+tests worker reuse/retirement and cancellation handling with unchanged caps;
+it does not relax timeout, latency, recovery or error acceptance gates.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 
