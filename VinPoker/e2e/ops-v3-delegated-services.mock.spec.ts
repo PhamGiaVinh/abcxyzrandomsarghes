@@ -1,3 +1,4 @@
+import { installOperationalDocument } from "./helpers/opsOperationalDocument";
 import { expect, test, type Page } from "@playwright/test";
 
 const clubId = "10000000-0000-4000-8000-000000000004";
@@ -89,58 +90,16 @@ async function installMockOpsSession(page: Page, observedRequests: string[]) {
   });
 }
 
-test("Chip Ops is responsive and only invokes its fixed read contract", async ({ page }) => {
-  const observedRequests: string[] = [];
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  await installMockOpsSession(page, observedRequests);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(`/ops/chip-ops?club=${clubId}&t=${tournamentId}`);
-
-  await expect(page.getByRole("main").getByText("READ_ONLY", { exact: true })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Giải đấu" })).toHaveValue(tournamentId);
-  await expect(page.getByText("450.000").first()).toBeVisible();
-  await expect(page.locator('[data-ops-action="chip-ops.refresh"]')).toBeVisible();
-  expect(pageErrors).toEqual([]);
-
-  for (const viewport of viewports) {
-    await page.setViewportSize(viewport);
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  }
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  const undersizedTargets = await page.locator("button, a, select").evaluateAll((elements) => elements
-    .filter((element) => {
-      const style = getComputedStyle(element);
-      return style.visibility !== "hidden" && style.display !== "none";
-    })
-    .map((element) => element.getBoundingClientRect())
-    .filter((rect) => rect.width > 0 && rect.height > 0)
-    .filter((rect) => rect.width < 44 || rect.height < 44));
-  expect(undersizedTargets).toEqual([]);
-
-  const moduleActions = await page.locator("[data-ops-action]").evaluateAll((elements) =>
-    elements.map((element) => element.getAttribute("data-ops-action")),
-  );
-  expect(moduleActions).toEqual(["chip-ops.refresh"]);
-  expect(observedRequests.some((request) => request.endsWith("/rpc/get_issued_chip_inventory"))).toBe(true);
-  expect([...new Set(observedRequests.filter((request) => /^POST /u.test(request)))].sort()).toEqual([
-    "POST /rest/v1/rpc/get_my_ops_capability_scope",
-    "POST /rest/v1/rpc/get_my_ops_global_capability",
-    "POST /rest/v1/rpc/get_issued_chip_inventory",
-  ].sort());
-});
-
-for (const route of ["/ops/fnb/counter", "/ops/fnb/serve", "/ops/fnb/kitchen", "/ops/fnb/admin", "/ops/marketing"]) {
-  test(`${route} remains disabled and mounts no service data hook`, async ({ page }) => {
+for (const [entry, destination] of [
+  ["/ops/chip-ops", "/chip-ops"], ["/ops/fnb", "/fnb/hub"], ["/ops/fnb/counter", "/fnb"],
+  ["/ops/fnb/serve", "/fnb/serve"], ["/ops/fnb/kitchen", "/fnb/kitchen"], ["/ops/fnb/admin", "/fnb/admin"], ["/ops/marketing", "/marketing"],
+]) {
+  test(entry + " opens its existing operational document without a mutation", async ({ page }) => {
     const observedRequests: string[] = [];
-    await installMockOpsSession(page, observedRequests);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${route}?club=${clubId}`);
-
-    await expect(page.getByRole("main").getByText("DISABLED", { exact: true })).toBeVisible();
-    await expect(page.locator("[data-ops-action]")).toHaveCount(0);
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    expect(observedRequests.some((request) => /fnb_|marketing_/u.test(request))).toBe(false);
+    await installMockOpsSession(page, observedRequests); await installOperationalDocument(page, destination);
+    await page.goto(entry + "?club=" + clubId + "&t=" + tournamentId);
+    await expect(page.getByRole("heading", { name: "Operational destination" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(destination + "$"));
+    expect(observedRequests.filter(request => /^POST /u.test(request) && !request.includes("/rpc/get_my_ops_"))).toEqual([]);
   });
 }

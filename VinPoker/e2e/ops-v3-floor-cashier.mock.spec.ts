@@ -1,3 +1,4 @@
+import { installOperationalDocument } from "./helpers/opsOperationalDocument";
 import { expect, test, type Page } from "@playwright/test";
 
 const clubId = "10000000-0000-4000-8000-000000000001";
@@ -262,26 +263,13 @@ test("Floor mode confirmation sends canonical session fences and displays pendin
   await expect(page.getByTestId("floor-table-control-mode-save")).toBeDisabled();
 });
 
-test("Cashier production surface is read-only and selected-club bound", async ({ page }) => {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  const writeRequests: string[] = [];
-  page.on("request", (request) => {
-    const pathname = new URL(request.url()).pathname;
-    if (
-      !["GET", "HEAD", "OPTIONS"].includes(request.method())
-      && !pathname.includes("/rpc/get_my_ops_")
-    ) writeRequests.push(request.url());
+test("Cashier opens its operational document without a money mutation", async ({ page }) => {
+  const writes: string[] = [];
+  page.on("request", request => { const path = new URL(request.url()).pathname;
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method()) && !path.includes("/rpc/get_my_ops_")) writes.push(path);
   });
-  await installMockOpsSession(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/ops/cashier?club=${clubId}`);
-
-  await page.waitForTimeout(1_000);
-  expect(pageErrors).toEqual([]);
-  await expect(page.getByRole("main").getByText("READ_ONLY", { exact: true })).toBeVisible();
-  await expect(page.getByText(/OPS MONEY GATE B/u)).toBeVisible();
-  await expect(page.locator('[data-ops-action="cashier.refresh"]')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(writeRequests.filter((url) => url.includes("/rest/v1/") || url.includes("/functions/v1/"))).toEqual([]);
+  await installMockOpsSession(page); await installOperationalDocument(page, "/cashier");
+  await page.goto('/ops/cashier?club=' + clubId);
+  await expect(page.getByRole("heading", { name: "Operational destination" })).toBeVisible();
+  await expect(page).toHaveURL(/\/cashier$/u); expect(writes).toEqual([]);
 });

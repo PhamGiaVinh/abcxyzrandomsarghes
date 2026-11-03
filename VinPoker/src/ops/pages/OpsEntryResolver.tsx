@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { Loader2, Search, ShieldAlert, ShieldX } from "lucide-react";
+import { OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
+import { DocumentRedirect } from "@/components/DocumentRedirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
@@ -58,6 +60,7 @@ export function OpsModuleGate({
   const workspace = useOpsWorkspace();
   const [params] = useSearchParams();
   const clubId = params.get("club");
+  const location = useLocation();
   const module = getOpsModule(capability);
   const allowedClubIds = capabilities.moduleClubIds(capability);
 
@@ -71,6 +74,22 @@ export function OpsModuleGate({
     return <OpsModuleStatus module={module} />;
   }
 
+  // Cross the document boundary only after this module and club are verified.
+  // Never import the player auth/client into Ops or carry a stale tournament/tab.
+  const operationalRoute = module.id === "fnb"
+    ? ({
+        "/ops/fnb/counter": "/fnb",
+        "/ops/fnb/serve": "/fnb/serve",
+        "/ops/fnb/kitchen": "/fnb/kitchen",
+        "/ops/fnb/admin": "/fnb/admin",
+      } as Record<string, string>)[location.pathname] ?? module.operationalRoute
+    : location.pathname === module.route ? module.operationalRoute : undefined;
+  const content = module.id === "cashier" && OPS_TOUR_CASHIER_ENABLED && location.pathname === module.route && clubId
+    ? <Navigate to={`/ops/cashier/tour?club=${encodeURIComponent(clubId)}`} replace />
+    : operationalRoute
+    ? <DocumentRedirect to={operationalRoute} preserveCurrentLocation={false} />
+    : children ?? <OpsModuleStatus module={module} />;
+
   if (!clubId) {
     if (!capabilities.isSuperAdmin && allowedClubIds.length === 1) {
       return <Navigate to={`${module.route}?club=${encodeURIComponent(allowedClubIds[0])}`} replace />;
@@ -78,14 +97,14 @@ export function OpsModuleGate({
     return <OpsClubPicker module={module} clubIds={allowedClubIds} />;
   }
 
-  if (allowedClubIds.includes(clubId)) return <>{children ?? <OpsModuleStatus module={module} />}</>;
+  if (allowedClubIds.includes(clubId)) return <>{content}</>;
   if (!capabilities.isSuperAdmin) {
     return <OpsAccessDenied message="CLB trên đường dẫn không thuộc phạm vi quyền của module này." />;
   }
 
   return (
     <SuperAdminClubGate clubId={clubId}>
-      {children ?? <OpsModuleStatus module={module} />}
+      {content}
     </SuperAdminClubGate>
   );
 }

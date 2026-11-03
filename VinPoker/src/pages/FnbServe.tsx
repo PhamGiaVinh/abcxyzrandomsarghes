@@ -1,3 +1,4 @@
+import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,14 +35,17 @@ function FnbServeInner() {
   const { loading: authLoading, isFnbServer, isFnbCashier, isClubOwner, isAdmin, isFnb } = useAuth();
   const { clubs, error: clubError, reload: reloadClubs } = useFnbClubs();
   const [clubId, setClubId] = useState("");
+  const access = useOperationalCapabilities();
+  const activeClub = clubs?.find(club => club.id === clubId)?.id ?? clubs?.[0]?.id;
   const qc = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const canServe = isFnbServer || isFnbCashier || isClubOwner || isAdmin; // server re-enforces
-  const isOperator = isFnb || isClubOwner || isAdmin;
+  const canServe = Boolean(activeClub && (access.hasFacet("can_fnb_server", activeClub) || access.hasFacet("can_fnb_cashier", activeClub))); // server re-enforces
+  const isOperator = access.allows("fnb");
 
   if (clubError) return <FnbClubReadError message={clubError} onRetry={reloadClubs} />;
-  if (authLoading || clubs === null) {
+  if (access.error) return <FnbClubReadError message="Chưa xác minh được quyền F&B. Vui lòng tải lại trang." onRetry={() => window.location.reload()} />;
+  if (authLoading || access.loading || clubs === null) {
     return <div className="container mx-auto max-w-2xl px-4 py-6 space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-64 w-full" /></div>;
   }
   if (!isOperator) {
@@ -51,7 +55,6 @@ function FnbServeInner() {
     return <div className="container mx-auto max-w-2xl px-4 py-6"><Card><CardContent className="py-6 text-sm text-muted-foreground">Bạn chưa được gán vào câu lạc bộ F&amp;B nào.</CardContent></Card></div>;
   }
 
-  const activeClub = clubs.find(club => club.id === clubId)?.id ?? clubs[0].id;
 
   return (
     <div className="container mx-auto max-w-2xl px-4 py-6 space-y-4">

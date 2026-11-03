@@ -1,3 +1,4 @@
+vi.mock("@/hooks/useOperationalCapabilities", () => ({ useOperationalCapabilities: () => ({ loading: false, error: false, allows: () => true, hasFacet: () => true }) }));
 import {act,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {MemoryRouter} from 'react-router-dom';

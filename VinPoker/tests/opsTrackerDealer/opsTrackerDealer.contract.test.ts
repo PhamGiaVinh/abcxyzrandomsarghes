@@ -52,9 +52,9 @@ describe("Ops Tracker and Dealer Control read-only boundaries", () => {
     expect(graph).not.toContain("navigate(-1)");
   });
 
-  it("keeps both modules read-only and rejects guessed club fallbacks", () => {
-    expect(getOpsModule("tracker").defaultState).toBe("READ_ONLY");
-    expect(getOpsModule("dealer-control").defaultState).toBe("READ_ONLY");
+  it("opens operational documents while snapshot readers reject guessed club fallbacks", () => {
+    expect(getOpsModule("tracker").defaultState).toBe("LIVE");
+    expect(getOpsModule("dealer-control").defaultState).toBe("LIVE");
 
     const containers = [
       source("src/ops/tracker/OpsTrackerWorkspace.tsx"),

@@ -1,3 +1,4 @@
+import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -44,12 +45,15 @@ function FnbCounterInner() {
   const { user, session, loading: authLoading, isClubOwner, isAdmin, isFnb, isFnbCashier } = useAuth();
   const { clubs, error: clubError, reload: reloadClubs } = useFnbClubs();
   const [clubId, setClubId] = useState("");
+  const access = useOperationalCapabilities();
+  const activeClub = clubs?.find(club => club.id === clubId)?.id ?? clubs?.[0]?.id;
 
-  const isOperator = isFnb || isClubOwner || isAdmin;
-  const canPay = isFnbCashier || isClubOwner || isAdmin; // affordance only — server re-checks
+  const isOperator = access.allows("fnb");
+  const canPay = Boolean(activeClub && access.hasFacet("can_fnb_cashier", activeClub)); // affordance only — server re-checks
 
   if (clubError) return <FnbClubReadError message={clubError} onRetry={reloadClubs} />;
-  if (authLoading || clubs === null) {
+  if (access.error) return <FnbClubReadError message="Chưa xác minh được quyền F&B. Vui lòng tải lại trang." onRetry={() => window.location.reload()} />;
+  if (authLoading || access.loading || clubs === null) {
     return (
       <div className="container mx-auto max-w-5xl px-4 py-6 space-y-3">
         <Skeleton className="h-8 w-48" /><Skeleton className="h-64 w-full" />
@@ -63,7 +67,6 @@ function FnbCounterInner() {
     return <div className="container mx-auto max-w-5xl px-4 py-6"><Card><CardContent className="py-6 text-sm text-muted-foreground">Bạn chưa được gán vào câu lạc bộ F&amp;B nào.</CardContent></Card></div>;
   }
 
-  const activeClub = clubs.find(club => club.id === clubId)?.id ?? clubs[0].id;
   let backend='invalid';try{backend=fnbShiftBackend(import.meta.env.VITE_SUPABASE_URL);}catch{/* Mutation hook fails closed. */}
   return <FnbCounterScope key={`${user?.id ?? "anonymous"}:${sessionReadEpoch(session)}:${backend}:${activeClub}`} clubs={clubs}
     actorId={user?.id ?? ''} activeClub={activeClub} setClubId={setClubId} canPay={canPay} />;

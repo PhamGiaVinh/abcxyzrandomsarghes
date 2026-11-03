@@ -579,7 +579,7 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
         }
         if(saved?.state==='pending')throw new Error('CASH_INTENT_UNRESOLVED');
         if(!selected||!tourId||!amount)throw new Error('CASH_SCOPE_CHANGED');
-        const next:CashPaymentIntent={actor_id:actor,club_id:club,tournament_id:tourId,
+        const next:CashPaymentIntent={actor_id:actor,club_id:club,tournament_id:selected.tournament_id,
           registration_id:selected.id,amount,request_id:crypto.randomUUID()};
         persistCashPaymentIntent(localStorage,next);return next;
       });

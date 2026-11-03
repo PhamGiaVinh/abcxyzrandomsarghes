@@ -111,7 +111,7 @@ async function installMockOpsSession(page: Page) {
   });
 }
 
-test("Ops Control Deck renders the conservative registry without horizontal overflow", async ({ page }, testInfo) => {
+test("Ops Control Deck opens every authorized module without horizontal overflow", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
   const q0Requests: string[] = [];
   page.on("console", (message) => {
@@ -131,7 +131,7 @@ test("Ops Control Deck renders the conservative registry without horizontal over
   await expect(page.getByRole("heading", { name: "Một lối vào cho mọi công việc vận hành" })).toBeVisible();
   await expect(page.getByText("Tài chính & Đối soát · nhân sự", { exact: true })).toBeVisible();
   await expect(page.getByText("ACCOUNTANT_PAYROLL_GUARD_NOT_LIVE", { exact: true })).toBeHidden();
-  await expect(page.getByRole("button", { name: "Mở" })).toHaveCount(9);
+  await expect(page.getByRole("button", { name: "Mở" })).toHaveCount(12);
   for (const viewport of [
     { width: 360, height: 800 },
     { width: 390, height: 844 },
@@ -157,7 +157,7 @@ test("Ops Control Deck renders the conservative registry without horizontal over
   await page.screenshot({ path: testInfo.outputPath("ops-control-deck-mobile.png"), fullPage: true });
 });
 
-test("blocked direct route does not mount a module data hook", async ({ page }, testInfo) => {
+test("an unrelated club is denied before opening an operational document", async ({ page }, testInfo) => {
   const moduleRequests: string[] = [];
   await page.setViewportSize({ width: 1280, height: 900 });
   await installMockOpsSession(page);
@@ -165,10 +165,10 @@ test("blocked direct route does not mount a module data hook", async ({ page }, 
     const pathname = new URL(request.url()).pathname;
     if (!pathname.includes("get_my_ops") && !pathname.endsWith("/clubs")) moduleRequests.push(pathname);
   });
-  await page.goto(`/ops/accountant?club=${clubId}`);
+  await page.goto(`/ops/accountant?club=99999999-9999-4999-8999-999999999999`);
 
-  await expect(page.getByRole("heading", { name: "Tài chính & Đối soát · nhân sự" })).toBeVisible();
-  await expect(page.getByText("ACCOUNTANT_PAYROLL_GUARD_NOT_LIVE", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Không có quyền vận hành" })).toBeVisible();
+  await expect(page).toHaveURL(/\/ops\/accountant\?club=/u);
   expect(moduleRequests.filter((path) => path.includes("rpc/") || path.includes("rest/v1"))).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("ops-blocked-desktop.png"), fullPage: true });
 });

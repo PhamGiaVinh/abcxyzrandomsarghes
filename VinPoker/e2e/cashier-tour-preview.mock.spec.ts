@@ -74,9 +74,10 @@ async function installMockSession(page: Page, requests: string[], cashGate?: Pro
       return json({ ok: true, rows: input.p_serving_tournament_id === tourA && input.p_query.toUpperCase().includes("BETA")
         ? [{ registration_id: registrationB, tournament_id: tourB, tournament_name: "Tour B · 11:00", player_name: "Khách Tour B" }] : [] });
     }
-    if (path.endsWith("/rpc/cashier_record_cash_buyin_v1")) {
-      await cashGate;
-      return json({ ok: true, payment_state: "paid", seating_state: "waiting" });
+    if (path.endsWith("/rpc/resolve_cashier_cash_buyin_intent_v1")) {
+      const input = request.postDataJSON() as { p_intent: Record<string, unknown>; p_action: string };
+      if (input.p_action === "record") await cashGate;
+      return json({ ok: true, status: "recorded", intent: input.p_intent, result: { ok: true, payment_state: "paid", seating_state: "waiting" } });
     }
     if (path.includes("/rpc/")) return json([]);
     if (path.includes("/rest/v1/")) return json([]);
@@ -112,10 +113,10 @@ for (const width of [375, 430, 1280]) {
 
 test("Tour B scan opens its registration without changing serving Tour A", async ({ page }) => {
   const requests: string[] = [];
-  const cashBodies: Array<{ p_registration_id: string }> = [];
+  const cashBodies: Array<{ registration_id: string; tournament_id: string }> = [];
   await installMockSession(page, requests);
   page.on("request", (request) => {
-    if (request.url().endsWith("/rpc/cashier_record_cash_buyin_v1")) cashBodies.push(request.postDataJSON());
+    if (request.url().endsWith("/rpc/resolve_cashier_cash_buyin_intent_v1")) cashBodies.push(request.postDataJSON().p_intent);
   });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/ops/cashier/tour?club=${clubId}`);
@@ -135,18 +136,18 @@ test("Tour B scan opens its registration without changing serving Tour A", async
   await expect(page.getByRole("heading", { name: "Tour A · 10:00" })).toBeVisible();
   await detail.getByRole("button", { name: "Ghi nhận tiền mặt" }).click();
   await expect.poll(() => cashBodies.length).toBe(1);
-  expect(cashBodies[0].p_registration_id).toBe(registrationB);
+  expect(cashBodies[0]).toMatchObject({ registration_id: registrationB, tournament_id: tourB });
 });
 
 test("cash double-click sends one server intent and cannot switch tours in flight", async ({ page }) => {
   const requests: string[] = [];
-  const cashBodies: Array<{ p_registration_id: string; p_amount: number; p_request_id: string }> = [];
+  const cashBodies: Array<{ registration_id: string; tournament_id: string; amount: number; request_id: string }> = [];
   let releaseCash!: () => void;
   const cashGate = new Promise<void>((resolve) => { releaseCash = resolve; });
   await installMockSession(page, requests, cashGate);
   page.on("request", (request) => {
-    if (request.url().endsWith("/rpc/cashier_record_cash_buyin_v1")) {
-      cashBodies.push(request.postDataJSON());
+    if (request.url().endsWith("/rpc/resolve_cashier_cash_buyin_intent_v1")) {
+      cashBodies.push(request.postDataJSON().p_intent);
     }
   });
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -163,10 +164,10 @@ test("cash double-click sends one server intent and cannot switch tours in fligh
   await expect(page.getByRole("dialog", { name: new RegExp(playerA) })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tour A · 10:00" })).toBeVisible();
   releaseCash();
-  await expect(page.getByText(`${playerA}: đã đủ tiền, đang chờ ghế.`)).toBeVisible();
+  await expect(page.getByText(/Đã xác minh khoản thu 6.600.000 VND/u)).toBeVisible();
   await page.getByRole("button", { name: /Tour B · 11:00/ }).first().click();
   await expect(page.getByRole("heading", { name: "Tour B · 11:00" })).toBeVisible();
   expect(cashBodies).toHaveLength(1);
-  expect(cashBodies[0]).toMatchObject({ p_registration_id: registrationA, p_amount: 6_600_000 });
-  expect(cashBodies[0].p_request_id).toMatch(/^[0-9a-f-]{36}$/u);
+  expect(cashBodies[0]).toMatchObject({ registration_id: registrationA, tournament_id: tourA, amount: 6_600_000 });
+  expect(cashBodies[0].request_id).toMatch(/^[0-9a-f-]{36}$/u);
 });

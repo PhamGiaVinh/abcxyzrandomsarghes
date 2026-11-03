@@ -1,3 +1,4 @@
+import { installOperationalDocument } from "./helpers/opsOperationalDocument";
 import { expect, test, type Page } from "@playwright/test";
 
 const clubId = "10000000-0000-4000-8000-000000000005";
@@ -121,6 +122,7 @@ test("Finance renders only the server summary and stays responsive", async ({ pa
   await expectResponsive(page);
   expect([...new Set(requests.filter((request) => /^POST /u.test(request)))].sort()).toEqual([
     "POST /rest/v1/rpc/get_club_finance_summary",
+    "POST /rest/v1/rpc/get_owner_tour_rake_live_v1",
     "POST /rest/v1/rpc/get_my_ops_capability_scope",
     "POST /rest/v1/rpc/get_my_ops_global_capability",
   ].sort());
@@ -137,19 +139,11 @@ test("malformed Finance response blocks without client table fallback", async ({
   expect(restReads).toEqual([]);
 });
 
-test("Series uses native server events without browser-local library", async ({ page }) => {
-  const requests: string[] = [];
-  await installMockOpsSession(page, requests);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(`/ops/series?club=${clubId}`);
-
-  await expect(page.getByText("CODEX SERIES READ TEST")).toBeVisible();
-  await expect(page.getByText(/1\/12 giải/u)).toBeVisible();
-  await expect(page.locator('[data-ops-action="series.refresh"]')).toBeVisible();
-  await expectResponsive(page);
-  expect([...new Set(requests.filter((request) => /^POST /u.test(request)))].sort()).toEqual([
-    "POST /rest/v1/rpc/get_club_series_events",
-    "POST /rest/v1/rpc/get_my_ops_capability_scope",
-    "POST /rest/v1/rpc/get_my_ops_global_capability",
-  ].sort());
+test("Series opens the full planning document after verifying owner scope", async ({ page }) => {
+  const requests: string[] = []; await installMockOpsSession(page, requests);
+  await installOperationalDocument(page, "/club/admin/series-intelligence");
+  await page.goto('/ops/series?club=' + clubId + '&t=stale');
+  await expect(page.getByRole("heading", { name: "Operational destination" })).toBeVisible();
+  await expect(page).toHaveURL(/\/club\/admin\/series-intelligence$/u);
+  expect(requests.filter(request => /^POST /u.test(request) && !request.includes("/rpc/get_my_ops_"))).toEqual([]);
 });
