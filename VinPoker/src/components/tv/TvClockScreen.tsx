@@ -1,13 +1,12 @@
 import type { TvData } from "@/types/tv";
 import { FEATURES } from "@/lib/featureFlags";
-import { VinPokerTournamentClock } from "@/components/tournament-clock/VinPokerTournamentClock";
-import { mapTvDataToClock } from "@/lib/tv/mapClockData";
 import { TvHeader } from "./TvHeader";
 import { TvTimer } from "./TvTimer";
 import { TvBlindsPanel } from "./TvBlindsPanel";
 import { TvStatsBar } from "./TvStatsBar";
 import { TvBreakOverlay } from "./TvBreakOverlay";
 import { TvTicker } from "./TvTicker";
+import { TvBroadcastBoard } from './TvBroadcastBoard';
 
 /**
  * Pure presentational 16:9 TV layout. Receives one TvData prop —
@@ -15,14 +14,12 @@ import { TvTicker } from "./TvTicker";
  * Below the lg breakpoint the three middle columns stack for tablets.
  */
 export function TvClockScreen({ data }: { data: TvData }) {
-  // PR Clock-B (flag-gated, default OFF): the new neon-green broadcast clock. It is a
-  // self-contained 16:9 display (its own title/stats/blinds/prizes/footer), so it replaces
-  // the whole legacy layout. On a break we fall through to the legacy layout below, which
-  // renders TvBreakOverlay in its proper flow (the break screen keeps working unchanged).
+  // Existing clock gate and break lifecycle remain intact; only the broadcast
+  // composition changes. All countdown values still come from the server anchor.
   if (FEATURES.tournamentClockV2 && !data.isBreak) {
     return (
       <div className="grid min-h-screen w-full place-items-center bg-black">
-        <VinPokerTournamentClock data={mapTvDataToClock(data)} />
+        <TvBroadcastBoard data={data} />
       </div>
     );
   }

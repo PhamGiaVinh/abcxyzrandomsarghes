@@ -68,6 +68,7 @@ export interface TvPrizeRow {
 }
 
 export interface TvDataSources {
+  tournamentId?: string;
   clock: ClockRpcPayload;
   tournament: TvTournamentRow;
   levels: TvLevelRow[];
@@ -146,6 +147,7 @@ export function mapTvData(sources: TvDataSources): TvData {
   const terminal = status === 'finished' || status === 'cancelled';
 
   return {
+    tournamentId: sources.tournamentId,
     tournamentName: tournament.name,
     clubName: tournament.club?.name ?? "",
     clubLogoUrl: tournament.club?.tv_logo_url ?? null,

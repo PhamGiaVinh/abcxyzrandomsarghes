@@ -28,6 +28,7 @@ export type TvTournamentStatus =
   | "cancelled";
 
 export interface TvData {
+  tournamentId?: string;
   tournamentName: string;
   clubName: string;
   clubLogoUrl?: string | null;
@@ -50,6 +51,9 @@ export interface TvData {
   totalEntries: number;
   reEntries: number | null;
   averageStack: number;
+  /** Confirmed aggregate extrema; never reconstructed from average or total. */
+  largestStack?: number | null;
+  smallestStack?: number | null;
   /** Exact canonical live-entry stack total; absent only in legacy/mock data. */
   totalChips?: number;
   /** Sum of confirmed buy-ins (VND). Null until wired to live data. */

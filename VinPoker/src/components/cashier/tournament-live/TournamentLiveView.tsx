@@ -1,4 +1,5 @@
 import { useTournamentTableAppearance } from "@/components/tracker/useTournamentTableAppearance";
+import { PublicPlayerHud } from '@/components/tracker/PublicPlayerHud';
 import { useState, useEffect, useMemo, useRef, useCallback, type ComponentProps } from "react";
 import { TrackerViewerCardProvider, TrackerCardStyleToggle } from "@/components/tracker/TrackerCardStyle";
 import { FEATURES } from "@/lib/featureFlags";
@@ -194,6 +195,7 @@ function TournamentLiveViewContent({
   ]);
   const canTdAi = isStaffOps || isClubAdmin;
   const [tdAiOpen, setTdAiOpen] = useState(false);
+  const [hudPlayerId, setHudPlayerId] = useState<string | null>(null);
   const [seats, setSeats] = useState<SeatInfo[]>([]);
   const [communityCards, setCommunityCards] = useState<string[]>([]);
   const [potSize, setPotSize] = useState(0);
@@ -2131,6 +2133,7 @@ function TournamentLiveViewContent({
             </div>
           ) : (
             <LiveFelt
+              onSeatClick={spectator ? seatNumber => { const seat = viewerFeltProps.seats.find(s => s.seat_number === seatNumber); if (seat) setHudPlayerId(seat.player_id); } : undefined}
               {...viewerFeltProps}
               portrait={orientationOverride ? orientationOverride === "portrait" : undefined}
               viewerNeon={spectator && FEATURES.liveHandFeed}
@@ -2169,6 +2172,7 @@ function TournamentLiveViewContent({
               hideUnrecordedHoleCards={spectator && !isReplay && tableDisplayState === "last_completed"}
             />
           )}
+          {spectator && <PublicPlayerHud tournamentId={tournamentId} playerId={hudPlayerId} onClose={() => setHudPlayerId(null)} />}
           {isReplay && selectedReplayHand && !(spectator && FEATURES.liveReplayHud) && (
             <ReplayScrubber
               key={selectedReplayHand.hand_id ?? `hand-${selectedReplayHand.hand_number}`}
