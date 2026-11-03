@@ -79,6 +79,17 @@ try{
   assert.equal(summary().state,'warming');
   for(let round=0;round<10;round++){
     const backfill=jsonSql(`${service} SELECT public.backfill_public_hud_v1(50);`);
+    if(round===0){
+      const late='00000000-0000-4000-8000-000000000001';
+      sql(`BEGIN;INSERT INTO public.tournament_hands(id,tournament_id,status) VALUES('${late}','${tour}','completed');
+       INSERT INTO public.hand_players(hand_id,tournament_id,player_id,seat_number,starting_stack)
+        SELECT '${late}',tournament_id,player_id,seat_number,starting_stack FROM public.hand_players WHERE hand_id='${hand}';
+       INSERT INTO public.hand_actions(hand_id,player_id,street,action_type,action_amount,action_order)
+        SELECT '${late}',player_id,street,action_type,action_amount,action_order FROM public.hand_actions WHERE hand_id='${hand}';COMMIT;`);
+      assert.equal(sql(`SELECT priority FROM tracker_analytics_v1.jobs WHERE kind='hand' AND entity_id='${late}';`),'0');
+      await drain();assert.equal(state().a.public_hands,2);
+      sql(`BEGIN;DELETE FROM public.hand_actions WHERE hand_id='${late}';DELETE FROM public.hand_players WHERE hand_id='${late}';DELETE FROM public.tournament_hands WHERE id='${late}';COMMIT;`);
+    }
     await drain();if(backfill.complete)break;
   }
   assert.equal(jsonSql('SELECT to_jsonb(backfill_complete) FROM tracker_analytics_v1.config;'),true);
@@ -136,6 +147,13 @@ try{
   assert.equal(sql('SELECT max(event_id) FROM tracker_analytics_v1.access_revocations;'),maxBefore);
   const verified=jsonSql(`SET ROLE anon;SELECT public.get_public_player_hud_summary_v1('${tour}','${a}','${openedBetweenCommits.accessSnapshot}');`);
   assert.equal(verified.accessChanged,true);
+  const sourceCount=sql('SELECT count(*) FROM public.tournament_hands;');
+  sql('UPDATE tracker_analytics_v1.config SET enabled=false,worker_enabled=false;');
+  assert.equal(summary().state,'warming');
+  assert.equal(jsonSql(`${service} SELECT to_jsonb(public.dispatch_public_hud_projection_v1());`),null);
+  sql('UPDATE tracker_analytics_v1.config SET enabled=true;');
+  assert.equal(summary().counters.publicHands,2);
+  assert.equal(sql('SELECT count(*) FROM public.tournament_hands;'),sourceCount);
   assert.throws(()=>sql("SET ROLE anon; SELECT public.claim_public_hud_jobs_v1(1);"),/permission denied/);
   console.log(JSON.stringify({kind:'NATIVE_POSTGRESQL_NOT_HTTP_OR_LOAD_TEST',checks:['classification','idempotent-retry','stale-lease','void','restore','settlement-revoke','settlement-reverify','eligibility-revoke','eligibility-restore','unchanged-source-revision','result-edit','result-revoke','visibility-revoke','visibility-restore','backfill','warming','anonymous-summary','verified-stack','immediate-revocation','anon-denial'],passed:true}));
 }finally{

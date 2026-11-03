@@ -30,6 +30,7 @@ for fn in _shared public-player-hud public-hud-projector-v1 public-spectator-pro
   mkdir -p "$test_root/supabase/functions"
   cp -a "$repo_root/supabase/functions/$fn" "$test_root/supabase/functions/$fn"
 done
+node tests/publicHud/scale.bundle.mjs "$test_root"
 for fn in public-player-hud public-hud-projector-v1 public-spectator-projector-v2; do
   printf '\n[functions.%s]\nverify_jwt = false\n' "$fn" >>"$test_root/supabase/config.toml"
 done
