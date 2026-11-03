@@ -6,6 +6,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createClient} from '@supabase/supabase-js';
 import {configureLocalRealtime} from './scale.realtime.mjs';
+import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
@@ -15,7 +16,7 @@ const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const player=uuid('30000000',1),stats={summary:[],realtime:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 let stopping=false;
-let phases={},transportTimings={};
+let phases={},transportTimings={},observationOrder=0;
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
 async function post(path,body,privileged=false,phase='other'){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
@@ -73,22 +74,32 @@ for(const scenario of ['concentrated','distributed']){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
   const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  // A Broadcast/read can finish before the writer's HTTP acknowledgement.
+  // Credit its actual observation time once its source write is registered.
+  const credit=(field,observation,predicate,measure,count)=>{
+   if(!observation?.healthy)return;
+   state[field]=state[field].filter(expected=>{
+    if(!predicate(observation.value,expected,observation.requestOrder))return true;
+    assert.ok(observation.at>=expected.at,'Observed source timestamp is in the future');
+    stats[measure].push(observation.at-expected.at);state[count]++;return false;
+   });
+  };
+  state.credit=()=>{credit('expected',state.handObservation,handIncludesWrite,'realtime','deliverySamples');credit('snapshotExpected',state.snapshotObservation,projectionIncludesWrite,'snapshot','snapshotSamples');};
+  const healthy=()=>state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20));
   const snapshot=async(sections=['tables'])=>{
    for(const section of sections)state.snapshotDirty.add(section);
    if(state.snapshotBusy)return;state.snapshotBusy=true;
    try{
     await sleep(Math.max(0,1000-(Date.now()-state.snapshotLast)));
     const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
+    const requestOrder=++observationOrder;
     const value=await rpc('get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:[],p_sections:requested,p_known_revisions:state.known});
     assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
     for(const section of requested){assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;}
     const tables=value.sections.tables;
-    if(tables){const remaining=[];for(const expected of state.snapshotExpected){
-     const generation=JSON.parse(tables.freshness.projectedSourceRevision).generation;
-     if((!expected.deferred||tables.freshness.state==='current')&&/^\d+$/.test(generation??'')&&BigInt(generation)>=BigInt(expected.generation)&&Date.parse(tables.freshness.publishedAt)>=expected.at&&state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20))){stats.snapshot.push(Date.now()-expected.at);state.snapshotSamples++;}else remaining.push(expected);
-    }state.snapshotExpected=remaining;}
+    if(tables){state.snapshotObservation={value:tables.freshness,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
    }catch{error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
-   finally{state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end)track(snapshot([]));}
+   finally{state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end+10000)track(snapshot([]));}
   };
   state.snapshot=snapshot;
   const clock=async()=>{try{const [value,summary]=await Promise.all([rpc('get_tournament_clock',{p_tournament_id:tour}),rpc('get_public_tournament_clock_summary',{p_tournament_id:tour})]);assert.equal(value.tournament_id,tour);if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(Array.isArray(summary)&&summary.length===1&&summary[0].tournament_id===tour);}catch{error('clock_read');}};
@@ -100,15 +111,10 @@ for(const scenario of ['concentrated','distributed']){
    try{
     const value=await rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});
     if(!(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'))assert.equal(value.tableId,table);
-    const hand=value.hand,remaining=[];
-    for(const e of state.expected){
-     const observed=hand&&(hand.handNumber>e.number||(hand.id===e.handId&&(e.step===5?hand.status==='completed':Array.isArray(hand.actions)&&hand.actions.length>=e.step)));
-     if(observed&&state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20))){stats.realtime.push(Date.now()-e.at);state.deliverySamples++;}else remaining.push(e);
-    }
-    state.expected=remaining;
+    state.handObservation={value:value.hand,at:Date.now(),healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
    }catch{state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}
-   finally{state.busy=false;if(state.pending&&Date.now()<end){state.pending=false;track(read());}}
+   finally{state.busy=false;if(state.pending&&Date.now()<end+10000){state.pending=false;track(read());}}
   };
   state.read=read;
   const openHud=async(phase='user-open')=>{
@@ -152,7 +158,9 @@ for(const scenario of ['concentrated','distributed']){
    state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
    if(state.accessOnline){if(state.accessJoined)track((async()=>{await sleep(250+Math.random()*2500);await verifyHud('reconnect-verify');})());state.accessJoined=true;}
   });
-  if(i%25===24)await sleep(25);
+  // Admit at most 50 new viewers/second, then hold the entire target audience
+  // for the full measured duration. Mass reconnect remains simultaneous.
+  if(i%25===24)await sleep(500);
  }
  try{await until(async()=>clients.every(c=>c.online&&c.accessOnline),60000,'Not every viewer joined both live channels');}
  catch(error){
@@ -169,10 +177,11 @@ for(const scenario of ['concentrated','distributed']){
    const start=Date.now();
    try{
     const value=await rpc('fixture_scale_step_v1',{p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
-    hand=value.handId;stats.sourceWrites++;
+    hand=value.handId;stats.sourceWrites++;const ackOrder=++observationOrder;
     if(!reconnecting&&(!revoking||n!==20))for(const c of clients)if(c.tour===uuid('10000000',n)&&c.online&&c.accessOnline){
      const at=Date.parse(value.sourceWrittenAt);c.expected.push({handId:hand,number,step,at});expectedDeliveries++;
-     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');c.snapshotExpected.push({at,generation:value.generation,deferred:value.generationDeferred});snapshotExpected++;
+     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');c.snapshotExpected.push({at,generation:value.generation,deferred:value.generationDeferred,ackOrder});snapshotExpected++;
+     c.credit();
     }
     if(step===5){
      const completed=hand,written=Date.parse(value.sourceWrittenAt);
@@ -230,6 +239,7 @@ for(const scenario of ['concentrated','distributed']){
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
  report.snapshotDelivery={expected:snapshotExpected,excludedForPlannedFault:snapshotExcluded,missed:snapshotMissed,pending:clients.reduce((n,c)=>n+c.snapshotExpected.length,0),samples:sample('snapshot').length,p95Ms:percentile(sample('snapshot'),.95),minSamplesPerViewer:Math.min(...clients.map(c=>c.snapshotSamples))};save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
  report.httpPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');

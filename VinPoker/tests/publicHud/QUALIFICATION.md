@@ -12,6 +12,10 @@ Run the `Public HUD incremental PostgreSQL` workflow on the reviewed branch.
 WebSocket connections against 1,000,000 historical hands per player for two
 30-minute scenarios (one tournament, then twenty tournaments). Each viewer
 subscribes to its tournament and the content-free HUD revocation channel.
+Initial admission is capped at 50 new viewers/second, with all initial requests
+still included in HTTP/error results. Only after all target viewers have joined
+does the full 30-minute hold start. The mass reconnect remains simultaneous;
+this ramp does not reduce concurrent viewers, duration, source rate or grading.
 
 The isolated runner starts PostgreSQL, pg_cron, pg_net, PostgREST, Kong, Auth,
 Realtime and actual Edge entrypoints. It generates disposable local secrets;
@@ -38,6 +42,12 @@ snapshot p95 has the same 3-second threshold as the current-hand view. A
 60-second HUD reopen is explicitly simulated user activity, not HUD polling.
 Older current-hand-only probes are diagnostic transport evidence, not full-page
 qualification.
+Delivery attribution retains actual observation time if a read finishes before
+the writer HTTP acknowledgment, but requires exact hand/generation evidence.
+Deferred generations additionally need a snapshot request after commit ack,
+an advanced generation and a current projection; rounded timestamps alone are
+insufficient. Coalesced reads may finish within the bounded 10-second tail,
+without dropping late/missing samples from the latency/error denominator.
 
 The pinned local runtime uses `per_request` supervision and at most 16 reusable
 workers per function. The CLI-generated gateway, image, 256MB per worker,
