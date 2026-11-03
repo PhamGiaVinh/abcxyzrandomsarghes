@@ -9,6 +9,8 @@ test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 serve_pid=''
 cleanup(){
+  result=$?
+  if [[ "$result" != 0 ]]; then node "$repo_root/tests/publicHud/scale.diagnostics.mjs" "$test_root" "$project_id" || true; fi
   if [[ -n "$serve_pid" ]]; then kill "$serve_pid" >/dev/null 2>&1 || true; fi
   supabase stop --workdir "$test_root" --no-backup >/dev/null 2>&1 || true
 }
@@ -43,6 +45,7 @@ export PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/seed.json"
 export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
 node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&1
+node tests/publicHud/scale.sources.native.mjs
 supabase functions serve --workdir "$test_root" --env-file "$test_root/workers.env" --no-verify-jwt >"$test_root/serve.log" 2>&1 &
 serve_pid=$!
 export PUBLIC_HUD_STATUS_FILE="$test_root/status.env" PUBLIC_HUD_WORKER_ENV_FILE="$test_root/workers.env" PUBLIC_HUD_STACK_PROJECT="$project_id"

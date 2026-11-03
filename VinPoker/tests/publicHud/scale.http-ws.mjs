@@ -104,4 +104,10 @@ for(const scenario of ['concentrated','distributed']){
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');
  assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');assert.ok(report.healthyRealtimeP95Ms<=3000,'Realtime p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
+ assert.equal(stats.errors.hud_read??0,0,'HUD HTTP failures are not excluded from acceptance');
+}
+if(viewers===1000&&duration===1800){
+ const seed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8'));
+ assert.equal(seed.handsPerPlayer,1_000_000);
+ assert.ok(seed.writer.p95OverheadPercent<=10,'Fixture source transaction marking overhead > 10%');
 }

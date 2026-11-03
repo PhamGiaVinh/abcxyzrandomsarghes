@@ -25,9 +25,10 @@ sql(`CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS pg_ne
  GRANT EXECUTE ON FUNCTION public.fixture_provision_hud_workers_v1(text,text,text) TO service_role;
  NOTIFY pgrst,'reload schema';`);
 execFileSync('docker',['restart',`supabase_realtime_${project}`],{stdio:'pipe'});
+let lastStatus=0;
 for(let i=0;i<60;i++){
- try{const response=await fetch(status.API_URL+'/functions/v1/public-hud-projector-v1',{method:'POST',headers:{apikey:status.ANON_KEY,Authorization:'Bearer invalid-fixture-credential'},signal:AbortSignal.timeout(3000)});if(response.status===401&&(await response.json()).error==='UNAUTHORIZED')break;}catch{}
- if(i===59)throw Error('Isolated Edge worker did not start');
+ try{const response=await fetch(status.API_URL+'/functions/v1/public-hud-projector-v1',{method:'POST',headers:{apikey:status.ANON_KEY,Authorization:'Bearer invalid-fixture-credential'},signal:AbortSignal.timeout(3000)});lastStatus=response.status;if(response.status===401&&(await response.json()).error==='UNAUTHORIZED')break;}catch{}
+ if(i===59)throw Error(`Isolated Edge worker did not start (last HTTP status ${lastStatus})`);
  await new Promise(resolve=>setTimeout(resolve,1000));
 }
 const response=await fetch(status.API_URL+'/rest/v1/rpc/fixture_provision_hud_workers_v1',{
