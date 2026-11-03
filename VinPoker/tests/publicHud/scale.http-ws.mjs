@@ -57,7 +57,7 @@ for(const scenario of ['concentrated','distributed']){
   };
   state.read=read;
   const openHud=async()=>{
-   const epoch=state.hudEpoch;
+   const epoch=++state.hudEpoch,expectedRevocation=revoking;
    try{
     const value=await hud(tour);if(epoch!==state.hudEpoch)return;
     state.lastHud=Date.now();
@@ -67,8 +67,8 @@ for(const scenario of ['concentrated','distributed']){
      if(history.access==='public'&&['current','updating'].includes(history.state)){
       assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);
       assert.ok(history.handHistory.every(h=>h.tableId===table),'History must remain in this tournament/table');
-     }else if(!revoking)error('history_not_ready');
-    }else{state.frozen=null;if(!revoking)error('hud_not_ready');}
+     }else if(!expectedRevocation)error('history_not_ready');
+    }else{state.frozen=null;if(!expectedRevocation)error('hud_not_ready');}
    }catch{error('hud_read');}
   };
   state.openHud=openHud;
