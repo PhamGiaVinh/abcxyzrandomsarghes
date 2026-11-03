@@ -214,6 +214,10 @@ jobs:
           src/pages/ops/OpsDealerSwing.readState.test.tsx
 
       # The legacy Floor/SuperAdmin summary is outside the targeted ops config.
+      - name: Lint chip-bank inventory display and regression tests
+        working-directory: VinPoker
+        run: npx eslint src/components/chip-ops/BankAuditTab.tsx src/components/chip-ops/BankAuditTab.test.tsx
+
       - name: Type-check complete application
         working-directory: VinPoker
         env:
