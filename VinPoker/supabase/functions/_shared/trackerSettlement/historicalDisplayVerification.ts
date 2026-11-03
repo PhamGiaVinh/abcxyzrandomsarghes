@@ -123,7 +123,7 @@ function sourceRefundAction(actions: readonly SettlementDbAction[], playerId: st
   const source = [...actions]
     .filter((action) => action.player_id === playerId)
     .sort((left, right) => right.action_order - left.action_order)
-    .find((action) => action.action_amount > 0
+    .find((action) => (action.action_amount ?? 0) > 0
       && ["bet", "raise", "all_in", "post_sb", "post_bb", "post_ante"].includes(action.action_type));
   return source ?? fail("refund_source_action_missing");
 }

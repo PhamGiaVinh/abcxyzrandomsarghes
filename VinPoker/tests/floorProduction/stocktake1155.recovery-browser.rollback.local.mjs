@@ -38,7 +38,7 @@ const claims=`SET LOCAL request.jwt.claim.sub='${actor}';SET LOCAL request.jwt.c
 const sessions=new Set(),secret=randomUUID(),user={id:actor,email:rejectChanged?'stocktake1186@example.invalid':confirmedDialog?'stocktake1184@example.invalid':'stocktake1155@example.invalid',aud:'authenticated',role:'authenticated',app_metadata:{},user_metadata:{},created_at:'2026-10-27T00:00:00Z'};
 let ingredient,stocktake,server;
 try{
- await send("BEGIN;SET LOCAL statement_timeout='10s';SET LOCAL lock_timeout='3s';"+(confirmedDialog?readFileSync('supabase/pending-migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql','utf8'):'')+claims);
+ await send("BEGIN;SET LOCAL statement_timeout='10s';SET LOCAL lock_timeout='3s';"+(confirmedDialog?readFileSync('supabase/migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql','utf8'):'')+claims);
  const created=await json(`SELECT public.fnb_upsert_ingredient('${club}',NULL,'LOCAL1155 stocktake TEST','unit','unit',1,0,true);`);assert.equal(created.status,'ok');ingredient=created.id;uuid(ingredient);state.ingredient=ingredient;
  assert.equal((await json(`SELECT public.fnb_stock_in('${club}','${ingredient}',2,1000,'${randomUUID()}');`)).status,'ok');
  state.otherIngredientsBefore=await json(`SELECT to_jsonb(md5(coalesce(jsonb_agg(to_jsonb(i) ORDER BY i.id)::text,'[]'))) FROM public.fnb_ingredients i WHERE id<>'${ingredient}';`);

@@ -10,7 +10,7 @@ const read=q=>JSON.parse(sql("BEGIN READ ONLY;SET LOCAL statement_timeout='10s';
 const guard=read("SELECT jsonb_build_object('db',current_database(),'host',host(inet_server_addr()),'port',inet_server_port(),'dir',current_setting('data_directory'),'comment',(SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()),'external',(SELECT count(*) FROM pg_extension WHERE extname IN('pg_net','pg_cron','dblink')));");
 assert.equal(guard.db,'vinpoker_ranking860_local');assert.equal(guard.host,'127.0.0.1');assert.equal(guard.port,55441);assert.equal(guard.dir,'/tmp/vinpoker-sol-local-20261016-0e79a729/data');assert.equal(guard.comment,'VINPOKER_RANKING860_OWNED_LOCAL_SOURCE_vinpoker_ops_cash115_qualified_c_HEAD_ef6a26948');assert.equal(guard.external,0);
 const actor='a364de8e-06b1-4428-a20d-ac614ec406e5',other='675fe35e-60a8-4452-bb90-e79486d54da6',club='349ecf35-50ba-4c71-a581-15dc45f1cd01';
-const candidate='supabase/pending-migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql';
+const candidate='supabase/migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql';
 const tables=['fnb_categories','fnb_menu_items','fnb_ingredients','fnb_recipe_items','fnb_stock_movements','fnb_stocktakes','fnb_stocktake_lines','fnb_orders','fnb_order_items','tournaments','tournament_entries','tournament_seats','cashier_buyin_movements','tournament_prize_payments','chip_bank_ledger','tournament_hands','table_operation_receipts'];
 const fingerprint=()=>read('SELECT to_jsonb(md5(jsonb_build_array('+tables.map(t=>`(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM public.${t} x)`).join(',')+')::text));');
 const before=fingerprint();
