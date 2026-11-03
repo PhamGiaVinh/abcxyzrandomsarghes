@@ -29,6 +29,28 @@ them. Restarting the local Realtime container forces all viewer sockets to
 reconnect. Anonymous summary/history requests use actual HTTP Edge functions;
 table reads use PostgREST. The test creates no browser windows.
 
+The watched-felt workload includes both independent readers: canonical current
+hand and hub viewer snapshot (`tables`, catalog-only while watching a felt).
+Initial/verification/visibility requests also read snapshot ranking/payout and
+the unchanged canonical clock/clock-summary RPCs. Snapshot generations and
+publication time must cover every eligible source write for every viewer;
+snapshot p95 has the same 3-second threshold as the current-hand view. A
+60-second HUD reopen is explicitly simulated user activity, not HUD polling.
+Older current-hand-only probes are diagnostic transport evidence, not full-page
+qualification.
+
+The pinned local runtime uses `per_request` supervision and at most 16 reusable
+workers per function. The CLI-generated gateway, image, 256MB per worker,
+CPU soft/hard 1000/2000ms, wall/HTTP limits, secrets and bind mounts are retained.
+Only policy and pool parallelism change; no production setting changes. This
+matches per-request CPU accounting, not the topology of the hosted service:
+https://supabase.com/docs/guides/functions/limits and
+https://github.com/supabase/edge-runtime/blob/v1.73.13/crates/base/src/worker/supervisor/strategy_per_request.rs.
+The original `per_worker` probe failures are retained: cumulative worker CPU
+retirement caused `WorkerAlreadyRetired`/HTTP500 under concurrent HUD reads.
+`runtime-policy.json` records the image and before/after gateway hashes. These
+are explicit isolated fixture settings, never evidence of a hosted quota.
+
 The HUD displays the prepared total of verified public prize results. Cashier's
 confirmed-payment component remains on the player profile with its existing
 payment/publication rules; HUD opening does not invoke that lifetime financial
@@ -48,6 +70,10 @@ change. Known invalidation clears it before waiting for replacement history.
 - `http-ws.json`: HTTP p95, healthy Broadcast-to-table-read p95, server hand
   projection completion latency and reconnect counts, separately per scenario.
 - `container-resources.jsonl`: final container resource sample, not peak memory.
+- `resource-samples.jsonl`, `pg-pressure.jsonl`, `edge-runtime.jsonl`: periodic
+  container, database wait/lock and runtime worker counters. Five-second samples
+  do not guarantee capturing a short resource peak. Diagnostic header timings
+  exclude response-body parsing; acceptance HTTP timings include it.
 
 The large seed is explicitly a **prebuilt derived read fixture**. Counters come
 from the actual classifiers, but historical rows are populated in bulk. It

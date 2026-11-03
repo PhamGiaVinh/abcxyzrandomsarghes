@@ -51,6 +51,11 @@ node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&
 node tests/publicHud/scale.sources.native.mjs
 supabase functions serve --workdir "$test_root" --env-file "$test_root/workers.env" --no-verify-jwt >"$test_root/serve.log" 2>&1 &
 serve_pid=$!
+node tests/publicHud/scale.edge-runtime.mjs capture "$test_root" "$project_id"
+kill -INT "$serve_pid"
+wait "$serve_pid" || true
+serve_pid=''
+node tests/publicHud/scale.edge-runtime.mjs apply "$test_root" "$project_id"
 export PUBLIC_HUD_STATUS_FILE="$test_root/status.env" PUBLIC_HUD_WORKER_ENV_FILE="$test_root/workers.env" PUBLIC_HUD_STACK_PROJECT="$project_id"
 node tests/publicHud/scale.stack-setup.mjs
 ulimit -n 16384
