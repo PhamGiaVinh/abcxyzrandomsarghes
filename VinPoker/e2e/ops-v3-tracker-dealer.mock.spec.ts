@@ -1,3 +1,4 @@
+import { installOperationalDocument } from "./helpers/opsOperationalDocument";
 import { expect, test, type Page } from "@playwright/test";
 
 const clubId = "10000000-0000-4000-8000-000000000003";
@@ -138,56 +139,21 @@ async function installMockOpsSession(page: Page) {
   });
 }
 
-async function expectResponsiveReadSurface(page: Page, route: string, action: string) {
-  const pageErrors: string[] = [];
-  const writeRequests: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  page.on("request", (request) => {
-    const path = new URL(request.url()).pathname;
-    if (!["GET", "HEAD", "OPTIONS"].includes(request.method()) && !path.includes("/rpc/get_my_ops_")) {
-      writeRequests.push(`${request.method()} ${path}`);
-    }
+for (const [entry, destination] of [["/ops/tracker", "/tracker"], ["/ops/dealer-swing", "/dealer-swing"]]) {
+  test(entry + " opens its operational document after verifying club access", async ({ page }) => {
+    const writes: string[] = [];
+    page.on("request", request => { const path = new URL(request.url()).pathname;
+      if (!["GET", "HEAD", "OPTIONS"].includes(request.method()) && !path.includes("/rpc/get_my_ops_")) writes.push(path);
+    });
+    await installMockOpsSession(page); await installOperationalDocument(page, destination);
+    await page.goto(entry + "?club=" + clubId + "&t=stale#old");
+    await expect(page.getByRole("heading", { name: "Operational destination" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(destination + "$")); expect(writes).toEqual([]);
   });
-  await installMockOpsSession(page);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(`${route}?club=${clubId}`);
-
-  await expect(page.getByRole("main").getByText("READ_ONLY", { exact: true })).toBeVisible();
-  await expect(page.locator(`[data-ops-action="${action}"]`)).toBeVisible();
-  await expect(page.getByRole("button", { name: /Đổi/u })).toBeVisible();
-  expect(pageErrors).toEqual([]);
-
-  for (const viewport of viewports) {
-    await page.setViewportSize(viewport);
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  }
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  const undersizedTargets = await page.locator("button, a").evaluateAll((elements) => elements
-    .filter((element) => {
-      const style = getComputedStyle(element);
-      return style.visibility !== "hidden" && style.display !== "none";
-    })
-    .map((element) => element.getBoundingClientRect())
-    .filter((rect) => rect.width > 0 && rect.height > 0)
-    .filter((rect) => rect.width < 44 || rect.height < 44));
-  expect(undersizedTargets).toEqual([]);
-  expect(writeRequests).toEqual([]);
+  test(entry + " rejects another club before any document transition", async ({ page }) => {
+    await installMockOpsSession(page); await installOperationalDocument(page, destination);
+    await page.goto(entry + "?club=99999999-9999-4999-8999-999999999999");
+    await expect(page.getByRole("heading", { name: "Không có quyền vận hành" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Operational destination" })).toHaveCount(0);
+  });
 }
-
-test("Tracker is an exact-club responsive read surface", async ({ page }) => {
-  await expectResponsiveReadSurface(page, "/ops/tracker", "tracker.refresh");
-  await expect(page.getByText("CODEX TRACKER READ TEST")).toBeVisible();
-  await expect(page.getByText("Bàn 3")).toBeVisible();
-});
-
-test("Dealer Control excludes payroll and writer controls", async ({ page }) => {
-  await expectResponsiveReadSurface(page, "/ops/dealer-swing", "dealer-control.refresh");
-  await expect(page.getByText("CODEX DEALER TEST")).toBeVisible();
-  await expect(page.getByText(/Không mount gán dealer/u)).toBeVisible();
-  const moduleActions = await page.locator("[data-ops-action]").evaluateAll((elements) =>
-    elements.map((element) => element.getAttribute("data-ops-action")),
-  );
-  expect(moduleActions).toEqual(["dealer-control.refresh"]);
-  await expect(page.getByRole("button", { name: /^(Gán dealer|Bắt đầu swing|Checkout|Payroll)$/iu })).toHaveCount(0);
-});
