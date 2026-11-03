@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { PublicSnapshotCoordinator, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
 import type { PublicSnapshotSection, PublicSpectatorSnapshot } from "./publicSnapshotTypes";
 
@@ -12,12 +12,14 @@ export function usePublicSpectatorSnapshot(
   enabled: boolean,
   requestedTableIds: readonly string[] = [],
 ) {
+  const supabase = useSupabaseClient();
   const [snapshot, setSnapshot] = useState<PublicSpectatorSnapshot | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [networkError, setNetworkError] = useState(false);
   const trustedRevisions = useRef<Partial<Record<PublicSnapshotSection, string>>>({});
   const trustedTableScope = useRef("");
   const trustedTournamentId = useRef<string | undefined>(undefined);
+  const trustedClient = useRef(supabase);
   const requestedTableKey = requestedTableIds.join(":");
   const tableIds = useMemo(
     () => normalizeVisibleTableIds(requestedTableKey ? requestedTableKey.split(":") : []),
@@ -32,7 +34,8 @@ export function usePublicSpectatorSnapshot(
       setLoading(false);
       return;
     }
-    if (trustedTournamentId.current !== tournamentId) {
+    if (trustedTournamentId.current !== tournamentId || trustedClient.current !== supabase) {
+      trustedClient.current = supabase;
       trustedTournamentId.current = tournamentId;
       trustedRevisions.current = {};
       trustedTableScope.current = "";
@@ -121,9 +124,10 @@ export function usePublicSpectatorSnapshot(
       document.removeEventListener("visibilitychange", onVisibility);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [enabled, tournamentId, tableKey, tableIds]);
+  }, [enabled, tournamentId, tableKey, tableIds, supabase]);
 
-  return { snapshot, loading, networkError };
+  const currentScope = trustedClient.current === supabase && snapshot?.tournamentId === tournamentId;
+  return { snapshot: currentScope ? snapshot : null, loading, networkError };
 }
 
 function mergeSnapshot(previous: PublicSpectatorSnapshot | null, next: PublicSpectatorSnapshot): PublicSpectatorSnapshot {

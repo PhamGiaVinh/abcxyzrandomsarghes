@@ -38,6 +38,7 @@ import { ReentryPanel } from "@/components/cashier/ReentryPanel";
 import { SatelliteTicketRedeemPanel } from "@/components/cashier/SatelliteTicketRedeemPanel";
 import { SePaySettlementTab } from "@/components/cashier/SePaySettlementTab";
 import DealerPtWageTab from "@/components/cashier/DealerPtWageTab";
+import { TournamentPayoutTab } from "@/components/cashier/TournamentPayoutTab";
 import { FEATURES, OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
 import { PROFILE_REVIEW_ENABLED } from "@/lib/profileReviewGate";
 import {
@@ -59,7 +60,7 @@ const refundPreviewSchema=z.object({deal_id:z.string().uuid(),club_id:z.string()
   state:z.enum(['eligible','refunded']),amount_vnd:z.number().int().nonnegative().safe(),purchase_count:z.number().int().nonnegative().safe(),request_id:z.string().uuid().nullable().optional()});
 type RefundPreview=z.infer<typeof refundPreviewSchema>;
 type RefundPreviewRead=(name:'get_staking_refund_preview_v1',args:{p_deal:string})=>{abortSignal(signal:AbortSignal):PromiseLike<{data:unknown;error:unknown}>};
-type SectionKey = "overview" | "staking" | "members" | "reports" | "tournament_registrations" | "offline_buyin" | "reentry" | "sepay_settlement" | "pt_wages";
+type SectionKey = "overview" | "staking" | "members" | "reports" | "tournament_registrations" | "offline_buyin" | "reentry" | "sepay_settlement" | "pt_wages" | "tournament_payouts";
 
 export default function CashierDashboard() {
   const { user, loading, isAdmin, rolesLoading, rolesError } = useAuth();
@@ -226,6 +227,7 @@ export default function CashierDashboard() {
 
   const navItems: { key: SectionKey; label: string; icon: any }[] = [
     { key: "overview", label: "Tổng quan", icon: LayoutDashboard },
+    ...(FEATURES.prizePayoutTracking && clubIds.length > 0 ? [{ key: "tournament_payouts" as SectionKey, label: "Trả thưởng giải", icon: Banknote }] : []),
     { key: "staking", label: "Staking", icon: Coins },
     { key: "members", label: "Thành viên", icon: UsersIcon },
     { key: "reports", label: "Doanh thu", icon: FileBarChart },
@@ -282,6 +284,9 @@ export default function CashierDashboard() {
         <main className="col-span-12 md:col-span-9 lg:col-span-10 min-w-0">
           {section === "overview" && <OverviewPanel key={JSON.stringify([userId, isAdmin, [...clubIds].sort()])} clubIds={clubIds} onJump={setSection} />}
           {section === "staking" && <StakingPanel clubIds={clubIds} />}
+          {section === "tournament_payouts" && (FEATURES.prizePayoutTracking && clubIds.length > 0
+            ? <TournamentPayoutTab clubIds={clubIds} />
+            : <Card className="p-8 text-center text-sm text-muted-foreground">Chưa mở ghi nhận trả thưởng cho tài khoản này.</Card>)}
           {section === "members" && <MembersPanel clubIds={clubIds} clubs={clubs} />}
           {section === "reports" && <ReportsPanel clubIds={clubIds} clubs={clubs} />}
           {section === "pt_wages" && (showPtWages

@@ -8,9 +8,10 @@ const { rpc, removeChannel, channel } = vi.hoisted(() => {
   return { rpc: vi.fn(), removeChannel: vi.fn(), channel };
 });
 
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: { rpc, channel: () => channel, removeChannel },
-}));
+vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
+  const client = { rpc, channel: () => channel, removeChannel };
+  return { useSupabaseClient: () => client };
+});
 
 afterEach(() => {
   cleanup();

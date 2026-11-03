@@ -2716,7 +2716,7 @@
   "liveHub": {
     "tabs": { "updates": "실시간", "tablesLive": "라이브 테이블", "leaders": "순위", "handHistory": "핸드 기록", "prizes": "상금", "structure": "구조", "photos": "사진", "back": "뒤로" },
     "watch": { "title": "라이브 테이블", "replay": "핸드 리플레이" },
-    "prizes": { "empty": "상금 구조가 아직 없습니다", "total": "총 상금", "position": "순위", "amount": "상금", "rank": "#{{n}}" },
+    "prizes": { "empty": "상금 구조가 아직 없습니다", "total": "총 상금", "position": "순위", "amount": "상금", "rank": "#{{n}}", "champion": "우승자" },
     "structure": { "empty": "블라인드 구조가 아직 없습니다", "level": "Lv", "blinds": "블라인드 (SB/BB)", "ante": "앤티", "time": "분", "break": "휴식" },
     "photos": { "empty": "사진이 아직 없습니다", "soon": "이벤트 사진이 곧 제공됩니다" },
     "breakdown": {

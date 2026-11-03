@@ -3010,7 +3010,7 @@
       "close": "Đóng trình xem"
     },
     "state": { "error": "Không tải được cập nhật. Vui lòng thử lại." },
-    "prizes": { "empty": "Chưa có cơ cấu giải thưởng", "total": "Tổng thưởng", "position": "Hạng", "amount": "Tiền thưởng", "rank": "#{{n}}" },
+    "prizes": { "empty": "Chưa có cơ cấu giải thưởng", "total": "Tổng thưởng", "position": "Hạng", "amount": "Tiền thưởng", "rank": "#{{n}}", "champion": "Nhà vô địch" },
     "structure": { "empty": "Chưa có cấu trúc mù", "level": "Lv", "blinds": "Mù (SB/BB)", "ante": "Ante", "time": "Phút", "break": "Nghỉ giải lao" },
     "photos": { "empty": "Chưa có ảnh", "soon": "Hình ảnh sự kiện sẽ sớm có ở đây", "photoAlt": "Ảnh giải đấu" },
     "breakdown": {

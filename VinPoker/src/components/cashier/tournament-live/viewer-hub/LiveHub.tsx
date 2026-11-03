@@ -393,7 +393,7 @@ function LiveHubContent({
                   {realtimeEnabled ? <>
                     <TabsTrigger value="updates" className={RPT_TAB_TRIGGER}><Activity className="mr-1.5 h-4 w-4" aria-hidden="true" />{t("liveHub.tabs.updates", "Cập nhật")}</TabsTrigger>
                     <TabsTrigger value="history" className={RPT_TAB_TRIGGER}><Radio className="mr-1.5 h-4 w-4" aria-hidden="true" />{t("liveHub.tabs.tablesLive", "Bàn LIVE")}</TabsTrigger>
-                    <TabsTrigger value="prizes" className={RPT_TAB_TRIGGER}><Crown className="mr-1.5 h-4 w-4" aria-hidden="true" />{t("liveHub.tabs.leaders", "Xếp hạng")}</TabsTrigger>
+                    <TabsTrigger value="prizes" className={RPT_TAB_TRIGGER}><Crown className="mr-1.5 h-4 w-4" aria-hidden="true" />{t("liveHub.tabs.prizes", "Giải thưởng")}</TabsTrigger>
                     <TabsTrigger value="structure" className={RPT_TAB_TRIGGER}><Layers3 className="mr-1.5 h-4 w-4" aria-hidden="true" />{t("liveHub.tabs.structure", "Cấu trúc")}</TabsTrigger>
                   </> : <>
                     <TabsTrigger value="updates" className={RPT_TAB_TRIGGER}><Activity className="mr-1.5 h-4 w-4" aria-hidden="true" />{t("liveHub.tabs.updates", "Cập nhật")}</TabsTrigger>

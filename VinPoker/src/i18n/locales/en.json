@@ -3010,7 +3010,7 @@
       "close": "Close viewer"
     },
     "state": { "error": "Updates could not be loaded. Please try again." },
-    "prizes": { "empty": "No prize structure yet", "total": "Total prizes", "position": "Place", "amount": "Prize", "rank": "#{{n}}" },
+    "prizes": { "empty": "No prize structure yet", "total": "Total prizes", "position": "Place", "amount": "Prize", "rank": "#{{n}}", "champion": "Champion" },
     "structure": { "empty": "No blind structure yet", "level": "Lv", "blinds": "Blinds (SB/BB)", "ante": "Ante", "time": "Min", "break": "Break" },
     "photos": { "empty": "No photos yet", "soon": "Event photos coming soon", "photoAlt": "Tournament photo" },
     "breakdown": {
