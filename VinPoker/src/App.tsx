@@ -38,6 +38,7 @@ const Account = lazy(() => import("./pages/Account"));
 const Auth = lazy(() => import("./pages/Auth"));
 const ClubAdmin = lazy(() => import("./pages/ClubAdmin"));
 const ClubFinanceDashboard = lazy(() => import("./pages/ClubFinanceDashboard"));
+const FinanceWorkspace = lazy(() => import("./pages/FinanceWorkspace"));
 // Accounting Control "Tài chính & Đối soát" — UI-only mock shell; page self-gates on FEATURES.accountingControl.
 const AccountingControl = lazy(() => import("./pages/AccountingControl"));
 const DealerInsuranceProfiles = lazy(() => import("./pages/DealerInsuranceProfiles"));
@@ -381,11 +382,13 @@ const App = () => {
                 <Route path="/packages/:packageId" element={<PackageDetail />} />
                 <Route path="/player/:userId" element={<PlayerProfile />} />
                 <Route path="/club/admin" element={<ClubAdmin />} />
-                <Route path="/club/admin/finance" element={<ClubFinanceDashboard />} />
+                <Route element={<FinanceWorkspace />}>
+                  <Route path="/finance" element={null} />
+                  <Route path="/club/admin/finance" element={<ClubFinanceDashboard />} />
+                  <Route path="/club/admin/accounting-control" element={<AccountingControl />} />
+                  <Route path="/accountant" element={<AccountantDashboard />} />
+                </Route>
                 <Route path="/club/admin/expenses" element={<ClubExpenses />} />
-                {/* Tài chính & Đối soát — mock cockpit. Page self-gates on FEATURES.accountingControl (default OFF).
-                    Device-aware: phones get the read-only mobile /ops/accounting view. */}
-                <Route path="/club/admin/accounting-control" element={<AccountingControl />} />
                 <Route path="/club/admin/insurance" element={<DealerInsuranceProfiles />} />
                 {/* Trí tuệ Series device-aware: phones get the read-only mobile /ops/series view. */}
                 <Route path="/club/admin/series-intelligence" element={<SeriesIntelligence />} />
@@ -414,7 +417,6 @@ const App = () => {
                 <Route path="/dealer-board" element={<DealerControlBoard />} />
                 <Route path="/tracker" element={<TrackerDashboard />} />
                 <Route path="/tracker/history" element={<TrackerHandHistory />} />
-                <Route path="/accountant" element={<AccountantDashboard />} />
                 <Route path="/tracker/hand-input" element={<TrackerHandInputConsole />} />
                 <Route path="/tracker/player/:playerId/analytics" element={<TrackerPlayerAnalytics />} />
                 <Route path="/floor" element={<FloorDashboard />} />

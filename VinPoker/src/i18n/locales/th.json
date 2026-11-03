@@ -3263,5 +3263,14 @@
   "tableHistory": {
     "blindUnavailable": "บลายด์ —", "ante": "แอนตี", "received": "ได้รับ", "main": "พอตหลัก", "side": "พอตข้าง",
     "publicCards": "ไพ่ที่เปิดเผยของ {{name}}", "net": "ผลสุทธิ", "pending": "กำลังตรวจสอบผล", "replay": "เล่นแฮนด์ซ้ำ"
+  },
+  "financeWorkspace": {
+    "title": "การเงินและการกระทบยอด",
+    "overview": "ภาพรวมรายรับรายจ่าย",
+    "overviewDescription": "รายได้ ค่าใช้จ่าย และยอดประมาณการของคลับ",
+    "payroll": "เงินเดือนและบุคลากร",
+    "payrollDescription": "เงินเดือน พนักงาน ค่าใช้จ่าย และขั้นตอนอนุมัติ",
+    "reconciliation": "การกระทบยอดและรายงาน",
+    "reconciliationDescription": "ข้อมูลสรุปและการแจ้งเตือน บางแท็บยังใช้ข้อมูลตัวอย่าง"
   }
 }

@@ -3263,5 +3263,14 @@
   "tableHistory": {
     "blindUnavailable": "盲注 —", "ante": "前注", "received": "获得", "main": "主池", "side": "边池",
     "publicCards": "{{name}}公开的手牌", "net": "净变化", "pending": "结果核验中", "replay": "回放牌局"
+  },
+  "financeWorkspace": {
+    "title": "财务与对账",
+    "overview": "收支概览",
+    "overviewDescription": "俱乐部收入、支出及暂估金额。",
+    "payroll": "薪资与人事",
+    "payrollDescription": "薪资、员工、费用及审批流程。",
+    "reconciliation": "对账与报表",
+    "reconciliationDescription": "汇总与提醒；部分标签页仍使用示例数据。"
   }
 }

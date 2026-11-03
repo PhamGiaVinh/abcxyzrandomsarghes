@@ -3263,5 +3263,14 @@
   "tableHistory": {
     "blindUnavailable": "ブラインド —", "ante": "アンティ", "received": "獲得", "main": "メインポット", "side": "サイドポット",
     "publicCards": "{{name}}の公開カード", "net": "純増減", "pending": "結果を確認中", "replay": "ハンドを再生"
+  },
+  "financeWorkspace": {
+    "title": "財務・照合",
+    "overview": "収支概要",
+    "overviewDescription": "クラブの収益、費用、暫定金額。",
+    "payroll": "給与・人事",
+    "payrollDescription": "給与、従業員、費用、承認フロー。",
+    "reconciliation": "照合・レポート",
+    "reconciliationDescription": "集計とアラート。一部のタブはサンプルデータを使用しています。"
   }
 }

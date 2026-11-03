@@ -3259,5 +3259,14 @@
   "tableHistory": {
     "blindUnavailable": "블라인드 —", "ante": "앤티", "received": "획득", "main": "메인 팟", "side": "사이드 팟",
     "publicCards": "{{name}}의 공개 카드", "net": "순변동", "pending": "결과 확인 중", "replay": "핸드 다시 보기"
+  },
+  "financeWorkspace": {
+    "title": "재무 및 대사",
+    "overview": "수입 및 지출",
+    "overviewDescription": "클럽 수익, 비용 및 잠정 금액.",
+    "payroll": "급여 및 인사",
+    "payrollDescription": "급여, 직원, 비용 및 승인 절차.",
+    "reconciliation": "대사 및 보고서",
+    "reconciliationDescription": "요약 및 알림. 일부 탭은 아직 샘플 데이터를 사용합니다."
   }
 }

@@ -3646,5 +3646,14 @@
   "tableHistory": {
     "blindUnavailable": "Blinds —", "ante": "Ante", "received": "Received", "main": "main pot", "side": "side pot",
     "publicCards": "{{name}}'s revealed cards", "net": "Net change", "pending": "Result under review", "replay": "Replay hand"
+  },
+  "financeWorkspace": {
+    "title": "Finance & Reconciliation",
+    "overview": "Income & expenses",
+    "overviewDescription": "Club revenue, expenses and provisional amounts.",
+    "payroll": "Payroll & staff",
+    "payrollDescription": "Payroll, staff, expenses and approval workflows.",
+    "reconciliation": "Reconciliation & reports",
+    "reconciliationDescription": "Summaries and alerts; some tabs still use sample data."
   }
 }
