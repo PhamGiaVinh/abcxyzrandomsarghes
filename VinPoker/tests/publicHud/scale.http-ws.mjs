@@ -55,7 +55,7 @@ for(const scenario of ['concentrated','distributed']){
  for(let i=0;i<viewers;i++){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
-  const state={client,online:false,accessOnline:false,joined:false,reconnected:0,revocations:0,deliverySamples:0,expected:[],busy:false,pending:false,lastRead:0,lastVerify:0,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  const state={client,online:false,accessOnline:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,expected:[],busy:false,pending:false,lastRead:0,lastVerify:0,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
   const read=async()=>{
    if(state.busy){state.pending=true;return;}state.busy=true;
    try{
@@ -91,11 +91,16 @@ for(const scenario of ['concentrated','distributed']){
    if(message.payload?.tournamentId!==tour)return;
    const components=message.payload.components??['tables'];
    if(components.includes('tables')||components.includes('visibility'))track(read());
-  }).subscribe(s=>{state.online=s==='SUBSCRIBED';if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());}});
-  client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{state.hudEpoch++;state.frozen=null;state.revocations++;stats.revocationClears++;track(openHud());}).subscribe(s=>{state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;});
+  }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());}});
+  client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{state.hudEpoch++;state.frozen=null;state.revocations++;stats.revocationClears++;track(openHud());}).subscribe(s=>{state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;});
   if(i%25===24)await sleep(25);
  }
- await until(async()=>clients.every(c=>c.online&&c.accessOnline),60000,'Not every viewer joined both live channels');
+ try{await until(async()=>clients.every(c=>c.online&&c.accessOnline),60000,'Not every viewer joined both live channels');}
+ catch(error){
+  const counts=field=>Object.fromEntries([...new Set(clients.map(c=>c[field]))].map(s=>[s,clients.filter(c=>c[field]===s).length]));
+  const diagnostic={phase:'viewer-join-failure',scenario,viewers,table:counts('tableStatus'),access:counts('accessStatus'),bothSubscribed:clients.filter(c=>c.online&&c.accessOnline).length};
+  writeFileSync('output/hud-scale/join-failure.json',JSON.stringify(diagnostic,null,2));console.log(JSON.stringify(diagnostic));throw error;
+ }
  // Stagger opens so this tests a real HTTP audience, not a single service cache call.
  for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud()));
  started=Date.now();end=started+duration*1000;coverageAt=started;

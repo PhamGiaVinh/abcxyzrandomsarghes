@@ -52,10 +52,10 @@ export function initialize(options={}){
   sql(fixture.slice(split));
   options.afterSourceTriggers?.();
   for(const file of [
-    'supabase/pending-migrations/20261104001500_public_hud_incremental_projection.sql',
-    'supabase/pending-migrations/20261104001600_public_hud_worker_rpc.sql',
-    'supabase/pending-migrations/20261104001700_public_hud_metadata_backfill.sql',
-    'supabase/pending-migrations/20261104001800_public_hud_read_contract.sql',
-    'supabase/pending-migrations/20261104002000_public_hud_dispatch_health.sql']) sql(readFileSync(file,'utf8'));
+    'supabase/migrations/20261104001500_public_hud_incremental_projection.sql',
+    'supabase/migrations/20261104001600_public_hud_worker_rpc.sql',
+    'supabase/migrations/20261104001700_public_hud_metadata_backfill.sql',
+    'supabase/migrations/20261104001800_public_hud_read_contract.sql',
+    'supabase/migrations/20261104002000_public_hud_dispatch_health.sql']) sql(readFileSync(file,'utf8'));
 }
 export const service="SET request.jwt.claim.role='service_role'; SET ROLE service_role;";

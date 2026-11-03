@@ -49,8 +49,8 @@ initialize({seedHistoricalSource(){
  sql(triggers);
  for(const [begin,end] of [['CREATE OR REPLACE FUNCTION public.claim_public_spectator_projection_v2','CREATE OR REPLACE FUNCTION public.get_public_spectator_projection_source_v2'],['CREATE OR REPLACE FUNCTION public.fail_public_spectator_projection_v2','CREATE OR REPLACE FUNCTION public.get_public_tournament_viewer_snapshot_v2']])sql(baseline.slice(baseline.indexOf(begin),baseline.indexOf(end)));
 },afterSourceTriggers(){baselineWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();}});
-sql(readFileSync('supabase/pending-migrations/20261104001900_public_spectator_compact_generations.sql','utf8'));
-sql(readFileSync('supabase/pending-migrations/20261104002100_public_current_hand_bounded.sql','utf8'));
+sql(readFileSync('supabase/migrations/20261104001900_public_spectator_compact_generations.sql','utf8'));
+sql(readFileSync('supabase/migrations/20261104002100_public_current_hand_bounded.sql','utf8'));
 console.log(JSON.stringify({phase:'source-ready',hands:count,elapsedMs:Date.now()-start}));
 const vectors=template.map(c=>`('${c.playerId}'::uuid,ARRAY[${c.numerators}],ARRAY[${c.denominators}],ARRAY[${c.missingProof}])`).join(',');
 sql(`CREATE TEMP TABLE fixture_counter_template(player_id uuid,n bigint[],d bigint[],m bigint[]);

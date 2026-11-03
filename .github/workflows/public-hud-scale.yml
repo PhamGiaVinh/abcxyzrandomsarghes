@@ -15,6 +15,10 @@ on:
         description: 'Full 1000 viewers, 1M hands, two 30-minute scenarios'
         type: boolean
         default: false
+      connection_probe:
+        description: 'Diagnostic 1000 real viewers against small history, two 30-second scenarios'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -29,7 +33,7 @@ jobs:
         working-directory: VinPoker
     env:
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || '100' }}
-      PUBLIC_HUD_SCALE_VIEWERS: ${{ inputs.qualification && '1000' || '10' }}
+      PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:

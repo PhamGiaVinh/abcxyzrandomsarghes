@@ -7,8 +7,7 @@ on:
       - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
       - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
       - 'VinPoker/supabase/functions/public-player-hud/**'
-      - 'VinPoker/supabase/pending-migrations/20261104001*.sql'
-      - 'VinPoker/supabase/pending-migrations/20261104002000_public_hud_dispatch_health.sql'
+      - 'VinPoker/supabase/migrations/2026110400*.sql'
       - 'VinPoker/src/lib/preparedPublicPlayerHud*'
       - 'VinPoker/src/components/tracker/PublicPlayerHud*'
       - 'VinPoker/src/components/cashier/tournament-live/**'
@@ -63,6 +62,8 @@ jobs:
         run: deno check supabase/functions/public-hud-projector-v1/index.ts supabase/functions/public-spectator-projector-v2/index.ts
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize
+      - name: Exact seven-migration release guards and atomic receipts
+        run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_generation_ci
