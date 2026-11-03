@@ -21,13 +21,13 @@ const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
 async function post(path,body,privileged=false,phase='other'){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
  const response=await fetch(status.API_URL+path,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}).catch(error=>{
-  const kind=`${phase}:${error?.name==='TimeoutError'?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
+  const kind=`${phase}:${path.split('/').at(-1)}:${error?.name==='TimeoutError'?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
  const timingKey=phase+':'+path;
  const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[]};
  timings.headers.push(performance.now()-start);
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers.get(header);if(value!==null&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
- if(!response.ok){let code='';try{const body=await response.json();if(typeof body.code==='string'&&/^[A-Z_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
+ if(!response.ok){let code='';try{const body=await response.json();if(typeof body.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:${path.split('/').at(-1)}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
  const value=await response.json();if(path.endsWith('public-player-hud')&&body.mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
 }
@@ -43,7 +43,8 @@ assert.equal(privilegedHeader.access,'revoked','Service header must not widen th
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[];
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:state==='passed'&&viewers===1000&&duration===1800,status:state,reports},null,2));
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:state==='passed'&&viewers===1000&&duration===1800,status:state,reports,
+ partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,snapshotSamples:stats.snapshot.length,sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(viewers===1000&&duration===1800){
@@ -64,7 +65,7 @@ for(const scenario of ['concentrated','distributed']){
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
  const resourceTimer=setInterval(()=>{
   track(fetch(status.API_URL+'/functions/v1/_internal/metric',{signal:AbortSignal.timeout(3000)}).then(async response=>{if(!response.ok)return;const value=await response.json();const safe={at:Date.now(),scenario};for(const key of ['activeUserWorkersCount','retiredUserWorkersCount','receivedRequestsCount','handledRequestsCount'])if(Number.isSafeInteger(value[key]))safe[key]=value[key];appendFileSync('output/hud-scale/edge-runtime.jsonl',JSON.stringify(safe)+'\n');}).catch(()=>{}));
-  track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
+  track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`,`supabase_rest_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
   const query="SELECT jsonb_build_object('at',clock_timestamp(),'backends',(SELECT jsonb_agg(to_jsonb(s)) FROM (SELECT state,wait_event_type,count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY state,wait_event_type) s),'waitingLocks',(SELECT count(*) FROM pg_locks WHERE NOT granted));";
   track(run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',query],{env:{...process.env,PGPASSWORD:'postgres'}}).then(({stdout})=>appendFileSync('output/hud-scale/pg-pressure.jsonl',stdout)).catch(()=>error('pg_pressure_sample')));
  },5000);
@@ -120,7 +121,12 @@ for(const scenario of ['concentrated','distributed']){
   const openHud=async(phase='user-open')=>{
    const epoch=++state.hudEpoch,expectedRevocation=revoking;
    try{
-    const [value,history]=await Promise.all([hud(tour,'summary',undefined,phase),hud(tour,'history')]);if(epoch!==state.hudEpoch)return;
+    let value,history;
+    if(phase==='revocation-revalidate'){
+     value=await hud(tour,'summary',undefined,phase);
+     if(value.access==='public'&&['current','updating'].includes(value.state))history=await hud(tour,'history',undefined,phase+'-history');
+    }else [value,history]=await Promise.all([hud(tour,'summary',undefined,phase),hud(tour,'history')]);
+    if(epoch!==state.hudEpoch)return;
     state.lastHud=Date.now();
     if(value.access==='public'&&['current','updating'].includes(value.state)&&Number.isSafeInteger(value.counters?.publicHands)){
      state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};

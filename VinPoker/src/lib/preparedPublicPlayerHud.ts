@@ -35,7 +35,7 @@ export async function loadPublicHudHistoryPage(tournamentId:string,playerId:stri
   if(next&&cursor&&next.handId===cursor.handId&&next.playedAt===cursor.playedAt)throw Error('PUBLIC_HUD_REPEATED_CURSOR');
   return {hands:data.handHistory,nextCursor:next};
 }
-export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal,frozen?:PreparedPublicPlayerHudData,onAccessChanged?:()=>void):Promise<PreparedPublicPlayerHudData>{
+export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:string,requestSignal:AbortSignal,frozen?:PreparedPublicPlayerHudData,onAccessChanged?:()=>void,accessCheckFirst=false):Promise<PreparedPublicPlayerHudData>{
   if(requestSignal.aborted)throw Error('aborted');
   if(frozen&&(frozen.tournamentId!==tournamentId||frozen.playerId!==playerId))throw Error('PUBLIC_HUD_SCOPE_UNAVAILABLE');
   const controller=new AbortController(),abort=()=>controller.abort();
@@ -43,7 +43,9 @@ export async function loadPreparedPublicPlayerHud(tournamentId:string,playerId:s
   try{
     // A new window loads two bounded reads. Reconnect only checks access; an
     // unchanged scope must not fetch history or replace the frozen revision.
-    const initial=frozen?null:await Promise.all([read(tournamentId,playerId,'summary',controller.signal),loadPublicHudHistoryPage(tournamentId,playerId,controller.signal)]);
+    // A revocation clears the UI immediately. Do not spend a history read on
+    // a warming or withdrawn scope while the server revalidates its totals.
+    const initial=frozen||accessCheckFirst?null:await Promise.all([read(tournamentId,playerId,'summary',controller.signal),loadPublicHudHistoryPage(tournamentId,playerId,controller.signal)]);
     const summary=initial?.[0]??await read(tournamentId,playerId,'summary',controller.signal,undefined,frozen?.accessSnapshot);
     if(summary.scope!=='all-public-tournaments'||summary.coverageComplete!==true||summary.version!=='public-hud-projection-v1'||
       !/^\d+$/.test(summary.revision)||typeof summary.accessSnapshot!=='string'||!/^\d+:\d+:(\d+(,\d+)*)?$/.test(summary.accessSnapshot)||typeof summary.accessChanged!=='boolean'||!Number.isFinite(Date.parse(summary.computedAt))||!Number.isSafeInteger(summary.analytics?.handsObserved)||summary.analytics.handsObserved<0||

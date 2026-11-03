@@ -61,7 +61,7 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
         setError(false);setPreparing(false);
         const read=()=>{requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen??undefined,()=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);}
-        }).then(value=>{
+        },reason!=='open').then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
             if(!frozen||(value!==frozen&&value.accessChanged)){frozen=value;setResult(value);}
           }

@@ -49,7 +49,7 @@ an advanced generation and a current projection; rounded timestamps alone are
 insufficient. Coalesced reads may finish within the bounded 10-second tail,
 without dropping late/missing samples from the latency/error denominator.
 
-The pinned local runtime uses `per_request` supervision and at most 16 reusable
+The pinned local runtime uses `per_request` supervision and at most 64 reusable
 workers per function. The CLI-generated gateway, image, 256MB per worker,
 CPU soft/hard 1000/2000ms, wall/HTTP limits, secrets and bind mounts are retained.
 Only policy and pool parallelism change; no production setting changes. This
@@ -67,6 +67,8 @@ payment/publication rules; HUD opening does not invoke that lifetime financial
 reader. New HUD windows read summary and history in parallel. Reconnect checks
 summary access only and preserves the frozen object if the access scope did not
 change. Known invalidation clears it before waiting for replacement history.
+After an explicit revocation, summary permission/readiness is checked first;
+warming or withdrawn scopes do not start a replacement-history request.
 
 ## Evidence and limits
 

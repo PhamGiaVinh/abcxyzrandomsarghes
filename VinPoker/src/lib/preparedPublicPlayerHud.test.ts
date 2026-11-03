@@ -24,6 +24,16 @@ it('checks reconnect access with one summary read and preserves the opened revis
   expect(await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen)).toBe(frozen);
   expect(invoke).toHaveBeenCalledTimes(1);expect(invoke.mock.calls[0][1].body).toMatchObject({mode:'summary',access_snapshot:'1:2:'});
 });
+it('checks an invalidated scope before history and skips history while warming or revoked',async()=>{
+ for(const data of [{access:'public',state:'warming'},{access:'revoked'}]){
+  invoke.mockReset();invoke.mockResolvedValue({data,error:null});
+  await expect(loadPreparedPublicPlayerHud(t,p,new AbortController().signal,undefined,undefined,true)).rejects.toThrow();
+  expect(invoke).toHaveBeenCalledTimes(1);expect(invoke.mock.calls[0][1].body.mode).toBe('summary');
+ }
+ invoke.mockReset();invoke.mockImplementation((_n,{body})=>Promise.resolve({data:body.mode==='summary'?summary():history(),error:null}));
+ await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,undefined,undefined,true);
+ expect(invoke.mock.calls.map(c=>c[1].body.mode)).toEqual(['summary','history']);
+});
 it('never reuses another player or tournament snapshot',async()=>{
   const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);invoke.mockClear();
   for(const different of [{...frozen,playerId:t},{...frozen,tournamentId:p}])await expect(loadPreparedPublicPlayerHud(t,p,new AbortController().signal,different)).rejects.toThrow('PUBLIC_HUD_SCOPE_UNAVAILABLE');
