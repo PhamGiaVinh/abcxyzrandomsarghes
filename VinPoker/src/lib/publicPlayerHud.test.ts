@@ -37,11 +37,34 @@ it('rejects repeated cursors and keeps current-tournament replay separate from l
 });
 it('aborts the traversal when the HUD is closed',async()=>{
  const controller=new AbortController();invoke.mockResolvedValue({data:page('current-tournament'),error:null});controller.abort();
- await expect(loadPublicPlayerHud(T,P,controller.signal)).rejects.toThrow('aborted');expect(invoke).toHaveBeenCalledTimes(1);
+ await expect(loadPublicPlayerHud(T,P,controller.signal)).rejects.toThrow('aborted');expect(invoke).not.toHaveBeenCalled();expect(manifest).not.toHaveBeenCalled();
 });
 
 it('rejects the whole lifetime result when an earlier hand changes during the scan',async()=>{
  invoke.mockResolvedValueOnce({data:page('current-tournament'),error:null}).mockResolvedValueOnce({data:page(),error:null});
  manifest.mockResolvedValueOnce({error:null,data:{tournamentId:T,playerId:P,asOf:'2026-01-01T00:00:00.000Z',digest:'a'.repeat(64)}}).mockResolvedValueOnce({error:null,data:{tournamentId:T,playerId:P,asOf:'2026-01-01T00:00:00.000Z',digest:'b'.repeat(64)}});
  await expect(loadPublicPlayerHud(T,P,new AbortController().signal)).rejects.toThrow('PUBLIC_HUD_HISTORY_CHANGED');
+});
+
+it('publishes validated tour history while the independent lifetime scan is still waiting',async()=>{
+ let resolveManifest!:(value:unknown)=>void;
+ manifest.mockImplementationOnce(()=>new Promise(resolve=>{resolveManifest=resolve;}));
+ invoke.mockResolvedValueOnce({data:page('current-tournament'),error:null}).mockResolvedValue({data:page(),error:null});
+ const current=vi.fn();let complete=false;
+ const task=loadPublicPlayerHud(T,P,new AbortController().signal,undefined,current).then(value=>{complete=true;return value;});
+ await vi.waitFor(()=>expect(current).toHaveBeenCalledTimes(1));
+ expect(manifest).toHaveBeenCalledTimes(1);expect(complete).toBe(false);
+ expect(current.mock.calls[0][0].scope).toBe('current-tournament');
+ resolveManifest({data:{tournamentId:T,playerId:P,asOf:'2026-01-01T00:00:00.000Z',digest:'a'.repeat(64)},error:null});
+ expect((await task).lifetimeHands).toBe(50);
+});
+it('cancels the sibling request and rejects late previews after lifetime verification fails',async()=>{
+ let resolveCurrent!:(value:unknown)=>void;
+ invoke.mockImplementationOnce(()=>new Promise(resolve=>{resolveCurrent=resolve;}));
+ manifest.mockResolvedValueOnce({data:null,error:new Error('manifest failed')});
+ const current=vi.fn();
+ await expect(loadPublicPlayerHud(T,P,new AbortController().signal,undefined,current)).rejects.toThrow('manifest failed');
+ const options=invoke.mock.calls[0][1];expect(options.signal.aborted).toBe(true);
+ resolveCurrent({data:page('current-tournament'),error:null});
+ await Promise.resolve();await Promise.resolve();expect(current).not.toHaveBeenCalled();
 });

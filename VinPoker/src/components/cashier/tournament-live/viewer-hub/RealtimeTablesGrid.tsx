@@ -4,7 +4,9 @@ import { SpectatorMiniTable } from "./SpectatorMiniTable";
 import type { TableAppearance } from "@/components/tracker/tableAppearance";
 import "./realtimeTablesGrid.css";
 import type { PublicFreshness, PublicTableCatalogItem, PublicTableSnapshot } from "./publicSnapshotTypes";
-import { PublicPlayerHud } from '@/components/tracker/PublicPlayerHud';
+import { lazy, Suspense } from 'react';
+
+const PublicPlayerHud = lazy(() => import('@/components/tracker/PublicPlayerHud').then(module => ({default: module.PublicPlayerHud})));
 
 const PAGE_SIZE = 6;
 export function RealtimeTablesGrid({ tournamentId, catalog, tables, freshness, loading, appearance, onVisibleTableIds, onView, onHistory }: { tournamentId?: string; appearance?: TableAppearance; catalog: PublicTableCatalogItem[]; tables: PublicTableSnapshot[]; freshness?: PublicFreshness; loading?: boolean; onVisibleTableIds: (ids: string[]) => void; onView: (id: string) => void; onHistory: (id: string) => void }) {
@@ -29,7 +31,7 @@ export function RealtimeTablesGrid({ tournamentId, catalog, tables, freshness, l
     onVisibleTableIds(visibleKey ? visibleKey.split(":") : []);
   }, [onVisibleTableIds, visibleKey]);
   return <section className="min-w-0 space-y-3" aria-label="Bàn trực tiếp">
-    {tournamentId && <PublicPlayerHud tournamentId={tournamentId} playerId={hudPlayerId} onClose={() => setHudPlayerId(null)} />}
+    {tournamentId && hudPlayerId && <Suspense fallback={<p role="status">Đang mở hồ sơ người chơi…</p>}><PublicPlayerHud tournamentId={tournamentId} playerId={hudPlayerId} onClose={() => setHudPlayerId(null)} /></Suspense>}
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[hsl(var(--viewer-neon))]">Tables live</p><h2 className="text-xl font-black">Bàn trực tiếp</h2></div>
       <label className="flex min-h-11 min-w-[15rem] flex-1 items-center gap-2 rounded-xl border border-border/60 bg-card/55 px-3 sm:max-w-sm"><Search className="h-4 w-4 text-muted-foreground" /><span className="sr-only">Tìm bàn hoặc người chơi</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm bàn hoặc người chơi" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" /></label>

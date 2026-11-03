@@ -10,7 +10,7 @@ import { useTournamentTableAppearance } from "@/components/tracker/useTournament
 // chơi" to watch live, or a hand to replay. OFF: today's stacked layout (felt
 // always shown), byte-identical.
 
-import { cloneElement, isValidElement, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, Suspense, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { TrackerViewerCardProvider, TrackerCardStyleToggle } from "@/components/tracker/TrackerCardStyle";
 import { useTranslation } from "react-i18next";
 import { Activity, History, Trophy, Layers3, Image as ImageIcon, ArrowLeft, Share2, X, Radio, Crown } from "lucide-react";
@@ -172,7 +172,9 @@ function LiveHubContent({
   // plus the table/hand to show). Guard: only inject into component children.
   const cloneViewer = (extra: ViewerProps): ReactNode =>
     isValidElement(children) && typeof children.type !== "string"
-      ? cloneElement(children as ReactElement<ViewerProps>, { key: `${tournamentId}:${extra.selectedTableIdOverride ?? "default"}:${extra.initialTablePanel ?? "felt"}`, orientationOverride: viewerOrientation, spectator: true, ...extra })
+      ? <Suspense fallback={<p role="status" className="p-6 text-center text-sm text-muted-foreground">Đang mở bàn và trình xem ván…</p>}>
+          {cloneElement(children as ReactElement<ViewerProps>, { key: `${tournamentId}:${extra.selectedTableIdOverride ?? "default"}:${extra.initialTablePanel ?? "felt"}`, orientationOverride: viewerOrientation, spectator: true, ...extra })}
+        </Suspense>
       : children;
 
   // ── Legacy stacked layout (flag OFF) — byte-identical to before ────────────────

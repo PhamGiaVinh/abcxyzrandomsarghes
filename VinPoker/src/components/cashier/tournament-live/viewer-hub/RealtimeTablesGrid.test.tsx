@@ -12,11 +12,11 @@ const makeTable = (id: string): PublicTableSnapshot => ({
     playerId: `player-${id}`, entryNumber: 1, seatNumber: 1, name: `Player ${id}`, avatarUrl: null, stack: 2000, holeCards: [], isFolded: false }],
   latestAction: { playerId: `player-${id}`, entryNumber: 1, actionType: "call", amount: 200 },
 });
-it('opens the clicked public player separately from whole-table navigation',()=>{
+it('opens the clicked public player separately from whole-table navigation',async()=>{
   const table=makeTable('hud');const onView=vi.fn();
   const view=render(<RealtimeTablesGrid tournamentId="t" tables={[table]} catalog={[{tableId:'hud',name:table.name,playerCount:1,searchPlayers:[]}]} onVisibleTableIds={vi.fn()} onView={onView} onHistory={vi.fn()}/>);
   fireEvent.click(screen.getByRole('button',{name:'Thống kê Player hud'}));
-  expect(screen.getByRole('dialog')).toHaveTextContent('HUD player-hud');expect(onView).not.toHaveBeenCalled();
+  expect(await screen.findByRole('dialog')).toHaveTextContent('HUD player-hud');expect(onView).not.toHaveBeenCalled();
   expect(view.container.querySelector('button button')).toBeNull();
   fireEvent.click(screen.getByRole('button',{name:'Xem Bàn hud'}));expect(onView).toHaveBeenCalledWith('hud');
 });
