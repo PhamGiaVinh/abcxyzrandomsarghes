@@ -6,6 +6,8 @@ import "../../src/i18n";
 import { ClockPanel } from "../../src/components/cashier/tournament-live/ClockPanel";
 import { AuthProvider } from "../../src/hooks/useAuth";
 import { PrizesPanel } from "../../src/components/cashier/tournament-live/viewer-hub/PrizesPanel";
+import { supabase } from "../../src/integrations/supabase/client";
+import { SupabaseClientProvider } from "../../src/integrations/supabase/SupabaseClientContext";
 import { VinPokerTournamentClock } from "../../src/components/tournament-clock/VinPokerTournamentClock";
 import { TrackerReadOnlyRoster } from "../../src/components/cashier/tournament-live/handinput/unified/TrackerReadOnlyRoster";
 import { DashboardTab } from "../../src/components/chip-ops/DashboardTab";
@@ -117,4 +119,11 @@ function Fixture() {
     </section>
   </main>;
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+// The fixture uses HTTP interception; keep realtime local and deterministic.
+const fixtureClient = Object.create(supabase) as typeof supabase;
+fixtureClient.channel = (() => {
+  const channel = { on: () => channel, subscribe: () => channel };
+  return channel;
+}) as typeof supabase.channel;
+fixtureClient.removeChannel = (async () => "ok") as typeof supabase.removeChannel;
+createRoot(document.getElementById("root")!).render(<SupabaseClientProvider client={fixtureClient}><Fixture /></SupabaseClientProvider>);

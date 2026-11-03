@@ -76,12 +76,16 @@ for (const surface of ["clock", "panels"]) {
         await route.fulfill({ status: 204 });
         return;
       }
-      const isReadRpc = ["get_tournament_clock", "get_tournament_leaderboard"].some((name) => path.endsWith(`/rpc/${name}`));
+      const isReadRpc = ["get_tournament_clock", "get_tournament_leaderboard", "get_public_tournament_viewer_snapshot_v2"].some((name) => path.endsWith(`/rpc/${name}`));
       const isAllowedRead = ["GET", "HEAD"].includes(request.method()) || (request.method() === "POST" && isReadRpc);
       if (!isAllowedRead) writes.push(path);
       const level = { id: "level-test", level_number: 20, small_blind: 500000, big_blind: 1000000, ante: 1000000, duration_minutes: 20, is_break: false };
       const body = path.endsWith("/get_tournament_clock")
         ? { tournament_id: "responsive-test", status: "live", is_running: false, remaining_seconds: 1200, elapsed_seconds: 0, current_level: level, next_level: { ...level, level_number: 21 }, is_break: false, control_revision: "test-revision" }
+        : path.endsWith("/get_public_tournament_viewer_snapshot_v2")
+          ? { ok: true, access: "public", tournamentId: "responsive-test", sections: { payout: { revision: "paid-test", unchanged: false, published: true,
+              freshness: { state: "current" }, items: [{ fromPlace: 1, toPlace: 1, playerName: "Nguyễn_Văn_Tên_Dài_".repeat(8), avatarUrl: null,
+                amountPerPlayer: 250000000, resultStatus: "official", paymentConfirmed: true }] } } }
         : path.endsWith("/get_tournament_leaderboard")
           ? { players: [{ position: 1, player_name: "Nguyễn_Văn_Tên_Dài_".repeat(8), prize: 250000000 }], prize_pool: 420000000 }
           : [{ position: 1, amount: 250000000, percentage: 60 }];
