@@ -21,7 +21,7 @@ const state={kind:'NATIVE_TWO_CONNECTION_CONFIRMED_COUNTS_ISOLATED_CLONE_NOT_BRO
 const save=()=>writeFileSync(report,JSON.stringify(state,null,2)+'\n');save();
 const actor='a364de8e-06b1-4428-a20d-ac614ec406e5',club='349ecf35-50ba-4c71-a581-15dc45f1cd01';
 const claims=`SET LOCAL request.jwt.claim.sub='${actor}';SET LOCAL request.jwt.claim.role='authenticated';SET LOCAL request.jwt.claims='{"sub":"${actor}","role":"authenticated"}';SET LOCAL ROLE authenticated;`;
-const up=readFileSync('supabase/pending-migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql','utf8');
+const up=readFileSync('supabase/migrations/20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql','utf8');
 const down=readFileSync('tests/floorProduction/stocktake1158.confirmed-counts.down.sql','utf8');
 const fixtureIds=[];
 const catalog=()=>read(target,"SELECT jsonb_agg(jsonb_build_object('name',p.oid::regprocedure::text,'body',md5(p.prosrc),'acl',p.proacl::text,'config',p.proconfig,'definer',p.prosecdef) ORDER BY p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN('fnb_commit_stocktake','fnb_commit_stocktake_confirmed_v1','fnb_set_stocktake_line','fnb_stock_in');");
