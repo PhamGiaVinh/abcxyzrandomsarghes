@@ -3646,5 +3646,14 @@
   "tableHistory": {
     "blindUnavailable": "Blind —", "ante": "Ante", "received": "Nhận", "main": "pot chính", "side": "pot phụ",
     "publicCards": "Bài đã công khai của {{name}}", "net": "Lãi ròng", "pending": "Kết quả đang được kiểm tra", "replay": "Xem lại hand"
+  },
+  "financeWorkspace": {
+    "title": "Tài chính & Đối soát",
+    "overview": "Tổng quan thu–chi",
+    "overviewDescription": "Doanh thu, chi phí và các khoản tạm tính của CLB.",
+    "payroll": "Lương & nhân sự",
+    "payrollDescription": "Bảng lương, nhân viên, chi phí và quy trình duyệt.",
+    "reconciliation": "Đối soát & báo cáo",
+    "reconciliationDescription": "Tổng hợp và cảnh báo; một số tab còn dùng dữ liệu mẫu."
   }
 }
