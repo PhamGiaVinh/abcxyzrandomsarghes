@@ -78,7 +78,7 @@ export const LiveStateEditor = ({ tournament }: Props) => {
             </dl>}
         <p className="text-xs text-muted-foreground">{t("liveStateSummary.explanation")}</p>
         <Button type="button" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t("liveStateSummary.refresh")}</Button>
-        {!missingScope && <Button asChild variant="outline"><Link to={`/ops/floor/tournaments/${encodeURIComponent(tournament.id)}/clock?club=${encodeURIComponent(tournament.club_id!)}`}>
+        {!missingScope && <Button asChild variant="outline"><Link reloadDocument to={`/ops/floor/tournaments/${encodeURIComponent(tournament.id)}/clock?club=${encodeURIComponent(tournament.club_id!)}`}>
           {t("liveStateSummary.openClock")}
         </Link></Button>}
       </>}
