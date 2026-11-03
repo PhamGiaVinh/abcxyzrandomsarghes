@@ -17,6 +17,9 @@ The isolated runner starts PostgreSQL, pg_cron, pg_net, PostgREST, Kong, Auth,
 Realtime and actual Edge entrypoints. It generates disposable local secrets;
 no repository/production credentials are passed. Only that disposable local
 Realtime tenant is configured for 2,000 connections. Production is untouched.
+The self-hosted Realtime image re-seeds that tenant on boot, so the harness
+configures the running tenant after each start/reconnect through its actual
+`Realtime.Api` context and checks the returned limit before admitting load.
 Do not upload CLI status, Edge serve logs or local environment files: they
 contain the disposable credentials. The workflow uploads sanitized evidence.
 

@@ -2,16 +2,12 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {parseEnv as parse} from 'node:util';
 import {sql} from './nativeDb.mjs';
+import {configureLocalRealtime} from './scale.realtime.mjs';
 const status=parse(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const secrets=parse(readFileSync(process.env.PUBLIC_HUD_WORKER_ENV_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(!/^hud-scale-[a-z0-9-]+$/.test(project)||status.API_URL!=='http://127.0.0.1:54321')throw Error('Isolated stack scope invalid');
 if(sql("SELECT position('fixture_messages' IN pg_get_functiondef('realtime.send(jsonb,text,text,boolean)'::regprocedure))=0;")!=='t')throw Error('Genuine Supabase realtime.send required');
-// Supabase owns _realtime under its existing admin role. Configure only the
-// disposable container; never grant/alter BYPASSRLS or change application roles.
-execFileSync('docker',['exec','-e','PGPASSWORD=postgres',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-v','ON_ERROR_STOP=1','-c',
- `DO $$ BEGIN IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-hud-scale-disposable' THEN RAISE EXCEPTION 'fixture_scope_required';END IF; END $$;
- UPDATE _realtime.tenants SET max_concurrent_users=2000,max_events_per_second=20000,max_joins_per_second=5000,max_bytes_per_second=100000000;`],{stdio:'pipe'});
 sql(`CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS pg_net;CREATE EXTENSION IF NOT EXISTS supabase_vault WITH SCHEMA vault;
  CREATE FUNCTION public.fixture_provision_hud_workers_v1(p_hud text,p_spectator text,p_url text) RETURNS boolean
  LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$ BEGIN
@@ -30,6 +26,7 @@ sql(`CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS pg_ne
 execFileSync('docker',['exec','-e','PGPASSWORD=postgres',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-v','ON_ERROR_STOP=1','-c',
  'ALTER FUNCTION public.fixture_provision_hud_workers_v1(text,text,text) OWNER TO supabase_admin;'],{stdio:'pipe'});
 execFileSync('docker',['restart',`supabase_realtime_${project}`],{stdio:'pipe'});
+await configureLocalRealtime(project);
 let lastStatus=0;
 for(let i=0;i<60;i++){
  try{const response=await fetch(status.API_URL+'/functions/v1/public-hud-projector-v1',{method:'POST',headers:{apikey:status.ANON_KEY,Authorization:'Bearer invalid-fixture-credential'},signal:AbortSignal.timeout(3000)});lastStatus=response.status;if(response.status===401&&(await response.json()).error==='UNAUTHORIZED')break;}catch{}

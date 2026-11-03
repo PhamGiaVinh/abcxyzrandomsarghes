@@ -4,6 +4,7 @@ import {parseEnv} from 'node:util';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createClient} from '@supabase/supabase-js';
+import {configureLocalRealtime} from './scale.realtime.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
@@ -147,6 +148,7 @@ for(const scenario of ['concentrated','distributed']){
   if(!restarted&&Date.now()-started>duration*500){
    restarted=true;reconnecting=true;suspendDeliveries();const before=clients.map(c=>c.reconnected);for(const c of clients){c.online=false;c.accessOnline=false;}
    await run('docker',['restart',`supabase_realtime_${project}`]);
+   await configureLocalRealtime(project);
    await until(async()=>clients.every((c,i)=>c.online&&c.accessOnline&&c.reconnected>before[i]),60000,'Mass reconnect failed');
    reconnectedClients=clients.filter((c,i)=>c.reconnected>before[i]).length;reconnecting=false;coverageAt=Date.now();
   }
