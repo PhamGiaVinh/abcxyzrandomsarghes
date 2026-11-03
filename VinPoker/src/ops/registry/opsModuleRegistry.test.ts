@@ -32,16 +32,28 @@ const scope = (clubs: OpsClubCapabilityRow[], isSuperAdmin = false): OpsScopeSna
 });
 
 describe("Ops module runtime registry", () => {
-  it("names the personnel finance workspace without relaxing its payroll guard", () => {
+  it("opens the personnel workspace without expanding its accountant capability", () => {
     const accountant = getOpsModule("accountant");
     expect(accountant.title).toBe("Tài chính & Đối soát · nhân sự");
     expect(accountant.route).toBe("/ops/accountant");
     expect(accountant.sideEffectClass).toBe("MONEY");
-    expect(accountant.defaultState).toBe("BLOCKED");
-    expect(accountant.disabledReasonCode).toBe("ACCOUNTANT_PAYROLL_GUARD_NOT_LIVE");
+    expect(accountant.defaultState).toBe("LIVE");
+    expect(accountant.operationalRoute).toBe("/accountant");
     const allowed = { ...emptyRow("10000000-0000-4000-8000-000000000001"), can_accountant: true };
     expect(accountant.clubCapabilityPredicate(allowed)).toBe(true);
     expect(accountant.clubCapabilityPredicate(emptyRow(allowed.club_id))).toBe(false);
+  });
+
+  it("makes every module available for authorized operator testing", () => {
+    expect(OPS_MODULE_REGISTRY.every(module => module.defaultState === "LIVE")).toBe(true);
+    for (const module of OPS_MODULE_REGISTRY) {
+      const operationalRoute = getOpsModule(module.id).operationalRoute;
+      if (operationalRoute) {
+        expect(operationalRoute.startsWith("/")).toBe(true);
+        expect(operationalRoute.startsWith("//")).toBe(false);
+        expect(operationalRoute.startsWith("/ops/")).toBe(false);
+      }
+    }
   });
 
   it("has unique ids/routes and complete safety metadata", () => {
@@ -106,7 +118,7 @@ describe("Ops module runtime registry", () => {
     const digest = getOpsModule("daily-digest");
     const owner = { ...emptyRow("10000000-0000-4000-8000-000000000001"), can_owner: true };
     expect(digest.sideEffectClass).toBe("READ");
-    expect(digest.defaultState).toBe("READ_ONLY");
+    expect(digest.defaultState).toBe("LIVE");
     expect(digest.clubCapabilityPredicate(owner)).toBe(true);
     expect(digest.clubCapabilityPredicate(emptyRow(owner.club_id))).toBe(false);
     expect(isOpsModuleFeatureEnabled(digest, { development: false })).toBe(true);

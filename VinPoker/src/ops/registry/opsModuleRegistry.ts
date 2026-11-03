@@ -36,6 +36,8 @@ export type OpsModuleDefinition = {
   title: string;
   description: string;
   route: string;
+  /** Existing operational document; its own server-scoped club picker remains authoritative. */
+  operationalRoute?: string;
   group: OpsModuleGroup;
   capabilityPredicate: (scope: OpsScopeSnapshot) => boolean;
   clubCapabilityPredicate: (row: OpsClubCapabilityRow) => boolean;
@@ -52,7 +54,7 @@ const inherited = (direct: (row: OpsClubCapabilityRow) => boolean) =>
 const anyClub = (predicate: (row: OpsClubCapabilityRow) => boolean) =>
   (scope: OpsScopeSnapshot) => scope.global.is_super_admin || scope.clubs.some(predicate);
 
-export const OPS_MODULE_REGISTRY = [
+export const OPS_MODULE_REGISTRY: readonly OpsModuleDefinition[] = [
   {
     id: "club-admin",
     title: "Quản trị CLB",
@@ -80,52 +82,56 @@ export const OPS_MODULE_REGISTRY = [
   {
     id: "cashier",
     title: "Cashier",
-    description: "Hàng chờ và trạng thái thu ngân; money controls vẫn khóa.",
+    description: "Đăng ký, buy-in, biên nhận và đối soát tại quầy.",
     route: "/ops/cashier",
+    operationalRoute: "/cashier",
     group: "CORE",
     capabilityPredicate: anyClub(inherited((row) => row.can_cashier)),
     clubCapabilityPredicate: inherited((row) => row.can_cashier),
-    requiredContracts: ["club_cashiers", "cashier queue read contracts", "OPS MONEY GATE B OFF"],
+    requiredContracts: ["club_cashiers", "cashier queue read contracts", "caller-bound cashier mutation contracts"],
     sideEffectClass: "MONEY",
-    defaultState: "READ_ONLY",
+    defaultState: "LIVE",
   },
   {
     id: "tracker",
     title: "Tracker",
-    description: "Theo dõi bàn; writer controls chưa được mount trong Ops V3.",
+    description: "Theo dõi và vận hành bàn tại màn hình Tracker đầy đủ.",
     route: "/ops/tracker",
+    operationalRoute: "/tracker",
     group: "CORE",
     capabilityPredicate: anyClub(inherited((row) => row.can_tracker)),
     clubCapabilityPredicate: inherited((row) => row.can_tracker),
     requiredContracts: [
       "club_trackers",
       "tournaments/tournament_tables/tournament_seats read RLS",
-      "tracker writer concurrency UAT",
+      "Tracker operational document server write guards",
     ],
     sideEffectClass: "DESTRUCTIVE",
-    defaultState: "READ_ONLY",
+    defaultState: "LIVE",
   },
   {
     id: "dealer-control",
     title: "Dealer Swing",
-    description: "Điều phối dealer; payroll không kế thừa quyền Dealer Control.",
+    description: "Điều phối dealer, lịch ca và bảng lương theo quyền riêng.",
     route: "/ops/dealer-swing",
+    operationalRoute: "/dealer-swing",
     group: "CORE",
     capabilityPredicate: anyClub(inherited((row) => row.can_dealer_control)),
     clubCapabilityPredicate: inherited((row) => row.can_dealer_control),
     requiredContracts: [
       "club_dealer_controls",
       "game_tables/dealer_assignments/dealer_attendance/dealers read RLS",
-      "dealer read parity UAT",
+      "Dealer Swing operational document server write guards",
     ],
-    sideEffectClass: "NON_MONEY_WRITE",
-    defaultState: "READ_ONLY",
+    sideEffectClass: "MONEY",
+    defaultState: "LIVE",
   },
   {
     id: "fnb",
     title: "F&B",
-    description: "Quầy, phục vụ và bếp giữ riêng từng facet quyền.",
+    description: "Quầy, phục vụ, bếp và quản trị theo từng quyền F&B.",
     route: "/ops/fnb",
+    operationalRoute: "/fnb/hub",
     group: "SERVICE",
     capabilityPredicate: anyClub(inherited((row) =>
       row.can_fnb_cashier || row.can_fnb_server || row.can_fnb_kitchen)),
@@ -133,27 +139,27 @@ export const OPS_MODULE_REGISTRY = [
       row.can_fnb_cashier || row.can_fnb_server || row.can_fnb_kitchen),
     requiredContracts: ["club_fnb_staff cashier/server/kitchen facets", "F&B money and stock UAT"],
     sideEffectClass: "MONEY",
-    defaultState: "DISABLED",
-    disabledReasonCode: "FNB_WRITE_UAT_REQUIRED",
+    defaultState: "LIVE",
   },
   {
     id: "marketing",
     title: "Marketing",
-    description: "Lịch nội dung; publish/send chưa được mở trong Ops.",
+    description: "Soạn nội dung và quản lý lịch Marketing theo CLB.",
     route: "/ops/marketing",
+    operationalRoute: "/marketing",
     group: "SERVICE",
     capabilityPredicate: anyClub(inherited((row) => row.can_marketer)),
     clubCapabilityPredicate: inherited((row) => row.can_marketer),
     requiredContracts: ["club_marketers", "marketing read contract", "external send UAT"],
     sideEffectClass: "EXTERNAL_SIDE_EFFECT",
-    defaultState: "DISABLED",
-    disabledReasonCode: "MARKETING_EXTERNAL_SEND_UAT_REQUIRED",
+    defaultState: "LIVE",
   },
   {
     id: "chip-ops",
     title: "Chip Ops",
-    description: "Tồn chip đã phát hành; write adapters chưa được mở.",
+    description: "Bộ chip, mẫu stack, cấp phát, kiểm kê và bag/tag.",
     route: "/ops/chip-ops",
+    operationalRoute: "/chip-ops",
     group: "CONTROL",
     capabilityPredicate: anyClub(inherited((row) => row.can_chip_master)),
     clubCapabilityPredicate: inherited((row) => row.can_chip_master),
@@ -164,7 +170,7 @@ export const OPS_MODULE_REGISTRY = [
       "chip write stale contract",
     ],
     sideEffectClass: "DESTRUCTIVE",
-    defaultState: "READ_ONLY",
+    defaultState: "LIVE",
   },
   {
     id: "daily-digest",
@@ -181,7 +187,7 @@ export const OPS_MODULE_REGISTRY = [
       "no client aggregation fallback",
     ],
     sideEffectClass: "READ",
-    defaultState: "READ_ONLY",
+    defaultState: "LIVE",
   },
   {
     id: "finance",
@@ -193,13 +199,14 @@ export const OPS_MODULE_REGISTRY = [
     clubCapabilityPredicate: owner,
     requiredContracts: ["get_club_finance_summary", "no client aggregation fallback", "liability contract not yet displayed"],
     sideEffectClass: "READ",
-    defaultState: "READ_ONLY",
+    defaultState: "LIVE",
   },
   {
     id: "accountant",
     title: "Tài chính & Đối soát · nhân sự",
-    description: "Payroll, chi phí và chuẩn bị thanh toán đang chờ authority review.",
+    description: "Lương nhân sự, chi phí và đối soát theo quyền được server xác nhận.",
     route: "/ops/accountant",
+    operationalRoute: "/accountant",
     group: "CONTROL",
     capabilityPredicate: anyClub(inherited((row) => row.can_accountant)),
     clubCapabilityPredicate: inherited((row) => row.can_accountant),
@@ -209,20 +216,20 @@ export const OPS_MODULE_REGISTRY = [
       "accountant write UAT",
     ],
     sideEffectClass: "MONEY",
-    defaultState: "BLOCKED",
-    disabledReasonCode: "ACCOUNTANT_PAYROLL_GUARD_NOT_LIVE",
+    defaultState: "LIVE",
   },
   {
     id: "series",
     title: "Series",
-    description: "Kế hoạch Series ở chế độ đọc trong Ops V3.",
+    description: "Phân tích, lập kế hoạch và xuất lịch Series.",
     route: "/ops/series",
+    operationalRoute: "/club/admin/series-intelligence",
     group: "PLANNING",
     capabilityPredicate: anyClub(owner),
     clubCapabilityPredicate: owner,
-    requiredContracts: ["get_club_series_events", "Ops does not mount browser-local CSV library"],
-    sideEffectClass: "READ",
-    defaultState: "READ_ONLY",
+    requiredContracts: ["get_club_series_events", "Series operational document separates browser-local planning from server data"],
+    sideEffectClass: "NON_MONEY_WRITE",
+    defaultState: "LIVE",
   },
 ] as const satisfies readonly OpsModuleDefinition[];
 

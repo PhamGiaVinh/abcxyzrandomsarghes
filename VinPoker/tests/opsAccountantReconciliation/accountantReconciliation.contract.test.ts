@@ -49,10 +49,10 @@ describe("Ops V3 Accountant reconciliation contract", () => {
     }
   });
 
-  it("does not mount Accountant hooks or legacy Accounting Control mocks", () => {
+  it("opens the operational Accountant document without importing it or Accounting Control mocks", () => {
     const accountant = getOpsModule("accountant");
-    expect(accountant.defaultState).toBe("BLOCKED");
-    expect(accountant.disabledReasonCode).toBe("ACCOUNTANT_PAYROLL_GUARD_NOT_LIVE");
+    expect(accountant.defaultState).toBe("LIVE");
+    expect(accountant.operationalRoute).toBe("/accountant");
     expect(opsApp).toContain('<OpsModuleGate capability="accountant" />');
     expect(opsApp).toContain('path="/ops/accounting" element={<Navigate to="/ops/finance" replace />}');
     expect(opsApp).not.toContain("MOCK_OVERVIEW");

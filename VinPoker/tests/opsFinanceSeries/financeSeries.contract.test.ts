@@ -25,8 +25,8 @@ describe("Ops Finance and Series read boundaries", () => {
     expect(app).toContain('<OpsModuleGate capability="series"><OpsSeriesWorkspace /></OpsModuleGate>');
     expect(app).toContain('path="/ops/accounting" element={<Navigate to="/ops/finance" replace />}');
     expect(getOpsModule("finance").title).toBe("Tài chính & Đối soát");
-    expect(getOpsModule("finance").defaultState).toBe("READ_ONLY");
-    expect(getOpsModule("series").defaultState).toBe("READ_ONLY");
+    expect(getOpsModule("finance").defaultState).toBe("LIVE");
+    expect(getOpsModule("series").defaultState).toBe("LIVE");
   });
 
   it("uses only fixed server read RPCs and no player/local fallback", () => {

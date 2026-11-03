@@ -88,7 +88,7 @@ function OpsModuleSelector({
           {spacesOnly ? "Chọn không gian làm việc" : "Một lối vào cho mọi công việc vận hành"}
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[#91a49b]">
-          Quyền đến từ server. Trạng thái trên từng dòng cho biết module đã được phép làm gì ở wave hiện tại.
+          Mở mô đun để làm việc theo quyền được server xác nhận. Với màn hình vận hành đầy đủ, chọn lại CLB hoặc giải tại màn hình vừa mở.
         </p>
         <div className="mt-4 flex flex-wrap gap-2 text-xs">
           <StatusLabel state="LIVE" label="Đang dùng" />

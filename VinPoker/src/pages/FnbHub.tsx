@@ -1,4 +1,6 @@
+import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { Navigate, useNavigate } from "react-router-dom";
+import { RouteLoader } from "@/components/RouteLoader";
 import { FEATURES } from "@/lib/featureFlags";
 import { useAuth } from "@/hooks/useAuth";
 import { UtensilsCrossed, ChefHat, Settings2, ConciergeBell, Eye, ChevronRight, type LucideIcon } from "lucide-react";
@@ -12,16 +14,17 @@ import { UtensilsCrossed, ChefHat, Settings2, ConciergeBell, Eye, ChevronRight, 
 type Tile = { to: string; icon: LucideIcon; title: string; desc: string };
 
 export default function FnbHub() {
-  const { isClubOwner, isAdmin, isFnbCashier, isFnbServer, isFnbKitchen } = useAuth();
+  const { loading, authError } = useAuth();
   const nav = useNavigate();
-  const isOwner = isClubOwner || isAdmin;
+  const access = useOperationalCapabilities();
+  const isOwner = access.hasFacet("can_owner");
 
   const tiles: Tile[] = [
-    FEATURES.fnbCounter && (isFnbCashier || isOwner) &&
+    FEATURES.fnbCounter && access.hasFacet("can_fnb_cashier") &&
       { to: "/fnb", icon: UtensilsCrossed, title: "Quầy", desc: "Tạo đơn, thu tiền tại quầy" },
-    FEATURES.fnbKitchen && (isFnbKitchen || isOwner) &&
+    FEATURES.fnbKitchen && access.hasFacet("can_fnb_kitchen") &&
       { to: "/fnb/kitchen", icon: ChefHat, title: "Bếp", desc: "Màn hình bếp — đơn đã thu" },
-    FEATURES.fnbGuestOrder && (isFnbServer || isFnbCashier || isOwner) &&
+    FEATURES.fnbGuestOrder && (access.hasFacet("can_fnb_server") || access.hasFacet("can_fnb_cashier")) &&
       { to: "/fnb/serve", icon: ConciergeBell, title: "Phục vụ", desc: "Ra bàn thu tiền mặt" },
     FEATURES.fnbModule && isOwner &&
       { to: "/fnb/admin", icon: Settings2, title: "Quản trị", desc: "Thực đơn, kho, cài đặt, QR bàn" },
@@ -29,6 +32,8 @@ export default function FnbHub() {
       { to: "/fnb/demo", icon: Eye, title: "Xem thử", desc: "Bản demo tĩnh" },
   ].filter(Boolean) as Tile[];
 
+  if (loading || access.loading) return <RouteLoader />;
+  if (authError || access.error) return <p role="alert" className="p-6">Chưa xác minh được quyền F&B. Vui lòng tải lại trang.</p>;
   if (!tiles.length) return <Navigate to="/" replace />;
 
   return (

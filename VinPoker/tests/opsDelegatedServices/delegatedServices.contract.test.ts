@@ -9,7 +9,7 @@ const root = resolve(import.meta.dirname, "../..");
 const source = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("Ops delegated service boundaries", () => {
-  it("keeps F&B and Marketing disabled without mounting legacy modules", () => {
+  it("opens F&B and Marketing documents without importing their legacy modules", () => {
     const app = source("src/OpsApp.tsx");
     for (const route of ["/ops/fnb", "/ops/fnb/counter", "/ops/fnb/serve", "/ops/fnb/kitchen", "/ops/fnb/admin"]) {
       expect(app).toContain(`path="${route}" element={<OpsModuleGate capability="fnb" />}`);
@@ -19,8 +19,8 @@ describe("Ops delegated service boundaries", () => {
     expect(app).not.toContain("FnbServe");
     expect(app).not.toContain("MarketingManager");
     expect(app).not.toContain("PostComposer");
-    expect(getOpsModule("fnb").defaultState).toBe("DISABLED");
-    expect(getOpsModule("marketing").defaultState).toBe("DISABLED");
+    expect(getOpsModule("fnb").defaultState).toBe("LIVE");
+    expect(getOpsModule("marketing").defaultState).toBe("LIVE");
   });
 
   it("mounts a fixed read-only Chip Ops adapter", () => {
@@ -40,7 +40,7 @@ describe("Ops delegated service boundaries", () => {
     expect(adapter).not.toMatch(/\.insert\s*\(|\.update\s*\(|\.upsert\s*\(|\.delete\s*\(/u);
     expect(graph).not.toMatch(/functions\.invoke|\.channel\s*\(/u);
     expect(graph).not.toMatch(/chip_ops_(create|update|delete|bind)|get_current_chip_inventory|color_up|bag_tag|stocktake/iu);
-    expect(getOpsModule("chip-ops").defaultState).toBe("READ_ONLY");
+    expect(getOpsModule("chip-ops").defaultState).toBe("LIVE");
   });
 
   it("fails closed on malformed or cross-tournament inventory", () => {

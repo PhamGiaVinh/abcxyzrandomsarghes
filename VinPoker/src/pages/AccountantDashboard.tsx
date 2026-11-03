@@ -1,3 +1,4 @@
+import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { BarChart3, Calculator, ReceiptText, Table2, Users, UtensilsCrossed, Wallet } from "lucide-react";
@@ -30,9 +31,10 @@ import StaffSalaryChot from "./StaffSalaryChot";
  * from empty data. Every write keeps its server-side gate; the UI is presentation only.
  */
 export default function AccountantDashboard() {
-  const { loading, user, isAdmin, isClubOwner, isAccountant } = useAuth();
+  const { loading, authError, user, isAdmin, isClubOwner } = useAuth();
   const source = staffSalarySource();
-  const gateOk = !loading && !!user && (isAccountant || isClubOwner || isAdmin);
+  const access = useOperationalCapabilities();
+  const gateOk = !loading && !access.loading && !access.error && !!user && access.allows("accountant");
 
   const clubsQuery = useSalaryClubs(source, gateOk && FEATURES.accountantWorkspace);
   const clubs = useMemo(() => clubsQuery.data ?? [], [clubsQuery.data]);
@@ -46,9 +48,10 @@ export default function AccountantDashboard() {
     if (!clubId && clubs[0]?.id) setClubId(clubs[0].id);
   }, [clubId, clubs]);
 
-  if (loading) return <RouteLoader />;
+  if (loading || access.loading) return <RouteLoader />;
+  if (authError || access.error) return <p role="alert" className="p-6">Chưa xác minh được quyền nhân sự. Vui lòng tải lại trang.</p>;
   if (!user) return <Navigate to="/auth" replace />;
-  if (!(isAccountant || isClubOwner || isAdmin)) return <Navigate to="/" replace />;
+  if (!access.allows("accountant")) return <Navigate to="/" replace />;
 
   // Kill-switch: exact pre-workspace behavior.
   if (!FEATURES.accountantWorkspace) return <StaffSalaryChot />;

@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": [
+    "src/vite-env.d.ts",
+    "src/pages/FnbHub.tsx",
+    "src/pages/Marketing.tsx",
+    "src/pages/AccountantDashboard.tsx",
+    "src/pages/OperationalEntryAuth.test.tsx",
+    "src/ops/pages/OpsOperationalEntry.test.tsx",
+    "src/ops/pages/OpsSelectModule.tsx",
+    "src/ops/registry/opsModuleRegistry.test.ts",
+    "src/ops/registry/opsRegistryRoutes.test.ts",
+    "src/pages/FnbCounter.tsx",
+    "src/pages/FnbServe.tsx",
+    "src/hooks/useOperationalCapabilities.test.tsx"
+  ],
+  "compilerOptions": {
+    "types": [
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
+  }
+}
