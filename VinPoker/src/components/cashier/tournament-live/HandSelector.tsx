@@ -424,7 +424,7 @@ export function HandSelector({
       >
         {loadingList && <option value="">Đang tải...</option>}
         {!loadingList && listError && <option value="">Không tải được lịch sử hand</option>}
-        {!loadingList && !listError && hands.length === 0 && <option value="">Chưa có hand đã xong</option>}
+        {!loadingList && !listError && hands.length === 0 && <option value={legacyPublicTarget ? replayTarget?.handId ?? "" : ""}>{legacyPublicTarget && replayTargetState.kind === "resolved" ? `Hand #${replayTargetState.handNumber} (lịch sử)` : "Chưa có hand đã xong"}</option>}
         {hands.map((h) => (
           <option key={h.id} value={h.id}>
             Hand #{h.hand_number}
