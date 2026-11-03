@@ -69,6 +69,15 @@ summary access only and preserves the frozen object if the access scope did not
 change. Known invalidation clears it before waiting for replacement history.
 After an explicit revocation, summary permission/readiness is checked first;
 warming or withdrawn scopes do not start a replacement-history request.
+The load driver mirrors the component's per-window supersession/abort and
+coalesced access verification. Only intentional caller aborts are classified
+as cancellation; the independent timeout remains an error. Reports retain
+launched/completed/cancelled requests, phase, request bytes and successful
+response bytes. Cancellation never counts as recovery: every viewer must
+complete its final current HUD epoch and verify its reconnected access channel,
+with all pending requests/timers drained. The Edge RPC adapter propagates the
+request-local signal while keeping its independent five-second timeout and
+fixed anonymous credentials. One caller cannot cancel another.
 
 ## Evidence and limits
 

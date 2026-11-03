@@ -2,7 +2,11 @@ import {it,expect,vi,beforeEach,afterEach} from 'vitest';
 import {createAnonymousPublicHudClient} from '../../supabase/functions/public-player-hud/publicRpc';
 // The browser test environment lacks the Deno/Node timeout static method.
 // These unit cases verify transport boundaries; real Edge HTTP covers runtime.
-beforeEach(()=>vi.stubGlobal('AbortSignal',{timeout:vi.fn(()=>new AbortController().signal)}));
+const timeouts:AbortController[]=[];
+beforeEach(()=>{timeouts.length=0;vi.stubGlobal('AbortSignal',{
+ timeout:vi.fn(()=>{const c=new AbortController();timeouts.push(c);return c.signal;}),
+ any:(signals:AbortSignal[])=>{const c=new AbortController();for(const s of signals){if(s.aborted)c.abort();else s.addEventListener('abort',()=>c.abort(),{once:true});}return c.signal;},
+});});
 afterEach(()=>vi.unstubAllGlobals());
 it('uses only fixed anonymous credentials and approved prepared readers',async()=>{
  const send=vi.fn().mockResolvedValue(new Response('{"access":"revoked"}',{status:200}));
@@ -22,4 +26,18 @@ it('fails closed without exposing database messages or retrying',async()=>{
 });
 it('rejects credential-bearing or non-origin endpoint configuration',()=>{
  for(const url of ['https://secret@fixture.invalid','https://fixture.invalid/private','file:///tmp/fixture','https://fixture.invalid/?key=value'])expect(()=>createAnonymousPublicHudClient(url,'fixture-anon')).toThrow('PUBLIC_RPC_CONFIGURATION');
+});
+it('isolates caller cancellation and keeps the independent timeout',async()=>{
+ const requests:Array<{signal:AbortSignal;resolve:(value:Response)=>void}>=[];
+ const send=vi.fn((_url:unknown,init:RequestInit)=>new Promise<Response>((resolve,reject)=>{
+  const signal=init.signal!;requests.push({signal,resolve});
+  signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});
+ })) as unknown as typeof fetch;
+ const a=new AbortController(),b=new AbortController();
+ const first=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,a.signal).rpc('get_public_player_hud_summary_v1',{});
+ const second=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,b.signal).rpc('get_public_player_hud_summary_v1',{});
+ a.abort();expect((await first).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});expect(requests[1].signal.aborted).toBe(false);
+ requests[1].resolve(new Response('{"access":"public"}'));expect((await second).error).toBeNull();
+ const third=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,b.signal).rpc('get_public_player_hud_summary_v1',{});
+ timeouts.at(-1)!.abort();expect((await third).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});expect(b.signal.aborted).toBe(false);
 });

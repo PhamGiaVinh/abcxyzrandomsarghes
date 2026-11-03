@@ -16,11 +16,17 @@ const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const player=uuid('30000000',1),stats={summary:[],realtime:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 let stopping=false;
-let phases={},transportTimings={},observationOrder=0;
+let phases={},transportTimings={},requestAccounting={},observationOrder=0;
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
-async function post(path,body,privileged=false,phase='other'){
+async function post(path,body,privileged=false,phase='other',callerSignal){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
- const response=await fetch(status.API_URL+path,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}).catch(error=>{
+ const accounting=requestAccounting[phase+':'+path]??={launched:0,requestBytes:0,completed:0,responseBytes:0,cancelled:0};
+ const encoded=JSON.stringify(body);accounting.launched++;accounting.requestBytes+=Buffer.byteLength(encoded);
+ const timeout=AbortSignal.timeout(10000),signal=callerSignal?AbortSignal.any([callerSignal,timeout]):timeout;
+ const intentionallyCancelled=error=>callerSignal?.aborted&&!timeout.aborted&&(error===callerSignal.reason||error?.name==='AbortError');
+ try{
+ const response=await fetch(status.API_URL+path,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:encoded,signal}).catch(error=>{
+  if(intentionallyCancelled(error))throw error;
   const kind=`${phase}:${path.split('/').at(-1)}:${error?.name==='TimeoutError'?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
  const timingKey=phase+':'+path;
@@ -28,11 +34,13 @@ async function post(path,body,privileged=false,phase='other'){
  timings.headers.push(performance.now()-start);
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers.get(header);if(value!==null&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
  if(!response.ok){let code='';try{const body=await response.json();if(typeof body.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:${path.split('/').at(-1)}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
- const value=await response.json();if(path.endsWith('public-player-hud')&&body.mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
+ const text=await response.text();const value=JSON.parse(text);accounting.completed++;accounting.responseBytes+=Buffer.byteLength(text);
+ if(path.endsWith('public-player-hud')&&body.mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
+ }catch(error){if(intentionallyCancelled(error)){accounting.cancelled++;throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});}throw error;}
 }
 const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privileged);
-const hud=(tour,mode='summary',accessSnapshot,phase)=>post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase);
+const hud=(tour,mode='summary',accessSnapshot,phase,signal)=>post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase,signal);
 async function until(fn,timeout,label){const start=Date.now();while(Date.now()-start<timeout){if(await fn())return;await sleep(200);}throw Error(label);}
 const percentile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*p))]:null;
 const denied=await fetch(status.API_URL+'/rest/v1/rpc/claim_public_hud_jobs_v1',{method:'POST',headers:{apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({p_limit:1})});
@@ -44,7 +52,7 @@ await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_h
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[];
 const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:state==='passed'&&viewers===1000&&duration===1800,status:state,reports,
- partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,snapshotSamples:stats.snapshot.length,sourceWrites:stats.sourceWrites}:undefined},null,2));
+ partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,requestAccounting,summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,snapshotSamples:stats.snapshot.length,sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(viewers===1000&&duration===1800){
@@ -53,7 +61,7 @@ if(viewers===1000&&duration===1800){
  assert.ok(seed.writer.p95OverheadPercent<=10,'Committed fixture marking overhead > 10%; stop before the long soak');
 }
 for(const scenario of ['concentrated','distributed']){
- phases={};transportTimings={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
+ phases={};transportTimings={};requestAccounting={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const offset={summary:stats.summary.length,realtime:stats.realtime.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,revoking=false,started=0;
@@ -64,6 +72,7 @@ for(const scenario of ['concentrated','distributed']){
  const health=[];
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
  const resourceTimer=setInterval(()=>{
+  appendFileSync('output/hud-scale/generator-memory.jsonl',JSON.stringify({at:Date.now(),scenario,...process.memoryUsage()})+'\n');
   track(fetch(status.API_URL+'/functions/v1/_internal/metric',{signal:AbortSignal.timeout(3000)}).then(async response=>{if(!response.ok)return;const value=await response.json();const safe={at:Date.now(),scenario};for(const key of ['activeUserWorkersCount','retiredUserWorkersCount','receivedRequestsCount','handledRequestsCount'])if(Number.isSafeInteger(value[key]))safe[key]=value[key];appendFileSync('output/hud-scale/edge-runtime.jsonl',JSON.stringify(safe)+'\n');}).catch(()=>{}));
   track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`,`supabase_rest_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
   const query="SELECT jsonb_build_object('at',clock_timestamp(),'backends',(SELECT jsonb_agg(to_jsonb(s)) FROM (SELECT state,wait_event_type,count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY state,wait_event_type) s),'waitingLocks',(SELECT count(*) FROM pg_locks WHERE NOT granted));";
@@ -74,7 +83,7 @@ for(const scenario of ['concentrated','distributed']){
  for(let i=0;i<viewers;i++){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
-  const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,hudController:null,hudActive:false,verifyAfterRead:false,hudCompletedEpoch:0,accessReconnect:0,verifiedAccessReconnect:0,table,tour};clients.push(state);
   // A Broadcast/read can finish before the writer's HTTP acknowledgement.
   // Credit its actual observation time once its source write is registered.
   const credit=(field,observation,predicate,measure,count)=>{
@@ -118,14 +127,24 @@ for(const scenario of ['concentrated','distributed']){
    finally{state.busy=false;if(state.pending&&Date.now()<end+10000){state.pending=false;track(read());}}
   };
   state.read=read;
+  const finishHud=controller=>{
+   if(state.hudController!==controller)return;
+   state.hudActive=false;
+   if(state.verifyAfterRead){
+    state.verifyAfterRead=false;const epoch=state.hudEpoch;
+    track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch)await verifyHud('coalesced-access-verify');})());
+   }
+  };
   const openHud=async(phase='user-open')=>{
+   state.hudController?.abort();const controller=new AbortController();state.hudController=controller;state.hudActive=true;state.frozen=null;
    const epoch=++state.hudEpoch,expectedRevocation=revoking;
+   const accessReconnect=state.accessReconnect;
    try{
     let value,history;
     if(phase==='revocation-revalidate'){
-     value=await hud(tour,'summary',undefined,phase);
-     if(value.access==='public'&&['current','updating'].includes(value.state))history=await hud(tour,'history',undefined,phase+'-history');
-    }else [value,history]=await Promise.all([hud(tour,'summary',undefined,phase),hud(tour,'history')]);
+     value=await hud(tour,'summary',undefined,phase,controller.signal);
+     if(value.access==='public'&&['current','updating'].includes(value.state))history=await hud(tour,'history',undefined,phase+'-history',controller.signal);
+    }else [value,history]=await Promise.all([hud(tour,'summary',undefined,phase,controller.signal),hud(tour,'history',undefined,phase+'-history',controller.signal)]);
     if(epoch!==state.hudEpoch)return;
     state.lastHud=Date.now();
     if(value.access==='public'&&['current','updating'].includes(value.state)&&Number.isSafeInteger(value.counters?.publicHands)){
@@ -133,20 +152,27 @@ for(const scenario of ['concentrated','distributed']){
      if(history.access==='public'&&['current','updating'].includes(history.state)){
       assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);
       assert.ok(history.handHistory.every(h=>h.tableId===table),'History must remain in this tournament/table');
+      state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;
      }else if(!expectedRevocation)error('history_not_ready');
     }else{state.frozen=null;if(!expectedRevocation)error('hud_not_ready');}
-   }catch{error('hud_read');}
+   }catch(cause){if(!cause.intentionalHudCancellation){error('hud_read');if(epoch===state.hudEpoch)state.frozen=null;}}
+   finally{controller.abort();finishHud(controller);}
   };
   state.openHud=openHud;
   const verifyHud=async(phase)=>{
-   const epoch=state.hudEpoch,frozen=state.frozen;if(!frozen)return;
+   if(state.hudActive){state.verifyAfterRead=true;return;}
+   const frozen=state.frozen;if(!frozen)return;
+   state.hudController?.abort();const controller=new AbortController();state.hudController=controller;state.hudActive=true;
+   const epoch=++state.hudEpoch,accessReconnect=state.accessReconnect;
    try{
-    const value=await hud(tour,'summary',frozen.accessSnapshot,phase);
+    const value=await hud(tour,'summary',frozen.accessSnapshot,phase,controller.signal);
     if(epoch!==state.hudEpoch)return;
     if(value.access!=='public'||!['current','updating'].includes(value.state)){state.frozen=null;if(!revoking)error('hud_not_ready');return;}
-    if(value.accessChanged){state.frozen=null;const history=await hud(tour,'history',undefined,phase+'-changed-history');if(epoch===state.hudEpoch){assert.equal(history.access,'public');assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};}}
+    if(value.accessChanged){state.frozen=null;const history=await hud(tour,'history',undefined,phase+'-changed-history',controller.signal);if(epoch===state.hudEpoch){assert.equal(history.access,'public');assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};}}
     else assert.equal(state.frozen,frozen,'Access verification must retain the frozen HUD');
-   }catch{error('hud_read');}
+    if(epoch===state.hudEpoch&&state.frozen){state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;}
+   }catch(cause){if(!cause.intentionalHudCancellation){error('hud_read');if(epoch===state.hudEpoch)state.frozen=null;}}
+   finally{controller.abort();finishHud(controller);}
   };
   state.verifyHud=verifyHud;
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
@@ -157,12 +183,13 @@ for(const scenario of ['concentrated','distributed']){
    else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
   }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());verifyPage();}});
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
+   state.hudController?.abort();state.hudController=null;state.hudActive=false;state.verifyAfterRead=false;
    const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
    // Same clear-now, jittered verification policy as the actual HUD component.
    track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch&&Date.now()<end)await openHud('revocation-revalidate');})());
   }).subscribe(s=>{
    state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
-   if(state.accessOnline){if(state.accessJoined)track((async()=>{await sleep(250+Math.random()*2500);await verifyHud('reconnect-verify');})());state.accessJoined=true;}
+   if(state.accessOnline){if(state.accessJoined){state.accessReconnect++;track((async()=>{await sleep(250+Math.random()*2500);await verifyHud('reconnect-verify');})());}state.accessJoined=true;}
   });
   // Admit at most 50 new viewers/second, then hold the entire target audience
   // for the full measured duration. Mass reconnect remains simultaneous.
@@ -202,7 +229,7 @@ for(const scenario of ['concentrated','distributed']){
   while(hand&&step>0&&step<=5){await rpc('fixture_scale_step_v1',{p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);step++;}
  };
  const writers=Array.from({length:tourCount},(_,i)=>writer(i+1));
- let restarted=false,withdrawn=false,lastHealth=0,lastProgress=0,revokedClients=0,reconnectedClients=0;
+ let restarted=false,withdrawn=false,lastHealth=0,lastProgress=0,revokedClients=0,reconnectedClients=0,restoredClients=0;
  while(Date.now()<end){
   const tick=Date.now(),online=clients.filter(c=>c.online&&c.accessOnline).length;
   if(!reconnecting&&!revoking){minHealthyOnline=Math.min(minHealthyOnline,online);healthySocketMs+=online*(tick-coverageAt);healthyWallMs+=tick-coverageAt;}
@@ -217,6 +244,8 @@ for(const scenario of ['concentrated','distributed']){
    await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},15000,'Public restoration not ready');
    // Explicit user reopen after the preparation state, not background HUD polling.
    for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud('restoration-open')));
+   await until(async()=>clients.every(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive),15000,'Every restored HUD must complete its current epoch');
+   restoredClients=clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive).length;
    revoking=false;coverageAt=Date.now();
   }
   if(!restarted&&Date.now()-started>duration*500){
@@ -240,11 +269,14 @@ for(const scenario of ['concentrated','distributed']){
  await Promise.all(writers);
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
- expireDeliveries();clearInterval(resourceTimer);await Promise.allSettled([...tasks]);
+ expireDeliveries();clearInterval(resourceTimer);
+ await until(async()=>tasks.size===0,30000,'Pending transport/timer work did not drain');
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.requestAccounting=requestAccounting;
+ report.hudRecovery={restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.verifyAfterRead).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.verifyAfterRead).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
  report.snapshotDelivery={expected:snapshotExpected,excludedForPlannedFault:snapshotExcluded,missed:snapshotMissed,pending:clients.reduce((n,c)=>n+c.snapshotExpected.length,0),samples:sample('snapshot').length,p95Ms:percentile(sample('snapshot'),.95),minSamplesPerViewer:Math.min(...clients.map(c=>c.snapshotSamples))};save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
@@ -256,6 +288,7 @@ for(const scenario of ['concentrated','distributed']){
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');
  assert.ok(report.revocationClears>=viewers,'Every HUD must clear for withdrawal in another contributing tour');
  assert.equal(report.revokedClients,viewers);assert.equal(report.reconnectedClients,viewers);
+ assert.equal(report.hudRecovery.restoredClients,viewers);assert.equal(report.hudRecovery.finalCurrentClients,viewers);assert.equal(report.hudRecovery.reconnectVerifiedClients,viewers);assert.equal(report.hudRecovery.pendingHudRequests,0);
  assert.equal(report.minHealthyOnline,viewers);assert.equal(report.healthySocketCoverage,1);
  assert.equal(report.unexpectedDisconnects,0);
  assert.equal(report.missedDeliveries,0);assert.equal(report.pendingDeliveries,0);
