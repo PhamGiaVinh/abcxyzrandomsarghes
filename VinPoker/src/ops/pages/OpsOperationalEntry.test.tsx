@@ -5,9 +5,10 @@ import { OpsModuleGate } from "./OpsEntryResolver";
 import { getOpsModule, type OpsModuleId } from "@/ops/registry/opsModuleRegistry";
 
 const h = vi.hoisted(() => ({ loading: false, scopeError: null as string | null,
-  allowed: true, superAdmin: false, clubs: ["club-a"], verify: vi.fn(),
+  allowed: true, superAdmin: false, tourEnabled: false, clubs: ["club-a"], verify: vi.fn(),
   workspace: { verifiedSuperAdminClubs: new Map(), rememberVerifiedSuperAdminClub: vi.fn() },
 }));
+vi.mock("@/lib/featureFlags", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/featureFlags")>(), get OPS_TOUR_CASHIER_ENABLED() { return h.tourEnabled; } }));
 vi.mock("@/ops/auth/OpsCapabilityProvider", () => ({ useOpsCapabilities: () => ({
   loading: h.loading, scopeError: h.scopeError, availableModules: h.allowed
     ? ["cashier", "tracker", "dealer-control", "fnb", "marketing", "chip-ops", "accountant", "series"].map(id => getOpsModule(id as OpsModuleId)) : [],
@@ -18,7 +19,7 @@ vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: { id: 
 const originalLocation = Object.getOwnPropertyDescriptor(window, "location");
 const replace = vi.fn();
 beforeEach(() => {
-  h.loading = false; h.scopeError = null; h.allowed = true; h.superAdmin = false;
+  h.loading = false; h.scopeError = null; h.allowed = true; h.superAdmin = false; h.tourEnabled = false;
   h.clubs = ["club-a"]; h.verify.mockReset(); replace.mockReset();
   h.workspace.verifiedSuperAdminClubs.clear();
   Object.defineProperty(window, "location", { configurable: true, value: {
@@ -46,6 +47,11 @@ describe("operational module document entry", () => {
   ])("retains the F&B %s destination without granting its facet", (facet, target) => {
     mount("fnb", "/ops/fnb/" + facet);
     expect(replace).toHaveBeenCalledWith("https://vinpoker.vercel.app" + target);
+  });
+  it("uses the enabled tour counter directly instead of looping multi-club cashiers through the hub", () => {
+    h.tourEnabled = true; mount("cashier");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByText("child workspace")).toBeInTheDocument();
   });
   it("does not redirect the existing tour cashier writer back into the legacy counter", () => {
     mount("cashier", "/ops/cashier/tour"); expect(replace).not.toHaveBeenCalled();

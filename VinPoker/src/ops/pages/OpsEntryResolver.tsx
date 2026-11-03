@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { Loader2, Search, ShieldAlert, ShieldX } from "lucide-react";
+import { OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
 import { DocumentRedirect } from "@/components/DocumentRedirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,7 +84,9 @@ export function OpsModuleGate({
         "/ops/fnb/admin": "/fnb/admin",
       } as Record<string, string>)[location.pathname] ?? module.operationalRoute
     : location.pathname === module.route ? module.operationalRoute : undefined;
-  const content = operationalRoute
+  const content = module.id === "cashier" && OPS_TOUR_CASHIER_ENABLED && location.pathname === module.route && clubId
+    ? <Navigate to={`/ops/cashier/tour?club=${encodeURIComponent(clubId)}`} replace />
+    : operationalRoute
     ? <DocumentRedirect to={operationalRoute} preserveCurrentLocation={false} />
     : children ?? <OpsModuleStatus module={module} />;
 
