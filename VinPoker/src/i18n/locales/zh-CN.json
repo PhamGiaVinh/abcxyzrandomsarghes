@@ -2720,7 +2720,7 @@
   "liveHub": {
     "tabs": { "updates": "动态", "tablesLive": "直播牌桌", "leaders": "排行榜", "handHistory": "牌局历史", "prizes": "奖金", "structure": "结构", "photos": "照片", "back": "返回" },
     "watch": { "title": "正在进行的牌桌", "replay": "牌局回放" },
-    "prizes": { "empty": "暂无奖金结构", "total": "奖金总额", "position": "名次", "amount": "奖金", "rank": "#{{n}}" },
+    "prizes": { "empty": "暂无奖金结构", "total": "奖金总额", "position": "名次", "amount": "奖金", "rank": "#{{n}}", "champion": "冠军" },
     "structure": { "empty": "暂无盲注结构", "level": "Lv", "blinds": "盲注 (SB/BB)", "ante": "前注", "time": "分钟", "break": "休息" },
     "photos": { "empty": "暂无照片", "soon": "赛事照片即将上线" },
     "breakdown": {

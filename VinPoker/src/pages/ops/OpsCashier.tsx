@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
-import { OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
+import { FEATURES, OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
 type OpsSupabaseClient = SupabaseClient<Database>;
@@ -135,6 +135,11 @@ export default function OpsCashier() {
           Mở quầy Buy-in theo tour
         </Link>
       )}
+
+      {FEATURES.prizePayoutTracking && <a href="/cashier?tab=tournament_payouts"
+        className="inline-flex min-h-11 items-center rounded-2xl border border-emerald-300/30 px-4 text-sm font-semibold text-emerald-200">
+        Trả thưởng giải · Ghi nhận đã trả
+      </a>}
 
       {capabilities.metadataError && (
         <div className="rounded-2xl border border-amber-300/15 bg-amber-300/8 px-4 py-3 text-sm text-amber-100">
