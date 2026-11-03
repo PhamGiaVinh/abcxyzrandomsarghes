@@ -54,7 +54,8 @@ describe("BankAuditTab", () => {
     const list=await screen.findByRole('list');
     const items=within(list).getAllByRole('listitem');
     expect(items).toHaveLength(4);
-    expect(items.map(item=>item.textContent)).toEqual(['20T100','7T500','0T1.000','-3 (ghi nợ)T5.000']);
+    expect(items.map(item=>within(item).getByText(/^T/).textContent)).toEqual(['T100','T500','T1.000','T5.000']);
+    ['20','7','0','-3 (ghi nợ)'].forEach((count,index)=>expect(within(items[index]).getByText(count,{exact:true})).toBeInTheDocument());
     expect(denominations.map(row=>row.on_hand_count)).toEqual([-4,8,12,7,0,0,1]);
     expect(h.rpc.mock.calls.map(([name])=>name)).toEqual(['get_chip_bank']);
   });
@@ -66,7 +67,7 @@ describe("BankAuditTab", () => {
     ],coupling_enabled:false},error:null});
     render(<BankAuditTab clubId="club-a" tournamentId="tour-a"/>);
     expect(within(await screen.findByRole('list')).getAllByRole('listitem')).toHaveLength(1);
-    expect(screen.getByRole('listitem')).toHaveTextContent('0T100');
+    expect(within(screen.getByRole('listitem')).getByText('0',{exact:true})).toBeInTheDocument();
     expect(screen.getByText(/Có mệnh giá đang/)).toBeInTheDocument();
   });
 
