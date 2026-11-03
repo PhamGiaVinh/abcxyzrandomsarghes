@@ -34,4 +34,5 @@ const clock=jsonSql(`BEGIN;DELETE FROM spectator_projection_v2.broadcast_pending
  UPDATE public.tournaments SET clock_started_at=clock_timestamp() WHERE id='${tour}';
  SELECT jsonb_agg(DISTINCT component ORDER BY component) FROM spectator_projection_v2.broadcast_pending_v1;ROLLBACK;`);
 assert.deepEqual(clock,['clock']);checked.push({table:'tournaments',operation:'CLOCK_UPDATE',components:['clock']});
+sql("DELETE FROM public.tournament_hands WHERE id='21111111-0000-4000-8000-000000000001';");
 writeFileSync('output/hud-scale/source-matrix.json',JSON.stringify(report,null,2));console.log(JSON.stringify({sourceCases:checked.length,passed:true}));

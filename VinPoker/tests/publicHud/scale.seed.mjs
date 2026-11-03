@@ -5,7 +5,8 @@ import {tmpdir,cpus,totalmem} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {initialize,sql,jsonSql} from './nativeDb.mjs';
-import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
+import {measureFixtureWriterTransactions,cleanupCommittedWriterFixture} from './scale.write.native.mjs';
+import {nativeWorkerClient} from './nativeRpc.mjs';
 const count=Number(process.env.PUBLIC_HUD_SCALE_HANDS??'10000');
 if(![100,1000,10000,100000,1000000].includes(count))throw Error('Unsupported synthetic scale');
 const temp=mkdtempSync(path.join(tmpdir(),'hud-scale-classifier-'));
@@ -47,7 +48,7 @@ initialize({seedHistoricalSource(){
  const triggers=baseline.slice(baseline.indexOf('DROP TRIGGER IF EXISTS spectator_v2_tournaments_dirty'),baseline.indexOf('-- Bootstrap existing events'));
  sql(triggers);
  for(const [begin,end] of [['CREATE OR REPLACE FUNCTION public.claim_public_spectator_projection_v2','CREATE OR REPLACE FUNCTION public.get_public_spectator_projection_source_v2'],['CREATE OR REPLACE FUNCTION public.fail_public_spectator_projection_v2','CREATE OR REPLACE FUNCTION public.get_public_tournament_viewer_snapshot_v2']])sql(baseline.slice(baseline.indexOf(begin),baseline.indexOf(end)));
-},afterSourceTriggers(){baselineWriter=measureFixtureWriterTransactions();}});
+},afterSourceTriggers(){baselineWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();}});
 sql(readFileSync('supabase/pending-migrations/20261104001900_public_spectator_compact_generations.sql','utf8'));
 sql(readFileSync('supabase/pending-migrations/20261104002100_public_current_hand_bounded.sql','utf8'));
 console.log(JSON.stringify({phase:'source-ready',hands:count,elapsedMs:Date.now()-start}));
@@ -70,13 +71,20 @@ sql(`CREATE TEMP TABLE fixture_counter_template(player_id uuid,n bigint[],d bigi
   FROM public.tournament_chip_counts c JOIN public.tournament_seats s ON s.tournament_id=c.tournament_id AND s.player_id=c.player_id WHERE c.tournament_id=t.id),'bigBlind',100) FROM public.tournaments t;
  ANALYZE public.tournament_hands;ANALYZE public.hand_players;ANALYZE public.hand_actions;ANALYZE tracker_analytics_v1.hand_contributions;ANALYZE tracker_analytics_v1.player_totals;
 `);
+const incrementalWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();
+await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(temp,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
+const {processPublicHudJobs}=await import(pathToFileURL(path.join(temp,'worker.mjs')));
+for(let i=0;i<20&&Number(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'))>0;i++){
+ const result=await processPublicHudJobs(nativeWorkerClient,80,Date.now()+10000);assert.equal(result.failed,0);
+}
+assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),'0');
+assert.equal(Number(sql('SELECT count(*) FROM public.tournament_hands;')),count);
 for(const row of template){
  const total=jsonSql(`SELECT to_jsonb(t) FROM tracker_analytics_v1.player_totals t WHERE player_id='${row.playerId}';`);
  assert.equal(total.public_hands,count);assert.equal(total.observed_hands,count);
  for(const [field,key] of [['numerators','numerators'],['denominators','denominators'],['missing_proof','missingProof']])assert.deepEqual(total[field],row[key].map(v=>v*count));
 }
 sql("UPDATE tracker_analytics_v1.config SET backfill_started_at=clock_timestamp(),backfill_complete=true,hands_done=true,results_done=true,enabled=true,worker_enabled=true WHERE singleton;");
-const incrementalWriter=measureFixtureWriterTransactions();
 const report={kind:'SYNTHETIC_PREBUILT_READ_FIXTURE_NOT_MILLION_HAND_BACKFILL_PROOF',handsPerPlayer:count,players:2,tournaments:20,
  seedMs:Date.now()-start,node:process.version,platform:process.platform,cpus:cpus().length,memoryBytes:totalmem(),postgres:sql('SHOW server_version;'),
  databaseBytes:Number(sql('SELECT pg_database_size(current_database());')),sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;')),

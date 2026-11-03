@@ -29,7 +29,9 @@ table reads use PostgREST. The test creates no browser windows.
 ## Evidence and limits
 
 - `seed.json`: machine/PG version, disk footprint and source writer p95 before
-  and after migrations, using 200 separate PostgreSQL transactions after warmup.
+  and after migrations, using 200 separate committed PostgreSQL transactions
+  after warmup. Synthetic benchmark hands are removed and their derived jobs
+  processed before certifying the large read fixture.
   This is a fixture writer, not the authenticated Floor HTTP write path.
 - `native-read.json`: summary read timings and PostgreSQL access counters/query
   plans at the configured historical volume. SQL timing is not HTTP timing.
