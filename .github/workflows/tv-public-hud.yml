@@ -8,6 +8,9 @@ on:
       - 'VinPoker/src/components/cashier/tournament-live/HandSelector*'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/RealtimeTablesGrid*'
       - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/SpectatorMiniTable*'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/LiveHub*'
+      - 'VinPoker/src/pages/TournamentLiveTracker.tsx'
+      - 'VinPoker/tests/viewerHub/liveHub.render.test.tsx'
       - 'VinPoker/src/lib/publicPlayerHud*'
       - 'VinPoker/src/hooks/useTvStackRange*'
       - 'VinPoker/supabase/functions/public-player-hud/**'
@@ -43,4 +46,5 @@ jobs:
       - run: deno check supabase/functions/public-player-hud/index.ts
       - run: npx vitest run tests/publicHud/metrics.test.ts tests/publicHud/handler.test.ts src/lib/publicPlayerHud.test.ts src/hooks/useTvStackRange.test.ts src/components/tracker/PublicPlayerHud.test.tsx src/components/tracker/PlayerHandHistory.test.tsx src/components/cashier/tournament-live/HandSelector.test.tsx src/components/tv/TvBroadcastBoard.test.tsx src/lib/tv/mapTvData.test.ts src/lib/tv/mapDisplayState.test.ts src/components/cashier/tournament-live/viewer-hub/SpectatorMiniTable.test.tsx src/components/cashier/tournament-live/viewer-hub/RealtimeTablesGrid.test.tsx --maxWorkers=1 --no-file-parallelism
       - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: npx vitest run tests/viewerHub/liveHub.render.test.tsx tests/viewerHub/tournamentLiveViewInitialization.test.tsx src/components/cashier/tournament-live/viewer-hub/LiveHub.navigation.test.tsx --maxWorkers=1 --no-file-parallelism
       - run: npm run build

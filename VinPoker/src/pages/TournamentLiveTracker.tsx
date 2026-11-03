@@ -1,17 +1,19 @@
-import { useEffect, useState, useCallback } from "react";
+import { lazy, useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { BackButton } from "@/components/BackButton";
-import { TournamentLiveView } from "@/components/cashier/tournament-live/TournamentLiveView";
 import { LiveHub } from "@/components/cashier/tournament-live/viewer-hub/LiveHub";
 import { defaultViewerTab, parseViewerTab } from "@/components/cashier/tournament-live/viewer-hub/viewerUrlState";
 import type { ViewerTab } from "@/components/cashier/tournament-live/viewer-hub/viewerTypes";
 import { parseReplayTarget, replaceReplayTargetParams, type ReplayTarget } from "@/components/cashier/tournament-live/viewer-hub/replayTarget";
 import { FEATURES } from "@/lib/featureFlags";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+// The overview does not render a felt until a table/replay is opened.
+const TournamentLiveView = lazy(() => import("@/components/cashier/tournament-live/TournamentLiveView").then(module => ({default: module.TournamentLiveView})));
 
 const TournamentLiveTracker = () => {
   const { tournamentId } = useParams();
