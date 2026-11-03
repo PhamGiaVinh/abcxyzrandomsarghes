@@ -16,12 +16,14 @@ it('opens the exact hand and table even when hand numbers repeat across tables',
     expect(url.searchParams.has('handNumber')).toBe(false);
   }
 });
-it('keeps missing proof blank while still providing its existing replay',()=>{
+it('connects known points with a solid neutral line across missing proof without fabricating dots',()=>{
   const {container}=render(<PlayerHandHistory tournamentId={T} hands={[hand('a','table',10),hand('b','table',null),hand('c','table',20)]}/>);
   expect(screen.getAllByRole('link',{name:/^Replay hand/})).toHaveLength(2);
   expect(screen.getAllByRole('link',{name:/^Mở replay hand/})).toHaveLength(3);
   expect(screen.getByText('Stack chưa xác minh')).toBeInTheDocument();
-  expect(container.querySelector('path')?.getAttribute('d')?.match(/M/g)).toHaveLength(2);
+  expect(container.querySelector('path')?.getAttribute('d')?.match(/M/g)).toHaveLength(1);
+  expect(screen.getByText(/Nét xám liền chỉ nối hai mốc đã biết/)).toBeInTheDocument();
+  expect(container.querySelector('svg line.text-muted-foreground')).not.toHaveAttribute('stroke-dasharray');
 });
 it('uses stable hand identity without guessing a missing legacy table',()=>{
   render(<PlayerHandHistory tournamentId={T} hands={[hand('a',null,100)]}/>);
