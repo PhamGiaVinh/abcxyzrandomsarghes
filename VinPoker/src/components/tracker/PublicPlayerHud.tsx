@@ -50,25 +50,28 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
     const controller = new AbortController();
     scopeController.current=controller;
     let unsubscribe:(()=>void)|undefined;
-    let pending=new AbortController(),attempt=0,revalidationTimer:ReturnType<typeof setTimeout>|undefined;
+    let pending=new AbortController(),attempt=0,requestActive=false,verifyAfterRead=false,revalidationTimer:ReturnType<typeof setTimeout>|undefined;
     void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud,observePublicHudRevocation}) => {
       if(controller.signal.aborted)return;
       let frozen:PreparedPublicPlayerHudData|null=null;
-      const load=(reason:'verify'|'revoked'='verify')=>{
+      const load=(reason:'open'|'verify'|'revoked'='open')=>{
+        if(reason==='verify'&&requestActive){verifyAfterRead=true;return;}
         clearTimeout(revalidationTimer);
-        pending.abort();pending=new AbortController();const owned=++attempt;
+        pending.abort();pending=new AbortController();requestActive=false;const owned=++attempt;
         if(reason==='revoked'){frozen=null;setResult(null);}
         setError(false);setPreparing(false);
-        const read=()=>{void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen?.accessSnapshot).then(value=>{
+        const read=()=>{requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen??undefined).then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
             if(!frozen||value.accessChanged){frozen=value;setResult(value);}
           }
         }).catch(reason=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
+        }).finally(()=>{
+          if(!controller.signal.aborted&&owned===attempt){requestActive=false;if(verifyAfterRead){verifyAfterRead=false;load('verify');}}
         });};
         // Clear private data synchronously; spread the subsequent public checks
         // so a global revocation does not send every spectator to Edge at once.
-        if(reason==='revoked')revalidationTimer=setTimeout(read,250+Math.random()*2500);else read();
+        if(reason!=='open')revalidationTimer=setTimeout(read,250+Math.random()*2500);else read();
       };
       load();unsubscribe=observePublicHudRevocation(tournamentId,load);
     }).catch(()=>{if(!controller.signal.aborted)setError(true);});

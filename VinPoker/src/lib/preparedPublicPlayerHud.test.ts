@@ -18,6 +18,18 @@ it('returns a frozen value; opening again reads the new revision',async()=>{
   const second=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);
   expect(first.revision).toBe('42');expect(second.revision).toBe('43');expect(invoke).toHaveBeenCalledTimes(4);
 });
+it('checks reconnect access with one summary read and preserves the opened revision',async()=>{
+  const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);invoke.mockClear();
+  invoke.mockResolvedValue({data:{...summary(),revision:'43'},error:null});
+  expect(await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen)).toBe(frozen);
+  expect(invoke).toHaveBeenCalledTimes(1);expect(invoke.mock.calls[0][1].body).toMatchObject({mode:'summary',access_snapshot:'1:2:'});
+});
+it('reloads bounded history only when the old access scope was invalidated',async()=>{
+  const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);invoke.mockClear();
+  invoke.mockImplementation((_n,{body})=>Promise.resolve({data:body.mode==='summary'?{...summary(),revision:'43',accessChanged:true}:history(),error:null}));
+  const updated=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen);
+  expect(updated.revision).toBe('43');expect(invoke.mock.calls.map(c=>c[1].body.mode)).toEqual(['summary','history']);
+});
 it('does not fall back to raw scans for warming, revoked or incompatible snapshots',async()=>{
   for(const data of [{access:'public',state:'warming'},{access:'revoked'},{...summary(),version:'incompatible'}]){
     invoke.mockImplementation((_n,{body})=>Promise.resolve({data:body.mode==='summary'?data:history(),error:null}));

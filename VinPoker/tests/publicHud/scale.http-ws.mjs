@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
+import {monitorEventLoopDelay,performance as nodePerformance} from 'node:perf_hooks';
 import {parseEnv} from 'node:util';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -14,16 +15,17 @@ const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const player=uuid('30000000',1),stats={summary:[],realtime:[],projection:[],errors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 let stopping=false;
+let phases={};
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
-async function post(path,body,privileged=false){
+async function post(path,body,privileged=false,phase='other'){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
  const response=await fetch(status.API_URL+path,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
  if(!response.ok)throw Error(`HTTP_${response.status}`);
- const value=await response.json();if(path.endsWith('public-player-hud')&&body.mode==='summary')stats.summary.push(performance.now()-start);
+ const value=await response.json();if(path.endsWith('public-player-hud')&&body.mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
 }
 const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privileged);
-const hud=(tour,mode='summary')=>post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode});
+const hud=(tour,mode='summary',accessSnapshot,phase)=>post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase);
 async function until(fn,timeout,label){const start=Date.now();while(Date.now()-start<timeout){if(await fn())return;await sleep(200);}throw Error(label);}
 const percentile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*p))]:null;
 const denied=await fetch(status.API_URL+'/rest/v1/rpc/claim_public_hud_jobs_v1',{method:'POST',headers:{apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({p_limit:1})});
@@ -43,6 +45,7 @@ if(viewers===1000&&duration===1800){
  assert.ok(seed.writer.p95OverheadPercent<=10,'Committed fixture marking overhead > 10%; stop before the long soak');
 }
 for(const scenario of ['concentrated','distributed']){
+ phases={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const offset={summary:stats.summary.length,realtime:stats.realtime.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,revoking=false,started=0;
@@ -56,7 +59,8 @@ for(const scenario of ['concentrated','distributed']){
  for(let i=0;i<viewers;i++){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
-  const state={client,online:false,accessOnline:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,expected:[],busy:false,pending:false,lastRead:0,lastVerify:0,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,expected:[],busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const read=async()=>{
    if(state.busy){state.pending=true;return;}state.busy=true;
    try{
@@ -72,13 +76,13 @@ for(const scenario of ['concentrated','distributed']){
    finally{state.busy=false;if(state.pending&&Date.now()<end){state.pending=false;track(read());}}
   };
   state.read=read;
-  const openHud=async()=>{
+  const openHud=async(phase='user-open')=>{
    const epoch=++state.hudEpoch,expectedRevocation=revoking;
    try{
-    const value=await hud(tour);if(epoch!==state.hudEpoch)return;
+    const value=await hud(tour,'summary',undefined,phase);if(epoch!==state.hudEpoch)return;
     state.lastHud=Date.now();
     if(value.access==='public'&&['current','updating'].includes(value.state)&&Number.isSafeInteger(value.counters?.publicHands)){
-     state.frozen=value.revision;
+     state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};
      const history=await hud(tour,'history');if(epoch!==state.hudEpoch)return;
      if(history.access==='public'&&['current','updating'].includes(history.state)){
       assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);
@@ -88,16 +92,30 @@ for(const scenario of ['concentrated','distributed']){
    }catch{error('hud_read');}
   };
   state.openHud=openHud;
+  const verifyHud=async(phase)=>{
+   const epoch=state.hudEpoch,frozen=state.frozen;if(!frozen)return;
+   try{
+    const value=await hud(tour,'summary',frozen.accessSnapshot,phase);
+    if(epoch!==state.hudEpoch)return;
+    if(value.access!=='public'||!['current','updating'].includes(value.state)){state.frozen=null;if(!revoking)error('hud_not_ready');return;}
+    if(value.accessChanged){state.frozen=null;await openHud(phase+'-changed');}
+    else assert.equal(state.frozen,frozen,'Access verification must retain the frozen HUD');
+   }catch{error('hud_read');}
+  };
+  state.verifyHud=verifyHud;
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
    const components=message.payload.components??['tables'];
    if(components.includes('tables')||components.includes('visibility'))track(read());
-  }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());}});
+  }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());}});
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
    const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
    // Same clear-now, jittered verification policy as the actual HUD component.
-   track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch&&Date.now()<end)await openHud();})());
-  }).subscribe(s=>{state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;});
+   track((async()=>{await sleep(250+Math.random()*2500);if(epoch===state.hudEpoch&&Date.now()<end)await openHud('revocation-revalidate');})());
+  }).subscribe(s=>{
+   state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
+   if(state.accessOnline){if(state.accessJoined)track((async()=>{await sleep(250+Math.random()*2500);await verifyHud('reconnect-verify');})());state.accessJoined=true;}
+  });
   if(i%25===24)await sleep(25);
  }
  try{await until(async()=>clients.every(c=>c.online&&c.accessOnline),60000,'Not every viewer joined both live channels');}
@@ -107,7 +125,7 @@ for(const scenario of ['concentrated','distributed']){
   writeFileSync('output/hud-scale/join-failure.json',JSON.stringify(diagnostic,null,2));console.log(JSON.stringify(diagnostic));throw error;
  }
  // Stagger opens so this tests a real HTTP audience, not a single service cache call.
- for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud()));
+ for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(async c=>{await c.openHud('initial-open');await c.verifyHud('initial-verify');}));
  started=Date.now();end=started+duration*1000;coverageAt=started;
  const writer=async(n)=>{
   let number=(scenario==='concentrated'?2_000_000:5_000_000)+n*100000,step=0,hand=null;
@@ -146,7 +164,7 @@ for(const scenario of ['concentrated','distributed']){
    await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
    await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},15000,'Public restoration not ready');
    // Explicit user reopen after the preparation state, not background HUD polling.
-   for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud()));
+   for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud('restoration-open')));
    revoking=false;coverageAt=Date.now();
   }
   if(!restarted&&Date.now()-started>duration*500){
@@ -157,12 +175,15 @@ for(const scenario of ['concentrated','distributed']){
    reconnectedClients=clients.filter((c,i)=>c.reconnected>before[i]).length;reconnecting=false;coverageAt=Date.now();
   }
   for(const c of clients){
-   const now=Date.now(),interval=c.online?30000:Math.min(30000,3000*2**Math.min(c.failures,3));
-   if(now-c.lastVerify>interval+Math.random()*3000){c.lastVerify=now;track(c.read());}
+   const now=Date.now();
+   if(now>=c.nextVerify){c.nextVerify=now+Math.round((c.online?30000:Math.min(30000,3000*2**Math.min(c.failures,4)))*(.9+Math.random()*.2));track(c.read());}
    if(now-c.lastHud>60000){c.lastHud=now;track(c.openHud());}
   }
   if(Date.now()-lastHealth>5000){lastHealth=Date.now();track((async()=>{try{const h=await rpc('get_public_hud_projection_health_v1',{},true);health.push({at:Date.now(),jobs:h.jobs,oldestAgeMs:h.oldestLiveChangeAt?Math.max(0,Date.now()-Date.parse(h.oldestLiveChangeAt)):0,expiredLeases:h.expiredLeases,failedJobs:h.failedJobs});}catch{error('health_read');}})());}
-  if(Date.now()-lastProgress>60000){lastProgress=Date.now();console.log(JSON.stringify({phase:'load-progress',scenario,elapsedSeconds:Math.floor((Date.now()-started)/1000),viewers,sourceWrites:stats.sourceWrites-offset.sourceWrites,projectionSamples:stats.projection.length-offset.projection.length,errors:stats.errors}));}
+  if(Date.now()-lastProgress>60000){
+   lastProgress=Date.now();console.log(JSON.stringify({phase:'load-progress',scenario,elapsedSeconds:Math.floor((Date.now()-started)/1000),viewers,sourceWrites:stats.sourceWrites-offset.sourceWrites,projectionSamples:stats.projection.length-offset.projection.length,errors:stats.errors}));
+   track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
+  }
   await sleep(250);
  }
  await Promise.all(writers);
@@ -173,6 +194,8 @@ for(const scenario of ['concentrated','distributed']){
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
+ report.httpPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
  console.log(JSON.stringify(report));
  assert.ok(report.httpSummarySamples>=viewers);assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');

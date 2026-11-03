@@ -1,11 +1,12 @@
 import {act,render,screen,waitFor,cleanup,fireEvent} from '@testing-library/react';
-import {afterEach,expect,it,vi} from 'vitest';
+import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
 const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')=>void)}));
 vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;return()=>{};}}));
 vi.mock('@/components/PublicPaidWinnings',()=>({PublicPaidWinnings:()=> <section>Total Winnings</section>}));
-afterEach(()=>{cleanup();load.mockReset();});
+beforeEach(()=>{vi.spyOn(Math,'random').mockReturnValue(0);});
+afterEach(()=>{cleanup();load.mockReset();vi.restoreAllMocks();});
 it('clears a revoked HUD immediately before its jittered access check',async()=>{
  const random=vi.spyOn(Math,'random').mockReturnValue(0);
  try{
