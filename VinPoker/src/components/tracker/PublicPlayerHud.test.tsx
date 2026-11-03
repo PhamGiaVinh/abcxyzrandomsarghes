@@ -1,4 +1,4 @@
-import {render,screen,waitFor,cleanup} from '@testing-library/react';
+import {render,screen,waitFor,cleanup,fireEvent} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
@@ -16,4 +16,20 @@ it('does not flash the previous player or accept a late response after changing 
   await waitFor(()=>expect(load).toHaveBeenCalledTimes(1));
   view.rerender(<PublicPlayerHud tournamentId="t" playerId="b" onClose={()=>{}}/>);
   await screen.findByText('TEST b');finish(result('a'));await waitFor(()=>expect(screen.queryByText('TEST a')).not.toBeInTheDocument());
+});
+
+it('opens Vietnamese metric help with the actual opportunities and switches explanation',async()=>{
+  const data=result('a');data.analytics.handsObserved=40;
+  data.analytics.metrics.vpip={...metric,percentage:30,numerator:12,denominator:40,sampleSize:40};
+  load.mockResolvedValue(data);render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
+  await screen.findByText('TEST a');
+  fireEvent.click(screen.getByRole('button',{name:'Giải thích VPIP'}));
+  await screen.findByRole('dialog',{name:'Giải thích chỉ số HUD'});
+  expect(screen.getByText('12 / 40 × 100 = 30%')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'FLOP · RCB'}));
+  await screen.findByRole('heading',{name:'Flop — Raise to Continuation Bet'});
+  expect(screen.getByText(/Dấu — không có nghĩa là 0%/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Close'}));
+  await screen.findByRole('button',{name:'Giải thích VPIP'});
+  expect(screen.getByText('TEST a')).toBeInTheDocument();
 });

@@ -32,3 +32,18 @@ it('explains an empty player history',()=>{
   render(<PlayerHandHistory tournamentId={T} hands={[]}/>);
   expect(screen.getByText(/Chưa có hand hoàn tất/)).toBeInTheDocument();expect(screen.queryByRole('img')).not.toBeInTheDocument();
 });
+
+it('plots ten verified hands flat for unchanged stacks and up/down for chip changes',()=>{
+  const stacks=[100,100,100,130,110,110,150,140,140,160];
+  render(<PlayerHandHistory tournamentId={T} hands={stacks.map((stack,i)=>({...hand(`hand-${i+1}`,'table',stack),handNumber:i+1}))}/>);
+  const dots=screen.getAllByRole('link',{name:/^Replay hand/});
+  const top=(i:number)=>Number.parseFloat(dots[i].style.top);
+  expect(top(0)).toBe(top(1));expect(top(1)).toBe(top(2));
+  expect(top(3)).toBeLessThan(top(2));expect(top(4)).toBeGreaterThan(top(3));
+  expect(top(4)).toBe(top(5));expect(top(9)).toBeLessThan(top(8));
+  expect(dots[1].querySelector('span')).toHaveClass('text-yellow-400');
+  expect(dots[3].querySelector('span')).toHaveClass('text-emerald-400');
+  expect(dots[4].querySelector('span')).toHaveClass('text-red-400');
+  expect(screen.getByText('↗ Tăng chip')).toBeInTheDocument();
+  expect(screen.getByText(/fold vẫn có thể mất chip/)).toBeInTheDocument();
+});
