@@ -7632,6 +7632,12 @@
   ],
   "ownerGatedActiveAllowlist": [
 {
+  "domain": "player-financial-reports-v1",
+  "filename": "20261103153245_player_financial_reports_v1.sql",
+  "sha256": "dfab9169a2a50d213c1d723f23dcef760abec3d761dede0f1b7bedc8943f859f",
+  "version": "20261103153245"
+},
+{
   "domain": "payout-publication-after-cashier-v1",
   "filename": "20261103131615_payout_publication_after_cashier.sql",
   "sha256": "cd6f4c4264da7e4ca18bd2e45115cb7beadc2029ceaedbb5b10dcb810d9c069f",
