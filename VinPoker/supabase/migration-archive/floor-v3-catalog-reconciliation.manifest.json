@@ -7583,6 +7583,25 @@
       "ledgerName": "tournament_table_appearance",
       "originalPath": "supabase/migrations/20270115000002_tracker_hand_correction_commit_receipt.sql",
       "lineageEvidence": "LIVE_SCHEMA_EFFECT_PRESENT; SAME_VERSION_DIFFERENT_LEDGER_NAME; preserve source without replay"
+    },
+    {
+      "version": "20270128000197",
+      "filename": "20270128000197_notification_push_outbox_v1.sql",
+      "classification": "NEVER_APPLIED / SUPERSEDED",
+      "sourceOnly": true,
+      "superseded": true,
+      "unapplied": true,
+      "hasData": false,
+      "aliasVersions": [],
+      "reason": "Sanitized predecessor literal pin cannot qualify the actual production function. Exact implementation retained in reviewed actual-predecessor replacement20261103040730; no197 receipt may be fabricated.",
+      "sourceOnlyEvidence": true,
+      "supersededEvidence": true,
+      "bucket": "historical-never-replay",
+      "archivePath": "supabase/migration-archive/historical-never-replay/20270128000197_notification_push_outbox_v1.sql",
+      "sha256": "88cac27921bc2523d6d0c544d20ad03a7f43f820473985718eec4421239f1d0a",
+      "ledgerVersionPresent": false,
+      "originalPath": "supabase/migrations/20270128000197_notification_push_outbox_v1.sql",
+      "lineageEvidence": "COMPLETE_BACKUP_BASELINE_REPLAY_AND_READ_ONLY_LITERAL_DIFF_REVIEW_20261103"
     }
   ],
   "pendingSources": [
@@ -7611,80 +7630,445 @@
       "reason": "post-production-head Tracker Voice Board Assist migration; source-only pending owner-gated rollout"
     }
   ],
-    "ownerGatedActiveAllowlist": [
-    {"version":"20270128000301","filename":"20270128000301_tracker_decided_hand_action_guard_v1.sql","sha256":"eee78ac780a8aa1cfd0010a56842316787523fd1f6622830990e40c54722f4f5","domain":"tracker-decided-hand-action-campaign"},
-    {"version":"20270128000189","filename":"20270128000189_tracker_action_stack_bound_v1.sql","sha256":"864946be61d9c2fe7768bc8d564897adda665b796c70f3b11b9b73966500ec44","domain":"tracker-action-stack-integrity-campaign"},
-    {"version":"20270128000113","filename":"20270128000113_cashier_canonical_paid_seating_v1.sql","sha256":"4b5faf7b9e79868efe7b62c37436252aff5a9ffa86594cf0d3d2f8424cb3cf46","domain":"cashier-canonical-paid-seating-campaign"},
-    {"version":"20270128000087","filename":"20270128000087_dealer_rotation_persist_session_fence_v1.sql","sha256":"a6bd06550895cac9aafed67859f80012592a50c33041717f6399ba822c2eeadf","domain":"dealer-rotation-persist-session-fence-campaign"},
-    {"version":"20270128000086","filename":"20270128000086_tournament_table_write_tenant_v1.sql","sha256":"01b495928a662277f4f0def15114f8376838a7c24c29db42be0e4585c4cb3740","domain":"tournament-table-tenant-boundary-campaign"},
-    {"version":"20270128000085","filename":"20270128000085_cashier_club_scope_authority_v1.sql","sha256":"bdf62cc23d4335fe11e93de5bb20f4fc967057425d90b44fdc63552cea413a2b","domain":"cashier-club-scope-authority-campaign"},
-    {"version":"20270128000084","filename":"20270128000084_profiles_anon_public_projection_v1.sql","sha256":"4db92b6d27a80bc13ad1bc2c37404b3ba61f0387fe170f47c53e8ccb3c491059","domain":"profiles-anon-public-projection-campaign"},
-    {"version":"20270128000083","filename":"20270128000083_shift_payroll_return_type_v1.sql","sha256":"ab1c5a98b03c9f032a1b8367a73a04d2536fa69e642bb27261a1a3be800349a7","domain":"shift-payroll-return-type-campaign"},
-    {"version":"20270128000082","filename":"20270128000082_payroll_legacy_read_club_authority_v1.sql","sha256":"04f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289","domain":"payroll-legacy-read-authority-campaign"},
-    {"version":"20270128000080","filename":"20270128000080_dealer_operator_next_intent_v1.sql","sha256":"0b90049a0cb63242bc5a99dd078781a3987956146546377db4c936843433c4ce","domain":"dealer-operator-next-intent-campaign"},
-    {"version":"20270128000081","filename":"20270128000081_dealer_close_forecast_slots_v1.sql","sha256":"accba5a8dd0873dd4de5d3c24d42abfbb6e3c519991f76ce02bcb3a7c5c70ff8","domain":"dealer-close-forecast-slots-campaign"},
-    {"version":"20270128000088","filename":"20270128000088_tournament_config_atomic_save_v1.sql","sha256":"292731d050964b90c6b3bb878de1ca636fce0e16756d3944712d3da28d86c8f5","domain":"tournament-config-atomic-save-campaign"},
-    {"version":"20270128000089","filename":"20270128000089_clock_start_level_readiness_v1.sql","sha256":"1f4b7d21014fe561110de19c17ea26d94485c09fba02a80ed16d07019cc6de92","domain":"clock-start-level-readiness-campaign"},
-    {"version":"20270128000090","filename":"20270128000090_public_clock_projection_v1.sql","sha256":"a9ca114984800b87af15cbaea4a4c95067182e1375f84074e382cf3ebd032276","domain":"public-clock-read-projection-campaign"},
-    {"version":"20270128000091","filename":"20270128000091_tournament_create_with_levels_atomic_v1.sql","sha256":"116a88485f116956602f9b7362bf39bb45efefe6aceaba5b7dbda03e59e56a15","domain":"tournament-create-levels-atomic-campaign"},
-      {"version":"20270128000092","filename":"20270128000092_club_series_reorder_atomic_v1.sql","sha256":"fdd9624de2d86252dff8472ba66a40fc55648f85cf297028633d0a3068100f54","domain":"club-series-reorder-atomic-campaign"},
-    {"version":"20270128000093","filename":"20270128000093_floor_legacy_restore_exact_session_required_v1.sql","sha256":"ed747bda61c670c1422e96066722f1d5cd3c6beea29dafd85dd29d350562a569","domain":"floor-legacy-restore-retirement-campaign"},
-    {"version":"20270128000094","filename":"20270128000094_tracker_manual_finish_lock_authority_v1.sql","sha256":"e15068894a124c376c2ffe8681d043af47838ca90177b19113fef9f434a7088c","domain":"tracker-manual-finish-lock-authority-campaign"},
-    {"version":"20270128000095","filename":"20270128000095_tracker_manual_finish_intent_receipts_v1.sql","sha256":"bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb","domain":"tracker-manual-finish-intent-receipts-campaign"},
-    {"version":"20270128000096","filename":"20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql","sha256":"c7e745378c1525fe7df19d7385a3e3ca6b9ff07a9c410b46643cad7e08ee18bd","domain":"tracker-bare-finish-retirement-campaign"},
-    {"version":"20270128000097","filename":"20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql","sha256":"1eb303d909b98b13dd0cf52ca61cbd7cdba8c0c7c0611c8347f8a002953b5cdf","domain":"tracker-manual-finish-cancellation-campaign"},
-    {"version":"20270128000098","filename":"20270128000098_tracker_public_history_attention_state_v1.sql","sha256":"12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938","domain":"tracker-public-history-attention-state-campaign"},
-    {"version":"20270128000099","filename":"20270128000099_tracker_historical_intent_resolution_v1.sql","sha256":"d06bb38e2adaff726a5631666682b678f989ae59790aa51e956daaca7881b9fc","domain":"tracker-historical-intent-resolution-campaign"},
-    {"version":"20270128000100","filename":"20270128000100_dealer_manual_swing_receipt_v1.sql","sha256":"dd4dac547f821922395a9a0781a50b19ae5b01a3bdee7d7d007c8a684a42e83b","domain":"dealer-manual-swing-receipt-campaign"},
-    {"version":"20270128000101","filename":"20270128000101_dealer_manual_swing_cancel_actor_v1.sql","sha256":"fdd9a2e41533c5378156dc2fe4ce55123de885b0978d780b9512cadef5ee1043","domain":"dealer-manual-swing-cancel-actor-campaign"},
-    {"version":"20270128000102","filename":"20270128000102_dealer_initial_intent_resolution_v1.sql","sha256":"bdf880411f806f90b8200944cff68d486b5d1ac25e1ae387254a8ae0c87fac87","domain":"dealer-initial-intent-resolution-campaign"},
-    {"version":"20270128000103","filename":"20270128000103_dealer_worker_swing_atomic_result_v1.sql","sha256":"9bb8838b598cb444738576a64bf2df97b74ddc7b0c83494bdc97e4891f605f23","domain":"dealer-worker-swing-atomic-result-campaign"},
-    {"version":"20270128000104","filename":"20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql","sha256":"b53b68484a8f3af536ef865de00bdc45f1691bd72680860f2583ed7befbd6490","domain":"dealer-legacy-preassign-cleanup-atomic-campaign"},
-    {"version":"20270128000105","filename":"20270128000105_dealer_legacy_adoption_atomic_v1.sql","sha256":"dda67897862d4555a7272da27963f8f9360b9357b4c176d7d6ded224c15cae6c","domain":"dealer-legacy-adoption-atomic-campaign"},
-    {"version":"20270128000106","filename":"20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql","sha256":"ca49dca4e164e329fa318a19dfefac3f47ca69fd7e6746691e877401f6547167","domain":"dealer-emergency-replan-prepare-atomic-campaign"},
-    {"version":"20270128000079","filename":"20270128000079_dealer_close_next_reservation_v1.sql","sha256":"ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66","domain":"dealer-close-next-reservation-campaign"},
-    {"version":"20270128000078","filename":"20270128000078_dealer_next_plan_rest_floor_v1.sql","sha256":"fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df","domain":"dealer-next-plan-rest-floor-campaign"},
-    {"version":"20270128000076","filename":"20270128000076_tracker_hand_input_scoped_read_v1.sql","sha256":"15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54","domain":"tracker-hand-input-scoped-read-campaign"},
-    {"version":"20270128000077","filename":"20270128000077_tracker_roster_scoped_read_v2.sql","sha256":"9ac013f3a8be2cfd2d657f223b5182a3ebe48217e1a6df6b7eb5cad0120e6062","domain":"tracker-roster-scoped-read-campaign"},
-    {"version":"20270128000075","filename":"20270128000075_tracker_manual_cards_receipts_v1.sql","sha256":"4f52194e0c0721552519660abb844e3ccb5e6dba307f45203de08a2a6b6f9a4a","domain":"tracker-manual-cards-receipts-campaign"},
-    {"version":"20270128000074","filename":"20270128000074_tracker_public_hand_visibility_v1.sql","sha256":"1b26b18d91807e2aa937c114810ee4e074f66e4c3af30d4ca50c51b433078163","domain":"tracker-public-hand-visibility-campaign"},
-    {"version":"20270128000072","filename":"20270128000072_tracker_voice_assignment_lifecycle_v1.sql","sha256":"6a0b7cb216c6eec027e4ff0b4eb7e5a7a4478ba0bf879b14a65906ce8c4edb09","domain":"tracker-voice-assignment-lifecycle-campaign"},
-    {"version":"20270128000073","filename":"20270128000073_dealer_voice_swing_lock_order_v1.sql","sha256":"5b44af84a9e20627152471141bca6ca42539f1ca658bbaade89a061a7066530b","domain":"dealer-voice-swing-lock-order-campaign"},
-    {"version":"20270128000071","filename":"20270128000071_tracker_voice_finish_actor_session_fence_v1.sql","sha256":"1a747f345d56b6ff4b5c13186dd5e98f9db384e918659808b638e39be6203993","domain":"tracker-voice-finish-actor-session-campaign"},
-    {"version":"20270128000070","filename":"20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql","sha256":"5a25a790d88f06969a13ad3a801998869b260f8fb69e71cbb08691e922c9aea2","domain":"tracker-voice-card-actor-epoch-campaign"},
-    {"version":"20270128000067","filename":"20270128000067_floor_manual_bust_restore_read_v1.sql","sha256":"427ec7f078b6e7c258af3dd165d2ce7400155acae144140a045472bc1c8d6597","domain":"floor-manual-bust-restore-campaign"},
-    {"version":"20270128000068","filename":"20270128000068_floor_restore_canonical_tuple_v1.sql","sha256":"f7441afd63f5bbbb6c54d2b006c3e6c1d7f119003699c6594e54eb3749c4ff5c","domain":"floor-restore-canonical-tuple-campaign"},
-    {"version":"20270128000069","filename":"20270128000069_chip_issuance_exact_intent_v1.sql","sha256":"c92283d9084afe9dd68c1967e80366f3af9fe55cea1589b04f67239df8374b5f","domain":"chip-issuance-exact-intent-campaign"},
-    {"version":"20270128000066","filename":"20270128000066_floor_manual_seat_session_fence_v1.sql","sha256":"2da4583e6d695ec2e36779f31dc4d784142e85e6e29888ab1ae633010490d90b","domain":"floor-manual-seat-session-fence-campaign"},
-    {"version":"20270128000064","filename":"20270128000064_dealer_swing_scoped_stop_v1.sql","sha256":"043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17","domain":"dealer-swing-scoped-stop-campaign"},
-    {"version":"20270128000065","filename":"20270128000065_floor_physical_asset_authority_commit_fence_v1.sql","sha256":"014718d85013b0b714afd96a300b7a80f38f45b031dc0ebef3740145f11682f6","domain":"quads-physical-asset-authority-fence-campaign"},
-    {"version":"20270128000063","filename":"20270128000063_floor_physical_asset_provision_v1.sql","sha256":"8ee185c840976f58854ec006c8ab1d6d6d6f8d34077ecffd68e52a7ee62f697f","domain":"quads-physical-asset-provision-campaign"},
-    {"version":"20270128000062","filename":"20270128000062_floor_roster_participation_integrity_v6.sql","sha256":"45fd420f2f0f1120c085843bd2503e92dddf5b764b1076ea3d7d1c00b5ad8e31","domain":"floor-roster-participation-integrity-campaign"},
-    {"version":"20270128000061","filename":"20270128000061_tracker_legacy_stack_retirement_v1.sql","sha256":"a037ef4fe53edb058e833e6605180f710875ce04a15f1770022bbf559650c9d2","domain":"tracker-legacy-stack-integrity-campaign"},
-    {"version":"20270128000060","filename":"20270128000060_tracker_legacy_reentry_retirement_v1.sql","sha256":"9b366c60ecfcc20f9d51876a0cdf9ad59b7c528255277ffce889792ca921a067","domain":"tracker-legacy-reentry-integrity-campaign"},
-    {"version":"20270128000059","filename":"20270128000059_tracker_completed_void_integrity_v1.sql","sha256":"83c3ac2381b184627c20439276a62afe1401cb980387ff1dc2b7be7ea711794d","domain":"tracker-completed-void-integrity-campaign"},
-    {"version":"20270128000058","filename":"20270128000058_tracker_hand_identity_revision_v1.sql","sha256":"48bc7cba5892c66819037ffbee796d02551436c85495e3f03d878512c112e99b","domain":"tracker-history-identity-revision-campaign"},
-    {"version":"20270128000057","filename":"20270128000057_dealer_pt_policy_tenant_integrity_v1.sql","sha256":"0b5c774899b6e933049a74be985b1f72e96b2501e5daf15a087e6fc784e80d20","domain":"dealer-policy-tenant-campaign"},
-    {"version":"20270128000056","filename":"20270128000056_tracker_card_batch_integrity_v1.sql","sha256":"bfdd54961f66da91b54fafa825926c9f6b362917fb8b7b315c897c676d4bf4e1","domain":"tracker-card-integrity-campaign"},
-    {"version":"20270128000055","filename":"20270128000055_chip_pending_cancellation_v1.sql","sha256":"c78099b9a34d5a7887f7d4b01901579ac39f3609c24836ba75ed4b7774cdc052","domain":"restore-chip-recovery-campaign"},
-    {"version":"20270128000054","filename":"20270128000054_restore_pending_cancellation_v1.sql","sha256":"db398f93e1d3f26ebca82f329ca8bbe6393cb3c6ba36bc2ab41912136f15312e","domain":"restore-chip-recovery-campaign"},
-    {"version":"20270128000053","filename":"20270128000053_chip_color_up_receipt_reconciliation_v1.sql","sha256":"3284dafe204a92bc33b57221d08093106074796d374a44a29aeeba883a2a0270","domain":"restore-chip-recovery-campaign"},
-    {"version":"20270128000052","filename":"20270128000052_floor_restore_receipt_reconciliation_v1.sql","sha256":"9629ee3543ef8eee2e5f97f61a9236cbdf383ace9fa39064d56e46ecc5d85de4","domain":"restore-chip-recovery-campaign"},
-    {"version":"20270128000051","filename":"20270128000051_dealer_checkin_receipt_reconciliation_v1.sql","sha256":"d53efa3e45942142c0aaac8148e116272294b4b2ff1d871ae38f1a672642ff9d","domain":"dealer-checkin-recovery-campaign"},
-    {"version":"20270128000037","filename":"20270128000037_floor_legacy_close_session_fence_v1.sql","sha256":"13766d88de0765d7fdebb0edf89f250af2ecf34e226c2e2146148bd85e497c3c","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000038","filename":"20270128000038_floor_break_lowest_number_policy_v1.sql","sha256":"657c1db3b3773dad47f070aa1a5d4757dfe2b30077f602075499bd81814b4721","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000039","filename":"20270128000039_floor_break_ticket_audit_v1.sql","sha256":"451788264693a09342660306a58806853b269a2aca08c3415ce2506865359f4a","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000040","filename":"20270128000040_floor_break_balanced_plan_v1.sql","sha256":"360647f7766261b6f063af6efb07b5b003456f74f842ca035c1e8954dc570d38","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000041","filename":"20270128000041_floor_deferred_move_ticket_audit_v1.sql","sha256":"377269df73038faf401649c63de2790146d009635228793138a88511b3dc5ba8","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000042","filename":"20270128000042_floor_canonical_move_ticket_integrity_v1.sql","sha256":"70044e39df48a1515687d912eed1065d7f1c80b0e805a7418616a118a0cce28d","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000043","filename":"20270128000043_floor_move_exact_intent_v1.sql","sha256":"f545d9cd37e7a6d8a59ad2ee392e3f72c551d3da5441839b2523502dfc6ae7dd","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000044","filename":"20270128000044_floor_seat_ticket_read_v1.sql","sha256":"ac977694c020afba499abf360902129360aebc9873ec5d40791c85744c122d26","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000045","filename":"20270128000045_floor_seat_ticket_select_scope_v1.sql","sha256":"46bdb1ee2dc1ce684e766c1d762265453cfb0f440e7c86f1227c543e422b8e59","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000046","filename":"20270128000046_dealer_inventory_canonical_table_link_v1.sql","sha256":"70d5c8ace517321fb2a7ac0a26c7098619391fa2cdc504d7436a9d1225426358","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000047","filename":"20270128000047_floor_closed_session_attendance_v1.sql","sha256":"68f37a501ee80408770f437553295271198222804bc58e978d6296eb54e61ad0","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000048","filename":"20270128000048_floor_move_or_queue_exact_intent_v1.sql","sha256":"7ee0538bcd42c45ab746dba5dd8d9f91e2b01d655fa351930ee409f78f4488ae","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000049","filename":"20270128000049_floor_mode_tombstone_guard_v1.sql","sha256":"eabbd6af0738a10d3a492b5e26c173b7e3c4fa3fc0c819ff4df2d06d433586a7","domain":"floor-session-ticket-campaign"},
-    {"version":"20270128000050","filename":"20270128000050_floor_mode_retry_schedule_v1.sql","sha256":"a173187282c167238d204c48d50b23895459f4698afcdfe498bca4ee64d76c2a","domain":"floor-session-ticket-campaign"},
+  "ownerGatedActiveAllowlist": [
+    {
+      "version": "20270128000301",
+      "filename": "20270128000301_tracker_decided_hand_action_guard_v1.sql",
+      "sha256": "eee78ac780a8aa1cfd0010a56842316787523fd1f6622830990e40c54722f4f5",
+      "domain": "tracker-decided-hand-action-campaign"
+    },
+    {
+      "version": "20270128000189",
+      "filename": "20270128000189_tracker_action_stack_bound_v1.sql",
+      "sha256": "864946be61d9c2fe7768bc8d564897adda665b796c70f3b11b9b73966500ec44",
+      "domain": "tracker-action-stack-integrity-campaign"
+    },
+    {
+      "version": "20270128000113",
+      "filename": "20270128000113_cashier_canonical_paid_seating_v1.sql",
+      "sha256": "4b5faf7b9e79868efe7b62c37436252aff5a9ffa86594cf0d3d2f8424cb3cf46",
+      "domain": "cashier-canonical-paid-seating-campaign"
+    },
+    {
+      "version": "20270128000087",
+      "filename": "20270128000087_dealer_rotation_persist_session_fence_v1.sql",
+      "sha256": "a6bd06550895cac9aafed67859f80012592a50c33041717f6399ba822c2eeadf",
+      "domain": "dealer-rotation-persist-session-fence-campaign"
+    },
+    {
+      "version": "20270128000086",
+      "filename": "20270128000086_tournament_table_write_tenant_v1.sql",
+      "sha256": "01b495928a662277f4f0def15114f8376838a7c24c29db42be0e4585c4cb3740",
+      "domain": "tournament-table-tenant-boundary-campaign"
+    },
+    {
+      "version": "20270128000085",
+      "filename": "20270128000085_cashier_club_scope_authority_v1.sql",
+      "sha256": "bdf62cc23d4335fe11e93de5bb20f4fc967057425d90b44fdc63552cea413a2b",
+      "domain": "cashier-club-scope-authority-campaign"
+    },
+    {
+      "version": "20270128000084",
+      "filename": "20270128000084_profiles_anon_public_projection_v1.sql",
+      "sha256": "4db92b6d27a80bc13ad1bc2c37404b3ba61f0387fe170f47c53e8ccb3c491059",
+      "domain": "profiles-anon-public-projection-campaign"
+    },
+    {
+      "version": "20270128000083",
+      "filename": "20270128000083_shift_payroll_return_type_v1.sql",
+      "sha256": "ab1c5a98b03c9f032a1b8367a73a04d2536fa69e642bb27261a1a3be800349a7",
+      "domain": "shift-payroll-return-type-campaign"
+    },
+    {
+      "version": "20270128000082",
+      "filename": "20270128000082_payroll_legacy_read_club_authority_v1.sql",
+      "sha256": "04f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289",
+      "domain": "payroll-legacy-read-authority-campaign"
+    },
+    {
+      "version": "20270128000080",
+      "filename": "20270128000080_dealer_operator_next_intent_v1.sql",
+      "sha256": "0b90049a0cb63242bc5a99dd078781a3987956146546377db4c936843433c4ce",
+      "domain": "dealer-operator-next-intent-campaign"
+    },
+    {
+      "version": "20270128000081",
+      "filename": "20270128000081_dealer_close_forecast_slots_v1.sql",
+      "sha256": "accba5a8dd0873dd4de5d3c24d42abfbb6e3c519991f76ce02bcb3a7c5c70ff8",
+      "domain": "dealer-close-forecast-slots-campaign"
+    },
+    {
+      "version": "20270128000088",
+      "filename": "20270128000088_tournament_config_atomic_save_v1.sql",
+      "sha256": "292731d050964b90c6b3bb878de1ca636fce0e16756d3944712d3da28d86c8f5",
+      "domain": "tournament-config-atomic-save-campaign"
+    },
+    {
+      "version": "20270128000089",
+      "filename": "20270128000089_clock_start_level_readiness_v1.sql",
+      "sha256": "1f4b7d21014fe561110de19c17ea26d94485c09fba02a80ed16d07019cc6de92",
+      "domain": "clock-start-level-readiness-campaign"
+    },
+    {
+      "version": "20270128000090",
+      "filename": "20270128000090_public_clock_projection_v1.sql",
+      "sha256": "a9ca114984800b87af15cbaea4a4c95067182e1375f84074e382cf3ebd032276",
+      "domain": "public-clock-read-projection-campaign"
+    },
+    {
+      "version": "20270128000091",
+      "filename": "20270128000091_tournament_create_with_levels_atomic_v1.sql",
+      "sha256": "116a88485f116956602f9b7362bf39bb45efefe6aceaba5b7dbda03e59e56a15",
+      "domain": "tournament-create-levels-atomic-campaign"
+    },
+    {
+      "version": "20270128000092",
+      "filename": "20270128000092_club_series_reorder_atomic_v1.sql",
+      "sha256": "fdd9624de2d86252dff8472ba66a40fc55648f85cf297028633d0a3068100f54",
+      "domain": "club-series-reorder-atomic-campaign"
+    },
+    {
+      "version": "20270128000093",
+      "filename": "20270128000093_floor_legacy_restore_exact_session_required_v1.sql",
+      "sha256": "ed747bda61c670c1422e96066722f1d5cd3c6beea29dafd85dd29d350562a569",
+      "domain": "floor-legacy-restore-retirement-campaign"
+    },
+    {
+      "version": "20270128000094",
+      "filename": "20270128000094_tracker_manual_finish_lock_authority_v1.sql",
+      "sha256": "e15068894a124c376c2ffe8681d043af47838ca90177b19113fef9f434a7088c",
+      "domain": "tracker-manual-finish-lock-authority-campaign"
+    },
+    {
+      "version": "20270128000095",
+      "filename": "20270128000095_tracker_manual_finish_intent_receipts_v1.sql",
+      "sha256": "bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb",
+      "domain": "tracker-manual-finish-intent-receipts-campaign"
+    },
+    {
+      "version": "20270128000096",
+      "filename": "20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql",
+      "sha256": "c7e745378c1525fe7df19d7385a3e3ca6b9ff07a9c410b46643cad7e08ee18bd",
+      "domain": "tracker-bare-finish-retirement-campaign"
+    },
+    {
+      "version": "20270128000097",
+      "filename": "20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql",
+      "sha256": "1eb303d909b98b13dd0cf52ca61cbd7cdba8c0c7c0611c8347f8a002953b5cdf",
+      "domain": "tracker-manual-finish-cancellation-campaign"
+    },
+    {
+      "version": "20270128000098",
+      "filename": "20270128000098_tracker_public_history_attention_state_v1.sql",
+      "sha256": "12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938",
+      "domain": "tracker-public-history-attention-state-campaign"
+    },
+    {
+      "version": "20270128000099",
+      "filename": "20270128000099_tracker_historical_intent_resolution_v1.sql",
+      "sha256": "d06bb38e2adaff726a5631666682b678f989ae59790aa51e956daaca7881b9fc",
+      "domain": "tracker-historical-intent-resolution-campaign"
+    },
+    {
+      "version": "20270128000100",
+      "filename": "20270128000100_dealer_manual_swing_receipt_v1.sql",
+      "sha256": "dd4dac547f821922395a9a0781a50b19ae5b01a3bdee7d7d007c8a684a42e83b",
+      "domain": "dealer-manual-swing-receipt-campaign"
+    },
+    {
+      "version": "20270128000101",
+      "filename": "20270128000101_dealer_manual_swing_cancel_actor_v1.sql",
+      "sha256": "fdd9a2e41533c5378156dc2fe4ce55123de885b0978d780b9512cadef5ee1043",
+      "domain": "dealer-manual-swing-cancel-actor-campaign"
+    },
+    {
+      "version": "20270128000102",
+      "filename": "20270128000102_dealer_initial_intent_resolution_v1.sql",
+      "sha256": "bdf880411f806f90b8200944cff68d486b5d1ac25e1ae387254a8ae0c87fac87",
+      "domain": "dealer-initial-intent-resolution-campaign"
+    },
+    {
+      "version": "20270128000103",
+      "filename": "20270128000103_dealer_worker_swing_atomic_result_v1.sql",
+      "sha256": "9bb8838b598cb444738576a64bf2df97b74ddc7b0c83494bdc97e4891f605f23",
+      "domain": "dealer-worker-swing-atomic-result-campaign"
+    },
+    {
+      "version": "20270128000104",
+      "filename": "20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql",
+      "sha256": "b53b68484a8f3af536ef865de00bdc45f1691bd72680860f2583ed7befbd6490",
+      "domain": "dealer-legacy-preassign-cleanup-atomic-campaign"
+    },
+    {
+      "version": "20270128000105",
+      "filename": "20270128000105_dealer_legacy_adoption_atomic_v1.sql",
+      "sha256": "dda67897862d4555a7272da27963f8f9360b9357b4c176d7d6ded224c15cae6c",
+      "domain": "dealer-legacy-adoption-atomic-campaign"
+    },
+    {
+      "version": "20270128000106",
+      "filename": "20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql",
+      "sha256": "ca49dca4e164e329fa318a19dfefac3f47ca69fd7e6746691e877401f6547167",
+      "domain": "dealer-emergency-replan-prepare-atomic-campaign"
+    },
+    {
+      "version": "20270128000079",
+      "filename": "20270128000079_dealer_close_next_reservation_v1.sql",
+      "sha256": "ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66",
+      "domain": "dealer-close-next-reservation-campaign"
+    },
+    {
+      "version": "20270128000078",
+      "filename": "20270128000078_dealer_next_plan_rest_floor_v1.sql",
+      "sha256": "fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df",
+      "domain": "dealer-next-plan-rest-floor-campaign"
+    },
+    {
+      "version": "20270128000076",
+      "filename": "20270128000076_tracker_hand_input_scoped_read_v1.sql",
+      "sha256": "15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54",
+      "domain": "tracker-hand-input-scoped-read-campaign"
+    },
+    {
+      "version": "20270128000077",
+      "filename": "20270128000077_tracker_roster_scoped_read_v2.sql",
+      "sha256": "9ac013f3a8be2cfd2d657f223b5182a3ebe48217e1a6df6b7eb5cad0120e6062",
+      "domain": "tracker-roster-scoped-read-campaign"
+    },
+    {
+      "version": "20270128000075",
+      "filename": "20270128000075_tracker_manual_cards_receipts_v1.sql",
+      "sha256": "4f52194e0c0721552519660abb844e3ccb5e6dba307f45203de08a2a6b6f9a4a",
+      "domain": "tracker-manual-cards-receipts-campaign"
+    },
+    {
+      "version": "20270128000074",
+      "filename": "20270128000074_tracker_public_hand_visibility_v1.sql",
+      "sha256": "1b26b18d91807e2aa937c114810ee4e074f66e4c3af30d4ca50c51b433078163",
+      "domain": "tracker-public-hand-visibility-campaign"
+    },
+    {
+      "version": "20270128000072",
+      "filename": "20270128000072_tracker_voice_assignment_lifecycle_v1.sql",
+      "sha256": "6a0b7cb216c6eec027e4ff0b4eb7e5a7a4478ba0bf879b14a65906ce8c4edb09",
+      "domain": "tracker-voice-assignment-lifecycle-campaign"
+    },
+    {
+      "version": "20270128000073",
+      "filename": "20270128000073_dealer_voice_swing_lock_order_v1.sql",
+      "sha256": "5b44af84a9e20627152471141bca6ca42539f1ca658bbaade89a061a7066530b",
+      "domain": "dealer-voice-swing-lock-order-campaign"
+    },
+    {
+      "version": "20270128000071",
+      "filename": "20270128000071_tracker_voice_finish_actor_session_fence_v1.sql",
+      "sha256": "1a747f345d56b6ff4b5c13186dd5e98f9db384e918659808b638e39be6203993",
+      "domain": "tracker-voice-finish-actor-session-campaign"
+    },
+    {
+      "version": "20270128000070",
+      "filename": "20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql",
+      "sha256": "5a25a790d88f06969a13ad3a801998869b260f8fb69e71cbb08691e922c9aea2",
+      "domain": "tracker-voice-card-actor-epoch-campaign"
+    },
+    {
+      "version": "20270128000067",
+      "filename": "20270128000067_floor_manual_bust_restore_read_v1.sql",
+      "sha256": "427ec7f078b6e7c258af3dd165d2ce7400155acae144140a045472bc1c8d6597",
+      "domain": "floor-manual-bust-restore-campaign"
+    },
+    {
+      "version": "20270128000068",
+      "filename": "20270128000068_floor_restore_canonical_tuple_v1.sql",
+      "sha256": "f7441afd63f5bbbb6c54d2b006c3e6c1d7f119003699c6594e54eb3749c4ff5c",
+      "domain": "floor-restore-canonical-tuple-campaign"
+    },
+    {
+      "version": "20270128000069",
+      "filename": "20270128000069_chip_issuance_exact_intent_v1.sql",
+      "sha256": "c92283d9084afe9dd68c1967e80366f3af9fe55cea1589b04f67239df8374b5f",
+      "domain": "chip-issuance-exact-intent-campaign"
+    },
+    {
+      "version": "20270128000066",
+      "filename": "20270128000066_floor_manual_seat_session_fence_v1.sql",
+      "sha256": "2da4583e6d695ec2e36779f31dc4d784142e85e6e29888ab1ae633010490d90b",
+      "domain": "floor-manual-seat-session-fence-campaign"
+    },
+    {
+      "version": "20270128000064",
+      "filename": "20270128000064_dealer_swing_scoped_stop_v1.sql",
+      "sha256": "043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17",
+      "domain": "dealer-swing-scoped-stop-campaign"
+    },
+    {
+      "version": "20270128000065",
+      "filename": "20270128000065_floor_physical_asset_authority_commit_fence_v1.sql",
+      "sha256": "014718d85013b0b714afd96a300b7a80f38f45b031dc0ebef3740145f11682f6",
+      "domain": "quads-physical-asset-authority-fence-campaign"
+    },
+    {
+      "version": "20270128000063",
+      "filename": "20270128000063_floor_physical_asset_provision_v1.sql",
+      "sha256": "8ee185c840976f58854ec006c8ab1d6d6d6f8d34077ecffd68e52a7ee62f697f",
+      "domain": "quads-physical-asset-provision-campaign"
+    },
+    {
+      "version": "20270128000062",
+      "filename": "20270128000062_floor_roster_participation_integrity_v6.sql",
+      "sha256": "45fd420f2f0f1120c085843bd2503e92dddf5b764b1076ea3d7d1c00b5ad8e31",
+      "domain": "floor-roster-participation-integrity-campaign"
+    },
+    {
+      "version": "20270128000061",
+      "filename": "20270128000061_tracker_legacy_stack_retirement_v1.sql",
+      "sha256": "a037ef4fe53edb058e833e6605180f710875ce04a15f1770022bbf559650c9d2",
+      "domain": "tracker-legacy-stack-integrity-campaign"
+    },
+    {
+      "version": "20270128000060",
+      "filename": "20270128000060_tracker_legacy_reentry_retirement_v1.sql",
+      "sha256": "9b366c60ecfcc20f9d51876a0cdf9ad59b7c528255277ffce889792ca921a067",
+      "domain": "tracker-legacy-reentry-integrity-campaign"
+    },
+    {
+      "version": "20270128000059",
+      "filename": "20270128000059_tracker_completed_void_integrity_v1.sql",
+      "sha256": "83c3ac2381b184627c20439276a62afe1401cb980387ff1dc2b7be7ea711794d",
+      "domain": "tracker-completed-void-integrity-campaign"
+    },
+    {
+      "version": "20270128000058",
+      "filename": "20270128000058_tracker_hand_identity_revision_v1.sql",
+      "sha256": "48bc7cba5892c66819037ffbee796d02551436c85495e3f03d878512c112e99b",
+      "domain": "tracker-history-identity-revision-campaign"
+    },
+    {
+      "version": "20270128000057",
+      "filename": "20270128000057_dealer_pt_policy_tenant_integrity_v1.sql",
+      "sha256": "0b5c774899b6e933049a74be985b1f72e96b2501e5daf15a087e6fc784e80d20",
+      "domain": "dealer-policy-tenant-campaign"
+    },
+    {
+      "version": "20270128000056",
+      "filename": "20270128000056_tracker_card_batch_integrity_v1.sql",
+      "sha256": "bfdd54961f66da91b54fafa825926c9f6b362917fb8b7b315c897c676d4bf4e1",
+      "domain": "tracker-card-integrity-campaign"
+    },
+    {
+      "version": "20270128000055",
+      "filename": "20270128000055_chip_pending_cancellation_v1.sql",
+      "sha256": "c78099b9a34d5a7887f7d4b01901579ac39f3609c24836ba75ed4b7774cdc052",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000054",
+      "filename": "20270128000054_restore_pending_cancellation_v1.sql",
+      "sha256": "db398f93e1d3f26ebca82f329ca8bbe6393cb3c6ba36bc2ab41912136f15312e",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000053",
+      "filename": "20270128000053_chip_color_up_receipt_reconciliation_v1.sql",
+      "sha256": "3284dafe204a92bc33b57221d08093106074796d374a44a29aeeba883a2a0270",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000052",
+      "filename": "20270128000052_floor_restore_receipt_reconciliation_v1.sql",
+      "sha256": "9629ee3543ef8eee2e5f97f61a9236cbdf383ace9fa39064d56e46ecc5d85de4",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000051",
+      "filename": "20270128000051_dealer_checkin_receipt_reconciliation_v1.sql",
+      "sha256": "d53efa3e45942142c0aaac8148e116272294b4b2ff1d871ae38f1a672642ff9d",
+      "domain": "dealer-checkin-recovery-campaign"
+    },
+    {
+      "version": "20270128000037",
+      "filename": "20270128000037_floor_legacy_close_session_fence_v1.sql",
+      "sha256": "13766d88de0765d7fdebb0edf89f250af2ecf34e226c2e2146148bd85e497c3c",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000038",
+      "filename": "20270128000038_floor_break_lowest_number_policy_v1.sql",
+      "sha256": "657c1db3b3773dad47f070aa1a5d4757dfe2b30077f602075499bd81814b4721",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000039",
+      "filename": "20270128000039_floor_break_ticket_audit_v1.sql",
+      "sha256": "451788264693a09342660306a58806853b269a2aca08c3415ce2506865359f4a",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000040",
+      "filename": "20270128000040_floor_break_balanced_plan_v1.sql",
+      "sha256": "360647f7766261b6f063af6efb07b5b003456f74f842ca035c1e8954dc570d38",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000041",
+      "filename": "20270128000041_floor_deferred_move_ticket_audit_v1.sql",
+      "sha256": "377269df73038faf401649c63de2790146d009635228793138a88511b3dc5ba8",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000042",
+      "filename": "20270128000042_floor_canonical_move_ticket_integrity_v1.sql",
+      "sha256": "70044e39df48a1515687d912eed1065d7f1c80b0e805a7418616a118a0cce28d",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000043",
+      "filename": "20270128000043_floor_move_exact_intent_v1.sql",
+      "sha256": "f545d9cd37e7a6d8a59ad2ee392e3f72c551d3da5441839b2523502dfc6ae7dd",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000044",
+      "filename": "20270128000044_floor_seat_ticket_read_v1.sql",
+      "sha256": "ac977694c020afba499abf360902129360aebc9873ec5d40791c85744c122d26",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000045",
+      "filename": "20270128000045_floor_seat_ticket_select_scope_v1.sql",
+      "sha256": "46bdb1ee2dc1ce684e766c1d762265453cfb0f440e7c86f1227c543e422b8e59",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000046",
+      "filename": "20270128000046_dealer_inventory_canonical_table_link_v1.sql",
+      "sha256": "70d5c8ace517321fb2a7ac0a26c7098619391fa2cdc504d7436a9d1225426358",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000047",
+      "filename": "20270128000047_floor_closed_session_attendance_v1.sql",
+      "sha256": "68f37a501ee80408770f437553295271198222804bc58e978d6296eb54e61ad0",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000048",
+      "filename": "20270128000048_floor_move_or_queue_exact_intent_v1.sql",
+      "sha256": "7ee0538bcd42c45ab746dba5dd8d9f91e2b01d655fa351930ee409f78f4488ae",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000049",
+      "filename": "20270128000049_floor_mode_tombstone_guard_v1.sql",
+      "sha256": "eabbd6af0738a10d3a492b5e26c173b7e3c4fa3fc0c819ff4df2d06d433586a7",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000050",
+      "filename": "20270128000050_floor_mode_retry_schedule_v1.sql",
+      "sha256": "a173187282c167238d204c48d50b23895459f4698afcdfe498bca4ee64d76c2a",
+      "domain": "floor-session-ticket-campaign"
+    },
     {
       "version": "20270128000036",
       "filename": "20270128000036_floor_manual_entry_roundtrip_v1.sql",
@@ -7948,6 +8332,1482 @@
       "filename": "20270128000019_dealer_manual_assignment_receipt_read_v1.sql",
       "sha256": "7037d878228e68fe6493a47132df03dfc0c49e4988467166326984664d6a3835",
       "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000107",
+      "filename": "20270128000107_dealer_rotation_locked_anchor_fence_v1.sql",
+      "sha256": "dc69d00e86d97b5a3b4c8bb3df9898c1d8d6c1403a93847b3b2951d0f80488de",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000108",
+      "filename": "20270128000108_dealer_rotation_completion_service_boundary_v1.sql",
+      "sha256": "1bca82500888a19c459e26b3f380506a45585354dc681348207d5ac215819d29",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000109",
+      "filename": "20270128000109_dealer_rotation_schedule_actor_scope_v1.sql",
+      "sha256": "62598107ebbbe773c6f89f79f7abac6af5e877f3f293f9f512968a2d0d2b8e00",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000110",
+      "filename": "20270128000110_dealer_rotation_execution_atomic_v1.sql",
+      "sha256": "cfccba4c55250fa0c957a4ca6872d1eef9e6e29bebf7a37fca168201a33b2f1c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000111",
+      "filename": "20270128000111_dealer_dispatch_canonical_open_scope_v1.sql",
+      "sha256": "d3be7a7c4ffc455f305033ae4e0d854dfa020d53a4563bcf1560be613cdcd902",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000112",
+      "filename": "20270128000112_cashier_cash_intent_receipts_v1.sql",
+      "sha256": "6472bcae99b4ed01b75adbbcfdc595a4e7a3ef23257f98900bb39f5d580f9d39",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000114",
+      "filename": "20270128000114_cashier_canonical_reentry_seating_v1.sql",
+      "sha256": "2059ceaf23a148b193ea540da2ee1f5e7e725bcc6c6271c7a02dc595223a8cea",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000115",
+      "filename": "20270128000115_cashier_server_priced_reentry_v1.sql",
+      "sha256": "ed00e60ad62c71b4859b4de6adbdafa690505a0b487477a12d6c618ea7dce8fa",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000116",
+      "filename": "20270128000116_floor_restore_pending_reentry_fence_v1.sql",
+      "sha256": "0062854b1e0b0e622c6a5e1ebf08abecae90eb27136c35aa73ec7645ab174748",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000117",
+      "filename": "20270128000117_cashier_correction_alert_seating_fence_v1.sql",
+      "sha256": "a3503ce6265cb2b8b0c8c88149e13cadf1c491a2c171c0f2534771f35214e5e8",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000118",
+      "filename": "20270128000118_tracker_correction_intent_resolution_v1.sql",
+      "sha256": "9bc72b42cebfa90ba3c6946852a95d7b636c144993fd8950e2d669f05a3f148b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000119",
+      "filename": "20270128000119_tracker_history_commit_lock_order_v1.sql",
+      "sha256": "502aacd8cc4dcdbdcd49a7c706523af7da0b266ffca310bbb7745949ff9eadeb",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000120",
+      "filename": "20270128000120_tracker_hand_scope_revision_v1.sql",
+      "sha256": "87d00e875207e5f9be6ebe8f8b65f919a25444499c6e89852a61be804d3d28dc",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000121",
+      "filename": "20270128000121_tracker_voice_finish_receipt_resolution_v1.sql",
+      "sha256": "2fb5422a31bbccb8bb6bc8460dcc5f9f5a9ad5880321236ccd1b24fcb43d4d0c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000122",
+      "filename": "20270128000122_floor_restore_provisional_history_order_v1.sql",
+      "sha256": "4d827ee6a44ea38014ee58751a4d5744589175b5f01cf75bcd7c2b25d308b74a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000123",
+      "filename": "20270128000123_tournament_close_official_results_v1.sql",
+      "sha256": "8a5ce9fca6af9793ef5a8b91a224fffbf00d182f4b0728a072c3df7e546c33c8",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000124",
+      "filename": "20270128000124_payout_confirmation_integrity_v1.sql",
+      "sha256": "7d92dd475fc6679550bb2d93495fc84452f6867b3a1d280cf8b4baac00268495",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000125",
+      "filename": "20270128000125_payout_liability_business_period_v2.sql",
+      "sha256": "ff6b30f8915c47046a6fd18af9b6440b4fc3f0d52ad340b38b04391eb9aa2703",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000126",
+      "filename": "20270128000126_payout_participation_display_v1.sql",
+      "sha256": "469c50d62a636e1c56b6f16fe5eb887d6404eb13d88eb0f5cf75261aea77a841",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000127",
+      "filename": "20270128000127_multiday_canonical_final_seating_v1.sql",
+      "sha256": "509224bebb8181e8aae6f661d53ccee4298da384b15f4b6fec25aadb89ca16d0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000128",
+      "filename": "20270128000128_multiday_final_participation_name_v1.sql",
+      "sha256": "20ae85b7b6ac3f4b7382109156012eb48a5b46db211f3fe7561437ff934b27ae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000129",
+      "filename": "20270128000129_multiday_final_playable_stack_v1.sql",
+      "sha256": "1ad2b3cf32fd39d3924457f068c888c02a93669e606eb9208bb97e07caba3f6e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000130",
+      "filename": "20270128000130_multiday_final_roster_read_v1.sql",
+      "sha256": "67b55d6726963588c35ac05dbef6032bb8e8574bb38a0f5b275c22a14c41d470",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000131",
+      "filename": "20270128000131_multiday_initial_draw_plan_v1.sql",
+      "sha256": "af5bb12844fd2a8058bca393465d9c5bdc83ce544f842be5f53a556c4815c637",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000132",
+      "filename": "20270128000132_multiday_initial_draw_apply_v1.sql",
+      "sha256": "a147ad1943c58e69d737de7eff32feab460a281439f5b460cdd2e74c91b83d7a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000133",
+      "filename": "20270128000133_multiday_initial_draw_cancel_v1.sql",
+      "sha256": "54df96bb790fb2d4e170e409a7574e8e8ded2de09ed11e7927df87d1cfbaa31a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000134",
+      "filename": "20270128000134_multiday_initial_draw_tv_hold_v1.sql",
+      "sha256": "0dd112a6731467d7f338137d9fda67abcfe6e3d98b5eac341d68c5836a71c1ac",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000135",
+      "filename": "20270128000135_multiday_bag_receipt_read_v1.sql",
+      "sha256": "6b25227f807e9f609f7c98f84c7c374996251475ec6d5c29d27b005da434bce7",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000136",
+      "filename": "20270128000136_multiday_bag_receipt_payload_v2.sql",
+      "sha256": "b7f6c132328b467faded1d4adf48343652345b73a18dba2953d57b5f90f7d88d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000137",
+      "filename": "20270128000137_tournament_schedule_batch_receipts_v1.sql",
+      "sha256": "594660fa1c53e3b2330e088ef6203c3b78d82c4c2878c0e749f041a750ac4d0a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000138",
+      "filename": "20270128000138_tournament_schedule_batch_cancel_v1.sql",
+      "sha256": "a7d0a0b7bd317fb491f30e2b7780ab9065e6dcfea58728879650b1472b38a193",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000139",
+      "filename": "20270128000139_cashier_paid_stack_projection_v1.sql",
+      "sha256": "656e1d0642b0e83f9c4a700c1e84e895c728be43d39c3c7708a8b6f765c240e4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000140",
+      "filename": "20270128000140_payroll_preview_private_defaults_v1.sql",
+      "sha256": "4c62befb6a1db4061c615c6e6837fc3c7caa12ca401adbbd4a1b287e92c86172",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000141",
+      "filename": "20270128000141_payroll_club_preview_tenant_v1.sql",
+      "sha256": "6e7703376bca39048a544577b9f2ac0feea4b61aa8c2d7b252a5a8a88c3d4432",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000142",
+      "filename": "20270128000142_sepay_settlement_fair_batch_v1.sql",
+      "sha256": "472429ee294e4d74695f1124bafe70045de440f26e24ef2f269c7fafd047c3c4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000143",
+      "filename": "20270128000143_multiday_floor_roundtrip_v1.sql",
+      "sha256": "2d31598efbbc2b5753139432c03c70703400b4a3669651eb731f5f0f6f8b45d2",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000144",
+      "filename": "20270128000144_multiday_reseat_entry_projection_v1.sql",
+      "sha256": "52588067601b6c85da15708e10d69e06faae916e94995df329a2e407ef3b1656",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000145",
+      "filename": "20270128000145_multiday_verified_payment_boundary_v1.sql",
+      "sha256": "e3e5a46111fff5bc47d021fe4e254dc7bef1ae702c2d985faa6aa4fb265886f6",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000146",
+      "filename": "20270128000146_multiday_live_paid_accounting_v1.sql",
+      "sha256": "c9fb2e04ec310a2b2eafe4fc76b713b62a6f9ea06737c360eaebb0dfa0ed471e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000147",
+      "filename": "20270128000147_multiday_frozen_obligation_payment_v1.sql",
+      "sha256": "5e1768faab611c8688129ee4645a083ec85eb337fe5221183f1d8b402a97be98",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000148",
+      "filename": "20270128000148_multiday_club_liability_accounting_v1.sql",
+      "sha256": "1eea5022e5edf0bfff609a70e8b4e8d10a8a864417b4fbea0dca4dc72c8cd478",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000149",
+      "filename": "20270128000149_fnb_club_scope_self_only_v1.sql",
+      "sha256": "e864eee57581a99d895dfc9e181d07146352821de026b7d21d938523f032a357",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000150",
+      "filename": "20270128000150_fnb_create_intent_binding_v1.sql",
+      "sha256": "056e3de1a2f9255c6960da55bbb9f25887bcbf31b41c2836301cf66bf251d690",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000151",
+      "filename": "20270128000151_direct_chat_participant_integrity_v1.sql",
+      "sha256": "c8f966d2e050c4d5947c34714c8c478c1d7e1f847c6031a93b1cb4daae44aa9d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000152",
+      "filename": "20270128000152_tracker_source_revision_monotonic_v1.sql",
+      "sha256": "09cb430ffaef2c2611ed835f85b662272dad4ded31597eeabacb9da23b78045d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000153",
+      "filename": "20270128000153_multiday_bust_restore_seed_identity_v1.sql",
+      "sha256": "6daba4719bac8249e7ee567e9267a6e4a4673131021fdfbc19f0339baa1b3e9a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000154",
+      "filename": "20270128000154_group_message_update_integrity_v1.sql",
+      "sha256": "5f7a5f7736c4cd5f6fb71bdfd45df6638866e66b778881464c8779910b778e0b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000155",
+      "filename": "20270128000155_chat_group_soft_delete_owner_rpc_v1.sql",
+      "sha256": "f6d226043e37b60ccb62e1fe357410f380bcffc89743ebac71675808cef390f5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000156",
+      "filename": "20270128000156_active_group_membership_scope_v1.sql",
+      "sha256": "896c4c6ec796c47aa5d567c981e82735a3541516b590a265afb113a6d7287c11",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000157",
+      "filename": "20270128000157_staking_release_atomic_commit_v1.sql",
+      "sha256": "e223a1d9cc220faf8a79c8cf8fec18868ebf96b4dbcc411162516bd88298c0d5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000158",
+      "filename": "20270128000158_staking_release_effect_outbox_v1.sql",
+      "sha256": "25d49db5e42a1cd0cc58fe074f45c38d5e37090945d5faf1600a4dbd8d5e082b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000159",
+      "filename": "20270128000159_staking_release_publication_snapshot_v1.sql",
+      "sha256": "eacf6a76ef2600d5329d53cd442a0c6a2bc9b2c4c01ed782a6fe5c4633aeb76d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000160",
+      "filename": "20270128000160_staking_release_authoritative_preview_v1.sql",
+      "sha256": "1eca9c8756ed4d1ad31e2d22d2c4a5411f1d1769171d38c3e5a921d52b5fadee",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000161",
+      "filename": "20270128000161_staking_release_legacy_entrypoint_fence_v1.sql",
+      "sha256": "f995892c01224d10a23c1c80e5d50ba73e59e3d628ce3e9be50791eae7abf0e5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000162",
+      "filename": "20270128000162_staking_release_effect_status_v1.sql",
+      "sha256": "5b18d1dd62659b651ad4b1d9e3d2ab9902514ae6b3e1182918081759e4e72c59",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000163",
+      "filename": "20270128000163_staking_release_request_atomic_v1.sql",
+      "sha256": "0d135a40f0ad00438b5a4ba123d2e706c751b7dca8b31c95b37c77c7f8b0aaf4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000164",
+      "filename": "20270128000164_staking_release_cosign_atomic_v1.sql",
+      "sha256": "3101a89c64f9fa14c1e0c75a6210a4b2cdbb7d2c6f6ca3a3c07bedbb1a602d91",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000165",
+      "filename": "20270128000165_group_invite_accept_receipt_v2.sql",
+      "sha256": "6cd095005ac4a26351410c8e622c44bcd8af94cbd80fa1af2ca5aea717ed5f51",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000166",
+      "filename": "20270128000166_payroll_save_server_amount_integrity_v1.sql",
+      "sha256": "9750a293d422ce3d8135c1563feb892097210dc134af73d4279e8a921f0bac2e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000167",
+      "filename": "20270128000167_payroll_save_preserve_historical_years_v1.sql",
+      "sha256": "4859f852ec4f193ea6a36e6d07d3945ee4989f3e7534b85479d371f5ba3d1c6c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000168",
+      "filename": "20270128000168_payroll_save_durable_receipt_v2.sql",
+      "sha256": "e32c4c92aedef953ff6d12ed48ec526c325e6d6d0b8ce7304c0e2ac90a0cc612",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000169",
+      "filename": "20270128000169_payroll_save_cancel_unresolved_request_v2.sql",
+      "sha256": "f78aa39196b14aa9769534b53caf088a17c261862e4d9e596317b30d5e2fb562",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000170",
+      "filename": "20270128000170_staff_checkout_serialized_close_v1.sql",
+      "sha256": "a48c3d2cb70543575360784ea50b3eba3bad35f3d8b60bc1181714631aa23e78",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000171",
+      "filename": "20270128000171_chip_setup_create_bind_receipts_v1.sql",
+      "sha256": "905ee2e49f0725e07a710b4252f603e421ecf6b8788ecdee8588e61dbcb1ff2c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000172",
+      "filename": "20270128000172_dealer_prediction_actor_scope_v1.sql",
+      "sha256": "7bbcb6d2a776bdd6fcde641bd8b3d126647a6e416d9563b60387f32bca01c57e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000173",
+      "filename": "20270128000173_dealer_prediction_session_projection_v1.sql",
+      "sha256": "26ff54a8c6880844517ae66978e1c5b4007a311b6c1250758a8f7287d7f0999a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000174",
+      "filename": "20270128000174_d2_continue_terminal_receipt_v1.sql",
+      "sha256": "d844f120c632f3cffdcfd66f8a085ec9d9847791d973f51fbc0defa50919b148",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000175",
+      "filename": "20270128000175_multiday_reversible_payment_projection_v1.sql",
+      "sha256": "f49ac22c9d6434ddf8f977121703682ab737ce04ec004afb86df98ae80f82b41",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000176",
+      "filename": "20270128000176_chip_template_save_receipts_v1.sql",
+      "sha256": "0cc863d1066541f3dcb5ef96dd4267523c648b71d9793028fc90df5d523760b3",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000177",
+      "filename": "20270128000177_chip_setup_metadata_receipts_v1.sql",
+      "sha256": "2b68b8aa5f3d028e3f70c7e92d0517964707f809dd6840d854c45854fbbfe2e4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000178",
+      "filename": "20270128000178_dealer_manual_swing_plan_completion_v1.sql",
+      "sha256": "f31488549ebe0860e6c57df8fa8e6be1c2ac1198b4f3c91517a0f54b0f30d3e0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000179",
+      "filename": "20270128000179_dealer_operator_next_outgoing_identity_v1.sql",
+      "sha256": "cd49be942d2ee4a801dd6a09df4f6004460c602153ca923daf94d4e08acc97b6",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000180",
+      "filename": "20270128000180_tournament_finalizer_one_survivor_v1.sql",
+      "sha256": "a9bfffbd3a96630f03236ad142ac8985e51884d2d5ec39a48b185c876edeb2f2",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000181",
+      "filename": "20270128000181_tournament_finalizer_serialization_v1.sql",
+      "sha256": "3a251a6620b77bb5cc954a9177adb7a345f2e0f352c4db3c6d124d71948fccba",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000182",
+      "filename": "20270128000182_tournament_finalizer_server_only_v1.sql",
+      "sha256": "020d1c74e4d9224776746edf757fe9745fc620afc75e2282187f63c47ce19f4e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000183",
+      "filename": "20270128000183_tracker_manual_pot_boundary_v1.sql",
+      "sha256": "63edff2600813467f0b6bb71a7d469744fedd1d7a9a93c742cc8d55b98f06983",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000184",
+      "filename": "20270128000184_tracker_finish_recorded_actions_complete_v1.sql",
+      "sha256": "f38a252f6fe52718246444db0f9f7ce3f9566caf750f9620e6087fe49c15dc5e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000185",
+      "filename": "20270128000185_tv_layout_configured_brand_read_v1.sql",
+      "sha256": "e3a03863521047d7ec81175c32d235229cf033a4479756518f0bf1c67857524c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000186",
+      "filename": "20270128000186_tv_layout_fallback_brand_read_v1.sql",
+      "sha256": "bac00b9e487e941f908cc3cf4349528222f3f8a819c0cf63fdb2e563198d7a74",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000187",
+      "filename": "20270128000187_floor_restore_positive_stack_evidence_v1.sql",
+      "sha256": "233d9cc591fb51dd5d155911a92416c05adfd4acd273c1bba3ce32734c8188c0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000188",
+      "filename": "20270128000188_chip_inventory_unissued_bound_denoms_v1.sql",
+      "sha256": "b8c328ed946ed8a8d52b0c01d717eaeefda5b8361ec0e6b437d2be459496215b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000190",
+      "filename": "20270128000190_dealer_scores_scoped_read_v1.sql",
+      "sha256": "5a7207786cd72b3ca80cb86a2ef3317c13d1203622baea1f2d700248f3db67c9",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000191",
+      "filename": "20270128000191_tracker_finish_existing_action_noop_v1.sql",
+      "sha256": "daa4e9d462b4a49e1dbec88cd5c58185ebb448c7a3c364af39e1db88f75ef179",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000192",
+      "filename": "20270128000192_tracker_void_current_seat_v1.sql",
+      "sha256": "2283bb2a50a6396cc4790cec88d738e9469f9c9f3373c6738c1fa5f2a9557714",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000193",
+      "filename": "20270128000193_tracker_hand_seat_snapshot_v1.sql",
+      "sha256": "690345975ed6e51d47ee327855508b5d68b1838b9894710abb6bcfb182fa7193",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000194",
+      "filename": "20270128000194_tracker_start_exact_context_v1.sql",
+      "sha256": "949732b858382072e8aa477060b6375b886d6d6e2dfdfbde2d2dd42d82fdef33",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000195",
+      "filename": "20270128000195_sepay_pull_progress_v1.sql",
+      "sha256": "4c57af93cf00cbd0e257af698ff52bbc23199be17610870f79dfc475d6d2edf4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000196",
+      "filename": "20270128000196_sepay_pull_total_fence_v2.sql",
+      "sha256": "380b29c21cbc0554d40819932b7d5cef7679740a37db5bbba6f17cd36c8b1c27",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103040730",
+      "filename": "20261103040730_notification_push_outbox_actual_predecessor_v1.sql",
+      "sha256": "432c6f8d9dea256431bfb4123be9f882b571b152c8907c9dea7f1cb206891277",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000198",
+      "filename": "20270128000198_tracker_undo_receipt_read_v1.sql",
+      "sha256": "e210ca02435fcfbd3e9a0201aaa2ace4d01f180717847158835a20526a04929c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000199",
+      "filename": "20270128000199_tracker_correction_entry_projection_v1.sql",
+      "sha256": "8756b8b7af62411057af5c76fb8e5b979e9f84bbd4ddf018b272d429a9d4549f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000200",
+      "filename": "20270128000200_booking_message_actor_integrity_v1.sql",
+      "sha256": "7db6b6ec6b4a50d33f0e034accea8f8fa68e8f32b5611ff6c61de6e55f981b9a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000201",
+      "filename": "20270128000201_tournament_edit_atomic_v1.sql",
+      "sha256": "ee561b45e5e2f3a5f80efdec511d38b0b732aef0a37e06e189032b921f1789e9",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000202",
+      "filename": "20270128000202_tracker_void_audit_snapshot_v1.sql",
+      "sha256": "c493e006e6af9bc7078ac81bd07183641f284eda7ebb97a249def9d91fec95b4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000203",
+      "filename": "20270128000203_tournament_blind_parent_lock_v1.sql",
+      "sha256": "26e20afc8ef38f3f194e8f71ee255a72559b784af474bae5e079cb1943fd8ae6",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000204",
+      "filename": "20270128000204_tournament_blind_legacy_lock_order_v1.sql",
+      "sha256": "d99053054727cf3a934b928027889cb6478b9dc0aa9a342644613c2d1d175f23",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000205",
+      "filename": "20270128000205_public_history_avoid_short_query_jit_v1.sql",
+      "sha256": "0afed306b18cd56801144754a619fa59211746e2b58ab8461cbe34f466ecdcf4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000206",
+      "filename": "20270128000206_dealer_fallback_rest_compensation_v1.sql",
+      "sha256": "10ac53498c92743a9d23624947090877f3b3461b5780cf1decc1623c3c0254e3",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000207",
+      "filename": "20270128000207_private_chat_attachment_bucket_v1.sql",
+      "sha256": "130ef36d6340cc2c8843640719b098f53a38898e87435635c8c5dea6b86d576b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000208",
+      "filename": "20270128000208_main_event_child_live_status_v1.sql",
+      "sha256": "e2b60875ce9c3ce91191fc4e9e8049619eb8ac229bbfc4bb714d509c03390a8e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000209",
+      "filename": "20270128000209_main_event_create_receipt_v1.sql",
+      "sha256": "e169654236fc38722aef393d73acd949f70515a27baa2e2ba947368a55190a77",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000210",
+      "filename": "20270128000210_main_event_shared_create_config_v1.sql",
+      "sha256": "253002707e87fb7cc310c49dcd63343d5808f65f7769d50de40d0b3a1d5058ae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000211",
+      "filename": "20270128000211_tv_main_event_guarantee_projection_v1.sql",
+      "sha256": "e51c7c3009477025862138eae74acf7547ed072eda3db9a5a7ad2a292df08965",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000212",
+      "filename": "20270128000212_multiday_bagged_table_release_v1.sql",
+      "sha256": "152fd39600028313ecd87ac10456158ff990e6beb645c9e6f89b7e55eb88b28a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000213",
+      "filename": "20270128000213_multiday_bagged_table_context_v1.sql",
+      "sha256": "2ee9e954a0b9564c8a35b7df8d2465ac5fd4f4848cb83efe4f89ebd2d3d127cb",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000214",
+      "filename": "20270128000214_tracker_input_canonical_table_number_v1.sql",
+      "sha256": "c910c111c75f213ae8afe99b5946c45aaff7e1c143cf58584c38f77e40a2e162",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000215",
+      "filename": "20270128000215_multiday_canonical_seat_relocation_v1.sql",
+      "sha256": "b15c026017f2277381ea31462cc0fcf3ab32fdfc303de8e7462c6347e937fcc1",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000216",
+      "filename": "20270128000216_multiday_payout_configuration_preview_v1.sql",
+      "sha256": "ddbe68fbe8150455f9a1d2931c4d6842dce4ceaab51bebecd2d60c6316fe2d50",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000217",
+      "filename": "20270128000217_multiday_prize_configuration_atomic_v1.sql",
+      "sha256": "0d6711fa6dc42fe76094f912d53a523dc9c6f6f4361c891b5c441a257dd49c81",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000218",
+      "filename": "20270128000218_multiday_overlay_verified_bank_scope_v1.sql",
+      "sha256": "940676345d4d260d0a9852c54e1b26094f6469b4d3d84dcf4122e720c2a4191e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000219",
+      "filename": "20270128000219_multiday_final_tv_funded_pool_v1.sql",
+      "sha256": "67b0a3ca57c6369d6aad7a2b0ec3cff85c5f6449c01ded573a366563f8e41a51",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000220",
+      "filename": "20270128000220_tournament_tv_pool_shared_projection_v1.sql",
+      "sha256": "4a2052deddd7d4460895afd76861ef139b4f09c7661e5db4cd4faa384c812f1d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000221",
+      "filename": "20270128000221_new_club_canonical_table_pool_v1.sql",
+      "sha256": "9efb31e748ad063a211be5338a7c8336ff5ab9c769e556a561dad93c6e54b47d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000222",
+      "filename": "20270128000222_dealer_pool_club_operating_day_v1.sql",
+      "sha256": "97fbfa6961ec1e5cd8c1b5aab84cd3b543be85c90ff8906be714dc3442c92cba",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000223",
+      "filename": "20270128000223_chip_bank_adjust_receipt_v2.sql",
+      "sha256": "d69ab7ff481b10b5e40f9b1c0701493b5dda573e1e39f6d0ab85a32a0b468f3e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000224",
+      "filename": "20270128000224_tracker_history_tables_canonical_v1.sql",
+      "sha256": "49aab084f941832cd774b0435a34d3c6e56669ff420ac263e152bf9b754e1cd0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000225",
+      "filename": "20270128000225_cashier_sepay_intent_receipt_v1.sql",
+      "sha256": "91c436d0c1ab11a53455423c7d4735653d840558892c400903c3b8d8d5db7c10",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000226",
+      "filename": "20270128000226_cashier_manual_bank_allocation_v1.sql",
+      "sha256": "4cf446c67e7f4cdcc4f1c61ad1e659d8ed05dde82bfb16d59d17cd0b5c33881f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000227",
+      "filename": "20270128000227_cashier_manual_bank_waiting_retry_v1.sql",
+      "sha256": "1c5a2eb7c3b85d62d348410a76ce9ae79e2ed1e480768b41a6474fc5579e6ea6",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000228",
+      "filename": "20270128000228_fnb_guest_intent_receipt_v1.sql",
+      "sha256": "6692efee8b44848013ef57aa9ec68c8e2c3be81bef9084b93635fb434dde89a7",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000229",
+      "filename": "20270128000229_fnb_guest_order_receipt_read_v1.sql",
+      "sha256": "eb10429e399561376a93d32b913311aa46271dd2896b85cdccafa82717623f2d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000230",
+      "filename": "20270128000230_fnb_guest_abandon_intent_v1.sql",
+      "sha256": "5e4a0e86c42c9103605c360047a278c45655c9a9f7d0b04889f01b98531f2c56",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000231",
+      "filename": "20270128000231_fnb_guest_status_bank_snapshot_v1.sql",
+      "sha256": "1e9174911c0d0b50fabb55987d2ef665da3a3e223804f618d08c776c902ecec2",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000232",
+      "filename": "20270128000232_public_tournament_registration_summary_v1.sql",
+      "sha256": "5bc0e58db17b2e0f9267b2518649837b6714624236cd870ee9efa686b189896c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000233",
+      "filename": "20270128000233_cashier_reentry_closed_registration_guard_v1.sql",
+      "sha256": "ba174f4857e77bf2125e2b7c91d7d9581a9690b38e8a1f21d647182e8592c3a3",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000234",
+      "filename": "20270128000234_tournament_create_money_integrity_v1.sql",
+      "sha256": "0dc866d4d66b1925baaa0d48295af5be777cd6591239012f4f945dbb303fc6bc",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000235",
+      "filename": "20270128000235_fnb_shipping_transition_integrity_v1.sql",
+      "sha256": "9602bd4cc8086e5ddde1a271f9384ab9fdb91d409049c3c07a1b00b1119b6488",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000236",
+      "filename": "20270128000236_tracker_source_table_privileges_v1.sql",
+      "sha256": "9e715b26aab3980eeafd7f2b441133b987fe00cc108b73c68a4dc64efc271d05",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000237",
+      "filename": "20270128000237_tournament_guarantee_write_integrity_v1.sql",
+      "sha256": "18dedd70e00b7bc38ecfc86051674731883ec5b1600bf2173be7c8aa14f03655",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000238",
+      "filename": "20270128000238_tournament_fee_write_integrity_v1.sql",
+      "sha256": "f6592f4cde981ea447b969f283054df99656da2de15763c17a98564d33a6d315",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000239",
+      "filename": "20270128000239_tournament_player_count_write_integrity_v1.sql",
+      "sha256": "b162212e2d5f852014ba03a463396002fe1c5f1323e25321088bf61f96e4e9d2",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000240",
+      "filename": "20270128000240_tournament_blind_level_integrity_v1.sql",
+      "sha256": "8d4eac7603420abb7fcbf71a50acf6ae42ebad7176cb70bd053215858d31e1e1",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000241",
+      "filename": "20270128000241_tournament_blind_replace_shape_v1.sql",
+      "sha256": "e37871d9615b6fc8ace57ba20ce3c83addefe36b32304eb597b9cb95bb4df17c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000242",
+      "filename": "20270128000242_d2_initial_draw_archive_read_v1.sql",
+      "sha256": "68c9db5c1a7374e9549784866b6cd5880562f8a409ebb59976dbe2bef4770751",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000243",
+      "filename": "20270128000243_clock_adjust_read_consistency_v1.sql",
+      "sha256": "4458ddeee1d94608d26f216a10ee49a51ae849e21d27b0b0f7204fdf8f85ae4a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000244",
+      "filename": "20270128000244_staking_refund_atomic_v1.sql",
+      "sha256": "7534c99ec667be9ada5bdfdb917af7941d4c78b4f93b1c493fd80447ad982a93",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000245",
+      "filename": "20270128000245_staking_funding_atomic_v1.sql",
+      "sha256": "aad0c7360ad4a096afd550db791dd49478ecd5354bcd13594faa8ee77e72f856",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000246",
+      "filename": "20270128000246_staking_cancel_integrity_v1.sql",
+      "sha256": "68de0db9bfb9c3917a2be1e6dd11d063e383ea41e43b074ebc93d9199c9c10f3",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000247",
+      "filename": "20270128000247_staking_close_early_atomic_v1.sql",
+      "sha256": "2ed08b3a177ecba109f71b03e1542ecbee8333234cbb04664e63bb046f063734",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000248",
+      "filename": "20270128000248_staking_close_early_audit_action_v1.sql",
+      "sha256": "0e2c9991d7ef8df4626d4d4df558711a9a0c581d68172dbef58c79526745ac81",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000249",
+      "filename": "20270128000249_staking_commit_atomic_v1.sql",
+      "sha256": "88a4ac35222995aa432cbd3388753a975543295b2dbc97efbae078d1b4577cd4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000250",
+      "filename": "20270128000250_staking_commit_notifications_v1.sql",
+      "sha256": "f324214bdb5fed05dac160f02aed34835af6ea36d71fc9f40d15924dfda1feb6",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000251",
+      "filename": "20270128000251_staking_commit_notification_conflicts_v1.sql",
+      "sha256": "79ad843245f1a749c893371158873f66cf30fdfca287e9359e85d085d765da76",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000252",
+      "filename": "20270128000252_staking_purchase_receipt_time_v1.sql",
+      "sha256": "1f66877e2a98df84dd373353ffd736a2d3c65de29cb94999729944cae3667494",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000253",
+      "filename": "20270128000253_staking_transfer_receipt_read_v1.sql",
+      "sha256": "0b24bd520ca7ef28610e7ca95ccb5b5e819c67aaaf149c1131924f0ed835a970",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103035223",
+      "filename": "20261103035223_staking_refund_predecessor_line_endings_v1.sql",
+      "sha256": "f50e02e4b075941604b32177c11f42edb3cdf5507131a18e6cfc08fa090dbe72",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000254",
+      "filename": "20270128000254_staking_refund_effect_intents_v1.sql",
+      "sha256": "c8c9cbbb32c911442370f87a53c470606dd6dc698dca815308599a1f9100bac6",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000255",
+      "filename": "20270128000255_staking_refund_effect_delivery_v1.sql",
+      "sha256": "11be1fb16eca1983d8802b42838b6f2c6fc8e3e20caedce2530b3d00f2f822e0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000256",
+      "filename": "20270128000256_staking_refund_effect_status_v1.sql",
+      "sha256": "05a55c861b1e53b4823fd104bd3136751d68136137cac397068e596fdaae2a60",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000257",
+      "filename": "20270128000257_staking_refund_preview_v1.sql",
+      "sha256": "2919e01d7f58d58d8b2540f74114ed13bc183d882bf92b02742357f01cfaaef5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103035328",
+      "filename": "20261103035328_staking_funding_predecessor_line_endings_v1.sql",
+      "sha256": "9c2f495f7adfb6a4b9ee8fc613d7be4850d86a51bc45280d488fc657ed579585",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000258",
+      "filename": "20270128000258_staking_funding_effect_intents_v1.sql",
+      "sha256": "95d9d7ff4fd1461a0c45dd77426ecb84b1f9830857e9f4b3adc888e684012a23",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000259",
+      "filename": "20270128000259_staking_funding_effect_delivery_v1.sql",
+      "sha256": "1cfb1f73e15b662026ac240d775cecb911dc02c753a658398170b10217a4fb1d",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000260",
+      "filename": "20270128000260_staking_legacy_funding_atomic_v1.sql",
+      "sha256": "0149863d3aad8b9876cb4943b22bfa34db7ba60d0b81ecff6db5e8cf259ee236",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000261",
+      "filename": "20270128000261_staking_funding_receipt_read_v1.sql",
+      "sha256": "2ca6c8426aa72778c3d1ad73ed5915a36616789b1b8d9d99b2e2d388c58fd6de",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000262",
+      "filename": "20270128000262_staking_funding_receipt_pending_v1.sql",
+      "sha256": "b32fb4cbcdf177dcce64c45519af305685410afb129f6e95a7f08f4c34082a2a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000263",
+      "filename": "20270128000263_staking_listing_archive_v1.sql",
+      "sha256": "342041a22c8a9b1d7f561403d92bdc6b182b70e451b4c64ae6627a75669574ee",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000264",
+      "filename": "20270128000264_finance_summary_business_dates_v2.sql",
+      "sha256": "2a300fafab4b4a3394d9a22653f6a9af00ca89c2036ce96f7d1fdb7ceeb57eec",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000265",
+      "filename": "20270128000265_tracker_undo_intent_cancellation_v1.sql",
+      "sha256": "5349c0052a2b8bb9e15a2ca3a5a76dba36e7aa0cd7e72c6649d2d4ea191fd9dd",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000266",
+      "filename": "20270128000266_tracker_source_trigger_privileges_v1.sql",
+      "sha256": "914ae7cbe01781f72481edbe97732d6646889d824ef07316f8689b0343834624",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000267",
+      "filename": "20270128000267_bag_reconciliation_actor_authority_v1.sql",
+      "sha256": "5e117bda549cc1fc9ba4774539638b97fda32fa68462aa4910d9ff810cb9e682",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000268",
+      "filename": "20270128000268_bag_table_label_canonical_v1.sql",
+      "sha256": "97fa9d3aacb5d9428b21163a7870f51a4335ea1a0aa0b694f4a05b021182cc2f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000269",
+      "filename": "20270128000269_bag_day_write_serialization_v1.sql",
+      "sha256": "90056ce2e662c218d8b646684a40e938ddeabdba991f3b568073d0c0e015b107",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000270",
+      "filename": "20270128000270_bag_tag_durable_intent_v1.sql",
+      "sha256": "bda250aa4b1a6cc3f47e7f76640653f632c3af5f6391475698bbe147d40ee1df",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000271",
+      "filename": "20270128000271_legacy_bag_active_hand_guard_v1.sql",
+      "sha256": "fb8a0c1c4feedf795f538d1f35ff0d151997cbd2b4c1a748e99c65ce28f10676",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000272",
+      "filename": "20270128000272_dealer_acquisition_operating_day_v1.sql",
+      "sha256": "22aab1ae3881ed8ac7ba2f5a00893bc9e646c0c22959b7a610d5727ecc3f6e32",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000273",
+      "filename": "20270128000273_dealer_pool_operating_day_read_v1.sql",
+      "sha256": "282f361c5021e63cb8482abffd5320e1df1d0aef0f365de257b36e304fba566b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000274",
+      "filename": "20270128000274_floor_dealer_close_reservations_v1.sql",
+      "sha256": "139ec0a3184046e27de9372360eaf7e98cefb26712e73269c99e3b7da0d3702b",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000275",
+      "filename": "20270128000275_floor_redraw_entry_tuple_receipts_v1.sql",
+      "sha256": "dcd6bff8a4a5564d04c3d84a76768da3ad00b94f1fe7e2d082588a2e9c2f70bc",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000276",
+      "filename": "20270128000276_floor_redraw_intent_read_v1.sql",
+      "sha256": "96dd72a9e85680cb5936ef4f3276c7bf7dd2ceb297a3396ced93bdc829c65916",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000277",
+      "filename": "20270128000277_payout_manual_edit_intent_v1.sql",
+      "sha256": "60b6a5fd625ca4022238b4e8f8b2818f35e174ea7ca2664423229ee13f684fb3",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000278",
+      "filename": "20270128000278_fnb_order_event_integrity_v1.sql",
+      "sha256": "db6ae642849b117a1c0c36ae373dfb6f57dc9a9aee2a057e2072143652d0f71c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000279",
+      "filename": "20270128000279_fnb_cash_shift_integrity_v1.sql",
+      "sha256": "c10b8c88f7c6746185538afba22a40e1fefd69becccc4e1a30ec6b2d02c47d97",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000280",
+      "filename": "20270128000280_fnb_canonical_link_targets_v1.sql",
+      "sha256": "e344766494695203068fade545342b14e2327bf839285587972a9bde19d2b77a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000281",
+      "filename": "20270128000281_fnb_create_recovery_ordering_v1.sql",
+      "sha256": "f2594f816985f96384c0e26c494b7e2ccb52891820f716fb1218a05164c72eae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000282",
+      "filename": "20270128000282_fnb_create_receipt_read_v1.sql",
+      "sha256": "0447b42d619b4ff234ea765c0ec83b20396a9f533deed60d45d2428ac0c5ec38",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000283",
+      "filename": "20270128000283_fnb_create_cancel_fence_v1.sql",
+      "sha256": "71bac8c90ae43aa0324f3441c9b6d08406a2fafe22da12d6e51e86cdc428c45a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000284",
+      "filename": "20270128000284_fnb_bank_technical_failure_v1.sql",
+      "sha256": "69c5329d041eeccccf6dc203f1b5f6a91fbca0aab0f9078738652e56decb050c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000285",
+      "filename": "20270128000285_cashier_terminal_receipt_history_v1.sql",
+      "sha256": "faa74bf3265c4472f8415c193261e1e5bbdee7c6342735bd2632fcea2d6f0537",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000286",
+      "filename": "20270128000286_multiday_bag_postwait_authority_v1.sql",
+      "sha256": "3d672377a33d3159fe3a702e20028b8e8894ec3709634d4ac8d19481139f9854",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000287",
+      "filename": "20270128000287_online_create_receipt_v1.sql",
+      "sha256": "fcd6d30498026f0c0c9882a7c8ff2c10b52e5d88820a705b36c76395abb287af",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000288",
+      "filename": "20270128000288_online_create_legacy_boundary_v1.sql",
+      "sha256": "3539a7f6ca2516e2394c43ea9eb0653430409722ff78e5b817a9ba7036131f7e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000289",
+      "filename": "20270128000289_dealer_checkout_atomic_v1.sql",
+      "sha256": "55fa863469c72b6ff7059609d3dc3476a47b7f53a5e922b561494af2c41fafc5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000290",
+      "filename": "20270128000290_dealer_feature_config_atomic_v1.sql",
+      "sha256": "23ca3bdb00d2e0d098401d1e6eba153f67de0c2ea822fa07708f97a96c305dc8",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000291",
+      "filename": "20270128000291_dealer_feature_profile_actor_cancel_v2.sql",
+      "sha256": "3ed72d6e9f3d332e762ce09dd843e2b033bfdafc25d3937e6d469b39edbe7c0c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000292",
+      "filename": "20270128000292_dealer_swing_fallback_pool_scope_v1.sql",
+      "sha256": "e88c694345bfd208c892af9c6364694abb9b024977df4913f568a429f3170630",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000293",
+      "filename": "20270128000293_dealer_swing_error_atomic_v1.sql",
+      "sha256": "c8ec6d9808866598809550e6164490677b425147635cee243d6230fa906620ce",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000294",
+      "filename": "20270128000294_d2_held_seed_read_v1.sql",
+      "sha256": "92db7550567b3e5fd75f2578d7d6efb3324ad74601b9b7407fc51bc404d58f02",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000295",
+      "filename": "20270128000295_tracker_hand_tenant_write_guard_v1.sql",
+      "sha256": "8202e08a3719ed087a403a6b5a50eda27727351a6e99acf9cb6d4033aecbf1d2",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000296",
+      "filename": "20270128000296_manual_ranking_review_v1.sql",
+      "sha256": "d786e04b14c42eaeb0832b97ea47f992eacd755ad1e94d9022f6a28920c778bd",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261027151355",
+      "filename": "20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql",
+      "sha256": "f9b859e0e74b1c21d9051c1fd721ca49a3c78694ef92052385083f63d9cb4daf",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261028200630",
+      "filename": "20261028200630_multiday_registration_requires_locked_rules_local.sql",
+      "sha256": "0bdb0ea41985d6527f621efd9ed48345459505be1f75d4db3e3a2c7b566051ae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029053635",
+      "filename": "20261029053635_multiday_individual_complete_package_v1.sql",
+      "sha256": "f6dfd3a2ae77c115f7f4dbe5722814816898ce80714d58fe6cbf0c4fc60e5ef0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029055503",
+      "filename": "20261029055503_multiday_unpaid_restore_individual_payment_fence_v1.sql",
+      "sha256": "c63dffcb498ec79139d308066b5aff23c5d2601c80a7661c011a23d7f111c32f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029074734",
+      "filename": "20261029074734_dealer_expired_rest_marker_completion_v1.sql",
+      "sha256": "ba09e335b55d9dcb784da1678750e3e6c1ca957cd60a1b600f938f8cce01c61f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029082610",
+      "filename": "20261029082610_dealer_ready_continuous_rest_anchor_v1.sql",
+      "sha256": "a3b6acd3189eeffe372d5b25b351d673d711bb77b25a049b13d0907855b81939",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029090402",
+      "filename": "20261029090402_finance_rake_event_day_recognition_v1.sql",
+      "sha256": "76cc13229a9e5e7e4ee34f5d4760a2db60b1d66e96a1212b3d2c1aa9d91c6a46",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029092203",
+      "filename": "20261029092203_owner_tour_rake_live_read_v1.sql",
+      "sha256": "5ce78be16ae38ed1c97dacd461ef08c00b4cad878b7def36be5d331bb96c530e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029092520",
+      "filename": "20261029092520_tour_revenue_buy_close_snapshot_v1.sql",
+      "sha256": "84ccfeb427d8c04c5bbd4e7be9747b4763d6d8033937d47a8a178bdb469f9403",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029092756",
+      "filename": "20261029092756_close_tournament_buy_v1.sql",
+      "sha256": "5907f71c1ff881d2046cc8a6a772d3ab6c773a61903dbeec29944973b0ba198f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029100324",
+      "filename": "20261029100324_tour_revenue_shared_live_source_v1.sql",
+      "sha256": "b8385948a49e7bb85745aaaf53c767a3b2e3c210ac4d4d7d0fc1efbac68018ce",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029100837",
+      "filename": "20261029100837_finance_receipt_snapshot_revenue_v1.sql",
+      "sha256": "f656f7ea305cf6cd3dae5330c8f253ec9f817fe8eb242ca856ac9910173fac4f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029102508",
+      "filename": "20261029102508_tour_revenue_buy_state_read_v1.sql",
+      "sha256": "081c43403281e9d04341707eddfd40fe093d592b4ee1d7d24a46742465709365",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103041341",
+      "filename": "20261103041341_dealer_fallback_session_rest_composition_v2.sql",
+      "sha256": "e5e7b230b72c57acd1543ab97467008a2a380df0525dfa67ec8a18e39eb54c69",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029155420",
+      "filename": "20261029155420_series_paid_pending_counts_v1.sql",
+      "sha256": "f08fc76d4b9e944bcf10641b1b27e07367bf254c50a358b7962fe903bb7590d9",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029160012",
+      "filename": "20261029160012_registration_expiry_skip_paid_v1.sql",
+      "sha256": "0e409369dc86be05658f90cbb9e21a6c7ab0d3385eddd142f91e532787f771d5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030050418",
+      "filename": "20261030050418_dealer_table_arrival_ack_v1.sql",
+      "sha256": "1efe03eb0762996c7bf64cf0bfa156a875d906b395ff2c14328f9063cc46dbf4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030090047",
+      "filename": "20261030090047_pt_actual_hours_new_payable_boundary_v1.sql",
+      "sha256": "6e07537e0ecfa8b7dc2b291cd0bf917a5e9dfba670dbc79def9d94b57db230bb",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030090337",
+      "filename": "20261030090337_pt_legacy_monthly_overlap_guard_v1.sql",
+      "sha256": "2a8fd2ef75f4990f7be572735683a6ffd017c31e9371529631e848617e82e9a0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030090948",
+      "filename": "20261030090948_pt_finalized_payment_monthly_overlap_guard_v1.sql",
+      "sha256": "ff1aedf8de2d23047a2509ba30a0bf9b6bb3ae5b53796fc7c1b205bb191c4143",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030091334",
+      "filename": "20261030091334_pt_statement_request_readback_v1.sql",
+      "sha256": "d3550bb1c071cc70ddf80b07599d20520b2c95f119b730b7a3390485aff295dc",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030092830",
+      "filename": "20261030092830_pt_attendance_cap_reservation_anchor_v1.sql",
+      "sha256": "dbf04b9496ffec776cdbd97f786b71fb750693337d3e595d53353a9f6e653569",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030151432",
+      "filename": "20261030151432_floor_closed_session_rest_markers_v1.sql",
+      "sha256": "cd483e6980c3a0996c04323f626c85533000ba387ce87363e71c20c14173a639",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030162544",
+      "filename": "20261030162544_multiday_live_prize_configuration_cashier_boundary_v1.sql",
+      "sha256": "47ae92efcfc9806ee580b0d0e2c0b87f5f096b88c02ee06224c585d18780f3ef",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030174722",
+      "filename": "20261030174722_series_pulse_ended_flight_exclusion_v1.sql",
+      "sha256": "4e05f5f3e71f07b7821f9e2c0c77366bb6fabd3beafec095bdc4687afd108eb7",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261101021500",
+      "filename": "20261101021500_floor_closed_session_dealer_rest_current_v2.sql",
+      "sha256": "0ab6b7409718ceee919f2be8334bf0ab36f87b7d6479861622cadd0cebd4bbda",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261101022500",
+      "filename": "20261101022500_dealer_rest_worker_rpc_service_only_v1.sql",
+      "sha256": "65c37ccd0fba233440fc5795372d1a3511c49763aeeb9b098a599f07ce368cf1",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000297",
+      "filename": "20270128000297_ops_live_clock_authority_v1.sql",
+      "sha256": "c343b8df75a5600b9f6bead341d223df848ba47cfc28bf15b60e68b1b7c3bbe7",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000298",
+      "filename": "20270128000298_ops_create_lifecycle_compatibility_v1.sql",
+      "sha256": "51e64b97bf88298dcea8b3e18e504c3d08a92df00198352989bd7b8b9e044e13",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000299",
+      "filename": "20270128000299_participation_bagged_read_classification_v1.sql",
+      "sha256": "2594ff636d759c1c49702230a57f2aacf6369ec3f93df0cddea1c6c283db8335",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000300",
+      "filename": "20270128000300_fnb_stock_in_request_binding_v1.sql",
+      "sha256": "db1c596c29bab4f5b80bb0e12dfc91d38eddec94573e92f72e489477295bc2ff",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000302",
+      "filename": "20270128000302_tracker_history_refund_only_v1.sql",
+      "sha256": "b6735f626950d3b57b0bd6a062f7aa7f4361adf93ccfac103a9e7dacadb31934",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000303",
+      "filename": "20270128000303_owner_finance_staff_salary_v1.sql",
+      "sha256": "e1e439069bdeee25b7897bea78eac1eca6e60562fa518e8f2423f328d3da0459",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000304",
+      "filename": "20270128000304_fnb_cancel_snapshot_cost_v1.sql",
+      "sha256": "5973316357ea0bf9bef848f893fc3f50556a83e03695919cdc4a3b3e39353a48",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000305",
+      "filename": "20270128000305_staff_salary_period_serialization_v1.sql",
+      "sha256": "b3102ac123bd03cbea662d26a8f169869efce8e53b332218f420073cba4f9e52",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000306",
+      "filename": "20270128000306_staff_salary_wait_authority_v1.sql",
+      "sha256": "36906bd3eda14e41c9fa2c7df9ec70c0331bf3d28a3a7601ceaf2b8e6ea1cecd",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000307",
+      "filename": "20270128000307_staff_rejected_unpaid_finance_v1.sql",
+      "sha256": "56b4b56a9e07e013e5c3566caf6a44a4978473437ee7ea23f3ec22bd05606735",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000308",
+      "filename": "20270128000308_staff_pt_monthly_summary_payment_guard_v1.sql",
+      "sha256": "8855f0671fd1837b27d8ec1bd5c3376b00503911dfcf482b606b8ee782100d60",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000309",
+      "filename": "20270128000309_dealer_rejected_unpaid_finance_v1.sql",
+      "sha256": "b8ae407d6f098bae7c8d6c63a271f372d67f3fc73916dc1edc6e92749face11f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000310",
+      "filename": "20270128000310_owner_finance_business_timezone_v1.sql",
+      "sha256": "66ef948558e77efa07db5ab32743843915eee5ffbb80480dfa41fe97bd588fb0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000311",
+      "filename": "20270128000311_staff_pt_payment_wait_authority_v1.sql",
+      "sha256": "350e4ffbeab4a40748391df81574b23d03c5621e254ba587cf2cea72b240734f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000312",
+      "filename": "20270128000312_dealer_finalized_pt_payment_wait_authority_v1.sql",
+      "sha256": "ba15b41c52fb821f9086f147e95ed2f726666f781386b62f9e39216fcbccaa6a",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000313",
+      "filename": "20270128000313_dealer_direct_pt_payment_wait_authority_v1.sql",
+      "sha256": "30742798c100c14112de263998f6d830310320d3bdd7727c064363f15df93eae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000314",
+      "filename": "20270128000314_dealer_pt_finalize_wait_authority_v1.sql",
+      "sha256": "489bacefdb6b54fe1dcc5095ed78bc5c3062f51d489f40b2453884cfcf06d50e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000315",
+      "filename": "20270128000315_dealer_pt_policy_wait_authority_v1.sql",
+      "sha256": "f5f1d7496c1e134278ce50ad9882a6b3be0a7e1aba20b772770a6ca54076fc67",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000316",
+      "filename": "20270128000316_tracker_manual_payout_pot_eligibility_v1.sql",
+      "sha256": "2df47c6ec9fc9e267e31b84615da817e274037fd6aeacb78e366e5665397324c",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000317",
+      "filename": "20270128000317_dealer_statement_parent_lock_order_v1.sql",
+      "sha256": "1ef330dfe8cf92ba07b96c679b0761ce688fd8f009f8dbca4d0aec09d6b4791f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000318",
+      "filename": "20270128000318_staff_pt_balance_exact_microseconds_v1.sql",
+      "sha256": "1859072529afd078461f754ac761e53917b182fea6cf73e067062cda30ad6c83",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000319",
+      "filename": "20270128000319_dealer_pt_segment_exact_sum_v1.sql",
+      "sha256": "4763a65e45451e2482a7573b83393807b3282397b2f083ea99c7482cb4b287b8",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000320",
+      "filename": "20270128000320_owner_dealer_pt_live_projection_v1.sql",
+      "sha256": "220cedf827df78d56455645d8439807c3876327affa7d1bdf1deb19e423ba2c7",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000321",
+      "filename": "20270128000321_owner_dealer_ft_provisional_projection_v1.sql",
+      "sha256": "3176032654551e3f3d67498a9a40cc656fa5d6cf9cacfc3ab65414d57cfd8bda",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000322",
+      "filename": "20270128000322_owner_dealer_ft_unbooked_rows_projection_v1.sql",
+      "sha256": "06fd2dcf2e5b5fbfb7833a31695eee0d4064d84e46ae7e4bf7b705919f639cb5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000323",
+      "filename": "20270128000323_owner_staff_ft_unbooked_rows_projection_v1.sql",
+      "sha256": "b3d0973390643840f2517644cee4261819c0e6549d0aa7a19095b201eb14bdae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000324",
+      "filename": "20270128000324_owner_staff_inactive_closed_pt_projection_v1.sql",
+      "sha256": "ec02ee203e9597363af0bcc6be8ea56608f22262251b36c30e5986ac231e93b3",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261102092616",
+      "filename": "20261102092616_staff_inactive_ft_earned_days_v1.sql",
+      "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261102112426",
+      "filename": "20261102112426_staff_checkout_before_inactive_v1.sql",
+      "sha256": "2b9a3fc094e562b149155c8145e8c71621d3f2975695b453c108a305a8cc7ce4",
+      "domain": "all-fixes-backend-20261103"
     }
   ],
   "floorActiveAllowlist": [
@@ -8038,9 +9898,9 @@
     }
   ],
   "counts": {
-    "historicalSources": 265,
+    "historicalSources": 266,
     "remoteEquivalent": 9,
-    "superseded": 31,
+    "superseded": 32,
     "neverReplay": 221,
     "legacyUnappliedNotForReplay": 4,
     "remoteHistoryReceipts": 66,
