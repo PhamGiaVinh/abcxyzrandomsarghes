@@ -18,6 +18,19 @@ CREATE TABLE public.tournament_seats(id uuid PRIMARY KEY,tournament_id uuid,play
 CREATE INDEX fixture_seats_identity ON public.tournament_seats(tournament_id,player_id,entry_number);
 CREATE TABLE public.tournament_prizes(id uuid PRIMARY KEY,tournament_id uuid,position integer,amount bigint);
 CREATE TABLE public.tournament_eliminations(id uuid PRIMARY KEY,tournament_id uuid);
+-- Columns used by the unchanged canonical clock/participation readers. These
+-- synthetic tables contain no copied accounts, payroll or financial entries.
+ALTER TABLE public.tournaments ADD COLUMN name text DEFAULT 'SCALE TEST',ADD COLUMN club_id uuid DEFAULT '40000000-0000-4000-8000-000000000001',
+ ADD COLUMN start_time timestamptz DEFAULT now(),ADD COLUMN guarantee_amount numeric DEFAULT 0,ADD COLUMN buy_in numeric DEFAULT 0;
+ALTER TABLE public.tournament_levels ADD COLUMN duration_minutes integer DEFAULT 20,ADD COLUMN is_break boolean DEFAULT false;
+CREATE TABLE public.game_tables(id uuid PRIMARY KEY,club_id uuid);
+ALTER TABLE public.tournament_tables ADD COLUMN game_table_id uuid,ADD COLUMN status text DEFAULT 'active',ADD COLUMN max_seats integer DEFAULT 9;
+ALTER TABLE public.table_sessions ADD COLUMN club_id uuid,ADD COLUMN game_table_id uuid;
+ALTER TABLE public.tournament_entries ADD COLUMN current_stack bigint DEFAULT 1000,ADD COLUMN seat_number integer;
+ALTER TABLE public.tournament_seats ADD COLUMN tournament_table_id uuid,ADD COLUMN table_id uuid,ADD COLUMN table_session_id uuid,
+ ADD COLUMN seat_number integer,ADD COLUMN chip_count bigint DEFAULT 1000;
+CREATE SCHEMA IF NOT EXISTS floor_private;
+GRANT SELECT ON public.tournaments,public.tournament_levels TO anon;
 
 CREATE OR REPLACE FUNCTION public.get_public_tournament_hand_v2(p_tournament_id uuid, p_hand_id uuid)
  RETURNS jsonb

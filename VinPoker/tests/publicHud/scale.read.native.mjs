@@ -27,6 +27,10 @@ const nulls=read(null,'ffffffff-ffff-ffff-ffff-ffffffffffff');
 assert.equal(nulls.handHistory.every(h=>h.playedAt===null&&h.endingStack===null),true);
 const explain=jsonSql(`SET ROLE anon;EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON) SELECT public.get_public_player_hud_summary_v1('${tour}','${player}');`);
 const summary=jsonSql(`SET ROLE anon;SELECT public.get_public_player_hud_summary_v1('${tour}','${player}');`);
+const clock=jsonSql(`SET ROLE anon;SELECT public.get_tournament_clock('${tour}');`);
+assert.equal(clock.tournament_id,tour);
+const clockSummary=jsonSql(`SET ROLE anon;SELECT to_jsonb(c) FROM public.get_public_tournament_clock_summary('${tour}') c;`);
+assert.equal(clockSummary.tournament_id,tour);assert.equal(clockSummary.entries,2);assert.equal(clockSummary.players_remaining,2);assert.equal(Number(clockSummary.average_stack),1000);
 assert.equal(summary.state,'current');assert.equal(summary.coverageComplete,true);
 const indexes=jsonSql(`SELECT jsonb_agg(jsonb_build_object('name',indexrelname,'bytes',pg_relation_size(indexrelid))) FROM pg_stat_user_indexes
  WHERE schemaname IN ('public','tracker_analytics_v1') AND relname IN ('tournament_hands','hand_players','hand_actions','hand_contributions','player_totals');`);

@@ -23,6 +23,10 @@ let baselineWriter;
 initialize({seedHistoricalSource(){
  sql(readFileSync('tests/publicHud/spectator-generation.fixture.sql','utf8'));
  sql(readFileSync('tests/publicHud/scale-runtime.fixture.sql','utf8'));
+ const functionSlice=(file,begin,end)=>{const source=readFileSync(file,'utf8'),start=source.indexOf(begin),stop=source.indexOf(end,start);assert.ok(start>=0&&stop>start);return source.slice(start,stop);};
+ sql(functionSlice('supabase/migrations/20270128000031_tournament_participation_current_scope_v1.sql','CREATE OR REPLACE FUNCTION floor_private.tournament_participation_v1','REVOKE ALL ON FUNCTION floor_private.tournament_participation_v1'));
+ sql(functionSlice('supabase/migrations/20270128000090_public_clock_projection_v1.sql','CREATE FUNCTION public.get_public_tournament_clock_summary','CREATE FUNCTION public.get_public_tournament_results'));
+ sql(functionSlice('supabase/migrations/20260608000001_tournament_live_tracker.sql','CREATE OR REPLACE FUNCTION public.get_tournament_clock','-- 13. CREATE RPC'));
  sql(`CREATE FUNCTION public.fixture_scale_uuid(prefix text,n bigint) RETURNS uuid LANGUAGE sql IMMUTABLE AS $$ SELECT (prefix||'-0000-4000-8000-'||lpad(to_hex(n),12,'0'))::uuid $$;
   INSERT INTO public.tournaments(id) SELECT public.fixture_scale_uuid('10000000',i) FROM generate_series(1,20) i;
   INSERT INTO public.table_sessions(id,tournament_id) SELECT public.fixture_scale_uuid('60000000',i),public.fixture_scale_uuid('10000000',i) FROM generate_series(1,20) i;
@@ -31,6 +35,12 @@ initialize({seedHistoricalSource(){
   INSERT INTO public.tournament_entries(id,tournament_id,player_id) SELECT public.fixture_scale_uuid('80000000',i*2+k),public.fixture_scale_uuid('10000000',i),public.fixture_scale_uuid('30000000',k) FROM generate_series(1,20) i CROSS JOIN generate_series(1,2) k;
   INSERT INTO public.tournament_seats(id,tournament_id,player_id,entry_id,player_name) SELECT public.fixture_scale_uuid('90000000',i*2+k),public.fixture_scale_uuid('10000000',i),public.fixture_scale_uuid('30000000',k),public.fixture_scale_uuid('80000000',i*2+k),'SCALE TEST '||k FROM generate_series(1,20) i CROSS JOIN generate_series(1,2) k;
   INSERT INTO public.tournament_chip_counts(tournament_id,player_id) SELECT public.fixture_scale_uuid('10000000',i),public.fixture_scale_uuid('30000000',k) FROM generate_series(1,20) i CROSS JOIN generate_series(1,2) k;
+  INSERT INTO public.game_tables(id,club_id) SELECT public.fixture_scale_uuid('a0000000',i),'40000000-0000-4000-8000-000000000001' FROM generate_series(1,20) i;
+  UPDATE public.tournament_tables tt SET game_table_id=public.fixture_scale_uuid('a0000000',i) FROM generate_series(1,20) i WHERE tt.id=public.fixture_scale_uuid('50000000',i);
+  UPDATE public.table_sessions ts SET game_table_id=tt.game_table_id,club_id='40000000-0000-4000-8000-000000000001' FROM public.tournament_tables tt WHERE tt.table_session_id=ts.id;
+  UPDATE public.tournament_seats s SET tournament_table_id=tt.id,table_id=tt.id,table_session_id=tt.table_session_id,seat_number=CASE WHEN s.player_id=public.fixture_scale_uuid('30000000',1) THEN 1 ELSE 2 END FROM public.tournament_tables tt WHERE tt.tournament_id=s.tournament_id;
+  UPDATE public.tournament_entries e SET seat_number=s.seat_number FROM public.tournament_seats s WHERE s.entry_id=e.id;
+  UPDATE public.tournaments SET clock_started_at=clock_timestamp();
   INSERT INTO public.tournament_hands(id,tournament_id,tournament_table_id,table_session_id,hand_number,hand_time,created_at,tracker_small_blind,tracker_big_blind,tracker_level_number,tracker_bba,pot_size)
    SELECT public.fixture_scale_uuid('20000000',n),public.fixture_scale_uuid('10000000',1+(n-1)%20),public.fixture_scale_uuid('50000000',1+(n-1)%20),public.fixture_scale_uuid('60000000',1+(n-1)%20),n,
     CASE WHEN n%17=0 THEN NULL ELSE to_timestamp(1700000000+floor(n/60)) END,to_timestamp(1700000000+n),50,100,1,0,350 FROM generate_series(1,${count}) n;

@@ -13,7 +13,7 @@ const viewers=Number(process.env.PUBLIC_HUD_SCALE_VIEWERS??1000),duration=Number
 if(!Number.isInteger(viewers)||viewers<1||viewers>1000||duration<30||duration>1800)throw Error('Invalid load bounds');
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
-const player=uuid('30000000',1),stats={summary:[],realtime:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
+const player=uuid('30000000',1),stats={summary:[],realtime:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 let stopping=false;
 let phases={},transportTimings={};
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
@@ -23,8 +23,8 @@ async function post(path,body,privileged=false,phase='other'){
   const kind=`${phase}:${error?.name==='TimeoutError'?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
  const timingKey=phase+':'+path;
- const timings=transportTimings[timingKey]??={wall:[],upstream:[],proxy:[]};
- timings.wall.push(performance.now()-start);
+ const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[]};
+ timings.headers.push(performance.now()-start);
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers.get(header);if(value!==null&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
  if(!response.ok){let code='';try{const body=await response.json();if(typeof body.code==='string'&&/^[A-Z_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
  const value=await response.json();if(path.endsWith('public-player-hud')&&body.mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
@@ -52,12 +52,13 @@ if(viewers===1000&&duration===1800){
 }
 for(const scenario of ['concentrated','distributed']){
  phases={};transportTimings={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
- const offset={summary:stats.summary.length,realtime:stats.realtime.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
+ const offset={summary:stats.summary.length,realtime:stats.realtime.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,revoking=false,started=0;
  let expectedDeliveries=0,excludedForPlannedFault=0,missedDeliveries=0,minHealthyOnline=viewers,healthySocketMs=0,healthyWallMs=0,coverageAt=0,unexpectedDisconnects=0;
- const suspendDeliveries=(onlyTour)=>{for(const c of clients)if(!onlyTour||c.tour===onlyTour){excludedForPlannedFault+=c.expected.length;c.expected=[];}};
- const expireDeliveries=()=>{for(const c of clients){const remaining=[];for(const e of c.expected){if(Date.now()-e.at>10000){missedDeliveries++;stats.realtime.push(Date.now()-e.at);}else remaining.push(e);}c.expected=remaining;}};
+ let snapshotExpected=0,snapshotExcluded=0,snapshotMissed=0;
+ const suspendDeliveries=(onlyTour)=>{for(const c of clients)if(!onlyTour||c.tour===onlyTour){excludedForPlannedFault+=c.expected.length;c.expected=[];snapshotExcluded+=c.snapshotExpected.length;c.snapshotExpected=[];}};
+ const expireDeliveries=()=>{for(const c of clients){for(const [field,measure] of [['expected','realtime'],['snapshotExpected','snapshot']]){const remaining=[];for(const e of c[field]){if(Date.now()-e.at>10000){if(field==='expected')missedDeliveries++;else snapshotMissed++;stats[measure].push(Date.now()-e.at);}else remaining.push(e);}c[field]=remaining;}}};
  const health=[];
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
  const resourceTimer=setInterval(()=>{
@@ -71,12 +72,34 @@ for(const scenario of ['concentrated','distributed']){
  for(let i=0;i<viewers;i++){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
-  const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,expected:[],busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,table,tour};clients.push(state);
+  const snapshot=async(sections=['tables'])=>{
+   for(const section of sections)state.snapshotDirty.add(section);
+   if(state.snapshotBusy)return;state.snapshotBusy=true;
+   try{
+    await sleep(Math.max(0,1000-(Date.now()-state.snapshotLast)));
+    const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
+    const value=await rpc('get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:[],p_sections:requested,p_known_revisions:state.known});
+    assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
+    for(const section of requested){assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;}
+    const tables=value.sections.tables;
+    if(tables){const remaining=[];for(const expected of state.snapshotExpected){
+     const generation=JSON.parse(tables.freshness.projectedSourceRevision).generation;
+     if(tables.freshness.state==='current'&&/^\d+$/.test(generation??'')&&BigInt(generation)>=BigInt(expected.generation)&&Date.parse(tables.freshness.publishedAt)>=expected.at&&state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20))){stats.snapshot.push(Date.now()-expected.at);state.snapshotSamples++;}else remaining.push(expected);
+    }state.snapshotExpected=remaining;}
+   }catch{error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
+   finally{state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end)track(snapshot([]));}
+  };
+  state.snapshot=snapshot;
+  const clock=async()=>{try{const [value,summary]=await Promise.all([rpc('get_tournament_clock',{p_tournament_id:tour}),rpc('get_public_tournament_clock_summary',{p_tournament_id:tour})]);assert.equal(value.tournament_id,tour);if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(Array.isArray(summary)&&summary.length===1&&summary[0].tournament_id===tour);}catch{error('clock_read');}};
+  state.clock=clock;
+  const verifyPage=()=>{track(snapshot(['tables','ranking','payout']));track(clock());};
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const read=async()=>{
    if(state.busy){state.pending=true;return;}state.busy=true;
    try{
     const value=await rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});
+    if(!(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'))assert.equal(value.tableId,table);
     const hand=value.hand,remaining=[];
     for(const e of state.expected){
      const observed=hand&&(hand.handNumber>e.number||(hand.id===e.handId&&(e.step===5?hand.status==='completed':Array.isArray(hand.actions)&&hand.actions.length>=e.step)));
@@ -109,7 +132,7 @@ for(const scenario of ['concentrated','distributed']){
     const value=await hud(tour,'summary',frozen.accessSnapshot,phase);
     if(epoch!==state.hudEpoch)return;
     if(value.access!=='public'||!['current','updating'].includes(value.state)){state.frozen=null;if(!revoking)error('hud_not_ready');return;}
-    if(value.accessChanged){state.frozen=null;await openHud(phase+'-changed');}
+    if(value.accessChanged){state.frozen=null;const history=await hud(tour,'history',undefined,phase+'-changed-history');if(epoch===state.hudEpoch){assert.equal(history.access,'public');assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};}}
     else assert.equal(state.frozen,frozen,'Access verification must retain the frozen HUD');
    }catch{error('hud_read');}
   };
@@ -117,8 +140,10 @@ for(const scenario of ['concentrated','distributed']){
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
    const components=message.payload.components??['tables'];
-   if(components.includes('tables')||components.includes('visibility'))track(read());
-  }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());}});
+   if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
+   if(components.includes('visibility')){state.known={};verifyPage();}
+   else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
+  }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());verifyPage();}});
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
    const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
    // Same clear-now, jittered verification policy as the actual HUD component.
@@ -146,7 +171,8 @@ for(const scenario of ['concentrated','distributed']){
     const value=await rpc('fixture_scale_step_v1',{p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
     hand=value.handId;stats.sourceWrites++;
     if(!reconnecting&&(!revoking||n!==20))for(const c of clients)if(c.tour===uuid('10000000',n)&&c.online&&c.accessOnline){
-     c.expected.push({handId:hand,number,step,at:Date.parse(value.sourceWrittenAt)});expectedDeliveries++;
+     const at=Date.parse(value.sourceWrittenAt);c.expected.push({handId:hand,number,step,at});expectedDeliveries++;
+     assert.match(value.generation,/^\d+$/);c.snapshotExpected.push({at,generation:value.generation});snapshotExpected++;
     }
     if(step===5){
      const completed=hand,written=Date.parse(value.sourceWrittenAt);
@@ -187,8 +213,8 @@ for(const scenario of ['concentrated','distributed']){
   }
   for(const c of clients){
    const now=Date.now();
-   if(now>=c.nextVerify){c.nextVerify=now+Math.round((c.online?30000:Math.min(30000,3000*2**Math.min(c.failures,4)))*(.9+Math.random()*.2));track(c.read());}
-   if(now-c.lastHud>60000){c.lastHud=now;track(c.openHud());}
+   if(now>=c.nextVerify){c.nextVerify=now+Math.round((c.online?30000:Math.min(30000,3000*2**Math.min(c.failures,4)))*(.9+Math.random()*.2));track(c.read());track(c.snapshot(['tables','ranking','payout']));track(c.clock());}
+   if(now-c.lastHud>60000){c.lastHud=now;track(c.openHud('simulated-user-reopen-60s'));}
   }
   if(Date.now()-lastHealth>5000){lastHealth=Date.now();track((async()=>{try{const h=await rpc('get_public_hud_projection_health_v1',{},true);health.push({at:Date.now(),jobs:h.jobs,oldestAgeMs:h.oldestLiveChangeAt?Math.max(0,Date.now()-Date.parse(h.oldestLiveChangeAt)):0,expiredLeases:h.expiredLeases,failedJobs:h.failedJobs});}catch{error('health_read');}})());}
   if(Date.now()-lastProgress>60000){
@@ -198,12 +224,13 @@ for(const scenario of ['concentrated','distributed']){
  }
  await Promise.all(writers);
  const drainUntil=Date.now()+10000;
- while(clients.some(c=>c.expected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
+ while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
  expireDeliveries();clearInterval(resourceTimer);await Promise.allSettled([...tasks]);
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.snapshotDelivery={expected:snapshotExpected,excludedForPlannedFault:snapshotExcluded,missed:snapshotMissed,pending:clients.reduce((n,c)=>n+c.snapshotExpected.length,0),samples:sample('snapshot').length,p95Ms:percentile(sample('snapshot'),.95),minSamplesPerViewer:Math.min(...clients.map(c=>c.snapshotSamples))};save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
  report.httpPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
  report.transportErrors={...stats.transportErrors};save('running');
@@ -216,13 +243,14 @@ for(const scenario of ['concentrated','distributed']){
  assert.equal(report.minHealthyOnline,viewers);assert.equal(report.healthySocketCoverage,1);
  assert.equal(report.unexpectedDisconnects,0);
  assert.equal(report.missedDeliveries,0);assert.equal(report.pendingDeliveries,0);
+ assert.equal(snapshotMissed,0);assert.equal(report.snapshotDelivery.pending,0);assert.equal(report.snapshotDelivery.samples,snapshotExpected-snapshotExcluded);assert.ok(report.snapshotDelivery.p95Ms<=3000,'Projected tables p95 > 3s');assert.ok(report.snapshotDelivery.minSamplesPerViewer>=Math.floor(duration/10));
  assert.equal(report.healthyRealtimeSamples,report.expectedDeliveries-report.excludedForPlannedFault);
  assert.ok(report.minSamplesPerViewer>=Math.floor(duration/10),'Every viewer must observe enough real writes');
  assert.ok(report.sourceWrites>=tourCount*duration*.9,'Source write rate fell below the defined load');
  assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');assert.ok(report.healthyRealtimeP95Ms<=3000,'Realtime p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
  assert.equal(stats.errors.hud_read??0,0,'HUD HTTP failures are not excluded from acceptance');
- for(const kind of ['healthy_table_read','hud_not_ready','history_not_ready','health_read'])assert.equal(stats.errors[kind]??0,0,kind);
+ for(const kind of ['healthy_table_read','healthy_snapshot_read','clock_read','hud_not_ready','history_not_ready','health_read'])assert.equal(stats.errors[kind]??0,0,kind);
 }
 if(viewers===1000&&duration===1800){
  const seed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8'));

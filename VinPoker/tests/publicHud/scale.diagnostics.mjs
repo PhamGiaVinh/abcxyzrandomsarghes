@@ -8,11 +8,10 @@ for(const name of ['status.env','workers.env'])if(existsSync(root+'/'+name))secr
 function safeErrors(body){
  let safe=body;for(const value of secretValues)safe=safe.replaceAll(value,'[redacted]');
  safe=safe.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[redacted-jwt]').replace(/Bearer\s+\S+/gi,'Bearer [redacted]');
- return safe.split('\n').filter(line=>/error|failed|cannot|isolate|serving|worker|port|limit|connection|file change|setting up|unavailable/i.test(line)&&!line.includes('SECRET=')).slice(-30).join('\n');
+ return safe.split('\n').filter(line=>/error|failed|cannot|isolate|worker|port|limit|connection|file change|setting up|unavailable/i.test(line)&&!line.includes('SECRET=')).slice(-60).join('\n');
 }
 for(const name of ['serve.log','start.log'])if(existsSync(root+'/'+name)){const body=readFileSync(root+'/'+name,'utf8');console.log(name+' lifecycle counts: '+JSON.stringify({fileChanges:(body.match(/File change detected/gi)??[]).length,runtimeSetups:(body.match(/Setting up Edge Functions runtime/gi)??[]).length}));console.log(name+' sanitized diagnostics:\n'+safeErrors(body));}
-try{console.log('local Edge sanitized diagnostics:\n'+safeErrors(execFileSync('docker',['logs','--tail','100',`supabase_edge_runtime_${project}`],{encoding:'utf8',stdio:['ignore','pipe','pipe']})));}catch{console.log('Local Edge diagnostic unavailable');}
-for(const service of ['kong','realtime']){
+for(const service of ['edge_runtime','kong','realtime']){
  try{const result=spawnSync('docker',['logs','--tail','200',`supabase_${service}_${project}`],{encoding:'utf8',maxBuffer:2*1024*1024});if(result.error||result.status!==0)throw Error('unavailable');console.log(`local ${service} sanitized diagnostics:\n`+safeErrors((result.stdout??'')+'\n'+(result.stderr??'')));}catch{console.log(`Local ${service} diagnostics unavailable`);}
 }
 try{
