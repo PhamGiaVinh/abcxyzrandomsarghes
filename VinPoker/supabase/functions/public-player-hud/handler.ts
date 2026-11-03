@@ -63,7 +63,7 @@ export async function readPublicPlayerHud(client: SupabaseClient, tournamentId: 
   if (ids.length) {
     const checked = await client.from('tournament_hands').select('id,status,is_voided,source_revision')
       .eq('tournament_id', tournamentId).in('id', ids);
-    if (checked.error || checked.data?.length !== sample.length || sample.some((h: HudHand) => !checked.data.some((v: HudHand) =>
+    if (checked.error || checked.data?.length !== sample.length || sample.some((h: HudHand) => !checked.data.some((v: Pick<HudHand,'id'|'status'|'is_voided'|'source_revision'>) =>
       v.id === h.id && v.status === 'completed' && !v.is_voided && v.source_revision === h.source_revision))) throw new Error('PUBLIC_SAMPLE_CHANGED');
   }
   const input: TrackerAnalyticsHand[] = sample.map((h: HudHand) => ({

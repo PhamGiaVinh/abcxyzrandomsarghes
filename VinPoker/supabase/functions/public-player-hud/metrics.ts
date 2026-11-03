@@ -35,9 +35,9 @@ export function publicStreetMetrics(playerId:string,hands:TrackerAnalyticsHand[]
     for(const street of ['flop','turn'] as const) {
       const streetActions=actions.filter(a=>a.street===street);
       const firstBet=streetActions.find(a=>aggression(hand,actions,a).raised);
-      const isCbet=firstBet && firstBet.player_id===opener && (street==='flop'||flopCbet);
+      const isCbet:boolean=Boolean(firstBet && firstBet.player_id===opener && (street==='flop'||flopCbet));
       if(street==='flop') flopCbet=Boolean(isCbet);
-      if(!isCbet || opener===playerId) continue;
+      if(!firstBet || !isCbet || opener===playerId) continue;
       const after=streetActions.slice(streetActions.indexOf(firstBet)+1);
       const response=after.find(a=>a.player_id===playerId);
       if(!response || after.slice(0,after.indexOf(response)).some(a=>aggression(hand,actions,a).raised)) continue;
