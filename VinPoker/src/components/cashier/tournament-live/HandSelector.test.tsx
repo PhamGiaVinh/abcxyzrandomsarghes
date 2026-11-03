@@ -263,3 +263,14 @@ it('offers an explicit parent target retry after resolver failure without invent
  fireEvent.click(screen.getByRole('button',{name:'Thử tìm lại hand'}));expect(retry).toHaveBeenCalledTimes(1);
  expect(rpc).not.toHaveBeenCalled();
 });
+
+it('loads a resolved legacy public UUID without guessing a table or reading raw rows',async()=>{
+ rpc.mockImplementation((name:string)=>Promise.resolve({error:null,data:name==='get_public_tournament_hand_v2'?{id:'legacy',handNumber:1,players:[],actions:[],bigBlind:200}:null}));
+ const select=vi.fn();
+ render(<HandSelector tournamentId="tour" tableId={null} spectator selectedHandId={null}
+ replayTarget={{handId:'legacy',tableId:null,handNumber:null}}
+ replayTargetState={{kind:'resolved',handId:'legacy',tableId:null,handNumber:1}} onSelectHand={select}/>);
+ await waitFor(()=>expect(select).toHaveBeenCalledWith('legacy',expect.objectContaining({big_blind:200})));
+ expect(screen.queryByText('Chọn bàn để xem lịch sử hand.')).not.toBeInTheDocument();
+ expect(rpc.mock.calls.every(([name])=>['get_public_tournament_hand_v2','get_public_tournament_settlement'].includes(name))).toBe(true);
+});

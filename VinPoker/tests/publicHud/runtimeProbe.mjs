@@ -16,4 +16,4 @@ const client=createClient(process.env.VITE_SUPABASE_URL,process.env.VITE_SUPABAS
 const result=await readPublicPlayerHud(client,tournamentId,playerId);
 if(result.tournamentId!==tournamentId||result.playerId!==playerId) throw new Error('Scope mismatch');
 console.log(JSON.stringify({probe:'actual-anon-RLS-read',tournamentId,playerId,name:result.name,hands:result.analytics.handsObserved,
-  sample:result.sampledTournamentHands,metrics:result.analytics.metrics,totalWinnings:result.totalWinnings,recentResultCount:result.recentResults?.length??null}));
+  sample:result.sampledTournamentHands,handHistory:result.handHistory,metrics:result.analytics.metrics,totalWinnings:result.totalWinnings,recentResultCount:result.recentResults?.length??null}));

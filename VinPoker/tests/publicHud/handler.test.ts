@@ -1,11 +1,11 @@
 import { describe,it,expect,vi } from 'vitest';
 import { readPublicPlayerHud } from '../../supabase/functions/public-player-hud/handler';
 const T='12ea401a-9790-4c3f-8aed-818cd1d5eddd',P='24fe3ccd-fbe8-4311-9a83-cf12e596c5a1';
-function client(options:{access?:string;count?:number;prize?:number;changed?:boolean;hands?:boolean;proof?:'verified'|'missing'|'malformed'}={}) {
+function client(options:{access?:string;count?:number;prize?:number;changed?:boolean;hands?:boolean;proof?:'verified'|'missing'|'malformed';external?:number;badEnding?:boolean}={}) {
   const calls:any[]=[];let handReads=0;
-  const h={id:'hand',status:'completed',is_voided:false,source_revision:1,button_seat:1,community_cards:options.proof?['AS','KD','QC','JS','2D']:[],hand_time:'2026-11-03'};
+  const h={id:'hand',status:'completed',is_voided:false,source_revision:1,button_seat:1,community_cards:options.proof?['AS','KD','QC','JS','2D']:[],hand_time:'2026-11-03',hand_number:1,tournament_table_id:T,table_session_id:T};
   const rpc=vi.fn(async(name:string)=>name==='get_public_tournament_settlement'
-    ? {data:options.proof==='missing'?{status:'pending'}:{schemaVersion:options.proof==='malformed'?'bad':'settlement-outcome-v1',status:'verified',pots:[{winnerIds:[P]}],handRanks:[{playerId:P},{playerId:'opponent'}]},error:null}
+    ? {data:options.proof==='missing'?{status:'pending'}:{schemaVersion:options.proof==='malformed'?'bad':'settlement-outcome-v1',status:'verified',players:[{playerId:P,startingStack:100,netDelta:75,externalDelta:options.external??0,endingStack:options.badEnding?999:175+(options.external??0)}],pots:[{winnerIds:[P]}],handRanks:[{playerId:P},{playerId:'opponent'}]},error:null}
     : {data:{ok:true,access:options.access??'public',tournamentId:T,sections:{ranking:{items:[{playerId:P,name:'TEST'}]}}},error:null});
   const from=vi.fn((table:string)=>{
     calls.push({table,ops:[]});const entry=calls.at(-1);
@@ -30,6 +30,8 @@ describe('public HUD scoped reader',()=>{
     const c=client();const result=await readPublicPlayerHud(c,T,P);
     expect(result.analytics.handsObserved).toBe(0);expect(result.analytics.metrics.vpip.percentage).toBeNull();
     expect(c.calls.find(x=>x.table==='tournament_hands').ops).toContainEqual(['eq','status','completed']);
+    expect(c.calls.find(x=>x.table==='tournament_hands').ops).toContainEqual(['eq','participation.player_id',P]);
+    expect(result.handHistory).toEqual([]);
     expect(JSON.stringify(c.calls)).not.toMatch(/hole_cards|service_role|profiles|payment/);
   });
   it('does not mistake a capped result set for complete winnings',async()=>{
@@ -46,9 +48,16 @@ describe('public HUD scoped reader',()=>{
     const result=await readPublicPlayerHud(client({hands:true,proof:'verified'}),T,P);
     expect(result.analytics.metrics.wsd).toMatchObject({numerator:1,denominator:1,percentage:100});
     expect(result.analytics.metrics.wtsd.percentage).toBe(100);
+    expect(result.handHistory).toEqual([expect.objectContaining({handId:'hand',tableId:T,tableSessionId:T,handNumber:1,endingStack:175,netDelta:75})]);
   });
   it.each(['missing','malformed'] as const)('keeps W$SD unknown with %s proof',async proof=>{
     const result=await readPublicPlayerHud(client({hands:true,proof}),T,P);
     expect(result.analytics.metrics.wsd.percentage).toBeNull();
+    expect(result.handHistory[0]).toMatchObject({endingStack:null,netDelta:null});
   });
+});
+
+it('includes verified external adjustments and rejects inconsistent ending stack',async()=>{
+  expect((await readPublicPlayerHud(client({hands:true,proof:'verified',external:50}),T,P)).handHistory[0]).toMatchObject({endingStack:225,netDelta:75});
+  expect((await readPublicPlayerHud(client({hands:true,proof:'verified',badEnding:true}),T,P)).handHistory[0]).toMatchObject({endingStack:null,netDelta:null});
 });

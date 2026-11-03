@@ -2,7 +2,7 @@ import { classifyTrackerPlayerAnalytics, type TrackerAnalyticsHand } from '../_s
 import { publicStreetMetrics } from './metrics.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.105.4';
 import type { ActionRow } from '../_shared/trackerEngine/types.ts';
-type HudHand={id:string;status:string;is_voided:boolean;source_revision:number;button_seat:number;community_cards:unknown};
+type HudHand={id:string;status:string;is_voided:boolean;source_revision:number;button_seat:number;community_cards:unknown;hand_time:string|null;hand_number:number;tournament_table_id:string|null;table_session_id:string|null};
 type HudPlayer={hand_id:string;player_id:string;player_name:string|null;avatar_url:string|null;seat_number:number;starting_stack:number};
 type RankingPlayer={playerId:string;name:string;avatarUrl:string|null};
 type PublicResult={tournament_name:string;event_date:string;position:number|null;total_entries:number|null;prize:number};
@@ -17,7 +17,8 @@ export async function readPublicPlayerHud(client: SupabaseClient, tournamentId: 
   });
   if (snapshotError || !snapshot?.ok || snapshot.access !== 'public' || snapshot.tournamentId !== tournamentId) throw new Error('PUBLIC_SCOPE_UNAVAILABLE');
   const { data: hands, error: handError } = await client.from('tournament_hands')
-    .select('id,status,is_voided,button_seat,community_cards,hand_time,source_revision')
+    .select('id,status,is_voided,button_seat,community_cards,hand_time,source_revision,hand_number,tournament_table_id,table_session_id,participation:hand_players!hand_players_hand_id_fkey!inner(player_id)')
+    .eq('participation.player_id',playerId)
     .eq('tournament_id', tournamentId).eq('status', 'completed').or('is_voided.is.null,is_voided.eq.false')
     .order('hand_time', { ascending: false }).order('id', { ascending: false }).limit(PUBLIC_HUD_HAND_LIMIT + 1);
   if (handError) throw new Error('PUBLIC_HANDS_UNAVAILABLE');
@@ -41,15 +42,22 @@ export async function readPublicPlayerHud(client: SupabaseClient, tournamentId: 
     if (offset >= 9000) throw new Error('PUBLIC_SAMPLE_TOO_LARGE');
   }
   const proofs = new Map<string, TrackerAnalyticsHand['settlement']>();
+  const stacks = new Map<string,{endingStack:number;netDelta:number}>();
   // Use the existing freshness-checked public result, never a private outcome table.
   for (let offset=0; offset<sample.length; offset+=5) {
-    await Promise.all(sample.slice(offset,offset+5).filter((h: HudHand) => Array.isArray(h.community_cards) && h.community_cards.length >= 3).map(async (h: HudHand) => {
+    await Promise.all(sample.slice(offset,offset+5).map(async (h: HudHand) => {
       const reply = await client.rpc('get_public_tournament_settlement',{p_hand_id:h.id});
       const p = reply.error ? null : reply.data;
       if (p?.schemaVersion !== 'settlement-outcome-v1' || p.status !== 'verified' || !Array.isArray(p.pots) || !Array.isArray(p.handRanks)) return;
       if (p.pots.some((pot: {winnerIds:string[]}) => !Array.isArray(pot.winnerIds)) || p.handRanks.some((rank: {playerId:string}) => typeof rank.playerId !== 'string')) return;
       proofs.set(h.id,{verified:true,current:true,winnerPlayerIds:[...new Set<string>(p.pots.flatMap((pot: {winnerIds:string[]}) => pot.winnerIds))],
         eligiblePlayerIds:p.handRanks.map((rank: {playerId:string}) => rank.playerId),showdown:p.handRanks.length >= 2});
+      const outcome=Array.isArray(p.players) ? p.players.find((row:{playerId:string})=>row.playerId===playerId) : null;
+      const delta=outcome?.netDelta,external=outcome?.externalDelta,ending=outcome?.endingStack;
+      const seed=playerRead.data?.find((row:HudPlayer)=>row.hand_id===h.id && row.player_id===playerId)?.starting_stack;
+      if(typeof seed==='number' && Number.isSafeInteger(seed) && seed>=0 && outcome?.startingStack===seed
+        && typeof delta==='number' && Number.isSafeInteger(delta) && typeof external==='number' && Number.isSafeInteger(external)
+        && typeof ending==='number' && Number.isSafeInteger(ending) && ending>=0 && seed+delta+external===ending) stacks.set(h.id,{endingStack:ending,netDelta:delta});
     }));
   }
   const historyReply = await client.from('player_results')
@@ -83,6 +91,10 @@ export async function readPublicPlayerHud(client: SupabaseClient, tournamentId: 
     avatarUrl: publicPlayer?.avatarUrl ?? observedPlayer?.avatar_url ?? null,
     sampledTournamentHands: sample.length, truncated: (hands?.length ?? 0) > PUBLIC_HUD_HAND_LIMIT,
     omittedHands,
+    handHistory:[...sample].reverse().filter((h:HudHand)=>playerRead.data?.some((row:HudPlayer)=>row.hand_id===h.id && row.player_id===playerId)).map((h:HudHand)=>({
+      handId:h.id,tableId:h.tournament_table_id,tableSessionId:h.table_session_id,handNumber:h.hand_number,playedAt:h.hand_time,
+      endingStack:stacks.get(h.id)?.endingStack ?? null,netDelta:stacks.get(h.id)?.netDelta ?? null,
+    })),
     // Only admin-verified, already-public result amounts; never profit or stack deltas.
     totalWinnings: Number.isSafeInteger(winnings) ? winnings : null,
     recentResults: history?.slice(0,5) ?? null,
