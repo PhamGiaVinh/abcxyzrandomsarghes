@@ -160,7 +160,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const applySession = (sess: Session | null, event?: string) => {
       if (disposed) return;
-      setSession(sess);
+      // Supabase may re-emit SIGNED_IN on refocus with a new Session object
+      // for the same bearer. Keep that read epoch so operator dialogs survive;
+      // changed credentials, account changes and logout still invalidate it.
+      setSession(previous => event === "SIGNED_IN" && previous && sess && sess.access_token
+        && previous.user.id === sess.user.id && previous.access_token === sess.access_token
+        ? previous : sess);
       setUser(sess?.user ?? null);
       setLoading(false);
       setAuthError(null);

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +9,7 @@ type QueryBuilder = {
   eq: () => QueryBuilder;
   limit: () => QueryBuilder;
   is: () => QueryBuilder;
+  in: () => QueryBuilder;
   abortSignal: (signal:AbortSignal) => QueryBuilder;
   then: <TResult1 = QueryResponse, TResult2 = never>(
     onfulfilled?: ((value: QueryResponse) => TResult1 | PromiseLike<TResult1>) | null,
@@ -27,6 +28,11 @@ const auth = vi.hoisted(() => ({
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
+    rpc: (name:string) => {
+      const result=Promise.resolve({data:name==='get_my_floor_operator_scope'
+        ?[{club_id:'row',can_owner:true,can_cashier:true,can_floor:true}]:['row'],error:null});
+      return Object.assign(result,{abortSignal:()=>result});
+    },
     auth: {
       getSession: auth.getSession,
       signOut: vi.fn().mockResolvedValue({ error: null }),
@@ -47,6 +53,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       };
       query.limit = () => query;
       query.is = () => query;
+      query.in = () => query;
       query.abortSignal = signal => {auth.signals.push(signal);return query;};
       query.then = (onfulfilled, onrejected) => {
         if (table !== "profiles") auth.queryReads.push({ table, userId });
@@ -70,6 +77,14 @@ vi.mock("@/lib/fnbStaff", () => ({ deriveIsFnb: vi.fn().mockResolvedValue(false)
 vi.mock("@/lib/accountant", () => ({ deriveIsAccountant: vi.fn().mockResolvedValue(false) }));
 
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useOperatorClubs } from './useOperatorClubs';
+
+// Exercise the real caller-bound scope hook that Dealer Swing uses to mount
+// its dialogs. Reverification replaces the workspace while scope is unknown.
+function OperatorDraft() {
+  const { scopeVerified } = useOperatorClubs();
+  return scopeVerified ? <input aria-label="Check-in selection draft" defaultValue="" /> : <p>Verifying operator scope</p>;
+}
 
 function Probe() {
   const { user, loading, rolesLoading, rolesError, isCashier, isAdmin } = useAuth();
@@ -97,6 +112,42 @@ describe("AuthProvider role loading", () => {
     auth.synchronousInitialSession = null;
     auth.getSession.mockReset();
     auth.signals=[];
+  });
+
+  it('keeps an operator draft on a repeated SIGNED_IN for the exact same credential',async()=>{
+    const session={user:{id:'same-operator'},access_token:'LOCAL_SAME_SESSION'};
+    auth.getSession.mockResolvedValue({data:{session},error:null});
+    render(<AuthProvider><Probe/><OperatorDraft/></AuthProvider>);
+    await screen.findByText('same-operator|cashier');
+    await screen.findByLabelText('Check-in selection draft');
+    fireEvent.change(screen.getByLabelText('Check-in selection draft'),{target:{value:'TEST dealer selection'}});
+    act(()=>auth.listener?.('SIGNED_IN',{...session,user:{...session.user}}));
+    expect(screen.getByLabelText('Check-in selection draft')).toHaveValue('TEST dealer selection');
+  });
+
+  it.each(['SIGNED_IN','TOKEN_REFRESHED'])('discards the old operator draft when %s brings a different credential',async event=>{
+    const session={user:{id:'same-operator'},access_token:'LOCAL_OLD_SESSION'};
+    auth.getSession.mockResolvedValue({data:{session},error:null});
+    render(<AuthProvider><Probe/><OperatorDraft/></AuthProvider>);
+    await screen.findByText('same-operator|cashier');
+    await screen.findByLabelText('Check-in selection draft');
+    fireEvent.change(screen.getByLabelText('Check-in selection draft'),{target:{value:'old dealer selection'}});
+    act(()=>auth.listener?.(event,{...session,access_token:'LOCAL_NEW_SESSION'}));
+    expect(screen.queryByLabelText('Check-in selection draft')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Check-in selection draft')).toHaveValue('');
+  });
+
+  it('clears the operator draft on sign-out and on a different actor even if token bytes match',async()=>{
+    const session={user:{id:'same-operator'},access_token:'LOCAL_SESSION'};
+    auth.getSession.mockResolvedValue({data:{session},error:null});
+    render(<AuthProvider><Probe/><OperatorDraft/></AuthProvider>);
+    fireEvent.change(await screen.findByLabelText('Check-in selection draft'),{target:{value:'private selection'}});
+    act(()=>auth.listener?.('SIGNED_IN',{...session,user:{id:'other-operator'}}));
+    expect(screen.queryByLabelText('Check-in selection draft')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Check-in selection draft')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Check-in selection draft'),{target:{value:'second selection'}});
+    act(()=>auth.listener?.('SIGNED_OUT',null));
+    expect(screen.queryByLabelText('Check-in selection draft')).not.toBeInTheDocument();
   });
 
   it('bounds a hanging role read, ignores its late privileges, and recovers after same-account sign-in',async()=>{
