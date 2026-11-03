@@ -28,6 +28,7 @@ export default function FinanceWorkspace() {
               {t("financeWorkspace.overviewDescription")}
             </FinanceLink>
           )}
+          {(isClubOwner || isAdmin) && <FinanceLink to="/club/admin/player-finance" label={t("playerFinance.title")} landing={landing}>{t("playerFinance.navDescription")}</FinanceLink>}
           {(isAccountant || isClubOwner || isAdmin) && (
             <FinanceLink to="/accountant" label={t("financeWorkspace.payroll")} landing={landing}>
               {t("financeWorkspace.payrollDescription")}

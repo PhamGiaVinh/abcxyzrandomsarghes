@@ -188,6 +188,8 @@ const ClubAdmin = () => {
             </Card>
           )}
 
+          {activeClub && (isClubOwner || isAdmin) && <Card className="p-4 flex items-center justify-between gap-3"><div><h3 className="font-display text-base">{t("playerFinance.title")}</h3><p className="text-xs text-muted-foreground">{t("playerFinance.navDescription")}</p></div><Button asChild size="sm"><Link to={`/club/admin/player-finance?club=${activeClub.id}`}>{t("playerFinance.open")}</Link></Button></Card>}
+
           {/* Tài chính & Đối soát — flag OFF ẩn với chủ CLB/admin; super_admin còn thấy để UAT nội bộ. */}
           {activeClub && (isClubAdmin || isClubOwner) && (FEATURES.accountingControl || isAdmin) && (
             <Card className="p-4 gradient-card border-primary/40 flex items-center justify-between gap-3">

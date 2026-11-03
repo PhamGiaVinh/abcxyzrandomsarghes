@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["src/vite-env.d.ts", "src/pages/PlayerFinancialReport.tsx", "src/lib/playerFinancialReport.ts", "src/lib/playerFinancialReport.test.ts", "src/components/PublicPaidWinnings.tsx", "src/components/tracker/PublicPlayerHud.tsx", "src/pages/PlayerProfile.tsx", "src/pages/FinanceWorkspace.tsx", "src/pages/ClubAdmin.tsx"]
+}
