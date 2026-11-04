@@ -10,7 +10,7 @@ import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {summaryApiReport} from './scale.summary.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
-import {PublicSnapshotCoordinator,PUBLIC_SPECTATOR_READ_INTERVAL_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
+import {PublicSnapshotCoordinator,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicHudRequest,revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
@@ -27,12 +27,15 @@ const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sou
 const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},requestAccounting={},observationOrder=0;
+let dispatchBuckets=new Map();
+const dispatchReport=()=>({windowMs:100,source:'physical HTTP launches including errors and cancellations; nonempty generator-clock windows',paths:Object.fromEntries([...dispatchBuckets].map(([path,buckets])=>{const counts=[...buckets.values()];return [path,{nonEmptyWindows:counts.length,maxRequestsPerWindow:Math.max(...counts),p95RequestsPerWindow:percentile(counts,.95)}];}))});
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
 const recordSummaryApi=(ms,phase,data)=>{const state=data?.access==='revoked'?'revoked':['current','updating','warming','unavailable'].includes(data?.state)?data.state:'unknown';stats.summaryHttp.push({ms,phase:phase??'unspecified',state,ready:data?.access==='public'&&['current','updating'].includes(state)});};
 async function post(path,body,privileged=false,phase='other',callerSignal){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
  const accounting=requestAccounting[phase+':'+path]??={launched:0,requestBytes:0,completed:0,responseBytes:0,cancelled:0};
  const encoded=JSON.stringify(body);accounting.launched++;accounting.requestBytes+=Buffer.byteLength(encoded);
+ const windows=dispatchBuckets.get(path)??new Map();dispatchBuckets.set(path,windows);const window=Math.floor(performance.now()/100);windows.set(window,(windows.get(window)??0)+1);
  const timeout=AbortSignal.timeout(10000),signal=callerSignal?AbortSignal.any([callerSignal,timeout]):timeout;
  const intentionallyCancelled=error=>error?.httpStatus===undefined&&callerSignal?.aborted&&!timeout.aborted&&(error===callerSignal.reason||error?.name==='AbortError');
  try{
@@ -123,7 +126,7 @@ if(viewers===1000&&targetDuration===1800){
 }
 for(const scenario of ['concentrated','distributed','overview']){
  const overview=scenario==='overview',duration=overview?30:targetDuration;
- phases={};transportTimings={};rpcOutcomes={};runtimeFailures={};hudFailureKinds={};requestAccounting={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
+ phases={};transportTimings={};rpcOutcomes={};runtimeFailures={};hudFailureKinds={};requestAccounting={};dispatchBuckets=new Map();const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
  const offset={summary:stats.summary.length,summaryHttp:stats.summaryHttp.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
@@ -177,11 +180,10 @@ for(const scenario of ['concentrated','distributed','overview']){
   state.credit=()=>{credit('expected',state.handObservation,handIncludesWrite,'realtime','deliverySamples');credit('snapshotExpected',state.snapshotObservation,projectionIncludesWrite,'snapshot','snapshotSamples');};
   const healthy=()=>state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20));
   let pageEpoch=0;
-  const snapshot=async(sections=['tables'])=>{
-   for(const section of sections)state.snapshotDirty.add(section);
-   if(state.snapshotBusy)return;state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
+  const refreshSnapshot=async()=>{
+   state.snapshotPending=false;if(!state.snapshotDirty.size)return;
+   state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
    try{
-    await sleep(Math.max(0,PUBLIC_SPECTATOR_READ_INTERVAL_MS-(Date.now()-state.snapshotLast)));
     if(epoch!==pageEpoch)return;
     const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
     const requestOrder=++observationOrder;
@@ -192,7 +194,12 @@ for(const scenario of ['concentrated','distributed','overview']){
     const tables=value.sections.tables;
     if(tables){state.snapshotObservation={value:tables.freshness,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
    }catch(cause){if(!cause.intentionalHudCancellation)error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
-   finally{controller.abort();state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end+10000)track(snapshot([]));}
+   finally{controller.abort();state.snapshotBusy=false;}
+  };
+  const snapshotCoordinator=new PublicSnapshotCoordinator(()=>{const promise=refreshSnapshot();track(promise);return promise;},PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS);
+  const snapshot=async(sections=['tables'])=>{
+   for(const section of sections)state.snapshotDirty.add(section);
+   if(state.snapshotDirty.size&&Date.now()<end+10000){state.snapshotPending=true;snapshotCoordinator.request();}
   };
   state.snapshot=snapshot;
   const clock=async()=>{try{const [value,summary]=await Promise.all([rpc('get_tournament_clock',{p_tournament_id:tour}),rpc('get_public_tournament_clock_summary',{p_tournament_id:tour})]);assert.equal(value.tournament_id,tour);if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(Array.isArray(summary)&&summary.length===1&&summary[0].tournament_id===tour);}catch{error('clock_read');}};
@@ -213,9 +220,9 @@ for(const scenario of ['concentrated','distributed','overview']){
   };
   const tableCoordinator=new PublicSnapshotCoordinator(()=>{
    state.pending=false;const promise=readCurrent();track(promise);return promise;
-  },PUBLIC_SPECTATOR_READ_INTERVAL_MS);
+  },PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS);
   const read=async()=>{if(!overview&&Date.now()<end+10000){state.pending=true;tableCoordinator.request();}};
-  state.stopTableReads=()=>tableCoordinator.stop();
+  state.stopTableReads=()=>{tableCoordinator.stop();snapshotCoordinator.stop();};
   state.read=read;
   let hudTimerToken=0;
   const scheduleHudCheck=phase=>{
@@ -429,7 +436,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
  expireDeliveries();clearInterval(resourceTimer);
- await until(async()=>tasks.size===0&&clients.every(c=>!c.pending&&!c.busy),30000,'Pending transport/timer work did not drain');
+ await until(async()=>tasks.size===0&&clients.every(c=>!c.pending&&!c.busy&&!c.snapshotPending&&!c.snapshotBusy),30000,'Pending transport/timer work did not drain');
  for(const c of clients)c.stopTableReads();
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
@@ -441,7 +448,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
- report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,pendingAtGrading:clients.filter(c=>c.pending||c.busy).length};save('running');
+ report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
  report.requestAccounting=requestAccounting;
  report.hudRecovery={summaryAndHistoryIndependent:true,historyRequiredForAcceptance:true,restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.historyActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');

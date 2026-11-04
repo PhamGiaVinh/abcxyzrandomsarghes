@@ -3,6 +3,7 @@ import type { PublicSnapshotSection } from "./publicSnapshotTypes";
 // Keep source writes independent while coalescing spectator HTTP bursts.
 // First/scope reads stay immediate; loaded delivery must still meet the3s gate.
 export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 2_000;
+export const PUBLIC_SPECTATOR_HINT_JITTER_MS = 200;
 
 export interface SnapshotRequest {
   tournamentId: string;
@@ -17,8 +18,11 @@ export class PublicSnapshotCoordinator {
   private stopped = false;
   private lastStartedAt: number | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly hintDelayMs:number;
 
-  constructor(private readonly refresh: () => Promise<void>, private readonly minIntervalMs = 0) {}
+  constructor(private readonly refresh: () => Promise<void>, private readonly minIntervalMs = 0, hintJitterMs=0) {
+    this.hintDelayMs=hintJitterMs>0?Math.floor(Math.random()*hintJitterMs):0;
+  }
 
   request(): void {
     if (this.stopped) return;
@@ -26,13 +30,16 @@ export class PublicSnapshotCoordinator {
       this.queued = true;
       return;
     }
-    const wait = this.lastStartedAt === null ? 0 : Math.max(0, this.minIntervalMs - (Date.now() - this.lastStartedAt));
+    // Keep one fixed hint deadline. A duplicate (even after the deadline but
+    // before the timer callback runs) must not create another trailing read.
+    if(this.timer)return;
+    const wait = this.lastStartedAt === null ? 0 : Math.max(0, this.minIntervalMs - (Date.now() - this.lastStartedAt))+this.hintDelayMs;
     if (wait > 0) {
       this.queued = true;
       if (!this.timer) this.timer = setTimeout(() => {
         this.timer = null;
         this.queued = false;
-        this.request();
+        if(!this.stopped)void this.run();
       }, wait);
       return;
     }

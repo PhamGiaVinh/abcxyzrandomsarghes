@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
-import { PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
+import { PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
 import type { PublicSnapshotSection, PublicSpectatorSnapshot } from "./publicSnapshotTypes";
 import {observePublicTournament,publicReadEpoch,publicReadEpochIsCurrent} from './publicTournamentRealtime';
 import {sharePublicTournamentRead} from './sharedPublicTournamentRead';
@@ -113,7 +113,7 @@ export function usePublicSpectatorSnapshot(
       setLoading(false);
     };
 
-    coordinator = new PublicSnapshotCoordinator(refresh, PUBLIC_SPECTATOR_READ_INTERVAL_MS);
+    coordinator = new PublicSnapshotCoordinator(refresh, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS);
     observation=observePublicTournament(supabase,tournamentId,event=>{
       if(event.reason==='status')return;
       if(event.invalidatePending){epoch++;controller.abort();trustedRevisions.current={};dirty.clear();}
