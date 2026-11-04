@@ -16,6 +16,12 @@ cleanup(){
 }
 trap cleanup EXIT
 supabase init --workdir "$test_root" >/dev/null
+# CLI 2.101.0's default 17.6.1.106 crashes on denied function EXECUTE.
+# Use the CLI's version-file input with an official, fixed image; preserve
+# all ACL denial tests and the remaining stack configuration.
+postgres_image='ghcr.io/supabase/postgres:17.6.1.155@sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b'
+mkdir -p "$test_root/supabase/.temp"
+printf '%s' '17.6.1.155@sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b' >"$test_root/supabase/.temp/postgres-version"
 python3 - "$test_root/supabase/config.toml" "$project_id" <<'PY'
 import pathlib,re,sys,tomllib
 p=pathlib.Path(sys.argv[1]); body=p.read_text()
@@ -38,10 +44,13 @@ printf 'PUBLIC_HUD_WORKER_SECRET=%s\nPUBLIC_SPECTATOR_WORKER_SECRET=%s\n' "$(ope
 exclude='imgproxy,logflare,mailpit,postgres-meta,storage-api,studio,supavisor,vector'
 supabase start --workdir "$test_root" --exclude "$exclude" >"$test_root/start.log" 2>&1
 docker inspect "supabase_db_$project_id" >/dev/null
+[[ "$(docker inspect --format '{{.Config.Image}}' "supabase_db_$project_id")" == "$postgres_image" ]]
 export PUBLIC_HUD_LOCAL_DATABASE=postgres PUBLIC_HUD_ISOLATED_STACK=vinpoker-hud-scale PUBLIC_HUD_LOCAL_PORT=54322 PGPASSWORD=postgres
 psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -w -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE postgres IS 'vinpoker-hud-scale-disposable';" >/dev/null
 supabase status --workdir "$test_root" -o env >"$test_root/status.env" 2>"$test_root/status.log"
 mkdir -p output/hud-scale
+psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -w -X -qAt -v ON_ERROR_STOP=1 \
+ -c "SELECT jsonb_build_object('postgres',version(),'supautils',current_setting('supautils.version',true));" >output/hud-scale/database-runtime.json
 PUBLIC_HUD_HTTP_GENERATOR_REPORT="$repo_root/output/hud-scale/generator-transport.json" node tests/publicHud/scale.http.benchmark.mjs
 docker inspect --format '{"name":{{json .Name}},"image":{{json .Config.Image}},"memoryLimitBytes":{{.HostConfig.Memory}},"nanoCpus":{{.HostConfig.NanoCpus}}}' \
  "supabase_db_$project_id" "supabase_realtime_$project_id" "supabase_edge_runtime_$project_id" >output/hud-scale/runtime-images.jsonl
