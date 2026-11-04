@@ -306,19 +306,3 @@ and read-to-observation durations sum to that delivery's original latency; a
 negative first duration means an in-flight read observed a later source commit.
 Their independent p95 values must not be added. These timings do not change
 expected events, exclusions, deadlines, source rate, reads or grading.
-
-The existing public-player-hud Edge endpoint also accepts strict `mode:table`
-with only tournament_id/table_id. It invokes the existing bounded public current
-table RPC using fixed anonymous credentials and the same5ms pre-query-only
-batcher, keyed by exact tournament/table. No DB contract, result cache or new
-Edge service is introduced. Watched-table frontend and load generator use this
-same path. Existing per-tab scope/epoch/cancellation gates and authoritative
-revocation handling remain; an Edge failure never falls back to a private read.
-The shared upstream5s deadline now also applies to watched-table reads. Runtime
-qualification must cover this behavior and public/signed-in/service-header,
-cross-tour and withdrawal cases; unit tests alone do not prove HTTP capacity.
-Release ordering: deploy the expanded public-player-hud Edge reader before the
-frontend starts using table mode. Roll back the frontend table transport before
-restoring an older Edge reader that lacks this mode. Both belong to the same
-exact approved critical release package; the existing RealtimeV2 flag also
-controls the frontend route. There is no automatic direct-RPC fallback.

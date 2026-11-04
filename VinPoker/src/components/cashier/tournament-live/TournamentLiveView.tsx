@@ -340,15 +340,9 @@ function TournamentLiveViewContent({
     const execute=async()=>{
     const seq = ++requestSeqRef.current;
     const currentRequest = () => !controller.signal.aborted&&seq === requestSeqRef.current && readScopeRef.current === readScope;
-    const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:{message:string}|null}>=>{
+    const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>{
       const epoch=publicReadEpoch(supabase,tournamentId,'tables');
-      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,async signal=>{
-        if(FEATURES.publicSpectatorRealtimeV2&&name==='get_public_tournament_table_live_or_last_hand_v2'){
-          const {data,error}=await supabase.functions.invoke('public-player-hud',{body:{mode:'table',tournament_id:args.p_tournament_id,table_id:args.p_tournament_table_id},signal});
-          return {data:error?null:data,error:error?{message:'public_table_unavailable'}:null};
-        }
-        return supabase.rpc(name as never,args as never).abortSignal(signal);
-      }).then(reply=>{
+      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
         reportPublicTournamentRead(supabase,tournamentId,!reply.error);
         if(!reply.error&&name==='get_public_tournament_table_live_or_last_hand_v2'&&(reply.data as {access?:string})?.access==='public'&&
           !publicReadEpochIsCurrent(supabase,tournamentId,'tables',epoch))throw Error('public_snapshot_superseded');

@@ -11,30 +11,6 @@ const batchResponse=(init?:RequestInit)=>{
 };
 const reader=(send:typeof fetch)=>createPublicHudReadBatcher('https://fixture.invalid','fixed-anon',send);
 beforeEach(()=>vi.useFakeTimers());afterEach(()=>vi.useRealTimers());
-it('coalesces public table reads before query start with isolated scopes and cancellation',async()=>{
- const table='50000000-0000-4000-8000-000000000001',name='get_public_tournament_table_live_or_last_hand_v2';
- const send=vi.fn(async(_url:unknown,_init?:RequestInit)=>response()),batch=reader(send),a=new AbortController(),b=new AbortController();
- const scope={p_tournament_id:tour,p_tournament_table_id:table};
- const cancelled=batch.forRequest(a.signal).rpc(name,scope),one=batch.forRequest(b.signal).rpc(name,scope),two=batch.forRequest(b.signal).rpc(name,scope);
- const otherTable=batch.forRequest(b.signal).rpc(name,{...scope,p_tournament_table_id:player});
- const otherTour=batch.forRequest(b.signal).rpc(name,{...scope,p_tournament_id:player});
- a.abort();expect((await cancelled).error).not.toBeNull();await vi.advanceTimersByTimeAsync(5);
- const [first,second]=await Promise.all([one,two,otherTable,otherTour]);expect(send).toHaveBeenCalledTimes(3);
- (first.data as {nested:{value:number}}).nested.value=9;expect(second.data).toMatchObject({nested:{value:1}});
- expect(send.mock.calls.every(call=>new Headers(call[1]?.headers).get('Authorization')==='Bearer fixed-anon')).toBe(true);
- const fresh=batch.forRequest(b.signal).rpc(name,scope);await vi.advanceTimersByTimeAsync(5);await fresh;
- expect(send).toHaveBeenCalledTimes(4);expect(vi.getTimerCount()).toBe(0);
-});
-it('starts a fresh table query for a late arrival after a public withdrawal',async()=>{
- const name='get_public_tournament_table_live_or_last_hand_v2',scope={p_tournament_id:tour,p_tournament_table_id:player};
- let hidden=false,release!:(v:Response)=>void;
- const send=vi.fn(async()=>hidden?new Response('{"access":"revoked"}'):new Promise<Response>(resolve=>{release=resolve;}));
- const batch=reader(send),signal=new AbortController().signal,old=batch.forRequest(signal).rpc(name,scope);
- await vi.advanceTimersByTimeAsync(5);hidden=true;
- const late=batch.forRequest(signal).rpc(name,scope);await vi.advanceTimersByTimeAsync(5);
- expect((await late).data).toEqual({access:'revoked'});release(new Response('{"access":"public"}'));await old;
- expect(send).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
-});
 it('shares only pre-query requests, clones results and never reuses completed reads',async()=>{
  const send=vi.fn(async()=>response()),observe=vi.fn(),batch=reader(send);
  const first=batch.forRequest(new AbortController().signal,observe).rpc(summary,args);
