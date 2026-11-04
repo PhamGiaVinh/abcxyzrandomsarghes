@@ -57,13 +57,13 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
   assert.ok(Number.isFinite(observedAt),'Missing fixture readiness clock');
   readyProbeTimes.set(body.p_hand_id,{observedAt,readMs:performance.now()-start});
  }
- if(path.endsWith('public-player-hud')&&body.mode==='summary'||hudTransport==='direct_rpc'&&path.endsWith('/get_public_player_hud_summary_v1')&&phase!=='diagnostic-direct-summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
+ if(hudTransport==='direct_rpc'&&path.endsWith('/get_public_player_hud_summary_v1')&&phase!=='diagnostic-direct-summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
  }catch(error){if(intentionallyCancelled(error)){accounting.cancelled++;throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});}throw error;}
 }
 const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privileged);
 const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
- if(hudTransport==='product_rpc'){
+ if(hudTransport!=='direct_rpc'){
   const start=performance.now();
   try{
   const caller=signal??new AbortController().signal;
@@ -74,7 +74,8 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
     assert.ok(['/rest/v1/rpc/get_public_player_hud_summary_v1','/rest/v1/rpc/get_public_player_hud_history_v1'].includes(target.pathname));
     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
     let data;const rpcStart=performance.now();
-    try{data=await post(target.pathname,JSON.parse(init.body),false,phase,init.signal);}
+    try{data=await post(hudTransport==='edge'?'/functions/v1/public-player-hud':target.pathname,
+     hudTransport==='edge'?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal);}
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     if(mode==='summary')recordSummaryApi(performance.now()-rpcStart,phase,data);
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});

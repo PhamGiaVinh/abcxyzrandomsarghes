@@ -10,7 +10,17 @@ const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;
 assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);
 assert.equal(sql('SELECT current_database();'),database);
 // No pgbench/HTTP workers may be connected while the counterfactual is active.
-assert.equal(sql("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid();"),'0');
+const preflight=[];
+for(let check=0;check<=60;check++){
+ const sessions=jsonSql("SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM (SELECT backend_type,state,count(*) AS sessions FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY backend_type,state) s;");
+ preflight.push({observedAt:new Date().toISOString(),sessions});
+ if(!sessions.length||sessions.some(s=>s.backend_type!=='autovacuum worker')||check===60)break;
+ // Only automatic maintenance may finish before this diagnostic begins.
+ // Another application/worker client remains an immediate hard rejection.
+ await new Promise(resolve=>setTimeout(resolve,500));
+}
+writeFileSync(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT+'.preflight.json',JSON.stringify({kind:'READONLY_NATIVE_CONTROL_PREFLIGHT',observations:preflight},null,2));
+assert.deepEqual(preflight.at(-1).sessions,[],'Exclusive native database required before changing the fixture marker');
 const catalog=()=>jsonSql(`SELECT coalesce(jsonb_agg(jsonb_build_object('name',tgname,'enabled',tgenabled,'definition',pg_get_triggerdef(oid)) ORDER BY tgname),'[]') FROM pg_trigger WHERE tgrelid='public.tournament_hands'::regclass AND NOT tgisinternal;`);
 const before=catalog(),trigger=before.find(t=>t.name==='hud_hand_changed');
 assert.ok(trigger?.enabled==='O'&&trigger.definition.endsWith('EXECUTE FUNCTION tracker_analytics_v1.hand_changed()'),'Expected HUD marker trigger required');
