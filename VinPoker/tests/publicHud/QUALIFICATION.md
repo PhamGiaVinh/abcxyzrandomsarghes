@@ -186,7 +186,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The ten migrations `20261104001500` through `20261104002400` are promoted
+The eleven migrations `20261104001500` through `20261104002500` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -198,7 +198,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-ten exact manifest entries, each SQL and new ledger receipt atomically; stop
+eleven exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -277,3 +277,5 @@ HUD summary display now loads independently of tour history: a successful summar
 Controlled connection-pool diagnostic: workflow rest_pool defaults10 and allows20 only in the disposable local Docker stack. CLI2.101 uses PostgREST14.10 without a pool env override (documented default10). The helper checks the disposable database marker and captured container identity/network, parses actual --dump-config, and for20 recreates only that container with one PGRST_DB_POOL environment delta. Image ID, all other environment values, entrypoint/cmd and HostConfig must remain identical; sanitized pool/image evidence is uploaded. No database max_connections, timeout, worker CPU/memory/wall limit, grants/RLS, source rate, viewer count or grading threshold changes. A20 result is conditional isolated configuration evidence, not proof of hosted pool settings or approval to change production. Source: https://docs.postgrest.org/en/v14/references/configuration.html#db-pool .
 
 SQL load profiling installs only the existing pg_stat_statements extension/view interface inside the disposable marked database, without resetting statistics or changing tracking/plan/timeout settings. It records a baseline and five-second cumulative counters for a fixed RPC-name allowlist: calls, total execution/planning milliseconds, returned rows and shared blocks. SQL text, parameters, user identities and secrets are never selected into evidence; private profile view grants are revoked. Baseline/end differences distinguish in-database work from HTTP/Edge/pool wait; sequential native timings alone do not prove concurrent performance. Observation cost remains inside the unchanged acceptance test.
+
+Migration025 adds plan-only reuse for the exact post023 public clock summary. It preserves every query expression, function property and permission. The separate private preimage must be restored with `clock-read-plan.forward-rollback.sql` before the earlier `read-plans.forward-rollback.sql` template. Native row/clock/scope/source-update/withdrawal/ACL and exact recovery checks precede the real HTTP load; native timing is not capacity evidence.
