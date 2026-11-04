@@ -21,9 +21,60 @@ on:
         type: choice
         options: [off, smoke, qualification]
         default: off
+      writer_control:
+        description: 'Diagnostic marginal marker pairs on a separately seeded native DB; not qualification'
+        type: choice
+        options: ['off', '10000', '1000000']
+        default: 'off'
 permissions:
   contents: read
 jobs:
+  writer-control:
+    if: github.event_name == 'workflow_dispatch' && inputs.writer_control != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vinpoker_hud_test_writer_control_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_writer_control_ci
+      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.writer_control }}
+      PUBLIC_HUD_SCALE_SEED_REPORT: output/hud-writer-control/seed.json
+      PUBLIC_HUD_SCALE_READ_REPORT: output/hud-writer-control/native-read.json
+      PUBLIC_HUD_WRITER_CONTROL: isolated-native-only
+      PUBLIC_HUD_WRITER_CONTROL_REPORT: output/hud-writer-control/matched-pairs.json
+      PGPASSWORD: postgres
+      NODE_OPTIONS: --max-old-space-size=4096
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Seed one isolated physical fixture and run every paired measurement
+        run: |
+          mkdir -p output/hud-writer-control
+          node tests/publicHud/scale.seed.mjs
+          node tests/publicHud/writer-control.native.mjs
+      - name: Sanitized native diagnostic evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-writer-control-${{ github.sha }}
+          path: VinPoker/output/hud-writer-control/
+          retention-days: 7
   real-stack:
     if: github.event_name == 'workflow_dispatch' && inputs.real_stack != 'off'
     uses: ./.github/workflows/public-hud-scale.yml
