@@ -19,8 +19,8 @@ on:
       real_stack:
         description: 'Isolated real HTTP/WebSocket run'
         type: choice
-        options: [off, smoke, qualification]
-        default: off
+        options: ['off', 'smoke', 'qualification']
+        default: 'off'
       writer_control:
         description: 'Diagnostic marginal marker pairs on a separately seeded native DB; not qualification'
         type: choice
