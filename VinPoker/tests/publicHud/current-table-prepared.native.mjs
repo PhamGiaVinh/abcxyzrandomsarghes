@@ -117,10 +117,13 @@ const prepared=samples();
 const recovery=readFileSync('tests/publicHud/current-table-prepared.forward-rollback.sql','utf8').replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
 const restored=jsonSql(`BEGIN;${recovery}SELECT jsonb_object_agg(oid::regprocedure::text,md5(replace(pg_get_functiondef(oid),chr(13),''))) FROM pg_proc WHERE oid IN (${list});ROLLBACK;`);
 assert.deepEqual(restored,beforeHashes);assert.deepEqual(hashes(),preparedHashes);assert.deepEqual(metadata(),beforeMeta);
-const objects=jsonSql(`BEGIN;CREATE SCHEMA IF NOT EXISTS vault;CREATE TABLE IF NOT EXISTS vault.decrypted_secrets(name text,decrypted_secret text);
- CREATE SCHEMA IF NOT EXISTS cron;CREATE TABLE IF NOT EXISTS cron.job(jobname text,schedule text,active boolean);
- ${readFileSync('scripts/ops/tracker-hud-20261104-postcheck.sql','utf8')}ROLLBACK;`);
-for(const key of ['readPlanDefinitionsMatch','currentTablePreparedDefinitionsMatch','currentTablePreparedSourceMatches','currentTablePreparedRls','currentTablePreparedExpiryIndex','currentTablePreparedHelperPrivate'])assert.equal(objects[key],true,key);
+// Verify the exact affected object-check expressions without touching managed
+// Vault/cron schemas or changing their grants in the genuine Supabase stack.
+const objectKeys=['readPlanDefinitionsMatch','currentTablePreparedDefinitionsMatch','currentTablePreparedSourceMatches','currentTablePreparedRls','currentTablePreparedExpiryIndex','currentTablePreparedHelperPrivate','currentTablePreparedPrivateGrants'];
+const postcheckLines=readFileSync('scripts/ops/tracker-hud-20261104-postcheck.sql','utf8').split(/\r?\n/);
+const objectChecks=objectKeys.map(key=>{const matches=postcheckLines.filter(line=>line.trimStart().startsWith(`'${key}',`));assert.equal(matches.length,1,key);return matches[0].trim().replace(/,$/,'');});
+const objects=jsonSql(`SELECT jsonb_build_object(${objectChecks.join(',\n')});`);
+for(const key of objectKeys.filter(key=>key!=='currentTablePreparedPrivateGrants'))assert.equal(objects[key],true,key);
 assert.equal(objects.currentTablePreparedPrivateGrants,0);
 const distribution=a=>({samples:a.length,p50Ms:a[Math.floor(a.length*.5)],p95Ms:a[Math.floor(a.length*.95)]});
 const report={kind:'NATIVE_PREPARED_CURRENT_TABLE',productionCapacityClaim:false,passed:true,checks:['metadata-OID-ACL-preserved','actual-cache-hit','anonymous-scope','private-helper-denied','exact-canonical-fallback','source-mutation-invalidation','deferred-source-commit-during-publication','lease-vector-retry-fences','inactive-table-cleanup','bounded-expired-orphan-pruning','21-active-table-publication','ordered-exact-recovery'],baseline:distribution(baseline),prepared:distribution(prepared),manyActiveTables:{tables:21,playersPerAddedTable:2,actionsPerAddedTable:4,executionMs:manyPlan[0]['Execution Time'],httpCapacityClaim:false},preparedHashes};
