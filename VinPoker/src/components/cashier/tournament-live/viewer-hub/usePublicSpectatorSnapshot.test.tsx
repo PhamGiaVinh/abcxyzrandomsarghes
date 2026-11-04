@@ -34,9 +34,9 @@ describe("public spectator table scope", () => {
     const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
     await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(1000);});
     expect(rpc).toHaveBeenCalledTimes(1);
-    await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(999);});
+    await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(499);});
     expect(rpc).toHaveBeenCalledTimes(1);
-    await act(async()=>{await vi.advanceTimersByTimeAsync(101);});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
     expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
   });
   it('clears withdrawal immediately while its access read is coalesced',async()=>{
@@ -49,7 +49,7 @@ describe("public spectator table scope", () => {
     const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
     await act(async()=>{changed({payload:{tournamentId,components:['visibility']}});});
     expect(result.current.snapshot).toBeNull();expect(rpc).toHaveBeenCalledTimes(1);
-    await act(async()=>{await vi.advanceTimersByTimeAsync(2099);});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1499);});
     expect(result.current.snapshot).toBeNull();expect(rpc).toHaveBeenCalledTimes(1);
     await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
     expect(result.current.snapshot?.access).toBe('revoked');expect(rpc).toHaveBeenCalledTimes(2);

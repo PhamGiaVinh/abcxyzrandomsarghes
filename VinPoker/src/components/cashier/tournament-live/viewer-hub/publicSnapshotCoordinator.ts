@@ -2,8 +2,11 @@ import type { PublicSnapshotSection } from "./publicSnapshotTypes";
 
 // Keep source writes independent while coalescing spectator HTTP bursts.
 // First/scope reads stay immediate; loaded delivery must still meet the3s gate.
-export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 2_000;
-export const PUBLIC_SPECTATOR_HINT_JITTER_MS = 200;
+// Spread steady hint dispatch over one second instead of concentrating 1,000
+// readers into 200ms. The combined dispatch delay stays below two seconds;
+// actual loaded delivery and increased request volume require the scale gate.
+export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 1_000;
+export const PUBLIC_SPECTATOR_HINT_JITTER_MS = 1_000;
 
 export interface SnapshotRequest {
   tournamentId: string;

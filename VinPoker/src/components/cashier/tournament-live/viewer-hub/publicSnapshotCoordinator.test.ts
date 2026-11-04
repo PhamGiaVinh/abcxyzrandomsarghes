@@ -1,7 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
-import { PublicSnapshotCoordinator, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
+import { PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
 
 describe("PublicSnapshotCoordinator", () => {
+  it('spreads the production hint policy across 100ms windows within a two-second dispatch budget',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random');
+    try{
+      const starts:number[]=[],base=Date.now();
+      const coordinators=Array.from({length:1000},(_,i)=>{
+        random.mockReturnValue(i/1000);
+        return new PublicSnapshotCoordinator(async()=>{starts.push(Date.now()-base);},PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS);
+      });
+      coordinators.forEach(c=>c.request());await Promise.resolve();
+      coordinators.forEach(c=>c.request());
+      await vi.advanceTimersByTimeAsync(2200);
+      const hinted=starts.slice(1000),windows=new Map<number,number>();
+      hinted.forEach(t=>{const window=Math.floor(t/100);windows.set(window,(windows.get(window)??0)+1);});
+      expect(hinted).toHaveLength(1000);
+      expect(Math.max(...windows.values())).toBeLessThanOrEqual(100);
+      expect(Math.max(...hinted)).toBeLessThan(2000);
+      coordinators.forEach(c=>c.stop());
+    }finally{random.mockRestore();vi.useRealTimers();}
+  });
   it('serializes a held read and cancels its jittered trailing hint on stop',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
     try{
