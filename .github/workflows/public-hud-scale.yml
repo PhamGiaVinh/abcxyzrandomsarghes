@@ -11,6 +11,9 @@ on:
       edge_policy:
         type: string
         default: 'per_worker'
+      rest_pool:
+        type: string
+        default: '10'
   pull_request:
     paths:
       - '.github/workflows/public-hud-scale.yml'
@@ -35,6 +38,11 @@ on:
         type: choice
         options: ['per_worker', 'per_request']
         default: 'per_worker'
+      rest_pool:
+        description: 'Isolated PostgREST pool comparison; no hosted setting change'
+        type: choice
+        options: ['10', '20']
+        default: '10'
 permissions:
   contents: read
 concurrency:
@@ -53,6 +61,7 @@ jobs:
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
       PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
       PUBLIC_HUD_SCALE_EDGE_POLICY: ${{ inputs.edge_policy || 'per_worker' }}
+      PUBLIC_HUD_SCALE_REST_POOL: ${{ inputs.rest_pool || '10' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4
