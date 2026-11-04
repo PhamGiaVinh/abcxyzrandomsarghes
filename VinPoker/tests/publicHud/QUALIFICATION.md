@@ -279,3 +279,15 @@ Controlled connection-pool diagnostic: workflow rest_pool defaults10 and allows2
 SQL load profiling installs only the existing pg_stat_statements extension/view interface inside the disposable marked database, without resetting statistics or changing tracking/plan/timeout settings. It records a baseline and five-second cumulative counters for a fixed RPC-name allowlist: calls, total execution/planning milliseconds, returned rows and shared blocks. SQL text, parameters, user identities and secrets are never selected into evidence; private profile view grants are revoked. Baseline/end differences distinguish in-database work from HTTP/Edge/pool wait; sequential native timings alone do not prove concurrent performance. Observation cost remains inside the unchanged acceptance test.
 
 Migration025 adds plan-only reuse for the exact post023 public clock summary. It preserves every query expression, function property and permission. The separate private preimage must be restored with `clock-read-plan.forward-rollback.sql` before the earlier `read-plans.forward-rollback.sql` template. Native row/clock/scope/source-update/withdrawal/ACL and exact recovery checks precede the real HTTP load; native timing is not capacity evidence.
+
+Public HUD reads may share an identical anonymous RPC only among requests
+admitted in the five milliseconds BEFORE that query starts. The group is removed
+from the joinable map before transport invocation; no in-flight or completed
+result is reused by a later open. Keys include reader, scope, access snapshot and
+both history cursor fields. Queue bounds bypass to a fresh ordinary read;
+cancellation/deadlines are per participant and each result is cloned. The
+five-second invocation deadline includes admission. This is per-isolate request
+coalescing, not a data cache or hosted-topology assumption. `hud_rpc` timing now
+includes admission and waiting for shared-RPC completion/fanout; it is not pure
+PostgREST timing. `hud_group` records only numeric participant count. Real HTTP
+artifacts must establish whether groups actually form and whether latency improves.

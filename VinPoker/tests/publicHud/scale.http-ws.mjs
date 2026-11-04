@@ -33,11 +33,12 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
   const kind=`${phase}:${path.split('/').at(-1)}:${timeout.aborted?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
  const timingKey=phase+':'+path;
- const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[],application:[],rpc:[]};
+ const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[],application:[],rpc:[],groupSize:[]};
  timings.headers.push(response.headersAt-start);
  const application=/\bhud;dur=([0-9]+(?:\.[0-9]+)?)/.exec(response.headers['server-timing']??'');if(application)timings.application.push(Number(application[1]));
  const rpcTiming=/\bhud_rpc;dur=([0-9]+(?:\.[0-9]+)?);desc="(ok|http|transport|deadline|cancelled)"/.exec(response.headers['server-timing']??'');
  if(rpcTiming){timings.rpc.push(Number(rpcTiming[1]));const key=phase+':'+rpcTiming[2];rpcOutcomes[key]=(rpcOutcomes[key]??0)+1;}
+ const group=/\bhud_group;desc="([1-9][0-9]{0,2})"/.exec(response.headers['server-timing']??'');if(group&&Number(group[1])<=256)timings.groupSize.push(Number(group[1]));
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers[header];if(value!==undefined&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
  if(!response.ok){let code='';try{const body=JSON.parse(response.text);if(typeof body.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:${path.split('/').at(-1)}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
  const text=response.text;const value=JSON.parse(text);
