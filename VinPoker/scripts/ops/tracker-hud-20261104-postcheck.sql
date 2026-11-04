@@ -3,7 +3,7 @@
 SELECT jsonb_build_object(
  'privateSchemaPresent',to_regnamespace('tracker_analytics_v1') IS NOT NULL,
  'identityLookupIndexMatches',EXISTS(SELECT 1 FROM pg_index i WHERE i.indexrelid=to_regclass('tracker_analytics_v1.hud_identity_latest') AND i.indisvalid AND i.indisready AND NOT i.indisunique AND pg_get_indexdef(i.indexrelid)='CREATE INDEX hud_identity_latest ON tracker_analytics_v1.hand_contributions USING btree (player_id, tournament_id, played_at DESC NULLS LAST, hand_id DESC)'),
- 'identityMembershipDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.public_context(uuid,uuid)'::regprocedure),chr(13),''))='d72e037647d90f1470ae73c47ac4f8ad',
+ 'identityMembershipDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.public_context(uuid,uuid)'::regprocedure),chr(13),''))='1f0e816f649fd32728ed1f537cb2c090',
  'anonPrivateSchemaUsage',has_schema_privilege('anon','tracker_analytics_v1','USAGE'),
  'authenticatedPrivateSchemaUsage',has_schema_privilege('authenticated','tracker_analytics_v1','USAGE'),
  'anonCanReadSummary',has_function_privilege('anon','public.get_public_player_hud_summary_v1(uuid,uuid,text)','EXECUTE'),

@@ -9910,6 +9910,12 @@
       "filename": "20261104002900_public_hud_identity_membership_lookup.sql",
       "sha256": "31a1db41893bff8f01a8a0f2870754441121231ae74f4fe19c6df87fe229fe22",
       "reason": "Tracker primary-key membership lookup preserving public HUD identity scope; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003000",
+      "filename": "20261104003000_public_hud_identity_membership_keyset.sql",
+      "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
+      "reason": "Tracker keyset membership lookup preserving invalid-parent gates; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [

@@ -195,7 +195,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The fifteen migrations `20261104001500` through `20261104002900` are promoted
+The sixteen migrations `20261104001500` through `20261104003000` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -207,7 +207,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-fifteen exact manifest entries, each SQL and new ledger receipt atomically; stop
+sixteen exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -378,7 +378,24 @@ before a sparse player's first matching hand: indexed player/tour candidates
 look up the source hand by primary key with a lateral OFFSET0 planning boundary.
 It adds no source index or write-path work. Exact preimage/rollback hashes,
 function metadata, all40source scopes, sparse membership, wrong source tour and
-missing participants are tested. Recover029 with
+missing participants are tested. A stock PostgreSQL CI run nevertheless chose
+a sequential HP startup scan inside EXISTS when players were physically grouped:
+20calls read200360sequential participant rows. Migration030 uses separate first
+and next `ORDER BY hand_id LIMIT1` index queries, then checks the matching source
+hand/tour by primary key. It skips invalid distinct parent candidates until a
+valid source membership exists or the index range is exhausted; there is no
+arbitrary prefix cutoff. Invalid prefixes still require one probe per distinct
+candidate. NULL hand IDs cannot qualify and duplicate entries need one parent
+check. Normal source membership remains a bounded lookup.
+
+The native030 test reproduces physically grouped participants with CLUSTER and
+ANALYZE inside a rolled-back transaction on the disposable database, before HTTP
+load. This can rewrite/lock millions of synthetic rows; it is not an operation
+to run on production. The report separates this setup/parity time from HTTP
+latency and checks zero sequential raw rows with bounded index reads. Exact
+scope parity, invalid-prefix-then-valid, invalid-only, NULLs, duplicates, function
+metadata and guarded recovery are mandatory. Recover030 with
+`identity-keyset.forward-rollback.sql`, then recover029 with
 `identity-membership.forward-rollback.sql`, then recover028 with
 `identity-lookup.forward-rollback.sql`; then recover027 with
 `current-table-prepared.forward-rollback.sql` BEFORE the earlier

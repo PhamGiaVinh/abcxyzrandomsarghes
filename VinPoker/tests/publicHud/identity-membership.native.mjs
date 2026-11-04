@@ -6,6 +6,7 @@ const migration=readFileSync('supabase/migrations/20261104002900_public_hud_iden
 const recovery=readFileSync('tests/publicHud/identity-membership.forward-rollback.sql','utf8');
 const body=s=>s.replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
 const hash=()=>sql(`SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));`);
+if(hash()==='1f0e816f649fd32728ed1f537cb2c090')sql(readFileSync('tests/publicHud/identity-keyset.forward-rollback.sql','utf8'));
 if(hash()==='d72e037647d90f1470ae73c47ac4f8ad')sql(recovery);
 assert.equal(hash(),'7c9682eba221897c6f956899ce72fdc1');
 const metadata=()=>jsonSql(`SELECT to_jsonb(p)-'prosrc' FROM pg_proc p WHERE oid='${signature}'::regprocedure;`);

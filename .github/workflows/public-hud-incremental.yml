@@ -64,7 +64,7 @@ jobs:
         run: node --test tests/publicHud/scale.http.native.mjs
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize
-      - name: Exact fifteen-migration release guards and atomic receipts
+      - name: Exact sixteen-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |
@@ -79,6 +79,7 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/source-writes.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-plans.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-membership.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-keyset.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-lookup.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/scale.amendments.native.mjs
       - name: Read plan reuse, scope isolation and exact recovery

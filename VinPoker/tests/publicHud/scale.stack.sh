@@ -66,6 +66,7 @@ PUBLIC_HUD_CLOCK_PLAN_REPORT="$repo_root/output/hud-scale/clock-read-plan.json" 
 PUBLIC_HUD_SUMMARY_BATCH_REPORT="$repo_root/output/hud-scale/summary-batch.json" node tests/publicHud/summary-batch.native.mjs
 PUBLIC_HUD_TABLE_PREPARED_REPORT="$repo_root/output/hud-scale/current-table-prepared.json" node tests/publicHud/current-table-prepared.native.mjs
 node tests/publicHud/identity-membership.native.mjs
+PUBLIC_HUD_IDENTITY_KEYSET_REPORT="$repo_root/output/hud-scale/identity-keyset.json" node tests/publicHud/identity-keyset.native.mjs
 PUBLIC_HUD_IDENTITY_PLAN_REPORT="$repo_root/output/hud-scale/identity-lookup.json" node tests/publicHud/identity-lookup.native.mjs
 PUBLIC_HUD_AMENDMENT_NATIVE_REPORT="$repo_root/output/hud-scale/amendment-native.json" node tests/publicHud/scale.amendments.native.mjs
 node tests/publicHud/scale.sources.native.mjs

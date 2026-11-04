@@ -117,7 +117,14 @@ for(const scenario of ['concentrated','distributed','overview']){
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
  const offset={summary:stats.summary.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
- let end=Infinity,reconnecting=false,revoking=false,started=0;
+ let end=Infinity,reconnecting=false,revoking=false,started=0,currentAmendment=null;
+ const notReadyOutcomes=[];
+ const notReady=(part,phase,value)=>{
+  error(part==='history'?'history_not_ready':'hud_not_ready');
+  if(notReadyOutcomes.length>=50)return;
+  const outcome={scenario,part,phase,at:Date.now(),access:['public','revoked'].includes(value?.access)?value.access:'unknown',state:['current','updating','warming','unavailable'].includes(value?.state)?value.state:'unknown',amendment:currentAmendment?{...currentAmendment}:null};
+  notReadyOutcomes.push(outcome);appendFileSync('output/hud-scale/not-ready.jsonl',JSON.stringify(outcome)+'\n');
+ };
  let expectedDeliveries=0,excludedForPlannedFault=0,missedDeliveries=0,minHealthyOnline=viewers,healthySocketMs=0,healthyWallMs=0,coverageAt=0,unexpectedDisconnects=0;
  let snapshotExpected=0,snapshotExcluded=0,snapshotMissed=0;
  const suspendDeliveries=(onlyTour)=>{for(const c of clients)if(!onlyTour||c.tour===onlyTour){excludedForPlannedFault+=c.expected.length;c.expected=[];snapshotExcluded+=c.snapshotExpected.length;c.snapshotExpected=[];}};
@@ -226,7 +233,7 @@ for(const scenario of ['concentrated','distributed','overview']){
      assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);
      assert.ok(history.handHistory.every(h=>h.tableId===table),'History must remain in this tournament/table');
      state.historySnapshot=snapshot;
-    }else{if(history.access==='revoked')state.frozen=null;if(!expectedRevocation)error('history_not_ready');}
+    }else{if(history.access==='revoked')state.frozen=null;if(!expectedRevocation)notReady('history',phase,history);}
    }catch(cause){if(!cause.intentionalHudCancellation)error('history_read');}
    finally{controller.abort();if(state.historyController===controller)state.historyActive=false;}
   };
@@ -244,7 +251,7 @@ for(const scenario of ['concentrated','distributed','overview']){
      state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};
      state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;
      track(readHudHistory(state.frozen,phase,expectedRevocation));
-    }else{state.frozen=null;if(!expectedRevocation)error('hud_not_ready');}
+    }else{state.frozen=null;if(!expectedRevocation)notReady('summary',phase,value);}
    }catch(cause){if(!cause.intentionalHudCancellation){error('hud_read');if(epoch===state.hudEpoch){state.historyController?.abort();state.historySnapshot=null;state.frozen=null;}}}
    finally{controller.abort();finishHud(controller);}
   };
@@ -257,7 +264,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    try{
     const value=await hud(tour,'summary',frozen.accessSnapshot,phase,controller.signal);
     if(epoch!==state.hudEpoch)return;
-    if(value.access!=='public'||!['current','updating'].includes(value.state)){state.historyController?.abort();state.frozen=null;state.historySnapshot=null;if(!revoking)error('hud_not_ready');return;}
+    if(value.access!=='public'||!['current','updating'].includes(value.state)){state.historyController?.abort();state.frozen=null;state.historySnapshot=null;if(!revoking)notReady('summary',phase,value);return;}
     if(value.accessChanged){state.historyController?.abort();state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};track(readHudHistory(state.frozen,phase+'-changed',revoking));}
     else assert.equal(state.frozen,frozen,'Access verification must retain the frozen HUD');
     if(epoch===state.hudEpoch&&state.frozen){state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;}
@@ -352,12 +359,15 @@ for(const scenario of ['concentrated','distributed','overview']){
   let cursor=0;
   while(Date.now()<end-5000&&!stopping){
    const kind=amendmentKinds[cursor%amendmentKinds.length],operation=crypto.randomUUID();
+   currentAmendment={kind,operation,launchedAt:Date.now()};
    try{
     const receipt=await rpc('fixture_scale_amend_once_v1',{p_operation:operation,p_hand_id:uuid('20000000',1),p_kind:kind},true);
     assert.equal(receipt.operation,operation);assert.equal(receipt.kind,kind);
     const written=Date.parse(receipt.sourceWrittenAt);assert.ok(Number.isFinite(written)&&written>=started);
+    currentAmendment.sourceWrittenAt=written;
     await until(()=>rpc('fixture_scale_amend_ready_v1',{p_operation:operation},true),15000,'amendment_projection_timeout');
     const endToEndMs=Date.now()-written;assert.ok(Number.isFinite(endToEndMs)&&endToEndMs>=0,'Invalid amendment timing clock');
+    currentAmendment.readyObservedAt=Date.now();
     amendmentSamples.push({kind,endToEndMs,sourceRevision:receipt.sourceRevision,sourceWrittenAt:receipt.sourceWrittenAt});
     cursor++;
    }catch{error('amendment_projection_or_write');return;}
@@ -412,6 +422,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.notReadyOutcomes=notReadyOutcomes;save('running');
  report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:Math.max(0,...amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:Math.max(0,...samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
