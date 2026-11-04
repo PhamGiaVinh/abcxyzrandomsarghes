@@ -1,3 +1,4 @@
+import {sanitizeWriterNestedPlans} from './scale.failures.mjs';
 import {jsonSql,pgbench,sql} from './nativeDb.mjs';
 export function measureFixtureWriter(){
  return jsonSql(`${process.env.PUBLIC_HUD_PROFILE_FUNCTIONS==='1'?"SET track_functions='all';":''}BEGIN;CREATE TEMP TABLE fixture_write_samples(ms numeric);GRANT INSERT ON fixture_write_samples TO service_role;
@@ -21,4 +22,14 @@ export function cleanupCommittedWriterFixture(){
  sql(`BEGIN;DELETE FROM public.hand_actions a USING public.tournament_hands h WHERE a.hand_id=h.id AND ${scope};
  DELETE FROM public.hand_players p USING public.tournament_hands h WHERE p.hand_id=h.id AND ${scope};
  DELETE FROM public.tournament_hands h WHERE ${scope};COMMIT;`);
+}
+
+export function diagnoseFixtureWriter(){
+ try{
+  sql(`BEGIN;LOAD 'auto_explain';SET LOCAL client_min_messages='warning';SET LOCAL auto_explain.log_level='warning';SET LOCAL auto_explain.log_min_duration=0;SET LOCAL auto_explain.log_analyze=on;SET LOCAL auto_explain.log_nested_statements=on;SET LOCAL auto_explain.log_format='json';
+   SET LOCAL request.jwt.claim.role='service_role';SET LOCAL ROLE service_role;
+   SELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000002);
+   RESET ROLE;ROLLBACK;DO $$ BEGIN RAISE EXCEPTION 'writer_plan_capture';END $$;`,{captureFailure:true});
+ }catch(error){return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',...sanitizeWriterNestedPlans(error?.stderr)};}
+ return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',capturedPlans:0,scans:[]};
 }

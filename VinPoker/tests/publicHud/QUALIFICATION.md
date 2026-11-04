@@ -440,3 +440,12 @@ visibility withdrawal still clears displayed data immediately. The source
 writers remain one intent/second/tour and healthy delivery p95 remains <=3s;
 no missing/error/latency gate is relaxed. This read-rate experiment requires
 fresh real-load evidence and is not itself proof of better latency.
+
+Failed product HUD reads now retain an allowlisted preparation-deadline versus
+RPC-deadline versus cancellation diagnostic; all failures still count. Each
+RPC also records complete body/JSON latency separately from the unchanged
+logical HUD latency grade. If the native writer overhead exceeds10%, one extra
+rolled-back fixture write captures nested plan scan/timing metadata only. It
+does not alter the measured baseline/incremental samples or planner settings.
+Query Text, filter expressions and source SQL are excluded from the artifact.
+An unavailable/truncated capture is explicit and does not waive the write gate.

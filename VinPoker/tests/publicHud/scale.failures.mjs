@@ -9,3 +9,28 @@ export function classifyEdgeFailure(body){
  if(/\bWorkerRequestIdleTimeout\b/.test(text))return 'worker_idle_timeout';
  return 'unknown';
 }
+// Allowlisted diagnostics only. The caller retains every original failure gate.
+export function classifyHudReadFailure(error){
+ if(error?.publicHudRevalidationExpired===true)return 'preparation_deadline';
+ if(error?.publicHudDeadline===true)return 'rpc_deadline';
+ if(error?.publicHudCallerCancelled===true)return 'caller_cancelled';
+ if(error?.message==='PUBLIC_HUD_INVALID_PREPARATION')return 'invalid_preparation';
+ return 'unknown';
+}
+
+// Retain scan/timing metadata, never Query Text, filter values or function SQL.
+export function sanitizeWriterNestedPlans(stderr){
+ const scans=[];let captured=0;
+ for(const match of String(stderr??'').matchAll(/plan:\s*(\{[\s\S]*?\n\})/g)){
+  try{
+   const root=JSON.parse(match[1]);if(!root.Plan)continue;captured++;
+   const visit=node=>{
+    const safeName=value=>typeof value==='string'&&/^[a-z][a-z0-9_]*$/.test(value)?value:undefined;
+    if(node['Relation Name'])scans.push({node:node['Node Type'],table:safeName(node['Relation Name']),index:safeName(node['Index Name']),rows:node['Actual Rows'],loops:node['Actual Loops'],removed:node['Rows Removed by Filter'],totalMs:node['Actual Total Time']});
+    for(const child of node.Plans??[])visit(child);
+   };visit(root.Plan);
+  }catch{/* A truncated diagnostic does not change the measured write result. */}
+ }
+ scans.sort((a,b)=>(b.totalMs??0)*(b.loops??1)-(a.totalMs??0)*(a.loops??1));
+ return {capturedPlans:captured,scans:scans.slice(0,40)};
+}
