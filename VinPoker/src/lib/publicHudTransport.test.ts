@@ -45,3 +45,48 @@ it('makes no request for closed or invalid scope',async()=>{
  await expect(readPublicHudRequest('https://fixture.invalid','public-anon',{...input,player_id:'bad'},new AbortController().signal,send)).rejects.toThrow('PUBLIC_SCOPE_INVALID');
  expect(send).not.toHaveBeenCalled();
 });
+it('distinguishes a superseded caller from the real five-second RPC deadline',async()=>{
+ vi.useFakeTimers();
+ try{
+  const send=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
+   init.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true});
+  }));
+  const closed=new AbortController();
+  const cancelled=expect(readPublicHudRequest('https://fixture.invalid','public-anon',input,closed.signal,send)).rejects.toThrow('aborted');
+  closed.abort();await cancelled;
+  const active=new AbortController();
+  const timedOut=expect(readPublicHudRequest('https://fixture.invalid','public-anon',input,active.signal,send)).rejects.toThrow('PUBLIC_HUD_UNAVAILABLE');
+  await vi.advanceTimersByTimeAsync(5000);await timedOut;
+  expect(active.signal.aborted).toBe(false);expect(send).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+  // Even a caller abort in the deadline's abort callback cannot hide timeout.
+  const raced=new AbortController();
+  const lateCaller=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
+   init.signal.addEventListener('abort',()=>{raced.abort();reject(new DOMException('aborted','AbortError'));},{once:true});
+  }));
+  const race=expect(readPublicHudRequest('https://fixture.invalid','public-anon',input,raced.signal,lateCaller)).rejects.toMatchObject({message:'PUBLIC_HUD_UNAVAILABLE',publicHudDeadline:true});
+  await vi.advanceTimersByTimeAsync(5000);await race;expect(raced.signal.aborted).toBe(true);expect(vi.getTimerCount()).toBe(0);
+ }finally{vi.useRealTimers();}
+});
+it('does not hide known HTTP, network or validation failures behind a late caller abort',async()=>{
+ for(const kind of ['http','network','validation']){
+  const caller=new AbortController();
+  const send=vi.fn(async()=>{
+   if(kind==='network'){caller.abort();throw Error('private network failure');}
+   return {ok:kind!=='http',json:async()=>{caller.abort();return kind==='http'?{code:'XX000'}:{...summary(),counters:{}};}} as Response;
+  });
+  const failure=await readPublicHudRequest('https://fixture.invalid','public-anon',input,caller.signal,send).then(()=>null,error=>error);
+  expect(caller.signal.aborted).toBe(true);expect(failure).toBeInstanceOf(Error);
+  expect(failure).not.toHaveProperty('publicHudCallerCancelled');
+  expect(failure.message).toBe(kind==='validation'?'PUBLIC_HUD_INVALID_COUNTERS':'PUBLIC_HUD_UNAVAILABLE');
+ }
+});
+it('retains an HTTP failure if its body is aborted after failed headers arrived',async()=>{
+ const caller=new AbortController();let reading:()=>void;
+ const started=new Promise<void>(resolve=>{reading=resolve;});
+ const send=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>({ok:false,json:()=>new Promise((_resolve,reject)=>{
+  init.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true});reading();
+ })} as Response));
+ const result=readPublicHudRequest('https://fixture.invalid','public-anon',input,caller.signal,send).then(()=>null,error=>error);
+ await started;caller.abort();const failure=await result;
+ expect(failure.message).toBe('PUBLIC_HUD_UNAVAILABLE');expect(failure).not.toHaveProperty('publicHudCallerCancelled');
+});

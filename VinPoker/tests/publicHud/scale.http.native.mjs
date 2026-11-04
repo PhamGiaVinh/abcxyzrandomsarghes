@@ -7,6 +7,7 @@ let server,origin,transport;
 beforeEach(async()=>{
  transport=createLocalHttpTransport();
  server=http.createServer((req,res)=>{
+  if(req.url==='/failed-body'){req.resume();res.writeHead(500,{'Content-Type':'application/json'});res.write('{');return;}
   if(req.url==='/slow'){req.resume();setTimeout(()=>{if(!res.destroyed)res.end('{}');},100);return;}
   if(req.url==='/truncated'){req.resume();res.writeHead(200,{'Content-Length':'100'});res.write('{}');setImmediate(()=>res.destroy());return;}
   if(req.url==='/slow-body'){req.resume();res.writeHead(200,{'Content-Type':'application/json'});res.write('{');setTimeout(()=>{if(!res.destroyed)res.end('}');},100);return;}
@@ -51,4 +52,10 @@ it('isolates caller cancellation and enforces a deadline while receiving the bod
 it('fails incomplete responses and rejects non-loopback destinations',async()=>{
  await assert.rejects(transport.request(origin+'/truncated',options('anon')));
  assert.throws(()=>transport.request('https://example.com',options('anon')),/Isolated loopback HTTP required/);
+});
+it('preserves known HTTP failure when a caller aborts after headers before the body completes',async()=>{
+ const caller=new AbortController();let status;
+ const request=transport.request(origin+'/failed-body',{...options('anon',caller.signal),onHeaders:headers=>{status=headers.status;caller.abort();}});
+ await assert.rejects(request,error=>error.httpStatus===500&&error.name!=='AbortError');
+ assert.equal(status,500);assert.equal(caller.signal.aborted,true);
 });

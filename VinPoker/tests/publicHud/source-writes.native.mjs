@@ -19,6 +19,13 @@ try{
  checked.push('committed-response-replay','action-step-once','completion-retry');
  assert.equal(sql(`SELECT status FROM public.tournament_hands WHERE id='${started.handId}';`),'completed');
  assert.equal(Number(sql(`SELECT count(*) FROM public.hand_actions WHERE hand_id='${started.handId}';`)),4);
+ const probe=jsonSql(`${service}WITH checked AS MATERIALIZED (
+  SELECT public.fixture_scale_hand_ready_v1('${started.handId}') AS ready)
+  SELECT jsonb_build_object('ready',ready,'headers',current_setting('response.headers')::jsonb,'after',clock_timestamp()) FROM checked;`);
+ assert.equal(probe.ready,false,'A completed hand without contributions is not ready');
+ const observed=Date.parse(probe.headers[0]['X-Hud-Fixture-Observed-At']);
+ assert.ok(Number.isFinite(observed)&&observed<=Date.parse(probe.after));
+ checked.push('readiness-clock-after-snapshot');
  assert.throws(()=>sql(query(opening,0,null,other)),/fixture_operation_conflict/);checked.push('operation-key-scope-conflict');
  const failed=op();assert.throws(()=>sql(query(failed,99)),/invalid_step/);
  assert.equal(Number(sql(`SELECT count(*) FROM spectator_projection_v2.fixture_source_operations WHERE operation_id='${failed}';`)),0);checked.push('failed-operation-rolls-back');

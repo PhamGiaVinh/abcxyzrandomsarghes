@@ -137,11 +137,18 @@ END $$;
 REVOKE ALL ON FUNCTION public.fixture_scale_step_v1(uuid,integer,integer,uuid),public.fixture_scale_visibility_v1(uuid,boolean) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fixture_scale_step_v1(uuid,integer,integer,uuid),public.fixture_scale_visibility_v1(uuid,boolean) TO service_role;
 CREATE FUNCTION public.fixture_scale_hand_ready_v1(p_hand_id uuid) RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$ BEGIN
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE ready boolean;
+BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501'; END IF;
- RETURN EXISTS(SELECT 1 FROM public.tournament_hands h WHERE h.id=p_hand_id AND h.status='completed'
+ ready:=EXISTS(SELECT 1 FROM public.tournament_hands h WHERE h.id=p_hand_id AND h.status='completed'
   AND (SELECT count(*) FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=h.id AND c.source_revision=h.source_revision)=2
   AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.jobs j WHERE j.kind='hand' AND j.entity_id=h.id));
+ -- Diagnostic only: clock is read AFTER the readiness snapshot. For a true
+ -- result this upper-bounds publication time without the HTTP return delay.
+ PERFORM set_config('response.headers',jsonb_build_array(jsonb_build_object(
+  'X-Hud-Fixture-Observed-At',clock_timestamp()::text))::text,true);
+ RETURN ready;
 END $$;
 REVOKE ALL ON FUNCTION public.fixture_scale_hand_ready_v1(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fixture_scale_hand_ready_v1(uuid) TO service_role;

@@ -280,6 +280,14 @@ SQL load profiling installs only the existing pg_stat_statements extension/view 
 
 Migration025 adds plan-only reuse for the exact post023 public clock summary. It preserves every query expression, function property and permission. The separate private preimage must be restored with `clock-read-plan.forward-rollback.sql` before the earlier `read-plans.forward-rollback.sql` template. Native row/clock/scope/source-update/withdrawal/ACL and exact recovery checks precede the real HTTP load; native timing is not capacity evidence.
 
+Worker-readiness diagnostics retain the fixture's original boolean predicate
+and original end-to-end <=5s grading. A private fixture response header records
+the PostgreSQL clock AFTER its readiness query. For the first true probe, that
+clock minus the source-write clock is an upper bound on server completion;
+the report separately records probe HTTP duration. It is not an exact commit
+timestamp, does not replace the existing grade, and is never a production RPC.
+Missing/invalid timing data fails the probe rather than manufacturing a result.
+
 The product client now calls the same bounded public summary/history RPCs via
 `src/lib/publicHudTransport.ts`, reusing the Edge anonymous reader and exact
 counter formatter. Each request keeps its five-second deadline and caller abort;
@@ -287,6 +295,10 @@ the fixed VITE public key never picks up a signed-in operator session. Public
 publishable keys use only apikey; legacy anon keys retain their fixed bearer.
 No database grant, authorization predicate, worker, counter or source write is
 changed by this transport switch. Existing Edge URLs remain for old clients.
+Caller cancellation carries an explicit internal provenance marker. The load
+generator excludes only that marker with an aborted original caller signal;
+HTTP/network/validation errors remain failures even after a late caller abort.
+A fired five-second deadline takes priority and can never become cancellation.
 The default `product_rpc` harness bundles this exact helper and measures through
 validation/formatting. It adapts real loopback HTTP responses to Fetch Responses;
 the extra JSON reserialization adds generator work. No new load result is

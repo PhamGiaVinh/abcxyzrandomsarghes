@@ -62,7 +62,7 @@ it('reports only duration and fixed outcome for each request without source or c
 });
 it('distinguishes caller cancellation from RPC deadline without changing transport errors',async()=>{
  const observe=vi.fn(),caller=new AbortController();
- const send=vi.fn((_url:unknown,init:RequestInit)=>new Promise<Response>((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(Error('private')),{once:true}))) as unknown as typeof fetch;
+ const send=vi.fn((_url:unknown,init:RequestInit)=>new Promise<Response>((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true}))) as unknown as typeof fetch;
  const first=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,caller.signal,observe).rpc('get_public_player_hud_summary_v1',{});
  caller.abort();expect((await first).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});expect(observe.mock.lastCall?.[0].outcome).toBe('cancelled');
  const second=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,undefined,observe).rpc('get_public_player_hud_history_v1',{});

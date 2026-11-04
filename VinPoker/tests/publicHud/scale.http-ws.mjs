@@ -22,6 +22,7 @@ const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const player=uuid('30000000',1),stats={summary:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
+const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},requestAccounting={},observationOrder=0;
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
@@ -30,7 +31,7 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
  const accounting=requestAccounting[phase+':'+path]??={launched:0,requestBytes:0,completed:0,responseBytes:0,cancelled:0};
  const encoded=JSON.stringify(body);accounting.launched++;accounting.requestBytes+=Buffer.byteLength(encoded);
  const timeout=AbortSignal.timeout(10000),signal=callerSignal?AbortSignal.any([callerSignal,timeout]):timeout;
- const intentionallyCancelled=error=>callerSignal?.aborted&&!timeout.aborted&&(error===callerSignal.reason||error?.name==='AbortError');
+ const intentionallyCancelled=error=>error?.httpStatus===undefined&&callerSignal?.aborted&&!timeout.aborted&&(error===callerSignal.reason||error?.name==='AbortError');
  try{
  const response=await httpTransport.request(status.API_URL+path,{headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:encoded,signal}).catch(error=>{
   if(intentionallyCancelled(error))throw error;
@@ -48,6 +49,11 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
  const text=response.text;const value=JSON.parse(text);
  if(performance.now()-start>=10000){const kind=`${phase}:${path.split('/').at(-1)}:timeout`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Object.assign(new Error('HTTP_DEADLINE'),{name:'TimeoutError'});}
  accounting.completed++;accounting.responseBytes+=Buffer.byteLength(text);
+ if(path.endsWith('/fixture_scale_hand_ready_v1')&&value===true){
+  const observedAt=Date.parse(response.headers['x-hud-fixture-observed-at']??'');
+  assert.ok(Number.isFinite(observedAt),'Missing fixture readiness clock');
+  readyProbeTimes.set(body.p_hand_id,{observedAt,readMs:performance.now()-start});
+ }
  if(path.endsWith('public-player-hud')&&body.mode==='summary'||hudTransport==='direct_rpc'&&path.endsWith('/get_public_player_hud_summary_v1')&&phase!=='diagnostic-direct-summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
  }catch(error){if(intentionallyCancelled(error)){accounting.cancelled++;throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});}throw error;}
@@ -56,17 +62,28 @@ const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privilege
 const hud=async(tour,mode='summary',accessSnapshot,phase,signal)=>{
  if(hudTransport==='product_rpc'){
   const start=performance.now();
+  try{
   const value=await readPublicHudRequest(status.API_URL,status.ANON_KEY,
    {tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},signal??new AbortController().signal,
    async(url,init)=>{
     const target=new URL(url);assert.equal(target.origin,status.API_URL);
     assert.ok(['/rest/v1/rpc/get_public_player_hud_summary_v1','/rest/v1/rpc/get_public_player_hud_history_v1'].includes(target.pathname));
     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-    const data=await post(target.pathname,JSON.parse(init.body),false,phase,init.signal);
+    let data;
+    try{data=await post(target.pathname,JSON.parse(init.body),false,phase,init.signal);}
+    catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
    });
   if(mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
   return value;
+  }catch(error){
+   // Only the original HUD caller can supersede its request. The helper's
+   // five-second timer aborts a different signal and must remain a failure.
+   const cancelled=signal?.aborted===true&&error?.publicHudCallerCancelled===true&&error?.publicHudDeadline!==true;
+   const outcome=phase+':'+(cancelled?'caller_cancelled':'failed');rpcOutcomes[outcome]=(rpcOutcomes[outcome]??0)+1;
+   if(cancelled)throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});
+   throw error;
+  }
  }
  return hudTransport==='edge'
  ?post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase,signal)
@@ -301,7 +318,13 @@ for(const scenario of ['concentrated','distributed','overview']){
     // delivery checks so an invariant failure cannot replay a source action.
     if(step===5){
      const completed=hand,written=event.at;
-     track((async()=>{try{await until(()=>rpc('fixture_scale_hand_ready_v1',{p_hand_id:completed},true),15000,'projection_timeout');stats.projection.push(Date.now()-written);}catch{error('projection_timeout');}})());
+     track((async()=>{try{
+      await until(()=>rpc('fixture_scale_hand_ready_v1',{p_hand_id:completed},true),15000,'projection_timeout');
+      const endToEndMs=Date.now()-written,probe=readyProbeTimes.get(completed);
+      assert.ok(probe&&probe.observedAt>=written,'Invalid fixture readiness clock');
+      workerProbeDiagnostics.push({scenario,endToEndMs,serverReadyUpperBoundMs:probe.observedAt-written,firstReadyReadMs:probe.readMs});
+      stats.projection.push(endToEndMs);
+     }catch{error('projection_timeout');}finally{readyProbeTimes.delete(completed);}})());
      number++;step=0;hand=null;
     }else step++;
     operation=crypto.randomUUID();
@@ -366,6 +389,8 @@ for(const scenario of ['concentrated','distributed','overview']){
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
+ report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
  report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:1000,pendingAtGrading:clients.filter(c=>c.pending||c.busy).length};save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
