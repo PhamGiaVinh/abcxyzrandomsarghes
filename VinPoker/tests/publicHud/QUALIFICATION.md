@@ -8,9 +8,12 @@ is evidence that the current production subscription permits 1,000 sockets.
 
 Run the `Public HUD incremental PostgreSQL` workflow on the reviewed branch.
 `real_stack=smoke` starts 10 viewers against 100 historical hands for two
-30-second scenarios. `real_stack=qualification` starts 1,000 independent SDK
+30-second felt scenarios plus a 30-second grid scenario. `real_stack=qualification` starts 1,000 independent SDK
 WebSocket connections against 1,000,000 historical hands per player for two
-30-minute scenarios (one tournament, then twenty tournaments). Each viewer
+30-minute watched-felt scenarios (one tournament, then twenty tournaments), plus
+a supplementary 30-second overview-grid regression at the same viewer count
+across twenty tournaments. The short grid regression is not a 30-minute grid
+capacity claim. Each viewer
 subscribes to its tournament and the content-free HUD revocation channel.
 Initial admission is capped at 50 new viewers/second, with all initial requests
 still included in HTTP/error results. Only after all target viewers have joined
@@ -33,15 +36,20 @@ them. Restarting the local Realtime container forces all viewer sockets to
 reconnect. Anonymous summary/history requests use actual HTTP Edge functions;
 table reads use PostgREST. The test creates no browser windows.
 
-The watched-felt workload includes both independent readers: canonical current
-hand and hub viewer snapshot (`tables`, catalog-only while watching a felt).
+The watched-felt workload loads canonical current hand on table changes. The
+hidden hub catalog is read initially, on periodic/access verification and when
+the viewer returns to the overview, rather than on every hidden hand update.
+While watching a felt, the small header table count can therefore lag until
+the next healthy verification (27–33 seconds); the visible felt remains live.
 Initial/verification/visibility requests also read snapshot ranking/payout and
-the unchanged canonical clock/clock-summary RPCs. Snapshot generations and
-publication time must cover every eligible source write for every viewer;
-snapshot p95 has the same 3-second threshold as the current-hand view. A
+the unchanged canonical clock/clock-summary RPCs. Every eligible source write
+must reach every visible felt; the separate overview scenario requests actual
+visible table details and checks every source write against snapshot generation
+and publication time for every grid viewer. Both visible paths retain p95 <=3s,
+zero missed/pending deliveries, and minimum samples per viewer. A
 60-second HUD reopen is explicitly simulated user activity, not HUD polling.
-Older current-hand-only probes are diagnostic transport evidence, not full-page
-qualification.
+Earlier always-reloading-hidden-catalog failures remain retained. The reduced
+hidden work is implemented/tested in the product, not only in the load driver.
 Delivery attribution retains actual observation time if a read finishes before
 the writer HTTP acknowledgment, but requires exact hand/generation evidence.
 Deferred generations additionally need a snapshot request after commit ack,

@@ -95,6 +95,14 @@ function LiveHubContent({
   // TournamentLiveView — the featured felt still renders the real viewer when watched.
   const realtimeEnabled = FEATURES.publicSpectatorRealtimeV2;
   const lastHandHistoryEnabled = realtimeEnabled && FEATURES.publicSpectatorLastHandHistory;
+  const requestedReplayTarget = initialReplayTarget ?? (initialReplayHandNumber != null
+    ? { handId: null, tableId: null, handNumber: initialReplayHandNumber }
+    : null);
+  const requestedReplayKey = requestedReplayTarget
+    ? `${requestedReplayTarget.handId ?? "legacy"}:${requestedReplayTarget.tableId ?? ""}:${requestedReplayTarget.handNumber ?? ""}`
+    : "";
+  const [watch, setWatch] = useState<Watch>(requestedReplayTarget ? { kind: "replay", target: requestedReplayTarget } : null);
+  const watchingTable=FEATURES.liveEventTabs&&watch!==null;
   const [visibleTableIds, setVisibleTableIds] = useState<string[]>([]);
   const [historyTableId, setHistoryTableId] = useState<string | null>(null);
   const appearance = useTournamentTableAppearance(tournamentId);
@@ -102,7 +110,8 @@ function LiveHubContent({
   const { snapshot: publicSnapshot, loading: publicSnapshotLoading, networkError } = usePublicSpectatorSnapshot(
     tournamentId,
     realtimeEnabled,
-    realtimeEnabled ? visibleTableIds : tables.map((table) => table.tableId),
+    realtimeEnabled ? watchingTable?[]:visibleTableIds : tables.map((table) => table.tableId),
+    !watchingTable,
   );
   const realtimeTables = publicSnapshot?.access === "public"
     ? (publicSnapshot.sections.tables?.catalog ?? []).map((table) => ({ tableId: table.tableId, name: table.name, playerCount: table.playerCount }))
@@ -112,12 +121,6 @@ function LiveHubContent({
     ? (publicSnapshot?.sections.tables?.catalog?.length ?? displayedTables.length)
     : liveTableCount;
   const { t } = useTranslation();
-  const requestedReplayTarget = initialReplayTarget ?? (initialReplayHandNumber != null
-    ? { handId: null, tableId: null, handNumber: initialReplayHandNumber }
-    : null);
-  const requestedReplayKey = requestedReplayTarget
-    ? `${requestedReplayTarget.handId ?? "legacy"}:${requestedReplayTarget.tableId ?? ""}:${requestedReplayTarget.handNumber ?? ""}`
-    : "";
 
   // "Cập nhật … trước" — stamp the moment the hub data last changed (each poll for a
   // live event re-stamps, so the header stays fresh; a finished event freezes).
@@ -149,7 +152,6 @@ function LiveHubContent({
   // Event-tabs: which felt (if any) the viewer is actively watching. null → tabs.
   // Seeded synchronously from a deep-linked hand so it opens its replay
   // on first paint; the effect re-syncs if the deep-link changes while mounted.
-  const [watch, setWatch] = useState<Watch>(requestedReplayTarget ? { kind: "replay", target: requestedReplayTarget } : null);
   useEffect(() => {
     if (requestedReplayTarget) setWatch({ kind: "replay", target: requestedReplayTarget });
   // The URL key is deliberate: parent renders may create equivalent target objects.

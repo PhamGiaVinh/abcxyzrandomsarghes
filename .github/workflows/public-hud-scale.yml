@@ -18,11 +18,11 @@ on:
   workflow_dispatch:
     inputs:
       qualification:
-        description: 'Full 1000 viewers, 1M hands, two 30-minute scenarios'
+        description: '1000 viewers/1M hands: two 30min felt scenarios plus 30s grid'
         type: boolean
         default: false
       connection_probe:
-        description: 'Diagnostic 1000 real viewers against small history, two 30-second scenarios'
+        description: 'Diagnostic 1000 viewers/small history: three 30-second scenarios'
         type: boolean
         default: false
       edge_parallelism:

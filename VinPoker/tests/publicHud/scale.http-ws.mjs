@@ -11,8 +11,8 @@ import {createLocalHttpTransport} from './scale.http.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
-const viewers=Number(process.env.PUBLIC_HUD_SCALE_VIEWERS??1000),duration=Number(process.env.PUBLIC_HUD_SCALE_SECONDS??1800);
-if(!Number.isInteger(viewers)||viewers<1||viewers>1000||duration<30||duration>1800)throw Error('Invalid load bounds');
+const viewers=Number(process.env.PUBLIC_HUD_SCALE_VIEWERS??1000),targetDuration=Number(process.env.PUBLIC_HUD_SCALE_SECONDS??1800);
+if(!Number.isInteger(viewers)||viewers<1||viewers>1000||targetDuration<30||targetDuration>1800)throw Error('Invalid load bounds');
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
@@ -57,16 +57,17 @@ assert.equal(privilegedHeader.access,'revoked','Service header must not widen th
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[];
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:state==='passed'&&viewers===1000&&duration===1800,status:state,reports,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:state==='passed'&&viewers===1000&&targetDuration===1800,status:state,reports,
  partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,requestAccounting,transportTimings:timingReport(),summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
-if(viewers===1000&&duration===1800){
+if(viewers===1000&&targetDuration===1800){
  const seed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8'));
  assert.equal(seed.handsPerPlayer,1_000_000);
  assert.ok(seed.writer.p95OverheadPercent<=10,'Committed fixture marking overhead > 10%; stop before the long soak');
 }
-for(const scenario of ['concentrated','distributed']){
+for(const scenario of ['concentrated','distributed','overview']){
+ const overview=scenario==='overview',duration=overview?30:targetDuration;
  phases={};transportTimings={};requestAccounting={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
  const offset={summary:stats.summary.length,realtime:stats.realtime.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
@@ -115,7 +116,7 @@ for(const scenario of ['concentrated','distributed']){
     if(epoch!==pageEpoch)return;
     const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
     const requestOrder=++observationOrder;
-    const value=await post('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:[],p_sections:requested,p_known_revisions:state.known},false,'other',controller.signal);
+    const value=await post('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:overview?[table]:[],p_sections:requested,p_known_revisions:state.known},false,'other',controller.signal);
     if(epoch!==pageEpoch)return;
     assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
     for(const section of requested){assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;}
@@ -130,6 +131,7 @@ for(const scenario of ['concentrated','distributed']){
   const verifyPage=()=>{track(snapshot(['tables','ranking','payout']));track(clock());};
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const read=async()=>{
+   if(overview)return;
    if(state.busy){state.pending=true;return;}state.busy=true;const epoch=pageEpoch,controller=new AbortController();state.tableController=controller;
    try{
     const value=await post('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table},false,'other',controller.signal);
@@ -194,7 +196,7 @@ for(const scenario of ['concentrated','distributed']){
    const components=message.payload.components??['tables'];
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
    if(components.includes('visibility')){state.known={};verifyPage();}
-   else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
+   else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c)&&(c!=='tables'||overview));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
   }).subscribe(s=>{
    const epoch=++pageEpoch;state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();
    if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
@@ -230,15 +232,17 @@ for(const scenario of ['concentrated','distributed']){
  for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(async c=>{await c.openHud('initial-open');await c.verifyHud('initial-verify');}));
  started=Date.now();end=started+duration*1000;coverageAt=started;
  const writer=async(n)=>{
-  let number=(scenario==='concentrated'?2_000_000:5_000_000)+n*100000,step=0,hand=null;
+  let number=(scenario==='concentrated'?2_000_000:overview?8_000_000:5_000_000)+n*100000,step=0,hand=null;
   while(Date.now()<end&&!stopping){
    const start=Date.now();
    try{
     const value=await rpc('fixture_scale_step_v1',{p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
     hand=value.handId;stats.sourceWrites++;const ackOrder=++observationOrder;
     if(!reconnecting&&(!revoking||n!==20))for(const c of clients)if(c.tour===uuid('10000000',n)&&c.online&&c.accessOnline){
-     const at=Date.parse(value.sourceWrittenAt);c.expected.push({handId:hand,number,step,at});expectedDeliveries++;
-     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');c.snapshotExpected.push({at,generation:value.generation,deferred:value.generationDeferred,ackOrder});snapshotExpected++;
+     const at=Date.parse(value.sourceWrittenAt);
+     if(!overview){c.expected.push({handId:hand,number,step,at});expectedDeliveries++;}
+     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');
+     if(overview){c.snapshotExpected.push({at,generation:value.generation,deferred:value.generationDeferred,ackOrder});snapshotExpected++;}
      c.credit();
     }
     if(step===5){
@@ -300,6 +304,7 @@ for(const scenario of ['concentrated','distributed']){
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
  report.requestAccounting=requestAccounting;
  report.hudRecovery={restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.verifyAfterRead).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.verifyAfterRead).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
@@ -310,7 +315,7 @@ for(const scenario of ['concentrated','distributed']){
  report.transportErrors={...stats.transportErrors};save('running');
  report.transportTimings=Object.fromEntries(Object.entries(transportTimings).map(([key,value])=>[key,Object.fromEntries(Object.entries(value).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));save('running');
  console.log(JSON.stringify(report));
- assert.ok(report.httpSummarySamples>=viewers);assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
+ assert.ok(report.httpSummarySamples>=viewers);if(!overview)assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');
  assert.ok(report.revocationClears>=viewers,'Every HUD must clear for withdrawal in another contributing tour');
  assert.equal(report.revokedClients,viewers);assert.equal(report.reconnectedClients,viewers);
@@ -318,18 +323,19 @@ for(const scenario of ['concentrated','distributed']){
  assert.equal(report.minHealthyOnline,viewers);assert.equal(report.healthySocketCoverage,1);
  assert.equal(report.unexpectedDisconnects,0);
  assert.equal(report.missedDeliveries,0);assert.equal(report.pendingDeliveries,0);
- assert.equal(snapshotMissed,0);assert.equal(report.snapshotDelivery.pending,0);assert.equal(report.snapshotDelivery.samples,snapshotExpected-snapshotExcluded);assert.ok(report.snapshotDelivery.p95Ms<=3000,'Projected tables p95 > 3s');assert.ok(report.snapshotDelivery.minSamplesPerViewer>=Math.floor(duration/10));
+ assert.equal(snapshotMissed,0);assert.equal(report.snapshotDelivery.pending,0);assert.equal(report.snapshotDelivery.samples,snapshotExpected-snapshotExcluded);
+ if(overview){assert.ok(report.snapshotDelivery.p95Ms<=3000,'Visible overview p95 > 3s');assert.ok(report.snapshotDelivery.minSamplesPerViewer>=Math.floor(duration/10));}
  assert.equal(report.healthyRealtimeSamples,report.expectedDeliveries-report.excludedForPlannedFault);
- assert.ok(report.minSamplesPerViewer>=Math.floor(duration/10),'Every viewer must observe enough real writes');
+ if(!overview)assert.ok(report.minSamplesPerViewer>=Math.floor(duration/10),'Every viewer must observe enough real writes');
  assert.ok(report.sourceWrites>=tourCount*duration*.9,'Source write rate fell below the defined load');
- assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');assert.ok(report.healthyRealtimeP95Ms<=3000,'Realtime p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
+ assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');if(!overview)assert.ok(report.healthyRealtimeP95Ms<=3000,'Visible felt p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
  assert.equal(stats.errors.hud_read??0,0,'HUD HTTP failures are not excluded from acceptance');
  for(const kind of ['healthy_table_read','healthy_snapshot_read','clock_read','hud_not_ready','history_not_ready','health_read'])assert.equal(stats.errors[kind]??0,0,kind);
 }
-if(viewers===1000&&duration===1800){
+if(viewers===1000&&targetDuration===1800){
  const seed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8'));
  assert.equal(seed.handsPerPlayer,1_000_000);
  assert.ok(seed.writer.p95OverheadPercent<=10,'Fixture source transaction marking overhead > 10%');
 }
-assert.equal(reports.length,2);save('passed');
+assert.equal(reports.length,3);save('passed');

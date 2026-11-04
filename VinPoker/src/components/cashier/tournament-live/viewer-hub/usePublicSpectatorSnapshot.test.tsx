@@ -21,9 +21,24 @@ afterEach(() => {
   channel.subscribe.mockClear();
   vi.restoreAllMocks();
   channel.on.mockReturnThis();channel.subscribe.mockReturnThis();
+  vi.useRealTimers();
 });
 
 describe("public spectator table scope", () => {
+  it('pauses hidden table invalidations, reloads on return, and still handles withdrawal while paused',async()=>{
+    vi.useFakeTimers();const tournamentId='hidden-hub';
+    rpc.mockResolvedValue({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision:'1',catalog:[],items:[]}}},error:null});
+    const {result,rerender}=renderHook(({live})=>usePublicSpectatorSnapshot(tournamentId,true,[],live),{initialProps:{live:false}});
+    await act(async()=>{});expect(rpc).toHaveBeenCalledTimes(1);
+    const changed=()=>channel.on.mock.calls.at(-1)![2];
+    await act(async()=>{changed()({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(1001);});
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{rerender({live:true});});expect(rpc).toHaveBeenCalledTimes(2);
+    await act(async()=>{rerender({live:false});});expect(rpc).toHaveBeenCalledTimes(3);
+    rpc.mockResolvedValueOnce({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    await act(async()=>{changed()({payload:{tournamentId,components:['visibility']}});await vi.advanceTimersByTimeAsync(1001);});
+    expect(result.current.snapshot?.access).toBe('revoked');expect(rpc).toHaveBeenCalledTimes(4);
+  });
   it('rechecks access after reconnect without reusing a held pre-disconnect snapshot',async()=>{
     vi.spyOn(Math,'random').mockReturnValue(.99);
     const tournamentId='reconnect-scope';let finish!:(value:unknown)=>void;

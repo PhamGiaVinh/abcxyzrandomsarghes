@@ -11,6 +11,7 @@ export function usePublicSpectatorSnapshot(
   tournamentId: string | undefined,
   enabled: boolean,
   requestedTableIds: readonly string[] = [],
+  liveTableUpdates = true,
 ) {
   const supabase = useSupabaseClient();
   const [snapshot, setSnapshot] = useState<PublicSpectatorSnapshot | null>(null);
@@ -90,7 +91,7 @@ export function usePublicSpectatorSnapshot(
       }
       const next = {...incoming,sections:{...incoming.sections}};
       if(next.access==='public'&&next.ok){
-        for(const section of sections)if(!publicReadEpochIsCurrent(supabase,tournamentId,section,epochs[section])){
+        for(const section of sections)if((section!=='tables'||liveTableUpdates)&&!publicReadEpochIsCurrent(supabase,tournamentId,section,epochs[section])){
           delete next.sections[section];dirty.add(section);coordinator?.request();
         }
         if(!Object.keys(next.sections).length)return;
@@ -118,7 +119,10 @@ export function usePublicSpectatorSnapshot(
       if(event.reason==='status')return;
       if(event.invalidatePending){epoch++;controller.abort();trustedRevisions.current={};dirty.clear();}
       if(event.reason==='changed'&&event.components.includes('visibility')){epoch++;controller.abort();trustedRevisions.current={};setSnapshot(null);}
-      for(const section of ['tables','ranking','payout'] as const)if(event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);
+      for(const section of ['tables','ranking','payout'] as const){
+        if(section==='tables'&&!liveTableUpdates&&event.reason==='changed'&&!event.components.includes('visibility'))continue;
+        if(event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);
+      }
       if(dirty.size)coordinator?.request();
     });
 
@@ -128,7 +132,7 @@ export function usePublicSpectatorSnapshot(
       coordinator?.stop();
       controller.abort();observation?.unsubscribe();
     };
-  }, [enabled, tournamentId, tableKey, tableIds, supabase]);
+  }, [enabled, tournamentId, tableKey, tableIds, supabase, liveTableUpdates]);
 
   const currentScope = trustedClient.current === supabase && snapshot?.tournamentId === tournamentId;
   return { snapshot: currentScope ? snapshot : null, loading, networkError };
