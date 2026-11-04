@@ -974,7 +974,7 @@ function TournamentLiveViewContent({
           setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
           setHistoryReplayTarget(null);setMode('live');setLoading(true);setFatalError(null);
         }
-        const needsFull=event.reason==='verify'||event.components.some(c=>['visibility','clock','ranking'].includes(c));
+        const needsFull=event.components.some(c=>['visibility','clock','ranking'].includes(c));
         if(!needsFull&&!event.components.includes('tables'))return;
         full=full||needsFull;coordinator.request();
       });

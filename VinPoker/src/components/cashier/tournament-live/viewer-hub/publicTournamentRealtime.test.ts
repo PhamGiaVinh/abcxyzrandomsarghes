@@ -31,3 +31,14 @@ it('uses a healthy 30s check, offline 3s polling and pauses in the background',a
  f.changed({tournamentId:'tour',components:['visibility']});expect(listener).toHaveBeenCalledTimes(1);
  observation.unsubscribe();await Promise.resolve();
 });
+it('prioritizes table access on reconnect and cancels deferred metadata after scope disposal',async()=>{
+ vi.useFakeTimers();vi.spyOn(Math,'random').mockReturnValue(.5);
+ const f=fixture(),listener=vi.fn(),observation=observePublicTournament(f.client,'reconnect-tour',listener);
+ f.status('SUBSCRIBED');f.status('CHANNEL_ERROR');listener.mockClear();f.status('SUBSCRIBED');
+ const verifications=()=>listener.mock.calls.map(([event])=>event).filter(event=>event.reason==='verify');
+ expect(verifications().map(event=>event.components)).toEqual([['tables']]);
+ vi.advanceTimersByTime(5249);expect(verifications()).toHaveLength(1);
+ vi.advanceTimersByTime(1);expect(verifications().map(event=>event.components)).toEqual([['tables'],['ranking','payout','clock']]);
+ f.status('CHANNEL_ERROR');f.status('SUBSCRIBED');observation.unsubscribe();await Promise.resolve();listener.mockClear();
+ vi.advanceTimersByTime(30_000);expect(listener).not.toHaveBeenCalled();
+});

@@ -180,13 +180,25 @@ for(const scenario of ['concentrated','distributed']){
    finally{controller.abort();finishHud(controller);}
   };
   state.verifyHud=verifyHud;
+  let pageEpoch=0;
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
    const components=message.payload.components??['tables'];
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
    if(components.includes('visibility')){state.known={};verifyPage();}
    else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
-  }).subscribe(s=>{state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;if(state.online){if(state.joined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());verifyPage();}});
+  }).subscribe(s=>{
+   const epoch=++pageEpoch;state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();
+   if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
+   if(state.online){
+    const rejoined=state.joined;if(rejoined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());
+    if(!rejoined)verifyPage();
+    else {
+     track(snapshot(['tables']));
+     track((async()=>{await sleep(250+Math.random()*10000);if(epoch===pageEpoch&&state.online){track(read());track(snapshot(['ranking','payout']));track(clock());}})());
+    }
+   }
+  });
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
    state.hudController?.abort();state.hudController=null;state.hudActive=false;state.verifyAfterRead=false;
    const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;

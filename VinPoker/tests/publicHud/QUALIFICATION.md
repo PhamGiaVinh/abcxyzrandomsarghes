@@ -81,6 +81,14 @@ HUD rechecks over 250–10,250ms, while clearing revoked data synchronously.
 Initial user opens remain immediate; table delivery and every acceptance gate
 are unchanged. This bounded access recheck delay is distinct from the 5-second
 server projection freshness target and adds no HUD polling.
+Probe 41743073089 restored all 1,000 HUDs after withdrawal, but the simultaneous
+reconnect still failed (904 final verified HUDs, API p95 2.62s, table p95 6.09s).
+The shared tournament coordinator now verifies table access immediately on
+reconnect and spreads clock/ranking/payout verification over 250–10,250ms.
+Actual component-change broadcasts remain immediate; initial reads, background
+pause, healthy/offline polling and all latency/error/recovery gates remain.
+The real harness performs the same extra current-hand read when deferred
+metadata invokes the existing full-page reader. It does not omit that work.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 

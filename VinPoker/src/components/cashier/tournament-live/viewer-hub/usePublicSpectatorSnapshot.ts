@@ -117,7 +117,7 @@ export function usePublicSpectatorSnapshot(
     observation=observePublicTournament(supabase,tournamentId,event=>{
       if(event.reason==='status')return;
       if(event.reason==='changed'&&event.components.includes('visibility')){epoch++;controller.abort();trustedRevisions.current={};setSnapshot(null);}
-      for(const section of ['tables','ranking','payout'] as const)if(event.reason==='verify'||event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);
+      for(const section of ['tables','ranking','payout'] as const)if(event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);
       if(dirty.size)coordinator?.request();
     });
 

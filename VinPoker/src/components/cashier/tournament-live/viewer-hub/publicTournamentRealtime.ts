@@ -10,6 +10,8 @@ class PublicTournamentRealtime {
   private listeners=new Set<(event:PublicTournamentSignal)=>void>();
   private channel:RealtimeChannel|null=null;
   private timer:ReturnType<typeof setTimeout>|null=null;
+  private metadataTimer:ReturnType<typeof setTimeout>|null=null;
+  private joined=false;
   private online=false;
   private failures=0;
   private stopped=false;
@@ -37,8 +39,24 @@ class PublicTournamentRealtime {
       }).subscribe(status=>{
         if(this.stopped)return;
         this.online=status==='SUBSCRIBED';
+        this.clearMetadataTimer();
         this.emit({reason:'status',components:all,revisions:{},online:this.online});
-        if(this.online){this.failures=0;this.emit({reason:'verify',components:all,revisions:{},online:true});}
+        if(this.online){
+          this.failures=0;
+          if(document.visibilityState!=='hidden'){
+            if(!this.joined)this.emit({reason:'verify',components:all,revisions:{},online:true});
+            else {
+              // Revalidate table access immediately. Clock/ranking/payout have
+              // independent broadcasts and need not join the reconnect herd.
+              this.emit({reason:'verify',components:['tables'],revisions:{},online:true});
+              this.metadataTimer=setTimeout(()=>{
+                this.metadataTimer=null;
+                if(!this.stopped&&this.online&&document.visibilityState!=='hidden')this.emit({reason:'verify',components:['ranking','payout','clock'],revisions:{},online:true});
+              },250+Math.random()*10000);
+            }
+          }
+          this.joined=true;
+        }
         this.schedule();
       });
       this.schedule();
@@ -50,7 +68,7 @@ class PublicTournamentRealtime {
       // through that handoff, then dispose if the tournament has no consumers.
       void Promise.resolve().then(()=>{
         if(this.listeners.size||this.stopped)return;
-        this.stopped=true;this.clearTimer();document.removeEventListener('visibilitychange',this.visibility);
+        this.stopped=true;this.clearTimer();this.clearMetadataTimer();document.removeEventListener('visibilitychange',this.visibility);
         if(this.channel)void this.client.removeChannel(this.channel);this.channel=null;this.dispose();
       });
     };
@@ -58,6 +76,7 @@ class PublicTournamentRealtime {
   report(success:boolean){this.failures=success?0:Math.min(this.failures+1,4);}
   private emit(event:PublicTournamentSignal){for(const listener of this.listeners)listener(event);}
   private clearTimer(){if(this.timer)clearTimeout(this.timer);this.timer=null;}
+  private clearMetadataTimer(){if(this.metadataTimer)clearTimeout(this.metadataTimer);this.metadataTimer=null;}
   private schedule(){
     this.clearTimer();if(this.stopped||document.visibilityState==='hidden')return;
     const base=this.online?30_000:Math.min(30_000,3_000*2**this.failures);
@@ -65,7 +84,7 @@ class PublicTournamentRealtime {
     this.timer=setTimeout(()=>{this.timer=null;this.emit({reason:'verify',components:all,revisions:{},online:this.online});this.schedule();},delay);
   }
   private visibility=()=>{
-    this.clearTimer();if(document.visibilityState!=='hidden'){this.emit({reason:'verify',components:all,revisions:{},online:this.online});this.schedule();}
+    this.clearTimer();this.clearMetadataTimer();if(document.visibilityState!=='hidden'){this.emit({reason:'verify',components:all,revisions:{},online:this.online});this.schedule();}
   };
 }
 export function observePublicTournament(client:Client,tournamentId:string,listener:(event:PublicTournamentSignal)=>void){
