@@ -13,8 +13,9 @@ export function createAnonymousPublicHudClient(baseUrl:string,anonKey:string,sen
   const timeout=setTimeout(()=>{deadline=true;cancel();},5000);
   try{
    const response=await send(new URL('/rest/v1/rpc/'+name,base),{method:'POST',
-    headers:{apikey:anonKey,Authorization:`Bearer ${anonKey}`,'Content-Type':'application/json','Content-Profile':'public','Accept-Profile':'public'},
-    body:JSON.stringify(args),signal:controller.signal,redirect:'error'});
+    headers:{apikey:anonKey,...(anonKey.startsWith('sb_publishable_')?{}:{Authorization:`Bearer ${anonKey}`}),
+     'Content-Type':'application/json','Content-Profile':'public','Accept-Profile':'public'},
+    body:JSON.stringify(args),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
    const body=await response.json();
    if(!response.ok){outcome='http';return {data:null,error:{code:typeof body?.code==='string'&&/^[A-Z0-9_]{5,24}$/.test(body.code)?body.code:`HTTP_${response.status}`}};}
    outcome='ok';

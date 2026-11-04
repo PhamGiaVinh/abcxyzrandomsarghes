@@ -1,4 +1,5 @@
 import {supabase} from '@/integrations/supabase/client';
+import {readPublicHudRequest} from './publicHudTransport';
 import type {PublicPlayerHand,PublicPlayerHudData} from './publicPlayerHud';
 import {observePublicHudAccess} from '@/components/cashier/tournament-live/viewer-hub/publicHudAccess';
 
@@ -11,17 +12,24 @@ export interface PreparedPublicPlayerHudData extends PublicPlayerHudData {
   revision:string;accessSnapshot:string;accessChanged:boolean;metricVersion:string;computedAt:string;updateState:'current'|'updating';
   nextHistoryCursor:PublicHudHistoryCursor|null;
 }
+interface PreparedHudReply {
+  access:'public';state:'current'|'updating';tournamentId:string;playerId:string;name:string;avatarUrl:string|null;
+  scope:string;version:string;revision:string;accessSnapshot:string;accessChanged:boolean;computedAt:string;coverageComplete:boolean;
+  counters:{publicHands:number;omittedHands:number};analytics:PublicPlayerHudData['analytics'];
+  totalWinnings:number|null;recentResults:PublicPlayerHudData['recentResults'];handHistory:PublicPlayerHand[];nextCursor:PublicHudHistoryCursor|null;
+}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const keys=['vpip','pfr','threeBet','foldToThreeBet','fourBet','fiveBet','wtsd','wsd','wwsf','flopCbet','turnCbet','foldToCbet','checkRaise','aggressionFrequency','ats','flopFoldCbet','flopCallCbet','flopRaiseCbet','turnFoldCbet','turnCallCbet','turnRaiseCbet','riverAggression'];
 async function read(tournamentId:string,playerId:string,mode:'summary'|'history',signal:AbortSignal,cursor?:PublicHudHistoryCursor,accessSnapshot?:string){
   if(signal.aborted)throw Error('aborted');
-  const {data,error}=await supabase.functions.invoke('public-player-hud',{body:{tournament_id:tournamentId,player_id:playerId,mode,cursor,access_snapshot:accessSnapshot},signal});
-  if(error)throw error;
+  const data=await readPublicHudRequest(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    {tournament_id:tournamentId,player_id:playerId,mode,cursor,access_snapshot:accessSnapshot},signal);
   if(signal.aborted)throw Error('aborted');
   if(data?.access==='revoked')throw Error('PUBLIC_HUD_ACCESS_REVOKED');
   if(data?.access==='public'&&data.state==='warming')throw Error('PUBLIC_HUD_PREPARING');
-  if(data?.access!=='public'||!['current','updating'].includes(data.state)||data.tournamentId!==tournamentId||data.playerId!==playerId||typeof data.name!=='string')throw Error('PUBLIC_HUD_SCOPE_UNAVAILABLE');
-  return data;
+  if(data?.access!=='public'||typeof data.state!=='string'||!['current','updating'].includes(data.state)||data.tournamentId!==tournamentId||data.playerId!==playerId||typeof data.name!=='string')throw Error('PUBLIC_HUD_SCOPE_UNAVAILABLE');
+  // The envelope is checked here; each mode validates its remaining fields below.
+  return data as unknown as PreparedHudReply;
 }
 export async function loadPublicHudHistoryPage(tournamentId:string,playerId:string,signal:AbortSignal,cursor?:PublicHudHistoryCursor):Promise<{hands:PublicPlayerHand[];nextCursor:PublicHudHistoryCursor|null}>{
   const data=await read(tournamentId,playerId,'history',signal,cursor);

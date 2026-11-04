@@ -280,16 +280,29 @@ SQL load profiling installs only the existing pg_stat_statements extension/view 
 
 Migration025 adds plan-only reuse for the exact post023 public clock summary. It preserves every query expression, function property and permission. The separate private preimage must be restored with `clock-read-plan.forward-rollback.sql` before the earlier `read-plans.forward-rollback.sql` template. Native row/clock/scope/source-update/withdrawal/ACL and exact recovery checks precede the real HTTP load; native timing is not capacity evidence.
 
+The product client now calls the same bounded public summary/history RPCs via
+`src/lib/publicHudTransport.ts`, reusing the Edge anonymous reader and exact
+counter formatter. Each request keeps its five-second deadline and caller abort;
+the fixed VITE public key never picks up a signed-in operator session. Public
+publishable keys use only apikey; legacy anon keys retain their fixed bearer.
+No database grant, authorization predicate, worker, counter or source write is
+changed by this transport switch. Existing Edge URLs remain for old clients.
+The default `product_rpc` harness bundles this exact helper and measures through
+validation/formatting. It adapts real loopback HTTP responses to Fetch Responses;
+the extra JSON reserialization adds generator work. No new load result is
+inherited from the raw diagnostic. Full qualification requires product_rpc.
+
 The optional `hud_transport=direct_rpc` workflow dispatch is a short diagnostic,
 not the product transport. It reads the same anonymous summary/history RPCs via
 real PostgREST, bypassing Edge batching, counter-to-metric formatting and the
 internal five-second RPC deadline (the HTTP ten-second deadline remains).
-Reports label `productTransport=false` and can never qualify; durations other
+Both raw direct_rpc and legacy Edge comparison reports label
+`productTransport=false` and can never qualify; durations other
 than30seconds are rejected. All viewers, writes, reconnect/withdrawal checks,
 latency thresholds and error accounting remain. Only a future implemented and
 verified product path could make such a result relevant to release acceptance.
 
-Public HUD reads may share an identical anonymous RPC only among requests
+Compatibility Edge HUD reads may share an identical anonymous RPC only among requests
 admitted in the 50 milliseconds BEFORE that query starts. The group is removed
 from the joinable map before transport invocation; no in-flight or completed
 result is reused by a later open. Keys include reader and scope; history includes both cursor fields. Summary groups retain each exact access snapshot separately. At most64 distinct summary snapshots and16KiB of snapshot UTF8 bytes are sent to migration026: one current rights/aggregate read, then the exact scalar visibility check per unique snapshot. Each participant receives its own result. One unique snapshot still uses the scalar RPC. Queue bounds bypass to a fresh ordinary read;

@@ -10,13 +10,14 @@ import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {classifyEdgeFailure} from './scale.failures.mjs';
 import {PublicSnapshotCoordinator} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
+import {readPublicHudRequest} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
 const viewers=Number(process.env.PUBLIC_HUD_SCALE_VIEWERS??1000),targetDuration=Number(process.env.PUBLIC_HUD_SCALE_SECONDS??1800);
 if(!Number.isInteger(viewers)||viewers<1||viewers>1000||targetDuration<30||targetDuration>1800)throw Error('Invalid load bounds');
-const hudTransport=process.env.PUBLIC_HUD_SCALE_TRANSPORT??'edge';
-if(!['edge','direct_rpc'].includes(hudTransport)||hudTransport==='direct_rpc'&&targetDuration!==30)throw Error('RPC comparison is a short diagnostic only');
+const hudTransport=process.env.PUBLIC_HUD_SCALE_TRANSPORT??'product_rpc';
+if(!['product_rpc','edge','direct_rpc'].includes(hudTransport)||hudTransport!=='product_rpc'&&targetDuration!==30)throw Error('Comparison transport is a short diagnostic only');
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
@@ -52,10 +53,26 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
  }catch(error){if(intentionallyCancelled(error)){accounting.cancelled++;throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});}throw error;}
 }
 const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privileged);
-const hud=(tour,mode='summary',accessSnapshot,phase,signal)=>hudTransport==='edge'
+const hud=async(tour,mode='summary',accessSnapshot,phase,signal)=>{
+ if(hudTransport==='product_rpc'){
+  const start=performance.now();
+  const value=await readPublicHudRequest(status.API_URL,status.ANON_KEY,
+   {tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},signal??new AbortController().signal,
+   async(url,init)=>{
+    const target=new URL(url);assert.equal(target.origin,status.API_URL);
+    assert.ok(['/rest/v1/rpc/get_public_player_hud_summary_v1','/rest/v1/rpc/get_public_player_hud_history_v1'].includes(target.pathname));
+    assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
+    const data=await post(target.pathname,JSON.parse(init.body),false,phase,init.signal);
+    return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
+   });
+  if(mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
+  return value;
+ }
+ return hudTransport==='edge'
  ?post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase,signal)
  :post('/rest/v1/rpc/'+(mode==='summary'?'get_public_player_hud_summary_v1':'get_public_player_hud_history_v1'),
   {p_tournament_id:tour,p_player_id:player,...(mode==='summary'?{p_access_snapshot:accessSnapshot??null}:{})},false,phase,signal);
+};
 async function until(fn,timeout,label){const start=Date.now();while(Date.now()-start<timeout){if(await fn())return;await sleep(200);}throw Error(label);}
 const percentile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*p))]:null;
 const timingReport=()=>Object.fromEntries(Object.entries(transportTimings).map(([phase,parts])=>[phase,Object.fromEntries(Object.entries(parts).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));
@@ -67,7 +84,7 @@ assert.equal(privilegedHeader.access,'revoked','Service header must not widen th
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='edge',sourceWriterBenchmark,qualification:state==='passed'&&hudTransport==='edge'&&viewers===1000&&targetDuration===1800,status:state,reports,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,
  partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,requestAccounting,transportTimings:timingReport(),summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));

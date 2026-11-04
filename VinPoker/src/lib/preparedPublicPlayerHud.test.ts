@@ -1,7 +1,10 @@
 import {it,expect,vi,beforeEach} from 'vitest';
 import {loadPreparedPublicPlayerHud,loadPublicHudHistoryPage} from './preparedPublicPlayerHud';
 const invoke=vi.hoisted(()=>vi.fn());
-vi.mock('@/integrations/supabase/client',()=>({supabase:{functions:{invoke}}}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{}}));
+vi.mock('./publicHudTransport',()=>({readPublicHudRequest:async(_url,_key,body,signal)=>{
+ const reply=await invoke('public-player-hud',{body,signal});if(reply.error)throw reply.error;return reply.data;
+}}));
 const t='10000000-0000-4000-8000-000000000001',p='30000000-0000-4000-8000-000000000001';
 const keys=['vpip','pfr','threeBet','foldToThreeBet','fourBet','fiveBet','wtsd','wsd','wwsf','flopCbet','turnCbet','foldToCbet','checkRaise','aggressionFrequency','ats','flopFoldCbet','flopCallCbet','flopRaiseCbet','turnFoldCbet','turnCallCbet','turnRaiseCbet','riverAggression'];
 const summary=()=>({access:'public',state:'current',tournamentId:t,playerId:p,name:'TEST',avatarUrl:null,scope:'all-public-tournaments',version:'public-hud-projection-v1',revision:'42',accessSnapshot:'1:2:',accessChanged:false,computedAt:'2026-11-04T00:00:00Z',coverageComplete:true,counters:{publicHands:1_000_000,omittedHands:0},totalWinnings:null,recentResults:[],analytics:{handsObserved:1_000_000,unavailableMetrics:[],metrics:Object.fromEntries(keys.map(k=>[k,{numerator:250_000,denominator:1_000_000,percentage:25,sampleSize:1_000_000,metricVersion:'test'}]))}});
