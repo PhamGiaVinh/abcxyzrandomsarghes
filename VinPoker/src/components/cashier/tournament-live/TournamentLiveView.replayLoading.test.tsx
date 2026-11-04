@@ -132,7 +132,7 @@ it('requires a fresh access read on reconnect and rejects the pre-disconnect pub
  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'revoked'}:
  name==='get_public_tournament_clock_summary'?[{tournament_id:'tour',players_remaining:0,average_stack:0}]:null}));
  vi.useFakeTimers();render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
- await act(async()=>{statuses.forEach(fn=>{fn('SUBSCRIBED');fn('CHANNEL_ERROR');fn('SUBSCRIBED');});await vi.advanceTimersByTimeAsync(1001);});
+ await act(async()=>{statuses.forEach(fn=>{fn('SUBSCRIBED');fn('CHANNEL_ERROR');fn('SUBSCRIBED');});await vi.advanceTimersByTimeAsync(2001);});
  expect(rpc.mock.calls.filter(([name])=>name==='get_public_tournament_table_live_or_last_hand_v2')).toHaveLength(2);
  expect(screen.getByText('Bàn này không còn được công khai.')).toBeInTheDocument();
  await act(async()=>{finish({error:null,data:{access:'public',state:'waiting',tableId:'table',tableSessionId:'session',hand:null}});});

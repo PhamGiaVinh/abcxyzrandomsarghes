@@ -432,3 +432,11 @@ revoked, malformed data and HTTP/network failures are not retried. Added
 requests count in HTTP accounting, and the entire logical preparation/recovery
 duration counts in HUD latency. Unresolved preparation, deadlines and missing
 viewer recovery still fail the existing qualification gates.
+
+Public V2 table/snapshot consumers and the load driver share a two-second
+minimum HTTP read interval from PublicSnapshotCoordinator. First/scope reads
+remain immediate, concurrent hints coalesce into one trailing read, and
+visibility withdrawal still clears displayed data immediately. The source
+writers remain one intent/second/tour and healthy delivery p95 remains <=3s;
+no missing/error/latency gate is relaxed. This read-rate experiment requires
+fresh real-load evidence and is not itself proof of better latency.

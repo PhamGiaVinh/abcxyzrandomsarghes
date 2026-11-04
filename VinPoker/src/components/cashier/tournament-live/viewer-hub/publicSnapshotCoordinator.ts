@@ -1,5 +1,9 @@
 import type { PublicSnapshotSection } from "./publicSnapshotTypes";
 
+// Keep source writes independent while coalescing spectator HTTP bursts.
+// First/scope reads stay immediate; loaded delivery must still meet the3s gate.
+export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 2_000;
+
 export interface SnapshotRequest {
   tournamentId: string;
   tableIds: string[];
