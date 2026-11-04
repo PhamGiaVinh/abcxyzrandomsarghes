@@ -48,3 +48,32 @@ it('holds the deadline through body consumption and detaches completed callers',
  expect((await pending).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});
  expect(vi.getTimerCount()).toBe(0);expect(remove).toHaveBeenCalledWith('abort',expect.any(Function));
 });
+it('reports only duration and fixed outcome for each request without source or credentials',async()=>{
+ const observe=vi.fn(),send=vi.fn().mockResolvedValue(new Response('{"access":"public","privateFixture":"not-in-timing"}'));
+ const client=createAnonymousPublicHudClient('https://fixture.invalid','private-fixture-key',send,undefined,observe);
+ await client.rpc('get_public_player_hud_summary_v1',{privateFixture:'not-in-timing'});
+ expect(observe).toHaveBeenCalledTimes(1);expect(observe.mock.calls[0][0]).toEqual({durationMs:expect.any(Number),outcome:'ok'});
+ expect(observe.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
+ send.mockResolvedValue(new Response('{"code":"42501","message":"private"}',{status:403}));
+ await client.rpc('get_public_player_hud_history_v1',{});expect(observe.mock.lastCall?.[0].outcome).toBe('http');
+ send.mockRejectedValue(Error('private'));await client.rpc('get_public_player_hud_summary_v1',{});expect(observe.mock.lastCall?.[0].outcome).toBe('transport');
+ expect(JSON.stringify(observe.mock.calls)).not.toMatch(/private|fixture|player|42501/);
+ expect(vi.getTimerCount()).toBe(0);
+});
+it('distinguishes caller cancellation from RPC deadline without changing transport errors',async()=>{
+ const observe=vi.fn(),caller=new AbortController();
+ const send=vi.fn((_url:unknown,init:RequestInit)=>new Promise<Response>((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(Error('private')),{once:true}))) as unknown as typeof fetch;
+ const first=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,caller.signal,observe).rpc('get_public_player_hud_summary_v1',{});
+ caller.abort();expect((await first).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});expect(observe.mock.lastCall?.[0].outcome).toBe('cancelled');
+ const second=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,undefined,observe).rpc('get_public_player_hud_history_v1',{});
+ vi.advanceTimersByTime(5000);expect((await second).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});expect(observe.mock.lastCall?.[0].outcome).toBe('deadline');
+ expect(observe).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+});
+it('keeps success and sanitized failure when the timing observer throws',async()=>{
+ const observe=vi.fn(()=>{throw Error('private observer');}),send=vi.fn().mockResolvedValue(new Response('{"access":"revoked"}'));
+ const client=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send,undefined,observe);
+ expect(await client.rpc('get_public_player_hud_summary_v1',{})).toEqual({data:{access:'revoked'},error:null});
+ send.mockRejectedValue(Error('private transport'));
+ expect(await client.rpc('get_public_player_hud_history_v1',{})).toEqual({data:null,error:{code:'PUBLIC_RPC_TRANSPORT'}});
+ expect(observe).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+});

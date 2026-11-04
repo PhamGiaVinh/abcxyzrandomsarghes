@@ -19,7 +19,7 @@ const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTranspo
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const player=uuid('30000000',1),stats={summary:[],realtime:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 let stopping=false;
-let phases={},transportTimings={},requestAccounting={},observationOrder=0;
+let phases={},transportTimings={},rpcOutcomes={},requestAccounting={},observationOrder=0;
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
 async function post(path,body,privileged=false,phase='other',callerSignal){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
@@ -33,9 +33,11 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
   const kind=`${phase}:${path.split('/').at(-1)}:${timeout.aborted?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
  const timingKey=phase+':'+path;
- const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[],application:[]};
+ const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[],application:[],rpc:[]};
  timings.headers.push(response.headersAt-start);
  const application=/\bhud;dur=([0-9]+(?:\.[0-9]+)?)/.exec(response.headers['server-timing']??'');if(application)timings.application.push(Number(application[1]));
+ const rpcTiming=/\bhud_rpc;dur=([0-9]+(?:\.[0-9]+)?);desc="(ok|http|transport|deadline|cancelled)"/.exec(response.headers['server-timing']??'');
+ if(rpcTiming){timings.rpc.push(Number(rpcTiming[1]));const key=phase+':'+rpcTiming[2];rpcOutcomes[key]=(rpcOutcomes[key]??0)+1;}
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers[header];if(value!==undefined&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
  if(!response.ok){let code='';try{const body=JSON.parse(response.text);if(typeof body.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:${path.split('/').at(-1)}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
  const text=response.text;const value=JSON.parse(text);
@@ -59,7 +61,7 @@ await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_h
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
 const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,sourceWriterBenchmark,qualification:state==='passed'&&viewers===1000&&targetDuration===1800,status:state,reports,
- partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,requestAccounting,transportTimings:timingReport(),summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
+ partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,requestAccounting,transportTimings:timingReport(),summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(viewers===1000&&targetDuration===1800){
@@ -69,7 +71,7 @@ if(viewers===1000&&targetDuration===1800){
 }
 for(const scenario of ['concentrated','distributed','overview']){
  const overview=scenario==='overview',duration=overview?30:targetDuration;
- phases={};transportTimings={};requestAccounting={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
+ phases={};transportTimings={};rpcOutcomes={};requestAccounting={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
  const offset={summary:stats.summary.length,realtime:stats.realtime.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
@@ -341,7 +343,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const cpu=process.cpuUsage(cpuStart);Object.assign(report.generator,{cpuMs:(cpu.user+cpu.system)/1000,elapsedMs:performance.now()-generatorStart,transport:httpTransport.metrics()});
  report.httpPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
  report.transportErrors={...stats.transportErrors};save('running');
- report.transportTimings=Object.fromEntries(Object.entries(transportTimings).map(([key,value])=>[key,Object.fromEntries(Object.entries(value).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));save('running');
+ report.rpcOutcomes={...rpcOutcomes};report.transportTimings=Object.fromEntries(Object.entries(transportTimings).map(([key,value])=>[key,Object.fromEntries(Object.entries(value).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));save('running');
  console.log(JSON.stringify(report));
  assert.ok(report.httpSummarySamples>=viewers);if(!overview)assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');

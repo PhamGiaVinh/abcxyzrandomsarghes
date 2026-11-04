@@ -1,4 +1,5 @@
 import {createAnonymousPublicHudClient} from './publicRpc.ts';
+import type {PublicHudRpcTiming} from './publicRpc.ts';
 import { handleOptions, jsonResp as baseJsonResp } from '../_shared/cors.ts';
 import {readPublicHudAggregate,readPublicHudCompatibility} from './aggregate.ts';
 const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_ANON_KEY');
@@ -13,10 +14,11 @@ function jsonResp(req:Request,data:unknown,status=200){
 
 Deno.serve(async req => {
   const started=performance.now();
+  let rpcTiming:PublicHudRpcTiming|undefined;
   const respond=(data:unknown,status=200)=>{
     const response=jsonResp(req,data,status);
     // Public duration only: no query, identity, credential or source data.
-    response.headers.set('Server-Timing',`hud;dur=${(performance.now()-started).toFixed(3)}`);
+    response.headers.set('Server-Timing',`hud;dur=${(performance.now()-started).toFixed(3)}${rpcTiming?`, hud_rpc;dur=${rpcTiming.durationMs.toFixed(3)};desc="${rpcTiming.outcome}"`:''}`);
     return response;
   };
   const preflight = handleOptions(req);
@@ -30,7 +32,7 @@ Deno.serve(async req => {
     const input = JSON.parse(body);
     // Cancellation belongs to this request only. Retain the independent RPC
     // timeout and fixed anonymous credentials; never mutate a shared signal.
-    const requestClient=createAnonymousPublicHudClient(url!,key!,fetch,req.signal);
+    const requestClient=createAnonymousPublicHudClient(url!,key!,fetch,req.signal,value=>{rpcTiming=value;});
     // Never use service_role or forward Authorization, even for an operator caller.
     if(input.mode==='summary'||input.mode==='history') return respond(await readPublicHudAggregate(requestClient,input.tournament_id,input.player_id,input.mode,input.cursor,input.access_snapshot));
     return respond(await readPublicHudCompatibility(requestClient,input));
