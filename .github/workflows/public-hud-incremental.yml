@@ -76,6 +76,7 @@ jobs:
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_history_plans_ci
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci PUBLIC_HUD_SCALE_HANDS=10000 node tests/publicHud/scale.seed.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/source-writes.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-plans.native.mjs
       - name: Read plan reuse, scope isolation and exact recovery
         run: |

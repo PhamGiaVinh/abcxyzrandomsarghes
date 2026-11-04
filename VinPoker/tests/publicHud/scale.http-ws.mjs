@@ -101,7 +101,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(!observation?.healthy)return;
    state[field]=state[field].filter(expected=>{
     if(!predicate(observation.value,expected,observation.requestOrder))return true;
-    assert.ok(observation.at>=expected.at,'Observed source timestamp is in the future');
+    if(observation.at<expected.at){error('delivery_timestamp');return true;}
     stats[measure].push(observation.at-expected.at);state[count]++;return false;
    });
   };
@@ -242,30 +242,33 @@ for(const scenario of ['concentrated','distributed','overview']){
  for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(async c=>{await c.openHud('initial-open');await c.verifyHud('initial-verify');}));
  started=Date.now();end=started+duration*1000;coverageAt=started;
  const writer=async(n)=>{
-  let number=(scenario==='concentrated'?2_000_000:overview?8_000_000:5_000_000)+n*100000,step=0,hand=null;
+  let number=(scenario==='concentrated'?2_000_000:overview?8_000_000:5_000_000)+n*100000,step=0,hand=null,operation=crypto.randomUUID();
   while(Date.now()<end&&!stopping){
    const start=Date.now();
    try{
-    const value=await rpc('fixture_scale_step_v1',{p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
+    const value=await rpc('fixture_scale_step_once_v1',{p_operation:operation,p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
+    const event={handId:value.handId,number,step,at:Date.parse(value.sourceWrittenAt)};
     hand=value.handId;stats.sourceWrites++;const ackOrder=++observationOrder;
-    if(!reconnecting&&(!revoking||n!==20))for(const c of clients)if(c.tour===uuid('10000000',n)&&c.online&&c.accessOnline){
-     const at=Date.parse(value.sourceWrittenAt);
-     if(!overview){c.expected.push({handId:hand,number,step,at});expectedDeliveries++;}
-     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');
-     if(overview){c.snapshotExpected.push({at,generation:value.generation,deferred:value.generationDeferred,ackOrder});snapshotExpected++;}
-     c.credit();
-    }
+    // The intent is committed and acknowledged. Advance independently of
+    // delivery checks so an invariant failure cannot replay a source action.
     if(step===5){
-     const completed=hand,written=Date.parse(value.sourceWrittenAt);
+     const completed=hand,written=event.at;
      track((async()=>{try{await until(()=>rpc('fixture_scale_hand_ready_v1',{p_hand_id:completed},true),15000,'projection_timeout');stats.projection.push(Date.now()-written);}catch{error('projection_timeout');}})());
      number++;step=0;hand=null;
     }else step++;
+    operation=crypto.randomUUID();
+    if(!reconnecting&&(!revoking||n!==20))for(const c of clients)if(c.tour===uuid('10000000',n)&&c.online&&c.accessOnline){
+     if(!overview){c.expected.push(event);expectedDeliveries++;}
+     assert.match(value.generation,/^\d+$/);assert.equal(typeof value.generationDeferred,'boolean');
+     if(overview){c.snapshotExpected.push({at:event.at,generation:value.generation,deferred:value.generationDeferred,ackOrder});snapshotExpected++;}
+     c.credit();
+    }
    }catch{error('source_write');}
    await sleep(Math.max(0,1000-(Date.now()-start)));
   }
   // Finish the fixture's final partial hand before starting the next scenario;
   // an old in-progress hand must not shadow the next tour's completed hand.
-  while(hand&&step>0&&step<=5){await rpc('fixture_scale_step_v1',{p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);step++;}
+  while(hand&&step>0&&step<=5){await rpc('fixture_scale_step_once_v1',{p_operation:operation,p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);step++;operation=crypto.randomUUID();}
  };
  const writers=Array.from({length:tourCount},(_,i)=>writer(i+1));
  let restarted=false,withdrawn=false,lastHealth=0,lastProgress=0,revokedClients=0,reconnectedClients=0,restoredClients=0;
@@ -341,7 +344,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');if(!overview)assert.ok(report.healthyRealtimeP95Ms<=3000,'Visible felt p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
  assert.equal(stats.errors.hud_read??0,0,'HUD HTTP failures are not excluded from acceptance');
- for(const kind of ['healthy_table_read','healthy_snapshot_read','clock_read','hud_not_ready','history_not_ready','health_read'])assert.equal(stats.errors[kind]??0,0,kind);
+ for(const kind of ['healthy_table_read','healthy_snapshot_read','clock_read','hud_not_ready','history_not_ready','health_read','delivery_timestamp'])assert.equal(stats.errors[kind]??0,0,kind);
 }
 if(viewers===1000&&targetDuration===1800){
  const seed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8'));

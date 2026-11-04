@@ -106,6 +106,29 @@ BEGIN
  RETURN jsonb_build_object('handId',hand,'generation',(SELECT source_revision::text FROM spectator_projection_v2.entity_markers WHERE tournament_id=p_tournament_id AND component='tables' AND entity_key='generation'),
   'generationDeferred',EXISTS(SELECT 1 FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id=p_tournament_id AND component='tables' AND source_txid=pg_current_xact_id()),'sourceWrittenAt',clock_timestamp());
 END $$;
+-- Isolated source intent receipt: retries after an unknown HTTP result must
+-- return the original committed event, not append an action or open a new hand.
+CREATE TABLE spectator_projection_v2.fixture_source_operations(
+ operation_id uuid PRIMARY KEY,request jsonb NOT NULL,response jsonb
+);
+ALTER TABLE spectator_projection_v2.fixture_source_operations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON spectator_projection_v2.fixture_source_operations FROM PUBLIC,anon,authenticated,service_role;
+CREATE FUNCTION public.fixture_scale_step_once_v1(p_operation uuid,p_tournament_id uuid,p_number integer,p_step integer,p_hand_id uuid DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE intent jsonb;receipt spectator_projection_v2.fixture_source_operations;result jsonb;
+BEGIN
+ IF auth.role() IS DISTINCT FROM 'service_role' OR p_operation IS NULL THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501';END IF;
+ intent:=jsonb_build_array(p_tournament_id,p_number,p_step,p_hand_id);
+ INSERT INTO spectator_projection_v2.fixture_source_operations(operation_id,request) VALUES(p_operation,intent) ON CONFLICT DO NOTHING;
+ SELECT * INTO STRICT receipt FROM spectator_projection_v2.fixture_source_operations WHERE operation_id=p_operation FOR UPDATE;
+ IF receipt.request IS DISTINCT FROM intent THEN RAISE EXCEPTION 'fixture_operation_conflict';END IF;
+ IF receipt.response IS NOT NULL THEN RETURN receipt.response;END IF;
+ result:=public.fixture_scale_step_v1(p_tournament_id,p_number,p_step,p_hand_id);
+ UPDATE spectator_projection_v2.fixture_source_operations SET response=result WHERE operation_id=p_operation;
+ RETURN result;
+END $$;
+REVOKE ALL ON FUNCTION public.fixture_scale_step_once_v1(uuid,uuid,integer,integer,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fixture_scale_step_once_v1(uuid,uuid,integer,integer,uuid) TO service_role;
 CREATE FUNCTION public.fixture_scale_visibility_v1(p_tournament_id uuid,p_hidden boolean) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$ BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501'; END IF;
