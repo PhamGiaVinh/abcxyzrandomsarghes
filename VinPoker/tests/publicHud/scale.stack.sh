@@ -12,6 +12,7 @@ cleanup(){
   result=$?
   if [[ "$result" != 0 ]]; then node "$repo_root/tests/publicHud/scale.diagnostics.mjs" "$test_root" "$project_id" || true; fi
   if [[ -n "$serve_pid" ]]; then kill "$serve_pid" >/dev/null 2>&1 || true; fi
+  node "$repo_root/tests/publicHud/scale.isolate-diagnostics.mjs" "$project_id" || true
   supabase stop --workdir "$test_root" --no-backup >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -41,6 +42,7 @@ for fn in public-player-hud public-hud-projector-v1 public-spectator-projector-v
   printf '\n[functions.%s]\nverify_jwt = false\n' "$fn" >>"$test_root/supabase/config.toml"
 done
 printf 'PUBLIC_HUD_WORKER_SECRET=%s\nPUBLIC_SPECTATOR_WORKER_SECRET=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >"$test_root/workers.env"
+printf 'PUBLIC_HUD_ISOLATE_DIAGNOSTICS=isolated-hud-runtime-diagnostics-v1\n' >>"$test_root/workers.env"
 exclude='imgproxy,logflare,mailpit,postgres-meta,storage-api,studio,supavisor,vector'
 supabase start --workdir "$test_root" --exclude "$exclude" >"$test_root/start.log" 2>&1
 docker inspect "supabase_db_$project_id" >/dev/null

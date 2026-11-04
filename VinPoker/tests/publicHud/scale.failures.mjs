@@ -44,3 +44,17 @@ export function writerCaptureFailureKind(error,capturedPlans){
  if(/writer_plan_capture/.test(text))return 'logs_not_returned';
  return 'capture_unavailable';
 }
+
+// Only this function's explicit telemetry prefix and fixed scalar fields leave logs.
+export function sanitizeIsolateShutdowns(log){
+ const events=[];
+ for(const match of String(log).matchAll(/PUBLIC_HUD_ISOLATE_DIAGNOSTIC (\{[^\r\n]*\})/g)){
+  if(events.length>=1000)break;
+  try{const value=JSON.parse(match[1]);
+   if(value.kind!=='PUBLIC_HUD_ISOLATE_SHUTDOWN'||!['CPUTime','WallClockTime','Memory','MemoryLimit','EarlyDrop','TerminationRequested','unknown'].includes(value.reason))continue;
+   if(!['ageMs','received','completed','active'].every(k=>Number.isSafeInteger(value[k])&&value[k]>=0&&value[k]<=1000000000)||value.received!==value.completed+value.active)continue;
+   events.push({reason:value.reason,ageMs:value.ageMs,received:value.received,completed:value.completed,active:value.active});
+  }catch{}
+ }
+ return events;
+}

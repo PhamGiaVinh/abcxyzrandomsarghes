@@ -1,3 +1,4 @@
+import {createIsolateDiagnostics} from './isolateDiagnostics.ts';
 import {createPublicHudReadBatcher} from './readBatch.ts';
 import type {PublicHudReadTiming} from './readBatch.ts';
 import { handleOptions, jsonResp as baseJsonResp } from '../_shared/cors.ts';
@@ -13,7 +14,13 @@ function jsonResp(req:Request,data:unknown,status=200){
   return response;
 }
 
+const isolateDiagnosticsEnabled=Deno.env.get('PUBLIC_HUD_ISOLATE_DIAGNOSTICS')==='isolated-hud-runtime-diagnostics-v1';
+const isolateDiagnostics=createIsolateDiagnostics(isolateDiagnosticsEnabled,value=>console.log('PUBLIC_HUD_ISOLATE_DIAGNOSTIC '+JSON.stringify(value)));
+if(isolateDiagnosticsEnabled)addEventListener('beforeunload',event=>isolateDiagnostics.shutdown((event as Event & {detail?:{reason?:unknown}}).detail?.reason));
+
 Deno.serve(async req => {
+  const finishDiagnostic=isolateDiagnostics.begin();
+  try {
   const started=performance.now();
   let rpcTiming:PublicHudReadTiming|undefined;
   const respond=(data:unknown,status=200)=>{
@@ -44,4 +51,5 @@ Deno.serve(async req => {
     if(error instanceof Error&&error.message==='PUBLIC_HUD_RELOAD_REQUIRED')return respond({error:'PUBLIC_HUD_RELOAD_REQUIRED'},409);
     return respond({error:'PUBLIC_HUD_UNAVAILABLE'},400);
   }
+  } finally {finishDiagnostic();}
 });
