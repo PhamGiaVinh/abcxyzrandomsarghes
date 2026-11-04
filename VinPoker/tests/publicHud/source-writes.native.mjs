@@ -23,7 +23,11 @@ try{
  const failed=op();assert.throws(()=>sql(query(failed,99)),/invalid_step/);
  assert.equal(Number(sql(`SELECT count(*) FROM spectator_projection_v2.fixture_source_operations WHERE operation_id='${failed}';`)),0);checked.push('failed-operation-rolls-back');
  console.log('Fixture intent replay, conflict and rollback passed; checking role boundaries');
- for(const role of ['anon','authenticated'])assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_step_once_v1('${op()}','${tour}',${number},0,NULL);`),/permission denied/);
+ for(const role of ['anon','authenticated']){
+  console.log(`Fixture boundary: ${role} execute denial`);
+  assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_step_once_v1('${op()}','${tour}',${number},0,NULL);`),/permission denied/);
+ }
+ console.log('Fixture boundary: service_role receipt read denial');
  assert.throws(()=>sql(`${service}SELECT * FROM spectator_projection_v2.fixture_source_operations;`),/permission denied/);checked.push('browser-execute-denied','private-receipt-read-denied');
  const report={kind:'NATIVE_POSTGRESQL_FIXTURE_INTENT_IDEMPOTENCY_NOT_PRODUCTION_WRITER',checked,passed:true};
  if(process.env.PUBLIC_HUD_SOURCE_WRITE_REPORT)writeFileSync(process.env.PUBLIC_HUD_SOURCE_WRITE_REPORT,JSON.stringify(report,null,2));console.log(JSON.stringify(report));
