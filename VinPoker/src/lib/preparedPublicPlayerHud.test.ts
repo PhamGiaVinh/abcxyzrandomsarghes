@@ -27,6 +27,42 @@ it('checks reconnect access with one summary read and preserves the opened revis
   expect(await loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen)).toBe(frozen);
   expect(invoke).toHaveBeenCalledTimes(1);expect(invoke.mock.calls[0][1].body).toMatchObject({mode:'summary',access_snapshot:'1:2:'});
 });
+it('recovers a revoked snapshot after the server briefly blocks old contributions',async()=>{
+ const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);
+ vi.useFakeTimers();
+ try{
+  invoke.mockReset();invoke.mockResolvedValueOnce({data:{access:'public',state:'unavailable'},error:null})
+   .mockResolvedValueOnce({data:{...summary(),revision:'43',accessChanged:true},error:null});
+  const invalidated=vi.fn();
+  const pending=loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen,invalidated).then(value=>({value}),error=>({error:error.message}));
+  await vi.advanceTimersByTimeAsync(500);
+  const completed=await pending;
+  expect(completed,JSON.stringify(completed)).toHaveProperty('value.revision','43');
+  expect(invalidated).toHaveBeenCalledTimes(1);expect(invoke).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(60000);expect(invoke).toHaveBeenCalledTimes(2);
+ }finally{vi.useRealTimers();}
+});
+it('never restores an invalidated frozen value even if the replacement watermark is unchanged',async()=>{
+ const frozen=await loadPreparedPublicPlayerHud(t,p,new AbortController().signal);
+ vi.useFakeTimers();
+ try{
+  invoke.mockReset();invoke.mockResolvedValueOnce({data:{access:'public',state:'unavailable'},error:null})
+   .mockResolvedValueOnce({data:{...summary(),revision:'43',accessChanged:false},error:null});
+  const invalidated=vi.fn(),pending=loadPreparedPublicPlayerHud(t,p,new AbortController().signal,frozen,invalidated);
+  await vi.advanceTimersByTimeAsync(500);const value=await pending;
+  expect(value).not.toBe(frozen);expect(value.revision).toBe('43');expect(invalidated).toHaveBeenCalledTimes(1);
+ }finally{vi.useRealTimers();}
+});
+it('can finish an initial open during a removal barrier without polling after success',async()=>{
+ vi.useFakeTimers();
+ try{
+  invoke.mockReset();invoke.mockResolvedValueOnce({data:{access:'public',state:'unavailable'},error:null})
+   .mockResolvedValueOnce({data:summary(),error:null});
+  const pending=loadPreparedPublicPlayerHud(t,p,new AbortController().signal);
+  await vi.advanceTimersByTimeAsync(500);expect((await pending).lifetimeHands).toBe(1_000_000);
+  await vi.advanceTimersByTimeAsync(60000);expect(invoke).toHaveBeenCalledTimes(2);
+ }finally{vi.useRealTimers();}
+});
 it('checks an invalidated scope before history and skips history while warming or revoked',async()=>{
  for(const data of [{access:'public',state:'warming'},{access:'revoked'}]){
   invoke.mockReset();invoke.mockResolvedValue({data,error:null});

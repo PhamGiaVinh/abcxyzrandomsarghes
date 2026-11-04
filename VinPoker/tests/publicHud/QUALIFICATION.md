@@ -423,3 +423,12 @@ Measured scenario hand numbers now start above the9M source-matrix fixture.
 Earlier short-run table latency/zero-miss counters have a fixture-ordering
 caveat: a stale higher-numbered fixture could satisfy the old later-hand test.
 No earlier run qualified; final acceptance must use the corrected ordering.
+
+HUD opening and access revalidation share the browser preparation helper with
+the HTTP load driver. Only the exact two-field public/unavailable withdrawal
+barrier may wait and reread, within one total five-second budget. It immediately
+clears any frozen HUD/history; successful reads start no polling. Warming,
+revoked, malformed data and HTTP/network failures are not retried. Added
+requests count in HTTP accounting, and the entire logical preparation/recovery
+duration counts in HUD latency. Unresolved preparation, deadlines and missing
+viewer recovery still fail the existing qualification gates.

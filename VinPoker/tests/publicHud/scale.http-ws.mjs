@@ -10,7 +10,7 @@ import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {classifyEdgeFailure} from './scale.failures.mjs';
 import {PublicSnapshotCoordinator} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
-import {readPublicHudRequest} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
+import {readPublicHudRequest,revalidatePublicHudRead} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
@@ -60,12 +60,13 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
  }catch(error){if(intentionallyCancelled(error)){accounting.cancelled++;throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});}throw error;}
 }
 const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privileged);
-const hud=async(tour,mode='summary',accessSnapshot,phase,signal)=>{
+const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
  if(hudTransport==='product_rpc'){
   const start=performance.now();
   try{
-  const value=await readPublicHudRequest(status.API_URL,status.ANON_KEY,
-   {tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},signal??new AbortController().signal,
+  const caller=signal??new AbortController().signal;
+  const request=owned=>readPublicHudRequest(status.API_URL,status.ANON_KEY,
+   {tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},owned,
    async(url,init)=>{
     const target=new URL(url);assert.equal(target.origin,status.API_URL);
     assert.ok(['/rest/v1/rpc/get_public_player_hud_summary_v1','/rest/v1/rpc/get_public_player_hud_history_v1'].includes(target.pathname));
@@ -75,6 +76,7 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal)=>{
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
    });
+  const value=mode==='summary'?await revalidatePublicHudRead(request,caller,onPreparing):await request(caller);
   if(mode==='summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
   return value;
   }catch(error){
@@ -262,10 +264,12 @@ for(const scenario of ['concentrated','distributed','overview']){
    state.hudController?.abort();const controller=new AbortController();state.hudController=controller;state.hudActive=true;
    const epoch=++state.hudEpoch,accessReconnect=state.accessReconnect;
    try{
-    const value=await hud(tour,'summary',frozen.accessSnapshot,phase,controller.signal);
+    const value=await hud(tour,'summary',frozen.accessSnapshot,phase,controller.signal,()=>{
+     if(epoch===state.hudEpoch){state.historyController?.abort();state.frozen=null;state.historySnapshot=null;}
+    });
     if(epoch!==state.hudEpoch)return;
     if(value.access!=='public'||!['current','updating'].includes(value.state)){state.historyController?.abort();state.frozen=null;state.historySnapshot=null;if(!revoking)notReady('summary',phase,value);return;}
-    if(value.accessChanged){state.historyController?.abort();state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};track(readHudHistory(state.frozen,phase+'-changed',revoking));}
+    if(value.accessChanged||!state.frozen){state.historyController?.abort();state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};track(readHudHistory(state.frozen,phase+'-changed',revoking));}
     else assert.equal(state.frozen,frozen,'Access verification must retain the frozen HUD');
     if(epoch===state.hudEpoch&&state.frozen){state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;}
    }catch(cause){if(!cause.intentionalHudCancellation){error('hud_read');if(epoch===state.hudEpoch){state.historyController?.abort();state.historySnapshot=null;state.frozen=null;}}}
