@@ -125,3 +125,17 @@ it('aborts the current core read when the viewer unmounts',()=>{
  rpc.mockImplementation(()=>new Promise(()=>{}));const view=render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
  expect(liveSignals).toHaveLength(3);view.unmount();expect(liveSignals.every(signal=>signal.aborted)).toBe(true);
 });
+it('clears an already displayed hand when a later public read explicitly revokes access',async()=>{
+ let revoked=false;
+ rpc.mockImplementation(async(name:string)=>({error:null,data:
+  name==='get_public_tournament_clock_summary'?[{tournament_id:'tour',players_remaining:0,average_stack:0}]:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?(revoked?{access:'revoked'}:{access:'public',state:'waiting',tableId:'table',tableSessionId:'session',hand:null}):
+  name==='get_public_tournament_table_hand_v2'?{id:'hand',tableId:'table',handNumber:32,status:'completed'}:null}));
+ vi.useFakeTimers();render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table" initialReplayTarget={target}/>);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+ await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Deliver replay'}));});
+ expect(screen.getByTestId('rendered-felt')).toBeInTheDocument();revoked=true;
+ await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['tables']}}));await vi.advanceTimersByTimeAsync(1001);});
+ expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
+ expect(screen.getByText('Bàn này không còn được công khai.')).toBeInTheDocument();
+});

@@ -383,8 +383,17 @@ function TournamentLiveViewContent({
       return;
     }
 
-    const currentResponse = usePublicCurrentHand ? parsePublicTableCurrentResponse(currentHandRes.data) : null;
-    if (usePublicCurrentHand && (!currentResponse || currentResponse.access === "revoked")) {
+      const currentResponse = usePublicCurrentHand ? parsePublicTableCurrentResponse(currentHandRes.data) : null;
+      if(usePublicCurrentHand&&currentResponse?.access==='revoked'){
+        // A successful access denial is authoritative even after a previously
+        // loaded hand. A transport failure may retain the last frame; denial may not.
+        requestSeqRef.current++;initialReadFailedRef.current=true;initialLoadedRef.current=false;publicSummaryRef.current=null;
+        setSeats([]);setCommunityCards([]);setActions([]);setPotSize(0);setHandId(null);setHandNumber(null);
+        setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
+        setHistoryReplayTarget(null);setToActId(null);setTableDisplayState(null);setMode('live');
+        setFatalError('Bàn này không còn được công khai.');setLoading(false);return;
+      }
+      if (usePublicCurrentHand && !currentResponse) {
       if (!initialLoadedRef.current) {
         initialReadFailedRef.current=true;
         setFatalError("Bàn này không còn được công khai.");

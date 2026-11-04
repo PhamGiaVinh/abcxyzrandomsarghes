@@ -89,6 +89,11 @@ Actual component-change broadcasts remain immediate; initial reads, background
 pause, healthy/offline polling and all latency/error/recovery gates remain.
 The real harness performs the same extra current-hand read when deferred
 metadata invokes the existing full-page reader. It does not omit that work.
+An explicit revoked current-hand response now clears an already displayed live
+or replay hand, including when the withdrawal broadcast was missed. It is not
+treated as a transient transport failure. The replay-loading regression covers
+that previously loaded-frame path; malformed/failed transport retains its
+existing separate recovery behavior.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 
