@@ -15,6 +15,14 @@ a supplementary 30-second overview-grid regression at the same viewer count
 across twenty tournaments. The short grid regression is not a 30-minute grid
 capacity claim. Each viewer
 subscribes to its tournament and the content-free HUD revocation channel.
+For the separate history-growth comparison, dispatch `public-hud-scale.yml`
+with `qualification=false`, `connection_probe=false` and `history_scale=10000`
+or `100000`. The same native summary/history/fallback row-read checks and real
+HTTP stack run at10viewers/30s; these are growth evidence, not1000viewer proof.
+The1M qualification ignores this diagnostic size input and always seeds1M.
+Each size has its own concurrency group and isolated runner/database. Keep
+candidate SHA, runtime configuration, indexes/bytes and native read counts in
+the comparison; do not substitute the prebuilt fixture for backfill proof.
 Initial admission is capped at 50 new viewers/second, with all initial requests
 still included in HTTP/error results. Only after all target viewers have joined
 does the full 30-minute hold start. The mass reconnect remains simultaneous;
@@ -33,7 +41,8 @@ contain the disposable credentials. The workflow uploads sanitized evidence.
 The real source fixture writes six separate transactions per hand at one step
 per second per active tournament. The actual cron-dispatched workers process
 them. Restarting the local Realtime container forces all viewer sockets to
-reconnect. Anonymous summary/history requests use actual HTTP Edge functions;
+reconnect. Anonymous summary/history requests use the actual shared product RPC
+reader over HTTP (the compatibility Edge endpoints are checked separately);
 table reads use PostgREST. The test creates no browser windows.
 
 The watched-felt workload loads canonical current hand on table changes. The

@@ -5,9 +5,12 @@ const isolatedStack=database==='postgres'&&process.env.PUBLIC_HUD_ISOLATED_STACK
 if(!isolatedStack&&!/^vinpoker_hud_(scale|test)_[a-z0-9_]+$/.test(database)) throw Error('Disposable HUD database name required');
 const windows=process.platform==='win32';
 const prefix=windows?['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql']:[];
-export function sql(query){
+export function sql(query,{captureFailure=false}={}){
   return execFileSync(windows?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{
     input:query,encoding:'utf8',maxBuffer:8*1024*1024,
+    // Explicit pipes suppress execFileSync's automatic stderr echo. Diagnostic
+    // callers can then emit only sanitized plan fields, never nested SQL text.
+    ...(captureFailure?{stdio:'pipe'}:{}),
     env:windows?process.env:{...process.env,PGHOST:'127.0.0.1',PGPORT:process.env.PUBLIC_HUD_LOCAL_PORT??'5432',PGUSER:'postgres',PGDATABASE:database},
   }).trim();
 }

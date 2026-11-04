@@ -5,6 +5,9 @@ on:
       qualification:
         type: boolean
         default: false
+      history_scale:
+        type: string
+        default: '100'
       edge_parallelism:
         type: string
         default: '16'
@@ -28,6 +31,11 @@ on:
         description: 'Diagnostic 1000 viewers/small history: three 30-second scenarios'
         type: boolean
         default: false
+      history_scale:
+        description: 'Nonqualifying history growth comparison; qualification always uses 1M'
+        type: choice
+        options: ['100', '10000', '100000', '1000000']
+        default: '100'
       hud_transport:
         description: 'Product RPC reader, or short nonqualifying comparison transports'
         type: choice
@@ -51,7 +59,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: public-hud-scale-${{ github.ref }}
+  group: public-hud-scale-${{ github.ref }}-${{ inputs.qualification && 'qualification' || inputs.connection_probe && 'connection-probe' || inputs.history_scale || '100' }}
   cancel-in-progress: false
 jobs:
   real-stack:
@@ -61,7 +69,7 @@ jobs:
       run:
         working-directory: VinPoker
     env:
-      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || '100' }}
+      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
       PUBLIC_HUD_SCALE_TRANSPORT: ${{ inputs.hud_transport || 'product_rpc' }}

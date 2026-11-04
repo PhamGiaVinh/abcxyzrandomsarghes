@@ -45,7 +45,21 @@ const fallbackReads=jsonSql(`BEGIN;${noRanking}
  SET LOCAL ROLE anon;DO $$ BEGIN FOR i IN 1..20 LOOP PERFORM ${summary};END LOOP;END $$;RESET ROLE;
  SELECT jsonb_agg(jsonb_build_object('table',s.relname,'sequentialRows',s.seq_tup_read-b.seq_tup_read,'indexRows',s.idx_tup_fetch-b.idx_tup_fetch)) FROM pg_stat_xact_user_tables s JOIN identity_raw_before b USING(relid);ROLLBACK;`);
 if(boundedPlanAsserted){
- for(const r of fallbackReads){assert.equal(r.sequentialRows,0);assert(r.indexRows<=20*8,`${r.table} fallback must read bounded source rows: ${JSON.stringify({scope,reads:fallbackReads})}`);}
+ if(fallbackReads.some(r=>r.sequentialRows!==0||r.indexRows>20*8)){
+  // Diagnose the exact nested function plans on the failing isolated runner.
+  // Never emit Query Text, filter expressions or source SQL into artifacts.
+  try{
+   sql(`BEGIN;${noRanking}LOAD 'auto_explain';SET LOCAL client_min_messages='warning';SET LOCAL auto_explain.log_level='warning';SET LOCAL auto_explain.log_min_duration=0;SET LOCAL auto_explain.log_analyze=on;SET LOCAL auto_explain.log_nested_statements=on;SET LOCAL auto_explain.log_format='json';SET LOCAL ROLE anon;
+    DO $$ BEGIN FOR i IN 1..20 LOOP PERFORM ${summary};END LOOP;END $$;RESET ROLE;ROLLBACK;DO $$ BEGIN RAISE EXCEPTION 'identity_plan_capture';END $$;`,{captureFailure:true});
+  }catch(error){
+   const text=String(error?.stderr??'');const plans=[];
+   for(const match of text.matchAll(/plan:\s*(\{[\s\S]*?\n\})/g)){
+    try{const value=JSON.parse(match[1]);if(value.Plan)plans.push(nodes(value.Plan).filter(n=>['hand_players','tournament_hands','hand_actions','hand_contributions'].includes(n['Relation Name'])).map(n=>({node:n['Node Type'],table:n['Relation Name'],index:n['Index Name'],rows:n['Actual Rows'],loops:n['Actual Loops'],removed:n['Rows Removed by Filter']})));}catch{}
+   }
+   console.log(JSON.stringify({kind:'SANITIZED_FAILED_IDENTITY_NESTED_PLANS',scope,reads:fallbackReads,plans:plans.filter(p=>p.length),captureAvailable:plans.length>0}));
+  }
+ }
+ for(const r of fallbackReads){assert.equal(r.sequentialRows,0,`${r.table} sequential fallback read: ${JSON.stringify({scope,reads:fallbackReads})}`);assert(r.indexRows<=20*8,`${r.table} fallback must read bounded source rows: ${JSON.stringify({scope,reads:fallbackReads})}`);}
 }
 // Force fallback for every source scope and compare before/after index removal.
 // Also exercise equal/null timestamps and a second algorithm version without
