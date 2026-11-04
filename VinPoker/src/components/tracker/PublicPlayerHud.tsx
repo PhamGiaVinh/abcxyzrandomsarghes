@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import type { PublicPlayerHudData } from '@/lib/publicPlayerHud';
+import type { PublicPlayerHudData,PublicPlayerHand } from '@/lib/publicPlayerHud';
 import type { TrackerAnalyticsMetric } from '@/lib/trackerVoice/analytics';
 import { formatChips } from '@/lib/tv/format';
 import {PlayerHandHistory} from './PlayerHandHistory';
 import {PublicPlayerHudHelp} from './PublicPlayerHudHelp';
 import {PUBLIC_HUD_METRIC_INFO,type PublicHudMetricKey} from '@/lib/publicPlayerHudMetrics';
-import type {PreparedPublicPlayerHudData} from '@/lib/preparedPublicPlayerHud';
+import type {PreparedPublicPlayerHudData,PublicHudHistoryCursor} from '@/lib/preparedPublicPlayerHud';
 
 type MetricDisplayProps={label:string;metric?:TrackerAnalyticsMetric;metricKey:PublicHudMetricKey;onExplain:(key:PublicHudMetricKey)=>void};
 function Ring({label,metric,metricKey,onExplain}:MetricDisplayProps) {
@@ -38,31 +38,33 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
   const [helpMetric,setHelpMetric]=useState<PublicHudMetricKey>('vpip');
   const explain=(key:PublicHudMetricKey)=>{setHelpMetric(key);setHelpOpen(true);};
   const [result, setResult] = useState<PreparedPublicPlayerHudData | null>(null);
+  const resultRef=useRef(result);resultRef.current=result;
   const [historyLoading,setHistoryLoading]=useState(false);
   const [historyError,setHistoryError]=useState(false);
+  const [history,setHistory]=useState<{snapshot:PreparedPublicPlayerHudData;hands:PublicPlayerHand[];nextCursor:PublicHudHistoryCursor|null}|null>(null);
+  const [historyRetry,setHistoryRetry]=useState(0);
   const [preparing,setPreparing]=useState(false);
   const [error, setError] = useState(false);
-  const scopeController=useRef<AbortController|null>(null);
+  const historyController=useRef<AbortController|null>(null);
   useEffect(() => {
     setResult(null);setError(false);setPreparing(false);setHistoryError(false);setHistoryLoading(false);setHelpOpen(false);
     if (!playerId) return;
     const controller = new AbortController();
-    scopeController.current=controller;
     let unsubscribe:(()=>void)|undefined;
     let pending=new AbortController(),attempt=0,requestActive=false,verifyAfterRead=false,revalidationTimer:ReturnType<typeof setTimeout>|undefined;
     void import('@/lib/preparedPublicPlayerHud').then(({loadPreparedPublicPlayerHud,observePublicHudRevocation}) => {
       if(controller.signal.aborted)return;
       let frozen:PreparedPublicPlayerHudData|null=null;
       const load=(reason:'open'|'verify'|'revoked'='open')=>{
-        if(reason==='revoked'){attempt++;frozen=null;setResult(null);setError(false);setPreparing(false);}
+        if(reason==='revoked'){attempt++;historyController.current?.abort();frozen=null;setResult(null);setError(false);setPreparing(false);}
         // Invalidate the displayed generation immediately, then serialize
         // same-scope rechecks. A second event must not start/cancel another read.
         if(requestActive){verifyAfterRead=true;return;}
         if(revalidationTimer!==undefined)return;
         setError(false);setPreparing(false);
         const read=()=>{revalidationTimer=undefined;pending.abort();pending=new AbortController();const flight=pending,owned=++attempt;requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,flight.signal,frozen??undefined,()=>{
-          if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);}
-        },reason!=='open').then(value=>{
+          if(!controller.signal.aborted&&owned===attempt){historyController.current?.abort();frozen=null;setResult(null);}
+        }).then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
             if(!frozen||(value!==frozen&&value.accessChanged)){frozen=value;setResult(value);}
           }
@@ -81,33 +83,51 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
     }).catch(()=>{if(!controller.signal.aborted)setError(true);});
     return () => {controller.abort();pending.abort();clearTimeout(revalidationTimer);unsubscribe?.();};
   }, [tournamentId, playerId]);
+  useEffect(()=>{
+    setHistory(null);setHistoryError(false);
+    if(!result||result.playerId!==playerId||result.tournamentId!==tournamentId){setHistoryLoading(false);return;}
+    const snapshot=result,controller=new AbortController();historyController.current=controller;setHistoryLoading(true);
+    void import('@/lib/preparedPublicPlayerHud').then(({loadPublicHudHistoryPage})=>{
+      if(controller.signal.aborted)return;
+      return loadPublicHudHistoryPage(tournamentId,snapshot.playerId,controller.signal).then(page=>{
+        if(!controller.signal.aborted&&resultRef.current===snapshot)setHistory({snapshot,hands:page.hands,nextCursor:page.nextCursor});
+      });
+    }).catch(reason=>{
+      if(controller.signal.aborted||resultRef.current!==snapshot)return;
+      if(reason instanceof Error&&reason.message==='PUBLIC_HUD_ACCESS_REVOKED'){setError(true);setResult(previous=>previous===snapshot?null:previous);}
+      setHistoryError(true);
+    }).finally(()=>{if(!controller.signal.aborted)setHistoryLoading(false);});
+    return()=>{controller.abort();if(historyController.current===controller)historyController.current=null;};
+  },[result,tournamentId,playerId,historyRetry]);
   // Scope on render as well as cleanup: never flash the previous person's statistics.
   const complete = result?.playerId === playerId && result?.tournamentId === tournamentId ? result : null;
   const current = complete;
+  const currentHistory=history?.snapshot===complete?history:null;
   const metrics = complete?.analytics.metrics ?? {};
   return <Dialog open={playerId != null} onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="operations-typography max-h-[90svh] max-w-xl overflow-y-auto border-border bg-card p-5 text-foreground">
     <DialogTitle className="flex items-center gap-4 pr-8"><Avatar className="h-16 w-16"><AvatarImage src={current?.avatarUrl ?? undefined} alt="" /><AvatarFallback>{current?.name.slice(0,2) ?? '?'}</AvatarFallback></Avatar><span>{current?.name ?? 'Thống kê người chơi'}</span></DialogTitle>
     <DialogDescription>Chỉ số cộng dồn toàn bộ hand hoàn tất được công khai qua tất cả tour. Lịch sử stack và replay chỉ thuộc tour đang xem.</DialogDescription>
     {error && <p role="alert">{preparing?'Thống kê đang được chuẩn bị. Hãy đóng và mở lại sau.':'Không tải đủ thống kê công khai. Hãy đóng và mở lại để thử.'}</p>}
-    {!current ? !error && <p role="status">Đang tải hồ sơ và lịch sử tour…</p> : <>
-      <PlayerHandHistory tournamentId={tournamentId} hands={current.handHistory ?? []}/>
-      {current.nextHistoryCursor&&<button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm disabled:opacity-50" onClick={async()=>{
+    {!current ? !error && <p role="status">Đang tải thống kê người chơi…</p> : <>
+      {!currentHistory&&!historyError&&<p role="status">Đang tải lịch sử tour…</p>}
+      {currentHistory&&<PlayerHandHistory tournamentId={tournamentId} hands={currentHistory.hands}/>}
+      {currentHistory?.nextCursor&&<button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm disabled:opacity-50" onClick={async()=>{
         setHistoryLoading(true);setHistoryError(false);
-        const scope=current;
-        const signal=scopeController.current?.signal;
+        const scope=currentHistory;
+        const signal=historyController.current?.signal;
         if(!signal||signal.aborted){setHistoryLoading(false);return;}
         try{
           const {loadPublicHudHistoryPage}=await import('@/lib/preparedPublicPlayerHud');
-          const page=await loadPublicHudHistoryPage(tournamentId,scope.playerId,signal,scope.nextHistoryCursor??undefined);
-          if(signal.aborted)return;
-          setResult(previous=>previous===scope?{...previous,handHistory:[...previous.handHistory,...page.hands.filter(h=>!previous.handHistory.some(old=>old.handId===h.handId))],nextHistoryCursor:page.nextCursor}:previous);
+          const page=await loadPublicHudHistoryPage(tournamentId,scope.snapshot.playerId,signal,scope.nextCursor??undefined);
+          if(signal.aborted||resultRef.current!==scope.snapshot)return;
+          setHistory(previous=>previous===scope?{...previous,hands:[...previous.hands,...page.hands.filter(h=>!previous.hands.some(old=>old.handId===h.handId))],nextCursor:page.nextCursor}:previous);
         }catch(reason){
-          if(signal.aborted)return;
-          if(reason instanceof Error&&reason.message==='PUBLIC_HUD_ACCESS_REVOKED')setResult(previous=>previous===scope?null:previous);
+          if(signal.aborted||resultRef.current!==scope.snapshot)return;
+          if(reason instanceof Error&&reason.message==='PUBLIC_HUD_ACCESS_REVOKED'){setError(true);setResult(previous=>previous===scope.snapshot?null:previous);}
           setHistoryError(true);
         }finally{if(!signal.aborted)setHistoryLoading(false);}
       }}>{historyLoading?'Đang tải…':'Xem thêm 50 hand trong tour'}</button>}
-      {historyError&&<p role="alert" className="text-sm">Không tải được lịch sử. Hãy thử lại hoặc đóng và mở lại hồ sơ.</p>}
+      {historyError&&<div><p role="alert" className="text-sm">Không tải được lịch sử tour. Chỉ số tổng hợp vẫn giữ phiên bản lúc mở.</p><button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm" onClick={()=>setHistoryRetry(value=>value+1)}>Thử lại lịch sử</button></div>}
       <p className="text-xs text-muted-foreground">Bản thống kê lúc mở{current.computedAt?` · ${new Date(current.computedAt).toLocaleString('vi-VN')}`:''}. Đóng và mở lại để nhận bản mới.{current.updateState==='updating'?' Máy chủ đang cập nhật.':''}</p>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Chỉ số cộng dồn · Tất cả tour</h3><button type="button" onClick={()=>setHelpOpen(true)} className="min-h-11 rounded-md border border-border px-3 text-xs font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Giải thích các chỉ số</button></div>
       <div className="grid grid-cols-4 gap-2"><Ring label="VPIP" metric={metrics.vpip} metricKey="vpip" onExplain={explain} /><Ring label="PFR" metric={metrics.pfr} metricKey="pfr" onExplain={explain} /><Ring label="ATS" metric={metrics.ats} metricKey="ats" onExplain={explain} /><Ring label="3-BET" metric={metrics.threeBet} metricKey="threeBet" onExplain={explain} /></div>

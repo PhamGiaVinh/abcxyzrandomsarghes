@@ -2,11 +2,12 @@ import {act,render,screen,waitFor,cleanup,fireEvent} from '@testing-library/reac
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
 const load=vi.hoisted(()=>vi.fn());
+const history=vi.hoisted(()=>vi.fn());
 const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')=>void)}));
 const paid=vi.hoisted(()=>vi.fn());
-vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;return()=>{};}}));
+vi.mock('@/lib/preparedPublicPlayerHud',()=>({loadPreparedPublicPlayerHud:(...args:unknown[])=>load(...args),loadPublicHudHistoryPage:(...args:unknown[])=>history(...args),observePublicHudRevocation:(_tour:string,ready:(reason:'verify'|'revoked')=>void)=>{access.callback=ready;return()=>{};}}));
 vi.mock('@/components/PublicPaidWinnings',()=>({PublicPaidWinnings:()=> {paid();return <section>Cashier reader</section>;}}));
-beforeEach(()=>{vi.spyOn(Math,'random').mockReturnValue(0);});
+beforeEach(()=>{vi.spyOn(Math,'random').mockReturnValue(0);history.mockReset();history.mockResolvedValue({hands:[],nextCursor:null});});
 afterEach(()=>{cleanup();load.mockReset();paid.mockReset();vi.restoreAllMocks();});
 it('uses cached verified winnings without mounting the cashier history reader',async()=>{
  load.mockResolvedValue({...result('a'),totalWinnings:500});
@@ -90,10 +91,43 @@ it('shows metrics only after the complete prepared snapshot arrives',async()=>{
  const data=result('a');data.analytics.metrics.vpip={...metric,percentage:99,numerator:99,denominator:100,sampleSize:100};
  load.mockImplementation(()=>new Promise(done=>{resolve=done;}));
  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
- await screen.findByText('Đang tải hồ sơ và lịch sử tour…');
+ await screen.findByText('Đang tải thống kê người chơi…');
  expect(screen.queryByText('99%')).not.toBeInTheDocument();
  resolve(data);await screen.findByText('99%');
- expect(screen.queryByText('Đang tải hồ sơ và lịch sử tour…')).not.toBeInTheDocument();
+ expect(screen.queryByText('Đang tải thống kê người chơi…')).not.toBeInTheDocument();
+});
+it('shows frozen metrics while tour history is pending and keeps them on a history failure',async()=>{
+ let reject!:(error:Error)=>void;history.mockImplementation(()=>new Promise((_resolve,fail)=>{reject=fail;}));
+ load.mockResolvedValue({...result('a'),totalWinnings:500});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
+ await screen.findByText('500 ₫');await screen.findByText('Đang tải lịch sử tour…');
+ await act(async()=>reject(Error('history unavailable')));
+ await screen.findByText(/Không tải được lịch sử tour/);expect(screen.getByText('500 ₫')).toBeInTheDocument();
+ history.mockResolvedValue({hands:[],nextCursor:null});fireEvent.click(screen.getByRole('button',{name:'Thử lại lịch sử'}));
+ await waitFor(()=>expect(screen.queryByText(/Không tải được lịch sử tour/)).not.toBeInTheDocument());
+ expect(load).toHaveBeenCalledTimes(1);expect(history).toHaveBeenCalledTimes(2);
+});
+it('aborts late history on player change without changing the next player snapshot',async()=>{
+ let finish!:(value:unknown)=>void;history.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ load.mockImplementation((_t,p)=>Promise.resolve(result(p)));
+ const view=render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
+ await screen.findByText('TEST a');await waitFor(()=>expect(history).toHaveBeenCalledTimes(1));const signal=history.mock.calls[0][2] as AbortSignal;
+ view.rerender(<PublicPlayerHud tournamentId="t" playerId="b" onClose={()=>{}}/>);await screen.findByText('TEST b');expect(signal.aborted).toBe(true);
+ await act(async()=>finish({hands:[],nextCursor:{handId:'old',playedAt:null}}));
+ expect(screen.queryByRole('button',{name:'Xem thêm 50 hand trong tour'})).not.toBeInTheDocument();
+});
+it('clears aggregate data when the independent history read proves access was withdrawn',async()=>{
+ let reject!:(error:Error)=>void;history.mockImplementation(()=>new Promise((_resolve,fail)=>{reject=fail;}));
+ load.mockResolvedValue({...result('a'),totalWinnings:500});
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('500 ₫');
+ await waitFor(()=>expect(history).toHaveBeenCalledTimes(1));await act(async()=>reject(Error('PUBLIC_HUD_ACCESS_REVOKED')));
+ await screen.findByText(/Không tải đủ thống kê công khai/);expect(screen.queryByText('500 ₫')).not.toBeInTheDocument();
+});
+it('aborts pending independent history immediately on an access revocation event',async()=>{
+ history.mockImplementation(()=>new Promise(()=>{}));load.mockResolvedValue(result('a'));
+ render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
+ await waitFor(()=>expect(history).toHaveBeenCalledTimes(1));const signal=history.mock.calls[0][2] as AbortSignal;
+ act(()=>access.callback!('revoked'));expect(signal.aborted).toBe(true);expect(screen.queryByText('TEST a')).not.toBeInTheDocument();
 });
 it('shows no partial statistics if the prepared read fails',async()=>{
  load.mockRejectedValue(new Error('read failed'));
