@@ -9916,6 +9916,12 @@
       "filename": "20261104003000_public_hud_identity_membership_keyset.sql",
       "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
       "reason": "Tracker keyset membership lookup preserving invalid-parent gates; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003100",
+      "filename": "20261104003100_public_hud_enqueue_write_coalescing.sql",
+      "sha256": "1c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b",
+      "reason": "Tracker coalesced derived HUD enqueue writes preserving withdrawal and lease fencing; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [
