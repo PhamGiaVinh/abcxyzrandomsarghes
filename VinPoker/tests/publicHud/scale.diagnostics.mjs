@@ -8,12 +8,19 @@ for(const name of ['status.env','workers.env'])if(existsSync(root+'/'+name))secr
 function safeErrors(body){
  let safe=body;for(const value of secretValues)safe=safe.replaceAll(value,'[redacted]');
  safe=safe.replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[redacted-jwt]').replace(/Bearer\s+\S+/gi,'Bearer [redacted]');
- return safe.split('\n').filter(line=>/error|failed|cannot|isolate|worker|port|limit|connection|file change|setting up|unavailable/i.test(line)&&!line.includes('SECRET=')).slice(-60).join('\n');
+ return safe.split('\n').filter(line=>/error|failed|cannot|isolate|worker|port|limit|connection|file change|setting up|unavailable|server process|PANIC|database system/i.test(line)&&!line.includes('SECRET=')).slice(-60).join('\n');
 }
 for(const name of ['serve.log','start.log'])if(existsSync(root+'/'+name)){const body=readFileSync(root+'/'+name,'utf8');console.log(name+' lifecycle counts: '+JSON.stringify({fileChanges:(body.match(/File change detected/gi)??[]).length,runtimeSetups:(body.match(/Setting up Edge Functions runtime/gi)??[]).length}));console.log(name+' sanitized diagnostics:\n'+safeErrors(body));}
 for(const service of ['edge_runtime','kong','realtime']){
  try{const result=spawnSync('docker',['logs','--tail','200',`supabase_${service}_${project}`],{encoding:'utf8',maxBuffer:2*1024*1024});if(result.error||result.status!==0)throw Error('unavailable');console.log(`local ${service} sanitized diagnostics:\n`+safeErrors((result.stdout??'')+'\n'+(result.stderr??'')));}catch{console.log(`Local ${service} diagnostics unavailable`);}
 }
+// Database crashes can precede Edge startup. Emit lifecycle errors only;
+// statement text and connection details are deliberately excluded.
+try{
+ const result=spawnSync('docker',['logs','--tail','300',`supabase_db_${project}`],{encoding:'utf8',maxBuffer:2*1024*1024});
+ const lines=((result.stdout??'')+'\n'+(result.stderr??'')).split('\n').filter(line=>!/STATEMENT:|DETAIL:|CONTEXT:|HINT:/.test(line)&&/server process .*terminated by signal|terminating any other active server processes|all server processes terminated|database system was interrupted|database system is ready|PANIC:|out of memory/.test(line));
+ console.log('Local database lifecycle diagnostics:\n'+safeErrors(lines.join('\n')));
+}catch{console.log('Local database lifecycle diagnostic unavailable');}
 try{
  const query=`SELECT jsonb_build_object('hudJobs',(SELECT count(*) FROM tracker_analytics_v1.jobs),
   'spectatorJobs',(SELECT count(*) FROM spectator_projection_v2.work_groups),
