@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {mkdtemp,rm} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {initialize,sql,jsonSql,sqlAsync,service} from './nativeDb.mjs';
 
 if(process.argv.includes('--initialize'))initialize();
+if(process.argv.includes('--enqueue-coalescing'))sql(readFileSync('supabase/migrations/20261104003100_public_hud_enqueue_write_coalescing.sql','utf8'));
 const directory=await mkdtemp(path.join(os.tmpdir(),'vinpoker-hud-native-'));
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(directory,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
 const {processPublicHudJobs}=await import(pathToFileURL(path.join(directory,'worker.mjs')));

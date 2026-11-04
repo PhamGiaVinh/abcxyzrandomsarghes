@@ -116,8 +116,8 @@ jobs:
       - name: Native HTTP load transport cancellation and response integrity
         run: node --test tests/publicHud/scale.http.native.mjs
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
-        run: node tests/publicHud/incremental.native.mjs --initialize
-      - name: Exact sixteen-migration release guards and atomic receipts
+        run: node tests/publicHud/incremental.native.mjs --initialize --enqueue-coalescing
+      - name: Exact seventeen-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |
@@ -129,6 +129,8 @@ jobs:
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_history_plans_ci
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci PUBLIC_HUD_SCALE_HANDS=10000 node tests/publicHud/scale.seed.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/enqueue-writes.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/enqueue-writes.recovery.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/source-writes.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-plans.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-membership.native.mjs

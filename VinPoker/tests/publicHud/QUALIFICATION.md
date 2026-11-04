@@ -195,7 +195,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The sixteen migrations `20261104001500` through `20261104003000` are promoted
+The seventeen migrations `20261104001500` through `20261104003100` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -207,7 +207,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-sixteen exact manifest entries, each SQL and new ledger receipt atomically; stop
+seventeen exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -488,3 +488,9 @@ Native1M run41909616379 confirmed that the sole remaining preflight session was 
 Public spectator dispatch now uses a fixed per-instance0–199ms hint phase after the initial read, in addition to the existing2s minimum interval. Initial/scope reads remain immediate and withdrawal clearing remains synchronous. Duplicate hints never slide an already scheduled deadline. A regression reproduced an overdue hint producing3reads instead of2; the coordinator now retains its one scheduled callback, and that callback executes the read directly rather than recursively adding jitter. Running reads retain one queued follow-up; stop cancels pending work. Defaults/legacy consumers retain0jitter.
 
 Both actual public V2 consumers and the physical felt/overview load harness use this same coordinator. Snapshot timers, pending flags and physical request promises are included in drain/grading. All1Hz source,3s table,5s worker/error/recovery and10%write gates remain unchanged; added delay needs fresh runtime proof. Seeded1000-coordinator tests show spread hint dispatch while preserving immediate initial reads, non-sliding deadlines, held-read serialization and stop. This deterministic timer test is not1000viewer capacity evidence. Reports additionally expose per-endpoint physical launch counts in nonempty100ms generator-clock windows, including failed/cancelled requests; histogram percentiles are not all-time load.
+
+Migration031 coalesces only redundant derived writes. Both hand/result scope UPSERTs skip the heap update when sticky hard_block OR new hard_block is unchanged; inserts and false-to-true transitions still fire withdrawal triggers. Job generation/priority/lease/reset remains unchanged. Settlement UPDATE queues its hand once when OLD/NEW IDs match, and still queues both on a move; INSERT/DELETE remain covered. Source rows, evidence, totals and financial ledgers are not rewritten. Exact preimage hashes and both replacement anchors are guarded.
+
+Native row-version tests went red for no-op updates and duplicate same-hand settlement enqueue before031, then passed14checks including immediate blocking, public withholding, sticky restoration, result actor moves, unchanged source revision and lease fencing. Guarded rollback/reapply preserves exact old definitions, owner/ACL/OID/config and denies duplicate apply/recovery. Actual-worker classification/retry/stale-lease/void/restore/settlement/result/visibility/backfill/anon-denial regression passed with031, as did all10actual-projector amendments and concurrent fixture-intent retry/denial checks. This proves those contracts, not1000-viewer performance or<=10%write overhead. Fresh HTTP qualification is still required.
+
+Release package:17entries015–031, manifestSHA2562b23b1efd9393530f9bfdbc1dbb9e9d782eea5449ad89fabd733478b5f965ada;031SQLSHA2561c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b. Exact approved-SHA/recovery/paused-dispatch/atomic-receipt controls remain; confirmation scope is APPLY_17_ plus the pinned hash. A prior16-entry approval cannot authorize this package. Controlled definition recovery restores031 before030/029/028 and remaining dependencies; default rollback still disables derived reads/worker while preserving source/audit.
