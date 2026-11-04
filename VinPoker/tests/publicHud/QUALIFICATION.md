@@ -281,7 +281,7 @@ SQL load profiling installs only the existing pg_stat_statements extension/view 
 Migration025 adds plan-only reuse for the exact post023 public clock summary. It preserves every query expression, function property and permission. The separate private preimage must be restored with `clock-read-plan.forward-rollback.sql` before the earlier `read-plans.forward-rollback.sql` template. Native row/clock/scope/source-update/withdrawal/ACL and exact recovery checks precede the real HTTP load; native timing is not capacity evidence.
 
 Public HUD reads may share an identical anonymous RPC only among requests
-admitted in the five milliseconds BEFORE that query starts. The group is removed
+admitted in the 50 milliseconds BEFORE that query starts. The group is removed
 from the joinable map before transport invocation; no in-flight or completed
 result is reused by a later open. Keys include reader and scope; history includes both cursor fields. Summary groups retain each exact access snapshot separately. At most64 distinct summary snapshots and16KiB of snapshot UTF8 bytes are sent to migration026: one current rights/aggregate read, then the exact scalar visibility check per unique snapshot. Each participant receives its own result. One unique snapshot still uses the scalar RPC. Queue bounds bypass to a fresh ordinary read;
 cancellation/deadlines are per participant and each result is cloned. The

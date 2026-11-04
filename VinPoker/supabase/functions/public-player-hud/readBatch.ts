@@ -74,7 +74,7 @@ export function createPublicHudReadBatcher(url:string,key:string,send:typeof fet
     void createAnonymousPublicHudClient(url,key,send,owned.controller.signal,v=>{timing=v;}).rpc(rpcName,rpcArgs)
      .then(reply=>{const mapped=batch?summaryReplies(reply,snapshots):null;for(const waiter of [...owned.waiters])waiter.finish(mapped?mapped.get(waiter.snapshot)!:reply,timing?.outcome??'transport',size);})
      .catch(()=>{for(const waiter of [...owned.waiters])waiter.finish(unavailable(),'transport',size);});
-   },5);
+   },50);
   }
   const owned=group;
   return new Promise<Reply>(resolve=>{
