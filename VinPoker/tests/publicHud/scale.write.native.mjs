@@ -12,9 +12,26 @@ export function measureFixtureWriter(){
 }
 export function measureFixtureWriterTransactions({commit=false}={}){
  const ending=commit?'COMMIT':'ROLLBACK';
+ const pressureBefore=writerPressureSnapshot();
  const samples=pgbench("BEGIN;\nSET LOCAL request.jwt.claim.role='service_role';\nSET LOCAL ROLE service_role;\nSELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000001);\n"+ending+";\n");
+ const pressureAfter=writerPressureSnapshot();
  if(samples.length!==200||samples.some(n=>!Number.isFinite(n)))throw Error('Invalid pgbench fixture samples');
- return {p50Ms:samples[99],p95Ms:samples[189],maxMs:samples.at(-1),samples:samples.length,transaction:`BEGIN/source writer/${ending}; one transaction per sample`};
+ return {p50Ms:samples[99],p95Ms:samples[189],maxMs:samples.at(-1),samples:samples.length,transaction:`BEGIN/source writer/${ending}; one transaction per sample`,pressureBefore,pressureAfter};
+}
+// Separate observer sessions surround both benchmarks symmetrically. No reset,
+// forced checkpoint or waiting for quiet: graded transaction samples stay intact.
+// Statistics may lag; disabled I/O timing and missing observations are explicit.
+function writerPressureSnapshot(){
+ try{return jsonSql(`SELECT jsonb_build_object(
+ 'observedAt',clock_timestamp(),'trackIoTiming',current_setting('track_io_timing'),
+ 'checkpointer',(SELECT to_jsonb(s) FROM pg_stat_checkpointer s),
+ 'wal',(SELECT to_jsonb(s) FROM pg_stat_wal s),
+ 'bgwriter',(SELECT to_jsonb(s) FROM pg_stat_bgwriter s),
+ 'io',(SELECT jsonb_agg(to_jsonb(s)) FROM pg_stat_io s),
+ 'activity',(SELECT jsonb_agg(to_jsonb(s)) FROM
+ (SELECT backend_type,state,wait_event_type,count(*) AS sessions FROM pg_stat_activity
+ WHERE pid<>pg_backend_pid() GROUP BY backend_type,state,wait_event_type) s));`);}
+ catch{return {unavailable:true};}
 }
 export function cleanupCommittedWriterFixture(){
  const scope="h.tournament_id='10000000-0000-4000-8000-000000000001' AND h.hand_number=2000000001";
