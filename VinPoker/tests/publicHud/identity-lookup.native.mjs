@@ -45,7 +45,7 @@ const fallbackReads=jsonSql(`BEGIN;${noRanking}
  SET LOCAL ROLE anon;DO $$ BEGIN FOR i IN 1..20 LOOP PERFORM ${summary};END LOOP;END $$;RESET ROLE;
  SELECT jsonb_agg(jsonb_build_object('table',s.relname,'sequentialRows',s.seq_tup_read-b.seq_tup_read,'indexRows',s.idx_tup_fetch-b.idx_tup_fetch)) FROM pg_stat_xact_user_tables s JOIN identity_raw_before b USING(relid);ROLLBACK;`);
 if(boundedPlanAsserted){
- for(const r of fallbackReads){assert.equal(r.sequentialRows,0);assert(r.indexRows<=20*8,`${r.table} fallback must read bounded source rows`);}
+ for(const r of fallbackReads){assert.equal(r.sequentialRows,0);assert(r.indexRows<=20*8,`${r.table} fallback must read bounded source rows: ${JSON.stringify({scope,reads:fallbackReads})}`);}
 }
 // Force fallback for every source scope and compare before/after index removal.
 // Also exercise equal/null timestamps and a second algorithm version without

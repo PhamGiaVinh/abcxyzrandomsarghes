@@ -186,7 +186,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The fourteen migrations `20261104001500` through `20261104002800` are promoted
+The fifteen migrations `20261104001500` through `20261104002900` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -198,7 +198,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-fourteen exact manifest entries, each SQL and new ledger receipt atomically; stop
+fifteen exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -363,7 +363,14 @@ policy, counter or source row changes. The native fallback test checks anonymous
 JSON parity, null/equal timestamps, multiple algorithm versions, unchanged function
 metadata, a single ordered source-row lookup, catalog drift and index-only recovery.
 The index is installed before the fixture incremental-writer measurement. This
-native plan check is not HTTP scale qualification. Recover028 with
+native plan check is not HTTP scale qualification. Migration029 preserves the
+same membership predicate but prevents a merge plan from scanning earlier hands
+before a sparse player's first matching hand: indexed player/tour candidates
+look up the source hand by primary key with a lateral OFFSET0 planning boundary.
+It adds no source index or write-path work. Exact preimage/rollback hashes,
+function metadata, all40source scopes, sparse membership, wrong source tour and
+missing participants are tested. Recover029 with
+`identity-membership.forward-rollback.sql`, then recover028 with
 `identity-lookup.forward-rollback.sql`; then recover027 with
 `current-table-prepared.forward-rollback.sql` BEFORE the earlier
 025/023/022 layers. Native/pre-filled timings are not HTTP qualification.
@@ -372,6 +379,19 @@ added hands each have2players/4actions) in a rolled-back transaction. This is
 not a many-table HTTP or production-capacity claim. Future changes to canonical
 hand/public-scope policy must invalidate prepared rows before activating that
 new reader policy.
+
+The load harness also serially edits a historical hand while normal source
+writers and the full audience remain active. It measures correction, void,
+restore, settlement verification/revocation/reverification and verified-result
+create/edit/revoke/reverify. Service-only synthetic intents have atomic replay
+receipts; readiness requires the exact source fingerprint (including proof),
+expected current-version contributions/removal and no pending job. Result
+readiness checks exact source values and derived contribution/removal. These
+checks prove selected contribution/job completion; native classifier/totals
+oracle tests remain necessary for conservation. Every observed amendment has
+an unchanged maximum5s gate, and each1800s scenario must cover all10kinds. Short
+probes may cover fewer kinds and remain nonqualifying. This fixture is absent
+from release migrations and cannot mutate production financial or game data.
 
 Measured scenario hand numbers now start above the9M source-matrix fixture.
 Earlier short-run table latency/zero-miss counters have a fixture-ordering

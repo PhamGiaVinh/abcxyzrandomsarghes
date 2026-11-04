@@ -21,6 +21,7 @@ if(!['product_rpc','edge','direct_rpc'].includes(hudTransport)||hudTransport!=='
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
+const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
 const player=uuid('30000000',1),stats={summary:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
 let stopping=false;
@@ -342,6 +343,27 @@ for(const scenario of ['concentrated','distributed','overview']){
   while(hand&&step>0&&step<=5){await rpc('fixture_scale_step_once_v1',{p_operation:operation,p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);step++;operation=crypto.randomUUID();}
  };
  const writers=Array.from({length:tourCount},(_,i)=>writer(i+1));
+ // A separate serial writer edits a historical hand while the full audience
+ // and normal 1Hz/tour source writers remain active. It never changes the
+ // watched hand-number delivery oracle. Each proof mutation keeps the hand's
+ // source revision fixed; readiness must match the receipt's full fingerprint.
+ const amendmentSamples=[];
+ const amendmentWriter=(async()=>{
+  let cursor=0;
+  while(Date.now()<end-5000&&!stopping){
+   const kind=amendmentKinds[cursor%amendmentKinds.length],operation=crypto.randomUUID();
+   try{
+    const receipt=await rpc('fixture_scale_amend_once_v1',{p_operation:operation,p_hand_id:uuid('20000000',1),p_kind:kind},true);
+    assert.equal(receipt.operation,operation);assert.equal(receipt.kind,kind);
+    const written=Date.parse(receipt.sourceWrittenAt);assert.ok(Number.isFinite(written)&&written>=started);
+    await until(()=>rpc('fixture_scale_amend_ready_v1',{p_operation:operation},true),15000,'amendment_projection_timeout');
+    const endToEndMs=Date.now()-written;assert.ok(Number.isFinite(endToEndMs)&&endToEndMs>=0,'Invalid amendment timing clock');
+    amendmentSamples.push({kind,endToEndMs,sourceRevision:receipt.sourceRevision,sourceWrittenAt:receipt.sourceWrittenAt});
+    cursor++;
+   }catch{error('amendment_projection_or_write');return;}
+   await sleep(1000);
+  }
+ })();
  let restarted=false,withdrawn=false,lastHealth=0,lastProgress=0,revokedClients=0,reconnectedClients=0,restoredClients=0;
  while(Date.now()<end){
   const tick=Date.now(),online=clients.filter(c=>c.online&&c.accessOnline).length;
@@ -380,6 +402,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   await sleep(250);
  }
  await Promise.all(writers);
+ await amendmentWriter;
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
  expireDeliveries();clearInterval(resourceTimer);
@@ -389,6 +412,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:Math.max(0,...amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:Math.max(0,...samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
@@ -419,6 +443,9 @@ for(const scenario of ['concentrated','distributed','overview']){
  assert.ok(report.sourceWrites>=tourCount*duration*.9,'Source write rate fell below the defined load');
  assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');if(!overview)assert.ok(report.healthyRealtimeP95Ms<=3000,'Visible felt p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
+ assert.equal(stats.errors.amendment_projection_or_write??0,0);
+ assert.ok(report.amendments.samples>0);assert.ok(report.amendments.maxMs<=5000,'Amendment projection > 5s');assert.equal(report.amendments.changesDuringAudienceHold,true);
+ if(duration===1800)for(const kind of amendmentKinds)assert.ok(report.amendments.byKind[kind].samples>0,`Missing loaded amendment case: ${kind}`);
  assert.equal(stats.errors.hud_read??0,0,'HUD HTTP failures are not excluded from acceptance');
  for(const kind of ['healthy_table_read','healthy_snapshot_read','clock_read','history_read','hud_not_ready','history_not_ready','health_read','delivery_timestamp'])assert.equal(stats.errors[kind]??0,0,kind);
 }

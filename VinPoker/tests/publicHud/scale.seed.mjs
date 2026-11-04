@@ -79,6 +79,7 @@ sql(`CREATE TEMP TABLE fixture_counter_template(player_id uuid,n bigint[],d bigi
  ANALYZE public.tournament_hands;ANALYZE public.hand_players;ANALYZE public.hand_actions;ANALYZE tracker_analytics_v1.hand_contributions;ANALYZE tracker_analytics_v1.player_totals;
 `);
 sql(readFileSync('supabase/migrations/20261104002800_public_hud_identity_ordered_lookup.sql','utf8'));
+sql(readFileSync('supabase/migrations/20261104002900_public_hud_identity_membership_lookup.sql','utf8'));
 const incrementalWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(temp,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
 const {processPublicHudJobs}=await import(pathToFileURL(path.join(temp,'worker.mjs')));
