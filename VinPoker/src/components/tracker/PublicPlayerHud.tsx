@@ -56,9 +56,10 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
       if(controller.signal.aborted)return;
       let frozen:PreparedPublicPlayerHudData|null=null;
       const load=(reason:'open'|'verify'|'revoked'='open')=>{
-        if(reason==='revoked'){attempt++;historyController.current?.abort();frozen=null;setResult(null);setError(false);setPreparing(false);}
+        if(reason==='revoked'){attempt++;historyController.current?.abort();frozen=null;setResult(null);setError(false);setPreparing(false);pending.abort();}
         // Invalidate the displayed generation immediately, then serialize
-        // same-scope rechecks. A second event must not start/cancel another read.
+        // rechecks. A revoked generation aborts its obsolete owned read, but only
+        // its finally may release the slot for one queued fresh check.
         if(requestActive){verifyAfterRead=true;return;}
         if(revalidationTimer!==undefined)return;
         setError(false);setPreparing(false);

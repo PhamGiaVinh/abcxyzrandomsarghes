@@ -1,6 +1,7 @@
 import {act,render,screen,waitFor,cleanup,fireEvent} from '@testing-library/react';
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 import {PublicPlayerHud} from './PublicPlayerHud';
+import {revalidatePublicHudRead} from '@/lib/publicHudRevalidation';
 const load=vi.hoisted(()=>vi.fn());
 const history=vi.hoisted(()=>vi.fn());
 const access=vi.hoisted(()=>({callback:null as null|((reason:'verify'|'revoked')=>void)}));
@@ -42,10 +43,20 @@ it('coalesces repeated revocations and rejects the active old generation before 
  act(()=>access.callback!('verify'));await waitFor(()=>expect(load).toHaveBeenCalledTimes(2));
  const oldSignal=load.mock.calls[1][2] as AbortSignal;
  act(()=>{access.callback!('revoked');access.callback!('revoked');access.callback!('verify');});
- expect(screen.queryByText('TEST a')).not.toBeInTheDocument();expect(load).toHaveBeenCalledTimes(2);expect(oldSignal.aborted).toBe(false);
+ expect(screen.queryByText('TEST a')).not.toBeInTheDocument();expect(load).toHaveBeenCalledTimes(2);expect(oldSignal.aborted).toBe(true);
  await act(async()=>{finish({...result('a'),name:'STALE PRIVATE FRAME'});});
  expect(screen.queryByText('STALE PRIVATE FRAME')).not.toBeInTheDocument();
  await screen.findByText('FRESH ACCESS');expect(load).toHaveBeenCalledTimes(3);
+});
+it.each(['http','preparation'])('aborts a revoked generation during %s and makes one fresh recheck',async(phase)=>{
+ load.mockResolvedValueOnce(result('a'));render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
+ const read=vi.fn((signal:AbortSignal)=>phase==='preparation'?Promise.resolve({access:'public',state:'unavailable'}):new Promise<Record<string,unknown>>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(Error('aborted'),{publicHudCallerCancelled:true})),{once:true})));
+ load.mockImplementationOnce((_t,_p,signal,_frozen,onChanged)=>revalidatePublicHudRead(read,signal,onChanged)).mockResolvedValue({...result('a'),name:'AFTER OBSOLETE READ'});
+ act(()=>access.callback!('verify'));await waitFor(()=>expect(load).toHaveBeenCalledTimes(2));
+ const obsolete=load.mock.calls[1][2] as AbortSignal;
+ act(()=>{access.callback!('revoked');access.callback!('revoked');access.callback!('verify');});
+ expect(obsolete.aborted).toBe(true);expect(load).toHaveBeenCalledTimes(2);expect(screen.queryByText('TEST a')).not.toBeInTheDocument();
+ await screen.findByText('AFTER OBSOLETE READ');expect(load).toHaveBeenCalledTimes(3);expect(read).toHaveBeenCalledTimes(1);
 });
 it('keeps opened counters on reconnect and replaces them only after access revocation',async()=>{
  load.mockResolvedValue({...result('a'),accessSnapshot:'1:2:',accessChanged:false});

@@ -302,8 +302,9 @@ for(const scenario of ['concentrated','distributed','overview']){
    }
   });
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
-   ++state.hudEpoch;state.historyController?.abort();state.historySnapshot=null;state.frozen=null;state.revocations++;stats.revocationClears++;
-   // Same immediate invalidation, one in-flight read and one queued recheck as UI.
+   ++state.hudEpoch;state.historyController?.abort();state.historySnapshot=null;state.frozen=null;state.hudController?.abort();state.revocations++;stats.revocationClears++;
+   // Same immediate generation invalidation/abort, one physical in-flight
+   // lifecycle and one queued recheck as UI. Genuine failures retain provenance.
    scheduleHudCheck('revocation-revalidate');
   }).subscribe(s=>{
    state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
