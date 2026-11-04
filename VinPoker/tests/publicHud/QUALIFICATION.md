@@ -299,3 +299,10 @@ grading and are never retried by this classifier. Upstream [CLI issue6675](https
 reports a retired-worker dispatch race; a matching category would be evidence
 to investigate, not proof that every timeout shares that cause. No upstream
 gateway retry or resource-cap change is introduced here.
+
+Watched-table delivery diagnostics record the start and completion of the exact
+read that satisfied each already-graded source event. Signed source-to-read-start
+and read-to-observation durations sum to that delivery's original latency; a
+negative first duration means an in-flight read observed a later source commit.
+Their independent p95 values must not be added. These timings do not change
+expected events, exclusions, deadlines, source rate, reads or grading.
