@@ -52,6 +52,10 @@ describe("TournamentLiveView clock source labels", () => {
     fixture.hand = true;
     const view = render(<TournamentLiveView tournamentId="test-tournament" />);
     await screen.findByText("Hand #16");
+    // The hand label can commit before the hand-scoped subscription effect.
+    // Await that effect itself; a missing/wrong subscription still fails.
+    await waitFor(() => expect(realtime.listeners.some(({ filter }) =>
+      filter.table === "hand_actions" && filter.filter === "hand_id=eq.frozen-hand")).toBe(true));
     const listener = realtime.listeners.find(({ filter }) => filter.table === "hand_actions");
     expect(listener?.filter.filter).toBe("hand_id=eq.frozen-hand");
     const before = realtime.reads.mock.calls.length;
