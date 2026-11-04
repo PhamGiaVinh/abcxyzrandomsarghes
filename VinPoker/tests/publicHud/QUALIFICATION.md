@@ -115,6 +115,13 @@ error responses. One anonymous direct-summary observer per process runs every
 5 seconds to distinguish PostgREST/database delay from Edge queueing. It uses
 the same prepared RPC and is diagnostic instrumentation, not per-viewer HUD
 polling or an alternate path used for acceptance.
+Repeated same-HUD permission events now clear/invalidate immediately but share
+one active read and at most one queued recheck. An invalidated active response
+cannot commit; it drains before the queued fresh read. Scope closure/change
+still physically aborts its request. A focused regression holds the old result
+through repeated revocations and proves exactly one fresh recheck replaces it.
+The load driver mirrors this serialization; stale results are not credited,
+and HTTP timeouts/errors still fail the existing acceptance gates.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 

@@ -143,15 +143,26 @@ for(const scenario of ['concentrated','distributed','overview']){
    finally{controller.abort();state.busy=false;if(state.pending&&Date.now()<end+10000){state.pending=false;track(read());}}
   };
   state.read=read;
+  let hudTimerToken=0;
+  const scheduleHudCheck=phase=>{
+   if(state.hudActive){state.verifyAfterRead=true;return;}
+   if(state.hudTimerPending)return;state.hudTimerPending=true;const token=++hudTimerToken;
+   track((async()=>{
+    await sleep(250+Math.random()*10000);if(token!==hudTimerToken)return;state.hudTimerPending=false;
+    if(state.hudActive){state.verifyAfterRead=true;return;}
+    if(state.frozen)await verifyHud(phase);else await openHud('revocation-revalidate');
+   })());
+  };
   const finishHud=controller=>{
    if(state.hudController!==controller)return;
    state.hudActive=false;
    if(state.verifyAfterRead){
-    state.verifyAfterRead=false;const epoch=state.hudEpoch;
-    track((async()=>{await sleep(250+Math.random()*10000);if(epoch===state.hudEpoch)await verifyHud('coalesced-access-verify');})());
+    state.verifyAfterRead=false;scheduleHudCheck('coalesced-access-verify');
    }
   };
   const openHud=async(phase='user-open')=>{
+   if(phase==='revocation-revalidate'&&state.hudActive){state.verifyAfterRead=true;return;}
+   if(phase!=='revocation-revalidate'){hudTimerToken++;state.hudTimerPending=false;state.verifyAfterRead=false;}
    state.hudController?.abort();const controller=new AbortController();state.hudController=controller;state.hudActive=true;state.frozen=null;
    const epoch=++state.hudEpoch,expectedRevocation=revoking;
    const accessReconnect=state.accessReconnect;
@@ -177,7 +188,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   state.openHud=openHud;
   const verifyHud=async(phase)=>{
    if(state.hudActive){state.verifyAfterRead=true;return;}
-   const frozen=state.frozen;if(!frozen)return;
+   const frozen=state.frozen;if(!frozen)return openHud('revocation-revalidate');
    state.hudController?.abort();const controller=new AbortController();state.hudController=controller;state.hudActive=true;
    const epoch=++state.hudEpoch,accessReconnect=state.accessReconnect;
    try{
@@ -210,13 +221,12 @@ for(const scenario of ['concentrated','distributed','overview']){
    }
   });
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
-   state.hudController?.abort();state.hudController=null;state.hudActive=false;state.verifyAfterRead=false;
-   const epoch=++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
-   // Same clear-now, jittered verification policy as the actual HUD component.
-   track((async()=>{await sleep(250+Math.random()*10000);if(epoch===state.hudEpoch&&Date.now()<end)await openHud('revocation-revalidate');})());
+   ++state.hudEpoch;state.frozen=null;state.revocations++;stats.revocationClears++;
+   // Same immediate invalidation, one in-flight read and one queued recheck as UI.
+   scheduleHudCheck('revocation-revalidate');
   }).subscribe(s=>{
    state.accessStatus=s;state.accessOnline=s==='SUBSCRIBED';if(!state.accessOnline&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
-   if(state.accessOnline){if(state.accessJoined){state.accessReconnect++;track((async()=>{await sleep(250+Math.random()*10000);await verifyHud('reconnect-verify');})());}state.accessJoined=true;}
+   if(state.accessOnline){if(state.accessJoined){state.accessReconnect++;scheduleHudCheck('reconnect-verify');}state.accessJoined=true;}
   });
   // Admit at most 50 new viewers/second, then hold the entire target audience
   // for the full measured duration. Mass reconnect remains simultaneous.
@@ -306,7 +316,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  reports.push(report);save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
  report.requestAccounting=requestAccounting;
- report.hudRecovery={restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.verifyAfterRead).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.verifyAfterRead).length};save('running');
+ report.hudRecovery={restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
  report.snapshotDelivery={expected:snapshotExpected,excludedForPlannedFault:snapshotExcluded,missed:snapshotMissed,pending:clients.reduce((n,c)=>n+c.snapshotExpected.length,0),samples:sample('snapshot').length,p95Ms:percentile(sample('snapshot'),.95),minSamplesPerViewer:Math.min(...clients.map(c=>c.snapshotSamples))};save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};

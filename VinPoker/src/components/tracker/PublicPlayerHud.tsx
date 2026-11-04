@@ -54,12 +54,13 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
       if(controller.signal.aborted)return;
       let frozen:PreparedPublicPlayerHudData|null=null;
       const load=(reason:'open'|'verify'|'revoked'='open')=>{
-        if(reason==='verify'&&requestActive){verifyAfterRead=true;return;}
-        clearTimeout(revalidationTimer);
-        pending.abort();pending=new AbortController();requestActive=false;const owned=++attempt;
-        if(reason==='revoked'){frozen=null;setResult(null);}
+        if(reason==='revoked'){attempt++;frozen=null;setResult(null);setError(false);setPreparing(false);}
+        // Invalidate the displayed generation immediately, then serialize
+        // same-scope rechecks. A second event must not start/cancel another read.
+        if(requestActive){verifyAfterRead=true;return;}
+        if(revalidationTimer!==undefined)return;
         setError(false);setPreparing(false);
-        const read=()=>{requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,pending.signal,frozen??undefined,()=>{
+        const read=()=>{revalidationTimer=undefined;pending.abort();pending=new AbortController();const flight=pending,owned=++attempt;requestActive=true;void loadPreparedPublicPlayerHud(tournamentId,playerId,flight.signal,frozen??undefined,()=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);}
         },reason!=='open').then(value=>{
           if(!controller.signal.aborted&&owned===attempt){
@@ -68,7 +69,7 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
         }).catch(reason=>{
           if(!controller.signal.aborted&&owned===attempt){frozen=null;setResult(null);setPreparing(reason instanceof Error&&reason.message==='PUBLIC_HUD_PREPARING');setError(true);}
         }).finally(()=>{
-          if(!controller.signal.aborted&&owned===attempt){requestActive=false;if(verifyAfterRead){verifyAfterRead=false;load('verify');}}
+          if(!controller.signal.aborted&&pending===flight){requestActive=false;if(verifyAfterRead){verifyAfterRead=false;load('verify');}}
         });};
         // Clear private data synchronously; spread the subsequent public checks
         // so a global revocation does not send every spectator to Edge at once.

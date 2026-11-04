@@ -34,6 +34,18 @@ it('clears a revoked HUD immediately before its jittered access check',async()=>
   await screen.findByText('REVALIDATED');expect(load).toHaveBeenCalledTimes(2);
  }finally{random.mockRestore();}
 });
+it('coalesces repeated revocations and rejects the active old generation before one fresh recheck',async()=>{
+ load.mockResolvedValueOnce(result('a'));render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
+ let finish!:(value:unknown)=>void;
+ load.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;})).mockResolvedValue({...result('a'),name:'FRESH ACCESS'});
+ act(()=>access.callback!('verify'));await waitFor(()=>expect(load).toHaveBeenCalledTimes(2));
+ const oldSignal=load.mock.calls[1][2] as AbortSignal;
+ act(()=>{access.callback!('revoked');access.callback!('revoked');access.callback!('verify');});
+ expect(screen.queryByText('TEST a')).not.toBeInTheDocument();expect(load).toHaveBeenCalledTimes(2);expect(oldSignal.aborted).toBe(false);
+ await act(async()=>{finish({...result('a'),name:'STALE PRIVATE FRAME'});});
+ expect(screen.queryByText('STALE PRIVATE FRAME')).not.toBeInTheDocument();
+ await screen.findByText('FRESH ACCESS');expect(load).toHaveBeenCalledTimes(3);
+});
 it('keeps opened counters on reconnect and replaces them only after access revocation',async()=>{
  load.mockResolvedValue({...result('a'),accessSnapshot:'1:2:',accessChanged:false});
  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);await screen.findByText('TEST a');
