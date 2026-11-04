@@ -59,6 +59,12 @@ assert.ok([401,403].includes(denied.status),'Anonymous caller must not claim pri
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:true},true);
 const privilegedHeader=await post('/functions/v1/public-player-hud',{tournament_id:uuid('10000000',20),player_id:player,mode:'summary'},true);
 assert.equal(privilegedHeader.access,'revoked','Service header must not widen the public Edge read');
+const hiddenTable=await post('/functions/v1/public-player-hud',{mode:'table',tournament_id:uuid('10000000',20),table_id:uuid('50000000',20)},true);
+assert.equal(hiddenTable.access,'revoked','Service header must not widen the public table read');
+const wrongTableArgs={p_tournament_id:uuid('10000000',1),p_tournament_table_id:uuid('50000000',2)};
+const wrongTable=await rpc('get_public_tournament_table_live_or_last_hand_v2',wrongTableArgs);
+assert.notEqual(wrongTable.access,'public');
+assert.deepEqual(await post('/functions/v1/public-player-hud',{mode:'table',tournament_id:wrongTableArgs.p_tournament_id,table_id:wrongTableArgs.p_tournament_table_id},true),wrongTable,'Edge must preserve cross-tour denial');
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
@@ -146,7 +152,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(overview)return;
    state.busy=true;const epoch=pageEpoch,controller=new AbortController(),startedAt=Date.now();state.tableController=controller;
    try{
-    const value=await post('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table},false,'other',controller.signal);
+    const value=await post('/functions/v1/public-player-hud',{mode:'table',tournament_id:tour,table_id:table},false,'watched-table',controller.signal);
     if(epoch!==pageEpoch)return;
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),startedAt,healthy:healthy()};state.credit();

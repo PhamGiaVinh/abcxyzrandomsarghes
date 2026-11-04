@@ -2,6 +2,7 @@ import {createPublicHudReadBatcher} from './readBatch.ts';
 import type {PublicHudReadTiming} from './readBatch.ts';
 import { handleOptions, jsonResp as baseJsonResp } from '../_shared/cors.ts';
 import {readPublicHudAggregate,readPublicHudCompatibility} from './aggregate.ts';
+import {readPublicTable} from './table.ts';
 const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_ANON_KEY');
 // Validate fixed anonymous configuration once. Request-local adapters below
 // never install a caller session or forward its Authorization header.
@@ -33,6 +34,7 @@ Deno.serve(async req => {
     // Cancellation belongs to this request only. Retain the independent RPC
     // timeout and fixed anonymous credentials; never mutate a shared signal.
     const requestClient=publicClient.forRequest(req.signal,value=>{rpcTiming=value;});
+    if(input.mode==='table')return respond(await readPublicTable(requestClient,input));
     // Never use service_role or forward Authorization, even for an operator caller.
     if(input.mode==='summary'||input.mode==='history') return respond(await readPublicHudAggregate(requestClient,input.tournament_id,input.player_id,input.mode,input.cursor,input.access_snapshot));
     return respond(await readPublicHudCompatibility(requestClient,input));

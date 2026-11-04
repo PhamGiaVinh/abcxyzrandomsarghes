@@ -5,7 +5,7 @@ export function createAnonymousPublicHudClient(baseUrl:string,anonKey:string,sen
  const base=new URL(baseUrl);
  if(!['http:','https:'].includes(base.protocol)||base.username||base.password||base.search||base.hash||base.pathname!=='/')throw Error('PUBLIC_RPC_CONFIGURATION');
  return {async rpc(name:string,args:Record<string,unknown>):Promise<{data:unknown;error:unknown}>{
-  if(!['get_public_player_hud_summary_v1','get_public_player_hud_history_v1','get_public_player_hud_summary_batch_v1'].includes(name))return {data:null,error:{code:'PUBLIC_RPC_NOT_ALLOWED'}};
+  if(!['get_public_player_hud_summary_v1','get_public_player_hud_history_v1','get_public_player_hud_summary_batch_v1','get_public_tournament_table_live_or_last_hand_v2'].includes(name))return {data:null,error:{code:'PUBLIC_RPC_NOT_ALLOWED'}};
   const controller=new AbortController();
   const started=performance.now();let deadline=false,outcome:PublicHudRpcTiming['outcome']='transport';
   const cancel=()=>controller.abort();
