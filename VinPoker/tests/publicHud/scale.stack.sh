@@ -55,6 +55,7 @@ psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -w -X -qAt -v ON_ERROR_STOP=1
 PUBLIC_HUD_HTTP_GENERATOR_REPORT="$repo_root/output/hud-scale/generator-transport.json" node tests/publicHud/scale.http.benchmark.mjs
 docker inspect --format '{"name":{{json .Name}},"image":{{json .Config.Image}},"memoryLimitBytes":{{.HostConfig.Memory}},"nanoCpus":{{.HostConfig.NanoCpus}}}' \
  "supabase_db_$project_id" "supabase_realtime_$project_id" "supabase_edge_runtime_$project_id" >output/hud-scale/runtime-images.jsonl
+export PUBLIC_HUD_STACK_PROJECT="$project_id"
 export PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/seed.json"
 export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1

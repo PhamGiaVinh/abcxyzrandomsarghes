@@ -472,3 +472,7 @@ behavior matches. Known HTTP/network/validation/deadline failures retain their
 provenance even if revocation arrives later; only proven caller cancellation
 is excluded. Actual-helper HTTP/wait regressions and late-error tests guard
 this distinction. This does not retroactively excuse prior runtime failures.
+
+Writer pressure diagnostics surround both committed benchmarks with separate read-only snapshots of checkpoint, WAL, background writer, I/O and grouped activity counters. No forced checkpoint, statistics reset, quiescence or grading change is applied. Snapshot timestamps and disabled I/O timing are explicit; statistics can lag and unavailable observations do not prove zero cost.
+
+The Supabase image denies auto_explain LOAD to postgres. Only the disposable marked container uses its existing supabase_admin account to load instrumentation; the captured fixture call still sets the same service_role and JWT role, then rolls back. Container prefix, local database/port and the database marker are required. No role, grant or RLS change is made. This separate observer is not part of graded transaction latency. Captured SQL text is withheld by the existing plan sanitizer. Local native capture and invalid container-scope rejection are checked; actual container execution requires the isolated CI run.
