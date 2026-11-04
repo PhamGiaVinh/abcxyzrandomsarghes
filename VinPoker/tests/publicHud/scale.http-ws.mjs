@@ -266,7 +266,9 @@ for(const scenario of ['concentrated','distributed','overview']){
  await until(async()=>clients.every(c=>!c.historyActive),15000,'Initial independent history reads did not settle');
  started=Date.now();end=started+duration*1000;coverageAt=started;
  const writer=async(n)=>{
-  let number=(scenario==='concentrated'?2_000_000:overview?8_000_000:5_000_000)+n*100000,step=0,hand=null,operation=crypto.randomUUID();
+  // All measured writes must follow the9M source-matrix fixture hand. Otherwise
+  // a stale higher-numbered fixture could falsely satisfy later-hand delivery.
+  let number=(scenario==='concentrated'?20_000_000:overview?80_000_000:50_000_000)+n*100000,step=0,hand=null,operation=crypto.randomUUID();
   while(Date.now()<end&&!stopping){
    const start=Date.now();
    try{

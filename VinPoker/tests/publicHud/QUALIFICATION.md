@@ -186,7 +186,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The twelve migrations `20261104001500` through `20261104002600` are promoted
+The thirteen migrations `20261104001500` through `20261104002700` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -198,7 +198,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-twelve exact manifest entries, each SQL and new ledger receipt atomically; stop
+thirteen exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -306,3 +306,31 @@ and read-to-observation durations sum to that delivery's original latency; a
 negative first duration means an in-flight read observed a later source commit.
 Their independent p95 values must not be added. These timings do not change
 expected events, exclusions, deadlines, source rate, reads or grading.
+
+Migration027 prepares canonical public current-table JSON inside the existing
+accepted spectator publication transaction. It uses a private original reader,
+not its own prepared fastpath, and the already-checked source generation. No
+source trigger or audience write path changes. Every hit checks current tour,
+table/session, payload scope, exact generation and absence of deferred source
+changes; a miss uses the unchanged bounded canonical expression. Removed or
+inactive table identities are cleaned at publication. Further fills prune up to
+100 rows older than one hour with an expiry index and SKIP LOCKED, including
+private orphans after a hard parent deletion. They are unreadable immediately
+through live parent gates; physical cleanup waits for subsequent fills. No FK
+or parent-row lock couples cache cleanup to business deletion. The private row is never
+an authorization decision. Native tests use a BEFORE INSERT barrier so a real
+source writer can commit between old JSON evaluation and publication; the read
+must reject that older certificate and return the newer canonical source.
+Lease/vector/retry, scope/ACL, invalidation and exact recovery remain mandatory.
+Recover027 with `current-table-prepared.forward-rollback.sql` BEFORE the earlier
+025/023/022 layers. Native/pre-filled timings are not HTTP qualification.
+The native suite also measures one publication across21 active tables (the20
+added hands each have2players/4actions) in a rolled-back transaction. This is
+not a many-table HTTP or production-capacity claim. Future changes to canonical
+hand/public-scope policy must invalidate prepared rows before activating that
+new reader policy.
+
+Measured scenario hand numbers now start above the9M source-matrix fixture.
+Earlier short-run table latency/zero-miss counters have a fixture-ordering
+caveat: a stale higher-numbered fixture could satisfy the old later-hand test.
+No earlier run qualified; final acceptance must use the corrected ordering.

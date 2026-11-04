@@ -6,6 +6,7 @@ it('credits only a completed or demonstrably newer observed hand',()=>{
  expect(handIncludesWrite({id:'hand',handNumber:8,status:'completed'},write)).toBe(true);
  expect(handIncludesWrite({id:'other',handNumber:7,status:'completed'},write)).toBe(false);
  expect(handIncludesWrite({id:'next',handNumber:9,status:'in_progress'},write)).toBe(true);
+ expect(handIncludesWrite({id:'source-matrix-fixture',handNumber:9_000_000,status:'in_progress'},{handId:'measured',number:20_100_000,step:1})).toBe(false);
 });
 it('accepts an included generation while newer writes wait but fences deferred work',()=>{
  const write={generation:'10',at:1000,deferred:false,ackOrder:5};

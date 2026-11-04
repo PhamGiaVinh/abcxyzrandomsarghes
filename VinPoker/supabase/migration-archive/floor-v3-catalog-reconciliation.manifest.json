@@ -9892,6 +9892,12 @@
       "filename": "20261104002600_public_hud_summary_batch.sql",
       "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
       "reason": "Tracker bounded public HUD snapshot batch; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002700",
+      "filename": "20261104002700_public_current_table_prepared_reads.sql",
+      "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
+      "reason": "Tracker prepared public current-table reads; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [
