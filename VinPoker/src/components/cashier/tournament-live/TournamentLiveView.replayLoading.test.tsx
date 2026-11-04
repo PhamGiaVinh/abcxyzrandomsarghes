@@ -2,12 +2,13 @@ import {render,screen,waitFor,fireEvent,cleanup,act} from '@testing-library/reac
 import {afterEach,expect,it,vi} from 'vitest';
 import {TournamentLiveView} from './TournamentLiveView';
 
-const {rpc,hand,target,auth,signals,liveSignals,events}=vi.hoisted(()=>({
+const {rpc,hand,target,auth,signals,liveSignals,events,statuses}=vi.hoisted(()=>({
+ statuses:[] as ((status:string)=>void)[],
  liveSignals:[] as AbortSignal[],events:[] as ((event?:unknown)=>void)[],signals:[] as AbortSignal[],rpc:vi.fn(),auth:{user:null,isStaffOps:false,isClubAdmin:false},
  target:{handId:'hand',tableId:'table',handNumber:32},
  hand:{hand_id:'hand',hand_number:32,button_seat:2,community_cards:['2c','3d','7s','9c','Kc'],big_blind:200,small_blind:100,ante:0,players:[],actions:[]},
 }));
-vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])=>{const result=Promise.resolve(rpc(...args));return Object.assign(result,{abortSignal:(signal:AbortSignal)=>{(args[0]==='get_public_tournament_table_hand_v2'?signals:liveSignals).push(signal);return result;}});},channel:()=>{const c={on:(...args:unknown[])=>{const callback=args.at(-1);if(typeof callback==='function')events.push(callback as ()=>void);return c;},subscribe:()=>c};return c},removeChannel:vi.fn()}}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])=>{const result=Promise.resolve(rpc(...args));return Object.assign(result,{abortSignal:(signal:AbortSignal)=>{(args[0]==='get_public_tournament_table_hand_v2'?signals:liveSignals).push(signal);return result;}});},channel:()=>{const c={on:(...args:unknown[])=>{const callback=args.at(-1);if(typeof callback==='function')events.push(callback as ()=>void);return c;},subscribe:(callback:(status:string)=>void)=>{statuses.push(callback);return c;}};return c},removeChannel:vi.fn()}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>auth}));
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
@@ -17,7 +18,7 @@ vi.mock('./LiveFelt',()=>({LiveFelt:({toActId}:{toActId?:string|null})=> <div da
 // explicitly rather than claiming this unit test is browser/DB acceptance.
 vi.mock('./HandSelector',()=>({HandSelector:({onSelectHand,replayTargetState,onRetryReplayTarget}:{onSelectHand:(id:string,h:unknown)=>void;replayTargetState:{kind:string};onRetryReplayTarget?:()=>void})=><><p data-testid="target-state">{replayTargetState.kind}</p>{replayTargetState.kind==='query_error'&&<button onClick={onRetryReplayTarget}>Thử tìm lại hand</button>}<button onClick={()=>onSelectHand('hand',hand)}>Deliver replay</button></>}));
 vi.mock('./ReplayScrubber',()=>({ReplayScrubber:()=>null}));
-afterEach(async()=>{cleanup();await Promise.resolve();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;vi.useRealTimers()});
+afterEach(async()=>{cleanup();await Promise.resolve();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;statuses.length=0;vi.useRealTimers()});
 
 it.each([false,true])('does not spotlight an actor after a fold has ended betting: folded=%s',async(folded)=>{
  const players=[{playerId:'p1',seatNumber:1,entryNumber:1,name:'PLAYER1',startingStack:58800,endingStack:null,holeCards:[],eliminated:false,avatarUrl:null},
@@ -125,9 +126,21 @@ it('aborts the current core read when the viewer unmounts',()=>{
  rpc.mockImplementation(()=>new Promise(()=>{}));const view=render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
  expect(liveSignals).toHaveLength(3);view.unmount();expect(liveSignals.every(signal=>signal.aborted)).toBe(true);
 });
-it('clears an already displayed hand when a later public read explicitly revokes access',async()=>{
+it('requires a fresh access read on reconnect and rejects the pre-disconnect public reply',async()=>{
+ let finish!:(value:unknown)=>void;const held=new Promise(resolve=>{finish=resolve;});let calls=0;
+ rpc.mockImplementation((name:string)=>name==='get_public_tournament_table_live_or_last_hand_v2'&&++calls===1?held:Promise.resolve({error:null,data:
+ name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'revoked'}:
+ name==='get_public_tournament_clock_summary'?[{tournament_id:'tour',players_remaining:0,average_stack:0}]:null}));
+ vi.useFakeTimers();render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
+ await act(async()=>{statuses.forEach(fn=>{fn('SUBSCRIBED');fn('CHANNEL_ERROR');fn('SUBSCRIBED');});await vi.advanceTimersByTimeAsync(1001);});
+ expect(rpc.mock.calls.filter(([name])=>name==='get_public_tournament_table_live_or_last_hand_v2')).toHaveLength(2);
+ expect(screen.getByText('Bàn này không còn được công khai.')).toBeInTheDocument();
+ await act(async()=>{finish({error:null,data:{access:'public',state:'waiting',tableId:'table',tableSessionId:'session',hand:null}});});
+ expect(screen.getByText('Bàn này không còn được công khai.')).toBeInTheDocument();expect(screen.queryByText('Waiting...')).not.toBeInTheDocument();
+});
+it.each([false,true])('clears an already displayed hand after denial even with a summary failure=%s',async(summaryFailure)=>{
  let revoked=false;
- rpc.mockImplementation(async(name:string)=>({error:null,data:
+ rpc.mockImplementation(async(name:string)=>({error:revoked&&summaryFailure&&name==='get_public_tournament_clock_summary'?{message:'summary unavailable'}:null,data:
   name==='get_public_tournament_clock_summary'?[{tournament_id:'tour',players_remaining:0,average_stack:0}]:
   name==='get_public_tournament_table_live_or_last_hand_v2'?(revoked?{access:'revoked'}:{access:'public',state:'waiting',tableId:'table',tableSessionId:'session',hand:null}):
   name==='get_public_tournament_table_hand_v2'?{id:'hand',tableId:'table',handNumber:32,status:'completed'}:null}));
@@ -135,7 +148,7 @@ it('clears an already displayed hand when a later public read explicitly revokes
  await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Deliver replay'}));});
  expect(screen.getByTestId('rendered-felt')).toBeInTheDocument();revoked=true;
- await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['tables']}}));await vi.advanceTimersByTimeAsync(1001);});
+ await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['clock']}}));await vi.advanceTimersByTimeAsync(1001);});
  expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
  expect(screen.getByText('Bàn này không còn được công khai.')).toBeInTheDocument();
 });

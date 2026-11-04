@@ -1,7 +1,7 @@
 import type {SupabaseClient,RealtimeChannel} from '@supabase/supabase-js';
 type Client=Pick<SupabaseClient,'channel'|'removeChannel'>;
 export type PublicTournamentComponent='tables'|'ranking'|'payout'|'visibility'|'clock';
-export interface PublicTournamentSignal {reason:'changed'|'verify'|'status';components:PublicTournamentComponent[];revisions:Record<string,string>;online:boolean}
+export interface PublicTournamentSignal {reason:'changed'|'verify'|'status';components:PublicTournamentComponent[];revisions:Record<string,string>;online:boolean;invalidatePending?:true}
 const all:PublicTournamentComponent[]=['tables','ranking','payout','visibility','clock'];
 const hubs=new WeakMap<object,Map<string,PublicTournamentRealtime>>();
 
@@ -48,7 +48,8 @@ class PublicTournamentRealtime {
             else {
               // Revalidate table access immediately. Clock/ranking/payout have
               // independent broadcasts and need not join the reconnect herd.
-              this.emit({reason:'verify',components:['tables'],revisions:{},online:true});
+              for(const component of all)this.epochs[component]=(this.epochs[component]??0)+1;
+              this.emit({reason:'verify',components:['tables'],revisions:{},online:true,invalidatePending:true});
               this.metadataTimer=setTimeout(()=>{
                 this.metadataTimer=null;
                 if(!this.stopped&&this.online&&document.visibilityState!=='hidden')this.emit({reason:'verify',components:['ranking','payout','clock'],revisions:{},online:true});

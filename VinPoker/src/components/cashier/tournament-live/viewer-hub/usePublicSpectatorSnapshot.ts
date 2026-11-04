@@ -74,7 +74,7 @@ export function usePublicSpectatorSnapshot(
         p_known_revisions: trustedRevisions.current,
       };
       let reply:{data:unknown;error:unknown};
-      try{reply=await sharePublicTournamentRead(supabase,JSON.stringify(['snapshot',args]),controller.signal,signal=>supabase.rpc('get_public_tournament_viewer_snapshot_v2' as never,args as never).abortSignal(signal));}
+      try{reply=await sharePublicTournamentRead(supabase,JSON.stringify(['snapshot',args,epochs]),controller.signal,signal=>supabase.rpc('get_public_tournament_viewer_snapshot_v2' as never,args as never).abortSignal(signal));}
       catch{reply={data:null,error:true};}
       const {data,error}=reply;
       if (!active||requestEpoch!==epoch) return;
@@ -116,6 +116,7 @@ export function usePublicSpectatorSnapshot(
     coordinator = new PublicSnapshotCoordinator(refresh, TABLE_REFRESH_FLOOR_MS);
     observation=observePublicTournament(supabase,tournamentId,event=>{
       if(event.reason==='status')return;
+      if(event.invalidatePending){epoch++;controller.abort();trustedRevisions.current={};dirty.clear();}
       if(event.reason==='changed'&&event.components.includes('visibility')){epoch++;controller.abort();trustedRevisions.current={};setSnapshot(null);}
       for(const section of ['tables','ranking','payout'] as const)if(event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);
       if(dirty.size)coordinator?.request();

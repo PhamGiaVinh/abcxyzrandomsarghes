@@ -18,9 +18,25 @@ afterEach(() => {
   rpc.mockReset();
   removeChannel.mockClear();
   channel.on.mockClear();
+  channel.subscribe.mockClear();
+  vi.restoreAllMocks();
+  channel.on.mockReturnThis();channel.subscribe.mockReturnThis();
 });
 
 describe("public spectator table scope", () => {
+  it('rechecks access after reconnect without reusing a held pre-disconnect snapshot',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.99);
+    const tournamentId='reconnect-scope';let finish!:(value:unknown)=>void;
+    rpc.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;})).mockResolvedValue({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(1));
+    const status=channel.subscribe.mock.calls.at(-1)![0];
+    act(()=>{status('SUBSCRIBED');status('CHANNEL_ERROR');status('SUBSCRIBED');});
+    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:2500});
+    expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
+    await act(async()=>{finish({data:{ok:true,access:'public',tournamentId,sections:{}},error:null});});
+    expect(result.current.snapshot?.access).toBe('revoked');
+  });
   it('does not restore a withdrawn snapshot from a late pre-invalidation reply',async()=>{
     const tournamentId='5a51bec5-4da0-4dd9-861a-cc4e7678478c';
     let finish!:(value:unknown)=>void;

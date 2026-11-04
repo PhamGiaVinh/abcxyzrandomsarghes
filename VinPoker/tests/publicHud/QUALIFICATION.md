@@ -94,6 +94,13 @@ or replay hand, including when the withdrawal broadcast was missed. It is not
 treated as a transient transport failure. The replay-loading regression covers
 that previously loaded-frame path; malformed/failed transport retains its
 existing separate recovery behavior.
+Independent review additionally checks mixed responses: a successful table
+denial wins over an unrelated failed summary. Reconnect advances local component
+epochs, aborts owned pre-disconnect reads, and includes epochs in in-flight share
+keys. Both current-hand and hub tests hold an old public response until after a
+fresh revoked response, then prove the old response cannot restore the frame.
+The HTTP harness likewise cancels/fences its old table/snapshot reads on rejoin;
+intentional cancellation is accounted separately and never credited as delivery.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 

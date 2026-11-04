@@ -1,5 +1,5 @@
 import {it,expect,vi,afterEach} from 'vitest';
-import {observePublicTournament} from './publicTournamentRealtime';
+import {observePublicTournament,publicReadEpoch} from './publicTournamentRealtime';
 function fixture(){
  let changed:(message:unknown)=>void,status:(value:string)=>void;
  const channel={on:vi.fn((_type,_event,callback)=>{changed=callback;return channel;}),subscribe:vi.fn(callback=>{status=callback;return channel;})};
@@ -37,6 +37,8 @@ it('prioritizes table access on reconnect and cancels deferred metadata after sc
  f.status('SUBSCRIBED');f.status('CHANNEL_ERROR');listener.mockClear();f.status('SUBSCRIBED');
  const verifications=()=>listener.mock.calls.map(([event])=>event).filter(event=>event.reason==='verify');
  expect(verifications().map(event=>event.components)).toEqual([['tables']]);
+ expect(verifications()[0].invalidatePending).toBe(true);
+ expect(publicReadEpoch(f.client,'reconnect-tour','tables')).toBe(1);
  vi.advanceTimersByTime(5249);expect(verifications()).toHaveLength(1);
  vi.advanceTimersByTime(1);expect(verifications().map(event=>event.components)).toEqual([['tables'],['ranking','payout','clock']]);
  f.status('CHANNEL_ERROR');f.status('SUBSCRIBED');observation.unsubscribe();await Promise.resolve();listener.mockClear();

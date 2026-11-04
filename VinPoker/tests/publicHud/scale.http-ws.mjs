@@ -101,20 +101,23 @@ for(const scenario of ['concentrated','distributed']){
   };
   state.credit=()=>{credit('expected',state.handObservation,handIncludesWrite,'realtime','deliverySamples');credit('snapshotExpected',state.snapshotObservation,projectionIncludesWrite,'snapshot','snapshotSamples');};
   const healthy=()=>state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20));
+  let pageEpoch=0;
   const snapshot=async(sections=['tables'])=>{
    for(const section of sections)state.snapshotDirty.add(section);
-   if(state.snapshotBusy)return;state.snapshotBusy=true;
+   if(state.snapshotBusy)return;state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
    try{
     await sleep(Math.max(0,1000-(Date.now()-state.snapshotLast)));
+    if(epoch!==pageEpoch)return;
     const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
     const requestOrder=++observationOrder;
-    const value=await rpc('get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:[],p_sections:requested,p_known_revisions:state.known});
+    const value=await post('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:[],p_sections:requested,p_known_revisions:state.known},false,'other',controller.signal);
+    if(epoch!==pageEpoch)return;
     assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
     for(const section of requested){assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;}
     const tables=value.sections.tables;
     if(tables){state.snapshotObservation={value:tables.freshness,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
-   }catch{error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
-   finally{state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end+10000)track(snapshot([]));}
+   }catch(cause){if(!cause.intentionalHudCancellation)error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
+   finally{controller.abort();state.snapshotBusy=false;if(state.snapshotDirty.size&&Date.now()<end+10000)track(snapshot([]));}
   };
   state.snapshot=snapshot;
   const clock=async()=>{try{const [value,summary]=await Promise.all([rpc('get_tournament_clock',{p_tournament_id:tour}),rpc('get_public_tournament_clock_summary',{p_tournament_id:tour})]);assert.equal(value.tournament_id,tour);if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(Array.isArray(summary)&&summary.length===1&&summary[0].tournament_id===tour);}catch{error('clock_read');}};
@@ -122,14 +125,15 @@ for(const scenario of ['concentrated','distributed']){
   const verifyPage=()=>{track(snapshot(['tables','ranking','payout']));track(clock());};
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const read=async()=>{
-   if(state.busy){state.pending=true;return;}state.busy=true;
+   if(state.busy){state.pending=true;return;}state.busy=true;const epoch=pageEpoch,controller=new AbortController();state.tableController=controller;
    try{
-    const value=await rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});
+    const value=await post('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table},false,'other',controller.signal);
+    if(epoch!==pageEpoch)return;
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
-   }catch{state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}
-   finally{state.busy=false;if(state.pending&&Date.now()<end+10000){state.pending=false;track(read());}}
+   }catch(cause){if(!cause.intentionalHudCancellation){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
+   finally{controller.abort();state.busy=false;if(state.pending&&Date.now()<end+10000){state.pending=false;track(read());}}
   };
   state.read=read;
   const finishHud=controller=>{
@@ -180,7 +184,6 @@ for(const scenario of ['concentrated','distributed']){
    finally{controller.abort();finishHud(controller);}
   };
   state.verifyHud=verifyHud;
-  let pageEpoch=0;
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
    const components=message.payload.components??['tables'];
@@ -191,7 +194,7 @@ for(const scenario of ['concentrated','distributed']){
    const epoch=++pageEpoch;state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();
    if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;
    if(state.online){
-    const rejoined=state.joined;if(rejoined){stats.reconnects++;state.reconnected++;}state.joined=true;track(read());
+    const rejoined=state.joined;if(rejoined){stats.reconnects++;state.reconnected++;state.tableController?.abort();state.snapshotController?.abort();state.known={};state.snapshotDirty.clear();}state.joined=true;track(read());
     if(!rejoined)verifyPage();
     else {
      track(snapshot(['tables']));

@@ -342,7 +342,7 @@ function TournamentLiveViewContent({
     const currentRequest = () => !controller.signal.aborted&&seq === requestSeqRef.current && readScopeRef.current === readScope;
     const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>{
       const epoch=publicReadEpoch(supabase,tournamentId,'tables');
-      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args]),controller.signal,signal=>supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
+      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
         reportPublicTournamentRead(supabase,tournamentId,!reply.error);
         if(!reply.error&&name==='get_public_tournament_table_live_or_last_hand_v2'&&(reply.data as {access?:string})?.access==='public'&&
           !publicReadEpochIsCurrent(supabase,tournamentId,'tables',epoch))throw Error('public_snapshot_superseded');
@@ -370,7 +370,17 @@ function TournamentLiveViewContent({
 
     if (!currentRequest()) return;
 
-    // Two-tier error handling: clock RPC errors are non-fatal (clock may be unconfigured).
+      const currentResponse = usePublicCurrentHand ? parsePublicTableCurrentResponse(currentHandRes.data) : null;
+      if(usePublicCurrentHand&&!currentHandRes.error&&currentResponse?.access==='revoked'){
+        // A successful access denial is authoritative even after a previously
+        // loaded hand. A transport failure may retain the last frame; denial may not.
+        requestSeqRef.current++;initialReadFailedRef.current=true;initialLoadedRef.current=false;publicSummaryRef.current=null;
+        setSeats([]);setCommunityCards([]);setActions([]);setPotSize(0);setHandId(null);setHandNumber(null);
+        setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
+        setHistoryReplayTarget(null);setToActId(null);setTableDisplayState(null);setMode('live');
+        setFatalError('Bàn này không còn được công khai.');setLoading(false);return;
+      }
+    // An unrelated failed read must not mask a successful access denial above.
     const coreError = currentHandRes.error || seatsRes.error || handsRes.error || tournamentRes.error;
     if (coreError) {
       if (!initialLoadedRef.current) {
@@ -382,17 +392,6 @@ function TournamentLiveViewContent({
       }
       return;
     }
-
-      const currentResponse = usePublicCurrentHand ? parsePublicTableCurrentResponse(currentHandRes.data) : null;
-      if(usePublicCurrentHand&&currentResponse?.access==='revoked'){
-        // A successful access denial is authoritative even after a previously
-        // loaded hand. A transport failure may retain the last frame; denial may not.
-        requestSeqRef.current++;initialReadFailedRef.current=true;initialLoadedRef.current=false;publicSummaryRef.current=null;
-        setSeats([]);setCommunityCards([]);setActions([]);setPotSize(0);setHandId(null);setHandNumber(null);
-        setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
-        setHistoryReplayTarget(null);setToActId(null);setTableDisplayState(null);setMode('live');
-        setFatalError('Bàn này không còn được công khai.');setLoading(false);return;
-      }
       if (usePublicCurrentHand && !currentResponse) {
       if (!initialLoadedRef.current) {
         initialReadFailedRef.current=true;
@@ -975,6 +974,7 @@ function TournamentLiveViewContent({
       const coordinator=new PublicSnapshotCoordinator(async()=>{if(initialReadFailedRef.current)return;const requestedFull=full;full=false;await loadAllData(!requestedFull);},1_000);
       const observation=observePublicTournament(supabase,tournamentId,event=>{
         if(event.reason==='status'){setRealtimeStatus(event.online?'online':'offline');return;}
+        if(event.invalidatePending){requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;}
         if(event.reason==='changed'&&event.components.includes('visibility')){
           requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;
           initialLoadedRef.current=false;publicSummaryRef.current=null;
