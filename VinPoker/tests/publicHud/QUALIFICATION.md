@@ -101,6 +101,12 @@ keys. Both current-hand and hub tests hold an old public response until after a
 fresh revoked response, then prove the old response cannot restore the frame.
 The HTTP harness likewise cancels/fences its old table/snapshot reads on rejoin;
 intentional cancellation is accounted separately and never credited as delivery.
+The public HUD response includes a duration-only `Server-Timing` header. The
+load report compares in-handler duration with proxy/HTTP timings, including
+error responses. One anonymous direct-summary observer per process runs every
+5 seconds to distinguish PostgREST/database delay from Edge queueing. It uses
+the same prepared RPC and is diagnostic instrumentation, not per-viewer HUD
+polling or an alternate path used for acceptance.
 `runtime-policy.json` records the image and before/after gateway hashes. These
 are explicit isolated fixture settings, never evidence of a hosted quota.
 

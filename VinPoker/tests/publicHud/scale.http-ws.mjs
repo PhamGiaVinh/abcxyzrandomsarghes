@@ -32,8 +32,9 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
   const kind=`${phase}:${path.split('/').at(-1)}:${timeout.aborted?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
  const timingKey=phase+':'+path;
- const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[]};
+ const timings=transportTimings[timingKey]??={headers:[],upstream:[],proxy:[],application:[]};
  timings.headers.push(response.headersAt-start);
+ const application=/\bhud;dur=([0-9]+(?:\.[0-9]+)?)/.exec(response.headers['server-timing']??'');if(application)timings.application.push(Number(application[1]));
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers[header];if(value!==undefined&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
  if(!response.ok){let code='';try{const body=JSON.parse(response.text);if(typeof body.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:${path.split('/').at(-1)}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
  const text=response.text;const value=JSON.parse(text);
@@ -47,6 +48,7 @@ const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privilege
 const hud=(tour,mode='summary',accessSnapshot,phase,signal)=>post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase,signal);
 async function until(fn,timeout,label){const start=Date.now();while(Date.now()-start<timeout){if(await fn())return;await sleep(200);}throw Error(label);}
 const percentile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*p))]:null;
+const timingReport=()=>Object.fromEntries(Object.entries(transportTimings).map(([phase,parts])=>[phase,Object.fromEntries(Object.entries(parts).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));
 const denied=await fetch(status.API_URL+'/rest/v1/rpc/claim_public_hud_jobs_v1',{method:'POST',headers:{apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({p_limit:1})});
 assert.ok([401,403].includes(denied.status),'Anonymous caller must not claim private jobs');
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:true},true);
@@ -56,7 +58,7 @@ await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_h
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[];
 const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,qualification:state==='passed'&&viewers===1000&&duration===1800,status:state,reports,
- partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,requestAccounting,summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,snapshotSamples:stats.snapshot.length,sourceWrites:stats.sourceWrites}:undefined},null,2));
+ partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,requestAccounting,transportTimings:timingReport(),summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(viewers===1000&&duration===1800){
@@ -77,6 +79,9 @@ for(const scenario of ['concentrated','distributed']){
  const health=[];
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
  const resourceTimer=setInterval(()=>{
+  // One observer per process, not viewer HUD polling: same anonymous prepared
+  // summary via PostgREST distinguishes database/HTTP delay from Edge queuing.
+  track(post('/rest/v1/rpc/get_public_player_hud_summary_v1',{p_tournament_id:uuid('10000000',1),p_player_id:player,p_access_snapshot:null},false,'diagnostic-direct-summary').catch(()=>error('diagnostic_summary_read')));
   appendFileSync('output/hud-scale/generator-memory.jsonl',JSON.stringify({at:Date.now(),scenario,...process.memoryUsage(),transport:httpTransport.metrics()})+'\n');
   track(fetch(status.API_URL+'/functions/v1/_internal/metric',{signal:AbortSignal.timeout(3000)}).then(async response=>{if(!response.ok)return;const value=await response.json();const safe={at:Date.now(),scenario};for(const key of ['activeUserWorkersCount','retiredUserWorkersCount','receivedRequestsCount','handledRequestsCount'])if(Number.isSafeInteger(value[key]))safe[key]=value[key];appendFileSync('output/hud-scale/edge-runtime.jsonl',JSON.stringify(safe)+'\n');}).catch(()=>{}));
   track(run('docker',['stats','--no-stream','--format','{{json .}}',`supabase_db_${project}`,`supabase_realtime_${project}`,`supabase_edge_runtime_${project}`,`supabase_kong_${project}`,`supabase_rest_${project}`]).then(({stdout})=>appendFileSync('output/hud-scale/resource-samples.jsonl',stdout)).catch(()=>error('resource_sample')));
