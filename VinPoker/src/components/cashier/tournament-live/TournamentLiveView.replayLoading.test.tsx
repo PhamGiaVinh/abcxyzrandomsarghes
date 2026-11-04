@@ -10,6 +10,7 @@ const {rpc,hand,target,auth,signals,liveSignals,events,statuses}=vi.hoisted(()=>
 }));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])=>{const result=Promise.resolve(rpc(...args));return Object.assign(result,{abortSignal:(signal:AbortSignal)=>{(args[0]==='get_public_tournament_table_hand_v2'?signals:liveSignals).push(signal);return result;}});},channel:()=>{const c={on:(...args:unknown[])=>{const callback=args.at(-1);if(typeof callback==='function')events.push(callback as ()=>void);return c;},subscribe:(callback:(status:string)=>void)=>{statuses.push(callback);return c;}};return c},removeChannel:vi.fn()}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>auth}));
+vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:(_url:string,_key:string,tour:string,table:string,signal:AbortSignal)=>{liveSignals.push(signal);return rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});}}));
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
 vi.mock('@/lib/tracker-poker/useTrackerRunoutSounds',()=>({useTrackerRunoutSounds:()=>{}}));

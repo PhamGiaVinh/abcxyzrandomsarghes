@@ -12,6 +12,7 @@ import {summaryApiReport} from './scale.summary.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
 import {PublicSnapshotCoordinator,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicHudRequest,revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
+import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
@@ -185,17 +186,24 @@ for(const scenario of ['concentrated','distributed','overview']){
   state.credit=()=>{credit('expected',state.handObservation,handIncludesWrite,'realtime','deliverySamples');credit('snapshotExpected',state.snapshotObservation,projectionIncludesWrite,'snapshot','snapshotSamples');};
   const healthy=()=>state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20));
   let pageEpoch=0;
+  const componentEpochs={tables:0,ranking:0,payout:0};
   const refreshSnapshot=async()=>{
    state.snapshotPending=false;if(!state.snapshotDirty.size)return;
    state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
    try{
     if(epoch!==pageEpoch)return;
     const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
+    const requestEpochs=Object.fromEntries(requested.map(section=>[section,componentEpochs[section]??0]));
     const requestOrder=++observationOrder;
     const value=await post('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:overview?[table]:[],p_sections:requested,p_known_revisions:state.known},false,'other',controller.signal);
     if(epoch!==pageEpoch)return;
     assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
-    for(const section of requested){assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;}
+    for(const section of requested){
+     if((section!=='tables'||overview)&&requestEpochs[section]!==componentEpochs[section]){
+      delete value.sections[section];state.supersededSnapshotSections=(state.supersededSnapshotSections??0)+1;void snapshot([section]);continue;
+     }
+     assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;
+    }
     const tables=value.sections.tables;
     if(tables){state.snapshotObservation={value:tables.freshness,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
    }catch(cause){if(!cause.intentionalHudCancellation)error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
@@ -213,14 +221,23 @@ for(const scenario of ['concentrated','distributed','overview']){
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const readCurrent=async()=>{
    if(overview)return;
-   state.busy=true;const epoch=pageEpoch,controller=new AbortController(),startedAt=Date.now();state.tableController=controller;
+   state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now();state.tableController=controller;
    try{
-    const value=await post('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table},false,'other',controller.signal);
+    const reply=await readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
+     assert.equal(String(url),status.API_URL+'/functions/v1/public-player-hud');
+     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
+     try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-edge',init.signal)),{headers:{'Content-Type':'application/json'}});}
+     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('Aborted','AbortError');throw error;}
+    });
+    const value=reply.data;
     if(epoch!==pageEpoch)return;
+    // Match TournamentLiveView's publicReadEpoch fence: even a payload that
+    // contains a source write cannot be displayed after a newer table hint.
+    if(value.access==='public'&&sourceEpoch!==componentEpochs.tables){state.supersededTableReads=(state.supersededTableReads??0)+1;return;}
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),startedAt,healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
-   }catch(cause){if(!cause.intentionalHudCancellation){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
+   }catch(cause){if(!(controller.signal.aborted&&cause?.publicTableCallerCancelled===true)){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
    finally{controller.abort();state.busy=false;}
   };
   const tableCoordinator=new PublicSnapshotCoordinator(()=>{
@@ -299,6 +316,8 @@ for(const scenario of ['concentrated','distributed','overview']){
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
    const components=message.payload.components??['tables'];
+   for(const component of ['tables','ranking','payout'])if(components.includes(component))componentEpochs[component]++;
+   if(components.includes('visibility')){pageEpoch++;state.tableController?.abort();state.snapshotController?.abort();state.handObservation=null;state.snapshotObservation=null;}
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
    if(components.includes('visibility')){state.known={};verifyPage();}
    else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c)&&(c!=='tables'||overview));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
@@ -453,6 +472,8 @@ for(const scenario of ['concentrated','distributed','overview']){
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
+ report.currentTableReader={source:'production-readPublicTableRequest',transport:'public-player-hud/current_table',anonymousAuthority:true,preQueryAdmissionMs:50,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
+ report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
  report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
  report.requestAccounting=requestAccounting;
