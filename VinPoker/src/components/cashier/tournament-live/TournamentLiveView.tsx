@@ -77,6 +77,7 @@ import { deriveReplayHeaderMetadata } from "./viewer-hub/replayMetadata";
 import { PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS } from "./viewer-hub/publicSnapshotCoordinator";
 import { parsePublicTableCurrentResponse,parsePublicParticipationSummary } from "./viewer-hub/publicTableHistory";
 import { loadPublicCurrentTable } from "./viewer-hub/loadPublicCurrentTable";
+import {readPublicTableRequest} from '@/lib/publicTableTransport';
 import { TableHistoryPanel } from "./viewer-hub/TableHistoryPanel";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
@@ -342,7 +343,9 @@ function TournamentLiveViewContent({
     const currentRequest = () => !controller.signal.aborted&&seq === requestSeqRef.current && readScopeRef.current === readScope;
     const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>{
       const epoch=publicReadEpoch(supabase,tournamentId,'tables');
-      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
+      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>name==='get_public_tournament_table_live_or_last_hand_v2'
+        ?readPublicTableRequest(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,String(args.p_tournament_id),String(args.p_tournament_table_id),signal)
+        :supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
         reportPublicTournamentRead(supabase,tournamentId,!reply.error);
         if(!reply.error&&name==='get_public_tournament_table_live_or_last_hand_v2'&&(reply.data as {access?:string})?.access==='public'&&
           !publicReadEpochIsCurrent(supabase,tournamentId,'tables',epoch))throw Error('public_snapshot_superseded');

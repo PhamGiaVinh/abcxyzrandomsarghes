@@ -11,6 +11,26 @@ const batchResponse=(init?:RequestInit)=>{
 };
 const reader=(send:typeof fetch)=>createPublicHudReadBatcher('https://fixture.invalid','fixed-anon',send);
 beforeEach(()=>vi.useFakeTimers());afterEach(()=>vi.useRealTimers());
+it('batches exact public table scopes before query start and retains fresh late-withdrawal reads',async()=>{
+ const name='get_public_tournament_table_live_or_last_hand_v2';
+ const tableArgs={p_tournament_id:tour,p_tournament_table_id:player};
+ let hidden=false,release:((value:Response)=>void)|undefined;
+ const send=vi.fn(async()=>hidden?new Response('{"access":"revoked"}'):new Promise<Response>(resolve=>{release=resolve;}));
+ const batch=reader(send),client=batch.forRequest(new AbortController().signal);
+ const first=client.rpc(name,tableArgs),second=client.rpc(name,tableArgs);
+ expect(send).not.toHaveBeenCalled();await vi.advanceTimersByTimeAsync(50);expect(send).toHaveBeenCalledTimes(1);
+ hidden=true;
+ const late=client.rpc(name,tableArgs);
+ const otherTable=client.rpc(name,{...tableArgs,p_tournament_table_id:tour});
+ const otherTour=client.rpc(name,{...tableArgs,p_tournament_id:player});
+ await vi.advanceTimersByTimeAsync(50);
+ expect((await late).data).toEqual({access:'revoked'});
+ await Promise.all([otherTable,otherTour]);expect(send).toHaveBeenCalledTimes(4);
+ release!(new Response(JSON.stringify({access:'public',tableId:player,nested:{value:1}})));
+ const [a,b]=await Promise.all([first,second]);
+ (a.data as {nested:{value:number}}).nested.value=2;
+ expect(b.data).toMatchObject({nested:{value:1}});expect(vi.getTimerCount()).toBe(0);
+});
 it('coalesces staggered arrivals within50ms without extending the first admission window',async()=>{
  const send=vi.fn(async()=>response()),batch=reader(send),client=batch.forRequest(new AbortController().signal);
  const first=client.rpc(summary,args);await vi.advanceTimersByTimeAsync(49);expect(send).not.toHaveBeenCalled();
@@ -18,6 +38,16 @@ it('coalesces staggered arrivals within50ms without extending the first admissio
  expect(send).toHaveBeenCalledTimes(1);await Promise.all([first,second]);
  const fresh=client.rpc(summary,args);await vi.advanceTimersByTimeAsync(49);expect(send).toHaveBeenCalledTimes(1);
  await vi.advanceTimersByTimeAsync(1);await fresh;expect(send).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+});
+it('keeps a grouped table read alive after one caller cancels and bounds its remaining deadline',async()=>{
+ const name='get_public_tournament_table_live_or_last_hand_v2',tableArgs={p_tournament_id:tour,p_tournament_table_id:player};
+ let underlying!:AbortSignal;
+ const send=vi.fn(async(_url:unknown,init?:RequestInit)=>{underlying=init!.signal!;return new Promise<Response>((_resolve,reject)=>underlying.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));});
+ const batch=reader(send),a=new AbortController(),b=new AbortController(),observe=vi.fn();
+ const first=batch.forRequest(a.signal).rpc(name,tableArgs),second=batch.forRequest(b.signal,observe).rpc(name,tableArgs);
+ await vi.advanceTimersByTimeAsync(50);a.abort();expect((await first).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});expect(underlying.aborted).toBe(false);
+ await vi.advanceTimersByTimeAsync(4950);expect((await second).error).toEqual({code:'PUBLIC_RPC_TRANSPORT'});
+ expect(observe.mock.lastCall?.[0].outcome).toBe('deadline');expect(underlying.aborted).toBe(true);expect(b.signal.aborted).toBe(false);expect(send).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
 });
 it('shares only pre-query requests, clones results and never reuses completed reads',async()=>{
  const send=vi.fn(async()=>response()),observe=vi.fn(),batch=reader(send);

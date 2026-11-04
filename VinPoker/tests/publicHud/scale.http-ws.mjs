@@ -11,6 +11,7 @@ import {createLocalHttpTransport} from './scale.http.mjs';
 import {summaryApiReport} from './scale.summary.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
 import {PublicSnapshotCoordinator,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
+import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 import {readPublicHudRequest,revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
@@ -224,8 +225,13 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(overview)return;
    state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now();state.tableController=controller;
    try{
-    const value=await post('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',
-     {p_tournament_id:tour,p_tournament_table_id:table},false,'other',controller.signal);
+    const reply=await readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
+     assert.equal(String(url),status.API_URL+'/functions/v1/public-player-hud');
+     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
+     try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-edge',init.signal)),{headers:{'Content-Type':'application/json'}});}
+     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('Aborted','AbortError');throw error;}
+    });
+    const value=reply.data;
     if(epoch!==pageEpoch)return;
     // Match TournamentLiveView's publicReadEpoch fence: even a payload that
     // contains a source write cannot be displayed after a newer table hint.
@@ -233,7 +239,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),startedAt,healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
-   }catch(cause){if(!cause.intentionalHudCancellation){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
+   }catch(cause){if(!(controller.signal.aborted&&cause?.publicTableCallerCancelled===true)){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
    finally{controller.abort();state.busy=false;}
   };
   const tableCoordinator=new PublicSnapshotCoordinator(()=>{
@@ -468,7 +474,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
- report.currentTableReader={source:'public-table-rpc',transport:'get_public_tournament_table_live_or_last_hand_v2',anonymousAuthority:true,responseCache:false,requestTimeoutMs:10000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
+ report.currentTableReader={source:'production-readPublicTableRequest',transport:'public-player-hud/current_table',anonymousAuthority:true,preQueryAdmissionMs:50,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
  report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
  report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
