@@ -8,9 +8,10 @@ import {createClient} from '@supabase/supabase-js';
 import {configureLocalRealtime} from './scale.realtime.mjs';
 import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
+import {summaryApiReport} from './scale.summary.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
 import {PublicSnapshotCoordinator,PUBLIC_SPECTATOR_READ_INTERVAL_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
-import {readPublicHudRequest,revalidatePublicHudRead} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
+import {readPublicHudRequest,revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
@@ -22,11 +23,12 @@ const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
-const player=uuid('30000000',1),stats={summary:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
+const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},requestAccounting={},observationOrder=0;
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
+const recordSummaryApi=(ms,phase,data)=>{const state=data?.access==='revoked'?'revoked':['current','updating','warming','unavailable'].includes(data?.state)?data.state:'unknown';stats.summaryHttp.push({ms,phase:phase??'unspecified',state,ready:data?.access==='public'&&['current','updating'].includes(state)});};
 async function post(path,body,privileged=false,phase='other',callerSignal){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
  const accounting=requestAccounting[phase+':'+path]??={launched:0,requestBytes:0,completed:0,responseBytes:0,cancelled:0};
@@ -71,9 +73,10 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
     const target=new URL(url);assert.equal(target.origin,status.API_URL);
     assert.ok(['/rest/v1/rpc/get_public_player_hud_summary_v1','/rest/v1/rpc/get_public_player_hud_history_v1'].includes(target.pathname));
     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-    let data;
+    let data;const rpcStart=performance.now();
     try{data=await post(target.pathname,JSON.parse(init.body),false,phase,init.signal);}
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
+    if(mode==='summary')recordSummaryApi(performance.now()-rpcStart,phase,data);
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
    });
   const value=mode==='summary'?await revalidatePublicHudRead(request,caller,onPreparing):await request(caller);
@@ -89,10 +92,13 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
    throw error;
   }
  }
- return hudTransport==='edge'
+ const start=performance.now();
+ const value=await (hudTransport==='edge'
  ?post('/functions/v1/public-player-hud',{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},false,phase,signal)
  :post('/rest/v1/rpc/'+(mode==='summary'?'get_public_player_hud_summary_v1':'get_public_player_hud_history_v1'),
-  {p_tournament_id:tour,p_player_id:player,...(mode==='summary'?{p_access_snapshot:accessSnapshot??null}:{})},false,phase,signal);
+  {p_tournament_id:tour,p_player_id:player,...(mode==='summary'?{p_access_snapshot:accessSnapshot??null}:{})},false,phase,signal));
+ if(mode==='summary')recordSummaryApi(performance.now()-start,phase,value);
+ return value;
 };
 async function until(fn,timeout,label){const start=Date.now();while(Date.now()-start<timeout){if(await fn())return;await sleep(200);}throw Error(label);}
 const percentile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*p))]:null;
@@ -106,7 +112,7 @@ await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_h
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
 const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,
- partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,requestAccounting,transportTimings:timingReport(),summarySamples:stats.summary.length,observedSummaryP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
+ partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(viewers===1000&&targetDuration===1800){
@@ -118,7 +124,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const overview=scenario==='overview',duration=overview?30:targetDuration;
  phases={};transportTimings={};rpcOutcomes={};runtimeFailures={};hudFailureKinds={};requestAccounting={};const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
- const offset={summary:stats.summary.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
+ const offset={summary:stats.summary.length,summaryHttp:stats.summaryHttp.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,revoking=false,started=0,currentAmendment=null;
  const notReadyOutcomes=[];
@@ -425,7 +431,8 @@ for(const scenario of ['concentrated','distributed','overview']){
  for(const c of clients)c.stopTableReads();
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
- const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
+ const apiSummary=summaryApiReport(sample('summaryHttp'));
+ const report={scenario,viewers,durationSeconds:duration,summaryTimingVersion:'per-rpc-complete-body-and-ready-v1',apiSummary,httpSummarySamples:apiSummary.all.samples,httpSummaryP95Ms:apiSummary.all.p95Ms,readySummarySamples:apiSummary.ready.samples,readySummaryP95Ms:apiSummary.ready.p95Ms,logicalHudSamples:sample('summary').length,logicalHudP95Ms:percentile(sample('summary'),.95),logicalHudMaxMs:Math.max(0,...sample('summary')),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
  report.notReadyOutcomes=notReadyOutcomes;save('running');
  report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:Math.max(0,...amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:Math.max(0,...samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
@@ -440,11 +447,11 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.snapshotDelivery={expected:snapshotExpected,excludedForPlannedFault:snapshotExcluded,missed:snapshotMissed,pending:clients.reduce((n,c)=>n+c.snapshotExpected.length,0),samples:sample('snapshot').length,p95Ms:percentile(sample('snapshot'),.95),minSamplesPerViewer:Math.min(...clients.map(c=>c.snapshotSamples))};save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
  const cpu=process.cpuUsage(cpuStart);Object.assign(report.generator,{cpuMs:(cpu.user+cpu.system)/1000,elapsedMs:performance.now()-generatorStart,transport:httpTransport.metrics()});
- report.httpPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
+ report.logicalHudPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
  report.transportErrors={...stats.transportErrors};save('running');
  report.runtimeFailures={...runtimeFailures};report.rpcOutcomes={...rpcOutcomes};report.hudFailureKinds={...hudFailureKinds};report.transportTimings=Object.fromEntries(Object.entries(transportTimings).map(([key,value])=>[key,Object.fromEntries(Object.entries(value).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));save('running');
  console.log(JSON.stringify(report));
- assert.ok(report.httpSummarySamples>=viewers);if(!overview)assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
+ assert.ok(report.httpSummarySamples>=viewers);assert.ok(report.readySummarySamples>=viewers,'Enough ready summary API responses are required');assert.ok(report.logicalHudSamples>=viewers);if(!overview)assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');
  assert.ok(report.revocationClears>=viewers,'Every HUD must clear for withdrawal in another contributing tour');
  assert.equal(report.revokedClients,viewers);assert.equal(report.reconnectedClients,viewers);
@@ -457,7 +464,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  assert.equal(report.healthyRealtimeSamples,report.expectedDeliveries-report.excludedForPlannedFault);
  if(!overview)assert.ok(report.minSamplesPerViewer>=Math.floor(duration/10),'Every viewer must observe enough real writes');
  assert.ok(report.sourceWrites>=tourCount*duration*.9,'Source write rate fell below the defined load');
- assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');if(!overview)assert.ok(report.healthyRealtimeP95Ms<=3000,'Visible felt p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
+ assert.ok(report.httpSummaryP95Ms<=1000,'HTTP summary p95 > 1s');assert.ok(report.readySummaryP95Ms<=1000,'Ready HTTP summary p95 > 1s');assert.ok(report.logicalHudMaxMs<=PUBLIC_HUD_REVALIDATION_WINDOW_MS,'Logical HUD preparation/revalidation exceeded its5s budget');if(!overview)assert.ok(report.healthyRealtimeP95Ms<=3000,'Visible felt p95 > 3s');assert.ok(report.projectionMaxMs<=5000,'Projection > 5s');
  assert.equal(stats.errors.source_write??0,0);assert.equal(stats.errors.projection_timeout??0,0);
  assert.equal(stats.errors.amendment_projection_or_write??0,0);
  assert.ok(report.amendments.samples>0);assert.ok(report.amendments.maxMs<=5000,'Amendment projection > 5s');assert.equal(report.amendments.changesDuringAudienceHold,true);

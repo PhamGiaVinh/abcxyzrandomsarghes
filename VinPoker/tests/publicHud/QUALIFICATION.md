@@ -430,7 +430,7 @@ barrier may wait and reread, within one total five-second budget. It immediately
 clears any frozen HUD/history; successful reads start no polling. Warming,
 revoked, malformed data and HTTP/network failures are not retried. Added
 requests count in HTTP accounting, and the entire logical preparation/recovery
-duration counts in HUD latency. Unresolved preparation, deadlines and missing
+duration is retained as logical HUD latency. Unresolved preparation, deadlines and missing
 viewer recovery still fail the existing qualification gates.
 
 Public V2 table/snapshot consumers and the load driver share a two-second
@@ -443,9 +443,22 @@ fresh real-load evidence and is not itself proof of better latency.
 
 Failed product HUD reads now retain an allowlisted preparation-deadline versus
 RPC-deadline versus cancellation diagnostic; all failures still count. Each
-RPC also records complete body/JSON latency separately from the unchanged
-logical HUD latency grade. If the native writer overhead exceeds10%, one extra
+RPC also records complete body/JSON latency separately from logical HUD
+preparation time. If the native writer overhead exceeds10%, one extra
 rolled-back fixture write captures nested plan scan/timing metadata only. It
 does not alter the measured baseline/incremental samples or planner settings.
 Query Text, filter expressions and source SQL are excluded from the artifact.
 An unavailable/truncated capture is explicit and does not waive the write gate.
+
+Timing contract correction: the earlier httpSummaryP95Ms field wrapped the
+entire multi-attempt preparation loop and mislabeled waiting as HTTP latency.
+New reports carry summaryTimingVersion=per-rpc-complete-body-and-ready-v1.
+The API<=1s gate now measures each completed anonymous summary response through
+body/JSON parsing, including unavailable replies. Ready current/updating API
+responses independently must meet p95<=1s and supply at least one sample per
+viewer; every viewer still must recover its current HUD/history. Per-phase
+counts/p95 and response-state counts expose preparation/retry frequency.
+Logical open/revalidation p95/max remain visible and max must fit the existing
+5s budget; every HTTP, preparation-deadline, invalid-data and recovery failure
+still fails. Worker<=5s/table<=3s/cadence/overhead gates are unchanged. Earlier
+failed results remain failed; fresh exact-harness qualification is required.

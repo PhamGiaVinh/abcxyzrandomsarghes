@@ -1,7 +1,7 @@
 import {createAnonymousPublicHudClient} from '../../supabase/functions/public-player-hud/publicRpc';
 import type {PublicHudRpcTiming} from '../../supabase/functions/public-player-hud/publicRpc';
 import {readPublicHudAggregate} from '../../supabase/functions/public-player-hud/aggregate';
-export {revalidatePublicHudRead} from './publicHudRevalidation';
+export {revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from './publicHudRevalidation';
 
 export interface PublicHudReadInput {
   tournament_id:string;player_id:string;mode:'summary'|'history';cursor?:unknown;access_snapshot?:unknown;
