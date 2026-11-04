@@ -8,6 +8,7 @@ import {createClient} from '@supabase/supabase-js';
 import {configureLocalRealtime} from './scale.realtime.mjs';
 import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
+import {PublicSnapshotCoordinator} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
@@ -130,9 +131,9 @@ for(const scenario of ['concentrated','distributed','overview']){
   state.clock=clock;
   const verifyPage=()=>{track(snapshot(['tables','ranking','payout']));track(clock());};
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
-  const read=async()=>{
+  const readCurrent=async()=>{
    if(overview)return;
-   if(state.busy){state.pending=true;return;}state.busy=true;const epoch=pageEpoch,controller=new AbortController();state.tableController=controller;
+   state.busy=true;const epoch=pageEpoch,controller=new AbortController();state.tableController=controller;
    try{
     const value=await post('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table},false,'other',controller.signal);
     if(epoch!==pageEpoch)return;
@@ -140,8 +141,13 @@ for(const scenario of ['concentrated','distributed','overview']){
     state.handObservation={value:value.hand,at:Date.now(),healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
    }catch(cause){if(!cause.intentionalHudCancellation){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
-   finally{controller.abort();state.busy=false;if(state.pending&&Date.now()<end+10000){state.pending=false;track(read());}}
+   finally{controller.abort();state.busy=false;}
   };
+  const tableCoordinator=new PublicSnapshotCoordinator(()=>{
+   state.pending=false;const promise=readCurrent();track(promise);return promise;
+  },1000);
+  const read=async()=>{if(!overview&&Date.now()<end+10000){state.pending=true;tableCoordinator.request();}};
+  state.stopTableReads=()=>tableCoordinator.stop();
   state.read=read;
   let hudTimerToken=0;
   const scheduleHudCheck=phase=>{
@@ -312,12 +318,14 @@ for(const scenario of ['concentrated','distributed','overview']){
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
  expireDeliveries();clearInterval(resourceTimer);
- await until(async()=>tasks.size===0,30000,'Pending transport/timer work did not drain');
+ await until(async()=>tasks.size===0&&clients.every(c=>!c.pending&&!c.busy),30000,'Pending transport/timer work did not drain');
+ for(const c of clients)c.stopTableReads();
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
  const report={scenario,viewers,durationSeconds:duration,httpSummarySamples:sample('summary').length,httpSummaryP95Ms:percentile(sample('summary'),.95),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:Math.max(0,...sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
+ report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:1000,pendingAtGrading:clients.filter(c=>c.pending||c.busy).length};save('running');
  report.requestAccounting=requestAccounting;
  report.hudRecovery={restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
