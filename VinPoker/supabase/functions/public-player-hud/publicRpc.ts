@@ -1,11 +1,11 @@
-// This public endpoint needs two anonymous PostgREST readers, not Auth/session,
+// This public endpoint needs bounded anonymous PostgREST readers, not Auth/session,
 // Storage or Realtime clients. Keep the transport stateless across callers.
 export interface PublicHudRpcTiming {durationMs:number;outcome:'ok'|'http'|'transport'|'deadline'|'cancelled'}
 export function createAnonymousPublicHudClient(baseUrl:string,anonKey:string,send:typeof fetch=fetch,requestSignal?:AbortSignal,observe?:(value:PublicHudRpcTiming)=>void){
  const base=new URL(baseUrl);
  if(!['http:','https:'].includes(base.protocol)||base.username||base.password||base.search||base.hash||base.pathname!=='/')throw Error('PUBLIC_RPC_CONFIGURATION');
  return {async rpc(name:string,args:Record<string,unknown>):Promise<{data:unknown;error:unknown}>{
-  if(!['get_public_player_hud_summary_v1','get_public_player_hud_history_v1'].includes(name))return {data:null,error:{code:'PUBLIC_RPC_NOT_ALLOWED'}};
+  if(!['get_public_player_hud_summary_v1','get_public_player_hud_history_v1','get_public_player_hud_summary_batch_v1'].includes(name))return {data:null,error:{code:'PUBLIC_RPC_NOT_ALLOWED'}};
   const controller=new AbortController();
   const started=performance.now();let deadline=false,outcome:PublicHudRpcTiming['outcome']='transport';
   const cancel=()=>controller.abort();

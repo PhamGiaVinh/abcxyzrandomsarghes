@@ -6,6 +6,8 @@ SELECT jsonb_build_object(
  'authenticatedPrivateSchemaUsage',has_schema_privilege('authenticated','tracker_analytics_v1','USAGE'),
  'anonCanReadSummary',has_function_privilege('anon','public.get_public_player_hud_summary_v1(uuid,uuid,text)','EXECUTE'),
  'anonCanReadHistory',has_function_privilege('anon','public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)','EXECUTE'),
+ 'anonCanReadSummaryBatch',has_function_privilege('anon','public.get_public_player_hud_summary_batch_v1(uuid,uuid,text[])','EXECUTE'),
+ 'summaryBatchDefinitionMatches',md5(replace(pg_get_functiondef('public.get_public_player_hud_summary_batch_v1(uuid,uuid,text[])'::regprocedure),chr(13),''))='e090d874e79988a0c6795beb6aff390b',
  'orderedHistoryDefinitionMatches',md5(replace(pg_get_functiondef('public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)'::regprocedure),chr(13),''))='7fcbf1a0c6ed5da9fedb5d83d699adf4',
  'anonCanClaimJobs',has_function_privilege('anon','public.claim_public_hud_jobs_v1(integer)','EXECUTE'),
  'authenticatedCanClaimJobs',has_function_privilege('authenticated','public.claim_public_hud_jobs_v1(integer)','EXECUTE'),

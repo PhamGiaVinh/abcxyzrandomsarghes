@@ -186,7 +186,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The eleven migrations `20261104001500` through `20261104002500` are promoted
+The twelve migrations `20261104001500` through `20261104002600` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -198,7 +198,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-eleven exact manifest entries, each SQL and new ledger receipt atomically; stop
+twelve exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -283,11 +283,12 @@ Migration025 adds plan-only reuse for the exact post023 public clock summary. It
 Public HUD reads may share an identical anonymous RPC only among requests
 admitted in the five milliseconds BEFORE that query starts. The group is removed
 from the joinable map before transport invocation; no in-flight or completed
-result is reused by a later open. Keys include reader, scope, access snapshot and
-both history cursor fields. Queue bounds bypass to a fresh ordinary read;
+result is reused by a later open. Keys include reader and scope; history includes both cursor fields. Summary groups retain each exact access snapshot separately. At most64 distinct summary snapshots and16KiB of snapshot UTF8 bytes are sent to migration026: one current rights/aggregate read, then the exact scalar visibility check per unique snapshot. Each participant receives its own result. One unique snapshot still uses the scalar RPC. Queue bounds bypass to a fresh ordinary read;
 cancellation/deadlines are per participant and each result is cloned. The
 five-second invocation deadline includes admission. This is per-isolate request
 coalescing, not a data cache or hosted-topology assumption. `hud_rpc` timing now
 includes admission and waiting for shared-RPC completion/fanout; it is not pure
 PostgREST timing. `hud_group` records only numeric participant count. Real HTTP
 artifacts must establish whether groups actually form and whether latency improves.
+
+Migration026 adds only a bounded public summary-batch reader, pinned to the exact scalar definition. No source/ledger writes or result cache. Native tests prove same-statement scalar equivalence, malformed-item isolation, early-outcome semantics, actor/scope/bounds, out-of-order committed revocation and guarded recovery. Restore the previous Edge reader before the `summary-batch.forward-rollback.sql` recovery template removes this API. Real HTTP qualification remains required.

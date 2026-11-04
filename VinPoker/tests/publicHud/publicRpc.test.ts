@@ -77,3 +77,10 @@ it('keeps success and sanitized failure when the timing observer throws',async()
  expect(await client.rpc('get_public_player_hud_history_v1',{})).toEqual({data:null,error:{code:'PUBLIC_RPC_TRANSPORT'}});
  expect(observe).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
 });
+it('uses the same fixed anonymous transport for the bounded snapshot batch reader',async()=>{
+ const send=vi.fn().mockResolvedValue(new Response('{"version":"public-hud-summary-batch-v1"}'));
+ const client=createAnonymousPublicHudClient('https://fixture.invalid','fixture-anon',send);
+ expect((await client.rpc('get_public_player_hud_summary_batch_v1',{p_access_snapshots:[null,'1:2:']})).error).toBeNull();
+ const [url,init]=send.mock.calls[0];expect(url.toString()).toContain('/rpc/get_public_player_hud_summary_batch_v1');
+ expect(init.headers.Authorization).toBe('Bearer fixture-anon');expect(init.redirect).toBe('error');expect(vi.getTimerCount()).toBe(0);
+});

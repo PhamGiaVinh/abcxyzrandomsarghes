@@ -9886,6 +9886,12 @@
       "filename": "20261104002500_public_clock_read_plan_reuse.sql",
       "sha256": "9293856d227d8675737a6930bb7d35755a3f0b4a1332aca6a9641e2892daf240",
       "reason": "Tracker public clock plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002600",
+      "filename": "20261104002600_public_hud_summary_batch.sql",
+      "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
+      "reason": "Tracker bounded public HUD snapshot batch; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [

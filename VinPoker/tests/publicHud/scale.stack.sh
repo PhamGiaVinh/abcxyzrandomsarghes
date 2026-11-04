@@ -63,6 +63,7 @@ PUBLIC_HUD_HISTORY_PLAN_REPORT="$repo_root/output/hud-scale/history-plans.json" 
 node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&1
 PUBLIC_HUD_PLAN_REPORT="$repo_root/output/hud-scale/read-plans.json" node tests/publicHud/read-plans.native.mjs
 PUBLIC_HUD_CLOCK_PLAN_REPORT="$repo_root/output/hud-scale/clock-read-plan.json" node tests/publicHud/clock-read-plan.native.mjs
+PUBLIC_HUD_SUMMARY_BATCH_REPORT="$repo_root/output/hud-scale/summary-batch.json" node tests/publicHud/summary-batch.native.mjs
 node tests/publicHud/scale.sources.native.mjs
 node tests/publicHud/scale.sql-profile.mjs
 supabase functions serve --workdir "$test_root" --env-file "$test_root/workers.env" --no-verify-jwt >"$test_root/serve.log" 2>&1 &
