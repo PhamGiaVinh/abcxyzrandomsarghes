@@ -444,8 +444,9 @@ fresh real-load evidence and is not itself proof of better latency.
 Failed product HUD reads now retain an allowlisted preparation-deadline versus
 RPC-deadline versus cancellation diagnostic; all failures still count. Each
 RPC also records complete body/JSON latency separately from logical HUD
-preparation time. If the native writer overhead exceeds10%, one extra
-rolled-back fixture write captures nested plan scan/timing metadata only. It
+preparation time. After both native writer measurements, one extra rolled-back fixture write
+probes nested plan scan/timing metadata only. Missing capture records an
+allowlisted permission/module/buffer/other reason; it is not scan evidence. It
 does not alter the measured baseline/incremental samples or planner settings.
 Query Text, filter expressions and source SQL are excluded from the artifact.
 An unavailable/truncated capture is explicit and does not waive the write gate.
@@ -462,3 +463,12 @@ Logical open/revalidation p95/max remain visible and max must fit the existing
 5s budget; every HTTP, preparation-deadline, invalid-data and recovery failure
 still fails. Worker<=5s/table<=3s/cadence/overhead gates are unchanged. Earlier
 failed results remain failed; fresh exact-harness qualification is required.
+
+A confirmed HUD revocation now aborts its obsolete owned request after
+clearing/fencing displayed data. Only that physical request finally releases
+the slot for one queued jittered recheck; ordinary verification does not abort
+a same-scope read and duplicate revocations do not reset jitter. Browser/load
+behavior matches. Known HTTP/network/validation/deadline failures retain their
+provenance even if revocation arrives later; only proven caller cancellation
+is excluded. Actual-helper HTTP/wait regressions and late-error tests guard
+this distinction. This does not retroactively excuse prior runtime failures.

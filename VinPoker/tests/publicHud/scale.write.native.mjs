@@ -1,4 +1,4 @@
-import {sanitizeWriterNestedPlans} from './scale.failures.mjs';
+import {sanitizeWriterNestedPlans,writerCaptureFailureKind} from './scale.failures.mjs';
 import {jsonSql,pgbench,sql} from './nativeDb.mjs';
 export function measureFixtureWriter(){
  return jsonSql(`${process.env.PUBLIC_HUD_PROFILE_FUNCTIONS==='1'?"SET track_functions='all';":''}BEGIN;CREATE TEMP TABLE fixture_write_samples(ms numeric);GRANT INSERT ON fixture_write_samples TO service_role;
@@ -30,6 +30,6 @@ export function diagnoseFixtureWriter(){
    SET LOCAL request.jwt.claim.role='service_role';SET LOCAL ROLE service_role;
    SELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000002);
    RESET ROLE;ROLLBACK;DO $$ BEGIN RAISE EXCEPTION 'writer_plan_capture';END $$;`,{captureFailure:true});
- }catch(error){return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',...sanitizeWriterNestedPlans(error?.stderr)};}
+ }catch(error){const result=sanitizeWriterNestedPlans(error?.stderr);return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',captureFailureKind:writerCaptureFailureKind(error,result.capturedPlans),...result};}
  return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',capturedPlans:0,scans:[]};
 }

@@ -34,3 +34,13 @@ export function sanitizeWriterNestedPlans(stderr){
  scans.sort((a,b)=>(b.totalMs??0)*(b.loops??1)-(a.totalMs??0)*(a.loops??1));
  return {capturedPlans:captured,scans:scans.slice(0,40)};
 }
+// Diagnostic error classes only; arbitrary database text never leaves capture.
+export function writerCaptureFailureKind(error,capturedPlans){
+ if(capturedPlans>0)return null;
+ const text=String(error?.stderr??'');
+ if(error?.code==='ENOBUFS'||/maxBuffer/i.test(String(error?.message??'')))return 'capture_buffer_limit';
+ if(/permission denied|must be superuser|not allowed|not permitted/i.test(text))return 'instrumentation_permission';
+ if(/could not access file|No such file|could not load library/i.test(text))return 'instrumentation_unavailable';
+ if(/writer_plan_capture/.test(text))return 'logs_not_returned';
+ return 'capture_unavailable';
+}

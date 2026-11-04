@@ -82,7 +82,7 @@ sql(readFileSync('supabase/migrations/20261104002800_public_hud_identity_ordered
 sql(readFileSync('supabase/migrations/20261104002900_public_hud_identity_membership_lookup.sql','utf8'));
 sql(readFileSync('supabase/migrations/20261104003000_public_hud_identity_membership_keyset.sql','utf8'));
 const incrementalWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();
-if(process.env.PUBLIC_HUD_SCALE_SEED_REPORT&&(incrementalWriter.p95Ms/baselineWriter.p95Ms-1)*100>10)writeFileSync(path.join(path.dirname(process.env.PUBLIC_HUD_SCALE_SEED_REPORT),'writer-nested-plans.json'),JSON.stringify(diagnoseFixtureWriter(),null,2));
+if(process.env.PUBLIC_HUD_SCALE_SEED_REPORT)writeFileSync(path.join(path.dirname(process.env.PUBLIC_HUD_SCALE_SEED_REPORT),'writer-nested-plans.json'),JSON.stringify(diagnoseFixtureWriter(),null,2));
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(temp,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
 const {processPublicHudJobs}=await import(pathToFileURL(path.join(temp,'worker.mjs')));
 for(let i=0;i<20&&Number(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'))>0;i++){

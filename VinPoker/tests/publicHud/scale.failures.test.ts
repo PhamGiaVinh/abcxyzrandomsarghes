@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {classifyHudReadFailure,sanitizeWriterNestedPlans} from './scale.failures.mjs';
+import {classifyHudReadFailure,sanitizeWriterNestedPlans,writerCaptureFailureKind} from './scale.failures.mjs';
 describe('safe HUD read failure diagnosis',()=>{
  it('separates preparation expiry, actual deadlines and caller cancellation',()=>{
   expect(classifyHudReadFailure({publicHudRevalidationExpired:true})).toBe('preparation_deadline');
@@ -18,4 +18,12 @@ it('sanitizes nested writer plans without exposing query or filter text',()=>{
  expect(sanitizeWriterNestedPlans(input)).toEqual({capturedPlans:1,scans:[{node:'Seq Scan',table:'hand_players',rows:2,loops:3,totalMs:4}]});
  expect(JSON.stringify(sanitizeWriterNestedPlans(input))).not.toContain('PRIVATE_');
  expect(sanitizeWriterNestedPlans('truncated')).toEqual({capturedPlans:0,scans:[]});
+});
+
+it('reports unavailable writer instrumentation without exporting database text',()=>{
+ expect(writerCaptureFailureKind({stderr:'ERROR: permission denied for private instrumentation SECRET'},0)).toBe('instrumentation_permission');
+ expect(writerCaptureFailureKind({stderr:'ERROR: could not access file SECRET'},0)).toBe('instrumentation_unavailable');
+ expect(writerCaptureFailureKind({code:'ENOBUFS'},0)).toBe('capture_buffer_limit');
+ expect(writerCaptureFailureKind({stderr:'writer_plan_capture'},0)).toBe('logs_not_returned');
+ expect(writerCaptureFailureKind({},3)).toBeNull();
 });
