@@ -292,3 +292,10 @@ PostgREST timing. `hud_group` records only numeric participant count. Real HTTP
 artifacts must establish whether groups actually form and whether latency improves.
 
 Migration026 adds only a bounded public summary-batch reader, pinned to the exact scalar definition. No source/ledger writes or result cache. Native tests prove same-statement scalar equivalence, malformed-item isolation, early-outcome semantics, actor/scope/bounds, out-of-order committed revocation and guarded recovery. Restore the previous Edge reader before the `summary-batch.forward-rollback.sql` recovery template removes this API. Real HTTP qualification remains required.
+
+HTTP5xx diagnostics classify only fixed runtime failure categories from at most
+8192 response characters; response text is not exported. All errors still fail
+grading and are never retried by this classifier. Upstream [CLI issue6675](https://github.com/supabase/cli/issues/6675)
+reports a retired-worker dispatch race; a matching category would be evidence
+to investigate, not proof that every timeout shares that cause. No upstream
+gateway retry or resource-cap change is introduced here.

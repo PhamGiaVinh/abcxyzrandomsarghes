@@ -2,6 +2,7 @@ import http from 'node:http';
 import assert from 'node:assert/strict';
 import {afterEach,beforeEach,it} from 'node:test';
 import {createLocalHttpTransport} from './scale.http.mjs';
+import {classifyEdgeFailure} from './scale.failures.mjs';
 let server,origin,transport;
 beforeEach(async()=>{
  transport=createLocalHttpTransport();
@@ -19,6 +20,19 @@ beforeEach(async()=>{
 });
 afterEach(async()=>{transport.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));});
 const options=(key,signal)=>({headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({fixture:key}),signal});
+it('classifies runtime failures without returning private response text',()=>{
+ for(const [body,label] of [
+  ['{"trace":"WorkerAlreadyRetired: private-path secret-value"}','worker_retired'],
+  ['{"code":"WORKER_RESOURCE_LIMIT","message":"secret-value"}','worker_resource_limit'],
+  ['{"code":"BOOT_ERROR","message":"secret-value"}','worker_boot'],
+  ['{"error":"WorkerRequestCancelled secret-value"}','worker_cancelled'],
+  ['{"error":"WorkerRequestIdleTimeout secret-value"}','worker_idle_timeout'],
+  ['{"private":"secret-value bearer eyJ.private.signature"}','unknown']]){
+  const result=classifyEdgeFailure(body);assert.equal(result,label);assert.ok(!result.includes('secret-value'));
+ }
+ assert.equal(classifyEdgeFailure(null),'unknown');
+ assert.equal(classifyEdgeFailure('x'.repeat(8192)+'WorkerAlreadyRetired'),'unknown');
+});
 it('sends distinct requests with per-call headers, full JSON and real status',async()=>{
  const [a,b]=await Promise.all([transport.request(origin+'/echo',options('anon')),transport.request(origin+'/denied',options('service-fixture'))]);
  assert.equal(a.status,200);assert.equal(a.headers['x-fixture'],'real-http');assert.deepEqual(JSON.parse(a.text),{body:{fixture:'anon'},key:'anon',encoding:'identity'});
