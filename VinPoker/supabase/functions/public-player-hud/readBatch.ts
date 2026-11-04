@@ -19,12 +19,6 @@ function summaryReplies(reply:Reply,snapshots:(string|null)[]):Map<string|null,R
  return replies;
 }
 function normalized(name:string,args:Record<string,unknown>):Record<string,unknown>|null{
- if(name==='get_public_tournament_table_live_or_last_hand_v2'){
-  if(Object.keys(args).some(k=>!['p_tournament_id','p_tournament_table_id'].includes(k))||
-   typeof args.p_tournament_id!=='string'||!uuid.test(args.p_tournament_id)||
-   typeof args.p_tournament_table_id!=='string'||!uuid.test(args.p_tournament_table_id))return null;
-  return {p_tournament_id:args.p_tournament_id,p_tournament_table_id:args.p_tournament_table_id};
- }
  if(typeof args.p_tournament_id!=='string'||!uuid.test(args.p_tournament_id)||typeof args.p_player_id!=='string'||!uuid.test(args.p_player_id))return null;
  const scope={p_tournament_id:args.p_tournament_id,p_player_id:args.p_player_id};
  if(name==='get_public_player_hud_summary_v1'){

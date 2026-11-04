@@ -13,7 +13,7 @@ export async function readPublicHudRequest(url:string,key:string,input:PublicHud
   if(signal.aborted)throw Object.assign(Error('aborted'),{publicHudCallerCancelled:true});
   let outcome:PublicHudRpcTiming['outcome']|undefined;
   try{
-    return await readPublicHudAggregate(createAnonymousPublicHudClient(url,key,send,signal,timing=>{outcome=timing.outcome;}),
+    return await readPublicHudAggregate(createAnonymousPublicHudClient(url,key,send,signal,timing=>{outcome=timing.outcome;},true),
       input.tournament_id,input.player_id,input.mode,input.cursor,input.access_snapshot);
   }catch(error){
     // The RPC deliberately sanitizes transport failures. Preserve caller
