@@ -9874,6 +9874,12 @@
       "filename": "20261104002300_tracker_participation_read_plan_reuse.sql",
       "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
       "reason": "Tracker canonical participation plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002400",
+      "filename": "20261104002400_public_hud_history_ordered_page.sql",
+      "sha256": "ebdee90872c0f14baeda9bad6404ebf9093d16aeec975bd5b263f215c347170a",
+      "reason": "Tracker ordered HUD history page; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [

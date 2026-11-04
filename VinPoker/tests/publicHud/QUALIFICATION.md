@@ -186,7 +186,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The nine migrations `20261104001500` through `20261104002300` are promoted
+The ten migrations `20261104001500` through `20261104002400` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -198,7 +198,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-nine exact manifest entries, each SQL and new ledger receipt atomically; stop
+ten exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -261,3 +261,5 @@ current-hand function AND tournament trigger, pause its dispatcher and deploy
 the matching old worker, invalidate/rebuild publications, and resolve deferred
 generations before resuming. Do not mix generations or treat that larger
 reversal as implicit in the default HUD-disable rollback.
+
+Migration024 keeps every source visibility/membership/completion/void/hard-block check before LIMIT51, but correlates those gates to the ordered contribution index. This avoids a full-tour semi-join and sort before pagination. The checked proof/seed CTE is materialized once. Exact first/next/null-cursor JSON, source exclusions, invalid prefixes, all-invalid history and reader ACL/OID are compared with018 on native PostgreSQL. Dense valid history uses page-sized source reads; an invalid prefix can still require more candidate checks. No bounded-cost claim is made for arbitrarily many invalid contributions. The default read-disable rollback also disables this reader; retaining the transparent024 query optimization does not require source changes.

@@ -48,6 +48,7 @@ docker inspect --format '{"name":{{json .Name}},"image":{{json .Config.Image}},"
 export PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/seed.json"
 export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
+PUBLIC_HUD_HISTORY_PLAN_REPORT="$repo_root/output/hud-scale/history-plans.json" node tests/publicHud/history-plans.native.mjs
 node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&1
 PUBLIC_HUD_PLAN_REPORT="$repo_root/output/hud-scale/read-plans.json" node tests/publicHud/read-plans.native.mjs
 node tests/publicHud/scale.sources.native.mjs
