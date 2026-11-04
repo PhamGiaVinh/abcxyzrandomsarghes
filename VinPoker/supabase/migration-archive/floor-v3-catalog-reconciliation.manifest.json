@@ -9898,6 +9898,12 @@
       "filename": "20261104002700_public_current_table_prepared_reads.sql",
       "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
       "reason": "Tracker prepared public current-table reads; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002800",
+      "filename": "20261104002800_public_hud_identity_ordered_lookup.sql",
+      "sha256": "30b558d20c8afd0857fcd661b396c7b46a18825f5ca220738a99bebed125241a",
+      "reason": "Tracker ordered private HUD identity lookup; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [

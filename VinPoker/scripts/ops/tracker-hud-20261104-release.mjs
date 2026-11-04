@@ -7,13 +7,13 @@ import {canonicalSqlText,buildAtomicMigrationQuery} from './ops-1359-release-gat
 
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export const PROJECT='orlesggcjamwuknxwcpk';
-export const MANIFEST_HASH='cb213a37ab9c65c4bf63ed7f0e0fbcc147aafbf2e5ddfc2a06f814746b5c9a5e';
+export const MANIFEST_HASH='acf35846acd2cd0b81724a5e3052dbf961f2a34b4ac4a7a3a197e6a6d19a3039';
 const sha=s=>createHash('sha256').update(canonicalSqlText(s)).digest('hex');
 export function loadPackage(root=ROOT){
  const raw=readFileSync(resolve(root,'scripts/ops/tracker-hud-20261104-manifest.json'),'utf8');
  if(sha(raw)!==MANIFEST_HASH)throw Error('Reviewed manifest hash differs');
  const manifest=JSON.parse(raw);
- if(manifest.projectRef!==PROJECT||manifest.migrations.length!==13)throw Error('Release scope differs');
+ if(manifest.projectRef!==PROJECT||manifest.migrations.length!==14)throw Error('Release scope differs');
  const entries=manifest.migrations.map(e=>{
   const sql=canonicalSqlText(readFileSync(resolve(root,e.path),'utf8'));
   if(sha(sql)!==e.sha256)throw Error('Migration checksum differs: '+e.version);
@@ -23,9 +23,9 @@ export function loadPackage(root=ROOT){
 }
 const fingerprint=`md5(string_agg(version||':'||coalesce(name,'')||':'||md5(coalesce(array_to_string(statements,E'\\n'),'')),E'\\n' ORDER BY version))`;
 export function stateSql(){return `SELECT json_build_object('rows',count(*),'fingerprint',${fingerprint},
- 'applied',(SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version BETWEEN '20261104001500' AND '20261104002700'),
+ 'applied',(SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version BETWEEN '20261104001500' AND '20261104002800'),
  'spectatorPaused',NOT EXISTS(SELECT 1 FROM cron.job WHERE jobname='public-spectator-v2-dispatch' AND active))::text
- FROM supabase_migrations.schema_migrations WHERE version NOT BETWEEN '20261104001500' AND '20261104002700';`;}
+ FROM supabase_migrations.schema_migrations WHERE version NOT BETWEEN '20261104001500' AND '20261104002800';`;}
 export function validateState(row,pkg){
  if(Number(row.rows)!==pkg.manifest.baselineLedgerRows||row.fingerprint!==pkg.manifest.baselineLedgerFingerprint)throw Error('Baseline ledger changed; review a new package');
  if(Number(row.applied)!==0)throw Error('Existing or partial receipt requires review; automatic resume forbidden');
@@ -40,7 +40,7 @@ export function atomicQuery(entry,pkg){
  const guard=`LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;
  DO $hud_release_guard$ BEGIN
  IF (SELECT count(*) FROM supabase_migrations.schema_migrations)<>${expectedRows}
- OR (SELECT ${fingerprint} FROM supabase_migrations.schema_migrations WHERE version NOT BETWEEN '20261104001500' AND '20261104002700')<>'${pkg.manifest.baselineLedgerFingerprint}'
+ OR (SELECT ${fingerprint} FROM supabase_migrations.schema_migrations WHERE version NOT BETWEEN '20261104001500' AND '20261104002800')<>'${pkg.manifest.baselineLedgerFingerprint}'
  OR EXISTS(SELECT 1 FROM cron.job WHERE jobname='public-spectator-v2-dispatch' AND active)
  THEN RAISE EXCEPTION 'HUD release baseline or paused dispatcher changed';END IF;
  ${prefixGuards}
@@ -63,8 +63,8 @@ function run(){
  const pkg=loadPackage();
  if(process.env.PGHOST!==`db.${PROJECT}.supabase.co`||process.env.PGPORT!=='5432'||process.env.PGUSER!=='postgres'||process.env.PGDATABASE!=='postgres'||process.env.PGSSLMODE!=='require'||!process.env.PGPASSWORD)throw Error('Exact private production connection required');
  validateState(JSON.parse(query(stateSql())),pkg);
- if(mode==='plan'){console.log(JSON.stringify({mode,manifestHash:MANIFEST_HASH,migrations:13}));return;}
- if(process.env.CONFIRM_TRACKER_HUD_APPLY!=='APPLY_13_'+MANIFEST_HASH)throw Error('Exact owner-approved package confirmation absent');
+ if(mode==='plan'){console.log(JSON.stringify({mode,manifestHash:MANIFEST_HASH,migrations:14}));return;}
+ if(process.env.CONFIRM_TRACKER_HUD_APPLY!=='APPLY_14_'+MANIFEST_HASH)throw Error('Exact owner-approved package confirmation absent');
  const sourceSha=execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim();
  if(!/^[a-f0-9]{40}$/.test(process.env.TRACKER_HUD_APPROVED_SHA??'')||sourceSha!==process.env.TRACKER_HUD_APPROVED_SHA||execFileSync('git',['status','--porcelain'],{cwd:ROOT,encoding:'utf8'}).trim())throw Error('Clean exact approved source required');
  validateRecovery(JSON.parse(readFileSync(process.env.TRACKER_HUD_RECOVERY_RECEIPT,'utf8')));
@@ -81,6 +81,6 @@ function run(){
    report.status='STOPPED_PARTIAL_OR_UNCONFIRMED_NO_RETRY';report.stoppedAt=e.version;writeFileSync(reportPath,JSON.stringify(report,null,2));throw Error('STOP at '+e.version+'; review exact receipts before any further action');
   }
  }
- report.status='THIRTEEN_ATOMIC_RECEIPTS_VERIFIED_OBJECT_POSTCHECK_STILL_REQUIRED';writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(report.status);
+ report.status='FOURTEEN_ATOMIC_RECEIPTS_VERIFIED_OBJECT_POSTCHECK_STILL_REQUIRED';writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(report.status);
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{run();}catch(e){console.error(e.message);process.exitCode=1;}}

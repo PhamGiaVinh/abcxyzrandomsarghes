@@ -186,7 +186,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The thirteen migrations `20261104001500` through `20261104002700` are promoted
+The fourteen migrations `20261104001500` through `20261104002800` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -198,7 +198,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-thirteen exact manifest entries, each SQL and new ledger receipt atomically; stop
+fourteen exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -356,7 +356,16 @@ an authorization decision. Native tests use a BEFORE INSERT barrier so a real
 source writer can commit between old JSON evaluation and publication; the read
 must reject that older certificate and return the newer canonical source.
 Lease/vector/retry, scope/ACL, invalidation and exact recovery remain mandatory.
-Recover027 with `current-table-prepared.forward-rollback.sql` BEFORE the earlier
+Migration028 adds only a private contribution index for the existing cross-version
+identity fallback when a player is absent from the current ranking. The existing
+version-prefixed history index cannot satisfy this ordering. No public function,
+policy, counter or source row changes. The native fallback test checks anonymous
+JSON parity, null/equal timestamps, multiple algorithm versions, unchanged function
+metadata, a single ordered source-row lookup, catalog drift and index-only recovery.
+The index is installed before the fixture incremental-writer measurement. This
+native plan check is not HTTP scale qualification. Recover028 with
+`identity-lookup.forward-rollback.sql`; then recover027 with
+`current-table-prepared.forward-rollback.sql` BEFORE the earlier
 025/023/022 layers. Native/pre-filled timings are not HTTP qualification.
 The native suite also measures one publication across21 active tables (the20
 added hands each have2players/4actions) in a rolled-back transaction. This is
