@@ -28,6 +28,11 @@ on:
         description: 'Diagnostic 1000 viewers/small history: three 30-second scenarios'
         type: boolean
         default: false
+      hud_transport:
+        description: 'Diagnostic only: compare public RPC without Edge; cannot qualify'
+        type: choice
+        options: ['edge', 'direct_rpc']
+        default: 'edge'
       edge_parallelism:
         description: 'Isolated per-function worker pool; recorded, not a hosted quota'
         type: choice
@@ -59,11 +64,15 @@ jobs:
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || '100' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
+      PUBLIC_HUD_SCALE_TRANSPORT: ${{ inputs.hud_transport || 'edge' }}
       PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
       PUBLIC_HUD_SCALE_EDGE_POLICY: ${{ inputs.edge_policy || 'per_worker' }}
       PUBLIC_HUD_SCALE_REST_POOL: ${{ inputs.rest_pool || '10' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
+      - name: Reject diagnostic transport for full qualification
+        if: inputs.hud_transport == 'direct_rpc' && inputs.qualification
+        run: exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

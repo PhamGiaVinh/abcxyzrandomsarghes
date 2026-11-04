@@ -280,6 +280,15 @@ SQL load profiling installs only the existing pg_stat_statements extension/view 
 
 Migration025 adds plan-only reuse for the exact post023 public clock summary. It preserves every query expression, function property and permission. The separate private preimage must be restored with `clock-read-plan.forward-rollback.sql` before the earlier `read-plans.forward-rollback.sql` template. Native row/clock/scope/source-update/withdrawal/ACL and exact recovery checks precede the real HTTP load; native timing is not capacity evidence.
 
+The optional `hud_transport=direct_rpc` workflow dispatch is a short diagnostic,
+not the product transport. It reads the same anonymous summary/history RPCs via
+real PostgREST, bypassing Edge batching, counter-to-metric formatting and the
+internal five-second RPC deadline (the HTTP ten-second deadline remains).
+Reports label `productTransport=false` and can never qualify; durations other
+than30seconds are rejected. All viewers, writes, reconnect/withdrawal checks,
+latency thresholds and error accounting remain. Only a future implemented and
+verified product path could make such a result relevant to release acceptance.
+
 Public HUD reads may share an identical anonymous RPC only among requests
 admitted in the 50 milliseconds BEFORE that query starts. The group is removed
 from the joinable map before transport invocation; no in-flight or completed
