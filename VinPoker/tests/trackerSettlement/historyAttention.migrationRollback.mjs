@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');
-assert.ok(['vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_history98_predecessor_20261105'].includes(process.env.PGDATABASE));
+assert.ok(['vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_history98_predecessor_20261105','vinpoker_ops_history98_runtime_20261105'].includes(process.env.PGDATABASE));
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 function run(sql){return spawnSync('psql',['-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8'});}
 function query(sql){const r=run(sql);assert.equal(r.status,0,r.stderr);return r.stdout.trim();}

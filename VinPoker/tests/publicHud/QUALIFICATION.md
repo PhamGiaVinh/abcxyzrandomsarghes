@@ -38,6 +38,13 @@ configures the running tenant after each start/reconnect through its actual
 Do not upload CLI status, Edge serve logs or local environment files: they
 contain the disposable credentials. The workflow uploads sanitized evidence.
 
+The current spectator path reads prepared summaries, bounded history and the
+canonical current table directly through their fixed-anonymous PostgREST RPCs.
+Browser and generator use the same request helpers, five-second deadlines and
+scope/epoch fences. The previous table/history Edge grouping experiment and
+its failed runs remain diagnostic evidence; the compatibility Edge readers
+still exist, but the product viewer no longer uses that intermediate hop.
+
 The real source fixture writes six separate transactions per hand at one step
 per second per active tournament. The actual cron-dispatched workers process
 them. Restarting the local Realtime container forces all viewer sockets to
@@ -51,7 +58,7 @@ the viewer returns to the overview, rather than on every hidden hand update.
 While watching a felt, the small header table count can therefore lag until
 the next healthy verification (27–33 seconds); the visible felt remains live.
 Initial/verification/visibility requests also read snapshot ranking/payout and
-the unchanged canonical clock/clock-summary RPCs. Every eligible source write
+the public clock-summary RPC (including participation counters). Every eligible source write
 must reach every visible felt; the separate overview scenario requests actual
 visible table details and checks every source write against snapshot generation
 and publication time for every grid viewer. Both visible paths retain p95 <=3s,

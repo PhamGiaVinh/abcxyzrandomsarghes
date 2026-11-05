@@ -105,7 +105,7 @@ SELECT set_config('request.jwt.claim.sub','f7290000-0000-4000-8000-000000000001'
 DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de bigint; st uuid; dt uuid; ss uuid; ds uuid; e uuid; h uuid; ep bigint; sr bigint; dr bigint; token text; ticket_code text; operator_actor uuid;
  finish_intent jsonb; finish_receipt jsonb; finish_epoch bigint; moving_entry uuid; BEGIN
  IF current_setting('test.scoped_finish_mode')='true' THEN
-  PERFORM pg_temp.assert_true(current_database() IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_full111_finish99')
+  PERFORM pg_temp.assert_true(current_database() IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_full111_finish99','vinpoker_ops_history98_runtime_20261105')
     AND current_setting('test.real_finish_case')='true'
     AND (current_setting('test.exact_queue')='true' OR current_setting('test.tracker_break_case')='true'),
     'scoped Finish mode case requires exact owned current-candidate APIs and public queue');

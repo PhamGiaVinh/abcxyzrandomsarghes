@@ -76,13 +76,11 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
    {tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot},owned,
    async(url,init)=>{
     const target=new URL(url);assert.equal(target.origin,status.API_URL);
-    assert.ok(['/rest/v1/rpc/get_public_player_hud_summary_v1','/rest/v1/rpc/get_public_player_hud_history_v1','/functions/v1/public-player-hud'].includes(target.pathname));
+    assert.equal(target.pathname,'/rest/v1/rpc/'+(mode==='summary'?'get_public_player_hud_summary_v1':'get_public_player_hud_history_v1'));
     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-    const sharedHistoryEdge=target.pathname==='/functions/v1/public-player-hud';
-    if(sharedHistoryEdge)assert.equal(mode,'history');
     let data;const rpcStart=performance.now();
     try{data=await post(hudTransport==='edge'?'/functions/v1/public-player-hud':target.pathname,
-     hudTransport==='edge'&&!sharedHistoryEdge?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal);}
+     hudTransport==='edge'?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal);}
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     if(mode==='summary')recordSummaryApi(performance.now()-rpcStart,phase,data);
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
@@ -227,9 +225,9 @@ for(const scenario of ['concentrated','distributed','overview']){
    state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now();state.tableController=controller;
    try{
     const reply=await readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
-     assert.equal(String(url),status.API_URL+'/functions/v1/public-player-hud');
+     assert.equal(String(url),status.API_URL+'/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2');
      assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-     try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-edge',init.signal)),{headers:{'Content-Type':'application/json'}});}
+     try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-rpc',init.signal)),{headers:{'Content-Type':'application/json'}});}
      catch(error){if(error?.intentionalHudCancellation)throw new DOMException('Aborted','AbortError');throw error;}
     });
     const value=reply.data;
@@ -475,7 +473,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:Math.max(0,...probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
- report.currentTableReader={source:'production-readPublicTableRequest',transport:'public-player-hud/current_table',anonymousAuthority:true,preQueryAdmissionMs:50,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
+ report.currentTableReader={source:'production-readPublicTableRequest',transport:'postgrest/get_public_tournament_table_live_or_last_hand_v2',anonymousAuthority:true,preQueryAdmissionMs:0,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
  report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
  report.watchedReadCoordinator={source:'production-PublicSnapshotCoordinator',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');

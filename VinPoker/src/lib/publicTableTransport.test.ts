@@ -5,9 +5,9 @@ afterEach(()=>vi.useRealTimers());
 it('uses fixed public credentials, exact scope, no cache/session and never falls back',async()=>{
  const send=vi.fn().mockResolvedValue(new Response('{"access":"revoked"}'));
  expect((await read(send)).data).toEqual({access:'revoked'});
- const [url,init]=send.mock.calls[0];expect(String(url)).toBe('https://fixture.invalid/functions/v1/public-player-hud');
- expect(init.headers).toEqual({apikey:'fixed-anon',Authorization:'Bearer fixed-anon','Content-Type':'application/json'});
- expect(JSON.parse(init.body)).toEqual({mode:'current_table',tournament_id:'tour',table_id:'table'});
+ const [url,init]=send.mock.calls[0];expect(String(url)).toBe('https://fixture.invalid/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2');
+ expect(init.headers).toEqual({apikey:'fixed-anon',Authorization:'Bearer fixed-anon','Content-Type':'application/json','Content-Profile':'public','Accept-Profile':'public'});
+ expect(JSON.parse(init.body)).toEqual({p_tournament_id:'tour',p_tournament_table_id:'table'});
  expect(init).toMatchObject({cache:'no-store',credentials:'omit',redirect:'error'});expect(send).toHaveBeenCalledTimes(1);
 });
 it('supports publishable public keys without installing a user JWT',async()=>{

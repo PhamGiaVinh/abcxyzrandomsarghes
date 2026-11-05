@@ -13,7 +13,7 @@ DECLARE target regprocedure;
  replacement constant text:='p.tracker_big_blind >= p.tracker_small_blind';
 BEGIN
  IF current_user<>'postgres'
- OR current_database() NOT IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_history98_predecessor_20261105')
+ OR current_database() NOT IN ('vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_history98_predecessor_20261105','vinpoker_ops_history98_runtime_20261105')
  OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
  OR inet_server_port() IS DISTINCT FROM 55441
  OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999

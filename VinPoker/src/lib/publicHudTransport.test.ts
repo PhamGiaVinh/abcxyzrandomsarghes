@@ -4,13 +4,13 @@ import {emptyPublicHudCounters} from '../../supabase/functions/_shared/publicHud
 const tournament='10000000-0000-4000-8000-000000000001',player='30000000-0000-4000-8000-000000000001';
 const input={tournament_id:tournament,player_id:player,mode:'summary' as const};
 const summary=()=>({access:'public',state:'current',tournamentId:tournament,playerId:player,counters:emptyPublicHudCounters()});
-it('batches only history through the existing anonymous Edge with exact tour and null cursor',async()=>{
+it('reads bounded history through the canonical anonymous RPC with exact tour and null cursor',async()=>{
  const send=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify({...summary(),handHistory:[],nextCursor:null})));
  await readPublicHudRequest('https://fixture.invalid','public-anon',input,new AbortController().signal,send);
  await readPublicHudRequest('https://fixture.invalid','public-anon',{...input,mode:'history',cursor:{playedAt:null,handId:player}},new AbortController().signal,send);
  expect(String(send.mock.calls[0][0])).toBe('https://fixture.invalid/rest/v1/rpc/get_public_player_hud_summary_v1');
- expect(String(send.mock.calls[1][0])).toBe('https://fixture.invalid/functions/v1/public-player-hud');
- expect(JSON.parse(String(send.mock.calls[1][1].body))).toEqual({mode:'history',tournament_id:tournament,player_id:player,cursor:{playedAt:null,handId:player}});
+ expect(String(send.mock.calls[1][0])).toBe('https://fixture.invalid/rest/v1/rpc/get_public_player_hud_history_v1');
+ expect(JSON.parse(String(send.mock.calls[1][1].body))).toEqual({p_tournament_id:tournament,p_player_id:player,p_after_hand:player,p_after_time:null});
  expect(send.mock.calls[1][1]).toMatchObject({credentials:'omit',cache:'no-store',redirect:'error'});
  expect(send.mock.calls[1][1].headers).toMatchObject({apikey:'public-anon',Authorization:'Bearer public-anon'});
 });
@@ -34,8 +34,8 @@ it('passes the frozen access watermark and null-timestamp cursor to separate bou
  await readPublicHudRequest('https://fixture.invalid','public-anon',{...input,access_snapshot:'1:2:'},new AbortController().signal,send);
  expect(JSON.parse(String(send.mock.calls[0][1].body)).p_access_snapshot).toBe('1:2:');
  await readPublicHudRequest('https://fixture.invalid','public-anon',{...input,mode:'history',cursor:{playedAt:null,handId:player}},new AbortController().signal,send);
- expect(String(send.mock.calls[1][0])).toContain('/functions/v1/public-player-hud');
- expect(JSON.parse(String(send.mock.calls[1][1].body))).toMatchObject({cursor:{playedAt:null,handId:player}});
+ expect(String(send.mock.calls[1][0])).toContain('/rest/v1/rpc/get_public_player_hud_history_v1');
+ expect(JSON.parse(String(send.mock.calls[1][1].body))).toMatchObject({p_after_hand:player,p_after_time:null});
 });
 it('rejects mismatched scope or malformed counters and preserves warming/revocation without fallback',async()=>{
  for(const data of [{...summary(),tournamentId:player},{...summary(),counters:{}}]){
@@ -101,7 +101,7 @@ it('retains an HTTP failure if its body is aborted after failed headers arrived'
  expect(failure.message).toBe('PUBLIC_HUD_UNAVAILABLE');expect(failure).not.toHaveProperty('publicHudCallerCancelled');
 });
 
-it('keeps history scope, page bound, revocation and Edge failures without direct fallback',async()=>{
+it('keeps history scope, page bound, revocation and RPC failures without retry',async()=>{
  for(const data of [{...summary(),playerId:tournament,handHistory:[]},{...summary(),handHistory:Array(51).fill({})}]){
   const send=vi.fn(async()=>new Response(JSON.stringify(data)));
   await expect(readPublicHudRequest('https://fixture.invalid','public-anon',{...input,mode:'history'},new AbortController().signal,send)).rejects.toThrow();
@@ -111,9 +111,9 @@ it('keeps history scope, page bound, revocation and Edge failures without direct
  expect(await readPublicHudRequest('https://fixture.invalid','public-anon',{...input,mode:'history'},new AbortController().signal,revoked)).toEqual({access:'revoked'});
  const failed=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify({error:'unavailable'}),{status:503}));
  await expect(readPublicHudRequest('https://fixture.invalid','public-anon',{...input,mode:'history'},new AbortController().signal,failed)).rejects.toThrow('PUBLIC_HUD_UNAVAILABLE');
- expect(failed).toHaveBeenCalledTimes(1);expect(String(failed.mock.calls[0][0])).toContain('/functions/v1/public-player-hud');
+ expect(failed).toHaveBeenCalledTimes(1);expect(String(failed.mock.calls[0][0])).toContain('/rest/v1/rpc/get_public_player_hud_history_v1');
 });
-it('bounds history Edge body reading by the same five-second caller-independent deadline',async()=>{
+it('bounds history RPC body reading by the same five-second caller-independent deadline',async()=>{
  vi.useFakeTimers();try{
   const caller=new AbortController();
   const send=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>({ok:true,json:()=>new Promise((_resolve,reject)=>{
