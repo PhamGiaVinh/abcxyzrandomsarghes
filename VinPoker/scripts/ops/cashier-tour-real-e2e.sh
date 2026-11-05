@@ -505,6 +505,12 @@ REPORT_PREFLIGHT
       <"$repo_root/supabase/migrations/$report_migration"
   done
   echo "REPORT_SCHEMA_PROOF: exact90/264 plus pinned private clock readers; disposable current runtime only"
+  # The retained baseline predates the existing session-label uniqueness fix.
+  # Keep its canonical function-body precondition intact; otherwise a second
+  # open on a closed physical table conflicts with the legacy empty label.
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql"
+  echo "FLOOR_SCHEMA_PROOF: exact26 session-label fix added only to the disposable current runtime"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHECKIN_PREFLIGHT'
 DO $$ BEGIN
  IF to_regprocedure('public.operator_check_in_dealer_v1(uuid,uuid,uuid,uuid)') IS NOT NULL

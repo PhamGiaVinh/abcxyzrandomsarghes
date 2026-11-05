@@ -398,6 +398,10 @@ test('canonical Floor open and close propagate into one continuously open screen
   closeRow.writeToVisibleMs=performance.now()-closing;closeRow.status='visible';report();
   }
   expect(rows.filter(row=>!row.warmup&&row.status==='visible')).toHaveLength(40);
+  for(const operation of ['open','close']){
+   const samples=rows.filter(row=>row.operation===operation&&!row.warmup).map(row=>row.writeToVisibleMs!).sort((a,b)=>a-b);
+   expect(samples[18],operation+' write-to-visible p95').toBeLessThanOrEqual(3000);
+  }
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
@@ -788,39 +792,74 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
   const data=await response.json();expect(response.ok).toBe(true);expect(Array.isArray(data)).toBe(true);return data;
  };
  const args=(context:Context,request=crypto.randomUUID())=>({p_table_id:context.table_id,p_table_session_id:context.session_id,p_assignment_id:context.assignment_id,p_expected_version:0,p_request_id:request});
- const rows:{iteration:number;warmup:boolean;actor:number;ackMs:number;retryMs:number;independentStateMs:number}[]=[];
+ const rows:{iteration:number;warmup:boolean;actor:number;ackMs:number;retryMs:number;independentStateMs:number;writeToVisibleMs?:number;writeToRealtimeMs?:number}[]=[];
+ const realtimeEnabled=process.env.LOCAL_OPERATIONS_REALTIME==='1',seen=new Map<string,number>();let postgresReady=false;
+ page.on('websocket',socket=>socket.on('framereceived',frame=>{
+  try{
+   const decoded=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString());
+   const message=Array.isArray(decoded)?{topic:decoded[2],event:decoded[3],payload:decoded[4]}:decoded;
+   if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:swing:')||!message.topic.includes('dealer_assignments'))return;
+   if(message.event==='system'&&message.payload?.status==='ok'&&message.payload?.extension==='postgres_changes')postgresReady=true;
+   const data=message.payload?.data,row=data?.record;
+   if(message.event==='postgres_changes'&&data?.table==='dealer_assignments'&&row?.club_id===fixture.handoverClubId
+    &&row.status==='assigned'&&row.released_at==null&&typeof row.attendance_id==='string'&&!seen.has(row.attendance_id))seen.set(row.attendance_id,performance.now());
+  }catch{/* Never persist raw frames or tokens. */}
+ }));
  let phase='start',race:{first:number;replays:number}|null=null;
- const summarize=(key:'ackMs'|'retryMs'|'independentStateMs')=>{
-  const samples=rows.filter(row=>!row.warmup).map(row=>row[key]).sort((a,b)=>a-b);
+ const summarize=(key:'ackMs'|'retryMs'|'independentStateMs'|'writeToVisibleMs'|'writeToRealtimeMs')=>{
+  const samples=rows.filter(row=>!row.warmup).map(row=>row[key]).filter((value):value is number=>typeof value==='number').sort((a,b)=>a-b);
   return {samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.at(-1)??null};
  };
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-handover-http.json'),JSON.stringify({
   kind:'REAL_AUTH_HTTP_CANONICAL_DEALER_HANDOVER_WITH_INDEPENDENT_OWNER_READ',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,
-  warmup:2,graded:20,rows,distributions:{ack:summarize('ackMs'),retry:summarize('retryMs'),independentState:summarize('independentStateMs')},race,qualification:false,
-  limitations:'Explicit synthetic dispatches initialize fixture only;actual handover uses canonical authenticated operator RPC. Independent owner reads verify one replacement and release markers. Excludes initial assignment Edge,arrival acknowledgement,rest expiry,checkout,payroll and cross-screen UI/Realtime latency. Duplicate race uses20concurrent requests from one actor.',
+  warmup:2,graded:20,rows,postgresReady,distributions:{ack:summarize('ackMs'),retry:summarize('retryMs'),independentState:summarize('independentStateMs'),
+   ...(realtimeEnabled?{writeToVisible:summarize('writeToVisibleMs'),writeToRealtime:summarize('writeToRealtimeMs')}:{})},race,qualification:false,
+  limitations:'Explicit synthetic dispatches initialize fixture only;actual handover uses canonical authenticated operator RPC. Independent owner reads verify one replacement and release markers. Realtime mode observes one continuously open actual Dealer Swing screen and its installed SDK channel;20serial graded handovers are not concurrent staff capacity. Excludes initial assignment Edge,arrival acknowledgement,rest expiry,checkout and payroll. Duplicate race uses20concurrent requests from one actor.',
  },null,2));
  try{
+  if(realtimeEnabled){
+   phase='screen-load';await page.goto('/dealer-swing');
+   await expect(page.locator('#table-card-'+fixture.handovers[0].table_id)).toBeVisible({timeout:30_000});
+   await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);
+  }
   const denied=await rpc(staff[0].token,'operator_perform_swing',{...args(fixture.handovers[0]),p_table_id:'af700000-0000-4000-8000-000000000001',p_table_session_id:crypto.randomUUID()});
   // Missing exact session must fail before touching the fixture's handover.
-  expect(denied.ok).toBe(false);
+  expect(denied.ok).toBe(false);expect(denied.data.message).toBe('SWING_ASSIGNMENT_CONTEXT_MISMATCH');
   for(let iteration=0;iteration<22;iteration++){
-   phase='handover-'+iteration;const context=fixture.handovers[iteration],actor=iteration%staff.length,intent=args(context),started=performance.now();
+   phase='handover-'+iteration;const context=fixture.handovers[iteration],actor=iteration%staff.length,intent=args(context);
+   const card=page.locator('#table-card-'+context.table_id);
+   if(realtimeEnabled)await expect(card.getByText('Handover outgoing TEST '+context.n,{exact:true})).toBeVisible();
+   const started=performance.now();
    const result=await rpc(staff[actor].token,'operator_perform_swing',intent);expect(result.ok).toBe(true);expect(result.data.outcome).toBe('swung');
    const active=await read('dealer_assignments','select=id,attendance_id,table_session_id,status,released_at&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
    expect(active).toHaveLength(1);expect(active[0].attendance_id).toBe(context.incoming_attendance);expect(active[0].table_session_id).toBe(context.session_id);expect(active[0].id).not.toBe(context.assignment_id);
    const outgoing=await read('dealer_attendance','select=current_state,last_released_at&id=eq.'+context.outgoing_attendance);
    expect(outgoing).toHaveLength(1);expect(outgoing[0].current_state).toBe('available');expect(typeof outgoing[0].last_released_at).toBe('string');
-   const observed=performance.now()-started,retry=await rpc(staff[actor].token,'operator_perform_swing',intent);
+   const observed=performance.now()-started;
+   let writeToVisibleMs:number|undefined,writeToRealtimeMs:number|undefined;
+   if(realtimeEnabled){
+    await expect.poll(()=>seen.has(context.incoming_attendance),{timeout:Math.max(1,5000-(performance.now()-started))}).toBe(true);
+    writeToRealtimeMs=seen.get(context.incoming_attendance)!-started;
+    await expect(card.getByText('Handover outgoing TEST '+context.n,{exact:true})).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-started))});
+    await expect(card.getByText('Handover incoming TEST '+context.n,{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+    writeToVisibleMs=performance.now()-started;
+   }
+   const retry=await rpc(staff[actor].token,'operator_perform_swing',intent);
    expect(retry.ok).toBe(true);expect(retry.data.outcome).toBe('swung');expect(retry.data.idempotent).toBe(true);
+   if(iteration===0){
+    const otherActor=await rpc(staff[1].token,'operator_perform_swing',intent);
+    expect(otherActor.ok).toBe(false);expect(otherActor.data.message).toBe('SWING_IDEMPOTENCY_CONFLICT');
+   }
    const after=await read('dealer_assignments','select=id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');expect(after).toEqual([{id:active[0].id}]);
    const stale=await rpc(staff[actor].token,'operator_perform_swing',args(context));expect(stale.ok).toBe(false);
-   rows.push({iteration,warmup:iteration<2,actor,ackMs:result.ms,retryMs:retry.ms,independentStateMs:observed});report();
+   rows.push({iteration,warmup:iteration<2,actor,ackMs:result.ms,retryMs:retry.ms,independentStateMs:observed,writeToVisibleMs,writeToRealtimeMs});report();
   }
   phase='duplicate-race';const context=fixture.handovers[22],intent=args(context);
   const outcomes=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'operator_perform_swing',intent)));
   for(const result of outcomes){expect(result.ok).toBe(true);expect(result.data.outcome).toBe('swung');}
   race={first:outcomes.filter(result=>result.data.idempotent!==true).length,replays:outcomes.filter(result=>result.data.idempotent===true).length};expect(race).toEqual({first:1,replays:19});
   const active=await read('dealer_assignments','select=attendance_id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');expect(active).toEqual([{attendance_id:context.incoming_attendance}]);
+  if(realtimeEnabled)expect(summarize('writeToVisibleMs').p95Ms).toBeLessThanOrEqual(3000);
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
