@@ -993,6 +993,10 @@ jobs:
         run: |
           set -euo pipefail
           createdb -T vinpoker_ops_history99_rollback "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000017_dealer_operational_inventory_exact_session_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql
           node tests/dealerSwing/manualSwingReceipt.currentSchema.mjs
       - name: Manual Swing101 actor binding and cancel versus writer overlap
         working-directory: VinPoker
