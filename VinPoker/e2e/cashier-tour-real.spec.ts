@@ -177,6 +177,45 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
 
+test('Cashier browser navigation and populated tour render latency',async({page})=>{
+ test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Isolated stack measurement only');
+ test.setTimeout(180_000);
+ await loginOwner(page);
+ await page.setViewportSize({width:375,height:844});
+ const errors:string[]=[];
+ page.on('pageerror',error=>errors.push(error.message));
+ const rows:{navigationToTourListMs:number;selectionToPopulatedWorklistMs:number}[]=[];
+ // Two warm navigations and ten measured navigations; each uses the real UI,
+ // Auth session and backend. These are serial staff reads, not viewer capacity.
+ for(let index=0;index<12;index++){
+  const navigationStarted=performance.now();
+  await page.goto('/ops/cashier/tour?club=a2000000-0000-4000-8000-000000000001');
+  await expect(page.getByText('ACTIVE',{exact:true})).toBeVisible({timeout:30_000});
+  const tour=page.getByRole('button',{name:/^Cashier Edge TEST Tour ·/}).first();
+  await expect(tour).toBeVisible();
+  const listRendered=performance.now();
+  const selectionStarted=performance.now();
+  await tour.click();
+  await page.getByRole('button',{name:/Đã tự hoàn tất/}).click();
+  await expect(page.getByRole('button',{name:/Người chơi Edge TEST/})).toBeVisible();
+  await expect(page.getByText(/Phiếu đã cấp: bàn 1, ghế \d+/u)).toBeVisible();
+  const worklistRendered=performance.now();
+  if(index>=2)rows.push({navigationToTourListMs:listRendered-navigationStarted,selectionToPopulatedWorklistMs:worklistRendered-selectionStarted});
+ }
+ expect(errors).toEqual([]);expect(rows).toHaveLength(10);
+ const summarize=(values:number[])=>{
+  const ordered=[...values].sort((a,b)=>a-b);
+  expect(ordered.every(value=>Number.isFinite(value)&&value>=0)).toBe(true);
+  return {samples:ordered.length,p50Ms:ordered[4],p95Ms:ordered[9],maxMs:ordered[9]};
+ };
+ writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-ui-http.json'),JSON.stringify({
+  kind:'REAL_CHROMIUM_AUTHENTICATED_CASHIER_RENDER_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  viewport:{width:375,height:844},actors:1,concurrency:1,warmup:2,graded:10,rows,
+  distributions:{navigationToTourList:summarize(rows.map(row=>row.navigationToTourListMs)),selectionToPopulatedWorklist:summarize(rows.map(row=>row.selectionToPopulatedWorklistMs))},
+  qualification:false,limitations:'Small isolated populated fixture;serial owner navigation;Playwright visibility observation includes browser automation overhead;ten samples give coarse p95 equal to max;not cross-screen Realtime,concurrent staff or production capacity',
+ },null,2));
+});
+
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {
   await loginOwner(page);
   const cashierReads: string[] = [];
