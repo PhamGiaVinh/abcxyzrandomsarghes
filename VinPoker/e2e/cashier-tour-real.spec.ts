@@ -99,11 +99,20 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  const realtimeEnabled=process.env.LOCAL_OPERATIONS_REALTIME==='1';
  const seen=new Map<string,number>(),expectedDealers=new Set(fixture.dealerIds),realtimeErrors:string[]=[];
  const realtimeStatuses:string[]=[],systemEvents:{status:string;extension:string;category:string}[]=[];
+ const wireFrames:{idTypes:string[];idsCount:number;bindingMatch:boolean;eventType:string;errorCount:number}[]=[];
+ let bindingIds:unknown[]=[];
  let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
  let uiObservation:{writeToVisibleMs:number;samples:number;path:string}|null=null;
  try{
  if(realtimeEnabled){
-  observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+  observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{logger:(kind,message,payload)=>{
+   if(kind!=='receive')return;
+   if(Array.isArray(payload?.response?.postgres_changes))bindingIds=payload.response.postgres_changes.map((row:{id:unknown})=>row.id);
+   if(!/\bpostgres_changes\b/.test(message))return;
+   const ids=Array.isArray(payload?.ids)?payload.ids:[],type=payload?.data?.type;
+   // Observe before SDK channel filtering, but retain no record, token or ID.
+   wireFrames.push({idTypes:[...new Set(ids.map((id:unknown)=>typeof id))] as string[],idsCount:ids.length,bindingMatch:ids.some((id:unknown)=>bindingIds.includes(id)),eventType:['INSERT','UPDATE','DELETE'].includes(type)?type:'other',errorCount:Array.isArray(payload?.data?.errors)?payload.data.errors.length:0});
+  }}});
   await observer.realtime.setAuth(identities[19].token);
   await new Promise<void>((resolve,reject)=>{
    const timeout=setTimeout(()=>reject(Error('CHECKIN_REALTIME_JOIN_TIMEOUT')),15000);
@@ -216,7 +225,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs),writeToRealtime:realtimeEnabled?summarize(row.writeToRealtimeMs):null}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
   limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
  }catch(error){
-  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,reason:'Actual check-in/observer assertions failed;see sanitized test assertion output'},null,2));
+  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,reason:'Actual check-in/observer assertions failed;see sanitized test assertion output'},null,2));
   throw error;
  }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
