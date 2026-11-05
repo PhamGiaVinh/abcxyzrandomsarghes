@@ -46,4 +46,3 @@ BEGIN
  RETURN NEW;
 END $$;
 COMMIT;
-
