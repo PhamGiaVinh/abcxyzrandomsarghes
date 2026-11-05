@@ -492,10 +492,13 @@ done
 printf '%s' "$staff_fixture" >"$test_root/staff-private.json"
 checkin_fixture_enabled=''
 if [[ "$schema_mode" == current ]]; then
-  docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" >"$test_root/dealer-fixture.json" <<'DEALER_FIXTURE'
+  other_owner_id="$(create_auth_user 'other-owner-latency@test.invalid' 'OtherOwnerLatencyFixture-2026!')"
+  [[ "$other_owner_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[a-f0-9]{12}$ ]]
+  docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -v other_owner_id="$other_owner_id" >"$test_root/dealer-fixture.json" <<'DEALER_FIXTURE'
 BEGIN;
+INSERT INTO public.profiles(user_id,display_name) VALUES(:'other_owner_id'::uuid,'Other tenant owner latency TEST');
 INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
- ('ad200000-0000-4000-8000-000000000002',:'owner_id'::uuid,'Other tenant check-in TEST','HCM','approved');
+ ('ad200000-0000-4000-8000-000000000002',:'other_owner_id'::uuid,'Other tenant check-in TEST','HCM','approved');
 INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES
  ('ad300000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','HTTP latency TEST','00:00','23:59'),
  ('ad300000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002','Other tenant TEST','00:00','23:59');
@@ -504,7 +507,7 @@ INSERT INTO public.dealers(club_id,user_id,full_name,status)
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
  ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
  ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
-SET LOCAL request.jwt.claim.sub=:'owner_id';
+SET LOCAL request.jwt.claim.sub=:'other_owner_id';
 SET LOCAL request.jwt.claims='{"role":"authenticated"}';
 SET LOCAL ROLE authenticated;
 DO $$ DECLARE r jsonb;BEGIN
