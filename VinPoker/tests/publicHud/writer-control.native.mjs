@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {execFileSync} from 'node:child_process';
+import {currentWriterIdentity,writerSourceFunctions as sourceFunctions} from './scale.write.identity.mjs';
 import {sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
 import {matchedWriterStatistics,validateMatchedWriterEvidence} from './scale.write.protocol.mjs';
@@ -29,22 +29,8 @@ const catalog=()=>jsonSql(`SELECT coalesce(jsonb_agg(jsonb_build_object('name',t
 const before=catalog(),trigger=before.find(t=>t.name==='hud_hand_changed');
 assert.ok(trigger?.enabled==='O'&&trigger.definition.endsWith('EXECUTE FUNCTION tracker_analytics_v1.hand_changed()'),'Expected HUD marker trigger required');
 const sourceCount=sql('SELECT count(*) FROM public.tournament_hands;');
-const sha256=value=>createHash('sha256').update(value).digest('hex');
-const sourceFunctions=()=>jsonSql(`SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',replace(pg_get_functiondef(p.oid),chr(13),'')) ORDER BY p.oid::regprocedure::text) FROM pg_proc p WHERE p.oid='public.fixture_complete_scale_hand_v1(uuid,integer)'::regprocedure OR p.oid IN(SELECT tgfoid FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN('public.tournament_hands'::regclass,'public.hand_players'::regclass,'public.hand_actions'::regclass));`);
 const originalSourceFunctions=sourceFunctions();
-const fixtureInputs=['tests/publicHud/scale.seed.mjs','tests/publicHud/scale-runtime.fixture.sql','tests/publicHud/spectator-generation.fixture.sql','tests/publicHud/scale.clock-readers.fixture.sql','tests/publicHud/scale.write.native.mjs','tests/publicHud/nativeDb.mjs','tests/publicHud/scale.write.protocol.mjs','tests/publicHud/writer-control.native.mjs'];
-const identity=process.env.GITHUB_RUN_ID?{
- sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
- runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,
- database,sourceHands:Number(sourceCount),
- manifestSha256:sha256(readFileSync('scripts/ops/tracker-hud-20261104-manifest.json')),
- fixtureInputsSha256:sha256(JSON.stringify(fixtureInputs.map(file=>[file,sha256(readFileSync(file))]))),
- sourceFunctionsSha256:sha256(JSON.stringify(originalSourceFunctions))
-}:null;
-if(identity){
- // The workflow uses checkout's default: merge SHA on PR, head on dispatch.
- assert.equal(identity.sha,process.env.GITHUB_SHA,'Checkout must match this workflow run');
-}
+const identity=process.env.GITHUB_RUN_ID?currentWriterIdentity():null;
 // Optional matched hand-observer profile. The source writer, fixture source
 // revision triggers, all data/indexes and commit timing remain identical.
 const storedCanonical=process.env.PUBLIC_HUD_WRITER_OBSERVER_CANONICAL==='pre019';
