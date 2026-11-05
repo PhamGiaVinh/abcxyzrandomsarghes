@@ -84,7 +84,7 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>
  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',actors:identities.length,actorScope:'Distinct local Auth users with actual Cashier membership;round-robin requests',warmupPerScenario:20,gradedPerScenario:100,scenarios,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',qualification:false,limitations:'Small fixed TEST tour,no Realtime,no concurrent writers; not production capacity or screen render latency'},null,2));
 });
 
-test('real check-in HTTP commit, independent observation, exact retry and tenant boundary',async()=>{
+test('real check-in HTTP commit, independent observation, exact retry and tenant boundary',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated check-in fixture only');
  test.setTimeout(120_000);
  expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
@@ -99,6 +99,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  const seen=new Map<string,number>(),expectedDealers=new Set(fixture.dealerIds),realtimeErrors:string[]=[];
  const realtimeStatuses:string[]=[],systemEvents:{status:string;extension:string;category:string}[]=[];
  let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
+ let uiObservation:{writeToVisibleMs:number;samples:number;path:string}|null=null;
  try{
  if(realtimeEnabled){
   observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
@@ -146,6 +147,23 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   const index=cursor++,identity=identities[index%identities.length],dealerId=fixture.dealerIds[index],requestId=crypto.randomUUID();
   expect(dealerId).toBeTruthy();
   const args={p_dealer_id:dealerId,p_club_id:fixture.clubId,p_shift_id:fixture.shiftId,p_request_id:requestId};
+  let uiDealerName:string|null=null;
+  if(realtimeEnabled&&index===359){
+   // Observe one new check-in in the existing product screen. Never reload or
+   // trigger a manual refresh after the write to manufacture synchronization.
+   const response=await fetch(api+'/rest/v1/dealers?select=full_name&id=eq.'+dealerId,{headers:headers(identity.token),signal:AbortSignal.timeout(5000)});
+   expect(response.ok).toBe(true);const names=await response.json();expect(names).toHaveLength(1);
+   uiDealerName=names[0].full_name;expect(typeof uiDealerName).toBe('string');
+   await loginOwner(page);await page.setViewportSize({width:1440,height:1000});
+   const initialAttendance=page.waitForResponse(response=>response.request().method()==='GET'&&new URL(response.url()).pathname==='/rest/v1/dealer_attendance',{timeout:30_000});
+   await page.goto('/dealer-swing');
+   const initialResponse=await initialAttendance;expect(initialResponse.ok()).toBe(true);
+   const initialRows=await initialResponse.json();expect(Array.isArray(initialRows)).toBe(true);
+   expect(initialRows.some((row:{dealer_id:string})=>row.dealer_id===dealerId)).toBe(false);
+   const search=page.getByPlaceholder('Tìm dealer...');
+   await expect(search).toBeVisible({timeout:30_000});await search.fill(uiDealerName!);
+   await expect(page.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
+  }
   const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
   expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
   const rows=await read(identity.token,dealerId),observed=performance.now();
@@ -163,6 +181,10 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    while(!seen.has(dealerId)&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
    expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
    writeToRealtimeMs=seen.get(dealerId)!-started;
+   if(uiDealerName){
+    await expect(page.getByText(uiDealerName,{exact:true})).toBeVisible({timeout:5000});
+    uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/dealer-swing'};
+   }
   }
   return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
  };
@@ -180,6 +202,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  const summarize=(values:number[])=>{const ordered=[...values].sort((a,b)=>a-b);expect(ordered).toHaveLength(100);expect(ordered.every(v=>Number.isFinite(v)&&v>=0)).toBe(true);return {p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]};};
  writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:realtimeEnabled?'REAL_AUTH_HTTP_CHECKIN_AND_POSTGRES_CHANGES_WEBSOCKET_OBSERVATION':'REAL_AUTH_HTTP_CHECKIN_COMMIT_AND_INDEPENDENT_DATA_API_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,actors:identities.length,actorScope:'Distinct local Auth users with actual club_dealer_controls membership;round-robin requests',fixtureSchemaAdditions:['exact14','exact51'],warmupPerScenario:20,gradedPerScenario:100,
   realtime:{enabled:realtimeEnabled,observers:realtimeEnabled?1:0,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,clock:'write-start and actual SDK callback use same monotonic client clock;not pure server-commit timing',postgresImage:realtimeEnabled?'17.6.1.155 pinned digest;see harness':'CLI default'},
+  uiObservation,uiObservationLimitations:'One live Dealer Swing screen/new dealer sample;Node monotonic write-start to Playwright visible assertion upper bound;no p95 or concurrent screen capacity claim',
   scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs),writeToRealtime:realtimeEnabled?summarize(row.writeToRealtimeMs):null}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
   limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
  }catch(error){

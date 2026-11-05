@@ -51,6 +51,22 @@ firewall_chain="CASHIER_E2E"
 stack_containers=()
 ephemeral_containers=()
 cleanup() {
+  local exit_code=$?
+  if [[ "$exit_code" != 0 && "$realtime_mode" == 1 && -n "${db_container:-}" ]]; then
+    mkdir -p "$repo_root/output/operations-latency"
+    # Fixed catalog fields only: no environment, credentials, claims or rows.
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/realtime-runtime-http.json" <<'REALTIME_DIAGNOSTIC' || true
+SELECT jsonb_build_object(
+ 'kind','ISOLATED_REALTIME_CATALOG_DIAGNOSTIC','qualification',false,
+ 'walLevel',current_setting('wal_level'),
+ 'attendancePublication',(SELECT jsonb_agg(jsonb_build_object('publication',pubname,'insert',pubinsert,'update',pubupdate,'delete',pubdelete))
+   FROM pg_publication p WHERE EXISTS(SELECT 1 FROM pg_publication_rel r WHERE r.prpubid=p.oid AND r.prrelid='public.dealer_attendance'::regclass)),
+ 'slots',(SELECT jsonb_agg(jsonb_build_object('plugin',plugin,'active',active,'walStatus',wal_status,'retainedBytes',pg_wal_lsn_diff(pg_current_wal_lsn(),restart_lsn),'unconfirmedBytes',pg_wal_lsn_diff(pg_current_wal_lsn(),confirmed_flush_lsn))) FROM pg_replication_slots),
+ 'replication',(SELECT jsonb_agg(jsonb_build_object('state',state,'syncState',sync_state)) FROM pg_stat_replication),
+ 'attendanceReplicaIdentity',(SELECT relreplident FROM pg_class WHERE oid='public.dealer_attendance'::regclass));
+REALTIME_DIAGNOSTIC
+  fi
   if (( ${#ephemeral_containers[@]} > 0 )); then
     docker rm -f "${ephemeral_containers[@]}" >/dev/null 2>&1 || true
   fi
