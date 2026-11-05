@@ -1,12 +1,30 @@
 import {act,fireEvent,render,screen,waitFor,cleanup} from '@testing-library/react';
 import {MemoryRouter,Routes,Route,Link} from 'react-router-dom';
 import {afterEach,expect,it,vi} from 'vitest';
-const api=vi.hoisted(()=>({rpc:vi.fn()}));
+const api=vi.hoisted(()=>({rpc:vi.fn(),format:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:api.rpc}}));
+vi.mock('@/components/cashier/tournament-live/viewer-hub/hubDerive',async importOriginal=>{
+ const actual=await importOriginal<typeof import('@/components/cashier/tournament-live/viewer-hub/hubDerive')>();
+ return {...actual,fmtCompact:(value:number)=>{api.format();return actual.fmtCompact(value);}};
+});
 import PublicTournamentClock from './PublicTournamentClock';
 function show(){return render(<MemoryRouter initialEntries={['/clock/tour-a']}><Link to='/clock/tour-b'>Change tournament</Link><Routes>
  <Route path='/clock/:tournamentId' element={<PublicTournamentClock/>}/></Routes></MemoryRouter>);}
 afterEach(()=>{cleanup();vi.useRealTimers();vi.resetAllMocks();});
+it('ticks the countdown without rerendering payout, stack or blind values or rereading the server',async()=>{
+ vi.useFakeTimers();
+ api.rpc.mockImplementation((name:string)=>Promise.resolve({data:name==='get_public_tournament_results'
+  ?[{place:1,prize:200000,player_name:'Tick TEST',result_status:'official'}]
+  :{id:'tour-a',name:'Isolated tick TEST',status:'live',is_running:true,average_stack:40000,
+   small_blind:100,big_blind:200,level_ends_at:new Date(Date.now()+120000).toISOString()},error:null}));
+ show();await act(async()=>{await vi.advanceTimersByTimeAsync(0);});
+ expect(screen.getByText('02:00')).toBeInTheDocument();
+ const formatCalls=api.format.mock.calls.length;expect(formatCalls).toBeGreaterThan(0);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(5000);});
+ expect(screen.getByText('01:55')).toBeInTheDocument();
+ expect(screen.getByText('Tick TEST')).toBeInTheDocument();
+ expect(api.format).toHaveBeenCalledTimes(formatCalls);expect(api.rpc).toHaveBeenCalledTimes(2);
+});
 it('keeps explicit public payout pending distinct from a failure and polls for publication',async()=>{
  vi.useFakeTimers();let published=false;
  api.rpc.mockImplementation((name:string)=>Promise.resolve(name==='get_public_tournament_results'

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Clock3, Radio, Trophy, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,6 +81,15 @@ export default function PublicTournamentClock() {
   return <ScopedPublicTournamentClock key={tournamentId ?? 'missing'} />;
 }
 
+function PublicClockCountdown({clock}: {clock: PublicClockState}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <div className="tracker-num my-2 text-[clamp(5rem,20vw,14rem)] font-black leading-[0.88] tracking-[-0.08em] tabular-nums text-foreground drop-shadow-[0_0_38px_hsl(var(--viewer-neon)_/_0.12)]">{formatCountdown(clock, now)}</div>;
+}
+
 function ScopedPublicTournamentClock() {
   const { tournamentId } = useParams();
   const [searchParams] = useSearchParams();
@@ -90,12 +99,6 @@ function ScopedPublicTournamentClock() {
   const [resultsUnavailable, setResultsUnavailable] = useState(false);
   const [resultsPending, setResultsPending] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!tournamentId) return;
@@ -154,7 +157,6 @@ function ScopedPublicTournamentClock() {
     return () => { active = false; window.clearInterval(poll); };
   }, [searchParams, tournamentId, attempt]);
 
-  const countdown = useMemo(() => formatCountdown(clock, now), [clock, now]);
   const terminal = !!clock && ['completed', 'finished', 'cancelled'].includes(clock.status);
   const statusLabel = clock?.status === 'completed' || clock?.status === 'finished' ? 'Đã kết thúc'
     : clock?.status === 'cancelled' ? 'Đã hủy'
@@ -173,7 +175,7 @@ function ScopedPublicTournamentClock() {
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[hsl(var(--poker-gold))]">Level {clock.currentLevel ?? "--"}</p>
           <h1 className="mx-auto mt-2 max-w-5xl text-2xl font-black tracking-[-0.04em] sm:text-4xl xl:text-5xl">{clock.name}</h1>
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{terminal ? 'Đồng hồ đã dừng' : 'Level kết thúc trong'}</p>
-          <div className="tracker-num my-2 text-[clamp(5rem,20vw,14rem)] font-black leading-[0.88] tracking-[-0.08em] tabular-nums text-foreground drop-shadow-[0_0_38px_hsl(var(--viewer-neon)_/_0.12)]">{countdown}</div>
+          <PublicClockCountdown clock={clock} />
           <div className="mx-auto mt-5 grid w-full max-w-5xl grid-cols-3 overflow-hidden rounded-2xl border border-border/55 bg-card/55 backdrop-blur-xl">
             <div className="p-3 sm:p-5"><div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">SB</div><div className="tracker-num mt-1 text-lg font-black sm:text-3xl">{fmtCompact(clock.smallBlind)}</div></div>
             <div className="border-x border-border/45 p-3 sm:p-5"><div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">BB</div><div className="tracker-num mt-1 text-lg font-black text-[hsl(var(--viewer-neon))] sm:text-3xl">{fmtCompact(clock.bigBlind)}</div></div>
