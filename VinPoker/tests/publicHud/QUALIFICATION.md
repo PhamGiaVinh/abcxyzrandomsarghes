@@ -195,7 +195,7 @@ a separate quota/configuration gate.
 
 ## Release gate
 
-The seventeen migrations `20261104001500` through `20261104003100` are promoted
+The eighteen migrations `20261104001500` through `20261104003200` are promoted
 to the active source catalog; this does not apply them to production.
 Prepare one exact SHA/migration hash package after checks and independent
 review. Applying them, deploying the three Edge functions, provisioning the
@@ -207,7 +207,7 @@ time, catalog guard, exact live ledger and captured function/trigger hashes.
 Record the existing `public-spectator-v2-dispatch` schedule/command/active state,
 then pause it and allow its in-flight requests to finish **before migration 019**.
 The HUD switches do not pause the existing spectator pipeline. Apply only the
-seventeen exact manifest entries, each SQL and new ledger receipt atomically; stop
+eighteen exact manifest entries, each SQL and new ledger receipt atomically; stop
 on any partial or unconfirmed apply, with no automatic resume. The reviewed
 `scripts/ops/tracker-hud-20261104-release.mjs` is disabled without exact package
 confirmation, clean approved SHA, private recovery receipt and paused cron.
@@ -236,6 +236,29 @@ The public clock-summary CTE materializes that STABLE participation value once
 per tournament within the request snapshot, instead of repeating it for each
 selected counter. It keeps its SQL language, result shape, OID, owner and ACL.
 The recovery template restores all four captured reader definitions.
+
+Migration032 replaces only the three consumed clock counters with their exact
+entry-only projection: DISTINCT(player_id,entry_no) counts and the original
+raw-row live-entry stack sum. It retains all public visibility, clock/time,
+rounding and metadata/ACL semantics. No source/ledger/chip data is repaired or
+written. This avoids constructing canonical seat/anomaly/display JSON on every
+spectator clock request, but still scales with the tournament's entry count.
+The wrapped023/025 baseline counterfactual matched42 complete rows across21
+scopes; native small/skewed1000-entry p95 was0.658→0.117ms and30.637→2.691ms.
+These are native server timings, not HTTP/1,000-viewer qualification.
+
+The032 contract suite compares152 complete rows (19 scenarios, two public roles,
+four scopes), including null fields, all entry statuses, reentry, seat anomalies,
+paused/not-started/break clocks, missing/withdrawn tours, warmed source updates,
+actual uncommitted-writer overlap and private backup ACL/RLS. Recovery is guarded
+and ordered032 before025/023/022 (and reverse package order for the full release).
+Postcheck the public clock definition `0996e504a583390a6ac36cad27937378`, original
+`6eb40dbf8d7444e09924a68ffd921d1b`, canonical helper
+`756297c6ef11962b0e53b4dcfc38a24d`, one private backup row and unchanged owner/ACL.
+The new18-entry manifest SHA256 is
+`551fa5b415aea5c3b48f4c2c27f5df4bf172075222f710b2530514a87f05b0cb`;
+the former17-entry confirmation is invalid for this package. Source registration
+and native proof do not authorize production apply.
 
 Install observers with reads/worker off; deploy the matching spectator and HUD
 workers before resuming the spectator cron. Verify the exact production

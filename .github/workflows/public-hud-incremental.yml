@@ -117,7 +117,7 @@ jobs:
         run: node --test tests/publicHud/scale.http.native.mjs
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize --enqueue-coalescing
-      - name: Exact seventeen-migration release guards and atomic receipts
+      - name: Exact eighteen-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |
@@ -144,5 +144,6 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-read-plan.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/summary-batch.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/current-table-prepared.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-counts.native.mjs
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit
