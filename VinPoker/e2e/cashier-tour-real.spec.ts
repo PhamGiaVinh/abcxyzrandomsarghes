@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createClient} from '@supabase/supabase-js';
+import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '../src/lib/financeSummaryRead';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -525,4 +526,61 @@ test("real Cashier UI refunds a waiting Tour B registration while serving Tour A
     accessToken: token, refundId: (await requested.json()).refund_id as string });
   expect(retry.status).toBe(200);
   expect(retry.body.already_paid).toBe(true);
+});
+
+
+test('Finance, Cashier cashflow and F&B actual authenticated HTTP report latency',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated operation fixture only');
+ test.setTimeout(180_000);
+ const token=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const clubId='a2000000-0000-4000-8000-000000000001',day=financeBusinessToday();
+ const from=day+'T00:00:00+07:00',to=new Date(Date.parse(from)+86400000).toISOString();
+ const operations=[
+  {rpc:'get_club_finance_summary_v2',args:{p_from_date:day,p_to_date:day,p_club_id:clubId}},
+  {rpc:'cashier_cashflow_range_v1',args:{p_club_id:clubId,p_from:from,p_to:to}},
+  {rpc:'fnb_get_report',args:{p_club_id:clubId,p_from:from,p_to:to}},
+ ];
+ const results:unknown[]=[];
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-finance-fnb-http.json'),JSON.stringify({
+  kind:'ACTUAL_AUTHENTICATED_FINANCE_FNB_HTTP_READS',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  clubId,businessDay:day,actors:1,warmupPerScenario:20,gradedPerScenario:100,results,qualification:false,
+  limitations:'One real Auth owner,concurrent requests share identity. Small existing isolated fixture; F&B may be empty. Complete JSON response and canonical contract validation; no render/propagation/concurrent writer or production capacity proof.',
+ },null,2));
+ for(const operation of operations)for(const concurrency of [1,5,20]){
+  const observedCounts=new Set<number>();
+  const read=async()=>{
+   const started=performance.now();
+   const response=await fetch(api+'/rest/v1/rpc/'+operation.rpc,{
+    method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify(operation.args),signal:AbortSignal.timeout(5000),
+   });
+   const payload=await response.json(),elapsed=performance.now()-started;
+   expect(response.ok,operation.rpc).toBe(true);expect(payload?.error).toBeUndefined();
+   if(operation.rpc==='get_club_finance_summary_v2'){
+    const {data}=parseFinanceCore(payload);assertFinanceCalendarScope(data,{from:day,to:day,clubId});
+    expect(Array.isArray(data.perClub)).toBe(true);observedCounts.add((data.perClub as unknown[]).length);
+   }else if(operation.rpc==='cashier_cashflow_range_v1'){
+    expect(payload.ok).toBe(true);expect(payload.club_id).toBe(clubId);
+    for(const key of ['cash_in','cash_out','bank_in','bank_out','unallocated_bank'])expect(Number.isFinite(payload.cash_flow?.[key]),key).toBe(true);
+    // This isolated suite has already committed and retried the real 6.6M refund.
+    expect(payload.cash_flow.cash_out).toBeGreaterThanOrEqual(6600000);
+    expect(Number.isSafeInteger(payload.entry_allocation?.unclassified_entries)).toBe(true);
+    observedCounts.add(payload.entry_allocation.unclassified_entries);
+   }else{
+    for(const key of ['revenue','cogs','grossProfit','orderCount','compCount','compCogs'])expect(Number.isFinite(payload?.[key]),key).toBe(true);
+    for(const key of ['topItems','lowStock','dailyTrend','byTable','byPlayer'])expect(Array.isArray(payload?.[key]),key).toBe(true);
+    expect(Number.isSafeInteger(payload.orderCount)&&payload.orderCount>=0).toBe(true);observedCounts.add(payload.orderCount);
+   }
+   return elapsed;
+  };
+  const batch=async(count:number)=>{
+   let cursor=0;const samples:number[]=[];
+   await Promise.all(Array.from({length:Math.min(count,concurrency)},async()=>{while(cursor<count){cursor++;samples.push(await read());}}));
+   expect(samples).toHaveLength(count);return samples;
+  };
+  try{
+   await batch(20);const samples=await batch(100),ordered=[...samples].sort((a,b)=>a-b);
+   results.push({rpc:operation.rpc,concurrency,observedCounts:[...observedCounts],samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99],status:'passed'});report();
+  }catch(error){results.push({rpc:operation.rpc,concurrency,status:'failed'});report();throw error;}
+ }
 });
