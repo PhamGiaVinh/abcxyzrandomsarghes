@@ -622,8 +622,6 @@ INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUE
  ('ad300000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002','Other tenant TEST','00:00','23:59');
 INSERT INTO public.dealers(club_id,user_id,full_name,status)
  SELECT 'a2000000-0000-4000-8000-000000000001',NULL,'HTTP latency TEST '||n,'active' FROM generate_series(1,:dealer_count) n;
-INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES
- ('af700000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Floor session latency TEST',2001,'tournament','inactive','available');
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
  ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
  ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
@@ -639,6 +637,10 @@ DO $$ BEGIN
  IF (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in')<>1 THEN RAISE EXCEPTION 'other_tenant_attendance_fixture_missing';END IF;
 END $$;
 SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shiftId','ad300000-0000-4000-8000-000000000001',
+ 'floorTable',(SELECT jsonb_build_object('id',g.id,'tableNumber',g.table_number) FROM public.game_tables g
+   WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.operational_status='available' AND g.table_number BETWEEN 1 AND 100
+   AND NOT EXISTS(SELECT 1 FROM public.table_sessions s WHERE s.game_table_id=g.id AND s.closed_at IS NULL)
+   ORDER BY g.table_number,g.id LIMIT 1),
  'dealerIds',(SELECT jsonb_agg(id ORDER BY full_name) FROM public.dealers WHERE club_id='a2000000-0000-4000-8000-000000000001'),
  'otherClubId','ad200000-0000-4000-8000-000000000002','otherShiftId','ad300000-0000-4000-8000-000000000002','otherDealerId','ad400000-0000-4000-8000-000000000002',
  'otherAttendedDealerId','ad400000-0000-4000-8000-000000000003');
@@ -744,6 +746,7 @@ fi
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
+  VITE_FLOOR_TABLE_CONTROL_V3=preview VITE_FLOOR_UAT_ENV=preview VITE_FLOOR_REDRAW_SEAT_LOCK_V1=off \
   npm run build >/dev/null)
 app_container="$(docker run -d --rm --network "$browser_network" --network-alias cashier-app \
   --volume "$repo_root:/app:ro" --workdir /app \
