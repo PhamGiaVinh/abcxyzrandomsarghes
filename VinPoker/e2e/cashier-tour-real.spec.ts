@@ -324,7 +324,7 @@ test('Floor and Dealer Swing authenticated HTTP read latency after check-in',asy
 
 test('canonical Floor open and close propagate into one continuously open screen',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_REALTIME!=='1','Contemporary isolated Realtime operation fixture only');
- test.setTimeout(60_000);
+ test.setTimeout(300_000);
  const token=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const tourId='a3000000-0000-4000-8000-000000000001';
  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorTable:{id:string;tableNumber:number}};
@@ -334,7 +334,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const response=await fetch(`${api}/rest/v1/rpc/${name}`,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
   const payload=await response.json();expect(response.ok,name).toBe(true);return payload;
  };
- const rows:{operation:string;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
+ const rows:{operation:string;iteration:number;warmup:boolean;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
  let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false;
  const openedHints=new Set<string>(),closedHints=new Set<string>();
  page.on('websocket',socket=>socket.on('framereceived',frame=>{
@@ -355,9 +355,13 @@ test('canonical Floor open and close propagate into one continuously open screen
  }));
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-session-ui-http.json'),JSON.stringify({
   kind:'ACTUAL_FLOOR_SESSION_WRITE_AND_OPEN_SCREEN_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  actors:1,concurrency:1,gradedPerOperation:1,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,rows,
+  actors:1,concurrency:1,warmupPerOperation:2,gradedPerOperation:20,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,rows,
+  distributions:Object.fromEntries(['open','close'].map(operation=>{
+   const samples=rows.filter(row=>row.operation===operation&&!row.warmup&&row.status==='visible').map(row=>row.writeToVisibleMs!).sort((a,b)=>a-b);
+   return [operation,{samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.length?samples.at(-1):null}];
+  })),
   fixtureBuild:{floorV3:'preview',floorUatEnvironment:'preview',redraw:'off'},
-  qualification:false,limitations:'Single canonical open/close pair on an empty TEST table. One observation has no meaningful p95;not seat-move/dealer handover or concurrent operational acceptance. No manual refresh/reload after initial screen load.',
+  qualification:false,limitations:'Twenty serial canonical open/close pairs after two warmups on one empty TEST table;one continuously open actual screen. Excludes seat-move,dealer handover and concurrent staff capacity. No manual refresh/reload after initial screen load.',
  },null,2));
  try{
   const loaded=page.waitForResponse(response=>/\/rpc\/get_floor_tournament_table_roster_v(?:3|6)$/.test(new URL(response.url()).pathname)&&response.status()===200);
@@ -369,26 +373,32 @@ test('canonical Floor open and close propagate into one continuously open screen
   await expect(page.getByTestId('floor-table-map-v3').locator('[data-ops-action="floor.tables.refresh"]')).toBeEnabled();
   await expect(page.getByTestId('floor-table-map-v3').getByRole('alert')).toHaveCount(0);
   const card=page.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${fixture.floorTable.tableNumber}"]`);
+  for(let iteration=0;iteration<22;iteration++){
   await expect(card).toHaveCount(0);
   phase='open';const started=performance.now();
   const intent={p_tournament_id:tourId,p_game_table_id:gameTableId,p_control_mode:'manual',p_request_id:crypto.randomUUID()};
   const opened=await rpc('floor_open_tournament_table_v3',intent);expect(opened.ok).toBe(true);committedOpen=true;
-  rows.push({operation:'open',ackMs:performance.now()-started,status:'committed'});report();
+  const openRow={operation:'open',iteration,warmup:iteration<2,ackMs:performance.now()-started,status:'committed',writeToVisibleMs:undefined as number|undefined};
+  rows.push(openRow);report();
   expect(await rpc('floor_open_tournament_table_v3',intent)).toEqual(opened);
   const roster=await rpc(rosterRpc,{p_tournament_id:tourId});
   expect(Array.isArray(roster)).toBe(true);expect(roster.some((row:{table_session_id:string})=>row.table_session_id===opened.table_session_id)).toBe(true);
   independentRosterConfirmed=true;report();
   await expect.poll(()=>openedHints.has(opened.table_session_id),{timeout:Math.max(1,5000-(performance.now()-started))}).toBe(true);
   await expect(card).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
-  rows[0].writeToVisibleMs=performance.now()-started;rows[0].status='visible';report();
+  openRow.writeToVisibleMs=performance.now()-started;openRow.status='visible';report();
   phase='close';const closing=performance.now();
   const closeIntent={p_tournament_table_id:opened.tournament_table_id,p_expected_revision:opened.revision,p_request_id:crypto.randomUUID()};
   const closed=await rpc('close_tournament_table_v3',closeIntent);expect(closed.ok).toBe(true);
-  rows.push({operation:'close',ackMs:performance.now()-closing,status:'committed'});report();
+  const closeRow={operation:'close',iteration,warmup:iteration<2,ackMs:performance.now()-closing,status:'committed',writeToVisibleMs:undefined as number|undefined};
+  rows.push(closeRow);report();
   expect(await rpc('close_tournament_table_v3',closeIntent)).toEqual(closed);
   await expect.poll(()=>closedHints.has(opened.table_session_id),{timeout:Math.max(1,5000-(performance.now()-closing))}).toBe(true);
   await expect(card).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-closing))});
-  rows[1].writeToVisibleMs=performance.now()-closing;rows[1].status='visible';phase='passed';report();
+  closeRow.writeToVisibleMs=performance.now()-closing;closeRow.status='visible';report();
+  }
+  expect(rows.filter(row=>!row.warmup&&row.status==='visible')).toHaveLength(40);
+  phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
 
