@@ -74,7 +74,7 @@ import { loadLatestLiveHand } from "./loadLatestLiveHand";
 import { resolveViewerIdentity } from "./viewer-hub/viewerIdentity";
 import { resolveReplayCandidates, type ReplayTarget, type ReplayTargetState } from "./viewer-hub/replayTarget";
 import { deriveReplayHeaderMetadata } from "./viewer-hub/replayMetadata";
-import { PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS } from "./viewer-hub/publicSnapshotCoordinator";
+import { PublicSnapshotCoordinator, registerPublicTournamentRead } from "./viewer-hub/publicSnapshotCoordinator";
 import { parsePublicTableCurrentResponse,parsePublicParticipationSummary,parsePublicClockSummary } from "./viewer-hub/publicTableHistory";
 import { loadPublicCurrentTable } from "./viewer-hub/loadPublicCurrentTable";
 import {readPublicTableRequest} from '@/lib/publicTableTransport';
@@ -980,7 +980,7 @@ function TournamentLiveViewContent({
     const publicV2 = spectator && FEATURES.publicSpectatorRealtimeV2;
     if(publicV2){
       let full=false;
-      const coordinator=new PublicSnapshotCoordinator(async()=>{if(initialReadFailedRef.current)return;const requestedFull=full;full=false;await loadAllData(!requestedFull);},PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS);
+      const coordinator=registerPublicTournamentRead(supabase,tournamentId,async()=>{if(initialReadFailedRef.current)return;const requestedFull=full;full=false;await loadAllData(!requestedFull);});
       const observation=observePublicTournament(supabase,tournamentId,event=>{
         if(event.reason==='status'){setRealtimeStatus(event.online?'online':'offline');return;}
         if(event.invalidatePending){requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;}

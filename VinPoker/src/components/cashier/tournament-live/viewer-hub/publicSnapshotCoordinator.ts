@@ -71,6 +71,70 @@ export class PublicSnapshotCoordinator {
   }
 }
 
+type PublicReadRegistration = { request(): void; stop(): void };
+type ReadSlot = { refresh: () => Promise<void>; pending: boolean; running: boolean; first: boolean; active: boolean };
+type ReadGroup = { slots: Set<ReadSlot>; scheduler: PublicSnapshotCoordinator; launch(slot: ReadSlot): void; dispose(): void };
+const tournamentReads = new WeakMap<object, Map<string, ReadGroup>>();
+
+// One dispatch clock per client/tournament. Consumers retain their own request
+// cancellation and epoch fences; a slow section never holds another section.
+export function registerPublicTournamentRead(client: object, tournamentId: string, refresh: () => Promise<void>): PublicReadRegistration {
+  let groups = tournamentReads.get(client);
+  if (!groups) { groups = new Map(); tournamentReads.set(client, groups); }
+  let group = groups.get(tournamentId);
+  if (!group) {
+    const slots = new Set<ReadSlot>();
+    const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const launch = (slot: ReadSlot) => {
+      if (!slot.active || slot.running || !slot.pending || hidden()) return;
+      slot.pending = false; slot.running = true; slot.first = false;
+      // A consumer observes its own failure. Scheduling still releases its slot
+      // after rejection, without retrying or blocking unrelated consumers.
+      void Promise.resolve().then(() => {
+        if (!slot.active) return;
+        if (hidden()) { slot.pending = true; return; }
+        return slot.refresh();
+      }).finally(() => {
+        slot.running = false;
+        if (slot.active && slot.pending && !hidden()) scheduler.request();
+      }).catch(() => { console.error('Public tournament read failed'); });
+    };
+    const scheduler = new PublicSnapshotCoordinator(async () => {
+      for (const slot of slots) launch(slot);
+    }, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS);
+    const onVisible = () => { if (!hidden() && [...slots].some(slot => slot.pending)) scheduler.request(); };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+    group = { slots, scheduler, launch, dispose() {
+      scheduler.stop();
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+    } };
+    groups.set(tournamentId, group);
+    // Prime the shared interval without delaying a newly mounted scope.
+    scheduler.request();
+    // Initial reads are intentionally immediate, even when another section has
+    // a steady-state dispatch already scheduled.
+  }
+  const current = group;
+  const slot: ReadSlot = { refresh, pending: false, running: false, first: true, active: true };
+  current.slots.add(slot);
+  return {
+    request() {
+      if (!slot.active) return;
+      slot.pending = true;
+      if (slot.first) current.launch(slot);
+      else if (!slot.running) current.scheduler.request();
+    },
+    stop() {
+      slot.active = false; slot.pending = false; current.slots.delete(slot);
+      queueMicrotask(() => {
+        if (!current.slots.size && groups.get(tournamentId) === current) {
+          current.dispose(); groups.delete(tournamentId);
+        }
+      });
+    },
+  };
+}
+
 export function normalizeVisibleTableIds(ids: readonly string[]): string[] {
   return [...new Set(ids.filter(Boolean))].slice(0, 16);
 }
