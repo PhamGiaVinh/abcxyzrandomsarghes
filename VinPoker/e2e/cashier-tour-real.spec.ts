@@ -339,7 +339,9 @@ test('canonical Floor open and close propagate into one continuously open screen
  const openedHints=new Set<string>(),closedHints=new Set<string>();
  page.on('websocket',socket=>socket.on('framereceived',frame=>{
   try{
-   const message=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString());
+   const decoded=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString());
+   // The installed SDK defaults to Phoenix V2 [join_ref,ref,topic,event,payload].
+   const message=Array.isArray(decoded)?{topic:decoded[2],event:decoded[3],payload:decoded[4]}:decoded;
    if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:floor-map-v3:'))return;
    const payload=message.payload;
    if(message.event==='system'&&payload?.status==='ok'&&payload?.extension==='postgres_changes')postgresReady=true;
