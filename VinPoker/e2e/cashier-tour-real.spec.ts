@@ -981,7 +981,7 @@ test('real dealer checkout Edge HTTP, open-screen latency and committed work con
 test('twenty distinct Floor actors sustain the four-reader reconciliation cadence',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated fixture only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
- const target=new URL(api);expect(target.protocol).toBe('http:');expect(['localhost','127.0.0.1'].includes(target.hostname)||/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(target.hostname)||/^supabase_kong_cashier-e2e-/.test(target.hostname)).toBe(true);
+ const target=new URL(api);expect(target.protocol).toBe('http:');expect(['localhost','127.0.0.1','cashier-api'].includes(target.hostname)||/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(target.hostname)||/^supabase_kong_cashier-e2e-/.test(target.hostname)).toBe(true);
  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorReadLoad:{tournamentId:string;gameTableIds:string[]}};
  expect(fixture.floorReadLoad.tournamentId).toBe('af300000-0000-4000-8000-000000000001');expect(fixture.floorReadLoad.gameTableIds).toHaveLength(20);
  const tour=fixture.floorReadLoad.tournamentId,opened:{id:string;revision:number}[]=[],phases:unknown[]=[];
