@@ -1028,6 +1028,8 @@ jobs:
         run: |
           set -euo pipefail
           createdb -T vinpoker_ops_initial102_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000046_dealer_inventory_canonical_table_link_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000105_dealer_legacy_adoption_atomic_v1.sql
