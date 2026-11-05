@@ -394,7 +394,9 @@ permissions: { actions: read, contents: read }
 jobs:
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The retained-schema suite now includes full worker/concurrency chains.
+    # Keep every per-case deadline; only allow the complete job to finish.
+    timeout-minutes: 30
     env:
       PGHOST: 127.0.0.1
       PGPORT: 55441
