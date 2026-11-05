@@ -9,6 +9,7 @@ import {configureLocalRealtime} from './scale.realtime.mjs';
 import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {summaryApiReport} from './scale.summary.mjs';
+import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
@@ -116,9 +117,10 @@ const privilegedHeader=await post('/functions/v1/public-player-hud',{tournament_
 assert.equal(privilegedHeader.access,'revoked','Service header must not widen the public Edge read');
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
+let restorationFailure=null;
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
 const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,
- partial:state==='failed'?{incomplete:true,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
+ partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(viewers===1000&&targetDuration===1800){
@@ -133,6 +135,12 @@ for(const scenario of ['concentrated','distributed','overview']){
  const offset={summary:stats.summary.length,summaryHttp:stats.summaryHttp.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,revoking=false,started=0,currentAmendment=null;
+ let restorationDeadline=null;
+ const checkRestoration=()=>{
+  if(restorationDeadline!==null&&Date.now()>=restorationDeadline&&clients.some(c=>c.restoration?.receiptAt==null)){
+   restorationFailure=hudRestorationFailure(clients,scenario);throw Error('Every restored HUD and independent history must recover within the original15s window');
+  }
+ };
  const notReadyOutcomes=[];
  const notReady=(part,phase,value)=>{
   error(part==='history'?'history_not_ready':'hud_not_ready');
@@ -252,7 +260,9 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(state.hudActive){state.verifyAfterRead=true;return;}
    if(state.hudTimerPending)return;state.hudTimerPending=true;const token=++hudTimerToken;
    track((async()=>{
+    recordHudRestoration(state,'verification-scheduled');
     await sleep(250+Math.random()*10000);if(token!==hudTimerToken)return;state.hudTimerPending=false;
+    recordHudRestoration(state,'verification-started');
     if(state.hudActive){state.verifyAfterRead=true;return;}
     if(state.frozen)await verifyHud(phase);else await openHud('revocation-revalidate');
    })());
@@ -260,6 +270,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   const finishHud=controller=>{
    if(state.hudController!==controller)return;
    state.hudActive=false;
+   recordHudRestoration(state,'summary-finished');
    if(state.verifyAfterRead){
     state.verifyAfterRead=false;scheduleHudCheck('coalesced-access-verify');
    }
@@ -275,9 +286,10 @@ for(const scenario of ['concentrated','distributed','overview']){
      state.historySnapshot=snapshot;
     }else{if(history.access==='revoked')state.frozen=null;if(!expectedRevocation)notReady('history',phase,history);}
    }catch(cause){if(!cause.intentionalHudCancellation)error('history_read');}
-   finally{controller.abort();if(state.historyController===controller)state.historyActive=false;}
+   finally{controller.abort();if(state.historyController===controller)state.historyActive=false;recordHudRestoration(state,'history-finished');}
   };
   const openHud=async(phase='user-open')=>{
+   if(phase==='restoration-open')beginHudRestoration(state);
    if(phase==='revocation-revalidate'&&state.hudActive){state.verifyAfterRead=true;return;}
    if(phase!=='revocation-revalidate'){hudTimerToken++;state.hudTimerPending=false;state.verifyAfterRead=false;}
    state.hudController?.abort();state.historyController?.abort();state.historySnapshot=null;const controller=new AbortController();state.hudController=controller;state.hudActive=true;state.frozen=null;
@@ -340,6 +352,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   });
   client.channel('public:player-hud-access-v1',{config:{private:false}}).on('broadcast',{event:'revoked'},()=>{
    ++state.hudEpoch;state.historyController?.abort();state.historySnapshot=null;state.frozen=null;state.hudController?.abort();state.revocations++;stats.revocationClears++;
+   recordHudRestoration(state,'revoked');
    // Same immediate generation invalidation/abort, one physical in-flight
    // lifecycle and one queued recheck as UI. Genuine failures retain provenance.
    scheduleHudCheck('revocation-revalidate');
@@ -438,10 +451,15 @@ for(const scenario of ['concentrated','distributed','overview']){
    await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},15000,'Public restoration not ready');
    // Explicit user reopen after the preparation state, not background HUD polling.
    for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud('restoration-open')));
-   await until(async()=>clients.every(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen),15000,'Every restored HUD and independent history must complete its current snapshot');
-   restoredClients=clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen).length;
+   // Track each real summary+history recovery once. A later valid withdrawal
+   // must clear that viewer again, but cannot erase its earlier recovery proof.
+   // Keep the same15s window after the explicit reopen wave, without blocking
+   // reconnect/health scheduling or requiring every HUD to be stable at once.
+   restorationDeadline=Date.now()+15000;
+   for(const c of clients)setHudRestorationDeadline(c,restorationDeadline);
    revoking=false;coverageAt=Date.now();
   }
+  checkRestoration();
   if(!restarted&&Date.now()-started>duration*500){
    restarted=true;reconnecting=true;suspendDeliveries();const before=clients.map(c=>c.reconnected);for(const c of clients){c.online=false;c.accessOnline=false;}
    await run('docker',['restart',`supabase_realtime_${project}`]);
@@ -462,6 +480,11 @@ for(const scenario of ['concentrated','distributed','overview']){
  }
  await Promise.all(writers);
  await amendmentWriter;
+ if(restorationDeadline!==null){
+  try{await until(async()=>clients.every(c=>c.restoration?.receiptAt!=null),Math.max(1,restorationDeadline-Date.now()),'Every restored HUD and independent history must recover within the original15s window');}
+  catch(error){restorationFailure=hudRestorationFailure(clients,scenario);throw error;}
+  restoredClients=clients.filter(c=>c.restoration?.receiptAt!=null).length;
+ }
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
  expireDeliveries();clearInterval(resourceTimer);
@@ -482,7 +505,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
  report.requestAccounting=requestAccounting;
- report.hudRecovery={summaryAndHistoryIndependent:true,historyRequiredForAcceptance:true,restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.historyActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');
+ report.hudRecovery={restorationMethod:'per-viewer-owned-summary-and-exact-history-receipt-v1',restorationWindowMs:15000,restorationDeadline,receiptMaxElapsedMs:Math.max(0,...clients.map(c=>c.restoration?.receiptAt==null?0:c.restoration.receiptAt-c.restoration.launchedAt)),summaryAndHistoryIndependent:true,historyRequiredForAcceptance:true,restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.historyActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
  report.snapshotDelivery={expected:snapshotExpected,excludedForPlannedFault:snapshotExcluded,missed:snapshotMissed,pending:clients.reduce((n,c)=>n+c.snapshotExpected.length,0),samples:sample('snapshot').length,p95Ms:percentile(sample('snapshot'),.95),minSamplesPerViewer:Math.min(...clients.map(c=>c.snapshotSamples))};save('running');
  eventLoop.disable();report.generator={eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization};
