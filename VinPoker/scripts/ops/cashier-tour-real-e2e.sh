@@ -539,7 +539,8 @@ checkin_fixture_enabled=''
 if [[ "$schema_mode" == current ]]; then
   other_owner_id="$(create_auth_user 'other-owner-latency@test.invalid' 'OtherOwnerLatencyFixture-2026!')"
   [[ "$other_owner_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[a-f0-9]{12}$ ]]
-  docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -v other_owner_id="$other_owner_id" >"$test_root/dealer-fixture.json" <<'DEALER_FIXTURE'
+  checkin_dealer_count=$((360 + realtime_mode))
+  docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -v other_owner_id="$other_owner_id" -v dealer_count="$checkin_dealer_count" >"$test_root/dealer-fixture.json" <<'DEALER_FIXTURE'
 BEGIN;
 INSERT INTO public.profiles(user_id,display_name) VALUES(:'other_owner_id'::uuid,'Other tenant owner latency TEST');
 INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
@@ -548,7 +549,7 @@ INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUE
  ('ad300000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','HTTP latency TEST','00:00','23:59'),
  ('ad300000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002','Other tenant TEST','00:00','23:59');
 INSERT INTO public.dealers(club_id,user_id,full_name,status)
- SELECT 'a2000000-0000-4000-8000-000000000001',NULL,'HTTP latency TEST '||n,'active' FROM generate_series(1,360) n;
+ SELECT 'a2000000-0000-4000-8000-000000000001',NULL,'HTTP latency TEST '||n,'active' FROM generate_series(1,:dealer_count) n;
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
  ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
  ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
@@ -720,8 +721,8 @@ if [[ "$schema_mode" == current ]]; then
       (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='operator_check_in_dealer_v1'),
       (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000002'),
       (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in');")"
-  if [[ "$checkin_state" != '360|361|0|1' ]]; then echo "Check-in committed-state or tenant-denial postcondition failed ($checkin_state)" >&2; exit 1; fi
-  echo "CHECKIN_COMMIT_PROOF:360staff attendances/receipts plus1other-tenant seeded attendance/receipt; exact retries did not duplicate; denied-write dealer unchanged"
+  if [[ "$checkin_state" != "$checkin_dealer_count|$((checkin_dealer_count + 1))|0|1" ]]; then echo "Check-in committed-state or tenant-denial postcondition failed ($checkin_state)" >&2; exit 1; fi
+  echo "CHECKIN_COMMIT_PROOF:${checkin_dealer_count}staff attendances/receipts plus1other-tenant seeded attendance/receipt; exact retries did not duplicate; denied-write dealer unchanged"
 fi
 
 refund_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \

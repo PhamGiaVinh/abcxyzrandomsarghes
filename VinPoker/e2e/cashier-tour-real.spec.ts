@@ -92,7 +92,8 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   clubId:string;shiftId:string;dealerIds:string[];otherClubId:string;otherShiftId:string;otherDealerId:string;otherAttendedDealerId:string;
  };
  expect(fixture.clubId).toBe('a2000000-0000-4000-8000-000000000001');
- expect(fixture.dealerIds).toHaveLength(360);expect(new Set(fixture.dealerIds).size).toBe(360);
+ const expectedCount=process.env.LOCAL_OPERATIONS_REALTIME==='1'?361:360;
+ expect(fixture.dealerIds).toHaveLength(expectedCount);expect(new Set(fixture.dealerIds).size).toBe(expectedCount);
  for(const id of [fixture.clubId,fixture.shiftId,fixture.otherClubId,fixture.otherShiftId,fixture.otherDealerId,fixture.otherAttendedDealerId,...fixture.dealerIds])expect(id).toMatch(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
  const identities=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const realtimeEnabled=process.env.LOCAL_OPERATIONS_REALTIME==='1';
@@ -148,20 +149,26 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   expect(dealerId).toBeTruthy();
   const args={p_dealer_id:dealerId,p_club_id:fixture.clubId,p_shift_id:fixture.shiftId,p_request_id:requestId};
   let uiDealerName:string|null=null;
-  if(realtimeEnabled&&index===359){
+  if(realtimeEnabled&&index===360){
    // Observe one new check-in in the existing product screen. Never reload or
    // trigger a manual refresh after the write to manufacture synchronization.
    const response=await fetch(api+'/rest/v1/dealers?select=full_name&id=eq.'+dealerId,{headers:headers(identity.token),signal:AbortSignal.timeout(5000)});
    expect(response.ok).toBe(true);const names=await response.json();expect(names).toHaveLength(1);
    uiDealerName=names[0].full_name;expect(typeof uiDealerName).toBe('string');
    await loginOwner(page);await page.setViewportSize({width:1440,height:1000});
-   const initialAttendance=page.waitForResponse(response=>response.request().method()==='GET'&&new URL(response.url()).pathname==='/rest/v1/dealer_attendance',{timeout:30_000});
+   const initialAttendance=page.waitForResponse(response=>{
+    const url=new URL(response.url()),select=url.searchParams.get('select')??'';
+    return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select.includes('dealers!inner(')&&select.includes('worked_minutes_since_last_break');
+   },{timeout:30_000});
    await page.goto('/dealer-swing');
    const initialResponse=await initialAttendance;expect(initialResponse.ok()).toBe(true);
    const initialRows=await initialResponse.json();expect(Array.isArray(initialRows)).toBe(true);
+   expect(initialRows).toHaveLength(360);
    expect(initialRows.some((row:{dealer_id:string})=>row.dealer_id===dealerId)).toBe(false);
    const search=page.getByPlaceholder('Tìm dealer...');
-   await expect(search).toBeVisible({timeout:30_000});await search.fill(uiDealerName!);
+   await expect(search).toBeVisible({timeout:30_000});
+   await expect(page.getByText(initialRows[0].dealers.full_name,{exact:true})).toBeVisible();
+   await search.fill(uiDealerName!);
    await expect(page.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
   }
   const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
@@ -197,8 +204,11 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   await batch(20);const rows=await batch(100);
   samples.push({concurrency,graded:rows.length,firstAckMs:rows.map(r=>r.firstAckMs),independentReadAfterAckMs:rows.map(r=>r.independentReadAfterAckMs),writeToObservedMs:rows.map(r=>r.writeToObservedMs),retryAckMs:rows.map(r=>r.retryAckMs),writeToRealtimeMs:rows.map(r=>r.writeToRealtimeMs).filter((value):value is number=>value!==null)});
  }
- expect(cursor).toBe(360);
- expect(realtimeErrors).toEqual([]);if(realtimeEnabled)expect(seen.size).toBe(360);
+ // The separate UI write starts only after all measured concurrent writers
+ // finish. Its sample is excluded from the 1/5/20 HTTP/WS distributions.
+ if(realtimeEnabled)await write();
+ expect(cursor).toBe(expectedCount);
+ expect(realtimeErrors).toEqual([]);if(realtimeEnabled)expect(seen.size).toBe(expectedCount);
  const summarize=(values:number[])=>{const ordered=[...values].sort((a,b)=>a-b);expect(ordered).toHaveLength(100);expect(ordered.every(v=>Number.isFinite(v)&&v>=0)).toBe(true);return {p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]};};
  writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:realtimeEnabled?'REAL_AUTH_HTTP_CHECKIN_AND_POSTGRES_CHANGES_WEBSOCKET_OBSERVATION':'REAL_AUTH_HTTP_CHECKIN_COMMIT_AND_INDEPENDENT_DATA_API_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,actors:identities.length,actorScope:'Distinct local Auth users with actual club_dealer_controls membership;round-robin requests',fixtureSchemaAdditions:['exact14','exact51'],warmupPerScenario:20,gradedPerScenario:100,
   realtime:{enabled:realtimeEnabled,observers:realtimeEnabled?1:0,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,clock:'write-start and actual SDK callback use same monotonic client clock;not pure server-commit timing',postgresImage:realtimeEnabled?'17.6.1.155 pinned digest;see harness':'CLI default'},
