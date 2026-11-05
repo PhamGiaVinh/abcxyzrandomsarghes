@@ -29,7 +29,7 @@ describe("PublicSnapshotCoordinator", () => {
       coordinators.forEach(c=>c.stop());
     }finally{random.mockRestore();vi.useRealTimers();}
   });
-  it('spreads the production hint policy across 100ms windows within a two-second dispatch budget',async()=>{
+  it('spreads the production hint policy across 100ms windows within its2.5s dispatch budget',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random');
     try{
       const starts:number[]=[],base=Date.now();
@@ -39,13 +39,25 @@ describe("PublicSnapshotCoordinator", () => {
       });
       coordinators.forEach(c=>c.request());await Promise.resolve();
       coordinators.forEach(c=>c.request());
-      await vi.advanceTimersByTimeAsync(2200);
+      await vi.advanceTimersByTimeAsync(2500);
       const hinted=starts.slice(1000),windows=new Map<number,number>();
       hinted.forEach(t=>{const window=Math.floor(t/100);windows.set(window,(windows.get(window)??0)+1);});
       expect(hinted).toHaveLength(1000);
       expect(Math.max(...windows.values())).toBeLessThanOrEqual(100);
-      expect(Math.max(...hinted)).toBeLessThan(2000);
+      expect(Math.max(...hinted)).toBeLessThan(2500);
       coordinators.forEach(c=>c.stop());
+    }finally{random.mockRestore();vi.useRealTimers();}
+  });
+  it('coalesces one-second source hints while retaining the latest queued read',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(0);
+    try{
+      const base=Date.now(),starts:number[]=[];
+      const coordinator=new PublicSnapshotCoordinator(async()=>{starts.push(Date.now()-base);},PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS);
+      coordinator.request();await vi.advanceTimersByTimeAsync(0);
+      for(let second=1;second<=10;second++){await vi.advanceTimersByTimeAsync(1000);coordinator.request();}
+      await vi.advanceTimersByTimeAsync(500);
+      expect(starts).toEqual([0,1500,3000,4500,6000,7500,9000,10500]);
+      coordinator.stop();await vi.advanceTimersByTimeAsync(5000);expect(starts).toHaveLength(8);
     }finally{random.mockRestore();vi.useRealTimers();}
   });
   it('serializes a held read and cancels its jittered trailing hint on stop',async()=>{
@@ -161,7 +173,7 @@ describe('shared tournament read scheduling', () => {
       expect(a).toHaveBeenCalledTimes(1); expect(b).toHaveBeenCalledTimes(1);
       first.request(); second.request(); first.request();
       expect(vi.getTimerCount()).toBe(1);
-      await vi.advanceTimersByTimeAsync(1499); expect(a).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1999); expect(a).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1); expect(a).toHaveBeenCalledTimes(2); expect(b).toHaveBeenCalledTimes(2);
     } finally {first.stop();second.stop();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
   });
@@ -172,10 +184,10 @@ describe('shared tournament read scheduling', () => {
     const first=registerPublicTournamentRead(client,'tour',slow),second=registerPublicTournamentRead(client,'tour',fast);
     try {
       first.request();second.request();await vi.advanceTimersByTimeAsync(0);
-      first.request();second.request();await vi.advanceTimersByTimeAsync(1000);
+      first.request();second.request();await vi.advanceTimersByTimeAsync(PUBLIC_SPECTATOR_READ_INTERVAL_MS);
       expect(slow).toHaveBeenCalledTimes(1);expect(fast).toHaveBeenCalledTimes(2);
       first.stop();release();await vi.advanceTimersByTimeAsync(0);
-      second.request();await vi.advanceTimersByTimeAsync(1000);
+      second.request();await vi.advanceTimersByTimeAsync(PUBLIC_SPECTATOR_READ_INTERVAL_MS);
       expect(slow).toHaveBeenCalledTimes(1);expect(fast).toHaveBeenCalledTimes(3);
     }finally{first.stop();second.stop();release();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
   });

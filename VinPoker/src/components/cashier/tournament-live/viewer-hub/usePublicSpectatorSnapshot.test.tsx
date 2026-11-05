@@ -38,7 +38,7 @@ describe("public spectator table scope", () => {
     await act(async()=>{changed({payload:{tournamentId,components:['visibility'],handVisibilityOnly:true}});});
     expect(result.current.snapshot?.sections.tables?.items).toEqual([]);
     expect(result.current.snapshot?.sections.ranking).toBe(ranking);expect(result.current.snapshot?.sections.payout).toBe(payout);
-    await act(async()=>{await vi.advanceTimersByTimeAsync(1600);});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
     expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
   });
   it('coalesces continuous table hints without reloading ranking or payout',async()=>{
@@ -50,7 +50,7 @@ describe("public spectator table scope", () => {
     const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
     await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(1000);});
     expect(rpc).toHaveBeenCalledTimes(1);
-    await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(499);});
+    await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(999);});
     expect(rpc).toHaveBeenCalledTimes(1);
     await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
     expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
@@ -65,7 +65,7 @@ describe("public spectator table scope", () => {
     const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
     await act(async()=>{changed({payload:{tournamentId,components:['visibility']}});});
     expect(result.current.snapshot).toBeNull();expect(rpc).toHaveBeenCalledTimes(1);
-    await act(async()=>{await vi.advanceTimersByTimeAsync(1499);});
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1999);});
     expect(result.current.snapshot).toBeNull();expect(rpc).toHaveBeenCalledTimes(1);
     await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
     expect(result.current.snapshot?.access).toBe('revoked');expect(rpc).toHaveBeenCalledTimes(2);
@@ -93,7 +93,7 @@ describe("public spectator table scope", () => {
     await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(1));
     const status=channel.subscribe.mock.calls.at(-1)![0];
     act(()=>{status('SUBSCRIBED');status('CHANNEL_ERROR');status('SUBSCRIBED');});
-    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:2500});
+    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:3000});
     expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
     await act(async()=>{finish({data:{ok:true,access:'public',tournamentId,sections:{}},error:null});});
     expect(result.current.snapshot?.access).toBe('revoked');
@@ -106,7 +106,7 @@ describe("public spectator table scope", () => {
     await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(1));
     const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
     act(()=>changed({payload:{tournamentId,components:['visibility'],revisions:{visibility:'2'},handVisibilityOnly}}));
-    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:2500});
+    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:3000});
     await act(async()=>{finish({data:{ok:true,access:'public',tournamentId,sections:{}},error:null});});
     expect(result.current.snapshot?.access).toBe('revoked');
   });

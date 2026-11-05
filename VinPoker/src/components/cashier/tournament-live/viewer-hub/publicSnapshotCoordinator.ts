@@ -3,9 +3,10 @@ import type { PublicSnapshotSection } from "./publicSnapshotTypes";
 // Keep source writes independent while coalescing spectator HTTP bursts.
 // First/scope reads stay immediate; loaded delivery must still meet the3s gate.
 // Spread steady hint dispatch over one second instead of concentrating 1,000
-// readers into 200ms. The combined dispatch delay stays below two seconds;
-// actual loaded delivery and increased request volume require the scale gate.
-export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 1_000;
+// readers into 200ms. The combined dispatch delay stays below2.5s. The1.5s
+// minimum coalesces continuous source hints to reduce HTTP/DB contention;
+// actual loaded source-to-display delivery must still pass the3s gate.
+export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 1_500;
 export const PUBLIC_SPECTATOR_HINT_JITTER_MS = 1_000;
 
 export interface SnapshotRequest {
