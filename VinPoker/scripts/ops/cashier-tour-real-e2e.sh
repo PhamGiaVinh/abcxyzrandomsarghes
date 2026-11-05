@@ -622,16 +622,11 @@ INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUE
  ('ad300000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002','Other tenant TEST','00:00','23:59');
 INSERT INTO public.dealers(club_id,user_id,full_name,status)
  SELECT 'a2000000-0000-4000-8000-000000000001',NULL,'HTTP latency TEST '||n,'active' FROM generate_series(1,:dealer_count) n;
--- Initial state of one unused synthetic pooled asset, not a production repair.
--- Exclude both canonical sessions and legacy active tournament ownership.
-DO $$ DECLARE asset uuid;BEGIN
- SELECT g.id INTO STRICT asset FROM public.game_tables g
- WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number BETWEEN 1 AND 100
- AND NOT EXISTS(SELECT 1 FROM public.table_sessions s WHERE s.game_table_id=g.id AND s.closed_at IS NULL)
- AND NOT EXISTS(SELECT 1 FROM public.tournament_tables t WHERE (t.game_table_id=g.id OR t.table_id=g.id) AND t.status='active')
- ORDER BY g.table_number,g.id LIMIT 1;
- UPDATE public.game_tables SET operational_status='available',status='inactive' WHERE id=asset;
-END $$;
+-- One new synthetic physical asset within the canonical1..100range. The
+-- inventory's numbered virtual slots are not pre-existing physical rows.
+-- Table1 belongs to the legacy Cashier fixture; no existing asset is repaired.
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES
+ ('af700000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Floor session latency TEST',2,'tournament','inactive','available');
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
  ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
  ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
@@ -648,9 +643,8 @@ DO $$ BEGIN
 END $$;
 SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shiftId','ad300000-0000-4000-8000-000000000001',
  'floorTable',(SELECT jsonb_build_object('id',g.id,'tableNumber',g.table_number) FROM public.game_tables g
-   WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.operational_status='available' AND g.table_number BETWEEN 1 AND 100
-   AND NOT EXISTS(SELECT 1 FROM public.table_sessions s WHERE s.game_table_id=g.id AND s.closed_at IS NULL)
-   ORDER BY g.table_number,g.id LIMIT 1),
+   WHERE g.id='af700000-0000-4000-8000-000000000001' AND g.club_id='a2000000-0000-4000-8000-000000000001'
+   AND g.operational_status='available' AND g.table_number=2),
  'dealerIds',(SELECT jsonb_agg(id ORDER BY full_name) FROM public.dealers WHERE club_id='a2000000-0000-4000-8000-000000000001'),
  'otherClubId','ad200000-0000-4000-8000-000000000002','otherShiftId','ad300000-0000-4000-8000-000000000002','otherDealerId','ad400000-0000-4000-8000-000000000002',
  'otherAttendedDealerId','ad400000-0000-4000-8000-000000000003');
