@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import {writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -35,13 +35,24 @@ async function loginOwner(page: Page) {
   return session.access_token as string;
 }
 
-test('authenticated Cashier worklist HTTP latency on isolated fixture',async({page})=>{
+test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>{
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Latency output is enabled only by the isolated stack');
  test.setTimeout(120_000);
  expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
- const token=await loginOwner(page);
+ const staff=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_STAFF_FILE!,'utf8')) as {email:string;password:string}[];
+ expect(staff).toHaveLength(20);expect(new Set(staff.map(row=>row.email)).size).toBe(20);
+ const identities=await Promise.all(staff.map(async row=>{
+  const response=await fetch(process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'')+'/auth/v1/token?grant_type=password',{
+   method:'POST',headers:{apikey:process.env.LOCAL_SUPABASE_ANON_KEY!,'Content-Type':'application/json'},body:JSON.stringify(row),signal:AbortSignal.timeout(10000),
+  });
+  const session=await response.json();expect(response.ok).toBe(true);expect(typeof session.access_token).toBe('string');expect(typeof session.user?.id).toBe('string');
+  return {token:session.access_token as string,userId:session.user.id as string};
+ }));
+ expect(new Set(identities.map(row=>row.userId)).size).toBe(20);
+ let identityCursor=0;
  const scenarios:{concurrency:number;samplesMs:number[];p50Ms:number;p95Ms:number;p99Ms:number;maxMs:number}[]=[];
  const read=async()=>{
+  const token=identities[identityCursor++%identities.length].token;
   const started=performance.now();
   const response=await fetch(process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'')+'/rest/v1/rpc/cashier_tour_worklist_v1',{
    method:'POST',headers:{apikey:process.env.LOCAL_SUPABASE_ANON_KEY!,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
@@ -64,7 +75,7 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async({pa
   const samples=await batch(100),ordered=[...samples].sort((a,b)=>a-b);
   scenarios.push({concurrency,samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]});
  }
- writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',warmupPerScenario:20,gradedPerScenario:100,scenarios,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',qualification:false,limitations:'Small fixed TEST tour,same owner token for all requests,no Realtime,no concurrent writers; concurrency is requests,not independent staff actors; not production capacity or screen render latency'},null,2));
+ writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',actors:identities.length,actorScope:'Distinct local Auth users with actual Cashier membership;round-robin requests',warmupPerScenario:20,gradedPerScenario:100,scenarios,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',qualification:false,limitations:'Small fixed TEST tour,no Realtime,no concurrent writers; not production capacity or screen render latency'},null,2));
 });
 
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {

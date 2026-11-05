@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 repo_root="$(pwd)"
 source_sha="$(git -C "$repo_root" rev-parse HEAD)"
 [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]]
@@ -451,6 +452,23 @@ docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d post
   <"$repo_root/supabase/pending-tests/cashier_tour_edge_fixture.sql" \
   >"$test_root/edge-fixture.log" 2>&1
 
+# Independent users in the same isolated club, using real local Auth. Keep
+# credentials in the private temporary directory, never in published artifacts.
+staff_fixture='[]'
+for staff_index in {1..20}; do
+  staff_email="cashier-latency-$staff_index@test.invalid"
+  staff_password='CashierLatencyFixture-2026!'
+  staff_id="$(create_auth_user "$staff_email" "$staff_password")"
+  [[ "$staff_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[a-f0-9]{12}$ ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    -v staff_id="$staff_id" -v owner_id="$owner_id" <<'STAFF_FIXTURE'
+INSERT INTO public.profiles(user_id,display_name) VALUES(:'staff_id'::uuid,'Cashier latency TEST');
+INSERT INTO public.club_cashiers(club_id,user_id,granted_by) VALUES('a2000000-0000-4000-8000-000000000001',:'staff_id'::uuid,:'owner_id'::uuid);
+STAFF_FIXTURE
+  staff_fixture="$(jq -c --arg email "$staff_email" --arg password "$staff_password" '.+[{email:$email,password:$password}]' <<<"$staff_fixture")"
+done
+printf '%s' "$staff_fixture" >"$test_root/staff-private.json"
+
 registration_json="$(docker run --rm --network "$network" \
   --volume "$repo_root/supabase/pending-tests/cashier-tour-edge-register.mjs:/tests/register.mjs:ro" \
   --env API_BASE="http://$gateway_container:8000" \
@@ -571,6 +589,8 @@ mkdir -p "$repo_root/output/operations-latency"
 docker run --rm --network "$browser_network" \
   --volume "$repo_root:/app:ro" --workdir /app \
   --volume "$repo_root/output/operations-latency:/latency" \
+  --volume "$test_root/staff-private.json:/fixtures/staff-private.json:ro" \
+  --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
   --env PLAYWRIGHT_BASE_URL='http://cashier-app:8080' \
