@@ -104,6 +104,9 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  let bindingIds:unknown[]=[];
  let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
  const uiObservations:{writeToVisibleMs:number;warmup:boolean}[]=[];
+ // The same available dealer can also appear in the staffing/prediction cards.
+ // Observe the actual searched roster, not an arbitrary duplicate elsewhere.
+ const uiRoster=page.getByPlaceholder('Tìm dealer...',{exact:true}).locator('xpath=../..');
  const uiFailedReads:{status:number;path:string}[]=[];
  page.on('response',response=>{if(response.status()>=400&&uiFailedReads.length<20)uiFailedReads.push({status:response.status(),path:new URL(response.url()).pathname});});
  const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
@@ -193,7 +196,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    }
    await expect(page.getByRole('button',{name:`Check-out (${index})`,exact:true})).toBeVisible();
    await page.getByPlaceholder('Tìm dealer...',{exact:true}).fill(uiDealerName!);
-   await expect(page.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
+   await expect(uiRoster.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
   }
   const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
   expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
@@ -215,7 +218,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    expect(writeToRealtimeMs).toBeLessThanOrEqual(5000);
    if(uiDealerName){
     await expect(page.getByRole('button',{name:`Check-out (${index+1})`,exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
-    await expect(page.getByText(uiDealerName,{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+    await expect(uiRoster.getByText(uiDealerName,{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
     const writeToVisibleMs=performance.now()-started;
     expect(writeToVisibleMs).toBeLessThanOrEqual(5000);
     uiObservations.push({writeToVisibleMs,warmup:index<360+uiWarmup});
