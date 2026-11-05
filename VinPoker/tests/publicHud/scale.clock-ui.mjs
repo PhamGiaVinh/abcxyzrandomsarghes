@@ -16,7 +16,7 @@ const report=()=>writeFileSync('output/hud-scale/clock-ui.json',JSON.stringify({
  kind:'REAL_CHROMIUM_SOURCE_TRIGGER_BROADCAST_PUBLIC_CLOCK_RENDER',sha:process.env.GITHUB_SHA,phase,joined,
  warmup:5,graded:20,samples,rpcReads:reads,qualification:false,productionChanged:false,
  p95Ms:samples.filter(row=>!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b)[18]??null,
- limitations:'One anonymous browser and synthetic source clock writes on the full isolated projection stack. Not canonical control RPC/Edge,staff authorization,1,000 browser render or production capacity proof. Missing fixture payout contract,if any,is recorded as an actual HTTP error; no payout response is mocked.',
+ limitations:'One anonymous browser and synthetic source clock writes on the full isolated projection stack. Not canonical control RPC/Edge,staff authorization,1,000 browser render or production capacity proof. Payout uses the exact canonical public adapter and actual prepared projection; no response is mocked.',
 },null,2));
 try{
  // Source fixture only: no business writer, money,attendance or notification.
@@ -50,6 +50,8 @@ try{
  phase='initial-public-read';report();await page.goto(origin+'/clock/'+tour);
  await expect(page.getByRole('heading',{name:'SCALE TEST',exact:true})).toBeVisible({timeout:30000});
  await expect.poll(()=>joined,{timeout:10000}).toBe(true);
+ await expect(page.getByRole('status')).toHaveCount(0,{timeout:35000});
+ await expect(page.getByText('#1',{exact:true})).toBeVisible();
  await expect(page.getByText('Đồng hồ đang dừng',{exact:true})).toHaveCount(0);
  for(let index=0;index<25;index++){
   const paused=index%2===0;phase=paused?'pause-source':'resume-source';
@@ -66,6 +68,8 @@ try{
   samples.push({action:paused?'pause':'resume',warmup:index<5,ackMs,writeToVisibleMs:visibleMs});report();
  }
  const graded=samples.filter(row=>!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b);
+ assert.ok((reads['get_public_tournament_results:200']??0)>0,'Canonical public payout read did not succeed');
+ assert.equal(reads['get_public_tournament_results:404']??0,0,'Public payout adapter missing');
  assert.equal(graded.length,20);const p95Ms=graded[18];assert.ok(p95Ms<=3000,'Clock source-to-screen p95 exceeds3s');
  phase='passed';report();console.log(JSON.stringify({clockUi:'passed',samples:graded.length,p95Ms,maxMs:graded.at(-1)}));
 }catch(error){phase+='-failed';report();throw error;}
