@@ -11,13 +11,15 @@ export function measureFixtureWriter(){
   RESET ROLE;SELECT jsonb_build_object('p50Ms',percentile_cont(.5) WITHIN GROUP(ORDER BY ms),'p95Ms',percentile_cont(.95) WITHIN GROUP(ORDER BY ms),'maxMs',max(ms)) FROM fixture_write_samples;
   ROLLBACK;`);
 }
-export function measureFixtureWriterTransactions({commit=false}={}){
+export function measureFixtureWriterTransactions({commit=false,orderedTransactions=false}={}){
  const ending=commit?'COMMIT':'ROLLBACK';
  const pressureBefore=writerPressureSnapshot();
- const samples=pgbench("BEGIN;\nSET LOCAL request.jwt.claim.role='service_role';\nSET LOCAL ROLE service_role;\nSELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000001);\n"+ending+";\n");
+ const measured=pgbench("BEGIN;\nSET LOCAL request.jwt.claim.role='service_role';\nSET LOCAL ROLE service_role;\nSELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000001);\n"+ending+";\n",{orderedTransactions});
+ const samples=orderedTransactions?measured.samples:measured;
  const pressureAfter=writerPressureSnapshot();
  if(samples.length!==200||samples.some(n=>!Number.isFinite(n)))throw Error('Invalid pgbench fixture samples');
- return {p50Ms:samples[99],p95Ms:samples[189],maxMs:samples.at(-1),samples:samples.length,transaction:`BEGIN/source writer/${ending}; one transaction per sample`,pressureBefore,pressureAfter};
+ if(orderedTransactions&&(measured.transactions.length!==220||measured.transactions.filter(t=>!t.warmup).length!==200))throw Error('Invalid ordered writer samples');
+ return {p50Ms:samples[99],p95Ms:samples[189],maxMs:samples.at(-1),samples:samples.length,...(orderedTransactions?{orderedTransactions:measured.transactions}:{}),transaction:`BEGIN/source writer/${ending}; one transaction per sample`,pressureBefore,pressureAfter};
 }
 // Separate observer sessions surround both benchmarks symmetrically. No reset,
 // forced checkpoint or waiting for quiet: graded transaction samples stay intact.

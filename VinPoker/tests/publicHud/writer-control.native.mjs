@@ -79,7 +79,7 @@ try{
     if(profilePath)setObservers(baselineObservers);
     sql('DROP TRIGGER hud_hand_changed ON public.tournament_hands;');
    }
-   try{measurements[mode]=measureFixtureWriterTransactions({commit:true});}
+   try{measurements[mode]=measureFixtureWriterTransactions({commit:true,orderedTransactions:true});}
    finally{
     if(mode==='withoutHudMarker'){
      sql(trigger.definition+';');
