@@ -75,7 +75,7 @@ import { resolveViewerIdentity } from "./viewer-hub/viewerIdentity";
 import { resolveReplayCandidates, type ReplayTarget, type ReplayTargetState } from "./viewer-hub/replayTarget";
 import { deriveReplayHeaderMetadata } from "./viewer-hub/replayMetadata";
 import { PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS } from "./viewer-hub/publicSnapshotCoordinator";
-import { parsePublicTableCurrentResponse,parsePublicParticipationSummary } from "./viewer-hub/publicTableHistory";
+import { parsePublicTableCurrentResponse,parsePublicParticipationSummary,parsePublicClockSummary } from "./viewer-hub/publicTableHistory";
 import { loadPublicCurrentTable } from "./viewer-hub/loadPublicCurrentTable";
 import {readPublicTableRequest} from '@/lib/publicTableTransport';
 import { TableHistoryPanel } from "./viewer-hub/TableHistoryPanel";
@@ -364,7 +364,7 @@ function TournamentLiveViewContent({
       usePublicCurrentHand ? Promise.resolve({ data: null, error: null }) : readRpc(
         "get_tournament_participation_v1", { p_tournament_id: tournamentId }),
       usePublicCurrentHand ? Promise.resolve({ data: [], error: null }) : loadLatestLiveHand(tournamentId, liveTableScope).abortSignal(controller.signal),
-      cachedSummary?Promise.resolve({data:null,error:null}):readRpc("get_tournament_clock", { p_tournament_id: tournamentId }),
+      usePublicCurrentHand||cachedSummary?Promise.resolve({data:null,error:null}):readRpc("get_tournament_clock", { p_tournament_id: tournamentId }),
       usePublicCurrentHand
         ? cachedSummary?Promise.resolve({data:cachedSummary,error:null}):readRpc(
           "get_public_tournament_clock_summary",{p_tournament_id:tournamentId})
@@ -415,11 +415,13 @@ function TournamentLiveViewContent({
     let seatRows: any[] = [];
     let participationSummary: ReturnType<typeof parseParticipationSummary> | null = null;
     const publicParticipationSummary=usePublicCurrentHand?parsePublicParticipationSummary(tournamentRes.data,tournamentId):null;
+    const publicClock=usePublicCurrentHand?parsePublicClockSummary(tournamentRes.data,tournamentId):null;
     if(usePublicCurrentHand&&!publicParticipationSummary){
       if(!initialLoadedRef.current){initialReadFailedRef.current=true;setFatalError("Không xác minh được số người chơi và stack trung bình.");setLoading(false);}
       else setSoftErrorAt(new Date());
       return;
     }
+    if(usePublicCurrentHand&&!publicClock)throw Error('Không xác minh được đồng hồ giải công khai.');
     if(usePublicCurrentHand&&publicParticipationSummary)publicSummaryRef.current={scope:readScope,data:tournamentRes.data};
     if (!usePublicCurrentHand) {
       try {
@@ -840,7 +842,11 @@ function TournamentLiveViewContent({
     setTableDisplayState(currentState);
     setTableSessionId(currentResponse?.tableSessionId ?? null);
 
-    if (clockRes.data && !clockRes.error) {
+    if(usePublicCurrentHand&&!cachedSummary&&publicClock){
+      setClockData(publicClock);
+      setCountdown({remaining:publicClock.remaining_seconds,running:publicClock.is_running,receivedAt:Date.now()});
+      if(publicClock.remaining_seconds>0)zeroRefetchDoneRef.current=false;
+    } else if (clockRes.data && !clockRes.error) {
       const c = clockRes.data as any;
       setClockData({
         is_running: c.is_running || false,

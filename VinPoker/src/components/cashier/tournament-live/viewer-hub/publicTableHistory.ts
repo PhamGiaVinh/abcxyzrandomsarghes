@@ -12,6 +12,23 @@ export function parsePublicParticipationSummary(value:unknown,tournamentId:strin
   return {playersRemaining:row.players_remaining,averageStack:row.average_stack};
 }
 
+/** The public summary already contains the complete spectator clock projection. */
+export function parsePublicClockSummary(value:unknown,tournamentId:string) {
+  if(!Array.isArray(value)||value.length!==1)return null;
+  const row=record(value[0]);
+  if(!row||row.tournament_id!==tournamentId||typeof row.is_running!=='boolean')return null;
+  for(const key of ['remaining_seconds','current_level','small_blind','big_blind','big_blind_ante']) {
+    const number=row[key];
+    if(number!==null&&(typeof number!=='number'||!Number.isFinite(number)||number<0))return null;
+  }
+  if(row.remaining_seconds!==null&&!Number.isSafeInteger(row.remaining_seconds)
+    ||row.current_level!==null&&!Number.isSafeInteger(row.current_level))return null;
+  if(row.is_running&&(row.remaining_seconds===null||row.current_level===null))return null;
+  return {is_running:row.is_running,remaining_seconds:(row.remaining_seconds as number|null)??0,
+    current_level:row.current_level as number|null,small_blind:(row.small_blind as number|null)??0,
+    big_blind:(row.big_blind as number|null)??0,ante:(row.big_blind_ante as number|null)??0};
+}
+
 function record(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
 }

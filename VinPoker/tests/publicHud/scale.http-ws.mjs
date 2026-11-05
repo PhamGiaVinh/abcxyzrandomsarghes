@@ -12,6 +12,7 @@ import {summaryApiReport} from './scale.summary.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
 import {PublicSnapshotCoordinator,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
+import {parsePublicClockSummary} from '../../.local-data/hud-scale-runtime/publicTableHistory.mjs';
 import {readPublicHudRequest,revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
 const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
@@ -217,7 +218,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(state.snapshotDirty.size&&Date.now()<end+10000){state.snapshotPending=true;snapshotCoordinator.request();}
   };
   state.snapshot=snapshot;
-  const clock=async()=>{try{const [value,summary]=await Promise.all([rpc('get_tournament_clock',{p_tournament_id:tour}),rpc('get_public_tournament_clock_summary',{p_tournament_id:tour})]);assert.equal(value.tournament_id,tour);if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(Array.isArray(summary)&&summary.length===1&&summary[0].tournament_id===tour);}catch{error('clock_read');}};
+  const clock=async()=>{try{const summary=await rpc('get_public_tournament_clock_summary',{p_tournament_id:tour});if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(parsePublicClockSummary(summary,tour),'Public clock must satisfy the production scoped parser');}catch{error('clock_read');}};
   state.clock=clock;
   const verifyPage=()=>{track(snapshot(['tables','ranking','payout']));track(clock());};
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
