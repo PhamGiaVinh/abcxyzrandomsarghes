@@ -1028,6 +1028,9 @@ jobs:
         run: |
           set -euo pipefail
           createdb -T vinpoker_ops_initial102_ci "$PGDATABASE"
+          # The close/cancel overlap exercises the canonical reservation cleanup.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000081_dealer_close_forecast_slots_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000046_dealer_inventory_canonical_table_link_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql

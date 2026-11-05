@@ -8,7 +8,9 @@ import {authorizeInternalTrigger,authorizeSwingWorkerRequest,getIdempotencyKey,p
 import ts from 'typescript';
 import {resolve,dirname} from 'node:path';import {pathToFileURL} from 'node:url';
 const integratedProjections=process.argv.includes('--integrated-projections');
-const database=integratedProjections?'vinpoker_ops_cash115_qualified_c':'vinpoker_ops_ready_capacity_ci';
+const localCloseOverlap=process.argv.includes('--local-close-overlap');
+assert.ok(!localCloseOverlap||process.platform==='win32'&&!integratedProjections&&process.argv.includes('--rotation-auth-overlap'));
+const database=localCloseOverlap?'vinpoker_ops_ready_close_20261105':integratedProjections?'vinpoker_ops_cash115_qualified_c':'vinpoker_ops_ready_capacity_ci';
 assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,database);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
 function sql(input){const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];const options={input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']};return (process.platform==='win32'?execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql',...flags],options):execFileSync('psql',flags,options)).trim();}
@@ -507,7 +509,7 @@ if(process.argv.includes('--negative')){
 if(process.argv.includes('--overlap')||process.argv.includes('--anchor-overlap')||process.argv.includes('--rotation-auth-overlap')||process.argv.includes('--execution-overlap')||process.argv.includes('--execution-negative')||process.argv.includes('--dispatch-overlap')){
  function tx(name,query,hold=false){
   const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];
-  const child=process.platform==='win32'?spawn('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_ready_capacity_ci','psql',...flags]):spawn('psql',flags);
+  const child=process.platform==='win32'?spawn('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql',...flags]):spawn('psql',flags);
   let out='',error='';child.stdin.on('error',()=>{});
   const result=new Promise(resolve=>{child.stdout.on('data',v=>out+=v);child.stderr.on('data',v=>error+=v);child.on('error',e=>resolve({code:-1,out,error:String(e)}));child.on('close',code=>resolve({code,out,error}));});
   const end=command=>{if(!child.stdin.writableEnded&&!child.stdin.destroyed)child.stdin.end(command+';\n');};
