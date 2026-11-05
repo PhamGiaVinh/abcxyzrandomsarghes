@@ -14,7 +14,8 @@ if(!isolatedStack)assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);
 assert.equal(sql('SELECT current_database();'),database);
 if(isolatedStack){
  assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-hud-scale-disposable');
- assert.equal(sql('SELECT count(*) FROM cron.job WHERE active;'),'0','No active cron during observer comparison');
+ if(sql("SELECT to_regclass('cron.job') IS NOT NULL;")==='t')assert.equal(sql('SELECT count(*) FROM cron.job WHERE active;'),'0','No active cron during observer comparison');
+ else assert.equal(sql("SELECT count(*) FROM pg_extension WHERE extname='pg_cron';"),'0','Cron extension/catalog drift');
  assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),'0','Drain fixture jobs before observer comparison');
 }
 // No pgbench/HTTP workers may be connected while the counterfactual is active.
