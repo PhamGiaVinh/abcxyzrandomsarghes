@@ -60,10 +60,18 @@ docker inspect --format '{"name":{{json .Name}},"image":{{json .Config.Image}},"
 export PUBLIC_HUD_STACK_PROJECT="$project_id"
 export PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/seed.json"
 export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.json"
-node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
-PUBLIC_HUD_WRITER_CONTROL=isolated-stack-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
+# Counterfactual observer jobs must never enter the audience database. Build the
+# same deterministic complete fixture in a separate owned database, then drop it.
+comparison_database="vinpoker_hud_test_pair_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"
+[[ "$comparison_database" =~ ^vinpoker_hud_test_pair_[a-z0-9_]+$ ]]
+createdb -h 127.0.0.1 -p 54322 -U postgres --template=template0 "$comparison_database"
+PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
+ node tests/publicHud/scale.seed.mjs >output/hud-scale/writer-isolated-seed.log 2>&1
+PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_CONTROL=isolated-native-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
  PUBLIC_HUD_WRITER_CONTROL_REPORT="$repo_root/output/hud-scale/writer-matched-observers.json" \
  node tests/publicHud/writer-control.native.mjs >output/hud-scale/writer-matched-observers.log 2>&1
+dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
 node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-contract.json
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs

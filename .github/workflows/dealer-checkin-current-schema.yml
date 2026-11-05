@@ -1136,6 +1136,8 @@ jobs:
           node tests/cashier/paidJourney.runtime.mjs --active-hand --pending-move
           node tests/cashier/paidJourney.runtime.mjs --active-hand --legacy-correction
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000024_tracker_history_scoped_canary_claim_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000075_tracker_manual_cards_receipts_v1.sql
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified
           node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified --identity-revision

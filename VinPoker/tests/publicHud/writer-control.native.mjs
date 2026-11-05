@@ -6,23 +6,16 @@ import {createHash} from 'node:crypto';
 import {sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
 import {matchedWriterStatistics} from './scale.write.protocol.mjs';
-const isolatedStack=process.env.PUBLIC_HUD_LOCAL_DATABASE==='postgres'&&process.env.PUBLIC_HUD_ISOLATED_STACK==='vinpoker-hud-scale'&&process.env.PUBLIC_HUD_LOCAL_PORT==='54322'&&/^hud-scale-[a-z0-9-]+$/.test(process.env.PUBLIC_HUD_STACK_PROJECT??'');
-assert.equal(process.env.PUBLIC_HUD_WRITER_CONTROL,isolatedStack?'isolated-stack-only':'isolated-native-only');
+assert.equal(process.env.PUBLIC_HUD_WRITER_CONTROL,'isolated-native-only');
 assert.ok(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT,'Explicit diagnostic report path required');
 const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;
-if(!isolatedStack)assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);
+assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);
 assert.equal(sql('SELECT current_database();'),database);
-if(isolatedStack){
- assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-hud-scale-disposable');
- if(sql("SELECT to_regclass('cron.job') IS NOT NULL;")==='t')assert.equal(sql('SELECT count(*) FROM cron.job WHERE active;'),'0','No active cron during observer comparison');
- else assert.equal(sql("SELECT count(*) FROM pg_extension WHERE extname='pg_cron';"),'0','Cron extension/catalog drift');
- assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),'0','Drain fixture jobs before observer comparison');
-}
 // No pgbench/HTTP workers may be connected while the counterfactual is active.
 const preflight=[];
 const maintenanceWaitMs=180000;
 for(let check=0;check<=maintenanceWaitMs/500;check++){
- const sessions=jsonSql(`SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM (SELECT backend_type,state,count(*) AS sessions FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() ${isolatedStack?"AND (backend_type='autovacuum worker' OR (backend_type='client backend' AND state IS DISTINCT FROM 'idle'))":''} GROUP BY backend_type,state) s;`);
+ const sessions=jsonSql("SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM (SELECT backend_type,state,count(*) AS sessions FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY backend_type,state) s;");
  preflight.push({observedAt:new Date().toISOString(),sessions});
  if(!sessions.length||sessions.some(s=>s.backend_type!=='autovacuum worker')||check===maintenanceWaitMs/500)break;
  // Only automatic maintenance may finish before this diagnostic begins.
