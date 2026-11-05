@@ -8,6 +8,13 @@ export function validateCanonicalWriterObservers(profile){
   for(let i=0;i<names.length;i++)assert.equal(createHash('md5').update(profile[arm][i].definition).digest('hex'),expected[arm][i],`Canonical ${arm} observer required`);
  }
 }
+// Explicit opt-in only: historical diagnostic runs never become qualification.
+export function requireMatchedWriterQualification(report,expectedIdentity){
+ validateCanonicalWriterObservers(report?.observerProfile);
+ const statistics=validateMatchedWriterEvidence(report,expectedIdentity);
+ assert.equal(statistics.passed,true,'Matched writer pooled or predefined pair overhead > 10%');
+ return {method:matchedWriterProtocol.version,identity:expectedIdentity,statistics,scope:matchedWriterProtocol.scope};
+}
 export const matchedWriterProtocol=Object.freeze({version:'canonical-hand-observers-paired-v1',pairs:3,orders:['AB','BA','AB'],warmupPerArm:20,gradedPerArm:200,p95:'nearest-rank pooled raw samples; no averaging p95',limitPercent:10,scope:'fixture completed-hand writer only; not settlement/result/withdrawal or Floor auth E2E'});
 // Consumers supply their own current-run identity; a report cannot certify itself.
 // This validates diagnostic evidence only. Qualification remains a separate gate.
