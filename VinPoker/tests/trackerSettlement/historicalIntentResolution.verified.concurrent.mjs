@@ -7,7 +7,7 @@ import {createRequire} from 'node:module';
 import {runInNewContext} from 'node:vm';
 import {buildSync} from 'esbuild';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');
-assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'vinpoker_ops_history99_verified');
+assert.equal(process.env.PGUSER,'postgres');assert.ok(['vinpoker_ops_history99_verified','vinpoker_ops_history99_verified_20261105'].includes(process.env.PGDATABASE));
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 const bundle=buildSync({stdin:{contents:`export {verifyHistoricalDisplaySettlement} from './supabase/functions/_shared/trackerSettlement/historicalDisplayVerification.ts';export {canonicalJsonV1} from './supabase/functions/_shared/trackerSettlement/outcomeV1.ts';`,resolveDir:process.cwd()},bundle:true,write:false,format:'cjs',platform:'node'});
 const module={exports:{}};
@@ -16,7 +16,7 @@ const {verifyHistoricalDisplaySettlement,canonicalJsonV1}=module.exports;
 const args=process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','psql','-h','127.0.0.1','-p','55441','-U','postgres','-d',process.env.PGDATABASE,'-w','-X','-qAt','-v','ON_ERROR_STOP=1']:['-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
 const command=process.platform==='win32'?'wsl':'psql';
 function sql(input){const r=spawnSync(command,args,{input,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();}
-assert.equal(sql("SELECT current_setting('server_version_num')::int BETWEEN 170000 AND 179999 AND inet_server_addr()='127.0.0.1'::inet AND current_database()='vinpoker_ops_history99_verified';"),'t');
+assert.equal(sql(`SELECT current_setting('server_version_num')::int BETWEEN 170000 AND 179999 AND inet_server_addr()='127.0.0.1'::inet AND current_database()='${process.env.PGDATABASE}';`),'t');
 const hand='86000000-0000-4000-8000-000000000001',tour='85000000-0000-4000-8000-000000000001',actor='81100000-0000-4000-8000-000000000001';
 const json=value=>`'${JSON.stringify(value).replaceAll("'","''")}'::jsonb`;
 const parse=output=>JSON.parse(output.split('\n').find(line=>line.startsWith('{')));
@@ -42,9 +42,9 @@ sql(`BEGIN;SET LOCAL statement_timeout='15s';
  SELECT gen_random_uuid(),hand_id,player_id,entry_number,'preflop',CASE WHEN row_number()OVER(ORDER BY seat_number)=1 THEN 'bet' ELSE 'call' END,
  100,row_number()OVER(ORDER BY seat_number) FROM public.hand_players WHERE hand_id='${hand}';COMMIT;`);
 for(const commitFirst of [true,false]){
- // Touch an outcome-relevant field to obtain a new source generation without
+ // Touch pot_size, which the actual source-revision trigger owns, to obtain a new generation without
  // changing the intended stacks or poker evidence between the two cases.
- sql(`UPDATE public.tournament_hands SET hand_number=hand_number+1 WHERE id='${hand}';`);
+ sql(`UPDATE public.tournament_hands SET pot_size=200 WHERE id='${hand}';`);
  const snapshot=parse(sql(`SELECT public.get_tracker_historical_display_snapshot('${hand}','${tour}');`));
  const settlementRevision=Number(sql(`SELECT coalesce(max(settlement_revision),0)+1 FROM public.tournament_settlement_outcomes WHERE hand_id='${hand}';`));
  const verified=await verifyHistoricalDisplaySettlement({tournamentId:tour,hand:snapshot.hand,players:snapshot.players,actions:snapshot.actions,
@@ -74,7 +74,7 @@ for(const commitFirst of [true,false]){
   assert.deepEqual(published.pots,JSON.parse(JSON.stringify(verified.publicOutcome.pots)));
   assert.equal(published.outcomeHash,undefined,'public RPC must not expose its internal proof hash');
   assert.equal(sql(`SELECT count(*) FROM public.tournament_settlement_outcomes WHERE idempotency_key='${key}';`),'1');
-  sql(`UPDATE public.tournament_hands SET hand_number=hand_number+1 WHERE id='${hand}';`);
+  sql(`UPDATE public.tournament_hands SET pot_size=pot_size+1 WHERE id='${hand}';`);
   const past=parse(sql(`BEGIN;${service}${resolve}COMMIT;`));assert.equal(past.status,'receipt_found');
   assert.ok(past.current_source_revision>snapshot.sourceRevision);
   const invalidated=JSON.parse(sql(`BEGIN;SET LOCAL ROLE anon;SELECT public.get_public_tournament_settlement('${hand}');COMMIT;`));
