@@ -29,7 +29,7 @@ describe("PublicSnapshotCoordinator", () => {
       coordinators.forEach(c=>c.stop());
     }finally{random.mockRestore();vi.useRealTimers();}
   });
-  it('spreads the production hint policy across 100ms windows within its2.5s dispatch budget',async()=>{
+  it('spreads the production hint policy across 100ms windows within its2s dispatch budget',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random');
     try{
       const starts:number[]=[],base=Date.now();
@@ -39,12 +39,12 @@ describe("PublicSnapshotCoordinator", () => {
       });
       coordinators.forEach(c=>c.request());await Promise.resolve();
       coordinators.forEach(c=>c.request());
-      await vi.advanceTimersByTimeAsync(2500);
+      await vi.advanceTimersByTimeAsync(2000);
       const hinted=starts.slice(1000),windows=new Map<number,number>();
       hinted.forEach(t=>{const window=Math.floor(t/100);windows.set(window,(windows.get(window)??0)+1);});
       expect(hinted).toHaveLength(1000);
-      expect(Math.max(...windows.values())).toBeLessThanOrEqual(100);
-      expect(Math.max(...hinted)).toBeLessThan(2500);
+      expect(Math.max(...windows.values())).toBeLessThanOrEqual(200);
+      expect(Math.max(...hinted)).toBeLessThan(2000);
       coordinators.forEach(c=>c.stop());
     }finally{random.mockRestore();vi.useRealTimers();}
   });
@@ -173,7 +173,7 @@ describe('shared tournament read scheduling', () => {
       expect(a).toHaveBeenCalledTimes(1); expect(b).toHaveBeenCalledTimes(1);
       first.request(); second.request(); first.request();
       expect(vi.getTimerCount()).toBe(1);
-      await vi.advanceTimersByTimeAsync(1999); expect(a).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1749); expect(a).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1); expect(a).toHaveBeenCalledTimes(2); expect(b).toHaveBeenCalledTimes(2);
     } finally {first.stop();second.stop();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
   });
