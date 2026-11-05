@@ -367,11 +367,14 @@ echo "SCHEMA_PROOF: mode=$schema_mode; captured schema restored; RPC ACL and def
 # a disposable, already outbound-isolated stack; no remote database is touched.
 docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
   'CREATE SCHEMA IF NOT EXISTS private; REVOKE ALL ON SCHEMA private FROM PUBLIC,anon,authenticated;'
-for cursor_migration in 20270128000195_sepay_pull_progress_v1.sql 20270128000196_sepay_pull_total_fence_v2.sql; do
+for cursor_migration in 20270128000142_sepay_settlement_fair_batch_v1.sql 20270128000195_sepay_pull_progress_v1.sql 20270128000196_sepay_pull_total_fence_v2.sql; do
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/$cursor_migration"
 done
-echo "EDGE_DEPENDENCY_PROOF: captured baseline plus exact SePay195/196; not untouched-baseline-only runtime proof"
+missing_contracts="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+  "SELECT string_agg(required.name,',') FROM unnest(ARRAY['cashier_record_verified_bank_v1','cashier_retry_paid_seating_v1','sepay_checkpoint_pull_v2','sepay_claim_pull_v2','sepay_get_active_payment_clubs','sepay_get_club_api_token','sepay_ingest_verified_transactions','sepay_take_settlement_batch_v1','settle_bank_transaction']) required(name) WHERE NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=required.name);")"
+if [[ -n "$missing_contracts" ]]; then echo "Missing current Edge RPC contracts: $missing_contracts" >&2; exit 1; fi
+echo "EDGE_DEPENDENCY_PROOF: captured baseline plus exact SePay142/195/196; all9 current RPC contracts present; not untouched-baseline-only runtime proof"
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   <"$repo_root/supabase/pending-tests/cashier_tour_money_v1.sql" \
