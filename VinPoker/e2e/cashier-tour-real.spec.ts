@@ -618,3 +618,49 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
   visibleMs=performance.now()-started;phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}finally{await context.close();}
 });
+
+
+test('real clock control HTTP latency and concurrent revision fencing',async()=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated operation fixture only');
+ test.setTimeout(120_000);
+ const staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const tourId='ac300000-0000-4000-8000-000000000001';
+ const samples:{action:string;ackMs:number;observedMs:number;warmup:boolean}[]=[];let phase='initial',raceSuccesses=0,raceConflicts=0;
+ const rpc=async(token:string,name:string,args:unknown)=>{
+  const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
+  const data=await response.json();expect(response.ok,name).toBe(true);return data;
+ };
+ const read=async()=>{
+  const value=await rpc(staff[19].token,'get_tournament_clock',{p_tournament_id:tourId});
+  expect(value.tournament_id).toBe(tourId);expect(value.control_revision).toMatch(/^[a-f0-9]{32}$/);return value;
+ };
+ const report=()=>{
+  const grouped=['pause','resume'].map(action=>{
+   const values=samples.filter(row=>row.action===action&&!row.warmup).map(row=>row.ackMs).sort((a,b)=>a-b);
+   return {action,count:values.length,p50Ms:values.length?values[Math.ceil(values.length*.5)-1]:null,p95Ms:values.length?values[Math.ceil(values.length*.95)-1]:null,maxMs:values.at(-1)??null};
+  });
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-clock-controls-http.json'),JSON.stringify({
+   kind:'ACTUAL_AUTHENTICATED_CLOCK_RPC_CONTROLS',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:staff.length,
+   warmupPairs:5,gradedPairs:20,samples,grouped,raceSuccesses,raceConflicts,qualification:false,
+   limitations:'Canonical control RPC over real HTTP and actual Auth Cashier memberships; excludes Edge wrapper and screen rendering. Serial pause/resume pairs plus one20-actor same-revision race; not broad tour-load or all clock-action acceptance.',
+  },null,2));
+ };
+ try{
+  expect((await read()).is_running).toBe(true);
+  for(let index=0;index<25;index++)for(const action of ['pause','resume']){
+   phase=action;const clock=await read(),args={p_tournament_id:tourId,p_action:action,p_delta_seconds:null,p_expected_control_revision:clock.control_revision};
+   const started=performance.now(),result=await rpc(staff[index%staff.length].token,'floor_control_tournament_clock',args),ack=performance.now();
+   expect(result.ok).toBe(true);const observed=await read();expect(observed.is_running).toBe(action==='resume');
+   expect(observed.control_revision).not.toBe(clock.control_revision);const observedAt=performance.now();
+   const retry=await rpc(staff[index%staff.length].token,'floor_control_tournament_clock',args);
+   expect(retry.ok).toBe(false);expect(retry.error).toBe('stale_clock_state');
+   samples.push({action,ackMs:ack-started,observedMs:observedAt-started,warmup:index<5});report();
+  }
+  phase='same-revision-race';const clock=await read();
+  const replies=await Promise.all(staff.map(identity=>rpc(identity.token,'floor_control_tournament_clock',{
+   p_tournament_id:tourId,p_action:'pause',p_delta_seconds:null,p_expected_control_revision:clock.control_revision,
+  })));
+  raceSuccesses=replies.filter(row=>row.ok===true).length;raceConflicts=replies.filter(row=>row.ok===false&&row.error==='stale_clock_state').length;
+  expect(raceSuccesses).toBe(1);expect(raceConflicts).toBe(19);expect((await read()).is_running).toBe(false);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
