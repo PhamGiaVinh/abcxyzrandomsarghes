@@ -7,7 +7,7 @@ it('clears once for a safe barrier, recovers, and makes no further reads',async(
  const read=vi.fn().mockResolvedValueOnce(blocked).mockResolvedValueOnce(blocked).mockResolvedValue({access:'public',state:'current',revision:'new'});
  const clear=vi.fn(),result=revalidatePublicHudRead(read,new AbortController().signal,clear);
  await vi.advanceTimersByTimeAsync(0);expect(clear).toHaveBeenCalledTimes(1);
- await vi.advanceTimersByTimeAsync(500);expect(await result).toMatchObject({revision:'new'});
+ await vi.advanceTimersByTimeAsync(750);expect(await result).toMatchObject({revision:'new'});
  expect(read).toHaveBeenCalledTimes(3);expect(clear).toHaveBeenCalledTimes(1);
  await vi.advanceTimersByTimeAsync(60000);expect(read).toHaveBeenCalledTimes(3);expect(vi.getTimerCount()).toBe(0);
 });
@@ -30,6 +30,32 @@ it('stops an unresolved preparation at the total five-second budget',async()=>{
  expect(error).toMatchObject({message:'PUBLIC_HUD_PREPARING',publicHudRevalidationExpired:true});
  expect(error).not.toHaveProperty('publicHudCallerCancelled');const calls=read.mock.calls.length;
  await vi.advanceTimersByTimeAsync(60000);expect(read).toHaveBeenCalledTimes(calls);expect(vi.getTimerCount()).toBe(0);
+});
+it('bounds preparation traffic per withdrawn HUD without extending its budget',async()=>{
+ const read=vi.fn().mockResolvedValue(blocked);
+ const pending=revalidatePublicHudRead(read,new AbortController().signal).then(()=>null,error=>error);
+ await vi.advanceTimersByTimeAsync(5000);
+ const error=await pending;
+ // Minimum jitter is the most aggressive permitted retry schedule. A constant
+ // 250ms loop makes 20 calls per viewer here; bounded backoff permits seven.
+ expect(read.mock.calls.length).toBeLessThanOrEqual(7);
+ expect(error.publicHudRevalidationExpired).toBe(true);
+ const calls=read.mock.calls.length;
+ await vi.advanceTimersByTimeAsync(60000);
+ expect(read).toHaveBeenCalledTimes(calls);
+ expect(vi.getTimerCount()).toBe(0);
+});
+it('accepts a newly prepared revision after a longer jittered wait and then stays frozen',async()=>{
+ vi.mocked(Math.random).mockReturnValue(0.999);
+ const read=vi.fn().mockResolvedValue(blocked);
+ const pending=revalidatePublicHudRead(read,new AbortController().signal);
+ await vi.advanceTimersByTimeAsync(1500);
+ read.mockResolvedValue({access:'public',state:'current',revision:'ready'});
+ await vi.advanceTimersByTimeAsync(2000);
+ expect(await pending).toMatchObject({revision:'ready'});
+ const calls=read.mock.calls.length;
+ await vi.advanceTimersByTimeAsync(60000);expect(read).toHaveBeenCalledTimes(calls);
+ expect(vi.getTimerCount()).toBe(0);
 });
 it('aborts a request at the overall budget and retains deadline priority over a late close',async()=>{
  const caller=new AbortController();

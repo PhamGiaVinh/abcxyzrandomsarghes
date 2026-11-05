@@ -18,7 +18,7 @@ export async function revalidatePublicHudRead<T extends Record<string,unknown>>(
  const stopBudget=()=>{clearTimeout(timer);budget.abort(signal.reason);};
  signal.addEventListener('abort',stopBudget,{once:true});
  const owned=budget.signal;
- let notified=false;
+ let notified=false,waitCeilingMs=500;
  try{
   while(true){
    const value=await read(owned);
@@ -34,7 +34,13 @@ export async function revalidatePublicHudRead<T extends Record<string,unknown>>(
     const cleanup=()=>{clearTimeout(waiting);owned.removeEventListener('abort',abort);};
     const abort=()=>{cleanup();reject(new PreparationWaitAborted());};
     if(owned.aborted){abort();return;}
-    waiting=setTimeout(()=>{cleanup();resolve();},250+Math.random()*250);
+    // A withdrawn contribution can require several worker turns. Constant
+    // 250–500ms retries amplify that preparation into thousands of reads for
+    // one popular player, competing with the worker that must clear the barrier.
+    // Equal jitter retains a positive floor and spreads later checks; the
+    // original total budget still bounds both waits and physical requests.
+    waiting=setTimeout(()=>{cleanup();resolve();},waitCeilingMs/2+Math.random()*waitCeilingMs/2);
+    waitCeilingMs=Math.min(waitCeilingMs*2,2000);
     owned.addEventListener('abort',abort,{once:true});
    });
   }
