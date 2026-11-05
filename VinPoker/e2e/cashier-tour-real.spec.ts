@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import {writeFileSync} from 'node:fs';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -33,6 +34,26 @@ async function loginOwner(page: Page) {
   }, { key: process.env.LOCAL_SUPABASE_STORAGE_KEY!, value: session });
   return session.access_token as string;
 }
+
+test('authenticated Cashier worklist HTTP latency on isolated fixture',async({page})=>{
+ test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Latency output is enabled only by the isolated stack');
+ test.setTimeout(120_000);
+ expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
+ const token=await loginOwner(page),samples:number[]=[];
+ for(let i=0;i<120;i++){
+  const started=performance.now();
+  const response=await fetch(process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'')+'/rest/v1/rpc/cashier_tour_worklist_v1',{
+   method:'POST',headers:{apikey:process.env.LOCAL_SUPABASE_ANON_KEY!,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+   body:JSON.stringify({p_club_id:'a2000000-0000-4000-8000-000000000001',p_tournament_id:'a3000000-0000-4000-8000-000000000001',p_query:'',p_bucket:'all',p_page:0,p_limit:50}),signal:AbortSignal.timeout(5000),
+  });
+  const result=await response.json(),elapsed=performance.now()-started;
+  expect(response.ok).toBe(true);expect(result.ok).toBe(true);expect(result.error).toBeUndefined();
+  expect(Array.isArray(result.rows)).toBe(true);expect(result.rows.length).toBeGreaterThan(0);
+  if(i>=20)samples.push(elapsed);
+ }
+ const ordered=[...samples].sort((a,b)=>a-b);
+ writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',warmup:20,graded:samples.length,concurrency:1,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered.at(-1),qualification:false,limitations:'Small fixed TEST tour,owner actor,no Realtime,no concurrent writers; not production capacity or screen render latency'},null,2));
+});
 
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {
   await loginOwner(page);

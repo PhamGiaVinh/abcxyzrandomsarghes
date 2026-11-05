@@ -13,7 +13,7 @@ export function measurePaidTourOperationReads(sql,fixture,reportPath){
  assert.equal(fixtureState.activeSeats,8);assert.equal(fixtureState.checkedInDealers,4);
  const cases=[
   ['Floor inventory',`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.get_floor_tournament_table_inventory_v1('${tour}') r`],
-  ['Cashier worklist',`SELECT to_jsonb(public.cashier_tour_worklist_v1('${club}','${tour}','','all',1,50))`],
+  ['Cashier worklist',`SELECT to_jsonb(public.cashier_tour_worklist_v1('${club}','${tour}','','all',0,50))`],
   ['Dealer assignments',`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.get_table_assignments_with_next('${club}') r`],
   ['Dealer health',`SELECT to_jsonb(public.get_dealer_swing_health(ARRAY['${club}'::uuid]))`],
  ];
@@ -25,6 +25,7 @@ export function measurePaidTourOperationReads(sql,fixture,reportPath){
     FOR i IN 1..120 LOOP
      started:=clock_timestamp();${query} INTO payload;
      IF payload IS NULL OR payload->>'error' IS NOT NULL THEN RAISE EXCEPTION 'operation_read_latency_invalid_result';END IF;
+     ${operation==='Cashier worklist'?"IF payload->>'ok' IS DISTINCT FROM 'true' OR coalesce(jsonb_array_length(payload->'rows'),0)<1 THEN RAISE EXCEPTION 'operation_read_latency_empty_cashier_fixture';END IF;":''}
      IF i>20 THEN samples:=samples||jsonb_build_array(extract(epoch FROM clock_timestamp()-started)*1000);END IF;
     END LOOP;
     PERFORM set_config('vinpoker.operation_read_latency',samples::text,true);

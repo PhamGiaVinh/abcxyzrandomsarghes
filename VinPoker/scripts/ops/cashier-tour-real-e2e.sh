@@ -546,8 +546,12 @@ if [[ "$app_ready" != true ]]; then
   exit 1
 fi
 storage_key="sb-${browser_gateway%%.*}-auth-token"
+mkdir -p "$repo_root/output/operations-latency"
 docker run --rm --network "$browser_network" \
   --volume "$repo_root:/app:ro" --workdir /app \
+  --volume "$repo_root/output/operations-latency:/latency" \
+  --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
+  --env LOCAL_OPERATIONS_SOURCE_SHA="$(git rev-parse HEAD)" \
   --env PLAYWRIGHT_BASE_URL='http://cashier-app:8080' \
   --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
