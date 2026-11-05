@@ -1046,6 +1046,11 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql
+          # Current Edge reads operating-day eligibility and acquisition rechecks
+          # it at commit. Install both canonical fences in this worker clone.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000222_dealer_pool_club_operating_day_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000272_dealer_acquisition_operating_day_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000273_dealer_pool_operating_day_read_v1.sql
           # Cross-module compatibility on the same final candidate, not web acceptance.
           createdb -T "$PGDATABASE" vinpoker_ops_full111_finish99
           PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql

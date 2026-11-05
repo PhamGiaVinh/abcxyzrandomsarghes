@@ -9,8 +9,10 @@ import ts from 'typescript';
 import {resolve,dirname} from 'node:path';import {pathToFileURL} from 'node:url';
 const integratedProjections=process.argv.includes('--integrated-projections');
 const localCloseOverlap=process.argv.includes('--local-close-overlap');
+const localOperatingDay=process.argv.includes('--local-operating-day');
 assert.ok(!localCloseOverlap||process.platform==='win32'&&!integratedProjections&&process.argv.includes('--rotation-auth-overlap'));
-const database=localCloseOverlap?'vinpoker_ops_ready_close_20261105':integratedProjections?'vinpoker_ops_cash115_qualified_c':'vinpoker_ops_ready_capacity_ci';
+assert.ok(!localOperatingDay||process.platform==='win32'&&!integratedProjections&&!localCloseOverlap);
+const database=localOperatingDay?'vinpoker_ops_ready_day_20261105':localCloseOverlap?'vinpoker_ops_ready_close_20261105':integratedProjections?'vinpoker_ops_cash115_qualified_c':'vinpoker_ops_ready_capacity_ci';
 assert.equal(process.env.VINPOKER_NATIVE_READY_CAPACITY,'1');assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,database);
 for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
 function sql(input){const flags=['-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];const options={input,encoding:'utf8',timeout:30000,stdio:['pipe','pipe','pipe']};return (process.platform==='win32'?execFileSync('wsl',['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres',`PGDATABASE=${database}`,'psql',...flags],options):execFileSync('psql',flags,options)).trim();}
@@ -28,13 +30,13 @@ const service=`SET request.jwt.claim.role='service_role';SET request.jwt.claims=
 const quote=v=>v===null?'NULL':typeof v==='boolean'?(v?'true':'false'):typeof v==='number'?(assert.ok(Number.isFinite(v)),String(v)):`'${String(v).replaceAll("'","''")}'`;
 const column=v=>(assert.match(v,/^[a-z_]+$/),v);
 const rpcArgs={get_dealer_pool_eligible_attendance_v1:['p_club_id','p_attendance_ids'],get_dealer_operational_tables_v1:['p_club_id'],atomic_dealer_ready_check:['p_club_id','p_attendance_id'],worker_perform_swing:['p_assignment_id','p_table_id','p_table_session_id','p_expected_version','p_next_attendance_id','p_send_to_break','p_break_duration_minutes','p_duration_minutes','p_rest_deficit_minutes']};
-const rpcCalls=[],rpcResults=[];let failRpc=null,workerInterleave=null;
+const rpcCalls=[],rpcResults=[],rpcFailures=[];let failRpc=null,workerInterleave=null;
 function rpc(name,args){assert.ok(rpcArgs[name],name);assert.deepEqual(Object.keys(args).sort(),[...rpcArgs[name]].sort());rpcCalls.push({name,args});
  const params=Object.entries(args).map(([k,v])=>`${column(k)}=>${Array.isArray(v)?`ARRAY[${v.map(quote).join(',')}]::uuid[]`:quote(v)}`).join(',');
- const query=['get_dealer_operational_tables_v1','get_dealer_pool_eligible_attendance_v1'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
+ const query=name==='get_dealer_pool_eligible_attendance_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM (SELECT * FROM public.${name}(${params})) r;`:name==='get_dealer_operational_tables_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
  const result=JSON.parse(sql(service+query));rpcResults.push({name,result});return result;
 }
-function client(){return {rpc:async(name,args)=>{if(name===failRpc)return {data:null,error:{message:'synthetic transport failure before dispatch'}};try{if(name==='worker_perform_swing'&&workerInterleave)return await workerInterleave(args);return {data:rpc(name,args),error:null};}catch(e){if(workerInterleave)console.log('READY153_INTERLEAVE_DIAGNOSTIC',String(e));const pg=String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):\s*([^\r\n]+)/);return {data:null,error:{code:pg?.[1],message:pg?.[2]??String(e)}};}},
+function client(){return {rpc:async(name,args)=>{if(name===failRpc)return {data:null,error:{message:'synthetic transport failure before dispatch'}};try{if(name==='worker_perform_swing'&&workerInterleave)return await workerInterleave(args);return {data:rpc(name,args),error:null};}catch(e){if(workerInterleave)console.log('READY153_INTERLEAVE_DIAGNOSTIC',String(e));const pg=String(e.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):\s*([^\r\n]+)/);const error={code:pg?.[1],message:pg?.[2]??String(e)};rpcFailures.push({name,...error});return {data:null,error};}},
  from(table){assert.ok(['club_settings','swing_config','swing_configs','tournaments','dealer_assignments','cron_metrics'].includes(table));let columns=[],conditions=[],ordering='',maximum='';
   const q={select(value){columns=value.split(',').map(x=>column(x.trim()));return q;},eq(k,v){conditions.push(`${column(k)}=${quote(v)}`);return q;},
    in(k,values){assert.ok(Array.isArray(values)&&values.length<=100);conditions.push(`${column(k)} IN (${values.map(quote).join(',')})`);return q;},
@@ -963,7 +965,7 @@ for(const size of sizes){const c=seed(size),start=Date.now();let count=0;
  };
  try{
  if(integratedProjections)checkProjection(size,size);
- for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
+ for(const row of c.rows){const result=await dispatch(c.club,row.nextAttendance);assert.equal(result.status,200,JSON.stringify({result,rpcFailures}));assert.equal(result.body.outcome,'swung',JSON.stringify(result));count++;
   assert.equal(sql(`SELECT count(*) FROM public.dealer_assignments WHERE id='${result.body.new_assignment_id}' AND club_id='${c.club}' AND table_id='${result.body.table_id}' AND released_at IS NULL AND attendance_id='${row.nextAttendance}';`),'1');
   const replay=await dispatch(c.club,row.nextAttendance);assert.equal(replay.status,200);assert.equal(replay.body.skipped,'state_changed');
   if(count%10===0)console.log(JSON.stringify({phase:size,completed:count}));
