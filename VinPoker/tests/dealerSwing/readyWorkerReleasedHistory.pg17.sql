@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$ BEGIN
- IF current_database() NOT IN ('vinpoker_ops_initial102_ci','vinpoker_ops_initial102_qualified')
+ IF current_database() NOT IN ('vinpoker_ops_initial102_ci','vinpoker_ops_initial102_qualified','vinpoker_ops_initial102_20261105')
  OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port()<>55441 OR current_user<>'postgres' THEN
   RAISE EXCEPTION 'owned_initial102_ready_selection_fixture_required';
  END IF;

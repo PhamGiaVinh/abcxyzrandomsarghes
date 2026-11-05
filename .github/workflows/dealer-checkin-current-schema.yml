@@ -1015,6 +1015,7 @@ jobs:
         run: |
           set -euo pipefail
           createdb -T vinpoker_ops_swing101_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
