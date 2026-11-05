@@ -2,6 +2,33 @@ import { describe, expect, it, vi } from "vitest";
 import { registerPublicTournamentRead, PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
 
 describe("PublicSnapshotCoordinator", () => {
+  it('keeps the minimum interval without adding jitter to every continuous hint',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
+    try{
+      const base=Date.now(),starts:number[]=[];
+      const coordinator=new PublicSnapshotCoordinator(async()=>{starts.push(Date.now()-base);},1000,1000);
+      coordinator.request();await Promise.resolve();coordinator.request();await vi.advanceTimersByTimeAsync(1500);
+      for(let i=0;i<4;i++){coordinator.request();await vi.advanceTimersByTimeAsync(1000);}
+      expect(starts).toEqual([0,1500,2500,3500,4500,5500]);
+      expect(starts.slice(1).every((t,i)=>t-starts[i]>=1000)).toBe(true);coordinator.stop();
+    }finally{random.mockRestore();vi.useRealTimers();}
+  });
+  it('still spreads repeated shared bursts after idle time across a thousand clients',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random');
+    try{
+      const base=Date.now(),starts:number[]=[];
+      const coordinators=Array.from({length:1000},(_,i)=>{random.mockReturnValue(i/1000);return new PublicSnapshotCoordinator(async()=>{starts.push(Date.now()-base);},1000,1000);});
+      coordinators.forEach(c=>c.request());await vi.advanceTimersByTimeAsync(3000);
+      coordinators.forEach(c=>c.request());await vi.advanceTimersByTimeAsync(4000);
+      coordinators.forEach(c=>c.request());await vi.advanceTimersByTimeAsync(1000);
+      for(const offset of [1000,2000]){
+        const burst=starts.slice(offset,offset+1000),windows=new Map<number,number>();
+        burst.forEach(t=>windows.set(Math.floor(t/100),(windows.get(Math.floor(t/100))??0)+1));
+        expect(burst).toHaveLength(1000);expect(Math.max(...windows.values())).toBeLessThanOrEqual(100);
+      }
+      coordinators.forEach(c=>c.stop());
+    }finally{random.mockRestore();vi.useRealTimers();}
+  });
   it('spreads the production hint policy across 100ms windows within a two-second dispatch budget',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random');
     try{

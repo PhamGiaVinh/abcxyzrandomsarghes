@@ -20,6 +20,7 @@ export class PublicSnapshotCoordinator {
   private queued = false;
   private stopped = false;
   private lastStartedAt: number | null = null;
+  private hasDispatchedHint = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly hintDelayMs:number;
 
@@ -36,7 +37,13 @@ export class PublicSnapshotCoordinator {
     // Keep one fixed hint deadline. A duplicate (even after the deadline but
     // before the timer callback runs) must not create another trailing read.
     if(this.timer)return;
-    const wait = this.lastStartedAt === null ? 0 : Math.max(0, this.minIntervalMs - (Date.now() - this.lastStartedAt))+this.hintDelayMs;
+    const elapsed = this.lastStartedAt === null ? Infinity : Date.now() - this.lastStartedAt;
+    const intervalWait = Math.max(0, this.minIntervalMs - elapsed);
+    // Spread the first hint and bursts after idle time. During a continuous
+    // stream the existing phase already spreads clients; adding jitter again
+    // would lengthen every minimum interval and accumulate delivery delay.
+    const jitter = !this.hasDispatchedHint || elapsed >= this.minIntervalMs ? this.hintDelayMs : 0;
+    const wait = this.lastStartedAt === null ? 0 : intervalWait + jitter;
     if (wait > 0) {
       this.queued = true;
       if (!this.timer) this.timer = setTimeout(() => {
@@ -58,6 +65,7 @@ export class PublicSnapshotCoordinator {
 
   private async run(): Promise<void> {
     this.running = true;
+    if (this.lastStartedAt !== null) this.hasDispatchedHint = true;
     this.lastStartedAt = Date.now();
     try {
       await this.refresh();
