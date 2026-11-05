@@ -114,6 +114,9 @@ serve_pid=''
 node tests/publicHud/scale.edge-runtime.mjs apply "$test_root" "$project_id"
 export PUBLIC_HUD_STATUS_FILE="$test_root/status.env" PUBLIC_HUD_WORKER_ENV_FILE="$test_root/workers.env" PUBLIC_HUD_STACK_PROJECT="$project_id"
 node tests/publicHud/scale.stack-setup.mjs
+if [[ "${PUBLIC_HUD_CLOCK_UI_PROBE:-0}" == 1 ]]; then
+  node tests/publicHud/scale.clock-ui.mjs
+fi
 ulimit -n 16384
 node tests/publicHud/scale.http-ws.mjs
 docker stats --no-stream --format '{{json .}}' >output/hud-scale/container-resources.jsonl
