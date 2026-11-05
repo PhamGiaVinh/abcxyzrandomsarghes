@@ -115,19 +115,25 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   }}});
   await observer.realtime.setAuth(identities[19].token);
   await new Promise<void>((resolve,reject)=>{
+   let channelJoined=false,postgresReady=false;
    const timeout=setTimeout(()=>reject(Error('CHECKIN_REALTIME_JOIN_TIMEOUT')),15000);
+   const ready=()=>{if(channelJoined&&postgresReady){clearTimeout(timeout);resolve();}};
    observer!.channel('isolated-checkin-observer').on('system',{},payload=>{
     // Persist only classifications, never raw server messages or JWTs.
     const message=String(payload.message??'').toLowerCase();
     systemEvents.push({status:String(payload.status??'').slice(0,40),extension:String(payload.extension??'').slice(0,40),category:
      /permission|privilege|denied/.test(message)?'permission':/publication/.test(message)?'publication':/connect|timeout/.test(message)?'connection':/subscribed/.test(message)?'subscribed':'other'});
+    if(payload.extension==='postgres_changes'){
+     if(payload.status==='ok'){postgresReady=true;ready();}
+     else if(payload.status==='error'){clearTimeout(timeout);reject(Error('CHECKIN_REALTIME_POSTGRES_SUBSCRIBE_FAILED'));}
+    }
    }).on('postgres_changes',{event:'INSERT',schema:'public',table:'dealer_attendance'},payload=>{
     const row=payload.new;
     if(!expectedDealers.has(row.dealer_id)||row.status!=='checked_in'||row.current_state!=='available'){realtimeErrors.push('unexpected_scope_or_state');return;}
     if(seen.has(row.dealer_id))duplicateEvents++;else seen.set(row.dealer_id,performance.now());
    }).subscribe(status=>{
     realtimeStatuses.push(status);
-    if(status==='SUBSCRIBED'){clearTimeout(timeout);resolve();}
+    if(status==='SUBSCRIBED'){channelJoined=true;ready();}
     else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){clearTimeout(timeout);reject(Error('CHECKIN_REALTIME_JOIN_FAILED'));}
     if(observing&&status!=='SUBSCRIBED')realtimeErrors.push('observer_disconnected');
    });
