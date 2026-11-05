@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {sql,jsonSql} from './nativeDb.mjs';
+import {build} from 'esbuild';
+import {nativeWorkerClient} from './nativeRpc.mjs';
+// Earlier integration cases intentionally leave valid hand jobs. Quiesce them
+// through the real projector so "current" certifies this result transition.
+const bundle=await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
+const {processPublicHudJobs}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const priorJobs=Number(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'));
+for(let i=0;i<40&&Number(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'))>0;i++){
+ const processed=await processPublicHudJobs(nativeWorkerClient,80,Date.now()+20000);
+ assert.equal(processed.failed,0,JSON.stringify(processed));
+}
+assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),'0','Require the real worker to finish prior fixture jobs');
 const signature='tracker_analytics_v1.broadcast_withdrawal_v1()';
 const migration=readFileSync('supabase/migrations/20261104003400_public_hud_result_withdrawal_scope.sql','utf8');
 const recovery=readFileSync('tests/publicHud/result-withdrawal.forward-rollback.sql','utf8').replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
@@ -61,6 +73,6 @@ const tour=jsonSql(`BEGIN;${clear}UPDATE public.tournaments SET deleted_at=clock
 assert.equal(tour.hud,1);assert.ok(tour.visibility>0);assert.equal(tour.access,'revoked');
 assert.throws(()=>sql(migration,{captureFailure:true}),/preimage differs/);
 assert.equal(sql(`BEGIN;${recovery}SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));ROLLBACK;`),'d21e991e6f1709070c370e43488d6eb2');
-const report={kind:'NATIVE_RESULT_WITHDRAWAL_SCOPE_NOT_WEBSOCKET_CAPACITY',passed:true,checks:[...checks,'unrelated-source-unchanged','immediate-hud-barrier','actual-claim-and-result-publication','hand-withdrawal-unchanged','tour-withdrawal-unchanged','metadata-preserved','exact-recovery']};
+const report={kind:'NATIVE_RESULT_WITHDRAWAL_SCOPE_NOT_WEBSOCKET_CAPACITY',passed:true,priorJobsDrained:priorJobs,checks:[...checks,'unrelated-source-unchanged','immediate-hud-barrier','actual-claim-and-result-publication','hand-withdrawal-unchanged','tour-withdrawal-unchanged','metadata-preserved','exact-recovery']};
 if(process.env.PUBLIC_HUD_RESULT_SCOPE_REPORT)writeFileSync(process.env.PUBLIC_HUD_RESULT_SCOPE_REPORT,JSON.stringify(report,null,2));
 console.log(JSON.stringify(report));
