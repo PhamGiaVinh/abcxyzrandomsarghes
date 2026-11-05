@@ -4,6 +4,7 @@ umask 077
 repo_root="$(pwd)"
 schema_dir="${SCHEMA_ARTIFACT_DIRECTORY:-}"
 schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
+realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
 case "$schema_mode" in
   pre03) ;;
   current)
@@ -12,6 +13,10 @@ case "$schema_mode" in
     ;;
   *) echo "Unsupported Cashier schema mode" >&2; exit 1 ;;
 esac
+if [[ "$realtime_mode" != 0 && "$realtime_mode" != 1 ]] || [[ "$realtime_mode" == 1 && "$schema_mode" != current ]]; then
+  echo "Realtime timing requires explicit contemporary isolated mode" >&2
+  exit 1
+fi
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
   echo "Verified schema-only baseline artifact is required" >&2
@@ -68,6 +73,12 @@ trap cleanup EXIT
 
 cd "$test_root"
 supabase init >/dev/null
+if [[ "$realtime_mode" == 1 ]]; then
+  # Same pinned PG17 image used by the HUD stack. The CLI default image has a
+  # reproduced denied-EXECUTE crash; retain real RLS/permission checks instead.
+  mkdir -p supabase/.temp
+  printf '%s' '17.6.1.155@sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b' >supabase/.temp/postgres-version
+fi
 if grep -q 'orlesggcjamwuknxwcpk' supabase/config.toml; then
   echo "Refusing production project config" >&2
   exit 1
@@ -94,6 +105,7 @@ printf '%s\n' \
 # The temporary project has no application migrations or function source.
 # This first start only downloads/prepares the pinned CLI service images.
 exclude_services="imgproxy,logflare,mailpit,postgres-meta,realtime,storage-api,studio,supavisor,vector"
+if [[ "$realtime_mode" == 1 ]]; then exclude_services="${exclude_services/realtime,/}";fi
 df -h / | tail -n 1
 set +e
 supabase start --exclude "$exclude_services" >"$test_root/prepare.log" 2>&1
@@ -217,6 +229,12 @@ probe_external_denied() {
 }
 probe_external_denied "$db_container" DB
 probe_external_denied "$edge_container" Edge
+if [[ "$realtime_mode" == 1 ]]; then
+  realtime_container="$(docker ps -q --filter "network=$network" --filter 'name=supabase_realtime_')"
+  [[ -n "$realtime_container" ]]
+  probe_external_denied "$realtime_container" Realtime
+  [[ "$(docker inspect --format '{{.Config.Image}}' "$db_container")" == 'ghcr.io/supabase/postgres:17.6.1.155@sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b' ]]
+fi
 
 # Browser/app context is a separate disposable container on the same network,
 # with no Docker socket or host networking.
@@ -395,6 +413,17 @@ CHECKIN_PREFLIGHT
       <"$repo_root/supabase/migrations/$checkin_migration"
   done
   echo "CHECKIN_SCHEMA_PROOF: exact14/51 added only to the disposable contemporary runtime; no historical migration or production claim"
+  if [[ "$realtime_mode" == 1 ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REALTIME_FIXTURE'
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime') THEN RAISE EXCEPTION 'isolated_realtime_publication_missing';END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid WHERE p.pubname='supabase_realtime' AND r.prrelid='public.dealer_attendance'::regclass) THEN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.dealer_attendance;
+ END IF;
+END $$;
+REALTIME_FIXTURE
+    echo "REALTIME_FIXTURE_PROOF:actualdealer_attendance publication;existingRLSretained;noquotaoverride"
+  fi
 fi
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
@@ -653,6 +682,7 @@ docker run --rm --network "$browser_network" \
   --volume "$test_root/dealer-fixture.json:/fixtures/dealer-fixture.json:ro" \
   --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
   --env LOCAL_OPERATIONS_CHECKIN_ENABLED="$checkin_fixture_enabled" \
+  --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \

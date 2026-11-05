@@ -10,11 +10,11 @@ import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
-function rejectedPreflight(mode) {
+function rejectedPreflight(mode,realtime='0') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
-  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -29,6 +29,13 @@ test('current mode rejects missing schema before Docker or application loading',
   const result = rejectedPreflight('current');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Verified schema-only baseline artifact is required/);
+});
+
+test('Realtime requires contemporary mode and rejects invalid input before allocating resources',()=>{
+  for(const [mode,realtime]of [['pre03','1'],['current','invalid']]){
+    const result=rejectedPreflight(mode,realtime);
+    assert.equal(result.status,1);assert.match(result.stderr,/Realtime timing requires explicit contemporary isolated mode/);
+  }
 });
 
 test('private dependencies use digest-matching source bodies and restricted grants', () => {

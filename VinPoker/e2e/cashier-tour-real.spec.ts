@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync,writeFileSync} from 'node:fs';
+import {createClient} from '@supabase/supabase-js';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -94,6 +95,27 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  expect(fixture.dealerIds).toHaveLength(360);expect(new Set(fixture.dealerIds).size).toBe(360);
  for(const id of [fixture.clubId,fixture.shiftId,fixture.otherClubId,fixture.otherShiftId,fixture.otherDealerId,fixture.otherAttendedDealerId,...fixture.dealerIds])expect(id).toMatch(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
  const identities=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const realtimeEnabled=process.env.LOCAL_OPERATIONS_REALTIME==='1';
+ const seen=new Map<string,number>(),expectedDealers=new Set(fixture.dealerIds),realtimeErrors:string[]=[];
+ let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
+ try{
+ if(realtimeEnabled){
+  observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+  await observer.realtime.setAuth(identities[19].token);
+  await new Promise<void>((resolve,reject)=>{
+   const timeout=setTimeout(()=>reject(Error('CHECKIN_REALTIME_JOIN_TIMEOUT')),15000);
+   observer!.channel('isolated-checkin-observer').on('postgres_changes',{event:'INSERT',schema:'public',table:'dealer_attendance'},payload=>{
+    const row=payload.new;
+    if(!expectedDealers.has(row.dealer_id)||row.status!=='checked_in'||row.current_state!=='available'){realtimeErrors.push('unexpected_scope_or_state');return;}
+    if(seen.has(row.dealer_id))duplicateEvents++;else seen.set(row.dealer_id,performance.now());
+   }).subscribe(status=>{
+    if(status==='SUBSCRIBED'){clearTimeout(timeout);resolve();}
+    else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){clearTimeout(timeout);reject(Error('CHECKIN_REALTIME_JOIN_FAILED'));}
+    if(observing&&status!=='SUBSCRIBED')realtimeErrors.push('observer_disconnected');
+   });
+  });
+  observing=true;
+ }
  const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{
   const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
@@ -112,7 +134,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  // Empty output here therefore exercises RLS, not an absent row.
  expect(await read(identities[0].token,fixture.otherAttendedDealerId)).toEqual([]);
  let cursor=0;
- const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[]}[]=[];
+ const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
  const write=async()=>{
   const index=cursor++,identity=identities[index%identities.length],dealerId=fixture.dealerIds[index],requestId=crypto.randomUUID();
   expect(dealerId).toBeTruthy();
@@ -127,7 +149,14 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    const otherActor=await rpc(identities[1].token,'get_dealer_checkin_receipt_v1',args);
    expect(otherActor).toEqual({ok:true,status:'unknown'});
   }
-  return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted};
+  let writeToRealtimeMs:number|null=null;
+  if(realtimeEnabled){
+   const deadline=performance.now()+5000;
+   while(!seen.has(dealerId)&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+   expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
+   writeToRealtimeMs=seen.get(dealerId)!-started;
+  }
+  return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
  };
  for(const concurrency of [1,5,20]){
   const batch=async(count:number)=>{
@@ -136,13 +165,16 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    expect(rows).toHaveLength(count);return rows;
   };
   await batch(20);const rows=await batch(100);
-  samples.push({concurrency,graded:rows.length,firstAckMs:rows.map(r=>r.firstAckMs),independentReadAfterAckMs:rows.map(r=>r.independentReadAfterAckMs),writeToObservedMs:rows.map(r=>r.writeToObservedMs),retryAckMs:rows.map(r=>r.retryAckMs)});
+  samples.push({concurrency,graded:rows.length,firstAckMs:rows.map(r=>r.firstAckMs),independentReadAfterAckMs:rows.map(r=>r.independentReadAfterAckMs),writeToObservedMs:rows.map(r=>r.writeToObservedMs),retryAckMs:rows.map(r=>r.retryAckMs),writeToRealtimeMs:rows.map(r=>r.writeToRealtimeMs).filter((value):value is number=>value!==null)});
  }
  expect(cursor).toBe(360);
+ expect(realtimeErrors).toEqual([]);if(realtimeEnabled)expect(seen.size).toBe(360);
  const summarize=(values:number[])=>{const ordered=[...values].sort((a,b)=>a-b);expect(ordered).toHaveLength(100);expect(ordered.every(v=>Number.isFinite(v)&&v>=0)).toBe(true);return {p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]};};
- writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'REAL_AUTH_HTTP_CHECKIN_COMMIT_AND_INDEPENDENT_DATA_API_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,actors:identities.length,actorScope:'Distinct local Auth users with actual club_dealer_controls membership;round-robin requests',fixtureSchemaAdditions:['exact14','exact51'],warmupPerScenario:20,gradedPerScenario:100,
-  scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs)}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
-  limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read,not Realtime or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
+ writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:realtimeEnabled?'REAL_AUTH_HTTP_CHECKIN_AND_POSTGRES_CHANGES_WEBSOCKET_OBSERVATION':'REAL_AUTH_HTTP_CHECKIN_COMMIT_AND_INDEPENDENT_DATA_API_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,actors:identities.length,actorScope:'Distinct local Auth users with actual club_dealer_controls membership;round-robin requests',fixtureSchemaAdditions:['exact14','exact51'],warmupPerScenario:20,gradedPerScenario:100,
+  realtime:{enabled:realtimeEnabled,observers:realtimeEnabled?1:0,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,clock:'write-start and actual SDK callback use same monotonic client clock;not pure server-commit timing',postgresImage:realtimeEnabled?'17.6.1.155 pinned digest;see harness':'CLI default'},
+  scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs),writeToRealtime:realtimeEnabled?summarize(row.writeToRealtimeMs):null}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
+  limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
+ }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
 
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {

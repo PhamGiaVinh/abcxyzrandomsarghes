@@ -30,6 +30,10 @@ on:
         type: choice
         options: [pre03, current]
         default: pre03
+      ops_realtime:
+        description: Contemporary isolated check-in WebSocket observation (not historical proof)
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -122,6 +126,7 @@ jobs:
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
+          LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier HTTP latency evidence
         if: always()
