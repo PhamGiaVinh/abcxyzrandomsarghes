@@ -18,6 +18,7 @@ const matrix=`SELECT jsonb_agg(jsonb_build_object('input',v,'value',tracker_anal
 const expected=jsonSql(matrix);
 const scope=jsonSql(`SELECT jsonb_build_object('tour',tournament_id,'player',player_id) FROM tracker_analytics_v1.hand_contributions ORDER BY hand_id LIMIT 1;`);
 const histories=new Map(['anon','authenticated'].map(role=>[role,jsonSql(`SET ROLE ${role};SELECT public.get_public_player_hud_history_v1('${scope.tour}','${scope.player}');`)]));
+for(const history of histories.values())assert.ok(history.access==='public'&&history.state==='current'&&history.handHistory.length>0,'Parity requires actual public hand rows');
 sql(migration);
 assert.equal(hash(),'a3615d0068110c9bf33939ecf8f29024');
 assert.equal(jsonSql(checkSql).nullProofValidatorDefinitionMatches,true);

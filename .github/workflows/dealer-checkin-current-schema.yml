@@ -458,6 +458,10 @@ jobs:
           deno check supabase/functions/tournament-historical-settlement-dispatcher/index.ts
           deno test --allow-env supabase/functions/tournament-historical-settlement-worker/runtime.test.ts supabase/functions/tournament-historical-settlement-dispatcher/runtime.test.ts
           deno test --allow-read supabase/functions/_shared/trackerSettlement/historyWorkerAuth.test.ts supabase/functions/_shared/trackerSettlement/historyWorkerHandler.test.ts
+          # Native PassR deliberately runs with no config/lock and no network.
+          # Warm that exact module graph, not the different deno-check graph.
+          deno cache --no-config --no-lock --node-modules-dir=none tests/dealerSwing/passR.native.mjs
+          deno run --cached-only --no-config --no-lock --node-modules-dir=none --deny-net --allow-read=./supabase/functions,./tests/dealerSwing --allow-env=PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS tests/dealerSwing/passR.native.mjs --import-only
           node node_modules/vitest/vitest.mjs run tests/trackerSettlement/historyWorkerPolicy.test.ts
           node node_modules/vitest/vitest.mjs run tests/trackerSettlement/historicalDisplayMigration.contract.test.ts
           node node_modules/vitest/vitest.mjs run tests/handinput/readHandBlindLevel.test.ts tests/trackerSettlement/historicalDisplayVerification.test.ts
