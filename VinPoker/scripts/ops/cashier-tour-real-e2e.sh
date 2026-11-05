@@ -764,7 +764,10 @@ if [[ "$app_ready" != true ]]; then
 fi
 storage_key="sb-${browser_gateway%%.*}-auth-token"
 mkdir -p "$repo_root/output/operations-latency"
-docker run --rm --network "$browser_network" \
+# Share the app's already-isolated network namespace so the real browser uses
+# loopback, a secure context with native crypto APIs. No browser security flags,
+# crypto stubs, published host ports or external network access are needed.
+docker run --rm --network "container:$app_container" \
   --volume "$repo_root:/app:ro" --workdir /app \
   --volume "$repo_root/output/operations-latency:/latency" \
   --volume "$test_root/staff-private.json:/fixtures/staff-private.json:ro" \
@@ -776,7 +779,7 @@ docker run --rm --network "$browser_network" \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
-  --env PLAYWRIGHT_BASE_URL='http://cashier-app:8080' \
+  --env PLAYWRIGHT_BASE_URL='http://localhost:8080' \
   --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
   --env LOCAL_OWNER_EMAIL="$owner_email" \
