@@ -635,14 +635,14 @@ test('real clock control HTTP latency and concurrent revision fencing',async()=>
   expect(value.tournament_id).toBe(tourId);expect(value.control_revision).toMatch(/^[a-f0-9]{32}$/);return value;
  };
  const report=()=>{
-  const grouped=['pause','resume'].map(action=>{
+  const grouped=['pause','resume','next_level','previous_level','adjust_minus_30','adjust_plus_30'].map(action=>{
    const values=samples.filter(row=>row.action===action&&!row.warmup).map(row=>row.ackMs).sort((a,b)=>a-b);
    return {action,count:values.length,p50Ms:values.length?values[Math.ceil(values.length*.5)-1]:null,p95Ms:values.length?values[Math.ceil(values.length*.95)-1]:null,maxMs:values.at(-1)??null};
   });
   writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-clock-controls-http.json'),JSON.stringify({
    kind:'ACTUAL_AUTHENTICATED_CLOCK_RPC_CONTROLS',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:staff.length,
-   warmupPairs:5,gradedPairs:20,samples,grouped,raceSuccesses,raceConflicts,qualification:false,
-   limitations:'Canonical control RPC over real HTTP and actual Auth Cashier memberships; excludes Edge wrapper and screen rendering. Serial pause/resume pairs plus one20-actor same-revision race; not broad tour-load or all clock-action acceptance.',
+   warmupPairs:5,gradedPairs:20,levelAdjustmentWarmupCycles:5,levelAdjustmentGradedCycles:20,samples,grouped,raceSuccesses,raceConflicts,qualification:false,
+   limitations:'Canonical control RPC over real HTTP and actual Auth Cashier memberships; excludes Edge wrapper and screen rendering. Serial pause/resume pairs, paused next/previous level and minus/plus30s cycles, plus one20-actor same-revision race; not broad tour-load, automatic break/advance or screen acceptance.',
   },null,2));
  };
  try{
@@ -661,6 +661,23 @@ test('real clock control HTTP latency and concurrent revision fencing',async()=>
    p_tournament_id:tourId,p_action:'pause',p_delta_seconds:null,p_expected_control_revision:clock.control_revision,
   })));
   raceSuccesses=replies.filter(row=>row.ok===true).length;raceConflicts=replies.filter(row=>row.ok===false&&row.error==='stale_clock_state').length;
-  expect(raceSuccesses).toBe(1);expect(raceConflicts).toBe(19);expect((await read()).is_running).toBe(false);phase='passed';report();
+  expect(raceSuccesses).toBe(1);expect(raceConflicts).toBe(19);expect((await read()).is_running).toBe(false);report();
+  for(let index=0;index<25;index++)for(const operation of [
+   {action:'next_level',label:'next_level',delta:null,level:2,remaining:1200},
+   {action:'previous_level',label:'previous_level',delta:null,level:1,remaining:1200},
+   {action:'adjust_time',label:'adjust_minus_30',delta:-30,level:1,remaining:1170},
+   {action:'adjust_time',label:'adjust_plus_30',delta:30,level:1,remaining:1200},
+  ]){
+   phase=operation.label;const before=await read();expect(before.is_running).toBe(false);
+   const args={p_tournament_id:tourId,p_action:operation.action,p_delta_seconds:operation.delta,p_expected_control_revision:before.control_revision};
+   const started=performance.now(),result=await rpc(staff[index%staff.length].token,'floor_control_tournament_clock',args),ack=performance.now();
+   expect(result.ok).toBe(true);const observed=await read();expect(observed.is_running).toBe(false);
+   expect(observed.current_level?.level_number).toBe(operation.level);expect(observed.remaining_seconds).toBe(operation.remaining);
+   expect(observed.control_revision).not.toBe(before.control_revision);const observedAt=performance.now();
+   const retry=await rpc(staff[(index+1)%staff.length].token,'floor_control_tournament_clock',args);
+   expect(retry.ok).toBe(false);expect(retry.error).toBe('stale_clock_state');
+   samples.push({action:operation.label,ackMs:ack-started,observedMs:observedAt-started,warmup:index<5});report();
+  }
+  phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
