@@ -5,16 +5,23 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
-assert.equal(process.env.PUBLIC_HUD_WRITER_CONTROL,'isolated-native-only');
+import {matchedWriterStatistics} from './scale.write.protocol.mjs';
+const isolatedStack=process.env.PUBLIC_HUD_LOCAL_DATABASE==='postgres'&&process.env.PUBLIC_HUD_ISOLATED_STACK==='vinpoker-hud-scale'&&process.env.PUBLIC_HUD_LOCAL_PORT==='54322'&&/^hud-scale-[a-z0-9-]+$/.test(process.env.PUBLIC_HUD_STACK_PROJECT??'');
+assert.equal(process.env.PUBLIC_HUD_WRITER_CONTROL,isolatedStack?'isolated-stack-only':'isolated-native-only');
 assert.ok(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT,'Explicit diagnostic report path required');
 const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;
-assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);
+if(!isolatedStack)assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);
 assert.equal(sql('SELECT current_database();'),database);
+if(isolatedStack){
+ assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-hud-scale-disposable');
+ assert.equal(sql('SELECT count(*) FROM cron.job WHERE active;'),'0','No active cron during observer comparison');
+ assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),'0','Drain fixture jobs before observer comparison');
+}
 // No pgbench/HTTP workers may be connected while the counterfactual is active.
 const preflight=[];
 const maintenanceWaitMs=180000;
 for(let check=0;check<=maintenanceWaitMs/500;check++){
- const sessions=jsonSql("SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM (SELECT backend_type,state,count(*) AS sessions FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY backend_type,state) s;");
+ const sessions=jsonSql(`SELECT coalesce(jsonb_agg(to_jsonb(s)),'[]') FROM (SELECT backend_type,state,count(*) AS sessions FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() ${isolatedStack?"AND (backend_type='autovacuum worker' OR (backend_type='client backend' AND state IS DISTINCT FROM 'idle'))":''} GROUP BY backend_type,state) s;`);
  preflight.push({observedAt:new Date().toISOString(),sessions});
  if(!sessions.length||sessions.some(s=>s.backend_type!=='autovacuum worker')||check===maintenanceWaitMs/500)break;
  // Only automatic maintenance may finish before this diagnostic begins.
@@ -29,7 +36,8 @@ assert.ok(trigger?.enabled==='O'&&trigger.definition.endsWith('EXECUTE FUNCTION 
 const sourceCount=sql('SELECT count(*) FROM public.tournament_hands;');
 // Optional matched hand-observer profile. The source writer, fixture source
 // revision triggers, all data/indexes and commit timing remain identical.
-const profilePath=process.env.PUBLIC_HUD_WRITER_OBSERVER_BASELINE;
+const storedCanonical=process.env.PUBLIC_HUD_WRITER_OBSERVER_CANONICAL==='pre019';
+const profilePath=process.env.PUBLIC_HUD_WRITER_OBSERVER_BASELINE||(storedCanonical?'stored-canonical-pre019':null);
 const observerNames=['mark_dirty','mark_hand_child_dirty','mark_row_dirty'];
 const observerSignatures=['spectator_projection_v2.mark_dirty(uuid,text,text,text)','spectator_projection_v2.mark_hand_child_dirty()','spectator_projection_v2.mark_row_dirty()'];
 const baselineHashes=['5275ae9972ac43651bd1b831b52332dd','e9df156b6ee5d6a22ba968257ae38852','34ebfad5c2bea4d3306d67d435fe02a6'];
@@ -38,7 +46,7 @@ const observerMetadata=()=>jsonSql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY p.pron
 const observers=()=>jsonSql(`SELECT jsonb_agg(jsonb_build_object('name',p.proname,'definition',replace(pg_get_functiondef(p.oid),chr(13),'')) ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='spectator_projection_v2' AND p.proname IN('mark_dirty','mark_hand_child_dirty','mark_row_dirty');`);
 const candidateObservers=profilePath?observers():null;
 const candidateMetadata=profilePath?observerMetadata():null;
-const baselineObservers=profilePath?JSON.parse(readFileSync(profilePath,'utf8').replace(/^\uFEFF/,'')):null;
+const baselineObservers=storedCanonical?jsonSql(`SELECT jsonb_agg(jsonb_build_object('name',split_part(split_part(signature,'.',2),'(',1),'definition',definition) ORDER BY signature) FROM spectator_projection_v2.compact_generation_originals_v1 WHERE signature IN(${observerSignatures.map(s=>`'${s}'`).join(',')});`):profilePath?JSON.parse(readFileSync(profilePath,'utf8').replace(/^\uFEFF/,'')):null;
 if(profilePath){
  assert.deepEqual(baselineObservers.map(p=>p.name),observerNames);
  assert.deepEqual(candidateObservers.map(p=>p.name),observerNames);
@@ -105,5 +113,6 @@ try{
 }
 const report={kind:profilePath?'DIAGNOSTIC_MATCHED_HAND_OBSERVERS_NOT_QUALIFICATION':'DIAGNOSTIC_MATCHED_SETUP_MARGINAL_HUD_MARKER_NOT_QUALIFICATION',observerProfile:profilePath?{baseline:baselineObservers,candidate:candidateObservers}:null,database,sourceHands:Number(sourceCount),pairs:results,sourceTriggerCatalogRestored:true,qualification:false,limitations:profilePath?'Only this fixture hand writer and its three Spectator observers plus HUD hand trigger. No settlement/result/withdrawal coverage. Same data/index setup; cache/autovacuum/OS scheduling can differ. Original failed gate remains.':'Only marginal HUD hand marker; other incremental changes remain in both arms. Owned unprojected jobs are cleaned; index bloat, legacy marker state, cache/autovacuum/OS scheduling can still differ. No original failed result is replaced.'};
 if(profilePath)report.observerFunctionMetadataRestored=true;
+if(profilePath)report.matchedHandObserverStatistics=matchedWriterStatistics(results);
 writeFileSync(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT,JSON.stringify(report,null,2));
 console.log(JSON.stringify({kind:report.kind,sourceHands:report.sourceHands,pairs:results.map(r=>({pair:r.pair,order:r.order,p95MarginalPercent:r.p95MarginalPercent})),sourceTriggerCatalogRestored:true,qualification:false}));

@@ -61,6 +61,9 @@ export PUBLIC_HUD_STACK_PROJECT="$project_id"
 export PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/seed.json"
 export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
+PUBLIC_HUD_WRITER_CONTROL=isolated-stack-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
+ PUBLIC_HUD_WRITER_CONTROL_REPORT="$repo_root/output/hud-scale/writer-matched-observers.json" \
+ node tests/publicHud/writer-control.native.mjs >output/hud-scale/writer-matched-observers.log 2>&1
 node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-contract.json
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs
