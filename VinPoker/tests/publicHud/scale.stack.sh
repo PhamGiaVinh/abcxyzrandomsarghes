@@ -65,6 +65,7 @@ node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-c
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs
 PUBLIC_HUD_HISTORY_PLAN_REPORT="$repo_root/output/hud-scale/history-plans.json" node tests/publicHud/history-plans.native.mjs
+PUBLIC_HUD_NULL_PROOF_REPORT="$repo_root/output/hud-scale/null-proof.json" node tests/publicHud/null-proof.native.mjs
 node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&1
 PUBLIC_HUD_PLAN_REPORT="$repo_root/output/hud-scale/read-plans.json" node tests/publicHud/read-plans.native.mjs
 PUBLIC_HUD_CLOCK_PLAN_REPORT="$repo_root/output/hud-scale/clock-read-plan.json" node tests/publicHud/clock-read-plan.native.mjs

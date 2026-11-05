@@ -9928,6 +9928,12 @@
       "filename": "20261104003200_public_clock_counts_only.sql",
       "sha256": "e6152212aa102d02aee1675f129c22a058b20c528e45414371bc6bbc1bfeddc2",
       "reason": "Tracker scoped public clock counts-only projection preserving canonical counters, public visibility and ACL; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003300",
+      "filename": "20261104003300_public_hud_null_proof_short_circuit.sql",
+      "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
+      "reason": "Tracker missing-proof numeric validation short circuit preserving unknown stack, JSON validation and ACL; production apply requires owner-approved exact migration package."
     }
   ],
   "floorActiveAllowlist": [
