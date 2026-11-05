@@ -2,7 +2,7 @@
 -- No historical migration edits, no production writes, no ledger receipts.
 BEGIN;
 DO $guard$ BEGIN
- IF current_database()<>'vinpoker_voice_release71_20261014' OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port() NOT IN (55441,55464) OR current_user<>'postgres' OR EXISTS(SELECT 1 FROM public.clubs) THEN RAISE EXCEPTION 'owned_empty_qualification_db_required'; END IF;
+ IF current_database() NOT IN ('vinpoker_voice_release71_20261014','vinpoker_ops_history98_runtime_20261105') OR inet_server_addr()<>'127.0.0.1'::inet OR inet_server_port() NOT IN (55441,55464) OR current_user<>'postgres' OR EXISTS(SELECT 1 FROM public.clubs) THEN RAISE EXCEPTION 'owned_empty_qualification_db_required'; END IF;
  IF md5(replace(pg_get_functiondef('floor_private.snapshot_tracker_hand_blinds()'::regprocedure),chr(13),''))<>'c101c4e790be82bc8af9f3ff9539a92e' THEN RAISE EXCEPTION 'local_dependency_drift'; END IF;
  IF md5(replace(pg_get_functiondef('start_tracker_hand_v3(uuid,uuid,uuid,bigint,integer,timestamp with time zone,uuid,integer)'::regprocedure),chr(13),''))<>'3e8a17200f840d53c1fc52e750bc7de8' THEN RAISE EXCEPTION 'local_dependency_drift'; END IF;
 END $guard$;

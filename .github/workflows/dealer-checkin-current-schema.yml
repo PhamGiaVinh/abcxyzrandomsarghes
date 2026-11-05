@@ -944,6 +944,24 @@ jobs:
           createdb -T vinpoker_ops_finish97_ci "$PGDATABASE"
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyAttention.predecessor.local.sql
+          for dependency in \
+            20270128000029_floor_deferred_break_intent_v1.sql \
+            20270128000030_tracker_roster_intent_fence_v1.sql \
+            20270128000031_tournament_participation_current_scope_v1.sql \
+            20270128000032_tournament_seat_display_preservation_v1.sql \
+            20270128000033_tournament_seat_move_tuple_v1.sql \
+            20270128000034_floor_move_wrapper_receipt_v1.sql \
+            20270128000038_floor_break_lowest_number_policy_v1.sql \
+            20270128000039_floor_break_ticket_audit_v1.sql \
+            20270128000040_floor_break_balanced_plan_v1.sql \
+            20270128000041_floor_deferred_move_ticket_audit_v1.sql \
+            20270128000042_floor_canonical_move_ticket_integrity_v1.sql \
+            20270128000043_floor_move_exact_intent_v1.sql \
+            20270128000044_floor_seat_ticket_read_v1.sql \
+            20270128000045_floor_seat_ticket_select_scope_v1.sql \
+            20270128000048_floor_move_or_queue_exact_intent_v1.sql; do
+            psql -X -v ON_ERROR_STOP=1 -f "supabase/migrations/$dependency"
+          done
           node tests/trackerSettlement/historyAttention.migrationRollback.mjs --apply-after-rollback
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyNeedsAttention.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
