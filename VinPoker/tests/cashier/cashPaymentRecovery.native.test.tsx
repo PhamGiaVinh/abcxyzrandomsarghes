@@ -1,6 +1,7 @@
 import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
 import type {CashPaymentIntent} from '@/lib/cashPaymentIntent';
 const h=vi.hoisted(()=>({actor:'',club:'',tour:'',registration:'',reference:'',beforeRecord:false,dropRecord:false,dropCancel:false,
@@ -80,31 +81,31 @@ describe.skipIf(!enabled)('Cashier rendered UI with actual112 PostgreSQL receipt
  });
  afterEach(()=>{cleanup();expect(h.errors).toEqual([]);});
  it('recovers a lost committed partial payment after remount with one immutable movement',async()=>{
-  h.dropRecord=true;const view=render(<TourCashierWorkbench/>);await pay();
+  h.dropRecord=true;const view=render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay();
   await screen.findByText(/Chưa xác minh được khoản thu trước/);const intent=journal().intent as CashPaymentIntent,committed=money();
   expect(committed.amount).toBe(10000);expect(committed.ids).toHaveLength(1);expect(journal().state).toBe('pending');
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'})).toBeEnabled());view.unmount();render(<TourCashierWorkbench/>);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'})).toBeEnabled());view.unmount();render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button',{name:'Kiểm tra khoản thu trước'}));
   await screen.findByText(/Đã xác minh khoản thu 10.000 VND/);expect(journal().state).toBe('settled');expect(money()).toEqual(committed);
   const attempts=h.calls.filter(c=>c.name==='resolve_cashier_cash_buyin_intent_v1');expect(attempts.map(c=>c.args.p_action)).toEqual(['record','read']);for(const call of attempts)expect(call.args.p_intent).toEqual(intent);
  });
  it('cancels a never-received request and fences both legacy and exact delayed writers',async()=>{
-  h.beforeRecord=true;render(<TourCashierWorkbench/>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);const intent=journal().intent as CashPaymentIntent;
+  h.beforeRecord=true;render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);const intent=journal().intent as CashPaymentIntent;
   await waitFor(()=>expect(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'}));
   await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);expect(money()).toEqual({ids:[],amount:0});expect(journal().state).toBe('settled');
   const legacy=JSON.parse(sql(auth()+`SELECT public.cashier_record_cash_buyin_v1('${h.registration}',10000,'${intent.request_id}');`));expect(legacy.error).toBe('cash_intent_cancelled');
   h.beforeRecord=false;const late=await h.rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:intent,p_action:'record'});expect((late.data as {status:string}).status).toBe('cancelled');expect(money()).toEqual({ids:[],amount:0});
  });
  it('recovers a lost cancellation receipt by reading, not by issuing a new payment',async()=>{
-  h.beforeRecord=true;h.dropCancel=true;const view=render(<TourCashierWorkbench/>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);
+  h.beforeRecord=true;h.dropCancel=true;const view=render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);
   await waitFor(()=>expect(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'}));
   await screen.findByText(/Chưa xác minh được khoản thu trước/);await waitFor(()=>expect(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'})).toBeEnabled());expect(journal().state).toBe('pending');
-  view.unmount();render(<TourCashierWorkbench/>);fireEvent.click(await screen.findByRole('button',{name:'Kiểm tra khoản thu trước'}));await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);
+  view.unmount();render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);fireEvent.click(await screen.findByRole('button',{name:'Kiểm tra khoản thu trước'}));await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);
   expect(money()).toEqual({ids:[],amount:0});expect(journal().state).toBe('settled');
   expect(h.calls.filter(c=>c.name==='resolve_cashier_cash_buyin_intent_v1').map(c=>c.args.p_action)).toEqual(['record','cancel','read']);
  });
  it('keeps a fully paid registration waiting when there is no operational table',async()=>{
-  render(<TourCashierWorkbench/>);await pay(100000);await screen.findByText(/Đã xác minh khoản thu 100.000 VND/);
+  render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay(100000);await screen.findByText(/Đã xác minh khoản thu 100.000 VND/);
   expect(money().amount).toBe(100000);expect(money().ids).toHaveLength(1);expect(journal().state).toBe('settled');
   const call=h.calls.find(c=>c.name==='resolve_cashier_cash_buyin_intent_v1')!;
   expect(call.data).toMatchObject({ok:true,status:'recorded',result:{ok:true,payment_state:'paid',seating_state:'waiting'}});
