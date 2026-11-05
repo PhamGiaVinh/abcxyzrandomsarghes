@@ -103,6 +103,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  let bindingIds:unknown[]=[];
  let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
  let uiObservation:{writeToVisibleMs:number;samples:number;path:string}|null=null;
+ const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
  try{
  if(realtimeEnabled){
   observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{logger:(kind,message,payload)=>{
@@ -158,7 +159,6 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  // Empty output here therefore exercises RLS, not an absent row.
  expect(await read(identities[0].token,fixture.otherAttendedDealerId)).toEqual([]);
  let cursor=0;
- const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
  const write=async()=>{
   const index=cursor++,identity=identities[index%identities.length],dealerId=fixture.dealerIds[index],requestId=crypto.randomUUID();
   expect(dealerId).toBeTruthy();
@@ -196,13 +196,15 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   let writeToRealtimeMs:number|null=null;
   if(realtimeEnabled){
    expect(await read(identities[19].token,dealerId),'WebSocket observer must independently have actual RLS read access').toHaveLength(1);
-   const deadline=performance.now()+5000;
+   const deadline=started+5000;
    while(!seen.has(dealerId)&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
    expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
    writeToRealtimeMs=seen.get(dealerId)!-started;
+   expect(writeToRealtimeMs).toBeLessThanOrEqual(5000);
    if(uiDealerName){
-    await expect(page.getByText('Trong ca',{exact:true}).locator('..').getByText('361',{exact:true})).toBeVisible({timeout:5000});
+    await expect(page.getByText('Trong ca',{exact:true}).locator('..').getByText('361',{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
     uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/ops/dealer-swing'};
+    expect(uiObservation.writeToVisibleMs).toBeLessThanOrEqual(5000);
    }
   }
   return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
@@ -228,7 +230,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs),writeToRealtime:realtimeEnabled?summarize(row.writeToRealtimeMs):null}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
   limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
  }catch(error){
-  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,reason:'Actual check-in/observer assertions failed;see sanitized test assertion output'},null,2));
+  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
   throw error;
  }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
