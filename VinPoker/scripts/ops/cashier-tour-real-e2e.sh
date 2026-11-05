@@ -661,7 +661,35 @@ RESET ROLE;
 DO $$ BEGIN
  IF (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in')<>1 THEN RAISE EXCEPTION 'other_tenant_attendance_fixture_missing';END IF;
 END $$;
+-- Separate synthetic dispatches for canonical handover measurements. These
+-- are explicit initial fixture assignments, not evidence of the assign Edge.
+INSERT INTO public.clubs(id,owner_id,name,region,status)
+SELECT 'ad500000-0000-4000-8000-000000000001',owner_id,'Handover latency TEST','HCM','approved'
+FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001';
+INSERT INTO public.club_dealer_controls(club_id,user_id,granted_by)
+SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id,b.owner_id
+FROM public.club_dealer_controls c CROSS JOIN public.clubs b
+WHERE c.club_id='a2000000-0000-4000-8000-000000000001' AND b.id=c.club_id;
+CREATE TEMP TABLE handover_latency AS SELECT n,md5('http-handover-table-'||n)::uuid table_id,
+ md5('http-handover-session-'||n)::uuid session_id,md5('http-handover-assignment-'||n)::uuid assignment_id,
+ md5('http-handover-out-dealer-'||n)::uuid outgoing_dealer,md5('http-handover-in-dealer-'||n)::uuid incoming_dealer,
+ md5('http-handover-out-attendance-'||n)::uuid outgoing_attendance,md5('http-handover-in-attendance-'||n)::uuid incoming_attendance
+FROM generate_series(1,23) n;
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT table_id,'ad500000-0000-4000-8000-000000000001','Handover TEST '||n,n,'cash','active','available' FROM handover_latency;
+INSERT INTO public.table_sessions(id,club_id,game_table_id,session_type,control_mode,control_epoch,revision)
+SELECT session_id,'ad500000-0000-4000-8000-000000000001',table_id,'cash','manual',1,1 FROM handover_latency;
+INSERT INTO public.dealers(id,club_id,full_name,status)
+SELECT outgoing_dealer,'ad500000-0000-4000-8000-000000000001','Handover outgoing TEST '||n,'active' FROM handover_latency
+UNION ALL SELECT incoming_dealer,'ad500000-0000-4000-8000-000000000001','Handover incoming TEST '||n,'active' FROM handover_latency;
+INSERT INTO public.dealer_attendance(id,dealer_id,status,check_in_time,current_state,pre_assigned_table_id,pre_assigned_at)
+SELECT outgoing_attendance,outgoing_dealer,'checked_in',now()-interval '1 hour','assigned',NULL::uuid,NULL::timestamptz FROM handover_latency
+UNION ALL SELECT incoming_attendance,incoming_dealer,'checked_in',now()-interval '1 hour','pre_assigned',table_id,now()-interval '1 minute' FROM handover_latency;
+INSERT INTO public.dealer_assignments(id,attendance_id,dealer_id,club_id,table_id,table_session_id,status,assigned_at,swing_due_at,version,pre_assigned_attendance_id,pre_assigned_at)
+SELECT assignment_id,outgoing_attendance,outgoing_dealer,'ad500000-0000-4000-8000-000000000001',table_id,session_id,'assigned',now()-interval '30 minutes',now(),0,incoming_attendance,now()-interval '1 minute' FROM handover_latency;
 SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shiftId','ad300000-0000-4000-8000-000000000001',
+ 'handoverClubId','ad500000-0000-4000-8000-000000000001',
+ 'handovers',(SELECT jsonb_agg(to_jsonb(h) ORDER BY n) FROM handover_latency h),
  'floorTable',(SELECT jsonb_build_object('id',g.id,'tableNumber',g.table_number) FROM public.game_tables g
    WHERE g.id='af700000-0000-4000-8000-000000000001' AND g.club_id='a2000000-0000-4000-8000-000000000001'
    AND g.operational_status='available' AND g.table_number=2),

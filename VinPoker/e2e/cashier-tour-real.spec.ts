@@ -769,3 +769,58 @@ test('populated F&B HTTP orders, duplicate payment and owner finance reconciliat
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('canonical dealer handover HTTP latency, independent state and duplicate requests',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated fixture only');
+ test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff();
+ const api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ type Context={n:number;table_id:string;session_id:string;assignment_id:string;outgoing_attendance:string;incoming_attendance:string};
+ const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {handoverClubId:string;handovers:Context[]};
+ expect(fixture.handoverClubId).toBe('ad500000-0000-4000-8000-000000000001');expect(fixture.handovers).toHaveLength(23);expect(staff).toHaveLength(20);
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{
+  const start=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
+  const data=await response.json();return {ok:response.ok,data,ms:performance.now()-start};
+ };
+ const read=async(table:string,path:string)=>{
+  const response=await fetch(api+'/rest/v1/'+table+'?'+path,{headers:headers(owner),signal:AbortSignal.timeout(5000)});
+  const data=await response.json();expect(response.ok).toBe(true);expect(Array.isArray(data)).toBe(true);return data;
+ };
+ const args=(context:Context,request=crypto.randomUUID())=>({p_table_id:context.table_id,p_table_session_id:context.session_id,p_assignment_id:context.assignment_id,p_expected_version:0,p_request_id:request});
+ const rows:{iteration:number;warmup:boolean;actor:number;ackMs:number;retryMs:number;independentStateMs:number}[]=[];
+ let phase='start',race:{first:number;replays:number}|null=null;
+ const summarize=(key:'ackMs'|'retryMs'|'independentStateMs')=>{
+  const samples=rows.filter(row=>!row.warmup).map(row=>row[key]).sort((a,b)=>a-b);
+  return {samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.at(-1)??null};
+ };
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-handover-http.json'),JSON.stringify({
+  kind:'REAL_AUTH_HTTP_CANONICAL_DEALER_HANDOVER_WITH_INDEPENDENT_OWNER_READ',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,
+  warmup:2,graded:20,rows,distributions:{ack:summarize('ackMs'),retry:summarize('retryMs'),independentState:summarize('independentStateMs')},race,qualification:false,
+  limitations:'Explicit synthetic dispatches initialize fixture only;actual handover uses canonical authenticated operator RPC. Independent owner reads verify one replacement and release markers. Excludes initial assignment Edge,arrival acknowledgement,rest expiry,checkout,payroll and cross-screen UI/Realtime latency. Duplicate race uses20concurrent requests from one actor.',
+ },null,2));
+ try{
+  const denied=await rpc(staff[0].token,'operator_perform_swing',{...args(fixture.handovers[0]),p_table_id:'af700000-0000-4000-8000-000000000001',p_table_session_id:crypto.randomUUID()});
+  // Missing exact session must fail before touching the fixture's handover.
+  expect(denied.ok).toBe(false);
+  for(let iteration=0;iteration<22;iteration++){
+   phase='handover-'+iteration;const context=fixture.handovers[iteration],actor=iteration%staff.length,intent=args(context),started=performance.now();
+   const result=await rpc(staff[actor].token,'operator_perform_swing',intent);expect(result.ok).toBe(true);expect(result.data.outcome).toBe('swung');
+   const active=await read('dealer_assignments','select=id,attendance_id,table_session_id,status,released_at&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
+   expect(active).toHaveLength(1);expect(active[0].attendance_id).toBe(context.incoming_attendance);expect(active[0].table_session_id).toBe(context.session_id);expect(active[0].id).not.toBe(context.assignment_id);
+   const outgoing=await read('dealer_attendance','select=current_state,last_released_at&id=eq.'+context.outgoing_attendance);
+   expect(outgoing).toHaveLength(1);expect(outgoing[0].current_state).toBe('available');expect(typeof outgoing[0].last_released_at).toBe('string');
+   const observed=performance.now()-started,retry=await rpc(staff[actor].token,'operator_perform_swing',intent);
+   expect(retry.ok).toBe(true);expect(retry.data.outcome).toBe('swung');expect(retry.data.idempotent).toBe(true);
+   const after=await read('dealer_assignments','select=id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');expect(after).toEqual([{id:active[0].id}]);
+   const stale=await rpc(staff[actor].token,'operator_perform_swing',args(context));expect(stale.ok).toBe(false);
+   rows.push({iteration,warmup:iteration<2,actor,ackMs:result.ms,retryMs:retry.ms,independentStateMs:observed});report();
+  }
+  phase='duplicate-race';const context=fixture.handovers[22],intent=args(context);
+  const outcomes=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'operator_perform_swing',intent)));
+  for(const result of outcomes){expect(result.ok).toBe(true);expect(result.data.outcome).toBe('swung');}
+  race={first:outcomes.filter(result=>result.data.idempotent!==true).length,replays:outcomes.filter(result=>result.data.idempotent===true).length};expect(race).toEqual({first:1,replays:19});
+  const active=await read('dealer_assignments','select=attendance_id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');expect(active).toEqual([{attendance_id:context.incoming_attendance}]);
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
