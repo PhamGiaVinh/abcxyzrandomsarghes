@@ -703,7 +703,7 @@ test('populated F&B HTTP orders, duplicate payment and owner finance reconciliat
   writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-fnb-paid-http.json'),JSON.stringify({
    kind:'ACTUAL_AUTHENTICATED_FNB_ORDER_PAYMENT_STOCK_AND_FINANCE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,
    businessDay:day,ownerActors:1,warmupOrders:5,gradedOrders:20,additionalRaceOrders:1,raceRequests:20,raceAccepted,raceReplays,samples,grouped,
-   fixture:{openingStock:1000,unitSale:20000,unitCost:5000,quantityPerOrder:2},qualification:false,
+   fixture:{openingStock:1000,unitSale:20000,unitCost:5000,quantityPerOrder:2,fnbInClubNet:true},qualification:false,
    limitations:'Small isolated fixture,one real Auth owner with20concurrent same-owner payment requests; not20independent F&B staff,render/Realtime propagation or production capacity. Canonical server amounts and immutable sale movements are checked through independent authenticated reads.',
   },null,2));
  };
@@ -719,6 +719,9 @@ test('populated F&B HTTP orders, duplicate payment and owner finance reconciliat
  const intent=(requestId:string)=>({p_club_id:club,p_source:'counter',p_table_label:'Operations TEST',p_customer_name:'Operations TEST',p_note:'isolated latency fixture',
   p_lines:[{menu_item_id:menu,qty:2}],p_client_request_id:requestId,p_table_ref:null,p_player_ref:null});
  try{
+  const settingsResponse=await fetch(api+'/rest/v1/fnb_settings?select=fnb_in_club_net&club_id=eq.'+club,
+   {headers:{apikey:anon,Authorization:'Bearer '+token},signal:AbortSignal.timeout(5000)});
+  expect(settingsResponse.ok).toBe(true);expect(await settingsResponse.json()).toEqual([{fnb_in_club_net:true}]);
   const baseline=(await fnbReport()).data,beforeFinance=await finance();
   phase='authority';
   const denied=await rpc(staff[0].token,'fnb_create_order',intent(crypto.randomUUID()));expect(denied.data.error).toBe('Forbidden');

@@ -683,6 +683,9 @@ CLOCK_FIXTURE
 -- Explicit opening stock/menu/recipe for isolated paid-order acceptance.
 -- Orders,payments,COGS and sale movements are created only by canonical RPCs.
 BEGIN;
+INSERT INTO public.fnb_settings(club_id,fnb_in_club_net)
+VALUES('a2000000-0000-4000-8000-000000000001',true)
+ON CONFLICT(club_id) DO UPDATE SET fnb_in_club_net=true;
 INSERT INTO public.fnb_ingredients(id,club_id,name,stock_unit,on_hand,avg_unit_cost)
 VALUES('afb10000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Operations TEST water stock','bottle',1000,5000);
 INSERT INTO public.fnb_menu_items(id,club_id,name,price_vnd,tracks_inventory)
