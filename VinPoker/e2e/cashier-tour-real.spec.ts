@@ -175,15 +175,20 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    await loginOwner(page);await page.setViewportSize({width:1440,height:1000});
    const initialAttendance=page.waitForResponse(response=>{
     const url=new URL(response.url()),select=url.searchParams.get('select')??'';
-    return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select==='dealer_id,current_state,check_in_time';
+    return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select.includes('dealers!inner(')&&url.searchParams.has('dealers.club_id');
    },{timeout:30_000});
    await page.goto('/ops/dealer-swing?club='+fixture.clubId);
    const initialResponse=await initialAttendance;expect(initialResponse.ok()).toBe(true);
    const initialRows=await initialResponse.json();expect(Array.isArray(initialRows)).toBe(true);
    expect(initialRows).toHaveLength(360);
    expect(initialRows.some((row:{dealer_id:string})=>row.dealer_id===dealerId)).toBe(false);
-   await expect(page.getByRole('heading',{name:'Dealer Swing',exact:true})).toBeVisible();
-   await expect(page.getByText('Trong ca',{exact:true}).locator('..').getByText('360',{exact:true})).toBeVisible();
+   // The Ops gate deliberately crosses into the full operational document.
+   // Do not measure the unmounted read-only workspace behind that gate.
+   await expect(page).toHaveURL(/\/dealer-swing$/);
+   await page.getByRole('button',{name:'ĐỘI HÌNH / CHECK-IN',exact:true}).click();
+   await expect(page.getByRole('button',{name:'Check-out (360)',exact:true})).toBeVisible();
+   await page.getByPlaceholder('Tìm dealer...',{exact:true}).fill(uiDealerName!);
+   await expect(page.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
   }
   const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
   expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
@@ -204,8 +209,9 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    writeToRealtimeMs=seen.get(dealerId)!-started;
    expect(writeToRealtimeMs).toBeLessThanOrEqual(5000);
    if(uiDealerName){
-    await expect(page.getByText('Trong ca',{exact:true}).locator('..').getByText('361',{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
-    uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/ops/dealer-swing'};
+    await expect(page.getByRole('button',{name:'Check-out (361)',exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+    await expect(page.getByText(uiDealerName,{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+    uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/dealer-swing'};
     expect(uiObservation.writeToVisibleMs).toBeLessThanOrEqual(5000);
    }
   }
@@ -233,8 +239,8 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
  }catch(error){
   let uiDiagnostics:unknown=null;
-  if(realtimeEnabled&&page.url().includes('/ops/dealer-swing')){
-   try{uiDiagnostics={path:new URL(page.url()).pathname,fixtureBody:(await page.locator('body').innerText()).slice(0,2000),failedReads:uiFailedReads};}catch{uiDiagnostics={status:'fixture_page_unavailable',failedReads:uiFailedReads};}
+  if(realtimeEnabled){
+   try{const path=new URL(page.url()).pathname;uiDiagnostics={path,fixtureBody:['/ops/dealer-swing','/dealer-swing'].includes(path)?(await page.locator('body').innerText()).slice(0,2000):null,failedReads:uiFailedReads};}catch{uiDiagnostics={status:'fixture_page_unavailable',failedReads:uiFailedReads};}
   }
   if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
   throw error;
