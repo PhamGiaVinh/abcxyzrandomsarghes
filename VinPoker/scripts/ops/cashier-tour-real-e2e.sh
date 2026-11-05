@@ -2,8 +2,6 @@
 set -euo pipefail
 umask 077
 repo_root="$(pwd)"
-source_sha="$(git -C "$repo_root" rev-parse HEAD)"
-[[ "$source_sha" =~ ^[a-f0-9]{40}$ ]]
 schema_dir="${SCHEMA_ARTIFACT_DIRECTORY:-}"
 schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
 case "$schema_mode" in
@@ -27,6 +25,9 @@ if [[ "$schema_mode" == current ]]; then
     exit 1
   fi
 fi
+
+source_sha="$(git -C "$repo_root" rev-parse HEAD)"
+[[ "$source_sha" =~ ^[a-f0-9]{40}$ ]]
 
 # This job has no production secrets or linked project. No application SQL or
 # handler is loaded until the outbound-network proof succeeds.
@@ -378,6 +379,23 @@ missing_contracts="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1
   "SELECT string_agg(required.name,',') FROM unnest(ARRAY['cashier_record_verified_bank_v1','cashier_retry_paid_seating_v1','sepay_checkpoint_pull_v2','sepay_claim_pull_v2','sepay_get_active_payment_clubs','sepay_get_club_api_token','sepay_ingest_verified_transactions','sepay_take_settlement_batch_v1','settle_bank_transaction']) required(name) WHERE NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=required.name);")"
 if [[ -n "$missing_contracts" ]]; then echo "Missing current Edge RPC contracts: $missing_contracts" >&2; exit 1; fi
 echo "EDGE_DEPENDENCY_PROOF: captured baseline plus exact SePay142/195/196; all9 current RPC contracts present; not untouched-baseline-only runtime proof"
+if [[ "$schema_mode" == current ]]; then
+  # Contemporary operation timing only; do not change historical pre03 proof.
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHECKIN_PREFLIGHT'
+DO $$ BEGIN
+ IF to_regprocedure('public.operator_check_in_dealer_v1(uuid,uuid,uuid,uuid)') IS NOT NULL
+ OR to_regprocedure('public.get_dealer_checkin_receipt_v1(uuid,uuid,uuid,uuid)') IS NOT NULL
+ OR to_regprocedure('floor_private.floor_table_v3_actor_is_dealer_operator(uuid,uuid)') IS NULL
+ OR to_regprocedure('floor_private.floor_table_v3_save_receipt(uuid,text,uuid,text,jsonb)') IS NULL
+ THEN RAISE EXCEPTION 'isolated_checkin_fixture_catalog_drift';END IF;
+END $$;
+CHECKIN_PREFLIGHT
+  for checkin_migration in 20270128000014_dealer_checkin_club_shift_receipt_v1.sql 20270128000051_dealer_checkin_receipt_reconciliation_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$checkin_migration"
+  done
+  echo "CHECKIN_SCHEMA_PROOF: exact14/51 added only to the disposable contemporary runtime; no historical migration or production claim"
+fi
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   <"$repo_root/supabase/pending-tests/cashier_tour_money_v1.sql" \
@@ -465,9 +483,48 @@ for staff_index in {1..20}; do
 INSERT INTO public.profiles(user_id,display_name) VALUES(:'staff_id'::uuid,'Cashier latency TEST '||:'staff_index');
 INSERT INTO public.club_cashiers(club_id,user_id,granted_by) VALUES('a2000000-0000-4000-8000-000000000001',:'staff_id'::uuid,:'owner_id'::uuid);
 STAFF_FIXTURE
+  if [[ "$schema_mode" == current ]]; then
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+      "INSERT INTO public.club_dealer_controls(club_id,user_id,granted_by) VALUES('a2000000-0000-4000-8000-000000000001','$staff_id'::uuid,'$owner_id'::uuid);"
+  fi
   staff_fixture="$(jq -c --arg email "$staff_email" --arg password "$staff_password" '.+[{email:$email,password:$password}]' <<<"$staff_fixture")"
 done
 printf '%s' "$staff_fixture" >"$test_root/staff-private.json"
+checkin_fixture_enabled=''
+if [[ "$schema_mode" == current ]]; then
+  docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" >"$test_root/dealer-fixture.json" <<'DEALER_FIXTURE'
+BEGIN;
+INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
+ ('ad200000-0000-4000-8000-000000000002',:'owner_id'::uuid,'Other tenant check-in TEST','HCM','approved');
+INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES
+ ('ad300000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','HTTP latency TEST','00:00','23:59'),
+ ('ad300000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002','Other tenant TEST','00:00','23:59');
+INSERT INTO public.dealers(club_id,user_id,full_name,status)
+ SELECT 'a2000000-0000-4000-8000-000000000001',NULL,'HTTP latency TEST '||n,'active' FROM generate_series(1,360) n;
+INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
+ ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
+ ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
+SET LOCAL request.jwt.claim.sub=:'owner_id';
+SET LOCAL request.jwt.claims='{"role":"authenticated"}';
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE r jsonb;BEGIN
+ r:=public.operator_check_in_dealer_v1('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002','ad300000-0000-4000-8000-000000000002',gen_random_uuid());
+ IF r->>'outcome' IS DISTINCT FROM 'checked_in' THEN RAISE EXCEPTION 'other_tenant_attendance_fixture_failed';END IF;
+END $$;
+RESET ROLE;
+DO $$ BEGIN
+ IF (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in')<>1 THEN RAISE EXCEPTION 'other_tenant_attendance_fixture_missing';END IF;
+END $$;
+SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shiftId','ad300000-0000-4000-8000-000000000001',
+ 'dealerIds',(SELECT jsonb_agg(id ORDER BY full_name) FROM public.dealers WHERE club_id='a2000000-0000-4000-8000-000000000001'),
+ 'otherClubId','ad200000-0000-4000-8000-000000000002','otherShiftId','ad300000-0000-4000-8000-000000000002','otherDealerId','ad400000-0000-4000-8000-000000000002',
+ 'otherAttendedDealerId','ad400000-0000-4000-8000-000000000003');
+COMMIT;
+DEALER_FIXTURE
+  checkin_fixture_enabled=1
+else
+  printf '{}' >"$test_root/dealer-fixture.json"
+fi
 
 registration_json="$(docker run --rm --network "$network" \
   --volume "$repo_root/supabase/pending-tests/cashier-tour-edge-register.mjs:/tests/register.mjs:ro" \
@@ -590,7 +647,11 @@ docker run --rm --network "$browser_network" \
   --volume "$repo_root:/app:ro" --workdir /app \
   --volume "$repo_root/output/operations-latency:/latency" \
   --volume "$test_root/staff-private.json:/fixtures/staff-private.json:ro" \
+  --volume "$test_root/dealer-fixture.json:/fixtures/dealer-fixture.json:ro" \
   --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
+  --env LOCAL_OPERATIONS_CHECKIN_ENABLED="$checkin_fixture_enabled" \
+  --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
+  --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
   --env PLAYWRIGHT_BASE_URL='http://cashier-app:8080' \
@@ -604,6 +665,15 @@ docker run --rm --network "$browser_network" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
+if [[ "$schema_mode" == current ]]; then
+  checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "SELECT (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='a2000000-0000-4000-8000-000000000001' AND a.status='checked_in' AND a.current_state='available'),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='operator_check_in_dealer_v1'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000002'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in');")"
+  if [[ "$checkin_state" != '360|361|0|1' ]]; then echo "Check-in committed-state or tenant-denial postcondition failed ($checkin_state)" >&2; exit 1; fi
+  echo "CHECKIN_COMMIT_PROOF:360staff attendances/receipts plus1other-tenant seeded attendance/receipt; exact retries did not duplicate; denied-write dealer unchanged"
+fi
 
 refund_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
   "SELECT (SELECT status='paid' FROM public.cashier_refund_requests WHERE registration_id='$refund_registration_id'::uuid),

@@ -35,10 +35,7 @@ async function loginOwner(page: Page) {
   return session.access_token as string;
 }
 
-test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>{
- test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Latency output is enabled only by the isolated stack');
- test.setTimeout(120_000);
- expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
+async function loginFixtureStaff(){
  const staff=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_STAFF_FILE!,'utf8')) as {email:string;password:string}[];
  expect(staff).toHaveLength(20);expect(new Set(staff.map(row=>row.email)).size).toBe(20);
  const identities=await Promise.all(staff.map(async row=>{
@@ -49,6 +46,14 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>
   return {token:session.access_token as string,userId:session.user.id as string};
  }));
  expect(new Set(identities.map(row=>row.userId)).size).toBe(20);
+ return identities;
+}
+
+test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>{
+ test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Latency output is enabled only by the isolated stack');
+ test.setTimeout(120_000);
+ expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
+ const identities=await loginFixtureStaff();
  let identityCursor=0;
  const scenarios:{concurrency:number;samplesMs:number[];p50Ms:number;p95Ms:number;p99Ms:number;maxMs:number}[]=[];
  const read=async()=>{
@@ -76,6 +81,68 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>
   scenarios.push({concurrency,samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]});
  }
  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',actors:identities.length,actorScope:'Distinct local Auth users with actual Cashier membership;round-robin requests',warmupPerScenario:20,gradedPerScenario:100,scenarios,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',qualification:false,limitations:'Small fixed TEST tour,no Realtime,no concurrent writers; not production capacity or screen render latency'},null,2));
+});
+
+test('real check-in HTTP commit, independent observation, exact retry and tenant boundary',async()=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated check-in fixture only');
+ test.setTimeout(120_000);
+ expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
+ const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {
+  clubId:string;shiftId:string;dealerIds:string[];otherClubId:string;otherShiftId:string;otherDealerId:string;otherAttendedDealerId:string;
+ };
+ expect(fixture.clubId).toBe('a2000000-0000-4000-8000-000000000001');
+ expect(fixture.dealerIds).toHaveLength(360);expect(new Set(fixture.dealerIds).size).toBe(360);
+ for(const id of [fixture.clubId,fixture.shiftId,fixture.otherClubId,fixture.otherShiftId,fixture.otherDealerId,fixture.otherAttendedDealerId,...fixture.dealerIds])expect(id).toMatch(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
+ const identities=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{
+  const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
+  const body=await response.json();expect(response.ok).toBe(true);return body;
+ };
+ const read=async(token:string,dealerId:string)=>{
+  const response=await fetch(api+'/rest/v1/dealer_attendance?select=id,dealer_id,status,current_state&dealer_id=eq.'+dealerId,{headers:headers(token),signal:AbortSignal.timeout(5000)});
+  const body=await response.json();expect(response.ok).toBe(true);expect(Array.isArray(body)).toBe(true);return body;
+ };
+ const denied=await rpc(identities[0].token,'operator_check_in_dealer_v1',{
+  p_dealer_id:fixture.otherDealerId,p_club_id:fixture.otherClubId,p_shift_id:fixture.otherShiftId,p_request_id:crypto.randomUUID(),
+ });
+ expect(denied).toEqual({ok:false,error:'actor_not_allowed'});
+ expect(await read(identities[0].token,fixture.otherDealerId)).toEqual([]);
+ // The privileged fixture asserts this second attendance really exists.
+ // Empty output here therefore exercises RLS, not an absent row.
+ expect(await read(identities[0].token,fixture.otherAttendedDealerId)).toEqual([]);
+ let cursor=0;
+ const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[]}[]=[];
+ const write=async()=>{
+  const index=cursor++,identity=identities[index%identities.length],dealerId=fixture.dealerIds[index],requestId=crypto.randomUUID();
+  expect(dealerId).toBeTruthy();
+  const args={p_dealer_id:dealerId,p_club_id:fixture.clubId,p_shift_id:fixture.shiftId,p_request_id:requestId};
+  const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
+  expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
+  const rows=await read(identity.token,dealerId),observed=performance.now();
+  expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({id:receipt.attendance_id,dealer_id:dealerId,status:'checked_in',current_state:'available'});
+  const retryStarted=performance.now(),repeated=await rpc(identity.token,'operator_check_in_dealer_v1',args),retried=performance.now();
+  expect(repeated).toEqual(receipt);
+  if(index===0){
+   const otherActor=await rpc(identities[1].token,'get_dealer_checkin_receipt_v1',args);
+   expect(otherActor).toEqual({ok:true,status:'unknown'});
+  }
+  return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted};
+ };
+ for(const concurrency of [1,5,20]){
+  const batch=async(count:number)=>{
+   let launched=0;const rows:Awaited<ReturnType<typeof write>>[]=[];
+   await Promise.all(Array.from({length:Math.min(concurrency,count)},async()=>{while(launched<count){launched++;rows.push(await write());}}));
+   expect(rows).toHaveLength(count);return rows;
+  };
+  await batch(20);const rows=await batch(100);
+  samples.push({concurrency,graded:rows.length,firstAckMs:rows.map(r=>r.firstAckMs),independentReadAfterAckMs:rows.map(r=>r.independentReadAfterAckMs),writeToObservedMs:rows.map(r=>r.writeToObservedMs),retryAckMs:rows.map(r=>r.retryAckMs)});
+ }
+ expect(cursor).toBe(360);
+ const summarize=(values:number[])=>{const ordered=[...values].sort((a,b)=>a-b);expect(ordered).toHaveLength(100);expect(ordered.every(v=>Number.isFinite(v)&&v>=0)).toBe(true);return {p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]};};
+ writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'REAL_AUTH_HTTP_CHECKIN_COMMIT_AND_INDEPENDENT_DATA_API_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,actors:identities.length,actorScope:'Distinct local Auth users with actual club_dealer_controls membership;round-robin requests',fixtureSchemaAdditions:['exact14','exact51'],warmupPerScenario:20,gradedPerScenario:100,
+  scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs)}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
+  limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read,not Realtime or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
 });
 
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {
