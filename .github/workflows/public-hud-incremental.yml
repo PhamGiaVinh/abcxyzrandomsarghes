@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/public-hud-incremental.yml'
       - 'VinPoker/tests/publicHud/**'
+      - 'VinPoker/scripts/ops/tracker-hud-shadow*'
       - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
       - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
       - 'VinPoker/supabase/functions/public-player-hud/**'
@@ -117,6 +118,19 @@ jobs:
         run: node --test tests/publicHud/scale.http.native.mjs
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize --enqueue-coalescing
+      - name: Read-only full source shadow and corruption detection
+        run: |
+          node --test scripts/ops/tracker-hud-shadow.test.mjs
+          node tests/publicHud/shadow.native.mjs
+          mkdir -p output
+          PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE="$PUBLIC_HUD_LOCAL_DATABASE" TRACKER_HUD_SHADOW_REPORT=output/hud-shadow-ci.json node scripts/ops/tracker-hud-shadow.mjs
+      - name: Sanitized read-only shadow certificate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-shadow-${{ github.sha }}
+          path: VinPoker/output/hud-shadow-ci.json
+          retention-days: 7
       - name: Exact eighteen-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
