@@ -1152,6 +1152,10 @@ jobs:
           node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts tests/trackerPoker/correctionNoChipChange.render.test.tsx src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
           node node_modules/vitest/vitest.mjs run tests/tracker/handEditPanel.validation.render.test.tsx tests/tracker/handEditValidation.test.ts tests/tracker/handEditDiff.test.ts --maxWorkers=1 --minWorkers=1
           VINPOKER_NATIVE_CORRECTION_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidCorrectionRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
+          # The captured application-schema clone excludes the migration ledger.
+          psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000185_tv_layout_configured_brand_read_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000186_tv_layout_fallback_brand_read_v1.sql
           node tests/trackerSettlement/tvStorage.bootstrap.mjs
           VINPOKER_NATIVE_TV_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidTvPublish.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
