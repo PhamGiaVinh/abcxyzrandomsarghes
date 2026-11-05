@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "kind": "vinpoker-tracker-hud-nineteen-migrations",
+  "kind": "vinpoker-tracker-hud-twenty-migrations",
   "projectRef": "orlesggcjamwuknxwcpk",
   "baselineLedgerRows": 763,
   "baselineLedgerFingerprint": "5bb5e2d79aca9b2d17be60931a2248ef",
@@ -156,6 +156,14 @@
       "name": "public_hud_null_proof_short_circuit",
       "path": "supabase/migrations/20261104003300_public_hud_null_proof_short_circuit.sql",
       "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
+      "action": "APPLY"
+    },
+    {
+      "order": 20,
+      "version": "20261104003400",
+      "name": "public_hud_result_withdrawal_scope",
+      "path": "supabase/migrations/20261104003400_public_hud_result_withdrawal_scope.sql",
+      "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
       "action": "APPLY"
     }
   ]

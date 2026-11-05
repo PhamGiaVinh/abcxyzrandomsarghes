@@ -9934,6 +9934,12 @@
       "filename": "20261104003300_public_hud_null_proof_short_circuit.sql",
       "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
       "reason": "Tracker missing-proof numeric validation short circuit preserving unknown stack, JSON validation and ACL; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003400",
+      "filename": "20261104003400_public_hud_result_withdrawal_scope.sql",
+      "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
+      "reason": "Profile result withdrawal retains global HUD access invalidation without reloading unrelated tournament components; hand and tournament withdrawal remain unchanged. Exact package approval required."
     }
   ],
   "floorActiveAllowlist": [
