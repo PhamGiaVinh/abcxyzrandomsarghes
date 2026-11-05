@@ -64,8 +64,22 @@ SELECT jsonb_build_object(
    FROM pg_publication p WHERE EXISTS(SELECT 1 FROM pg_publication_rel r WHERE r.prpubid=p.oid AND r.prrelid='public.dealer_attendance'::regclass)),
  'slots',(SELECT jsonb_agg(jsonb_build_object('plugin',plugin,'active',active,'walStatus',wal_status,'retainedBytes',pg_wal_lsn_diff(pg_current_wal_lsn(),restart_lsn),'unconfirmedBytes',pg_wal_lsn_diff(pg_current_wal_lsn(),confirmed_flush_lsn))) FROM pg_replication_slots),
  'replication',(SELECT jsonb_agg(jsonb_build_object('state',state,'syncState',sync_state)) FROM pg_stat_replication),
- 'attendanceReplicaIdentity',(SELECT relreplident FROM pg_class WHERE oid='public.dealer_attendance'::regclass));
+ 'attendanceReplicaIdentity',(SELECT relreplident FROM pg_class WHERE oid='public.dealer_attendance'::regclass),
+ 'subscriptions',(SELECT jsonb_agg(jsonb_build_object('entity',to_jsonb(s)->>'entity','role',to_jsonb(s)->>'claims_role','filters',to_jsonb(s)->'filters')) FROM realtime.subscription s),
+ 'realtimeFunctionPrivileges',(SELECT jsonb_agg(jsonb_build_object('schema',n.nspname,'function',p.proname,'executable',has_function_privilege('supabase_realtime_admin',p.oid,'EXECUTE')))
+   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE (n.nspname='realtime' AND p.proname IN ('apply_rls','list_changes')) OR (n.nspname='pg_catalog' AND p.proname='pg_logical_slot_get_changes')));
 REALTIME_DIAGNOSTIC
+    if [[ -n "${realtime_container:-}" ]]; then
+      docker logs "$realtime_container" --tail 300 2>&1 | node --input-type=module -e '
+        import {readFileSync} from "node:fs";
+        const raw=readFileSync(0,"utf8");
+        const deniedFunctions=[...new Set([...raw.matchAll(/permission denied for function ([a-zA-Z_][a-zA-Z_0-9.]*)/g)].map(match=>match[1]))];
+        const deniedSchemas=[...new Set([...raw.matchAll(/permission denied for schema ([a-zA-Z_][a-zA-Z_0-9]*)/g)].map(match=>match[1]))];
+        const markers=Object.fromEntries(["Postgrex.Error","ErrorPolling","ReplicationPoller","apply_rls","list_changes","insufficient_privilege","row-level security","too_many_connections"].map(marker=>[marker,raw.split(marker).length-1]));
+        process.stdout.write(JSON.stringify({kind:"SANITIZED_REALTIME_LOG_CLASSIFICATIONS",qualification:false,deniedFunctions,deniedSchemas,markers}));
+      ' >"$repo_root/output/operations-latency/realtime-log-http.json" || true
+    fi
   fi
   if (( ${#ephemeral_containers[@]} > 0 )); then
     docker rm -f "${ephemeral_containers[@]}" >/dev/null 2>&1 || true
