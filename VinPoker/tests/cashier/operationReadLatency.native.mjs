@@ -16,6 +16,8 @@ export function measurePaidTourOperationReads(sql,fixture,reportPath){
   ['Cashier worklist',`SELECT to_jsonb(public.cashier_tour_worklist_v1('${club}','${tour}','','all',0,50))`],
   ['Dealer assignments',`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.get_table_assignments_with_next('${club}') r`],
   ['Dealer health',`SELECT to_jsonb(public.get_dealer_swing_health(ARRAY['${club}'::uuid]))`],
+  ['Floor tracker alerts',`SELECT to_jsonb(public.list_tracker_floor_alerts('${tour}',NULL))`],
+  ['Tournament chip inventory',`SELECT to_jsonb(public.get_current_chip_inventory('${tour}'))`],
  ];
  const results=[];
  for(const [operation,query] of cases){
