@@ -238,7 +238,7 @@ function ScopedFloorTableMapPanelV3({
 
   useEffect(() => {
     if (!actorId || !v3.enabled || tournamentEnded) return;
-    let active = true, healthy = false, reading = false, queued = false, failures = 0, pollEpoch = 0;
+    let active = true, reading = false, queued = false, failures = 0, pollEpoch = 0;
     let debounce: ReturnType<typeof setTimeout> | undefined;
     let fallback: ReturnType<typeof setTimeout> | undefined;
     const visible = () => document.visibilityState !== "hidden";
@@ -262,7 +262,11 @@ function ScopedFloorTableMapPanelV3({
     const poll = () => {
       clearTimeout(fallback);
       const owned = ++pollEpoch;
-      const delay = healthy ? 30_000 + Math.random() * 3_000 : Math.min(30_000, 3_000 * 2 ** failures);
+      // A channel/system acknowledgement does not prove every required source
+      // is published and SELECTable. Reconcile this staff screen through its
+      // authorized RPCs until complete invalidation coverage is available.
+      // Public spectator subscriptions keep their separate healthy cadence.
+      const delay = Math.min(30_000, 2_000 * 2 ** failures);
       fallback = setTimeout(async () => {
         if (!active || owned !== pollEpoch) return;
         if (visible()) await refresh();
@@ -275,16 +279,15 @@ function ScopedFloorTableMapPanelV3({
     }
     channel.on("system", {}, payload => {
       if (!active || payload.extension !== "postgres_changes" || payload.status !== "ok") return;
-      healthy = true; invalidate(); poll();
+      invalidate(); poll();
     });
     channel.subscribe(status => {
       if (!active) return;
-      if (status !== "SUBSCRIBED") healthy = false;
       // Re-read after joining/rejoining to close the initial read/subscribe gap.
       invalidate(); poll();
     });
     const resume = () => { if (visible()) { invalidate(); poll(); } };
-    const offline = () => { healthy = false; invalidate(); poll(); };
+    const offline = () => { invalidate(); poll(); };
     window.addEventListener("online", resume);
     window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", resume);

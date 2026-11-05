@@ -132,14 +132,28 @@ it("does not request hidden-tab changes until the tab becomes visible", async ()
   act(() => { document.dispatchEvent(new Event("visibilitychange")); });
   await screen.findByRole("button", { name: /Bàn 4, 0\/9 ghế/ });
 });
-it("uses a 30-second healthy fallback after its post-join verification", async () => {
-  vi.useFakeTimers();vi.spyOn(Math, "random").mockReturnValue(0);
+it("reconciles missing source changes even when a partial channel reports healthy", async () => {
+  vi.useFakeTimers();
   await act(async () => { render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />); });
   expect(state.roster).toHaveBeenCalledTimes(1);
   await act(async () => { live.channels[0].status?.("SUBSCRIBED"); live.channels[0].ready?.({ extension: "postgres_changes", status: "ok" }); await vi.advanceTimersByTimeAsync(200); });
   expect(state.roster).toHaveBeenCalledTimes(2);
-  await act(async () => { await vi.advanceTimersByTimeAsync(29_000); });expect(state.roster).toHaveBeenCalledTimes(2);
-  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });expect(state.roster).toHaveBeenCalledTimes(3);
+  // No CDC hint arrives for the new table: another published source's system
+  // acknowledgement must not suppress authorized snapshot reconciliation.
+  state.roster.mockResolvedValue({ ok: true, data: [table(7)] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_799); });expect(state.roster).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });expect(state.roster).toHaveBeenCalledTimes(3);
+  expect(screen.getByText("TEST table 7", {exact:false})).toBeInTheDocument();
+});
+it("does not poll a hidden staff screen while source coverage is incomplete", async () => {
+  vi.useFakeTimers();const visibility=vi.spyOn(document,"visibilityState","get");
+  await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0}/>);});
+  visibility.mockReturnValue("hidden");
+  await act(async()=>{live.channels[0].ready?.({extension:"postgres_changes",status:"ok"});await vi.advanceTimersByTimeAsync(10_000);});
+  expect(state.roster).toHaveBeenCalledTimes(1);
+  visibility.mockReturnValue("visible");state.roster.mockResolvedValue({ok:true,data:[table(8)]});
+  await act(async()=>{document.dispatchEvent(new Event("visibilitychange"));await vi.advanceTimersByTimeAsync(200);});
+  expect(screen.getByText("TEST table 8",{exact:false})).toBeInTheDocument();
 });
 it("keeps the last roster visible while retiring its action context", async () => {
   state.roster.mockResolvedValue({ ok: true, data: [table(2)] });

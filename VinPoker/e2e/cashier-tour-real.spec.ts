@@ -342,7 +342,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const payload=await response.json();expect(response.ok,name).toBe(true);return payload;
  };
  const rows:{operation:string;iteration:number;warmup:boolean;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
- let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false;
+ let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false,channelJoined=false;
  const openedHints=new Set<string>(),closedHints=new Set<string>();
  page.on('websocket',socket=>socket.on('framereceived',frame=>{
   try{
@@ -351,6 +351,7 @@ test('canonical Floor open and close propagate into one continuously open screen
    const message=Array.isArray(decoded)?{topic:decoded[2],event:decoded[3],payload:decoded[4]}:decoded;
    if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:floor-map-v3:'))return;
    const payload=message.payload;
+   if(message.event==='phx_reply'&&payload?.status==='ok')channelJoined=true;
    if(message.event==='system'&&payload?.status==='ok'&&payload?.extension==='postgres_changes')postgresReady=true;
    const data=payload?.data,row=data?.record;
    if(message.event!=='postgres_changes'||!row)return;
@@ -362,7 +363,8 @@ test('canonical Floor open and close propagate into one continuously open screen
  }));
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-session-ui-http.json'),JSON.stringify({
   kind:'ACTUAL_FLOOR_SESSION_WRITE_AND_OPEN_SCREEN_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  actors:1,concurrency:1,warmupPerOperation:2,gradedPerOperation:20,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,rows,
+  actors:1,concurrency:1,warmupPerOperation:2,gradedPerOperation:20,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,channelJoined,rows,
+  sourceSignals:'Production-matching publication: open/close session and tournament-table sources are absent;staff RPC fallback must reconcile without their CDC events',
   distributions:Object.fromEntries(['open','close'].map(operation=>{
    const samples=rows.filter(row=>row.operation===operation&&!row.warmup&&row.status==='visible').map(row=>row.writeToVisibleMs!).sort((a,b)=>a-b);
    return [operation,{samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.length?samples.at(-1):null}];
@@ -376,7 +378,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const initialReply=await loaded;rosterRpc=new URL(initialReply.url()).pathname.split('/').at(-1)!;
   expect(Array.isArray(await initialReply.json())).toBe(true);
   await expect(page.getByTestId('floor-table-map-v3')).toBeVisible();
-  await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);
+  await expect.poll(()=>channelJoined,{timeout:15_000}).toBe(true);
   await expect(page.getByTestId('floor-table-map-v3').locator('[data-ops-action="floor.tables.refresh"]')).toBeEnabled();
   await expect(page.getByTestId('floor-table-map-v3').getByRole('alert')).toHaveCount(0);
   const card=page.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${fixture.floorTable.tableNumber}"]`);
@@ -391,8 +393,8 @@ test('canonical Floor open and close propagate into one continuously open screen
   const roster=await rpc(rosterRpc,{p_tournament_id:tourId});
   expect(Array.isArray(roster)).toBe(true);expect(roster.some((row:{table_session_id:string})=>row.table_session_id===opened.table_session_id)).toBe(true);
   independentRosterConfirmed=true;report();
-  await expect.poll(()=>openedHints.has(opened.table_session_id),{timeout:Math.max(1,5000-(performance.now()-started))}).toBe(true);
   await expect(card).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+  expect(openedHints.has(opened.table_session_id),'Missing source publication must not be silently synthesized by the fixture').toBe(false);
   openRow.writeToVisibleMs=performance.now()-started;openRow.status='visible';report();
   phase='close';const closing=performance.now();
   const closeIntent={p_tournament_table_id:opened.tournament_table_id,p_expected_revision:opened.revision,p_request_id:crypto.randomUUID()};
@@ -400,8 +402,8 @@ test('canonical Floor open and close propagate into one continuously open screen
   const closeRow={operation:'close',iteration,warmup:iteration<2,ackMs:performance.now()-closing,status:'committed',writeToVisibleMs:undefined as number|undefined};
   rows.push(closeRow);report();
   expect(await rpc('close_tournament_table_v3',closeIntent)).toEqual(closed);
-  await expect.poll(()=>closedHints.has(opened.table_session_id),{timeout:Math.max(1,5000-(performance.now()-closing))}).toBe(true);
   await expect(card).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-closing))});
+  expect(closedHints.has(opened.table_session_id)).toBe(false);
   closeRow.writeToVisibleMs=performance.now()-closing;closeRow.status='visible';report();
   }
   expect(rows.filter(row=>!row.warmup&&row.status==='visible')).toHaveLength(40);
@@ -938,17 +940,20 @@ test('real dealer checkout Edge HTTP, open-screen latency and committed work con
  const attendance=(id:string)=>read('dealer_attendance','select=id,status,current_state,check_in_time,check_out_time,total_worked_minutes_today,overtime_minutes&id=eq.'+id);
  const active=(context:Context)=>read('dealer_assignments','select=id,attendance_id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
  const rows:{iteration:number;warmup:boolean;actor:number;ackMs:number;retryMs:number;writeToVisibleMs?:number;writeToRealtimeMs?:number}[]=[];
+ const boundaryChecks:{kind:string;status:number;classification:string}[]=[];
  let phase='start',race:{first:number;replays:number}|null=null;
  const distribution=(key:'ackMs'|'retryMs'|'writeToVisibleMs'|'writeToRealtimeMs')=>{const values=rows.filter(row=>!row.warmup).map(row=>row[key]).filter((v):v is number=>typeof v==='number').sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-checkout-edge-http.json'),JSON.stringify({kind:'REAL_AUTH_DEALER_CHECKOUT_EDGE_HTTP_AND_OPEN_SWING_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,warmup:2,graded:20,rows,postgresReady,race,
-  distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),...(realtimeEnabled?{writeToVisible:distribution('writeToVisibleMs'),writeToRealtime:distribution('writeToRealtimeMs')}:{})},qualification:false,
+  distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),...(realtimeEnabled?{writeToVisible:distribution('writeToVisibleMs'),writeToRealtime:distribution('writeToRealtimeMs')}:{})},boundaryChecks,qualification:false,
   limitations:'Checkout of the already-released outgoing dealer after canonical handover;actual current handler,Auth,service-only289RPC and independent control-actor reads. Verifies retained worked minutes and unchanged incoming assignment. Excludes checkout replacement/active-table races,inactive-payroll closing and production Telegram;bot token absent and external networking denied. Duplicate race uses one actor with20identical requests.',
  },null,2));
  try{
   const first=fixture.handovers[0],before=await attendance(first.outgoing_attendance);expect(before).toHaveLength(1);expect(before[0].status).toBe('checked_in');
-  expect((await call(undefined,{attendance_id:first.outgoing_attendance})).status).toBe(401);
-  expect((await call(staff[0].token,{attendance_ids:[first.outgoing_attendance,fixture.otherAttendanceId]})).status).toBe(403);
-  expect((await call(staff[0].token,{attendance_id:fixture.otherAttendanceId})).status).toBe(403);
+  for(const check of [{kind:'missing-auth',token:undefined,body:{attendance_id:first.outgoing_attendance},status:401},
+   {kind:'mixed-tenant',token:staff[0].token,body:{attendance_ids:[first.outgoing_attendance,fixture.otherAttendanceId]},status:403},
+   {kind:'foreign-tenant',token:staff[0].token,body:{attendance_id:fixture.otherAttendanceId},status:403}]){
+   const result=await call(check.token,check.body);boundaryChecks.push({kind:check.kind,status:result.status,classification:result.data?.code==='BOOT_ERROR'?'BOOT_ERROR':result.status>=500?'SERVER_ERROR':result.data?.error==='Invalid token'?'AUTH_REJECTED':'EXPECTED_OR_OTHER'});report();expect(result.status).toBe(check.status);
+  }
   expect(await attendance(first.outgoing_attendance)).toEqual(before);
   const direct=await fetch(api+'/rest/v1/rpc/operator_checkout_dealer_attendance_v1',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({p_actor_id:staff[0].userId,p_attendance_id:first.outgoing_attendance}),signal:AbortSignal.timeout(5000)});expect(direct.status).toBe(403);await direct.arrayBuffer();
   if(realtimeEnabled){phase='screen-load';await page.setViewportSize({width:1440,height:1000});await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');await page.getByRole('button',{name:'ĐỘI HÌNH / CHECK-IN',exact:true}).click();await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);}

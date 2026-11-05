@@ -52,6 +52,17 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ "$exit_code" != 0 && -n "${edge_container:-}" ]]; then
+    mkdir -p "$repo_root/output/operations-latency"
+    # Emit fixed classifications only; never persist raw handler logs/claims.
+    docker logs "$edge_container" --tail 200 2>&1 | node --input-type=module -e '
+      import {readFileSync} from "node:fs";
+      const raw=readFileSync(0,"utf8");
+      const markers=Object.fromEntries(["BOOT_ERROR","Module not found","failed to create the graph","failed to load module","error sending request for url","AuthSessionMissingError","Invalid JWT","Network is unreachable"].map(marker=>[marker,raw.split(marker).length-1]));
+      const referencedPublicImports=["https://esm.sh/@supabase/supabase-js@2.45.0","https://esm.sh/@supabase/supabase-js@2"].filter(specifier=>raw.includes(specifier));
+      process.stdout.write(JSON.stringify({kind:"SANITIZED_ISOLATED_EDGE_BOOT_CLASSIFICATIONS",qualification:false,markers,referencedPublicImports}));
+    ' >"$repo_root/output/operations-latency/edge-boot-http.json" || true
+  fi
   if [[ "$exit_code" != 0 && "$realtime_mode" == 1 && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
     # Fixed catalog fields only: no environment, credentials, claims or rows.
@@ -537,14 +548,21 @@ CHECKIN_PREFLIGHT
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REALTIME_FIXTURE'
 DO $$ DECLARE source_table text;BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime') THEN RAISE EXCEPTION 'isolated_realtime_publication_missing';END IF;
- FOREACH source_table IN ARRAY ARRAY['dealer_attendance','table_sessions','tournament_tables','tournament_seats','tournament_chip_counts','tournament_entries'] LOOP
+ -- Match the read-only production catalog. Missing Floor sources must be
+ -- reconciled through authorized RPCs; publishing everything hides the gap.
+ FOREACH source_table IN ARRAY ARRAY['dealer_attendance','dealer_assignments','tournament_seats','tournament_chip_counts'] LOOP
   IF NOT EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid WHERE p.pubname='supabase_realtime' AND r.prrelid=to_regclass('public.'||source_table)) THEN
    EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I',source_table);
   END IF;
  END LOOP;
+ FOREACH source_table IN ARRAY ARRAY['table_sessions','tournament_tables','tournament_entries'] LOOP
+  IF EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid WHERE p.pubname='supabase_realtime' AND r.prrelid=to_regclass('public.'||source_table)) THEN
+   RAISE EXCEPTION 'isolated_production_publication_drift: %',source_table;
+  END IF;
+ END LOOP;
 END $$;
 REALTIME_FIXTURE
-    echo "REALTIME_FIXTURE_PROOF:actualattendance/session/table/seat/chip/entry publications;existingRLSretained;noquotaoverride"
+    echo "REALTIME_FIXTURE_PROOF:production-matching attendance/assignment/seat/chip publications;session/table/entry absent;existingRLSretained;noquotaoverride"
   fi
 fi
 set +e
