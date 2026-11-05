@@ -21,7 +21,7 @@ SELECT jsonb_build_object(
  'anonCanReadHistory',has_function_privilege('anon','public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)','EXECUTE'),
  'anonCanReadSummaryBatch',has_function_privilege('anon','public.get_public_player_hud_summary_batch_v1(uuid,uuid,text[])','EXECUTE'),
  'summaryBatchDefinitionMatches',md5(replace(pg_get_functiondef('public.get_public_player_hud_summary_batch_v1(uuid,uuid,text[])'::regprocedure),chr(13),''))='e090d874e79988a0c6795beb6aff390b',
- 'orderedHistoryDefinitionMatches',md5(replace(pg_get_functiondef('public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)'::regprocedure),chr(13),''))='1a9b508726f30b94a830977ef6190f70',
+ 'orderedHistoryDefinitionMatches',md5(replace(pg_get_functiondef('public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)'::regprocedure),chr(13),''))='4f8894bc8dd9114663ace03f9b3225e3',
  'anonCanClaimJobs',has_function_privilege('anon','public.claim_public_hud_jobs_v1(integer)','EXECUTE'),
  'authenticatedCanClaimJobs',has_function_privilege('authenticated','public.claim_public_hud_jobs_v1(integer)','EXECUTE'),
  'serviceCanClaimJobs',has_function_privilege('service_role','public.claim_public_hud_jobs_v1(integer)','EXECUTE'),

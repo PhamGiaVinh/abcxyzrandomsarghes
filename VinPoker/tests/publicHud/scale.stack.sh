@@ -83,6 +83,7 @@ PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempot
 PUBLIC_HUD_HISTORY_PLAN_REPORT="$repo_root/output/hud-scale/history-plans.json" node tests/publicHud/history-plans.native.mjs
 PUBLIC_HUD_HISTORY_AMOUNTS_APPLY=isolated-native-only PUBLIC_HUD_HISTORY_AMOUNTS_REPORT="$repo_root/output/hud-scale/history-amounts.json" node tests/publicHud/history-amounts.native.mjs
 PUBLIC_HUD_NULL_PROOF_REPORT="$repo_root/output/hud-scale/null-proof.json" node tests/publicHud/null-proof.native.mjs
+PUBLIC_HUD_HISTORY_SEED_APPLY=isolated-native-only PUBLIC_HUD_HISTORY_SEED_REPORT="$repo_root/output/hud-scale/history-seed.json" node tests/publicHud/history-seed.native.mjs
 PUBLIC_HUD_RESULT_SCOPE_REPORT="$repo_root/output/hud-scale/result-withdrawal.json" node tests/publicHud/result-withdrawal.native.mjs
 PUBLIC_HUD_HAND_WITHDRAWAL_REPORT="$repo_root/output/hud-scale/hand-withdrawal.json" node tests/publicHud/hand-withdrawal.native.mjs
 node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&1

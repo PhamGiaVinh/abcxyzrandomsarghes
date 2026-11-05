@@ -10,6 +10,7 @@ on:
       - 'VinPoker/supabase/functions/public-player-hud/**'
       - 'VinPoker/supabase/migrations/2026110400*.sql'
       - 'VinPoker/supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql'
+      - 'VinPoker/supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql'
       - 'VinPoker/scripts/ops/tracker-hud-visibility-restore-reverse.sql'
       - 'VinPoker/src/lib/preparedPublicPlayerHud*'
       - 'VinPoker/src/lib/publicHudTransport*'
@@ -142,7 +143,7 @@ jobs:
           name: public-hud-shadow-${{ github.sha }}
           path: VinPoker/output/hud-shadow-ci.json
           retention-days: 7
-      - name: Exact twenty-three-migration release guards and atomic receipts
+      - name: Exact twenty-four-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |
@@ -159,6 +160,7 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/source-writes.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-plans.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-amounts.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-seed.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-membership.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-keyset.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-lookup.native.mjs
