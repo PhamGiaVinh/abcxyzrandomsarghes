@@ -76,6 +76,12 @@ if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
   node tests/publicHud/writer-evidence.native.mjs >output/hud-scale/writer-evidence-validation.log 2>&1
 fi
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+claim_database="vinpoker_hud_test_claim_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"
+createdb -h 127.0.0.1 -p 54322 -U postgres "$claim_database"
+PUBLIC_HUD_LOCAL_DATABASE="$claim_database" PUBLIC_HUD_ISOLATED_STACK= \
+ PUBLIC_HUD_CLAIM_SOURCE_REPORT="$repo_root/output/hud-scale/claim-source.json" \
+ node tests/publicHud/claim-source.native.mjs --initialize
+dropdb -h 127.0.0.1 -p 54322 -U postgres "$claim_database"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
 PUBLIC_HUD_GENERATION_INDEX_REPORT="$repo_root/output/hud-scale/compact-generation-index.json" node tests/publicHud/compact-generation-index.native.mjs
 node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-contract.json

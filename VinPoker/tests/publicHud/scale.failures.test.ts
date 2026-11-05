@@ -27,3 +27,10 @@ it('reports unavailable writer instrumentation without exporting database text',
  expect(writerCaptureFailureKind({stderr:'writer_plan_capture'},0)).toBe('logs_not_returned');
  expect(writerCaptureFailureKind({},3)).toBeNull();
 });
+
+it('classifies table errors without returning arbitrary messages',async()=>{
+ const {classifyTableReadFailure}=await import('./scale.failures.mjs');
+ expect(classifyTableReadFailure({message:'PUBLIC_TABLE_DEADLINE'})).toBe('rpc_deadline');
+ expect(classifyTableReadFailure({code:'ERR_ASSERTION',message:'PRIVATE'})).toBe('scope_assertion');
+ expect(classifyTableReadFailure({message:'PRIVATE'})).toBe('unknown');
+});

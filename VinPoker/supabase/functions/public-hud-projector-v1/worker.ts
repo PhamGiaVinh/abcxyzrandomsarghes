@@ -1,11 +1,12 @@
 import {classifyPublicHudHand, PUBLIC_HUD_PROJECTION_VERSION} from '../_shared/publicHudContribution.ts';
 import type {TrackerAnalyticsHand} from '../_shared/trackerPlayerAnalytics.ts';
 
-export interface HudJob {kind:'hand'|'result'|'visibility';entity_id:string;generation:number;lease_token:string}
+export interface HudJob {kind:'hand'|'result'|'visibility';entity_id:string;generation:number;lease_token:string;
+  source:unknown;source_error:boolean}
 export interface HudWorkerClient {rpc(name:string,args:Record<string,unknown>):PromiseLike<{data:unknown;error:unknown}>}
 
 export async function processPublicHudJobs(client:HudWorkerClient,limit=20,deadline=Date.now()+5_000){
-  const claimed=await client.rpc('claim_public_hud_jobs_v1',{p_limit:limit});
+  const claimed=await client.rpc('claim_public_hud_jobs_with_source_v1',{p_limit:limit});
   if(claimed.error||!Array.isArray(claimed.data))throw Error('PUBLIC_HUD_CLAIM_FAILED');
   const jobs=claimed.data as HudJob[];
   let cursor=0,processed=0,failed=0;
@@ -16,9 +17,10 @@ export async function processPublicHudJobs(client:HudWorkerClient,limit=20,deadl
       try{
         let published;
         if(job.kind==='hand'){
-          const source=await client.rpc('get_public_hud_job_source_v1',args);
-          if(source.error||!source.data)throw Error('PUBLIC_HUD_SOURCE_FAILED');
-          const value=source.data as {hand:TrackerAnalyticsHand|null;fingerprint:string};
+          // Source belongs only to this claim/token. Publication still checks
+          // the current source fingerprint, generation and unexpired lease.
+          if(job.source_error!==false||!job.source)throw Error('PUBLIC_HUD_SOURCE_FAILED');
+          const value=job.source as {hand:TrackerAnalyticsHand|null;fingerprint:string};
           if(!/^[a-f0-9]{32}$/.test(value.fingerprint))throw Error('PUBLIC_HUD_SOURCE_INVALID');
           const rows=value.hand?classifyPublicHudHand(value.hand):[];
           published=await client.rpc('publish_public_hud_hand_v1',{

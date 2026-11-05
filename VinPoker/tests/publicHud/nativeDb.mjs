@@ -64,6 +64,7 @@ export function initialize(options={}){
     'supabase/migrations/20261104001600_public_hud_worker_rpc.sql',
     'supabase/migrations/20261104001700_public_hud_metadata_backfill.sql',
     'supabase/migrations/20261104001800_public_hud_read_contract.sql',
-    'supabase/migrations/20261104002000_public_hud_dispatch_health.sql']) sql(readFileSync(file,'utf8'));
+    'supabase/migrations/20261104002000_public_hud_dispatch_health.sql',
+    'supabase/migrations/20261105213000_public_hud_claim_source_batch.sql']) sql(readFileSync(file,'utf8'));
 }
 export const service="SET request.jwt.claim.role='service_role'; SET ROLE service_role;";

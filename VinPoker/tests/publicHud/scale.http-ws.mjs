@@ -11,7 +11,7 @@ import {createLocalHttpTransport} from './scale.http.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure} from './scale.restoration.mjs';
-import {classifyEdgeFailure,classifyHudReadFailure} from './scale.failures.mjs';
+import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 import {parsePublicClockSummary} from '../../.local-data/hud-scale-runtime/publicTableHistory.mjs';
@@ -30,7 +30,7 @@ const amendmentKinds=['correct','void','restore','verify','revoke','reverify','r
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
 let stopping=false;
-let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},requestAccounting={},observationOrder=0;
+let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},tableFailureKinds={},requestAccounting={},observationOrder=0;
 let dispatchBuckets=new Map();
 const dispatchReport=()=>({windowMs:100,source:'physical HTTP launches including errors and cancellations; nonempty generator-clock windows',paths:Object.fromEntries([...dispatchBuckets].map(([path,buckets])=>{const counts=[...buckets.values()];return [path,{nonEmptyWindows:counts.length,maxRequestsPerWindow:maximumSample(counts),p95RequestsPerWindow:percentile(counts,.95)}];}))});
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
@@ -124,7 +124,7 @@ const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup'
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
 const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,
- partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
+ partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(writerMethod==='canonical-hand-observers-paired-v1'){
@@ -138,7 +138,7 @@ if(viewers===1000&&targetDuration===1800){
 }
 for(const scenario of ['concentrated','distributed','overview']){
  const overview=scenario==='overview',duration=overview?30:targetDuration;
- phases={};transportTimings={};rpcOutcomes={};runtimeFailures={};hudFailureKinds={};requestAccounting={};dispatchBuckets=new Map();const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
+ phases={};transportTimings={};rpcOutcomes={};runtimeFailures={};hudFailureKinds={};tableFailureKinds={};requestAccounting={};dispatchBuckets=new Map();const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
  const offset={summary:stats.summary.length,summaryHttp:stats.summaryHttp.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,snapshotToReadStart:stats.snapshotToReadStart.length,snapshotRead:stats.snapshotRead.length,snapshotToPublication:stats.snapshotToPublication.length,snapshotPublicationToRead:stats.snapshotPublicationToRead.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
@@ -260,7 +260,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),startedAt,healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
-   }catch(cause){if(!(controller.signal.aborted&&cause?.publicTableCallerCancelled===true)){state.failures++;error(reconnecting||!state.online?'offline_table_read':'healthy_table_read');}}
+   }catch(cause){if(!(controller.signal.aborted&&cause?.publicTableCallerCancelled===true)){const phase=reconnecting||!state.online?'offline':'healthy';const kind=phase+':'+classifyTableReadFailure(cause);tableFailureKinds[kind]=(tableFailureKinds[kind]??0)+1;state.failures++;error(phase+'_table_read');}}
    finally{controller.abort();state.busy=false;}
   };
   const tableCoordinator=registerPublicTournamentRead(client,tour,()=>{
@@ -526,7 +526,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const cpu=process.cpuUsage(cpuStart);Object.assign(report.generator,{cpuMs:(cpu.user+cpu.system)/1000,elapsedMs:performance.now()-generatorStart,transport:httpTransport.metrics()});
  report.logicalHudPhases=Object.fromEntries(Object.entries(phases).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]));save('running');
  report.transportErrors={...stats.transportErrors};save('running');
- report.runtimeFailures={...runtimeFailures};report.rpcOutcomes={...rpcOutcomes};report.hudFailureKinds={...hudFailureKinds};report.transportTimings=Object.fromEntries(Object.entries(transportTimings).map(([key,value])=>[key,Object.fromEntries(Object.entries(value).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));save('running');
+ report.runtimeFailures={...runtimeFailures};report.rpcOutcomes={...rpcOutcomes};report.hudFailureKinds={...hudFailureKinds};report.tableFailureKinds={...tableFailureKinds};report.transportTimings=Object.fromEntries(Object.entries(transportTimings).map(([key,value])=>[key,Object.fromEntries(Object.entries(value).map(([name,values])=>[name,{samples:values.length,p95Ms:percentile(values,.95)}]))]));save('running');
  console.log(JSON.stringify(report));
  assert.ok(report.httpSummarySamples>=viewers);assert.ok(report.readySummarySamples>=viewers,'Enough ready summary API responses are required');assert.ok(report.logicalHudSamples>=viewers);if(!overview)assert.ok(report.healthyRealtimeSamples>0);assert.ok(report.projectionSamples>0);
  assert.ok(report.reconnects>=viewers,'Every WebSocket client must reconnect');

@@ -17,6 +17,13 @@ export function classifyHudReadFailure(error){
  if(error?.message==='PUBLIC_HUD_INVALID_PREPARATION')return 'invalid_preparation';
  return 'unknown';
 }
+export function classifyTableReadFailure(error){
+ if(error?.message==='PUBLIC_TABLE_DEADLINE')return 'rpc_deadline';
+ if(error?.publicTableCallerCancelled===true)return 'caller_cancelled';
+ if(error?.code==='ERR_ASSERTION')return 'scope_assertion';
+ if(error?.message==='PUBLIC_TABLE_UNAVAILABLE')return 'unavailable';
+ return 'unknown';
+}
 
 // Retain scan/timing metadata, never Query Text, filter values or function SQL.
 export function sanitizeWriterNestedPlans(stderr){

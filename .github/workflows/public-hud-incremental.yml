@@ -12,6 +12,7 @@ on:
       - 'VinPoker/supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql'
       - 'VinPoker/supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql'
       - 'VinPoker/supabase/migrations/20261105203358_spectator_compact_generation_lookup.sql'
+      - 'VinPoker/supabase/migrations/20261105213000_public_hud_claim_source_batch.sql'
       - 'VinPoker/scripts/ops/tracker-hud-visibility-restore-reverse.sql'
       - 'VinPoker/src/lib/preparedPublicPlayerHud*'
       - 'VinPoker/src/lib/publicHudTransport*'
@@ -144,8 +145,12 @@ jobs:
           name: public-hud-shadow-${{ github.sha }}
           path: VinPoker/output/hud-shadow-ci.json
           retention-days: 7
-      - name: Exact twenty-five-migration release guards and atomic receipts
+      - name: Exact twenty-six-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
+      - name: Batched claim/source visibility and publication fences
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_claim_source_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_claim_source_ci node tests/publicHud/claim-source.native.mjs --initialize
       - name: Compact generations, concurrent writers and durable revocation
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_generation_ci

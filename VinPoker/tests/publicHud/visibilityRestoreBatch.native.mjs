@@ -11,7 +11,7 @@ if(process.argv.includes('--initialize')){
 }
 const compiled=await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
 const {processPublicHudJobs}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
-const signatures={claim_public_hud_jobs_v1:['p_limit'],get_public_hud_job_source_v1:['p_kind','p_entity','p_generation','p_lease'],publish_public_hud_hand_v1:['p_entity','p_generation','p_lease','p_fingerprint','p_rows'],process_public_hud_metadata_v1:['p_kind','p_entity','p_generation','p_lease'],fail_public_hud_job_v1:['p_kind','p_entity','p_generation','p_lease','p_error']};
+const signatures={claim_public_hud_jobs_v1:['p_limit'],claim_public_hud_jobs_with_source_v1:['p_limit'],get_public_hud_job_source_v1:['p_kind','p_entity','p_generation','p_lease'],publish_public_hud_hand_v1:['p_entity','p_generation','p_lease','p_fingerprint','p_rows'],process_public_hud_metadata_v1:['p_kind','p_entity','p_generation','p_lease'],fail_public_hud_job_v1:['p_kind','p_entity','p_generation','p_lease','p_error']};
 const quote=value=>value===null?'NULL':"'"+String(typeof value==='object'?JSON.stringify(value):value).replaceAll("'","''")+"'";
 const rpcRejections=[];
 const client={async rpc(name,args){

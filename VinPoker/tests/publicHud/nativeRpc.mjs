@@ -1,6 +1,6 @@
 import {sqlAsync,service} from './nativeDb.mjs';
 const signatures={
- claim_public_hud_jobs_v1:['p_limit'],get_public_hud_job_source_v1:['p_kind','p_entity','p_generation','p_lease'],
+ claim_public_hud_jobs_v1:['p_limit'],claim_public_hud_jobs_with_source_v1:['p_limit'],get_public_hud_job_source_v1:['p_kind','p_entity','p_generation','p_lease'],
  publish_public_hud_hand_v1:['p_entity','p_generation','p_lease','p_fingerprint','p_rows'],
  process_public_hud_metadata_v1:['p_kind','p_entity','p_generation','p_lease'],
  fail_public_hud_job_v1:['p_kind','p_entity','p_generation','p_lease','p_error'],

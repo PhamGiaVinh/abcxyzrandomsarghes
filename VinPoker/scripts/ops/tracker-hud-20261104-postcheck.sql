@@ -1,6 +1,8 @@
 -- Read-only object/ACL inspection. Receipt hashes are separately verified by
 -- the atomic runner; ledger success does not replace these object checks.
 SELECT jsonb_build_object(
+ 'claimSourceBatchDefinitionMatches',md5(replace(pg_get_functiondef('public.claim_public_hud_jobs_with_source_v1(integer)'::regprocedure),chr(13),''))='7d94b5d916cd03a5941f5df724abff07',
+ 'claimSourceBatchServiceOnly',EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.claim_public_hud_jobs_with_source_v1(integer)'::regprocedure AND proowner='postgres'::regrole AND prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=""']::text[] AND proacl::text='{postgres=X/postgres,service_role=X/postgres}'),
  'privateSchemaPresent',to_regnamespace('tracker_analytics_v1') IS NOT NULL,
  'compactGenerationLookupIndexMatches',md5(pg_get_indexdef(to_regclass('spectator_projection_v2.idx_compact_generation_lookup_v1')))='ab83ab3c2b71e3586fa6bc40e5b08514' AND EXISTS(SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('spectator_projection_v2.idx_compact_generation_lookup_v1') AND indisvalid AND indisready),
  'visibilityRestoreTriggerMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.visibility_changed()'::regprocedure),chr(13),''))='1b3320cd0f08d14fde3f081c5b132246',

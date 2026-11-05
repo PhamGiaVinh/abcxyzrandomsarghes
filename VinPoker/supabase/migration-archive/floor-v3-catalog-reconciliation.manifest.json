@@ -9966,10 +9966,16 @@
       "reason": "Private partial index for compact component generations while retaining historical markers. Preserves writer, fencing, source, RLS and ACL. Exact package approval required."
     },
     {
+      "version": "20261105213000",
+      "filename": "20261105213000_public_hud_claim_source_batch.sql",
+      "sha256": "453fbcb692d45f2c7a35d45a3e13fd79fe0aa15cf64dbcba29fe083afcff139d",
+      "reason": "Service-only canonical claim plus source batching. Preserves limits, lease and publication fences. Exact package approval required before production apply."
+    },
+    {
       "version": "20261106010000",
       "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
       "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
-      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved25-migration package is required before production apply."
+      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved26-migration package is required before production apply."
     }
   ],
   "floorActiveAllowlist": [
