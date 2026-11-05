@@ -9,6 +9,7 @@ on:
       - "VinPoker/tests/trackerTakeoverAuthority/**"
       - "VinPoker/tests/handinput/voidResponseRecovery.hook.test.tsx"
       - "VinPoker/tests/handinput/standaloneEdge.parity.test.ts"
+      - "VinPoker/tests/handinput/undoReview.callback.test.mjs"
       - "VinPoker/tsconfig.tracker-takeover-authority-closure.json"
       - "VinPoker/src/pages/TrackerDashboard*"
   workflow_dispatch:
@@ -87,6 +88,7 @@ jobs:
         working-directory: VinPoker
         run: |
           set -euo pipefail
+          node --test tests/handinput/undoReview.callback.test.mjs
           node ./node_modules/vitest/vitest.mjs run \
             tests/trackerTakeoverAuthority/migration.contract.test.ts \
             tests/handinput/voidResponseRecovery.hook.test.tsx \
