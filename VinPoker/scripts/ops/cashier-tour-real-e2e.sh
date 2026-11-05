@@ -670,12 +670,16 @@ END $$;
 -- Separate synthetic dispatches for canonical handover measurements. These
 -- are explicit initial fixture assignments, not evidence of the assign Edge.
 INSERT INTO public.clubs(id,owner_id,name,region,status)
-SELECT 'ad500000-0000-4000-8000-000000000001',owner_id,'Handover latency TEST','HCM','approved'
-FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001';
+SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id,'Handover latency TEST','HCM','approved'
+FROM public.club_dealer_controls c WHERE c.club_id='a2000000-0000-4000-8000-000000000001'
+AND NOT EXISTS(SELECT 1 FROM public.clubs owned WHERE owned.owner_id=c.user_id)
+ORDER BY c.user_id LIMIT 1;
 INSERT INTO public.club_dealer_controls(club_id,user_id,granted_by)
-SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id,b.owner_id
+SELECT 'ad500000-0000-4000-8000-000000000001'::uuid,c.user_id,b.owner_id
 FROM public.club_dealer_controls c CROSS JOIN public.clubs b
-WHERE c.club_id='a2000000-0000-4000-8000-000000000001' AND b.id=c.club_id;
+WHERE c.club_id='a2000000-0000-4000-8000-000000000001' AND b.id=c.club_id
+UNION SELECT 'ad500000-0000-4000-8000-000000000001',owner_id,owner_id FROM public.clubs
+WHERE id='a2000000-0000-4000-8000-000000000001';
 CREATE TEMP TABLE handover_latency AS SELECT n,md5('http-handover-table-'||n)::uuid table_id,
  md5('http-handover-session-'||n)::uuid session_id,md5('http-handover-assignment-'||n)::uuid assignment_id,
  md5('http-handover-out-dealer-'||n)::uuid outgoing_dealer,md5('http-handover-in-dealer-'||n)::uuid incoming_dealer,
@@ -686,7 +690,7 @@ SELECT table_id,'ad500000-0000-4000-8000-000000000001','Handover TEST '||n,n,'ca
 INSERT INTO public.table_sessions(id,club_id,game_table_id,session_type,control_mode,control_epoch,revision)
 SELECT session_id,'ad500000-0000-4000-8000-000000000001',table_id,'cash','manual',1,1 FROM handover_latency;
 INSERT INTO public.dealers(id,club_id,full_name,status)
-SELECT outgoing_dealer,'ad500000-0000-4000-8000-000000000001','Handover outgoing TEST '||n,'active' FROM handover_latency
+SELECT outgoing_dealer,'ad500000-0000-4000-8000-000000000001'::uuid,'Handover outgoing TEST '||n,'active' FROM handover_latency
 UNION ALL SELECT incoming_dealer,'ad500000-0000-4000-8000-000000000001','Handover incoming TEST '||n,'active' FROM handover_latency;
 INSERT INTO public.dealer_attendance(id,dealer_id,status,check_in_time,current_state,pre_assigned_table_id,pre_assigned_at)
 SELECT outgoing_attendance,outgoing_dealer,'checked_in',now()-interval '1 hour','assigned',NULL::uuid,NULL::timestamptz FROM handover_latency
