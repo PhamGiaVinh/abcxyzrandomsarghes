@@ -832,9 +832,9 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
    await expect(page.locator('#table-card-'+fixture.handovers[0].table_id)).toBeVisible({timeout:30_000});
    await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);
   }
-  const denied=await rpc(staff[0].token,'operator_perform_swing',{...args(fixture.handovers[0]),p_table_id:'af700000-0000-4000-8000-000000000001',p_table_session_id:crypto.randomUUID()});
-  // Missing exact session must fail before touching the fixture's handover.
-  expect(denied.ok).toBe(false);expect(denied.data.message).toBe('SWING_ASSIGNMENT_CONTEXT_MISMATCH');
+  const denied=await rpc(staff[0].token,'operator_perform_swing',{...args(fixture.handovers[0]),p_table_session_id:fixture.handovers[1].session_id});
+  // Both sessions exist: exercise the canonical context fence, not a receipt FK.
+  expect(denied.ok).toBe(false);expect(denied.data.message).toBe('TABLE_SESSION_STALE');
   for(let iteration=0;iteration<22;iteration++){
    phase='handover-'+iteration;const context=fixture.handovers[iteration],actor=iteration%staff.length,intent=args(context);
    const card=page.locator('#table-card-'+context.table_id);
