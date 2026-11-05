@@ -4,7 +4,7 @@ import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/reac
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
 import type {CashPaymentIntent} from '@/lib/cashPaymentIntent';
-const h=vi.hoisted(()=>({actor:'',club:'',tour:'',registration:'',reference:'',beforeRecord:false,dropRecord:false,dropCancel:false,
+const h=vi.hoisted(()=>({adapterRequest:undefined as unknown as <T>(run:()=>Promise<T>,signal?:AbortSignal)=>Promise<T>&{abortSignal(next:AbortSignal):Promise<T>},actor:'',club:'',tour:'',registration:'',reference:'',beforeRecord:false,dropRecord:false,dropCancel:false,
   errors:[] as string[],calls:[] as Array<{name:string;args:Record<string,unknown>;data:unknown}>,
   rpc:undefined as unknown as (name:string,args:Record<string,unknown>)=>Promise<{data:unknown;error:unknown}>,
   read:undefined as unknown as (table:string,columns:string,filters:string[],single:boolean,limit:number)=>Promise<{data:unknown;error:unknown}>}));
@@ -20,12 +20,23 @@ const rpcTypes:Record<string,Record<string,string>>={
  cashier_tour_issues_v1:{p_club_id:'uuid',p_tournament_id:'uuid'},cashier_shift_summary_v1:{p_shift_id:'uuid'},
 };
 vi.mock('@/integrations/supabase/SupabaseClientContext',()=>{
- const client={rpc:(name:string,args:Record<string,unknown>)=>h.rpc(name,args),from:(table:string)=>{
-  let columns='',filters:string[]=[];const query={select:(s:string)=>{columns=s;return query;},
+ // Model the abortable SDK read shape while keeping the real SQL seam. An
+ // aborted scope cannot launch a deferred read or deliver a stale response.
+ const request=<T,>(run:()=>Promise<T>,initialSignal?:AbortSignal)=>{
+  let signal=initialSignal;
+  const check=()=>{if(signal?.aborted)throw new DOMException('Read aborted','AbortError');};
+  const result=Promise.resolve().then(()=>{check();return run();}).then(value=>{check();return value;});
+  return Object.assign(result,{abortSignal(next:AbortSignal){signal=next;return result;}});
+ };
+ h.adapterRequest=request;
+ const client={rpc:(name:string,args:Record<string,unknown>)=>request(()=>h.rpc(name,args)),from:(table:string)=>{
+  let columns='',filters:string[]=[],signal:AbortSignal|undefined;const query={select:(s:string)=>{columns=s;return query;},
    eq:(k:string,v:unknown)=>{if(!/^[a-z_]+$/.test(k))throw Error('bad column');filters.push(`${k}=${quote(v)}`);return query;},
    is:(k:string,v:unknown)=>{if(!/^[a-z_]+$/.test(k)||v!==null)throw Error('bad is');filters.push(`${k} IS NULL`);return query;},
    not:(k:string,op:string,v:unknown)=>{if(!/^[a-z_]+$/.test(k)||op!=='is'||v!==null)throw Error('bad not');filters.push(`${k} IS NOT NULL`);return query;},
-   order:()=>query,limit:(n:number)=>h.read(table,columns,filters,false,n),maybeSingle:()=>h.read(table,columns,filters,true,2)};return query;
+   order:()=>query,abortSignal:(next:AbortSignal)=>{signal=next;return query;},
+   limit:(n:number)=>request(()=>h.read(table,columns,filters,false,n),signal),
+   maybeSingle:()=>request(()=>h.read(table,columns,filters,true,2),signal)};return query;
  }};return {useSupabaseClient:()=>client};
 });
 const session={access_token:'TEST-only-native-cash-session'};
@@ -35,6 +46,22 @@ vi.mock('@/ops/workspace/OpsWorkspaceProvider',()=>({useOpsWorkspace:()=>({selec
 vi.mock('@/lib/featureFlags',async original=>({...await original<typeof import('@/lib/featureFlags')>(),OPS_TOUR_CASHIER_ENABLED:true}));
 vi.mock('@/components/tournament/seat/SeatReceiptDialog',()=>({SeatReceiptDialog:()=>null}));
 import TourCashierWorkbench from '@/pages/ops/TourCashierWorkbench';
+describe('native cashier abortable transport seam',()=>{
+ it('does not launch a read for an already aborted scope',async()=>{
+  const controller=new AbortController();controller.abort();const run=vi.fn().mockResolvedValue({data:'stale'});
+  await expect(h.adapterRequest(run,controller.signal)).rejects.toMatchObject({name:'AbortError'});expect(run).not.toHaveBeenCalled();
+ });
+ it('rejects a response arriving after the read scope was aborted',async()=>{
+  const controller=new AbortController();let release!:(value:unknown)=>void;
+  const result=h.adapterRequest(()=>new Promise(resolve=>{release=resolve;}),controller.signal);
+  await Promise.resolve();controller.abort();release({data:'stale'});
+  await expect(result).rejects.toMatchObject({name:'AbortError'});
+ });
+ it('executes one uncancelled request for multiple observers',async()=>{
+  const run=vi.fn().mockResolvedValue({data:'one result'}),result=h.adapterRequest(run);
+  await expect(Promise.all([result,result])).resolves.toEqual([{data:'one result'},{data:'one result'}]);expect(run).toHaveBeenCalledOnce();
+ });
+});
 const journal=()=>JSON.parse(localStorage.getItem(`vp:cash-payment:v1:${h.actor}:${h.club}`)!);
 const money=()=>JSON.parse(sql(`SELECT jsonb_build_object('ids',coalesce(jsonb_agg(id ORDER BY id),'[]'),'amount',coalesce(sum(amount),0)) FROM public.cashier_buyin_movements WHERE registration_id='${h.registration}';`));
 async function pay(amount=10000){fireEvent.click(await screen.findByRole('button',{name:new RegExp(h.reference)}));fireEvent.change(screen.getByRole('textbox',{name:'Nhận tiền mặt (VND)'}),{target:{value:String(amount)}});await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Ghi nhận tiền mặt'}));});}
