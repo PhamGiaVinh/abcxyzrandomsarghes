@@ -488,6 +488,13 @@ if [[ "$(jq -r '.ok' <<<"$first_reconcile")" != true ||
       "$(jq -r '.ok' <<<"$second_reconcile")" != true ||
       "$(jq -r '.settled' <<<"$second_reconcile")" != 0 ]]; then
   echo "SePay reconcile did not settle exactly once" >&2
+  # Keep only counts/enums from the synthetic provider; never print credentials,
+  # reference codes, raw response errors or transaction/customer payloads.
+  for reconcile_result in "$first_reconcile" "$second_reconcile"; do
+    jq -c '{ok,clubs,settled,auto_confirm,results:[(.results // [])[]|{status,pulled,settled,partial,waiting_seat,failed,pull_status,observation_status}]}' <<<"$reconcile_result" >&2
+  done
+  docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "SELECT jsonb_build_object('registration_status',(SELECT status FROM public.tournament_registrations WHERE id='$registration_id'::uuid),'movements',(SELECT count(*) FROM public.cashier_buyin_movements WHERE registration_id='$registration_id'::uuid),'receipts',(SELECT count(*) FROM public.seat_draw_receipts WHERE registration_id='$registration_id'::uuid),'bank_rows',(SELECT count(*) FROM public.bank_transactions WHERE provider_txn_id='cashier-edge-bank-1'));" >&2
   exit 1
 fi
 
