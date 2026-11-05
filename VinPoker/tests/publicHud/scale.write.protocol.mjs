@@ -1,5 +1,26 @@
 import assert from 'node:assert/strict';
 export const matchedWriterProtocol=Object.freeze({version:'canonical-hand-observers-paired-v1',pairs:3,orders:['AB','BA','AB'],warmupPerArm:20,gradedPerArm:200,p95:'nearest-rank pooled raw samples; no averaging p95',limitPercent:10,scope:'fixture completed-hand writer only; not settlement/result/withdrawal or Floor auth E2E'});
+// Consumers supply their own current-run identity; a report cannot certify itself.
+// This validates diagnostic evidence only. Qualification remains a separate gate.
+export function validateMatchedWriterEvidence(report,expectedIdentity){
+ assert.ok(expectedIdentity&&Object.keys(expectedIdentity).length,'Expected run identity required');
+ assert.deepEqual(report.identity,expectedIdentity,'Writer evidence belongs to another source/run/fixture');
+ assert.match(expectedIdentity.sha,/^[a-f0-9]{40}$/);
+ assert.match(expectedIdentity.runId,/^[1-9][0-9]*$/);
+ assert.match(expectedIdentity.runAttempt,/^[1-9][0-9]*$/);
+ assert.match(expectedIdentity.manifestSha256,/^[a-f0-9]{64}$/);
+ assert.match(expectedIdentity.fixtureInputsSha256,/^[a-f0-9]{64}$/);
+ assert.match(expectedIdentity.sourceFunctionsSha256,/^[a-f0-9]{64}$/);
+ assert.match(expectedIdentity.database,/^vinpoker_hud_test_pair_[0-9]+_[0-9]+$/);
+ assert.equal(expectedIdentity.database,`vinpoker_hud_test_pair_${expectedIdentity.runId}_${expectedIdentity.runAttempt}`);
+ assert.ok(Number.isSafeInteger(expectedIdentity.sourceHands)&&expectedIdentity.sourceHands>0);
+ assert.equal(report.sourceHands,expectedIdentity.sourceHands);
+ assert.equal(report.database,expectedIdentity.database);
+ assert.equal(report.sourceTriggerCatalogRestored,true);
+ assert.equal(report.observerFunctionMetadataRestored,true);
+ assert.equal(report.sourceFunctionsRestored,true);
+ return matchedWriterStatistics(report.pairs);
+}
 export function matchedWriterStatistics(pairs){
  assert.equal(pairs.length,3,'Three predefined pairs required');
  const pooled={withoutHudMarker:[],incremental:[]};let configuration;
