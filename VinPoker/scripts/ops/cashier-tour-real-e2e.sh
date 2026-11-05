@@ -682,6 +682,11 @@ INSERT INTO public.dealers(club_id,user_id,full_name,status)
 -- Table1 belongs to the legacy Cashier fixture; no existing asset is repaired.
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES
  ('af700000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Floor session latency TEST',2,'tournament','inactive','available');
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,current_level)
+VALUES('af300000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Floor read cadence TEST','registering','registering',now(),1000000,0,0,1);
+CREATE TEMP TABLE floor_read_assets AS SELECT n,md5('http-floor-cadence-asset-'||n)::uuid game_table_id FROM generate_series(1,20) n;
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT game_table_id,'a2000000-0000-4000-8000-000000000001','Floor cadence TEST '||n,n+2,'tournament','inactive','available' FROM floor_read_assets;
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
  ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
  ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
@@ -732,6 +737,7 @@ UNION ALL SELECT incoming_attendance,incoming_dealer,'checked_in',now()-interval
 INSERT INTO public.dealer_assignments(id,attendance_id,dealer_id,club_id,table_id,table_session_id,status,assigned_at,swing_due_at,version,pre_assigned_attendance_id,pre_assigned_at)
 SELECT assignment_id,outgoing_attendance,outgoing_dealer,'ad500000-0000-4000-8000-000000000001',table_id,session_id,'assigned',now()-interval '30 minutes',now(),0,incoming_attendance,now()-interval '1 minute' FROM handover_latency;
 SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shiftId','ad300000-0000-4000-8000-000000000001',
+ 'floorReadLoad',jsonb_build_object('tournamentId','af300000-0000-4000-8000-000000000001','gameTableIds',(SELECT jsonb_agg(game_table_id ORDER BY n) FROM floor_read_assets)),
  'handoverClubId','ad500000-0000-4000-8000-000000000001',
  'handovers',(SELECT jsonb_agg(to_jsonb(h) ORDER BY n) FROM handover_latency h),
  'floorTable',(SELECT jsonb_build_object('id',g.id,'tableNumber',g.table_number) FROM public.game_tables g

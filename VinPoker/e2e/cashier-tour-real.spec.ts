@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync,writeFileSync} from 'node:fs';
+import {availableParallelism,cpus,totalmem} from 'node:os';
 import {createClient} from '@supabase/supabase-js';
 import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '../src/lib/financeSummaryRead';
 
@@ -975,4 +976,46 @@ test('real dealer checkout Edge HTTP, open-screen latency and committed work con
   race={first:outcomes.filter(row=>row.data.results[0].idempotent!==true).length,replays:outcomes.filter(row=>row.data.results[0].idempotent===true).length};expect(race).toEqual({first:1,replays:19});expect(await active(context)).toEqual(assignment);
   if(realtimeEnabled)expect(distribution('writeToVisibleMs').p95Ms).toBeLessThanOrEqual(3000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
+});
+
+test('twenty distinct Floor actors sustain the four-reader reconciliation cadence',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated fixture only');test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const target=new URL(api);expect(target.protocol).toBe('http:');expect(['localhost','127.0.0.1'].includes(target.hostname)||/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(target.hostname)||/^supabase_kong_cashier-e2e-/.test(target.hostname)).toBe(true);
+ const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorReadLoad:{tournamentId:string;gameTableIds:string[]}};
+ expect(fixture.floorReadLoad.tournamentId).toBe('af300000-0000-4000-8000-000000000001');expect(fixture.floorReadLoad.gameTableIds).toHaveLength(20);
+ const tour=fixture.floorReadLoad.tournamentId,opened:{id:string;revision:number}[]=[],phases:unknown[]=[];
+ const readers=['get_floor_tournament_table_roster_v3','get_floor_seatable_entries','get_floor_restorable_entries_v3','get_floor_pending_tracker_moves_v1'];
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ let phase='fixture-open',cleanupFailures=0;
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-staff-cadence-http.json'),JSON.stringify({
+  kind:'REAL_AUTH_HTTP_FLOOR_STAFF_RECONCILIATION_CADENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,phases,cleanupFailures,
+  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryGiB:totalmem()/1024**3,node:process.version},
+  fixture:{tables:20,players:0,readers,intervalAfterCompletionMs:2000,requestsPerCycle:4,warmupCycles:2,gradedCycles:15},
+  nominalRequestsPerVisibleScreenSecond:2,qualification:false,
+  limitations:'One-actor baseline then20independent Auth staff using the actual four Floor RPCs at the product fallback cadence for at least30seconds. HTTP concurrency,not20Chrome screens. Twenty canonical open tables have zero seated players;no mixed1000-viewer load,large roster or production quota/capacity claim. Read-window excludes canonical fixture open/close costs.',
+ },null,2));
+ try{
+  for(const id of fixture.floorReadLoad.gameTableIds){const result=(await rpc(owner,'floor_open_tournament_table_v3',{p_tournament_id:tour,p_game_table_id:id,p_control_mode:'manual',p_request_id:crypto.randomUUID()})).data;expect(result.ok).toBe(true);opened.push({id:result.tournament_table_id,revision:result.revision});}
+  for(const concurrency of [1,20]){
+   phase='read-'+concurrency;const rows:{actor:number;cycle:number;rpc:string;ms:number;count:number}[]=[],starts:number[]=[],ends:number[]=[];
+   await Promise.all(staff.slice(0,concurrency).map(async(identity,actor)=>{
+    for(let cycle=0;cycle<17;cycle++){
+     if(cycle===2)starts.push(performance.now());
+     const replies=await Promise.all(readers.map(async(name)=>{const result=await rpc(identity.token,name,{p_tournament_id:tour});expect(Array.isArray(result.data),name).toBe(true);if(name===readers[0]){expect(result.data).toHaveLength(20);for(const row of result.data)expect(row.tournament_id).toBe(tour);}if(cycle>=2)rows.push({actor,cycle:cycle-2,rpc:name,ms:result.ms,count:result.data.length});return result;}));
+     expect(replies).toHaveLength(4);await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+    ends.push(performance.now());
+   }));
+   expect(rows).toHaveLength(concurrency*15*4);const durationMs=Math.max(...ends)-Math.min(...starts);expect(durationMs).toBeGreaterThanOrEqual(30000);
+   const metrics=readers.map(name=>{const values=rows.filter(row=>row.rpc===name).map(row=>row.ms).sort((a,b)=>a-b);return {rpc:name,samples:values.length,p95Ms:values[Math.ceil(values.length*.95)-1],maxMs:values.at(-1),rowCounts:[...new Set(rows.filter(row=>row.rpc===name).map(row=>row.count))]};});
+   phases.push({concurrency,durationMs,requests:rows.length,achievedRequestsPerSecond:rows.length/(durationMs/1000),rows,metrics,status:'measured'});report();
+   for(const metric of metrics)expect(metric.p95Ms,metric.rpc+' staff HTTP p95').toBeLessThanOrEqual(1000);
+  }
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+ finally{
+  for(const table of opened){try{const result=(await rpc(owner,'close_tournament_table_v3',{p_tournament_table_id:table.id,p_expected_revision:table.revision,p_request_id:crypto.randomUUID()})).data;if(result.ok!==true)cleanupFailures++;}catch{cleanupFailures++;}}
+  if(cleanupFailures)phase='cleanup-failed';report();expect(cleanupFailures).toBe(0);
+ }
 });
