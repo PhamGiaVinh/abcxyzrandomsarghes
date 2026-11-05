@@ -1169,7 +1169,7 @@ jobs:
           # Reuse the isolated ledger created above for the TV fixtures.
           # Exact264 retains its legacy-function hash and ledger-shape guards.
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000264_finance_summary_business_dates_v2.sql
-          VINPOKER_NATIVE_OPS_READ_LATENCY_REPORT=output/operations-latency/native-reads.json VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_OPS_READ_LATENCY_REPORT=output/operations-latency/native-reads.json VINPOKER_NATIVE_OPS_WRITE_LATENCY_REPORT=output/operations-latency/native-writes.json VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
           VINPOKER_NATIVE_RESTORE_HISTORY=1 node tests/cashier/restoreHistoryOrder.native.mjs
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --existing-places
@@ -1200,7 +1200,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: operations-read-latency-${{ github.sha }}
-          path: VinPoker/output/operations-latency/native-reads.json
+          path: VinPoker/output/operations-latency/native-*.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Manual75 full migration rollback and actor-bound payload receipts
