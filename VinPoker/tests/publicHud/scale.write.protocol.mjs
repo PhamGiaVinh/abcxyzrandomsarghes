@@ -1,4 +1,13 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+export function validateCanonicalWriterObservers(profile){
+ const names=['mark_dirty','mark_hand_child_dirty','mark_row_dirty'];
+ const expected={baseline:['5275ae9972ac43651bd1b831b52332dd','e9df156b6ee5d6a22ba968257ae38852','34ebfad5c2bea4d3306d67d435fe02a6'],candidate:['e5684f8818e0d536bcdde7842032f71d','c9f805174bf0cf551aff43a748684df1','27a7e7aad6c0a9f52b040594b4ac115b']};
+ for(const arm of ['baseline','candidate']){
+  assert.deepEqual(profile?.[arm]?.map(row=>row.name),names,'Canonical observer set required');
+  for(let i=0;i<names.length;i++)assert.equal(createHash('md5').update(profile[arm][i].definition).digest('hex'),expected[arm][i],`Canonical ${arm} observer required`);
+ }
+}
 export const matchedWriterProtocol=Object.freeze({version:'canonical-hand-observers-paired-v1',pairs:3,orders:['AB','BA','AB'],warmupPerArm:20,gradedPerArm:200,p95:'nearest-rank pooled raw samples; no averaging p95',limitPercent:10,scope:'fixture completed-hand writer only; not settlement/result/withdrawal or Floor auth E2E'});
 // Consumers supply their own current-run identity; a report cannot certify itself.
 // This validates diagnostic evidence only. Qualification remains a separate gate.

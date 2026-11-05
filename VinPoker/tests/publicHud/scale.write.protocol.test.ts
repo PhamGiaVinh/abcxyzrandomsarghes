@@ -1,6 +1,11 @@
 import {it,expect} from 'vitest';
-import {matchedWriterStatistics,validateMatchedWriterEvidence} from './scale.write.protocol.mjs';
+import {matchedWriterStatistics,validateMatchedWriterEvidence,validateCanonicalWriterObservers} from './scale.write.protocol.mjs';
 const fixture=()=>Array.from({length:3},(_,index)=>({pair:index+1,order:index%2?['incremental','withoutHudMarker']:['withoutHudMarker','incremental'],measurements:Object.fromEntries(['incremental','withoutHudMarker'].map(arm=>[arm,{configuration:{fsync:'on',fullPageWrites:'on',synchronousCommit:'on',commit:true,pgbenchProtocol:'prepared',clients:1,threads:1},orderedTransactions:Array.from({length:220},(_,i)=>({client:0,script:0,transaction:i,latencyMs:arm==='incremental'?1.05:1,epochSeconds:1700000000,epochMicros:i,warmup:i<20}))}]))}));
+it('rejects missing or noncanonical observer definitions even when names match',()=>{
+ expect(()=>validateCanonicalWriterObservers(null)).toThrow();
+ const rows=['mark_dirty','mark_hand_child_dirty','mark_row_dirty'].map(name=>({name,definition:'altered implementation'}));
+ expect(()=>validateCanonicalWriterObservers({baseline:rows,candidate:rows})).toThrow();
+});
 it('uses all600 raw graded samples per arm with fixed warmup and pair order',()=>{
  const result=matchedWriterStatistics(fixture());expect(result.gradedPerArm).toBe(600);expect(result.overheadPercent).toBeCloseTo(5);expect(result.passed).toBe(true);
 });
