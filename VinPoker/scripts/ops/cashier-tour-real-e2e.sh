@@ -487,6 +487,24 @@ if [[ -n "$missing_contracts" ]]; then echo "Missing current Edge RPC contracts:
 echo "EDGE_DEPENDENCY_PROOF: captured baseline plus exact SePay142/195/196; all9 current RPC contracts present; not untouched-baseline-only runtime proof"
 if [[ "$schema_mode" == current ]]; then
   # Contemporary operation timing only; do not change historical pre03 proof.
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REPORT_PREFLIGHT'
+CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);
+DO $$ BEGIN
+ IF (SELECT count(*) FROM pg_attribute WHERE attrelid='supabase_migrations.schema_migrations'::regclass AND NOT attisdropped
+  AND ((attname='version' AND atttypid='text'::regtype AND attnotnull)
+    OR (attname='name' AND atttypid='text'::regtype)
+    OR (attname='statements' AND atttypid='text[]'::regtype)))<>3
+ THEN RAISE EXCEPTION 'isolated_report_ledger_shape_drift'; END IF;
+END $$;
+REPORT_PREFLIGHT
+  # Exact read-only contracts absent from the captured baseline. Their source
+  # definition/dependency guards remain intact; no migration guard is rewritten.
+  for report_migration in 20270128000090_public_clock_projection_v1.sql 20270128000264_finance_summary_business_dates_v2.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$report_migration"
+  done
+  echo "REPORT_SCHEMA_PROOF: exact90/264 plus pinned private clock readers; disposable current runtime only"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHECKIN_PREFLIGHT'
 DO $$ BEGIN
  IF to_regprocedure('public.operator_check_in_dealer_v1(uuid,uuid,uuid,uuid)') IS NOT NULL
