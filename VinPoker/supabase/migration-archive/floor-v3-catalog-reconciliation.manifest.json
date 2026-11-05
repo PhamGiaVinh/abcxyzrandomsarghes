@@ -9960,10 +9960,16 @@
       "reason": "Skip redundant starting-stack lookup only without a verified outcome. Preserves raw membership, proof validation, unknown values and pagination. Exact package approval required."
     },
     {
+      "version": "20261105203358",
+      "filename": "20261105203358_spectator_compact_generation_lookup.sql",
+      "sha256": "e50c41cfb36d5ec82bdfcafac9e9be68dabe9f76a5c5c47df1ec333956ecebe6",
+      "reason": "Private partial index for compact component generations while retaining historical markers. Preserves writer, fencing, source, RLS and ACL. Exact package approval required."
+    },
+    {
       "version": "20261106010000",
       "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
       "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
-      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved24-migration package is required before production apply."
+      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved25-migration package is required before production apply."
     }
   ],
   "floorActiveAllowlist": [

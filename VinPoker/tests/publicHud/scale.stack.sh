@@ -77,6 +77,7 @@ if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
 fi
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
+PUBLIC_HUD_GENERATION_INDEX_REPORT="$repo_root/output/hud-scale/compact-generation-index.json" node tests/publicHud/compact-generation-index.native.mjs
 node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-contract.json
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs

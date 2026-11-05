@@ -2,6 +2,7 @@
 -- the atomic runner; ledger success does not replace these object checks.
 SELECT jsonb_build_object(
  'privateSchemaPresent',to_regnamespace('tracker_analytics_v1') IS NOT NULL,
+ 'compactGenerationLookupIndexMatches',md5(pg_get_indexdef(to_regclass('spectator_projection_v2.idx_compact_generation_lookup_v1')))='ab83ab3c2b71e3586fa6bc40e5b08514' AND EXISTS(SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('spectator_projection_v2.idx_compact_generation_lookup_v1') AND indisvalid AND indisready),
  'visibilityRestoreTriggerMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.visibility_changed()'::regprocedure),chr(13),''))='1b3320cd0f08d14fde3f081c5b132246',
  'visibilityRestoreMetadataMatches',md5(replace(pg_get_functiondef('public.process_public_hud_metadata_v1(text,uuid,bigint,uuid)'::regprocedure),chr(13),''))='ac3c705ee94ca18024759124088a15e8',
  'visibilityRestorePublisherMatches',md5(replace(pg_get_functiondef('public.publish_public_hud_hand_v1(uuid,bigint,uuid,text,jsonb)'::regprocedure),chr(13),''))='9bb2728bff8e77d32d8c92e55bafe9a4',
