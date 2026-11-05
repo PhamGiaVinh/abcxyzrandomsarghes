@@ -39,17 +39,18 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: vinpoker_hud_test_writer_control_ci
+          POSTGRES_DB: vinpoker_hud_test_pair_${{ github.run_id }}_${{ github.run_attempt }}
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready --health-interval 5s
           --health-timeout 5s --health-retries 10
     env:
-      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_writer_control_ci
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_pair_${{ github.run_id }}_${{ github.run_attempt }}
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.writer_control }}
       PUBLIC_HUD_SCALE_SEED_REPORT: output/hud-writer-control/seed.json
       PUBLIC_HUD_SCALE_READ_REPORT: output/hud-writer-control/native-read.json
       PUBLIC_HUD_WRITER_CONTROL: isolated-native-only
+      PUBLIC_HUD_WRITER_OBSERVER_CANONICAL: pre019
       PUBLIC_HUD_WRITER_CONTROL_REPORT: output/hud-writer-control/matched-pairs.json
       PGPASSWORD: postgres
       NODE_OPTIONS: --max-old-space-size=4096
@@ -69,6 +70,7 @@ jobs:
           mkdir -p output/hud-writer-control
           node tests/publicHud/scale.seed.mjs
           node tests/publicHud/writer-control.native.mjs
+          node tests/publicHud/writer-evidence.native.mjs
       - name: Sanitized native diagnostic evidence only
         if: always()
         uses: actions/upload-artifact@v4
