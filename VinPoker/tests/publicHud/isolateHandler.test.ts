@@ -13,8 +13,8 @@ it('keeps the actual Edge handler response intact and enables shutdown telemetry
   await vi.advanceTimersByTimeAsync(50);const response=await pending;
   expect(response.status).toBe(200);expect(await response.json()).toMatchObject({access:'public',tableId:table});
   expect(!!shutdown).toBe(enabled);
-  shutdown?.({detail:{reason:'EarlyDrop'}});
-  if(enabled){const entry=log.mock.calls.find(args=>String(args[0]).startsWith('PUBLIC_HUD_ISOLATE_DIAGNOSTIC '));expect(entry).toBeDefined();expect(JSON.parse(String(entry![0]).split('PUBLIC_HUD_ISOLATE_DIAGNOSTIC ')[1])).toMatchObject({reason:'EarlyDrop',received:1,completed:1,active:0});}
+  shutdown?.({detail:'cpu'});
+  if(enabled){const entry=log.mock.calls.find(args=>String(args[0]).startsWith('PUBLIC_HUD_ISOLATE_DIAGNOSTIC '));expect(entry).toBeDefined();expect(JSON.parse(String(entry![0]).split('PUBLIC_HUD_ISOLATE_DIAGNOSTIC ')[1])).toMatchObject({reason:'CPUTime',received:1,completed:1,active:0});}
   else expect(log).not.toHaveBeenCalled();
   log.mockRestore();vi.unstubAllGlobals();
  }}finally{vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks();}

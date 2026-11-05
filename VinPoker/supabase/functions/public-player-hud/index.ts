@@ -16,7 +16,7 @@ function jsonResp(req:Request,data:unknown,status=200){
 
 const isolateDiagnosticsEnabled=Deno.env.get('PUBLIC_HUD_ISOLATE_DIAGNOSTICS')==='isolated-hud-runtime-diagnostics-v1';
 const isolateDiagnostics=createIsolateDiagnostics(isolateDiagnosticsEnabled,value=>console.log('PUBLIC_HUD_ISOLATE_DIAGNOSTIC '+JSON.stringify(value)));
-if(isolateDiagnosticsEnabled)addEventListener('beforeunload',event=>isolateDiagnostics.shutdown((event as Event & {detail?:{reason?:unknown}}).detail?.reason));
+if(isolateDiagnosticsEnabled)addEventListener('beforeunload',event=>isolateDiagnostics.shutdown((event as Event & {detail?:unknown}).detail));
 
 Deno.serve(async req => {
   const finishDiagnostic=isolateDiagnostics.begin();
