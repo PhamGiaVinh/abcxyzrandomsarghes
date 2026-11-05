@@ -652,6 +652,15 @@ SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shift
  'otherAttendedDealerId','ad400000-0000-4000-8000-000000000003');
 COMMIT;
 DEALER_FIXTURE
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CLOCK_FIXTURE'
+-- A separate empty TEST tournament: no modification to Cashier or Floor fixtures.
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,current_level)
+VALUES('ac300000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001',
+ 'Operations clock TEST','registering','registering',now(),1000000,0,0,1);
+INSERT INTO public.tournament_levels(tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
+VALUES('ac300000-0000-4000-8000-000000000001',1,100,200,200,20,false),
+ ('ac300000-0000-4000-8000-000000000001',2,200,400,400,20,false);
+CLOCK_FIXTURE
   checkin_fixture_enabled=1
 else
   printf '{}' >"$test_root/dealer-fixture.json"
