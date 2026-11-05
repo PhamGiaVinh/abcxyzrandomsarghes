@@ -6,6 +6,8 @@ export function measurePaidTourOperationReads(sql,fixture,reportPath){
  assert.equal(sql('SELECT current_database();'),'vinpoker_ops_cash115_qualified_c');
  for(const key of ['actor','club','tour'])assert.match(fixture[key],/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i);
  const {actor,club,tour}=fixture;
+ const businessDate=sql("SELECT (clock_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date;");
+ assert.match(businessDate,/^\d{4}-\d{2}-\d{2}$/);
  const fixtureState=JSON.parse(sql(`BEGIN READ ONLY;SELECT jsonb_build_object(
   'activeSeats',(SELECT count(*) FROM public.tournament_seats WHERE tournament_id='${tour}' AND is_active),
   'checkedInDealers',(SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${club}' AND a.status='checked_in'));
@@ -18,6 +20,7 @@ export function measurePaidTourOperationReads(sql,fixture,reportPath){
   ['Dealer health',`SELECT to_jsonb(public.get_dealer_swing_health(ARRAY['${club}'::uuid]))`],
   ['Floor tracker alerts',`SELECT to_jsonb(public.list_tracker_floor_alerts('${tour}',NULL))`],
   ['Tournament chip inventory',`SELECT to_jsonb(public.get_current_chip_inventory('${tour}'))`],
+  ['Finance business-date summary',`SELECT to_jsonb(public.get_club_finance_summary_v2('${businessDate}'::date,'${businessDate}'::date,'${club}'))`],
  ];
  const results=[];
  for(const [operation,query] of cases){
@@ -37,7 +40,7 @@ export function measurePaidTourOperationReads(sql,fixture,reportPath){
   const ordered=[...samples].sort((a,b)=>a-b);
   results.push({operation,samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered.at(-1)});
  }
- const report={kind:'AUTHENTICATED_POSTGRESQL_READ_LATENCY_NOT_HTTP_OR_UI',sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),fixture:{club,tour,actor,...fixtureState,phase:'paid roster and check-in complete; before initial dealer assignment'},warmupPerOperation:20,gradedPerOperation:100,concurrency:1,actorScope:'fixture owner; separate Floor/Cashier/dealer role and tenant tests still required',transaction:'one read-only transaction per operation; warm repeated reads in same connection',results,qualification:false};
+ const report={kind:'AUTHENTICATED_POSTGRESQL_READ_LATENCY_NOT_HTTP_OR_UI',sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),fixtureSchemaAdditions:['20270128000264_finance_summary_business_dates_v2.sql'],businessDate,fixture:{club,tour,actor,...fixtureState,phase:'paid roster and check-in complete; before initial dealer assignment'},warmupPerOperation:20,gradedPerOperation:100,concurrency:1,actorScope:'fixture owner; separate Floor/Cashier/dealer role and tenant tests still required',transaction:'one read-only transaction per operation; warm repeated reads in same connection',results,qualification:false};
  mkdirSync(dirname(reportPath),{recursive:true});writeFileSync(reportPath,JSON.stringify(report,null,2));
  return report;
 }
