@@ -942,6 +942,7 @@ jobs:
         run: |
           set -euo pipefail
           createdb -T vinpoker_ops_finish97_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyAttention.predecessor.local.sql
           node tests/trackerSettlement/historyAttention.migrationRollback.mjs --apply-after-rollback
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyNeedsAttention.pg17.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql

@@ -13,6 +13,12 @@ const sourceState=()=>jsonSql(`SELECT jsonb_build_object(
  'tournaments',(SELECT md5(string_agg(to_jsonb(t)::text,'' ORDER BY id)) FROM public.tournaments t),
  'entries',(SELECT md5(string_agg(to_jsonb(e)::text,'' ORDER BY id)) FROM public.tournament_entries e),
  'seats',(SELECT md5(string_agg(to_jsonb(s)::text,'' ORDER BY id)) FROM public.tournament_seats s));`);
+// PostgreSQL requires a new function owner to have CREATE in its namespace.
+// Managed postgres is not a superuser. Use a dedicated, uncommitted TEST role
+// instead of assuming a browser role can own private-schema functions.
+const ownerProbe=`CREATE ROLE hud_clock_counts_owner_probe NOLOGIN NOSUPERUSER NOBYPASSRLS;
+ GRANT hud_clock_counts_owner_probe TO postgres;
+ GRANT CREATE ON SCHEMA public,floor_private TO hud_clock_counts_owner_probe;`;
 assert.equal(hash(),'6eb40dbf8d7444e09924a68ffd921d1b','Run after the actual025 clock wrapper');
 const beforeMetadata=metadata(),beforeSource=sourceState();
 const original=sql(`SELECT pg_get_functiondef('${signature}'::regprocedure);`);
@@ -63,8 +69,8 @@ for(const fn of [signature,'floor_private.tournament_participation_v1(uuid)']){
  assert.equal(sql("SELECT to_regclass('spectator_projection_v2.clock_counts_original_v1') IS NULL;"),'t');
 }
 for(const change of [
- `ALTER FUNCTION ${signature} OWNER TO authenticated;`,
- 'ALTER FUNCTION floor_private.tournament_participation_v1(uuid) OWNER TO authenticated;',
+ `${ownerProbe}ALTER FUNCTION ${signature} OWNER TO hud_clock_counts_owner_probe;`,
+ `${ownerProbe}ALTER FUNCTION floor_private.tournament_participation_v1(uuid) OWNER TO hud_clock_counts_owner_probe;`,
  `GRANT EXECUTE ON FUNCTION ${signature} TO service_role;`,
  'GRANT EXECUTE ON FUNCTION floor_private.tournament_participation_v1(uuid) TO anon;',
 ])assert.throws(()=>sql(`BEGIN;${change}${strip(migration)}ROLLBACK;`,{captureFailure:true}),/clock_counts_preimage_differs/);
@@ -90,7 +96,7 @@ for(const [changes,key,expected] of [
  ["UPDATE spectator_projection_v2.clock_counts_original_v1 SET candidate_definition_hash=repeat('0',32);",'clockCountsDefinitionMatches',false],
  ['ALTER TABLE spectator_projection_v2.clock_counts_original_v1 DISABLE ROW LEVEL SECURITY;','clockCountsPrivateRlsOwner',false],
  ['GRANT SELECT ON spectator_projection_v2.clock_counts_original_v1 TO anon;','clockCountsPrivateBrowserGrants',1],
- [`ALTER FUNCTION ${signature} OWNER TO authenticated;`,'clockCountsReaderMetadataMatches',false],
+ [`${ownerProbe}ALTER FUNCTION ${signature} OWNER TO hud_clock_counts_owner_probe;`,'clockCountsReaderMetadataMatches',false],
 ])assert.equal(readObjects(changes)[key],expected,key);
 // Reused plans must observe new entry counters and withdrawal in new statements,
 // while retaining the other tournament's independent source values.
@@ -122,6 +128,7 @@ try{
  assert.equal(Number(during.average_stack),1000);
 }finally{await writer;}
 assert.deepEqual(sourceState(),beforeSource);
+assert.equal(sql("SELECT NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='hud_clock_counts_owner_probe');"),'t');
 // Guard rollback against a changed candidate, then exercise exact metadata and
 // ordered032→025→023/022 recovery. No old migration is edited.
 assert.throws(()=>sql(`BEGIN;ALTER FUNCTION ${signature} VOLATILE;${strip(recovery)}ROLLBACK;`,{captureFailure:true}),/clock_counts_recovery_drift/);

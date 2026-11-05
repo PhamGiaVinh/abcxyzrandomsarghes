@@ -142,8 +142,8 @@ jobs:
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_read_plans_ci
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/read-plans.native.mjs --initialize
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-read-plan.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-counts.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/summary-batch.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/current-table-prepared.native.mjs
-          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-counts.native.mjs
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit
