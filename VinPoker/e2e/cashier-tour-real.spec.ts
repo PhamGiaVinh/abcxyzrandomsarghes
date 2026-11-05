@@ -92,7 +92,7 @@ test("real Auth and Cashier backend render the completed seated buy-in", async (
     console.error(JSON.stringify({ body: (await page.locator("body").innerText()).slice(0, 2_000), cashierReads }));
     throw error;
   }
-  await expect(page.getByText(/Bàn 1, ghế \d+/u)).toBeVisible();
+  await expect(page.getByText(/Phiếu đã cấp: bàn 1, ghế \d+/u)).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(pageErrors).toEqual([]);
 });
