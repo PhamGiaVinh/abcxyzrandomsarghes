@@ -318,6 +318,49 @@ test('Floor and Dealer Swing authenticated HTTP read latency after check-in',asy
  }
 });
 
+test('canonical Floor open and close propagate into one continuously open screen',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_REALTIME!=='1','Contemporary isolated Realtime operation fixture only');
+ test.setTimeout(60_000);
+ const token=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const tourId='a3000000-0000-4000-8000-000000000001',gameTableId='af700000-0000-4000-8000-000000000001';
+ const rpc=async(name:string,args:Record<string,unknown>)=>{
+  const response=await fetch(`${api}/rest/v1/rpc/${name}`,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
+  const payload=await response.json();expect(response.ok,name).toBe(true);return payload;
+ };
+ const rows:{operation:string;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
+ let phase='screen-load',committedOpen=false,independentRosterConfirmed=false;
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-session-ui-http.json'),JSON.stringify({
+  kind:'ACTUAL_FLOOR_SESSION_WRITE_AND_OPEN_SCREEN_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  actors:1,concurrency:1,gradedPerOperation:1,phase,committedOpen,independentRosterConfirmed,rows,
+  qualification:false,limitations:'Single canonical open/close pair on an empty TEST table. One observation has no meaningful p95;not seat-move/dealer handover or concurrent operational acceptance. No manual refresh/reload after initial screen load.',
+ },null,2));
+ try{
+  const loaded=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/rpc/get_floor_tournament_table_inventory_v1')&&response.status()===200);
+  await page.goto(`/ops/floor/tournaments/${tourId}/tables?club=a2000000-0000-4000-8000-000000000001`);await loaded;
+  await expect(page.getByTestId('floor-table-map-v3')).toBeVisible();
+  await expect(page.getByTestId('floor-table-map-v3').locator('[data-ops-action="floor.tables.refresh"]')).toBeEnabled();
+  const card=page.locator('[data-testid="floor-table-roster-card"][data-floor-table-number="2001"]');
+  await expect(card).toHaveCount(0);
+  phase='open';const started=performance.now();
+  const intent={p_tournament_id:tourId,p_game_table_id:gameTableId,p_control_mode:'manual',p_request_id:crypto.randomUUID()};
+  const opened=await rpc('floor_open_tournament_table_v3',intent);expect(opened.ok).toBe(true);committedOpen=true;
+  rows.push({operation:'open',ackMs:performance.now()-started,status:'committed'});report();
+  expect(await rpc('floor_open_tournament_table_v3',intent)).toEqual(opened);
+  const roster=await rpc('get_floor_tournament_table_roster_v5',{p_tournament_id:tourId});
+  expect(Array.isArray(roster)).toBe(true);expect(roster.some((row:{table_session_id:string})=>row.table_session_id===opened.table_session_id)).toBe(true);
+  independentRosterConfirmed=true;report();
+  await expect(card).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+  rows[0].writeToVisibleMs=performance.now()-started;rows[0].status='visible';report();
+  phase='close';const closing=performance.now();
+  const closeIntent={p_tournament_table_id:opened.tournament_table_id,p_expected_revision:opened.revision,p_request_id:crypto.randomUUID()};
+  const closed=await rpc('close_tournament_table_v3',closeIntent);expect(closed.ok).toBe(true);
+  rows.push({operation:'close',ackMs:performance.now()-closing,status:'committed'});report();
+  expect(await rpc('close_tournament_table_v3',closeIntent)).toEqual(closed);
+  await expect(card).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-closing))});
+  rows[1].writeToVisibleMs=performance.now()-closing;rows[1].status='visible';phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
 test('Cashier browser navigation and populated tour render latency',async({page})=>{
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Isolated stack measurement only');
  test.setTimeout(180_000);

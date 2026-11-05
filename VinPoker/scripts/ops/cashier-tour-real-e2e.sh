@@ -622,6 +622,8 @@ INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUE
  ('ad300000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002','Other tenant TEST','00:00','23:59');
 INSERT INTO public.dealers(club_id,user_id,full_name,status)
  SELECT 'a2000000-0000-4000-8000-000000000001',NULL,'HTTP latency TEST '||n,'active' FROM generate_series(1,:dealer_count) n;
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status) VALUES
+ ('af700000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Floor session latency TEST',2001,'tournament','inactive','available');
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES
  ('ad400000-0000-4000-8000-000000000002','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant unchecked TEST dealer','active'),
  ('ad400000-0000-4000-8000-000000000003','ad200000-0000-4000-8000-000000000002',NULL,'Other tenant checked TEST dealer','active');
