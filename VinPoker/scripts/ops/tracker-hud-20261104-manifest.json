@@ -173,6 +173,14 @@
       "path": "supabase/migrations/20261105044028_public_hud_hand_withdrawal_scope.sql",
       "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
       "action": "APPLY"
+    },
+    {
+      "order": 22,
+      "version": "20261105072714",
+      "name": "public_hud_history_amounts_materialized",
+      "path": "supabase/migrations/20261105072714_public_hud_history_amounts_materialized.sql",
+      "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
+      "action": "APPLY"
     }
   ]
 }

@@ -148,6 +148,7 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/enqueue-writes.recovery.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/source-writes.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-plans.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-amounts.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-membership.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-keyset.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-lookup.native.mjs

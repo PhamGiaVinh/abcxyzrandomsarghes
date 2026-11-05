@@ -76,6 +76,7 @@ node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-c
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs
 PUBLIC_HUD_HISTORY_PLAN_REPORT="$repo_root/output/hud-scale/history-plans.json" node tests/publicHud/history-plans.native.mjs
+PUBLIC_HUD_HISTORY_AMOUNTS_APPLY=isolated-native-only PUBLIC_HUD_HISTORY_AMOUNTS_REPORT="$repo_root/output/hud-scale/history-amounts.json" node tests/publicHud/history-amounts.native.mjs
 PUBLIC_HUD_NULL_PROOF_REPORT="$repo_root/output/hud-scale/null-proof.json" node tests/publicHud/null-proof.native.mjs
 PUBLIC_HUD_RESULT_SCOPE_REPORT="$repo_root/output/hud-scale/result-withdrawal.json" node tests/publicHud/result-withdrawal.native.mjs
 PUBLIC_HUD_HAND_WITHDRAWAL_REPORT="$repo_root/output/hud-scale/hand-withdrawal.json" node tests/publicHud/hand-withdrawal.native.mjs
