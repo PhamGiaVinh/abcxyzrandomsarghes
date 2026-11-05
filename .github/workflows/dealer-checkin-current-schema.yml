@@ -1123,6 +1123,7 @@ jobs:
           node tests/trackerSettlement/correctionResolution118.migration.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql
           node tests/trackerSettlement/correctionResolution118.migration.mjs --history119
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000121_tracker_voice_finish_receipt_resolution_v1.sql
           node tests/cashier/seatingMigrations.pg17.mjs --only122
