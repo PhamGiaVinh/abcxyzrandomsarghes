@@ -25,3 +25,23 @@ export function parseSpectatorTrace(log){
  }
  return events;
 }
+export function summarizeSpectatorTrace(events){
+ const summary=values=>({samples:values.length,p95Ms:values.length?[...values].sort((a,b)=>a-b)[Math.ceil(values.length*.95)-1]:null,maxMs:values.length?values.reduce((max,value)=>Math.max(max,value),0):null});
+ const byRpc={};
+ for(const row of events)(byRpc[row.rpc]??=[]).push(row.endedAt-row.startedAt);
+ const flushes=new Map();
+ for(const row of events)if(row.rpc==='flush_public_spectator_broadcast_v2'&&row.outcome==='ok'){
+  const rows=flushes.get(row.batch)??[];rows.push(row);flushes.set(row.batch,rows);
+ }
+ for(const rows of flushes.values())rows.sort((a,b)=>a.startedAt-b.startedAt);
+ const wait=[],throughFlush=[];let published=0,withoutFollowingFlush=0;
+ for(const row of events)if(row.rpc==='publish_public_spectator_projection_v2'&&row.outcome==='published'){
+  published++;
+  const flush=flushes.get(row.batch)?.find(candidate=>candidate.startedAt>=row.endedAt);
+  if(!flush){withoutFollowingFlush++;continue;}
+  wait.push(flush.startedAt-row.endedAt);throughFlush.push(flush.endedAt-row.endedAt);
+ }
+ return {rpcDurations:Object.fromEntries(Object.entries(byRpc).map(([rpc,values])=>[rpc,summary(values)])),published,withoutFollowingFlush,
+  publishAckToNextSuccessfulFlushStart:summary(wait),publishAckToNextSuccessfulFlushEnd:summary(throughFlush),
+  scope:'Same-batch successful flush starting after publish acknowledgement; not proof a particular tournament notification was emitted or delivered. Missing following flushes are counted, not treated as zero. Independent percentiles are not additive.'};
+}
