@@ -173,18 +173,15 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    await loginOwner(page);await page.setViewportSize({width:1440,height:1000});
    const initialAttendance=page.waitForResponse(response=>{
     const url=new URL(response.url()),select=url.searchParams.get('select')??'';
-    return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select.includes('dealers!inner(')&&select.includes('worked_minutes_since_last_break');
+    return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select==='dealer_id,current_state,check_in_time';
    },{timeout:30_000});
-   await page.goto('/dealer-swing');
+   await page.goto('/ops/dealer-swing?club='+fixture.clubId);
    const initialResponse=await initialAttendance;expect(initialResponse.ok()).toBe(true);
    const initialRows=await initialResponse.json();expect(Array.isArray(initialRows)).toBe(true);
    expect(initialRows).toHaveLength(360);
    expect(initialRows.some((row:{dealer_id:string})=>row.dealer_id===dealerId)).toBe(false);
-   const search=page.getByPlaceholder('Tìm dealer...');
-   await expect(search).toBeVisible({timeout:30_000});
-   await expect(page.getByText(initialRows[0].dealers.full_name,{exact:true})).toBeVisible();
-   await search.fill(uiDealerName!);
-   await expect(page.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
+   await expect(page.getByRole('heading',{name:'Dealer Swing',exact:true})).toBeVisible();
+   await expect(page.getByText('Trong ca',{exact:true}).locator('..').getByText('360',{exact:true})).toBeVisible();
   }
   const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
   expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
@@ -204,8 +201,8 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
    writeToRealtimeMs=seen.get(dealerId)!-started;
    if(uiDealerName){
-    await expect(page.getByText(uiDealerName,{exact:true})).toBeVisible({timeout:5000});
-    uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/dealer-swing'};
+    await expect(page.getByText('Trong ca',{exact:true}).locator('..').getByText('361',{exact:true})).toBeVisible({timeout:5000});
+    uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/ops/dealer-swing'};
    }
   }
   return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
