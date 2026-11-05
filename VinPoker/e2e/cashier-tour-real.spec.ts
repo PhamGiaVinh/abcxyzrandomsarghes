@@ -256,6 +256,68 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
 
+test('Floor and Dealer Swing authenticated HTTP read latency after check-in',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated operation fixture only');
+ test.setTimeout(180_000);
+ const token=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const clubId='a2000000-0000-4000-8000-000000000001',tourId='a3000000-0000-4000-8000-000000000001';
+ const operations=[
+  {rpc:'get_floor_tournament_table_inventory_v1',args:{p_tournament_id:tourId},shape:'inventory'},
+  {rpc:'get_floor_tournament_table_roster_v5',args:{p_tournament_id:tourId},shape:'roster'},
+  {rpc:'list_tracker_floor_alerts',args:{p_tournament_id:tourId,p_status:null},shape:'alerts'},
+  {rpc:'get_table_assignments_with_next',args:{p_club_id:clubId},shape:'assignments'},
+  {rpc:'get_dealer_swing_health',args:{p_club_ids:[clubId]},shape:'health'},
+ ] as const;
+ const results:unknown[]=[];
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-operations-http.json'),JSON.stringify({
+  kind:'REAL_AUTHENTICATED_POSTGREST_OPERATION_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  fixture:{clubId,tourId,phase:'after canonical check-in; no initial dealer assignment'},
+  actors:1,actorScope:'Actual local Auth club owner; concurrent requests share this identity,not independent staff',
+  warmupPerScenario:20,gradedPerScenario:100,results,qualification:false,
+  limitations:'Small isolated tour; complete HTTP JSON bodies; excludes login,rendering,concurrent writers and cross-screen propagation. Empty alert/assignment/roster results are explicitly counted,not populated-workload proof.',
+ },null,2));
+ for(const operation of operations)for(const concurrency of [1,5,20]){
+  const cardinalities=new Set<number>();
+  const read=async()=>{
+   const started=performance.now();
+   const response=await fetch(`${api}/rest/v1/rpc/${operation.rpc}`,{
+    method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify(operation.args),signal:AbortSignal.timeout(5000),
+   });
+   const payload=await response.json(),elapsed=performance.now()-started;
+   expect(response.ok,operation.rpc).toBe(true);
+   if(operation.shape==='alerts'){
+    expect(payload.ok).toBe(true);expect(payload.error).toBeUndefined();expect(Array.isArray(payload.alerts)).toBe(true);
+    cardinalities.add(payload.alerts.length);
+   }else{
+    expect(Array.isArray(payload),operation.rpc).toBe(true);cardinalities.add(payload.length);
+    if(operation.shape==='inventory'){
+     expect(payload.some((row:{game_table_id:string})=>row.game_table_id==='a7000000-0000-4000-8000-000000000001')).toBe(true);
+    }
+    if(operation.shape==='health'){
+     expect(payload).toHaveLength(1);expect(payload[0].club_id).toBe(clubId);
+     expect(typeof payload[0].overdue_now).toBe('number');expect(typeof payload[0].lock?.held).toBe('boolean');
+    }
+   }
+   return elapsed;
+  };
+  const batch=async(count:number)=>{
+   let cursor=0;const samples:number[]=[];
+   await Promise.all(Array.from({length:Math.min(concurrency,count)},async()=>{while(cursor<count){cursor++;samples.push(await read());}}));
+   expect(samples).toHaveLength(count);return samples;
+  };
+  try{
+   await batch(20);const samples=await batch(100),ordered=[...samples].sort((a,b)=>a-b);
+   expect(ordered.every(value=>Number.isFinite(value)&&value>=0)).toBe(true);
+   results.push({rpc:operation.rpc,concurrency,samplesMs:samples,rowCounts:[...cardinalities].sort((a,b)=>a-b),p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99],status:'passed'});
+   report();
+  }catch(error){
+   // Retain completed phases without leaking response bodies, tokens or claims.
+   results.push({rpc:operation.rpc,concurrency,status:'failed'});report();throw error;
+  }
+ }
+});
+
 test('Cashier browser navigation and populated tour render latency',async({page})=>{
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Isolated stack measurement only');
  test.setTimeout(180_000);
