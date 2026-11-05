@@ -86,13 +86,14 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>
 
 test('real check-in HTTP commit, independent observation, exact retry and tenant boundary',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated check-in fixture only');
- test.setTimeout(120_000);
+ test.setTimeout(180_000);
  expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {
   clubId:string;shiftId:string;dealerIds:string[];otherClubId:string;otherShiftId:string;otherDealerId:string;otherAttendedDealerId:string;
  };
  expect(fixture.clubId).toBe('a2000000-0000-4000-8000-000000000001');
- const expectedCount=process.env.LOCAL_OPERATIONS_REALTIME==='1'?361:360;
+ const uiWarmup=2,uiGraded=20;
+ const expectedCount=process.env.LOCAL_OPERATIONS_REALTIME==='1'?360+uiWarmup+uiGraded:360;
  expect(fixture.dealerIds).toHaveLength(expectedCount);expect(new Set(fixture.dealerIds).size).toBe(expectedCount);
  for(const id of [fixture.clubId,fixture.shiftId,fixture.otherClubId,fixture.otherShiftId,fixture.otherDealerId,fixture.otherAttendedDealerId,...fixture.dealerIds])expect(id).toMatch(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
  const identities=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
@@ -102,7 +103,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  const wireFrames:{idTypes:string[];idsCount:number;bindingMatch:boolean;eventType:string;errorCount:number}[]=[];
  let bindingIds:unknown[]=[];
  let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
- let uiObservation:{writeToVisibleMs:number;samples:number;path:string}|null=null;
+ const uiObservations:{writeToVisibleMs:number;warmup:boolean}[]=[];
  const uiFailedReads:{status:number;path:string}[]=[];
  page.on('response',response=>{if(response.status()>=400&&uiFailedReads.length<20)uiFailedReads.push({status:response.status(),path:new URL(response.url()).pathname});});
  const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
@@ -166,12 +167,13 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   expect(dealerId).toBeTruthy();
   const args={p_dealer_id:dealerId,p_club_id:fixture.clubId,p_shift_id:fixture.shiftId,p_request_id:requestId};
   let uiDealerName:string|null=null;
-  if(realtimeEnabled&&index===360){
-   // Observe one new check-in in the existing product screen. Never reload or
+  if(realtimeEnabled&&index>=360){
+   // Observe each new check-in in the same product screen. Never reload or
    // trigger a manual refresh after the write to manufacture synchronization.
    const response=await fetch(api+'/rest/v1/dealers?select=full_name&id=eq.'+dealerId,{headers:headers(identity.token),signal:AbortSignal.timeout(5000)});
    expect(response.ok).toBe(true);const names=await response.json();expect(names).toHaveLength(1);
    uiDealerName=names[0].full_name;expect(typeof uiDealerName).toBe('string');
+   if(index===360){
    await loginOwner(page);await page.setViewportSize({width:1440,height:1000});
    const initialAttendance=page.waitForResponse(response=>{
     const url=new URL(response.url()),select=url.searchParams.get('select')??'';
@@ -188,7 +190,8 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    // Do not measure the unmounted read-only workspace behind that gate.
    await expect(page).toHaveURL(/\/dealer-swing$/);
    await page.getByRole('button',{name:'ĐỘI HÌNH / CHECK-IN',exact:true}).click();
-   await expect(page.getByRole('button',{name:'Check-out (360)',exact:true})).toBeVisible();
+   }
+   await expect(page.getByRole('button',{name:`Check-out (${index})`,exact:true})).toBeVisible();
    await page.getByPlaceholder('Tìm dealer...',{exact:true}).fill(uiDealerName!);
    await expect(page.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
   }
@@ -211,10 +214,11 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    writeToRealtimeMs=seen.get(dealerId)!-started;
    expect(writeToRealtimeMs).toBeLessThanOrEqual(5000);
    if(uiDealerName){
-    await expect(page.getByRole('button',{name:'Check-out (361)',exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
+    await expect(page.getByRole('button',{name:`Check-out (${index+1})`,exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
     await expect(page.getByText(uiDealerName,{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
-    uiObservation={writeToVisibleMs:performance.now()-started,samples:1,path:'/dealer-swing'};
-    expect(uiObservation.writeToVisibleMs).toBeLessThanOrEqual(5000);
+    const writeToVisibleMs=performance.now()-started;
+    expect(writeToVisibleMs).toBeLessThanOrEqual(5000);
+    uiObservations.push({writeToVisibleMs,warmup:index<360+uiWarmup});
    }
   }
   return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
@@ -228,23 +232,26 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   await batch(20);const rows=await batch(100);
   samples.push({concurrency,graded:rows.length,firstAckMs:rows.map(r=>r.firstAckMs),independentReadAfterAckMs:rows.map(r=>r.independentReadAfterAckMs),writeToObservedMs:rows.map(r=>r.writeToObservedMs),retryAckMs:rows.map(r=>r.retryAckMs),writeToRealtimeMs:rows.map(r=>r.writeToRealtimeMs).filter((value):value is number=>value!==null)});
  }
- // The separate UI write starts only after all measured concurrent writers
- // finish. Its sample is excluded from the 1/5/20 HTTP/WS distributions.
- if(realtimeEnabled)await write();
+ // UI writes start only after all measured concurrent writers finish. Keep
+ // this one open screen mounted; exclude its serial writes from 1/5/20 samples.
+ if(realtimeEnabled)for(let sample=0;sample<uiWarmup+uiGraded;sample++)await write();
  expect(cursor).toBe(expectedCount);
  expect(realtimeErrors).toEqual([]);if(realtimeEnabled)expect(seen.size).toBe(expectedCount);
  const summarize=(values:number[])=>{const ordered=[...values].sort((a,b)=>a-b);expect(ordered).toHaveLength(100);expect(ordered.every(v=>Number.isFinite(v)&&v>=0)).toBe(true);return {p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]};};
+ const uiTimings=uiObservations.filter(row=>!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b);
+ if(realtimeEnabled)expect(uiTimings).toHaveLength(uiGraded);
  writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:realtimeEnabled?'REAL_AUTH_HTTP_CHECKIN_AND_POSTGRES_CHANGES_WEBSOCKET_OBSERVATION':'REAL_AUTH_HTTP_CHECKIN_COMMIT_AND_INDEPENDENT_DATA_API_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,actors:identities.length,actorScope:'Distinct local Auth users with actual club_dealer_controls membership;round-robin requests',fixtureSchemaAdditions:['exact14','exact51'],warmupPerScenario:20,gradedPerScenario:100,
   realtime:{enabled:realtimeEnabled,observers:realtimeEnabled?1:0,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,clock:'write-start and actual SDK callback use same monotonic client clock;not pure server-commit timing',postgresImage:realtimeEnabled?'17.6.1.155 pinned digest;see harness':'CLI default'},
-  uiObservation,uiObservationLimitations:'One live Dealer Swing screen/new dealer sample;Node monotonic write-start to Playwright visible assertion upper bound;no p95 or concurrent screen capacity claim',
+  uiObservation:realtimeEnabled?{path:'/dealer-swing',actors:1,concurrency:1,warmup:uiWarmup,graded:uiGraded,rows:uiObservations,distribution:{p50Ms:uiTimings[9],p95Ms:uiTimings[18],p99Ms:uiTimings[19],maxMs:uiTimings[19]}}:null,
+  uiObservationLimitations:'One actual open Dealer Swing screen,serial check-ins;Node monotonic intent to Playwright count+named-roster assertion upper bound;20graded samples give coarse p95,not concurrent screen capacity',
   scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs),writeToRealtime:realtimeEnabled?summarize(row.writeToRealtimeMs):null}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
-  limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
+  limitations:'360HTTP-phase synthetic dealers plus optional22serial UI-phase dealers;small fixture;one SDK WS observer with20writers and one actual UI screen,not20screens;no production capacity claim;native SQL postcheck verifies attendance/receipt cardinality.'},null,2));
  }catch(error){
   let uiDiagnostics:unknown=null;
   if(realtimeEnabled){
    try{const path=new URL(page.url()).pathname;uiDiagnostics={path,fixtureBody:['/ops/dealer-swing','/dealer-swing'].includes(path)?(await page.locator('body').innerText()).slice(0,2000):null,failedReads:uiFailedReads};}catch{uiDiagnostics={status:'fixture_page_unavailable',failedReads:uiFailedReads};}
   }
-  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
+  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,completedUiObservations:uiObservations,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
   throw error;
  }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
