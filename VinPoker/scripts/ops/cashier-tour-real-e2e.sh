@@ -95,6 +95,38 @@ END $diagnostic$;
 SELECT current_setting('vinpoker.realtime_rls_diagnostic');
 ROLLBACK;
 REALTIME_RLS_DIAGNOSTIC
+    # Separate temporary slot; never drain or reset the service's own slots.
+    # This extra canonical fixture write happens only after a failed test and
+    # is diagnostic, not a measured HTTP/UI sample or an acceptance pass.
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/realtime-decoding-http.json" <<'REALTIME_DECODING_DIAGNOSTIC' || true
+SET statement_timeout='10s';
+SELECT pg_create_logical_replication_slot('cashier_failed_probe','wal2json',true) \g /dev/null
+BEGIN;
+SET LOCAL statement_timeout='5s';
+SET LOCAL request.jwt.claim.sub='';
+SELECT set_config('request.jwt.claims',(SELECT claims::text FROM realtime.subscription WHERE entity='public.dealer_attendance'::regclass LIMIT 1),true) \g /dev/null
+SET LOCAL ROLE authenticated;
+DO $probe$
+DECLARE dealer uuid;r jsonb;
+BEGIN
+ SELECT d.id INTO STRICT dealer FROM public.dealers d WHERE d.club_id='a2000000-0000-4000-8000-000000000001'
+  AND NOT EXISTS(SELECT 1 FROM public.dealer_attendance a WHERE a.dealer_id=d.id) ORDER BY d.id LIMIT 1;
+ r:=public.operator_check_in_dealer_v1(dealer,'a2000000-0000-4000-8000-000000000001','ad300000-0000-4000-8000-000000000001',gen_random_uuid());
+ IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'isolated_decoding_probe_write_failed';END IF;
+END $probe$;
+COMMIT;
+WITH decoded AS MATERIALIZED (
+ SELECT data::jsonb AS packet FROM pg_logical_slot_get_changes('cashier_failed_probe',NULL,100,
+  'format-version','2','include-pk','true','include-timestamp','true','include-type-oids','true',
+  'include-transaction','false','actions','insert','add-tables','public.dealer_attendance'))
+SELECT jsonb_build_object('kind','ACTUAL_FIXTURE_WAL_DECODING_DIAGNOSTIC','qualification',false,
+ 'listChangesResult',(SELECT pg_get_function_result(oid) FROM pg_proc WHERE oid='realtime.list_changes(name,name,integer,integer)'::regprocedure),
+ 'packets',jsonb_agg(jsonb_build_object('action',packet->>'action','primaryKeyCount',jsonb_array_length(packet->'pk'),
+  'columnCount',jsonb_array_length(packet->'columns'),'rlsResults',(SELECT jsonb_agg(jsonb_build_object('authorizedSubscriptionCount',coalesce(cardinality(r.subscription_ids),0),'errors',r.errors)) FROM realtime.apply_rls(packet,1048576) r))))
+FROM decoded;
+SELECT pg_drop_replication_slot('cashier_failed_probe') \g /dev/null
+REALTIME_DECODING_DIAGNOSTIC
     if [[ -n "${realtime_container:-}" ]]; then
       docker logs "$realtime_container" --tail 300 2>&1 | node --input-type=module -e '
         import {readFileSync} from "node:fs";
@@ -287,6 +319,7 @@ probe_external_denied "$edge_container" Edge
 if [[ "$realtime_mode" == 1 ]]; then
   realtime_container="$(docker ps -q --filter "network=$network" --filter 'name=supabase_realtime_')"
   [[ -n "$realtime_container" ]]
+  echo "REALTIME_IMAGE_PROOF:$(docker inspect --format '{{.Config.Image}}' "$realtime_container")"
   probe_external_denied "$realtime_container" Realtime
   [[ "$(docker inspect --format '{{.Config.Image}}' "$db_container")" == 'ghcr.io/supabase/postgres:17.6.1.155@sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b' ]]
 fi
