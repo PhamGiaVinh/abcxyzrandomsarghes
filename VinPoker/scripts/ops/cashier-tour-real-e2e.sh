@@ -70,6 +70,31 @@ SELECT jsonb_build_object(
    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE (n.nspname='realtime' AND p.proname IN ('apply_rls','list_changes')) OR (n.nspname='pg_catalog' AND p.proname='pg_logical_slot_get_changes')));
 REALTIME_DIAGNOSTIC
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/realtime-rls-http.json" <<'REALTIME_RLS_DIAGNOSTIC' || true
+BEGIN;
+SET LOCAL statement_timeout='5s';
+DO $diagnostic$
+DECLARE source_row public.dealer_attendance;input_wal jsonb;diagnostic jsonb;
+BEGIN
+ SELECT a.* INTO STRICT source_row FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id
+ WHERE d.club_id='a2000000-0000-4000-8000-000000000001' ORDER BY a.check_in_time LIMIT 1;
+ input_wal:=jsonb_build_object('action','I','schema','public','table','dealer_attendance','timestamp',clock_timestamp(),
+  'pk',jsonb_build_array(jsonb_build_object('name','id','type','uuid')),
+  'columns',jsonb_build_array(jsonb_build_object('name','id','type','uuid','value',source_row.id),
+   jsonb_build_object('name','dealer_id','type','uuid','value',source_row.dealer_id),
+   jsonb_build_object('name','status','type','text','value',source_row.status)));
+ SELECT jsonb_build_object('kind','REAL_APPLY_RLS_CONTROLLED_INPUT_DIAGNOSTIC','qualification',false,
+  'authenticatedPkSelect',has_column_privilege('authenticated','public.dealer_attendance','id','SELECT'),
+  'results',jsonb_agg(jsonb_build_object('rlsEnabled',r.is_rls_enabled,'authorizedSubscriptionCount',coalesce(cardinality(r.subscription_ids),0),'errors',r.errors)))
+ INTO diagnostic FROM realtime.apply_rls(input_wal,1048576) r;
+ PERFORM set_config('vinpoker.realtime_rls_diagnostic',diagnostic::text,true);
+EXCEPTION WHEN OTHERS THEN
+ PERFORM set_config('vinpoker.realtime_rls_diagnostic',jsonb_build_object('kind','REAL_APPLY_RLS_CONTROLLED_INPUT_DIAGNOSTIC','qualification',false,'sqlState',SQLSTATE)::text,true);
+END $diagnostic$;
+SELECT current_setting('vinpoker.realtime_rls_diagnostic');
+ROLLBACK;
+REALTIME_RLS_DIAGNOSTIC
     if [[ -n "${realtime_container:-}" ]]; then
       docker logs "$realtime_container" --tail 300 2>&1 | node --input-type=module -e '
         import {readFileSync} from "node:fs";
