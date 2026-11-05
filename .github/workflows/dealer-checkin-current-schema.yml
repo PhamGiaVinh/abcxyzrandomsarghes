@@ -1164,6 +1164,7 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
           VINPOKER_NATIVE_VOICE_FINISH=1 node tests/trackerVoice/paidFinishCommit.native.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000053_chip_color_up_receipt_reconciliation_v1.sql
           VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
           VINPOKER_NATIVE_RESTORE_HISTORY=1 node tests/cashier/restoreHistoryOrder.native.mjs
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs
