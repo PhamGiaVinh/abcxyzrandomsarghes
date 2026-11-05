@@ -679,6 +679,18 @@ INSERT INTO public.tournament_levels(tournament_id,level_number,small_blind,big_
 VALUES('ac300000-0000-4000-8000-000000000001',1,100,200,200,20,false),
  ('ac300000-0000-4000-8000-000000000001',2,200,400,400,20,false);
 CLOCK_FIXTURE
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'FNB_FIXTURE'
+-- Explicit opening stock/menu/recipe for isolated paid-order acceptance.
+-- Orders,payments,COGS and sale movements are created only by canonical RPCs.
+BEGIN;
+INSERT INTO public.fnb_ingredients(id,club_id,name,stock_unit,on_hand,avg_unit_cost)
+VALUES('afb10000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Operations TEST water stock','bottle',1000,5000);
+INSERT INTO public.fnb_menu_items(id,club_id,name,price_vnd,tracks_inventory)
+VALUES('afb20000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Operations TEST water',20000,true);
+INSERT INTO public.fnb_recipe_items(club_id,menu_item_id,ingredient_id,qty)
+VALUES('a2000000-0000-4000-8000-000000000001','afb20000-0000-4000-8000-000000000001','afb10000-0000-4000-8000-000000000001',1);
+COMMIT;
+FNB_FIXTURE
   checkin_fixture_enabled=1
 else
   printf '{}' >"$test_root/dealer-fixture.json"

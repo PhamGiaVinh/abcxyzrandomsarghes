@@ -681,3 +681,78 @@ test('real clock control HTTP latency and concurrent revision fencing',async()=>
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('populated F&B HTTP orders, duplicate payment and owner finance reconciliation',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated operation fixture only');
+ test.setTimeout(180_000);
+ const token=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='a2000000-0000-4000-8000-000000000001',menu='afb20000-0000-4000-8000-000000000001',ingredient='afb10000-0000-4000-8000-000000000001';
+ const day=financeBusinessToday(),from=day+'T00:00:00+07:00',to=new Date(Date.parse(from)+86400000).toISOString();
+ const samples:{operation:string;ms:number;warmup:boolean}[]=[];let phase='baseline',raceAccepted=0,raceReplays=0;
+ const rpc=async(actor:string,name:string,args:unknown)=>{
+  const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{
+   method:'POST',headers:{apikey:anon,Authorization:'Bearer '+actor,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000),
+  });
+  const data=await response.json(),ms=performance.now()-started;expect(response.ok,name).toBe(true);return {data,ms};
+ };
+ const report=()=>{
+  const grouped=['create','create_retry','pay','pay_retry','owner_report'].map(operation=>{
+   const rows=samples.filter(row=>row.operation===operation&&!row.warmup).map(row=>row.ms).sort((a,b)=>a-b);
+   return {operation,count:rows.length,p95Ms:rows.length?rows[Math.ceil(rows.length*.95)-1]:null,maxMs:rows.at(-1)??null};
+  });
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-fnb-paid-http.json'),JSON.stringify({
+   kind:'ACTUAL_AUTHENTICATED_FNB_ORDER_PAYMENT_STOCK_AND_FINANCE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,
+   businessDay:day,ownerActors:1,warmupOrders:5,gradedOrders:20,additionalRaceOrders:1,raceRequests:20,raceAccepted,raceReplays,samples,grouped,
+   fixture:{openingStock:1000,unitSale:20000,unitCost:5000,quantityPerOrder:2},qualification:false,
+   limitations:'Small isolated fixture,one real Auth owner with20concurrent same-owner payment requests; not20independent F&B staff,render/Realtime propagation or production capacity. Canonical server amounts and immutable sale movements are checked through independent authenticated reads.',
+  },null,2));
+ };
+ const fnbReport=async()=>{
+  const result=await rpc(token,'fnb_get_report',{p_club_id:club,p_from:from,p_to:to});
+  expect(result.data.error).toBeUndefined();return result;
+ };
+ const finance=async()=>{
+  const result=await rpc(token,'get_club_finance_summary_v2',{p_from_date:day,p_to_date:day,p_club_id:club});
+  const parsed=parseFinanceCore(result.data);assertFinanceCalendarScope(parsed.data,{from:day,to:day,clubId:club});
+  expect(parsed.revenue.fnb).toBeDefined();expect(parsed.cost.fnbCogs).toBeDefined();return parsed;
+ };
+ const intent=(requestId:string)=>({p_club_id:club,p_source:'counter',p_table_label:'Operations TEST',p_customer_name:'Operations TEST',p_note:'isolated latency fixture',
+  p_lines:[{menu_item_id:menu,qty:2}],p_client_request_id:requestId,p_table_ref:null,p_player_ref:null});
+ try{
+  const baseline=(await fnbReport()).data,beforeFinance=await finance();
+  phase='authority';
+  const denied=await rpc(staff[0].token,'fnb_create_order',intent(crypto.randomUUID()));expect(denied.data.error).toBe('Forbidden');
+  const crossClub=await rpc(token,'fnb_create_order',{...intent(crypto.randomUUID()),p_club_id:'ad200000-0000-4000-8000-000000000002'});
+  expect(crossClub.data.error).toBe('Forbidden');
+  for(let index=0;index<25;index++){
+   phase='create';const args=intent(crypto.randomUUID()),created=await rpc(token,'fnb_create_order',args);
+   expect(created.data.status).toBe('ok');expect(created.data.idempotent).toBe(false);expect(created.data.subtotal_vnd).toBe(40000);
+   const repeated=await rpc(token,'fnb_create_order',args);expect(repeated.data.order_id).toBe(created.data.order_id);expect(repeated.data.idempotent).toBe(true);
+   phase='pay';const payment={p_order_id:created.data.order_id,p_client_request_id:crypto.randomUUID()},paid=await rpc(token,'fnb_mark_paid',payment);
+   expect(paid.data.status).toBe('ok');expect(paid.data.idempotent).toBe(false);expect(paid.data.subtotal_vnd).toBe(40000);expect(paid.data.cogs_vnd).toBe(10000);
+   const retry=await rpc(token,'fnb_mark_paid',payment);expect(retry.data.order_id).toBe(created.data.order_id);expect(retry.data.idempotent).toBe(true);
+   phase='owner-report';const observed=await fnbReport();
+   expect(observed.data.orderCount-baseline.orderCount).toBe(index+1);expect(observed.data.revenue-baseline.revenue).toBe((index+1)*40000);
+   expect(observed.data.cogs-baseline.cogs).toBe((index+1)*10000);
+   for(const [operation,ms] of [['create',created.ms],['create_retry',repeated.ms],['pay',paid.ms],['pay_retry',retry.ms],['owner_report',observed.ms]] as [string,number][])
+    samples.push({operation,ms,warmup:index<5});report();
+  }
+  phase='same-order-payment-race';const created=await rpc(token,'fnb_create_order',intent(crypto.randomUUID()));expect(created.data.status).toBe('ok');
+  const replies=await Promise.all(Array.from({length:20},()=>rpc(token,'fnb_mark_paid',{p_order_id:created.data.order_id,p_client_request_id:crypto.randomUUID()})));
+  expect(replies.every(row=>row.data.status==='ok')).toBe(true);raceAccepted=replies.filter(row=>row.data.idempotent===false).length;raceReplays=replies.filter(row=>row.data.idempotent===true).length;
+  expect(raceAccepted).toBe(1);expect(raceReplays).toBe(19);report();
+  phase='stock-and-finance';
+  const readTable=async(path:string)=>{
+   const response=await fetch(api+'/rest/v1/'+path,{headers:{apikey:anon,Authorization:'Bearer '+token},signal:AbortSignal.timeout(5000)});
+   const data=await response.json();expect(response.ok,path).toBe(true);expect(Array.isArray(data)).toBe(true);return data;
+  };
+  const stock=await readTable('fnb_ingredients?select=id,on_hand&id=eq.'+ingredient);expect(stock).toHaveLength(1);expect(Number(stock[0].on_hand)).toBe(948);
+  const movements=await readTable('fnb_stock_movements?select=delta,unit_cost,ref_id&ingredient_id=eq.'+ingredient+'&reason=eq.sale');
+  expect(movements).toHaveLength(26);expect(new Set(movements.map((row:{ref_id:string})=>row.ref_id)).size).toBe(26);
+  for(const row of movements){expect(Number(row.delta)).toBe(-2);expect(Number(row.unit_cost)).toBe(5000);}
+  const finalReport=(await fnbReport()).data,afterFinance=await finance();
+  expect(finalReport.orderCount-baseline.orderCount).toBe(26);expect(finalReport.revenue-baseline.revenue).toBe(1040000);expect(finalReport.cogs-baseline.cogs).toBe(260000);
+  expect(afterFinance.revenue.fnb-beforeFinance.revenue.fnb).toBe(1040000);expect(afterFinance.cost.fnbCogs-beforeFinance.cost.fnbCogs).toBe(260000);
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
