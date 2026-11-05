@@ -112,7 +112,7 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  const payload=JSON.parse(sql(`BEGIN;
  CREATE TEMP TABLE native_voice_payloads(k text,v jsonb);GRANT SELECT,INSERT ON native_voice_payloads TO authenticated;
  SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
- DO $ DECLARE r jsonb;s record;d uuid:=gen_random_uuid();a uuid:=gen_random_uuid();shift uuid:=gen_random_uuid();BEGIN
+ DO $$ DECLARE r jsonb;s record;d uuid:=gen_random_uuid();a uuid:=gen_random_uuid();shift uuid:=gen_random_uuid();BEGIN
  SELECT * INTO STRICT s FROM public.table_sessions WHERE id='${table.table_session_id}';
  r:=public.floor_request_table_control_mode_v4('${table.id}',s.id,'tracker',s.revision,s.control_epoch,gen_random_uuid());
  IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_voice_mode_failed: %',r;END IF;
