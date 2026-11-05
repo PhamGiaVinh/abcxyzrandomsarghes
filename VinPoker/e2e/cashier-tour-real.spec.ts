@@ -97,6 +97,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  const identities=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const realtimeEnabled=process.env.LOCAL_OPERATIONS_REALTIME==='1';
  const seen=new Map<string,number>(),expectedDealers=new Set(fixture.dealerIds),realtimeErrors:string[]=[];
+ const realtimeStatuses:string[]=[],systemEvents:{status:string;extension:string;category:string}[]=[];
  let observer:ReturnType<typeof createClient>|undefined,observing=false,duplicateEvents=0;
  try{
  if(realtimeEnabled){
@@ -104,11 +105,17 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   await observer.realtime.setAuth(identities[19].token);
   await new Promise<void>((resolve,reject)=>{
    const timeout=setTimeout(()=>reject(Error('CHECKIN_REALTIME_JOIN_TIMEOUT')),15000);
-   observer!.channel('isolated-checkin-observer').on('postgres_changes',{event:'INSERT',schema:'public',table:'dealer_attendance'},payload=>{
+   observer!.channel('isolated-checkin-observer').on('system',{},payload=>{
+    // Persist only classifications, never raw server messages or JWTs.
+    const message=String(payload.message??'').toLowerCase();
+    systemEvents.push({status:String(payload.status??'').slice(0,40),extension:String(payload.extension??'').slice(0,40),category:
+     /permission|privilege|denied/.test(message)?'permission':/publication/.test(message)?'publication':/connect|timeout/.test(message)?'connection':/subscribed/.test(message)?'subscribed':'other'});
+   }).on('postgres_changes',{event:'INSERT',schema:'public',table:'dealer_attendance'},payload=>{
     const row=payload.new;
     if(!expectedDealers.has(row.dealer_id)||row.status!=='checked_in'||row.current_state!=='available'){realtimeErrors.push('unexpected_scope_or_state');return;}
     if(seen.has(row.dealer_id))duplicateEvents++;else seen.set(row.dealer_id,performance.now());
    }).subscribe(status=>{
+    realtimeStatuses.push(status);
     if(status==='SUBSCRIBED'){clearTimeout(timeout);resolve();}
     else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){clearTimeout(timeout);reject(Error('CHECKIN_REALTIME_JOIN_FAILED'));}
     if(observing&&status!=='SUBSCRIBED')realtimeErrors.push('observer_disconnected');
@@ -151,6 +158,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   }
   let writeToRealtimeMs:number|null=null;
   if(realtimeEnabled){
+   expect(await read(identities[19].token,dealerId),'WebSocket observer must independently have actual RLS read access').toHaveLength(1);
    const deadline=performance.now()+5000;
    while(!seen.has(dealerId)&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
    expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
@@ -174,6 +182,9 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   realtime:{enabled:realtimeEnabled,observers:realtimeEnabled?1:0,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,clock:'write-start and actual SDK callback use same monotonic client clock;not pure server-commit timing',postgresImage:realtimeEnabled?'17.6.1.155 pinned digest;see harness':'CLI default'},
   scenarios:samples.map(row=>({...row,distributions:{firstAck:summarize(row.firstAckMs),independentReadAfterAck:summarize(row.independentReadAfterAckMs),writeToObserved:summarize(row.writeToObservedMs),retryAck:summarize(row.retryAckMs),writeToRealtime:realtimeEnabled?summarize(row.writeToRealtimeMs):null}})),crossTenantDenied:true,crossActorReceiptUnknown:true,exactRetryMatched:true,qualification:false,
   limitations:'360synthetic dealers;small fixture;HTTP acknowledgment and independent committed-state read;optional one real WS observer with20writers,not20observers or UI rendering;no production capacity claim;native SQL postcheck additionally verifies attendance/receipt cardinality.'},null,2));
+ }catch(error){
+  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,reason:'Actual check-in/observer assertions failed;see sanitized test assertion output'},null,2));
+  throw error;
  }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
 
