@@ -1111,6 +1111,12 @@ jobs:
           set -euo pipefail
           createdb -T vinpoker_ops_cash112_qualified "$PGDATABASE"
           node tests/cashier/seatingMigrations.pg17.mjs
+          # This branch was cloned before the independent restore/chip fixture.
+          # Install the canonical restore chain expected by the116 preimage.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000015_floor_restore_bust_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000052_floor_restore_receipt_reconciliation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000054_restore_pending_cancellation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql
           node tests/cashier/seatingMigrations.pg17.mjs --only116
           node tests/cashier/seatingMigrations.pg17.mjs --only117
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql
