@@ -51,6 +51,12 @@ async function loginFixtureStaff(){
  return identities;
 }
 
+async function selectDealerSwingClub(page:Page,name:string){
+ const scope=page.getByRole('heading',{name:'Chọn CLB để vận hành Dealer Swing',exact:true}).locator('..');
+ await expect(scope).toBeVisible();await scope.getByRole('combobox').click();
+ await page.getByRole('option',{name,exact:true}).click();
+}
+
 test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>{
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Latency output is enabled only by the isolated stack');
  test.setTimeout(120_000);
@@ -184,6 +190,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
     return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select.includes('dealers!inner(')&&url.searchParams.has('dealers.club_id');
    },{timeout:30_000});
    await page.goto('/ops/dealer-swing?club='+fixture.clubId);
+   await selectDealerSwingClub(page,'Cashier Edge TEST');
    expect(await page.evaluate(()=>window.isSecureContext&&typeof crypto.randomUUID==='function'),
     'Isolated operational browser must supply the secure-context API available on production HTTPS').toBe(true);
    const initialResponse=await initialAttendance;expect(initialResponse.ok()).toBe(true);
@@ -818,7 +825,7 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
  },null,2));
  try{
   if(realtimeEnabled){
-   phase='screen-load';await page.goto('/dealer-swing');
+   phase='screen-load';await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');
    await expect(page.locator('#table-card-'+fixture.handovers[0].table_id)).toBeVisible({timeout:30_000});
    await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);
   }
