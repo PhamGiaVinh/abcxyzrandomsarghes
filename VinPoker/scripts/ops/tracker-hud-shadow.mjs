@@ -92,6 +92,7 @@ export const shadowSql=`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout='60min';
 SET LOCAL request.jwt.claims='{"role":"service_role"}';
 SELECT jsonb_build_object('kind','header','snapshot',pg_current_snapshot()::text,'database',current_database(),'serverVersion',current_setting('server_version_num')::int,'serverAddress',inet_server_addr()::text,
+ 'currentUser',current_user,'databaseComment',(SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()),
  'readOnly',current_setting('transaction_read_only')='on','isolation',current_setting('transaction_isolation'),
  'version',version,'backfillComplete',backfill_complete,'handsDone',hands_done,'resultsDone',results_done,
  'pendingJobs',(SELECT count(*) FROM tracker_analytics_v1.jobs),'barriers',(SELECT count(*) FROM tracker_analytics_v1.visibility_barriers))
@@ -119,6 +120,20 @@ SELECT jsonb_build_object('kind','tour','value',to_jsonb(t)||jsonb_build_object(
 SELECT jsonb_build_object('kind','player','value',to_jsonb(p)||jsonb_build_object('winnings',p.winnings::text)) FROM tracker_analytics_v1.player_totals p WHERE version=(SELECT version FROM tracker_analytics_v1.config WHERE singleton);
 SELECT '{"kind":"end"}'::jsonb;ROLLBACK;`;
 
+export function validateShadowTarget(row,env,local){
+ assert.equal(row.database,env.PGDATABASE);assert.equal(row.currentUser,'postgres');
+ assert.ok(row.serverVersion>=170000&&row.serverVersion<180000);
+ if(!local)return 'exact-production-ssl-read-only';
+ if(row.serverAddress==='127.0.0.1/32')return 'native-loopback';
+ // Actions' postgres:17 service is published on client loopback but PostgreSQL
+ // sees its container interface. Require the exact workflow-created database
+ // and marker as well as the CLI's existing loopback host/port validation.
+ assert.equal(env.GITHUB_ACTIONS,'true');assert.equal(env.PGPORT,'5432');
+ assert.equal(env.PGDATABASE,'vinpoker_hud_test_ci');
+ assert.equal(row.databaseComment,'vinpoker-hud-shadow-isolated-ci');
+ return 'marked-isolated-actions-container';
+}
+
 async function main(){
  const env=process.env,db=env.PGDATABASE;
  assert.equal(env.PGUSER,'postgres');
@@ -137,7 +152,7 @@ async function main(){
  child.stdin.on('error',()=>{});child.stdin.end(shadowSql);
  try{for await(const line of createInterface({input:child.stdout}))if(line.trim()){
    const row=JSON.parse(line);
-   if(row.kind==='header'){assert.equal(row.database,db);assert.ok(row.serverVersion>=170000&&row.serverVersion<180000);if(local)assert.equal(row.serverAddress,'127.0.0.1/32');}
+   if(row.kind==='header')shadow.report.target=validateShadowTarget(row,env,local);
    shadow.accept(row);
   }
   assert.equal(await done,0,'Read-only shadow transaction failed');shadow.finish();

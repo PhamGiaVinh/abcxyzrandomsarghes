@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {loadClassifier,createShadow,normalizeSource,shadowSql} from './tracker-hud-shadow.mjs';
+import {loadClassifier,createShadow,normalizeSource,shadowSql,validateShadowTarget} from './tracker-hud-shadow.mjs';
 const classifier=await loadClassifier();
 const header={kind:'header',snapshot:'10:11:',readOnly:true,isolation:'repeatable read',version:classifier.PUBLIC_HUD_PROJECTION_VERSION,backfillComplete:true,handsDone:true,resultsDone:true,pendingJobs:0,barriers:0};
 const hand={handId:'hand',status:'completed',isVoided:false,buttonSeat:1,boardCardCount:0,
@@ -44,4 +44,13 @@ test('detects stale displayed result metadata even when winnings match',()=>{
  rows.splice(2,0,{kind:'result',id:'result',source:{player_id:'a',verified_by_admin:true,prize:'100',...metadata},projected:{player_id:'a',prize:'100',...metadata,position:2}});
  const player=rows.find(r=>r.kind==='player'&&r.value.player_id==='a');player.value.winnings='100';player.value.result_count=1;
  assert.ok(run(rows).examples.some(e=>e.code==='result_contribution'));
+});
+test('requires exact marked Actions fixture for a container server interface',()=>{
+ const env={PGDATABASE:'vinpoker_hud_test_ci',PGPORT:'5432',GITHUB_ACTIONS:'true'};
+ const row={database:env.PGDATABASE,currentUser:'postgres',serverVersion:170006,serverAddress:'172.17.0.2/32',databaseComment:'vinpoker-hud-shadow-isolated-ci'};
+ assert.equal(validateShadowTarget(row,env,true),'marked-isolated-actions-container');
+ for(const change of [{databaseComment:null},{database:'other'},{serverVersion:160000},{currentUser:'anon'}])assert.throws(()=>validateShadowTarget({...row,...change},env,true));
+ assert.throws(()=>validateShadowTarget(row,{...env,GITHUB_ACTIONS:'false'},true));
+ assert.throws(()=>validateShadowTarget(row,{...env,PGPORT:'55441'},true));
+ assert.equal(validateShadowTarget({...row,serverAddress:'127.0.0.1/32',databaseComment:null},{...env,GITHUB_ACTIONS:'false'},true),'native-loopback');
 });
