@@ -39,8 +39,9 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async({pa
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Latency output is enabled only by the isolated stack');
  test.setTimeout(120_000);
  expect(process.env.LOCAL_OPERATIONS_SOURCE_SHA).toMatch(/^[a-f0-9]{40}$/);
- const token=await loginOwner(page),samples:number[]=[];
- for(let i=0;i<120;i++){
+ const token=await loginOwner(page);
+ const scenarios:{concurrency:number;samplesMs:number[];p50Ms:number;p95Ms:number;p99Ms:number;maxMs:number}[]=[];
+ const read=async()=>{
   const started=performance.now();
   const response=await fetch(process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'')+'/rest/v1/rpc/cashier_tour_worklist_v1',{
    method:'POST',headers:{apikey:process.env.LOCAL_SUPABASE_ANON_KEY!,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
@@ -49,10 +50,21 @@ test('authenticated Cashier worklist HTTP latency on isolated fixture',async({pa
   const result=await response.json(),elapsed=performance.now()-started;
   expect(response.ok).toBe(true);expect(result.ok).toBe(true);expect(result.error).toBeUndefined();
   expect(Array.isArray(result.rows)).toBe(true);expect(result.rows.length).toBeGreaterThan(0);
-  if(i>=20)samples.push(elapsed);
+  return elapsed;
+ };
+ for(const concurrency of [1,5,20]){
+  const batch=async(count:number)=>{
+   let cursor=0;const samples:number[]=[];
+   await Promise.all(Array.from({length:Math.min(concurrency,count)},async()=>{
+    while(cursor<count){cursor++;samples.push(await read());}
+   }));
+   expect(samples).toHaveLength(count);return samples;
+  };
+  await batch(20);
+  const samples=await batch(100),ordered=[...samples].sort((a,b)=>a-b);
+  scenarios.push({concurrency,samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered[99]});
  }
- const ordered=[...samples].sort((a,b)=>a-b);
- writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',warmup:20,graded:samples.length,concurrency:1,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',samplesMs:samples,p50Ms:ordered[49],p95Ms:ordered[94],p99Ms:ordered[98],maxMs:ordered.at(-1),qualification:false,limitations:'Small fixed TEST tour,owner actor,no Realtime,no concurrent writers; not production capacity or screen render latency'},null,2));
+ writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!,JSON.stringify({kind:'REAL_AUTHENTICATED_POSTGREST_CASHIER_READ_LATENCY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,operation:'cashier_tour_worklist_v1',warmupPerScenario:20,gradedPerScenario:100,scenarios,transport:'Actual HTTP through isolated gateway; complete JSON body; excludes login',qualification:false,limitations:'Small fixed TEST tour,same owner token for all requests,no Realtime,no concurrent writers; concurrency is requests,not independent staff actors; not production capacity or screen render latency'},null,2));
 });
 
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {
