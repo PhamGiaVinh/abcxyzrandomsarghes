@@ -1158,6 +1158,10 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000186_tv_layout_fallback_brand_read_v1.sql
           node tests/trackerSettlement/tvStorage.bootstrap.mjs
           VINPOKER_NATIVE_TV_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidTvPublish.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
+          # Voice handoff uses the same check-in receipt and rest15 operator contracts.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
           VINPOKER_NATIVE_VOICE_FINISH=1 node tests/trackerVoice/paidFinishCommit.native.mjs
           VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
