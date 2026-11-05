@@ -124,7 +124,8 @@ DO $$ DECLARE s jsonb; d jsonb; r jsonb; original jsonb; req uuid; se bigint; de
  INSERT INTO public.dealers(id,club_id,full_name,status)
  VALUES('f7290000-0000-4000-8000-000000000031','f7290000-0000-4000-8000-000000000002','Source dealer TEST','active');
  INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
- VALUES('f7290000-0000-4000-8000-000000000041','f7290000-0000-4000-8000-000000000031','f7290000-0000-4000-8000-000000000030',current_date,'checked_in',now(),'available');
+ VALUES('f7290000-0000-4000-8000-000000000041','f7290000-0000-4000-8000-000000000031','f7290000-0000-4000-8000-000000000030',
+   (statement_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,'checked_in',statement_timestamp(),'available');
  PERFORM set_config('request.jwt.claim.role','authenticated',true);
  PERFORM set_config('request.headers','{"x-vinpoker-dealer-intent":"manual","x-vinpoker-dealer-actor":"f7290000-0000-4000-8000-000000000001"}',true);
  INSERT INTO public.dealer_assignments(table_id,table_session_id,attendance_id,dealer_id,club_id,status,assigned_at)

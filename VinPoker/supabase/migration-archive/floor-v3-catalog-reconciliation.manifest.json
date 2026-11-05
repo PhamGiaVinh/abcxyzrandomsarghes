@@ -9952,6 +9952,12 @@
       "filename": "20261105072714_public_hud_history_amounts_materialized.sql",
       "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
       "reason": "Materialize four validated settlement amounts once per bounded history row. Preserves source, proof, pagination, unknown stacks and ACL. Exact package approval required."
+    },
+    {
+      "version": "20261106010000",
+      "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
+      "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
+      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved23-migration package is required before production apply."
     }
   ],
   "floorActiveAllowlist": [
