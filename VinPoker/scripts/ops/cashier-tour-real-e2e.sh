@@ -503,14 +503,16 @@ CHECKIN_PREFLIGHT
   echo "CHECKIN_SCHEMA_PROOF: exact14/51 added only to the disposable contemporary runtime; no historical migration or production claim"
   if [[ "$realtime_mode" == 1 ]]; then
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REALTIME_FIXTURE'
-DO $$ BEGIN
+DO $$ DECLARE source_table text;BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime') THEN RAISE EXCEPTION 'isolated_realtime_publication_missing';END IF;
- IF NOT EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid WHERE p.pubname='supabase_realtime' AND r.prrelid='public.dealer_attendance'::regclass) THEN
-  ALTER PUBLICATION supabase_realtime ADD TABLE public.dealer_attendance;
- END IF;
+ FOREACH source_table IN ARRAY ARRAY['dealer_attendance','table_sessions','tournament_tables','tournament_seats','tournament_chip_counts','tournament_entries'] LOOP
+  IF NOT EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid WHERE p.pubname='supabase_realtime' AND r.prrelid=to_regclass('public.'||source_table)) THEN
+   EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I',source_table);
+  END IF;
+ END LOOP;
 END $$;
 REALTIME_FIXTURE
-    echo "REALTIME_FIXTURE_PROOF:actualdealer_attendance publication;existingRLSretained;noquotaoverride"
+    echo "REALTIME_FIXTURE_PROOF:actualattendance/session/table/seat/chip/entry publications;existingRLSretained;noquotaoverride"
   fi
 fi
 set +e

@@ -334,10 +334,25 @@ test('canonical Floor open and close propagate into one continuously open screen
   const payload=await response.json();expect(response.ok,name).toBe(true);return payload;
  };
  const rows:{operation:string;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
- let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='';
+ let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false;
+ const openedHints=new Set<string>(),closedHints=new Set<string>();
+ page.on('websocket',socket=>socket.on('framereceived',frame=>{
+  try{
+   const message=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString());
+   if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:floor-map-v3:'))return;
+   const payload=message.payload;
+   if(message.event==='system'&&payload?.status==='ok'&&payload?.extension==='postgres_changes')postgresReady=true;
+   const data=payload?.data,row=data?.record;
+   if(message.event!=='postgres_changes'||!row)return;
+   const session=data.table==='table_sessions'?row.id:data.table==='tournament_tables'?row.table_session_id:null;
+   if(typeof session!=='string')return;
+   if((data.table==='table_sessions'&&row.closed_at!=null)||(data.table==='tournament_tables'&&row.status==='closed'))closedHints.add(session);
+   else openedHints.add(session);
+  }catch{/* Do not retain raw frames, claims or row payloads in artifacts. */}
+ }));
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-session-ui-http.json'),JSON.stringify({
   kind:'ACTUAL_FLOOR_SESSION_WRITE_AND_OPEN_SCREEN_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  actors:1,concurrency:1,gradedPerOperation:1,phase,committedOpen,independentRosterConfirmed,rosterRpc,rows,
+  actors:1,concurrency:1,gradedPerOperation:1,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,rows,
   fixtureBuild:{floorV3:'preview',floorUatEnvironment:'preview',redraw:'off'},
   qualification:false,limitations:'Single canonical open/close pair on an empty TEST table. One observation has no meaningful p95;not seat-move/dealer handover or concurrent operational acceptance. No manual refresh/reload after initial screen load.',
  },null,2));
@@ -347,6 +362,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const initialReply=await loaded;rosterRpc=new URL(initialReply.url()).pathname.split('/').at(-1)!;
   expect(Array.isArray(await initialReply.json())).toBe(true);
   await expect(page.getByTestId('floor-table-map-v3')).toBeVisible();
+  await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);
   await expect(page.getByTestId('floor-table-map-v3').locator('[data-ops-action="floor.tables.refresh"]')).toBeEnabled();
   await expect(page.getByTestId('floor-table-map-v3').getByRole('alert')).toHaveCount(0);
   const card=page.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${fixture.floorTable.tableNumber}"]`);
@@ -359,6 +375,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const roster=await rpc(rosterRpc,{p_tournament_id:tourId});
   expect(Array.isArray(roster)).toBe(true);expect(roster.some((row:{table_session_id:string})=>row.table_session_id===opened.table_session_id)).toBe(true);
   independentRosterConfirmed=true;report();
+  await expect.poll(()=>openedHints.has(opened.table_session_id),{timeout:Math.max(1,5000-(performance.now()-started))}).toBe(true);
   await expect(card).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
   rows[0].writeToVisibleMs=performance.now()-started;rows[0].status='visible';report();
   phase='close';const closing=performance.now();
@@ -366,6 +383,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const closed=await rpc('close_tournament_table_v3',closeIntent);expect(closed.ok).toBe(true);
   rows.push({operation:'close',ackMs:performance.now()-closing,status:'committed'});report();
   expect(await rpc('close_tournament_table_v3',closeIntent)).toEqual(closed);
+  await expect.poll(()=>closedHints.has(opened.table_session_id),{timeout:Math.max(1,5000-(performance.now()-closing))}).toBe(true);
   await expect(card).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-closing))});
   rows[1].writeToVisibleMs=performance.now()-closing;rows[1].status='visible';phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}

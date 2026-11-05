@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Loader2, LockKeyhole, Plus, RadioTower, RefreshCw, RotateCcw, Shuffle, UnlockKeyhole, UserRoundMinus, UserRoundX, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
@@ -173,8 +173,11 @@ function ScopedFloorTableMapPanelV3({
   const currentReadScope = useRef(readScope);
   currentReadScope.current = readScope;
   const readSequence = useRef(0);
+  const liveHintEpoch = useRef(0);
+  const liveReadId = useId();
   const load = useCallback(async (silent = false) => {
     const sequence = ++readSequence.current;
+    const hintAtStart = liveHintEpoch.current;
     const isCurrent = () => currentReadScope.current === readScope && readSequence.current === sequence;
     if (!v3.enabled) {
       setLoading(false);
@@ -224,7 +227,7 @@ function ScopedFloorTableMapPanelV3({
       if (!silent) toast.error(message);
       return false;
     } finally {
-      if (isCurrent()) setLoading(false);
+      if (isCurrent() && hintAtStart === liveHintEpoch.current) setLoading(false);
     }
   }, [readScope, tournament.id, tournamentEnded, v3]);
 
@@ -232,6 +235,68 @@ function ScopedFloorTableMapPanelV3({
     void load();
     return () => { ++readSequence.current; };
   }, [load, refreshTrigger]);
+
+  useEffect(() => {
+    if (!actorId || !v3.enabled || tournamentEnded) return;
+    let active = true, healthy = false, reading = false, queued = false, failures = 0, pollEpoch = 0;
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    let fallback: ReturnType<typeof setTimeout> | undefined;
+    const visible = () => document.visibilityState !== "hidden";
+    const schedule = () => {
+      if (!active || !visible() || debounce !== undefined) return;
+      // Keep the first deadline: a busy stream must not postpone reads forever.
+      debounce = setTimeout(() => { debounce = undefined; void refresh(); }, 200);
+    };
+    const refresh = async () => {
+      if (!active || !visible()) { queued = true; return; }
+      if (reading) { queued = true; return; }
+      reading = true; queued = false;
+      try { failures = await load(true) ? 0 : Math.min(failures + 1, 4); }
+      finally { reading = false; if (active && queued) schedule(); }
+    };
+    const invalidate = () => {
+      if (!active) return;
+      // Keep writes fenced until a read covers the latest hint; allow same-scope display progress.
+      ++liveHintEpoch.current; setLoading(true); queued = true; schedule();
+    };
+    const poll = () => {
+      clearTimeout(fallback);
+      const owned = ++pollEpoch;
+      const delay = healthy ? 30_000 + Math.random() * 3_000 : Math.min(30_000, 3_000 * 2 ** failures);
+      fallback = setTimeout(async () => {
+        if (!active || owned !== pollEpoch) return;
+        if (visible()) await refresh();
+        if (active && owned === pollEpoch) poll();
+      }, delay);
+    };
+    let channel = supabase.channel(`floor-map-v3:${tournament.id}:${liveReadId}`);
+    for (const table of ["table_sessions", "tournament_tables", "tournament_seats", "tournament_chip_counts", "tournament_entries"]) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `tournament_id=eq.${tournament.id}` }, invalidate);
+    }
+    channel.on("system", {}, payload => {
+      if (!active || payload.extension !== "postgres_changes" || payload.status !== "ok") return;
+      healthy = true; invalidate(); poll();
+    });
+    channel.subscribe(status => {
+      if (!active) return;
+      if (status !== "SUBSCRIBED") healthy = false;
+      // Re-read after joining/rejoining to close the initial read/subscribe gap.
+      invalidate(); poll();
+    });
+    const resume = () => { if (visible()) { invalidate(); poll(); } };
+    const offline = () => { healthy = false; invalidate(); poll(); };
+    window.addEventListener("online", resume);
+    window.addEventListener("offline", offline);
+    document.addEventListener("visibilitychange", resume);
+    poll();
+    return () => {
+      active = false; clearTimeout(debounce); clearTimeout(fallback);
+      window.removeEventListener("online", resume);
+      window.removeEventListener("offline", offline);
+      document.removeEventListener("visibilitychange", resume);
+      void supabase.removeChannel(channel);
+    };
+  }, [actorId, sessionEpoch, tournament.id, tournamentEnded, v3.enabled, load, liveReadId, supabase]);
 
   useEffect(() => {
     if (!pendingMoves.some((move) => move.status === "pending")) return;
@@ -391,7 +456,7 @@ function ScopedFloorTableMapPanelV3({
   }
 
   if (tournamentEnded) return (
-    <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3">
+    <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3" aria-busy={loading}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Bàn của giải đã đóng</h2>
         <Button data-ops-action="floor.tables.refresh" size="sm" variant="outline" className="min-h-12" disabled={loading} onClick={() => void load()}>
@@ -413,7 +478,7 @@ function ScopedFloorTableMapPanelV3({
 
 
   return (
-    <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3">
+    <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3" aria-busy={loading}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold">Bàn đang sử dụng</h2>
@@ -434,7 +499,7 @@ function ScopedFloorTableMapPanelV3({
       {secondaryLoadError && <p role="status" className="rounded-xl border border-amber-400/35 bg-amber-400/10 p-3 text-sm text-amber-100">{secondaryLoadError}</p>}
       {operationError && <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{operationError}</p>}
 
-      {loading ? (
+      {loading && tables.length === 0 ? (
         <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Đang tải danh sách bàn…</div>
       ) : tables.length === 0 ? (
         !loadError && <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{tournamentEnded ? "Không còn bàn đang hoạt động trong giải này." : "Chưa có bàn đang hoạt động. Chọn “Mở bàn” để lấy một bàn vật lý còn trống."}</div>
