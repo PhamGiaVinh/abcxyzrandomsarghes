@@ -15,13 +15,19 @@ assert.deepEqual(oldHashes,['80d94877352e8ad4bb86c3ffd6fa9c4e','ef1f388d4fe77907
 const scope=jsonSql(`SELECT jsonb_build_object('hand',h.id,'tour',h.tournament_id) FROM public.tournament_hands h
  WHERE NOT coalesce(h.is_voided,false) AND EXISTS(SELECT 1 FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=h.id) LIMIT 1;`);
 assert.ok(scope?.hand);
+// Native fixtures record send() arguments locally. The real isolated Supabase
+// stack uses its actual managed message table; never replace realtime.send().
+const fixtureSink=sql("SELECT position('fixture_messages' IN pg_get_functiondef('realtime.send(jsonb,text,text,boolean)'::regprocedure))>0;")==='t';
+if(!fixtureSink)assert.equal(process.env.PUBLIC_HUD_ISOLATED_STACK,'vinpoker-hud-scale');
+const messageTable=fixtureSink?'realtime.fixture_messages':'realtime.messages';
 sql(migration);assert.deepEqual(metadata(),before);
 assert.deepEqual(Object.values(postcheck()),[true,true]);
 assert.throws(()=>sql(migration),/hand withdrawal preimage differs/);
 const cases=[];
 for(const mode of ['hand','mixed','split','tour']){
  const result=jsonSql(`BEGIN; SET LOCAL request.jwt.claim.role='service_role';
- DELETE FROM spectator_projection_v2.broadcast_pending_v1;DELETE FROM tracker_analytics_v1.revocation_broadcast_v1;DELETE FROM realtime.fixture_messages;
+ DELETE FROM spectator_projection_v2.broadcast_pending_v1;DELETE FROM tracker_analytics_v1.revocation_broadcast_v1;
+ CREATE TEMP TABLE hud_existing_message_rows AS SELECT tableoid AS relation,ctid AS row FROM ${messageTable};
  ${mode==='tour'?`UPDATE public.tournaments SET deleted_at=now() WHERE id='${scope.tour}';`:`UPDATE public.tournament_hands SET is_voided=true WHERE id='${scope.hand}';`}
  ${mode==='mixed'||mode==='split'?`SELECT spectator_projection_v2.queue_broadcast_v1('${scope.tour}','visibility',pg_current_xact_id()::text);`:''}
  ${mode==='split'?`INSERT INTO spectator_projection_v2.broadcast_pending_v1(tournament_id,component,revision,source_txid) SELECT '${scope.tour}','tables','test',(100+n)::text::xid8 FROM generate_series(1,501) n;`:''}
@@ -29,8 +35,8 @@ for(const mode of ['hand','mixed','split','tour']){
  IF NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.revocation_broadcast_v1) THEN RAISE EXCEPTION 'global HUD revocation missing'; END IF;
  ${mode==='hand'?`IF NOT EXISTS(SELECT 1 FROM spectator_projection_v2.broadcast_pending_v1 WHERE component='hand_visibility') OR EXISTS(SELECT 1 FROM spectator_projection_v2.broadcast_pending_v1 WHERE component='visibility') THEN RAISE EXCEPTION 'hand scope outbox incorrect'; END IF;`:''}
  PERFORM public.flush_public_spectator_broadcast_v2(100); END $$;
- SELECT jsonb_build_object('messages',(SELECT jsonb_agg(payload) FROM realtime.fixture_messages WHERE event='changed' AND topic='public:tournament-viewer-v2:${scope.tour}'),
-  'hudRevocations',(SELECT count(*) FROM realtime.fixture_messages WHERE event='revoked'),'pending',(SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1));ROLLBACK;`);
+ SELECT jsonb_build_object('messages',(SELECT jsonb_agg(payload) FROM ${messageTable} m WHERE event='changed' AND topic='public:tournament-viewer-v2:${scope.tour}' AND NOT EXISTS(SELECT 1 FROM hud_existing_message_rows b WHERE b.relation=m.tableoid AND b.row=m.ctid)),
+  'hudRevocations',(SELECT count(*) FROM ${messageTable} m WHERE event='revoked' AND NOT EXISTS(SELECT 1 FROM hud_existing_message_rows b WHERE b.relation=m.tableoid AND b.row=m.ctid)),'pending',(SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1));ROLLBACK;`);
  assert.equal(result.hudRevocations,1);
  if(mode==='split')assert.ok(result.pending>0,'Full visibility remains in the next outbox batch');else assert.equal(result.pending,0);
  assert.equal(result.messages.length,1);
@@ -41,6 +47,6 @@ for(const mode of ['hand','mixed','split','tour']){
 }
 sql(recovery);assert.deepEqual(hashes(),oldHashes);assert.deepEqual(metadata(),before);
 sql(migration);
-const report={kind:'NATIVE_HAND_WITHDRAWAL_SCOPE',passed:true,cases,metadataPreserved:true,duplicateDenied:true,guardedRecoveryPassed:true,productionChanged:false};
+const report={kind:'NATIVE_HAND_WITHDRAWAL_SCOPE',passed:true,messageSink:messageTable,cases,metadataPreserved:true,duplicateDenied:true,guardedRecoveryPassed:true,productionChanged:false};
 if(process.env.PUBLIC_HUD_HAND_WITHDRAWAL_REPORT)writeFileSync(process.env.PUBLIC_HUD_HAND_WITHDRAWAL_REPORT,JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify(report));
