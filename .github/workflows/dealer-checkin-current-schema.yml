@@ -34,6 +34,7 @@ on:
       - 'VinPoker/tests/cashier/canonicalPaidSeating*'
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/tests/cashier/paidTourRoster.native.mjs'
+      - 'VinPoker/tests/cashier/operationReadLatency.native.mjs'
       - 'VinPoker/tests/cashier/paidMemberHistory.native.mjs'
       - 'VinPoker/tests/dealerSwing/paidTourInitialAssign.native.mjs'
       - 'VinPoker/tests/trackerVoice/paidTourHand.native.mjs'
@@ -1165,7 +1166,7 @@ jobs:
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
           VINPOKER_NATIVE_VOICE_FINISH=1 node tests/trackerVoice/paidFinishCommit.native.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000053_chip_color_up_receipt_reconciliation_v1.sql
-          VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_OPS_READ_LATENCY_REPORT=output/operations-latency/native-reads.json VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
           VINPOKER_NATIVE_RESTORE_HISTORY=1 node tests/cashier/restoreHistoryOrder.native.mjs
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs
           VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --existing-places
@@ -1191,6 +1192,14 @@ jobs:
           node --test tests/cashier/reentryTransport.test.mjs
           deno check supabase/functions/tournament-reentry/index.ts
           deno check supabase/functions/tournament-live-resettle-commit/index.ts
+      - name: Sanitized operations read latency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-read-latency-${{ github.sha }}
+          path: VinPoker/output/operations-latency/native-reads.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Manual75 full migration rollback and actor-bound payload receipts
         working-directory: VinPoker
         env:
