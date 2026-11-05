@@ -1041,6 +1041,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql
           # Cross-module compatibility on the same final candidate, not web acceptance.
           createdb -T "$PGDATABASE" vinpoker_ops_full111_finish99
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql
           for failure_case in '' TICKET_FAILURE_CASE; do
             extra=()
             if [ -n "$failure_case" ]; then extra=(-v "$failure_case=true"); fi
