@@ -511,6 +511,9 @@ REPORT_PREFLIGHT
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql"
   echo "FLOOR_SCHEMA_PROOF: exact26 session-label fix added only to the disposable current runtime"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20261030050418_dealer_table_arrival_ack_v1.sql"
+  echo "ARRIVAL_SCHEMA_PROOF: exact arrival acknowledgement contract; no assignment or payroll writer replacement"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHECKIN_PREFLIGHT'
 DO $$ BEGIN
  IF to_regprocedure('public.operator_check_in_dealer_v1(uuid,uuid,uuid,uuid)') IS NOT NULL
@@ -685,13 +688,18 @@ CREATE TEMP TABLE handover_latency AS SELECT n,md5('http-handover-table-'||n)::u
  md5('http-handover-out-dealer-'||n)::uuid outgoing_dealer,md5('http-handover-in-dealer-'||n)::uuid incoming_dealer,
  md5('http-handover-out-attendance-'||n)::uuid outgoing_attendance,md5('http-handover-in-attendance-'||n)::uuid incoming_attendance
 FROM generate_series(1,23) n;
+ALTER TABLE handover_latency ADD COLUMN incoming_actor uuid;
+WITH actors AS (SELECT user_id,row_number() OVER(ORDER BY user_id) slot FROM public.club_dealer_controls
+ WHERE club_id='a2000000-0000-4000-8000-000000000001')
+UPDATE handover_latency h SET incoming_actor=a.user_id FROM actors a WHERE a.slot=1+((h.n-1)%20);
+DO $$ BEGIN IF EXISTS(SELECT 1 FROM handover_latency WHERE incoming_actor IS NULL) THEN RAISE EXCEPTION 'handover_actor_fixture_missing';END IF;END $$;
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 SELECT table_id,'ad500000-0000-4000-8000-000000000001','Handover TEST '||n,n,'cash','active','available' FROM handover_latency;
 INSERT INTO public.table_sessions(id,club_id,game_table_id,session_type,control_mode,control_epoch,revision)
 SELECT session_id,'ad500000-0000-4000-8000-000000000001',table_id,'cash','manual',1,1 FROM handover_latency;
-INSERT INTO public.dealers(id,club_id,full_name,status)
-SELECT outgoing_dealer,'ad500000-0000-4000-8000-000000000001'::uuid,'Handover outgoing TEST '||n,'active' FROM handover_latency
-UNION ALL SELECT incoming_dealer,'ad500000-0000-4000-8000-000000000001','Handover incoming TEST '||n,'active' FROM handover_latency;
+INSERT INTO public.dealers(id,club_id,user_id,full_name,status)
+SELECT outgoing_dealer,'ad500000-0000-4000-8000-000000000001'::uuid,NULL::uuid,'Handover outgoing TEST '||n,'active' FROM handover_latency
+UNION ALL SELECT incoming_dealer,'ad500000-0000-4000-8000-000000000001',incoming_actor,'Handover incoming TEST '||n,'active' FROM handover_latency;
 INSERT INTO public.dealer_attendance(id,dealer_id,status,check_in_time,current_state,pre_assigned_table_id,pre_assigned_at)
 SELECT outgoing_attendance,outgoing_dealer,'checked_in',now()-interval '1 hour','assigned',NULL::uuid,NULL::timestamptz FROM handover_latency
 UNION ALL SELECT incoming_attendance,incoming_dealer,'checked_in',now()-interval '1 hour','pre_assigned',table_id,now()-interval '1 minute' FROM handover_latency;

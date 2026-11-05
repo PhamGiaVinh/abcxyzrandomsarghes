@@ -863,3 +863,51 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('dealer arrival acknowledgement HTTP latency and immutable operational state',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated fixture only');
+ test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ type Context={table_id:string;session_id:string;incoming_dealer:string;incoming_attendance:string;incoming_actor:string};
+ type Arrival={assignment_id:string;table_session_id:string;attendance_id:string;dispatch_at:string;acknowledged_at:string|null;incoming:boolean};
+ const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {handovers:Context[]};expect(fixture.handovers).toHaveLength(23);
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{
+  const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
+  const data=await response.json();return {ok:response.ok,data,ms:performance.now()-started};
+ };
+ const readFacts=async(context:Context)=>{
+  const paths=[['dealer_assignments','select=id,attendance_id,table_session_id,status,version,assigned_at,swing_due_at,released_at,swing_processed_at&table_id=eq.'+context.table_id+'&status=eq.assigned&released_at=is.null'],
+   ['dealer_attendance','select=id,status,current_state,last_released_at,check_in_time,check_out_time,total_worked_minutes_today,overtime_minutes&id=eq.'+context.incoming_attendance]];
+  return Promise.all(paths.map(async([table,query])=>{const response=await fetch(api+'/rest/v1/'+table+'?'+query,{headers:headers(owner),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok).toBe(true);expect(data).toHaveLength(1);return data;}));
+ };
+ const rows:{iteration:number;warmup:boolean;ackMs:number;retryMs:number;readMs:number}[]=[];let phase='start',raceIdentical=false;
+ const distribution=(key:'ackMs'|'retryMs'|'readMs')=>{const values=rows.filter(row=>!row.warmup).map(row=>row[key]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-arrival-http.json'),JSON.stringify({kind:'REAL_AUTH_HTTP_DEALER_ARRIVAL_ACKNOWLEDGEMENT_ONLY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,
+  warmup:2,graded:20,rows,distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),read:distribution('readMs')},raceIdentical,qualification:false,
+  limitations:'Actual dealer-bound Auth identities and canonical arrival RPCs after handover;independent control-actor reads compare unchanged assignment and attendance facts. Excludes dealer-app rendering,scheduled handover,rest expiry,checkout and payroll totals. Duplicate race uses one dealer identity with20concurrent identical acknowledgements.',
+ },null,2));
+ const intent=(arrival:Arrival)=>({p_assignment_id:arrival.assignment_id,p_table_session_id:arrival.table_session_id,p_attendance_id:arrival.attendance_id,p_dispatch_at:arrival.dispatch_at});
+ try{
+  for(let iteration=0;iteration<22;iteration++){
+   phase='arrival-'+iteration;const context=fixture.handovers[iteration],identity=staff.find(row=>row.userId===context.incoming_actor);expect(identity).toBeTruthy();
+   const fetched=await rpc(identity!.token,'dealer_get_table_arrivals_v1',{p_dealer_id:context.incoming_dealer});expect(fetched.ok).toBe(true);expect(fetched.data).toHaveLength(1);
+   const arrival=fetched.data[0] as Arrival;expect(arrival.table_session_id).toBe(context.session_id);expect(arrival.attendance_id).toBe(context.incoming_attendance);expect(arrival.incoming).toBe(false);expect(arrival.acknowledged_at).toBeNull();
+   const before=await readFacts(context);expect(before[0][0].attendance_id).toBe(context.incoming_attendance);expect(before[1][0].current_state).toBe('assigned');
+   if(iteration===0){
+    const forbidden=await rpc(owner,'dealer_ack_table_arrival_v1',intent(arrival));expect(forbidden.ok).toBe(false);expect(forbidden.data.message).toBe('dealer_arrival_forbidden');
+    const stale=await rpc(identity!.token,'dealer_ack_table_arrival_v1',{...intent(arrival),p_dispatch_at:new Date(Date.parse(arrival.dispatch_at)+1000).toISOString()});expect(stale.ok).toBe(false);expect(stale.data.message).toBe('dealer_arrival_stale_dispatch');
+   }
+   const ack=await rpc(identity!.token,'dealer_ack_table_arrival_v1',intent(arrival));expect(ack.ok).toBe(true);expect(typeof ack.data.acknowledged_at).toBe('string');expect(ack.data.assignment_id).toBe(arrival.assignment_id);
+   const retry=await rpc(identity!.token,'dealer_ack_table_arrival_v1',intent(arrival));expect(retry.ok).toBe(true);expect(retry.data).toEqual(ack.data);
+   const read=await rpc(identity!.token,'dealer_get_table_arrivals_v1',{p_dealer_id:context.incoming_dealer});expect(read.ok).toBe(true);expect(read.data).toHaveLength(1);expect(read.data[0].acknowledged_at).toBe(ack.data.acknowledged_at);
+   expect(await readFacts(context)).toEqual(before);
+   rows.push({iteration,warmup:iteration<2,ackMs:ack.ms,retryMs:retry.ms,readMs:read.ms});report();
+  }
+  phase='duplicate-race';const context=fixture.handovers[22],identity=staff.find(row=>row.userId===context.incoming_actor)!;
+  const read=await rpc(identity.token,'dealer_get_table_arrivals_v1',{p_dealer_id:context.incoming_dealer});expect(read.ok).toBe(true);expect(read.data).toHaveLength(1);expect(read.data[0].acknowledged_at).toBeNull();const before=await readFacts(context);
+  const outcomes=await Promise.all(Array.from({length:20},()=>rpc(identity.token,'dealer_ack_table_arrival_v1',intent(read.data[0]))));
+  for(const result of outcomes){expect(result.ok).toBe(true);expect(typeof result.data.acknowledged_at).toBe('string');expect(result.data).toEqual(outcomes[0].data);}
+  expect(await readFacts(context)).toEqual(before);raceIdentical=true;phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
