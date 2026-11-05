@@ -1046,6 +1046,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql
+          # Empty-search-path worker calls require the canonical qualified audit
+          # trigger from check-in14, including emergency marker release.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
           # Current Edge reads operating-day eligibility and acquisition rechecks
           # it at commit. Install both canonical fences in this worker clone.
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000222_dealer_pool_club_operating_day_v1.sql
