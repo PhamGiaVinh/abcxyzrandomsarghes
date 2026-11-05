@@ -9,6 +9,8 @@ on:
       - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
       - 'VinPoker/supabase/functions/public-player-hud/**'
       - 'VinPoker/supabase/migrations/2026110400*.sql'
+      - 'VinPoker/supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql'
+      - 'VinPoker/scripts/ops/tracker-hud-visibility-restore-reverse.sql'
       - 'VinPoker/src/lib/preparedPublicPlayerHud*'
       - 'VinPoker/src/lib/publicHudTransport*'
       - 'VinPoker/src/lib/publicHudRevalidation*'
@@ -120,6 +122,12 @@ jobs:
         run: node --test tests/publicHud/scale.http.native.mjs
       - name: Native PostgreSQL trigger, lease, backfill and public read contracts
         run: node tests/publicHud/incremental.native.mjs --initialize --enqueue-coalescing
+      - name: Visibility restore catalog, guarded reverse and batch checkpoint races
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_catalog_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_catalog_ci node tests/publicHud/visibilityRestoreCatalog.native.mjs --initialize
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_batch_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_batch_ci node tests/publicHud/visibilityRestoreBatch.native.mjs --initialize
       - name: Read-only full source shadow and corruption detection
         run: |
           node --test scripts/ops/tracker-hud-shadow.test.mjs
@@ -134,7 +142,7 @@ jobs:
           name: public-hud-shadow-${{ github.sha }}
           path: VinPoker/output/hud-shadow-ci.json
           retention-days: 7
-      - name: Exact eighteen-migration release guards and atomic receipts
+      - name: Exact twenty-three-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Compact generations, concurrent writers and durable revocation
         run: |

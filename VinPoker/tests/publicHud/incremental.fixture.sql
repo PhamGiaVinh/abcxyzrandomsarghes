@@ -16,18 +16,18 @@ CREATE SCHEMA spectator_projection_v2;
 CREATE TABLE spectator_projection_v2.publications(tournament_id uuid,component text,payload jsonb,
   PRIMARY KEY(tournament_id,component));
 CREATE TABLE public.tournaments(id uuid PRIMARY KEY,deleted_at timestamptz,status text NOT NULL DEFAULT 'live');
-CREATE TABLE public.tournament_hands(id uuid PRIMARY KEY,tournament_id uuid NOT NULL REFERENCES public.tournaments(id),
+CREATE TABLE public.tournament_hands(id uuid PRIMARY KEY,tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,
   tournament_table_id uuid,table_session_id uuid,
   hand_number integer NOT NULL DEFAULT 1,hand_time timestamptz,button_seat integer DEFAULT 1,community_cards jsonb DEFAULT '[]',
   status text NOT NULL DEFAULT 'completed',is_voided boolean DEFAULT false,source_revision bigint NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now());
-CREATE TABLE public.hand_players(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hand_id uuid REFERENCES public.tournament_hands(id),
+CREATE TABLE public.hand_players(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hand_id uuid REFERENCES public.tournament_hands(id) ON DELETE CASCADE,
   tournament_id uuid,player_id uuid,entry_number integer DEFAULT 1,seat_number integer,starting_stack bigint,
   player_name text,avatar_url text,UNIQUE(hand_id,player_id,entry_number));
-CREATE TABLE public.hand_actions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hand_id uuid REFERENCES public.tournament_hands(id),
+CREATE TABLE public.hand_actions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hand_id uuid REFERENCES public.tournament_hands(id) ON DELETE CASCADE,
   player_id uuid,street text,action_type text,action_amount bigint,action_order integer);
 CREATE INDEX fixture_actions_by_hand ON public.hand_actions(hand_id,action_order);
-CREATE TABLE public.tournament_settlement_outcomes(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hand_id uuid,
+CREATE TABLE public.tournament_settlement_outcomes(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hand_id uuid REFERENCES public.tournament_hands(id) ON DELETE CASCADE,
   source_revision bigint,settlement_revision bigint,status text,public_outcome jsonb);
 CREATE INDEX fixture_outcomes_latest ON public.tournament_settlement_outcomes(hand_id,settlement_revision DESC);
 CREATE TABLE public.player_results(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),player_id uuid,verified_by_admin boolean DEFAULT false,

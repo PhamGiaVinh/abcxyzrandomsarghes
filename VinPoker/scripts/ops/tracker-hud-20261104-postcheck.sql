@@ -2,6 +2,11 @@
 -- the atomic runner; ledger success does not replace these object checks.
 SELECT jsonb_build_object(
  'privateSchemaPresent',to_regnamespace('tracker_analytics_v1') IS NOT NULL,
+ 'visibilityRestoreTriggerMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.visibility_changed()'::regprocedure),chr(13),''))='1b3320cd0f08d14fde3f081c5b132246',
+ 'visibilityRestoreMetadataMatches',md5(replace(pg_get_functiondef('public.process_public_hud_metadata_v1(text,uuid,bigint,uuid)'::regprocedure),chr(13),''))='ac3c705ee94ca18024759124088a15e8',
+ 'visibilityRestorePublisherMatches',md5(replace(pg_get_functiondef('public.publish_public_hud_hand_v1(uuid,bigint,uuid,text,jsonb)'::regprocedure),chr(13),''))='9bb2728bff8e77d32d8c92e55bafe9a4',
+ 'visibilityRestoreColumnMatches',EXISTS(SELECT 1 FROM pg_attribute a JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='tracker_analytics_v1.jobs'::regclass AND a.attname='refresh_hidden_only' AND a.atttypid='boolean'::regtype AND a.attnotnull AND NOT a.attisdropped AND pg_get_expr(d.adbin,d.adrelid)='false'),
+ 'visibilityRestoreIndexMatches',md5(pg_get_indexdef(to_regclass('tracker_analytics_v1.hand_contributions_hidden_policy_idx')))='a1057f4c33eed89d5509f1206c06ae33' AND EXISTS(SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('tracker_analytics_v1.hand_contributions_hidden_policy_idx') AND indisvalid AND indisready),
  'nullProofValidatorDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.safe_integer(jsonb)'::regprocedure),chr(13),''))='a3615d0068110c9bf33939ecf8f29024',
  'resultWithdrawalDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.broadcast_withdrawal_v1()'::regprocedure),chr(13),''))='59860fa9484c0f48b70044f51c2380cf',
  'handWithdrawalBroadcastDefinitionMatches',md5(replace(pg_get_functiondef('public.flush_public_spectator_broadcast_v2(integer)'::regprocedure),chr(13),''))='e5439d6d813079754d9f2d55ef8a7d48',
