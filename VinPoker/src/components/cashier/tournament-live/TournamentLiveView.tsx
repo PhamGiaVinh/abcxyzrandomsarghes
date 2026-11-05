@@ -271,6 +271,9 @@ function TournamentLiveViewContent({
   const [replayMotionEpoch, setReplayMotionEpoch] = useState(0);
   const [replaySelectedPotIndex, setReplaySelectedPotIndex] = useState(0);
   const [replayTargetState, setReplayTargetState] = useState<ReplayTargetState>({ kind: "idle" });
+  const replayResolveCancelRef=useRef<(()=>void)|null>(null);
+  const replayAccessEpochRef=useRef(0);
+  const replayAccessEpoch=replayAccessEpochRef.current;
   const [replayResolveAttempt,setReplayResolveAttempt]=useState(0);
   // Snapshot of the LIVE table the moment replay was entered. The live machinery
   // keeps advancing in the background while the felt is frozen on the replay frame;
@@ -984,9 +987,12 @@ function TournamentLiveViewContent({
       const observation=observePublicTournament(supabase,tournamentId,event=>{
         if(event.reason==='status'){setRealtimeStatus(event.online?'online':'offline');return;}
         if(event.invalidatePending){requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;}
-        if(event.reason==='changed'&&event.components.includes('visibility')){
+        if(event.reason==='changed'&&event.components.some(c=>c==='visibility'||c==='hand_visibility')){
+          replayAccessEpochRef.current++;
+          replayResolveCancelRef.current?.();
+          setReplayTargetState(previous=>previous.kind==='idle'?previous:{kind:'query_error'});
           requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;
-          initialLoadedRef.current=false;publicSummaryRef.current=null;
+          if(event.components.includes('visibility')){initialLoadedRef.current=false;publicSummaryRef.current=null;}
           initialReadFailedRef.current=false;
           setSeats([]);setCommunityCards([]);setActions([]);setPotSize(0);setHandId(null);setHandNumber(null);
           setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
@@ -1599,6 +1605,8 @@ function TournamentLiveViewContent({
     setReplayMotionEpoch((epoch) => epoch + 1);
     setReplayTargetState({ kind: "loading" });
     const controller=new AbortController();
+    const cancel=()=>{cancelled=true;controller.abort();};
+    replayResolveCancelRef.current=cancel;
     const publicRead=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>supabase.rpc(name as never,args as never).abortSignal(controller.signal);
     const resolve = async () => {
       const publicReplay = spectator && FEATURES.publicSpectatorRealtimeV2;
@@ -1685,7 +1693,7 @@ function TournamentLiveViewContent({
     void observeTrackerContextRead(resolve()).catch(()=>{
       if(!cancelled){cancelled=true;setReplayTargetState({kind:"query_error"});}
     }).finally(()=>controller.abort());
-    return () => { cancelled = true;controller.abort(); };
+    return () => { cancel();if(replayResolveCancelRef.current===cancel)replayResolveCancelRef.current=null; };
   }, [requestedReplayTarget, spectator, tournamentId,replayResolveAttempt]);
 
   useEffect(() => {
@@ -2137,6 +2145,7 @@ function TournamentLiveViewContent({
             onSelectReplayTarget={onReplayTargetChange}
             onRetryReplayTarget={()=>setReplayResolveAttempt(attempt=>attempt+1)}
             onLoadStart={(id) => {
+              if(replayAccessEpoch!==replayAccessEpochRef.current)return;
               setReplayHandId(id);
               setReplayHand(null);
               setReplayFrameState(null);
@@ -2147,6 +2156,7 @@ function TournamentLiveViewContent({
               setReplayMotionEpoch((current) => current + 1);
             }}
             onSelectHand={(id, h) => {
+              if(replayAccessEpoch!==replayAccessEpochRef.current)return;
               if (requestedReplayTarget && (replayTargetState.kind !== "resolved" || replayTargetState.handId !== id)) return;
               setReplayHandId(id);
               setReplayHand(h);

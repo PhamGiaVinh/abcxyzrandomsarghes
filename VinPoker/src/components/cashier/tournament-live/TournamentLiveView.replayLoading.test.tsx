@@ -21,6 +21,35 @@ vi.mock('./LiveFelt',()=>({LiveFelt:({toActId}:{toActId?:string|null})=> <div da
 vi.mock('./HandSelector',()=>({HandSelector:({onSelectHand,replayTargetState,onRetryReplayTarget}:{onSelectHand:(id:string,h:unknown)=>void;replayTargetState:{kind:string};onRetryReplayTarget?:()=>void})=><><p data-testid="target-state">{replayTargetState.kind}</p>{replayTargetState.kind==='query_error'&&<button onClick={onRetryReplayTarget}>Thử tìm lại hand</button>}<button onClick={()=>onSelectHand('hand',hand)}>Deliver replay</button></>}));
 vi.mock('./ReplayScrubber',()=>({ReplayScrubber:()=>null}));
 afterEach(async()=>{cleanup();await Promise.resolve();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;statuses.length=0;vi.useRealTimers()});
+it.each([false,true])('aborts a held URL replay resolver and rejects its late reply; hand-only=%s',async(handVisibilityOnly)=>{
+ let finish!:(value:unknown)=>void;const held=new Promise(resolve=>{finish=resolve;});
+ rpc.mockImplementation((name:string)=>name==='get_public_tournament_table_hand_v2'?held:Promise.resolve({error:null,data:
+  name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:0,average_stack:0}]:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state:'waiting',tableId:'table',tableSessionId:'session',hand:null}:null}));
+ vi.useFakeTimers();render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table" initialReplayTarget={target}/>);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+ expect(signals).toHaveLength(1);expect(signals[0].aborted).toBe(false);
+ await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['visibility'],handVisibilityOnly}}));});
+ expect(signals[0].aborted).toBe(true);
+ await act(async()=>{finish({data:{id:'hand',tableId:'table',handNumber:32,status:'completed'},error:null});});
+ expect(screen.queryByTestId('target-state')?.textContent).not.toBe('resolved');
+ expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
+});
+it('clears an opened replay immediately on hand withdrawal without reloading the clock',async()=>{
+ rpc.mockImplementation(async(name:string)=>({error:null,data:
+  name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:0,average_stack:0}]:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state:'waiting',tableId:'table',tableSessionId:'session',hand:null}:
+  name==='get_public_tournament_table_hand_v2'?{id:'hand',tableId:'table',handNumber:32,status:'completed'}:null}));
+ vi.useFakeTimers();render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table" initialReplayTarget={target}/>);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+ await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Deliver replay'}));});
+ expect(screen.getByTestId('rendered-felt')).toBeInTheDocument();
+ const clockReads=rpc.mock.calls.filter(([name])=>name==='get_public_tournament_clock_summary').length;
+ await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['visibility'],handVisibilityOnly:true}}));});
+ expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1600);});
+ expect(rpc.mock.calls.filter(([name])=>name==='get_public_tournament_clock_summary')).toHaveLength(clockReads);
+});
 
 it.each([false,true])('does not spotlight an actor after a fold has ended betting: folded=%s',async(folded)=>{
  const players=[{playerId:'p1',seatNumber:1,entryNumber:1,name:'PLAYER1',startingStack:58800,endingStack:null,holeCards:[],eliminated:false,avatarUrl:null},

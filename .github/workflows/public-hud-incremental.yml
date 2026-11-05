@@ -162,5 +162,6 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/current-table-prepared.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/null-proof.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/result-withdrawal.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/hand-withdrawal.native.mjs
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit

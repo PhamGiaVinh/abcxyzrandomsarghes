@@ -316,12 +316,16 @@ for(const scenario of ['concentrated','distributed','overview']){
   state.verifyHud=verifyHud;
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
-   const components=message.payload.components??['tables'];
+   const components=[...(message.payload.components??['tables'])];
+   if(message.payload.handVisibilityOnly===true&&components.includes('visibility')){
+    components.splice(components.indexOf('visibility'),1,'hand_visibility');
+    if(!components.includes('tables'))components.push('tables');
+   }
    for(const component of ['tables','ranking','payout'])if(components.includes(component))componentEpochs[component]++;
-   if(components.includes('visibility')){pageEpoch++;state.tableController?.abort();state.snapshotController?.abort();state.handObservation=null;state.snapshotObservation=null;}
+   if(components.some(c=>c==='visibility'||c==='hand_visibility')){pageEpoch++;state.tableController?.abort();state.snapshotController?.abort();state.handObservation=null;state.snapshotObservation=null;}
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
    if(components.includes('visibility')){state.known={};verifyPage();}
-   else {const sections=components.filter(c=>['tables','ranking','payout'].includes(c)&&(c!=='tables'||overview));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
+   else {if(components.includes('hand_visibility'))delete state.known.tables;const sections=components.filter(c=>['tables','ranking','payout'].includes(c)&&(c!=='tables'||overview));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
   }).subscribe(s=>{
    const epoch=++pageEpoch;state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();
    if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;

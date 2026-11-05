@@ -18,9 +18,7 @@ const migration=readFileSync('supabase/migrations/20261104003400_public_hud_resu
 const recovery=readFileSync('tests/publicHud/result-withdrawal.forward-rollback.sql','utf8').replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
 const meta=()=>jsonSql(`SELECT to_jsonb(p)-'prosrc' FROM pg_proc p WHERE oid='${signature}'::regprocedure;`);
 const before=meta();
-const objectCheck=readFileSync('scripts/ops/tracker-hud-20261104-postcheck.sql','utf8').split(/\r?\n/).filter(line=>line.trimStart().startsWith("'resultWithdrawalDefinitionMatches',"));
-assert.equal(objectCheck.length,1);
-const checkSql=`SELECT jsonb_build_object(${objectCheck[0].trim().replace(/,$/,'')});`;
+const checkSql="SELECT jsonb_build_object('resultWithdrawalDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.broadcast_withdrawal_v1()'::regprocedure),chr(13),''))='80d94877352e8ad4bb86c3ffd6fa9c4e');";
 assert.equal(jsonSql(checkSql).resultWithdrawalDefinitionMatches,false);
 assert.equal(sql(`SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));`),'d21e991e6f1709070c370e43488d6eb2');
 const scope=jsonSql(`SELECT jsonb_build_object('tour',tournament_id,'player',player_id,'hand',hand_id) FROM tracker_analytics_v1.hand_contributions ORDER BY hand_id,player_id LIMIT 1;`);

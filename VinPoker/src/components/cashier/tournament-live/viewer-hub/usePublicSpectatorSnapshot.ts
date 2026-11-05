@@ -118,6 +118,10 @@ export function usePublicSpectatorSnapshot(
       if(event.reason==='status')return;
       if(event.invalidatePending){epoch++;controller.abort();trustedRevisions.current={};dirty.clear();}
       if(event.reason==='changed'&&event.components.includes('visibility')){epoch++;controller.abort();trustedRevisions.current={};setSnapshot(null);}
+      if(event.reason==='changed'&&event.components.includes('hand_visibility')){
+        epoch++;controller.abort();delete trustedRevisions.current.tables;
+        setSnapshot(previous=>previous?{...previous,sections:{...previous.sections,tables:previous.sections.tables?{...previous.sections.tables,items:[],removed:[],unchanged:false}:undefined}}:previous);
+      }
       for(const section of ['tables','ranking','payout'] as const){
         if(section==='tables'&&!liveTableUpdates&&event.reason==='changed'&&!event.components.includes('visibility'))continue;
         if(event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);

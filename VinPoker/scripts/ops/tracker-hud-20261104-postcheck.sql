@@ -3,7 +3,8 @@
 SELECT jsonb_build_object(
  'privateSchemaPresent',to_regnamespace('tracker_analytics_v1') IS NOT NULL,
  'nullProofValidatorDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.safe_integer(jsonb)'::regprocedure),chr(13),''))='a3615d0068110c9bf33939ecf8f29024',
- 'resultWithdrawalDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.broadcast_withdrawal_v1()'::regprocedure),chr(13),''))='80d94877352e8ad4bb86c3ffd6fa9c4e',
+ 'resultWithdrawalDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.broadcast_withdrawal_v1()'::regprocedure),chr(13),''))='59860fa9484c0f48b70044f51c2380cf',
+ 'handWithdrawalBroadcastDefinitionMatches',md5(replace(pg_get_functiondef('public.flush_public_spectator_broadcast_v2(integer)'::regprocedure),chr(13),''))='e5439d6d813079754d9f2d55ef8a7d48',
  'enqueueWriteDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.enqueue(text,uuid,boolean)'::regprocedure),chr(13),''))='0650893a716858e40a966b9c9dd2a460',
  'settlementEnqueueDefinitionMatches',md5(replace(pg_get_functiondef('tracker_analytics_v1.outcome_changed()'::regprocedure),chr(13),''))='ee4e45ea372523c4aef8371aa16cf430',
  'enqueueWritePrivate',NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN (VALUES('anon'),('authenticated'),('service_role')) roles(name) WHERE n.nspname='tracker_analytics_v1' AND p.proname IN('enqueue','outcome_changed') AND has_function_privilege(roles.name,p.oid,'EXECUTE')),

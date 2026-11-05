@@ -1,6 +1,6 @@
 import type {SupabaseClient,RealtimeChannel} from '@supabase/supabase-js';
 type Client=Pick<SupabaseClient,'channel'|'removeChannel'>;
-export type PublicTournamentComponent='tables'|'ranking'|'payout'|'visibility'|'clock';
+export type PublicTournamentComponent='tables'|'ranking'|'payout'|'visibility'|'clock'|'hand_visibility';
 export interface PublicTournamentSignal {reason:'changed'|'verify'|'status';components:PublicTournamentComponent[];revisions:Record<string,string>;online:boolean;invalidatePending?:true}
 const all:PublicTournamentComponent[]=['tables','ranking','payout','visibility','clock'];
 const hubs=new WeakMap<object,Map<string,PublicTournamentRealtime>>();
@@ -24,12 +24,16 @@ class PublicTournamentRealtime {
       this.channel=this.client.channel(`public:tournament-viewer-v2:${this.tournamentId}`,{config:{private:false}});
       this.channel.on('broadcast',{event:'changed'},message=>{
         if(this.stopped)return;
-        const payload=message?.payload as {tournamentId?:unknown;components?:unknown;revisions?:unknown};
+        const payload=message?.payload as {tournamentId?:unknown;components?:unknown;revisions?:unknown;handVisibilityOnly?:unknown};
         if(payload?.tournamentId!==this.tournamentId)return;
         const requested=payload.components;
-        const components=Array.isArray(requested)?all.filter(c=>requested.includes(c)):all;
+        const components=Array.isArray(requested)?all.filter(c=>requested.includes(c)):all.slice();
+        if(payload.handVisibilityOnly===true&&components.includes('visibility')){
+          components.splice(components.indexOf('visibility'),1,'hand_visibility');
+          if(!components.includes('tables'))components.push('tables');
+        }
         if(!components.length)return;
-        if(document.visibilityState==='hidden'&&!components.includes('visibility'))return;
+        if(document.visibilityState==='hidden'&&!components.includes('visibility')&&!components.includes('hand_visibility'))return;
         const revisions:Record<string,string>={};
         if(payload.revisions&&typeof payload.revisions==='object')for(const c of components){
           const value=(payload.revisions as Record<string,unknown>)[c];if(typeof value==='string')revisions[c]=value;

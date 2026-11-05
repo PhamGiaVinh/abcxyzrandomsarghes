@@ -7,6 +7,19 @@ function fixture(){
  return {client:client as never,channel:client.channel,remove:client.removeChannel,changed:(payload:unknown)=>changed({payload}),status:(value:string)=>status(value)};
 }
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
+it('clears hand scopes in hidden tabs without advancing unrelated metadata epochs',async()=>{
+ vi.useFakeTimers();vi.spyOn(document,'visibilityState','get').mockReturnValue('hidden');
+ const f=fixture(),listener=vi.fn(),observation=observePublicTournament(f.client,'hand-tour',listener);
+ listener.mockClear();
+ f.changed({tournamentId:'hand-tour',components:['visibility'],handVisibilityOnly:true});
+ expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({components:['hand_visibility','tables']}));
+ expect(publicReadEpoch(f.client,'hand-tour','tables')).toBe(1);
+ for(const component of ['ranking','payout','clock','visibility'] as const)expect(publicReadEpoch(f.client,'hand-tour',component)).toBe(0);
+ f.changed({tournamentId:'hand-tour',components:['visibility'],handVisibilityOnly:false});
+ expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({components:['visibility']}));
+ expect(publicReadEpoch(f.client,'hand-tour','visibility')).toBe(1);
+ observation.unsubscribe();await Promise.resolve();
+});
 it('shares one channel, preserves it across same-turn scope handoff and releases the last observer',async()=>{
  const f=fixture(),a=vi.fn(),b=vi.fn();
  const first=observePublicTournament(f.client,'tour',a),second=observePublicTournament(f.client,'tour',b);

@@ -9940,6 +9940,12 @@
       "filename": "20261104003400_public_hud_result_withdrawal_scope.sql",
       "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
       "reason": "Profile result withdrawal retains global HUD access invalidation without reloading unrelated tournament components; hand and tournament withdrawal remain unchanged. Exact package approval required."
+    },
+    {
+      "version": "20261105044028",
+      "filename": "20261105044028_public_hud_hand_withdrawal_scope.sql",
+      "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
+      "reason": "Scoped hand withdrawal preserves immediate HUD/live/replay clearing and old-client full visibility while avoiding unrelated metadata reload. Exact package approval required."
     }
   ],
   "floorActiveAllowlist": [
