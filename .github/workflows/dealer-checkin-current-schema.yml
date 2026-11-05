@@ -1166,9 +1166,8 @@ jobs:
           VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
           VINPOKER_NATIVE_VOICE_FINISH=1 node tests/trackerVoice/paidFinishCommit.native.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000053_chip_color_up_receipt_reconciliation_v1.sql
-          # The schema-only fixture omits migration metadata. Exact264 keeps
-          # its legacy-function hash guard and supplies the UI's date contract.
-          psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          # Reuse the isolated ledger created above for the TV fixtures.
+          # Exact264 retains its legacy-function hash and ledger-shape guards.
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000264_finance_summary_business_dates_v2.sql
           VINPOKER_NATIVE_OPS_READ_LATENCY_REPORT=output/operations-latency/native-reads.json VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
           VINPOKER_NATIVE_RESTORE_HISTORY=1 node tests/cashier/restoreHistoryOrder.native.mjs

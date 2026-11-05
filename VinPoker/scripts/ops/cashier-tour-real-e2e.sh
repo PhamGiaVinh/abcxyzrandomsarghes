@@ -461,8 +461,8 @@ for staff_index in {1..20}; do
   staff_id="$(create_auth_user "$staff_email" "$staff_password")"
   [[ "$staff_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[a-f0-9]{12}$ ]]
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    -v staff_id="$staff_id" -v owner_id="$owner_id" <<'STAFF_FIXTURE'
-INSERT INTO public.profiles(user_id,display_name) VALUES(:'staff_id'::uuid,'Cashier latency TEST');
+    -v staff_id="$staff_id" -v staff_index="$staff_index" -v owner_id="$owner_id" <<'STAFF_FIXTURE'
+INSERT INTO public.profiles(user_id,display_name) VALUES(:'staff_id'::uuid,'Cashier latency TEST '||:'staff_index');
 INSERT INTO public.club_cashiers(club_id,user_id,granted_by) VALUES('a2000000-0000-4000-8000-000000000001',:'staff_id'::uuid,:'owner_id'::uuid);
 STAFF_FIXTURE
   staff_fixture="$(jq -c --arg email "$staff_email" --arg password "$staff_password" '.+[{email:$email,password:$password}]' <<<"$staff_fixture")"
