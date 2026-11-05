@@ -918,3 +918,56 @@ test('dealer arrival acknowledgement HTTP latency and immutable operational stat
   expect(await readFacts(context)).toEqual(before);raceIdentical=true;phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('real dealer checkout Edge HTTP, open-screen latency and committed work conservation',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated fixture only');test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ type Context={n:number;table_id:string;outgoing_attendance:string;incoming_attendance:string};
+ const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {handovers:Context[];otherAttendanceId:string};expect(fixture.handovers).toHaveLength(23);expect(fixture.otherAttendanceId).toMatch(/^[a-f0-9-]{36}$/);
+ const realtimeEnabled=process.env.LOCAL_OPERATIONS_REALTIME==='1',seen=new Map<string,number>();let postgresReady=false;
+ page.on('websocket',socket=>socket.on('framereceived',frame=>{try{
+  const decoded=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString()),message=Array.isArray(decoded)?{topic:decoded[2],event:decoded[3],payload:decoded[4]}:decoded;
+  if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:swing:')||!message.topic.includes('dealer_attendance'))return;
+  if(message.event==='system'&&message.payload?.extension==='postgres_changes'&&message.payload?.status==='ok')postgresReady=true;
+  const data=message.payload?.data,row=data?.record;
+  if(message.event==='postgres_changes'&&data?.table==='dealer_attendance'&&row?.status==='checked_out'&&typeof row.id==='string'&&!seen.has(row.id))seen.set(row.id,performance.now());
+ }catch{/* No raw frames or tokens in artifacts. */}}));
+ const headers=(token?:string)=>({apikey:anon,...(token?{Authorization:`Bearer ${token}`}:{}) ,'Content-Type':'application/json'});
+ const call=async(token:string|undefined,body:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/functions/v1/checkout-dealer',{method:'POST',headers:headers(token),body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});const data=await response.json();return {ok:response.ok,status:response.status,data,ms:performance.now()-started};};
+ const read=async(table:string,query:string)=>{const response=await fetch(api+'/rest/v1/'+table+'?'+query,{headers:headers(owner),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok).toBe(true);expect(Array.isArray(data)).toBe(true);return data;};
+ const attendance=(id:string)=>read('dealer_attendance','select=id,status,current_state,check_in_time,check_out_time,total_worked_minutes_today,overtime_minutes&id=eq.'+id);
+ const active=(context:Context)=>read('dealer_assignments','select=id,attendance_id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
+ const rows:{iteration:number;warmup:boolean;actor:number;ackMs:number;retryMs:number;writeToVisibleMs?:number;writeToRealtimeMs?:number}[]=[];
+ let phase='start',race:{first:number;replays:number}|null=null;
+ const distribution=(key:'ackMs'|'retryMs'|'writeToVisibleMs'|'writeToRealtimeMs')=>{const values=rows.filter(row=>!row.warmup).map(row=>row[key]).filter((v):v is number=>typeof v==='number').sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-checkout-edge-http.json'),JSON.stringify({kind:'REAL_AUTH_DEALER_CHECKOUT_EDGE_HTTP_AND_OPEN_SWING_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,warmup:2,graded:20,rows,postgresReady,race,
+  distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),...(realtimeEnabled?{writeToVisible:distribution('writeToVisibleMs'),writeToRealtime:distribution('writeToRealtimeMs')}:{})},qualification:false,
+  limitations:'Checkout of the already-released outgoing dealer after canonical handover;actual current handler,Auth,service-only289RPC and independent control-actor reads. Verifies retained worked minutes and unchanged incoming assignment. Excludes checkout replacement/active-table races,inactive-payroll closing and production Telegram;bot token absent and external networking denied. Duplicate race uses one actor with20identical requests.',
+ },null,2));
+ try{
+  const first=fixture.handovers[0],before=await attendance(first.outgoing_attendance);expect(before).toHaveLength(1);expect(before[0].status).toBe('checked_in');
+  expect((await call(undefined,{attendance_id:first.outgoing_attendance})).status).toBe(401);
+  expect((await call(staff[0].token,{attendance_ids:[first.outgoing_attendance,fixture.otherAttendanceId]})).status).toBe(403);
+  expect((await call(staff[0].token,{attendance_id:fixture.otherAttendanceId})).status).toBe(403);
+  expect(await attendance(first.outgoing_attendance)).toEqual(before);
+  const direct=await fetch(api+'/rest/v1/rpc/operator_checkout_dealer_attendance_v1',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({p_actor_id:staff[0].userId,p_attendance_id:first.outgoing_attendance}),signal:AbortSignal.timeout(5000)});expect(direct.status).toBe(403);await direct.arrayBuffer();
+  if(realtimeEnabled){phase='screen-load';await page.setViewportSize({width:1440,height:1000});await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');await page.getByRole('button',{name:'ĐỘI HÌNH / CHECK-IN',exact:true}).click();await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);}
+  const roster=page.getByPlaceholder('Tìm dealer...',{exact:true}).locator('xpath=../..');
+  for(let iteration=0;iteration<22;iteration++){
+   phase='checkout-'+iteration;const context=fixture.handovers[iteration],actor=iteration%staff.length,old=await attendance(context.outgoing_attendance),assignment=await active(context);expect(old).toHaveLength(1);expect(old[0].current_state).toBe('available');expect(assignment).toHaveLength(1);expect(assignment[0].attendance_id).toBe(context.incoming_attendance);
+   const currentName=roster.locator('span.text-foreground').filter({hasText:new RegExp('^Handover outgoing TEST '+context.n+'$')});
+   if(realtimeEnabled){await page.getByPlaceholder('Tìm dealer...',{exact:true}).fill('Handover outgoing TEST '+context.n);await expect(currentName).toBeVisible();}
+   const started=performance.now(),result=await call(staff[actor].token,{attendance_id:context.outgoing_attendance});expect(result.ok).toBe(true);expect(result.data.results).toHaveLength(1);const saved=result.data.results[0];expect(saved.success).toBe(true);expect(saved.attendance_id).toBe(context.outgoing_attendance);
+   let writeToVisibleMs:number|undefined,writeToRealtimeMs:number|undefined;
+   if(realtimeEnabled){await expect.poll(()=>seen.has(context.outgoing_attendance),{timeout:Math.max(1,5000-(performance.now()-started))}).toBe(true);writeToRealtimeMs=seen.get(context.outgoing_attendance)!-started;await expect(currentName).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-started))});await expect(page.getByRole('button',{name:`Check-out (${45-iteration})`,exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});writeToVisibleMs=performance.now()-started;}
+   const ended=await attendance(context.outgoing_attendance);expect(ended).toHaveLength(1);expect(ended[0].status).toBe('checked_out');expect(ended[0].current_state).toBe('checked_out');expect(ended[0].check_out_time).toBe(saved.check_out_time);
+   const worked=Math.round((Date.parse(ended[0].check_out_time)-Date.parse(ended[0].check_in_time))/60000);expect(ended[0].total_worked_minutes_today).toBe(worked);expect(ended[0].overtime_minutes).toBe(0);expect(worked).toBeGreaterThanOrEqual(60);
+   const retry=await call(staff[actor].token,{attendance_id:context.outgoing_attendance});expect(retry.ok).toBe(true);expect(retry.data.results).toHaveLength(1);expect(retry.data.results[0].success).toBe(true);expect(retry.data.results[0].idempotent).toBe(true);expect(retry.data.results[0].check_out_time).toBe(saved.check_out_time);
+   expect(await attendance(context.outgoing_attendance)).toEqual(ended);expect(await active(context)).toEqual(assignment);rows.push({iteration,warmup:iteration<2,actor,ackMs:result.ms,retryMs:retry.ms,writeToVisibleMs,writeToRealtimeMs});report();
+  }
+  phase='duplicate-race';const context=fixture.handovers[22],assignment=await active(context),outcomes=await Promise.all(Array.from({length:20},()=>call(staff[0].token,{attendance_id:context.outgoing_attendance})));
+  for(const result of outcomes){expect(result.ok).toBe(true);expect(result.data.results).toHaveLength(1);expect(result.data.results[0].success).toBe(true);expect(result.data.results[0].check_out_time).toBe(outcomes[0].data.results[0].check_out_time);}
+  race={first:outcomes.filter(row=>row.data.results[0].idempotent!==true).length,replays:outcomes.filter(row=>row.data.results[0].idempotent===true).length};expect(race).toEqual({first:1,replays:19});expect(await active(context)).toEqual(assignment);
+  if(realtimeEnabled)expect(distribution('writeToVisibleMs').p95Ms).toBeLessThanOrEqual(3000);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});

@@ -171,7 +171,7 @@ if grep -q 'orlesggcjamwuknxwcpk' supabase/config.toml; then
   exit 1
 fi
 
-# Warm only the public package dependencies needed by the two real handlers.
+# Warm only the public package dependencies needed by the real handlers.
 # No application handler, schema, fixture or credential is present yet.
 mkdir -p supabase/functions/edge-dependency-cache
 cp "$repo_root/supabase/pending-tests/edge-dependency-cache/index.ts" \
@@ -183,7 +183,9 @@ printf '%s\n' \
   '[functions.tournament-register]' \
   'verify_jwt = true' \
   '[functions.sepay-reconcile]' \
-  'verify_jwt = false' >>supabase/config.toml
+  'verify_jwt = false' \
+  '[functions.checkout-dealer]' \
+  'verify_jwt = true' >>supabase/config.toml
 printf '%s\n' \
   'SEPAY_RECONCILE_SECRET=cashier-edge-reconcile-test' \
   'SEPAY_AUTO_CONFIRM=true' \
@@ -514,6 +516,9 @@ REPORT_PREFLIGHT
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20261030050418_dealer_table_arrival_ack_v1.sql"
   echo "ARRIVAL_SCHEMA_PROOF: exact arrival acknowledgement contract; no assignment or payroll writer replacement"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20270128000289_dealer_checkout_atomic_v1.sql"
+  echo "CHECKOUT_SCHEMA_PROOF: exact289 with original dependency/collision guards; disposable current runtime only"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHECKIN_PREFLIGHT'
 DO $$ BEGIN
  IF to_regprocedure('public.operator_check_in_dealer_v1(uuid,uuid,uuid,uuid)') IS NOT NULL
@@ -588,6 +593,9 @@ rm -rf -- supabase/functions/edge-dependency-cache
 cp -R "$repo_root/supabase/functions/_shared" supabase/functions/_shared
 cp -R "$repo_root/supabase/functions/tournament-register" supabase/functions/tournament-register
 cp -R "$repo_root/supabase/functions/sepay-reconcile" supabase/functions/sepay-reconcile
+if [[ "$schema_mode" == current ]]; then
+  cp -R "$repo_root/supabase/functions/checkout-dealer" supabase/functions/checkout-dealer
+fi
 
 api_url="$(jq -er '.API_URL' "$test_root/isolated-status.json")"
 anon_key="$(jq -er '.ANON_KEY' "$test_root/isolated-status.json")"
@@ -713,7 +721,8 @@ SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shift
    AND g.operational_status='available' AND g.table_number=2),
  'dealerIds',(SELECT jsonb_agg(id ORDER BY full_name) FROM public.dealers WHERE club_id='a2000000-0000-4000-8000-000000000001'),
  'otherClubId','ad200000-0000-4000-8000-000000000002','otherShiftId','ad300000-0000-4000-8000-000000000002','otherDealerId','ad400000-0000-4000-8000-000000000002',
- 'otherAttendedDealerId','ad400000-0000-4000-8000-000000000003');
+ 'otherAttendedDealerId','ad400000-0000-4000-8000-000000000003',
+ 'otherAttendanceId',(SELECT id FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in'));
 COMMIT;
 DEALER_FIXTURE
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CLOCK_FIXTURE'
