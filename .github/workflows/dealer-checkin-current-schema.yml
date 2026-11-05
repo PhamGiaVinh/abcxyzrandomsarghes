@@ -1097,6 +1097,7 @@ jobs:
         run: |
           set -euo pipefail
           createdb -T vinpoker_ops_full111_finish99 "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000112_cashier_cash_intent_receipts_v1.sql
           psql -X -v ON_ERROR_STOP=1 -v CASH112_CASE=true -f tests/cashier/cashPaymentIdentity.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_cash112_overlap
