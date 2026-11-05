@@ -1,7 +1,8 @@
 // Diagnostic counterfactual, never a qualification substitute. Run alone on an
 // already seeded disposable native test DB; do not run beside HTTP/worker load.
 import assert from 'node:assert/strict';
-import {writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
 assert.equal(process.env.PUBLIC_HUD_WRITER_CONTROL,'isolated-native-only');
@@ -26,6 +27,31 @@ const catalog=()=>jsonSql(`SELECT coalesce(jsonb_agg(jsonb_build_object('name',t
 const before=catalog(),trigger=before.find(t=>t.name==='hud_hand_changed');
 assert.ok(trigger?.enabled==='O'&&trigger.definition.endsWith('EXECUTE FUNCTION tracker_analytics_v1.hand_changed()'),'Expected HUD marker trigger required');
 const sourceCount=sql('SELECT count(*) FROM public.tournament_hands;');
+// Optional matched hand-observer profile. The source writer, fixture source
+// revision triggers, all data/indexes and commit timing remain identical.
+const profilePath=process.env.PUBLIC_HUD_WRITER_OBSERVER_BASELINE;
+const observerNames=['mark_dirty','mark_hand_child_dirty','mark_row_dirty'];
+const observerSignatures=['spectator_projection_v2.mark_dirty(uuid,text,text,text)','spectator_projection_v2.mark_hand_child_dirty()','spectator_projection_v2.mark_row_dirty()'];
+const baselineHashes=['5275ae9972ac43651bd1b831b52332dd','e9df156b6ee5d6a22ba968257ae38852','34ebfad5c2bea4d3306d67d435fe02a6'];
+const candidateHashes=['e5684f8818e0d536bcdde7842032f71d','c9f805174bf0cf551aff43a748684df1','27a7e7aad6c0a9f52b040594b4ac115b'];
+const observerMetadata=()=>jsonSql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY p.proname) FROM pg_proc p WHERE p.oid IN(${observerSignatures.map(s=>`'${s}'::regprocedure`).join(',')});`);
+const observers=()=>jsonSql(`SELECT jsonb_agg(jsonb_build_object('name',p.proname,'definition',replace(pg_get_functiondef(p.oid),chr(13),'')) ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='spectator_projection_v2' AND p.proname IN('mark_dirty','mark_hand_child_dirty','mark_row_dirty');`);
+const candidateObservers=profilePath?observers():null;
+const candidateMetadata=profilePath?observerMetadata():null;
+const baselineObservers=profilePath?JSON.parse(readFileSync(profilePath,'utf8').replace(/^\uFEFF/,'')):null;
+if(profilePath){
+ assert.deepEqual(baselineObservers.map(p=>p.name),observerNames);
+ assert.deepEqual(candidateObservers.map(p=>p.name),observerNames);
+ for(const [profile,hashes] of [[baselineObservers,baselineHashes],[candidateObservers,candidateHashes]])for(let i=0;i<profile.length;i++)assert.equal(createHash('md5').update(profile[i].definition).digest('hex'),hashes[i],'Canonical observer definition required');
+}
+const setObservers=profile=>{
+ sql('BEGIN;'+profile.map(p=>p.definition+';').join('\n')+'COMMIT;');
+ assert.deepEqual(observers(),profile,'Observer profile did not match');
+ const metadata=observerMetadata();
+ const withoutBody=rows=>rows.map(({prosrc,...rest})=>rest);
+ assert.deepEqual(withoutBody(metadata),withoutBody(candidateMetadata),'Observer OID/owner/ACL/metadata changed');
+ if(profile===candidateObservers)assert.deepEqual(metadata,candidateMetadata,'Candidate function metadata restoration failed');
+};
 const ownedScope="tournament_id='10000000-0000-4000-8000-000000000001' AND hand_number=2000000001";
 assert.equal(sql(`SELECT count(*) FROM public.tournament_hands WHERE ${ownedScope};`),'0','Counterfactual fixture scope already occupied');
 const queue=()=>jsonSql("SELECT jsonb_build_object('jobs',count(*),'leased',count(*) FILTER(WHERE lease_until IS NOT NULL),'failed',count(*) FILTER(WHERE attempts>0)) FROM tracker_analytics_v1.jobs;");
@@ -49,10 +75,16 @@ try{
   const measurements={};
   for(const mode of order){
    const queueBefore=queue();let removed;
-   if(mode==='withoutHudMarker')sql('DROP TRIGGER hud_hand_changed ON public.tournament_hands;');
+   if(mode==='withoutHudMarker'){
+    if(profilePath)setObservers(baselineObservers);
+    sql('DROP TRIGGER hud_hand_changed ON public.tournament_hands;');
+   }
    try{measurements[mode]=measureFixtureWriterTransactions({commit:true});}
    finally{
-    if(mode==='withoutHudMarker')sql(trigger.definition+';');
+    if(mode==='withoutHudMarker'){
+     sql(trigger.definition+';');
+     if(profilePath)setObservers(candidateObservers);
+    }
     removed=cleanupOwned();
     assert.deepEqual(queue(),queueBefore,'Owned diagnostic jobs were not cleaned');
     assert.deepEqual(catalog(),before,'Source trigger catalog changed');
@@ -68,8 +100,10 @@ try{
  // If the diagnostic fails, restore this one exact definition; never change
  // source-revision, Realtime, auth/RLS or any other trigger.
  if(!catalog().some(t=>t.name==='hud_hand_changed'))sql(trigger.definition+';');
+ if(profilePath)setObservers(candidateObservers);
  assert.deepEqual(catalog(),before,'Source trigger restoration failed');
 }
-const report={kind:'DIAGNOSTIC_MATCHED_SETUP_MARGINAL_HUD_MARKER_NOT_QUALIFICATION',database,sourceHands:Number(sourceCount),pairs:results,sourceTriggerCatalogRestored:true,qualification:false,limitations:'Only marginal HUD hand marker; other incremental changes remain in both arms. Owned unprojected jobs are cleaned; index bloat, legacy marker state, cache/autovacuum/OS scheduling can still differ. No original failed result is replaced.'};
+const report={kind:profilePath?'DIAGNOSTIC_MATCHED_HAND_OBSERVERS_NOT_QUALIFICATION':'DIAGNOSTIC_MATCHED_SETUP_MARGINAL_HUD_MARKER_NOT_QUALIFICATION',observerProfile:profilePath?{baseline:baselineObservers,candidate:candidateObservers}:null,database,sourceHands:Number(sourceCount),pairs:results,sourceTriggerCatalogRestored:true,qualification:false,limitations:profilePath?'Only this fixture hand writer and its three Spectator observers plus HUD hand trigger. No settlement/result/withdrawal coverage. Same data/index setup; cache/autovacuum/OS scheduling can differ. Original failed gate remains.':'Only marginal HUD hand marker; other incremental changes remain in both arms. Owned unprojected jobs are cleaned; index bloat, legacy marker state, cache/autovacuum/OS scheduling can still differ. No original failed result is replaced.'};
+if(profilePath)report.observerFunctionMetadataRestored=true;
 writeFileSync(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT,JSON.stringify(report,null,2));
 console.log(JSON.stringify({kind:report.kind,sourceHands:report.sourceHands,pairs:results.map(r=>({pair:r.pair,order:r.order,p95MarginalPercent:r.p95MarginalPercent})),sourceTriggerCatalogRestored:true,qualification:false}));
