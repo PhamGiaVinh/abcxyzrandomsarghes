@@ -30,9 +30,21 @@ for(const [table,components,overrides] of cases){
  }
 }
 const report={kind:'REAL_POSTGRESQL_SOURCE_TRIGGER_MATRIX_NOT_WEBSOCKET',checked};
-const clock=jsonSql(`BEGIN;DELETE FROM spectator_projection_v2.broadcast_pending_v1;
- UPDATE public.tournaments SET clock_started_at=clock_timestamp() WHERE id='${tour}';
- SELECT jsonb_agg(DISTINCT component ORDER BY component) FROM spectator_projection_v2.broadcast_pending_v1;ROLLBACK;`);
-assert.deepEqual(clock,['clock']);checked.push({table:'tournaments',operation:'CLOCK_UPDATE',components:['clock']});
+for(const [column,value] of [
+ ['clock_started_at','clock_timestamp()'],
+ ['clock_paused_at','clock_timestamp()'],
+ ['pause_accumulated','coalesce(pause_accumulated,0)+30'],
+ ['current_level','coalesce(current_level,0)+1'],
+ ['current_level_id',"'fc100000-0000-4000-8000-000000000001'::uuid"],
+]){
+ const clock=jsonSql(`BEGIN;DELETE FROM spectator_projection_v2.broadcast_pending_v1;
+  UPDATE public.tournaments SET ${column}=${value} WHERE id='${tour}';
+  SELECT coalesce(jsonb_agg(DISTINCT component ORDER BY component),'[]'::jsonb) FROM spectator_projection_v2.broadcast_pending_v1;ROLLBACK;`);
+ assert.deepEqual(clock,['clock'],column);checked.push({table:'tournaments',operation:'CLOCK_UPDATE',column,components:['clock']});
+ const unchanged=jsonSql(`BEGIN;DELETE FROM spectator_projection_v2.broadcast_pending_v1;
+  UPDATE public.tournaments SET ${column}=${column} WHERE id='${tour}';
+  SELECT coalesce(jsonb_agg(DISTINCT component ORDER BY component),'[]'::jsonb) FROM spectator_projection_v2.broadcast_pending_v1;ROLLBACK;`);
+ assert.deepEqual(unchanged,[],column+' unchanged');checked.push({table:'tournaments',operation:'CLOCK_UNCHANGED',column,components:[]});
+}
 sql("DELETE FROM public.tournament_hands WHERE id='21111111-0000-4000-8000-000000000001';");
 writeFileSync('output/hud-scale/source-matrix.json',JSON.stringify(report,null,2));console.log(JSON.stringify({sourceCases:checked.length,passed:true}));
