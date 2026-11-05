@@ -15,6 +15,14 @@ for (const name of required) {
   if (!process.env[name]) throw new Error(`missing ${name}`);
 }
 
+// The disposable Docker hostname uses HTTP, unlike the HTTPS production app.
+// Enable secure-context APIs for this one isolated origin only; do not stub
+// crypto or claim that these measurements include a production TLS handshake.
+const isolatedRealtimeOrigin=process.env.LOCAL_OPERATIONS_REALTIME==='1'
+  &&process.env.PLAYWRIGHT_BASE_URL==='http://cashier-app:8080';
+test.use({launchOptions:{args:isolatedRealtimeOrigin
+  ?['--unsafely-treat-insecure-origin-as-secure=http://cashier-app:8080']:[]}});
+
 async function loginOwner(page: Page) {
   const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, "");
   const anon = process.env.LOCAL_SUPABASE_ANON_KEY!;
@@ -178,6 +186,8 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
     return response.request().method()==='GET'&&url.pathname==='/rest/v1/dealer_attendance'&&url.searchParams.get('status')==='eq.checked_in'&&select.includes('dealers!inner(')&&url.searchParams.has('dealers.club_id');
    },{timeout:30_000});
    await page.goto('/ops/dealer-swing?club='+fixture.clubId);
+   expect(await page.evaluate(()=>window.isSecureContext&&typeof crypto.randomUUID==='function'),
+    'Isolated operational browser must supply the secure-context API available on production HTTPS').toBe(true);
    const initialResponse=await initialAttendance;expect(initialResponse.ok()).toBe(true);
    const initialRows=await initialResponse.json();expect(Array.isArray(initialRows)).toBe(true);
    expect(initialRows).toHaveLength(360);
