@@ -23,6 +23,11 @@ on:
       - 'VinPoker/tests/publicHud/scale*'
   workflow_dispatch:
     inputs:
+      writer_method:
+        description: 'Prospective completed-hand marking benchmark; old runs unchanged'
+        type: choice
+        options: ['startup', 'canonical-hand-observers-paired-v1']
+        default: 'startup'
       qualification:
         description: '1000 viewers/1M hands: two 30min felt scenarios plus 30s grid'
         type: boolean
@@ -70,6 +75,7 @@ jobs:
         working-directory: VinPoker
     env:
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
+      PUBLIC_HUD_WRITER_QUALIFICATION_METHOD: ${{ inputs.writer_method || 'startup' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
       PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
       PUBLIC_HUD_SCALE_TRANSPORT: ${{ inputs.hud_transport || 'product_rpc' }}

@@ -15,10 +15,13 @@ export function currentWriterIdentity(){
  const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;
  assert.match(database??'',/^vinpoker_hud_test_pair_[0-9]+_[0-9]+$/);
  assert.equal(sql('SELECT current_database();'),database);
+ return {...currentWriterCodeIdentity(),runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,database,
+  sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;'))};
+}
+export function currentWriterCodeIdentity(){
  const sha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
  assert.equal(sha,process.env.GITHUB_SHA,'Default checkout must match the current workflow SHA');
- return {sha,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,database,
-  sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;')),
+ return {sha,
   manifestSha256:sha256(readFileSync('scripts/ops/tracker-hud-20261104-manifest.json')),
   fixtureInputsSha256:sha256(JSON.stringify(inputs.map(file=>[file,sha256(readFileSync(file))]))),
   sourceFunctionsSha256:sha256(JSON.stringify(writerSourceFunctions()))};
