@@ -363,6 +363,15 @@ if [[ "$(docker exec "$db_container" psql -X -Atq -U postgres -d postgres -c 'SH
   exit 1
 fi
 echo "SCHEMA_PROOF: mode=$schema_mode; captured schema restored; RPC ACL and default-off verified; cron remains off"
+# Exact later cursor contracts required by the current Edge consumer. This is
+# a disposable, already outbound-isolated stack; no remote database is touched.
+docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+  'CREATE SCHEMA IF NOT EXISTS private; REVOKE ALL ON SCHEMA private FROM PUBLIC,anon,authenticated;'
+for cursor_migration in 20270128000195_sepay_pull_progress_v1.sql 20270128000196_sepay_pull_total_fence_v2.sql; do
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/$cursor_migration"
+done
+echo "EDGE_DEPENDENCY_PROOF: captured baseline plus exact SePay195/196; not untouched-baseline-only runtime proof"
 set +e
 timeout 10m docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   <"$repo_root/supabase/pending-tests/cashier_tour_money_v1.sql" \
