@@ -1170,7 +1170,7 @@ CLOCK_CANDIDATE_PREFLIGHT
     fi
     candidate_count=$((candidate_count+1))
   done <"$test_root/clock-candidate-migrations.list"
-  [[ "$candidate_count" == 29 ]]
+  [[ "$candidate_count" == 30 ]]
   candidate_flags="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT enabled,worker_enabled,backfill_complete FROM tracker_analytics_v1.config WHERE singleton;')"
   [[ "$candidate_flags" == 'f|f|f' ]]
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
@@ -1214,12 +1214,12 @@ CLOCK_BROADCAST_BOOTSTRAP
   if [[ "$clock_candidate_probe" == 1 ]]; then
     run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
     finish_candidate_broadcast
-    echo 'CLOCK_CANDIDATE_PROOF:exact29 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
+    echo 'CLOCK_CANDIDATE_PROOF:exact30 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
     exit 0
   fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" <<'OPERATIONS_PACKAGE_APPLIED'
 import {writeFileSync} from 'node:fs';
-writeFileSync(process.argv[2],JSON.stringify({kind:'EXACT29_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:29,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. No mixed1000spectator capacity claim.'},null,2));
+writeFileSync(process.argv[2],JSON.stringify({kind:'EXACT30_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:30,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. No mixed1000spectator capacity claim.'},null,2));
 OPERATIONS_PACKAGE_APPLIED
   if [[ "$audience_count" != 0 ]]; then
     # Only the fresh isolated runtime is configured; hosted quotas stay intact.
@@ -1846,8 +1846,8 @@ AUDIENCE_FINAL_RECEIPT
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
-assert.equal(report.phase,'package-applied');assert.equal(report.migrations,29);
-report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on exact29candidate. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
+assert.equal(report.phase,'package-applied');assert.equal(report.migrations,30);
+report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on exact30candidate. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
 writeFileSync(process.argv[2],JSON.stringify(report,null,2));
 OPERATIONS_PACKAGE_FINISHED
 fi

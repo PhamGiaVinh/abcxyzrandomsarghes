@@ -189,5 +189,9 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/result-withdrawal.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/hand-withdrawal.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/visibility-wake.native.mjs --already-applied
+      - name: Spectator source lease race and exact recovery
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_spectator_source_lease_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_spectator_source_lease_ci node tests/publicHud/spectator-source-lease.native.mjs --initialize
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit

@@ -32,6 +32,32 @@ function fixture(count=8){
 }
 async function settle(){for(let i=0;i<100;i++)await Promise.resolve();}
 
+it('does not publish or fail a claim explicitly fenced by the source RPC',async()=>{
+ const f=fixture(1);
+ const original=f.rpc.getMockImplementation()!;
+ f.rpc.mockImplementation(async(name,args)=>name==='get_public_spectator_projection_source_v2'
+  ?{data:{fenced:true},error:null}:original(name,args));
+ const result=await processPublicSpectatorJobs(f,5000);
+ expect(result.results).toEqual([{key:'tour-0:payout:component',published:false}]);
+ expect(f.rpc.mock.calls.some(([name])=>name==='publish_public_spectator_projection_v2'||name==='fail_public_spectator_projection_v2')).toBe(false);
+});
+it.each([null,{fenced:false},{fenced:true,payload:null}])('does not silently accept malformed source fence %j',async data=>{
+ const f=fixture(1),original=f.rpc.getMockImplementation()!;
+ f.rpc.mockImplementation(async(name,args)=>name==='get_public_spectator_projection_source_v2'
+  ?{data,error:null}:original(name,args));
+ // Malformed non-null data is not a fence and goes through normal validation/publication.
+ await processPublicSpectatorJobs(f,5000);
+ expect(f.rpc.mock.calls.some(([name])=>name==='fail_public_spectator_projection_v2'||name==='publish_public_spectator_projection_v2')).toBe(true);
+});
+it('retains real source RPC failures rather than interpreting error text as a fence',async()=>{
+ const f=fixture(1),original=f.rpc.getMockImplementation()!;
+ f.rpc.mockImplementation(async(name,args)=>name==='get_public_spectator_projection_source_v2'
+  ?{data:null,error:{code:'P0001',message:'lease_expired'}}:original(name,args));
+ const result=await processPublicSpectatorJobs(f,5000);
+ expect(result.results[0].error).toBe('source_failed');
+ expect(f.rpc.mock.calls.some(([name])=>name==='fail_public_spectator_projection_v2')).toBe(true);
+});
+
 it('streams committed publications with one held flush and awaits it before the final flush',async()=>{
  const f=fixture();let release!:(value:{data:unknown;error:unknown})=>void;
  f.hold(new Promise(resolve=>{release=resolve;}));let returned=false;

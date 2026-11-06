@@ -30,6 +30,12 @@ export async function processPublicSpectatorJobs(client:Client,deadline=Date.now
       try{
         const source=await call('get_public_spectator_projection_source_v2',{p_tournament_id:job.tournament_id,p_component:job.component,p_fencing_token:job.fencing_token});
         if(source.error||!source.data)throw Error('source_failed');
+        // A source write can revoke the claim between claim and source read.
+        // Only the exact DB fence receipt is a no-op; errors/missing data still fail.
+        if(typeof source.data==='object'&&Object.keys(source.data).length===1&&
+          (source.data as {fenced?:unknown}).fenced===true){
+          results.push({key,published:false});continue;
+        }
         const value=source.data as {sourceVector:Record<string,string>;payload:unknown};
         const published=await call('publish_public_spectator_projection_v2',{p_tournament_id:job.tournament_id,p_component:job.component,p_group_key:job.group_key,
           p_fencing_token:job.fencing_token,p_source_vector:value.sourceVector,p_payload:reducePublicSpectatorPayload(job.component,value.payload)});

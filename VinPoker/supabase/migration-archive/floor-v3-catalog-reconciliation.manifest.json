@@ -9994,6 +9994,12 @@
       "filename": "20261106111519_public_hud_visibility_work_wakeup.sql",
       "sha256": "8aa0c2a11fd69abfc412c87481b167578bf4b659cb38e7c4611d0793670b73aa",
       "reason": "Successful fenced child publication may accelerate only its unleased matching-generation visibility parent through SKIP LOCKED. Busy parents retain existing retries; source/counters/barriers/leases are unchanged. Exact owner-approved29-migration package required."
+    },
+    {
+      "version": "20261106144208",
+      "filename": "20261106144208_public_spectator_source_lease_outcome.sql",
+      "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
+      "reason": "Exact stale-lease receipt after existing service authorization; no source payload or authority for old workers. Keeps publication fencing. Requires quiesced spectator worker, no active leases and exact owner-approved30-migration package before production apply."
     }
   ],
   "floorActiveAllowlist": [
