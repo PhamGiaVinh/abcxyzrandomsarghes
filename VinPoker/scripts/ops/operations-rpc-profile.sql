@@ -25,11 +25,15 @@ BEGIN
   END rpc,calls,total_exec_time,max_exec_time,shared_blks_hit,shared_blks_read
   FROM %I.pg_stat_statements WHERE toplevel AND dbid=(SELECT oid FROM pg_database WHERE datname=current_database())
    AND query NOT LIKE '%%pg_stat_statements%%'
+   -- Exclude migrations/function-definition guards that mention an RPC name.
+   -- These measurements cover the actual PostgREST request CTE only.
+   AND query ~* '^[[:space:]]*WITH[[:space:]]+pgrst_source[[:space:]]+AS[[:space:]]*[(]'
  ), aggregated AS (
   SELECT rpc,sum(calls)::bigint calls,sum(total_exec_time) execution_ms,max(max_exec_time) max_execution_ms,
    sum(shared_blks_hit)::bigint shared_hits,sum(shared_blks_read)::bigint shared_reads
   FROM classified WHERE rpc IS NOT NULL GROUP BY rpc
- ) SELECT jsonb_build_object('capture','available','kind','ISOLATED_AGGREGATE_RPC_POSTGRES_TIMINGS',
+ ) SELECT jsonb_build_object('capture',CASE WHEN count(*)>0 THEN 'available' ELSE 'empty' END,'kind','ISOLATED_AGGREGATE_RPC_POSTGRES_TIMINGS',
+ 'queryScope','PostgREST pgrst_source request CTE only;DDL and native calls excluded',
  'qualification',false,'rpc',coalesce(jsonb_agg(to_jsonb(a) ORDER BY rpc),'[]'::jsonb)) FROM aggregated a
  $query$,stats_schema) INTO result;
  RETURN result;
