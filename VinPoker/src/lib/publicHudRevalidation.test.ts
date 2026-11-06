@@ -27,7 +27,7 @@ it('stops an unresolved preparation at the total five-second budget',async()=>{
  const read=vi.fn().mockResolvedValue(blocked);
  const pending=revalidatePublicHudRead(read,new AbortController().signal).then(()=>null,e=>e);
  await vi.advanceTimersByTimeAsync(5000);const error=await pending;
- expect(error).toMatchObject({message:'PUBLIC_HUD_PREPARING',publicHudRevalidationExpired:true});
+ expect(error).toMatchObject({message:'PUBLIC_HUD_PREPARING',publicHudRevalidationExpired:true,publicHudRevalidationPhase:'wait'});
  expect(error).not.toHaveProperty('publicHudCallerCancelled');const calls=read.mock.calls.length;
  await vi.advanceTimersByTimeAsync(60000);expect(read).toHaveBeenCalledTimes(calls);expect(vi.getTimerCount()).toBe(0);
 });
@@ -64,7 +64,7 @@ it('aborts a request at the overall budget and retains deadline priority over a 
  },{once:true})));
  const pending=revalidatePublicHudRead(read,caller.signal).then(()=>null,e=>e);
  await vi.advanceTimersByTimeAsync(5000);const error=await pending;
- expect(error).toMatchObject({message:'PUBLIC_HUD_UNAVAILABLE',publicHudDeadline:true});expect(error).not.toHaveProperty('publicHudCallerCancelled');expect(read).toHaveBeenCalledTimes(1);
+ expect(error).toMatchObject({message:'PUBLIC_HUD_UNAVAILABLE',publicHudDeadline:true,publicHudRevalidationPhase:'rpc'});expect(error).not.toHaveProperty('publicHudCallerCancelled');expect(read).toHaveBeenCalledTimes(1);
  expect(vi.getTimerCount()).toBe(0);
 });
 it('preserves HTTP/network/validation failure when a caller aborts late and never retries it',async()=>{
@@ -88,4 +88,12 @@ it('makes no request after closure and does not accept a late successful respons
  await expect(revalidatePublicHudRead(unused,closed.signal)).rejects.toMatchObject({publicHudCallerCancelled:true});expect(unused).not.toHaveBeenCalled();
  const caller=new AbortController();const read=vi.fn(async()=>{caller.abort();return {access:'public',state:'current'};});
  await expect(revalidatePublicHudRead(read,caller.signal)).rejects.toMatchObject({publicHudCallerCancelled:true});expect(vi.getTimerCount()).toBe(0);
+});
+
+it('preserves a physical request deadline without retry',async()=>{
+ const failure=Object.assign(Error('PUBLIC_HUD_UNAVAILABLE'),{publicHudDeadline:true});
+ const read=vi.fn().mockRejectedValue(failure);
+ await expect(revalidatePublicHudRead(read,new AbortController().signal)).rejects.toBe(failure);
+ expect(failure).not.toHaveProperty('publicHudRevalidationPhase');
+ expect(read).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
 });

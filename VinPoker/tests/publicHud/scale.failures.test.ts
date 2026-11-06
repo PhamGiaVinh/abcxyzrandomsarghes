@@ -2,8 +2,9 @@ import {describe,it,expect} from 'vitest';
 import {classifyHudReadFailure,sanitizeWriterNestedPlans,writerCaptureFailureKind} from './scale.failures.mjs';
 describe('safe HUD read failure diagnosis',()=>{
  it('separates preparation expiry, actual deadlines and caller cancellation',()=>{
-  expect(classifyHudReadFailure({publicHudRevalidationExpired:true})).toBe('preparation_deadline');
-  expect(classifyHudReadFailure({publicHudDeadline:true,publicHudCallerCancelled:true})).toBe('rpc_deadline');
+  expect(classifyHudReadFailure({publicHudRevalidationExpired:true})).toBe('revalidation_budget_expired_in_wait');
+  expect(classifyHudReadFailure({publicHudDeadline:true,publicHudCallerCancelled:true})).toBe('physical_rpc_deadline');
+  expect(classifyHudReadFailure({publicHudDeadline:true,publicHudRevalidationPhase:'rpc'})).toBe('revalidation_budget_expired_in_rpc');
   expect(classifyHudReadFailure({publicHudCallerCancelled:true})).toBe('caller_cancelled');
  });
  it('never exports arbitrary error text or changes a failure to success',()=>{

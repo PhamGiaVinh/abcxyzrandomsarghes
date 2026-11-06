@@ -31,7 +31,7 @@ const amendmentKinds=['correct','void','restore','verify','revoke','reverify','r
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),amendReadyProbeTimes=new Map(),workerProbeDiagnostics=[];
 const coveringHintDiagnostics=new Map();
-const hudFailureSamples=[],tableFailureSamples=[];
+const hudFailureSamples=[],hudReadinessFailureSamples=[],tableFailureSamples=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},tableFailureKinds={},requestAccounting={},observationOrder=0;
 let dispatchBuckets=new Map();
@@ -95,9 +95,9 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAt
     const target=new URL(url);assert.equal(target.origin,status.API_URL);
     assert.equal(target.pathname,'/rest/v1/rpc/'+(mode==='summary'?'get_public_player_hud_summary_v1':'get_public_player_hud_history_v1'));
     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-    let data;const rpcStart=performance.now();diagnostic.attempts++;diagnostic.rpcStartedAt=Date.now();
+    let data;const rpcStart=performance.now();diagnostic.attempts++;diagnostic.rpcStartedAt=Date.now();diagnostic.lastRpcTrace={};
     try{data=await post(hudTransport==='edge'?'/functions/v1/public-player-hud':target.pathname,
-     hudTransport==='edge'?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal);}
+     hudTransport==='edge'?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal,diagnostic.lastRpcTrace);}
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     diagnostic.completed++;diagnostic.lastRpcMs=performance.now()-rpcStart;diagnostic.rpcStartedAt=null;
     diagnostic.lastState=data?.access==='revoked'?'revoked':['current','updating','warming','unavailable'].includes(data?.state)?data.state:'unknown';
@@ -114,7 +114,9 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAt
    const cancelled=signal?.aborted===true&&error?.publicHudCallerCancelled===true&&error?.publicHudDeadline!==true;
    const outcome=phase+':'+(cancelled?'caller_cancelled':'failed');rpcOutcomes[outcome]=(rpcOutcomes[outcome]??0)+1;
    if(!cancelled){const kind=phase+':'+classifyHudReadFailure(error);hudFailureKinds[kind]=(hudFailureKinds[kind]??0)+1;
-    if(hudFailureSamples.length<64)hudFailureSamples.push({...diagnostic,kind,failedAt:Date.now(),elapsedMs:performance.now()-start,callerAborted:signal?.aborted===true});
+    const sample={...diagnostic,kind,failedAt:Date.now(),elapsedMs:performance.now()-start,callerAborted:signal?.aborted===true};
+    if(hudFailureSamples.length<64)hudFailureSamples.push(sample);
+    if(phase==='restoration-readiness'&&hudReadinessFailureSamples.length<4)hudReadinessFailureSamples.push(sample);
    }
    if(cancelled)throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});
    throw error;
@@ -144,7 +146,7 @@ const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,tableFailureSamples,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));

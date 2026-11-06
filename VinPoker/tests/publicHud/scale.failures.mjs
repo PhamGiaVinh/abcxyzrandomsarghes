@@ -11,8 +11,8 @@ export function classifyEdgeFailure(body){
 }
 // Allowlisted diagnostics only. The caller retains every original failure gate.
 export function classifyHudReadFailure(error){
- if(error?.publicHudRevalidationExpired===true)return 'preparation_deadline';
- if(error?.publicHudDeadline===true)return 'rpc_deadline';
+ if(error?.publicHudRevalidationExpired===true)return 'revalidation_budget_expired_in_wait';
+ if(error?.publicHudDeadline===true)return error.publicHudRevalidationPhase==='rpc'?'revalidation_budget_expired_in_rpc':'physical_rpc_deadline';
  if(error?.publicHudCallerCancelled===true)return 'caller_cancelled';
  if(error?.message==='PUBLIC_HUD_INVALID_PREPARATION')return 'invalid_preparation';
  return 'unknown';

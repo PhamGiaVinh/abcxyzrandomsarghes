@@ -4,7 +4,7 @@
 export const PUBLIC_HUD_REVALIDATION_WINDOW_MS=5_000;
 class PreparationWaitAborted extends Error {}
 const cancelled=()=>Object.assign(Error('aborted'),{publicHudCallerCancelled:true});
-const deadline=()=>Object.assign(Error('PUBLIC_HUD_UNAVAILABLE'),{publicHudDeadline:true});
+const deadline=()=>Object.assign(Error('PUBLIC_HUD_UNAVAILABLE'),{publicHudDeadline:true,publicHudRevalidationPhase:'rpc'});
 
 export async function revalidatePublicHudRead<T extends Record<string,unknown>>(
  read:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal,onPreparing?:()=>void,
@@ -46,7 +46,7 @@ export async function revalidatePublicHudRead<T extends Record<string,unknown>>(
   }
  }catch(error){
   if(error instanceof PreparationWaitAborted){
-   if(expired)throw Object.assign(Error('PUBLIC_HUD_PREPARING'),{publicHudRevalidationExpired:true});
+   if(expired)throw Object.assign(Error('PUBLIC_HUD_PREPARING'),{publicHudRevalidationExpired:true,publicHudRevalidationPhase:'wait'});
    throw cancelled();
   }
   if((error as {publicHudCallerCancelled?:boolean})?.publicHudCallerCancelled&&expired)throw deadline();
