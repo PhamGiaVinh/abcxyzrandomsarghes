@@ -300,6 +300,9 @@ printf '%s\n' \
   'verify_jwt = true' \
   '[functions.tournament-reentry]' \
   'verify_jwt = true' >>supabase/config.toml
+if [[ "$operations_candidate_probe" == 1 ]]; then
+  printf '%s\n' '[functions.tournament-historical-settlement]' 'verify_jwt = true' >>supabase/config.toml
+fi
 printf '%s\n' \
   'SEPAY_RECONCILE_SECRET=cashier-edge-reconcile-test' \
   'SEPAY_AUTO_CONFIRM=true' \
@@ -754,6 +757,9 @@ cp -R "$repo_root/supabase/functions/sepay-reconcile" supabase/functions/sepay-r
 if [[ "$schema_mode" == current ]]; then
   cp -R "$repo_root/supabase/functions/checkout-dealer" supabase/functions/checkout-dealer
   cp -R "$repo_root/supabase/functions/tournament-reentry" supabase/functions/tournament-reentry
+  if [[ "$operations_candidate_probe" == 1 ]]; then
+    cp -R "$repo_root/supabase/functions/tournament-historical-settlement" supabase/functions/tournament-historical-settlement
+  fi
   if [[ "$reentry_transport_probe" == 1 ]]; then
     cp "$repo_root/supabase/pending-tests/tournament-reentry-transport.ts" supabase/functions/tournament-reentry/index.ts
   fi
@@ -1303,6 +1309,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_ACTION_FINISH_ENABLED="$manual_action_finish_enabled" \
   --env LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED="$recorded_action_finish_enabled" \
+  --env LOCAL_OPERATIONS_HISTORICAL_PREVIEW_ENABLED="$operations_candidate_probe" \
   --env LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED="$telegram_sink_enabled" \
   --env LOCAL_OPERATIONS_INTELLIGENCE_ENABLED="$intelligence_enabled" \
   --env LOCAL_OPERATIONS_HUD_BROWSER_ENABLED="$hud_browser_enabled" \
@@ -2065,7 +2072,7 @@ MANUAL_ACTION_ACTORS
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
   if [[ "$action_finish_state" != '21|105|65|0' ]]; then echo "Manual action Finish conservation failed ($action_finish_state)" >&2; exit 1; fi
   echo 'MANUAL_ACTION_FINISH_PROOF:21completed three-player hands;105exact actions;65seat snapshots;zero active hands'
-  run_browser_proof '' '' 'recorded actions enforce budget and merge once through canonical Finish|anonymous public replay reads the recorded hand through actual HTTP' '' '' '' '' '' '' '' '' 1
+  run_browser_proof '' '' 'recorded actions enforce budget and merge once through canonical Finish|owner historical preview verifies the canonical recorded hand over real HTTP|anonymous public replay reads the recorded hand through actual HTTP' '' '' '' '' '' '' '' '' 1
   recorded_finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9023 AND status='completed'),
     (SELECT count(*) FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001' AND h.hand_number=9023),

@@ -1585,6 +1585,44 @@ test('recorded actions enforce budget and merge once through canonical Finish',a
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('owner historical preview verifies the canonical recorded hand over real HTTP',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_HISTORICAL_PREVIEW_ENABLED!=='1'||process.env.LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED!=='1'||!['0','10'].includes(process.env.LOCAL_OPERATIONS_AUDIENCE??'0'),
+  'Small isolated preview diagnostic only;not a1000-viewer claim');test.setTimeout(45_000);
+ const original=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const tour='a3000000-0000-4000-8000-000000000001',club='a2000000-0000-4000-8000-000000000001';
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ let phase='owner',previewMs:number|null=null,lastHttpStatus:number|null=null;
+ const checks={verifiedOwner:false,actorChangeDenied:false,positivePreview:false,validFingerprints:false,selectedSourceFieldsUnchanged:false};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-historical-preview-http.json'),JSON.stringify({
+  kind:'REAL_AUTH_OWNER_HISTORICAL_PREVIEW_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  phase,checks,previewMs,lastHttpStatus,qualification:false,
+  limitations:'Read-only preview on canonical recorded hand9023;selected source columns compared,not whole-source immutability. Actor409 proves context binding;positive200proves owner authorization/verifier. Does not persist proof,verify stack dots,commit receipt,showdown/sidepots or1000-viewer latency.',
+ },null,2));
+ const get=async(token:string,path:string)=>{const response=await fetch(api+path,{headers:headers(token),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
+ try{
+  const originalUser=await get(original,'/auth/v1/user'),clubs=await get(original,'/rest/v1/clubs?select=owner_id&id=eq.'+club);
+  expect(clubs.length).toBe(1);const ownerId=clubs[0].owner_id;
+  const identity=originalUser.id===ownerId?{userId:ownerId,token:original}:staff.find(s=>s.userId===ownerId);
+  expect(Boolean(identity)).toBe(true);const owner=identity!;
+  expect((await get(owner.token,'/auth/v1/user')).id).toBe(ownerId);checks.verifiedOwner=true;
+  const hands=await get(owner.token,'/rest/v1/tournament_hands?select=id,source_revision,status,pot_size&tournament_id=eq.'+tour+'&hand_number=eq.9023');
+  expect(hands.length).toBe(1);expect(hands[0].status).toBe('completed');const hand=hands[0];
+  const source=async()=>({hand:await get(owner.token,'/rest/v1/tournament_hands?select=id,source_revision,status,pot_size&id=eq.'+hand.id),
+   players:await get(owner.token,'/rest/v1/hand_players?select=id,starting_stack,ending_stack,is_eliminated,entry_number&hand_id=eq.'+hand.id+'&order=id'),
+   actions:await get(owner.token,'/rest/v1/hand_actions?select=id,street,action_type,action_amount,action_order&hand_id=eq.'+hand.id+'&order=id')});
+  const before=await source(),intent={mode:'preview',expected_actor_id:owner.userId,tournament_id:tour,hand_id:hand.id};
+  const post=async(body:Record<string,unknown>)=>{const response=await fetch(api+'/functions/v1/tournament-historical-settlement',{
+   method:'POST',headers:headers(owner.token),body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});return {response,data:await response.json()};};
+  phase='actor-denial';const other=staff.find(s=>s.userId!==owner.userId)!;
+  const denied=await post({...intent,expected_actor_id:other.userId});expect(denied.response.status).toBe(409);expect(denied.data.code).toBe('actor_context_changed');checks.actorChangeDenied=true;
+  phase='preview';const started=performance.now(),result=await post(intent);previewMs=performance.now()-started;lastHttpStatus=result.response.status;report();
+  expect(result.response.status).toBe(200);expect(result.data.ok).toBe(true);expect(result.data.status).toBe('preview');checks.positivePreview=true;
+  expect(result.data.source_revision).toBe(hand.source_revision);
+  expect(/^[0-9a-f]{64}$/.test(result.data.source_chain_hash)).toBe(true);expect(/^[0-9a-f]{64}$/.test(result.data.outcome_hash)).toBe(true);checks.validFingerprints=true;
+  expect(await source()).toEqual(before);checks.selectedSourceFieldsUnchanged=true;phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
 test('anonymous public replay reads the recorded hand through actual HTTP',async({page,browser})=>{
  test.skip(process.env.LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED!=='1','Requires the preceding canonical recorded-action Finish');test.setTimeout(45_000);
  const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
