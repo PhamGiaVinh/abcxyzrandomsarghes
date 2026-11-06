@@ -923,7 +923,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}"
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
   local -a container_args=()
   if [[ "$replacement_enabled" == rest-race || "$replacement_enabled" == off-race ]]; then container_args+=(--name "$race_browser_container"); fi
@@ -941,6 +941,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
   --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
+  --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1344,4 +1345,24 @@ OFF_RACE_FIXTURE
   if [[ "$race_off_denials" != 1 ]]; then echo 'Exact OFF-denial attribution missing or duplicated' >&2; exit 1; fi
   printf '{"kind":"REAL_CHECKOUT_OFF_COMMIT_RACE","workerBlocked":true,"controlCommitted":true,"denial":"AUTO_SWING_OFF","denials":1,"activeAssignments":0,"checkoutReplacementReceipts":1,"qualification":false}\n' >"$repo_root/output/operations-latency/checkout-off-guard-http.json"
   echo 'REPLACEMENT_OFF_RACE_PROOF:actual worker blocked;OFF committed;checkout retained;no replacement or new receipt'
+  node "$repo_root/scripts/ops/prepare-staff-salary-runtime-dependencies.mjs" "$test_root/staff-salary-current.sql"
+  { printf "SET vinpoker.isolated_staff_salary_fixture='cashier-current-salary-v1';\n"; cat "$test_root/staff-salary-current.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'STAFF_SALARY_FIXTURE'
+BEGIN;
+INSERT INTO public.clubs(id,owner_id,name,region,status)
+VALUES('af200000-0000-4000-8000-000000000001',:'owner_id'::uuid,'Staff salary HTTP TEST','HCM','approved');
+INSERT INTO public.club_settings(club_id,standard_shifts_per_month)
+VALUES('af200000-0000-4000-8000-000000000001',26);
+INSERT INTO public.staff(id,club_id,user_id,full_name,department,employment_type,monthly_salary_vnd,manual_bhxh_vnd,manual_tax_vnd,status)
+SELECT ('af100000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'af200000-0000-4000-8000-000000000001',u.id,
+ 'Staff salary HTTP TEST '||n,'service','full_time',2600000,0,0,'active'
+FROM generate_series(1,20) n JOIN auth.users u ON u.email='cashier-latency-'||n||'@test.invalid';
+INSERT INTO public.staff(id,club_id,user_id,full_name,department,employment_type,monthly_salary_vnd,manual_bhxh_vnd,manual_tax_vnd,status)
+VALUES('af100000-0000-4000-8000-000000000021','af200000-0000-4000-8000-000000000001',:'owner_id'::uuid,
+ 'Staff salary HTTP TEST 21','service','full_time',2600000,0,0,'inactive');
+DO $$ BEGIN IF (SELECT count(*) FROM public.staff WHERE club_id='af200000-0000-4000-8000-000000000001')<>21 THEN RAISE EXCEPTION 'salary_fixture_staff_incomplete';END IF;END $$;
+COMMIT;
+STAFF_SALARY_FIXTURE
+  run_browser_proof '' '' 'inactive earned staff salary HTTP preserves approved period roster' '' '' '' '' 1
 fi

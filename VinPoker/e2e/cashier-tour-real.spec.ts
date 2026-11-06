@@ -1264,6 +1264,58 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('inactive earned staff salary HTTP preserves approved period roster',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_STAFF_SALARY_ENABLED!=='1','Exact current salary contracts after all existing operational proofs');test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='af200000-0000-4000-8000-000000000001',id=(n:number)=>'af100000-0000-4000-8000-'+String(n).padStart(12,'0');
+ const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'numeric'}).formatToParts(new Date());
+ const period={p_club_id:club,p_year:Number(parts.find(p=>p.type==='year')!.value),p_month:Number(parts.find(p=>p.type==='month')!.value)};
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const timings:Record<string,number[]>={};let phase='preconditions';let evidence:Record<string,unknown>={};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-staff-salary-http.json'),JSON.stringify({kind:'REAL_AUTH_STAFF_SALARY_HTTP_INACTIVE_AND_FROZEN_ROSTER',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,timings:Object.fromEntries(Object.entries(timings).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return [key,{samples:values.length,p95Ms:values.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null}];})),qualification:false,limitations:'Twenty real Auth staff self-checkins/checkouts and owner offboarding/reads in one synthetic month;one freeze/submit/approval and20concurrent post-approval freeze attempts. Direct authenticated HTTP and independent table reads;not UI/Realtime/provider/payroll payment/mixed1000viewer capacity. Exact current production salary definitions restored,including the observed legacy chot body;no guarded substitute to make the test pass.'},null,2));
+ const rpc=async(token:string,name:string,args:Record<string,unknown>,metric?:string,expectedStatus=200)=>{
+  const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(10000)});
+  const data=await response.json();if(metric)(timings[metric]??=[]).push(performance.now()-started);expect(response.status,name).toBe(expectedStatus);return data;
+ };
+ const upsert=(n:number,status:string,metric?:string)=>rpc(owner,'staff_upsert',{p_club_id:club,p_staff_id:id(n),p_full_name:'Staff salary HTTP TEST '+n,p_department:'service',p_employment_type:'full_time',p_monthly_salary_vnd:2600000,p_manual_bhxh_vnd:0,p_manual_tax_vnd:0,p_status:status},n<=20?metric:undefined);
+ const runs=async()=>{const response=await fetch(api+'/rest/v1/staff_salary_runs?select=*&club_id=eq.'+club+'&period_year=eq.'+period.p_year+'&period_month=eq.'+period.p_month+'&order=id',{headers:headers(owner),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);const data=await response.json();expect(Array.isArray(data)).toBe(true);return data;};
+ const periodSnapshot=async()=>{const response=await fetch(api+'/rest/v1/staff_salary_periods?select=*&club_id=eq.'+club+'&period_year=eq.'+period.p_year+'&period_month=eq.'+period.p_month,{headers:headers(owner),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);const data=await response.json();expect(data).toHaveLength(1);expect(data[0].status).toBe('approved');return data;};
+ try{
+  await rpc(staff[0].token,'get_staff_salary_month',period,undefined,403);
+  phase='attendance-and-inactive';
+  for(let n=1;n<=20;n++){
+   expect((await rpc(staff[n-1].token,'staff_check_in',{p_staff_id:id(n)},'selfCheckin')).outcome).toBe('checked_in');
+   expect((await upsert(n,'inactive','blockedOffboard')).error).toBe('STAFF_CHECKOUT_REQUIRED');
+   if(n===1)await rpc(owner,'staff_check_out',{p_staff_id:id(n)},undefined,403);
+   expect((await rpc(staff[n-1].token,'staff_check_out',{p_staff_id:id(n)},'selfCheckout')).outcome).toBe('checked_out');
+   expect((await upsert(n,'inactive','offboard')).status).toBe('ok');
+  }
+  phase='earned-preview';
+  for(let n=0;n<20;n++){
+   const month=await rpc(owner,'get_staff_salary_month',period,'earnedMonthRead');expect(month.staff).toHaveLength(20);
+   expect(month.staff.every((s:{worked_days:number;net_vnd:number})=>s.worked_days===1&&s.net_vnd===100000)).toBe(true);
+  }
+  phase='freeze-and-approve';
+  const frozen=await rpc(owner,'chot_staff_salary_month',period);expect(frozen.locked_now).toBe(20);expect(frozen.total_net_vnd).toBe(2000000);
+  expect((await rpc(owner,'chot_staff_salary_month',period)).locked_now).toBe(0);
+  expect((await rpc(owner,'submit_staff_salary_month',{...period,p_note:'Synthetic HTTP qualification;no provider'})).status).toBe('submitted');
+  expect((await rpc(owner,'approve_staff_salary_month',period)).status).toBe('approved');
+  const before=await runs();expect(before).toHaveLength(20);expect(before.reduce((sum:number,r:{net_vnd:number})=>sum+r.net_vnd,0)).toBe(2000000);
+  const approvedPeriodBefore=await periodSnapshot();
+  phase='late-earned-after-approval';
+  expect((await upsert(21,'active')).status).toBe('ok');
+  expect((await rpc(owner,'staff_check_in',{p_staff_id:id(21)})).outcome).toBe('checked_in');
+  expect((await rpc(owner,'staff_check_out',{p_staff_id:id(21)})).outcome).toBe('checked_out');
+  expect((await upsert(21,'inactive')).status).toBe('ok');
+  phase='approved-roster-concurrent-freeze';
+  const repeated=await Promise.all(Array.from({length:20},()=>rpc(owner,'chot_staff_salary_month',period,'approvedFreeze')));
+  const after=await runs();evidence={beforeRuns:before.length,afterRuns:after.length,beforeNet:before.reduce((sum:number,r:{net_vnd:number})=>sum+r.net_vnd,0),afterNet:after.reduce((sum:number,r:{net_vnd:number})=>sum+r.net_vnd,0),lockedNow:repeated.map(r=>r.locked_now),checkoutBeforeInactive:true};report();
+  const approvedPeriodAfter=await periodSnapshot();expect(approvedPeriodAfter).toEqual(approvedPeriodBefore);
+  expect(repeated.every(r=>r.locked_now===0),'Approved period must refuse roster extension').toBe(true);expect(after).toEqual(before);
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
 test('current owner rake closes once and exports the immutable event-day snapshot',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_BUY_CLOSE_ENABLED!=='1','Fourth isolated stage after reentry conservation');test.setTimeout(120_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
