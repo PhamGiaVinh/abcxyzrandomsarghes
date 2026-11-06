@@ -1047,6 +1047,7 @@ fi
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
   VITE_FLOOR_TABLE_CONTROL_V3=preview VITE_FLOOR_UAT_ENV=preview VITE_FLOOR_REDRAW_SEAT_LOCK_V1=off \
+  VITE_PUBLIC_SPECTATOR_LAST_HAND_HISTORY=preview \
   npm run build >/dev/null)
 app_container="$(docker run -d --rm --network "$browser_network" --network-alias cashier-app \
   --volume "$repo_root:/app:ro" --workdir /app \
