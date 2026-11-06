@@ -105,6 +105,7 @@ PUBLIC_HUD_IDENTITY_KEYSET_REPORT="$repo_root/output/hud-scale/identity-keyset.j
 PUBLIC_HUD_IDENTITY_PLAN_REPORT="$repo_root/output/hud-scale/identity-lookup.json" node tests/publicHud/identity-lookup.native.mjs
 PUBLIC_HUD_AMENDMENT_NATIVE_REPORT="$repo_root/output/hud-scale/amendment-native.json" node tests/publicHud/scale.amendments.native.mjs
 node tests/publicHud/scale.sources.native.mjs
+PUBLIC_HUD_VISIBILITY_WAKE_REPORT="$repo_root/output/hud-scale/visibility-wake.json" node tests/publicHud/visibility-wake.native.mjs --already-applied
 node tests/publicHud/scale.sql-profile.mjs
 supabase functions serve --workdir "$test_root" --env-file "$test_root/workers.env" --no-verify-jwt >"$test_root/serve.log" 2>&1 &
 serve_pid=$!

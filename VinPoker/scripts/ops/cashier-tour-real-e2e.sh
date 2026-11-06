@@ -1063,7 +1063,7 @@ CLOCK_CANDIDATE_PREFLIGHT
   # Restore its exact missing private read dependencies, then apply its original
   # guarded migration. Never replace the candidate019 preimage requirement.
   node "$repo_root/scripts/ops/prepare-clock-payout-runtime-dependencies.mjs" "$test_root/clock-payout-dependencies.sql"
-  { printf "SET vinpoker.isolated_clock_candidate='current-clock28-only';\n"; cat "$test_root/clock-payout-dependencies.sql"; } | \
+  { printf "SET vinpoker.isolated_clock_candidate='current-clock29-only';\n"; cat "$test_root/clock-payout-dependencies.sql"; } | \
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20261103131615_payout_publication_after_cashier.sql"
@@ -1078,7 +1078,7 @@ CLOCK_CANDIDATE_PREFLIGHT
     fi
     candidate_count=$((candidate_count+1))
   done <"$test_root/clock-candidate-migrations.list"
-  [[ "$candidate_count" == 28 ]]
+  [[ "$candidate_count" == 29 ]]
   candidate_flags="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT enabled,worker_enabled,backfill_complete FROM tracker_analytics_v1.config WHERE singleton;')"
   [[ "$candidate_flags" == 'f|f|f' ]]
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
@@ -1097,7 +1097,7 @@ const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(report.phase,'stopped');assert.equal(report.failures,0);
 assert.ok(report.completed>0);assert.ok(report.sent>0);
 CLOCK_FLUSH_POSTCHECK
-  echo 'CLOCK_CANDIDATE_PROOF:exact28 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
+  echo 'CLOCK_CANDIDATE_PROOF:exact29 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
   exit 0
 fi
 run_browser_proof

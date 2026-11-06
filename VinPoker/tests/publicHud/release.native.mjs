@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {loadPackage,validateState,validateRecovery,stateSql,atomicQuery,PROJECT} from '../../scripts/ops/tracker-hud-20261104-release.mjs';
 import {sql,jsonSql} from './nativeDb.mjs';
-const pkg=loadPackage();assert.equal(pkg.entries.length,28);
+const pkg=loadPackage();assert.equal(pkg.entries.length,29);
 const state={rows:763,fingerprint:pkg.manifest.baselineLedgerFingerprint,applied:0,spectatorPaused:true};
 validateState(state,pkg);
 for(const change of [{rows:764},{fingerprint:'changed'},{applied:1},{spectatorPaused:false}])assert.throws(()=>validateState({...state,...change},pkg));
@@ -26,4 +26,4 @@ assert.throws(()=>sql(atomicQuery(failure,fixture)),/division by zero/);
 assert.equal(sql("SELECT to_regclass('public.hud_release_rollback_probe') IS NULL AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261104001600');"),'t');
 sql("UPDATE cron.job SET active=true;");
 assert.throws(()=>sql(atomicQuery(failure,fixture)),/paused dispatcher changed/);
-console.log(JSON.stringify({kind:'NATIVE_POSTGRESQL_ATOMIC_RELEASE_GATES',passed:true,checks:['pinned-twenty-eight-migration-hashes','ledger-drift','partial-stop','paused-cron','recovery-validation','atomic-object-and-receipt','rollback-on-error','duplicate-denied']}));
+console.log(JSON.stringify({kind:'NATIVE_POSTGRESQL_ATOMIC_RELEASE_GATES',passed:true,checks:['pinned-twenty-nine-migration-hashes','ledger-drift','partial-stop','paused-cron','recovery-validation','atomic-object-and-receipt','rollback-on-error','duplicate-denied']}));
