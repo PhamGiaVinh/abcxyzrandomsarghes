@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
+import { loadPackage } from './tracker-hud-20261104-release.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
@@ -169,6 +170,17 @@ test('candidate operations mode rejects unsafe or ambiguous combinations before 
   }
   const valid=rejectedPreflight('current','1','1','0');
   assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
+});
+
+test('candidate admission and final receipt require the exact reviewed manifest count',()=>{
+  const expected=loadPackage().entries.length;
+  const admission=script.match(/\[\[ "\$candidate_count" == (\d+) \]\]/g)??[];
+  const emitted=script.match(/phase:'package-applied',migrations:(\d+)/g)??[];
+  const completion=script.match(/assert\.equal\(report\.migrations,(\d+)\)/g)??[];
+  for(const [name,matches] of [['admission',admission],['emitted receipt',emitted],['completion',completion]]){
+    assert.equal(matches.length,1,name);
+    assert.equal(Number(matches[0].match(/\d+/)?.[0]),expected,name);
+  }
 });
 
 test('shared flusher accepts exactly one candidate mode and retains disposable target guard',()=>{

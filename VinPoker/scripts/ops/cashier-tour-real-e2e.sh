@@ -1371,7 +1371,7 @@ CLOCK_CANDIDATE_PREFLIGHT
     fi
     candidate_count=$((candidate_count+1))
   done <"$test_root/clock-candidate-migrations.list"
-  [[ "$candidate_count" == 30 ]]
+  [[ "$candidate_count" == 31 ]]
   candidate_flags="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT enabled,worker_enabled,backfill_complete FROM tracker_analytics_v1.config WHERE singleton;')"
   [[ "$candidate_flags" == 'f|f|f' ]]
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
