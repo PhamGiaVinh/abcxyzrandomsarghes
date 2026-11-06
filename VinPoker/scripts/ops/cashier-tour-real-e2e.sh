@@ -867,6 +867,13 @@ FROM public.club_dealer_controls c CROSS JOIN public.clubs b
 WHERE c.club_id='a2000000-0000-4000-8000-000000000001' AND b.id=c.club_id
 UNION SELECT 'ad500000-0000-4000-8000-000000000001',owner_id,owner_id FROM public.clubs
 WHERE id='a2000000-0000-4000-8000-000000000001';
+-- Bind new synthetic attendances to a real owned shift. Its four-hour window
+-- spans fixture creation and the bounded test, including a local midnight;
+-- derive shift_date from the same current operating-day rule as the matcher.
+INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
+VALUES('ad530000-0000-4000-8000-000000000001','ad500000-0000-4000-8000-000000000001',
+ 'Handover latency TEST',((now() AT TIME ZONE 'Asia/Ho_Chi_Minh')-interval '1 hour')::time,
+ ((now() AT TIME ZONE 'Asia/Ho_Chi_Minh')+interval '3 hours')::time);
 CREATE TEMP TABLE handover_latency AS SELECT n,md5('http-handover-table-'||n)::uuid table_id,
  md5('http-handover-session-'||n)::uuid session_id,md5('http-handover-assignment-'||n)::uuid assignment_id,
  md5('http-handover-out-dealer-'||n)::uuid outgoing_dealer,md5('http-handover-in-dealer-'||n)::uuid incoming_dealer,
@@ -884,9 +891,17 @@ SELECT session_id,'ad500000-0000-4000-8000-000000000001',table_id,'cash','manual
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status)
 SELECT outgoing_dealer,'ad500000-0000-4000-8000-000000000001'::uuid,NULL::uuid,'Handover outgoing TEST '||n,'active' FROM handover_latency
 UNION ALL SELECT incoming_dealer,'ad500000-0000-4000-8000-000000000001',incoming_actor,'Handover incoming TEST '||n,'active' FROM handover_latency;
-INSERT INTO public.dealer_attendance(id,dealer_id,status,check_in_time,current_state,pre_assigned_table_id,pre_assigned_at)
-SELECT outgoing_attendance,outgoing_dealer,'checked_in',now()-interval '1 hour','assigned',NULL::uuid,NULL::timestamptz FROM handover_latency
-UNION ALL SELECT incoming_attendance,incoming_dealer,'checked_in',now()-interval '1 hour','pre_assigned',table_id,now()-interval '1 minute' FROM handover_latency;
+INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state,pre_assigned_table_id,pre_assigned_at)
+SELECT outgoing_attendance,outgoing_dealer,s.id,
+ ((now()-interval '1 hour') AT TIME ZONE 'Asia/Ho_Chi_Minh')::date-
+ CASE WHEN s.end_time<=s.start_time AND ((now()-interval '1 hour') AT TIME ZONE 'Asia/Ho_Chi_Minh')::time<s.end_time THEN 1 ELSE 0 END,
+ 'checked_in',now()-interval '1 hour','assigned',NULL::uuid,NULL::timestamptz
+FROM handover_latency CROSS JOIN public.dealer_shifts s WHERE s.id='ad530000-0000-4000-8000-000000000001'
+UNION ALL SELECT incoming_attendance,incoming_dealer,s.id,
+ ((now()-interval '1 hour') AT TIME ZONE 'Asia/Ho_Chi_Minh')::date-
+ CASE WHEN s.end_time<=s.start_time AND ((now()-interval '1 hour') AT TIME ZONE 'Asia/Ho_Chi_Minh')::time<s.end_time THEN 1 ELSE 0 END,
+ 'checked_in',now()-interval '1 hour','pre_assigned',table_id,now()-interval '1 minute'
+FROM handover_latency CROSS JOIN public.dealer_shifts s WHERE s.id='ad530000-0000-4000-8000-000000000001';
 INSERT INTO public.dealer_assignments(id,attendance_id,dealer_id,club_id,table_id,table_session_id,status,assigned_at,swing_due_at,version,pre_assigned_attendance_id,pre_assigned_at)
 SELECT assignment_id,outgoing_attendance,outgoing_dealer,'ad500000-0000-4000-8000-000000000001',table_id,session_id,'assigned',now()-interval '30 minutes',now(),0,incoming_attendance,now()-interval '1 minute' FROM handover_latency;
 SELECT jsonb_build_object('clubId','a2000000-0000-4000-8000-000000000001','shiftId','ad300000-0000-4000-8000-000000000001',
@@ -1149,6 +1164,17 @@ REVENUE_PARITY
 install_current_replacement_schema() {
   node "$repo_root/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs" "$test_root/replacement-dependencies.sql"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$test_root/replacement-dependencies.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'HANDOVER_SHIFT_PREFLIGHT'
+DO $$ BEGIN
+ IF (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id
+     WHERE d.club_id='ad500000-0000-4000-8000-000000000001'
+       AND d.full_name LIKE 'Handover % TEST %')<>46
+ OR EXISTS(SELECT 1 FROM public.dealers d WHERE d.club_id='ad500000-0000-4000-8000-000000000001'
+    AND d.full_name LIKE 'Handover % TEST %'
+    AND NOT floor_private.dealer_pool_attendance_matches_v1(d.id,d.club_id,statement_timestamp()))
+ THEN RAISE EXCEPTION 'handover_fixture_requires_46_current_operating_day_attendances';END IF;
+END $$;
+HANDOVER_SHIFT_PREFLIGHT
 }
 
 install_current_salary_schema() {

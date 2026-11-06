@@ -903,6 +903,7 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
   }catch{/* Never persist raw frames or tokens. */}
  }));
  let phase='start',race:{first:number;replays:number}|null=null;
+ let handoverFailure:{outcome:string;knownReasons:string[];responseSha256:string}|null=null;
  const summarize=(key:'ackMs'|'retryMs'|'independentStateMs'|'writeToVisibleMs'|'writeToRealtimeMs')=>{
   const samples=rows.filter(row=>!row.warmup).map(row=>row[key]).filter((value):value is number=>typeof value==='number').sort((a,b)=>a-b);
   return {samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.at(-1)??null};
@@ -910,7 +911,7 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-handover-http.json'),JSON.stringify({
   kind:'REAL_AUTH_HTTP_CANONICAL_DEALER_HANDOVER_WITH_INDEPENDENT_OWNER_READ',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,
   warmup:2,graded:20,rows,postgresReady,distributions:{ack:summarize('ackMs'),retry:summarize('retryMs'),independentState:summarize('independentStateMs'),
-   ...(realtimeEnabled?{writeToVisible:summarize('writeToVisibleMs'),writeToRealtime:summarize('writeToRealtimeMs')}:{})},race,qualification:false,
+   ...(realtimeEnabled?{writeToVisible:summarize('writeToVisibleMs'),writeToRealtime:summarize('writeToRealtimeMs')}:{})},race,handoverFailure,qualification:false,
   limitations:'Explicit synthetic dispatches initialize fixture only;actual handover uses canonical authenticated operator RPC. Independent owner reads verify one replacement and release markers. Realtime mode observes one continuously open actual Dealer Swing screen and its installed SDK channel;20serial graded handovers are not concurrent staff capacity. Excludes initial assignment Edge,arrival acknowledgement,rest expiry,checkout and payroll. Duplicate race uses20concurrent requests from one actor.',
  },null,2));
  try{
@@ -927,7 +928,12 @@ test('canonical dealer handover HTTP latency, independent state and duplicate re
    const card=page.locator('#table-card-'+context.table_id);
    if(realtimeEnabled)await expect(card.getByText('Handover outgoing TEST '+context.n,{exact:true})).toBeVisible();
    const started=performance.now();
-   const result=await rpc(staff[actor].token,'operator_perform_swing',intent);expect(result.ok).toBe(true);expect(result.data.outcome).toBe('swung');
+   const result=await rpc(staff[actor].token,'operator_perform_swing',intent);
+   if(!result.ok||result.data.outcome!=='swung'){
+    const serialized=JSON.stringify(result.data);
+    handoverFailure={outcome:result.data.outcome==='error'?'error':'other',knownReasons:['DEALER_ACQUISITION_ATTENDANCE_STALE','DEALER_MANUAL_ACQUISITION_FORBIDDEN','DEALER_ACQUISITION_CLUB_MISMATCH','DEALER_AUTO_ASSIGN_OFF'].filter(reason=>serialized.includes(reason)),responseSha256:createHash('sha256').update(serialized).digest('hex')};report();
+   }
+   expect(result.ok).toBe(true);expect(result.data.outcome).toBe('swung');
    const active=await read('dealer_assignments','select=id,attendance_id,table_session_id,status,released_at&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
    expect(active).toHaveLength(1);expect(active[0].attendance_id).toBe(context.incoming_attendance);expect(active[0].table_session_id).toBe(context.session_id);expect(active[0].id).not.toBe(context.assignment_id);
    const outgoing=await read('dealer_attendance','select=current_state,last_released_at&id=eq.'+context.outgoing_attendance);

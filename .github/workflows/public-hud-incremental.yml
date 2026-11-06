@@ -5,6 +5,7 @@ on:
       - '.github/workflows/public-hud-incremental.yml'
       - 'VinPoker/tests/publicHud/**'
       - 'VinPoker/scripts/ops/tracker-hud-shadow*'
+      - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
       - 'VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql'
       - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
       - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
@@ -200,3 +201,7 @@ jobs:
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_schema_fence_ci
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_schema_fence_ci node tests/publicHud/operations.schema-freeze.native.mjs --initialize
+      - name: Handover fixture satisfies current operating-day guards
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_handover_fixture_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_handover_fixture_ci node tests/publicHud/operations.handover-fixture.native.mjs --initialize
