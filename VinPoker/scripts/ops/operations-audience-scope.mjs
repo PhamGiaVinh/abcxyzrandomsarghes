@@ -229,3 +229,23 @@ export function observeAudienceSubscriptions(client,onStatus){
   return result;
  };
 }
+
+// Bounded diagnostics for selected-table admission. No identifiers, payloads,
+// arbitrary errors or source values leave this helper; readiness is unchanged.
+export function audienceSelectionReadiness(clients,selection,now=Date.now()){
+ if(!selection)return null;
+ const counts={missing:0,offline:0,tableNotReady:0,clockNotReady:0,wrongTable:0,wrongSession:0,inFlight:0};
+ const samples=[];
+ for(let index=0;index<clients.length;index++){
+  const c=clients[index];
+  const flags={offline:!c.online,tableNotReady:!c.ready,clockNotReady:!c.clockReady,
+   wrongTable:c.tableId!==selection.tableId,wrongSession:c.observedSession!==selection.sessionId,
+   inFlight:c.detailInFlight===true};
+  if(!flags.offline&&!flags.tableNotReady&&!flags.clockNotReady&&!flags.wrongTable&&!flags.wrongSession)continue;
+  counts.missing++;for(const key of Object.keys(flags))if(flags[key])counts[key]++;
+  if(samples.length<20)samples.push({index,...flags,
+   lastRequestAgeMs:c.detailStartedAt==null?null:Math.max(0,now-c.detailStartedAt),
+   started:c.detailStarted??0,accepted:c.detailAccepted??0,fenced:c.detailFenced??0,rejected:c.detailRejected??0});
+ }
+ return {counts,samples};
+}

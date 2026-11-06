@@ -10,7 +10,7 @@ import {createClient} from '@supabase/supabase-js';
 import {settleScopedFeltRead} from '../../tests/publicHud/scale.delivery.mjs';
 import {createAudienceGenerationEvidence} from './operations-audience-generation.mjs';
 import {createOperationalHandDeliveryEvidence,validateHandDeliverySelection,readHandDeliveryJournal} from './operations-audience-hand-delivery.mjs';
-import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -88,6 +88,7 @@ const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  handDelivery:selected?handEvidence.report():null,
  selectionNonce:handSelection?.nonce??null,
  selectionReady:selected&&handSelection?clients.filter(c=>c.online&&c.ready&&c.clockReady&&c.observedSession===handSelection.sessionId&&c.tableId===handSelection.tableId).length:0,
+ selectionReadiness:selected?audienceSelectionReadiness(clients,handSelection):null,
  measurementStatus:selected?(handEvidence.report().complete?'TABLE_SPECIFIC_SOURCE_RECEIPTS_COMPLETE':'TABLE_SPECIFIC_SOURCE_PROOF_PENDING'):'GRID_DETAIL_STRESS',
  requestCounts,snapshotSectionCounts,maxSnapshotTableIds,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
@@ -255,6 +256,7 @@ try{
    state.detailController=controller;const epoch=state.epoch,tableEpoch=loaded.observer.publicReadEpoch(client,tour,'tables');
    const full=state.detailFull||!state.clockReady;state.detailFull=false;
    const started=Date.now();let physicalFailure=false;
+   state.detailStartedAt=started;state.detailInFlight=true;state.detailStarted=(state.detailStarted??0)+1;
    // The table reader owns its physical5s deadline. Do not pass the clock's
    // timeout as a caller signal and misclassify a real table deadline as cancel.
    const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,(url,init)=>{requestCounts.table++;return fetch(url,init);},full?'table-clock':'table');
@@ -284,9 +286,10 @@ try{
    const current=reply=>epoch===state.epoch&&loaded.observer.publicReadEpochIsCurrent(client,tour,'tables',tableEpoch)&&reply.data?.access==='public';
    try{
     const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;});
-    if(stopping||!current(reply))return;
+    if(stopping||!current(reply)){state.detailFenced=(state.detailFenced??0)+1;return;}
     assert.equal(reply.data.tableId,state.tableId);assert.match(reply.data.sourceGeneration,/^\d+$/);
     state.ready=true;state.observedSession=reply.data.tableSessionId;
+    state.detailAccepted=(state.detailAccepted??0)+1;
     // Consumer visibility requires both the table and any full clock read,
     // plus current scope/epoch fences. Transport completion alone is earlier.
     handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now());
@@ -296,9 +299,10 @@ try{
     }
     state.observation.reportResult(true);
    }catch(cause){
+    state.detailRejected=(state.detailRejected??0)+1;
     if(!physicalFailure){fail('spectator_detail_contract');diagnostic('spectator_detail_contract',cause);}
     state.observation.reportResult(false);
-   }finally{controller.abort();}
+   }finally{state.detailInFlight=false;controller.abort();}
   })())):null;
   state.clockCoordinator=selected?{request(){state.detailFull=true;state.detailCoordinator.request();},stop(){}}:loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
    if(stopping)return;
