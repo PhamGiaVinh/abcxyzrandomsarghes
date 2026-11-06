@@ -31,10 +31,11 @@ const client=sessions?createNativeWorkerClient(async query=>{
  const started=performance.now();try{return await sessions.query(query);}finally{const elapsed=performance.now()-started;nativeRpcTiming.calls++;nativeRpcTiming.totalMs+=elapsed;nativeRpcTiming.maxMs=Math.max(nativeRpcTiming.maxMs,elapsed);}
 }):nativeWorkerClient;
 const started=Date.now(),report={kind:'REAL_NATIVE_WORKER_BACKFILL_CHECKPOINT_NOT_HTTP_LOAD',database,sourceHands,mode:first?'first-checkpoint':'resume',initialCheckpoint:initial.backfill_hand_cursor,
+ node:process.version,platform:process.platform,postgres:sql('SHOW server_version;'),initialDatabaseBytes:Number(sql('SELECT pg_database_size(current_database());')),
  transport,nativeSessionConnections:sessions?4:0,nativeRpcTiming,
  batchSize:limit,batches:0,processed:0,claimed:0,failed:0,elapsedMs:0,complete:false,checkpoint:null,contributions:null,qualification:false,productionCapacityClaim:false,
  limitations:'Actual backfill RPC and production classifier/worker through declared native transport. Native-process includes per-RPC WSL startup;native-session retains four real psql sessions. Source invariant here is hand cardinality only,not complete content/players/actions immutability. Independent raw-source shadow is required separately. Not HTTP/Edge throughput,production capacity or concurrent live writes.'};
-const save=()=>{report.elapsedMs=Date.now()-started;writeFileSync(output,JSON.stringify(report,null,2)+'\n');};
+const save=()=>{report.elapsedMs=Date.now()-started;writeFileSync(output,JSON.stringify({...report,processedPerSecond:report.elapsedMs?report.processed*1000/report.elapsedMs:null},null,2)+'\n');};
 try{
  sql('UPDATE tracker_analytics_v1.config SET worker_enabled=true WHERE singleton AND NOT enabled;');
  for(let batch=0;batch<Math.ceil(sourceHands/limit)+100;batch++){
