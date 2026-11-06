@@ -1,12 +1,12 @@
 // Disposable operational-load companion. This is not the 1M-hand qualification.
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,readdirSync} from 'node:fs';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {availableParallelism,totalmem,cpus} from 'node:os';
 import {setMaxListeners} from 'node:events';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
-import {ownedAudienceCancellation,audienceClockSignal} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -22,6 +22,10 @@ assert.ok(reportFile?.endsWith('/output/operations-latency/operations-audience-h
 const status=JSON.parse(readFileSync(statusFile,'utf8'));
 assert.equal(status.API_URL,'http://127.0.0.1:54321');
 assert.equal(typeof status.ANON_KEY,'string');assert.equal(typeof status.SERVICE_ROLE_KEY,'string');
+assert.equal(process.platform,'linux');
+const fdLimits=audienceFileLimits(readFileSync('/proc/self/limits','utf8'));
+assert.ok(fdLimits,'Actual generator file limits required');
+assert.ok(fdLimits.soft>=16384,'Generator must have the scale harness file descriptor budget');
 const modules={
  observer:'src/components/cashier/tournament-live/viewer-hub/publicTournamentRealtime.ts',
  coordinator:'src/components/cashier/tournament-live/viewer-hub/publicSnapshotCoordinator.ts',
@@ -46,15 +50,22 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const dist=values=>{const a=[...values].sort((x,y)=>x-y);return {samples:a.length,p50Ms:a.length?a[Math.ceil(a.length*.5)-1]:null,p95Ms:a.length?a[Math.ceil(a.length*.95)-1]:null,maxMs:a.at(-1)??null};};
 const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],sourceToPublication:[]};
 const errors={},clients=[],pending=new Set();
+const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0;
 const fail=name=>{errors[name]=(errors[name]??0)+1;};
+const diagnostic=(phase,cause,status)=>{
+ const value=audienceFailure(cause,status),key=phase+':'+value.kind;
+ failureKinds[key]=(failureKinds[key]??0)+1;
+ if(failureSamples.length<20)failureSamples.push({phase,at:Date.now(),...value});
+};
 const track=promise=>{pending.add(promise);void promise.finally(()=>pending.delete(promise)).catch(()=>{});return promise;};
 const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'};
 const report=()=>writeFileSync(reportFile,JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
- readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,
+ readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,
+ admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
  productionChanged:false,qualification:false,
@@ -67,11 +78,13 @@ const worker=track((async()=>{
   try{
    const result=await loaded.worker.processPublicSpectatorJobs({rpc:async(name,args)=>{
     const left=deadline-Date.now();if(left<=0)throw Error('worker_deadline');
-    return service.rpc(name,args).abortSignal(AbortSignal.timeout(left));
+    const result=await service.rpc(name,args).abortSignal(AbortSignal.timeout(left));
+    if(result.error)diagnostic('worker_rpc',result.error,result.status);
+    return result;
    }},deadline);
    workerCalls++;workerPublished+=result.results.filter(r=>r.published).length;
    for(const row of result.results)if(row.error)fail('worker_job');
-  }catch{fail('worker_transport');}
+  }catch(cause){fail('worker_transport');diagnostic('worker_transport',cause);}
   await sleep(Math.max(1,1000-(Date.now()-start)));
  }
 })());
@@ -80,6 +93,15 @@ const timer=setInterval(report,1000);report();
 try{
  for(let i=0;i<viewers&&!stopping;i++){
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+  observeAudienceSubscriptions(client,(status,error)=>{
+   if(stopping)return;
+   const label=['SUBSCRIBED','CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)?status:'unknown';
+   subscriptionStatuses[label]=(subscriptionStatuses[label]??0)+1;
+   if(label!=='SUBSCRIBED'){
+    const kind=audienceJoinFailure(error);joinFailureKinds[kind]=(joinFailureKinds[kind]??0)+1;
+    if(readyAt)fail('unexpected_realtime_status');
+   }
+  });
   const state={client,online:false,ready:false,clockReady:false,changes:0,known:{},dirty:new Set(['tables','ranking','payout']),catalog:[],tableId:null,revision:null,epoch:0,controller:null};
   clients.push(state);
   const refresh=async()=>{
@@ -93,7 +115,8 @@ try{
     const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{
      method:'POST',headers,body:JSON.stringify({p_tournament_id:tour,p_table_ids:state.tableId?[state.tableId]:[],p_sections:sections,p_known_revisions:state.known}),signal:AbortSignal.any([controller.signal,timeout]),
     });
-    assert.equal(response.status,200);const data=await response.json();
+    if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
+    const data=await response.json();
     if(epoch!==state.epoch||stopping){for(const s of sections)state.dirty.add(s);return;}
     assert.equal(data.ok,true);assert.equal(data.access,'public');assert.equal(data.tournamentId,tour);
     timings.snapshot.push(Date.now()-start);
@@ -124,7 +147,7 @@ try{
    }catch(cause){
     const cancelled=ownedAudienceCancellation(cause,controller,timeout,requestType==='table'?'table':'http');
     if(cancelled)for(const s of sections)state.dirty.add(s);
-    else {fail('spectator_'+requestType+'_read');state.observation.reportResult(false);}
+    else {fail('spectator_'+requestType+'_read');diagnostic('spectator_'+requestType,cause,cause?.audienceHttpStatus??cause?.publicTableHttpStatus);state.observation.reportResult(false);}
    }finally{
     if(!stopping&&state.dirty.size)state.coordinator.request();
    }
@@ -138,14 +161,15 @@ try{
     const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{
      method:'POST',headers,body:JSON.stringify({p_tournament_id:tour}),signal:AbortSignal.any([controller.signal,timeout]),
     });
-    assert.equal(response.status,200);const data=await response.json();
+    if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
+    const data=await response.json();
     if(stopping)return;
     if(!loaded.observer.publicReadEpochIsCurrent(client,tour,'clock',epoch)){state.clockCoordinator.request();return;}
     assert.ok(loaded.history.parsePublicClockSummary(data,tour));
     timings.clock.push(Date.now()-started);state.clockReady=true;
    }catch(cause){
     const cancelled=ownedAudienceCancellation(cause,controller,timeout);
-    if(!cancelled)fail('spectator_clock');
+    if(!cancelled){fail('spectator_clock');diagnostic('spectator_clock',cause,cause?.audienceHttpStatus);}
    }
   })()));
   state.observation=loaded.observer.observePublicTournament(client,tour,event=>{
@@ -162,7 +186,9 @@ try{
    if(clockSignal.reload)state.clockCoordinator.request();
   });
   state.coordinator.request();state.clockCoordinator.request();
-  if(i%25===24)await sleep(50);
+  // Same admission bound as the existing full HUD qualification. All1000
+  // remain concurrent throughout the operational stages after readiness.
+  if(i%25===24)await sleep(500);
  }
  const start=Date.now();
  while(!stopping&&!clients.every(c=>c.online&&c.ready&&c.clockReady)&&Date.now()-start<90000)await sleep(100);
@@ -170,7 +196,7 @@ try{
  assert.equal(Object.keys(errors).length,0,'Audience startup errors');
  readyAt=Date.now();phase='ready';report();
  while(!stopping)await sleep(100);
-}catch{fail('audience_lifecycle');stopping=true;process.exitCode=1;}
+}catch(cause){fail('audience_lifecycle');diagnostic('audience_lifecycle',cause);stopping=true;process.exitCode=1;}
 finally{
  clearInterval(timer);stopping=true;
  endedAt=Date.now();connectedAtStop=clients.filter(c=>c.online).length;

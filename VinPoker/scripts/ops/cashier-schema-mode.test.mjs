@@ -1,6 +1,6 @@
 import test from 'node:test';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -207,4 +207,30 @@ test('clock rechecks immediately after reconnect/withdrawal and on ranking hints
   assert.deepEqual(audienceClockSignal({reason:'changed',components:['ranking']}),{invalidate:false,reload:true});
   assert.deepEqual(audienceClockSignal({reason:'changed',components:['tables']}),{invalidate:false,reload:false});
   assert.deepEqual(audienceClockSignal({reason:'status',components:['clock','ranking']}),{invalidate:false,reload:false});
+});
+
+test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP without leaking exception text',()=>{
+  assert.deepEqual(audienceFailure({name:'TypeError',cause:{code:'EMFILE',message:'private'}},undefined),{kind:'file_descriptor_limit',httpStatus:null,serverCode:null});
+  assert.equal(audienceFailure({name:'TimeoutError',message:'private'}).kind,'deadline');
+  assert.deepEqual(audienceFailure({code:'PGRST003',message:'private'},504),{kind:'http_error',httpStatus:504,serverCode:'PGRST003'});
+  assert.deepEqual(audienceFailure({code:'TOKEN',message:'private',Authorization:'private'},'500'),{kind:'unknown',httpStatus:null,serverCode:null});
+  assert.equal(audienceFailure({code:'42501'},403).serverCode,'42501');
+});
+
+test('actual proc file-limit format retains whitespace and unknown values stay unknown',()=>{
+  assert.deepEqual(audienceFileLimits('Max open files            16384              16384              files     \n'),{soft:16384,hard:16384});
+  assert.equal(audienceFileLimits('Max open files unlimited unlimited files'),null);
+});
+
+test('subscription diagnostics preserve SDK identity, arguments, timeout and callback values',()=>{
+  let actualArgs,actualTimeout,actualCallback;const marker={},channel={subscribe(callback,timeout){actualCallback=callback;actualTimeout=timeout;return marker;}};
+  const client={channel(...args){actualArgs=args;return channel;}};const observations=[];
+  observeAudienceSubscriptions(client,(...args)=>observations.push(args));
+  const config={config:{private:false}},received=[],error=new Error('ConnectionRateLimitReached private');
+  assert.equal(client.channel('public:tournament-viewer-v2:test',config),channel);
+  assert.equal(channel.subscribe((...args)=>received.push(args),1234),marker);
+  actualCallback('CHANNEL_ERROR',error);assert.deepEqual(actualArgs,['public:tournament-viewer-v2:test',config]);assert.equal(actualTimeout,1234);
+  assert.equal(received[0][1],error);assert.equal(observations[0][1],error);assert.equal(audienceJoinFailure(error),'connection_limit');
+  assert.equal(audienceJoinFailure(new Error('ClientJoinRateLimitReached private')),'join_rate_limit');
+  assert.equal(audienceJoinFailure(new Error('private')),'unknown');
 });

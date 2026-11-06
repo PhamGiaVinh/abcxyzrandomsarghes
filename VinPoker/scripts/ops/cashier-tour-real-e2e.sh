@@ -226,7 +226,7 @@ REALTIME_DECODING_DIAGNOSTIC
         const raw=readFileSync(0,"utf8");
         const deniedFunctions=[...new Set([...raw.matchAll(/permission denied for function ([a-zA-Z_][a-zA-Z_0-9.]*)/g)].map(match=>match[1]))];
         const deniedSchemas=[...new Set([...raw.matchAll(/permission denied for schema ([a-zA-Z_][a-zA-Z_0-9]*)/g)].map(match=>match[1]))];
-        const markers=Object.fromEntries(["Postgrex.Error","ErrorPolling","ReplicationPoller","apply_rls","list_changes","insufficient_privilege","row-level security","too_many_connections"].map(marker=>[marker,raw.split(marker).length-1]));
+        const markers=Object.fromEntries(["Postgrex.Error","ErrorPolling","ReplicationPoller","apply_rls","list_changes","insufficient_privilege","row-level security","too_many_connections","ConnectionRateLimitReached","ClientJoinRateLimitReached","DatabaseConnectionRateLimitReached","IncreaseConnectionPool","DatabaseLackOfConnections","InitializingProjectConnection","RealtimeRestarting"].map(marker=>[marker,raw.split(marker).length-1]));
         process.stdout.write(JSON.stringify({kind:"SANITIZED_REALTIME_LOG_CLASSIFICATIONS",qualification:false,deniedFunctions,deniedSchemas,markers}));
       ' >"$repo_root/output/operations-latency/realtime-log-http.json" || true
     fi
@@ -1221,10 +1221,30 @@ DO $$ BEGIN
  THEN RAISE EXCEPTION 'operational_audience_requires_fresh_owned_fixture';END IF;
 END $$;
 AUDIENCE_OWNED_PREFLIGHT
+    # Match scale.stack.sh's load-generator FD budget. This is a host-process
+    # prerequisite, not a hosted service/quota change or a product speed fix.
+    audience_fd_before="$(ulimit -Sn)"
+    ulimit -n 16384
+    audience_fd_after="$(ulimit -Sn)"
+    node --input-type=module - "$audience_fd_before" "$audience_fd_after" "$repo_root/output/operations-latency/operations-audience-generator-http.json" <<'AUDIENCE_GENERATOR_LIMITS'
+import assert from 'node:assert/strict';import {writeFileSync} from 'node:fs';
+const parse=value=>value==='unlimited'?'unlimited':/^\d+$/.test(value)?Number(value):null;
+const before=parse(process.argv[2]),after=parse(process.argv[3]);
+assert.notEqual(before,null);assert.ok(typeof after==='number'&&after>=16384);
+writeFileSync(process.argv[4],JSON.stringify({kind:'ISOLATED_OPERATIONAL_GENERATOR_FD_BUDGET',before,after,scope:'generator-host-process-only',productionChanged:false,qualification:false},null,2));
+AUDIENCE_GENERATOR_LIMITS
     docker exec "$realtime_container" /app/bin/realtime rpc '
       case Realtime.Api.update_tenant_by_external_id("realtime-dev", %{max_concurrent_users: 2000, max_events_per_second: 20000, max_joins_per_second: 5000, max_bytes_per_second: 100000000}) do
        {:ok, tenant} when tenant.max_concurrent_users == 2000 and tenant.max_events_per_second == 20000 and tenant.max_joins_per_second == 5000 and tenant.max_bytes_per_second == 100000000 ->
-        IO.puts(Jason.encode!(%{kind: "ISOLATED_OPERATIONAL_REALTIME_LIMITS", users: tenant.max_concurrent_users, eventsPerSecond: tenant.max_events_per_second, joinsPerSecond: tenant.max_joins_per_second, bytesPerSecond: tenant.max_bytes_per_second, productionChanged: false, qualification: false}))
+        cached=Enum.reduce_while(1..50, nil, fn _, _ ->
+          value=Realtime.Tenants.Cache.get_tenant_by_external_id("realtime-dev")
+          case value do
+            %{max_concurrent_users: 2000, max_events_per_second: 20000, max_joins_per_second: 5000, max_bytes_per_second: 100000000} -> {:halt,value}
+            _ -> Process.sleep(100); {:cont,nil}
+          end
+        end)
+        if is_nil(cached), do: raise "isolated operational cached limits not ready"
+        IO.puts(Jason.encode!(%{kind: "ISOLATED_OPERATIONAL_REALTIME_LIMITS", users: tenant.max_concurrent_users, eventsPerSecond: tenant.max_events_per_second, joinsPerSecond: tenant.max_joins_per_second, bytesPerSecond: tenant.max_bytes_per_second, cachedUsers: cached.max_concurrent_users, cachedEventsPerSecond: cached.max_events_per_second, cachedJoinsPerSecond: cached.max_joins_per_second, cachedBytesPerSecond: cached.max_bytes_per_second, productionChanged: false, qualification: false}))
        _ -> raise "isolated operational Realtime configuration failed"
       end' >"$test_root/operations-audience-realtime.log" 2>&1
     node --input-type=module - "$test_root/operations-audience-realtime.log" "$repo_root/output/operations-latency/operations-audience-realtime-http.json" <<'AUDIENCE_REALTIME_RECEIPT'
@@ -1232,6 +1252,7 @@ import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from
 const lines=readFileSync(process.argv[2],'utf8').split(/\r?\n/).filter(line=>line.startsWith('{'));
 const receipt=lines.map(line=>JSON.parse(line)).find(row=>row.kind==='ISOLATED_OPERATIONAL_REALTIME_LIMITS');
 assert.equal(receipt?.users,2000);assert.equal(receipt?.eventsPerSecond,20000);assert.equal(receipt?.joinsPerSecond,5000);assert.equal(receipt?.bytesPerSecond,100000000);
+assert.equal(receipt.cachedUsers,2000);assert.equal(receipt.cachedEventsPerSecond,20000);assert.equal(receipt.cachedJoinsPerSecond,5000);assert.equal(receipt.cachedBytesPerSecond,100000000);
 assert.equal(receipt.productionChanged,false);writeFileSync(process.argv[3],JSON.stringify(receipt,null,2));
 AUDIENCE_REALTIME_RECEIPT
     LOCAL_OPERATIONS_AUDIENCE_STATUS="$test_root/isolated-status.json" \
