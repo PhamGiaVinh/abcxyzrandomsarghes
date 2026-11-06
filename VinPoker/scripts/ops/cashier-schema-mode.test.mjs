@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {selectedAudienceSections,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics} from './operations-audience-scope.mjs';
+import {selectedAudienceSections,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics,reentryServerTiming} from './operations-audience-scope.mjs';
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
@@ -411,4 +411,12 @@ test('latency-only collection rejects incomplete, transport and source failures 
  const boundary=script.slice(script.indexOf('reentry_latency_failed=0'),script.indexOf("<<'REENTRY_LATENCY_ONLY_FAILURE'"));
  assert.match(boundary,/\[\[ \"\$operations_candidate_probe\" == 1 \]\] \|\| exit 1/);
  assert.ok(script.indexOf('Reentry generation/money/receipt conservation failed')>script.indexOf('REENTRY_LATENCY_ONLY_FAILURE'));
+});
+
+
+test('reentry timing export accepts only fixed scalar phases and never header text',()=>{
+ const value='reentry_auth;dur=1.250;desc="1", reentry_configuration;dur=5.125;desc="3", reentry_total;dur=8.000';
+ assert.deepEqual(reentryServerTiming(value),{capture:'available',totalMs:8,phases:{auth:{ms:1.25,calls:1},configuration:{ms:5.125,calls:3}}});
+ assert.deepEqual(reentryServerTiming(value+', private{secret="DO_NOT_EMIT"};dur=1'),reentryServerTiming(value));
+ for(const header of [null,'PRIVATE_DO_NOT_EMIT','x'.repeat(4097),value+', reentry_total;dur=8',value.replace('1.250','NaN'),value.replace('desc="3"','desc="11"'),value.replace('desc="1"','desc="SECRET"'),value.replace('1.250','120001'),value.replace('reentry_configuration','reentry_SECRET')])assert.deepEqual(reentryServerTiming(header),{capture:'unavailable'});
 });

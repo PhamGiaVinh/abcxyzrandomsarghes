@@ -3,6 +3,24 @@ import {createHash} from 'node:crypto';
 import http from 'node:http';
 import {isIP} from 'node:net';
 
+// Re-entry telemetry exports fixed phase durations/counts only, never header text.
+export function reentryServerTiming(header){
+ const unavailable={capture:'unavailable'};
+ if(typeof header!=='string'||header.length>4096)return unavailable;
+ const phases={};let totalMs;
+ for(const part of header.split(',').map(x=>x.trim())){
+  if(!/^reentry_/.test(part))continue;
+  const match=/^reentry_(auth|tour|configuration|registration|notification|total);dur=([0-9]+(?:\.[0-9]+)?)(?:;desc="([1-9][0-9]?)")?$/.exec(part);
+  if(!match)return unavailable;
+  const [,phase,duration,count]=match,ms=Number(duration);
+  if(!Number.isFinite(ms)||ms>120000)return unavailable;
+  if(phase==='total'){if(totalMs!==undefined||count!==undefined)return unavailable;totalMs=ms;}
+  else {if(Object.hasOwn(phases,phase)||count===undefined||Number(count)>10)return unavailable;phases[phase]={ms,calls:Number(count)};}
+ }
+ if(totalMs===undefined)return unavailable;
+ return {capture:'available',totalMs,phases};
+}
+
 // Whitelist scalar pool counters only. Never retain labels or arbitrary metrics.
 export function audiencePoolStats(text){
  const names={pgrst_db_pool_available:'available',pgrst_db_pool_waiting:'waiting',pgrst_db_pool_max:'max',pgrst_db_pool_timeouts_total:'timeouts'};
