@@ -1204,7 +1204,7 @@ test('current Cashier full payment commits canonical seats through real HTTP',as
 });
 
 test('pending reentry transport rejects ambiguous payment account before creation',async()=>{
- test.skip(process.env.LOCAL_REENTRY_TRANSPORT_PROBE!=='1'||(process.env.LOCAL_REENTRY_FAULT_MODE??'failure-injection')!=='failure-injection','Explicit disposable failure-injection transport probe only');
+ test.skip(process.env.LOCAL_REENTRY_BANK_PROBE_STAGE!=='1'||process.env.LOCAL_REENTRY_TRANSPORT_PROBE!=='1'||(process.env.LOCAL_REENTRY_FAULT_MODE??'failure-injection')!=='failure-injection','Dedicated disposable bank-fixture stage only');
  const staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const started=performance.now();
  const response=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',

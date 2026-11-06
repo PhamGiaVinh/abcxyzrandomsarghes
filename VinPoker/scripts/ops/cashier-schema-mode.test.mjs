@@ -468,3 +468,12 @@ test('pool comparison refuses foreign containers and invalid workload before Doc
  for(const [mode,rt,ops,audience,pool] of [['pre03','0','0','0','20'],['current','1','1','10','20'],['current','1','1','1000','30']]){const result=rejectedPreflight(mode,rt,ops,'0',audience,'0','failure-injection',pool);assert.notEqual(result.status,0);assert.match(result.stderr,/Pool comparison requires/);}
  const valid=rejectedPreflight('current','1','1','0','1000','1','healthy','20');assert.notEqual(valid.status,0);assert.doesNotMatch(valid.stderr,/Pool comparison requires/);
 });
+
+test('bank ambiguity executes only after its dedicated fixture stage,not the initial all-tests run',()=>{
+ const spec=readFileSync(new URL('../../e2e/cashier-tour-real.spec.ts',import.meta.url),'utf8');
+ assert.match(spec,/LOCAL_REENTRY_BANK_PROBE_STAGE!=='1'/);
+ assert.match(script,/LOCAL_REENTRY_BANK_PROBE_STAGE:-0/);
+ const stage=script.indexOf('LOCAL_REENTRY_BANK_PROBE_STAGE=1 run_browser_proof');assert.ok(stage>script.indexOf('REENTRY_BANK_AMBIGUITY_SETUP'));
+ assert.ok(stage<script.indexOf('REENTRY_BANK_AMBIGUITY_RECOVERY'));
+ assert.equal(script.split('LOCAL_REENTRY_BANK_PROBE_STAGE=1').length-1,1);
+});

@@ -1316,6 +1316,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_REENTRY_TRANSPORT_PROBE="$reentry_transport_probe" \
   --env LOCAL_REENTRY_FAULT_MODE="$reentry_fault_mode" \
+  --env LOCAL_REENTRY_BANK_PROBE_STAGE="${LOCAL_REENTRY_BANK_PROBE_STAGE:-0}" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
@@ -1694,7 +1695,7 @@ INSERT INTO public.platform_bank_accounts(id,club_id,bank_name,account_number,ac
 VALUES('ae400000-0000-4000-8000-000000000099','a2000000-0000-4000-8000-000000000001','AMBIGUOUS TEST BANK','999100001','AMBIGUOUS TEST ONLY',true);
 COMMIT;
 REENTRY_BANK_AMBIGUITY_SETUP
-    run_browser_proof '' 1 'pending reentry transport rejects ambiguous payment account before creation'
+    LOCAL_REENTRY_BANK_PROBE_STAGE=1 run_browser_proof '' 1 'pending reentry transport rejects ambiguous payment account before creation'
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REENTRY_BANK_AMBIGUITY_RECOVERY'
 BEGIN;
 DO $$ DECLARE removed integer; BEGIN
