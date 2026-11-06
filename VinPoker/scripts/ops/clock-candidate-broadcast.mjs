@@ -14,7 +14,7 @@ assert.equal(typeof status.SERVICE_ROLE_KEY,'string');
 assert.ok(status.SERVICE_ROLE_KEY.length>32);
 const pkg=loadPackage();
 let stopped=false,completed=0,sent=0,failures=0,phase='starting';
-const report=()=>writeFileSync(reportPath,JSON.stringify({kind:'ISOLATED_CANONICAL_CLOCK_REAL_HTTP_BROADCAST_FLUSH_ONLY',phase,manifestSha256:MANIFEST_HASH,migrations:pkg.entries.map(e=>({version:e.version,sha256:e.sha256})),completed,sent,failures,qualification:false,productionChanged:false,limitations:'Host loop calls the unmodified service-only Broadcast flush RPC every1s. Not the Edge projector/cron/hand worker lifecycle,HUDreadactivation,backfill,32caseoperational suite or1000spectator capacity. No response bodies,frames,credentials or source definitions retained.'},null,2));
+const report=()=>writeFileSync(reportPath,JSON.stringify({kind:'ISOLATED_CANONICAL_CLOCK_REAL_HTTP_BROADCAST_FLUSH_ONLY',phase,manifestSha256:MANIFEST_HASH,migrations:pkg.entries.map(e=>({version:e.version,sha256:e.sha256})),fixturePredecessor:'20261103131615_payout_publication_after_cashier',completed,sent,failures,qualification:false,productionChanged:false,limitations:'Host loop calls the unmodified service-only Broadcast flush RPC every1s. The stale retained capture is advanced through the already-live payout reader migration with exact private reader dependencies;not multi-day payout qualification. Not the Edge projector/cron/hand worker lifecycle,HUDreadactivation,backfill,32caseoperational suite or1000spectator capacity. No response bodies,frames,credentials or source definitions retained.'},null,2));
 process.on('SIGTERM',()=>{stopped=true;});
 report();
 while(!stopped){

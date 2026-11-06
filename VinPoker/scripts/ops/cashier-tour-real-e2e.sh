@@ -1059,6 +1059,14 @@ DO $$ BEGIN
  THEN RAISE EXCEPTION 'candidate_clock_requires_owned_fresh_fixture';END IF;
 END $$;
 CLOCK_CANDIDATE_PREFLIGHT
+  # The retained schema capture predates an already-live payout reader release.
+  # Restore its exact missing private read dependencies, then apply its original
+  # guarded migration. Never replace the candidate019 preimage requirement.
+  node "$repo_root/scripts/ops/prepare-clock-payout-runtime-dependencies.mjs" "$test_root/clock-payout-dependencies.sql"
+  { printf "SET vinpoker.isolated_clock_candidate='current-clock27-only';\n"; cat "$test_root/clock-payout-dependencies.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20261103131615_payout_publication_after_cashier.sql"
   candidate_count=0
   while IFS= read -r candidate_path; do
     [[ "$candidate_path" =~ ^supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql$ ]]

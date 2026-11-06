@@ -6,6 +6,7 @@ on:
       - ".github/workflows/cashier-tour-real-e2e.yml"
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
       - "VinPoker/scripts/ops/clock-candidate-broadcast.mjs"
+      - "VinPoker/scripts/ops/prepare-clock-payout-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs"
