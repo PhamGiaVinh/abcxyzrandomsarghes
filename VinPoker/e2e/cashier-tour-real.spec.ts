@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import {readFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,appendFileSync,renameSync,existsSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {availableParallelism,cpus,totalmem} from 'node:os';
 import {createClient} from '@supabase/supabase-js';
@@ -1441,12 +1441,37 @@ test('twenty current manual Finish hands preserve supplied actions and payouts',
  test.skip(process.env.LOCAL_OPERATIONS_MANUAL_ACTION_FINISH_ENABLED!=='1','Current contracts after zero-pot lifecycle proof');test.setTimeout(120_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};
+ const audienceCount=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);
+ const bridgeEnabled=audienceCount>0&&process.env.LOCAL_OPERATIONS_AUDIENCE_MODEL==='selected-table';
+ const bridgeRoot=process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\/[^/]+$/,'');
+ const selectionNonce=crypto.randomUUID();
+ let startEvidence:{startIntentAt:number;startAckAt:number}|null=null;
+ const selectAudience=async(hand:Hand)=>{
+  if(!bridgeEnabled)return;
+  expect([10,1000]).toContain(audienceCount);
+  const selection={kind:'select-operational-table-v1',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce:selectionNonce,tournamentId:tour,tableId:hand.tournament_table_id,sessionId:hand.table_session_id};
+  const target=bridgeRoot+'/operations-hand-selection.json';
+  writeFileSync(target+'.tmp',JSON.stringify(selection));renameSync(target+'.tmp',target);
+  const deadline=Date.now()+15000;
+  while(Date.now()<deadline){
+   const path=bridgeRoot+'/operations-audience-http.json';
+   if(existsSync(path)){
+    expect(statSync(path).size).toBeLessThanOrEqual(1048576);
+    // Report replacement is atomic in the companion; no partial JSON retry.
+    const report=JSON.parse(readFileSync(path,'utf8'));
+    expect(report.sha).toBe(process.env.LOCAL_OPERATIONS_SOURCE_SHA);
+    if(report.selectionNonce===selectionNonce&&report.selectionReady===audienceCount)return;
+   }
+   await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  throw Error('Actual selected-table audience readiness deadline');
+ };
  type Player={player_id:string;entry_number:number;seat_number:number;starting_stack:number;ending_stack:number|null};
  type Hand={id:string;hand_number:number;hand_time:string;source_revision:number;tournament_table_id:string;table_session_id:string;status:string;tracker_sb_position:number;tracker_bb_position:number;tracker_small_blind:number;tracker_big_blind:number;tracker_bba:number};
  const rows:{handNumber:number;startMs:number;finishMs:number;retryMs:number;receiptMs:number;independentReadMs:number}[]=[];let phase='setup',failure:unknown=null,warmupCompleted=false;
  const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-manual-action-finish-http.json'),JSON.stringify({kind:'REAL_AUTH_TWENTY_MANUAL_SUPPLIED_ACTION_FINISH_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,warmupCompleted,actors:20,rows,distributions:Object.fromEntries(['startMs','finishMs','retryMs','receiptMs','independentReadMs'].map(k=>[k,dist(rows.map(r=>r[k as keyof typeof r]))])),qualification:false,limitations:'One owner warmup then20distinct Auth Tracker actors complete20three-player hands serially on one isolated table. Each supplies3blind/ante actions and2folds,with canonical uncalled-return/one-eligible-player pot and exact payout. Negatives preserve source;replay/receipt/conflicting intent and committed actions/stacks are checked. Not pre-recorded-action merge,showdown/cards/side-pot matrix,UI/Realtime,mixed1000viewers or production capacity.'},null,2));
- const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok)failure={name,status:response.status,code:typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified',messageSha256:typeof data?.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at};};
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const requestAt=Date.now(),at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok)failure={name,status:response.status,code:typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified',messageSha256:typeof data?.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at,requestAt,ackAt:Date.now()};};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
  const readHand=async(number:number)=>{const result=await read('tournament_hands?select=id,hand_number,hand_time,source_revision,tournament_table_id,table_session_id,status,tracker_sb_position,tracker_bb_position,tracker_small_blind,tracker_big_blind,tracker_bba&tournament_id=eq.'+tour+'&hand_number=eq.'+number);expect(result).toHaveLength(1);return result[0] as Hand;};
  const players=(id:string)=>read('hand_players?select=player_id,entry_number,seat_number,starting_stack,ending_stack&hand_id=eq.'+id+'&order=seat_number') as Promise<Player[]>;
@@ -1470,11 +1495,12 @@ test('twenty current manual Finish hands preserve supplied actions and payouts',
   expect((await rpc(token,'record_tracker_manual_hand_v1',{p_intent:{...intent,payload:{...payload,pot_size:201}}})).data.error).toBe('IDEMPOTENCY_CONFLICT');
   const at=performance.now();expect((await readHand(hand.hand_number)).status).toBe('completed');expect(await actions(hand.id)).toEqual(supplied);const ended=await players(hand.id);expect(ended).toEqual(payload.players.map(({is_eliminated,side_pots,hole_cards,...p})=>p));
   const tables=await roster(),paid=tables.flatMap(t=>t.seats).filter(p=>staff.some(s=>s.userId===p.player_id));expect(paid).toHaveLength(20);expect(paid.reduce((n,p)=>n+p.chip_count,0)).toBe(400000);for(const p of ended)expect(paid.find(s=>s.player_id===p.player_id)!.chip_count).toBe(p.ending_stack);
+  if(graded&&bridgeEnabled){expect(startEvidence).not.toBeNull();appendFileSync(bridgeRoot+'/operations-hand-receipts.jsonl',JSON.stringify({sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce:selectionNonce,receipt:{kind:'verified-canonical-finish-v1',tournamentId:tour,tableId:hand.tournament_table_id,sessionId:hand.table_session_id,handId:hand.id,handNumber:hand.hand_number,...startEvidence,intentAt:committed.requestAt,ackAt:committed.ackAt,verifiedAt:Date.now()}})+'\n');}
   if(graded)rows.push({handNumber:hand.hand_number,startMs,finishMs:committed.ms,retryMs:retry.ms,receiptMs:receipt.ms,independentReadMs:performance.now()-at});report();
  };
  try{
-  const identity=await fetch(api+'/auth/v1/user',{headers,signal:AbortSignal.timeout(5000)});expect(identity.ok).toBe(true);const actor=(await identity.json()).id;expect(typeof actor).toBe('string');phase='warmup';await finish(await readHand(9002),owner,actor,0,false);warmupCompleted=true;
-  phase='graded';for(let n=0;n<20;n++){const current=(await roster()).find(t=>t.seats.length===3&&t.seats.some(p=>p.player_id===staff[2].userId))!;expect(current).toBeTruthy();const button=[...current.seats].sort((a,b)=>a.seat_number-b.seat_number)[n%3].seat_number;const started=await rpc(staff[n].token,'start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:current.tournament_table_id,p_table_session_id:current.table_session_id,p_control_epoch:current.control_epoch,p_hand_number:9003+n,p_hand_time:new Date().toISOString(),p_created_by:staff[n].userId,p_button_seat:button});expect(started.data.status).toBe('success');await finish(await readHand(9003+n),staff[n].token,staff[n].userId,started.ms,true);}
+  const identity=await fetch(api+'/auth/v1/user',{headers,signal:AbortSignal.timeout(5000)});expect(identity.ok).toBe(true);const actor=(await identity.json()).id;expect(typeof actor).toBe('string');phase='warmup';await finish(await readHand(9002),owner,actor,0,false);warmupCompleted=true;await selectAudience(await readHand(9002));
+  phase='graded';for(let n=0;n<20;n++){const current=(await roster()).find(t=>t.seats.length===3&&t.seats.some(p=>p.player_id===staff[2].userId))!;expect(current).toBeTruthy();const button=[...current.seats].sort((a,b)=>a.seat_number-b.seat_number)[n%3].seat_number;expect(await read('tournament_hands?select=id&tournament_id=eq.'+tour+'&tournament_table_id=eq.'+current.tournament_table_id+'&table_session_id=eq.'+current.table_session_id+'&status=eq.in_progress')).toEqual([]);const started=await rpc(staff[n].token,'start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:current.tournament_table_id,p_table_session_id:current.table_session_id,p_control_epoch:current.control_epoch,p_hand_number:9003+n,p_hand_time:new Date().toISOString(),p_created_by:staff[n].userId,p_button_seat:button});expect(started.data.status).toBe('success');const hand=await readHand(9003+n);expect(hand.tournament_table_id).toBe(current.tournament_table_id);expect(hand.table_session_id).toBe(current.table_session_id);expect(hand.id).toBe(started.data.hand_id);startEvidence={startIntentAt:started.requestAt,startAckAt:started.ackAt};await finish(hand,staff[n].token,staff[n].userId,started.ms,true);}
   expect(rows).toHaveLength(20);for(const key of ['startMs','finishMs','retryMs','receiptMs','independentReadMs'] as const)expect(dist(rows.map(r=>r[key])).p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });

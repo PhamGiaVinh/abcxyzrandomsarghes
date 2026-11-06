@@ -1085,6 +1085,8 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
+  --env LOCAL_OPERATIONS_AUDIENCE="$audience_count" \
+  --env LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
   --env PLAYWRIGHT_BASE_URL='http://localhost:8080' \
   --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \

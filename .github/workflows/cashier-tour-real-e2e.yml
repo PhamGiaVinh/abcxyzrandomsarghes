@@ -12,6 +12,8 @@ on:
       - "VinPoker/scripts/ops/operations-audience-scope.mjs"
       - "VinPoker/scripts/ops/operations-audience-generation.mjs"
       - "VinPoker/scripts/ops/operations-audience-generation.test.mjs"
+      - "VinPoker/scripts/ops/operations-audience-hand-delivery.mjs"
+      - "VinPoker/scripts/ops/operations-audience-hand-delivery.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs"
@@ -111,7 +113,7 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test scripts/ops/cashier-schema-mode.test.mjs scripts/ops/operations-audience-generation.test.mjs
+          node --test scripts/ops/cashier-schema-mode.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
           node --test supabase/pending-tests/fake-sepay-server.test.mjs
       - name: Download latest owner-captured schema-only baseline

@@ -1,6 +1,6 @@
 // Disposable operational-load companion. This is not the 1M-hand qualification.
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync,readdirSync} from 'node:fs';
+import {readFileSync,writeFileSync,renameSync,readdirSync,existsSync,statSync} from 'node:fs';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {availableParallelism,totalmem,cpus} from 'node:os';
 import {setMaxListeners} from 'node:events';
@@ -9,6 +9,7 @@ import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
 import {settleScopedFeltRead} from '../../tests/publicHud/scale.delivery.mjs';
 import {createAudienceGenerationEvidence} from './operations-audience-generation.mjs';
+import {createOperationalHandDeliveryEvidence,validateHandDeliverySelection,readHandDeliveryJournal} from './operations-audience-hand-delivery.mjs';
 import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
@@ -25,6 +26,9 @@ assert.match(statusFile??'',/^\/tmp\/cashier-e2e-[A-Za-z0-9]+\/isolated-status\.
 const root=statusFile.slice(0,statusFile.lastIndexOf('/'));
 const reportFile=process.env.LOCAL_OPERATIONS_AUDIENCE_REPORT;
 assert.ok(reportFile?.endsWith('/output/operations-latency/operations-audience-http.json'));
+const bridgeRoot=reportFile.slice(0,reportFile.lastIndexOf('/'));
+const handEvidence=createOperationalHandDeliveryEvidence(viewers);
+let handSelection=null;
 const status=JSON.parse(readFileSync(statusFile,'utf8'));
 assert.equal(status.API_URL,'http://127.0.0.1:54321');
 assert.equal(typeof status.ANON_KEY,'string');assert.equal(typeof status.SERVICE_ROLE_KEY,'string');
@@ -78,10 +82,13 @@ const diagnostic=(phase,cause,status)=>{
 };
 const track=promise=>{pending.add(promise);void promise.finally(()=>pending.delete(promise)).catch(()=>{});return promise;};
 const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'};
-const report=()=>writeFileSync(reportFile,JSON.stringify({
+const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,workloadModel,
  generationEvidence:selected?generationEvidence.report():null,oracleReadCalls,
- measurementStatus:selected?'TABLE_SPECIFIC_SOURCE_PROOF_PENDING':'GRID_DETAIL_STRESS',
+ handDelivery:selected?handEvidence.report():null,
+ selectionNonce:handSelection?.nonce??null,
+ selectionReady:selected&&handSelection?clients.filter(c=>c.online&&c.ready&&c.clockReady&&c.observedSession===handSelection.sessionId&&c.tableId===handSelection.tableId).length:0,
+ measurementStatus:selected?(handEvidence.report().complete?'TABLE_SPECIFIC_SOURCE_RECEIPTS_COMPLETE':'TABLE_SPECIFIC_SOURCE_PROOF_PENDING'):'GRID_DETAIL_STRESS',
  requestCounts,snapshotSectionCounts,maxSnapshotTableIds,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
@@ -94,7 +101,7 @@ const report=()=>writeFileSync(reportFile,JSON.stringify({
  productionChanged:false,qualification:false,
  limitations:(selected?'Selected-table consumer:catalog-only hidden hub;independent detail with scoped full clock reads. One additional200ms anonymous snapshot oracle supplies clocks only,never viewer data. ':'Combined grid+detail stress;not the selected-table page composition. ')+
   'Actual anonymous HTTP/WS with product observer,coordinator and table transport. All virtual tabs visible. Canonical spectator worker executes on host through real service HTTP,not hosted Edge/cron. Real operational suite runs separately in Chromium against this same isolated DB. No1Mhand HUD,1000DOM render,all-intermediate-write delivery,Telegram handset or production-capacity claim.',
-},null,2));
+},null,2));renameSync(reportFile+'.tmp',reportFile);};
 const service=createClient(status.API_URL,status.SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
 const captureGeneration=async()=>{
  oracleReadCalls++;
@@ -131,6 +138,30 @@ const worker=track((async()=>{
  }
 })());
 process.on('SIGTERM',()=>{stopping=true;});
+const readBridge=()=>{
+ if(!selected)return;
+ const selectionPath=bridgeRoot+'/operations-hand-selection.json';
+ if(!existsSync(selectionPath))return;
+ assert.ok(statSync(selectionPath).size<=2048,'Oversized table selection');
+ const next=validateHandDeliverySelection(JSON.parse(readFileSync(selectionPath,'utf8')),process.env.LOCAL_OPERATIONS_SOURCE_SHA);
+ if(handSelection)assert.deepEqual(next,handSelection,'Selection changed during graded operations');
+ else{
+  handSelection=next;
+  for(const state of clients){
+   state.epoch++;state.controller?.abort();state.detailController?.abort();
+   state.tableId=next.tableId;state.ready=false;state.clockReady=false;state.observedSession=null;state.revision=null;
+   state.detailFull=true;state.detailCoordinator.request();
+  }
+ }
+ const journal=bridgeRoot+'/operations-hand-receipts.jsonl';
+ if(existsSync(journal)){
+  assert.ok(statSync(journal).size<=65536,'Oversized Finish journal');
+  for(const receipt of readHandDeliveryJournal(readFileSync(journal,'utf8'),handSelection))handEvidence.receipt(receipt);
+ }
+};
+const bridgeTimer=setInterval(()=>{
+ try{readBridge();}catch(cause){fail('hand_delivery_bridge');diagnostic('hand_delivery_bridge',cause);stopping=true;process.exitCode=1;}
+},100);
 const timer=setInterval(report,1000);report();
 try{
  if(viewers===1000){
@@ -256,7 +287,10 @@ try{
     const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;});
     if(stopping||!current(reply))return;
     assert.equal(reply.data.tableId,state.tableId);assert.match(reply.data.sourceGeneration,/^\d+$/);
-    state.ready=true;
+    state.ready=true;state.observedSession=reply.data.tableSessionId;
+    // Consumer visibility requires both the table and any full clock read,
+    // plus current scope/epoch fences. Transport completion alone is earlier.
+    handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now());
     if(state.revision!==reply.data.sourceGeneration){
      if(readyAt&&state.revision!==null){state.changes++;generationEvidence.record(i,reply.data.sourceGeneration,Date.now());}
      state.revision=reply.data.sourceGeneration;
@@ -324,7 +358,8 @@ try{
 finally{
  eventLoop.disable();
  stopHandshakeDiagnostics();
- clearInterval(timer);stopping=true;
+ clearInterval(timer);clearInterval(bridgeTimer);stopping=true;
+ try{readBridge();}catch(cause){fail('hand_delivery_bridge');diagnostic('hand_delivery_bridge',cause);}
  endedAt=Date.now();connectedAtStop=clients.filter(c=>c.online).length;
  for(const state of clients){state.controller?.abort();state.clockController?.abort();state.detailController?.abort();state.coordinator.stop();state.clockCoordinator.stop();state.detailCoordinator?.stop();state.observation?.unsubscribe();}
  await Promise.all(clients.map(async({client})=>{await client.removeAllChannels();client.realtime.disconnect();}));
@@ -333,10 +368,11 @@ finally{
   allSawLaterTableRevision:clients.every(c=>c.ready&&c.changes>0),tableP95Within3Seconds:timings.table.length>=viewers&&dist(timings.table).p95Ms<=3000,
   ...(selected?{
    markerToScopedDetailP95Within3Seconds:timings.markerToScopedDetail.length>=viewers&&dist(timings.markerToScopedDetail).p95Ms<=3000,
-   markerClockCoverage:generationEvidence.report().markerObservationCoverage>=.9&&generationEvidence.report().matchedViewers===viewers,
-   // A tournament marker can change for another table, and deferred writes may
-   // precede that marker. Do not qualify changed-table delivery from this oracle.
-   tableSpecificSourceDeliveryVerified:false,
+   // Tournament markers remain diagnostics. Exact verified Finish identities
+   // replace the global-marker coverage denominator for this prospective run.
+   // Every graded source hand must reach every viewer, including coalesced
+   // later states backed by their own ordered canonical receipts.
+   tableSpecificSourceDeliveryVerified:handEvidence.report().complete&&handEvidence.report().p95Ms<=3000,
   }:{sourceToSnapshotP95Within3Seconds:timings.sourceToSnapshot.length>=viewers&&dist(timings.sourceToSnapshot).p95Ms<=3000}),
   publicationMaxWithin5Seconds:(selected?timings.markerToPublication:timings.sourceToPublication).length>=viewers&&dist(selected?timings.markerToPublication:timings.sourceToPublication).maxMs<=5000};
  const passed=Object.values(checks).every(Boolean);
