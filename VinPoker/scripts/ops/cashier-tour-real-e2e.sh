@@ -1711,10 +1711,14 @@ DO $$ DECLARE removed integer; BEGIN
 END $$;
 COMMIT;
 REENTRY_BANK_AMBIGUITY_RECOVERY
-    node --input-type=module - "$repo_root/output/operations-latency/cashier-http-reentry-bank-ambiguity-http.json" <<'REENTRY_BANK_AMBIGUITY_RECEIPT'
+    node --input-type=module - "$repo_root/output/operations-latency/cashier-http-reentry-bank-ambiguity-http.json" "$repo_root/output/operations-latency/reentry-bank-ambiguity-native-conservation.json" <<'REENTRY_BANK_AMBIGUITY_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const file=process.argv[2],report=JSON.parse(readFileSync(file,'utf8'));assert.equal(report.phase,'denied');assert.equal(report.httpStatus,503);
-report.nativeSourceUnchanged=true;report.fixtureBankRestored=true;writeFileSync(file,JSON.stringify(report,null,2));
+// The browser owns its original receipt inside Docker. Preserve it and write the
+// host's subsequent native SQL assertions to a separate private receipt.
+writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_REENTRY_BANK_DENIAL_NATIVE_CONSERVATION',sha:report.sha,
+ browserReceipt:'cashier-http-reentry-bank-ambiguity-http.json',nativeSourceUnchanged:true,fixtureBankRestored:true,
+ qualification:false,productionChanged:false},null,2),{mode:0o600,flag:'wx'});
 REENTRY_BANK_AMBIGUITY_RECEIPT
     docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/pending-tests/reentry_transport_timeout_rollback.sql" >"$test_root/reentry-timeout-native.log"
