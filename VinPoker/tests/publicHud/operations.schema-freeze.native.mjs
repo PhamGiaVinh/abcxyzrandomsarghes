@@ -11,6 +11,7 @@ assert.throws(()=>sql(fixture,{captureFailure:true}),'Unmarked target must be re
 assert.equal(sql("SELECT to_regnamespace('ops_load_fixture_v1') IS NULL;"),'t');
 sql(`COMMENT ON DATABASE ${database} IS 'vinpoker-operational-schema-fence-disposable';`);
 sql("SET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n"+fixture);
+assert.equal(sql('BEGIN;SET LOCAL ROLE anon;SELECT public.fixture_operations_schema_ready_v1();ROLLBACK;'),'operations-complete-schema-v1');
 sql(`CREATE TABLE ops_load_fixture_v1.business_probe(id integer PRIMARY KEY,value integer NOT NULL);
 INSERT INTO ops_load_fixture_v1.business_probe VALUES(1,0);`);
 const before=sql('SELECT ops_load_fixture_v1.catalog_fingerprint();');assert.match(before,/^[a-f0-9]{32}$/);

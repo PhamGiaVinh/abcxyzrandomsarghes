@@ -5,6 +5,7 @@ DO $$ BEGIN
  OR current_setting('vinpoker.isolated_schema_fence',true) IS DISTINCT FROM 'cashier-current-schema-v1'
  OR (SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()) IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
  OR to_regnamespace('ops_load_fixture_v1') IS NOT NULL
+ OR to_regprocedure('public.fixture_operations_schema_ready_v1()') IS NOT NULL
  THEN RAISE EXCEPTION 'isolated_schema_fence_target_required';END IF;
 END $$;
 CREATE SCHEMA ops_load_fixture_v1;
@@ -38,4 +39,12 @@ CREATE FUNCTION ops_load_fixture_v1.catalog_fingerprint() RETURNS text LANGUAGE 
  ) rows;
 $$;
 REVOKE ALL ON FUNCTION ops_load_fixture_v1.catalog_fingerprint() FROM PUBLIC,anon,authenticated,service_role;
+-- Cache acknowledgment only: no product data, source rows or permissions are
+-- simulated. PostgREST cannot expose this new signature until a cache reload
+-- that includes all preceding canonical schema installation has completed.
+CREATE FUNCTION public.fixture_operations_schema_ready_v1() RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+ SELECT 'operations-complete-schema-v1'::text;
+$$;
+REVOKE ALL ON FUNCTION public.fixture_operations_schema_ready_v1() FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fixture_operations_schema_ready_v1() TO anon;
 COMMIT;

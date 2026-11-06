@@ -1461,9 +1461,10 @@ const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,
 const deadline=Date.now()+15000;let ready=false;
 while(Date.now()<deadline&&!ready){
  try{
+  const marker=await fetch(status.API_URL+'/rest/v1/rpc/fixture_operations_schema_ready_v1',{method:'POST',headers,body:'{}',signal:AbortSignal.timeout(1000)});const acknowledgment=await marker.json();
   const clock=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{method:'POST',headers,body:JSON.stringify({p_tournament_id:'a3000000-0000-4000-8000-000000000001'}),signal:AbortSignal.timeout(1000)});await clock.arrayBuffer();
   const denied=await fetch(status.API_URL+'/rest/v1/rpc/get_tracker_manual_finish_receipt_v1',{method:'POST',headers,body:JSON.stringify({p_intent:{}}),signal:AbortSignal.timeout(1000)});const denial=await denied.json();
-  ready=clock.status===200&&denied.status===403&&denial.code==='42501';
+  ready=marker.status===200&&acknowledgment==='operations-complete-schema-v1'&&clock.status===200&&denied.status===403&&denial.code==='42501';
  }catch{/* Startup readiness only; never classify a load failure as cancellation. */}
  if(!ready)await new Promise(resolve=>setTimeout(resolve,250));
 }
@@ -1474,7 +1475,7 @@ CURRENT_SCHEMA_HTTP_READY
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'UPDATE ops_load_fixture_v1.schema_fence SET frozen=true,admission_at=clock_timestamp() WHERE singleton;'
     node --input-type=module - "$schema_before" "$repo_root/output/operations-latency/operations-schema-freeze-http.json" <<'SCHEMA_FROZEN_RECEIPT'
 import assert from 'node:assert/strict';import {writeFileSync} from 'node:fs';
-assert.match(process.argv[2],/^[a-f0-9]{32}$/);writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_BEFORE_CONTINUOUS_AUDIENCE',phase:'frozen-before-admission',before:process.argv[2],after:null,unchanged:null,ddlGuardEnabled:true,qualification:false,productionChanged:false},null,2));
+assert.match(process.argv[2],/^[a-f0-9]{32}$/);writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_BEFORE_CONTINUOUS_AUDIENCE',phase:'frozen-before-admission',before:process.argv[2],after:null,unchanged:null,ddlGuardEnabled:true,schemaCacheAcknowledged:true,cacheProbeScope:'New constant-only fixture signature on the single owned PostgREST instance;not product behavior or latency evidence',qualification:false,productionChanged:false},null,2));
 SCHEMA_FROZEN_RECEIPT
     LOCAL_OPERATIONS_AUDIENCE_STATUS="$test_root/isolated-status.json" \
     LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
