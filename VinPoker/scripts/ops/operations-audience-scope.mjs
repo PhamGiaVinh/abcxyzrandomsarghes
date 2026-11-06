@@ -18,6 +18,14 @@ export function audienceClockSignal(event){
   ||event.components.includes('clock')||event.components.includes('ranking'))};
 }
 
+// Same hidden-hub policy as usePublicSpectatorSnapshot(..., [], false).
+export function selectedAudienceSections(event){
+ if(event.reason==='status')return [];
+ return ['tables','ranking','payout'].filter(section=>
+  (event.components.includes(section)||event.components.includes('visibility'))&&
+  !(section==='tables'&&event.reason==='changed'&&!event.components.includes('visibility')));
+}
+
 // Never return exception messages, SQL text or arbitrary error properties.
 export function audienceFailure(cause,status){
  const code=cause?.code??cause?.cause?.code;

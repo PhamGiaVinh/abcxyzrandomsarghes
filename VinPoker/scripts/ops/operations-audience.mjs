@@ -7,7 +7,9 @@ import {setMaxListeners} from 'node:events';
 import {monitorEventLoopDelay,performance as nodePerformance} from 'node:perf_hooks';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {settleScopedFeltRead} from '../../tests/publicHud/scale.delivery.mjs';
+import {createAudienceGenerationEvidence} from './operations-audience-generation.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -15,6 +17,9 @@ assert.equal(process.env.LOCAL_OPERATIONS_CANDIDATE_PROBE,'1');
 assert.equal(process.env.LOCAL_CLOCK_CANDIDATE_PROBE??'0','0');
 const viewers=Number(process.env.LOCAL_OPERATIONS_AUDIENCE);
 assert.ok([10,1000].includes(viewers),'Explicit bounded isolated audience required');
+const workloadModel=process.env.LOCAL_OPERATIONS_AUDIENCE_MODEL??'grid-detail-stress';
+assert.ok(['selected-table','grid-detail-stress'].includes(workloadModel),'Explicit audience model required');
+const selected=workloadModel==='selected-table',generationEvidence=createAudienceGenerationEvidence();
 const statusFile=process.env.LOCAL_OPERATIONS_AUDIENCE_STATUS;
 assert.match(statusFile??'',/^\/tmp\/cashier-e2e-[A-Za-z0-9]+\/isolated-status\.json$/);
 const root=statusFile.slice(0,statusFile.lastIndexOf('/'));
@@ -49,15 +54,17 @@ globalThis.document={visibilityState:'visible',addEventListener:visibility.addEv
 const tour='a3000000-0000-4000-8000-000000000001';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const dist=values=>{const a=[...values].sort((x,y)=>x-y);return {samples:a.length,p50Ms:a.length?a[Math.ceil(a.length*.5)-1]:null,p95Ms:a.length?a[Math.ceil(a.length*.95)-1]:null,maxMs:a.at(-1)??null};};
-const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],sourceToPublication:[]};
+const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],markerToScopedDetail:generationEvidence.markerToDetailObservationMs,
+ sourceToPublication:[],markerToPublication:generationEvidence.markerToPublicationMs};
 const timingParts={},eventLoop=monitorEventLoopDelay({resolution:20}),utilizationStart=nodePerformance.eventLoopUtilization();eventLoop.enable();
 const observeTiming=(kind,headers)=>{for(const [name,value]of Object.entries(audienceServerTiming(headers)))(timingParts[kind+':'+name]??=[]).push(value);};
 const errors={},clients=[],pending=new Set();
 const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
 const socketEvents={},socketFailureSamples=[];
 const workerRpcFailures={},workerJobFailures={};
+const requestCounts={snapshot:0,table:0,clock:0},snapshotSectionCounts={tables:0,ranking:0,payout:0};let maxSnapshotTableIds=0;
 const handshakeEvents={},handshakeFailureSamples=[];
-let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0;
+let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0,oracleReadCalls=0;
 const stopHandshakeDiagnostics=observeAudienceHandshake(status.API_URL,value=>{
  if(stopping)return;
  const key=[value.event,value.httpStatus??'none',value.kind??'none'].join(':');handshakeEvents[key]=(handshakeEvents[key]??0)+1;
@@ -72,7 +79,10 @@ const diagnostic=(phase,cause,status)=>{
 const track=promise=>{pending.add(promise);void promise.finally(()=>pending.delete(promise)).catch(()=>{});return promise;};
 const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'};
 const report=()=>writeFileSync(reportFile,JSON.stringify({
- kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+ kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,workloadModel,
+ generationEvidence:selected?generationEvidence.report():null,oracleReadCalls,
+ measurementStatus:selected?'TABLE_SPECIFIC_SOURCE_PROOF_PENDING':'GRID_DETAIL_STRESS',
+ requestCounts,snapshotSectionCounts,maxSnapshotTableIds,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
  readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
@@ -82,9 +92,21 @@ const report=()=>writeFileSync(reportFile,JSON.stringify({
  generator:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization,scope:'Process-wide including admission;diagnostic only'},
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
  productionChanged:false,qualification:false,
- limitations:'Actual anonymous HTTP/WS with product observer, coordinator and table transport. All virtual tabs visible. Canonical spectator worker executes on host through real service HTTP, not hosted Edge/cron. Real operational suite runs separately in Chromium against this same isolated DB. No1Mhand HUD,1000DOM render,all-intermediate-write delivery,Telegram handset or production-capacity claim. Revision-age observations do not count unchanged old publications as fresh writes.',
+ limitations:(selected?'Selected-table consumer:catalog-only hidden hub;independent detail with scoped full clock reads. One additional200ms anonymous snapshot oracle supplies clocks only,never viewer data. ':'Combined grid+detail stress;not the selected-table page composition. ')+
+  'Actual anonymous HTTP/WS with product observer,coordinator and table transport. All virtual tabs visible. Canonical spectator worker executes on host through real service HTTP,not hosted Edge/cron. Real operational suite runs separately in Chromium against this same isolated DB. No1Mhand HUD,1000DOM render,all-intermediate-write delivery,Telegram handset or production-capacity claim.',
 },null,2));
 const service=createClient(status.API_URL,status.SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+const captureGeneration=async()=>{
+ oracleReadCalls++;
+ try{
+  const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{
+   method:'POST',headers,body:JSON.stringify({p_tournament_id:tour,p_table_ids:[],p_sections:['tables'],p_known_revisions:{}}),signal:AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status,200);const snapshot=await response.json();assert.equal(snapshot.tournamentId,tour);
+  generationEvidence.observe(snapshot);
+ }catch(cause){fail('generation_oracle');diagnostic('generation_oracle',cause);}
+};
+const oracle=selected?track((async()=>{while(!stopping){await captureGeneration();await sleep(200);}})()):Promise.resolve();
 const worker=track((async()=>{
  while(!stopping){
   const start=Date.now(),deadline=start+5000;
@@ -136,7 +158,7 @@ try{
     if(readyAt)fail('unexpected_realtime_status');
    }
   });
-  const state={client,online:false,ready:false,clockReady:false,changes:0,known:{},dirty:new Set(['tables','ranking','payout']),catalog:[],tableId:null,revision:null,epoch:0,controller:null};
+  const state={client,online:false,ready:false,clockReady:false,changes:0,known:{},dirty:new Set(['tables','ranking','payout']),catalog:[],tableId:null,revision:null,epoch:0,controller:null,detailFull:true,detailController:null};
   clients.push(state);
   const refresh=async()=>{
    if(stopping||!state.dirty.size)return;
@@ -145,9 +167,11 @@ try{
    const controller=new AbortController(),timeout=AbortSignal.timeout(5000);state.controller=controller;
    let requestType='snapshot';
    const start=Date.now();
-   try{
+  try{
+    requestCounts.snapshot++;for(const section of sections)snapshotSectionCounts[section]++;
+    const tableIds=!selected&&state.tableId?[state.tableId]:[];maxSnapshotTableIds=Math.max(maxSnapshotTableIds,tableIds.length);
     const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{
-     method:'POST',headers,body:JSON.stringify({p_tournament_id:tour,p_table_ids:state.tableId?[state.tableId]:[],p_sections:sections,p_known_revisions:state.known}),signal:AbortSignal.any([controller.signal,timeout]),
+     method:'POST',headers,body:JSON.stringify({p_tournament_id:tour,p_table_ids:tableIds,p_sections:sections,p_known_revisions:state.known}),signal:AbortSignal.any([controller.signal,timeout]),
     });
     if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
     const data=await response.json();
@@ -156,11 +180,16 @@ try{
     assert.equal(data.ok,true);assert.equal(data.access,'public');assert.equal(data.tournamentId,tour);
     timings.snapshot.push(Date.now()-start);
     for(const section of sections){
-     if(!loaded.observer.publicReadEpochIsCurrent(client,tour,section,epochs[section])){delete data.sections[section];state.dirty.add(section);continue;}
+     if((!selected||section!=='tables')&&!loaded.observer.publicReadEpochIsCurrent(client,tour,section,epochs[section])){delete data.sections[section];state.dirty.add(section);continue;}
      assert.ok(data.sections[section]?.freshness);state.known[section]=data.sections[section].revision;
     }
     const tables=data.sections.tables;
     if(tables){
+     if(selected){
+      // The hidden hub keeps catalog/metadata, but does not follow live hands.
+      if(!tables.unchanged){assert.ok(Array.isArray(tables.catalog));state.catalog=tables.catalog;}
+      if(!state.tableId&&state.catalog.length){state.tableId=state.catalog[0].tableId;state.detailCoordinator.request();}
+     }else{
      const previous=state.revision;state.revision=tables.revision;
      if(!tables.unchanged){assert.ok(Array.isArray(tables.catalog));state.catalog=tables.catalog;}
      state.tableId=state.catalog.find(t=>t.tableId===state.tableId)?.tableId??state.catalog[0]?.tableId??null;
@@ -171,11 +200,12 @@ try{
      }
      if(state.tableId){
       requestType='table';
-      const readStart=Date.now();const result=await loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal);
+      const readStart=Date.now();const result=await loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,(url,init)=>{requestCounts.table++;return fetch(url,init);});
       if(epoch!==state.epoch||stopping||!loaded.observer.publicReadEpochIsCurrent(client,tour,'tables',epochs.tables)){state.dirty.add('tables');return;}
       assert.equal(result.data?.access,'public');assert.equal(result.data?.tableId,state.tableId);
       timings.table.push(Date.now()-readStart);
       if(tables.freshness.state==='current')state.ready=true;
+     }
      }
     }
     state.observation.reportResult(true);
@@ -188,11 +218,61 @@ try{
    }
   };
   state.coordinator=loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track(refresh()));
-  state.clockCoordinator=loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
+  state.detailCoordinator=selected?loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
+   if(stopping||!state.tableId)return;
+   const controller=new AbortController(),timeout=AbortSignal.timeout(5000),signal=AbortSignal.any([controller.signal,timeout]);
+   state.detailController=controller;const epoch=state.epoch,tableEpoch=loaded.observer.publicReadEpoch(client,tour,'tables');
+   const full=state.detailFull||!state.clockReady;state.detailFull=false;
+   const started=Date.now();let physicalFailure=false;
+   // The table reader owns its physical5s deadline. Do not pass the clock's
+   // timeout as a caller signal and misclassify a real table deadline as cancel.
+   const tableRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,(url,init)=>{requestCounts.table++;return fetch(url,init);}).then(reply=>{
+    timings.table.push(Date.now()-started);return reply;
+   }).catch(cause=>{
+    physicalFailure=true;
+    if(!ownedAudienceCancellation(cause,controller,timeout,'table')){fail('spectator_table_read');diagnostic('spectator_table',cause,cause?.publicTableHttpStatus);}
+    throw cause;
+   });
+   const clockRead=full?(async()=>{
+    const at=Date.now();
+    try{
+     requestCounts.clock++;
+     const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{
+      method:'POST',headers,body:JSON.stringify({p_tournament_id:tour}),signal,
+     });
+     if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
+     const data=await response.json();observeTiming('clock',response.headers);
+     assert.ok(loaded.history.parsePublicClockSummary(data,tour));timings.clock.push(Date.now()-at);return true;
+    }catch(cause){
+     physicalFailure=true;
+     if(!ownedAudienceCancellation(cause,controller,timeout)){fail('spectator_clock');diagnostic('spectator_clock',cause,cause?.audienceHttpStatus);}
+     throw cause;
+    }
+   })():Promise.resolve(false);
+   // Promise.all may reject before its sibling settles; preserve the physical drain.
+   track(tableRead.catch(()=>{}));track(clockRead.catch(()=>{}));
+   const current=reply=>epoch===state.epoch&&loaded.observer.publicReadEpochIsCurrent(client,tour,'tables',tableEpoch)&&reply.data?.access==='public';
+   try{
+    const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;});
+    if(stopping||!current(reply))return;
+    assert.equal(reply.data.tableId,state.tableId);assert.match(reply.data.sourceGeneration,/^\d+$/);
+    state.ready=true;
+    if(state.revision!==reply.data.sourceGeneration){
+     if(readyAt&&state.revision!==null){state.changes++;generationEvidence.record(i,reply.data.sourceGeneration,Date.now());}
+     state.revision=reply.data.sourceGeneration;
+    }
+    state.observation.reportResult(true);
+   }catch(cause){
+    if(!physicalFailure){fail('spectator_detail_contract');diagnostic('spectator_detail_contract',cause);}
+    state.observation.reportResult(false);
+   }finally{controller.abort();}
+  })())):null;
+  state.clockCoordinator=selected?{request(){state.detailFull=true;state.detailCoordinator.request();},stop(){}}:loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
    if(stopping)return;
    const started=Date.now(),epoch=loaded.observer.publicReadEpoch(client,tour,'clock');
    const controller=new AbortController(),timeout=AbortSignal.timeout(5000);state.clockController=controller;
    try{
+    requestCounts.clock++;
     const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{
      method:'POST',headers,body:JSON.stringify({p_tournament_id:tour}),signal:AbortSignal.any([controller.signal,timeout]),
     });
@@ -212,13 +292,21 @@ try{
    state.online=event.online;
    if(event.reason==='status')return;
    if(event.invalidatePending||event.components.includes('visibility')||event.components.includes('hand_visibility')){
-    state.epoch++;state.controller?.abort();state.known={};state.dirty.add('tables');
+    state.epoch++;state.controller?.abort();
+    if(selected){
+     if(event.invalidatePending){state.known={};state.dirty.clear();}
+     else if(event.components.includes('visibility'))state.known={};
+     else delete state.known.tables;
+    }else{state.known={};state.dirty.add('tables');}
+    state.detailController?.abort();if(event.components.includes('visibility'))state.clockReady=false;
    }
    const clockSignal=audienceClockSignal(event);
    if(clockSignal.invalidate)state.clockController?.abort();
-   for(const c of event.components)if(['tables','ranking','payout'].includes(c))state.dirty.add(c);
+   if(selected){for(const c of selectedAudienceSections(event))state.dirty.add(c);}
+   else for(const c of event.components)if(['tables','ranking','payout'].includes(c))state.dirty.add(c);
    if(event.components.includes('visibility'))for(const c of ['tables','ranking','payout'])state.dirty.add(c);
    if(state.dirty.size)state.coordinator.request();
+   if(selected&&event.components.some(c=>['tables','hand_visibility','visibility'].includes(c)))state.detailCoordinator.request();
    if(clockSignal.reload)state.clockCoordinator.request();
   });
   state.coordinator.request();state.clockCoordinator.request();
@@ -238,13 +326,19 @@ finally{
  stopHandshakeDiagnostics();
  clearInterval(timer);stopping=true;
  endedAt=Date.now();connectedAtStop=clients.filter(c=>c.online).length;
- for(const state of clients){state.controller?.abort();state.clockController?.abort();state.coordinator.stop();state.clockCoordinator.stop();state.observation?.unsubscribe();}
+ for(const state of clients){state.controller?.abort();state.clockController?.abort();state.detailController?.abort();state.coordinator.stop();state.clockCoordinator.stop();state.detailCoordinator?.stop();state.observation?.unsubscribe();}
  await Promise.all(clients.map(async({client})=>{await client.removeAllChannels();client.realtime.disconnect();}));
- await worker;await Promise.allSettled([...pending]);
+ await worker;await oracle;await Promise.allSettled([...pending]);if(selected)await captureGeneration();
  checks={zeroErrors:Object.keys(errors).length===0,atLeast30Seconds:readyAt!==null&&endedAt-readyAt>=30000,allViewers:clients.length===viewers&&connectedAtStop===viewers,
   allSawLaterTableRevision:clients.every(c=>c.ready&&c.changes>0),tableP95Within3Seconds:timings.table.length>=viewers&&dist(timings.table).p95Ms<=3000,
-  sourceToSnapshotP95Within3Seconds:timings.sourceToSnapshot.length>=viewers&&dist(timings.sourceToSnapshot).p95Ms<=3000,
-  publicationMaxWithin5Seconds:timings.sourceToPublication.length>=viewers&&dist(timings.sourceToPublication).maxMs<=5000};
+  ...(selected?{
+   markerToScopedDetailP95Within3Seconds:timings.markerToScopedDetail.length>=viewers&&dist(timings.markerToScopedDetail).p95Ms<=3000,
+   markerClockCoverage:generationEvidence.report().markerObservationCoverage>=.9&&generationEvidence.report().matchedViewers===viewers,
+   // A tournament marker can change for another table, and deferred writes may
+   // precede that marker. Do not qualify changed-table delivery from this oracle.
+   tableSpecificSourceDeliveryVerified:false,
+  }:{sourceToSnapshotP95Within3Seconds:timings.sourceToSnapshot.length>=viewers&&dist(timings.sourceToSnapshot).p95Ms<=3000}),
+  publicationMaxWithin5Seconds:(selected?timings.markerToPublication:timings.sourceToPublication).length>=viewers&&dist(selected?timings.markerToPublication:timings.sourceToPublication).maxMs<=5000};
  const passed=Object.values(checks).every(Boolean);
  phase=passed?'passed':'failed';if(!passed)process.exitCode=1;report();
 }

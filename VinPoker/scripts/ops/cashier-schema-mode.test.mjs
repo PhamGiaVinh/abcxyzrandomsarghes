@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {selectedAudienceSections} from './operations-audience-scope.mjs';
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
@@ -11,6 +12,16 @@ import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
+
+test('selected-table hidden hub omits ordinary hand snapshots but retains scope and metadata checks',()=>{
+ assert.deepEqual(selectedAudienceSections({reason:'changed',components:['tables']}),[]);
+ assert.deepEqual(selectedAudienceSections({reason:'changed',components:['hand_visibility','tables']}),[]);
+ assert.deepEqual(selectedAudienceSections({reason:'changed',components:['ranking','tables']}),['ranking']);
+ assert.deepEqual(selectedAudienceSections({reason:'changed',components:['payout','clock']}),['payout']);
+ assert.deepEqual(selectedAudienceSections({reason:'changed',components:['visibility']}),['tables','ranking','payout']);
+ assert.deepEqual(selectedAudienceSections({reason:'verify',components:['tables']}),['tables']);
+ assert.deepEqual(selectedAudienceSections({reason:'status',components:['tables','ranking','payout']}),[]);
+});
 
 function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
@@ -161,7 +172,7 @@ test('mixed audience cannot run outside exact candidate or exceed bounded load',
 test('audience executable rejects invalid mode, count and non-disposable status before connection',()=>{
   const filename=fileURLToPath(new URL('./operations-audience.mjs',import.meta.url));
   const base={...process.env,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_CLOCK_CANDIDATE_PROBE:'0',LOCAL_OPERATIONS_AUDIENCE:'10',LOCAL_OPERATIONS_AUDIENCE_STATUS:'/invalid-target'};
-  for(const [override,pattern]of [[{LOCAL_OPERATIONS_AUDIENCE:'1001'},/Explicit bounded isolated audience required/],[{LOCAL_OPERATIONS_CANDIDATE_PROBE:'0'},/ERR_ASSERTION/],[{},/cashier-e2e-/]]){
+  for(const [override,pattern]of [[{LOCAL_OPERATIONS_AUDIENCE:'1001'},/Explicit bounded isolated audience required/],[{LOCAL_OPERATIONS_CANDIDATE_PROBE:'0'},/ERR_ASSERTION/],[{LOCAL_OPERATIONS_AUDIENCE_MODEL:'unknown'},/Explicit audience model required/],[{LOCAL_OPERATIONS_AUDIENCE_MODEL:'selected-table'},/cashier-e2e-/],[{LOCAL_OPERATIONS_AUDIENCE_MODEL:'grid-detail-stress'},/cashier-e2e-/]]){
     const result=spawnSync(process.execPath,[filename],{encoding:'utf8',env:{...base,...override}});assert.notEqual(result.status,0);assert.match(result.stderr,pattern);
   }
 });

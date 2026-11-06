@@ -8,6 +8,10 @@ on:
       - "VinPoker/scripts/ops/clock-candidate-broadcast.mjs"
       - "VinPoker/scripts/ops/prepare-clock-payout-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
+      - "VinPoker/scripts/ops/operations-audience.mjs"
+      - "VinPoker/scripts/ops/operations-audience-scope.mjs"
+      - "VinPoker/scripts/ops/operations-audience-generation.mjs"
+      - "VinPoker/scripts/ops/operations-audience-generation.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs"
@@ -56,6 +60,12 @@ on:
         options: ['0', '10', '1000']
         default: '0'
 
+      operations_audience_model:
+        description: Selected-table product composition or retained combined grid+detail stress
+        type: choice
+        options: ['selected-table', 'grid-detail-stress']
+        default: 'selected-table'
+
 permissions:
   actions: read
   contents: read
@@ -101,7 +111,7 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test scripts/ops/cashier-schema-mode.test.mjs
+          node --test scripts/ops/cashier-schema-mode.test.mjs scripts/ops/operations-audience-generation.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
           node --test supabase/pending-tests/fake-sepay-server.test.mjs
       - name: Download latest owner-captured schema-only baseline
@@ -150,6 +160,7 @@ jobs:
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
           LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
           LOCAL_OPERATIONS_AUDIENCE: ${{ inputs.operations_audience || '0' }}
+          LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh

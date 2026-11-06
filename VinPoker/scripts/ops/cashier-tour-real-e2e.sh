@@ -8,6 +8,8 @@ realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
 clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
+audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
+case "$audience_model" in selected-table|grid-detail-stress) ;; *) echo 'Unsupported isolated audience model' >&2;exit 1;; esac
 case "$schema_mode" in
   pre03) ;;
   current)
@@ -1277,6 +1279,7 @@ assert.equal(receipt.cachedUsers,2000);assert.equal(receipt.cachedEventsPerSecon
 assert.equal(receipt.productionChanged,false);writeFileSync(process.argv[3],JSON.stringify(receipt,null,2));
 AUDIENCE_REALTIME_RECEIPT
     LOCAL_OPERATIONS_AUDIENCE_STATUS="$test_root/isolated-status.json" \
+    LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
     LOCAL_OPERATIONS_AUDIENCE_REPORT="$repo_root/output/operations-latency/operations-audience-http.json" \
     LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
       node "$repo_root/scripts/ops/operations-audience.mjs" >"$test_root/operations-audience-private.log" 2>&1 &
