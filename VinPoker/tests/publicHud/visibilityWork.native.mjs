@@ -105,6 +105,15 @@ assert.equal(held,true,'Actual concurrent source transaction must be observed');
 const concurrentPublish=nativeWorkerClient.rpc('publish_public_hud_hand_v1',packet);
 await sourceTransaction;
 assert.equal((await concurrentPublish).data,false);
+// This test intercepted the worker to park its publish. Resume the real worker
+// failure path too: rejected publication releases its still-current hand lease
+// through the fenced RPC. Do not rely on slow local psql calls expiring it.
+assert.equal(sql(`SELECT count(*) FROM tracker_analytics_v1.visibility_work WHERE hand_id='${newer}';`),'1');
+const released=await nativeWorkerClient.rpc('fail_public_hud_job_v1',{
+ p_kind:'hand',p_entity:packet.p_entity,p_generation:packet.p_generation,p_lease:packet.p_lease,p_error:'PUBLIC_HUD_WORK_FAILED',
+});
+assert.equal(released.error,null);
+assert.equal(sql(`SELECT lease_token IS NULL FROM tracker_analytics_v1.jobs WHERE kind='hand' AND entity_id='${newer}';`),'t');
 await drain();assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.visibility_work;'),'0');
 // Metadata enqueues/registers while an earlier publisher is already claimed.
 // Parent-before-child locks serialize them; enqueue fences the old hand lease.
