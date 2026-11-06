@@ -13,6 +13,7 @@ import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
 import {tableFailureSample} from './scale.table-trace.mjs';
+import {audienceSocketDiagnostic} from '../../scripts/ops/operations-audience-scope.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 import {parsePublicClockSummary} from '../../.local-data/hud-scale-runtime/publicTableHistory.mjs';
@@ -183,6 +184,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  };
  let expectedDeliveries=0,excludedForPlannedFault=0,missedDeliveries=0,minHealthyOnline=viewers,healthySocketMs=0,healthyWallMs=0,coverageAt=0,unexpectedDisconnects=0;
  let snapshotExpected=0,snapshotExcluded=0,snapshotMissed=0;
+ const realtimeDiagnostics={events:{},unexpectedSamples:[]};
  const suspendDeliveries=(onlyTour)=>{for(const c of clients)if(!onlyTour||c.tour===onlyTour){excludedForPlannedFault+=c.expected.length;c.expected=[];snapshotExcluded+=c.snapshotExpected.length;c.snapshotExpected=[];}};
  const expireDeliveries=()=>{for(const c of clients){for(const [field,measure] of [['expected','realtime'],['snapshotExpected','snapshot']]){const remaining=[];for(const e of c[field]){if(Date.now()-e.at>10000){if(field==='expected')missedDeliveries++;else snapshotMissed++;stats[measure].push(Date.now()-e.at);}else remaining.push(e);}c[field]=remaining;}}};
  const health=[];
@@ -206,7 +208,12 @@ for(const scenario of ['concentrated','distributed','overview']){
  await until(async()=>{const reply=await rpc('get_public_tournament_viewer_snapshot_v2',{p_tournament_id:uuid('10000000',1),p_table_ids:[uuid('50000000',1)],p_sections:['tables'],p_known_revisions:{}});return reply.sections?.tables?.freshness?.state==='current';},60000,'Initial real worker publication unavailable');
  for(let i=0;i<viewers;i++){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
-  const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
+  const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100},logger:(kind,message,data)=>{
+   const value=audienceSocketDiagnostic(kind,message,data);if(!value)return;
+   const at=Date.now(),phase=!started?'admission':at>=end?'drain':reconnecting?'planned-reconnect':'healthy';
+   const key=[phase,value.event,value.kind,value.joinKind,value.closeCode??'none'].join(':');realtimeDiagnostics.events[key]=(realtimeDiagnostics.events[key]??0)+1;
+   if(phase==='healthy'&&value.event!=='transport_open'&&realtimeDiagnostics.unexpectedSamples.length<20)realtimeDiagnostics.unexpectedSamples.push({elapsedMs:at-started,...value});
+  }}});
   const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,hudController:null,hudActive:false,verifyAfterRead:false,hudCompletedEpoch:0,accessReconnect:0,verifiedAccessReconnect:0,table,tour};clients.push(state);
   const tableHints=[];
   // A Broadcast/read can finish before the writer's HTTP acknowledgement.
@@ -652,6 +659,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
  report.currentTableReader={source:'production-readPublicTableRequest',transport:'postgrest/get_public_tournament_table_clock_v1(full),get_public_tournament_table_live_or_last_hand_v2(table-only)',anonymousAuthority:true,preQueryAdmissionMs:0,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
  report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
+ report.realtimeDiagnostics=realtimeDiagnostics;save('running');
  report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
  report.watchedCoveringHintTiming={...(coveringHintDiagnostics.get(scenario)??createCoveringHintDiagnostics()).summary(),scope:'Diagnostic only: earliest retained covering numeric table hint received after source timestamp and before chosen observation; at most128 hints/viewer. Deferred sources and missing hints remain unmatched. Exact integer-ms histograms; same-clock signed intervals; independent percentiles are not additive. Production epoch fences and all grades unchanged.'};save('running');
