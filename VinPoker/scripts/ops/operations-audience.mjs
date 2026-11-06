@@ -260,7 +260,7 @@ try{
    state.detailStartedAt=started;state.detailInFlight=true;state.detailStarted=(state.detailStarted??0)+1;
    // The table reader owns its physical5s deadline. Do not pass the clock's
    // timeout as a caller signal and misclassify a real table deadline as cancel.
-   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,(url,init)=>{requestCounts.table++;return fetch(url,init);},full?'table-clock':'table');
+   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,async(url,init)=>{requestCounts.table++;const response=await fetch(url,init);observeTiming(full?'table-clock':'table',response.headers);return response;},full?'table-clock':'table');
    const tableRead=physicalRead.then(reply=>{
     if(full){assert.ok(reply.data?.table&&Array.isArray(reply.data.clock),'Canonical table-clock bundle required');reply={...reply,data:reply.data.table};}
     timings.table.push(Date.now()-started);return reply;
