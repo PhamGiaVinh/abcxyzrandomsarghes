@@ -41,7 +41,7 @@ on:
         type: boolean
         default: false
       clock_candidate_probe:
-        description: Isolated canonical clock UI against exact27candidate migrations and real Broadcast flush RPC only
+        description: Isolated canonical clock UI against exact28candidate migrations and real Broadcast flush RPC only
         type: boolean
         default: false
 

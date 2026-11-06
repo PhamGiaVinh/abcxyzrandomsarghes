@@ -81,13 +81,14 @@ assert.deepEqual(metadata(),beforeMetadata);
 assert.equal(sql("SELECT relrowsecurity FROM pg_class WHERE oid='spectator_projection_v2.clock_counts_original_v1'::regclass;"),'t');
 for(const role of ['anon','authenticated','service_role'])assert.throws(()=>sql(`SET ROLE ${role};SELECT * FROM spectator_projection_v2.clock_counts_original_v1;`,{captureFailure:true}),/permission denied/);
 assert.throws(()=>sql(`SET ROLE service_role;SELECT * FROM public.get_public_tournament_clock_summary('${tour}');`,{captureFailure:true}),/permission denied/);
-// Execute the exact release postchecks, including the025→032 hash chain. Do not
+// Execute the exact release postchecks, including the025→032→numeric hash chain. Do not
 // require managed Vault/cron access or substitute a separately copied assertion.
 const objectKeys=['clockReadPlanDefinitionMatches','clockCountsDefinitionMatches','clockCountsDependencyMatches',
  'clockCountsReaderMetadataMatches','clockCountsPrivateRlsOwner','clockCountsPrivateBrowserGrants'];
 const postcheckLines=readFileSync('scripts/ops/tracker-hud-20261104-postcheck.sql','utf8').split(/\r?\n/);
 const objectChecks=objectKeys.map(key=>{const matches=postcheckLines.filter(line=>line.trimStart().startsWith(`'${key}',`));assert.equal(matches.length,1,key);return matches[0].trim().replace(/,$/,'');});
-const readObjects=(changes='')=>jsonSql(`BEGIN;${changes}SELECT jsonb_build_object(${objectChecks.join(',\n')});ROLLBACK;`);
+const numericMigration=strip(readFileSync('supabase/migrations/20261106105930_public_clock_numeric_buy_in.sql','utf8'));
+const readObjects=(changes='')=>jsonSql(`BEGIN;${numericMigration}${changes}SELECT jsonb_build_object(${objectChecks.join(',\n')});ROLLBACK;`);
 const objects=readObjects();
 for(const key of objectKeys.filter(key=>key!=='clockCountsPrivateBrowserGrants'))assert.equal(objects[key],true,key);
 assert.equal(objects.clockCountsPrivateBrowserGrants,0);

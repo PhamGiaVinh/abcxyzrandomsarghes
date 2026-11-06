@@ -9982,6 +9982,12 @@
       "filename": "20261106025221_public_hud_visibility_required_work.sql",
       "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
       "reason": "Private visibility-generation required-work tracking with fenced completion, resumable pending-cursor upgrade and disabled-reader/worker/no-lease apply guards. Exact owner-approved27-migration package required before production apply."
+    },
+    {
+      "version": "20261106105930",
+      "filename": "20261106105930_public_clock_numeric_buy_in.sql",
+      "sha256": "29c7132c6d1690114fb467d19727ba3e5e752da63dff114f67132f8b67603711",
+      "reason": "Read-only numeric buy-in coercion restores the canonical SQL clock output contract on production bigint source columns. Preserves source, clock rules, owner/ACL and visibility. Exact owner-approved28-migration package required before production apply."
     }
   ],
   "floorActiveAllowlist": [

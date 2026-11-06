@@ -32,7 +32,7 @@ const triggers=['individual_result_immutable','individual_obligation_immutable']
 const sql=`BEGIN;
 SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='30s';
 DO $$ BEGIN
- IF current_setting('vinpoker.isolated_clock_candidate',true) IS DISTINCT FROM 'current-clock27-only'
+ IF current_setting('vinpoker.isolated_clock_candidate',true) IS DISTINCT FROM 'current-clock28-only'
  OR current_database()<>'postgres'
  OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
  OR md5(replace(pg_get_functiondef('public.get_public_tournament_viewer_snapshot_v2(uuid,uuid[],text[],jsonb)'::regprocedure),chr(13),''))<>'c23a5810b1307994c1b3428958bd92e0'

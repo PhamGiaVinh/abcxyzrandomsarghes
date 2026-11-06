@@ -97,6 +97,7 @@ node tests/publicHud/scale.read.native.mjs >output/hud-scale/native-read.log 2>&
 PUBLIC_HUD_PLAN_REPORT="$repo_root/output/hud-scale/read-plans.json" node tests/publicHud/read-plans.native.mjs
 PUBLIC_HUD_CLOCK_PLAN_REPORT="$repo_root/output/hud-scale/clock-read-plan.json" node tests/publicHud/clock-read-plan.native.mjs
 PUBLIC_HUD_CLOCK_COUNTS_REPORT="$repo_root/output/hud-scale/clock-counts.json" node tests/publicHud/clock-counts.native.mjs
+PUBLIC_HUD_CLOCK_NUMERIC_REPORT="$repo_root/output/hud-scale/clock-numeric.json" node tests/publicHud/clock-numeric.native.mjs
 PUBLIC_HUD_SUMMARY_BATCH_REPORT="$repo_root/output/hud-scale/summary-batch.json" node tests/publicHud/summary-batch.native.mjs
 PUBLIC_HUD_TABLE_PREPARED_REPORT="$repo_root/output/hud-scale/current-table-prepared.json" node tests/publicHud/current-table-prepared.native.mjs
 node tests/publicHud/identity-membership.native.mjs
