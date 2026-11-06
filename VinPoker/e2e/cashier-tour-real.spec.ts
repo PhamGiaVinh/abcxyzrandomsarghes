@@ -1235,9 +1235,11 @@ test('current Floor bust and player reentry preserve separate paid entry generat
    const started=performance.now(),after=await location(staff[actor].userId);expect(after.seat.entry_id).not.toBe(before.seat.entry_id);expect(after.seat.entry_no).toBe(2);expect(after.seat.chip_count).toBe(20000);
    rows.push({actor,bustMs:busted.ms,bustRetryMs:bustRetry.ms,registrationMs:registration.ms,registrationRetryMs:retryRegistration.ms,paymentMs:paid.ms,paymentRetryMs:paymentRetry.ms,independentReadMs:performance.now()-started});report();
   }
-  expect(rows).toHaveLength(20);for(const key of ['bustMs','registrationMs','paymentMs'] as const)expect(dist(key).p95Ms).toBeLessThanOrEqual(1000);
+  expect(rows).toHaveLength(20);
+  const failedLatencyGates=(['bustMs','registrationMs','paymentMs'] as const).filter(key=>dist(key).p95Ms!>1000);
+  if(failedLatencyGates.length){phase='latency-failed';report();throw Error('OPERATIONAL_REENTRY_LATENCY_GATE_FAILED');}
   phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}
+ }catch(error){if(!(error instanceof Error&&error.message==='OPERATIONAL_REENTRY_LATENCY_GATE_FAILED'))phase+='-failed';report();throw error;}
 });
 
 test('current Floor exact movement conserves paid chips and retries through HTTP',async({page})=>{

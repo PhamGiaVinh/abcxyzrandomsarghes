@@ -396,3 +396,19 @@ test('real native WebSocket handshake failure can be inspected without serializi
   assert.throws(()=>observeAudienceHandshake('https://example.com',()=>{}),/Loopback/);
  }finally{stop();clearTimeout(timer);socket?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
+
+
+test('latency-only collection rejects incomplete, transport and source failures and remains fatal',()=>{
+ const match=script.match(/<<'REENTRY_LATENCY_ONLY_FAILURE'\r?\n([\s\S]*?)\r?\nREENTRY_LATENCY_ONLY_FAILURE/);assert.ok(match);
+ const dir=mkdtempSync(join(tmpdir(),'reentry-latency-gate-')),file=join(dir,'receipt.json'),sha='a'.repeat(40);
+ const keys=['bustMs','bustRetryMs','registrationMs','registrationRetryMs','paymentMs','paymentRetryMs','independentReadMs'];
+ const fixture=()=>({sha,kind:'REAL_AUTH_FLOOR_BUST_REENTRY_EDGE_AND_CANONICAL_CASH_SEATING',phase:'latency-failed',graded:20,warmup:0,qualification:false,rows:Array.from({length:20},(_,actor)=>({actor,...Object.fromEntries(keys.map(k=>[k,k==='registrationMs'?1200:100]))})),distributions:Object.fromEntries(keys.map(k=>[k,{samples:20,p95Ms:k==='registrationMs'?1200:100,maxMs:k==='registrationMs'?1200:100}]))});
+ const run=value=>{writeFileSync(file,JSON.stringify(value));return spawnSync(process.execPath,['--input-type=module','-',file,sha],{input:match[1],encoding:'utf8'}).status;};
+ assert.equal(run(fixture()),0);
+ for(const mutate of [r=>r.phase='serial-failed',r=>r.phase='latency-failed-failed',r=>r.sha='b'.repeat(40),r=>r.rows.pop(),r=>r.rows[1].actor=0,r=>r.rows[0].bustMs='100',r=>r.distributions.registrationMs.p95Ms=999,r=>r.qualification=true]){const value=fixture();mutate(value);assert.notEqual(run(value),0);}
+ const fast=fixture();for(const row of fast.rows)row.registrationMs=100;fast.distributions.registrationMs={samples:20,p95Ms:100,maxMs:100};assert.notEqual(run(fast),0);
+ const gate=script.indexOf('if [[ "$reentry_latency_failed" == 1 ]]');assert.ok(gate>script.indexOf('REENTRY_LATENCY_ONLY_FAILURE'));assert.match(script.slice(gate,gate+230),/exit 1/);assert.ok(gate<script.indexOf("<<'OPERATIONS_PACKAGE_FINISHED'"));
+ const boundary=script.slice(script.indexOf('reentry_latency_failed=0'),script.indexOf("<<'REENTRY_LATENCY_ONLY_FAILURE'"));
+ assert.match(boundary,/\[\[ \"\$operations_candidate_probe\" == 1 \]\] \|\| exit 1/);
+ assert.ok(script.indexOf('Reentry generation/money/receipt conservation failed')>script.indexOf('REENTRY_LATENCY_ONLY_FAILURE'));
+});

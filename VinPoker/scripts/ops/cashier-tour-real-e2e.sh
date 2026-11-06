@@ -1620,7 +1620,27 @@ PAID_ASSET_FIXTURE
       (SELECT count(*) FROM public.tournament_chip_counts c JOIN public.tournament_entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number JOIN registrations r ON r.id=e.registration_id WHERE c.chip_count=20000);")"
   if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
   echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets/stack projections;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
-  run_browser_proof '' 1 'current Floor bust and player reentry preserve separate paid entry generations'
+  reentry_latency_failed=0
+  if run_browser_proof '' 1 'current Floor bust and player reentry preserve separate paid entry generations'; then
+    :
+  else
+    # Only the candidate path owns the mandatory final aggregate-failure gate.
+    [[ "$operations_candidate_probe" == 1 ]] || exit 1
+    # Only continue measurements after every source/retry/Auth assertion passed.
+    # The unchanged1s latency failure remains fatal at the final gate below.
+    node --input-type=module - "$repo_root/output/operations-latency/cashier-http-bust-reentry-http.json" "$source_sha" <<'REENTRY_LATENCY_ONLY_FAILURE'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(r.sha,process.argv[3]);assert.equal(r.kind,'REAL_AUTH_FLOOR_BUST_REENTRY_EDGE_AND_CANONICAL_CASH_SEATING');
+assert.equal(r.phase,'latency-failed');assert.equal(r.graded,20);assert.equal(r.warmup,0);assert.equal(r.qualification,false);assert.equal(r.rows.length,20);
+assert.deepEqual(r.rows.map(x=>x.actor),Array.from({length:20},(_,i)=>i));
+const keys=['bustMs','bustRetryMs','registrationMs','registrationRetryMs','paymentMs','paymentRetryMs','independentReadMs'];
+for(const key of keys){const values=r.rows.map(x=>x[key]);assert.ok(values.every(x=>typeof x==='number'&&Number.isFinite(x)&&x>=0));values.sort((a,b)=>a-b);assert.equal(r.distributions[key].samples,20);assert.equal(r.distributions[key].p95Ms,values[18]);assert.equal(r.distributions[key].maxMs,values[19]);}
+assert.ok(['bustMs','registrationMs','paymentMs'].some(key=>r.distributions[key].p95Ms>1000));
+REENTRY_LATENCY_ONLY_FAILURE
+    reentry_latency_failed=1
+    echo 'REENTRY_LATENCY_FAILED:retained;collecting later stages after mandatory committed-state conservation'
+  fi
   reentry_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
     "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
       AND r.player_id IN (SELECT user_id FROM public.club_cashiers WHERE club_id='a2000000-0000-4000-8000-000000000001' AND user_id<>'$owner_id'::uuid)),
@@ -1997,6 +2017,10 @@ const report=JSON.parse(readFileSync(process.argv[3],'utf8'));assert.match(proce
 SCHEMA_UNCHANGED_RECEIPT
   fi
   finish_candidate_broadcast
+  if [[ "$reentry_latency_failed" == 1 ]]; then
+    echo 'Operational latency qualification FAILED:reentry1s gate;later measurements do not erase it' >&2
+    exit 1
+  fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
