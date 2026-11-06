@@ -35,6 +35,7 @@ on:
       - 'VinPoker/tests/cashier/cashPaymentRecovery*'
       - 'VinPoker/tests/cashier/paidTourRoster.native.mjs'
       - 'VinPoker/tests/cashier/operationReadLatency.native.mjs'
+      - 'VinPoker/tests/cashier/operationWriteLatency.native.mjs'
       - 'VinPoker/tests/cashier/paidMemberHistory.native.mjs'
       - 'VinPoker/tests/dealerSwing/paidTourInitialAssign.native.mjs'
       - 'VinPoker/tests/trackerVoice/paidTourHand.native.mjs'
