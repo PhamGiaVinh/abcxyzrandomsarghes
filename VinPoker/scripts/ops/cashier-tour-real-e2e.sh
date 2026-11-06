@@ -973,6 +973,22 @@ echo "REFUND_BROWSER_PROOF: Tour B waiting-seat refund paid once, registration c
 if [[ "$schema_mode" == current ]]; then
   # Separate stage: preserve the earlier baseline/refund/partial-payment proof,
   # then restore the exact current allocator with its original dependency guards.
+  # The public-only capture contains the allocator's helper functions but omits
+  # this private blocker queue. Restore only its exact source DDL/RLS/index,
+  # not unrelated mode writers. Read-only production catalog confirms ten columns.
+  node --input-type=module - "$repo_root" "$test_root/paid-private-dependencies.sql" <<'PAID_PRIVATE_SOURCE'
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const source=readFileSync(process.argv[2]+'/supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql','utf8').replaceAll('\r','');
+const start=source.indexOf('CREATE TABLE floor_private.table_mode_requests_v1 ('),end=source.indexOf('CREATE FUNCTION floor_private.resolve_table_mode_request_v1(');
+assert.ok(start>=0&&end>start);
+const ddl=source.slice(start,end).trim();
+assert.equal(createHash('sha256').update(ddl).digest('hex'),'ec5161591e98e6a71a4ee3cbca17e534cf02b2b56e24709604cd6a74a7aa8fda');
+writeFileSync(process.argv[3],`BEGIN;\nDO $$ BEGIN IF to_regclass('floor_private.table_mode_requests_v1') IS NOT NULL THEN RAISE EXCEPTION 'isolated_paid_mode_queue_collision';END IF;END $$;\n${ddl}\nCOMMIT;\n`,{mode:0o600});
+PAID_PRIVATE_SOURCE
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/paid-private-dependencies.sql"
   for paid_migration in \
     20270128000113_cashier_canonical_paid_seating_v1.sql \
     20270128000114_cashier_canonical_reentry_seating_v1.sql \
