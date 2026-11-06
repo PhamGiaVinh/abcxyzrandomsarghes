@@ -67,6 +67,7 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ -n "${hud_projector_pid:-}" ]]; then kill -TERM "$hud_projector_pid" 2>/dev/null || true;wait "$hud_projector_pid" 2>/dev/null || true;fi
   if [[ -n "${audience_pid:-}" ]]; then kill "$audience_pid" 2>/dev/null || true;wait "$audience_pid" 2>/dev/null || true;fi
   if [[ -n "${clock_flush_pid:-}" ]]; then kill "$clock_flush_pid" 2>/dev/null || true; wait "$clock_flush_pid" 2>/dev/null || true; fi
   if [[ "$exit_code" != 0 && ( "$clock_candidate_probe" == 1 || "$operations_candidate_probe" == 1 ) && -n "${db_container:-}" ]]; then
@@ -1244,6 +1245,9 @@ run_browser_proof() {
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
   local -a container_args=()
   if [[ "$replacement_enabled" == rest-race || "$replacement_enabled" == off-race ]]; then container_args+=(--name "$race_browser_container"); fi
+  if [[ "$hud_browser_enabled" == 1 ]]; then
+    container_args+=(--volume "$test_root/hud-control/requests:/fixtures/hud-control/requests" --volume "$test_root/hud-control/receipts:/fixtures/hud-control/receipts:ro")
+  fi
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --volume "$repo_root:/app:ro" --workdir /app \
@@ -1266,6 +1270,8 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED="$telegram_sink_enabled" \
   --env LOCAL_OPERATIONS_INTELLIGENCE_ENABLED="$intelligence_enabled" \
   --env LOCAL_OPERATIONS_HUD_BROWSER_ENABLED="$hud_browser_enabled" \
+  --env LOCAL_OPERATIONS_HUD_CONTROL=/fixtures/hud-control \
+  --env LOCAL_OPERATIONS_HUD_CONTROL_NONCE="${hud_control_nonce:-}" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1967,14 +1973,27 @@ OPERATIONS_PACKAGE_FINISHED
   if [[ "$audience_count" != 0 ]]; then
     # Load qualification has already stopped and its receipt/catalog were
     # checked. Certify this small operational source before isolated HUD reads.
-    LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" node "$repo_root/scripts/ops/prepare-operations-public-hud.mjs" \
-      "$test_root/isolated-status.json" "$db_container" "$repo_root/output/operations-latency/operations-hud-backfill-http.json"
+    mkdir -p "$test_root/hud-control/requests" "$test_root/hud-control/receipts"
+    hud_control_nonce="$(node -e 'console.log(require("node:crypto").randomUUID())')"
+    LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" LOCAL_OPERATIONS_HUD_CONTROL_NONCE="$hud_control_nonce" node "$repo_root/scripts/ops/prepare-operations-public-hud.mjs" \
+      "$test_root/isolated-status.json" "$db_container" "$repo_root/output/operations-latency/operations-hud-backfill-http.json" "$test_root/hud-control" >"$test_root/hud-projector-private.log" 2>&1 &
+    hud_projector_pid=$!
+    hud_prepared=false
+    for ((hud_wait=0;hud_wait<130;hud_wait++)); do
+      if ! kill -0 "$hud_projector_pid" 2>/dev/null; then echo 'Isolated HUD preparation stopped before readiness' >&2;wait "$hud_projector_pid";exit 1;fi
+      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json"; then hud_prepared=true;break;fi
+      sleep 1
+    done
+    [[ "$hud_prepared" == true ]]
     run_browser_proof '' '' 'anonymous prepared HUD reads canonical operational history and replay' '' '' '' '' '' '' '' '' '' '' '' 1
+    kill -TERM "$hud_projector_pid"
+    wait "$hud_projector_pid"
+    hud_projector_pid=''
     node --input-type=module - "$repo_root/output/operations-latency" <<'PREPARED_HUD_FINAL_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf8'));
 const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
-assert.equal(backfill.phase,'prepared');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(browser.phase,'passed');
+assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(backfill.finalShadow.passed,true);assert.equal(backfill.controls.uniqueApplied,2);assert.equal(backfill.controls.complete,true);assert.equal(browser.phase,'passed');
 assert.ok(Object.values(browser.checks).every(value=>value===true));
 const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
 pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';
