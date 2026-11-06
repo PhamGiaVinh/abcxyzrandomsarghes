@@ -2,6 +2,15 @@ import {afterEach,expect,it,vi} from 'vitest';
 import {readPublicTableRequest} from './publicTableTransport';
 const read=(send:typeof fetch,signal=new AbortController().signal,key='fixed-anon')=>readPublicTableRequest('https://fixture.invalid',key,'tour','table',signal,send);
 afterEach(()=>vi.useRealTimers());
+it('reads the canonical table and clock bundle with one fresh anonymous HTTP request',async()=>{
+ const data={table:{access:'revoked'},clock:[]};
+ const send=vi.fn().mockResolvedValue(new Response(JSON.stringify(data)));
+ expect((await readPublicTableRequest('https://fixture.invalid','fixed-anon','tour','table',new AbortController().signal,send,'table-clock')).data).toEqual(data);
+ expect(send).toHaveBeenCalledTimes(1);
+ expect(String(send.mock.calls[0][0])).toBe('https://fixture.invalid/rest/v1/rpc/get_public_tournament_table_clock_v1');
+ expect(send.mock.calls[0][1]).toMatchObject({cache:'no-store',credentials:'omit',redirect:'error'});
+ expect(JSON.parse(send.mock.calls[0][1].body)).toEqual({p_tournament_id:'tour',p_tournament_table_id:'table'});
+});
 it('uses fixed public credentials, exact scope, no cache/session and never falls back',async()=>{
  const send=vi.fn().mockResolvedValue(new Response('{"access":"revoked"}'));
  expect((await read(send)).data).toEqual({access:'revoked'});

@@ -37,7 +37,7 @@ assert.equal(inspected.stdout.trim(),'/supabase_db_'+basename(dirname(statusPath
 const status=JSON.parse(readFileSync(statusPath,'utf8'));
 assert.equal(status.API_URL,'http://127.0.0.1:54321');
 assert.ok(typeof status.SERVICE_ROLE_KEY==='string'&&status.SERVICE_ROLE_KEY.length>32);
-assert.equal(loadPackage().entries.length,30);
+assert.equal(loadPackage().entries.length,31);
 const execute=query=>{
  const result=spawnSync('docker',['exec','-i',container,'psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres'],{input:query,encoding:'utf8',maxBuffer:16*1024*1024});
  if(result.status!==0)throw Error('ISOLATED_HUD_SQL_FAILED');

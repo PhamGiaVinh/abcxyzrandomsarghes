@@ -11,7 +11,14 @@ const {rpc,hand,target,auth,signals,liveSignals,events,statuses}=vi.hoisted(()=>
 }));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])=>{const result=Promise.resolve(rpc(...args));return Object.assign(result,{abortSignal:(signal:AbortSignal)=>{(args[0]==='get_public_tournament_table_hand_v2'?signals:liveSignals).push(signal);return result;}});},channel:()=>{const c={on:(...args:unknown[])=>{const callback=args.at(-1);if(typeof callback==='function')events.push(callback as ()=>void);return c;},subscribe:(callback:(status:string)=>void)=>{statuses.push(callback);return c;}};return c},removeChannel:vi.fn()}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>auth}));
-vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:(_url:string,_key:string,tour:string,table:string,signal:AbortSignal)=>{liveSignals.push(signal);return rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});}}));
+vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:async(_url:string,_key:string,tour:string,table:string,signal:AbortSignal,_send:typeof fetch,mode?:string)=>{
+ liveSignals.push(signal);
+ const result=await rpc('get_public_tournament_table_live_or_last_hand_v2',{p_tournament_id:tour,p_tournament_table_id:table});
+ if(mode!=='table-clock'||result.error)return result;
+ if(result.data?.access!=='public')return {data:{table:result.data,clock:[]},error:null};
+ const clock=await rpc('get_public_tournament_clock_summary',{p_tournament_id:tour});
+ return clock.error?clock:{data:{table:result.data,clock:clock.data},error:null};
+}}));
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
 vi.mock('@/lib/tracker-poker/useTrackerRunoutSounds',()=>({useTrackerRunoutSounds:()=>{}}));
@@ -172,7 +179,7 @@ it('recovers the core read explicitly after timeout and never publishes its late
 });
 it('aborts the current core read when the viewer unmounts',()=>{
  rpc.mockImplementation(()=>new Promise(()=>{}));const view=render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
- expect(liveSignals).toHaveLength(2);expect(rpc.mock.calls.some(([name])=>name==='get_tournament_clock')).toBe(false);
+ expect(liveSignals).toHaveLength(1);expect(rpc.mock.calls.some(([name])=>name==='get_tournament_clock')).toBe(false);
  view.unmount();expect(liveSignals.every(signal=>signal.aborted)).toBe(true);
 });
 it('requires a fresh access read on reconnect and rejects the pre-disconnect public reply',async()=>{

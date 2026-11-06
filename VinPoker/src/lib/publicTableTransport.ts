@@ -3,7 +3,7 @@ const callerCancelled=()=>Object.assign(new DOMException('Aborted','AbortError')
 
 // Shared by the real spectator and load generator. No user session, response
 // cache or retry is installed on this canonical anonymous PostgREST read.
-export async function readPublicTableRequest(baseUrl:string,key:string,tournamentId:string,tableId:string,signal:AbortSignal,send:typeof fetch=fetch):Promise<PostgrestSingleResponse<unknown>>{
+export async function readPublicTableRequest(baseUrl:string,key:string,tournamentId:string,tableId:string,signal:AbortSignal,send:typeof fetch=fetch,mode:'table'|'table-clock'='table'):Promise<PostgrestSingleResponse<unknown>>{
  if(signal.aborted)throw callerCancelled();
  const base=new URL(baseUrl);
  if(!['http:','https:'].includes(base.protocol)||base.username||base.password||base.search||base.hash||base.pathname!=='/')throw Error('PUBLIC_TABLE_CONFIGURATION');
@@ -12,7 +12,8 @@ export async function readPublicTableRequest(baseUrl:string,key:string,tournamen
  if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});
  const timer=setTimeout(()=>{deadline=true;controller.abort();},5000);
  try{
-  const response=await send(new URL('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2',base),{
+  const endpoint=mode==='table-clock'?'get_public_tournament_table_clock_v1':'get_public_tournament_table_live_or_last_hand_v2';
+  const response=await send(new URL(`/rest/v1/rpc/${endpoint}`,base),{
    method:'POST',headers:{apikey:key,...(key.startsWith('sb_publishable_')?{}:{Authorization:`Bearer ${key}`}), 'Content-Type':'application/json','Content-Profile':'public','Accept-Profile':'public'},
    body:JSON.stringify({p_tournament_id:tournamentId,p_tournament_table_id:tableId}),signal:controller.signal,
    cache:'no-store',credentials:'omit',redirect:'error',

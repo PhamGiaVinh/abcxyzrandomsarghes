@@ -257,7 +257,9 @@ try{
    const started=Date.now();let physicalFailure=false;
    // The table reader owns its physical5s deadline. Do not pass the clock's
    // timeout as a caller signal and misclassify a real table deadline as cancel.
-   const tableRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,(url,init)=>{requestCounts.table++;return fetch(url,init);}).then(reply=>{
+   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,(url,init)=>{requestCounts.table++;return fetch(url,init);},full?'table-clock':'table');
+   const tableRead=physicalRead.then(reply=>{
+    if(full){assert.ok(reply.data?.table&&Array.isArray(reply.data.clock),'Canonical table-clock bundle required');reply={...reply,data:reply.data.table};}
     timings.table.push(Date.now()-started);return reply;
    }).catch(cause=>{
     physicalFailure=true;
@@ -267,12 +269,9 @@ try{
    const clockRead=full?(async()=>{
     const at=Date.now();
     try{
-     requestCounts.clock++;
-     const response=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{
-      method:'POST',headers,body:JSON.stringify({p_tournament_id:tour}),signal,
-     });
-     if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
-     const data=await response.json();observeTiming('clock',response.headers);
+     const {data:bundle}=await physicalRead;
+     if(bundle?.table?.access!=='public')return false;
+     const data=bundle.clock;
      assert.ok(loaded.history.parsePublicClockSummary(data,tour));timings.clock.push(Date.now()-at);return true;
     }catch(cause){
      physicalFailure=true;

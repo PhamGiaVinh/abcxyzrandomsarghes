@@ -234,7 +234,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   const healthy=()=>state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20));
   let pageEpoch=0,clockScopeEpoch=0;
   const componentEpochs={tables:0,ranking:0,payout:0,clock:0};
-  Object.assign(state,{fullRead:true,clockReady:false,clockPending:false,clockBusy:false,clockPhysicalReads:0,clockScopedReads:0,supersededClockReads:0});
+  Object.assign(state,{fullRead:true,clockReady:false,clockPending:false,clockBusy:false,clockPhysicalReads:0,bundledClockPhysicalReads:0,clockScopedReads:0,supersededClockReads:0});
   const refreshSnapshot=async()=>{
    state.snapshotPending=false;if(!state.snapshotDirty.size)return;
    state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
@@ -295,13 +295,23 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(overview)return;
    state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now(),full=state.fullRead||!state.clockReady;state.fullRead=false;state.tableController=controller;const tableTrace={};
    try{
-    const tableRead=readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
-     assert.equal(String(url),status.API_URL+'/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2');
+    if(full){state.clockPhysicalReads++;state.bundledClockPhysicalReads++;}
+    const physicalRead=readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
+     assert.equal(String(url),status.API_URL+'/rest/v1/rpc/'+(full?'get_public_tournament_table_clock_v1':'get_public_tournament_table_live_or_last_hand_v2'));
      assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
      try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-rpc',init.signal,tableTrace)),{headers:{'Content-Type':'application/json'}});}
      catch(error){if(error?.intentionalHudCancellation)throw new DOMException('Aborted','AbortError');throw error;}
+    },full?'table-clock':'table');
+    const tableRead=physicalRead.then(reply=>{
+     if(!full)return reply;
+     assert.ok(reply.data?.table&&Array.isArray(reply.data.clock),'Canonical table-clock bundle required');
+     return {...reply,data:reply.data.table};
     });
-    const clockRead=full?readClock(controller,epoch):Promise.resolve();
+    const clockRead=full?physicalRead.then(reply=>{
+     if(reply.data?.table?.access!=='public')return;
+     assert.ok(parsePublicClockSummary(reply.data.clock,tour),'Bundled public clock must satisfy the production scoped parser');
+     return true;
+    }):Promise.resolve();
     // Promise.all can reject before its sibling has physically settled. Keep
     // both transports in the final drain even when scope cancellation wins.
     track(tableRead.catch(()=>{}));if(full)track(clockRead.catch(()=>{}));
@@ -602,7 +612,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const apiSummary=summaryApiReport(sample('summaryHttp'));
  const report={scenario,viewers,durationSeconds:duration,summaryTimingVersion:'per-rpc-complete-body-and-ready-v1',apiSummary,httpSummarySamples:apiSummary.all.samples,httpSummaryP95Ms:apiSummary.all.p95Ms,readySummarySamples:apiSummary.ready.samples,readySummaryP95Ms:apiSummary.ready.p95Ms,logicalHudSamples:sample('summary').length,logicalHudP95Ms:percentile(sample('summary'),.95),logicalHudMaxMs:maximumSample(sample('summary')),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:maximumSample(sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
- report.clockLifecycle={version:'production-felt-full-load-or-overview-shared-slot-v1',physicalReads:clients.reduce((n,c)=>n+c.clockPhysicalReads,0),minScopedReadsPerViewer:Math.min(...clients.map(c=>c.clockScopedReads)),superseded:clients.reduce((n,c)=>n+c.supersededClockReads,0),pendingAtGrading:clients.filter(c=>c.clockPending||c.clockBusy).length,scopeCancellation:true,errorsRemainFailures:true};assert.ok(report.clockLifecycle.minScopedReadsPerViewer>=1,'Every viewer needs a successful scoped clock read');assert.equal(report.clockLifecycle.pendingAtGrading,0);save('running');
+ report.clockLifecycle={version:'production-felt-bundled-full-load-or-overview-shared-slot-v2',physicalReadsContainingClock:clients.reduce((n,c)=>n+c.clockPhysicalReads,0),bundledPhysicalReads:clients.reduce((n,c)=>n+c.bundledClockPhysicalReads,0),standalonePhysicalReads:clients.reduce((n,c)=>n+c.clockPhysicalReads-c.bundledClockPhysicalReads,0),minScopedReadsPerViewer:Math.min(...clients.map(c=>c.clockScopedReads)),superseded:clients.reduce((n,c)=>n+c.supersededClockReads,0),pendingAtGrading:clients.filter(c=>c.clockPending||c.clockBusy).length,scopeCancellation:true,errorsRemainFailures:true};assert.ok(report.clockLifecycle.minScopedReadsPerViewer>=1,'Every viewer needs a successful scoped clock read');assert.equal(report.clockLifecycle.pendingAtGrading,0);save('running');
  report.notReadyOutcomes=notReadyOutcomes;save('running');
  report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:maximumSample(amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:maximumSample(samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
  report.amendmentProbeDiagnostics={samples:amendmentSamples.length,serverReadyUpperBoundMaxMs:maximumSample(amendmentSamples.map(p=>p.serverReadyUpperBoundMs)),
@@ -611,7 +621,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:maximumSample(probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');
- report.currentTableReader={source:'production-readPublicTableRequest',transport:'postgrest/get_public_tournament_table_live_or_last_hand_v2',anonymousAuthority:true,preQueryAdmissionMs:0,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
+ report.currentTableReader={source:'production-readPublicTableRequest',transport:'postgrest/get_public_tournament_table_clock_v1(full),get_public_tournament_table_live_or_last_hand_v2(table-only)',anonymousAuthority:true,preQueryAdmissionMs:0,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
  report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
  report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');

@@ -1618,8 +1618,8 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   const openTable=async()=>{
    phase='felt-filter';await viewer.getByPlaceholder('Tìm bàn hoặc người chơi',{exact:true}).fill(tableName!,{timeout:10000});
    const button=viewer.getByRole('article',{name:tableName!,exact:true}).getByRole('button',{name:'Xem '+tableName,exact:true});phase='felt-open';await expect(button).toBeVisible({timeout:10000});
-   const response=viewer.waitForResponse(value=>{if(!new URL(value.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2'))return false;const args=value.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_tournament_table_id===hand.tournament_table_id;},{timeout:10000});void response.catch(()=>{});
-   await button.click({timeout:5000});phase='felt-read';const actual=await response;expect(actual.ok()).toBe(true);expect((await actual.json()).tableId).toBe(hand.tournament_table_id);
+   const response=viewer.waitForResponse(value=>{if(!new URL(value.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_clock_v1'))return false;const args=value.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_tournament_table_id===hand.tournament_table_id;},{timeout:10000});void response.catch(()=>{});
+   await button.click({timeout:5000});phase='felt-read';const actual=await response;expect(actual.ok()).toBe(true);expect((await actual.json()).table.tableId).toBe(hand.tournament_table_id);
   };
   phase='felt';await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');
   await openTable();checks.actualTableOpen=true;

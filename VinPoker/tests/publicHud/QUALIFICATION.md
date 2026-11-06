@@ -609,3 +609,34 @@ independent withdrawal blocks. The 202-hand checkpoint test compares every
 contribution against the independent source classifier. These are correctness
 evidence, not the 1,000-viewer/1M-hand latency qualification. Re-run paired writer
 overhead and both full 30-minute scenarios on the resulting SHA before release.
+
+## Fresh table and clock read bundle (2026-11-07)
+
+Migration `20261106184814` adds a STABLE SECURITY INVOKER RPC calling the
+existing canonical table and clock getters in one statement snapshot. A table
+denial returns before invoking the clock; a public table retains real clock
+errors. No getter, source row, grant on the source, or visibility rule changes.
+Selected-table full refreshes use one anonymous HTTP request in both the UI and
+the operational/scale consumers. Table-only hints still perform a fresh table
+authorization read. Unselected/catalog and overview clock reads retain their
+existing paths. The physical five-second deadline and scope/epoch cancellation
+remain mandatory; no cache, raw-history fallback or request admission is added.
+
+The exact release package now contains **31 migrations**, manifest SHA256
+`13616e361af1c8552a23cccd7c109224d0e42076bbc669261b34a6a3c24955d6`.
+Migration SHA256 is
+`4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057`.
+Earlier package approvals do not approve this scope. Native PostgreSQL tests
+compare 17 cases across anon/authenticated, reject service role, retain denial
+with unavailable clock, test postcheck tampering, and rollback/reapply without
+altering the canonical getters. Restore the prior two-reader client before
+dropping the additive RPC during definition recovery. Default rollback still
+disables derived reads/workers and preserves source and audit.
+
+Prior SHA `e0e2117c28a51b32423a636c4ac857a5ce828ad5`, Actions
+`42275349690`, passed the configured 33 operational cases with 10 viewers and
+the actual anonymous browser HUD lifecycle (frozen open HUD, new hand/reopen,
+withdrawal/restore and current-tour replay). It is neither evidence for this
+new bundle's HTTP performance nor the 1,000-viewer/1M-hand qualification.
+Both full 30-minute scenarios, mixed operational load, exact-head required CI
+and the final approved release remain outstanding.

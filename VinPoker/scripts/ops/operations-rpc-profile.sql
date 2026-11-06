@@ -17,6 +17,7 @@ SELECT CASE WHEN current_user='postgres'
    WHEN strpos(query,'publish_public_spectator_projection_v2')>0 THEN 'publish_public_spectator_projection_v2'
    WHEN strpos(query,'claim_public_spectator_projection_v2')>0 THEN 'claim_public_spectator_projection_v2'
    WHEN strpos(query,'get_public_tournament_viewer_snapshot_v2')>0 THEN 'get_public_tournament_viewer_snapshot_v2'
+   WHEN strpos(query,'get_public_tournament_table_clock_v1')>0 THEN 'get_public_tournament_table_clock_v1'
    WHEN strpos(query,'get_public_tournament_table_live_or_last_hand_v2')>0 THEN 'get_public_tournament_table_live_or_last_hand_v2'
    WHEN strpos(query,'get_public_tournament_clock_summary')>0 THEN 'get_public_tournament_clock_summary'
   END rpc,calls,total_exec_time,max_exec_time,shared_blks_hit,shared_blks_read

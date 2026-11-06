@@ -10000,6 +10000,12 @@
       "filename": "20261106144208_public_spectator_source_lease_outcome.sql",
       "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
       "reason": "Exact stale-lease receipt after existing service authorization; no source payload or authority for old workers. Keeps publication fencing. Requires quiesced spectator worker, no active leases and exact owner-approved30-migration package before production apply."
+    },
+    {
+      "version": "20261106184814",
+      "filename": "20261106184814_public_table_clock_read_bundle.sql",
+      "sha256": "4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057",
+      "reason": "Fresh public table and clock canonical getters in one STABLE invoker statement; preserves denial precedence and existing authorization. No source mutation. Requires exact owner-approved31-migration package before production apply."
     }
   ],
   "floorActiveAllowlist": [

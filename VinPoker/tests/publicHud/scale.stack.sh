@@ -100,6 +100,7 @@ PUBLIC_HUD_CLOCK_COUNTS_REPORT="$repo_root/output/hud-scale/clock-counts.json" n
 PUBLIC_HUD_CLOCK_NUMERIC_REPORT="$repo_root/output/hud-scale/clock-numeric.json" node tests/publicHud/clock-numeric.native.mjs
 PUBLIC_HUD_SUMMARY_BATCH_REPORT="$repo_root/output/hud-scale/summary-batch.json" node tests/publicHud/summary-batch.native.mjs
 PUBLIC_HUD_TABLE_PREPARED_REPORT="$repo_root/output/hud-scale/current-table-prepared.json" node tests/publicHud/current-table-prepared.native.mjs
+PUBLIC_HUD_BUNDLE_REPORT="$repo_root/output/hud-scale/table-clock-bundle.json" node tests/publicHud/table-clock-bundle.native.mjs
 node tests/publicHud/identity-membership.native.mjs
 PUBLIC_HUD_IDENTITY_KEYSET_REPORT="$repo_root/output/hud-scale/identity-keyset.json" node tests/publicHud/identity-keyset.native.mjs
 PUBLIC_HUD_IDENTITY_PLAN_REPORT="$repo_root/output/hud-scale/identity-lookup.json" node tests/publicHud/identity-lookup.native.mjs

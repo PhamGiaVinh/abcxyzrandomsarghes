@@ -55,12 +55,12 @@ on:
         type: boolean
         default: false
       clock_candidate_probe:
-        description: Isolated canonical clock UI against exact30candidate migrations and real Broadcast flush RPC only
+        description: Isolated canonical clock UI against exact31candidate migrations and real Broadcast flush RPC only
         type: boolean
         default: false
 
       operations_candidate_probe:
-        description: Full isolated operational stages against exact30candidate; not mixed1000spectator proof
+        description: Full isolated operational stages against exact31candidate; not mixed1000spectator proof
         type: boolean
         default: false
 

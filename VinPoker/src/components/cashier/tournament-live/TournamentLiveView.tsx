@@ -346,11 +346,13 @@ function TournamentLiveViewContent({
     const currentRequest = () => !controller.signal.aborted&&seq === requestSeqRef.current && readScopeRef.current === readScope;
     const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>{
       const epoch=publicReadEpoch(supabase,tournamentId,'tables');
-      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>name==='get_public_tournament_table_live_or_last_hand_v2'
-        ?readPublicTableRequest(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,String(args.p_tournament_id),String(args.p_tournament_table_id),signal)
+      const bundled=name==='get_public_tournament_table_clock_v1';
+      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>name==='get_public_tournament_table_live_or_last_hand_v2'||bundled
+        ?readPublicTableRequest(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,String(args.p_tournament_id),String(args.p_tournament_table_id),signal,fetch,bundled?'table-clock':'table')
         :supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
         reportPublicTournamentRead(supabase,tournamentId,!reply.error);
-        if(!reply.error&&name==='get_public_tournament_table_live_or_last_hand_v2'&&(reply.data as {access?:string})?.access==='public'&&
+        const tableData=bundled?(reply.data as {table?:unknown})?.table:reply.data;
+        if(!reply.error&&(name==='get_public_tournament_table_live_or_last_hand_v2'||bundled)&&(tableData as {access?:string})?.access==='public'&&
           !publicReadEpochIsCurrent(supabase,tournamentId,'tables',epoch))throw Error('public_snapshot_superseded');
         return reply;
       })
@@ -360,16 +362,25 @@ function TournamentLiveViewContent({
     const cachedSummary=tableOnly&&usePublicCurrentHand&&publicSummaryRef.current?.scope===readScope?publicSummaryRef.current.data:null;
     try {
     await observeTrackerContextRead((async()=>{
+    // A full selected-table refresh reads both canonical getters in one fresh
+    // database snapshot. Never reuse a table payload to skip its access check.
+    const bundle=usePublicCurrentHand&&!cachedSummary&&liveTableScope
+      ?Promise.resolve(readRpc('get_public_tournament_table_clock_v1',{p_tournament_id:tournamentId,p_tournament_table_id:liveTableScope})).then(reply=>{
+        if(reply.error)return {table:{data:null,error:reply.error},clock:{data:null,error:reply.error}};
+        const value=reply.data as {table?:unknown;clock?:unknown}|null;
+        if(!value||typeof value.table!=='object'||value.table===null||!Array.isArray(value.clock))throw Error('invalid_public_table_clock_bundle');
+        return {table:{data:value.table,error:null},clock:{data:value.clock,error:null}};
+      }):null;
     const [currentHandRes, seatsRes, handsRes, clockRes, tournamentRes] = await Promise.all([
       usePublicCurrentHand
-        ? loadPublicCurrentTable(async(name, args) => await readRpc(name,args), tournamentId, liveTableScope, FEATURES.publicSpectatorLastHandHistory)
+        ? loadPublicCurrentTable(async(name, args) => bundle?(await bundle).table:await readRpc(name,args), tournamentId, liveTableScope, FEATURES.publicSpectatorLastHandHistory)
         : Promise.resolve({ data: null, error: null }),
       usePublicCurrentHand ? Promise.resolve({ data: null, error: null }) : readRpc(
         "get_tournament_participation_v1", { p_tournament_id: tournamentId }),
       usePublicCurrentHand ? Promise.resolve({ data: [], error: null }) : loadLatestLiveHand(tournamentId, liveTableScope).abortSignal(controller.signal),
       usePublicCurrentHand||cachedSummary?Promise.resolve({data:null,error:null}):readRpc("get_tournament_clock", { p_tournament_id: tournamentId }),
       usePublicCurrentHand
-        ? cachedSummary?Promise.resolve({data:cachedSummary,error:null}):readRpc(
+        ? cachedSummary?Promise.resolve({data:cachedSummary,error:null}):bundle?bundle.then(value=>value.clock):readRpc(
           "get_public_tournament_clock_summary",{p_tournament_id:tournamentId})
         : readRpc("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }),
     ]);
