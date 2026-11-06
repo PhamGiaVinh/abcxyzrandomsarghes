@@ -1,4 +1,5 @@
 import {channel} from 'node:diagnostics_channel';
+import {createHash} from 'node:crypto';
 
 // A stopped scope is not evidence that an HTTP failure was cancellation.
 // The table transport supplies its own canonical provenance marker.
@@ -38,6 +39,28 @@ export function audienceFailure(cause,status){
 export function audienceFileLimits(text){
  const match=/^Max open files\s+(\d+)\s+(\d+)\s+files\s*$/m.exec(text);
  return match?{soft:Number(match[1]),hard:Number(match[2])}:null;
+}
+
+export function audienceGatewayConfig(text,{allowImplicitLimits=false}={}){
+ let ambiguous=false;
+ const read=name=>{
+  const matches=[...text.matchAll(new RegExp('^\\s*'+name+'\\s+(\\d+)\\s*;','gm'))];
+  if(matches.length>1)ambiguous=true;
+  return matches.length===1?Number(matches[0][1]):null;
+ };
+ const value={workers:read('worker_processes'),connectionsPerWorker:read('worker_connections'),fileLimitPerWorker:read('worker_rlimit_nofile')};
+ if(allowImplicitLimits&&!ambiguous&&Number.isSafeInteger(value.workers)&&value.workers>0&&Object.values(value).every(n=>n===null||Number.isSafeInteger(n)&&n>0))return value;
+ return Object.values(value).every(n=>Number.isSafeInteger(n)&&n>0)?value:null;
+}
+
+export function prepareAudienceGatewayTemplate(text){
+ // Exact public CLI2.101.0 template; its custom events block omits Kong's
+ // normal injected resource directives, so environment settings alone cannot
+ // change worker_connections. Add only the two explicit resource directives.
+ // CLI writes the embedded file through a heredoc, adding a final newline.
+ // Normalize only that trailing newline count, retaining every body byte.
+ if(createHash('sha256').update(text.replace(/\n+$/,'\n')).digest('hex')!=='c51eab99a3e358ff6515a0ded65ed9b1516b58dd9e19c8974b847402b3a7356f')throw Error('Pinned isolated gateway template drift');
+ return text.replace('events {',()=> 'worker_rlimit_nofile 16384;\n\nevents {\n    worker_connections 4096;');
 }
 
 export function audienceJoinFailure(error){

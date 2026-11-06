@@ -393,6 +393,11 @@ if [[ -z "$db_container" || -z "$edge_container" || -z "$gateway_container" ]]; 
   echo "Could not identify local DB, Edge and API gateway services" >&2
   exit 1
 fi
+if [[ "$audience_count" == 1000 ]]; then
+  mkdir -p "$repo_root/output/operations-latency"
+  node "$repo_root/scripts/ops/operations-gateway.mjs" "$gateway_container" "$network" \
+    "$repo_root/output/operations-latency/operations-gateway-http.json"
+fi
 browser_gateway="cashier-api"
 browser_network="cashier-browser-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 docker network create --internal "$browser_network" >/dev/null

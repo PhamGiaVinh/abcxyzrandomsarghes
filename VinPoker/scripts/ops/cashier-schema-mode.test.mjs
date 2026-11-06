@@ -1,6 +1,6 @@
 import test from 'node:test';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -220,6 +220,27 @@ test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP w
 test('actual proc file-limit format retains whitespace and unknown values stay unknown',()=>{
   assert.deepEqual(audienceFileLimits('Max open files            16384              16384              files     \n'),{soft:16384,hard:16384});
   assert.equal(audienceFileLimits('Max open files unlimited unlimited files'),null);
+});
+
+test('generated gateway resource receipts reject ambiguity, symbolic values and incomplete directives',()=>{
+ const config='worker_processes 4;\nworker_rlimit_nofile 16384;\nevents {\n worker_connections 4096;\n}\n# private token';
+ assert.deepEqual(audienceGatewayConfig(config),{workers:4,connectionsPerWorker:4096,fileLimitPerWorker:16384});
+ assert.equal(audienceGatewayConfig(config+'\nworker_processes 1;'),null);
+ assert.equal(audienceGatewayConfig(config.replace('worker_processes 4','worker_processes auto')),null);
+ assert.equal(audienceGatewayConfig('worker_processes 4;'),null);
+ assert.deepEqual(audienceGatewayConfig('worker_processes 1;',{allowImplicitLimits:true}),{workers:1,connectionsPerWorker:null,fileLimitPerWorker:null});
+ assert.equal(audienceGatewayConfig(config+'\nworker_processes 1;',{allowImplicitLimits:true}),null);
+ assert.throws(()=>prepareAudienceGatewayTemplate('events {\n private\n}'),/template drift/);
+ assert.equal(JSON.stringify(audienceGatewayConfig(config)).includes('private'),false);
+});
+
+test('gateway preparation refuses non-owned containers and non1000 modes before Docker',()=>{
+ const filename=fileURLToPath(new URL('./operations-gateway.mjs',import.meta.url));
+ const env={...process.env,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_OPERATIONS_AUDIENCE:'1000'};
+ for(const args of [['supabase_kong_other','supabase_network_cashier-e2e-test','/output/operations-latency/operations-gateway-http.json'],['supabase_kong_cashier-e2e-test','shared-network','/output/operations-latency/operations-gateway-http.json']]){
+  const result=spawnSync(process.execPath,[filename,...args],{encoding:'utf8',env});assert.notEqual(result.status,0);assert.match(result.stderr,/ERR_ASSERTION/);assert.doesNotMatch(result.stderr,/Isolated gateway command failed/);
+ }
+ const result=spawnSync(process.execPath,[filename],{encoding:'utf8',env:{...env,LOCAL_OPERATIONS_AUDIENCE:'10'}});assert.notEqual(result.status,0);assert.match(result.stderr,/ERR_ASSERTION/);
 });
 
 test('subscription diagnostics preserve SDK identity, arguments, timeout and callback values',()=>{
