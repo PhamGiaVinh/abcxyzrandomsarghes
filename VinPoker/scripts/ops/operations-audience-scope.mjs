@@ -59,6 +59,19 @@ export function audienceWorkerFailure(name,error){
  return {operation:operations.includes(name)?name:'unknown',reason:reasons.includes(error?.message)?error.message:'unknown'};
 }
 
+export function audienceServerTiming(headers){
+ const result={};
+ const number=text=>typeof text==='string'&&/^\d+(?:\.\d+)?$/.test(text)&&Number(text)<=60000?Number(text):null;
+ for(const part of (headers.get('server-timing')??'').split(',')){
+  const match=/^\s*(jwt|parse|plan|transaction|response);dur=(\d+(?:\.\d+)?)\s*$/.exec(part);
+  if(match){const value=number(match[2]);if(value!==null)result[match[1]]=value;}
+ }
+ for(const [header,key]of [['x-kong-upstream-latency','kongUpstream'],['x-kong-proxy-latency','kongProxy']]){
+  const value=number(headers.get(header));if(value!==null)result[key]=value;
+ }
+ return result;
+}
+
 export function prepareAudienceGatewayTemplate(text){
  // Exact public CLI2.101.0 template; its custom events block omits Kong's
  // normal injected resource directives, so environment settings alone cannot

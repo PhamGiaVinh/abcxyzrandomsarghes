@@ -8,6 +8,7 @@ import {parseSeriesClubLivePulseV1} from '../src/lib/series-intelligence/seriesC
 import {parseOpsIntelligenceContextV1} from '../src/ops/intelligence/opsIntelligenceContextV1';
 import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelligenceTimelineV1';
 import {clockBroadcastSignal,decodeClockWireFrame} from '../tests/publicHud/clockWireDiagnostics';
+import {audienceServerTiming} from '../scripts/ops/operations-audience-scope.mjs';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -1155,10 +1156,10 @@ test('current Cashier full payment commits canonical seats through real HTTP',as
  test.skip(process.env.LOCAL_OPERATIONS_PAID_SEATING_ENABLED!=='1','Second isolated stage after exact113/114/117/139');test.setTimeout(120_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
- const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started,serverTiming:audienceServerTiming(response.headers)};};
  const worklist=async()=>{const {data}=await rpc(owner,'cashier_tour_worklist_v1',{p_club_id:club,p_tournament_id:tour,p_query:'',p_bucket:'all',p_page:0,p_limit:50});expect(data.ok).toBe(true);return data.rows as {id:string;player_id:string;received:number;total_pay:number;status:string}[];};
- const rows:{actor:number;ackMs:number;retryMs:number;independentReadMs:number}[]=[];let phase='open-canonical-tables';
- const distribution=(field:keyof Omit<typeof rows[number],'actor'>)=>{const values=rows.map(r=>r[field]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const rows:{actor:number;ackMs:number;retryMs:number;independentReadMs:number;ackParts:Record<string,number>;retryParts:Record<string,number>}[]=[];let phase='open-canonical-tables';
+ const distribution=(field:'ackMs'|'retryMs'|'independentReadMs')=>{const values=rows.map(r=>r[field]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-cash-full-seated-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_CASHIER_FULL_PAYMENT_CANONICAL_SEATING_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,warmup:0,graded:20,rows,distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),independentRead:distribution('independentReadMs')},qualification:false,limitations:'Second disposable stage adds exact113/114/117/139 after the earlier partial-cash and refund conservation checks. Twenty distinct Auth cashiers complete their existing server-priced partial registrations;three empty physical tables are opened through canonical Floor RPC. No browser seating latency,re-entry,undo,prize or mixed1000-viewer capacity claim.'},null,2));
  try{
   for(let n=1;n<=3;n++){
@@ -1173,7 +1174,7 @@ test('current Cashier full payment commits canonical seats through real HTTP',as
    const first=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(first.data.ok).toBe(true);expect(first.data.status).toBe('recorded');expect(first.data.result.payment_state).toBe('paid');expect(first.data.result.seating_state).toBe('seated');
    const retry=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(retry.data).toEqual(first.data);
    const started=performance.now(),after=(await worklist()).find(r=>r.id===registration!.id);expect(after).toBeTruthy();expect(Number(after!.received)).toBe(Number(registration!.total_pay));expect(after!.status).toBe('confirmed');
-   rows.push({actor,ackMs:first.ms,retryMs:retry.ms,independentReadMs:performance.now()-started});report();
+   rows.push({actor,ackMs:first.ms,retryMs:retry.ms,independentReadMs:performance.now()-started,ackParts:first.serverTiming,retryParts:retry.serverTiming});report();
   }
   expect(rows).toHaveLength(20);expect(distribution('ackMs').p95Ms).toBeLessThanOrEqual(1000);expect(distribution('retryMs').p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -221,6 +221,12 @@ test('worker diagnostics preserve exact known lease rejection without exporting 
  assert.deepEqual(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'lease_expired'}),{operation:'get_public_spectator_projection_source_v2',reason:'lease_expired'});
  assert.deepEqual(audienceWorkerFailure('private_rpc',{message:'private SQL and token'}),{operation:'unknown',reason:'unknown'});
  assert.equal(audienceWorkerFailure('claim_public_spectator_projection_v2',{message:'lease_expired private'}).reason,'unknown');
+});
+
+test('server timing retains only bounded numeric known phases and gateway durations',()=>{
+ const headers=new Headers({'Server-Timing':'jwt;dur=0.2, transaction;dur=12.8, private;dur=3, plan;dur=NaN, parse;dur=90000, response;dur=1;desc="private"','X-Kong-Upstream-Latency':'14','X-Kong-Proxy-Latency':'private'});
+ assert.deepEqual(audienceServerTiming(headers),{jwt:.2,transaction:12.8,kongUpstream:14});
+ assert.deepEqual(audienceServerTiming(new Headers()),{});
 });
 
 test('actual proc file-limit format retains whitespace and unknown values stay unknown',()=>{

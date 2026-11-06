@@ -1236,6 +1236,11 @@ AUDIENCE_OWNED_PREFLIGHT
       docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
         -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions;' \
         >"$test_root/operations-rpc-statistics-private.log" 2>&1
+      # Diagnostic headers only in the owned disposable stack. Verify an actual
+      # header in the generator before admitting viewers; no hosted config change.
+      docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        -c "ALTER ROLE authenticator SET pgrst.server_timing_enabled='true'; NOTIFY pgrst,'reload config';" \
+        >"$test_root/operations-server-timing-private.log" 2>&1
     fi
     # Match scale.stack.sh's load-generator FD budget. This is a host-process
     # prerequisite, not a hosted service/quota change or a product speed fix.

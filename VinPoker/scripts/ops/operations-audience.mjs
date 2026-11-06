@@ -4,9 +4,10 @@ import {readFileSync,writeFileSync,readdirSync} from 'node:fs';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {availableParallelism,totalmem,cpus} from 'node:os';
 import {setMaxListeners} from 'node:events';
+import {monitorEventLoopDelay,performance as nodePerformance} from 'node:perf_hooks';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -49,6 +50,8 @@ const tour='a3000000-0000-4000-8000-000000000001';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const dist=values=>{const a=[...values].sort((x,y)=>x-y);return {samples:a.length,p50Ms:a.length?a[Math.ceil(a.length*.5)-1]:null,p95Ms:a.length?a[Math.ceil(a.length*.95)-1]:null,maxMs:a.at(-1)??null};};
 const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],sourceToPublication:[]};
+const timingParts={},eventLoop=monitorEventLoopDelay({resolution:20}),utilizationStart=nodePerformance.eventLoopUtilization();eventLoop.enable();
+const observeTiming=(kind,headers)=>{for(const [name,value]of Object.entries(audienceServerTiming(headers)))(timingParts[kind+':'+name]??=[]).push(value);};
 const errors={},clients=[],pending=new Set();
 const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
 const socketEvents={},socketFailureSamples=[];
@@ -75,6 +78,8 @@ const report=()=>writeFileSync(reportFile,JSON.stringify({
  readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
+ serverTiming:Object.fromEntries(Object.entries(timingParts).map(([name,values])=>[name,dist(values)])),
+ generator:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization,scope:'Process-wide including admission;diagnostic only'},
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
  productionChanged:false,qualification:false,
  limitations:'Actual anonymous HTTP/WS with product observer, coordinator and table transport. All virtual tabs visible. Canonical spectator worker executes on host through real service HTTP, not hosted Edge/cron. Real operational suite runs separately in Chromium against this same isolated DB. No1Mhand HUD,1000DOM render,all-intermediate-write delivery,Telegram handset or production-capacity claim. Revision-age observations do not count unchanged old publications as fresh writes.',
@@ -106,6 +111,15 @@ const worker=track((async()=>{
 process.on('SIGTERM',()=>{stopping=true;});
 const timer=setInterval(report,1000);report();
 try{
+ if(viewers===1000){
+  let confirmed=false;
+  for(let i=0;i<30&&!confirmed;i++){
+   const reply=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{method:'POST',headers,body:JSON.stringify({p_tournament_id:tour}),signal:AbortSignal.timeout(5000)});
+   await reply.arrayBuffer();confirmed=reply.ok&&Object.hasOwn(audienceServerTiming(reply.headers),'transaction');
+   if(!confirmed)await sleep(200);
+  }
+  assert.ok(confirmed,'Actual isolated PostgREST Server-Timing header required');
+ }
  for(let i=0;i<viewers&&!stopping;i++){
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false},realtime:{logger:(kind,message,data)=>{
    if(stopping)return;
@@ -137,6 +151,7 @@ try{
     });
     if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
     const data=await response.json();
+    observeTiming('snapshot',response.headers);
     if(epoch!==state.epoch||stopping){for(const s of sections)state.dirty.add(s);return;}
     assert.equal(data.ok,true);assert.equal(data.access,'public');assert.equal(data.tournamentId,tour);
     timings.snapshot.push(Date.now()-start);
@@ -183,6 +198,7 @@ try{
     });
     if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
     const data=await response.json();
+    observeTiming('clock',response.headers);
     if(stopping)return;
     if(!loaded.observer.publicReadEpochIsCurrent(client,tour,'clock',epoch)){state.clockCoordinator.request();return;}
     assert.ok(loaded.history.parsePublicClockSummary(data,tour));
@@ -218,6 +234,7 @@ try{
  while(!stopping)await sleep(100);
 }catch(cause){fail('audience_lifecycle');diagnostic('audience_lifecycle',cause);stopping=true;process.exitCode=1;}
 finally{
+ eventLoop.disable();
  stopHandshakeDiagnostics();
  clearInterval(timer);stopping=true;
  endedAt=Date.now();connectedAtStop=clients.filter(c=>c.online).length;
