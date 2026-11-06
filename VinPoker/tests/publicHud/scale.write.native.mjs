@@ -45,20 +45,34 @@ export function cleanupCommittedWriterFixture(){
  DELETE FROM public.tournament_hands h WHERE ${scope};COMMIT;`);
 }
 
+export function writerDiagnosticAdminTarget(env){
+ const comparison=env.PUBLIC_HUD_WRITER_DIAGNOSTIC==='isolated-comparison-admin';
+ if(env.PUBLIC_HUD_WRITER_DIAGNOSTIC&&!comparison)throw Error('writer_diagnostic_scope_required');
+ if(!comparison&&env.PUBLIC_HUD_ISOLATED_STACK!=='vinpoker-hud-scale')return null;
+ const project=env.PUBLIC_HUD_STACK_PROJECT;
+ if(env.PUBLIC_HUD_LOCAL_PORT!=='54322'||!/^hud-scale-[a-z0-9-]+$/.test(project??''))throw Error('writer_diagnostic_scope_required');
+ if(comparison){
+  const match=project.match(/^hud-scale-([a-z0-9]+)-([a-z0-9]+)$/);
+  if(!match||env.PUBLIC_HUD_ISOLATED_STACK||env.PUBLIC_HUD_LOCAL_DATABASE!==`vinpoker_hud_test_pair_${match[1]}_${match[2]}`)
+   throw Error('writer_diagnostic_scope_required');
+  return {project,database:env.PUBLIC_HUD_LOCAL_DATABASE,marker:'vinpoker-hud-writer-control-disposable'};
+ }
+ if(env.PUBLIC_HUD_LOCAL_DATABASE!=='postgres')throw Error('writer_diagnostic_scope_required');
+ return {project,database:'postgres',marker:'vinpoker-hud-scale-disposable'};
+}
 export function diagnoseFixtureWriter(){
  try{
   const query=`BEGIN;LOAD 'auto_explain';SET LOCAL client_min_messages='warning';SET LOCAL auto_explain.log_level='warning';SET LOCAL auto_explain.log_min_duration=0;SET LOCAL auto_explain.log_analyze=on;SET LOCAL auto_explain.log_nested_statements=on;SET LOCAL auto_explain.log_format='json';
    SET LOCAL request.jwt.claim.role='service_role';SET LOCAL ROLE service_role;
    SELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000002);
    RESET ROLE;ROLLBACK;DO $$ BEGIN RAISE EXCEPTION 'writer_plan_capture';END $$;`;
-  if(process.env.PUBLIC_HUD_ISOLATED_STACK==='vinpoker-hud-scale'){
-   const project=process.env.PUBLIC_HUD_STACK_PROJECT;
-   if(process.env.PUBLIC_HUD_LOCAL_DATABASE!=='postgres'||process.env.PUBLIC_HUD_LOCAL_PORT!=='54322'||!/^hud-scale-[a-z0-9-]+$/.test(project??''))throw Error('writer_diagnostic_scope_required');
+  const target=writerDiagnosticAdminTarget(process.env);
+  if(target){
    // LOAD is administrative in the Supabase image. Existing local admin only;
    // the instrumented business call still runs as service_role in the query.
    // Check the marker inside the selected container before loading anything.
-   const guard=`DO $$ BEGIN IF current_database()<>'postgres' OR shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-hud-scale-disposable' THEN RAISE EXCEPTION 'writer_diagnostic_scope_required';END IF;END $$;`;
-   execFileSync('docker',['exec','-i','-e','PGPASSWORD=postgres',`supabase_db_${project}`,'psql','-U','supabase_admin','-d','postgres','-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:guard+query,encoding:'utf8',stdio:'pipe',maxBuffer:8*1024*1024});
+   const guard=`DO $$ BEGIN IF current_database()<>'${target.database}' OR shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM '${target.marker}' THEN RAISE EXCEPTION 'writer_diagnostic_scope_required';END IF;END $$;`;
+   execFileSync('docker',['exec','-i','-e','PGPASSWORD=postgres',`supabase_db_${target.project}`,'psql','-U','supabase_admin','-d',target.database,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{input:guard+query,encoding:'utf8',stdio:'pipe',maxBuffer:8*1024*1024});
   }else sql(query,{captureFailure:true});
  }catch(error){const result=sanitizeWriterNestedPlans(error?.stderr);return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',captureFailureKind:writerCaptureFailureKind(error,result.capturedPlans),...result};}
  return {kind:'SANITIZED_ROLLED_BACK_WRITER_PLANS_NOT_GRADED_LATENCY',capturedPlans:0,scans:[]};

@@ -107,6 +107,7 @@ jobs:
         with:
           version: 2.101.0
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test tests/publicHud/scale.write.diagnostic.test.mjs
       - name: Install real clock probe browser
         if: inputs.clock_ui_probe
         run: npx playwright install --with-deps chromium

@@ -65,7 +65,9 @@ export PUBLIC_HUD_SCALE_READ_REPORT="$repo_root/output/hud-scale/native-read.jso
 comparison_database="vinpoker_hud_test_pair_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"
 [[ "$comparison_database" =~ ^vinpoker_hud_test_pair_[a-z0-9_]+$ ]]
 createdb -h 127.0.0.1 -p 54322 -U postgres --template=template0 "$comparison_database"
-PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
+psql -h 127.0.0.1 -p 54322 -U postgres -d "$comparison_database" -w -X -qAt -v ON_ERROR_STOP=1 \
+ -c "COMMENT ON DATABASE \"$comparison_database\" IS 'vinpoker-hud-writer-control-disposable';" >/dev/null
+PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_DIAGNOSTIC=isolated-comparison-admin PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
  node tests/publicHud/scale.seed.mjs >output/hud-scale/writer-isolated-seed.log 2>&1
 PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_CONTROL=isolated-native-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
  PUBLIC_HUD_WRITER_CONTROL_REPORT="$repo_root/output/hud-scale/writer-matched-observers.json" \
