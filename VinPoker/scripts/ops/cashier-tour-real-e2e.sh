@@ -1132,6 +1132,7 @@ REVENUE_IMMUTABILITY
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$test_root/clock-pre32-fixture.sql"
   for move_migration in \
+    20270128000029_floor_deferred_break_intent_v1.sql \
     20270128000032_tournament_seat_display_preservation_v1.sql \
     20270128000033_tournament_seat_move_tuple_v1.sql \
     20270128000034_floor_move_wrapper_receipt_v1.sql \
