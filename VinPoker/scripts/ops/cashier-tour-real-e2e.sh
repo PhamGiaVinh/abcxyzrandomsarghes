@@ -1366,6 +1366,9 @@ CLOCK_CANDIDATE_PREFLIGHT
   if [[ "$operations_candidate_probe" == 1 ]]; then
     # Install the existing current reader at its exact guarded preimage, before
     # candidate read-plan wrappers. No historical migration guard is rewritten.
+    node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/floor-v6-reader.sql" --restore-floor-v6-reader
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$test_root/floor-v6-reader.sql"
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql"
   fi

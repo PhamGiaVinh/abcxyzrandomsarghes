@@ -7,7 +7,29 @@ import { isAbsolute } from 'node:path';
 const output = process.argv[2];
 assert.ok(output && isAbsolute(output), 'absolute disposable output required');
 const restoreClockPre32 = process.argv[3] === '--restore-clock-pre32';
-assert.ok(process.argv.length === 3 || (process.argv.length === 4 && restoreClockPre32), 'unsupported dependency mode');
+const restoreFloorV6 = process.argv[3] === '--restore-floor-v6-reader';
+assert.ok(process.argv.length === 3 || (process.argv.length === 4 && (restoreClockPre32 || restoreFloorV6)), 'unsupported dependency mode');
+if (restoreFloorV6) {
+  const source=readFileSync(new URL('../../supabase/migrations/20270128000031_tournament_participation_current_scope_v1.sql',import.meta.url),'utf8').replaceAll('\r\n','\n');
+  const matches=[...source.matchAll(/CREATE OR REPLACE FUNCTION public\.get_tournament_participation_v1\([\s\S]*?AS \$\$([\s\S]*?)\$\$;/g)];
+  assert.equal(matches.length,1,'unique original31 protected participation reader');
+  assert.equal(createHash('md5').update(matches[0][1]).digest('hex'),'9b90170ca89209f493578df5796ad4ea','original31 reader body drift');
+  assert.equal(matches[0][0].split('AS $$')[0].replace(/\s+/g,' ').trim(),"CREATE OR REPLACE FUNCTION public.get_tournament_participation_v1(p_tournament_id uuid) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''",'original31 reader metadata drift');
+  const statements=["BEGIN;SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='30s';",
+    `DO $$ BEGIN IF current_user<>'postgres' OR current_database()<>'postgres'
+     OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+     OR to_regprocedure('public.get_tournament_participation_v1(uuid)') IS NOT NULL
+     OR md5(replace(pg_get_functiondef('floor_private.tournament_participation_v1(uuid)'::regprocedure),chr(13),''))<>'3ec6dd6e4db2e8f75602d2c62a925910'
+     THEN RAISE EXCEPTION 'isolated_floor_v6_dependency_collision_or_drift';END IF;END $$;`,
+    matches[0][0],
+    'ALTER FUNCTION public.get_tournament_participation_v1(uuid) OWNER TO postgres;',
+    'REVOKE ALL ON FUNCTION public.get_tournament_participation_v1(uuid) FROM PUBLIC,anon,authenticated,service_role;',
+    'GRANT EXECUTE ON FUNCTION public.get_tournament_participation_v1(uuid) TO authenticated;',
+    'COMMIT;'];
+  writeFileSync(output,statements.join('\n')+'\n',{mode:0o600});
+  console.log('EXACT_FLOOR_V6_PROTECTED_READER_PREPARED');
+  process.exit(0);
+}
 const sources = [
   readFileSync(new URL('../../supabase/pending-migrations/20260924165219_centerpoint_tournament_ops_release_v1.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../../supabase/pending-migrations/20260924065041_tv_layout_editor_v1.sql', import.meta.url), 'utf8'),

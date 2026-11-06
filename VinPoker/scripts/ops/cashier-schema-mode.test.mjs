@@ -172,6 +172,23 @@ test('candidate operations mode rejects unsafe or ambiguous combinations before 
   assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
 });
 
+test('current Floor dependency preserves original actor checks and rejects body/header drift',()=>{
+  const filename='20270128000031_tournament_participation_current_scope_v1.sql';
+  const original=readFileSync(new URL('../../supabase/migrations/'+filename,import.meta.url),'utf8');
+  for(const [valid,transform] of [[true,source=>source],[false,source=>source.replace('LANGUAGE plpgsql STABLE SECURITY DEFINER', 'LANGUAGE plpgsql STABLE SECURITY INVOKER')],[false,source=>source.replace('DECLARE a uuid:=auth.uid(); c uuid;','DECLARE a uuid:=NULL; c uuid;')]]){
+    const root=mkdtempSync(join(tmpdir(),'floor-v6-reader-')),scripts=join(root,'scripts','ops'),migrations=join(root,'supabase','migrations');
+    mkdirSync(scripts,{recursive:true});mkdirSync(migrations,{recursive:true});
+    const generator=join(scripts,'prepare-cashier-runtime-dependencies.mjs'),output=join(root,'reader.sql');
+    writeFileSync(generator,readFileSync(new URL('./prepare-cashier-runtime-dependencies.mjs',import.meta.url)));
+    const changed=transform(original);assert.equal(changed===original,valid,'Drift mutation must change the source');writeFileSync(join(migrations,filename),changed);
+    const result=spawnSync(process.execPath,[generator,output,'--restore-floor-v6-reader'],{encoding:'utf8'});
+    if(!valid){assert.notEqual(result.status,0);assert.equal(existsSync(output),false);continue;}
+    assert.equal(result.status,0,result.stderr);const sql=readFileSync(output,'utf8');
+    for(const marker of ['auth.uid()','actor_not_authorized','public.is_club_floor(a,c)','public.is_club_tracker(a,c)','public.is_club_cashier(a,c)','FROM PUBLIC,anon,authenticated,service_role;','TO authenticated;','isolated_floor_v6_dependency_collision_or_drift'])assert.ok(sql.includes(marker),marker);
+    assert.ok(!sql.includes('SET check_function_bodies = false'));
+  }
+});
+
 test('candidate admission and final receipt require the exact reviewed manifest count',()=>{
   const expected=loadPackage().entries.length;
   const admission=script.match(/\[\[ "\$candidate_count" == (\d+) \]\]/g)??[];
