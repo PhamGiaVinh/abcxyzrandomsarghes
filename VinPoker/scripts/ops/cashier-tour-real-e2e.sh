@@ -221,6 +221,10 @@ printf '%s\n' \
   'SEPAY_RECONCILE_SECRET=cashier-edge-reconcile-test' \
   'SEPAY_AUTO_CONFIRM=true' \
   'SEPAY_API_BASE=http://fake-sepay:8787' >supabase/functions/.env
+if [[ "$realtime_mode" == 1 ]]; then
+  printf '%s\n' 'TELEGRAM_BOT_TOKEN=LOCAL_TEST_ONLY_INVALID_TOKEN' \
+    'VINPOKER_ISOLATED_TELEGRAM=cashier-current-only' >>supabase/functions/.env
+fi
 
 # The temporary project has no application migrations or function source.
 # This first start only downloads/prepares the pinned CLI service images.
@@ -415,6 +419,21 @@ for target in 'http://example.com' 'http://1.1.1.1'; do
   fi
 done
 echo "ISOLATION_PROOF: DB/pg_net/Edge/browser outbound denied; local Auth reachable; cron off"
+if [[ "$realtime_mode" == 1 ]]; then
+  telegram_sink="$(docker run -d --rm --network "$network" --network-alias telegram-test-sink \
+    --volume "$repo_root/scripts/ops/telegram-test-sink.mjs:/tests/server.mjs:ro" \
+    --env VINPOKER_TELEGRAM_TEST_SINK=isolated-cashier-only \
+    mcr.microsoft.com/playwright:v1.60.0-noble node /tests/server.mjs)"
+  ephemeral_containers+=("$telegram_sink")
+  docker network connect --alias telegram-test-sink "$browser_network" "$telegram_sink"
+  probe_external_denied "$telegram_sink" Telegram-synthetic-sink
+  sink_ready=false
+  for _ in {1..30}; do
+    if docker exec "$telegram_sink" node -e 'fetch("http://127.0.0.1:8788/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then sink_ready=true;break;fi
+    sleep 1
+  done
+  [[ "$sink_ready" == true ]]
+fi
 
 # Only after the network proof: restore the owner-captured current public and
 # storage schema into the real local Supabase stack. Historical migrations are
@@ -647,6 +666,9 @@ cp -R "$repo_root/supabase/functions/sepay-reconcile" supabase/functions/sepay-r
 if [[ "$schema_mode" == current ]]; then
   cp -R "$repo_root/supabase/functions/checkout-dealer" supabase/functions/checkout-dealer
   cp -R "$repo_root/supabase/functions/tournament-reentry" supabase/functions/tournament-reentry
+  if [[ "$realtime_mode" == 1 ]]; then
+    node "$repo_root/scripts/ops/prepare-checkout-telegram-test.mjs" "$test_root/supabase/functions/checkout-dealer/index.ts"
+  fi
 fi
 
 api_url="$(jq -er '.API_URL' "$test_root/isolated-status.json")"
@@ -934,7 +956,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}"
   # These operational stages share committed fixtures. A failed prerequisite
   # must fail the run immediately, not produce misleading downstream failures.
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
@@ -959,6 +981,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_ACTION_FINISH_ENABLED="$manual_action_finish_enabled" \
   --env LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED="$recorded_action_finish_enabled" \
+  --env LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED="$telegram_sink_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1505,4 +1528,28 @@ MANUAL_ACTION_ACTORS
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
   if [[ "$recorded_finish_state" != '1|5|68|0' ]]; then echo "Recorded action Finish conservation failed ($recorded_finish_state)" >&2; exit 1; fi
   echo 'RECORDED_ACTION_FINISH_PROOF:one completed hand;five stable actions;one first action after20contenders;68snapshots;zero active hands'
+  if [[ "$realtime_mode" == 1 ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'TELEGRAM_FIXTURE'
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR EXISTS(SELECT 1 FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001' AND telegram_chat_id IS NOT NULL)
+ OR EXISTS(SELECT 1 FROM public.dealers WHERE full_name LIKE 'Notification TEST%')
+ THEN RAISE EXCEPTION 'synthetic_notification_fixture_preimage_drift';END IF;
+END $$;
+INSERT INTO public.club_settings(club_id,telegram_chat_id) VALUES('a2000000-0000-4000-8000-000000000001','-1000000000001')
+ ON CONFLICT(club_id) DO UPDATE SET telegram_chat_id=excluded.telegram_chat_id;
+INSERT INTO public.dealers(id,club_id,full_name,status,telegram_username,telegram_user_id)
+SELECT md5('http-notification-dealer-'||n)::uuid,'a2000000-0000-4000-8000-000000000001','Notification TEST <'||n||'> & Dealer','active','notify_test_'||n,(9900000000000+n)::text
+FROM generate_series(1,22) n;
+COMMIT;
+TELEGRAM_FIXTURE
+    run_browser_proof '' '' 'checkout notifications reach the isolated HTTP sink once with dealer tags' '' '' '' '' '' '' '' '' '' 1
+    telegram_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+      (SELECT count(*) FROM public.dealers WHERE full_name LIKE 'Notification TEST%'),
+      (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.full_name LIKE 'Notification TEST%' AND a.status='checked_out' AND a.current_state='checked_out'),
+      (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.full_name LIKE 'Notification TEST%' AND a.status='checked_in');")"
+    if [[ "$telegram_state" != '22|22|0' ]]; then echo "Notification checkout conservation failed ($telegram_state)" >&2;exit 1;fi
+    echo 'TELEGRAM_SYNTHETIC_PROOF:22canonical checkouts;20graded group/DM pairs;single-send20contender race;provider-failure retains checkout'
+  fi
 fi
