@@ -236,9 +236,12 @@ REALTIME_DECODING_DIAGNOSTIC
   fi
   if [[ "$audience_count" == 1000 && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
-    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    if ! docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/scripts/ops/operations-rpc-profile.sql" \
-      >"$repo_root/output/operations-latency/operations-rpc-profile-http.json" 2>/dev/null || true
+      >"$repo_root/output/operations-latency/operations-rpc-profile-http.json" 2>/dev/null; then
+      printf '%s\n' '{"capture":"unavailable","reason":"statistics_query_failed","qualification":false}' \
+        >"$repo_root/output/operations-latency/operations-rpc-profile-http.json"
+    fi
   fi
   if (( ${#ephemeral_containers[@]} > 0 )); then
     docker rm -f "${ephemeral_containers[@]}" >/dev/null 2>&1 || true

@@ -27,6 +27,10 @@ sql("SET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n"+fixture)
 assert.equal(sql('BEGIN;SET LOCAL ROLE anon;SELECT public.fixture_operations_schema_ready_v1();ROLLBACK;'),'operations-complete-schema-v1');
 sql(`CREATE TABLE ops_load_fixture_v1.business_probe(id integer PRIMARY KEY,value integer NOT NULL);
 INSERT INTO ops_load_fixture_v1.business_probe VALUES(1,0);`);
+sql(`CREATE TABLE public.clubs(id uuid PRIMARY KEY,name text);
+CREATE TABLE public.tournaments(id uuid PRIMARY KEY,name text);
+INSERT INTO public.clubs VALUES('a2000000-0000-4000-8000-000000000001','Cashier Edge TEST');
+INSERT INTO public.tournaments VALUES('a3000000-0000-4000-8000-000000000001','Cashier Edge TEST Tour');`);
 const before=sql('SELECT ops_load_fixture_v1.catalog_fingerprint();');assert.match(before,/^[a-f0-9]{32}$/);
 sql('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true,admission_at=clock_timestamp() WHERE singleton;');
 sql(`DO $$ DECLARE denied boolean;BEGIN
@@ -37,8 +41,14 @@ sql(`DO $$ DECLARE denied boolean;BEGIN
  IF (SELECT value FROM ops_load_fixture_v1.business_probe WHERE id=1)<>20 THEN RAISE EXCEPTION 'business_write_failed';END IF;
 END $$;`);
 assert.equal(sql('SELECT ops_load_fixture_v1.catalog_fingerprint();'),before);
+const profile=readFileSync(new URL('../../scripts/ops/operations-rpc-profile.sql',import.meta.url),'utf8');
+const observation=JSON.parse(sql(profile,{captureFailure:true}));
+assert.equal(observation.capture,'unavailable');
+assert.equal(observation.reason,'fixture_scope_or_statistics_extension');
+assert.equal(sql('SELECT ops_load_fixture_v1.catalog_fingerprint();'),before);
+assert.equal(sql('SELECT frozen FROM ops_load_fixture_v1.schema_fence WHERE singleton;'),'t');
 const privacy=jsonSql(`SELECT jsonb_build_object('anon',has_function_privilege('anon','ops_load_fixture_v1.catalog_fingerprint()','EXECUTE'),
  'authenticated',has_table_privilege('authenticated','ops_load_fixture_v1.schema_fence','SELECT'),
  'service',has_function_privilege('service_role','ops_load_fixture_v1.guard_schema()','EXECUTE'));`);
 assert.deepEqual(privacy,{anon:false,authenticated:false,service:false});
-console.log(JSON.stringify({kind:'REAL_PG17_OPERATIONAL_SCHEMA_FREEZE',actionPreflightCompiled:true,malformedActionPreflightDenied:true,unmarkedTargetDenied:true,createBlocked:true,alterBlocked:true,grantBlocked:true,businessWrites:20,catalogUnchanged:true,privateFixture:true,qualification:false}));
+console.log(JSON.stringify({kind:'REAL_PG17_OPERATIONAL_SCHEMA_FREEZE',actionPreflightCompiled:true,malformedActionPreflightDenied:true,unmarkedTargetDenied:true,createBlocked:true,alterBlocked:true,grantBlocked:true,businessWrites:20,catalogUnchanged:true,profileReadUnderFence:true,privateFixture:true,qualification:false}));

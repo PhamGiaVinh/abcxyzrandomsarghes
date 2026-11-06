@@ -1,15 +1,12 @@
 -- Isolated-only observer. Never export SQL text, parameters, claims or rows.
-BEGIN;
-CREATE FUNCTION pg_temp.operations_rpc_profile() RETURNS jsonb LANGUAGE plpgsql AS $$
-DECLARE stats_schema text; result jsonb;
-BEGIN
- IF current_database()<>'postgres' THEN RETURN jsonb_build_object('capture','unavailable','reason','fixture_scope');END IF;
- IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
- OR NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST Tour')
- THEN RETURN jsonb_build_object('capture','unavailable','reason','fixture_scope');END IF;
- SELECT n.nspname INTO stats_schema FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='pg_stat_statements';
- IF stats_schema IS NULL OR stats_schema NOT IN ('public','extensions') THEN RETURN jsonb_build_object('capture','unavailable','reason','statistics_extension');END IF;
- EXECUTE format($query$
+-- Pure reads: the audience schema fence must remain enabled during cleanup.
+BEGIN READ ONLY;
+SELECT CASE WHEN current_user='postgres'
+ AND (SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database())='vinpoker-operational-schema-fence-disposable'
+ AND EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ AND EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST Tour')
+ AND stats_schema IN ('public','extensions')
+ THEN format($query$
  WITH classified AS (
   SELECT CASE
    WHEN strpos(query,'resolve_cashier_cash_buyin_intent_v1')>0 THEN 'resolve_cashier_cash_buyin_intent_v1'
@@ -35,10 +32,8 @@ BEGIN
  ) SELECT jsonb_build_object('capture',CASE WHEN count(*)>0 THEN 'available' ELSE 'empty' END,'kind','ISOLATED_AGGREGATE_RPC_POSTGRES_TIMINGS',
  'queryScope','PostgREST pgrst_source request CTE only;DDL and native calls excluded',
  'qualification',false,'rpc',coalesce(jsonb_agg(to_jsonb(a) ORDER BY rpc),'[]'::jsonb)) FROM aggregated a
- $query$,stats_schema) INTO result;
- RETURN result;
-EXCEPTION WHEN OTHERS THEN
- RETURN jsonb_build_object('capture','unavailable','reason','statistics_query');
-END $$;
-SELECT pg_temp.operations_rpc_profile();
+ $query$,stats_schema)
+ ELSE $$SELECT jsonb_build_object('capture','unavailable','reason','fixture_scope_or_statistics_extension')$$ END
+ FROM (SELECT (SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='pg_stat_statements') stats_schema) scope
+\gexec
 ROLLBACK;
