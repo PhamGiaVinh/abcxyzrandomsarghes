@@ -3,7 +3,7 @@ import {selectedAudienceSections,audienceResourceStats,audiencePoolStats,readAud
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -13,6 +13,24 @@ import { loadPackage } from './tracker-hud-20261104-release.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
+
+test('isolated historical Edge graph requires the unchanged canonical hand-state core',async(t)=>{
+ const {build}=await import('esbuild');
+ const root=mkdtempSync(join(tmpdir(),'cashier-historical-graph-'));
+ t.after(()=>{assert.ok(root.startsWith(join(tmpdir(),'cashier-historical-graph-')));rmSync(root,{recursive:true,force:true});});
+ const functions=join(root,'supabase','functions');mkdirSync(functions,{recursive:true});
+ for(const name of ['_shared','tournament-historical-settlement'])cpSync(new URL('../../supabase/functions/'+name,import.meta.url),join(functions,name),{recursive:true});
+ const entry=join(functions,'tournament-historical-settlement','index.ts');
+ const options={entryPoints:[entry],bundle:true,write:false,format:'esm',platform:'neutral',external:['https://*','npm:*'],logLevel:'silent'};
+ await assert.rejects(build(options),/handStateCore/);
+ const core=join(root,'src','lib','tracker-poker','handStateCore.ts');mkdirSync(join(root,'src','lib','tracker-poker'),{recursive:true});
+ cpSync(new URL('../../src/lib/tracker-poker/handStateCore.ts',import.meta.url),core);
+ const bundled=await build(options);assert.equal(bundled.errors.length,0);
+ writeFileSync(entry,bundled.outputFiles[0].text);rmSync(join(root,'src'),{recursive:true});
+ // Standalone function entry still resolves when src is outside the CLI mount.
+ assert.equal((await build(options)).errors.length,0);
+ assert.match(script,/entryPoints:\['supabase\/functions\/tournament-historical-settlement\/index\.ts'\]/);
+});
 
 test('resource observations retain fixed numeric counters and reject labels or non-finite values',()=>{
  assert.deepEqual(audienceResourceStats('191.55%|12.30%|18\n'),{cpuPercent:191.55,memoryPercent:12.3,pids:18});

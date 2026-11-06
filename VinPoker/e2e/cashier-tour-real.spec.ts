@@ -1212,10 +1212,12 @@ test('pending reentry transport rejects ambiguous payment account before creatio
   body:JSON.stringify({tournament_id:'a3000000-0000-4000-8000-000000000001'}),signal:AbortSignal.timeout(5000)});
  const body=await response.json();
  const expectedError='SePay master account is not exclusive to this club';
- const errorKind=body?.error===expectedError?'ambiguous_master_account':body?.error==='entry_not_reenterable'?'entry_not_reenterable':body?.error==='CLB chưa cấu hình tài khoản nhận tiền.'?'missing_legacy_bank':body?.error==='Tournament has no club'?'tour_missing_club':'other';
+ const canonicalErrors=new Set(['actor_not_allowed','invalid_request','tournament_not_found','cashier_tour_disabled','reentry_window_closed','source_entry_not_found','entry_not_reenterable','player_already_active','ambiguous_reentry_registration','registration_identity_mismatch','reentry_already_confirmed','legacy_reentry_price_requires_review']);
+ const errorKind=body?.error===expectedError?'ambiguous_master_account':canonicalErrors.has(body?.error)?body.error:body?.error==='Invalid input'?'invalid_input':body?.error==='Invalid JSON body'?'invalid_json':body?.error==='CLB chưa cấu hình tài khoản nhận tiền.'?'missing_legacy_bank':body?.error==='Tournament has no club'?'tour_missing_club':'other';
+ const errorSha256=typeof body?.error==='string'&&body.error.length<=256?createHash('sha256').update(body.error).digest('hex'):null;
  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-reentry-bank-ambiguity-http.json'),JSON.stringify({
   kind:'REAL_AUTH_COMPOSITE_REENTRY_BANK_AMBIGUITY_DENIAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  phase:response.status===503&&body?.error===expectedError?'denied':'unexpected-response',httpStatus:response.status,errorKind,elapsedMs:performance.now()-started,qualification:false,
+  phase:response.status===503&&body?.error===expectedError?'denied':'unexpected-response',httpStatus:response.status,errorKind,errorSha256,elapsedMs:performance.now()-started,qualification:false,
   limitations:'Ambiguous active bank fixture only;source and money preservation require the separate native before/after check. Not bank-outage,closed-buy race or1000-viewer proof.',
  },null,2));
  expect(response.status).toBe(503);expect(body).toEqual({error:expectedError});

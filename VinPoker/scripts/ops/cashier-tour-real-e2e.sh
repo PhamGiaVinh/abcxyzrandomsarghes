@@ -759,6 +759,17 @@ if [[ "$schema_mode" == current ]]; then
   cp -R "$repo_root/supabase/functions/tournament-reentry" supabase/functions/tournament-reentry
   if [[ "$operations_candidate_probe" == 1 ]]; then
     cp -R "$repo_root/supabase/functions/tournament-historical-settlement" supabase/functions/tournament-historical-settlement
+    # Local CLI may mount functions without src. Bundle the unchanged handler
+    # and its canonical pure core into this disposable entry, as for HUD workers.
+    # Public remote/npm imports stay external; no production source is rewritten.
+    (
+      cd "$repo_root"
+      node --input-type=module - "$test_root/supabase/functions/tournament-historical-settlement/index.ts" <<'HISTORICAL_EDGE_BUNDLE'
+import {build} from 'esbuild';
+await build({entryPoints:['supabase/functions/tournament-historical-settlement/index.ts'],outfile:process.argv[2],
+ bundle:true,format:'esm',platform:'neutral',external:['https://*','npm:*'],logLevel:'silent'});
+HISTORICAL_EDGE_BUNDLE
+    )
   fi
   if [[ "$reentry_transport_probe" == 1 ]]; then
     cp "$repo_root/supabase/pending-tests/tournament-reentry-transport.ts" supabase/functions/tournament-reentry/index.ts
