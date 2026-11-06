@@ -9976,6 +9976,12 @@
       "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
       "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
       "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved26-migration package is required before production apply."
+    },
+    {
+      "version": "20261106025221",
+      "filename": "20261106025221_public_hud_visibility_required_work.sql",
+      "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
+      "reason": "Private visibility-generation required-work tracking with fenced completion, resumable pending-cursor upgrade and disabled-reader/worker/no-lease apply guards. Exact owner-approved27-migration package required before production apply."
     }
   ],
   "floorActiveAllowlist": [
