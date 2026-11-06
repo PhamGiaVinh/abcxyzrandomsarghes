@@ -934,7 +934,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}"
   # These operational stages share committed fixtures. A failed prerequisite
   # must fail the run immediately, not produce misleading downstream failures.
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
@@ -957,6 +957,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
   --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
+  --env LOCAL_OPERATIONS_MANUAL_ACTION_FINISH_ENABLED="$manual_action_finish_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1431,4 +1432,32 @@ TRACKER_QUEUE_FIXTURE
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress');")"
   if [[ "$finish_state" != '1|5|1|1' ]]; then echo "Canonical Finish/deferred apply conservation failed ($finish_state)" >&2; exit 1; fi
   echo 'MANUAL_FINISH_APPLY_PROOF:one applied reservation;two old-hand participants;three next-hand participants;single completed hand'
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'MANUAL_ACTION_ACTORS'
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
+  WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
+   AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
+ OR (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1
+ THEN RAISE EXCEPTION 'manual_action_actor_fixture_drift';END IF;
+END $$;
+INSERT INTO public.club_trackers(club_id,user_id,granted_by)
+SELECT 'a2000000-0000-4000-8000-000000000001',u.id,:'owner_id'::uuid
+FROM generate_series(1,20) n JOIN auth.users u ON u.email='cashier-latency-'||n||'@test.invalid';
+DO $$ BEGIN
+ IF (SELECT count(*) FROM public.club_trackers ct JOIN auth.users u ON u.id=ct.user_id
+  JOIN generate_series(1,20) n ON u.email='cashier-latency-'||n||'@test.invalid'
+  WHERE ct.club_id='a2000000-0000-4000-8000-000000000001')<>20
+ THEN RAISE EXCEPTION 'manual_action_twenty_actor_grants_required';END IF;
+END $$;
+COMMIT;
+MANUAL_ACTION_ACTORS
+  run_browser_proof '' '' 'twenty current manual Finish hands preserve supplied actions and payouts' '' '' '' '' '' '' '' 1
+  action_finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number BETWEEN 9002 AND 9022 AND status='completed'),
+    (SELECT count(*) FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001' AND h.hand_number BETWEEN 9002 AND 9022),
+    (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193),
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
+  if [[ "$action_finish_state" != '21|105|65|0' ]]; then echo "Manual action Finish conservation failed ($action_finish_state)" >&2; exit 1; fi
+  echo 'MANUAL_ACTION_FINISH_PROOF:21completed three-player hands;105exact actions;65seat snapshots;zero active hands'
 fi
