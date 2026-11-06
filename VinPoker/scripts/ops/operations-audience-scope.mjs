@@ -80,9 +80,13 @@ export function ownedAudienceCancellation(cause,controller,timeout,kind='http'){
 
 // PublicTournamentClock also reloads participation-derived counts on ranking.
 // Reconnect and withdrawal invalidate a pending request even without a clock hint.
+export function audienceScopeSignal(event){
+ const changed=event.reason==='changed',clearClock=changed&&event.components.includes('visibility');
+ const handOnly=changed&&event.components.includes('hand_visibility')&&!clearClock&&event.invalidatePending!==true;
+ return {invalidate:event.reason!=='status'&&(event.invalidatePending===true||clearClock||handOnly),clearClock,handOnly};
+}
 export function audienceClockSignal(event){
- const invalidate=event.reason!=='status'&&(event.invalidatePending===true
-  ||event.reason==='changed'&&event.components.includes('visibility'));
+ const scope=audienceScopeSignal(event),invalidate=scope.invalidate&&!scope.handOnly;
  return {invalidate,reload:event.reason!=='status'&&(invalidate
   ||event.components.includes('clock')||event.components.includes('ranking'))};
 }

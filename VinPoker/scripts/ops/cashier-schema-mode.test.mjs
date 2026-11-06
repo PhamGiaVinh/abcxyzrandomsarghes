@@ -1,7 +1,7 @@
 import test from 'node:test';
 import {selectedAudienceSections,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics,reentryServerTiming} from './operations-audience-scope.mjs';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -319,6 +319,19 @@ test('real HTTP body cancellation is owned; real timeout and HTTP failure remain
   }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
 
+test('ordinary verification preserves scope and clock while actual withdrawal still invalidates',()=>{
+ const all=['tables','ranking','payout','visibility','clock'];
+ assert.deepEqual(audienceScopeSignal({reason:'verify',components:all}),{invalidate:false,clearClock:false,handOnly:false});
+ assert.deepEqual(audienceClockSignal({reason:'verify',components:all}),{invalidate:false,reload:true});
+ assert.deepEqual(audienceScopeSignal({reason:'status',components:all}),{invalidate:false,clearClock:false,handOnly:false});
+ assert.deepEqual(audienceScopeSignal({reason:'changed',components:['tables']}),{invalidate:false,clearClock:false,handOnly:false});
+ assert.deepEqual(audienceScopeSignal({reason:'changed',components:['visibility']}),{invalidate:true,clearClock:true,handOnly:false});
+ assert.deepEqual(audienceScopeSignal({reason:'changed',components:['hand_visibility','tables']}),{invalidate:true,clearClock:false,handOnly:true});
+ assert.deepEqual(audienceClockSignal({reason:'changed',components:['hand_visibility','tables']}),{invalidate:false,reload:false});
+ assert.deepEqual(audienceScopeSignal({reason:'verify',components:['tables'],invalidatePending:true}),{invalidate:true,clearClock:false,handOnly:false});
+ assert.deepEqual(audienceScopeSignal({reason:'changed',components:['visibility','hand_visibility']}),{invalidate:true,clearClock:true,handOnly:false});
+});
+
 test('clock rechecks immediately after reconnect/withdrawal and on ranking hints',()=>{
   for(const event of [{reason:'verify',components:['tables'],invalidatePending:true},{reason:'changed',components:['visibility']}]){
     const state=audienceClockSignal(event);assert.equal(state.invalidate,true);assert.equal(state.reload,true);
@@ -432,6 +445,21 @@ test('latency-only collection rejects incomplete, transport and source failures 
  assert.ok(script.indexOf('Reentry generation/money/receipt conservation failed')>script.indexOf('REENTRY_LATENCY_ONLY_FAILURE'));
 });
 
+
+test('manual Finish latency-only collection requires every validated hand and retains final failure',()=>{
+ const match=script.match(/<<'MANUAL_FINISH_LATENCY_ONLY_FAILURE'\r?\n([\s\S]*?)\r?\nMANUAL_FINISH_LATENCY_ONLY_FAILURE/);assert.ok(match);
+ const dir=mkdtempSync(join(tmpdir(),'manual-finish-latency-gate-')),file=join(dir,'receipt.json'),sha='a'.repeat(40);
+ const keys=['startMs','finishMs','retryMs','receiptMs','independentReadMs'];
+ const fixture=()=>({sha,kind:'REAL_AUTH_TWENTY_MANUAL_SUPPLIED_ACTION_FINISH_HTTP',phase:'graded-failed',failure:null,warmupCompleted:true,actors:20,qualification:false,
+  rows:Array.from({length:20},(_,i)=>({handNumber:9003+i,...Object.fromEntries(keys.map(k=>[k,k==='independentReadMs'?1200:100]))})),
+  distributions:Object.fromEntries(keys.map(k=>[k,{samples:20,p95Ms:k==='independentReadMs'?1200:100,maxMs:k==='independentReadMs'?1200:100}]))});
+ const run=value=>{writeFileSync(file,JSON.stringify(value));return spawnSync(process.execPath,['--input-type=module','-',file,sha],{input:match[1],encoding:'utf8'}).status;};
+ assert.equal(run(fixture()),0);
+ for(const mutate of [r=>r.phase='setup-failed',r=>r.failure={kind:'deadline'},r=>r.sha='b'.repeat(40),r=>r.warmupCompleted=false,r=>r.actors=19,r=>r.rows.pop(),r=>r.rows[1].handNumber=9003,r=>r.rows[0].finishMs=-1,r=>r.rows[0].finishMs='100',r=>r.distributions.independentReadMs.p95Ms=999,r=>r.qualification=true]){const value=fixture();mutate(value);assert.notEqual(run(value),0);}
+ const fast=fixture();for(const row of fast.rows)row.independentReadMs=100;fast.distributions.independentReadMs={samples:20,p95Ms:100,maxMs:100};assert.notEqual(run(fast),0);
+ const gate=script.indexOf('if [[ "$manual_finish_latency_failed" == 1 ]]');assert.ok(gate>script.indexOf('MANUAL_FINISH_LATENCY_ONLY_FAILURE'));assert.match(script.slice(gate,gate+240),/exit 1/);assert.ok(gate<script.indexOf("<<'OPERATIONS_PACKAGE_FINISHED'"));
+ assert.ok(script.indexOf('Manual action Finish conservation failed')>script.indexOf('MANUAL_FINISH_LATENCY_ONLY_FAILURE'));
+});
 
 test('reentry timing export accepts only fixed scalar phases and never header text',()=>{
  const value='reentry_auth;dur=1.250;desc="1", reentry_configuration;dur=5.125;desc="3", reentry_total;dur=8.000';

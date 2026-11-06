@@ -10,7 +10,7 @@ import {createClient} from '@supabase/supabase-js';
 import {settleScopedFeltRead} from '../../tests/publicHud/scale.delivery.mjs';
 import {createAudienceGenerationEvidence} from './operations-audience-generation.mjs';
 import {createOperationalHandDeliveryEvidence,validateHandDeliverySelection,readHandDeliveryJournal} from './operations-audience-hand-delivery.mjs';
-import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness,recordAudienceDetailEvent} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness,recordAudienceDetailEvent} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -329,14 +329,15 @@ try{
   state.observation=loaded.observer.observePublicTournament(client,tour,event=>{
    state.online=event.online;
    if(event.reason==='status')return;
-   if(event.invalidatePending||event.components.includes('visibility')||event.components.includes('hand_visibility')){
+   const scopeSignal=audienceScopeSignal(event);
+   if(scopeSignal.invalidate){
     state.epoch++;state.controller?.abort();
     if(selected){
      if(event.invalidatePending){state.known={};state.dirty.clear();}
-     else if(event.components.includes('visibility'))state.known={};
+     else if(scopeSignal.clearClock)state.known={};
      else delete state.known.tables;
     }else{state.known={};state.dirty.add('tables');}
-    state.detailController?.abort();if(event.components.includes('visibility')){state.clockReady=false;state.clockInvalidations=(state.clockInvalidations??0)+1;}recordAudienceDetailEvent(state,event.components.includes('visibility')?'visibility':'invalidate');
+    state.detailController?.abort();if(scopeSignal.clearClock){state.clockReady=false;state.clockInvalidations=(state.clockInvalidations??0)+1;}recordAudienceDetailEvent(state,scopeSignal.clearClock?'visibility':'invalidate');
    }
    const clockSignal=audienceClockSignal(event);
    if(clockSignal.invalidate)state.clockController?.abort();

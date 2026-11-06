@@ -2089,7 +2089,24 @@ DO $$ BEGIN
 END $$;
 COMMIT;
 MANUAL_ACTION_ACTORS
-  run_browser_proof '' '' 'twenty current manual Finish hands preserve supplied actions and payouts' '' '' '' '' '' '' '' 1
+  manual_finish_latency_failed=0
+  if run_browser_proof '' '' 'twenty current manual Finish hands preserve supplied actions and payouts' '' '' '' '' '' '' '' 1; then
+    :
+  else
+    [[ "$operations_candidate_probe" == 1 ]] || exit 1
+    node --input-type=module - "$repo_root/output/operations-latency/cashier-http-manual-action-finish-http.json" "$source_sha" <<'MANUAL_FINISH_LATENCY_ONLY_FAILURE'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(r.sha,process.argv[3]);assert.equal(r.kind,'REAL_AUTH_TWENTY_MANUAL_SUPPLIED_ACTION_FINISH_HTTP');
+assert.equal(r.phase,'graded-failed');assert.equal(r.failure,null);assert.equal(r.warmupCompleted,true);assert.equal(r.actors,20);assert.equal(r.qualification,false);assert.equal(r.rows.length,20);
+assert.deepEqual(r.rows.map(x=>x.handNumber),Array.from({length:20},(_,i)=>9003+i));
+const keys=['startMs','finishMs','retryMs','receiptMs','independentReadMs'];
+for(const key of keys){const values=r.rows.map(x=>x[key]);assert.ok(values.every(x=>typeof x==='number'&&Number.isFinite(x)&&x>=0));values.sort((a,b)=>a-b);assert.equal(r.distributions[key].samples,20);assert.equal(r.distributions[key].p95Ms,values[18]);assert.equal(r.distributions[key].maxMs,values[19]);}
+assert.ok(keys.some(key=>r.distributions[key].p95Ms>1000));
+MANUAL_FINISH_LATENCY_ONLY_FAILURE
+    manual_finish_latency_failed=1
+    echo 'MANUAL_FINISH_LATENCY_FAILED:retained;collecting later stages after mandatory committed-state conservation'
+  fi
   action_finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number BETWEEN 9002 AND 9022 AND status='completed'),
     (SELECT count(*) FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001' AND h.hand_number BETWEEN 9002 AND 9022),
@@ -2156,6 +2173,10 @@ const report=JSON.parse(readFileSync(process.argv[3],'utf8'));assert.match(proce
 SCHEMA_UNCHANGED_RECEIPT
   fi
   finish_candidate_broadcast
+  if [[ "$manual_finish_latency_failed" == 1 ]]; then
+    echo 'Operational latency qualification FAILED:manual Finish1s gate;later measurements do not erase it' >&2
+    exit 1
+  fi
   if [[ "$reentry_latency_failed" == 1 ]]; then
     echo 'Operational latency qualification FAILED:reentry1s gate;later measurements do not erase it' >&2
     exit 1
