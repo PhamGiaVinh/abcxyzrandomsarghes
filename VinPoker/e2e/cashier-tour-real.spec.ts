@@ -1335,7 +1335,7 @@ test('current Floor deferred move reserves and cancels without joining an active
 
 test('inactive earned staff salary HTTP preserves approved period roster',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_STAFF_SALARY_ENABLED!=='1','Exact current salary contracts after all existing operational proofs');test.setTimeout(120_000);
- const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const lateActor=await loginOwner(page),staff=await loginFixtureStaff(),owner=staff[19].token,api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const club='af200000-0000-4000-8000-000000000001',id=(n:number)=>'af100000-0000-4000-8000-'+String(n).padStart(12,'0');
  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'numeric'}).formatToParts(new Date());
  const period={p_club_id:club,p_year:Number(parts.find(p=>p.type==='year')!.value),p_month:Number(parts.find(p=>p.type==='month')!.value)};
@@ -1373,8 +1373,8 @@ test('inactive earned staff salary HTTP preserves approved period roster',async(
   const approvedPeriodBefore=await periodSnapshot();
   phase='late-earned-after-approval';
   expect((await upsert(21,'active')).status).toBe('ok');
-  expect((await rpc(owner,'staff_check_in',{p_staff_id:id(21)})).outcome).toBe('checked_in');
-  expect((await rpc(owner,'staff_check_out',{p_staff_id:id(21)})).outcome).toBe('checked_out');
+  expect((await rpc(lateActor,'staff_check_in',{p_staff_id:id(21)})).outcome).toBe('checked_in');
+  expect((await rpc(lateActor,'staff_check_out',{p_staff_id:id(21)})).outcome).toBe('checked_out');
   expect((await upsert(21,'inactive')).status).toBe('ok');
   phase='approved-roster-concurrent-freeze';
   const repeated=await Promise.all(Array.from({length:20},()=>rpc(owner,'chot_staff_salary_month',period,'approvedFreeze')));

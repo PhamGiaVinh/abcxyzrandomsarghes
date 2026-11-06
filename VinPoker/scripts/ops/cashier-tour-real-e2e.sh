@@ -1364,8 +1364,14 @@ OFF_RACE_FIXTURE
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'STAFF_SALARY_FIXTURE'
 BEGIN;
+DO $$ BEGIN
+ IF (SELECT count(*) FROM auth.users WHERE email='cashier-latency-20@test.invalid')<>1
+ OR EXISTS(SELECT 1 FROM public.clubs WHERE owner_id=(SELECT id FROM auth.users WHERE email='cashier-latency-20@test.invalid'))
+ THEN RAISE EXCEPTION 'salary_fixture_requires_independent_unowned_actor';END IF;
+END $$;
 INSERT INTO public.clubs(id,owner_id,name,region,status)
-VALUES('af200000-0000-4000-8000-000000000001',:'owner_id'::uuid,'Staff salary HTTP TEST','HCM','approved');
+SELECT 'af200000-0000-4000-8000-000000000001',id,'Staff salary HTTP TEST','HCM','approved'
+FROM auth.users WHERE email='cashier-latency-20@test.invalid';
 INSERT INTO public.club_settings(club_id,standard_shifts_per_month)
 VALUES('af200000-0000-4000-8000-000000000001',26);
 INSERT INTO public.staff(id,club_id,user_id,full_name,department,employment_type,monthly_salary_vnd,manual_bhxh_vnd,manual_tax_vnd,status)
