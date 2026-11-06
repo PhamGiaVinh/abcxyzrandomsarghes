@@ -184,10 +184,20 @@ function ScopedFloorTableMapPanelV3({
       setLoading(false);
       return false;
     }
-    if (!silent) setLoading(true);
+    // Silent refresh may publish the new roster before its action lists.
+    // Retain the visible roster, but fence writes for every refresh generation.
+    setLoading(true);
     try {
       const settled = await Promise.allSettled([
-        v3.getTournamentTableRoster(tournament.id),
+        v3.getTournamentTableRoster(tournament.id).then(roster => {
+          // The authorized roster can render independently of action lists.
+          // Keep loading/write fences until all scoped reads have settled.
+          if (isCurrent() && roster.ok) {
+            setTables(roster.data);
+            setLoadError(null);
+          }
+          return roster;
+        }),
         tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : v3.getSeatableEntries(tournament.id),
         tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : v3.getRestorableEntries(tournament.id),
         tournamentEnded ? Promise.resolve({ ok: true as const, data: [] }) : v3.getPendingTrackerMoves(tournament.id),
@@ -203,9 +213,6 @@ function ScopedFloorTableMapPanelV3({
         const message = `Không tải được danh sách bàn: ${v3ErrorMessage(roster.error)}`;
         setLoadError(message);
         if (!silent) toast.error(message);
-      } else {
-        setTables(roster.data);
-        setLoadError(null);
       }
       if (entries.ok) setSeatableEntries(entries.data);
       if (restorable.ok) setRestorableEntries(restorable.data);

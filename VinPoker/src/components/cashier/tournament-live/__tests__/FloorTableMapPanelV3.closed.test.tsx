@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Tournament } from "@/types/tournament";
-const state = vi.hoisted(() => ({ roster: vi.fn(), entries: vi.fn(), restorable: vi.fn(), moves: vi.fn(), redraw: vi.fn() }));
+const state = vi.hoisted(() => ({ roster: vi.fn(), entries: vi.fn(), restorable: vi.fn(), moves: vi.fn(), redraw: vi.fn(), close: vi.fn() }));
 type LiveChannel = { changes: { table: string; filter: string; read: () => void }[]; status?: (value: string) => void; ready?: (value: { extension: string; status: string }) => void;
   on: (kind: string, filter: { table: string; filter: string }, read: () => void) => LiveChannel;
   subscribe: (status: (value: string) => void) => LiveChannel };
@@ -17,7 +17,7 @@ const client = { rpc: vi.fn(), removeChannel: vi.fn(async () => "ok"), channel: 
   live.channels.push(channel); return channel;
 }) };
 const v3 = { enabled: true, redrawSeatLockEnabled: true, getTournamentTableRoster: state.roster,
-  getSeatableEntries: state.entries, getRestorableEntries: state.restorable, getPendingTrackerMoves: state.moves };
+  getSeatableEntries: state.entries, getRestorableEntries: state.restorable, getPendingTrackerMoves: state.moves, closeTournamentTable: state.close };
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
 vi.mock("@/lib/floorTableControlV3", () => ({ createFloorTableControlV3Client: () => v3 }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { floorRedrawSeatLockV1: true, floorTableControlV3: false } }));
@@ -198,6 +198,56 @@ it("keeps the last roster visible while retiring its action context", async () =
   await waitFor(() => expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "false"));
 });
 
+it("renders the authorized roster before slow action lists while writes stay fenced", async () => {
+  let finish!: (value: {ok:true;data:[]}) => void;
+  state.entries.mockReturnValue(new Promise(resolve => {finish=resolve;}));
+  state.roster.mockResolvedValue({ok:true,data:[table(12)]});
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0}/>);
+  await screen.findByRole("button",{name:/Bàn 12, 0\/9 ghế/});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","true");
+  const refresh=screen.getByRole("button",{name:"Làm mới"});expect(refresh).toBeDisabled();
+  expect(state.entries).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button",{name:/Bàn 12, 0\/9 ghế/}));
+  expect(screen.queryByRole("button",{name:"Đóng bàn trống"})).not.toBeInTheDocument();
+  expect(state.close).not.toHaveBeenCalled();
+  await act(async()=>{finish({ok:true,data:[]});});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  expect(refresh).toBeEnabled();
+  expect(await screen.findByRole("button",{name:"Đóng bàn trống"})).toBeEnabled();
+});
+
+it("does not display a late roster from the previous actor while its action list is pending", async () => {
+  let finishRoster!: (value:{ok:true;data:ReturnType<typeof table>[]})=>void;
+  let finishEntries!: (value:{ok:true;data:[]})=>void;
+  state.roster.mockReturnValueOnce(new Promise(resolve=>{finishRoster=resolve;})).mockResolvedValue({ok:true,data:[table(14)]});
+  state.entries.mockReturnValueOnce(new Promise(resolve=>{finishEntries=resolve;})).mockResolvedValue({ok:true,data:[]});
+  const view=render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-a" sessionEpoch={1} refreshTrigger={0}/>);
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-b" sessionEpoch={2} refreshTrigger={0}/>);
+  await screen.findByRole("button",{name:/Bàn 14, 0\/9 ghế/});
+  await act(async()=>{finishRoster({ok:true,data:[table(13)]});finishEntries({ok:true,data:[]});});
+  expect(screen.queryByRole("button",{name:/Bàn 13, 0\/9 ghế/})).not.toBeInTheDocument();
+  expect(screen.getByRole("button",{name:/Bàn 14, 0\/9 ghế/})).toBeInTheDocument();
+});
+
+it("fences an already-open action sheet during a silent fallback with a slow action list", async () => {
+  vi.useFakeTimers();
+  state.roster.mockResolvedValue({ok:true,data:[table(15)]});
+  await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0}/>);});
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:/Bàn 15, 0\/9 ghế/}));});
+  expect(screen.getByRole("button",{name:"Đóng bàn trống"})).toBeEnabled();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  let finish!: (value:{ok:true;data:[]})=>void;
+  state.entries.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","true");
+  fireEvent.click(screen.getByRole("button",{name:"Đóng bàn trống"}));
+  expect(screen.queryByRole("button",{name:"Xác nhận đóng bàn"})).not.toBeInTheDocument();
+  expect(state.close).not.toHaveBeenCalled();
+  await act(async()=>{finish({ok:true,data:[]});});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  expect(screen.getByRole("button",{name:"Xác nhận đóng bàn"})).toBeEnabled();
+});
+
 it("advances snapshots under sustained hints while keeping writes fenced", async () => {
   vi.useFakeTimers();
   await act(async () => { render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />); });
@@ -214,7 +264,8 @@ it("advances snapshots under sustained hints while keeping writes fenced", async
   expect(screen.getByText("TEST table 3", { exact: false })).toBeInTheDocument();
   expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
   clearInterval(hints);
-  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  // Let the final hinted read settle before the separate2s fallback starts.
+  await act(async () => { await vi.advanceTimersByTimeAsync(600); });
   expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "false");
 });
 

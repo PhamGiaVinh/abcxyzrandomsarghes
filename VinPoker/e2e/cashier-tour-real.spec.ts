@@ -375,7 +375,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   const response=await fetch(`${api}/rest/v1/rpc/${name}`,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
   const payload=await response.json();expect(response.ok,name).toBe(true);return payload;
  };
- const rows:{operation:string;iteration:number;warmup:boolean;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
+ const rows:{operation:string;iteration:number;warmup:boolean;ackMs:number;writeToVisibleMs?:number;writeToActionReadyMs?:number;status:string}[]=[];
  let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false,channelJoined=false,publicTableBroadcastHints=0;
  const openedHints=new Set<string>(),closedHints=new Set<string>();
  page.on('websocket',socket=>socket.on('framereceived',frame=>{
@@ -404,6 +404,10 @@ test('canonical Floor open and close propagate into one continuously open screen
    const samples=rows.filter(row=>row.operation===operation&&!row.warmup&&row.status==='visible').map(row=>row.writeToVisibleMs!).sort((a,b)=>a-b);
    return [operation,{samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.length?samples.at(-1):null}];
   })),
+  actionReadinessDistributions:Object.fromEntries(['open','close'].map(operation=>{
+   const samples=rows.filter(row=>row.operation===operation&&!row.warmup&&typeof row.writeToActionReadyMs==='number').map(row=>row.writeToActionReadyMs!).sort((a,b)=>a-b);
+   return [operation,{samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.length?samples.at(-1):null}];
+  })),
   fixtureBuild:{floorV3:'preview',floorUatEnvironment:'preview',redraw:'off'},
   qualification:false,limitations:'Twenty serial canonical open/close pairs after two warmups on one empty TEST table;one continuously open actual screen. Excludes seat-move,dealer handover and concurrent staff capacity. No manual refresh/reload after initial screen load.',
  },null,2));
@@ -422,7 +426,7 @@ test('canonical Floor open and close propagate into one continuously open screen
   phase='open';const started=performance.now();
   const intent={p_tournament_id:tourId,p_game_table_id:gameTableId,p_control_mode:'manual',p_request_id:crypto.randomUUID()};
   const opened=await rpc('floor_open_tournament_table_v3',intent);expect(opened.ok).toBe(true);committedOpen=true;
-  const openRow={operation:'open',iteration,warmup:iteration<2,ackMs:performance.now()-started,status:'committed',writeToVisibleMs:undefined as number|undefined};
+  const openRow={operation:'open',iteration,warmup:iteration<2,ackMs:performance.now()-started,status:'committed',writeToVisibleMs:undefined as number|undefined,writeToActionReadyMs:undefined as number|undefined};
   rows.push(openRow);report();
   expect(await rpc('floor_open_tournament_table_v3',intent)).toEqual(opened);
   const roster=await rpc(rosterRpc,{p_tournament_id:tourId});
@@ -431,20 +435,29 @@ test('canonical Floor open and close propagate into one continuously open screen
   await expect(card).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});
   expect(openedHints.has(opened.table_session_id),'Missing source publication must not be silently synthesized by the fixture').toBe(false);
   openRow.writeToVisibleMs=performance.now()-started;openRow.status='visible';report();
+  await page.locator('[data-testid="floor-table-map-v3"][aria-busy="false"]').waitFor({state:'attached',timeout:Math.max(1,5000-(performance.now()-started))});
+  await expect(page.getByTestId('floor-table-map-v3').getByRole('alert')).toHaveCount(0);
+  openRow.writeToActionReadyMs=performance.now()-started;report();
   phase='close';const closing=performance.now();
   const closeIntent={p_tournament_table_id:opened.tournament_table_id,p_expected_revision:opened.revision,p_request_id:crypto.randomUUID()};
   const closed=await rpc('close_tournament_table_v3',closeIntent);expect(closed.ok).toBe(true);
-  const closeRow={operation:'close',iteration,warmup:iteration<2,ackMs:performance.now()-closing,status:'committed',writeToVisibleMs:undefined as number|undefined};
+  const closeRow={operation:'close',iteration,warmup:iteration<2,ackMs:performance.now()-closing,status:'committed',writeToVisibleMs:undefined as number|undefined,writeToActionReadyMs:undefined as number|undefined};
   rows.push(closeRow);report();
   expect(await rpc('close_tournament_table_v3',closeIntent)).toEqual(closed);
   await expect(card).toHaveCount(0,{timeout:Math.max(1,5000-(performance.now()-closing))});
   expect(closedHints.has(opened.table_session_id)).toBe(false);
   closeRow.writeToVisibleMs=performance.now()-closing;closeRow.status='visible';report();
+  await page.locator('[data-testid="floor-table-map-v3"][aria-busy="false"]').waitFor({state:'attached',timeout:Math.max(1,5000-(performance.now()-closing))});
+  await expect(page.getByTestId('floor-table-map-v3').getByRole('alert')).toHaveCount(0);
+  closeRow.writeToActionReadyMs=performance.now()-closing;report();
   }
   expect(rows.filter(row=>!row.warmup&&row.status==='visible')).toHaveLength(40);
   for(const operation of ['open','close']){
    const samples=rows.filter(row=>row.operation===operation&&!row.warmup).map(row=>row.writeToVisibleMs!).sort((a,b)=>a-b);
    expect(samples[18],operation+' write-to-visible p95').toBeLessThanOrEqual(3000);
+   const ready=rows.filter(row=>row.operation===operation&&!row.warmup).map(row=>row.writeToActionReadyMs!).sort((a,b)=>a-b);
+   expect(ready).toHaveLength(20);expect(ready.every(value=>Number.isFinite(value))).toBe(true);
+   expect(ready[18],operation+' write-to-action-ready p95').toBeLessThanOrEqual(3000);
   }
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
