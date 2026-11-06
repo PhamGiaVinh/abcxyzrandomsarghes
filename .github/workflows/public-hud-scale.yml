@@ -36,6 +36,11 @@ on:
         description: 'Diagnostic 1000 viewers/small history: three 30-second scenarios'
         type: boolean
         default: false
+      diagnostic_seconds:
+        description: 'Nonqualifying felt duration; full qualification always remains1800seconds'
+        type: choice
+        options: ['30', '300']
+        default: '30'
       clock_ui_probe:
         description: 'One real anonymous Chromium clock/source/broadcast probe before audience load'
         type: boolean
@@ -81,7 +86,7 @@ jobs:
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
       PUBLIC_HUD_WRITER_QUALIFICATION_METHOD: ${{ inputs.writer_method || 'startup' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
-      PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || '30' }}
+      PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || inputs.diagnostic_seconds || '30' }}
       PUBLIC_HUD_SCALE_TRANSPORT: ${{ inputs.hud_transport || 'product_rpc' }}
       PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
       PUBLIC_HUD_SCALE_EDGE_POLICY: ${{ inputs.edge_policy || 'per_worker' }}
