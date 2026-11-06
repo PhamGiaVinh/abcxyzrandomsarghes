@@ -69,6 +69,7 @@ cleanup() {
   local exit_code=$?
   if [[ -n "${hud_projector_pid:-}" ]]; then kill -TERM "$hud_projector_pid" 2>/dev/null || true;wait "$hud_projector_pid" 2>/dev/null || true;fi
   if [[ -n "${audience_pid:-}" ]]; then kill "$audience_pid" 2>/dev/null || true;wait "$audience_pid" 2>/dev/null || true;fi
+  if [[ -n "${db_pressure_pid:-}" ]]; then kill -TERM "$db_pressure_pid" 2>/dev/null || true;wait "$db_pressure_pid" 2>/dev/null || true;fi
   if [[ -n "${clock_flush_pid:-}" ]]; then kill "$clock_flush_pid" 2>/dev/null || true; wait "$clock_flush_pid" 2>/dev/null || true; fi
   if [[ "$exit_code" != 0 && ( "$clock_candidate_probe" == 1 || "$operations_candidate_probe" == 1 ) && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
@@ -1519,6 +1520,18 @@ CURRENT_SCHEMA_HTTP_READY
 import assert from 'node:assert/strict';import {writeFileSync} from 'node:fs';
 assert.match(process.argv[2],/^[a-f0-9]{32}$/);writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_BEFORE_CONTINUOUS_AUDIENCE',phase:'frozen-before-admission',before:process.argv[2],after:null,unchanged:null,ddlGuardEnabled:true,schemaCacheAcknowledged:true,cacheProbeScope:'New constant-only fixture signature on the single owned PostgREST instance;not product behavior or latency evidence',qualification:false,productionChanged:false},null,2));
 SCHEMA_FROZEN_RECEIPT
+    if [[ "$audience_count" == 1000 ]]; then
+      LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" node "$repo_root/scripts/ops/operations-db-pressure.mjs" "$db_container" \
+        "$repo_root/output/operations-latency/operations-db-pressure-http.json" >"$test_root/db-pressure-private.log" 2>&1 &
+      db_pressure_pid=$!
+      pressure_ready=false
+      for _ in {1..10}; do
+        if [[ -f "$repo_root/output/operations-latency/operations-db-pressure-http.json" ]] && jq -e '.phase=="observing" and .errors==0 and (.samples|length)>0' "$repo_root/output/operations-latency/operations-db-pressure-http.json" >/dev/null; then pressure_ready=true;break;fi
+        if ! kill -0 "$db_pressure_pid" 2>/dev/null; then echo 'Isolated database observer exited before admission' >&2;exit 1;fi
+        sleep 1
+      done
+      [[ "$pressure_ready" == true ]]
+    fi
     LOCAL_OPERATIONS_AUDIENCE_STATUS="$test_root/isolated-status.json" \
     LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
     LOCAL_OPERATIONS_AUDIENCE_REPORT="$repo_root/output/operations-latency/operations-audience-http.json" \
@@ -1952,6 +1965,11 @@ if [[ "$operations_candidate_probe" == 1 ]]; then
     kill -TERM "$audience_pid"
     wait "$audience_pid"
     audience_pid=''
+    if [[ -n "${db_pressure_pid:-}" ]]; then
+      kill -TERM "$db_pressure_pid"
+      wait "$db_pressure_pid"
+      db_pressure_pid=''
+    fi
     node --input-type=module - "$repo_root/output/operations-latency/operations-audience-http.json" "$audience_count" <<'AUDIENCE_FINAL_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {sql,jsonSql} from './nativeDb.mjs';
+import {sql,jsonSql,sqlAsync} from './nativeDb.mjs';
 const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;
 assert.match(database??'',/^vinpoker_hud_test_schema_fence_[a-z0-9_]+$/);
 assert.deepEqual(process.argv.slice(2),['--initialize']);
@@ -47,8 +47,22 @@ assert.equal(observation.capture,'unavailable');
 assert.equal(observation.reason,'fixture_scope_or_statistics_extension');
 assert.equal(sql('SELECT ops_load_fixture_v1.catalog_fingerprint();'),before);
 assert.equal(sql('SELECT frozen FROM ops_load_fixture_v1.schema_fence WHERE singleton;'),'t');
+const pressure=JSON.parse(sql(readFileSync(new URL('../../scripts/ops/operations-db-pressure.sql',import.meta.url),'utf8'),{captureFailure:true}));
+assert.equal(pressure.scopeReady,true);assert.ok(Number.isSafeInteger(pressure.observedAtMs));assert.ok(Array.isArray(pressure.clients));
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const holder=sqlAsync("BEGIN;SET LOCAL application_name='ops_pressure_holder';UPDATE ops_load_fixture_v1.business_probe SET value=value+1 WHERE id=1;SELECT pg_sleep(4);ROLLBACK;");
+void holder.catch(()=>{});
+let locked=false;
+for(let i=0;i<20&&!locked;i++){locked=sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='ops_pressure_holder' AND wait_event='PgSleep');")==='t';if(!locked)await sleep(100);}
+assert.equal(locked,true);
+const waiter=sqlAsync("BEGIN;SET LOCAL statement_timeout='8s';UPDATE ops_load_fixture_v1.business_probe SET value=value+1 WHERE id=1;ROLLBACK;");void waiter.catch(()=>{});
+let witnessedLock=false;
+for(let i=0;i<15&&!witnessedLock;i++){const observed=JSON.parse(sql(readFileSync(new URL('../../scripts/ops/operations-db-pressure.sql',import.meta.url),'utf8'),{captureFailure:true}));witnessedLock=observed.clients.some(row=>row.client==='other'&&row.lock_wait>=1);if(!witnessedLock)await sleep(100);}
+await Promise.all([holder,waiter]);assert.equal(witnessedLock,true,'Actual blocked writer must appear in aggregate lock waits');
+assert.equal(sql('SELECT value FROM ops_load_fixture_v1.business_probe WHERE id=1;'),'20');
+assert.equal(sql('SELECT ops_load_fixture_v1.catalog_fingerprint();'),before);
 const privacy=jsonSql(`SELECT jsonb_build_object('anon',has_function_privilege('anon','ops_load_fixture_v1.catalog_fingerprint()','EXECUTE'),
  'authenticated',has_table_privilege('authenticated','ops_load_fixture_v1.schema_fence','SELECT'),
  'service',has_function_privilege('service_role','ops_load_fixture_v1.guard_schema()','EXECUTE'));`);
 assert.deepEqual(privacy,{anon:false,authenticated:false,service:false});
-console.log(JSON.stringify({kind:'REAL_PG17_OPERATIONAL_SCHEMA_FREEZE',actionPreflightCompiled:true,malformedActionPreflightDenied:true,unmarkedTargetDenied:true,createBlocked:true,alterBlocked:true,grantBlocked:true,businessWrites:20,catalogUnchanged:true,profileReadUnderFence:true,privateFixture:true,qualification:false}));
+console.log(JSON.stringify({kind:'REAL_PG17_OPERATIONAL_SCHEMA_FREEZE',actionPreflightCompiled:true,malformedActionPreflightDenied:true,unmarkedTargetDenied:true,createBlocked:true,alterBlocked:true,grantBlocked:true,businessWrites:20,catalogUnchanged:true,profileReadUnderFence:true,actualLockObserved:true,privateFixture:true,qualification:false}));
