@@ -934,7 +934,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}"
   # These operational stages share committed fixtures. A failed prerequisite
   # must fail the run immediately, not produce misleading downstream failures.
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
@@ -956,6 +956,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
   --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
   --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
+  --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1419,4 +1420,15 @@ TRACKER_QUEUE_FIXTURE
       AND tracker_small_blind=100 AND tracker_big_blind=200 AND tracker_bba=200 AND tracker_is_break=false);")"
   if [[ "$deferred_state" != '21|0|2|1' ]]; then echo "Deferred queue/cancel conservation failed ($deferred_state)" >&2; exit 1; fi
   echo 'DEFERRED_QUEUE_CANCEL_PROOF:21cancelled reservations;zero unresolved;two frozen hand participants;active hand retained'
+  node "$repo_root/scripts/ops/prepare-tracker-finish-runtime-dependencies.mjs" "$test_root/tracker-finish-current.sql"
+  { printf "SET vinpoker.isolated_tracker_finish_fixture='cashier-current-manual-finish-v1';\n"; cat "$test_root/tracker-finish-current.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  run_browser_proof '' '' 'canonical zero-pot Finish applies a pending move only after the hand' '' '' '' '' '' '' 1
+  finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+    (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE requested_reason='isolated deferred apply TEST' AND status='applied'),
+    (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193),
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9001 AND status='completed'),
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress');")"
+  if [[ "$finish_state" != '1|5|1|1' ]]; then echo "Canonical Finish/deferred apply conservation failed ($finish_state)" >&2; exit 1; fi
+  echo 'MANUAL_FINISH_APPLY_PROOF:one applied reservation;two old-hand participants;three next-hand participants;single completed hand'
 fi
