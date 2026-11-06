@@ -15,7 +15,7 @@ export function measurePaidTourOperationWrites(sql,fixture,reportPath){
   'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.tournament_entries e WHERE tournament_id='${tour}'),
   'cash',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.cashier_buyin_movements c WHERE tournament_id='${tour}'),
   'registrations',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.tournament_registrations r WHERE tournament_id='${tour}'),
-  'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.table_operation_receipts r WHERE club_id='${club}'),
+  'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY operation_type,request_id) FROM public.table_operation_receipts r WHERE actor_id='${actor}'),
   'sessions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.table_sessions s WHERE tournament_id='${tour}'),
   'dealers',(SELECT jsonb_agg(to_jsonb(d) ORDER BY id) FROM public.dealers d WHERE club_id='${club}'),
   'attendance',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='${club}'))::text);`);
