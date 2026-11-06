@@ -651,6 +651,18 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
  const context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL});
  const viewer=await context.newPage();let phase='initial-public-read',ackMs:number|undefined,visibleMs:number|undefined,independentRunning=false;
  let realtimeJoined=false;
+ const publicReads:{rpc:string;status:number;code:string|null;rows:number|null;running:boolean|null;remaining:number|null;failure:string|null}[]=[];
+ viewer.on('response',async response=>{
+  const rpcName=new URL(response.url()).pathname.split('/').at(-1);
+  if(!['get_public_tournament_clock_summary','get_public_tournament_results'].includes(rpcName??''))return;
+  try{
+   const value=await response.json(),row=Array.isArray(value)?value[0]:null;
+   const code=typeof value?.code==='string'&&/^[A-Z0-9]{5,12}$/.test(value.code)?value.code:null;
+   const message=typeof value?.message==='string'?value.message:'';
+   const failure=/ambiguous/i.test(message)?'ambiguous_reference':/does not exist/i.test(message)?'missing_dependency':/permission denied/i.test(message)?'permission_denied':/public_payout_pending/.test(message)?'payout_pending':response.ok()?null:'other_rpc_failure';
+   if(publicReads.length<64)publicReads.push({rpc:rpcName!,status:response.status(),code,rows:Array.isArray(value)?value.length:null,running:typeof row?.is_running==='boolean'?row.is_running:null,remaining:typeof row?.remaining_seconds==='number'?row.remaining_seconds:null,failure});
+  }catch{if(publicReads.length<64)publicReads.push({rpc:rpcName!,status:response.status(),code:null,rows:null,running:null,remaining:null,failure:'unreadable_response'});}
+ });
  viewer.on('websocket',socket=>socket.on('framereceived',frame=>{try{
   const wire=JSON.parse(String(frame.payload)),event=Array.isArray(wire)?wire[3]:wire.event,topic=Array.isArray(wire)?wire[2]:wire.topic,payload=Array.isArray(wire)?wire[4]:wire.payload;
   if(event==='phx_reply'&&topic==='realtime:public:tournament-viewer-v2:'+tourId&&payload?.status==='ok')realtimeJoined=true;
@@ -659,7 +671,7 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
  const grouped=()=>['pause','resume'].map(action=>{const values=controls.filter(row=>row.action===action&&!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b);return {action,samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};});
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-clock-ui-http.json'),JSON.stringify({
   kind:'CANONICAL_CLOCK_RPC_START_TO_ANONYMOUS_PUBLIC_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,realtimeJoined,actors:1,anonymousObservers:1,startSamples:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
+  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,realtimeJoined,publicReads,actors:1,anonymousObservers:1,startSamples:ackMs===undefined?0:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
   limitations:'One start plus3warmup and20graded canonical pause/resume pairs through real HTTP on one continuously open anonymous screen. Start is a single observation,not p95. Realtime join is observed separately;join alone does not prove which signal caused each render.20s per transition is an observation timeout,not a newly approved latency target. No refresh/reload,Edge wrapper,next-level/automatic-break screen or mixed1000spectator claim. Separate control test covers CAS concurrency.',
  },null,2));
  const rpc=async(name:string,args:unknown)=>{
