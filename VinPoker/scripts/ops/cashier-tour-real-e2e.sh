@@ -1130,6 +1130,18 @@ END $$;
 NOTIFY pgrst,'reload schema';
 PAID_SEATING_PREFLIGHT
   echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/115/117/139/233 original guards; six production body fingerprints"
+  if [[ "$reentry_transport_probe" == 1 ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/pending-migrations/20261107013500_cashier_app_reentry_transport_v1.sql"
+    { printf "SET vinpoker.isolated_reentry_transport='current-composite-v1';\n";
+      cat "$repo_root/supabase/pending-tests/reentry_transport_notification_fault.sql"; } |
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'REENTRY_TRANSPORT_APPLIED_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(report.pendingReentryTransportMigrations,1);
+report.pendingReentryTransportApplied=true;writeFileSync(process.argv[2],JSON.stringify(report,null,2));
+REENTRY_TRANSPORT_APPLIED_RECEIPT
+  fi
 }
 
 install_current_revenue_schema() {
@@ -1392,13 +1404,7 @@ CLOCK_CANDIDATE_PREFLIGHT
     candidate_count=$((candidate_count+1))
   done <"$test_root/clock-candidate-migrations.list"
   [[ "$candidate_count" == 31 ]]
-  if [[ "$reentry_transport_probe" == 1 ]]; then
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      <"$repo_root/supabase/pending-migrations/20261107013500_cashier_app_reentry_transport_v1.sql"
-    { printf "SET vinpoker.isolated_reentry_transport='current-composite-v1';\n";
-      cat "$repo_root/supabase/pending-tests/reentry_transport_notification_fault.sql"; } |
-      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
-  fi
+
   candidate_flags="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT enabled,worker_enabled,backfill_complete FROM tracker_analytics_v1.config WHERE singleton;')"
   [[ "$candidate_flags" == 'f|f|f' ]]
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
@@ -1447,7 +1453,7 @@ CLOCK_BROADCAST_BOOTSTRAP
   fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" <<'OPERATIONS_PACKAGE_APPLIED'
 import {writeFileSync} from 'node:fs';
-writeFileSync(process.argv[2],JSON.stringify({kind:process.argv[4]==='1'?'BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME':'EXACT31_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:31,pendingReentryTransportMigrations:process.argv[4]==='1'?1:0,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. Optional pending transport is additional to base31,not in its release manifest. No mixed1000spectator capacity claim.'},null,2));
+writeFileSync(process.argv[2],JSON.stringify({kind:process.argv[4]==='1'?'BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME':'EXACT31_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:31,pendingReentryTransportMigrations:process.argv[4]==='1'?1:0,pendingReentryTransportApplied:false,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. Optional pending transport is additional to base31,not in its release manifest. No mixed1000spectator capacity claim.'},null,2));
 OPERATIONS_PACKAGE_APPLIED
   if [[ "$audience_count" != 0 ]]; then
     # Only the fresh isolated runtime is configured; hosted quotas stay intact.
@@ -2054,6 +2060,7 @@ SCHEMA_UNCHANGED_RECEIPT
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(report.phase,'package-applied');assert.equal(report.migrations,31);
+if(report.pendingReentryTransportMigrations===1)assert.equal(report.pendingReentryTransportApplied,true);
 report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on base31candidate'+(report.pendingReentryTransportMigrations===1?' plus pending reentry transport':'')+'. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
 writeFileSync(process.argv[2],JSON.stringify(report,null,2));
 OPERATIONS_PACKAGE_FINISHED

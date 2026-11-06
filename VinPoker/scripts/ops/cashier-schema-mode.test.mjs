@@ -431,4 +431,7 @@ test('pending reentry transport is explicit,current-only and capped before alloc
  assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
  assert.ok(script.indexOf('20261107013500_cashier_app_reentry_transport_v1.sql')<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
  assert.match(script,/BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME/);
+ const paid=script.slice(script.indexOf('install_current_paid_schema() {'),script.indexOf('install_current_revenue_schema() {'));
+ assert.ok(paid.indexOf('PAID_SEATING_SCHEMA_PROOF')<paid.indexOf('20261107013500_cashier_app_reentry_transport_v1.sql'));
+ assert.match(paid,/pendingReentryTransportApplied=true/);
 });
