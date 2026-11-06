@@ -6,7 +6,8 @@ import {isAbsolute} from 'node:path';
 // Exact current contracts for the disposable manual-Finish proof only.
 // Never execute this against production or expose the bare core to callers.
 const output=process.argv[2];
-assert.ok(output&&isAbsolute(output)&&process.argv.length===3,'absolute isolated output required');
+const beforeAudience=process.argv[3]==='--before-audience';
+assert.ok(output&&isAbsolute(output)&&(process.argv.length===3||process.argv.length===4&&beforeAudience),'absolute isolated output and known preparation phase required');
 const read=file=>readFileSync(new URL('../../supabase/migrations/'+file,import.meta.url),'utf8').replaceAll('\r\n','\n');
 const md5=value=>createHash('md5').update(value).digest('hex');
 const source95=read('20270128000095_tracker_manual_finish_intent_receipts_v1.sql');
@@ -35,8 +36,9 @@ DO $$ DECLARE p pg_proc%ROWTYPE;BEGIN
  OR NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
   WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
    AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
- OR (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9001 AND status='in_progress')<>1
- OR (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193)<>2
+ ${beforeAudience?`OR EXISTS(SELECT 1 FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number IN (9001,9002))
+ OR EXISTS(SELECT 1 FROM floor_private.tracker_hand_seat_snapshots193)`:`OR (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9001 AND status='in_progress')<>1
+ OR (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193)<>2`}
  OR ${absent} THEN RAISE EXCEPTION 'manual_finish_requires_owned_current_tracker_fixture';END IF;
  SELECT * INTO STRICT p FROM pg_proc WHERE oid='${core.signature}'::regprocedure;
  IF md5(replace(p.prosrc,chr(13),''))<>'461c01b156921261e3d4ebc904879e9e'

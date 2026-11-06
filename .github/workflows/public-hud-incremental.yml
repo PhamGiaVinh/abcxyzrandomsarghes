@@ -5,6 +5,7 @@ on:
       - '.github/workflows/public-hud-incremental.yml'
       - 'VinPoker/tests/publicHud/**'
       - 'VinPoker/scripts/ops/tracker-hud-shadow*'
+      - 'VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql'
       - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
       - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
       - 'VinPoker/supabase/functions/public-player-hud/**'
@@ -195,3 +196,7 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_spectator_source_lease_ci node tests/publicHud/spectator-source-lease.native.mjs --initialize
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit
+      - name: Continuous audience rejects schema changes
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_schema_fence_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_schema_fence_ci node tests/publicHud/operations.schema-freeze.native.mjs --initialize

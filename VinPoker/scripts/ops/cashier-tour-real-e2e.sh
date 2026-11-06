@@ -1052,6 +1052,165 @@ mkdir -p "$repo_root/output/operations-latency"
 # Share the app's already-isolated network namespace so the real browser uses
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
+current_schema_prepared=0
+install_current_paid_schema() {
+  # Canonical schema installation is independent of payment/refund fixture rows.
+  # Keep the exact current allocator and its original dependency guards.
+  # The public-only capture contains the allocator's helper functions but omits
+  # this private blocker queue. Restore only its exact source DDL/RLS/index,
+  # not unrelated mode writers. Read-only production catalog confirms ten columns.
+  node --input-type=module - "$repo_root" "$test_root/paid-private-dependencies.sql" <<'PAID_PRIVATE_SOURCE'
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const source=readFileSync(process.argv[2]+'/supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql','utf8').replaceAll('\r','');
+const start=source.indexOf('CREATE TABLE floor_private.table_mode_requests_v1 ('),end=source.indexOf('CREATE FUNCTION floor_private.resolve_table_mode_request_v1(');
+assert.ok(start>=0&&end>start);
+const ddl=source.slice(start,end).trim();
+assert.equal(createHash('sha256').update(ddl).digest('hex'),'ec5161591e98e6a71a4ee3cbca17e534cf02b2b56e24709604cd6a74a7aa8fda');
+writeFileSync(process.argv[3],`BEGIN;\nDO $$ BEGIN IF to_regclass('floor_private.table_mode_requests_v1') IS NOT NULL THEN RAISE EXCEPTION 'isolated_paid_mode_queue_collision';END IF;END $$;\n${ddl}\nCOMMIT;\n`,{mode:0o600});
+PAID_PRIVATE_SOURCE
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/paid-private-dependencies.sql"
+  for paid_migration in \
+    20270128000113_cashier_canonical_paid_seating_v1.sql \
+    20270128000114_cashier_canonical_reentry_seating_v1.sql \
+    20270128000115_cashier_server_priced_reentry_v1.sql \
+    20270128000117_cashier_correction_alert_seating_fence_v1.sql \
+    20270128000139_cashier_paid_stack_projection_v1.sql \
+    20270128000233_cashier_reentry_closed_registration_guard_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$paid_migration"
+  done
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAID_SEATING_PREFLIGHT'
+DO $$ BEGIN
+ IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_registration_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'f1f8edbbeb1da8b2d883f6322eafdbfd'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='floor_private.pick_cashier_canonical_seat_v1(uuid,text)'::regprocedure)<>'5917c0a1566cc7f63966cf5db4997ff5'
+ OR has_function_privilege('authenticated','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
+ OR has_function_privilege('anon','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.cashier_create_app_reentry_v1(uuid,uuid)'::regprocedure)<>'8c1fed4cdecbccde55c7f8ba5aa7b169'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public._assign_reentry_seat(uuid,uuid,uuid,uuid,uuid,text,integer)'::regprocedure)<>'e9fe638ef857c549b69283326a91dcd9'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_bust_player_v3(uuid,bigint,bigint,integer,uuid,text)'::regprocedure)<>'5e0a933c3abf478b159de9c621b53001'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_reentry_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'be049df28a3fcbaf969494aee86efb7a'
+ OR has_function_privilege('authenticated','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
+ OR has_function_privilege('anon','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
+ OR NOT has_function_privilege('service_role','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
+ THEN RAISE EXCEPTION 'isolated_paid_seating_production_contract_mismatch';END IF;
+END $$;
+NOTIFY pgrst,'reload schema';
+PAID_SEATING_PREFLIGHT
+  echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/115/117/139/233 original guards; six production body fingerprints"
+}
+
+install_current_revenue_schema() {
+  # Exact current tour-revenue family. The private classifier dependency is
+  # restored separately; this does not qualify or replay the Finance wrapper.
+  for revenue_migration in \
+    20261029092203_owner_tour_rake_live_read_v1.sql \
+    20261029092520_tour_revenue_buy_close_snapshot_v1.sql \
+    20261029092756_close_tournament_buy_v1.sql \
+    20261029100324_tour_revenue_shared_live_source_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$revenue_migration"
+  done
+  node "$repo_root/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs" "$test_root/revenue-classifier-dependency.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/revenue-classifier-dependency.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20261029102508_tour_revenue_buy_state_read_v1.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REVENUE_PARITY'
+DO $$ DECLARE expected record;actual pg_proc%ROWTYPE;BEGIN
+ FOR expected IN SELECT * FROM (VALUES
+  ('public.get_owner_tour_rake_live_v1(uuid)','56ded9283dae799954cbc0f90914a225',true,'s'),
+  ('public.get_tour_revenue_buy_close_v1(uuid)','db5a1bd401b7c4686631e2fcd21b0d3b',true,'s'),
+  ('public.close_tournament_buy_v1(uuid)','bf38ef9402512db5feec27153cd91ca9',true,'v'),
+  ('floor_private.tour_revenue_live_source_v1(uuid)','ba5b849a51a1abf21a14a122cc680bf6',true,'s'),
+  ('floor_private.capture_tour_revenue_buy_close_v1()','df9d3c4118478ea71f8cb84b798d46e3',true,'v'),
+  ('floor_private.keep_tour_revenue_snapshot_immutable_v1()','0f37eb46743e2c7305000afd299f9121',false,'v')
+ ) e(signature,body_md5,definer,volatility) LOOP
+  SELECT * INTO STRICT actual FROM pg_proc WHERE oid=expected.signature::regprocedure;
+  IF md5(replace(actual.prosrc,chr(13),''))<>expected.body_md5 OR actual.proowner<>'postgres'::regrole
+   OR actual.prosecdef<>expected.definer OR actual.provolatile::text<>expected.volatility
+   OR actual.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
+   OR has_function_privilege('anon',actual.oid,'EXECUTE') OR has_function_privilege('service_role',actual.oid,'EXECUTE')
+   OR has_function_privilege('authenticated',actual.oid,'EXECUTE') IS DISTINCT FROM (expected.signature LIKE 'public.%')
+  THEN RAISE EXCEPTION 'isolated_revenue_production_contract_mismatch: %',expected.signature;END IF;
+ END LOOP;
+ IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid='floor_private.tour_revenue_buy_close_v1'::regclass)
+ OR has_table_privilege('authenticated','floor_private.tour_revenue_buy_close_v1','SELECT')
+ OR EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename IN ('tournaments','tournament_registrations'))
+ THEN RAISE EXCEPTION 'isolated_revenue_privacy_or_publication_drift';END IF;
+END $$;
+NOTIFY pgrst,'reload schema';
+REVENUE_PARITY
+  echo "REVENUE_SCHEMA_PROOF:six current production body/owner/security/ACL fingerprints;private snapshot RLS;production-matching absent tournament/registration CDC;combined Finance wrapper not qualified"
+}
+
+install_current_replacement_schema() {
+  node "$repo_root/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs" "$test_root/replacement-dependencies.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$test_root/replacement-dependencies.sql"
+}
+
+install_current_salary_schema() {
+  node "$repo_root/scripts/ops/prepare-staff-salary-runtime-dependencies.mjs" "$test_root/staff-salary-current.sql"
+  { printf "SET vinpoker.isolated_staff_salary_fixture='cashier-current-salary-v1';\n"; cat "$test_root/staff-salary-current.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+}
+
+install_current_start_schema() {
+  node "$repo_root/scripts/ops/prepare-tracker-start-runtime-dependencies.mjs" "$test_root/tracker-start-current.sql"
+  { printf "SET vinpoker.isolated_tracker_start_fixture='cashier-current-tracker-v1';\n"; cat "$test_root/tracker-start-current.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+}
+
+install_current_finish_schema() {
+  node "$repo_root/scripts/ops/prepare-tracker-finish-runtime-dependencies.mjs" "$test_root/tracker-finish-current.sql" ${1:+"$1"}
+  { printf "SET vinpoker.isolated_tracker_finish_fixture='cashier-current-manual-finish-v1';\n"; cat "$test_root/tracker-finish-current.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+}
+
+install_current_action_schema() {
+  # The public-only captured baseline predates the action budget/decided guards.
+  # Restore their original guarded migrations before qualifying supplied actions.
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v install_phase="${1:-stage}" <<'ACTION_GUARD_PREFLIGHT'
+SELECT set_config('vinpoker.isolated_action_install', :'install_phase',false);
+DO $ BEGIN
+ IF current_user<>'postgres' OR NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
+  WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
+   AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
+ OR CASE WHEN current_setting('vinpoker.isolated_action_install',true)='before-audience' THEN
+   EXISTS(SELECT 1 FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number IN (9001,9002))
+   ELSE (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1 END
+ OR EXISTS(SELECT 1 FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001')
+ OR md5(replace((SELECT prosrc FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure),chr(13),'')) IS DISTINCT FROM '9d3c35935fa68e8137e6fe6577b578b5'
+ THEN RAISE EXCEPTION 'current_action_guards_require_owned_empty_action_fixture';END IF;
+END $$;
+ACTION_GUARD_PREFLIGHT
+  for action_guard_migration in \
+    20270128000189_tracker_action_stack_bound_v1.sql \
+    20270128000301_tracker_decided_hand_action_guard_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$action_guard_migration"
+  done
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'ACTION_GUARD_POSTCHECK'
+DO $$ DECLARE p pg_proc%ROWTYPE;BEGIN
+ SELECT * INTO STRICT p FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure;
+ IF md5(replace(p.prosrc,chr(13),''))<>'ccf4f55e6826bef6d4fe35dd7b38c30f' OR md5(replace(pg_get_functiondef(p.oid),chr(13),''))<>'fa4e8a99992729dfe13446dd5300014f'
+ OR p.proowner<>'postgres'::regrole OR NOT p.prosecdef OR p.provolatile<>'v' OR p.pronargdefaults<>6
+ OR p.proconfig IS DISTINCT FROM ARRAY['search_path=public']::text[] OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,authenticated=X/postgres}'
+ THEN RAISE EXCEPTION 'current_record_action_authority_drift';END IF;
+ SELECT * INTO STRICT p FROM pg_proc WHERE oid='floor_private.guard_tracker_action_stack189()'::regprocedure;
+ IF md5(replace(p.prosrc,chr(13),''))<>'59c8dbd2fd8a4e2135e782e67e1eea7c' OR md5(replace(pg_get_functiondef(p.oid),chr(13),''))<>'4f064c7755b5a8ee53e39caed61f7429'
+ OR p.proowner<>'postgres'::regrole OR NOT p.prosecdef OR p.provolatile<>'v' OR p.pronargdefaults<>0
+ OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[] OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres}'
+ OR NOT EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgname='trg_guard_tracker_action_stack189' AND t.tgrelid='public.hand_actions'::regclass
+  AND t.tgfoid=p.oid AND NOT t.tgisinternal AND t.tgenabled='O' AND md5(replace(pg_get_triggerdef(t.oid),chr(13),''))='2537fe8cd97049cffb7675436f814772')
+ THEN RAISE EXCEPTION 'current_action_stack_guard_attachment_drift';END IF;
+END $$;
+NOTIFY pgrst,'reload schema';
+ACTION_GUARD_POSTCHECK
+}
+
 run_browser_proof() {
   local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}" intelligence_enabled="${14:-}"
   # These operational stages share committed fixtures. A failed prerequisite
@@ -1236,6 +1395,16 @@ DO $$ BEGIN
  THEN RAISE EXCEPTION 'operational_audience_requires_fresh_owned_fixture';END IF;
 END $$;
 AUDIENCE_OWNED_PREFLIGHT
+    # Install the complete current contracts before continuous viewer admission.
+    # Fixture rows and all monetary/conservation assertions stay in their stages.
+    install_current_paid_schema
+    install_current_revenue_schema
+    install_current_replacement_schema
+    install_current_salary_schema
+    install_current_start_schema
+    install_current_finish_schema --before-audience
+    install_current_action_schema before-audience
+    current_schema_prepared=1
     if [[ "$audience_count" == 1000 ]]; then
       docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
         -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions;' \
@@ -1280,6 +1449,33 @@ assert.equal(receipt?.users,2000);assert.equal(receipt?.eventsPerSecond,20000);a
 assert.equal(receipt.cachedUsers,2000);assert.equal(receipt.cachedEventsPerSecond,20000);assert.equal(receipt.cachedJoinsPerSecond,5000);assert.equal(receipt.cachedBytesPerSecond,100000000);
 assert.equal(receipt.productionChanged,false);writeFileSync(process.argv[3],JSON.stringify(receipt,null,2));
 AUDIENCE_REALTIME_RECEIPT
+    # The fixed marker is set only inside this already-owned ephemeral stack.
+    { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
+      cat "$repo_root/supabase/pending-tests/operations_schema_freeze_fixture.sql"; } |
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
+    node --input-type=module - "$test_root/isolated-status.json" <<'CURRENT_SCHEMA_HTTP_READY'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const status=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(status.API_URL,'http://127.0.0.1:54321');
+const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'};
+const deadline=Date.now()+15000;let ready=false;
+while(Date.now()<deadline&&!ready){
+ try{
+  const clock=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{method:'POST',headers,body:JSON.stringify({p_tournament_id:'a3000000-0000-4000-8000-000000000001'}),signal:AbortSignal.timeout(1000)});await clock.arrayBuffer();
+  const denied=await fetch(status.API_URL+'/rest/v1/rpc/get_tracker_manual_finish_receipt_v1',{method:'POST',headers,body:JSON.stringify({p_intent:{}}),signal:AbortSignal.timeout(1000)});const denial=await denied.json();
+  ready=clock.status===200&&denied.status===403&&denial.code==='42501';
+ }catch{/* Startup readiness only; never classify a load failure as cancellation. */}
+ if(!ready)await new Promise(resolve=>setTimeout(resolve,250));
+}
+assert.ok(ready,'Current public read and denied private Finish receipt routes must be schema-ready before admission');
+CURRENT_SCHEMA_HTTP_READY
+    schema_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
+    [[ "$schema_before" =~ ^[0-9a-f]{32}$ ]]
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'UPDATE ops_load_fixture_v1.schema_fence SET frozen=true,admission_at=clock_timestamp() WHERE singleton;'
+    node --input-type=module - "$schema_before" "$repo_root/output/operations-latency/operations-schema-freeze-http.json" <<'SCHEMA_FROZEN_RECEIPT'
+import assert from 'node:assert/strict';import {writeFileSync} from 'node:fs';
+assert.match(process.argv[2],/^[a-f0-9]{32}$/);writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_BEFORE_CONTINUOUS_AUDIENCE',phase:'frozen-before-admission',before:process.argv[2],after:null,unchanged:null,ddlGuardEnabled:true,qualification:false,productionChanged:false},null,2));
+SCHEMA_FROZEN_RECEIPT
     LOCAL_OPERATIONS_AUDIENCE_STATUS="$test_root/isolated-status.json" \
     LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
     LOCAL_OPERATIONS_AUDIENCE_REPORT="$repo_root/output/operations-latency/operations-audience-http.json" \
@@ -1333,56 +1529,13 @@ fi
 echo "REFUND_BROWSER_PROOF: Tour B waiting-seat refund paid once, registration closed, no seat/receipt"
 
 if [[ "$schema_mode" == current ]]; then
-  # Separate stage: preserve the earlier baseline/refund/partial-payment proof,
-  # then restore the exact current allocator with its original dependency guards.
-  # The public-only capture contains the allocator's helper functions but omits
-  # this private blocker queue. Restore only its exact source DDL/RLS/index,
-  # not unrelated mode writers. Read-only production catalog confirms ten columns.
-  node --input-type=module - "$repo_root" "$test_root/paid-private-dependencies.sql" <<'PAID_PRIVATE_SOURCE'
-import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync} from 'node:fs';
-import {createHash} from 'node:crypto';
-const source=readFileSync(process.argv[2]+'/supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql','utf8').replaceAll('\r','');
-const start=source.indexOf('CREATE TABLE floor_private.table_mode_requests_v1 ('),end=source.indexOf('CREATE FUNCTION floor_private.resolve_table_mode_request_v1(');
-assert.ok(start>=0&&end>start);
-const ddl=source.slice(start,end).trim();
-assert.equal(createHash('sha256').update(ddl).digest('hex'),'ec5161591e98e6a71a4ee3cbca17e534cf02b2b56e24709604cd6a74a7aa8fda');
-writeFileSync(process.argv[3],`BEGIN;\nDO $$ BEGIN IF to_regclass('floor_private.table_mode_requests_v1') IS NOT NULL THEN RAISE EXCEPTION 'isolated_paid_mode_queue_collision';END IF;END $$;\n${ddl}\nCOMMIT;\n`,{mode:0o600});
-PAID_PRIVATE_SOURCE
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    <"$test_root/paid-private-dependencies.sql"
-  for paid_migration in \
-    20270128000113_cashier_canonical_paid_seating_v1.sql \
-    20270128000114_cashier_canonical_reentry_seating_v1.sql \
-    20270128000115_cashier_server_priced_reentry_v1.sql \
-    20270128000117_cashier_correction_alert_seating_fence_v1.sql \
-    20270128000139_cashier_paid_stack_projection_v1.sql \
-    20270128000233_cashier_reentry_closed_registration_guard_v1.sql; do
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      <"$repo_root/supabase/migrations/$paid_migration"
-  done
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAID_SEATING_PREFLIGHT'
-DO $$ BEGIN
- IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_registration_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'f1f8edbbeb1da8b2d883f6322eafdbfd'
- OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='floor_private.pick_cashier_canonical_seat_v1(uuid,text)'::regprocedure)<>'5917c0a1566cc7f63966cf5db4997ff5'
- OR has_function_privilege('authenticated','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
- OR has_function_privilege('anon','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
- OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.cashier_create_app_reentry_v1(uuid,uuid)'::regprocedure)<>'8c1fed4cdecbccde55c7f8ba5aa7b169'
- OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public._assign_reentry_seat(uuid,uuid,uuid,uuid,uuid,text,integer)'::regprocedure)<>'e9fe638ef857c549b69283326a91dcd9'
- OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_bust_player_v3(uuid,bigint,bigint,integer,uuid,text)'::regprocedure)<>'5e0a933c3abf478b159de9c621b53001'
- OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_reentry_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'be049df28a3fcbaf969494aee86efb7a'
- OR has_function_privilege('authenticated','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
- OR has_function_privilege('anon','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
- OR NOT has_function_privilege('service_role','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
- THEN RAISE EXCEPTION 'isolated_paid_seating_production_contract_mismatch';END IF;
-END $$;
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_paid_schema; fi
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAID_ASSET_FIXTURE'
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 SELECT ('ac700000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  'a2000000-0000-4000-8000-000000000001','Full cash seating TEST '||n,22+n,'tournament','inactive','available'
 FROM generate_series(1,3) n;
-NOTIFY pgrst,'reload schema';
-PAID_SEATING_PREFLIGHT
-  echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/115/117/139/233 original guards; six production body fingerprints; three new empty TEST assets only"
+PAID_ASSET_FIXTURE
   run_browser_proof 1 '' 'current Cashier full payment commits canonical seats'
   paid_seating_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
     "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
@@ -1416,47 +1569,7 @@ PAID_SEATING_PREFLIGHT
       (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='cashier_cash_buyin_v2');")"
   if [[ "$reentry_state" != '40|20|20|20|20|64|264000000|40|40|20|65' ]]; then echo "Reentry generation/money/receipt conservation failed ($reentry_state)" >&2; exit 1; fi
   echo "REENTRY_COMMIT_PROOF:20immutable paid source registrations/busted entries plus20new paid entry generations;20active seats;40tickets/projections;64cash movements/264000000TEST units;20bust/65cash receipts;no duplicate retries"
-  # Exact current tour-revenue family. The private classifier dependency is
-  # restored separately; this does not qualify or replay the Finance wrapper.
-  for revenue_migration in \
-    20261029092203_owner_tour_rake_live_read_v1.sql \
-    20261029092520_tour_revenue_buy_close_snapshot_v1.sql \
-    20261029092756_close_tournament_buy_v1.sql \
-    20261029100324_tour_revenue_shared_live_source_v1.sql; do
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      <"$repo_root/supabase/migrations/$revenue_migration"
-  done
-  node "$repo_root/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs" "$test_root/revenue-classifier-dependency.sql"
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    <"$test_root/revenue-classifier-dependency.sql"
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    <"$repo_root/supabase/migrations/20261029102508_tour_revenue_buy_state_read_v1.sql"
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REVENUE_PARITY'
-DO $$ DECLARE expected record;actual pg_proc%ROWTYPE;BEGIN
- FOR expected IN SELECT * FROM (VALUES
-  ('public.get_owner_tour_rake_live_v1(uuid)','56ded9283dae799954cbc0f90914a225',true,'s'),
-  ('public.get_tour_revenue_buy_close_v1(uuid)','db5a1bd401b7c4686631e2fcd21b0d3b',true,'s'),
-  ('public.close_tournament_buy_v1(uuid)','bf38ef9402512db5feec27153cd91ca9',true,'v'),
-  ('floor_private.tour_revenue_live_source_v1(uuid)','ba5b849a51a1abf21a14a122cc680bf6',true,'s'),
-  ('floor_private.capture_tour_revenue_buy_close_v1()','df9d3c4118478ea71f8cb84b798d46e3',true,'v'),
-  ('floor_private.keep_tour_revenue_snapshot_immutable_v1()','0f37eb46743e2c7305000afd299f9121',false,'v')
- ) e(signature,body_md5,definer,volatility) LOOP
-  SELECT * INTO STRICT actual FROM pg_proc WHERE oid=expected.signature::regprocedure;
-  IF md5(replace(actual.prosrc,chr(13),''))<>expected.body_md5 OR actual.proowner<>'postgres'::regrole
-   OR actual.prosecdef<>expected.definer OR actual.provolatile::text<>expected.volatility
-   OR actual.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
-   OR has_function_privilege('anon',actual.oid,'EXECUTE') OR has_function_privilege('service_role',actual.oid,'EXECUTE')
-   OR has_function_privilege('authenticated',actual.oid,'EXECUTE') IS DISTINCT FROM (expected.signature LIKE 'public.%')
-  THEN RAISE EXCEPTION 'isolated_revenue_production_contract_mismatch: %',expected.signature;END IF;
- END LOOP;
- IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid='floor_private.tour_revenue_buy_close_v1'::regclass)
- OR has_table_privilege('authenticated','floor_private.tour_revenue_buy_close_v1','SELECT')
- OR EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename IN ('tournaments','tournament_registrations'))
- THEN RAISE EXCEPTION 'isolated_revenue_privacy_or_publication_drift';END IF;
-END $$;
-NOTIFY pgrst,'reload schema';
-REVENUE_PARITY
-  echo "REVENUE_SCHEMA_PROOF:six current production body/owner/security/ACL fingerprints;private snapshot RLS;production-matching absent tournament/registration CDC;combined Finance wrapper not qualified"
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_revenue_schema; fi
   run_browser_proof '' '' 'current owner rake closes once and exports the immutable event-day snapshot' 1
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REVENUE_IMMUTABILITY'
 DO $$ DECLARE blocked boolean:=false;BEGIN
@@ -1497,7 +1610,7 @@ DO $$ DECLARE e record;p pg_proc%ROWTYPE;BEGIN
   THEN RAISE EXCEPTION 'isolated_exact_move_production_contract_mismatch: %',e.signature;END IF;
  END LOOP;
 END $$;
-NOTIFY pgrst,'reload schema';
+-- No schema changed in this parity read.
 MOVE_PARITY
   run_browser_proof '' '' 'current Floor exact movement conserves paid chips and retries through HTTP' '' 1
   movement_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
@@ -1530,8 +1643,7 @@ MOVE_PARITY
       (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL);")"
   if [[ "$active_checkout_state" != '21|21|21|21|2' ]]; then echo "Active checkout committed-state conservation failed ($active_checkout_state)" >&2; exit 1; fi
   echo "ACTIVE_CHECKOUT_COMMIT_PROOF:21active dealers checked out once;21released replacement-needed assignments/receipts/audits;worked minutes preserved;2other assigned tables unchanged"
-  node "$repo_root/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs" "$test_root/replacement-dependencies.sql"
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$test_root/replacement-dependencies.sql"
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REPLACEMENT_FIXTURE'
 BEGIN;
 INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
@@ -1547,7 +1659,6 @@ SELECT md5('checkout-replacement-attendance-'||n)::uuid,md5('checkout-replacemen
  now()-CASE WHEN n=3 THEN interval '1 minute' ELSE interval '20 minutes' END FROM generate_series(1,3) n;
 INSERT INTO public.club_settings(club_id,auto_swing_enabled) VALUES('ad500000-0000-4000-8000-000000000001',false)
 ON CONFLICT(club_id) DO UPDATE SET auto_swing_enabled=false;
-NOTIFY pgrst,'reload schema';
 COMMIT;
 REPLACEMENT_FIXTURE
   run_browser_proof '' '' 'active checkout respects automatic OFF and rested replacement eligibility' '' '' '' off
@@ -1606,18 +1717,15 @@ REPLACEMENT_FIXTURE
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'OFF_RACE_FIXTURE'
 BEGIN;
 -- Synthetic setup only: no claim this marker reset is a real release history.
-CREATE TEMP TABLE off_race_target AS SELECT payload FROM floor_private.dealer_initial_assign_receipts WHERE request_key LIKE 'checkout_replace_%';
-DO $$ BEGIN IF (SELECT count(*) FROM off_race_target)<>1 THEN RAISE EXCEPTION 'off_race_target_ambiguous';END IF;END $$;
-CREATE TEMP TABLE off_race_spare AS SELECT id FROM public.dealer_attendance WHERE id IN(md5('checkout-replacement-attendance-1')::uuid,md5('checkout-replacement-attendance-2')::uuid) AND current_state='available';
-DO $$ BEGIN IF (SELECT count(*) FROM off_race_spare)<>1 THEN RAISE EXCEPTION 'off_race_spare_ambiguous';END IF;END $$;
-UPDATE public.dealer_attendance SET last_released_at=now()-interval '20 minutes',pool_entered_at=now()-interval '20 minutes' WHERE id IN(SELECT id FROM off_race_spare);
+DO $$ DECLARE target jsonb;spare uuid;result jsonb;BEGIN
+ SELECT payload INTO STRICT target FROM floor_private.dealer_initial_assign_receipts WHERE request_key LIKE 'checkout_replace_%';
+ SELECT id INTO STRICT spare FROM public.dealer_attendance WHERE id IN(md5('checkout-replacement-attendance-1')::uuid,md5('checkout-replacement-attendance-2')::uuid) AND current_state='available';
+ UPDATE public.dealer_attendance SET last_released_at=now()-interval '20 minutes',pool_entered_at=now()-interval '20 minutes' WHERE id=spare;
 INSERT INTO public.dealers(id,club_id,full_name,status,tier,skills) VALUES(md5('checkout-replacement-dealer-4')::uuid,'ad500000-0000-4000-8000-000000000001','Replacement eligibility TEST 4','active','A',ARRAY['holdem']);
 INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,current_state,check_in_time,last_released_at,pool_entered_at) VALUES(md5('checkout-replacement-attendance-4')::uuid,md5('checkout-replacement-dealer-4')::uuid,'ad300000-0000-4000-8000-000000000003',(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,'checked_in','available',now()-interval '1 hour',now()-interval '20 minutes',now()-interval '20 minutes');
-GRANT SELECT ON off_race_target,off_race_spare TO service_role;
-SELECT set_config('request.jwt.claims','{"role":"service_role"}',true);
+PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
 SET LOCAL ROLE service_role;
-DO $$ DECLARE result jsonb;BEGIN
- SELECT public.worker_assign_dealer_to_session_v1((payload->>'club')::uuid,(payload->>'table')::uuid,(payload->>'session')::uuid,(SELECT id FROM pg_temp.off_race_spare),now()+interval '45 minutes','off_race_fixture_assignment') INTO result FROM pg_temp.off_race_target;
+ SELECT public.worker_assign_dealer_to_session_v1((target->>'club')::uuid,(target->>'table')::uuid,(target->>'session')::uuid,spare,now()+interval '45 minutes','off_race_fixture_assignment') INTO result;
  IF result->>'outcome' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'off_race_fixture_assignment_failed';END IF;
 END $$;
 COMMIT;
@@ -1666,9 +1774,7 @@ OFF_RACE_FIXTURE
   if [[ "$race_off_denials" != 1 ]]; then echo 'Exact OFF-denial attribution missing or duplicated' >&2; exit 1; fi
   printf '{"kind":"REAL_CHECKOUT_OFF_COMMIT_RACE","workerBlocked":true,"controlCommitted":true,"denial":"AUTO_SWING_OFF","denials":1,"activeAssignments":0,"checkoutReplacementReceipts":1,"qualification":false}\n' >"$repo_root/output/operations-latency/checkout-off-guard-http.json"
   echo 'REPLACEMENT_OFF_RACE_PROOF:actual worker blocked;OFF committed;checkout retained;no replacement or new receipt'
-  node "$repo_root/scripts/ops/prepare-staff-salary-runtime-dependencies.mjs" "$test_root/staff-salary-current.sql"
-  { printf "SET vinpoker.isolated_staff_salary_fixture='cashier-current-salary-v1';\n"; cat "$test_root/staff-salary-current.sql"; } | \
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_salary_schema; fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'STAFF_SALARY_FIXTURE'
 BEGIN;
 DO $$ BEGIN
@@ -1692,9 +1798,7 @@ DO $$ BEGIN IF (SELECT count(*) FROM public.staff WHERE club_id='af200000-0000-4
 COMMIT;
 STAFF_SALARY_FIXTURE
   run_browser_proof '' '' 'inactive earned staff salary HTTP preserves approved period roster' '' '' '' '' 1
-  node "$repo_root/scripts/ops/prepare-tracker-start-runtime-dependencies.mjs" "$test_root/tracker-start-current.sql"
-  { printf "SET vinpoker.isolated_tracker_start_fixture='cashier-current-tracker-v1';\n"; cat "$test_root/tracker-start-current.sql"; } | \
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_start_schema; fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'TRACKER_QUEUE_FIXTURE'
 INSERT INTO public.club_trackers(club_id,user_id,granted_by)
 VALUES('a2000000-0000-4000-8000-000000000001',:'owner_id'::uuid,:'owner_id'::uuid) ON CONFLICT DO NOTHING;
@@ -1726,9 +1830,7 @@ TRACKER_QUEUE_FIXTURE
       AND tracker_small_blind=100 AND tracker_big_blind=200 AND tracker_bba=200 AND tracker_is_break=false);")"
   if [[ "$deferred_state" != '21|0|2|1' ]]; then echo "Deferred queue/cancel conservation failed ($deferred_state)" >&2; exit 1; fi
   echo 'DEFERRED_QUEUE_CANCEL_PROOF:21cancelled reservations;zero unresolved;two frozen hand participants;active hand retained'
-  node "$repo_root/scripts/ops/prepare-tracker-finish-runtime-dependencies.mjs" "$test_root/tracker-finish-current.sql"
-  { printf "SET vinpoker.isolated_tracker_finish_fixture='cashier-current-manual-finish-v1';\n"; cat "$test_root/tracker-finish-current.sql"; } | \
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_finish_schema; fi
   run_browser_proof '' '' 'canonical zero-pot Finish applies a pending move only after the hand' '' '' '' '' '' '' 1
   finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
     (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE requested_reason='isolated deferred apply TEST' AND status='applied'),
@@ -1737,42 +1839,7 @@ TRACKER_QUEUE_FIXTURE
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress');")"
   if [[ "$finish_state" != '1|5|1|1' ]]; then echo "Canonical Finish/deferred apply conservation failed ($finish_state)" >&2; exit 1; fi
   echo 'MANUAL_FINISH_APPLY_PROOF:one applied reservation;two old-hand participants;three next-hand participants;single completed hand'
-  # The public-only captured baseline predates the action budget/decided guards.
-  # Restore their original guarded migrations before qualifying supplied actions.
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'ACTION_GUARD_PREFLIGHT'
-DO $$ BEGIN
- IF current_user<>'postgres' OR NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
-  WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
-   AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
- OR (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1
- OR EXISTS(SELECT 1 FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001')
- OR md5(replace((SELECT prosrc FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure),chr(13),'')) IS DISTINCT FROM '9d3c35935fa68e8137e6fe6577b578b5'
- THEN RAISE EXCEPTION 'current_action_guards_require_owned_empty_action_fixture';END IF;
-END $$;
-ACTION_GUARD_PREFLIGHT
-  for action_guard_migration in \
-    20270128000189_tracker_action_stack_bound_v1.sql \
-    20270128000301_tracker_decided_hand_action_guard_v1.sql; do
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      <"$repo_root/supabase/migrations/$action_guard_migration"
-  done
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'ACTION_GUARD_POSTCHECK'
-DO $$ DECLARE p pg_proc%ROWTYPE;BEGIN
- SELECT * INTO STRICT p FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure;
- IF md5(replace(p.prosrc,chr(13),''))<>'ccf4f55e6826bef6d4fe35dd7b38c30f' OR md5(replace(pg_get_functiondef(p.oid),chr(13),''))<>'fa4e8a99992729dfe13446dd5300014f'
- OR p.proowner<>'postgres'::regrole OR NOT p.prosecdef OR p.provolatile<>'v' OR p.pronargdefaults<>6
- OR p.proconfig IS DISTINCT FROM ARRAY['search_path=public']::text[] OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,authenticated=X/postgres}'
- THEN RAISE EXCEPTION 'current_record_action_authority_drift';END IF;
- SELECT * INTO STRICT p FROM pg_proc WHERE oid='floor_private.guard_tracker_action_stack189()'::regprocedure;
- IF md5(replace(p.prosrc,chr(13),''))<>'59c8dbd2fd8a4e2135e782e67e1eea7c' OR md5(replace(pg_get_functiondef(p.oid),chr(13),''))<>'4f064c7755b5a8ee53e39caed61f7429'
- OR p.proowner<>'postgres'::regrole OR NOT p.prosecdef OR p.provolatile<>'v' OR p.pronargdefaults<>0
- OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[] OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres}'
- OR NOT EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgname='trg_guard_tracker_action_stack189' AND t.tgrelid='public.hand_actions'::regclass
-  AND t.tgfoid=p.oid AND NOT t.tgisinternal AND t.tgenabled='O' AND md5(replace(pg_get_triggerdef(t.oid),chr(13),''))='2537fe8cd97049cffb7675436f814772')
- THEN RAISE EXCEPTION 'current_action_stack_guard_attachment_drift';END IF;
-END $$;
-NOTIFY pgrst,'reload schema';
-ACTION_GUARD_POSTCHECK
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_action_schema; fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'MANUAL_ACTION_ACTORS'
 BEGIN;
 DO $$ BEGIN
@@ -1780,6 +1847,7 @@ DO $$ BEGIN
   WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
    AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
  OR (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1
+ OR EXISTS(SELECT 1 FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001')
  THEN RAISE EXCEPTION 'manual_action_actor_fixture_drift';END IF;
 END $$;
 INSERT INTO public.club_trackers(club_id,user_id,granted_by)
@@ -1846,6 +1914,13 @@ import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(report.phase,'passed');assert.equal(report.viewers,Number(process.argv[3]));assert.ok(Object.values(report.checks).every(value=>value===true));
 AUDIENCE_FINAL_RECEIPT
+    schema_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT ops_load_fixture_v1.catalog_fingerprint()
+      WHERE EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+      AND EXISTS(SELECT 1 FROM pg_event_trigger WHERE evtname='ops_load_schema_frozen' AND evtenabled='O');")"
+    node --input-type=module - "$schema_after" "$repo_root/output/operations-latency/operations-schema-freeze-http.json" <<'SCHEMA_UNCHANGED_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[3],'utf8'));assert.match(process.argv[2],/^[a-f0-9]{32}$/);report.after=process.argv[2];report.unchanged=report.before===report.after;report.phase=report.unchanged?'unchanged-through-audience':'catalog-drift';writeFileSync(process.argv[3],JSON.stringify(report,null,2));assert.equal(report.unchanged,true,'Catalog/ACL/source contracts changed during continuous audience');
+SCHEMA_UNCHANGED_RECEIPT
   fi
   finish_candidate_broadcast
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
