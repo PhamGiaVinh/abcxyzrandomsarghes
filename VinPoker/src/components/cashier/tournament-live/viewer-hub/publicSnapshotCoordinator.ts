@@ -21,7 +21,6 @@ export class PublicSnapshotCoordinator {
   private queued = false;
   private stopped = false;
   private lastStartedAt: number | null = null;
-  private hasDispatchedHint = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly hintDelayMs:number;
 
@@ -40,11 +39,12 @@ export class PublicSnapshotCoordinator {
     if(this.timer)return;
     const elapsed = this.lastStartedAt === null ? Infinity : Date.now() - this.lastStartedAt;
     const intervalWait = Math.max(0, this.minIntervalMs - elapsed);
-    // Spread the first hint and bursts after idle time. During a continuous
-    // stream the existing phase already spreads clients; adding jitter again
-    // would lengthen every minimum interval and accumulate delivery delay.
-    const jitter = !this.hasDispatchedHint || elapsed >= this.minIntervalMs ? this.hintDelayMs : 0;
-    const wait = this.lastStartedAt === null ? 0 : intervalWait + jitter;
+    // Retain the viewer's spread during sustained traffic too. A shared fixed
+    // interval re-forms request waves and competes with HUD withdrawal checks.
+    // Ready readers keep a1.5–2s interval; a slow in-flight reader still owns
+    // its slot. Duplicate hints never move an already scheduled deadline and
+    // initial scope reads stay immediate.
+    const wait = this.lastStartedAt === null ? 0 : intervalWait + this.hintDelayMs;
     if (wait > 0) {
       this.queued = true;
       if (!this.timer) this.timer = setTimeout(() => {
@@ -66,7 +66,6 @@ export class PublicSnapshotCoordinator {
 
   private async run(): Promise<void> {
     this.running = true;
-    if (this.lastStartedAt !== null) this.hasDispatchedHint = true;
     this.lastStartedAt = Date.now();
     try {
       await this.refresh();

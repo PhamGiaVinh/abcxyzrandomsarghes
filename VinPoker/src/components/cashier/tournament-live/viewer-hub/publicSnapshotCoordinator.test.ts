@@ -2,16 +2,43 @@ import { describe, expect, it, vi } from "vitest";
 import { registerPublicTournamentRead, PublicSnapshotCoordinator, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
 
 describe("PublicSnapshotCoordinator", () => {
-  it('keeps the minimum interval without adding jitter to every continuous hint',async()=>{
+  it('retains the viewer spread during continuous hints without sliding an existing deadline',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
     try{
       const base=Date.now(),starts:number[]=[];
       const coordinator=new PublicSnapshotCoordinator(async()=>{starts.push(Date.now()-base);},1000,1000);
       coordinator.request();await Promise.resolve();coordinator.request();await vi.advanceTimersByTimeAsync(1500);
-      for(let i=0;i<4;i++){coordinator.request();await vi.advanceTimersByTimeAsync(1000);}
-      expect(starts).toEqual([0,1500,2500,3500,4500,5500]);
+      for(let i=0;i<4;i++){coordinator.request();await vi.advanceTimersByTimeAsync(750);coordinator.request();await vi.advanceTimersByTimeAsync(750);}
+      expect(starts).toEqual([0,1500,3000,4500,6000,7500]);
       expect(starts.slice(1).every((t,i)=>t-starts[i]>=1000)).toBe(true);coordinator.stop();
     }finally{random.mockRestore();vi.useRealTimers();}
+  });
+  it('bounds sustained thousand-viewer dispatches and eventually reads the latest source hint',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random');
+    const base=Date.now(),starts:{at:number;viewer:number}[]=[],seen=Array(1000).fill(0);let revision=0;
+    const coordinators=Array.from({length:1000},(_,viewer)=>{
+      random.mockReturnValue(viewer/1000);
+      return new PublicSnapshotCoordinator(async()=>{starts.push({at:Date.now()-base,viewer});seen[viewer]=revision;},PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS);
+    });
+    try{
+      coordinators.forEach(c=>c.request());await vi.advanceTimersByTimeAsync(0);
+      for(let tick=0;tick<32;tick++){await vi.advanceTimersByTimeAsync(250);revision++;coordinators.forEach(c=>c.request());}
+      const sustained=starts.filter(row=>row.at<=8000);
+      expect(sustained.length).toBeLessThan(5600);
+      expect(sustained.filter(row=>row.at===0)).toHaveLength(1000);
+      // Deterministic scheduling coverage, not a production traffic bound:
+      // retained client offsets spread successive waves into more windows.
+      const windows=new Map<number,number>();
+      sustained.filter(row=>row.at>0).forEach(row=>{const window=Math.floor(row.at/100);windows.set(window,(windows.get(window)??0)+1);});
+      expect(windows.size).toBeGreaterThan(40);
+      expect(Math.max(...windows.values())).toBeLessThanOrEqual(250);
+      for(let viewer=0;viewer<1000;viewer++){
+        const times=sustained.filter(row=>row.viewer===viewer).map(row=>row.at);
+        expect(times.length).toBeGreaterThanOrEqual(5);
+        expect(times.slice(1).every((time,index)=>time-times[index]>=1500&&time-times[index]<2000)).toBe(true);
+      }
+      await vi.advanceTimersByTimeAsync(2000);expect(seen.every(value=>value===revision)).toBe(true);
+    }finally{coordinators.forEach(c=>c.stop());random.mockRestore();vi.useRealTimers();}
   });
   it('still spreads repeated shared bursts after idle time across a thousand clients',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random');
