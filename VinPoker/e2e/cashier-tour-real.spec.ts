@@ -1161,6 +1161,16 @@ test('current Floor exact movement conserves paid chips and retries through HTTP
  const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-exact-move-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_EXACT_MOVE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,graded:20,warmup:0,rows,distributions:Object.fromEntries(['ackMs','retryMs','independentReadMs'].map(key=>[key,dist(rows.map(row=>row[key as keyof typeof row]))])),race,qualification:false,limitations:'Twenty serial moves of distinct paid entry2 players by20authorized cashier actors;manual-mode empty target seats in disposable9-max fixtures. Actual current v2/v3/v4/v5/queue writer bodies are production-hash pinned. Placement/independent owner reads use captured roster plus exact32 display patch,not the full current production reader. One21st move has20same-key concurrent requests from actor0. No browser move latency,active-hand deferred move,redraw,multiday-final runtime or mixed1000-viewer claim.'},null,2));
  try{
+  // With20players on3nine-seat tables, the other two tables can both fill
+  // while a source still contains2players. Open one explicit spare fixture
+  // through the real Floor intent, after all paid-seating/revenue proofs.
+  // Four tables guarantee a legal empty destination for this positive case.
+  phase='spare-capacity';
+  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorReadLoad:{gameTableIds:string[]}};
+  expect(fixture.floorReadLoad.gameTableIds).toHaveLength(20);
+  const spare=await rpc(owner,'floor_open_tournament_table_v3',{p_tournament_id:tour,p_game_table_id:fixture.floorReadLoad.gameTableIds[0],p_control_mode:'manual',p_request_id:crypto.randomUUID()});expect(spare.data.ok).toBe(true);
+  const opened=(await roster()).find(t=>t.tournament_table_id===spare.data.tournament_table_id);expect(opened).toBeTruthy();expect(opened!.table_session_id).toBe(spare.data.table_session_id);expect(opened!.control_mode).toBe('manual');expect(opened!.seats).toHaveLength(0);
+  phase='authorization';
   // This identity is created only inside the isolated harness, and owns a
   // different fixture club. Cashiers of this tour are legitimately operators.
   const otherLogin=await fetch(api+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({email:'other-owner-latency@test.invalid',password:'OtherOwnerLatencyFixture-2026!'}),signal:AbortSignal.timeout(5000)});expect(otherLogin.ok).toBe(true);const otherSession=await otherLogin.json();expect(typeof otherSession.access_token).toBe('string');
