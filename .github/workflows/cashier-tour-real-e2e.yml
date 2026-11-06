@@ -50,6 +50,12 @@ on:
         type: boolean
         default: false
 
+      operations_audience:
+        description: Isolated anonymous HTTP/WS viewers during full candidate operational suite
+        type: choice
+        options: ['0', '10', '1000']
+        default: '0'
+
 permissions:
   actions: read
   contents: read
@@ -143,6 +149,7 @@ jobs:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
           LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
+          LOCAL_OPERATIONS_AUDIENCE: ${{ inputs.operations_audience || '0' }}
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh

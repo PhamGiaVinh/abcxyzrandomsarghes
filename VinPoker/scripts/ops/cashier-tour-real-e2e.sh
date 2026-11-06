@@ -7,6 +7,7 @@ schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
 realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
 clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
+audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 case "$schema_mode" in
   pre03) ;;
   current)
@@ -24,6 +25,10 @@ if [[ "$clock_candidate_probe" != 0 && "$clock_candidate_probe" != 1 ]] || [[ "$
 fi
 if [[ "$operations_candidate_probe" != 0 && "$operations_candidate_probe" != 1 ]] || [[ "$operations_candidate_probe" == 1 && ( "$schema_mode" != current || "$realtime_mode" != 1 || "$clock_candidate_probe" != 0 ) ]]; then
   echo 'Candidate operations probe requires current isolated Realtime mode and excludes clock-only mode' >&2; exit 1
+fi
+case "$audience_count" in 0|10|1000) ;; *) echo 'Unsupported isolated operational audience' >&2;exit 1;; esac
+if [[ "$audience_count" != 0 && "$operations_candidate_probe" != 1 ]]; then
+  echo 'Operational audience requires explicit full candidate operations mode' >&2;exit 1
 fi
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
@@ -60,6 +65,7 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ -n "${audience_pid:-}" ]]; then kill "$audience_pid" 2>/dev/null || true;wait "$audience_pid" 2>/dev/null || true;fi
   if [[ -n "${clock_flush_pid:-}" ]]; then kill "$clock_flush_pid" 2>/dev/null || true; wait "$clock_flush_pid" 2>/dev/null || true; fi
   if [[ "$exit_code" != 0 && ( "$clock_candidate_probe" == 1 || "$operations_candidate_probe" == 1 ) && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
@@ -1077,6 +1083,27 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test "${test_args[@]}"
 }
+prepare_current_movement_schema() {
+  node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/clock-pre32-fixture.sql" --restore-clock-pre32
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/clock-pre32-fixture.sql"
+  for move_migration in \
+    20270128000029_floor_deferred_break_intent_v1.sql \
+    20270128000032_tournament_seat_display_preservation_v1.sql \
+    20270128000033_tournament_seat_move_tuple_v1.sql \
+    20270128000034_floor_move_wrapper_receipt_v1.sql \
+    20270128000038_floor_break_lowest_number_policy_v1.sql \
+    20270128000039_floor_break_ticket_audit_v1.sql \
+    20270128000040_floor_break_balanced_plan_v1.sql \
+    20270128000041_floor_deferred_move_ticket_audit_v1.sql \
+    20270128000042_floor_canonical_move_ticket_integrity_v1.sql \
+    20270128000043_floor_move_exact_intent_v1.sql \
+    20270128000048_floor_move_or_queue_exact_intent_v1.sql \
+    20270128000215_multiday_canonical_seat_relocation_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$move_migration"
+  done
+}
 finish_candidate_broadcast() {
   kill -TERM "$clock_flush_pid"
   wait "$clock_flush_pid"
@@ -1110,6 +1137,9 @@ DO $$ BEGIN
  THEN RAISE EXCEPTION 'candidate_clock_requires_owned_fresh_fixture';END IF;
 END $$;
 CLOCK_CANDIDATE_PREFLIGHT
+  # Full operations uses the current movement/read dependency chain before
+  # candidate wrappers are installed. Never roll those wrappers back mid-test.
+  if [[ "$operations_candidate_probe" == 1 ]]; then prepare_current_movement_schema;fi
   # The retained schema capture predates an already-live payout reader release.
   # Restore its exact missing private read dependencies, then apply its original
   # guarded migration. Never replace the candidate019 preimage requirement.
@@ -1180,7 +1210,43 @@ CLOCK_BROADCAST_BOOTSTRAP
 import {writeFileSync} from 'node:fs';
 writeFileSync(process.argv[2],JSON.stringify({kind:'EXACT29_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:29,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. No mixed1000spectator capacity claim.'},null,2));
 OPERATIONS_PACKAGE_APPLIED
-
+  if [[ "$audience_count" != 0 ]]; then
+    # Only the fresh isolated runtime is configured; hosted quotas stay intact.
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'AUDIENCE_OWNED_PREFLIGHT'
+DO $$ BEGIN
+ IF current_database()<>'postgres'
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST Tour')
+ OR EXISTS(SELECT 1 FROM tracker_analytics_v1.config WHERE enabled OR worker_enabled OR backfill_complete)
+ THEN RAISE EXCEPTION 'operational_audience_requires_fresh_owned_fixture';END IF;
+END $$;
+AUDIENCE_OWNED_PREFLIGHT
+    docker exec "$realtime_container" /app/bin/realtime rpc '
+      case Realtime.Api.update_tenant_by_external_id("realtime-dev", %{max_concurrent_users: 2000, max_events_per_second: 20000, max_joins_per_second: 5000, max_bytes_per_second: 100000000}) do
+       {:ok, tenant} when tenant.max_concurrent_users == 2000 and tenant.max_events_per_second == 20000 and tenant.max_joins_per_second == 5000 and tenant.max_bytes_per_second == 100000000 ->
+        IO.puts(Jason.encode!(%{kind: "ISOLATED_OPERATIONAL_REALTIME_LIMITS", users: tenant.max_concurrent_users, eventsPerSecond: tenant.max_events_per_second, joinsPerSecond: tenant.max_joins_per_second, bytesPerSecond: tenant.max_bytes_per_second, productionChanged: false, qualification: false}))
+       _ -> raise "isolated operational Realtime configuration failed"
+      end' >"$test_root/operations-audience-realtime.log" 2>&1
+    node --input-type=module - "$test_root/operations-audience-realtime.log" "$repo_root/output/operations-latency/operations-audience-realtime-http.json" <<'AUDIENCE_REALTIME_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const lines=readFileSync(process.argv[2],'utf8').split(/\r?\n/).filter(line=>line.startsWith('{'));
+const receipt=lines.map(line=>JSON.parse(line)).find(row=>row.kind==='ISOLATED_OPERATIONAL_REALTIME_LIMITS');
+assert.equal(receipt?.users,2000);assert.equal(receipt?.eventsPerSecond,20000);assert.equal(receipt?.joinsPerSecond,5000);assert.equal(receipt?.bytesPerSecond,100000000);
+assert.equal(receipt.productionChanged,false);writeFileSync(process.argv[3],JSON.stringify(receipt,null,2));
+AUDIENCE_REALTIME_RECEIPT
+    LOCAL_OPERATIONS_AUDIENCE_STATUS="$test_root/isolated-status.json" \
+    LOCAL_OPERATIONS_AUDIENCE_REPORT="$repo_root/output/operations-latency/operations-audience-http.json" \
+    LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
+      node "$repo_root/scripts/ops/operations-audience.mjs" >"$test_root/operations-audience-private.log" 2>&1 &
+    audience_pid=$!
+    audience_ready=false
+    for _ in {1..120}; do
+      if [[ -f "$repo_root/output/operations-latency/operations-audience-http.json" ]] && [[ "$(jq -r '.phase' "$repo_root/output/operations-latency/operations-audience-http.json")" == ready ]]; then audience_ready=true;break;fi
+      if ! kill -0 "$audience_pid" 2>/dev/null; then echo 'Operational audience exited before readiness' >&2;exit 1;fi
+      sleep 1
+    done
+    [[ "$audience_ready" == true ]]
+  fi
 fi
 run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
@@ -1364,25 +1430,9 @@ REVENUE_IMMUTABILITY
   echo "REVENUE_COMMIT_PROOF:one immutable event-day closure snapshot;41paid buys/21unique players;24600000rake/270600000collected TEST units;server reentry closed;actual browser CSV verified"
   # Restore the exact existing movement dependency chain only after the earlier
   # committed conservation proofs. Original migration preconditions remain intact.
-  node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/clock-pre32-fixture.sql" --restore-clock-pre32
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    <"$test_root/clock-pre32-fixture.sql"
-  for move_migration in \
-    20270128000029_floor_deferred_break_intent_v1.sql \
-    20270128000032_tournament_seat_display_preservation_v1.sql \
-    20270128000033_tournament_seat_move_tuple_v1.sql \
-    20270128000034_floor_move_wrapper_receipt_v1.sql \
-    20270128000038_floor_break_lowest_number_policy_v1.sql \
-    20270128000039_floor_break_ticket_audit_v1.sql \
-    20270128000040_floor_break_balanced_plan_v1.sql \
-    20270128000041_floor_deferred_move_ticket_audit_v1.sql \
-    20270128000042_floor_canonical_move_ticket_integrity_v1.sql \
-    20270128000043_floor_move_exact_intent_v1.sql \
-    20270128000048_floor_move_or_queue_exact_intent_v1.sql \
-    20270128000215_multiday_canonical_seat_relocation_v1.sql; do
-    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      <"$repo_root/supabase/migrations/$move_migration"
-  done
+  if [[ "$operations_candidate_probe" != 1 ]]; then
+    prepare_current_movement_schema
+  fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'MOVE_PARITY'
 DO $$ DECLARE e record;p pg_proc%ROWTYPE;BEGIN
  FOR e IN SELECT * FROM (VALUES
@@ -1740,12 +1790,22 @@ TELEGRAM_FIXTURE
 fi
 
 if [[ "$operations_candidate_probe" == 1 ]]; then
+  if [[ "$audience_count" != 0 ]]; then
+    kill -TERM "$audience_pid"
+    wait "$audience_pid"
+    audience_pid=''
+    node --input-type=module - "$repo_root/output/operations-latency/operations-audience-http.json" "$audience_count" <<'AUDIENCE_FINAL_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(report.phase,'passed');assert.equal(report.viewers,Number(process.argv[3]));assert.ok(Object.values(report.checks).every(value=>value===true));
+AUDIENCE_FINAL_RECEIPT
+  fi
   finish_candidate_broadcast
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(report.phase,'package-applied');assert.equal(report.migrations,29);
-report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on exact29candidate. HUD reads/worker remain OFF; no mixed1000spectator capacity or hosted cron claim.';
+report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on exact29candidate. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
 writeFileSync(process.argv[2],JSON.stringify(report,null,2));
 OPERATIONS_PACKAGE_FINISHED
 fi

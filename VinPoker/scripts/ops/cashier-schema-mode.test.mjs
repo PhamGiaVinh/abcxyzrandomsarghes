@@ -1,4 +1,6 @@
 import test from 'node:test';
+import http from 'node:http';
+import {ownedAudienceCancellation,audienceClockSignal} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,11 +12,11 @@ import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
-function rejectedPreflight(mode,realtime='0',operations='0',clock='0') {
+function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
-  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -148,4 +150,61 @@ test('shared flusher accepts exactly one candidate mode and retains disposable t
     const result=spawnSync(process.execPath,[filename],{encoding:'utf8',env:{...process.env,LOCAL_CLOCK_CANDIDATE_PROBE:clock,LOCAL_OPERATIONS_CANDIDATE_PROBE:operations,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_CLOCK_CANDIDATE_STATUS:'/invalid-target'}});
     assert.notEqual(result.status,0);assert.match(result.stderr,/cashier-e2e-/);assert.doesNotMatch(result.stderr,/Exactly one candidate probe mode is required/);
   }
+});
+
+test('mixed audience cannot run outside exact candidate or exceed bounded load',()=>{
+  const unsupported=rejectedPreflight('current','1','1','0','1001');assert.equal(unsupported.status,1);assert.match(unsupported.stderr,/Unsupported isolated operational audience/);
+  const unscoped=rejectedPreflight('current','1','0','0','10');assert.equal(unscoped.status,1);assert.match(unscoped.stderr,/requires explicit full candidate operations mode/);
+  for(const count of ['10','1000']){const valid=rejectedPreflight('current','1','1','0',count);assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);}
+});
+
+test('audience executable rejects invalid mode, count and non-disposable status before connection',()=>{
+  const filename=fileURLToPath(new URL('./operations-audience.mjs',import.meta.url));
+  const base={...process.env,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_CLOCK_CANDIDATE_PROBE:'0',LOCAL_OPERATIONS_AUDIENCE:'10',LOCAL_OPERATIONS_AUDIENCE_STATUS:'/invalid-target'};
+  for(const [override,pattern]of [[{LOCAL_OPERATIONS_AUDIENCE:'1001'},/Explicit bounded isolated audience required/],[{LOCAL_OPERATIONS_CANDIDATE_PROBE:'0'},/ERR_ASSERTION/],[{},/cashier-e2e-/]]){
+    const result=spawnSync(process.execPath,[filename],{encoding:'utf8',env:{...base,...override}});assert.notEqual(result.status,0);assert.match(result.stderr,pattern);
+  }
+});
+
+test('shutdown cannot erase HTTP errors or a deadline that won an abort race',async()=>{
+  const scope=new AbortController(),deadline=new AbortController();scope.abort();
+  assert.equal(ownedAudienceCancellation(new Error('HTTP_503'),scope,deadline.signal),false);
+  assert.equal(ownedAudienceCancellation(scope.signal.reason,scope,deadline.signal),true);
+  deadline.abort(new DOMException('Deadline','TimeoutError'));
+  assert.equal(ownedAudienceCancellation(scope.signal.reason,scope,deadline.signal),false);
+  assert.equal(ownedAudienceCancellation(new DOMException('Deadline','TimeoutError'),scope,deadline.signal,'table'),false);
+  assert.equal(ownedAudienceCancellation({publicTableCallerCancelled:true},scope,deadline.signal,'table'),true);
+});
+
+test('real HTTP body cancellation is owned; real timeout and HTTP failure remain errors after stop',async()=>{
+  const server=http.createServer((request,response)=>{
+    if(request.url==='/status'){response.writeHead(503);response.end('{}');return;}
+    if(request.url==='/body'){response.writeHead(200,{'Content-Type':'application/json'});response.write('{');}
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base='http://127.0.0.1:'+server.address().port;
+  try{
+    const scope=new AbortController(),timeout=AbortSignal.timeout(5000);
+    const response=await fetch(base+'/body',{signal:AbortSignal.any([scope.signal,timeout])});
+    const pending=response.json();scope.abort();
+    const cause=await pending.then(()=>null,error=>error);assert.ok(cause);
+    assert.equal(ownedAudienceCancellation(cause,scope,timeout),true);
+    const lateScope=new AbortController(),deadline=AbortSignal.timeout(30);
+    const timeoutCause=await fetch(base+'/slow',{signal:AbortSignal.any([lateScope.signal,deadline])}).then(()=>null,error=>error);
+    lateScope.abort();assert.ok(timeoutCause);assert.equal(ownedAudienceCancellation(timeoutCause,lateScope,deadline),false);
+    const failedScope=new AbortController(),failedTimeout=AbortSignal.timeout(5000);
+    const failed=await fetch(base+'/status',{signal:AbortSignal.any([failedScope.signal,failedTimeout])});
+    assert.equal(failed.status,503);const httpError=new Error('HTTP_503');failedScope.abort();
+    assert.equal(ownedAudienceCancellation(httpError,failedScope,failedTimeout),false);
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test('clock rechecks immediately after reconnect/withdrawal and on ranking hints',()=>{
+  for(const event of [{reason:'verify',components:['tables'],invalidatePending:true},{reason:'changed',components:['visibility']}]){
+    const state=audienceClockSignal(event);assert.equal(state.invalidate,true);assert.equal(state.reload,true);
+    const controller=new AbortController();if(state.invalidate)controller.abort();assert.equal(controller.signal.aborted,true);
+  }
+  assert.deepEqual(audienceClockSignal({reason:'changed',components:['ranking']}),{invalidate:false,reload:true});
+  assert.deepEqual(audienceClockSignal({reason:'changed',components:['tables']}),{invalidate:false,reload:false});
+  assert.deepEqual(audienceClockSignal({reason:'status',components:['clock','ranking']}),{invalidate:false,reload:false});
 });
