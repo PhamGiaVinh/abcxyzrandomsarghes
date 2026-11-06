@@ -81,6 +81,24 @@ cleanup() {
       process.stdout.write(JSON.stringify({kind:"SANITIZED_ISOLATED_GATEWAY_FAILURE_CLASSIFICATIONS",qualification:false,markers,limitations:"Last1000gateway log lines,fixed marker counts only;not a per-request causal attribution."}));
     ' >"$repo_root/output/operations-latency/gateway-failure-http.json" || true
   fi
+  if [[ "$exit_code" != 0 && -n "${db_container:-}" ]]; then
+    mkdir -p "$repo_root/output/operations-latency"
+    # A witnessed502 scope read needs DB/PostgREST process diagnostics. Export
+    # fixed event counts only,never raw statements,JWTs,headers or request logs.
+    for diagnostic_service in database postgrest; do
+      diagnostic_container="$db_container"
+      if [[ "$diagnostic_service" == postgrest ]]; then diagnostic_container="$(docker ps -aq --filter "network=$network" --filter 'name=supabase_rest_' | head -n 1)";fi
+      if [[ -n "$diagnostic_container" ]]; then
+        docker logs "$diagnostic_container" --tail 1000 2>&1 | node --input-type=module -e '
+          import {readFileSync} from "node:fs";
+          const raw=readFileSync(0,"utf8");
+          const patterns={segmentationFault:/segmentation fault|terminated by signal 11/gi,outOfMemory:/out of memory|oom.kill|cannot allocate memory/gi,panic:/\bPANIC\b/g,terminatingConnection:/terminating connection/gi,connectionReset:/connection reset|connection refused|connection terminated/gi,recovery:/database system is in recovery|database system was interrupted/gi,poolTimeout:/PGRST003|connection acquisition timeout|timed out acquiring/gi,schemaCacheReload:/schema cache (?:loaded|reloaded)/gi};
+          const markers=Object.fromEntries(Object.entries(patterns).map(([key,pattern])=>[key,[...raw.matchAll(pattern)].length]));
+          process.stdout.write(JSON.stringify({kind:"SANITIZED_ISOLATED_DATABASE_OR_POSTGREST_PROCESS_EVENTS",qualification:false,markers,limitations:"Last1000container log lines;fixed marker counts only,not per-request causal attribution or a crash-free proof."}));
+        ' >"$repo_root/output/operations-latency/$diagnostic_service-process-http.json" || true
+      fi
+    done
+  fi
   if [[ "$exit_code" != 0 && "$realtime_mode" == 1 && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
     # Fixed catalog fields only: no environment, credentials, claims or rows.
@@ -956,7 +974,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}" intelligence_enabled="${14:-}"
   # These operational stages share committed fixtures. A failed prerequisite
   # must fail the run immediately, not produce misleading downstream failures.
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
@@ -982,6 +1000,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_MANUAL_ACTION_FINISH_ENABLED="$manual_action_finish_enabled" \
   --env LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED="$recorded_action_finish_enabled" \
   --env LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED="$telegram_sink_enabled" \
+  --env LOCAL_OPERATIONS_INTELLIGENCE_ENABLED="$intelligence_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1551,5 +1570,6 @@ TELEGRAM_FIXTURE
       (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.full_name LIKE 'Notification TEST%' AND a.status='checked_in');")"
     if [[ "$telegram_state" != '22|22|0' ]]; then echo "Notification checkout conservation failed ($telegram_state)" >&2;exit 1;fi
     echo 'TELEGRAM_SYNTHETIC_PROOF:22canonical checkouts;20graded group/DM pairs;single-send20contender race;provider-failure retains checkout'
+    run_browser_proof '' '' 'owner Intelligence reads match confirmed registration identities over real HTTP' '' '' '' '' '' '' '' '' '' '' 1
   fi
 fi

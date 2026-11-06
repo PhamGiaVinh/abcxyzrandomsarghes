@@ -4,6 +4,9 @@ import {createHash} from 'node:crypto';
 import {availableParallelism,cpus,totalmem} from 'node:os';
 import {createClient} from '@supabase/supabase-js';
 import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '../src/lib/financeSummaryRead';
+import {parseSeriesClubLivePulseV1} from '../src/lib/series-intelligence/seriesClubLivePulseV1';
+import {parseOpsIntelligenceContextV1} from '../src/ops/intelligence/opsIntelligenceContextV1';
+import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelligenceTimelineV1';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -1487,6 +1490,33 @@ test('checkout notifications reach the isolated HTTP sink once with dealer tags'
   const faultId=await checkin(22),faultBefore=(await snapshot()).length,fault=await checkout(22,faultId),attempts=(await snapshot()).slice(faultBefore);expect(attempts.filter(m=>m.chatId==='-1000000000001'&&!m.accepted)).toHaveLength(3);expect(attempts.filter(m=>m.chatId==='9900000000022'&&m.accepted)).toHaveLength(1);await verifyAttendance(faultId,fault.value.check_out_time);expect((await checkout(22,faultId)).value.idempotent).toBe(true);expect(await snapshot()).toHaveLength(faultBefore+4);
   providerFailure={group503Attempts:3,dmAccepted:1,checkoutCommitted:true,replayDidNotResend:true,checkoutMs:fault.ms};expect(rows).toHaveLength(20);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}finally{await fetch(sink+'/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({failGroup:false})}).catch(()=>{});}
+});
+
+test('owner Intelligence reads match confirmed registration identities over real HTTP',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_INTELLIGENCE_ENABLED!=='1','Owner read-only Intelligence stage');test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'}),samples:Record<string,number[]>={pulse:[],context:[],timeline:[]};let phase='setup',failure:unknown=null,evidence:unknown=null;
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-intelligence-http.json'),JSON.stringify({kind:'REAL_AUTH_OWNER_INTELLIGENCE_PULSE_CONTEXT_TIMELINE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,evidence,distributions:Object.fromEntries(Object.entries(samples).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return [key,{samples:values.length,p95Ms:values.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null}];})),qualification:false,limitations:'One actual owner session,20cycles of3parallel real PostgREST RPCs after3warmups. Production client parsers retained. Pulse confirmed event-day registrations/unique canonical identities independently compared with owner source reads;confirmed entries are not assumed to equal paid buys or financial rake. Context/timeline transport+parse,not chart render,source-to-Intelligence propagation latency,fullLiveOps adapter,AI provider or mixed1000spectator load. Partial source states remain partial.'},null,2));
+ const names={pulse:'get_series_club_live_pulse_v1',context:'get_ops_intelligence_context_v1',timeline:'get_ops_intelligence_timeline_v1'} as const;
+ const args=(key:keyof typeof names,clubId=club)=>key==='timeline'?{p_club_id:clubId,p_tournament_id:tour}:{p_club_id:clubId};
+ const call=async(key:keyof typeof names,token=owner,clubId=club)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+names[key],{method:'POST',headers:headers(token),body:JSON.stringify(args(key,clubId)),signal:AbortSignal.timeout(5000)});const value=await response.json();return {response,value,ms:performance.now()-started};};
+ const accepted=async(key:keyof typeof names,graded:boolean)=>{const result=await call(key);if(!result.response.ok)failure={rpc:names[key],status:result.response.status,code:typeof result.value?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(result.value.code)?result.value.code:null,messageSha256:typeof result.value?.message==='string'?createHash('sha256').update(result.value.message).digest('hex'):null};expect(result.response.ok,names[key]).toBe(true);const value=key==='pulse'?parseSeriesClubLivePulseV1(result.value):key==='context'?parseOpsIntelligenceContextV1(result.value,club):parseOpsIntelligenceTimelineV1(result.value,club,tour);if(graded)samples[key].push(result.ms);return value;};
+ const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers:headers(owner),signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
+ try{
+  phase='authority';for(const key of ['pulse','context','timeline'] as const){expect((await call(key,staff[0].token)).response.status).toBe(403);expect((await call(key,owner,'ad200000-0000-4000-8000-000000000002')).response.status).toBe(403);}
+  phase='source-comparison';const pulse=parseSeriesClubLivePulseV1((await call('pulse')).value);expect(pulse.clubId).toBe(club);expect(pulse.timezone).toBeTruthy();expect(pulse.clubLocalDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const dayOf=(value:string)=>{const parts=new Intl.DateTimeFormat('en',{timeZone:pulse.timezone!,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));return ['year','month','day'].map(type=>parts.find(part=>part.type===type)!.value).join('-');};
+  const tours=(await read('tournaments?select=id,start_time,status,deleted_at&club_id=eq.'+club)).filter((row:{start_time:string|null;status:string;deleted_at:string|null})=>row.deleted_at===null&&row.status!=='cancelled'&&row.start_time!==null&&dayOf(row.start_time)===pulse.clubLocalDate);expect(tours.length).toBeGreaterThan(0);
+  const registrations=await read('tournament_registrations?select=id,player_id,tournament_id,status&tournament_id=in.('+tours.map((t:{id:string})=>t.id).join(',')+')&status=eq.confirmed');expect(registrations.length).toBeGreaterThanOrEqual(40);
+  type Entry={id:string;registration_id:string;tournament_id:string;member_id:string|null;created_at:string|null};
+  const entries=await read('tournament_entries?select=id,registration_id,tournament_id,member_id,created_at&registration_id=in.('+registrations.map((r:{id:string})=>r.id).join(',')+')') as Entry[];
+  let usedFallback=false;const identities=registrations.map((registration:{id:string;tournament_id:string;player_id:string})=>{const matching=entries.filter(e=>e.registration_id===registration.id&&e.tournament_id===registration.tournament_id).sort((a,b)=>{const at=a.created_at===null?Infinity:Date.parse(a.created_at),bt=b.created_at===null?Infinity:Date.parse(b.created_at);return (at===bt?0:at-bt)||a.id.localeCompare(b.id);});const member=matching[0]?.member_id;if(!member)usedFallback=true;return member??registration.player_id;});
+  const unique=new Set(identities).size;expect(unique).toBeGreaterThanOrEqual(20);expect(pulse.entriesToday.value).toBe(registrations.length);expect(pulse.entriesToday.availability).toBe('exact');expect(pulse.uniquePlayersToday.value).toBe(unique);expect(pulse.uniquePlayersToday.availability).toBe(usedFallback?'partial':'exact');
+  const context=parseOpsIntelligenceContextV1((await call('context')).value,club);expect(context.dailyTournaments.some(t=>t.tournamentId===tour)).toBe(true);const timeline=parseOpsIntelligenceTimelineV1((await call('timeline')).value,club,tour);
+  evidence={confirmedRegistrations:registrations.length,uniqueCanonicalIdentities:unique,usedFallbackIdentity:usedFallback,clubLocalDate:pulse.clubLocalDate,timezone:pulse.timezone,entriesAvailability:pulse.entriesToday.availability,uniqueAvailability:pulse.uniquePlayersToday.availability,contextTourPresent:true,timelineAvailability:{entries:timeline.entries.availability,tables:timeline.tables.availability,dealers:timeline.dealers.availability},ownerOnlyAndCrossTenantDenied:true};report();
+  phase='warmup';for(let n=0;n<3;n++)await Promise.all((['pulse','context','timeline'] as const).map(key=>accepted(key,false)));
+  phase='graded';for(let n=0;n<20;n++)await Promise.all((['pulse','context','timeline'] as const).map(key=>accepted(key,true)));for(const values of Object.values(samples))expect(values).toHaveLength(20);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
 });
 
 test('inactive earned staff salary HTTP preserves approved period roster',async({page})=>{
