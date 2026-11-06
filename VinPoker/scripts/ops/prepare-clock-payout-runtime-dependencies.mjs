@@ -12,6 +12,7 @@ const read=file=>readFileSync(new URL('../../supabase/'+file,import.meta.url),'u
 const md5=text=>createHash('md5').update(text).digest('hex');
 const publication=read('migrations/20261103131615_payout_publication_after_cashier.sql');
 assert.equal(createHash('sha256').update(publication).digest('hex'),'cd6f4c4264da7e4ca18bd2e45115cb7beadc2029ceaedbb5b10dcb810d9c069f');
+assert.equal(createHash('sha256').update(read('migrations/20270128000299_participation_bagged_read_classification_v1.sql')).digest('hex'),'2594ff636d759c1c49702230a57f2aacf6369ec3f93df0cddea1c6c283db8335');
 const individual=read('migrations/20261029053635_multiday_individual_complete_package_v1.sql');
 const extract=(source,name,hash)=>{
  const pattern=new RegExp('CREATE (?:OR REPLACE )?FUNCTION '+name.replaceAll('.','\\.')+'\\([\\s\\S]*?\\bAS\\s+(\\$[A-Za-z0-9_]*\\$)([\\s\\S]*?)\\1\\s*;','g');

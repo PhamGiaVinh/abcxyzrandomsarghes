@@ -1067,6 +1067,8 @@ CLOCK_CANDIDATE_PREFLIGHT
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20261103131615_payout_publication_after_cashier.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20270128000299_participation_bagged_read_classification_v1.sql"
   candidate_count=0
   while IFS= read -r candidate_path; do
     [[ "$candidate_path" =~ ^supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql$ ]]
