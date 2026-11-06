@@ -716,6 +716,26 @@ docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d post
   <"$repo_root/supabase/pending-tests/cashier_tour_edge_fixture.sql" \
   >"$test_root/edge-fixture.log" 2>&1
 
+# Current operations include today's Intelligence pulse. Choose the event day
+# before registrations, payments or immutable revenue snapshots are created.
+# Keep the historical pre03 fixture and its future event unchanged.
+if [[ "$schema_mode" == current && "$realtime_mode" == 1 ]]; then
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CURRENT_EVENT_DAY'
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
+   WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
+    AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST'
+    AND t.status='registering' AND t.registration_closed_at IS NULL AND t.start_time>now())
+ OR EXISTS(SELECT 1 FROM public.tournament_registrations WHERE tournament_id='a3000000-0000-4000-8000-000000000001')
+ THEN RAISE EXCEPTION 'current_event_day_requires_fresh_owned_fixture';END IF;
+END $$;
+UPDATE public.tournaments SET start_time=now()
+WHERE id='a3000000-0000-4000-8000-000000000001';
+COMMIT;
+CURRENT_EVENT_DAY
+fi
+
 # Independent users in the same isolated club, using real local Auth. Keep
 # credentials in the private temporary directory, never in published artifacts.
 staff_fixture='[]'
