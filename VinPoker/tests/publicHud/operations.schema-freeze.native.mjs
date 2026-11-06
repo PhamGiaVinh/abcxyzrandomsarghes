@@ -6,6 +6,19 @@ assert.match(database??'',/^vinpoker_hud_test_schema_fence_[a-z0-9_]+$/);
 assert.deepEqual(process.argv.slice(2),['--initialize']);
 assert.equal(sql('SELECT current_database();'),database);
 assert.equal(sql("SELECT to_regnamespace('ops_load_fixture_v1') IS NULL;"),'t');
+// Compile the exact operational action preflight with PostgreSQL's PL/pgSQL
+// parser. bash -n cannot detect malformed dollar quoting or IF/CASE syntax.
+// Compilation does not execute its catalog/data checks or install source DDL.
+const shell=readFileSync(new URL('../../scripts/ops/cashier-tour-real-e2e.sh',import.meta.url),'utf8').replaceAll('\r\n','\n');
+const match=shell.match(/<<'ACTION_GUARD_PREFLIGHT'\n([\s\S]*?)\nACTION_GUARD_PREFLIGHT/);
+assert.ok(match,'Exact action preflight heredoc required');
+const block=match[1].match(/\nDO \$\$([\s\S]*?)\$\$;\s*$/);
+assert.ok(block,'Complete action preflight DO block required');
+const compile=body=>sql(`BEGIN;CREATE FUNCTION pg_temp.check_action_preflight() RETURNS void LANGUAGE plpgsql AS $validate$${body}$validate$;ROLLBACK;`,{captureFailure:true});
+compile(block[1]);
+const malformed=block[1].replace('OR (CASE WHEN','OR CASE WHEN').replace("<>1 END)\n OR EXISTS","<>1 END\n OR EXISTS");
+assert.notEqual(malformed,block[1]);
+assert.throws(()=>compile(malformed),'Unparenthesized operational IF/CASE must fail native compilation');
 const fixture=readFileSync(new URL('../../supabase/pending-tests/operations_schema_freeze_fixture.sql',import.meta.url),'utf8');
 assert.throws(()=>sql(fixture,{captureFailure:true}),'Unmarked target must be rejected');
 assert.equal(sql("SELECT to_regnamespace('ops_load_fixture_v1') IS NULL;"),'t');
@@ -28,4 +41,4 @@ const privacy=jsonSql(`SELECT jsonb_build_object('anon',has_function_privilege('
  'authenticated',has_table_privilege('authenticated','ops_load_fixture_v1.schema_fence','SELECT'),
  'service',has_function_privilege('service_role','ops_load_fixture_v1.guard_schema()','EXECUTE'));`);
 assert.deepEqual(privacy,{anon:false,authenticated:false,service:false});
-console.log(JSON.stringify({kind:'REAL_PG17_OPERATIONAL_SCHEMA_FREEZE',unmarkedTargetDenied:true,createBlocked:true,alterBlocked:true,grantBlocked:true,businessWrites:20,catalogUnchanged:true,privateFixture:true,qualification:false}));
+console.log(JSON.stringify({kind:'REAL_PG17_OPERATIONAL_SCHEMA_FREEZE',actionPreflightCompiled:true,malformedActionPreflightDenied:true,unmarkedTargetDenied:true,createBlocked:true,alterBlocked:true,grantBlocked:true,businessWrites:20,catalogUnchanged:true,privateFixture:true,qualification:false}));

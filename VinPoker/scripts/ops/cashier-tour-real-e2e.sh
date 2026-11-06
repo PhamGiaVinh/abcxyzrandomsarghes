@@ -1178,9 +1178,9 @@ DO $$ BEGIN
  IF current_user<>'postgres' OR NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
   WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
    AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
- OR CASE WHEN current_setting('vinpoker.isolated_action_install',true)='before-audience' THEN
+ OR (CASE WHEN current_setting('vinpoker.isolated_action_install',true)='before-audience' THEN
    EXISTS(SELECT 1 FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number IN (9001,9002))
-   ELSE (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1 END
+   ELSE (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1 END)
  OR EXISTS(SELECT 1 FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001')
  OR md5(replace((SELECT prosrc FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure),chr(13),'')) IS DISTINCT FROM '9d3c35935fa68e8137e6fe6577b578b5'
  THEN RAISE EXCEPTION 'current_action_guards_require_owned_empty_action_fixture';END IF;
