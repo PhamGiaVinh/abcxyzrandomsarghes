@@ -1199,7 +1199,7 @@ MOVE_PARITY
       (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL);")"
   if [[ "$active_checkout_state" != '21|21|21|21|2' ]]; then echo "Active checkout committed-state conservation failed ($active_checkout_state)" >&2; exit 1; fi
   echo "ACTIVE_CHECKOUT_COMMIT_PROOF:21active dealers checked out once;21released replacement-needed assignments/receipts/audits;worked minutes preserved;2other assigned tables unchanged"
-  node scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs "$test_root/replacement-dependencies.sql"
+  node "$repo_root/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs" "$test_root/replacement-dependencies.sql"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$test_root/replacement-dependencies.sql"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REPLACEMENT_FIXTURE'
 BEGIN;
