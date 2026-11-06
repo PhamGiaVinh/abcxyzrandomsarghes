@@ -46,6 +46,33 @@ export function audienceJoinFailure(error){
  return 'unknown';
 }
 
+// Phoenix normalizes channel errors and can hide the original ErrorEvent.
+// Inspect its logger input before normalization; never serialize the input,
+// endpoint, topic, close reason or arbitrary exception text.
+export function audienceSocketDiagnostic(kind,message,data){
+ let event=null;
+ if(kind==='transport'){
+  if(message==='error')event='transport_error';
+  else if(message==='close')event='transport_close';
+  else if(typeof message==='string'&&message.startsWith('connected to '))event='transport_open';
+  else if(message==='heartbeat timeout. Attempting to re-establish connection')event='heartbeat_timeout';
+ }else if(kind==='channel'&&typeof message==='string'){
+  if(message.startsWith('error '))event='channel_error';
+  else if(message.startsWith('timeout '))event='channel_timeout';
+ }
+ if(!event)return null;
+ let failure=audienceFailure(data),joinKind=audienceJoinFailure(data),closeCode=null;
+ const queue=[data],seen=new Set();
+ for(let i=0;i<queue.length&&i<8;i++){
+  const item=queue[i];if(!item||typeof item!=='object'||seen.has(item))continue;seen.add(item);
+  const candidate=audienceFailure(item);if(failure.kind==='unknown'&&candidate.kind!=='unknown')failure=candidate;
+  const joined=audienceJoinFailure(item);if(joinKind==='unknown'&&joined!=='unknown')joinKind=joined;
+  if(closeCode===null&&Number.isInteger(item.code)&&item.code>=1000&&item.code<=4999)closeCode=item.code;
+  queue.push(item.cause,item.error);
+ }
+ return {event,...failure,joinKind,closeCode};
+}
+
 // Observe the real SDK callback; retain the client identity used by the actual
 // product's WeakMaps, exact channel args, subscription timeout and return value.
 export function observeAudienceSubscriptions(client,onStatus){

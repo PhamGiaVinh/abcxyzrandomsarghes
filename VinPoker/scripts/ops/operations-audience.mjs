@@ -6,7 +6,7 @@ import {availableParallelism,totalmem,cpus} from 'node:os';
 import {setMaxListeners} from 'node:events';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -51,6 +51,7 @@ const dist=values=>{const a=[...values].sort((x,y)=>x-y);return {samples:a.lengt
 const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],sourceToPublication:[]};
 const errors={},clients=[],pending=new Set();
 const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
+const socketEvents={},socketFailureSamples=[];
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0;
 const fail=name=>{errors[name]=(errors[name]??0)+1;};
 const diagnostic=(phase,cause,status)=>{
@@ -64,7 +65,7 @@ const report=()=>writeFileSync(reportFile,JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
- readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,
+ readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
@@ -92,7 +93,12 @@ process.on('SIGTERM',()=>{stopping=true;});
 const timer=setInterval(report,1000);report();
 try{
  for(let i=0;i<viewers&&!stopping;i++){
-  const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+  const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false},realtime:{logger:(kind,message,data)=>{
+   if(stopping)return;
+   const value=audienceSocketDiagnostic(kind,message,data);if(!value)return;
+   const key=[value.event,value.kind,value.joinKind,value.closeCode??'none'].join(':');socketEvents[key]=(socketEvents[key]??0)+1;
+   if(value.event!=='transport_open'&&socketFailureSamples.length<20)socketFailureSamples.push({at:Date.now(),...value});
+  }}});
   observeAudienceSubscriptions(client,(status,error)=>{
    if(stopping)return;
    const label=['SUBSCRIBED','CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)?status:'unknown';

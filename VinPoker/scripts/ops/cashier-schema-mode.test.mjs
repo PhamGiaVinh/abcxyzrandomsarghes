@@ -1,6 +1,6 @@
 import test from 'node:test';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -233,4 +233,29 @@ test('subscription diagnostics preserve SDK identity, arguments, timeout and cal
   assert.equal(received[0][1],error);assert.equal(observations[0][1],error);assert.equal(audienceJoinFailure(error),'connection_limit');
   assert.equal(audienceJoinFailure(new Error('ClientJoinRateLimitReached private')),'join_rate_limit');
   assert.equal(audienceJoinFailure(new Error('private')),'unknown');
+});
+
+test('socket diagnostics retain nested error codes and close codes without endpoint or payload text',()=>{
+ const event={error:{cause:{code:'ECONNRESET',message:'private endpoint'}}};event.cause=event;
+ assert.deepEqual(audienceSocketDiagnostic('transport','error',event),{event:'transport_error',kind:'connection_lost',httpStatus:null,serverCode:null,joinKind:'unknown',closeCode:null});
+ const closed=audienceSocketDiagnostic('transport','close',{code:1006,reason:'private token'});
+ assert.equal(closed.closeCode,1006);assert.equal(JSON.stringify(closed).includes('private'),false);
+ assert.equal(audienceSocketDiagnostic('push','private topic',{token:'private'}),null);
+ const opened=audienceSocketDiagnostic('transport','connected to ws://private?apikey=private',{});
+ assert.equal(opened.event,'transport_open');assert.equal(JSON.stringify(opened).includes('private'),false);
+ assert.equal(audienceSocketDiagnostic('channel','error private',{cause:new Error('ConnectionRateLimitReached private')}).joinKind,'connection_limit');
+});
+
+test('real native WebSocket handshake failure can be inspected without serializing its ErrorEvent',async()=>{
+ const server=http.createServer();server.on('upgrade',(_request,socket)=>socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ let socket,timer;
+ try{
+  const result=await new Promise((resolve,reject)=>{
+   timer=setTimeout(()=>reject(Error('WebSocket test deadline')),3000);
+   socket=new WebSocket('ws://127.0.0.1:'+server.address().port+'/?private=fixture');
+   socket.addEventListener('error',event=>resolve(audienceSocketDiagnostic('transport','error',event)),{once:true});
+  });
+  assert.equal(result.event,'transport_error');assert.equal(JSON.stringify(result).includes('fixture'),false);
+ }finally{clearTimeout(timer);socket?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
