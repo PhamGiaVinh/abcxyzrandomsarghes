@@ -1432,6 +1432,42 @@ TRACKER_QUEUE_FIXTURE
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress');")"
   if [[ "$finish_state" != '1|5|1|1' ]]; then echo "Canonical Finish/deferred apply conservation failed ($finish_state)" >&2; exit 1; fi
   echo 'MANUAL_FINISH_APPLY_PROOF:one applied reservation;two old-hand participants;three next-hand participants;single completed hand'
+  # The public-only captured baseline predates the action budget/decided guards.
+  # Restore their original guarded migrations before qualifying supplied actions.
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'ACTION_GUARD_PREFLIGHT'
+DO $$ BEGIN
+ IF current_user<>'postgres' OR NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
+  WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
+   AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
+ OR (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9002 AND status='in_progress')<>1
+ OR EXISTS(SELECT 1 FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001')
+ OR md5(replace((SELECT prosrc FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure),chr(13),'')) IS DISTINCT FROM '9d3c35935fa68e8137e6fe6577b578b5'
+ THEN RAISE EXCEPTION 'current_action_guards_require_owned_empty_action_fixture';END IF;
+END $$;
+ACTION_GUARD_PREFLIGHT
+  for action_guard_migration in \
+    20270128000189_tracker_action_stack_bound_v1.sql \
+    20270128000301_tracker_decided_hand_action_guard_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$action_guard_migration"
+  done
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'ACTION_GUARD_POSTCHECK'
+DO $$ DECLARE p pg_proc%ROWTYPE;BEGIN
+ SELECT * INTO STRICT p FROM pg_proc WHERE oid='public.record_action(uuid,uuid,text,integer,integer,text,integer,text,text,uuid)'::regprocedure;
+ IF md5(replace(p.prosrc,chr(13),''))<>'ccf4f55e6826bef6d4fe35dd7b38c30f' OR md5(replace(pg_get_functiondef(p.oid),chr(13),''))<>'fa4e8a99992729dfe13446dd5300014f'
+ OR p.proowner<>'postgres'::regrole OR NOT p.prosecdef OR p.provolatile<>'v' OR p.pronargdefaults<>6
+ OR p.proconfig IS DISTINCT FROM ARRAY['search_path=public']::text[] OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,authenticated=X/postgres}'
+ THEN RAISE EXCEPTION 'current_record_action_authority_drift';END IF;
+ SELECT * INTO STRICT p FROM pg_proc WHERE oid='floor_private.guard_tracker_action_stack189()'::regprocedure;
+ IF md5(replace(p.prosrc,chr(13),''))<>'59c8dbd2fd8a4e2135e782e67e1eea7c' OR md5(replace(pg_get_functiondef(p.oid),chr(13),''))<>'4f064c7755b5a8ee53e39caed61f7429'
+ OR p.proowner<>'postgres'::regrole OR NOT p.prosecdef OR p.provolatile<>'v' OR p.pronargdefaults<>0
+ OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[] OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres}'
+ OR NOT EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgname='trg_guard_tracker_action_stack189' AND t.tgrelid='public.hand_actions'::regclass
+  AND t.tgfoid=p.oid AND NOT t.tgisinternal AND t.tgenabled='O' AND md5(replace(pg_get_triggerdef(t.oid),chr(13),''))='2537fe8cd97049cffb7675436f814772')
+ THEN RAISE EXCEPTION 'current_action_stack_guard_attachment_drift';END IF;
+END $$;
+NOTIFY pgrst,'reload schema';
+ACTION_GUARD_POSTCHECK
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'MANUAL_ACTION_ACTORS'
 BEGIN;
 DO $$ BEGIN
