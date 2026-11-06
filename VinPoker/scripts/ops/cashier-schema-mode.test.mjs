@@ -13,6 +13,21 @@ import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('operational HUD backfill refuses non-disposable targets before Docker or activation',()=>{
+ const helper=fileURLToPath(new URL('./prepare-operations-public-hud.mjs',import.meta.url));
+ const env={...process.env,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_AUDIENCE:'10',LOCAL_OPERATIONS_SOURCE_SHA:'a'.repeat(40)};
+ for(const status of ['https://production.invalid/isolated-status.json','/tmp/other-fixture/isolated-status.json']){
+  const result=spawnSync(process.execPath,[helper,status,'a'.repeat(12),'/tmp/output/operations-latency/operations-hud-backfill-http.json'],{env,encoding:'utf8'});
+  assert.notEqual(result.status,0);assert.equal(result.stdout,'');assert.match(result.stderr,/AssertionError/);
+ }
+});
+
+test('operational HUD worker bundles from a foreign working directory without a target',()=>{
+ const helper=fileURLToPath(new URL('./prepare-operations-public-hud.mjs',import.meta.url));
+ const result=spawnSync(process.execPath,[helper,'--check-worker-bundle'],{cwd:tmpdir(),encoding:'utf8'});
+ assert.equal(result.status,0);assert.deepEqual(JSON.parse(result.stdout),{kind:'OPERATIONAL_HUD_WORKER_SOURCE_BUNDLE_ONLY',bundled:true});
+});
+
 test('selected-table hidden hub omits ordinary hand snapshots but retains scope and metadata checks',()=>{
  assert.deepEqual(selectedAudienceSections({reason:'changed',components:['tables']}),[]);
  assert.deepEqual(selectedAudienceSections({reason:'changed',components:['hand_visibility','tables']}),[]);

@@ -1589,6 +1589,44 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
  }catch(error){phase+='-failed';report();throw error;}finally{await context?.close();}
 });
 
+test('anonymous prepared HUD reads canonical operational history and replay',async({page,browser})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_HUD_BROWSER_ENABLED!=='1','Requires actual backfill and independent raw-source shadow after load stops');test.setTimeout(75_000);
+ const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
+ const headers={apikey:anon,Authorization:`Bearer ${owner}`};
+ const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
+ let phase='source',pageErrors=0,summaryReads=0,historyCount=0,unknownStacks=0,observedHands:number|null=null,revision:string|null=null;
+ const checks={actualSeatClick:false,anonymousSummary:false,independentHistory:false,help:false,idleNoPolling:false,tourReplayLink:false,actualReplayRpc:false,anonymousStorage:false};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,observedHands,revision,historyCount,unknownStacks,summaryReads,pageErrors,qualification:false,limitations:'One real anonymous Chromium HUD after actual worker/backfill and independent raw-source shadow. Seat click,displayed HANDS,independent bounded tour history,help,idle no-poll and list-link replay. Does not yet prove frozen state during new source changes,reopen receiving a newer revision,rights withdrawal,cross-tour aggregation or verified stack-dot replay. No routes/responses intercepted.'},null,2));
+ let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
+ try{
+  const hands=await read('tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023');expect(hands).toHaveLength(1);const hand=hands[0];expect(hand.status).toBe('completed');
+  const players=await read('hand_players?select=player_id,seat_number&hand_id=eq.'+hand.id+'&order=seat_number');expect(players).toHaveLength(3);const player=players[0].player_id as string;
+  const source=await read('tournament_hands?select=id&tournament_id=eq.'+tour),sourceIds=new Set(source.map((row:{id:string})=>row.id));
+  context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:1366,height:900}});const viewer=await context.newPage();viewer.on('pageerror',()=>pageErrors++);
+  viewer.on('request',request=>{if(new URL(request.url()).pathname.endsWith('/rest/v1/rpc/get_public_player_hud_summary_v1'))summaryReads++;});
+  phase='felt';await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');
+  const seat=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(seat).toBeVisible({timeout:15000});
+  const responseFor=(name:string)=>viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/'+name))return false;const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_player_id===player;},{timeout:10000});
+  const summaryResponse=responseFor('get_public_player_hud_summary_v1'),historyResponse=responseFor('get_public_player_hud_history_v1');void summaryResponse.catch(()=>{});void historyResponse.catch(()=>{});
+  await seat.click();checks.actualSeatClick=true;phase='hud';
+  const actualSummary=await summaryResponse;expect(actualSummary.ok()).toBe(true);const summary=await actualSummary.json();expect(summary.access).toBe('public');expect(summary.coverageComplete).toBe(true);expect(summary.playerId).toBe(player);expect(summary.tournamentId).toBe(tour);
+  observedHands=summary.counters.handsObserved;revision=summary.revision;expect(observedHands).toBeGreaterThanOrEqual(21);checks.anonymousSummary=true;
+  const dialog=viewer.getByRole('dialog').filter({has:viewer.getByRole('button',{name:'Giải thích HANDS',exact:true})});
+  await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(observedHands!.toLocaleString('vi-VN'));await expect(dialog.getByText(/Bản thống kê lúc mở/)).toBeVisible();
+  const actualHistory=await historyResponse;expect(actualHistory.ok()).toBe(true);const history=await actualHistory.json();expect(history.tournamentId).toBe(tour);expect(history.playerId).toBe(player);expect(Array.isArray(history.handHistory)).toBe(true);expect(history.handHistory.length).toBeLessThanOrEqual(50);
+  expect(history.handHistory.every((row:{handId:string})=>sourceIds.has(row.handId))).toBe(true);expect(history.handHistory.some((row:{handId:string})=>row.handId===hand.id)).toBe(true);historyCount=history.handHistory.length;unknownStacks=history.handHistory.filter((row:{endingStack:number|null})=>row.endingStack===null).length;checks.independentHistory=true;
+  const region=dialog.getByRole('region',{name:'Lịch sử hand của người chơi'}),link=region.getByRole('link',{name:'Mở replay hand #9023',exact:true});await expect(link).toBeVisible();const href=new URL((await link.getAttribute('href'))!,process.env.PLAYWRIGHT_BASE_URL);expect(href.pathname).toBe('/live/'+tour);expect(href.searchParams.get('handId')).toBe(hand.id);expect(href.searchParams.get('tableId')).toBe(hand.tournament_table_id);checks.tourReplayLink=true;
+  const current=history.handHistory.find((row:{handId:string})=>row.handId===hand.id);if(current.endingStack===null){await expect(region.getByRole('link',{name:/^Replay hand #9023,/})).toHaveCount(0);await expect(link.getByText('Stack chưa xác minh')).toBeVisible();}
+  await dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).click();const help=viewer.getByRole('dialog',{name:'Giải thích chỉ số HUD'});await expect(help).toBeVisible();await help.getByRole('button',{name:'Close',exact:true}).click();checks.help=true;
+  // Allow the one initial access-subscription verification, then observe an
+  // actual idle window. This does not simulate a source revision change.
+  await viewer.waitForTimeout(11000);const before=summaryReads;await viewer.waitForTimeout(3500);expect(summaryReads).toBe(before);checks.idleNoPolling=true;
+  phase='history-replay';const replay=viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;return response.request().postDataJSON()?.p_hand_id===hand.id;},{timeout:10000});void replay.catch(()=>{});
+  await link.click();const actualReplay=await replay;expect(actualReplay.ok()).toBe(true);expect((await actualReplay.json()).id).toBe(hand.id);await expect(viewer.getByTestId('replay-action-rail')).toBeVisible();checks.actualReplayRpc=true;
+  checks.anonymousStorage=!(await context.storageState()).origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(checks.anonymousStorage).toBe(true);expect(pageErrors).toBe(0);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}finally{await context?.close();}
+});
+
 test('checkout notifications reach the isolated HTTP sink once with dealer tags',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED!=='1','Explicit isolated provider transport stage');test.setTimeout(150_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,club='a2000000-0000-4000-8000-000000000001';

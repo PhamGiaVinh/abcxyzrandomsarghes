@@ -1238,7 +1238,7 @@ ACTION_GUARD_POSTCHECK
 }
 
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}" intelligence_enabled="${14:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}" intelligence_enabled="${14:-}" hud_browser_enabled="${15:-}"
   # These operational stages share committed fixtures. A failed prerequisite
   # must fail the run immediately, not produce misleading downstream failures.
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
@@ -1265,6 +1265,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED="$recorded_action_finish_enabled" \
   --env LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED="$telegram_sink_enabled" \
   --env LOCAL_OPERATIONS_INTELLIGENCE_ENABLED="$intelligence_enabled" \
+  --env LOCAL_OPERATIONS_HUD_BROWSER_ENABLED="$hud_browser_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1963,4 +1964,22 @@ assert.equal(report.phase,'package-applied');assert.equal(report.migrations,30);
 report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on exact30candidate. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
 writeFileSync(process.argv[2],JSON.stringify(report,null,2));
 OPERATIONS_PACKAGE_FINISHED
+  if [[ "$audience_count" != 0 ]]; then
+    # Load qualification has already stopped and its receipt/catalog were
+    # checked. Certify this small operational source before isolated HUD reads.
+    LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" node "$repo_root/scripts/ops/prepare-operations-public-hud.mjs" \
+      "$test_root/isolated-status.json" "$db_container" "$repo_root/output/operations-latency/operations-hud-backfill-http.json"
+    run_browser_proof '' '' 'anonymous prepared HUD reads canonical operational history and replay' '' '' '' '' '' '' '' '' '' '' '' 1
+    node --input-type=module - "$repo_root/output/operations-latency" <<'PREPARED_HUD_FINAL_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf8'));
+const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
+assert.equal(backfill.phase,'prepared');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(browser.phase,'passed');
+assert.ok(Object.values(browser.checks).every(value=>value===true));
+const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
+pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';
+pkg.limitations='Configured operations finished before audience drain and unchanged catalog check. Afterwards,actual fixture backfill/raw shadow enabled isolated HUD reads for one anonymous browser test. Separate reports define scope;not full1Mhand/load qualification,full HUD lifecycle or hosted cron proof.';
+writeFileSync(root+'/operations-candidate-package-http.json',JSON.stringify(pkg,null,2));
+PREPARED_HUD_FINAL_RECEIPT
+  fi
 fi

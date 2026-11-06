@@ -20,6 +20,7 @@ on:
       - "VinPoker/scripts/ops/prepare-staff-salary-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tracker-start-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tracker-finish-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-operations-public-hud.mjs"
       - "VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql"
       - "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
