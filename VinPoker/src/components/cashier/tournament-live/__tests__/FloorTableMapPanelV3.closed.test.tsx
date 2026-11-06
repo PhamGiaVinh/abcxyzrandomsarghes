@@ -6,6 +6,10 @@ type LiveChannel = { changes: { table: string; filter: string; read: () => void 
   on: (kind: string, filter: { table: string; filter: string }, read: () => void) => LiveChannel;
   subscribe: (status: (value: string) => void) => LiveChannel };
 const live = vi.hoisted(() => ({ channels: [] as LiveChannel[] }));
+const broadcasts = vi.hoisted(() => ({ entries: [] as { tournamentId: string; receive: (event: { reason: string; components: string[] }) => void; unsubscribe: ReturnType<typeof vi.fn> }[] }));
+vi.mock("../viewer-hub/publicTournamentRealtime", () => ({ observePublicTournament: vi.fn((_client, tournamentId, receive) => {
+  const entry = { tournamentId, receive, unsubscribe: vi.fn() }; broadcasts.entries.push(entry);return { unsubscribe: entry.unsubscribe };
+}) }));
 const client = { rpc: vi.fn(), removeChannel: vi.fn(async () => "ok"), channel: vi.fn(() => {
   const channel: LiveChannel = { changes: [],
     on(kind, filter, read) { if (kind === "system") channel.ready = read as unknown as LiveChannel["ready"]; else channel.changes.push({ ...filter, read }); return channel; },
@@ -28,7 +32,7 @@ import { FloorTableMapPanelV3 } from "../FloorTableMapPanelV3";
 import { FloorTableMapPanel } from "../FloorTableMapPanel";
 const tour = (status: string) => ({ id: "tour", name: "TEST", status } as Tournament);
 beforeEach(() => { for (const method of Object.values(state)) method.mockReset().mockResolvedValue({ ok: true, data: [] });
-  live.channels.length = 0; client.channel.mockClear(); client.removeChannel.mockClear(); });
+  live.channels.length = 0; broadcasts.entries.length = 0; client.channel.mockClear(); client.removeChannel.mockClear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it("passes the shell identity to redraw and retires an open dialog when the session changes", async () => {
   const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
@@ -144,6 +148,35 @@ it("reconciles missing source changes even when a partial channel reports health
   await act(async () => { await vi.advanceTimersByTimeAsync(1_799); });expect(state.roster).toHaveBeenCalledTimes(2);
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });expect(state.roster).toHaveBeenCalledTimes(3);
   expect(screen.getByText("TEST table 7", {exact:false})).toBeInTheDocument();
+});
+
+it("uses component publication hints without waiting for the incomplete CDC fallback", async () => {
+  vi.useFakeTimers();
+  await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0}/>);});
+  expect(state.roster).toHaveBeenCalledTimes(1);expect(broadcasts.entries[0].tournamentId).toBe("tour");
+  state.roster.mockResolvedValue({ok:true,data:[table(9)]});
+  act(()=>{for(let i=0;i<10;i++)broadcasts.entries[0].receive({reason:"changed",components:["tables"]});});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","true");
+  await act(async()=>{await vi.advanceTimersByTimeAsync(199);});expect(state.roster).toHaveBeenCalledTimes(1);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(1);});expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("TEST table 9",{exact:false})).toBeInTheDocument();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  act(()=>broadcasts.entries[0].receive({reason:"changed",components:["clock","payout"]}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(200);});expect(state.roster).toHaveBeenCalledTimes(2);
+});
+
+it("retires publication listeners on actor scope change and ignores late old callbacks", async () => {
+  vi.useFakeTimers();let view:ReturnType<typeof render>;
+  await act(async()=>{view=render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-a" sessionEpoch={1} refreshTrigger={0}/>);});
+  const old=broadcasts.entries[0];
+  await act(async()=>{view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-b" sessionEpoch={2} refreshTrigger={0}/>);});
+  expect(old.unsubscribe).toHaveBeenCalledTimes(1);const count=state.roster.mock.calls.length;
+  act(()=>old.receive({reason:"changed",components:["visibility"]}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(200);});expect(state.roster).toHaveBeenCalledTimes(count);
+  state.roster.mockResolvedValue({ok:true,data:[table(10)]});
+  act(()=>broadcasts.entries[1].receive({reason:"changed",components:["hand_visibility"]}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(200);});expect(state.roster).toHaveBeenCalledTimes(count+1);
+  expect(screen.getByText("TEST table 10",{exact:false})).toBeInTheDocument();
 });
 it("does not poll a hidden staff screen while source coverage is incomplete", async () => {
   vi.useFakeTimers();const visibility=vi.spyOn(document,"visibilityState","get");

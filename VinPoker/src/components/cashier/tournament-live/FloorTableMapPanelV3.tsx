@@ -38,6 +38,7 @@ import { AddPlayerDialog } from "./AddPlayerDialog";
 import { MovePlayerDialog } from "./MovePlayerDialog";
 import { FEATURES } from "@/lib/featureFlags";
 import { parseCanonicalCloseResult } from "./closeTableResponse";
+import { observePublicTournament } from "./viewer-hub/publicTournamentRealtime";
 
 type Mutation = () => Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }>;
 type PendingTableAction = "close" | "break";
@@ -273,6 +274,14 @@ function ScopedFloorTableMapPanelV3({
         if (active && owned === pollEpoch) poll();
       }, delay);
     };
+    // Session/table CDC coverage is incomplete in production. The existing
+    // component Broadcast can invalidate sooner; it supplies no staff data or
+    // authority. Continue reading the scoped authorized RPCs and keep fallback
+    // reconciliation for private tours, missing hints and offline connections.
+    const publication = observePublicTournament(supabase, tournament.id, event => {
+      if (event.reason === "changed" && event.components.some(component =>
+        component === "tables" || component === "visibility" || component === "hand_visibility")) invalidate();
+    });
     let channel = supabase.channel(`floor-map-v3:${tournament.id}:${liveReadId}`);
     for (const table of ["table_sessions", "tournament_tables", "tournament_seats", "tournament_chip_counts", "tournament_entries"]) {
       channel = channel.on("postgres_changes", { event: "*", schema: "public", table, filter: `tournament_id=eq.${tournament.id}` }, invalidate);
@@ -294,6 +303,7 @@ function ScopedFloorTableMapPanelV3({
     poll();
     return () => {
       active = false; clearTimeout(debounce); clearTimeout(fallback);
+      publication.unsubscribe();
       window.removeEventListener("online", resume);
       window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", resume);

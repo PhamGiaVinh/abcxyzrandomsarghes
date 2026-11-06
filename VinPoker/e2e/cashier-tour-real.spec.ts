@@ -375,11 +375,12 @@ test('canonical Floor open and close propagate into one continuously open screen
   const payload=await response.json();expect(response.ok,name).toBe(true);return payload;
  };
  const rows:{operation:string;iteration:number;warmup:boolean;ackMs:number;writeToVisibleMs?:number;status:string}[]=[];
- let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false,channelJoined=false;
+ let phase='screen-load',committedOpen=false,independentRosterConfirmed=false,rosterRpc='',postgresReady=false,channelJoined=false,publicTableBroadcastHints=0;
  const openedHints=new Set<string>(),closedHints=new Set<string>();
  page.on('websocket',socket=>socket.on('framereceived',frame=>{
   try{
-   const decoded=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString());
+   const decoded=decodeClockWireFrame(frame.payload) as Record<string,any>|any[];
+   const signal=clockBroadcastSignal(decoded,tourId);if(signal?.components.includes('tables'))publicTableBroadcastHints++;
    // The installed SDK defaults to Phoenix V2 [join_ref,ref,topic,event,payload].
    const message=Array.isArray(decoded)?{topic:decoded[2],event:decoded[3],payload:decoded[4]}:decoded;
    if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:floor-map-v3:'))return;
@@ -396,8 +397,8 @@ test('canonical Floor open and close propagate into one continuously open screen
  }));
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-session-ui-http.json'),JSON.stringify({
   kind:'ACTUAL_FLOOR_SESSION_WRITE_AND_OPEN_SCREEN_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  actors:1,concurrency:1,warmupPerOperation:2,gradedPerOperation:20,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,channelJoined,rows,
-  sourceSignals:'Production-matching publication: open/close session and tournament-table sources are absent;staff RPC fallback must reconcile without their CDC events',
+  actors:1,concurrency:1,warmupPerOperation:2,gradedPerOperation:20,phase,committedOpen,independentRosterConfirmed,rosterRpc,postgresReady,channelJoined,publicTableBroadcastHints,rows,
+  sourceSignals:'Production-matching CDC omits open/close session and tournament-table sources. Count actual scoped public table Broadcast hints separately;authorized staff RPCs remain the data source and fallback remains enabled. Hint count alone does not identify which hint caused a render.',
   distributions:Object.fromEntries(['open','close'].map(operation=>{
    const samples=rows.filter(row=>row.operation===operation&&!row.warmup&&row.status==='visible').map(row=>row.writeToVisibleMs!).sort((a,b)=>a-b);
    return [operation,{samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.length?samples.at(-1):null}];
