@@ -645,15 +645,17 @@ test('Finance, Cashier cashflow and F&B actual authenticated HTTP report latency
 
 test('canonical clock start reaches an already-open anonymous clock screen',async({page,browser})=>{
  test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated operation fixture only');
- test.setTimeout(60_000);
+ test.setTimeout(1_000_000);
  const token=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const tourId='ac300000-0000-4000-8000-000000000001';
  const context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL});
  const viewer=await context.newPage();let phase='initial-public-read',ackMs:number|undefined,visibleMs:number|undefined,independentRunning=false;
+ const controls:{action:string;warmup:boolean;ackMs:number;writeToVisibleMs:number}[]=[];
+ const grouped=()=>['pause','resume'].map(action=>{const values=controls.filter(row=>row.action===action&&!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b);return {action,samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};});
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-clock-ui-http.json'),JSON.stringify({
   kind:'CANONICAL_CLOCK_RPC_START_TO_ANONYMOUS_PUBLIC_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,actors:1,anonymousObservers:1,gradedSamples:1,qualification:false,
-  limitations:'Single start through the canonical RPC invoked by the Edge handler; not the Edge transport or pause/resume/next-level/CAS concurrency. Public screen uses its existing 15s polling;20s is an observation timeout,not a newly approved latency target. No refresh/reload after initial screen load.',
+  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,actors:1,anonymousObservers:1,startSamples:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
+  limitations:'One start plus3warmup and20graded canonical pause/resume pairs through real HTTP on one continuously open anonymous screen. Start is a single observation,not p95. Public screen retains its existing15s polling;20s per transition is an observation timeout,not a newly approved latency target. No refresh/reload,Edge wrapper,next-level/automatic-break screen or mixed1000spectator claim. Separate control test covers CAS concurrency.',
  },null,2));
  const rpc=async(name:string,args:unknown)=>{
   const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
@@ -670,7 +672,24 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
   await expect(viewer.getByText('Đồng hồ đang dừng',{exact:true})).toHaveCount(0,{timeout:Math.max(1,20000-(performance.now()-started))});
   await expect(viewer.getByRole('heading',{name:'Operations clock TEST',exact:true})).toBeVisible();
   await expect(viewer.getByText('Live',{exact:true})).toBeVisible();
-  visibleMs=performance.now()-started;phase='passed';report();
+  visibleMs=performance.now()-started;report();
+  for(let index=0;index<23;index++)for(const action of ['pause','resume']){
+   phase='screen-'+action;const before=await rpc('get_tournament_clock',{p_tournament_id:tourId});
+   expect(before.is_running).toBe(action==='pause');expect(before.control_revision).toMatch(/^[a-f0-9]{32}$/);
+   const began=performance.now(),changed=await rpc('floor_control_tournament_clock',{p_tournament_id:tourId,p_action:action,p_delta_seconds:null,p_expected_control_revision:before.control_revision}),ack=performance.now();
+   expect(changed.ok).toBe(true);
+   const marker=viewer.getByText('Đồng hồ đang dừng',{exact:true}),remaining=()=>Math.max(1,20000-(performance.now()-began));
+   if(action==='pause')await expect(marker).toBeVisible({timeout:remaining()});else await expect(marker).toHaveCount(0,{timeout:remaining()});
+   // Absence of the paused marker alone also matches an error/blank page.
+   await expect(viewer.getByRole('heading',{name:'Operations clock TEST',exact:true})).toBeVisible({timeout:remaining()});
+   await expect(viewer.getByText('Live',{exact:true})).toBeVisible({timeout:remaining()});
+   await expect(viewer.getByText(/^\d{2}:\d{2}$/)).toBeVisible({timeout:remaining()});
+   const observed=performance.now();expect(observed-began).toBeLessThanOrEqual(20000);
+   const after=await rpc('get_tournament_clock',{p_tournament_id:tourId});
+   expect(after.is_running).toBe(action==='resume');expect(after.control_revision).not.toBe(before.control_revision);
+   controls.push({action,warmup:index<3,ackMs:ack-began,writeToVisibleMs:observed-began});report();
+  }
+  for(const row of grouped())expect(row.samples).toBe(20);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}finally{await context.close();}
 });
 
