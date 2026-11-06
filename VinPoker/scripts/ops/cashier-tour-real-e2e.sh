@@ -5,6 +5,7 @@ repo_root="$(pwd)"
 schema_dir="${SCHEMA_ARTIFACT_DIRECTORY:-}"
 schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
 realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
+clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 case "$schema_mode" in
   pre03) ;;
   current)
@@ -16,6 +17,9 @@ esac
 if [[ "$realtime_mode" != 0 && "$realtime_mode" != 1 ]] || [[ "$realtime_mode" == 1 && "$schema_mode" != current ]]; then
   echo "Realtime timing requires explicit contemporary isolated mode" >&2
   exit 1
+fi
+if [[ "$clock_candidate_probe" != 0 && "$clock_candidate_probe" != 1 ]] || [[ "$clock_candidate_probe" == 1 && ( "$schema_mode" != current || "$realtime_mode" != 1 ) ]]; then
+  echo 'Candidate clock probe requires explicit current isolated Realtime mode' >&2; exit 1
 fi
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
@@ -52,6 +56,7 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ -n "${clock_flush_pid:-}" ]]; then kill "$clock_flush_pid" 2>/dev/null || true; wait "$clock_flush_pid" 2>/dev/null || true; fi
   if [[ -n "${race_control_pid:-}" && -n "${db_container:-}" ]]; then
     docker exec "$db_container" psql -X -Atq -U postgres -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name='isolated_checkout_policy_control';" >/dev/null 2>&1 || true
     kill "$race_control_pid" 2>/dev/null || true
@@ -1037,6 +1042,52 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test "${test_args[@]}"
 }
+if [[ "$clock_candidate_probe" == 1 ]]; then
+  # This is a separate integration probe, never historical proof or32case PASS.
+  # All source guards and checksums remain intact; no hand/HUD read activation.
+  node --input-type=module >"$test_root/clock-candidate-migrations.list" <<'CANDIDATE_PATHS'
+import {loadPackage} from './scripts/ops/tracker-hud-20261104-release.mjs';
+for(const entry of loadPackage().entries)console.log(entry.path);
+CANDIDATE_PATHS
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CLOCK_CANDIDATE_PREFLIGHT'
+DO $$ BEGIN
+ IF current_database()<>'postgres' OR to_regnamespace('tracker_analytics_v1') IS NOT NULL
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='ac300000-0000-4000-8000-000000000001' AND name='Operations clock TEST' AND status='registering')
+ THEN RAISE EXCEPTION 'candidate_clock_requires_owned_fresh_fixture';END IF;
+END $$;
+CLOCK_CANDIDATE_PREFLIGHT
+  candidate_count=0
+  while IFS= read -r candidate_path; do
+    [[ "$candidate_path" =~ ^supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql$ ]]
+    if ! docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/$candidate_path" >"$test_root/clock-candidate-apply.log" 2>&1; then
+      echo "Candidate clock migration precondition/apply failed: $candidate_path" >&2; exit 1
+    fi
+    candidate_count=$((candidate_count+1))
+  done <"$test_root/clock-candidate-migrations.list"
+  [[ "$candidate_count" == 27 ]]
+  candidate_flags="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT enabled,worker_enabled,backfill_complete FROM tracker_analytics_v1.config WHERE singleton;')"
+  [[ "$candidate_flags" == 'f|f|f' ]]
+  docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
+  LOCAL_CLOCK_CANDIDATE_STATUS="$test_root/isolated-status.json" \
+  LOCAL_CLOCK_CANDIDATE_REPORT="$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" \
+    node scripts/ops/clock-candidate-broadcast.mjs &
+  clock_flush_pid=$!
+  run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
+  kill -TERM "$clock_flush_pid"
+  wait "$clock_flush_pid"
+  clock_flush_pid=''
+  node --input-type=module <<'CLOCK_FLUSH_POSTCHECK'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync('output/operations-latency/clock-candidate-broadcast-http.json','utf8'));
+assert.equal(report.phase,'stopped');assert.equal(report.failures,0);
+assert.ok(report.completed>0);assert.ok(report.sent>0);
+CLOCK_FLUSH_POSTCHECK
+  echo 'CLOCK_CANDIDATE_PROOF:exact27 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
+  exit 0
+fi
 run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
 if [[ "$schema_mode" == current ]]; then

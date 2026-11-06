@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/cashier-tour-real-e2e.yml"
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
+      - "VinPoker/scripts/ops/clock-candidate-broadcast.mjs"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs"
@@ -36,6 +37,10 @@ on:
         default: pre03
       ops_realtime:
         description: Contemporary isolated check-in WebSocket observation (not historical proof)
+        type: boolean
+        default: false
+      clock_candidate_probe:
+        description: Isolated canonical clock UI against exact27candidate migrations and real Broadcast flush RPC only
         type: boolean
         default: false
 
@@ -132,6 +137,7 @@ jobs:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
           LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
+          LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier HTTP latency evidence
         if: always()
