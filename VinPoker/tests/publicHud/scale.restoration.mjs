@@ -1,6 +1,17 @@
 export function currentHudSnapshot(state){
  return !!state.frozen&&state.hudCompletedEpoch===state.hudEpoch&&!state.hudActive&&!state.historyActive&&state.historySnapshot===state.frozen;
 }
+// A source withdrawal can commit between a summary and its independent history.
+// This classifies only a definitive denial in the exact acknowledged TEST scope;
+// it never turns that denial into history success or recovery credit.
+export function committedHistoryWithdrawalDenial(value,attempt,receipt){
+ if(!value||Object.keys(value).length!==1||value.access!=='revoked'||!receipt||receipt.hiddenConfirmed!==true)return false;
+ if(attempt.tour!==receipt.tour)return false;
+ const {startedAt,finishedAt}=attempt,{hideRequestedAt,hideAckAt,restoreStartedAt}=receipt;
+ if(![startedAt,finishedAt,hideRequestedAt,hideAckAt].every(x=>Number.isFinite(x)&&x>=0)||startedAt>finishedAt||hideRequestedAt>hideAckAt)return false;
+ if(restoreStartedAt!==null&&(!Number.isFinite(restoreStartedAt)||restoreStartedAt<hideAckAt))return false;
+ return finishedAt>=hideRequestedAt&&(restoreStartedAt===null||finishedAt<restoreStartedAt);
+}
 export function beginHudRestoration(state,now=Date.now()){
  state.restoration={launchedAt:now,minEpoch:state.hudEpoch+1,deadlineAt:null,receiptAt:null,events:[]};
  recordHudRestoration(state,'reopen-launched',now);

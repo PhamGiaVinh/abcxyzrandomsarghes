@@ -10,7 +10,7 @@ import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead,coveringT
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
-import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure} from './scale.restoration.mjs';
+import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
 import {tableFailureSample} from './scale.table-trace.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
@@ -166,6 +166,8 @@ for(const scenario of ['concentrated','distributed','overview']){
  const offset={summary:stats.summary.length,summaryHttp:stats.summaryHttp.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,snapshotToReadStart:stats.snapshotToReadStart.length,snapshotRead:stats.snapshotRead.length,snapshotToPublication:stats.snapshotToPublication.length,snapshotPublicationToRead:stats.snapshotPublicationToRead.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
  const tourCount=scenario==='concentrated'?1:20,clients=[],tasks=new Set();
  let end=Infinity,reconnecting=false,revoking=false,started=0,currentAmendment=null;
+ let plannedWithdrawal=null,plannedHistoryDenialCount=0;
+ const plannedHistoryDenialSamples=[];
  let restorationDeadline=null;
  const checkRestoration=()=>{
   if(restorationDeadline!==null&&Date.now()>=restorationDeadline&&clients.some(c=>c.restoration?.receiptAt==null)){
@@ -173,10 +175,10 @@ for(const scenario of ['concentrated','distributed','overview']){
   }
  };
  const notReadyOutcomes=[];
- const notReady=(part,phase,value)=>{
+ const notReady=(part,phase,value,attempt)=>{
   error(part==='history'?'history_not_ready':'hud_not_ready');
   if(notReadyOutcomes.length>=50)return;
-  const outcome={scenario,part,phase,at:Date.now(),access:['public','revoked'].includes(value?.access)?value.access:'unknown',state:['current','updating','warming','unavailable'].includes(value?.state)?value.state:'unknown',amendment:currentAmendment?{...currentAmendment}:null};
+  const outcome={scenario,part,phase,at:Date.now(),access:['public','revoked'].includes(value?.access)?value.access:'unknown',state:['current','updating','warming','unavailable'].includes(value?.state)?value.state:'unknown',amendment:currentAmendment?{...currentAmendment}:null,...(attempt?{scopeIndex:attempt.scopeIndex,startedAt:attempt.startedAt,finishedAt:attempt.finishedAt}:{})};
   notReadyOutcomes.push(outcome);appendFileSync('output/hud-scale/not-ready.jsonl',JSON.stringify(outcome)+'\n');
  };
  let expectedDeliveries=0,excludedForPlannedFault=0,missedDeliveries=0,minHealthyOnline=viewers,healthySocketMs=0,healthyWallMs=0,coverageAt=0,unexpectedDisconnects=0;
@@ -357,16 +359,28 @@ for(const scenario of ['concentrated','distributed','overview']){
     state.verifyAfterRead=false;scheduleHudCheck('coalesced-access-verify');
    }
   };
-  const readHudHistory=async(snapshot,phase,expectedRevocation)=>{
+  const readHudHistory=async(snapshot,phase)=>{
    state.historyController?.abort();const controller=new AbortController();state.historyController=controller;state.historyActive=true;state.historySnapshot=null;
+   const attemptStartedAt=Date.now();
    try{
     const history=await hud(tour,'history',undefined,phase+'-history',controller.signal);
+    const attemptFinishedAt=Date.now();
     if(controller.signal.aborted||state.frozen!==snapshot)return;
     if(history.access==='public'&&['current','updating'].includes(history.state)){
      assert.ok(Array.isArray(history.handHistory)&&history.handHistory.length<=50);
      assert.ok(history.handHistory.every(h=>h.tableId===table),'History must remain in this tournament/table');
      state.historySnapshot=snapshot;
-    }else{if(history.access==='revoked')state.frozen=null;if(!expectedRevocation)notReady('history',phase,history);}
+    }else{
+     if(history.access==='revoked')state.frozen=null;
+     const withdrawal=plannedWithdrawal;
+     // Clear immediately, then reconcile a response racing the source ACK.
+     // A failed/false hide receipt cannot excuse any read failure.
+     if(history.access==='revoked'&&withdrawal)await withdrawal.confirmation;
+     if(committedHistoryWithdrawalDenial(history,{tour,startedAt:attemptStartedAt,finishedAt:attemptFinishedAt},withdrawal)){
+      plannedHistoryDenialCount++;
+      if(plannedHistoryDenialSamples.length<32)plannedHistoryDenialSamples.push({scopeIndex:n,startedAt:attemptStartedAt,finishedAt:attemptFinishedAt,hideRequestedAt:withdrawal.hideRequestedAt,hideAckAt:withdrawal.hideAckAt});
+     }else notReady('history',phase,history,{scopeIndex:n,startedAt:attemptStartedAt,finishedAt:attemptFinishedAt});
+    }
    }catch(cause){if(!cause.intentionalHudCancellation)error('history_read');}
    finally{controller.abort();if(state.historyController===controller)state.historyActive=false;recordHudRestoration(state,'history-finished');}
   };
@@ -384,7 +398,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(value.access==='public'&&['current','updating'].includes(value.state)&&Number.isSafeInteger(value.counters?.publicHands)){
      state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};
      state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;
-     track(readHudHistory(state.frozen,phase,expectedRevocation));
+     track(readHudHistory(state.frozen,phase));
     }else{state.frozen=null;if(!expectedRevocation)notReady('summary',phase,value);}
    }catch(cause){if(!cause.intentionalHudCancellation){error('hud_read');if(epoch===state.hudEpoch){state.historyController?.abort();state.historySnapshot=null;state.frozen=null;}}}
    finally{controller.abort();finishHud(controller);}
@@ -401,7 +415,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     });
     if(epoch!==state.hudEpoch)return;
     if(value.access!=='public'||!['current','updating'].includes(value.state)){state.historyController?.abort();state.frozen=null;state.historySnapshot=null;if(!revoking)notReady('summary',phase,value);return;}
-    if(value.accessChanged||!state.frozen){state.historyController?.abort();state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};track(readHudHistory(state.frozen,phase+'-changed',revoking));}
+    if(value.accessChanged||!state.frozen){state.historyController?.abort();state.frozen={revision:value.revision,accessSnapshot:value.accessSnapshot};track(readHudHistory(state.frozen,phase+'-changed'));}
     else assert.equal(state.frozen,frozen,'Access verification must retain the frozen HUD');
     if(epoch===state.hudEpoch&&state.frozen){state.hudCompletedEpoch=epoch;state.verifiedAccessReconnect=accessReconnect;}
    }catch(cause){if(!cause.intentionalHudCancellation){error('hud_read');if(epoch===state.hudEpoch){state.historyController?.abort();state.historySnapshot=null;state.frozen=null;}}}
@@ -535,12 +549,19 @@ for(const scenario of ['concentrated','distributed','overview']){
   coverageAt=tick;expireDeliveries();
   if(!withdrawn&&Date.now()-started>duration*250){
    withdrawn=true;revoking=true;suspendDeliveries(uuid('10000000',20));const before=clients.map(c=>c.revocations);
-   await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:true},true);
+   let confirmHide;
+   plannedWithdrawal={tour:uuid('10000000',20),hideRequestedAt:Date.now(),hideAckAt:null,hiddenConfirmed:false,restoreStartedAt:null,restoreAckAt:null,confirmation:new Promise(resolve=>{confirmHide=resolve;})};
+   try{
+    assert.equal(await rpc('fixture_scale_visibility_v1',{p_tournament_id:plannedWithdrawal.tour,p_hidden:true},true),true,'Owned withdrawal must affect its exact TEST tour');
+    plannedWithdrawal.hideAckAt=Date.now();plannedWithdrawal.hiddenConfirmed=true;
+   }finally{confirmHide();}
    await until(async()=>clients.every((c,i)=>c.revocations>before[i]),15000,'Cross-tour HUD revocation missed at least one viewer');
    revokedClients=clients.filter((c,i)=>c.revocations>before[i]).length;
    await sleep(duration===1800?5000:1000);
    const restorationRequestedAt=Date.now();
-   await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
+   plannedWithdrawal.restoreStartedAt=restorationRequestedAt;
+   assert.equal(await rpc('fixture_scale_visibility_v1',{p_tournament_id:plannedWithdrawal.tour,p_hidden:false},true),true,'Owned restoration must affect its exact TEST tour');
+   plannedWithdrawal.restoreAckAt=Date.now();
    const probe={scenario,sourceRestoreRequestedAt:restorationRequestedAt,startedAt:Date.now(),attempts:[],snapshots:[],failure:null,finishedAt:null};
    restorationReadinessDiagnostics.push(probe);
    let diagnosticActive=null;
@@ -615,7 +636,8 @@ for(const scenario of ['concentrated','distributed','overview']){
  const report={scenario,viewers,durationSeconds:duration,summaryTimingVersion:'per-rpc-complete-body-and-ready-v1',apiSummary,httpSummarySamples:apiSummary.all.samples,httpSummaryP95Ms:apiSummary.all.p95Ms,readySummarySamples:apiSummary.ready.samples,readySummaryP95Ms:apiSummary.ready.p95Ms,logicalHudSamples:sample('summary').length,logicalHudP95Ms:percentile(sample('summary'),.95),logicalHudMaxMs:maximumSample(sample('summary')),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:maximumSample(sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
  report.clockLifecycle={version:'production-felt-bundled-full-load-or-overview-shared-slot-v2',physicalReadsContainingClock:clients.reduce((n,c)=>n+c.clockPhysicalReads,0),bundledPhysicalReads:clients.reduce((n,c)=>n+c.bundledClockPhysicalReads,0),standalonePhysicalReads:clients.reduce((n,c)=>n+c.clockPhysicalReads-c.bundledClockPhysicalReads,0),minScopedReadsPerViewer:Math.min(...clients.map(c=>c.clockScopedReads)),superseded:clients.reduce((n,c)=>n+c.supersededClockReads,0),pendingAtGrading:clients.filter(c=>c.clockPending||c.clockBusy).length,scopeCancellation:true,errorsRemainFailures:true};assert.ok(report.clockLifecycle.minScopedReadsPerViewer>=1,'Every viewer needs a successful scoped clock read');assert.equal(report.clockLifecycle.pendingAtGrading,0);save('running');
- report.notReadyOutcomes=notReadyOutcomes;save('running');
+ report.notReadyOutcomes=notReadyOutcomes;
+ report.plannedHistoryDenials={count:plannedHistoryDenialCount,samples:plannedHistoryDenialSamples,withdrawal:plannedWithdrawal?{scopeIndex:20,hideRequestedAt:plannedWithdrawal.hideRequestedAt,hideAckAt:plannedWithdrawal.hideAckAt,hiddenConfirmed:plannedWithdrawal.hiddenConfirmed,restoreStartedAt:plannedWithdrawal.restoreStartedAt,restoreAckAt:plannedWithdrawal.restoreAckAt}:null};save('running');
  report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:maximumSample(amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:maximumSample(samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
  report.amendmentProbeDiagnostics={samples:amendmentSamples.length,serverReadyUpperBoundMaxMs:maximumSample(amendmentSamples.map(p=>p.serverReadyUpperBoundMs)),
   firstReadyReadP95Ms:percentile(amendmentSamples.map(p=>p.firstReadyReadMs),.95),slowest:[...amendmentSamples].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),
