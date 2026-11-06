@@ -8,6 +8,7 @@ on:
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"

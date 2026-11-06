@@ -916,7 +916,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}"
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm --network "container:$app_container" \
@@ -931,6 +931,7 @@ docker run --rm --network "container:$app_container" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
+  --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1198,4 +1199,34 @@ MOVE_PARITY
       (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL);")"
   if [[ "$active_checkout_state" != '21|21|21|21|2' ]]; then echo "Active checkout committed-state conservation failed ($active_checkout_state)" >&2; exit 1; fi
   echo "ACTIVE_CHECKOUT_COMMIT_PROOF:21active dealers checked out once;21released replacement-needed assignments/receipts/audits;worked minutes preserved;2other assigned tables unchanged"
+  node scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs "$test_root/replacement-dependencies.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$test_root/replacement-dependencies.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REPLACEMENT_FIXTURE'
+BEGIN;
+INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
+VALUES('ad300000-0000-4000-8000-000000000003','ad500000-0000-4000-8000-000000000001','Replacement eligibility TEST','00:00','23:59');
+INSERT INTO public.dealers(id,club_id,full_name,status,tier,skills)
+SELECT md5('checkout-replacement-dealer-'||n)::uuid,'ad500000-0000-4000-8000-000000000001',
+ 'Replacement eligibility TEST '||n,'active','A',ARRAY['holdem'] FROM generate_series(1,3) n;
+INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,current_state,check_in_time,last_released_at,pool_entered_at)
+SELECT md5('checkout-replacement-attendance-'||n)::uuid,md5('checkout-replacement-dealer-'||n)::uuid,
+ 'ad300000-0000-4000-8000-000000000003',(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
+ 'checked_in','available',now()-interval '1 hour',
+ now()-CASE WHEN n=3 THEN interval '1 minute' ELSE interval '20 minutes' END,
+ now()-CASE WHEN n=3 THEN interval '1 minute' ELSE interval '20 minutes' END FROM generate_series(1,3) n;
+INSERT INTO public.club_settings(club_id,auto_swing_enabled) VALUES('ad500000-0000-4000-8000-000000000001',false)
+ON CONFLICT(club_id) DO UPDATE SET auto_swing_enabled=false;
+NOTIFY pgrst,'reload schema';
+COMMIT;
+REPLACEMENT_FIXTURE
+  run_browser_proof '' '' 'active checkout respects automatic OFF and rested replacement eligibility' '' '' '' off
+  docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "UPDATE public.club_settings SET auto_swing_enabled=true WHERE club_id='ad500000-0000-4000-8000-000000000001';"
+  run_browser_proof '' '' 'active checkout respects automatic OFF and rested replacement eligibility' '' '' '' on
+  replacement_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "SELECT (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL),
+      (SELECT count(*) FROM public.dealer_attendance WHERE id IN(md5('checkout-replacement-attendance-1')::uuid,md5('checkout-replacement-attendance-2')::uuid) AND status='checked_in' AND current_state='assigned'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE id=md5('checkout-replacement-attendance-3')::uuid AND status='checked_in' AND current_state='available'),
+      (SELECT count(*) FROM floor_private.dealer_initial_assign_receipts WHERE request_key LIKE 'checkout_replace_%');")"
+  if [[ "$replacement_state" != '1|1|1|1' ]]; then echo "Eligible replacement committed-state conservation failed ($replacement_state)" >&2; exit 1; fi
+  echo "REPLACEMENT_COMMIT_PROOF:OFF checkout remains unstaffed;ON checkout creates1current-session replacement/receipt;recent-release dealer excluded;no duplicate assignment"
 fi
