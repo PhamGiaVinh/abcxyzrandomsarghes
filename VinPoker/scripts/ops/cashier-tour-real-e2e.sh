@@ -1801,7 +1801,7 @@ MANUAL_ACTION_ACTORS
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
   if [[ "$action_finish_state" != '21|105|65|0' ]]; then echo "Manual action Finish conservation failed ($action_finish_state)" >&2; exit 1; fi
   echo 'MANUAL_ACTION_FINISH_PROOF:21completed three-player hands;105exact actions;65seat snapshots;zero active hands'
-  run_browser_proof '' '' 'recorded actions enforce budget and merge once through canonical Finish' '' '' '' '' '' '' '' '' 1
+  run_browser_proof '' '' 'recorded actions enforce budget and merge once through canonical Finish|anonymous public replay reads the recorded hand through actual HTTP' '' '' '' '' '' '' '' '' 1
   recorded_finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9023 AND status='completed'),
     (SELECT count(*) FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001' AND h.hand_number=9023),
