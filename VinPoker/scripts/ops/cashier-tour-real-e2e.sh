@@ -1391,13 +1391,32 @@ STAFF_SALARY_FIXTURE
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'TRACKER_QUEUE_FIXTURE'
 INSERT INTO public.club_trackers(club_id,user_id,granted_by)
 VALUES('a2000000-0000-4000-8000-000000000001',:'owner_id'::uuid,:'owner_id'::uuid) ON CONFLICT DO NOTHING;
+-- The Cashier fixture deliberately has no blind structure. Canonical Tracker
+-- start must freeze a real Floor level; retain its guard rather than bypass it.
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
+   WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
+    AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST'
+    AND t.current_level_id IS NULL)
+ OR EXISTS(SELECT 1 FROM public.tournament_levels WHERE tournament_id='a3000000-0000-4000-8000-000000000001')
+ OR EXISTS(SELECT 1 FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001')
+ THEN RAISE EXCEPTION 'deferred_tracker_blind_fixture_preimage_drift';END IF;
+END $$;
+INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
+VALUES('af910000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',1,100,200,200,20,false);
+UPDATE public.tournaments SET current_level=1,current_level_id='af910000-0000-4000-8000-000000000001'
+WHERE id='a3000000-0000-4000-8000-000000000001';
+COMMIT;
 TRACKER_QUEUE_FIXTURE
   run_browser_proof '' '' 'current Floor deferred move reserves and cancels without joining an active hand' '' '' '' '' '' 1
   deferred_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
     (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE requested_reason='isolated deferred queue/cancel TEST' AND status='cancelled'),
     (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE requested_reason='isolated deferred queue/cancel TEST' AND status<>'cancelled'),
     (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193),
-    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9001 AND status='in_progress');")"
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9001 AND status='in_progress'
+      AND tracker_level_id='af910000-0000-4000-8000-000000000001' AND tracker_level_number=1
+      AND tracker_small_blind=100 AND tracker_big_blind=200 AND tracker_bba=200 AND tracker_is_break=false);")"
   if [[ "$deferred_state" != '21|0|2|1' ]]; then echo "Deferred queue/cancel conservation failed ($deferred_state)" >&2; exit 1; fi
   echo 'DEFERRED_QUEUE_CANCEL_PROOF:21cancelled reservations;zero unresolved;two frozen hand participants;active hand retained'
 fi
