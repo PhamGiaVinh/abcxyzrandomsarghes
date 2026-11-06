@@ -923,8 +923,10 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}"
-  local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}"
+  # These operational stages share committed fixtures. A failed prerequisite
+  # must fail the run immediately, not produce misleading downstream failures.
+  local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
   local -a container_args=()
   if [[ "$replacement_enabled" == rest-race || "$replacement_enabled" == off-race ]]; then container_args+=(--name "$race_browser_container"); fi
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
@@ -942,6 +944,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
   --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
   --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
+  --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1365,4 +1368,19 @@ DO $$ BEGIN IF (SELECT count(*) FROM public.staff WHERE club_id='af200000-0000-4
 COMMIT;
 STAFF_SALARY_FIXTURE
   run_browser_proof '' '' 'inactive earned staff salary HTTP preserves approved period roster' '' '' '' '' 1
+  node "$repo_root/scripts/ops/prepare-tracker-start-runtime-dependencies.mjs" "$test_root/tracker-start-current.sql"
+  { printf "SET vinpoker.isolated_tracker_start_fixture='cashier-current-tracker-v1';\n"; cat "$test_root/tracker-start-current.sql"; } | \
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'TRACKER_QUEUE_FIXTURE'
+INSERT INTO public.club_trackers(club_id,user_id)
+VALUES('a2000000-0000-4000-8000-000000000001',:'owner_id'::uuid) ON CONFLICT DO NOTHING;
+TRACKER_QUEUE_FIXTURE
+  run_browser_proof '' '' 'current Floor deferred move reserves and cancels without joining an active hand' '' '' '' '' '' 1
+  deferred_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+    (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE requested_reason='isolated deferred queue/cancel TEST' AND status='cancelled'),
+    (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE requested_reason='isolated deferred queue/cancel TEST' AND status<>'cancelled'),
+    (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193),
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9001 AND status='in_progress');")"
+  if [[ "$deferred_state" != '21|0|2|1' ]]; then echo "Deferred queue/cancel conservation failed ($deferred_state)" >&2; exit 1; fi
+  echo 'DEFERRED_QUEUE_CANCEL_PROOF:21cancelled reservations;zero unresolved;two frozen hand participants;active hand retained'
 fi

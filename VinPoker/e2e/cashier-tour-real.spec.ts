@@ -17,6 +17,8 @@ for (const name of required) {
   if (!process.env[name]) throw new Error(`missing ${name}`);
 }
 
+const scopeReadFailures=new WeakMap<Page,{status:number;path:string;code?:string;gatewayClass?:string}[]>();
+
 async function loginOwner(page: Page) {
   const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, "");
   const anon = process.env.LOCAL_SUPABASE_ANON_KEY!;
@@ -35,6 +37,18 @@ async function loginOwner(page: Page) {
   await page.addInitScript(({ key, value }) => {
     localStorage.setItem(key, JSON.stringify(value));
   }, { key: process.env.LOCAL_SUPABASE_STORAGE_KEY!, value: session });
+  if(!scopeReadFailures.has(page)){
+    const failures:{status:number;path:string;code?:string;gatewayClass?:string}[]=[];scopeReadFailures.set(page,failures);
+    page.on('response',response=>{
+      const path=new URL(response.url()).pathname;
+      if(response.status()<400||failures.length>=20||!['/rest/v1/rpc/dealer_control_club_ids','/rest/v1/rpc/get_my_floor_operator_scope'].includes(path))return;
+      const row:{status:number;path:string;code?:string;gatewayClass?:string}={status:response.status(),path};failures.push(row);
+      void response.text().then(raw=>{
+        try{const code=JSON.parse(raw)?.code;if(typeof code==='string'&&/^(?:PGRST\d{3}|[0-9A-Z]{5})$/.test(code))row.code=code;}catch{/* Gateway bodies may not be JSON. */}
+        row.gatewayClass=/upstream.*tim(?:ed? ?out|eout)|timeout/i.test(raw)?'timeout':/connection refused/i.test(raw)?'connection-refused':/upstream.*(?:closed|reset)|connection reset/i.test(raw)?'connection-closed':/no healthy upstream/i.test(raw)?'no-healthy-upstream':'unclassified';
+      }).catch(()=>{row.gatewayClass='body-unavailable';});
+    });
+  }
   return session.access_token as string;
 }
 
@@ -54,7 +68,11 @@ async function loginFixtureStaff(){
 
 async function selectDealerSwingClub(page:Page,name:string){
  const scope=page.getByRole('heading',{name:'Chọn CLB để vận hành Dealer Swing',exact:true}).locator('..');
- await expect(scope).toBeVisible();await scope.getByRole('combobox').click();
+ try{await expect(scope).toBeVisible();}catch(error){
+  if(process.env.LOCAL_OPERATIONS_LATENCY_REPORT)writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT.replace(/\.json$/,'-dealer-scope-failure-http.json'),JSON.stringify({kind:'ISOLATED_DEALER_SWING_SCOPE_FAILURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,test:test.info().title,path:new URL(page.url()).pathname,scopeReadFailures:scopeReadFailures.get(page)??[],scopeErrorVisible:await page.getByText('Không tải được phạm vi CLB',{exact:true}).isVisible(),qualification:false,limitations:'First-load failure retained without retry,role fallback,raw response bodies or credentials.'},null,2));
+  throw error;
+ }
+ await scope.getByRole('combobox').click();
  await page.getByRole('option',{name,exact:true}).click();
 }
 
@@ -1270,6 +1288,48 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
    const after=await pool();expect(after.find((r:{id:string})=>r.id===recent.id)).toEqual(recent);expect(after.filter((r:{current_state:string})=>r.current_state==='assigned')).toHaveLength(1);
   }
   const writeToVisibleMs=performance.now()-started,retry=await checkout();expect(retry.data.idempotent).toBe(true);expect(retry.data.check_out_time).toBe(results[0].data.check_out_time);observation={requests:results.length,first:1,replays:results.length-1,ackMs:first!.ms,retryMs:retry.ms,writeToVisibleMs};if(mode==='off'||mode==='on')expect(writeToVisibleMs).toBeLessThanOrEqual(3000);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
+test('current Floor deferred move reserves and cancels without joining an active hand',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED!=='1','Isolated stage after existing operational conservation proofs');test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
+ const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
+ type Table={tournament_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
+ const roster=async()=>{const r=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(r.data)).toBe(true);return r.data as Table[];};
+ const seats=(tables:Table[])=>tables.flatMap(t=>t.seats.map(s=>({...s,table:t.tournament_table_id,session:t.table_session_id}))).sort((a,b)=>a.entry_id.localeCompare(b.entry_id));
+ const intent=async(player:string,destinationId:string)=>{const tables=await roster(),source=tables.find(t=>t.seats.some(s=>s.player_id===player))!,destination=tables.find(t=>t.tournament_table_id===destinationId)!;expect(source).toBeTruthy();expect(destination).toBeTruthy();expect(source.control_mode).toBe('manual');const seat=source.seats.find(s=>s.player_id===player)!;expect(seat.entry_no).toBe(2);return {p_entry_id:seat.entry_id,p_from_tournament_table_id:source.tournament_table_id,p_from_table_session_id:source.table_session_id,p_to_tournament_table_id:destination.tournament_table_id,p_to_table_session_id:destination.table_session_id,p_to_seat_number:Array.from({length:9},(_,n)=>n+1).find(n=>!destination.seats.some(s=>s.seat_number===n))!,p_expected_source_revision:source.session_revision,p_expected_destination_revision:destination.session_revision,p_expected_source_epoch:source.control_epoch,p_expected_destination_epoch:destination.control_epoch,p_reason:'isolated deferred queue/cancel TEST',p_request_id:crypto.randomUUID()};};
+ const readHand=async(handId:string)=>{const response=await fetch(api+'/rest/v1/hand_players?select=player_id,entry_number,seat_number,starting_stack&hand_id=eq.'+handId+'&order=seat_number',{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
+ const rows:{queueMs:number;retryMs:number;pendingReadMs:number;cancelMs:number}[]=[];let phase='setup',race:unknown=null;
+ const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-deferred-queue-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_DEFERRED_MOVE_QUEUE_CANCEL_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,rows,distributions:Object.fromEntries(['queueMs','retryMs','pendingReadMs','cancelMs'].map(k=>[k,dist(rows.map(r=>r[k as keyof typeof r]))])),race,qualification:false,limitations:'Twenty serial queue/cancel cycles by20real Auth operators against one canonical in-progress hand. Two paid players enter a fresh Tracker table before its exact session/epoch start. Every pending move retains source seats/chips and cannot join the active hand. Captured roster plus exact32 display patch is not full current reader qualification. This test does not finish/void a hand,apply a deferred move,measure UI/Realtime,or prove mixed1000viewer capacity.'},null,2));
+ try{
+  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorReadLoad:{gameTableIds:string[]}};
+  const opened=await rpc(owner,'floor_open_tournament_table_v3',{p_tournament_id:tour,p_game_table_id:fixture.floorReadLoad.gameTableIds[1],p_control_mode:'tracker',p_request_id:crypto.randomUUID()});expect(opened.data.ok).toBe(true);const tableId=opened.data.tournament_table_id;
+  for(const identity of staff.slice(0,2)){const move=await intent(identity.userId,tableId);expect((await rpc(owner,'move_player_seat_v5',move)).data.ok).toBe(true);}
+  const target=(await roster()).find(t=>t.tournament_table_id===tableId)!;expect(target.control_mode).toBe('tracker');expect(target.seats).toHaveLength(2);
+  const identityResponse=await fetch(api+'/auth/v1/user',{headers,signal:AbortSignal.timeout(5000)});expect(identityResponse.ok).toBe(true);const ownerIdentity=await identityResponse.json();expect(typeof ownerIdentity.id).toBe('string');
+  const start={p_tournament_id:tour,p_tournament_table_id:tableId,p_table_session_id:target.table_session_id,p_control_epoch:target.control_epoch,p_hand_number:9001,p_hand_time:new Date().toISOString(),p_created_by:ownerIdentity.id,p_button_seat:1};
+  expect((await rpc(owner,'start_tracker_hand_v3',{...start,p_control_epoch:target.control_epoch+1})).data.error).toBe('STALE_TRACKER_CONTEXT');
+  const started=await rpc(owner,'start_tracker_hand_v3',start);expect(started.data.status).toBe('success');const handId=started.data.hand_id;expect(typeof handId).toBe('string');
+  expect((await rpc(owner,'start_tracker_hand_v3',start)).data.error).toBe('table_has_active_hand');
+  const before=seats(await roster()),handBefore=await readHand(handId);const paid=before.filter(s=>staff.some(identity=>identity.userId===s.player_id));expect(paid).toHaveLength(20);expect(paid.reduce((sum,s)=>sum+s.chip_count,0)).toBe(400000);expect(handBefore).toHaveLength(2);
+  phase='serial';
+  for(let n=0;n<20;n++){
+   const actor=staff[n],player=staff[2+n%18],move=await intent(player.userId,tableId),queued=await rpc(actor.token,'move_player_seat_v5',move);expect(queued.data.ok).toBe(true);expect(queued.data.queued).toBe(true);
+   const retry=await rpc(actor.token,'move_player_seat_v5',move);expect(retry.data).toEqual(queued.data);
+   const pending=await rpc(owner,'get_floor_pending_tracker_moves_v1',{p_tournament_id:tour});expect(pending.data).toHaveLength(1);expect(pending.data[0]).toMatchObject({pending_move_id:queued.data.pending_move_id,entry_id:move.p_entry_id,status:'pending',destination_tournament_table_id:tableId});
+   expect(seats(await roster())).toEqual(before);expect(await readHand(handId)).toEqual(handBefore);
+   const cancelled=await rpc(actor.token,'floor_cancel_pending_tracker_move_v1',{p_pending_move_id:queued.data.pending_move_id});expect(cancelled.data.status).toBe('cancelled');
+   expect((await rpc(actor.token,'floor_cancel_pending_tracker_move_v1',{p_pending_move_id:queued.data.pending_move_id})).data).toMatchObject({ok:true,status:'cancelled',already_resolved:true});
+   expect((await rpc(owner,'get_floor_pending_tracker_moves_v1',{p_tournament_id:tour})).data).toEqual([]);rows.push({queueMs:queued.ms,retryMs:retry.ms,pendingReadMs:pending.ms,cancelMs:cancelled.ms});report();
+  }
+  phase='same-key-race';const move=await intent(staff[2].userId,tableId),answers=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'move_player_seat_v5',move)));for(const answer of answers)expect(answer.data).toEqual(answers[0].data);expect(answers[0].data.queued).toBe(true);
+  race={requests:20,identicalResults:true,latency:dist(answers.map(r=>r.ms))};expect((await rpc(owner,'get_floor_pending_tracker_moves_v1',{p_tournament_id:tour})).data).toHaveLength(1);
+  expect((await rpc(owner,'floor_cancel_pending_tracker_move_v1',{p_pending_move_id:answers[0].data.pending_move_id})).data.status).toBe('cancelled');expect(seats(await roster())).toEqual(before);expect(await readHand(handId)).toEqual(handBefore);
+  for(const key of ['queueMs','retryMs','pendingReadMs','cancelMs'] as const)expect(dist(rows.map(r=>r[key])).p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
 
