@@ -1180,6 +1180,47 @@ test('current Floor exact movement conserves paid chips and retries through HTTP
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('active-table dealer checkout preserves work and reports an unstaffed table',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED!=='1','Sixth isolated stage after exact movement conservation');test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ type Context={n:number;table_id:string;session_id:string;incoming_attendance:string};
+ const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {handoverClubId:string;handovers:Context[]};expect(fixture.handovers).toHaveLength(23);
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const read=async(table:string,query:string)=>{const response=await fetch(api+'/rest/v1/'+table+'?'+query,{headers:headers(owner),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);const data=await response.json();expect(Array.isArray(data)).toBe(true);return data;};
+ const attendance=(id:string)=>read('dealer_attendance','select=id,status,current_state,check_in_time,check_out_time,total_worked_minutes_today,overtime_minutes&id=eq.'+id);
+ const assigned=(context:Context)=>read('dealer_assignments','select=id,attendance_id,table_session_id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
+ const checkout=async(token:string,id:string)=>{const started=performance.now(),response=await fetch(api+'/functions/v1/checkout-dealer',{method:'POST',headers:headers(token),body:JSON.stringify({attendance_id:id}),signal:AbortSignal.timeout(10000)});expect(response.ok).toBe(true);const data=await response.json();expect(data.results).toHaveLength(1);expect(data.results[0].success).toBe(true);return {data:data.results[0],ms:performance.now()-started};};
+ const realtime=process.env.LOCAL_OPERATIONS_REALTIME==='1',seen=new Map<string,number>();let postgresReady=false;
+ page.on('websocket',socket=>socket.on('framereceived',frame=>{try{
+  const decoded=JSON.parse(typeof frame.payload==='string'?frame.payload:frame.payload.toString()),message=Array.isArray(decoded)?{topic:decoded[2],event:decoded[3],payload:decoded[4]}:decoded;
+  if(typeof message.topic!=='string'||!message.topic.startsWith('realtime:swing:')||!message.topic.includes('dealer_assignments'))return;
+  if(message.event==='system'&&message.payload?.status==='ok'&&message.payload?.extension==='postgres_changes')postgresReady=true;
+  const data=message.payload?.data,row=data?.record;
+  if(message.event==='postgres_changes'&&data?.table==='dealer_assignments'&&row?.club_id===fixture.handoverClubId&&row.status==='completed'&&row.release_reason==='dealer_checkout'&&typeof row.attendance_id==='string'&&!seen.has(row.attendance_id))seen.set(row.attendance_id,performance.now());
+ }catch{/* Never persist frames or credentials. */}}));
+ const rows:{ackMs:number;retryMs:number;independentReadMs:number;writeToVisibleMs?:number;writeToRealtimeMs?:number}[]=[];let phase='preconditions',race:unknown=null;
+ const dist=(key:keyof typeof rows[number])=>{const values=rows.map(r=>r[key]).filter((v):v is number=>typeof v==='number').sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-active-dealer-checkout-http.json'),JSON.stringify({kind:'REAL_AUTH_ACTIVE_TABLE_CHECKOUT_SHORTAGE_AND_OPEN_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,graded:20,warmup:0,rows,race,postgresReady,distributions:Object.fromEntries(['ackMs','retryMs','independentReadMs','writeToVisibleMs','writeToRealtimeMs'].map(key=>[key,dist(key as keyof typeof rows[number])])),qualification:false,limitations:'Twenty serial active cash-table checkouts plus one same-attendance20request race. All outgoing fixture dealers already checked out and all remaining incoming dealers assigned;no available replacement pool. Verifies canonical release/shortage/work retention and one continuously open actual Swing board. Does not qualify eligible-pool auto-replacement,rest expiry,inactive payroll,Telegram or mixed1000spectator load.'},null,2));
+ try{
+  expect(await read('dealer_attendance','select=id,dealers!inner(club_id)&status=eq.checked_in&current_state=eq.available&dealers.club_id=eq.'+fixture.handoverClubId)).toHaveLength(0);
+  if(realtime){await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');await expect(page.locator('#table-card-'+fixture.handovers[0].table_id)).toBeVisible({timeout:30_000});await expect.poll(()=>postgresReady,{timeout:15_000}).toBe(true);}
+  for(let actor=0;actor<20;actor++){
+   phase='checkout-'+actor;const context=fixture.handovers[actor],before=await attendance(context.incoming_attendance),active=await assigned(context);expect(before).toHaveLength(1);expect(before[0].status).toBe('checked_in');expect(before[0].current_state).toBe('assigned');expect(active).toHaveLength(1);expect(active[0].attendance_id).toBe(context.incoming_attendance);expect(active[0].table_session_id).toBe(context.session_id);
+   const card=page.locator('#table-card-'+context.table_id);if(realtime)await expect(card.getByText('Handover incoming TEST '+context.n,{exact:true})).toBeVisible();
+   const started=performance.now(),first=await checkout(staff[actor].token,context.incoming_attendance);expect(first.data.needs_replacement_table).toBe(context.table_id);expect(first.data.auto_assigned_dealer).toBeNull();
+   let writeToVisibleMs:number|undefined,writeToRealtimeMs:number|undefined;
+   if(realtime){await expect.poll(()=>seen.has(context.incoming_attendance),{timeout:Math.max(1,5000-(performance.now()-started))}).toBe(true);writeToRealtimeMs=seen.get(context.incoming_attendance)!-started;await expect(card.getByText('Chưa gán',{exact:true})).toBeVisible({timeout:Math.max(1,5000-(performance.now()-started))});writeToVisibleMs=performance.now()-started;}
+   const readAt=performance.now(),ended=await attendance(context.incoming_attendance);expect(ended).toHaveLength(1);expect(ended[0].status).toBe('checked_out');expect(ended[0].current_state).toBe('checked_out');expect(ended[0].check_out_time).toBe(first.data.check_out_time);expect(ended[0].total_worked_minutes_today).toBe(Math.round((Date.parse(ended[0].check_out_time)-Date.parse(ended[0].check_in_time))/60000));expect(ended[0].total_worked_minutes_today).toBeGreaterThanOrEqual(60);expect(await assigned(context)).toHaveLength(0);
+   const released=await read('dealer_assignments','select=id,status,release_reason,needs_replacement&id=eq.'+active[0].id);expect(released).toEqual([{id:active[0].id,status:'completed',release_reason:'dealer_checkout',needs_replacement:true}]);const independentReadMs=performance.now()-readAt;
+   const retry=await checkout(staff[actor].token,context.incoming_attendance);expect(retry.data.idempotent).toBe(true);expect(retry.data.check_out_time).toBe(first.data.check_out_time);expect(await attendance(context.incoming_attendance)).toEqual(ended);expect(await assigned(context)).toHaveLength(0);
+   rows.push({ackMs:first.ms,retryMs:retry.ms,independentReadMs,writeToVisibleMs,writeToRealtimeMs});report();
+  }
+  phase='duplicate-race';const context=fixture.handovers[22];expect(await assigned(context)).toHaveLength(1);const results=await Promise.all(Array.from({length:20},()=>checkout(staff[0].token,context.incoming_attendance)));for(const result of results){expect(result.data.check_out_time).toBe(results[0].data.check_out_time);expect(result.data.needs_replacement_table).toBe(context.table_id);expect(result.data.auto_assigned_dealer).toBeNull();}expect(results.filter(r=>r.data.idempotent!==true)).toHaveLength(1);expect(await assigned(context)).toHaveLength(0);race={requests:20,first:1,replays:19};
+  for(const other of fixture.handovers.slice(20,22)){const active=await assigned(other);expect(active).toHaveLength(1);expect(active[0].attendance_id).toBe(other.incoming_attendance);}
+  expect(dist('ackMs').p95Ms).toBeLessThanOrEqual(1000);if(realtime)expect(dist('writeToVisibleMs').p95Ms).toBeLessThanOrEqual(3000);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
 test('current owner rake closes once and exports the immutable event-day snapshot',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_BUY_CLOSE_ENABLED!=='1','Fourth isolated stage after reentry conservation');test.setTimeout(120_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';

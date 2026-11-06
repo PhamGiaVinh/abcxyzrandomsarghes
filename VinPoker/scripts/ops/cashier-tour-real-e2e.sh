@@ -916,7 +916,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}"
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm --network "container:$app_container" \
@@ -930,6 +930,7 @@ docker run --rm --network "container:$app_container" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
+  --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1184,4 +1185,17 @@ MOVE_PARITY
       (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='pending');")"
   if [[ "$movement_state" != '40|20|20|20|400000|64|264000000|61|21|21|0' ]]; then echo "Exact movement committed chip/money/ticket/receipt conservation failed ($movement_state)" >&2; exit 1; fi
   echo "EXACT_MOVE_COMMIT_PROOF:21committed moves/21tickets/history/intent receipts;20active paid entry2 seats/400000chips;40paid registrations/64movements/264000000TEST units unchanged;no pending reservations or duplicate retries"
+  # Separate stage, after the earlier assignment/attendance conservation proof.
+  # The same23 incoming dealers still occupy23 cash sessions; all outgoing
+  # dealers have checked out, so no available replacement fixture is invented.
+  run_browser_proof '' '' 'active-table dealer checkout preserves work and reports an unstaffed table' '' '' 1
+  active_checkout_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "WITH target AS (SELECT md5('http-handover-in-attendance-'||n)::uuid attendance_id FROM generate_series(1,23) n WHERE n<=20 OR n=23)
+     SELECT (SELECT count(*) FROM public.dealer_attendance a JOIN target t ON t.attendance_id=a.id WHERE a.status='checked_out' AND a.current_state='checked_out' AND a.total_worked_minutes_today>=60),
+      (SELECT count(*) FROM public.dealer_assignments a JOIN target t ON t.attendance_id=a.attendance_id WHERE a.status='completed' AND a.released_at IS NOT NULL AND a.release_reason='dealer_checkout' AND a.needs_replacement),
+      (SELECT count(*) FROM private.dealer_checkout_receipts_v1 r JOIN target t ON t.attendance_id=r.attendance_id),
+      (SELECT count(*) FROM public.audit_logs a JOIN target t ON t.attendance_id=a.entity_id WHERE a.action='checkout_dealer'),
+      (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL);")"
+  if [[ "$active_checkout_state" != '21|21|21|21|2' ]]; then echo "Active checkout committed-state conservation failed ($active_checkout_state)" >&2; exit 1; fi
+  echo "ACTIVE_CHECKOUT_COMMIT_PROOF:21active dealers checked out once;21released replacement-needed assignments/receipts/audits;worked minutes preserved;2other assigned tables unchanged"
 fi
