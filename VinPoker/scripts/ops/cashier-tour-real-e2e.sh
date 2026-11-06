@@ -1045,9 +1045,11 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
 if [[ "$clock_candidate_probe" == 1 ]]; then
   # This is a separate integration probe, never historical proof or32case PASS.
   # All source guards and checksums remain intact; no hand/HUD read activation.
-  node --input-type=module >"$test_root/clock-candidate-migrations.list" <<'CANDIDATE_PATHS'
-import {loadPackage} from './scripts/ops/tracker-hud-20261104-release.mjs';
-for(const entry of loadPackage().entries)console.log(entry.path);
+  node --input-type=module - "$repo_root" >"$test_root/clock-candidate-migrations.list" <<'CANDIDATE_PATHS'
+import {pathToFileURL} from 'node:url';
+const root=process.argv[2];
+const {loadPackage}=await import(pathToFileURL(root+'/scripts/ops/tracker-hud-20261104-release.mjs').href);
+for(const entry of loadPackage(root).entries)console.log(entry.path);
 CANDIDATE_PATHS
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CLOCK_CANDIDATE_PREFLIGHT'
 DO $$ BEGIN
@@ -1072,16 +1074,16 @@ CLOCK_CANDIDATE_PREFLIGHT
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
   LOCAL_CLOCK_CANDIDATE_STATUS="$test_root/isolated-status.json" \
   LOCAL_CLOCK_CANDIDATE_REPORT="$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" \
-    node scripts/ops/clock-candidate-broadcast.mjs &
+    node "$repo_root/scripts/ops/clock-candidate-broadcast.mjs" &
   clock_flush_pid=$!
   run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
   kill -TERM "$clock_flush_pid"
   wait "$clock_flush_pid"
   clock_flush_pid=''
-  node --input-type=module <<'CLOCK_FLUSH_POSTCHECK'
+  node --input-type=module - "$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" <<'CLOCK_FLUSH_POSTCHECK'
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-const report=JSON.parse(readFileSync('output/operations-latency/clock-candidate-broadcast-http.json','utf8'));
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(report.phase,'stopped');assert.equal(report.failures,0);
 assert.ok(report.completed>0);assert.ok(report.sent>0);
 CLOCK_FLUSH_POSTCHECK
