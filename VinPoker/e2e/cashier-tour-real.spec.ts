@@ -7,6 +7,7 @@ import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '
 import {parseSeriesClubLivePulseV1} from '../src/lib/series-intelligence/seriesClubLivePulseV1';
 import {parseOpsIntelligenceContextV1} from '../src/ops/intelligence/opsIntelligenceContextV1';
 import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelligenceTimelineV1';
+import {clockBroadcastSignal,decodeClockWireFrame} from '../tests/publicHud/clockWireDiagnostics';
 
 const required = [
   "LOCAL_SUPABASE_URL",
@@ -650,7 +651,9 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
  const tourId='ac300000-0000-4000-8000-000000000001';
  const context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL});
  const viewer=await context.newPage();let phase='initial-public-read',ackMs:number|undefined,visibleMs:number|undefined,independentRunning=false;
- let realtimeJoined=false;
+ let realtimeJoined=false,websocketCloses=0,websocketErrors=0;
+ const signals:{at:number;components:string[];clockRevision:string|null}[]=[];
+ let controlState:{action:string;ackAt:number;verifiedAt:number;running:boolean;revisionChanged:boolean}|null=null;
  const publicReads:{rpc:string;status:number;code:string|null;rows:number|null;running:boolean|null;remaining:number|null;failure:string|null}[]=[];
  viewer.on('response',async response=>{
   const rpcName=new URL(response.url()).pathname.split('/').at(-1);
@@ -663,15 +666,16 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
    if(publicReads.length<64)publicReads.push({rpc:rpcName!,status:response.status(),code,rows:Array.isArray(value)?value.length:null,running:typeof row?.is_running==='boolean'?row.is_running:null,remaining:typeof row?.remaining_seconds==='number'?row.remaining_seconds:null,failure});
   }catch{if(publicReads.length<64)publicReads.push({rpc:rpcName!,status:response.status(),code:null,rows:null,running:null,remaining:null,failure:'unreadable_response'});}
  });
- viewer.on('websocket',socket=>socket.on('framereceived',frame=>{try{
-  const wire=JSON.parse(String(frame.payload)),event=Array.isArray(wire)?wire[3]:wire.event,topic=Array.isArray(wire)?wire[2]:wire.topic,payload=Array.isArray(wire)?wire[4]:wire.payload;
+ viewer.on('websocket',socket=>{socket.on('close',()=>{websocketCloses++;});socket.on('socketerror',()=>{websocketErrors++;});socket.on('framereceived',frame=>{try{
+  const wire=decodeClockWireFrame(frame.payload) as Record<string,any>|any[],event=Array.isArray(wire)?wire[3]:wire.event,topic=Array.isArray(wire)?wire[2]:wire.topic,payload=Array.isArray(wire)?wire[4]:wire.payload;
   if(event==='phx_reply'&&topic==='realtime:public:tournament-viewer-v2:'+tourId&&payload?.status==='ok')realtimeJoined=true;
- }catch{ /* No raw frames or credentials are retained. */ }}));
+  const signal=clockBroadcastSignal(wire,tourId);if(signal&&signals.length<128)signals.push({at:Date.now(),...signal});
+ }catch{ /* No raw frames or credentials are retained. */ }});});
  const controls:{action:string;warmup:boolean;ackMs:number;writeToVisibleMs:number}[]=[];
  const grouped=()=>['pause','resume'].map(action=>{const values=controls.filter(row=>row.action===action&&!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b);return {action,samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};});
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-clock-ui-http.json'),JSON.stringify({
   kind:'CANONICAL_CLOCK_RPC_START_TO_ANONYMOUS_PUBLIC_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,realtimeJoined,publicReads,actors:1,anonymousObservers:1,startSamples:ackMs===undefined?0:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
+  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,realtimeJoined,websocketCloses,websocketErrors,signals,controlState,publicReads,actors:1,anonymousObservers:1,startSamples:ackMs===undefined?0:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
   limitations:'One start plus3warmup and20graded canonical pause/resume pairs through real HTTP on one continuously open anonymous screen. Start is a single observation,not p95. Realtime join is observed separately;join alone does not prove which signal caused each render.20s per transition is an observation timeout,not a newly approved latency target. No refresh/reload,Edge wrapper,next-level/automatic-break screen or mixed1000spectator claim. Separate control test covers CAS concurrency.',
  },null,2));
  const rpc=async(name:string,args:unknown)=>{
@@ -695,6 +699,9 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
    expect(before.is_running).toBe(action==='pause');expect(before.control_revision).toMatch(/^[a-f0-9]{32}$/);
    const began=performance.now(),changed=await rpc('floor_control_tournament_clock',{p_tournament_id:tourId,p_action:action,p_delta_seconds:null,p_expected_control_revision:before.control_revision}),ack=performance.now();
    expect(changed.ok).toBe(true);
+   const after=await rpc('get_tournament_clock',{p_tournament_id:tourId});
+   controlState={action,ackAt:Date.now()-Math.round(performance.now()-ack),verifiedAt:Date.now(),running:after.is_running,revisionChanged:after.control_revision!==before.control_revision};report();
+   expect(after.is_running).toBe(action==='resume');expect(after.control_revision).not.toBe(before.control_revision);
    const marker=viewer.getByText('Đồng hồ đang dừng',{exact:true}),remaining=()=>Math.max(1,20000-(performance.now()-began));
    if(action==='pause')await expect(marker).toBeVisible({timeout:remaining()});else await expect(marker).toHaveCount(0,{timeout:remaining()});
    // Absence of the paused marker alone also matches an error/blank page.
@@ -702,8 +709,6 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
    await expect(viewer.getByText('Live',{exact:true})).toBeVisible({timeout:remaining()});
    await expect(viewer.getByText(/^\d{2}:\d{2}$/)).toBeVisible({timeout:remaining()});
    const observed=performance.now();expect(observed-began).toBeLessThanOrEqual(20000);
-   const after=await rpc('get_tournament_clock',{p_tournament_id:tourId});
-   expect(after.is_running).toBe(action==='resume');expect(after.control_revision).not.toBe(before.control_revision);
    controls.push({action,warmup:index<3,ackMs:ack-began,writeToVisibleMs:observed-began});report();
   }
   for(const row of grouped())expect(row.samples).toBe(20);phase='passed';report();

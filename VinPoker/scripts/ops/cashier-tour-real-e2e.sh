@@ -57,6 +57,37 @@ ephemeral_containers=()
 cleanup() {
   local exit_code=$?
   if [[ -n "${clock_flush_pid:-}" ]]; then kill "$clock_flush_pid" 2>/dev/null || true; wait "$clock_flush_pid" 2>/dev/null || true; fi
+  if [[ "$exit_code" != 0 && "$clock_candidate_probe" == 1 && -n "${db_container:-}" ]]; then
+    mkdir -p "$repo_root/output/operations-latency"
+    # Failure-only fixed TEST scope, counts and booleans. No payloads, message
+    # bodies, schema definitions, actor data or credentials leave this runtime.
+    docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/clock-candidate-state-http.json" 2>/dev/null <<'CLOCK_FAILURE_STATE' || true
+SET statement_timeout='5s';
+SELECT jsonb_build_object('kind','ISOLATED_CLOCK_BROADCAST_FAILURE_STATE','qualification',false,
+ 'observationScope','Failure cleanup after flusher stop; not the exact timeout snapshot',
+ 'observedAt',clock_timestamp(),
+ 'ownedFixture',EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST'),
+ 'clockSource',(SELECT jsonb_build_object('started',clock_started_at IS NOT NULL,'paused',clock_paused_at IS NOT NULL)
+   FROM public.tournaments WHERE id='ac300000-0000-4000-8000-000000000001' AND name='Operations clock TEST'),
+ 'pendingClock',(SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1 WHERE tournament_id='ac300000-0000-4000-8000-000000000001' AND component='clock'),
+ 'messagesPublicationExists',EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime_messages_publication'),
+ 'messagesTablePublished',EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid
+   WHERE p.pubname='supabase_realtime_messages_publication' AND r.prrelid='realtime.messages'::regclass),
+ 'activeLogicalSlots',(SELECT count(*) FROM pg_replication_slots WHERE active AND slot_type='logical'),
+ 'messageColumnsSupported',(SELECT count(*)=3 FROM information_schema.columns WHERE table_schema='realtime' AND table_name='messages' AND column_name IN ('topic','event','payload')),
+ 'topicMessages',(SELECT count(*) FROM realtime.messages m WHERE to_jsonb(m)->>'topic'='public:tournament-viewer-v2:ac300000-0000-4000-8000-000000000001'),
+ 'clockChangedMessages',(SELECT count(*) FROM realtime.messages m WHERE to_jsonb(m)->>'topic'='public:tournament-viewer-v2:ac300000-0000-4000-8000-000000000001'
+   AND to_jsonb(m)->>'event'='changed' AND (to_jsonb(m)->'payload'->'components') @> '["clock"]'::jsonb)
+)
+WHERE EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ AND EXISTS(SELECT 1 FROM public.tournaments WHERE id='ac300000-0000-4000-8000-000000000001' AND name='Operations clock TEST');
+CLOCK_FAILURE_STATE
+    if [[ ! -s "$repo_root/output/operations-latency/clock-candidate-state-http.json" ]]; then
+      printf '%s\n' '{"kind":"ISOLATED_CLOCK_BROADCAST_FAILURE_STATE","captureUnavailable":true,"qualification":false}' \
+        >"$repo_root/output/operations-latency/clock-candidate-state-http.json"
+    fi
+  fi
   if [[ -n "${race_control_pid:-}" && -n "${db_container:-}" ]]; then
     docker exec "$db_container" psql -X -Atq -U postgres -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name='isolated_checkout_policy_control';" >/dev/null 2>&1 || true
     kill "$race_control_pid" 2>/dev/null || true
