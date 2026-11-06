@@ -12,6 +12,7 @@ import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
+import {tableFailureSample} from './scale.table-trace.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 import {parsePublicClockSummary} from '../../.local-data/hud-scale-runtime/publicTableHistory.mjs';
@@ -28,24 +29,25 @@ const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTranspo
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
-const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
+const readyProbeTimes=new Map(),amendReadyProbeTimes=new Map(),workerProbeDiagnostics=[];
 const coveringHintDiagnostics=new Map();
-const hudFailureSamples=[];
+const hudFailureSamples=[],tableFailureSamples=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},tableFailureKinds={},requestAccounting={},observationOrder=0;
 let dispatchBuckets=new Map();
 const dispatchReport=()=>({windowMs:100,source:'physical HTTP launches including errors and cancellations; nonempty generator-clock windows',paths:Object.fromEntries([...dispatchBuckets].map(([path,buckets])=>{const counts=[...buckets.values()];return [path,{nonEmptyWindows:counts.length,maxRequestsPerWindow:maximumSample(counts),p95RequestsPerWindow:percentile(counts,.95)}];}))});
 const error=kind=>{stats.errors[kind]=(stats.errors[kind]??0)+1;};
 const recordSummaryApi=(ms,phase,data)=>{const state=data?.access==='revoked'?'revoked':['current','updating','warming','unavailable'].includes(data?.state)?data.state:'unknown';stats.summaryHttp.push({ms,phase:phase??'unspecified',state,ready:data?.access==='public'&&['current','updating'].includes(state)});};
-async function post(path,body,privileged=false,phase='other',callerSignal){
+async function post(path,body,privileged=false,phase='other',callerSignal,trace){
  const key=privileged?status.SERVICE_ROLE_KEY:status.ANON_KEY,start=performance.now();
  const accounting=requestAccounting[phase+':'+path]??={launched:0,requestBytes:0,completed:0,responseBytes:0,cancelled:0};
+ if(trace)trace.launchedAt=Date.now();
  const encoded=JSON.stringify(body);accounting.launched++;accounting.requestBytes+=Buffer.byteLength(encoded);
  const windows=dispatchBuckets.get(path)??new Map();dispatchBuckets.set(path,windows);const window=Math.floor(performance.now()/100);windows.set(window,(windows.get(window)??0)+1);
  const timeout=AbortSignal.timeout(10000),signal=callerSignal?AbortSignal.any([callerSignal,timeout]):timeout;
  const intentionallyCancelled=error=>error?.httpStatus===undefined&&callerSignal?.aborted&&!timeout.aborted&&(error===callerSignal.reason||error?.name==='AbortError');
  try{
- const response=await httpTransport.request(status.API_URL+path,{headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:encoded,signal}).catch(error=>{
+ const response=await httpTransport.request(status.API_URL+path,{headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:encoded,signal,...(trace?{onHeaders:({status,headersAt})=>{trace.httpStatus=status;trace.headersAt=trace.launchedAt+headersAt-start;}}:{})}).catch(error=>{
   if(intentionallyCancelled(error))throw error;
   const kind=`${phase}:${path.split('/').at(-1)}:${timeout.aborted?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
@@ -58,13 +60,20 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
  const group=/\bhud_group;desc="([1-9][0-9]{0,2})"/.exec(response.headers['server-timing']??'');if(group&&Number(group[1])<=256)timings.groupSize.push(Number(group[1]));
  for(const [field,header] of [['upstream','x-kong-upstream-latency'],['proxy','x-kong-proxy-latency']]){const value=response.headers[header];if(value!==undefined&&Number.isFinite(Number(value)))timings[field].push(Number(value));}
  if(!response.ok){if(response.status>=500){const kind=phase+':'+classifyEdgeFailure(response.text);runtimeFailures[kind]=(runtimeFailures[kind]??0)+1;}let code='';try{const body=JSON.parse(response.text);if(typeof body.code==='string'&&/^[A-Z0-9_]{1,40}$/.test(body.code))code=':'+body.code;}catch{}const kind=`${phase}:${path.split('/').at(-1)}:HTTP_${response.status}${code}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Error(`HTTP_${response.status}`);}
+ if(trace){trace.upstreamMs=Number(response.headers['x-kong-upstream-latency']);trace.proxyMs=Number(response.headers['x-kong-proxy-latency']);}
  const text=response.text;const value=JSON.parse(text);
  if(performance.now()-start>=10000){const kind=`${phase}:${path.split('/').at(-1)}:timeout`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw Object.assign(new Error('HTTP_DEADLINE'),{name:'TimeoutError'});}
+ if(trace)trace.completedAt=Date.now();
  accounting.completed++;accounting.responseBytes+=Buffer.byteLength(text);timings.complete.push(performance.now()-start);
  if(path.endsWith('/fixture_scale_hand_ready_v1')&&value===true){
   const observedAt=Date.parse(response.headers['x-hud-fixture-observed-at']??'');
   assert.ok(Number.isFinite(observedAt),'Missing fixture readiness clock');
   readyProbeTimes.set(body.p_hand_id,{observedAt,readMs:performance.now()-start});
+ }
+ if(path.endsWith('/fixture_scale_amend_ready_v1')&&value===true){
+  const observedAt=Date.parse(response.headers['x-hud-fixture-observed-at']??'');
+  assert.ok(Number.isFinite(observedAt),'Missing amendment readiness clock');
+  amendReadyProbeTimes.set(body.p_operation,{observedAt,readMs:performance.now()-start});
  }
  if(hudTransport==='direct_rpc'&&path.endsWith('/get_public_player_hud_summary_v1')&&phase!=='diagnostic-direct-summary'){const elapsed=performance.now()-start;stats.summary.push(elapsed);(phases[phase]??=[]).push(elapsed);}
  return value;
@@ -135,7 +144,7 @@ const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,tableFailureSamples,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
@@ -284,12 +293,12 @@ for(const scenario of ['concentrated','distributed','overview']){
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const readCurrent=async()=>{
    if(overview)return;
-   state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now(),full=state.fullRead||!state.clockReady;state.fullRead=false;state.tableController=controller;
+   state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now(),full=state.fullRead||!state.clockReady;state.fullRead=false;state.tableController=controller;const tableTrace={};
    try{
     const tableRead=readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
      assert.equal(String(url),status.API_URL+'/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2');
      assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-     try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-rpc',init.signal)),{headers:{'Content-Type':'application/json'}});}
+     try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-rpc',init.signal,tableTrace)),{headers:{'Content-Type':'application/json'}});}
      catch(error){if(error?.intentionalHudCancellation)throw new DOMException('Aborted','AbortError');throw error;}
     });
     const clockRead=full?readClock(controller,epoch):Promise.resolve();
@@ -307,7 +316,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),startedAt,healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
-   }catch(cause){if(!(controller.signal.aborted&&(cause?.publicTableCallerCancelled===true||cause?.intentionalHudCancellation===true))){const phase=reconnecting||!state.online?'offline':'healthy';const kind=phase+':'+classifyTableReadFailure(cause);tableFailureKinds[kind]=(tableFailureKinds[kind]??0)+1;state.failures++;error(phase+'_table_read');}}
+   }catch(cause){if(!(controller.signal.aborted&&(cause?.publicTableCallerCancelled===true||cause?.intentionalHudCancellation===true))){const phase=reconnecting||!state.online?'offline':'healthy';const kind=phase+':'+classifyTableReadFailure(cause);tableFailureKinds[kind]=(tableFailureKinds[kind]??0)+1;state.failures++;error(phase+'_table_read');if(tableFailureSamples.length<20)tableFailureSamples.push(tableFailureSample({scenario,viewer:i,cause,transport:tableTrace,sourceEpoch,currentEpoch:componentEpochs.tables,online:state.online,reconnecting,eventLoopMaxMs:eventLoop.max/1e6,startedAt,finishedAt:Date.now()}));}}
    finally{controller.abort();state.busy=false;}
   };
   const tableCoordinator=registerPublicTournamentRead(client,tour,()=>{
@@ -499,9 +508,11 @@ for(const scenario of ['concentrated','distributed','overview']){
     await until(()=>rpc('fixture_scale_amend_ready_v1',{p_operation:operation},true),15000,'amendment_projection_timeout');
     const endToEndMs=Date.now()-written;assert.ok(Number.isFinite(endToEndMs)&&endToEndMs>=0,'Invalid amendment timing clock');
     currentAmendment.readyObservedAt=Date.now();
-    amendmentSamples.push({kind,endToEndMs,sourceRevision:receipt.sourceRevision,sourceWrittenAt:receipt.sourceWrittenAt});
+    const probe=amendReadyProbeTimes.get(operation);assert.ok(probe,'Missing amendment readiness observation');
+    amendmentSamples.push({kind,endToEndMs,sourceRevision:receipt.sourceRevision,sourceWrittenAt:receipt.sourceWrittenAt,readyObservedAt:probe.observedAt,
+      serverReadyUpperBoundMs:probe.observedAt-written,firstReadyReadMs:probe.readMs});
     cursor++;
-   }catch{error('amendment_projection_or_write');return;}
+   }catch{error('amendment_projection_or_write');return;}finally{amendReadyProbeTimes.delete(operation);}
    await sleep(1000);
   }
  })();
@@ -594,6 +605,9 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.clockLifecycle={version:'production-felt-full-load-or-overview-shared-slot-v1',physicalReads:clients.reduce((n,c)=>n+c.clockPhysicalReads,0),minScopedReadsPerViewer:Math.min(...clients.map(c=>c.clockScopedReads)),superseded:clients.reduce((n,c)=>n+c.supersededClockReads,0),pendingAtGrading:clients.filter(c=>c.clockPending||c.clockBusy).length,scopeCancellation:true,errorsRemainFailures:true};assert.ok(report.clockLifecycle.minScopedReadsPerViewer>=1,'Every viewer needs a successful scoped clock read');assert.equal(report.clockLifecycle.pendingAtGrading,0);save('running');
  report.notReadyOutcomes=notReadyOutcomes;save('running');
  report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:maximumSample(amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:maximumSample(samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
+ report.amendmentProbeDiagnostics={samples:amendmentSamples.length,serverReadyUpperBoundMaxMs:maximumSample(amendmentSamples.map(p=>p.serverReadyUpperBoundMs)),
+  firstReadyReadP95Ms:percentile(amendmentSamples.map(p=>p.firstReadyReadMs),.95),slowest:[...amendmentSamples].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),
+  grading:'Original end-to-end maximum <=5000ms; server observation only upper-bounds readiness, not a replacement grade'};save('running');
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
  report.workerProbeDiagnostics={samples:probes.length,serverReadyUpperBoundMaxMs:maximumSample(probes.map(p=>p.serverReadyUpperBoundMs)),firstReadyReadP95Ms:percentile(probes.map(p=>p.firstReadyReadMs),.95),slowest:[...probes].sort((a,b)=>b.endToEndMs-a.endToEndMs).slice(0,10),grading:'original end-to-end maximum <=5000ms; diagnostic clock does not replace it'};save('running');
  report.viewKind=overview?'visible-overview-grid':'watched-felt-hidden-hub';save('running');

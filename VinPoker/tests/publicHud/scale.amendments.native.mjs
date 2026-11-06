@@ -23,17 +23,25 @@ await drain();
 const hand='20000000-0000-4000-8000-000000000001';
 const kinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
 const samples=[];
+const readiness=operation=>{
+ const probe=jsonSql(`${service}WITH checked AS MATERIALIZED (
+  SELECT public.fixture_scale_amend_ready_v1('${operation}') AS ready)
+  SELECT jsonb_build_object('ready',ready,'headers',current_setting('response.headers')::jsonb,'after',clock_timestamp()) FROM checked;`);
+ const observedAt=Date.parse(probe.headers[0]['X-Hud-Fixture-Observed-At']);
+ assert.ok(Number.isFinite(observedAt)&&observedAt<=Date.parse(probe.after),'Readiness clock must follow its snapshot');
+ return probe.ready;
+};
 let revision;
 for(const kind of kinds){
  const operation=randomUUID();
  const request=`${service}SELECT public.fixture_scale_amend_once_v1('${operation}','${hand}','${kind}');`;
  const value=jsonSql(request),again=jsonSql(request);
  assert.deepEqual(again,value,'Committed mutation retries must return the original receipt');
- assert.equal(sql(`${service}SELECT public.fixture_scale_amend_ready_v1('${operation}');`),'f','Old contributions must not satisfy the new receipt');
+ assert.equal(readiness(operation),false,'Old contributions must not satisfy the new receipt');
  if(['revoke','reverify'].includes(kind))assert.equal(value.sourceRevision,revision,'Settlement invalidates without changing hand revision');
  revision=value.sourceRevision;
  await drain();
- assert.equal(sql(`${service}SELECT public.fixture_scale_amend_ready_v1('${operation}');`),'t');
+ assert.equal(readiness(operation),true);
  samples.push({kind,operation,sourceRevision:value.sourceRevision,ready:true});
 }
 for(const role of ['anon','authenticated']){
@@ -50,6 +58,6 @@ assert.throws(()=>sql(`${service}SELECT public.fixture_scale_amend_once_v1('${sa
 assert.throws(()=>sql(`${service}SELECT public.fixture_scale_amend_once_v1('${randomUUID()}','${hand}','unknown');`),/invalid_amendment/);
 // An old receipt cannot be made ready just because a newer job finished.
 assert.equal(sql(`${service}SELECT public.fixture_scale_amend_ready_v1('${samples[0].operation}');`),'f');
-const report={kind:'NATIVE_REAL_PROJECTOR_AMENDMENT_RECEIPTS_NOT_LOAD_LATENCY',passed:true,samples,diagnosticCost,checks:['exact-source-fingerprint','old-contribution-rejected','source-revision-unchanged-settlement','void-subtracted','restore-readded','result-edit-revoke-reverify','idempotent-committed-retry','scope-conflict','browser-denial','superseded-receipt-denied','service-only-preparation-diagnostic','preload-diagnostic-plan']};
+const report={kind:'NATIVE_REAL_PROJECTOR_AMENDMENT_RECEIPTS_NOT_LOAD_LATENCY',passed:true,samples,diagnosticCost,checks:['exact-source-fingerprint','old-contribution-rejected','source-revision-unchanged-settlement','void-subtracted','restore-readded','result-edit-revoke-reverify','idempotent-committed-retry','scope-conflict','browser-denial','superseded-receipt-denied','service-only-preparation-diagnostic','preload-diagnostic-plan','readiness-clock-after-snapshot']};
 if(process.env.PUBLIC_HUD_AMENDMENT_NATIVE_REPORT)writeFileSync(process.env.PUBLIC_HUD_AMENDMENT_NATIVE_REPORT,JSON.stringify(report,null,2));
 console.log(JSON.stringify(report));

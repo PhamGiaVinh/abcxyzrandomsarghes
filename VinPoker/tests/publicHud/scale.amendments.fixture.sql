@@ -70,6 +70,9 @@ BEGIN
    AND (SELECT count(*) FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=entity AND c.version=v)=(receipt->>'expectedContributions')::integer
    AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=entity AND c.version=v AND c.source_fingerprint<>receipt->>'fingerprint');
  END IF;
+ -- Diagnostic clock follows the exact readiness snapshot; not a new gate.
+ PERFORM set_config('response.headers',jsonb_build_array(jsonb_build_object(
+  'X-Hud-Fixture-Observed-At',clock_timestamp()::text))::text,true);
  RETURN ready;
 END $$;
 REVOKE ALL ON FUNCTION public.fixture_scale_amend_once_v1(uuid,uuid,text),public.fixture_scale_amend_ready_v1(uuid) FROM PUBLIC,anon,authenticated;
