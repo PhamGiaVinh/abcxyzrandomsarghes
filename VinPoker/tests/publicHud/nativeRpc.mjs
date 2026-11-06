@@ -11,9 +11,10 @@ const signatures={
  fail_public_spectator_projection_v2:['p_tournament_id','p_component','p_group_key','p_fencing_token','p_error'],
 };
 const quote=value=>value===null?'NULL':`'${String(typeof value==='object'?JSON.stringify(value):value).replaceAll("'","''")}'`;
-export const nativeWorkerClient={async rpc(name,args){
+export function createNativeWorkerClient(execute=sqlAsync){return {async rpc(name,args){
  if(!Object.hasOwn(signatures,name))throw Error('Native fixture RPC not allowed');
  const values=signatures[name].map(key=>{if(args[key]===undefined)throw Error('Missing fixture RPC argument');return quote(args[key]);});
- try{return {data:JSON.parse(await sqlAsync(`${service} SET statement_timeout='5s';SELECT coalesce(to_jsonb(public.${name}(${values.join(',')})),'null'::jsonb);`)),error:null};}
+ try{return {data:JSON.parse(await execute(`${service} SET statement_timeout='5s';SELECT coalesce(to_jsonb(public.${name}(${values.join(',')})),'null'::jsonb);`)),error:null};}
  catch(error){return {data:null,error:String(error)};}
-}};
+}};}
+export const nativeWorkerClient=createNativeWorkerClient();

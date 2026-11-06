@@ -1,5 +1,6 @@
 import {execFileSync,spawn} from 'node:child_process';
 import {readFileSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
 const database=process.env.PUBLIC_HUD_LOCAL_DATABASE??'vinpoker_hud_scale_20261104';
 const isolatedStack=database==='postgres'&&process.env.PUBLIC_HUD_ISOLATED_STACK==='vinpoker-hud-scale'&&process.env.PUBLIC_HUD_LOCAL_PORT==='54322';
 if(!isolatedStack&&!/^vinpoker_hud_(scale|test)_[a-z0-9_]+$/.test(database)) throw Error('Disposable HUD database name required');
@@ -47,6 +48,38 @@ export function sqlAsync(query){
     child.on('error',reject);child.on('close',code=>code===0?resolve(output.trim()):reject(Error(error||`psql exit ${code}`)));
     child.stdin.end(query);
   });
+}
+// Native-only load transport: retain real psql connections instead of launching
+// WSL for every job publication. No RPC response caching or SQL substitution.
+export function createSqlSessionPool(size=4){
+  if(!Number.isSafeInteger(size)||size<1||size>4)throw Error('Native session pool must contain1to4connections');
+  const sessions=Array.from({length:size},()=>{
+    const child=spawn(windows?'wsl':'psql',[...prefix,'-w','-X','-qAt','-v','ON_ERROR_STOP=1'],{
+      env:windows?process.env:{...process.env,PGHOST:'127.0.0.1',PGPORT:process.env.PUBLIC_HUD_LOCAL_PORT??'5432',PGUSER:'postgres',PGDATABASE:database},
+      stdio:['pipe','pipe','pipe'],
+    });
+    let active=null,buffer='',closed=false;const queued=[];
+    const fail=()=>{closed=true;active?.reject(Error('Native session database query failed'));active=null;for(const item of queued.splice(0))item.reject(Error('Native session unavailable'));};
+    const pump=()=>{if(closed||active||!queued.length)return;active=queued.shift();child.stdin.write(active.query+'\n\\echo '+active.marker+'\n');};
+    child.stderr.resume();child.stdin.on('error',fail);child.on('error',fail);
+    child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{
+      buffer+=chunk;if(buffer.length>8*1024*1024){fail();child.kill();return;}
+      while(buffer.includes('\n')){
+        const at=buffer.indexOf('\n'),line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);
+        if(!active)continue;
+        if(line===active.marker){const done=active;active=null;done.resolve(done.lines.join('\n').trim());pump();}
+        else if(line){active.bytes+=line.length;if(active.bytes>8*1024*1024){fail();child.kill();return;}active.lines.push(line);}
+      }
+    });
+    const exited=new Promise(resolve=>child.on('close',()=>{fail();resolve();}));
+    return {query(query){return new Promise((resolve,reject)=>{
+      if(closed){reject(Error('Native session unavailable'));return;}
+      queued.push({query,marker:'HUD_NATIVE_'+randomUUID().replaceAll('-',''),lines:[],bytes:0,resolve,reject});pump();
+    });},async close(){if(!closed)child.stdin.end('\\q\n');const timer=setTimeout(()=>child.kill(),10000);try{await exited;}finally{clearTimeout(timer);}}};
+  });
+  let cursor=0,stopped=false;
+  return {query(query){if(stopped)return Promise.reject(Error('Native session pool closed'));return sessions[cursor++%sessions.length].query(query);},
+    async close(){stopped=true;await Promise.all(sessions.map(session=>session.close()));}};
 }
 export function initialize(options={}){
   if(sql('select current_database();')!==database)throw Error('Disposable database scope mismatch');
