@@ -52,6 +52,13 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ -n "${race_control_pid:-}" && -n "${db_container:-}" ]]; then
+    docker exec "$db_container" psql -X -Atq -U postgres -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name='isolated_checkout_rest_control';" >/dev/null 2>&1 || true
+    kill "$race_control_pid" 2>/dev/null || true
+    wait "$race_control_pid" 2>/dev/null || true
+  fi
+  if [[ -n "${race_browser_container:-}" ]]; then docker rm -f "$race_browser_container" >/dev/null 2>&1 || true; fi
+  if [[ -n "${race_browser_pid:-}" ]]; then kill "$race_browser_pid" 2>/dev/null || true; wait "$race_browser_pid" 2>/dev/null || true; fi
   if [[ "$exit_code" != 0 && -n "${edge_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
     # Emit fixed classifications only; never persist raw handler logs/claims.
@@ -918,8 +925,10 @@ mkdir -p "$repo_root/output/operations-latency"
 run_browser_proof() {
   local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}"
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
+  local -a container_args=()
+  if [[ "$replacement_enabled" == rest-race ]]; then container_args+=(--name "$race_browser_container"); fi
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
-docker run --rm --network "container:$app_container" \
+docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --volume "$repo_root:/app:ro" --workdir /app \
   --volume "$repo_root/output/operations-latency:/latency" \
   --volume "$test_root/staff-private.json:/fixtures/staff-private.json:ro" \
@@ -1229,4 +1238,47 @@ REPLACEMENT_FIXTURE
       (SELECT count(*) FROM floor_private.dealer_initial_assign_receipts WHERE request_key LIKE 'checkout_replace_%');")"
   if [[ "$replacement_state" != '1|1|1|1' ]]; then echo "Eligible replacement committed-state conservation failed ($replacement_state)" >&2; exit 1; fi
   echo "REPLACEMENT_COMMIT_PROOF:OFF checkout remains unstaffed;ON checkout creates1current-session replacement/receipt;recent-release dealer excluded;no duplicate assignment"
+  # Isolated fault injection: the picker sees the old committed rest marker,
+  # while the canonical worker must recheck the new marker after its row wait.
+  # No privileged connection or Docker socket is exposed to the browser.
+  race_fifo="$test_root/replacement-rest-control.fifo"
+  race_log_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  race_browser_container="$network-rest-race"
+  mkfifo "$race_fifo"
+  docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$race_fifo" >"$test_root/replacement-rest-control.log" 2>&1 &
+  race_control_pid=$!
+  exec {race_fd}>"$race_fifo"
+  printf '%s\n' "BEGIN;SET LOCAL application_name='isolated_checkout_rest_control';SET LOCAL idle_in_transaction_session_timeout='20s';SET LOCAL statement_timeout='10s';UPDATE public.dealer_attendance SET last_released_at=clock_timestamp(),pool_entered_at=clock_timestamp() WHERE id IN(md5('checkout-replacement-attendance-1')::uuid,md5('checkout-replacement-attendance-2')::uuid) AND current_state='available';SELECT 'REST_LOCK_READY';" >&"$race_fd"
+  race_ready=false
+  for attempt in $(seq 1 50); do
+    if grep -qx REST_LOCK_READY "$test_root/replacement-rest-control.log"; then race_ready=true; break; fi
+    sleep .1
+  done
+  if [[ "$race_ready" != true ]]; then
+    printf 'ROLLBACK;\n' >&"$race_fd"; exec {race_fd}>&-; wait "$race_control_pid" || true
+    echo 'Rest-race control did not hold its transaction' >&2; exit 1
+  fi
+  run_browser_proof '' '' 'active checkout respects automatic OFF and rested replacement eligibility' '' '' '' rest-race &
+  race_browser_pid=$!
+  race_blocked=false
+  for attempt in $(seq 1 100); do
+    if [[ "$(docker exec "$db_container" psql -X -Atq -U postgres -d postgres -c "SELECT EXISTS(SELECT 1 FROM pg_stat_activity w JOIN pg_stat_activity c ON c.pid=ANY(pg_blocking_pids(w.pid)) WHERE c.application_name='isolated_checkout_rest_control' AND w.query LIKE '%worker_assign_dealer_to_session_v1%');")" == t ]]; then race_blocked=true; break; fi
+    sleep .1
+  done
+  if [[ "$race_blocked" == true ]]; then printf 'COMMIT;\n' >&"$race_fd"; else printf 'ROLLBACK;\n' >&"$race_fd"; fi
+  exec {race_fd}>&-
+  wait "$race_control_pid"
+  race_control_pid=""
+  wait "$race_browser_pid"
+  race_browser_pid=""
+  if [[ "$race_blocked" != true ]]; then echo 'No real worker row-lock wait observed; rest race not proved' >&2; exit 1; fi
+  race_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL),(SELECT count(*) FROM floor_private.dealer_initial_assign_receipts WHERE request_key LIKE 'checkout_replace_%'),(SELECT count(*) FROM public.dealer_attendance WHERE id IN(md5('checkout-replacement-attendance-1')::uuid,md5('checkout-replacement-attendance-2')::uuid) AND current_state='available');")"
+  if [[ "$race_state" != '0|1|1' ]]; then echo "Rest-race conservation failed ($race_state)" >&2; exit 1; fi
+  # Attribute the rejection to the exact DB guard, not an arbitrary RPC error.
+  # Persist fixed enum/count only; raw Edge logs never leave the isolated stack.
+  race_rest_denials="$(docker logs --since "$race_log_start" "$edge_container" 2>&1 | node --input-type=module -e 'import {readFileSync} from "node:fs";const raw=readFileSync(0,"utf8");process.stdout.write(String((raw.match(/Auto-replace RPC error: DEALER_REST_REQUIRED\b/g)||[]).length));')"
+  if [[ "$race_rest_denials" != 1 ]]; then echo 'Exact rest-denial attribution missing or duplicated' >&2; exit 1; fi
+  printf '{"kind":"REAL_CHECKOUT_REST_COMMIT_RACE","workerBlocked":true,"controlCommitted":true,"denial":"DEALER_REST_REQUIRED","denials":1,"activeAssignments":0,"initialAssignmentReceipts":1,"qualification":false}\n' >"$repo_root/output/operations-latency/checkout-rest-guard-http.json"
+  echo 'REPLACEMENT_REST_RACE_PROOF:actual worker blocked;fresh rest marker committed;checkout retained;no replacement or new receipt'
 fi

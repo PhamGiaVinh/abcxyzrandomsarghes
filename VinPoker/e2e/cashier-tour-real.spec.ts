@@ -1232,34 +1232,35 @@ test('active-table dealer checkout preserves work and reports an unstaffed table
 });
 
 test('active checkout respects automatic OFF and rested replacement eligibility',async({page})=>{
- const mode=process.env.LOCAL_OPERATIONS_REPLACEMENT_ENABLED;test.skip(mode!=='off'&&mode!=='on','Seventh isolated stage with exact current acquisition/rest/day contracts');test.setTimeout(60_000);
+ const mode=process.env.LOCAL_OPERATIONS_REPLACEMENT_ENABLED;test.skip(mode!=='off'&&mode!=='on'&&mode!=='rest-race','Seventh isolated stage with exact current acquisition/rest/day contracts');test.setTimeout(60_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {handoverClubId:string;handovers:{n:number;table_id:string;session_id:string;incoming_attendance:string}[]};
  const context=fixture.handovers[mode==='off'?20:21],headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
  const read=async(table:string,query:string)=>{const response=await fetch(api+'/rest/v1/'+table+'?'+query,{headers:headers(owner),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);const data=await response.json();expect(Array.isArray(data)).toBe(true);return data;};
  const active=()=>read('dealer_assignments','select=id,attendance_id,table_session_id&table_id=eq.'+context.table_id+'&released_at=is.null&status=eq.assigned');
  const pool=()=>read('dealer_attendance','select=id,current_state,last_released_at,dealers!inner(full_name)&dealers.club_id=eq.'+fixture.handoverClubId+'&dealers.full_name=like.Replacement eligibility TEST *');
- const checkout=async()=>{const started=performance.now(),response=await fetch(api+'/functions/v1/checkout-dealer',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({attendance_id:context.incoming_attendance}),signal:AbortSignal.timeout(10000)});expect(response.ok).toBe(true);const result=await response.json();expect(result.results).toHaveLength(1);expect(result.results[0].success).toBe(true);return {data:result.results[0],ms:performance.now()-started};};
+ let checkoutAttendance=context.incoming_attendance;
+ const checkout=async()=>{const started=performance.now(),response=await fetch(api+'/functions/v1/checkout-dealer',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({attendance_id:checkoutAttendance}),signal:AbortSignal.timeout(10000)});expect(response.ok).toBe(true);const result=await response.json();expect(result.results).toHaveLength(1);expect(result.results[0].success).toBe(true);return {data:result.results[0],ms:performance.now()-started};};
  let phase='preconditions';let observation:unknown=null;
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-replacement-'+mode+'-http.json'),JSON.stringify({kind:'REAL_AUTH_CHECKOUT_AUTOMATIC_POLICY_AND_ELIGIBILITY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,mode,phase,observation,qualification:false,limitations:'One actual checkout per OFF/ON mode;ON has20same-attendance concurrent requests. No p95/capacity claim. Two eligible synthetic attendance markers20minutes old and one recent1minute marker;current day/shift/commit guards restored with production hashes. No claim about every selection/commit race,rest expiry worker,payroll,Telegram or mixed1000spectator load.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-dealer-replacement-'+mode+'-http.json'),JSON.stringify({kind:'REAL_AUTH_CHECKOUT_AUTOMATIC_POLICY_AND_ELIGIBILITY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,mode,phase,observation,qualification:false,limitations:'One actual checkout per OFF/ON mode;ON has20same-attendance concurrent requests. No p95/capacity claim. Two eligible synthetic attendance markers20minutes old and one recent1minute marker;current day/shift/commit guards restored with production hashes. Rest-race mode is a deliberately held actual PostgreSQL row lock with a fresh rest marker committed after observing worker blocking; it is not a normal-latency sample or proof of the full canonical concurrent work/release path. No claim about OFF-at-commit race,rest expiry worker,payroll,Telegram or mixed1000spectator load.'},null,2));
  try{
-  expect((await read('club_settings','select=auto_swing_enabled&club_id=eq.'+fixture.handoverClubId))[0].auto_swing_enabled).toBe(mode==='on');
-  const candidates=await pool();expect(candidates).toHaveLength(3);expect(candidates.every((r:{current_state:string})=>r.current_state==='available')).toBe(true);
+  expect((await read('club_settings','select=auto_swing_enabled&club_id=eq.'+fixture.handoverClubId))[0].auto_swing_enabled).toBe(mode!=='off');
+  const candidates=await pool();expect(candidates).toHaveLength(3);expect(candidates.filter((r:{current_state:string})=>r.current_state==='available')).toHaveLength(mode==='rest-race'?2:3);
   const recent=candidates.find((r:{dealers:{full_name:string}})=>r.dealers.full_name==='Replacement eligibility TEST 3');expect(recent).toBeTruthy();const eligible=candidates.filter((r:{id:string})=>r.id!==recent.id);
-  const before=await active();expect(before).toHaveLength(1);expect(before[0].attendance_id).toBe(context.incoming_attendance);
-  await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');const card=page.locator('#table-card-'+context.table_id);await expect(card.getByText('Handover incoming TEST '+context.n,{exact:true})).toBeVisible({timeout:30_000});
-  phase='checkout';const started=performance.now(),results=mode==='off'?[await checkout()]:await Promise.all(Array.from({length:20},checkout));
+  const before=await active();expect(before).toHaveLength(1);if(mode==='rest-race')checkoutAttendance=before[0].attendance_id;else expect(before[0].attendance_id).toBe(context.incoming_attendance);
+  await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');const card=page.locator('#table-card-'+context.table_id);if(mode!=='rest-race')await expect(card.getByText('Handover incoming TEST '+context.n,{exact:true})).toBeVisible({timeout:30_000});else await expect(card.getByText(/Replacement eligibility TEST [12]/)).toBeVisible({timeout:30_000});
+  phase='checkout';const started=performance.now(),results=mode!=='on'?[await checkout()]:await Promise.all(Array.from({length:20},checkout));
   for(const result of results){expect(result.data.needs_replacement_table).toBe(context.table_id);expect(result.data.check_out_time).toBe(results[0].data.check_out_time);}
   const first=results.find(r=>r.data.idempotent!==true);expect(first).toBeTruthy();expect(results.filter(r=>r.data.idempotent!==true)).toHaveLength(1);
-  if(mode==='off'){
-   expect(first!.data.auto_assigned_dealer,'Automatic replacement must respect OFF although checkout itself is manual').toBeNull();expect(await active()).toHaveLength(0);await expect(card.getByText('Chưa gán',{exact:true})).toBeVisible({timeout:5000});expect(await pool()).toEqual(candidates);
+  if(mode!=='on'){
+   expect(first!.data.auto_assigned_dealer,'Automatic replacement must respect OFF although checkout itself is manual').toBeNull();expect(await active()).toHaveLength(0);await expect(card.getByText('Chưa gán',{exact:true})).toBeVisible({timeout:5000});if(mode==='off')expect(await pool()).toEqual(candidates);else{const after=await pool();expect(after.filter((r:{current_state:string})=>r.current_state==='available')).toHaveLength(2);expect(after.find((r:{id:string})=>r.id===checkoutAttendance)?.current_state).toBe('checked_out');expect(after.find((r:{id:string})=>r.id===recent.id)).toEqual(recent);}
   }else{
    expect(eligible.map((r:{dealers:{full_name:string}})=>r.dealers.full_name)).toContain(first!.data.auto_assigned_dealer);
    const assigned=await active();expect(assigned).toHaveLength(1);expect(eligible.map((r:{id:string})=>r.id)).toContain(assigned[0].attendance_id);expect(assigned[0].table_session_id).toBe(context.session_id);
    await expect(card.getByText(first!.data.auto_assigned_dealer,{exact:true})).toBeVisible({timeout:5000});
    const after=await pool();expect(after.find((r:{id:string})=>r.id===recent.id)).toEqual(recent);expect(after.filter((r:{current_state:string})=>r.current_state==='assigned')).toHaveLength(1);
   }
-  const writeToVisibleMs=performance.now()-started,retry=await checkout();expect(retry.data.idempotent).toBe(true);expect(retry.data.check_out_time).toBe(results[0].data.check_out_time);observation={requests:results.length,first:1,replays:results.length-1,ackMs:first!.ms,retryMs:retry.ms,writeToVisibleMs};expect(writeToVisibleMs).toBeLessThanOrEqual(3000);phase='passed';report();
+  const writeToVisibleMs=performance.now()-started,retry=await checkout();expect(retry.data.idempotent).toBe(true);expect(retry.data.check_out_time).toBe(results[0].data.check_out_time);observation={requests:results.length,first:1,replays:results.length-1,ackMs:first!.ms,retryMs:retry.ms,writeToVisibleMs};if(mode!=='rest-race')expect(writeToVisibleMs).toBeLessThanOrEqual(3000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
 
