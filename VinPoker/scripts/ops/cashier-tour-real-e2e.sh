@@ -969,3 +969,55 @@ if [[ "$refund_state" != 't|t|6600000|1|0|0' ]]; then
   exit 1
 fi
 echo "REFUND_BROWSER_PROOF: Tour B waiting-seat refund paid once, registration closed, no seat/receipt"
+
+if [[ "$schema_mode" == current ]]; then
+  # Separate stage: preserve the earlier baseline/refund/partial-payment proof,
+  # then restore the exact current allocator with its original dependency guards.
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20270128000113_cashier_canonical_paid_seating_v1.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAID_SEATING_PREFLIGHT'
+DO $$ BEGIN
+ IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_registration_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'f1f8edbbeb1da8b2d883f6322eafdbfd'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='floor_private.pick_cashier_canonical_seat_v1(uuid,text)'::regprocedure)<>'5917c0a1566cc7f63966cf5db4997ff5'
+ OR has_function_privilege('authenticated','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
+ OR has_function_privilege('anon','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'isolated_paid_seating_production_contract_mismatch';END IF;
+END $$;
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT ('ac700000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+ 'a2000000-0000-4000-8000-000000000001','Full cash seating TEST '||n,22+n,'tournament','inactive','available'
+FROM generate_series(1,3) n;
+PAID_SEATING_PREFLIGHT
+  echo "PAID_SEATING_SCHEMA_PROOF: exact113 original guards; two production body fingerprints; three new empty TEST assets only"
+  docker run --rm --network "container:$app_container" \
+    --volume "$repo_root:/app:ro" --workdir /app \
+    --volume "$repo_root/output/operations-latency:/latency" \
+    --volume "$test_root/staff-private.json:/fixtures/staff-private.json:ro" \
+    --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
+    --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED=1 \
+    --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
+    --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
+    --env PLAYWRIGHT_BASE_URL='http://localhost:8080' \
+    --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
+    --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
+    --env LOCAL_OWNER_EMAIL="$owner_email" \
+    --env LOCAL_OWNER_PASSWORD="$owner_password" \
+    --env LOCAL_SUPABASE_STORAGE_KEY="$storage_key" \
+    --env LOCAL_REFUND_REGISTRATION_ID="$refund_registration_id" \
+    --env LOCAL_REFUND_REFERENCE_CODE="$refund_reference_code" \
+    mcr.microsoft.com/playwright:v1.60.0-noble \
+    npx playwright test e2e/cashier-tour-real.spec.ts --grep 'current Cashier full payment commits canonical seats' --output=/tmp/cashier-paid-playwright-results
+  paid_seating_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
+      AND r.player_id IN (SELECT user_id FROM public.club_cashiers WHERE club_id='a2000000-0000-4000-8000-000000000001' AND user_id<>'$owner_id'::uuid)),
+     seats AS (SELECT s.* FROM public.tournament_seats s JOIN public.tournament_entries e ON e.id=s.entry_id JOIN registrations r ON r.id=e.registration_id WHERE s.is_active)
+     SELECT (SELECT count(*) FROM registrations WHERE status='confirmed' AND cashier_paid_at IS NOT NULL),
+      (SELECT count(*) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT sum(m.applied_amount) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT count(*) FROM public.tournament_entries e JOIN registrations r ON r.id=e.registration_id),
+      (SELECT count(*) FROM seats),(SELECT sum(chip_count) FROM seats),
+      (SELECT count(*) FROM seats s JOIN public.tournament_tables t ON t.id=s.tournament_table_id AND t.table_session_id=s.table_session_id JOIN public.table_sessions ts ON ts.id=s.table_session_id AND ts.closed_at IS NULL AND ts.game_table_id=coalesce(t.game_table_id,t.table_id) WHERE ts.tournament_id=s.tournament_id),
+      (SELECT count(*) FROM public.seat_draw_receipts d JOIN registrations r ON r.id=d.registration_id WHERE d.status IN ('issued','printed'));")"
+  if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
+  echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
+fi

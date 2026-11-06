@@ -1077,3 +1077,31 @@ test('current Cashier partial-cash intent HTTP, duplicate recovery and real brow
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('current Cashier full payment commits canonical seats through real HTTP',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_PAID_SEATING_ENABLED!=='1','Second isolated stage after exact113');test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ const worklist=async()=>{const {data}=await rpc(owner,'cashier_tour_worklist_v1',{p_club_id:club,p_tournament_id:tour,p_query:'',p_bucket:'all',p_page:0,p_limit:50});expect(data.ok).toBe(true);return data.rows as {id:string;player_id:string;received:number;total_pay:number;status:string}[];};
+ const rows:{actor:number;ackMs:number;retryMs:number;independentReadMs:number}[]=[];let phase='open-canonical-tables';
+ const distribution=(field:keyof Omit<typeof rows[number],'actor'>)=>{const values=rows.map(r=>r[field]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-cash-full-seated-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_CASHIER_FULL_PAYMENT_CANONICAL_SEATING_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,concurrency:1,warmup:0,graded:20,rows,distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),independentRead:distribution('independentReadMs')},qualification:false,limitations:'Second disposable stage adds exact113 after the earlier partial-cash and refund conservation checks. Twenty distinct Auth cashiers complete their existing server-priced partial registrations;three empty physical tables are opened through canonical Floor RPC. No browser seating latency,re-entry,undo,prize or mixed1000-viewer capacity claim.'},null,2));
+ try{
+  for(let n=1;n<=3;n++){
+   const intent={p_tournament_id:tour,p_game_table_id:`ac700000-0000-4000-8000-${String(n).padStart(12,'0')}`,p_control_mode:'manual',p_request_id:crypto.randomUUID()};
+   const opened=await rpc(owner,'floor_open_tournament_table_v3',intent);expect(opened.data.ok).toBe(true);expect((await rpc(owner,'floor_open_tournament_table_v3',intent)).data).toEqual(opened.data);
+  }
+  phase='full-payment';const before=await worklist();
+  for(let actor=0;actor<staff.length;actor++){
+   const registration=before.find(r=>r.player_id===staff[actor].userId);expect(registration).toBeTruthy();expect(registration!.status).toBe('pending');
+   const amount=Number(registration!.total_pay)-Number(registration!.received);expect(amount).toBeGreaterThan(0);
+   const payment={actor_id:staff[actor].userId,club_id:club,tournament_id:tour,registration_id:registration!.id,amount,request_id:crypto.randomUUID()};
+   const first=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(first.data.ok).toBe(true);expect(first.data.status).toBe('recorded');expect(first.data.result.payment_state).toBe('paid');expect(first.data.result.seating_state).toBe('seated');
+   const retry=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(retry.data).toEqual(first.data);
+   const started=performance.now(),after=(await worklist()).find(r=>r.id===registration!.id);expect(after).toBeTruthy();expect(Number(after!.received)).toBe(Number(registration!.total_pay));expect(after!.status).toBe('confirmed');
+   rows.push({actor,ackMs:first.ms,retryMs:retry.ms,independentReadMs:performance.now()-started});report();
+  }
+  expect(rows).toHaveLength(20);expect(distribution('ackMs').p95Ms).toBeLessThanOrEqual(1000);expect(distribution('retryMs').p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
