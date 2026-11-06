@@ -1389,8 +1389,8 @@ STAFF_SALARY_FIXTURE
   { printf "SET vinpoker.isolated_tracker_start_fixture='cashier-current-tracker-v1';\n"; cat "$test_root/tracker-start-current.sql"; } | \
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'TRACKER_QUEUE_FIXTURE'
-INSERT INTO public.club_trackers(club_id,user_id)
-VALUES('a2000000-0000-4000-8000-000000000001',:'owner_id'::uuid) ON CONFLICT DO NOTHING;
+INSERT INTO public.club_trackers(club_id,user_id,granted_by)
+VALUES('a2000000-0000-4000-8000-000000000001',:'owner_id'::uuid,:'owner_id'::uuid) ON CONFLICT DO NOTHING;
 TRACKER_QUEUE_FIXTURE
   run_browser_proof '' '' 'current Floor deferred move reserves and cancels without joining an active hand' '' '' '' '' '' 1
   deferred_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
