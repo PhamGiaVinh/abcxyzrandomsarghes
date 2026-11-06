@@ -6,7 +6,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createClient} from '@supabase/supabase-js';
 import {configureLocalRealtime} from './scale.realtime.mjs';
-import {handIncludesWrite,projectionIncludesWrite} from './scale.delivery.mjs';
+import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
@@ -208,8 +208,9 @@ for(const scenario of ['concentrated','distributed','overview']){
   };
   state.credit=()=>{credit('expected',state.handObservation,handIncludesWrite,'realtime','deliverySamples');credit('snapshotExpected',state.snapshotObservation,projectionIncludesWrite,'snapshot','snapshotSamples');};
   const healthy=()=>state.online&&!reconnecting&&(!revoking||tour!==uuid('10000000',20));
-  let pageEpoch=0;
-  const componentEpochs={tables:0,ranking:0,payout:0};
+  let pageEpoch=0,clockScopeEpoch=0;
+  const componentEpochs={tables:0,ranking:0,payout:0,clock:0};
+  Object.assign(state,{fullRead:true,clockReady:false,clockPending:false,clockBusy:false,clockPhysicalReads:0,clockScopedReads:0,supersededClockReads:0});
   const refreshSnapshot=async()=>{
    state.snapshotPending=false;if(!state.snapshotDirty.size)return;
    state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
@@ -238,20 +239,51 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(state.snapshotDirty.size&&Date.now()<end+10000){state.snapshotPending=true;snapshotCoordinator.request();}
   };
   state.snapshot=snapshot;
-  const clock=async()=>{try{const summary=await rpc('get_public_tournament_clock_summary',{p_tournament_id:tour});if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;assert.ok(parsePublicClockSummary(summary,tour),'Public clock must satisfy the production scoped parser');}catch{error('clock_read');}};
+  const readClock=async(controller,epoch,clockEpoch)=>{
+   state.clockPhysicalReads++;
+   try{
+    const summary=await post('/rest/v1/rpc/get_public_tournament_clock_summary',{p_tournament_id:tour},false,'clock-rpc',controller.signal);
+    if(epoch!==(overview?clockScopeEpoch:pageEpoch))return;
+    if(overview&&clockEpoch!==componentEpochs.clock){state.supersededClockReads++;void clock();return;}
+    if(revoking&&tour===uuid('10000000',20)&&Array.isArray(summary)&&summary.length===0)return;
+    assert.ok(parsePublicClockSummary(summary,tour),'Public clock must satisfy the production scoped parser');
+    if(overview)state.clockScopedReads++;
+    return true;
+   }catch(cause){if(!(controller.signal.aborted&&cause?.intentionalHudCancellation))error('clock_read');throw cause;}
+  };
+  // Match the two real consumers: felt metadata belongs to its full table
+  // request/controller; overview clock is a separate slot in the SAME registry.
+  const clockCoordinator=overview?registerPublicTournamentRead(client,tour,()=>{
+   state.clockPending=false;state.clockBusy=true;
+   const controller=new AbortController(),epoch=clockScopeEpoch,clockEpoch=componentEpochs.clock;state.clockController=controller;
+   const promise=readClock(controller,epoch,clockEpoch).catch(()=>{}).finally(()=>{controller.abort();state.clockBusy=false;});
+   track(promise);return promise;
+  }):null;
+  const clock=async()=>{
+   if(Date.now()>=end+10000)return;
+   if(!overview){state.fullRead=true;await read();return;}
+   state.clockPending=true;clockCoordinator.request();
+  };
   state.clock=clock;
   const verifyPage=()=>{track(snapshot(['tables','ranking','payout']));track(clock());};
   const scheduleVerify=()=>{state.nextVerify=Date.now()+Math.round((state.online?30000:Math.min(30000,3000*2**Math.min(state.failures,4)))*(.9+Math.random()*.2));};
   const readCurrent=async()=>{
    if(overview)return;
-   state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now();state.tableController=controller;
+   state.busy=true;const epoch=pageEpoch,sourceEpoch=componentEpochs.tables,controller=new AbortController(),startedAt=Date.now(),full=state.fullRead||!state.clockReady;state.fullRead=false;state.tableController=controller;
    try{
-    const reply=await readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
+    const tableRead=readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,table,controller.signal,async(url,init)=>{
      assert.equal(String(url),status.API_URL+'/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2');
      assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
      try{return new Response(JSON.stringify(await post(new URL(url).pathname,JSON.parse(init.body),false,'current-table-rpc',init.signal)),{headers:{'Content-Type':'application/json'}});}
      catch(error){if(error?.intentionalHudCancellation)throw new DOMException('Aborted','AbortError');throw error;}
     });
+    const clockRead=full?readClock(controller,epoch):Promise.resolve();
+    // Promise.all can reject before its sibling has physically settled. Keep
+    // both transports in the final drain even when scope cancellation wins.
+    track(tableRead.catch(()=>{}));if(full)track(clockRead.catch(()=>{}));
+    const reply=await settleScopedFeltRead(tableRead,clockRead,
+     reply=>epoch===pageEpoch&&sourceEpoch===componentEpochs.tables&&reply.data?.access==='public',
+     ()=>{state.clockReady=true;state.clockScopedReads++;});
     const value=reply.data;
     if(epoch!==pageEpoch)return;
     // Match TournamentLiveView's publicReadEpoch fence: even a payload that
@@ -260,14 +292,14 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(!(revoking&&tour===uuid('10000000',20)&&(value.access==='revoked'||value.error==='table_out_of_scope')))assert.equal(value.tableId,table);
     state.handObservation={value:value.hand,at:Date.now(),startedAt,healthy:healthy()};state.credit();
     state.failures=0;state.lastRead=Date.now();
-   }catch(cause){if(!(controller.signal.aborted&&cause?.publicTableCallerCancelled===true)){const phase=reconnecting||!state.online?'offline':'healthy';const kind=phase+':'+classifyTableReadFailure(cause);tableFailureKinds[kind]=(tableFailureKinds[kind]??0)+1;state.failures++;error(phase+'_table_read');}}
+   }catch(cause){if(!(controller.signal.aborted&&(cause?.publicTableCallerCancelled===true||cause?.intentionalHudCancellation===true))){const phase=reconnecting||!state.online?'offline':'healthy';const kind=phase+':'+classifyTableReadFailure(cause);tableFailureKinds[kind]=(tableFailureKinds[kind]??0)+1;state.failures++;error(phase+'_table_read');}}
    finally{controller.abort();state.busy=false;}
   };
   const tableCoordinator=registerPublicTournamentRead(client,tour,()=>{
    state.pending=false;const promise=readCurrent();track(promise);return promise;
   });
   const read=async()=>{if(!overview&&Date.now()<end+10000){state.pending=true;tableCoordinator.request();}};
-  state.stopTableReads=()=>{tableCoordinator.stop();snapshotCoordinator.stop();};
+  state.stopTableReads=()=>{tableCoordinator.stop();snapshotCoordinator.stop();clockCoordinator?.stop();state.clockController?.abort();};
   state.read=read;
   let hudTimerToken=0;
   const scheduleHudCheck=phase=>{
@@ -347,8 +379,9 @@ for(const scenario of ['concentrated','distributed','overview']){
     components.splice(components.indexOf('visibility'),1,'hand_visibility');
     if(!components.includes('tables'))components.push('tables');
    }
-   for(const component of ['tables','ranking','payout'])if(components.includes(component))componentEpochs[component]++;
+   for(const component of ['tables','ranking','payout','clock'])if(components.includes(component))componentEpochs[component]++;
    if(components.some(c=>c==='visibility'||c==='hand_visibility')){pageEpoch++;state.tableController?.abort();state.snapshotController?.abort();state.handObservation=null;state.snapshotObservation=null;}
+   if(components.includes('visibility')){clockScopeEpoch++;state.clockReady=false;state.clockController?.abort();}
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
    if(components.includes('visibility')){state.known={};verifyPage();}
    else {if(components.includes('hand_visibility'))delete state.known.tables;const sections=components.filter(c=>['tables','ranking','payout'].includes(c)&&(c!=='tables'||overview));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
@@ -359,6 +392,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     const rejoined=state.joined;if(rejoined){stats.reconnects++;state.reconnected++;state.tableController?.abort();state.snapshotController?.abort();state.known={};state.snapshotDirty.clear();}state.joined=true;track(read());
     if(!rejoined)verifyPage();
     else {
+     clockScopeEpoch++;state.clockController?.abort();if(overview)track(clock());
      track(snapshot(['tables']));
      track((async()=>{await sleep(250+Math.random()*10000);if(epoch===pageEpoch&&state.online){track(read());track(snapshot(['ranking','payout']));track(clock());}})());
     }
@@ -502,13 +536,14 @@ for(const scenario of ['concentrated','distributed','overview']){
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
  expireDeliveries();clearInterval(resourceTimer);
- await until(async()=>tasks.size===0&&clients.every(c=>!c.pending&&!c.busy&&!c.snapshotPending&&!c.snapshotBusy),30000,'Pending transport/timer work did not drain');
+ await until(async()=>tasks.size===0&&clients.every(c=>!c.pending&&!c.busy&&!c.snapshotPending&&!c.snapshotBusy&&!c.clockPending&&!c.clockBusy),30000,'Pending transport/timer work did not drain');
  for(const c of clients)c.stopTableReads();
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));
  const sample=key=>stats[key].slice(offset[key]);
  const apiSummary=summaryApiReport(sample('summaryHttp'));
  const report={scenario,viewers,durationSeconds:duration,summaryTimingVersion:'per-rpc-complete-body-and-ready-v1',apiSummary,httpSummarySamples:apiSummary.all.samples,httpSummaryP95Ms:apiSummary.all.p95Ms,readySummarySamples:apiSummary.ready.samples,readySummaryP95Ms:apiSummary.ready.p95Ms,logicalHudSamples:sample('summary').length,logicalHudP95Ms:percentile(sample('summary'),.95),logicalHudMaxMs:maximumSample(sample('summary')),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:maximumSample(sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
  reports.push(report);save('running');
+ report.clockLifecycle={version:'production-felt-full-load-or-overview-shared-slot-v1',physicalReads:clients.reduce((n,c)=>n+c.clockPhysicalReads,0),minScopedReadsPerViewer:Math.min(...clients.map(c=>c.clockScopedReads)),superseded:clients.reduce((n,c)=>n+c.supersededClockReads,0),pendingAtGrading:clients.filter(c=>c.clockPending||c.clockBusy).length,scopeCancellation:true,errorsRemainFailures:true};assert.ok(report.clockLifecycle.minScopedReadsPerViewer>=1,'Every viewer needs a successful scoped clock read');assert.equal(report.clockLifecycle.pendingAtGrading,0);save('running');
  report.notReadyOutcomes=notReadyOutcomes;save('running');
  report.amendments={source:'real source triggers and production projector; selected contribution/job readiness, not an independent totals oracle',samples:amendmentSamples.length,maxMs:maximumSample(amendmentSamples.map(s=>s.endToEndMs)),byKind:Object.fromEntries(amendmentKinds.map(kind=>{const samples=amendmentSamples.filter(s=>s.kind===kind);return [kind,{samples:samples.length,maxMs:maximumSample(samples.map(s=>s.endToEndMs))}];})),changesDuringAudienceHold:amendmentSamples.every(s=>Date.parse(s.sourceWrittenAt)<=end)};save('running');
  const probes=workerProbeDiagnostics.filter(p=>p.scenario===scenario);
