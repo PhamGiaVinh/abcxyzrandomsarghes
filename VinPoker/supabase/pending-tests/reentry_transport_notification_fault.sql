@@ -15,6 +15,11 @@ REVOKE ALL ON SCHEMA ops_reentry_transport_probe_v1 FROM PUBLIC,anon,authenticat
 -- A nontransactional sequence is diagnostic only: it records an actual trigger
 -- attempt even when its inserted notification and subtransaction are rolled back.
 CREATE SEQUENCE ops_reentry_transport_probe_v1.notification_attempts;
+CREATE SEQUENCE ops_reentry_transport_probe_v1.notification_timeout_attempts;
+CREATE TABLE ops_reentry_transport_probe_v1.timeout_mode(singleton boolean PRIMARY KEY CHECK(singleton),enabled boolean NOT NULL);
+ALTER TABLE ops_reentry_transport_probe_v1.timeout_mode ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON ops_reentry_transport_probe_v1.timeout_mode FROM PUBLIC,anon,authenticated,service_role;
+INSERT INTO ops_reentry_transport_probe_v1.timeout_mode VALUES(true,false);
 CREATE FUNCTION ops_reentry_transport_probe_v1.bank_probe_source_snapshot()
 RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
  SELECT jsonb_build_object(
@@ -32,6 +37,11 @@ RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  IF NEW.type='registration_confirmed' AND NEW.data->>'reentry'='true'
   AND NEW.data->>'tournament_id'='a3000000-0000-4000-8000-000000000001' THEN
+  IF (SELECT enabled FROM ops_reentry_transport_probe_v1.timeout_mode WHERE singleton) THEN
+   PERFORM nextval('ops_reentry_transport_probe_v1.notification_timeout_attempts');
+   PERFORM pg_sleep(5);
+   RAISE EXCEPTION 'ISOLATED_NOTIFICATION_TIMEOUT_DID_NOT_FIRE';
+  END IF;
   PERFORM nextval('ops_reentry_transport_probe_v1.notification_attempts');
   RAISE EXCEPTION 'ISOLATED_OPTIONAL_REENTRY_NOTIFICATION_FAULT';
  END IF;

@@ -1680,6 +1680,19 @@ import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from
 const file=process.argv[2],report=JSON.parse(readFileSync(file,'utf8'));assert.equal(report.phase,'denied');assert.equal(report.httpStatus,503);
 report.nativeSourceUnchanged=true;report.fixtureBankRestored=true;writeFileSync(file,JSON.stringify(report,null,2));
 REENTRY_BANK_AMBIGUITY_RECEIPT
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/pending-tests/reentry_transport_timeout_rollback.sql" >"$test_root/reentry-timeout-native.log"
+    node --input-type=module - "$test_root/reentry-timeout-native.log" "$repo_root/output/operations-latency/reentry-transport-notification-timeout-native.json" "$source_sha" <<'REENTRY_NOTIFICATION_TIMEOUT_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const rows=readFileSync(process.argv[2],'utf8').trim().split(/\r?\n/).map(line=>JSON.parse(line));assert.equal(rows.length,2);
+const [pending,recovered]=rows;assert.equal(pending.phase,'pending-survived-timeout');assert.equal(pending.timeoutAttempts,1);
+assert.ok(Number.isFinite(pending.elapsedMs)&&pending.elapsedMs>=150&&pending.elapsedMs<=3000);
+assert.equal(recovered.phase,'outer-rollback-preserved-source');assert.equal(recovered.sourceUnchanged,true);assert.equal(recovered.modeReset,true);
+writeFileSync(process.argv[3],JSON.stringify({kind:'REAL_PG_STATEMENT_TIMEOUT_REENTRY_SUBTRANSACTION_ROLLBACK',sha:process.argv[4],
+ pendingSurvivedNotificationTimeout:true,timeoutAttempts:1,elapsedMs:pending.elapsedMs,outerRollbackPreservedSource:true,
+ edgeHttp:false,committedPayment:false,qualification:false,productionChanged:false,
+ limitations:'Native canonical bust/service reentry under real database roles and300ms statement timeout against a5second notification sleep. All source changes rolled back;not verified-player EdgeHTTP,committed-payment or connection-termination proof.'},null,2));
+REENTRY_NOTIFICATION_TIMEOUT_RECEIPT
   fi
   reentry_latency_failed=0
   if run_browser_proof '' 1 'current Floor bust and player reentry preserve separate paid entry generations'; then

@@ -35,6 +35,7 @@ on:
       - "VinPoker/supabase/pending-tests/cashier_tour_edge_fixture.sql"
       - "VinPoker/supabase/pending-tests/tournament-reentry-transport.ts"
       - "VinPoker/supabase/pending-tests/reentry_transport_notification_fault.sql"
+      - "VinPoker/supabase/pending-tests/reentry_transport_timeout_rollback.sql"
       - "VinPoker/tests/cashier/reentryTransportCandidate.test.mjs"
       - "VinPoker/supabase/pending-tests/fake-sepay-server.mjs"
       - "VinPoker/supabase/pending-tests/static-preview-server.mjs"
@@ -185,11 +186,13 @@ jobs:
           LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
-      - name: Sanitized Cashier HTTP latency evidence
+      - name: Sanitized Cashier runtime latency evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cashier-http-latency-${{ github.sha }}
-          path: VinPoker/output/operations-latency/*-http.json
+          path: |
+            VinPoker/output/operations-latency/*-http.json
+            VinPoker/output/operations-latency/reentry-transport-notification-timeout-native.json
           if-no-files-found: ignore
           retention-days: 7
