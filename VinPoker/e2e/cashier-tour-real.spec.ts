@@ -26,7 +26,7 @@ for (const name of required) {
   if (!process.env[name]) throw new Error(`missing ${name}`);
 }
 
-const scopeReadFailures=new WeakMap<Page,{status:number;path:string;code?:string;gatewayClass?:string}[]>();
+const scopeReadFailures=new WeakMap<Page,{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}[]>();
 
 async function loginOwner(page: Page) {
   const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, "");
@@ -47,11 +47,11 @@ async function loginOwner(page: Page) {
     localStorage.setItem(key, JSON.stringify(value));
   }, { key: process.env.LOCAL_SUPABASE_STORAGE_KEY!, value: session });
   if(!scopeReadFailures.has(page)){
-    const failures:{status:number;path:string;code?:string;gatewayClass?:string}[]=[];scopeReadFailures.set(page,failures);
+    const failures:{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}[]=[];scopeReadFailures.set(page,failures);
     page.on('response',response=>{
       const path=new URL(response.url()).pathname;
       if(response.status()<400||failures.length>=20||!['/rest/v1/rpc/dealer_control_club_ids','/rest/v1/rpc/get_my_floor_operator_scope'].includes(path))return;
-      const row:{status:number;path:string;code?:string;gatewayClass?:string}={status:response.status(),path};failures.push(row);
+      const row:{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}={status:response.status(),path,observedAtMs:Date.now(),requestStartedAtMs:response.request().timing().startTime};failures.push(row);
       void response.text().then(raw=>{
         try{const code=JSON.parse(raw)?.code;if(typeof code==='string'&&/^(?:PGRST\d{3}|[0-9A-Z]{5})$/.test(code))row.code=code;}catch{/* Gateway bodies may not be JSON. */}
         row.gatewayClass=/upstream.*tim(?:ed? ?out|eout)|timeout/i.test(raw)?'timeout':/connection refused/i.test(raw)?'connection-refused':/upstream.*(?:closed|reset)|connection reset/i.test(raw)?'connection-closed':/no healthy upstream/i.test(raw)?'no-healthy-upstream':'unclassified';
@@ -142,10 +142,10 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  // The same available dealer can also appear in the staffing/prediction cards.
  // Observe the actual searched roster, not an arbitrary duplicate elsewhere.
  const uiRoster=page.getByPlaceholder('Tìm dealer...',{exact:true}).locator('xpath=../..');
- const uiFailedReads:{status:number;path:string;code?:string;gatewayClass?:string}[]=[];
+ const uiFailedReads:{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}[]=[];
  page.on('response',response=>{
   if(response.status()<400||uiFailedReads.length>=20)return;
-  const row:{status:number;path:string;code?:string;gatewayClass?:string}={status:response.status(),path:new URL(response.url()).pathname};uiFailedReads.push(row);
+  const row:{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}={status:response.status(),path:new URL(response.url()).pathname};uiFailedReads.push(row);
   if(!['/rest/v1/rpc/dealer_control_club_ids','/rest/v1/rpc/get_my_floor_operator_scope'].includes(row.path))return;
   // Classifications only: never retain response bodies, credentials or SQL.
   void response.text().then(raw=>{
