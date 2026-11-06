@@ -1595,8 +1595,9 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
  const headers={apikey:anon,Authorization:`Bearer ${owner}`};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
  let phase='source',pageErrors=0,summaryReads=0,historyCount=0,unknownStacks=0,observedHands:number|null=null,revision:string|null=null,revocationFrames=0,visibilityFrames=0,sourceToReadyMs:number|null=null;
+ let failureKind:string|null=null,teardown='pending';const tableUi={catalogCount:0,targetIndex:-1,snapshotReads:0,lastStatus:0,lastAccess:'unknown',targetItem:false};
  const checks={actualTableOpen:false,actualSeatClick:false,anonymousSummary:false,independentHistory:false,help:false,idleNoPolling:false,tourReplayLink:false,actualReplayRpc:false,anonymousStorage:false,canonicalNewHand:false,frozenDuringNewHand:false,reopenNewRevision:false,revocationBroadcast:false,revocationCleared:false,definitiveDenials:false,restored:false};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,observedHands,revision,historyCount,unknownStacks,summaryReads,pageErrors,revocationFrames,visibilityFrames,sourceToReadyMs,qualification:false,limitations:'One anonymous Chromium HUD with canonical start/Finish,new-source frozen HUD,reopen,actual Broadcast and definitive API withdrawal/restore. Host private controls mutate only fixed TEST tour deleted_at through real triggers;not operator withdrawal authorization/UI proof. Original shadow runs before reads and after worker drain. No cross-tour aggregation,verified stack-dot,Edge/cron or1000capacity proof. No routes/responses intercepted.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,failureKind,teardown,tableUi,observedHands,revision,historyCount,unknownStacks,summaryReads,pageErrors,revocationFrames,visibilityFrames,sourceToReadyMs,qualification:false,limitations:'One anonymous Chromium HUD with canonical start/Finish,new-source frozen HUD,reopen,actual Broadcast and definitive API withdrawal/restore. Host private controls mutate only fixed TEST tour deleted_at through real triggers;not operator withdrawal authorization/UI proof. Original shadow runs before reads and after worker drain. No cross-tour aggregation,verified stack-dot,Edge/cron or1000capacity proof. No routes/responses intercepted.'},null,2));
  let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  try{
   const hands=await read('tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023');expect(hands).toHaveLength(1);const hand=hands[0];expect(hand.status).toBe('completed');
@@ -1604,6 +1605,7 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   const source=await read('tournament_hands?select=id&tournament_id=eq.'+tour),sourceIds=new Set(source.map((row:{id:string})=>row.id));
   const catalogResponse=await fetch(api+'/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{method:'POST',headers:{...headers,Authorization:`Bearer ${anon}`,'Content-Type':'application/json'},body:JSON.stringify({p_tournament_id:tour,p_table_ids:[],p_sections:['tables'],p_known_revisions:{}}),signal:AbortSignal.timeout(5000)});expect(catalogResponse.ok).toBe(true);
   const catalog=(await catalogResponse.json()).sections.tables.catalog as {tableId:string;name:string}[],tableName=catalog.find(row=>row.tableId===hand.tournament_table_id)?.name;expect(typeof tableName).toBe('string');expect(catalog.filter(row=>row.name===tableName)).toHaveLength(1);
+  tableUi.catalogCount=catalog.length;tableUi.targetIndex=catalog.findIndex(row=>row.tableId===hand.tournament_table_id);
   context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:1366,height:900}});const viewer=await context.newPage();viewer.on('pageerror',()=>pageErrors++);
   viewer.on('websocket',socket=>socket.on('framereceived',frame=>{try{
    const wire=decodeClockWireFrame(typeof frame.payload==='string'?frame.payload:new Uint8Array(frame.payload)) as Record<string,unknown>|unknown[];
@@ -1612,9 +1614,12 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
    if(event==='broadcast'&&topic==='realtime:public:player-hud-access-v1'&&outer?.event==='revoked'&&outer.payload?.scope==='all-public-player-hud')revocationFrames++;
   }catch{/* Count only decoded fixed events;never export frames. */}}));
   viewer.on('request',request=>{if(new URL(request.url()).pathname.endsWith('/rest/v1/rpc/get_public_player_hud_summary_v1'))summaryReads++;});
+  viewer.on('response',async response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2'))return;tableUi.snapshotReads++;tableUi.lastStatus=response.status();try{const value=await response.json();tableUi.lastAccess=['public','revoked'].includes(value.access)?value.access:'other';tableUi.targetItem=Array.isArray(value.sections?.tables?.items)&&value.sections.tables.items.some((row:{tableId:string})=>row.tableId===hand.tournament_table_id);}catch{/* Diagnostic counters only; UI expectations retain actual failures. */}});
   const openTable=async()=>{
+   phase='felt-filter';await viewer.getByPlaceholder('Tìm bàn hoặc người chơi',{exact:true}).fill(tableName!,{timeout:10000});
+   const button=viewer.getByRole('article',{name:tableName!,exact:true}).getByRole('button',{name:'Xem '+tableName,exact:true});phase='felt-open';await expect(button).toBeVisible({timeout:10000});
    const response=viewer.waitForResponse(value=>{if(!new URL(value.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_live_or_last_hand_v2'))return false;const args=value.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_tournament_table_id===hand.tournament_table_id;},{timeout:10000});void response.catch(()=>{});
-   await viewer.getByRole('article',{name:tableName!,exact:true}).getByRole('button',{name:'Xem '+tableName,exact:true}).click();const actual=await response;expect(actual.ok()).toBe(true);expect((await actual.json()).tableId).toBe(hand.tournament_table_id);
+   await button.click({timeout:5000});phase='felt-read';const actual=await response;expect(actual.ok()).toBe(true);expect((await actual.json()).tableId).toBe(hand.tournament_table_id);
   };
   phase='felt';await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');
   await openTable();checks.actualTableOpen=true;
@@ -1668,7 +1673,9 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   phase='history-replay';const replay=viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;return response.request().postDataJSON()?.p_hand_id===hand.id;},{timeout:10000});void replay.catch(()=>{});
   await link.click();const actualReplay=await replay;expect(actualReplay.ok()).toBe(true);expect((await actualReplay.json()).id).toBe(hand.id);await expect(viewer.getByTestId('replay-action-rail')).toBeVisible();checks.actualReplayRpc=true;
   checks.anonymousStorage=!(await context.storageState()).origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(checks.anonymousStorage).toBe(true);expect(pageErrors).toBe(0);phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}finally{await context?.close();}
+  }catch(error){failureKind=error instanceof Error&&['Error','AssertionError','TimeoutError'].includes(error.name)?error.name:'other';phase+='-failed';report();throw error;}finally{
+   if(context){let timer:ReturnType<typeof setTimeout>|undefined;const closed=await Promise.race([context.close().then(()=>true,()=>false),new Promise<false>(resolve=>{timer=setTimeout(()=>resolve(false),5000);})]);clearTimeout(timer);teardown=closed?'closed':'failed';if(!closed&&phase==='passed'){phase='cleanup-failed';report();throw Error('HUD browser teardown failed');}report();}
+  }
 });
 
 test('checkout notifications reach the isolated HTTP sink once with dealer tags',async({page})=>{

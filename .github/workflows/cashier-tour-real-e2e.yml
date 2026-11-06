@@ -163,7 +163,7 @@ jobs:
           node scripts/deploy/validate-live-public-schema-artifact.mjs \
             --artifact-directory "${RUNNER_TEMP}/cashier-schema"
           echo "Schema baseline: owner capture run $capture_id (pre-Cashier-03)"
-      - name: Isolate empty local Supabase before any application migration
+      - name: Run isolated backend, browser and operational checks
         working-directory: VinPoker
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema

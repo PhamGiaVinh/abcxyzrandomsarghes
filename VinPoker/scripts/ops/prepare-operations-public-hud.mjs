@@ -13,9 +13,10 @@ import {loadClassifier,createShadow,shadowSql} from './tracker-hud-shadow.mjs';
 import {createOperationalHudControl} from './operations-hud-control.mjs';
 
 const workerBuild={entryPoints:[fileURLToPath(new URL('../../supabase/functions/public-hud-projector-v1/worker.ts',import.meta.url))],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'};
+const spectatorBuild={...workerBuild,entryPoints:[fileURLToPath(new URL('../../supabase/functions/public-spectator-projector-v2/worker.ts',import.meta.url))]};
 // Non-mutating source preflight; no target/credential reads or worker execution.
 if(process.argv.length===3&&process.argv[2]==='--check-worker-bundle'){
- await build(workerBuild);console.log(JSON.stringify({kind:'OPERATIONAL_HUD_WORKER_SOURCE_BUNDLE_ONLY',bundled:true}));process.exit(0);
+ await Promise.all([build(workerBuild),build(spectatorBuild)]);console.log(JSON.stringify({kind:'OPERATIONAL_HUD_WORKER_SOURCE_BUNDLE_ONLY',bundled:true}));process.exit(0);
 }
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_CANDIDATE_PROBE,'1');
@@ -55,14 +56,23 @@ const scope=json(`SELECT jsonb_build_object('owned',current_user='postgres' AND 
  'catalog',ops_load_fixture_v1.catalog_fingerprint());`);
 for(const key of ['owned','frozen','eventGuard','disabled','onlyOwnedSource','recordedFinish'])assert.equal(scope[key],true,'Required fixture boundary: '+key);
 assert.ok(scope.hands>=21&&scope.hands<=1000&&scope.results<=1000);
-const client=createClient(status.API_URL,status.SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>fetch(input,{...init,signal:AbortSignal.timeout(5000)})}});
+const client=createClient(status.API_URL,status.SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:(input,init)=>fetch(input,{...init,signal:init?.signal?AbortSignal.any([init.signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)})}});
 const bundle=await build(workerBuild);
 const workerText=bundle.outputFiles[0].text;
 const {processPublicHudJobs}=await import('data:text/javascript;base64,'+Buffer.from(workerText).toString('base64'));
+const spectatorText=(await build(spectatorBuild)).outputFiles[0].text;
+const {processPublicSpectatorJobs}=await import('data:text/javascript;base64,'+Buffer.from(spectatorText).toString('base64'));
 const started=Date.now(),report={kind:'REAL_ISOLATED_OPERATIONAL_HUD_BACKFILL_AND_RAW_SHADOW',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,manifestSha256:MANIFEST_HASH,
  workerSha256:createHash('sha256').update(workerText).digest('hex'),phase:'backfill',sourceHands:scope.hands,sourceResults:scope.results,batches:0,processed:0,failed:0,shadow:null,
- readsEnabled:false,elapsedMs:0,liveProcessed:0,controls:null,finalShadow:null,qualification:false,productionChanged:false,limitations:'Actual production worker through service HTTP RPCs and original raw-source read-only shadow on the owned disposable operational fixture. Optional private controls change only fixed TEST tour withdrawal/restore through source triggers;not operator authorization/UI proof. Not Edge/cron execution,1000-viewer capacity,production backfill or browser proof.'};
+ readsEnabled:false,elapsedMs:0,liveProcessed:0,spectatorWorkerSha256:createHash('sha256').update(spectatorText).digest('hex'),spectatorProcessed:0,spectatorFailed:0,spectatorPendingBefore:null,spectatorReady:false,controls:null,finalShadow:null,qualification:false,productionChanged:false,limitations:'Actual HUD and spectator production workers through service HTTP RPCs and original raw-source read-only shadow on owned disposable fixture. Optional private controls change only fixed TEST tour withdrawal/restore through source triggers;not operator authorization/UI proof. Not Edge/cron execution,1000-viewer capacity,production backfill or browser proof.'};
 const save=()=>{report.elapsedMs=Date.now()-started;writeFileSync(reportPath,JSON.stringify(report,null,2));};
+const spectatorPending=()=>Number(execute('SELECT (SELECT count(*) FROM spectator_projection_v2.work_groups)+(SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1);'));
+const spectatorWork=async()=>{
+ const deadline=Date.now()+5000;
+ const result=await processPublicSpectatorJobs({rpc:(name,args)=>{const left=deadline-Date.now();assert.ok(left>0,'Spectator fixture deadline');return client.rpc(name,args).abortSignal(AbortSignal.timeout(left));}},deadline);
+ report.spectatorProcessed+=result.processed;report.spectatorFailed+=result.results.filter(row=>row.error).length;
+ assert.equal(report.spectatorFailed,0,'Actual spectator worker failure');
+};
 try{
  execute('UPDATE tracker_analytics_v1.config SET worker_enabled=true WHERE singleton AND NOT enabled AND NOT backfill_complete;');save();
  let complete=false;
@@ -88,7 +98,10 @@ try{
  execute('UPDATE tracker_analytics_v1.config SET enabled=true WHERE singleton AND backfill_complete AND hands_done AND results_done AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.jobs) AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.visibility_barriers);');
  assert.equal(execute('SELECT enabled FROM tracker_analytics_v1.config WHERE singleton;'),'t');
  assert.equal(execute('SELECT ops_load_fixture_v1.catalog_fingerprint();'),scope.catalog,'Preparation must not alter frozen schema');
- report.readsEnabled=true;report.phase='prepared';save();
+ report.readsEnabled=true;report.phase='spectator-drain';report.spectatorPendingBefore=spectatorPending();save();
+ const spectatorUntil=Date.now()+15000;
+ while(spectatorPending()>0){assert.ok(!stopping&&Date.now()<spectatorUntil,'Initial spectator fixture drain deadline');await spectatorWork();if(spectatorPending()>0)await new Promise(resolve=>setTimeout(resolve,100));}
+ report.spectatorReady=true;report.phase='prepared';save();
  if(controlDir){
   const nonce=process.env.LOCAL_OPERATIONS_HUD_CONTROL_NONCE;
   const control=createOperationalHudControl({sha:report.sha,nonce,
@@ -106,13 +119,13 @@ try{
   const work=async()=>{const result=await processPublicHudJobs(client,80,Date.now()+10000);report.liveProcessed+=result.processed;report.failed+=result.failed;assert.equal(result.failed,0,'Live fixture projector failure');};
   report.phase='serving';save();
   while(!stopping){
-   await control.poll();await work();
+   await control.poll();await work();await spectatorWork();
    const flushed=await client.rpc('flush_public_spectator_broadcast_v2',{p_limit:100});assert.ok(!flushed.error&&Number.isInteger(flushed.data),'Actual fixture Broadcast flush failed');
    report.controls=control.report();save();await new Promise(resolve=>setTimeout(resolve,250));
   }
   await control.stop();
   const drainUntil=Date.now()+15000;
-  while(Number(execute('SELECT count(*) FROM tracker_analytics_v1.jobs;'))>0){assert.ok(Date.now()<drainUntil,'Final fixture drain deadline');await work();}
+  while(Number(execute('SELECT count(*) FROM tracker_analytics_v1.jobs;'))>0||spectatorPending()>0){assert.ok(Date.now()<drainUntil,'Final fixture drain deadline');await work();await spectatorWork();}
   const final=createShadow(classifier);execute(shadowSql).split('\n').filter(Boolean).forEach(line=>final.accept(JSON.parse(line)));
   report.finalShadow=final.finish();assert.equal(report.finalShadow.passed,true);assert.equal(report.finalShadow.mismatches,0);
   assert.equal(execute('SELECT ops_load_fixture_v1.catalog_fingerprint();'),scope.catalog);

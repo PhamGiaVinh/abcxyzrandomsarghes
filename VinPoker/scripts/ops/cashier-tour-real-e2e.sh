@@ -2002,7 +2002,7 @@ OPERATIONS_PACKAGE_FINISHED
     hud_prepared=false
     for ((hud_wait=0;hud_wait<130;hud_wait++)); do
       if ! kill -0 "$hud_projector_pid" 2>/dev/null; then echo 'Isolated HUD preparation stopped before readiness' >&2;wait "$hud_projector_pid";exit 1;fi
-      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json"; then hud_prepared=true;break;fi
+      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json"; then hud_prepared=true;break;fi
       sleep 1
     done
     [[ "$hud_prepared" == true ]]
@@ -2015,6 +2015,7 @@ import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from
 const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf8'));
 const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
 assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(backfill.finalShadow.passed,true);assert.equal(backfill.controls.uniqueApplied,2);assert.equal(backfill.controls.complete,true);assert.equal(browser.phase,'passed');
+assert.equal(backfill.spectatorReady,true);assert.equal(backfill.spectatorFailed,0);
 assert.ok(Object.values(browser.checks).every(value=>value===true));
 const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
 pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';
