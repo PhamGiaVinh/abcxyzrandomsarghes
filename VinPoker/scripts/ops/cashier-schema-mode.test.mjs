@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {selectedAudienceSections,audienceResourceStats} from './operations-audience-scope.mjs';
+import {selectedAudienceSections,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics} from './operations-audience-scope.mjs';
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
@@ -17,6 +17,32 @@ const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-r
 test('resource observations retain fixed numeric counters and reject labels or non-finite values',()=>{
  assert.deepEqual(audienceResourceStats('191.55%|12.30%|18\n'),{cpuPercent:191.55,memoryPercent:12.3,pids:18});
  for(const text of ['NaN%|0%|1','1%|101%|1','1%|0%|1\nprivate-label','1%|0%|-1','1%|0%|9007199254740992'])assert.throws(()=>audienceResourceStats(text));
+});
+
+const poolText='pgrst_db_pool_available 2.0\npgrst_db_pool_waiting 3e0\npgrst_db_pool_max 10\npgrst_db_pool_timeouts_total 0\n';
+test('pool diagnostics retain four unlabeled integer counters,never substitute missing data',()=>{
+  assert.deepEqual(audiencePoolStats('# private comment\n'+poolText+'unrelated_metric{secret="private"} 42\n'),{available:2,waiting:3,max:10,timeouts:0});
+  for(const value of [poolText.replace('waiting 3e0','waiting NaN'),poolText.replace('waiting 3e0','waiting -1'),poolText.replace('max 10','max 1'),poolText.replace('available 2.0','available{private="x"} 2'),poolText.replace('pgrst_db_pool_max 10\n',''),poolText+'pgrst_db_pool_waiting 1\n','x'.repeat(65537)])assert.throws(()=>audiencePoolStats(value));
+});
+test('existing admin HTTP reads are bounded,anonymous and never follow redirects or expose bodies',async()=>{
+  let mode='ok',calls=0;
+  const server=http.createServer((request,response)=>{
+    calls++;assert.equal(request.url,'/metrics');assert.equal(request.headers.authorization,undefined);assert.equal(request.headers.cookie,undefined);
+    if(mode==='redirect'){response.writeHead(302,{Location:'http://8.8.8.8/metrics'});response.end('private');}
+    else if(mode==='denied'){response.writeHead(403);response.end('private');}
+    else if(mode==='large')response.end('x'.repeat(65537));
+    else if(mode==='slow'){response.writeHead(200);response.write('pgrst_');}
+    else response.end(poolText);
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const address=`http://127.0.0.1:${server.address().port}/metrics`;
+  try{
+    const first=await readAudiencePoolMetrics(address);assert.equal(first.available,2);assert.equal(first.waiting,3);assert.ok(first.observerMs>=0);
+    for(mode of ['redirect','denied','large','slow'])await assert.rejects(readAudiencePoolMetrics(address,50),{message:'Isolated pool metrics unavailable'});
+    assert.equal(calls,5);
+    for(const url of ['http://8.8.8.8:3001/metrics','http://127.evil.invalid:3001/metrics',address+'?token=private',address.replace('/metrics','/schema_cache'),address.replace('127.0.0.1','user:private@127.0.0.1')])assert.throws(()=>readAudiencePoolMetrics(url));
+    assert.equal(calls,5);
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
 
 test('operational HUD backfill refuses non-disposable targets before Docker or activation',()=>{

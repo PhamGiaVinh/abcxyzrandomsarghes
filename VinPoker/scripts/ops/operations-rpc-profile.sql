@@ -10,6 +10,8 @@ SELECT CASE WHEN current_user='postgres'
  WITH classified AS (
   SELECT CASE
    WHEN strpos(query,'resolve_cashier_cash_buyin_intent_v1')>0 THEN 'resolve_cashier_cash_buyin_intent_v1'
+   WHEN strpos(query,'cashier_create_app_reentry_v1')>0 THEN 'cashier_create_app_reentry_v1'
+   WHEN strpos(query,'floor_bust_player_v3')>0 THEN 'floor_bust_player_v3'
    WHEN strpos(query,'cashier_tour_worklist_v1')>0 THEN 'cashier_tour_worklist_v1'
    WHEN strpos(query,'get_floor_tournament_table_roster_v3')>0 THEN 'get_floor_tournament_table_roster_v3'
    WHEN strpos(query,'get_floor_tournament_table_roster_v6')>0 THEN 'get_floor_tournament_table_roster_v6'

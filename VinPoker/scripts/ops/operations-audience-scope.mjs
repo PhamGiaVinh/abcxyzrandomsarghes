@@ -1,5 +1,46 @@
 import {channel} from 'node:diagnostics_channel';
 import {createHash} from 'node:crypto';
+import http from 'node:http';
+import {isIP} from 'node:net';
+
+// Whitelist scalar pool counters only. Never retain labels or arbitrary metrics.
+export function audiencePoolStats(text){
+ const names={pgrst_db_pool_available:'available',pgrst_db_pool_waiting:'waiting',pgrst_db_pool_max:'max',pgrst_db_pool_timeouts_total:'timeouts'};
+ if(typeof text!=='string'||Buffer.byteLength(text)>65536)throw Error('Invalid isolated pool counters');
+ const result={};
+ for(const line of text.split(/\r?\n/)){
+  const name=line.match(/^(pgrst_db_pool_[a-z_]+)(?=[\s{])/)?.[1];
+  if(!Object.hasOwn(names,name??''))continue;
+  const sample=/^pgrst_db_pool_[a-z_]+\s+([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\s*$/.exec(line);
+  const value=sample?Number(sample[1]):NaN,key=names[name];
+  if(!Number.isSafeInteger(value)||value<0||Object.hasOwn(result,key))throw Error('Invalid isolated pool counters');
+  result[key]=value;
+ }
+ if(Object.keys(result).length!==4||result.max<1||result.available>result.max)throw Error('Incomplete isolated pool counters');
+ return result;
+}
+
+// Only a pre-existing private/loopback admin endpoint, without credentials,
+// redirects or retry. The caller additionally binds it to its owned container.
+export function readAudiencePoolMetrics(address,timeoutMs=1000){
+ const target=new URL(address);
+ if(target.protocol!=='http:'||isIP(target.hostname)!==4||!(/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(target.hostname))||!target.port||target.username||target.password||target.search||target.hash||target.pathname!=='/metrics'||!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>1000)throw Error('Private isolated metrics endpoint required');
+ return new Promise((resolve,reject)=>{
+  let settled=false;const started=Date.now(),chunks=[];let bytes=0;
+  const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);error?reject(Error('Isolated pool metrics unavailable')):resolve(value);};
+  const request=http.get(target,{headers:{'Accept-Encoding':'identity'}},response=>{
+   if(response.statusCode!==200){finish(true);response.destroy();return;}
+   response.on('data',chunk=>{bytes+=chunk.length;if(bytes>65536){finish(true);response.destroy();request.destroy();}else chunks.push(chunk);});
+   response.on('error',()=>finish(true));
+   response.on('end',()=>{try{
+    if(Date.now()-started>=timeoutMs){finish(true);return;}
+    finish(false,{...audiencePoolStats(Buffer.concat(chunks).toString('utf8')),startedAtMs:started,observedAtMs:Date.now(),observerMs:Date.now()-started});
+   }catch{finish(true);}});
+  });
+  const timer=setTimeout(()=>{finish(true);request.destroy();},timeoutMs);
+  request.on('error',()=>finish(true));
+ });
+}
 
 // docker stats emits only these requested fields; reject malformed values and
 // discard all labels. Container identities/configuration are never exported.
