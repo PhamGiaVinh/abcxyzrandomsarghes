@@ -6,7 +6,7 @@ import {availableParallelism,totalmem,cpus} from 'node:os';
 import {setMaxListeners} from 'node:events';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -52,7 +52,13 @@ const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],sourceToPublica
 const errors={},clients=[],pending=new Set();
 const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
 const socketEvents={},socketFailureSamples=[];
+const handshakeEvents={},handshakeFailureSamples=[];
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0;
+const stopHandshakeDiagnostics=observeAudienceHandshake(status.API_URL,value=>{
+ if(stopping)return;
+ const key=[value.event,value.httpStatus??'none',value.kind??'none'].join(':');handshakeEvents[key]=(handshakeEvents[key]??0)+1;
+ if(value.httpStatus!==101&&handshakeFailureSamples.length<20)handshakeFailureSamples.push({at:Date.now(),...value});
+});
 const fail=name=>{errors[name]=(errors[name]??0)+1;};
 const diagnostic=(phase,cause,status)=>{
  const value=audienceFailure(cause,status),key=phase+':'+value.kind;
@@ -65,7 +71,7 @@ const report=()=>writeFileSync(reportFile,JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
- readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,
+ readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
@@ -204,6 +210,7 @@ try{
  while(!stopping)await sleep(100);
 }catch(cause){fail('audience_lifecycle');diagnostic('audience_lifecycle',cause);stopping=true;process.exitCode=1;}
 finally{
+ stopHandshakeDiagnostics();
  clearInterval(timer);stopping=true;
  endedAt=Date.now();connectedAtStop=clients.filter(c=>c.online).length;
  for(const state of clients){state.controller?.abort();state.clockController?.abort();state.coordinator.stop();state.clockCoordinator.stop();state.observation?.unsubscribe();}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -247,15 +247,18 @@ test('socket diagnostics retain nested error codes and close codes without endpo
 });
 
 test('real native WebSocket handshake failure can be inspected without serializing its ErrorEvent',async()=>{
- const server=http.createServer();server.on('upgrade',(_request,socket)=>socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
+ const server=http.createServer((_request,response)=>{response.writeHead(403);response.end();});server.on('upgrade',(_request,socket)=>socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- let socket,timer;
+ let socket,timer;const observed=[],origin='http://127.0.0.1:'+server.address().port,stop=observeAudienceHandshake(origin,event=>observed.push(event));
  try{
+  await fetch(origin+'/ordinary?private=fixture');assert.deepEqual(observed,[]);
   const result=await new Promise((resolve,reject)=>{
    timer=setTimeout(()=>reject(Error('WebSocket test deadline')),3000);
-   socket=new WebSocket('ws://127.0.0.1:'+server.address().port+'/?private=fixture');
+   socket=new WebSocket('ws://127.0.0.1:'+server.address().port+'/realtime/v1/websocket?private=fixture');
    socket.addEventListener('error',event=>resolve(audienceSocketDiagnostic('transport','error',event)),{once:true});
   });
   assert.equal(result.event,'transport_error');assert.equal(JSON.stringify(result).includes('fixture'),false);
- }finally{clearTimeout(timer);socket?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+  assert.ok(observed.some(e=>e.event==='handshake_response'&&e.httpStatus===403));assert.equal(JSON.stringify(observed).includes('fixture'),false);
+  assert.throws(()=>observeAudienceHandshake('https://example.com',()=>{}),/Loopback/);
+ }finally{stop();clearTimeout(timer);socket?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });

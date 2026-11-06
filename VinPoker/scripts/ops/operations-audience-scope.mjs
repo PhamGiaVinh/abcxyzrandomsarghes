@@ -1,3 +1,5 @@
+import {channel} from 'node:diagnostics_channel';
+
 // A stopped scope is not evidence that an HTTP failure was cancellation.
 // The table transport supplies its own canonical provenance marker.
 export function ownedAudienceCancellation(cause,controller,timeout,kind='http'){
@@ -23,6 +25,8 @@ export function audienceFailure(cause,status){
  if(['EMFILE','ENFILE'].includes(code))kind='file_descriptor_limit';
  else if(cause?.name==='TimeoutError')kind='deadline';
  else if(code==='UND_ERR_CONNECT_TIMEOUT')kind='connect_timeout';
+ else if(code==='UND_ERR_HEADERS_TIMEOUT')kind='headers_timeout';
+ else if(code==='UND_ERR_BODY_TIMEOUT')kind='body_timeout';
  else if(['ECONNRESET','ECONNREFUSED','EPIPE','UND_ERR_SOCKET'].includes(code))kind='connection_lost';
  else if(httpStatus!==null)kind='http_error';
  else if(cause?.name==='SyntaxError')kind='invalid_json';
@@ -71,6 +75,27 @@ export function audienceSocketDiagnostic(kind,message,data){
   queue.push(item.cause,item.error);
  }
  return {event,...failure,joinKind,closeCode};
+}
+
+// Native WebSocket deliberately hides the failed HTTP handshake status in its
+// ErrorEvent. Observe Undici's real request diagnostics without replacing its
+// dispatcher, transport, retry policy or timeout. Nothing from the URL is emitted.
+export function observeAudienceHandshake(origin,onEvent){
+ const target=new URL(origin);
+ if(target.protocol!=='http:'||target.hostname!=='127.0.0.1'||target.username||target.password||target.pathname!=='/')throw Error('Loopback handshake diagnostic required');
+ const owned=new WeakSet(),listeners=[];
+ const listen=(name,callback)=>{const stream=channel(name),safe=value=>{try{callback(value);}catch{/* Observability cannot change the request outcome. */}};stream.subscribe(safe);listeners.push(()=>stream.unsubscribe(safe));};
+ listen('undici:request:create',({request})=>{
+  if(String(request.origin)===target.origin&&typeof request.path==='string'&&request.path.startsWith('/realtime/v1/websocket?'))owned.add(request);
+ });
+ listen('undici:request:headers',({request,response})=>{
+  if(!owned.has(request))return;
+  const status=response?.statusCode;if(Number.isInteger(status)&&status>=100&&status<=599)onEvent({event:'handshake_response',httpStatus:status});
+ });
+ listen('undici:request:error',({request,error})=>{
+  if(owned.has(request))onEvent({event:'handshake_request_error',...audienceFailure(error)});
+ });
+ return ()=>listeners.forEach(stop=>stop());
 }
 
 // Observe the real SDK callback; retain the client identity used by the actual

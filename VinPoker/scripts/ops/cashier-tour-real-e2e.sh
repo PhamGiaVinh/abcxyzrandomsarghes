@@ -120,11 +120,11 @@ CLOCK_FAILURE_STATE
     mkdir -p "$repo_root/output/operations-latency"
     # Browser scope failures need the gateway's fixed error classifications,
     # not raw request logs, headers, JWTs, response bodies or customer records.
-    docker logs "$gateway_container" --tail 1000 2>&1 | node --input-type=module -e '
+    docker logs "$gateway_container" --tail 100000 2>&1 | node --input-type=module -e '
       import {readFileSync} from "node:fs";
       const raw=readFileSync(0,"utf8");
-      const markers=Object.fromEntries(["upstream timed out","connect() failed","no live upstreams","could not be resolved","failed to get a peer","upstream prematurely closed connection","Connection reset by peer","too many open files","worker process exited"].map(marker=>[marker,raw.split(marker).length-1]));
-      process.stdout.write(JSON.stringify({kind:"SANITIZED_ISOLATED_GATEWAY_FAILURE_CLASSIFICATIONS",qualification:false,markers,limitations:"Last1000gateway log lines,fixed marker counts only;not a per-request causal attribution."}));
+      const markers=Object.fromEntries(["upstream timed out","connect() failed","no live upstreams","could not be resolved","failed to get a peer","upstream prematurely closed connection","Connection reset by peer","too many open files","Too many open files","worker process exited","worker_connections are not enough","accept4() failed","socket() failed","upstream sent too big header"].map(marker=>[marker,raw.split(marker).length-1]));
+      process.stdout.write(JSON.stringify({kind:"SANITIZED_ISOLATED_GATEWAY_FAILURE_CLASSIFICATIONS",qualification:false,markers,limitations:"Last100000gateway log lines include the bounded startup interval;fixed marker counts only;not a per-request causal attribution."}));
     ' >"$repo_root/output/operations-latency/gateway-failure-http.json" || true
   fi
   if [[ "$exit_code" != 0 && -n "${db_container:-}" ]]; then
