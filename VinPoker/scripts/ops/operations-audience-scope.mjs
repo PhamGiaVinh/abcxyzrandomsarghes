@@ -1,6 +1,16 @@
 import {channel} from 'node:diagnostics_channel';
 import {createHash} from 'node:crypto';
 
+// docker stats emits only these requested fields; reject malformed values and
+// discard all labels. Container identities/configuration are never exported.
+export function audienceResourceStats(text){
+ const match=/^([0-9]+(?:\.[0-9]+)?)%\|([0-9]+(?:\.[0-9]+)?)%\|([0-9]+)\s*$/.exec(text);
+ if(!match)throw Error('Invalid isolated resource counters');
+ const [cpuPercent,memoryPercent,pids]=match.slice(1).map(Number);
+ if(![cpuPercent,memoryPercent,pids].every(Number.isFinite)||cpuPercent>100000||memoryPercent>100||!Number.isSafeInteger(pids))throw Error('Invalid isolated resource counters');
+ return {cpuPercent,memoryPercent,pids};
+}
+
 // A stopped scope is not evidence that an HTTP failure was cancellation.
 // The table transport supplies its own canonical provenance marker.
 export function ownedAudienceCancellation(cause,controller,timeout,kind='http'){

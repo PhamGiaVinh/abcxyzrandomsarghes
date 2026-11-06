@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {selectedAudienceSections} from './operations-audience-scope.mjs';
+import {selectedAudienceSections,audienceResourceStats} from './operations-audience-scope.mjs';
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
@@ -12,6 +12,11 @@ import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
+
+test('resource observations retain fixed numeric counters and reject labels or non-finite values',()=>{
+ assert.deepEqual(audienceResourceStats('191.55%|12.30%|18\n'),{cpuPercent:191.55,memoryPercent:12.3,pids:18});
+ for(const text of ['NaN%|0%|1','1%|101%|1','1%|0%|1\nprivate-label','1%|0%|-1','1%|0%|9007199254740992'])assert.throws(()=>audienceResourceStats(text));
+});
 
 test('operational HUD backfill refuses non-disposable targets before Docker or activation',()=>{
  const helper=fileURLToPath(new URL('./prepare-operations-public-hud.mjs',import.meta.url));
