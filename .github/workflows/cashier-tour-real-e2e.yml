@@ -211,5 +211,6 @@ jobs:
           path: |
             VinPoker/output/operations-latency/*-http.json
             VinPoker/output/operations-latency/reentry-transport-notification-timeout-native.json
+            VinPoker/output/operations-latency/reentry-bank-ambiguity-native-conservation.json
           if-no-files-found: ignore
           retention-days: 7

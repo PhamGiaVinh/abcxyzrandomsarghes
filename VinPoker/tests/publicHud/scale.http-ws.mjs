@@ -225,6 +225,11 @@ for(const scenario of ['concentrated','distributed','overview']){
      if(!coveringHintDiagnostics.has(scenario))coveringHintDiagnostics.set(scenario,createCoveringHintDiagnostics());
      coveringHintDiagnostics.get(scenario).record(coveringTableHintTiming(tableHints,expected,observation));
     }else if(measure==='snapshot'){
+     // The publication returned by a later read is not necessarily the first
+     // usable one. Reuse retained numeric hints to distinguish publication/
+     // notification delay from waiting for the next overview dispatch slot.
+     if(!coveringHintDiagnostics.has(scenario))coveringHintDiagnostics.set(scenario,createCoveringHintDiagnostics());
+     coveringHintDiagnostics.get(scenario).record(coveringTableHintTiming(tableHints,{...expected,generationDeferred:expected.deferred},observation));
      stats.snapshotToReadStart.push(observation.startedAt-expected.at);
      stats.snapshotRead.push(observation.at-observation.startedAt);
      const publicationAt=Date.parse(observation.value.publishedAt);
@@ -650,6 +655,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
  report.watchedCoveringHintTiming={...(coveringHintDiagnostics.get(scenario)??createCoveringHintDiagnostics()).summary(),scope:'Diagnostic only: earliest retained covering numeric table hint received after source timestamp and before chosen observation; at most128 hints/viewer. Deferred sources and missing hints remain unmatched. Exact integer-ms histograms; same-clock signed intervals; independent percentiles are not additive. Production epoch fences and all grades unchanged.'};save('running');
+ if(overview){report.overviewCoveringHintTiming=report.watchedCoveringHintTiming;delete report.watchedCoveringHintTiming;save('running');}
  report.requestAccounting=requestAccounting;
  report.hudRecovery={restorationMethod:'per-viewer-owned-summary-and-exact-history-receipt-v1',restorationWindowMs:15000,restorationDeadline,receiptMaxElapsedMs:maximumSample(clients.map(c=>c.restoration?.receiptAt==null?0:c.restoration.receiptAt-c.restoration.launchedAt)),summaryAndHistoryIndependent:true,historyRequiredForAcceptance:true,restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.historyActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
