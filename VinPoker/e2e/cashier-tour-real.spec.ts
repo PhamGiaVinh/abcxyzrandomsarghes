@@ -1203,6 +1203,22 @@ test('current Cashier full payment commits canonical seats through real HTTP',as
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('pending reentry transport rejects ambiguous payment account before creation',async()=>{
+ test.skip(process.env.LOCAL_REENTRY_TRANSPORT_PROBE!=='1','Explicit disposable composite-transport probe only');
+ const staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const started=performance.now();
+ const response=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',
+  headers:{apikey:anon,Authorization:`Bearer ${staff[0].token}`,'Content-Type':'application/json'},
+  body:JSON.stringify({tournament_id:'a3000000-0000-4000-8000-000000000001'}),signal:AbortSignal.timeout(5000)});
+ const body=await response.json();expect(response.status).toBe(503);
+ expect(body).toEqual({error:'SePay master account is not exclusive to this club'});
+ writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-reentry-bank-ambiguity-http.json'),JSON.stringify({
+  kind:'REAL_AUTH_COMPOSITE_REENTRY_BANK_AMBIGUITY_DENIAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  phase:'denied',httpStatus:response.status,elapsedMs:performance.now()-started,qualification:false,
+  limitations:'Ambiguous active bank fixture only;source and money preservation require the separate native before/after check. Not bank-outage,closed-buy race or1000-viewer proof.',
+ },null,2));
+});
+
 test('current Floor bust and player reentry preserve separate paid entry generations',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_REENTRY_ENABLED!=='1','Third isolated stage after full seated-payment proof');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;

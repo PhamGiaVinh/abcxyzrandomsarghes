@@ -15,6 +15,18 @@ REVOKE ALL ON SCHEMA ops_reentry_transport_probe_v1 FROM PUBLIC,anon,authenticat
 -- A nontransactional sequence is diagnostic only: it records an actual trigger
 -- attempt even when its inserted notification and subtransaction are rolled back.
 CREATE SEQUENCE ops_reentry_transport_probe_v1.notification_attempts;
+CREATE FUNCTION ops_reentry_transport_probe_v1.bank_probe_source_snapshot()
+RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+ SELECT jsonb_build_object(
+  'registrations',(SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id)::text,'')) FROM public.tournament_registrations r),
+  'entries',(SELECT md5(coalesce(jsonb_agg(to_jsonb(e) ORDER BY e.id)::text,'')) FROM public.tournament_entries e),
+  'movements',(SELECT md5(coalesce(jsonb_agg(to_jsonb(m) ORDER BY m.id)::text,'')) FROM public.cashier_buyin_movements m)
+ );
+$$;
+REVOKE ALL ON FUNCTION ops_reentry_transport_probe_v1.bank_probe_source_snapshot() FROM PUBLIC,anon,authenticated,service_role;
+CREATE TABLE ops_reentry_transport_probe_v1.bank_probe_before(singleton boolean PRIMARY KEY CHECK(singleton),snapshot jsonb NOT NULL);
+ALTER TABLE ops_reentry_transport_probe_v1.bank_probe_before ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON ops_reentry_transport_probe_v1.bank_probe_before FROM PUBLIC,anon,authenticated,service_role;
 CREATE FUNCTION ops_reentry_transport_probe_v1.fail_optional_notification()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN

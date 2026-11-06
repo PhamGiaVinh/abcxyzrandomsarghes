@@ -1641,6 +1641,46 @@ PAID_ASSET_FIXTURE
       (SELECT count(*) FROM public.tournament_chip_counts c JOIN public.tournament_entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number JOIN registrations r ON r.id=e.registration_id WHERE c.chip_count=20000);")"
   if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
   echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets/stack projections;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
+  if [[ "$reentry_transport_probe" == 1 ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REENTRY_BANK_AMBIGUITY_SETUP'
+BEGIN;
+DO $$ BEGIN
+ IF current_database()<>'postgres' OR to_regclass('ops_reentry_transport_probe_v1.bank_probe_before') IS NULL
+  OR (SELECT count(*) FROM public.platform_bank_accounts WHERE is_active AND account_number='999100001')<>1
+  OR NOT EXISTS(SELECT 1 FROM public.platform_bank_accounts WHERE id='a4000000-0000-4000-8000-000000000001'
+   AND club_id='a2000000-0000-4000-8000-000000000001' AND is_active AND account_number='999100001')
+  OR NOT EXISTS(SELECT 1 FROM public.club_payment_config WHERE club_id='a2000000-0000-4000-8000-000000000001'
+   AND is_active AND master_account_number='999100001' AND api_token_vault_key IS NOT NULL)
+  OR EXISTS(SELECT 1 FROM public.tournament_registrations WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND source_entry_id IS NOT NULL)
+ THEN RAISE EXCEPTION 'isolated_reentry_bank_preimage_drift';END IF;
+END $$;
+INSERT INTO ops_reentry_transport_probe_v1.bank_probe_before VALUES(true,ops_reentry_transport_probe_v1.bank_probe_source_snapshot());
+INSERT INTO public.platform_bank_accounts(id,club_id,bank_name,account_number,account_holder,is_active)
+VALUES('ae400000-0000-4000-8000-000000000099','a2000000-0000-4000-8000-000000000001','AMBIGUOUS TEST BANK','999100001','AMBIGUOUS TEST ONLY',true);
+COMMIT;
+REENTRY_BANK_AMBIGUITY_SETUP
+    run_browser_proof '' 1 'pending reentry transport rejects ambiguous payment account before creation'
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REENTRY_BANK_AMBIGUITY_RECOVERY'
+BEGIN;
+DO $$ DECLARE removed integer; BEGIN
+ IF (SELECT snapshot FROM ops_reentry_transport_probe_v1.bank_probe_before WHERE singleton)
+  IS DISTINCT FROM ops_reentry_transport_probe_v1.bank_probe_source_snapshot()
+  OR (SELECT count(*) FROM public.platform_bank_accounts WHERE is_active AND account_number='999100001')<>2
+ THEN RAISE EXCEPTION 'reentry_bank_denial_changed_source';END IF;
+ DELETE FROM public.platform_bank_accounts WHERE id='ae400000-0000-4000-8000-000000000099'
+  AND club_id='a2000000-0000-4000-8000-000000000001' AND account_number='999100001' AND account_holder='AMBIGUOUS TEST ONLY';
+ GET DIAGNOSTICS removed=ROW_COUNT;
+ IF removed<>1 OR (SELECT count(*) FROM public.platform_bank_accounts WHERE is_active AND account_number='999100001')<>1 THEN
+  RAISE EXCEPTION 'reentry_bank_fixture_recovery_failed';END IF;
+END $$;
+COMMIT;
+REENTRY_BANK_AMBIGUITY_RECOVERY
+    node --input-type=module - "$repo_root/output/operations-latency/cashier-http-reentry-bank-ambiguity-http.json" <<'REENTRY_BANK_AMBIGUITY_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const file=process.argv[2],report=JSON.parse(readFileSync(file,'utf8'));assert.equal(report.phase,'denied');assert.equal(report.httpStatus,503);
+report.nativeSourceUnchanged=true;report.fixtureBankRestored=true;writeFileSync(file,JSON.stringify(report,null,2));
+REENTRY_BANK_AMBIGUITY_RECEIPT
+  fi
   reentry_latency_failed=0
   if run_browser_proof '' 1 'current Floor bust and player reentry preserve separate paid entry generations'; then
     :
