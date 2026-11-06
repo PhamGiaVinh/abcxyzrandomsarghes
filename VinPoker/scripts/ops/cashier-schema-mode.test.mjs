@@ -183,6 +183,21 @@ test('candidate admission and final receipt require the exact reviewed manifest 
   }
 });
 
+test('full candidate Floor uses the current guarded roster and actual redraw build gate',()=>{
+  const browser=readFileSync(new URL('../../e2e/cashier-tour-real.spec.ts',import.meta.url),'utf8');
+  const currentReader='20270128000062_floor_roster_participation_integrity_v6.sql';
+  const prerequisite=script.indexOf('<"$repo_root/supabase/migrations/20270128000299_participation_bagged_read_classification_v1.sql"');
+  const install=script.indexOf('<"$repo_root/supabase/migrations/'+currentReader+'"');
+  const pending=script.indexOf('candidate_count=0');
+  assert.ok(install>=0&&prerequisite>install&&pending>prerequisite,'Install current reader at its original pre299 preimage,then299 and candidate wrappers');
+  assert.match(script,/if \[\[ "\$operations_candidate_probe" == 1 \]\]; then floor_redraw_build=preview; fi/);
+  assert.match(script,/VITE_FLOOR_REDRAW_SEAT_LOCK_V1="\$floor_redraw_build"/);
+  assert.match(script,/--env LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED="\$operations_candidate_probe"/);
+  assert.match(browser,/currentFloorRosterV6\?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3'/);
+  assert.match(browser,/expect\(rosterRpc\)\.toBe\(floorRosterRpc\)/);
+  assert.match(browser,/const readers=\[floorRosterRpc,/);
+});
+
 test('shared flusher accepts exactly one candidate mode and retains disposable target guard',()=>{
   const filename=fileURLToPath(new URL('./clock-candidate-broadcast.mjs',import.meta.url));
   for(const [clock,operations]of [['0','0'],['1','1'],['invalid','0']]){

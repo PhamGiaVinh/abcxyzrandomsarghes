@@ -10,6 +10,9 @@ import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelli
 import {clockBroadcastSignal,decodeClockWireFrame} from '../tests/publicHud/clockWireDiagnostics';
 import {audienceServerTiming} from '../scripts/ops/operations-audience-scope.mjs';
 
+const currentFloorRosterV6=process.env.LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED==='1';
+const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3';
+
 const required = [
   "LOCAL_SUPABASE_URL",
   "LOCAL_SUPABASE_ANON_KEY",
@@ -308,7 +311,7 @@ test('Floor and Dealer Swing authenticated HTTP read latency after check-in',asy
  const clubId='a2000000-0000-4000-8000-000000000001',tourId='a3000000-0000-4000-8000-000000000001';
  const operations=[
   {rpc:'get_floor_tournament_table_inventory_v1',args:{p_tournament_id:tourId},shape:'inventory'},
-  {rpc:'get_floor_tournament_table_roster_v5',args:{p_tournament_id:tourId},shape:'roster'},
+  {rpc:currentFloorRosterV6?floorRosterRpc:'get_floor_tournament_table_roster_v5',args:{p_tournament_id:tourId},shape:'roster'},
   {rpc:'list_tracker_floor_alerts',args:{p_tournament_id:tourId,p_status:null},shape:'alerts'},
   {rpc:'get_table_assignments_with_next',args:{p_club_id:clubId},shape:'assignments'},
   {rpc:'get_dealer_swing_health',args:{p_club_ids:[clubId]},shape:'health'},
@@ -408,13 +411,14 @@ test('canonical Floor open and close propagate into one continuously open screen
    const samples=rows.filter(row=>row.operation===operation&&!row.warmup&&typeof row.writeToActionReadyMs==='number').map(row=>row.writeToActionReadyMs!).sort((a,b)=>a-b);
    return [operation,{samples:samples.length,p95Ms:samples.length===20?samples[18]:null,maxMs:samples.length?samples.at(-1):null}];
   })),
-  fixtureBuild:{floorV3:'preview',floorUatEnvironment:'preview',redraw:'off'},
+  fixtureBuild:{floorV3:'preview',floorUatEnvironment:'preview',redraw:currentFloorRosterV6?'preview':'off'},
   qualification:false,limitations:'Twenty serial canonical open/close pairs after two warmups on one empty TEST table;one continuously open actual screen. Excludes seat-move,dealer handover and concurrent staff capacity. No manual refresh/reload after initial screen load.',
  },null,2));
  try{
   const loaded=page.waitForResponse(response=>/\/rpc\/get_floor_tournament_table_roster_v(?:3|6)$/.test(new URL(response.url()).pathname)&&response.status()===200);
   await page.goto(`/ops/floor/tournaments/${tourId}/tables?club=a2000000-0000-4000-8000-000000000001`);
   const initialReply=await loaded;rosterRpc=new URL(initialReply.url()).pathname.split('/').at(-1)!;
+  expect(rosterRpc).toBe(floorRosterRpc);
   expect(Array.isArray(await initialReply.json())).toBe(true);
   await expect(page.getByTestId('floor-table-map-v3')).toBeVisible();
   await expect.poll(()=>channelJoined,{timeout:15_000}).toBe(true);
@@ -1078,7 +1082,7 @@ test('twenty distinct Floor actors sustain the four-reader reconciliation cadenc
  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorReadLoad:{tournamentId:string;gameTableIds:string[]}};
  expect(fixture.floorReadLoad.tournamentId).toBe('af300000-0000-4000-8000-000000000001');expect(fixture.floorReadLoad.gameTableIds).toHaveLength(20);
  const tour=fixture.floorReadLoad.tournamentId,opened:{id:string;revision:number}[]=[],phases:unknown[]=[];
- const readers=['get_floor_tournament_table_roster_v3','get_floor_seatable_entries','get_floor_restorable_entries_v3','get_floor_pending_tracker_moves_v1'];
+ const readers=[floorRosterRpc,'get_floor_seatable_entries','get_floor_restorable_entries_v3','get_floor_pending_tracker_moves_v1'];
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
  let phase='fixture-open',cleanupFailures=0;
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-staff-cadence-http.json'),JSON.stringify({
@@ -1207,7 +1211,7 @@ test('current Floor bust and player reentry preserve separate paid entry generat
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
  type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number};
  type Table={session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
- const roster=async()=>{const {data}=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(data)).toBe(true);return data as Table[];};
+ const roster=async()=>{const {data}=await rpc(owner,floorRosterRpc,{p_tournament_id:tour});expect(Array.isArray(data)).toBe(true);return data as Table[];};
  const location=async(player:string)=>{const tables=await roster(),table=tables.find(t=>t.seats.some(s=>s.player_id===player));expect(table).toBeTruthy();return {table:table!,seat:table!.seats.find(s=>s.player_id===player)!};};
  const rows:{actor:number;bustMs:number;bustRetryMs:number;registrationMs:number;registrationRetryMs:number;paymentMs:number;paymentRetryMs:number;independentReadMs:number}[]=[];let phase='authorization';
  const dist=(key:keyof Omit<typeof rows[number],'actor'>)=>{const values=rows.map(r=>r[key]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
@@ -1242,7 +1246,7 @@ test('current Floor exact movement conserves paid chips and retries through HTTP
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
  type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
  type Table={tournament_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
- const roster=async()=>{const result=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(result.data)).toBe(true);return result.data as Table[];};
+ const roster=async()=>{const result=await rpc(owner,floorRosterRpc,{p_tournament_id:tour});expect(Array.isArray(result.data)).toBe(true);return result.data as Table[];};
  const intentFor=async(player:string)=>{
   const tables=await roster(),source=tables.find(t=>t.seats.some(s=>s.player_id===player));expect(source).toBeTruthy();
   const seat=source!.seats.find(s=>s.player_id===player)!;expect(seat.entry_no).toBe(2);expect(seat.chip_count).toBe(20000);expect(source!.control_mode).toBe('manual');
@@ -1252,7 +1256,7 @@ test('current Floor exact movement conserves paid chips and retries through HTTP
  };
  const rows:{ackMs:number;retryMs:number;independentReadMs:number}[]=[];let phase='authorization';let race:unknown=null;
  const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-exact-move-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_EXACT_MOVE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,graded:20,warmup:0,rows,distributions:Object.fromEntries(['ackMs','retryMs','independentReadMs'].map(key=>[key,dist(rows.map(row=>row[key as keyof typeof row]))])),race,qualification:false,limitations:'Twenty serial moves of distinct paid entry2 players by20authorized cashier actors;manual-mode empty target seats in disposable9-max fixtures. Actual current v2/v3/v4/v5/queue writer bodies are production-hash pinned. Placement/independent owner reads use captured roster plus exact32 display patch,not the full current production reader. One21st move has20same-key concurrent requests from actor0. No browser move latency,active-hand deferred move,redraw,multiday-final runtime or mixed1000-viewer claim.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-exact-move-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_EXACT_MOVE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,graded:20,warmup:0,rows,distributions:Object.fromEntries(['ackMs','retryMs','independentReadMs'].map(key=>[key,dist(rows.map(row=>row[key as keyof typeof row]))])),race,qualification:false,limitations:'Twenty serial moves of distinct paid entry2 players by20authorized cashier actors;manual-mode empty target seats in disposable9-max fixtures. Actual current v2/v3/v4/v5/queue writer bodies are production-hash pinned. Placement/independent reads use rosterV6 in full candidate mode and the capturedV3 reader in the separate retained-schema mode. One21st move has20same-key concurrent requests from actor0. No browser move latency,active-hand deferred move,redraw,multiday-final runtime or mixed1000-viewer claim.'},null,2));
  try{
   // With20players on3nine-seat tables, the other two tables can both fill
   // while a source still contains2players. Open one explicit spare fixture
@@ -1365,7 +1369,7 @@ test('current Floor deferred move reserves and cancels without joining an active
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();if(!response.ok){const code=typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified';failedRpc={name,status:response.status,code,messageSha256:typeof data?.message==='string'?createHash('sha256').update(data.message).digest('hex'):null,classification:code==='42883'?'missing_function':code==='42703'?'missing_column':code==='42P01'?'missing_relation':code==='42501'?'permission':code.startsWith('23')?'integrity':'other'};}expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
  type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
  type Table={tournament_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
- const roster=async()=>{const r=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(r.data)).toBe(true);return r.data as Table[];};
+ const roster=async()=>{const r=await rpc(owner,floorRosterRpc,{p_tournament_id:tour});expect(Array.isArray(r.data)).toBe(true);return r.data as Table[];};
  const seats=(tables:Table[])=>tables.flatMap(t=>t.seats.map(s=>({...s,table:t.tournament_table_id,session:t.table_session_id}))).sort((a,b)=>a.entry_id.localeCompare(b.entry_id));
  const intent=async(player:string,destinationId:string)=>{const tables=await roster(),source=tables.find(t=>t.seats.some(s=>s.player_id===player))!,destination=tables.find(t=>t.tournament_table_id===destinationId)!;expect(source).toBeTruthy();expect(destination).toBeTruthy();expect(source.control_mode).toBe('manual');const seat=source.seats.find(s=>s.player_id===player)!;expect(seat.entry_no).toBe(2);return {p_entry_id:seat.entry_id,p_from_tournament_table_id:source.tournament_table_id,p_from_table_session_id:source.table_session_id,p_to_tournament_table_id:destination.tournament_table_id,p_to_table_session_id:destination.table_session_id,p_to_seat_number:Array.from({length:9},(_,n)=>n+1).find(n=>!destination.seats.some(s=>s.seat_number===n))!,p_expected_source_revision:source.session_revision,p_expected_destination_revision:destination.session_revision,p_expected_source_epoch:source.control_epoch,p_expected_destination_epoch:destination.control_epoch,p_reason:'isolated deferred queue/cancel TEST',p_request_id:crypto.randomUUID()};};
  const readHand=async(handId:string)=>{const response=await fetch(api+'/rest/v1/hand_players?select=player_id,entry_number,seat_number,starting_stack&hand_id=eq.'+handId+'&order=seat_number',{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
@@ -1411,7 +1415,7 @@ test('canonical zero-pot Finish applies a pending move only after the hand',asyn
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
  type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
  type Table={tournament_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
- const roster=async()=>(await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour})).data as Table[];
+ const roster=async()=>(await rpc(owner,floorRosterRpc,{p_tournament_id:tour})).data as Table[];
  const seats=(tables:Table[])=>tables.flatMap(t=>t.seats.map(s=>({...s,table:t.tournament_table_id,session:t.table_session_id}))).sort((a,b)=>a.entry_id.localeCompare(b.entry_id));
  const handPlayers=(hand:string)=>read('hand_players?select=player_id,entry_number,seat_number,starting_stack,ending_stack&hand_id=eq.'+hand+'&order=seat_number');
  try{
@@ -1482,7 +1486,7 @@ test('twenty current manual Finish hands preserve supplied actions and payouts',
  const readHand=async(number:number)=>{const result=await read('tournament_hands?select=id,hand_number,hand_time,source_revision,tournament_table_id,table_session_id,status,tracker_sb_position,tracker_bb_position,tracker_small_blind,tracker_big_blind,tracker_bba&tournament_id=eq.'+tour+'&hand_number=eq.'+number);expect(result).toHaveLength(1);return result[0] as Hand;};
  const players=(id:string)=>read('hand_players?select=player_id,entry_number,seat_number,starting_stack,ending_stack&hand_id=eq.'+id+'&order=seat_number') as Promise<Player[]>;
  const actions=(id:string)=>read('hand_actions?select=player_id,entry_number,street,action_type,action_amount,action_order&hand_id=eq.'+id+'&order=action_order');
- const roster=async()=>(await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour})).data as {tournament_table_id:string;table_session_id:string;control_epoch:number;seats:{entry_id:string;player_id:string;chip_count:number;seat_number:number}[]}[];
+ const roster=async()=>(await rpc(owner,floorRosterRpc,{p_tournament_id:tour})).data as {tournament_table_id:string;table_session_id:string;control_epoch:number;seats:{entry_id:string;player_id:string;chip_count:number;seat_number:number}[]}[];
  const finish=async(hand:Hand,token:string,actor:string,startMs:number,graded:boolean)=>{
   expect(hand.status).toBe('in_progress');expect(hand.tracker_small_blind).toBe(100);expect(hand.tracker_big_blind).toBe(200);expect(hand.tracker_bba).toBe(200);
   const frozen=await players(hand.id);expect(frozen).toHaveLength(3);const sb=frozen.find(p=>p.seat_number===hand.tracker_sb_position)!,bb=frozen.find(p=>p.seat_number===hand.tracker_bb_position)!;expect(sb).toBeTruthy();expect(bb).toBeTruthy();expect(sb.player_id).not.toBe(bb.player_id);for(const p of frozen){expect(p.entry_number).toBe(2);expect(p.starting_stack).toBeGreaterThan(400);}
@@ -1519,7 +1523,7 @@ test('recorded actions enforce budget and merge once through canonical Finish',a
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok)failure={name,status:response.status,code:typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified',messageSha256:typeof data?.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at};};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
  type Player={player_id:string;entry_number:number;seat_number:number;starting_stack:number;ending_stack:number|null};
- const roster=async()=>(await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour})).data as {tournament_table_id:string;table_session_id:string;control_epoch:number;seats:{player_id:string;chip_count:number;seat_number:number}[]}[];
+ const roster=async()=>(await rpc(owner,floorRosterRpc,{p_tournament_id:tour})).data as {tournament_table_id:string;table_session_id:string;control_epoch:number;seats:{player_id:string;chip_count:number;seat_number:number}[]}[];
  try{
   const target=(await roster()).find(t=>t.seats.length===3&&t.seats.some(p=>p.player_id===staff[2].userId))!;expect(target).toBeTruthy();const started=await rpc(actor.token,'start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,p_table_session_id:target.table_session_id,p_control_epoch:target.control_epoch,p_hand_number:9023,p_hand_time:new Date().toISOString(),p_created_by:actor.userId,p_button_seat:1});expect(started.data.status).toBe('success');const handId=started.data.hand_id;
   const readHand=async()=>{const result=await read('tournament_hands?select=id,hand_time,status,source_revision,tracker_sb_position,tracker_bb_position,tracker_small_blind,tracker_big_blind,tracker_bba&id=eq.'+handId);expect(result).toHaveLength(1);return result[0];};
@@ -1641,7 +1645,7 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   await viewer.waitForTimeout(11000);const before=summaryReads;await viewer.waitForTimeout(3500);expect(summaryReads).toBe(before);checks.idleNoPolling=true;
   phase='new-source';const actor=(await loginFixtureStaff())[0];
   const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});expect(response.ok,name).toBe(true);return response.json();};
-  const roster=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour}),target=roster.find((row:{tournament_table_id:string})=>row.tournament_table_id===hand.tournament_table_id);expect(target).toBeTruthy();
+  const roster=await rpc(owner,floorRosterRpc,{p_tournament_id:tour}),target=roster.find((row:{tournament_table_id:string})=>row.tournament_table_id===hand.tournament_table_id);expect(target).toBeTruthy();
   const paidBefore=roster.flatMap((row:{seats:{player_id:string;chip_count:number}[]})=>row.seats) as {player_id:string;chip_count:number}[];
   const started=await rpc(actor.token,'start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,p_table_session_id:target.table_session_id,p_control_epoch:target.control_epoch,p_hand_number:9024,p_hand_time:new Date().toISOString(),p_created_by:actor.userId,p_button_seat:1});expect(started.status).toBe('success');
   const fresh=(await read('tournament_hands?select=id,hand_time,status,source_revision,tracker_sb_position,tracker_bb_position,tracker_small_blind,tracker_big_blind,tracker_bba&id=eq.'+started.hand_id))[0];expect(fresh.status).toBe('in_progress');expect([fresh.tracker_small_blind,fresh.tracker_big_blind,fresh.tracker_bba]).toEqual([100,200,200]);
@@ -1656,7 +1660,7 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   expect(await read('hand_players?select=player_id,entry_number,seat_number,starting_stack,ending_stack&hand_id=eq.'+fresh.id+'&order=seat_number')).toEqual(payload.players.map(({is_eliminated,side_pots,hole_cards,...p})=>p));
   expect((await read('hand_actions?select=player_id,entry_number,street,action_type,action_amount,action_order&hand_id=eq.'+fresh.id+'&order=action_order'))).toEqual(payload.actions);
   expect(payload.players.reduce((n,p)=>n+p.ending_stack,0)).toBe(frozen.reduce((n,p)=>n+p.starting_stack,0));
-  const paidAfter=(await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour})).flatMap((row:{seats:{player_id:string;chip_count:number}[]})=>row.seats) as {player_id:string;chip_count:number}[];
+  const paidAfter=(await rpc(owner,floorRosterRpc,{p_tournament_id:tour})).flatMap((row:{seats:{player_id:string;chip_count:number}[]})=>row.seats) as {player_id:string;chip_count:number}[];
   expect(paidAfter).toHaveLength(paidBefore.length);expect(paidAfter.reduce((n,p)=>n+p.chip_count,0)).toBe(paidBefore.reduce((n,p)=>n+p.chip_count,0));for(const p of payload.players)expect(paidAfter.find(row=>row.player_id===p.player_id)!.chip_count).toBe(p.ending_stack);checks.canonicalNewHand=true;
   let nextSummary=summary;await expect.poll(async()=>{nextSummary=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return nextSummary.counters?.handsObserved;},{timeout:Math.max(1,5000-(performance.now()-sourceAt)),intervals:[100,250]}).toBe(observedHands!+1);sourceToReadyMs=performance.now()-sourceAt;expect(sourceToReadyMs).toBeLessThanOrEqual(5000);expect(nextSummary.revision).not.toBe(revision);
   await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(observedHands!.toLocaleString('vi-VN'));expect(summaryReads).toBe(before);checks.frozenDuringNewHand=true;

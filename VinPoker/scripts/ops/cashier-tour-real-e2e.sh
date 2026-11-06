@@ -1042,11 +1042,13 @@ fi
 
 # Build the real UI against this local gateway and render it in Chromium. The
 # browser performs real Auth/Data API calls; no request route is intercepted.
+floor_redraw_build=off
+if [[ "$operations_candidate_probe" == 1 ]]; then floor_redraw_build=preview; fi
 (cd "$repo_root" && \
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
-  VITE_FLOOR_TABLE_CONTROL_V3=preview VITE_FLOOR_UAT_ENV=preview VITE_FLOOR_REDRAW_SEAT_LOCK_V1=off \
+  VITE_FLOOR_TABLE_CONTROL_V3=preview VITE_FLOOR_UAT_ENV=preview VITE_FLOOR_REDRAW_SEAT_LOCK_V1="$floor_redraw_build" \
   VITE_PUBLIC_SPECTATOR_LAST_HAND_HISTORY=preview \
   npm run build >/dev/null)
 app_container="$(docker run -d --rm --network "$browser_network" --network-alias cashier-app \
@@ -1261,6 +1263,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --volume "$test_root/dealer-fixture.json:/fixtures/dealer-fixture.json:ro" \
   --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
   --env LOCAL_OPERATIONS_CHECKIN_ENABLED="$checkin_fixture_enabled" \
+  --env LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED="$operations_candidate_probe" \
   --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED="$paid_enabled" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
@@ -1360,6 +1363,12 @@ CLOCK_CANDIDATE_PREFLIGHT
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20261103131615_payout_publication_after_cashier.sql"
+  if [[ "$operations_candidate_probe" == 1 ]]; then
+    # Install the existing current reader at its exact guarded preimage, before
+    # candidate read-plan wrappers. No historical migration guard is rewritten.
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql"
+  fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20270128000299_participation_bagged_read_classification_v1.sql"
   candidate_count=0
