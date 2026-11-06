@@ -196,6 +196,8 @@ printf '%s\n' \
   '[functions.sepay-reconcile]' \
   'verify_jwt = false' \
   '[functions.checkout-dealer]' \
+  'verify_jwt = true' \
+  '[functions.tournament-reentry]' \
   'verify_jwt = true' >>supabase/config.toml
 printf '%s\n' \
   'SEPAY_RECONCILE_SECRET=cashier-edge-reconcile-test' \
