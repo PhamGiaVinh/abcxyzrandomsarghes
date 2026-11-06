@@ -9,6 +9,9 @@ import {measureFixtureWriterTransactions,cleanupCommittedWriterFixture,diagnoseF
 import {nativeWorkerClient} from './nativeRpc.mjs';
 const count=Number(process.env.PUBLIC_HUD_SCALE_HANDS??'10000');
 if(![100,1000,10000,100000,1000000].includes(count))throw Error('Unsupported synthetic scale');
+const seedKind=process.env.PUBLIC_HUD_SCALE_SEED_KIND??'prebuilt-read';
+assert.ok(['prebuilt-read','raw-backfill'].includes(seedKind),'Unsupported source preparation kind');
+const rawBackfill=seedKind==='raw-backfill';
 const temp=mkdtempSync(path.join(tmpdir(),'hud-scale-classifier-'));
 await build({entryPoints:['supabase/functions/_shared/publicHudContribution.ts'],outfile:path.join(temp,'classifier.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
 const {classifyPublicHudHand}=await import(pathToFileURL(path.join(temp,'classifier.mjs')));
@@ -60,6 +63,7 @@ sql(readFileSync('supabase/migrations/20261104001900_public_spectator_compact_ge
 sql(readFileSync('supabase/migrations/20261104002100_public_current_hand_bounded.sql','utf8'));
 console.log(JSON.stringify({phase:'source-ready',hands:count,elapsedMs:Date.now()-start}));
 const vectors=template.map(c=>`('${c.playerId}'::uuid,ARRAY[${c.numerators}],ARRAY[${c.denominators}],ARRAY[${c.missingProof}])`).join(',');
+if(!rawBackfill){
 sql(`CREATE TEMP TABLE fixture_counter_template(player_id uuid,n bigint[],d bigint[],m bigint[]);
  INSERT INTO fixture_counter_template VALUES ${vectors};
  INSERT INTO tracker_analytics_v1.hand_contributions(hand_id,player_id,tournament_id,version,source_fingerprint,settlement_evidence,
@@ -78,6 +82,11 @@ sql(`CREATE TEMP TABLE fixture_counter_template(player_id uuid,n bigint[],d bigi
   FROM public.tournament_chip_counts c JOIN public.tournament_seats s ON s.tournament_id=c.tournament_id AND s.player_id=c.player_id WHERE c.tournament_id=t.id),'bigBlind',100) FROM public.tournaments t;
  ANALYZE public.tournament_hands;ANALYZE public.hand_players;ANALYZE public.hand_actions;ANALYZE tracker_analytics_v1.hand_contributions;ANALYZE tracker_analytics_v1.player_totals;
 `);
+}else{
+ // A backfill qualification must start from source rows, not fabricated totals.
+ // The same source triggers and migrations remain installed before backfill.
+ sql('ANALYZE public.tournament_hands;ANALYZE public.hand_players;ANALYZE public.hand_actions;');
+}
 sql(readFileSync('supabase/migrations/20261104002800_public_hud_identity_ordered_lookup.sql','utf8'));
 sql(readFileSync('supabase/migrations/20261104002900_public_hud_identity_membership_lookup.sql','utf8'));
 sql(readFileSync('supabase/migrations/20261104003000_public_hud_identity_membership_keyset.sql','utf8'));
@@ -94,6 +103,19 @@ for(let i=0;i<20&&Number(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'))
 }
 assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),'0');
 assert.equal(Number(sql('SELECT count(*) FROM public.tournament_hands;')),count);
+if(rawBackfill){
+ assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.hand_contributions;'),'0');
+ assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.player_totals;'),'0');
+ const config=jsonSql('SELECT to_jsonb(c) FROM tracker_analytics_v1.config c;');
+ assert.equal(config.enabled,false);assert.equal(config.backfill_complete,false);
+ const report={kind:'SYNTHETIC_RAW_SOURCE_FOR_REAL_BACKFILL_NOT_COMPLETED',handsPerPlayer:count,players:2,tournaments:20,seedMs:Date.now()-start,
+  sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;')),sourcePlayers:Number(sql('SELECT count(*) FROM public.hand_players;')),
+  sourceActions:Number(sql('SELECT count(*) FROM public.hand_actions;')),derivedContributions:0,derivedPlayerTotals:0,config,
+  databaseBytes:Number(sql('SELECT pg_database_size(current_database());')),postgres:sql('SHOW server_version;'),qualification:false,productionCapacityClaim:false};
+ if(process.env.PUBLIC_HUD_SCALE_SEED_REPORT)writeFileSync(process.env.PUBLIC_HUD_SCALE_SEED_REPORT,JSON.stringify(report,null,2));
+ console.log(JSON.stringify(report));
+ process.exit(0);
+}
 for(const row of template){
  const total=jsonSql(`SELECT to_jsonb(t) FROM tracker_analytics_v1.player_totals t WHERE player_id='${row.playerId}';`);
  assert.equal(total.public_hands,count);assert.equal(total.observed_hands,count);
