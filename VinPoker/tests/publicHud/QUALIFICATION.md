@@ -557,3 +557,29 @@ The next product candidate changes only the shared coordinator minimum interval 
 2026-11-06: candidate1500ms/1000ms failed short1000viewer/1M run42068218388 at d0ac. Concentrated30s had HUDAPIp95=605.341ms/ready655.524ms,table2668ms,workermax3610ms,amendmentmax2545ms and zeroerrors. Distributed30s had HUD359.629ms/ready368.034ms,table3168ms,worker3349ms,amendment2931ms and zeroerrors; the table3s gate failed and overview did not run. Do not run full qualification on that failed candidate.
 
 The next candidate keeps the1500ms minimum and reduces only fixed hint jitter from1000to500ms, restoring worst-case dispatch below2000ms while retaining continuous-hint coalescing. A deterministic1000client phase example now admits at most200launches/100ms rather than100; this is a changed scheduling example, not a relaxed runtime acceptance gate or a hard request cap. Burst contention is a risk to measure. Immediate initial/scope reads, withdrawal clearing/abort/epochs,5s deadlines and the original HUD1s/table3s/worker5s/error/recovery/full-duration gates remain unchanged. Fresh short then full evidence is required; no production change or qualification is claimed.
+
+2026-11-06 preparation diagnostics: full run42143588204 at68b15c1ba remains
+FAILED. Its concentrated1000-viewer/1M-hand1800s scenario completed with
+HUDp95 171ms,table1812ms,worker maximum2553ms,amendment maximum3036ms,
+zero errors/missed/pending and all1000HUD recoveries. The distributed scenario
+then failed its restoration-readiness product helper with PUBLIC_HUD_PREPARING
+at the unchanged5s budget;the overview and second1800s scenario did not complete.
+No completed first scenario can substitute for full qualification.
+
+The next diagnostic labels this probe and records every actual preparation
+response timestamp with amendment kind/times. A fixture-only,service-only RPC
+samples aggregate queue/barrier/lease/hard-block state at most once per second
+while this probe is active. It accepts only the synthetic tour20/player1 scope,
+exports no raw hands/player data and changes no production response. Calls are
+single-flight. Successful probes do not await diagnostics before user reopening;
+failed probes retain the final diagnostic snapshot before saving failure evidence.
+The5s helper and outer15s loop remain unchanged;expiry is never swallowed/retried.
+
+Native real-PostgreSQL tests verify its role/scope boundary and actual visibility
+job observations. A pre-load EXPLAIN ANALYZE records function execution/planning
+and buffers;the HTTP timing and statement profile separately record diagnostic
+cost during load. Its observer contributes real REST/database work. Snapshot1Hz
+can miss short blocking windows;use server observedAt,not client receipt time.
+Queue age relative to restoration is not an exact restoration cohort when an
+existing job is re-enqueued. A300s diagnostic is not two1800s qualification and
+does not change any historical failed verdict.

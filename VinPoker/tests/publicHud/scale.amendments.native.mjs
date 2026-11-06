@@ -39,11 +39,17 @@ for(const kind of kinds){
 for(const role of ['anon','authenticated']){
  assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_amend_once_v1('${randomUUID()}','${hand}','correct');`),/permission denied/);
  assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_amend_ready_v1('${samples[0].operation}');`),/permission denied/);
+ assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_hud_preparation_state_v1('10000000-0000-4000-8000-000000000014','30000000-0000-4000-8000-000000000001',clock_timestamp());`,{captureFailure:true}),/permission denied/);
 }
+const diagnosticCall="public.fixture_scale_hud_preparation_state_v1('10000000-0000-4000-8000-000000000014','30000000-0000-4000-8000-000000000001',clock_timestamp())";
+assert.throws(()=>sql(`${service}SELECT public.fixture_scale_hud_preparation_state_v1('10000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001',clock_timestamp());`,{captureFailure:true}),/fixture_diagnostic_scope/);
+const diagnostic=jsonSql(`${service}SELECT ${diagnosticCall};`);assert.ok(Array.isArray(diagnostic.jobs));assert.ok(Array.isArray(diagnostic.hardBlocks));assert.equal(typeof diagnostic.hiddenPolicyHands,'number');
+const diagnosticPlan=jsonSql(`${service}EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON) SELECT ${diagnosticCall};`)[0];
+const diagnosticCost={scope:'Single pre-load real-function query on the seeded database;not under audience load. Runtime HTTP/statements timings are recorded separately.',executionMs:diagnosticPlan['Execution Time'],planningMs:diagnosticPlan['Planning Time'],sharedHits:diagnosticPlan.Plan['Shared Hit Blocks'],sharedReads:diagnosticPlan.Plan['Shared Read Blocks'],planRows:diagnosticPlan.Plan['Plan Rows'],actualRows:diagnosticPlan.Plan['Actual Rows']};
 assert.throws(()=>sql(`${service}SELECT public.fixture_scale_amend_once_v1('${samples[0].operation}','${hand}','void');`),/fixture_operation_conflict/);
 assert.throws(()=>sql(`${service}SELECT public.fixture_scale_amend_once_v1('${randomUUID()}','${hand}','unknown');`),/invalid_amendment/);
 // An old receipt cannot be made ready just because a newer job finished.
 assert.equal(sql(`${service}SELECT public.fixture_scale_amend_ready_v1('${samples[0].operation}');`),'f');
-const report={kind:'NATIVE_REAL_PROJECTOR_AMENDMENT_RECEIPTS_NOT_LOAD_LATENCY',passed:true,samples,checks:['exact-source-fingerprint','old-contribution-rejected','source-revision-unchanged-settlement','void-subtracted','restore-readded','result-edit-revoke-reverify','idempotent-committed-retry','scope-conflict','browser-denial','superseded-receipt-denied']};
+const report={kind:'NATIVE_REAL_PROJECTOR_AMENDMENT_RECEIPTS_NOT_LOAD_LATENCY',passed:true,samples,diagnosticCost,checks:['exact-source-fingerprint','old-contribution-rejected','source-revision-unchanged-settlement','void-subtracted','restore-readded','result-edit-revoke-reverify','idempotent-committed-retry','scope-conflict','browser-denial','superseded-receipt-denied','service-only-preparation-diagnostic','preload-diagnostic-plan']};
 if(process.env.PUBLIC_HUD_AMENDMENT_NATIVE_REPORT)writeFileSync(process.env.PUBLIC_HUD_AMENDMENT_NATIVE_REPORT,JSON.stringify(report,null,2));
 console.log(JSON.stringify(report));

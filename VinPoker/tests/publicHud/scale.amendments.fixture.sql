@@ -74,3 +74,43 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.fixture_scale_amend_once_v1(uuid,uuid,text),public.fixture_scale_amend_ready_v1(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fixture_scale_amend_once_v1(uuid,uuid,text),public.fixture_scale_amend_ready_v1(uuid) TO service_role;
+
+-- Read-only, fixture-scoped availability diagnostics. No raw hand/player data
+-- or prepared totals; this does not alter a public response or readiness gate.
+CREATE FUNCTION public.fixture_scale_hud_preparation_state_v1(p_tournament_id uuid,p_player_id uuid,p_restore_started_at timestamptz)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+DECLARE v text; observed timestamptz:=statement_timestamp();
+BEGIN
+ IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501';END IF;
+ IF p_tournament_id IS DISTINCT FROM '10000000-0000-4000-8000-000000000014'::uuid
+  OR p_player_id IS DISTINCT FROM '30000000-0000-4000-8000-000000000001'::uuid
+  OR p_restore_started_at IS NULL THEN RAISE EXCEPTION 'fixture_diagnostic_scope';END IF;
+ SELECT version INTO STRICT v FROM tracker_analytics_v1.config WHERE singleton;
+ RETURN jsonb_build_object('observedAt',observed,
+  'barriers',(SELECT jsonb_build_object('count',count(*),'oldestAgeMs',coalesce(max(extract(epoch FROM observed-b.changed_at)*1000),0),
+    'targetPresent',coalesce(bool_or(b.tournament_id=p_tournament_id),false),
+    'targetAgeMs',max(extract(epoch FROM observed-b.changed_at)*1000) FILTER(WHERE b.tournament_id=p_tournament_id)) FROM tracker_analytics_v1.visibility_barriers b),
+  'visibilityJob',(SELECT jsonb_build_object('ageMs',extract(epoch FROM observed-j.oldest_pending_at)*1000,
+    'refreshHands',j.refresh_hands,'hiddenOnly',j.refresh_hidden_only,'hasCursor',j.progress_cursor IS NOT NULL,
+    'leased',j.lease_token IS NOT NULL,'leaseExpired',j.lease_until<=observed,'attempts',j.attempts)
+    FROM tracker_analytics_v1.jobs j WHERE j.kind='visibility' AND j.entity_id=p_tournament_id),
+  'jobs',(SELECT coalesce(jsonb_agg(to_jsonb(q)),'[]'::jsonb) FROM (
+    SELECT j.kind,j.priority,count(*) pending,count(*) FILTER(WHERE j.lease_token IS NOT NULL) leased,
+     count(*) FILTER(WHERE j.available_at<=observed AND (j.lease_until IS NULL OR j.lease_until<=observed)) eligible,
+     count(*) FILTER(WHERE j.lease_until<=observed) expired_leases,max(j.attempts) attempts,
+     max(extract(epoch FROM observed-j.oldest_pending_at)*1000) oldest_age_ms
+    FROM tracker_analytics_v1.jobs j GROUP BY j.kind,j.priority ORDER BY j.kind,j.priority) q),
+  'hardBlocks',(SELECT coalesce(jsonb_agg(to_jsonb(q)),'[]'::jsonb) FROM (
+    SELECT j.kind,count(*) pending,max(extract(epoch FROM observed-j.oldest_pending_at)*1000) oldest_age_ms
+    FROM tracker_analytics_v1.job_players p JOIN tracker_analytics_v1.jobs j USING(kind,entity_id)
+    WHERE p.player_id=p_player_id AND p.hard_block GROUP BY j.kind ORDER BY j.kind) q),
+  'targetHandJobs',(SELECT jsonb_build_object('pending',count(*),
+    'queuedAfterRestoreStarted',count(*) FILTER(WHERE j.oldest_pending_at>=p_restore_started_at),
+    'oldestAgeMs',coalesce(max(extract(epoch FROM observed-j.oldest_pending_at)*1000),0))
+    FROM tracker_analytics_v1.jobs j JOIN public.tournament_hands h ON h.id=j.entity_id
+    WHERE j.kind='hand' AND h.tournament_id=p_tournament_id),
+  'hiddenPolicyHands',(SELECT count(DISTINCT c.hand_id) FROM tracker_analytics_v1.hand_contributions c
+    WHERE c.tournament_id=p_tournament_id AND c.version=v AND c.settlement_evidence->>'policyEligible'='false'));
+END $$;
+REVOKE ALL ON FUNCTION public.fixture_scale_hud_preparation_state_v1(uuid,uuid,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fixture_scale_hud_preparation_state_v1(uuid,uuid,timestamptz) TO service_role;

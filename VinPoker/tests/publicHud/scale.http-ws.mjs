@@ -69,7 +69,7 @@ async function post(path,body,privileged=false,phase='other',callerSignal){
  }catch(error){if(intentionallyCancelled(error)){accounting.cancelled++;throw Object.assign(new Error('HUD_SUPERSEDED'),{intentionalHudCancellation:true});}throw error;}
 }
 const rpc=(name,args,privileged=false)=>post('/rest/v1/rpc/'+name,args,privileged);
-const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
+const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAttempt)=>{
  if(hudTransport!=='direct_rpc'){
   const start=performance.now();
   try{
@@ -85,6 +85,7 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing)=>{
      hudTransport==='edge'?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal);}
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     if(mode==='summary')recordSummaryApi(performance.now()-rpcStart,phase,data);
+    onAttempt?.(data);
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
    });
   const value=mode==='summary'?await revalidatePublicHudRead(request,caller,onPreparing):await request(caller);
@@ -119,11 +120,12 @@ assert.equal(privilegedHeader.access,'revoked','Service header must not widen th
 await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
 await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},60000,'Lifetime visibility revalidation did not recover');
 let restorationFailure=null;
+const restorationReadinessDiagnostics=[];
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
@@ -495,8 +497,35 @@ for(const scenario of ['concentrated','distributed','overview']){
    await until(async()=>clients.every((c,i)=>c.revocations>before[i]),15000,'Cross-tour HUD revocation missed at least one viewer');
    revokedClients=clients.filter((c,i)=>c.revocations>before[i]).length;
    await sleep(duration===1800?5000:1000);
+   const restorationRequestedAt=Date.now();
    await rpc('fixture_scale_visibility_v1',{p_tournament_id:uuid('10000000',20),p_hidden:false},true);
-   await until(async()=>{const value=await hud(uuid('10000000',1));return value.access==='public'&&['current','updating'].includes(value.state);},15000,'Public restoration not ready');
+   const probe={scenario,sourceRestoreRequestedAt:restorationRequestedAt,startedAt:Date.now(),attempts:[],snapshots:[],failure:null,finishedAt:null};
+   restorationReadinessDiagnostics.push(probe);
+   let diagnosticActive=null;
+   const capture=reason=>{
+    if(diagnosticActive)return diagnosticActive;
+    diagnosticActive=post('/rest/v1/rpc/fixture_scale_hud_preparation_state_v1',{
+     p_tournament_id:uuid('10000000',20),p_player_id:player,p_restore_started_at:new Date(restorationRequestedAt).toISOString(),
+    },true,'restoration-barrier-diagnostic').then(state=>probe.snapshots.push({reason,at:Date.now(),state}))
+     .catch(()=>probe.snapshots.push({reason,at:Date.now(),captureFailed:true})).finally(()=>{diagnosticActive=null;});
+    return diagnosticActive;
+   };
+   void capture('start');
+   const diagnosticTimer=setInterval(()=>{void capture('interval');},1000);
+   try{
+    await until(async()=>{const value=await hud(uuid('10000000',1),'summary',undefined,'restoration-readiness',undefined,undefined,value=>{
+     probe.attempts.push({at:Date.now(),access:['public','revoked'].includes(value?.access)?value.access:'unknown',
+      state:['current','updating','warming','unavailable'].includes(value?.state)?value.state:'unknown',
+      amendment:currentAmendment?{kind:currentAmendment.kind,launchedAt:currentAmendment.launchedAt,sourceWrittenAt:currentAmendment.sourceWrittenAt,readyObservedAt:currentAmendment.readyObservedAt}:null});
+    });return value.access==='public'&&['current','updating'].includes(value.state);},15000,'Public restoration not ready');
+   }catch(error){probe.failure=classifyHudReadFailure(error);throw error;}
+   finally{
+    probe.finishedAt=Date.now();clearInterval(diagnosticTimer);
+    // Successful probes keep the original user-reopen pacing. Only a failed
+    // run waits for its final diagnostic snapshot before preserving evidence.
+    if(probe.failure){if(diagnosticActive)await diagnosticActive;await capture('failure');}
+    else if(diagnosticActive)track(diagnosticActive);
+   }
    // Explicit user reopen after the preparation state, not background HUD polling.
    for(let i=0;i<clients.length;i+=25)await Promise.all(clients.slice(i,i+25).map(c=>c.openHud('restoration-open')));
    // Track each real summary+history recovery once. A later valid withdrawal

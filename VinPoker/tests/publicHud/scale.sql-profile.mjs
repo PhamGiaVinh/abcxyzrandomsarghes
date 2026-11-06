@@ -7,7 +7,7 @@ assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database W
 sql('CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions;');
 const schema=sql("SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='pg_stat_statements';");
 assert.ok(['public','extensions'].includes(schema),'Unexpected statement statistics schema');
-const readers=['get_public_player_hud_summary_v1','get_public_player_hud_summary_batch_v1','get_public_player_hud_history_v1','get_public_tournament_table_live_or_last_hand_v2','get_public_tournament_viewer_snapshot_v2','get_tournament_clock','get_public_tournament_clock_summary','get_public_hud_job_source_v1','claim_public_hud_jobs_with_source_v1','publish_public_hud_hand_v1','process_public_hud_metadata_v1','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2'];
+const readers=['get_public_player_hud_summary_v1','get_public_player_hud_summary_batch_v1','get_public_player_hud_history_v1','get_public_tournament_table_live_or_last_hand_v2','get_public_tournament_viewer_snapshot_v2','get_tournament_clock','get_public_tournament_clock_summary','get_public_hud_job_source_v1','claim_public_hud_jobs_with_source_v1','publish_public_hud_hand_v1','process_public_hud_metadata_v1','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fixture_scale_hud_preparation_state_v1'];
 const classification=readers.map(name=>`WHEN strpos(query,'${name}')>0 THEN '${name}'`).join('\n');
 sql(`CREATE VIEW spectator_projection_v2.fixture_rpc_profile AS
  WITH classified AS (
