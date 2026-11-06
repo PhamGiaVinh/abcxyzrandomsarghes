@@ -231,6 +231,12 @@ REALTIME_DECODING_DIAGNOSTIC
       ' >"$repo_root/output/operations-latency/realtime-log-http.json" || true
     fi
   fi
+  if [[ "$audience_count" == 1000 && -n "${db_container:-}" ]]; then
+    mkdir -p "$repo_root/output/operations-latency"
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/scripts/ops/operations-rpc-profile.sql" \
+      >"$repo_root/output/operations-latency/operations-rpc-profile-http.json" 2>/dev/null || true
+  fi
   if (( ${#ephemeral_containers[@]} > 0 )); then
     docker rm -f "${ephemeral_containers[@]}" >/dev/null 2>&1 || true
   fi
@@ -1226,6 +1232,11 @@ DO $$ BEGIN
  THEN RAISE EXCEPTION 'operational_audience_requires_fresh_owned_fixture';END IF;
 END $$;
 AUDIENCE_OWNED_PREFLIGHT
+    if [[ "$audience_count" == 1000 ]]; then
+      docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions;' \
+        >"$test_root/operations-rpc-statistics-private.log" 2>&1
+    fi
     # Match scale.stack.sh's load-generator FD budget. This is a host-process
     # prerequisite, not a hosted service/quota change or a product speed fix.
     audience_fd_before="$(ulimit -Sn)"

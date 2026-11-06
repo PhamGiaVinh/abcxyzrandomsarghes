@@ -6,7 +6,7 @@ import {availableParallelism,totalmem,cpus} from 'node:os';
 import {setMaxListeners} from 'node:events';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -52,6 +52,7 @@ const timings={snapshot:[],table:[],clock:[],sourceToSnapshot:[],sourceToPublica
 const errors={},clients=[],pending=new Set();
 const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
 const socketEvents={},socketFailureSamples=[];
+const workerRpcFailures={},workerJobFailures={};
 const handshakeEvents={},handshakeFailureSamples=[];
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0;
 const stopHandshakeDiagnostics=observeAudienceHandshake(status.API_URL,value=>{
@@ -71,7 +72,7 @@ const report=()=>writeFileSync(reportFile,JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
- readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,
+ readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
@@ -86,11 +87,18 @@ const worker=track((async()=>{
    const result=await loaded.worker.processPublicSpectatorJobs({rpc:async(name,args)=>{
     const left=deadline-Date.now();if(left<=0)throw Error('worker_deadline');
     const result=await service.rpc(name,args).abortSignal(AbortSignal.timeout(left));
-    if(result.error)diagnostic('worker_rpc',result.error,result.status);
+    if(result.error){
+     diagnostic('worker_rpc',result.error,result.status);
+     const value=audienceWorkerFailure(name,result.error),key=value.operation+':'+value.reason;
+     workerRpcFailures[key]=(workerRpcFailures[key]??0)+1;
+    }
     return result;
    }},deadline);
    workerCalls++;workerPublished+=result.results.filter(r=>r.published).length;
-   for(const row of result.results)if(row.error)fail('worker_job');
+   for(const row of result.results)if(row.error){
+    fail('worker_job');const kind=['source_failed','publish_failed','deadline_exceeded'].includes(row.error)?row.error:'unknown';
+    workerJobFailures[kind]=(workerJobFailures[kind]??0)+1;
+   }
   }catch(cause){fail('worker_transport');diagnostic('worker_transport',cause);}
   await sleep(Math.max(1,1000-(Date.now()-start)));
  }

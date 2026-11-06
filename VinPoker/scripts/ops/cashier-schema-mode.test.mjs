@@ -1,6 +1,6 @@
 import test from 'node:test';
 import http from 'node:http';
-import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -215,6 +215,12 @@ test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP w
   assert.deepEqual(audienceFailure({code:'PGRST003',message:'private'},504),{kind:'http_error',httpStatus:504,serverCode:'PGRST003'});
   assert.deepEqual(audienceFailure({code:'TOKEN',message:'private',Authorization:'private'},'500'),{kind:'unknown',httpStatus:null,serverCode:null});
   assert.equal(audienceFailure({code:'42501'},403).serverCode,'42501');
+});
+
+test('worker diagnostics preserve exact known lease rejection without exporting arbitrary RPC or error text',()=>{
+ assert.deepEqual(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'lease_expired'}),{operation:'get_public_spectator_projection_source_v2',reason:'lease_expired'});
+ assert.deepEqual(audienceWorkerFailure('private_rpc',{message:'private SQL and token'}),{operation:'unknown',reason:'unknown'});
+ assert.equal(audienceWorkerFailure('claim_public_spectator_projection_v2',{message:'lease_expired private'}).reason,'unknown');
 });
 
 test('actual proc file-limit format retains whitespace and unknown values stay unknown',()=>{
