@@ -33,6 +33,9 @@ on:
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
       - "VinPoker/supabase/pending-tests/cashier_tour_edge_fixture.sql"
+      - "VinPoker/supabase/pending-tests/tournament-reentry-transport.ts"
+      - "VinPoker/supabase/pending-tests/reentry_transport_notification_fault.sql"
+      - "VinPoker/tests/cashier/reentryTransportCandidate.test.mjs"
       - "VinPoker/supabase/pending-tests/fake-sepay-server.mjs"
       - "VinPoker/supabase/pending-tests/static-preview-server.mjs"
       - "VinPoker/supabase/functions/tournament-register/**"
@@ -76,6 +79,11 @@ on:
         type: choice
         options: ['selected-table', 'grid-detail-stress']
         default: 'selected-table'
+
+      reentry_transport_probe:
+        description: Pending composite reentry RPC/Edge with notification fault;isolated current operational mode only
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -124,6 +132,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           node --test scripts/ops/cashier-schema-mode.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
+          node --test tests/cashier/reentryTransportCandidate.test.mjs
           node --test supabase/pending-tests/fake-sepay-server.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker
@@ -173,6 +182,7 @@ jobs:
           LOCAL_OPERATIONS_AUDIENCE: ${{ inputs.operations_audience || '0' }}
           LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
+          LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier HTTP latency evidence

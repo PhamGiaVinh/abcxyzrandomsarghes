@@ -70,11 +70,11 @@ test('selected-table hidden hub omits ordinary hand snapshots but retains scope 
  assert.deepEqual(selectedAudienceSections({reason:'status',components:['tables','ranking','payout']}),[]);
 });
 
-function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0') {
+function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0',reentry='0') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
-  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, LOCAL_REENTRY_TRANSPORT_PROBE:reentry, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`,`LOCAL_REENTRY_TRANSPORT_PROBE=${reentry}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -419,4 +419,16 @@ test('reentry timing export accepts only fixed scalar phases and never header te
  assert.deepEqual(reentryServerTiming(value),{capture:'available',totalMs:8,phases:{auth:{ms:1.25,calls:1},configuration:{ms:5.125,calls:3}}});
  assert.deepEqual(reentryServerTiming(value+', private{secret="DO_NOT_EMIT"};dur=1'),reentryServerTiming(value));
  for(const header of [null,'PRIVATE_DO_NOT_EMIT','x'.repeat(4097),value+', reentry_total;dur=8',value.replace('1.250','NaN'),value.replace('desc="3"','desc="11"'),value.replace('desc="1"','desc="SECRET"'),value.replace('1.250','120001'),value.replace('reentry_configuration','reentry_SECRET')])assert.deepEqual(reentryServerTiming(header),{capture:'unavailable'});
+});
+
+
+test('pending reentry transport is explicit,current-only and capped before allocation',()=>{
+ for(const args of [['current','1','1','0','10','invalid'],['current','1','0','0','0','1'],['current','1','1','0','1000','1'],['pre03','0','0','0','0','1']]){
+  const result=rejectedPreflight(...args);assert.equal(result.status,1);
+  assert.match(result.stderr,/Pending reentry transport requires/);
+ }
+ const valid=rejectedPreflight('current','1','1','0','10','1');assert.equal(valid.status,1);
+ assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
+ assert.ok(script.indexOf('20261107013500_cashier_app_reentry_transport_v1.sql')<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
+ assert.match(script,/BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME/);
 });
