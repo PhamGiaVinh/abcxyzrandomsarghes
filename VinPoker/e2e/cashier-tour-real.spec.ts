@@ -115,8 +115,17 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
  // The same available dealer can also appear in the staffing/prediction cards.
  // Observe the actual searched roster, not an arbitrary duplicate elsewhere.
  const uiRoster=page.getByPlaceholder('Tìm dealer...',{exact:true}).locator('xpath=../..');
- const uiFailedReads:{status:number;path:string}[]=[];
- page.on('response',response=>{if(response.status()>=400&&uiFailedReads.length<20)uiFailedReads.push({status:response.status(),path:new URL(response.url()).pathname});});
+ const uiFailedReads:{status:number;path:string;code?:string;gatewayClass?:string}[]=[];
+ page.on('response',response=>{
+  if(response.status()<400||uiFailedReads.length>=20)return;
+  const row:{status:number;path:string;code?:string;gatewayClass?:string}={status:response.status(),path:new URL(response.url()).pathname};uiFailedReads.push(row);
+  if(!['/rest/v1/rpc/dealer_control_club_ids','/rest/v1/rpc/get_my_floor_operator_scope'].includes(row.path))return;
+  // Classifications only: never retain response bodies, credentials or SQL.
+  void response.text().then(raw=>{
+   try{const code=JSON.parse(raw)?.code;if(typeof code==='string'&&/^(?:PGRST\d{3}|[0-9A-Z]{5})$/.test(code))row.code=code;}catch{/* Gateway errors may be HTML/text. */}
+   row.gatewayClass=/upstream.*tim(?:ed? ?out|eout)|timeout/i.test(raw)?'timeout':/connection refused/i.test(raw)?'connection-refused':/upstream.*(?:closed|reset)|connection reset/i.test(raw)?'connection-closed':/no healthy upstream/i.test(raw)?'no-healthy-upstream':'unclassified';
+  }).catch(()=>{row.gatewayClass='body-unavailable';});
+ });
  const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
  try{
  if(realtimeEnabled){
@@ -1272,7 +1281,7 @@ test('inactive earned staff salary HTTP preserves approved period roster',async(
  const period={p_club_id:club,p_year:Number(parts.find(p=>p.type==='year')!.value),p_month:Number(parts.find(p=>p.type==='month')!.value)};
  const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
  const timings:Record<string,number[]>={};let phase='preconditions';let evidence:Record<string,unknown>={};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-staff-salary-http.json'),JSON.stringify({kind:'REAL_AUTH_STAFF_SALARY_HTTP_INACTIVE_AND_FROZEN_ROSTER',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,timings:Object.fromEntries(Object.entries(timings).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return [key,{samples:values.length,p95Ms:values.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null}];})),qualification:false,limitations:'Twenty real Auth staff self-checkins/checkouts and owner offboarding/reads in one synthetic month;one freeze/submit/approval and20concurrent post-approval freeze attempts. Direct authenticated HTTP and independent table reads;not UI/Realtime/provider/payroll payment/mixed1000viewer capacity. Exact current production salary definitions restored,including the observed legacy chot body;no guarded substitute to make the test pass.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-staff-salary-http.json'),JSON.stringify({kind:'REAL_AUTH_STAFF_SALARY_HTTP_INACTIVE_AND_FROZEN_ROSTER',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,timings:Object.fromEntries(Object.entries(timings).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return [key,{samples:values.length,p95Ms:values.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null}];})),qualification:false,limitations:'Twenty real Auth staff self-checkins/checkouts and owner offboarding/reads in one synthetic month;one freeze/submit/approval and20concurrent post-approval freeze attempts. Direct authenticated HTTP and independent table reads;not UI/Realtime/provider/payroll payment/mixed1000viewer capacity. Exact current production salary definitions restored,including existing period lock,post-wait authority and submitted/approved guards;no substitute implementation used.'},null,2));
  const rpc=async(token:string,name:string,args:Record<string,unknown>,metric?:string,expectedStatus=200)=>{
   const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(10000)});
   const data=await response.json();if(metric)(timings[metric]??=[]).push(performance.now()-started);expect(response.status,name).toBe(expectedStatus);return data;
