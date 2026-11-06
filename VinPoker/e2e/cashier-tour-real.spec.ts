@@ -1142,3 +1142,37 @@ test('current Floor bust and player reentry preserve separate paid entry generat
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('current owner rake closes once and exports the immutable event-day snapshot',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_BUY_CLOSE_ENABLED!=='1','Fourth isolated stage after reentry conservation');test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ const finalReads:number[]=[],liveReads:number[]=[];let phase='open',closeRace:unknown=null,visibleMs:number|null=null,downloadMs:number|null=null;
+ const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-buy-close-rake-export-http.json'),JSON.stringify({kind:'REAL_AUTH_BUY_CLOSE_OWNER_RAKE_AND_BROWSER_CSV',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,liveReads:dist(liveReads),finalReads:dist(finalReads),closeRace,ui:{samples:downloadMs===null?0:1,closeToExportEnabledMs:visibleMs,clickToDownloadedCsvMs:downloadMs},qualification:false,limitations:'One populated tour closure with20concurrent authorized cashier requests,not20independent closures. Twenty serial owner reads each before/after closure;one actual Finance TourRevenuePanel CSV download. Exact current six-function revenue family;existing combined Finance wrapper remains the captured fixture version and is not qualified by this test. Production-matching absent tournament/registration CDC means the real5s panel reconciliation must observe closure. No mixed1000-viewer capacity claim.'},null,2));
+ try{
+  for(let n=0;n<20;n++){
+   const live=await rpc(owner,'get_owner_tour_rake_live_v1',{p_club_id:club});const selected=live.data.tours.find((t:{tournamentId:string})=>t.tournamentId===tour);
+   expect(selected).toMatchObject({buyState:'open',provisional:true,paidBuys:41,uniquePlayers:21,rake:24600000,collected:270600000,unavailableBuys:0,waitingSeatBuys:0});liveReads.push(live.ms);
+  }
+  const before=await rpc(owner,'get_tour_revenue_buy_close_v1',{p_tournament_id:tour});expect(before.data).toEqual({status:'buy_open',canExport:false});
+  const forbidden=await fetch(api+'/rest/v1/rpc/get_owner_tour_rake_live_v1',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({p_club_id:club}),signal:AbortSignal.timeout(5000)});expect(forbidden.status).toBe(403);
+  await page.setViewportSize({width:1280,height:900});await page.goto('/ops/finance?club='+club);
+  const panel=page.getByRole('region',{name:'Rake theo giải'});await expect(panel).toBeVisible();await page.getByLabel('Giải cần xem',{exact:true}).selectOption(tour);
+  const exportButton=panel.getByRole('button',{name:'Xuất báo cáo rake đã chốt',exact:true});await expect(exportButton).toBeDisabled();
+  phase='close-race';const started=performance.now();const closed=await Promise.all(staff.map(identity=>rpc(identity.token,'close_tournament_buy_v1',{p_tournament_id:tour})));
+  expect(closed.filter(r=>r.data.status==='closed')).toHaveLength(1);expect(closed.filter(r=>r.data.status==='already_closed')).toHaveLength(19);
+  const closedAt=closed[0].data.registrationClosedAt;expect(Number.isFinite(Date.parse(closedAt))).toBe(true);for(const result of closed)expect(result.data.registrationClosedAt).toBe(closedAt);
+  closeRace={requests:20,firstClosures:1,alreadyClosed:19,timingScope:'one first commit plus serialized same-tour retries',latency:dist(closed.map(r=>r.ms))};report();
+  await expect(exportButton).toBeEnabled({timeout:7000});visibleMs=performance.now()-started;
+  phase='final-reads';let saved:{snapshot:{eventDay:string}}|undefined;
+  for(let n=0;n<20;n++){
+   const final=await rpc(owner,'get_tour_revenue_buy_close_v1',{p_tournament_id:tour});expect(final.data.status).toBe('final');expect(final.data.canExport).toBe(true);expect(final.data.snapshot).toMatchObject({tournamentId:tour,provisional:false,paidBuys:41,uniquePlayers:21,rake:24600000,collected:270600000,registrationClosedAt:closedAt});if(saved)expect(final.data).toEqual(saved);saved=final.data;finalReads.push(final.ms);
+  }
+  phase='csv';const downloading=page.waitForEvent('download'),clickAt=performance.now();await exportButton.click();const file=await downloading;expect(file.suggestedFilename()).toBe('rake-'+tour+'.csv');const path=await file.path();expect(path).toBeTruthy();const csv=readFileSync(path!,'utf8');downloadMs=performance.now()-clickAt;
+  expect(csv).toContain('"Ngày giải"');const fields=csv.split('\r\n')[1].split(',').map(v=>v.slice(1,-1).replace(/""/g,'"'));expect(fields).toHaveLength(11);expect(fields[0]).toBe(tour);expect(fields[2]).toBe(saved!.snapshot.eventDay);expect(fields[5]).toBe('41');expect(fields[6]).toBe('21');expect(fields[7]).toBe('24600000');expect(fields[10]).toBe('270600000');
+  const blocked=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});expect(blocked.status).toBe(400);expect((await blocked.json()).error).toBe('reentry_window_closed');
+  expect(dist(liveReads).p95Ms).toBeLessThanOrEqual(1000);expect(dist(finalReads).p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});

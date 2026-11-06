@@ -916,7 +916,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}"
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm --network "container:$app_container" \
@@ -928,6 +928,7 @@ docker run --rm --network "container:$app_container" \
   --env LOCAL_OPERATIONS_CHECKIN_ENABLED="$checkin_fixture_enabled" \
   --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED="$paid_enabled" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
+  --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1065,4 +1066,63 @@ PAID_SEATING_PREFLIGHT
       (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='cashier_cash_buyin_v2');")"
   if [[ "$reentry_state" != '40|20|20|20|20|64|264000000|40|40|20|65' ]]; then echo "Reentry generation/money/receipt conservation failed ($reentry_state)" >&2; exit 1; fi
   echo "REENTRY_COMMIT_PROOF:20immutable paid source registrations/busted entries plus20new paid entry generations;20active seats;40tickets/projections;64cash movements/264000000TEST units;20bust/65cash receipts;no duplicate retries"
+  # Exact current tour-revenue family. The private classifier dependency is
+  # restored separately; this does not qualify or replay the Finance wrapper.
+  for revenue_migration in \
+    20261029092203_owner_tour_rake_live_read_v1.sql \
+    20261029092520_tour_revenue_buy_close_snapshot_v1.sql \
+    20261029092756_close_tournament_buy_v1.sql \
+    20261029100324_tour_revenue_shared_live_source_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$revenue_migration"
+  done
+  node "$repo_root/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs" "$test_root/revenue-classifier-dependency.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/revenue-classifier-dependency.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20261029102508_tour_revenue_buy_state_read_v1.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REVENUE_PARITY'
+DO $$ DECLARE expected record;actual pg_proc%ROWTYPE;BEGIN
+ FOR expected IN SELECT * FROM (VALUES
+  ('public.get_owner_tour_rake_live_v1(uuid)','56ded9283dae799954cbc0f90914a225',true,'s'),
+  ('public.get_tour_revenue_buy_close_v1(uuid)','db5a1bd401b7c4686631e2fcd21b0d3b',true,'s'),
+  ('public.close_tournament_buy_v1(uuid)','bf38ef9402512db5feec27153cd91ca9',true,'v'),
+  ('floor_private.tour_revenue_live_source_v1(uuid)','ba5b849a51a1abf21a14a122cc680bf6',true,'s'),
+  ('floor_private.capture_tour_revenue_buy_close_v1()','df9d3c4118478ea71f8cb84b798d46e3',true,'v'),
+  ('floor_private.keep_tour_revenue_snapshot_immutable_v1()','0f37eb46743e2c7305000afd299f9121',false,'v')
+ ) e(signature,body_md5,definer,volatility) LOOP
+  SELECT * INTO STRICT actual FROM pg_proc WHERE oid=expected.signature::regprocedure;
+  IF md5(replace(actual.prosrc,chr(13),''))<>expected.body_md5 OR actual.proowner<>'postgres'::regrole
+   OR actual.prosecdef<>expected.definer OR actual.provolatile::text<>expected.volatility
+   OR actual.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
+   OR has_function_privilege('anon',actual.oid,'EXECUTE') OR has_function_privilege('service_role',actual.oid,'EXECUTE')
+   OR has_function_privilege('authenticated',actual.oid,'EXECUTE') IS DISTINCT FROM (expected.signature LIKE 'public.%')
+  THEN RAISE EXCEPTION 'isolated_revenue_production_contract_mismatch: %',expected.signature;END IF;
+ END LOOP;
+ IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid='floor_private.tour_revenue_buy_close_v1'::regclass)
+ OR has_table_privilege('authenticated','floor_private.tour_revenue_buy_close_v1','SELECT')
+ OR EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename IN ('tournaments','tournament_registrations'))
+ THEN RAISE EXCEPTION 'isolated_revenue_privacy_or_publication_drift';END IF;
+END $$;
+NOTIFY pgrst,'reload schema';
+REVENUE_PARITY
+  echo "REVENUE_SCHEMA_PROOF:six current production body/owner/security/ACL fingerprints;private snapshot RLS;production-matching absent tournament/registration CDC;combined Finance wrapper not qualified"
+  run_browser_proof '' '' 'current owner rake closes once and exports the immutable event-day snapshot' 1
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REVENUE_IMMUTABILITY'
+DO $$ DECLARE blocked boolean:=false;BEGIN
+ BEGIN UPDATE floor_private.tour_revenue_buy_close_v1 SET captured_at=captured_at WHERE tournament_id='a3000000-0000-4000-8000-000000000001';
+ EXCEPTION WHEN SQLSTATE '55000' THEN blocked:=true;END;
+ IF NOT blocked THEN RAISE EXCEPTION 'isolated_revenue_snapshot_was_mutable';END IF;
+END $$;
+DO $$ BEGIN
+ IF (SELECT count(*) FROM floor_private.tour_revenue_buy_close_v1)<>1
+ OR NOT EXISTS(SELECT 1 FROM floor_private.tour_revenue_buy_close_v1 s JOIN public.tournaments t ON t.id=s.tournament_id
+  WHERE s.tournament_id='a3000000-0000-4000-8000-000000000001' AND s.registration_closed_at=t.registration_closed_at
+   AND s.snapshot->>'eventDay'=(t.start_time AT TIME ZONE 'Asia/Ho_Chi_Minh')::date::text
+   AND s.snapshot->>'provisional'='false' AND s.snapshot->>'paidBuys'='41' AND s.snapshot->>'uniquePlayers'='21'
+   AND s.snapshot->>'rake'='24600000' AND s.snapshot->>'collected'='270600000')
+ THEN RAISE EXCEPTION 'isolated_revenue_saved_snapshot_mismatch';END IF;
+END $$;
+REVENUE_IMMUTABILITY
+  echo "REVENUE_COMMIT_PROOF:one immutable event-day closure snapshot;41paid buys/21unique players;24600000rake/270600000collected TEST units;server reentry closed;actual browser CSV verified"
 fi
