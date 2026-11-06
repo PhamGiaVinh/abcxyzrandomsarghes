@@ -78,7 +78,7 @@ async function loginFixtureStaff(){
 async function selectDealerSwingClub(page:Page,name:string){
  const scope=page.getByRole('heading',{name:'Chọn CLB để vận hành Dealer Swing',exact:true}).locator('..');
  try{await expect(scope).toBeVisible();}catch(error){
-  if(process.env.LOCAL_OPERATIONS_LATENCY_REPORT)writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT.replace(/\.json$/,'-dealer-scope-failure-http.json'),JSON.stringify({kind:'ISOLATED_DEALER_SWING_SCOPE_FAILURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,test:test.info().title,path:new URL(page.url()).pathname,scopeReadFailures:scopeReadFailures.get(page)??[],scopeErrorVisible:await page.getByText('Không tải được phạm vi CLB',{exact:true}).isVisible(),qualification:false,limitations:'First-load failure retained without retry,role fallback,raw response bodies or credentials.'},null,2));
+  if(process.env.LOCAL_OPERATIONS_LATENCY_REPORT)writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT.replace(/\.json$/,'-dealer-scope-failure-http.json'),JSON.stringify({kind:'ISOLATED_DEALER_SWING_SCOPE_FAILURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,test:test.info().title,path:new URL(page.url()).pathname,scopeReadFailures:scopeReadFailures.get(page)??[],scopeErrorVisible:await page.getByRole('alert').filter({hasText:/phạm vi CLB/}).isVisible(),qualification:false,limitations:'First-load failure retained without retry,role fallback,raw response bodies or credentials.'},null,2));
   throw error;
  }
  await scope.getByRole('combobox').click();
