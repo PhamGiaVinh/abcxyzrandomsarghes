@@ -6,7 +6,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createClient} from '@supabase/supabase-js';
 import {configureLocalRealtime} from './scale.realtime.mjs';
-import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead} from './scale.delivery.mjs';
+import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead,coveringTableHintTiming,createCoveringHintDiagnostics} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
@@ -29,6 +29,7 @@ const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0
 const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),workerProbeDiagnostics=[];
+const coveringHintDiagnostics=new Map();
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},tableFailureKinds={},requestAccounting={},observationOrder=0;
 let dispatchBuckets=new Map();
@@ -185,6 +186,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   const n=1+i%tourCount,tour=uuid('10000000',n),table=uuid('50000000',n);
   const client=createClient(status.API_URL,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{params:{eventsPerSecond:100}}});
   const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,hudController:null,hudActive:false,verifyAfterRead:false,hudCompletedEpoch:0,accessReconnect:0,verifiedAccessReconnect:0,table,tour};clients.push(state);
+  const tableHints=[];
   // A Broadcast/read can finish before the writer's HTTP acknowledgement.
   // Credit its actual observation time once its source write is registered.
   const credit=(field,observation,predicate,measure,count)=>{
@@ -198,6 +200,8 @@ for(const scenario of ['concentrated','distributed','overview']){
      // their independent percentiles must not be added together.
      stats.sourceToReadStart.push(observation.startedAt-expected.at);
      stats.tableRead.push(observation.at-observation.startedAt);
+     if(!coveringHintDiagnostics.has(scenario))coveringHintDiagnostics.set(scenario,createCoveringHintDiagnostics());
+     coveringHintDiagnostics.get(scenario).record(coveringTableHintTiming(tableHints,expected,observation));
     }else if(measure==='snapshot'){
      stats.snapshotToReadStart.push(observation.startedAt-expected.at);
      stats.snapshotRead.push(observation.at-observation.startedAt);
@@ -377,6 +381,12 @@ for(const scenario of ['concentrated','distributed','overview']){
   client.channel(`public:tournament-viewer-v2:${tour}`,{config:{private:false}}).on('broadcast',{event:'changed'},message=>{
    if(message.payload?.tournamentId!==tour)return;
    const components=[...(message.payload.components??['tables'])];
+   if(components.includes('tables')){
+    const generation=message.payload.revisions?.tables;
+    if(typeof generation==='string'&&/^\d+$/.test(generation)){
+     tableHints.push({generation,at:Date.now()});if(tableHints.length>128)tableHints.shift();
+    }
+   }
    if(message.payload.handVisibilityOnly===true&&components.includes('visibility')){
     components.splice(components.indexOf('visibility'),1,'hand_visibility');
     if(!components.includes('tables'))components.push('tables');
@@ -432,7 +442,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    const start=Date.now();
    try{
     const value=await rpc('fixture_scale_step_once_v1',{p_operation:operation,p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
-    const event={handId:value.handId,number,step,at:Date.parse(value.sourceWrittenAt)};
+    const event={handId:value.handId,number,step,at:Date.parse(value.sourceWrittenAt),generation:value.generation,generationDeferred:value.generationDeferred};
     hand=value.handId;stats.sourceWrites++;const ackOrder=++observationOrder;
     // The intent is committed and acknowledged. Advance independently of
     // delivery checks so an invariant failure cannot replay a source action.
@@ -582,6 +592,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
  report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
+ report.watchedCoveringHintTiming={...(coveringHintDiagnostics.get(scenario)??createCoveringHintDiagnostics()).summary(),scope:'Diagnostic only: earliest retained covering numeric table hint received after source timestamp and before chosen observation; at most128 hints/viewer. Deferred sources and missing hints remain unmatched. Exact integer-ms histograms; same-clock signed intervals; independent percentiles are not additive. Production epoch fences and all grades unchanged.'};save('running');
  report.requestAccounting=requestAccounting;
  report.hudRecovery={restorationMethod:'per-viewer-owned-summary-and-exact-history-receipt-v1',restorationWindowMs:15000,restorationDeadline,receiptMaxElapsedMs:maximumSample(clients.map(c=>c.restoration?.receiptAt==null?0:c.restoration.receiptAt-c.restoration.launchedAt)),summaryAndHistoryIndependent:true,historyRequiredForAcceptance:true,restoredClients,finalCurrentClients:clients.filter(c=>c.frozen&&c.hudCompletedEpoch===c.hudEpoch&&!c.hudActive&&!c.historyActive&&c.historySnapshot===c.frozen&&!c.verifyAfterRead&&!c.hudTimerPending).length,reconnectVerifiedClients:clients.filter(c=>c.accessReconnect>0&&c.verifiedAccessReconnect===c.accessReconnect).length,pendingHudRequests:clients.filter(c=>c.hudActive||c.historyActive||c.verifyAfterRead||c.hudTimerPending).length};save('running');
  report.admission={maxNewViewersPerSecond:50,initialRequestErrorsIncluded:true,fullAudienceHoldSeconds:duration};save('running');
