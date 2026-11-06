@@ -1454,20 +1454,26 @@ AUDIENCE_REALTIME_RECEIPT
       cat "$repo_root/supabase/pending-tests/operations_schema_freeze_fixture.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
-    node --input-type=module - "$test_root/isolated-status.json" <<'CURRENT_SCHEMA_HTTP_READY'
-import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+    node --input-type=module - "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-schema-readiness-http.json" <<'CURRENT_SCHEMA_HTTP_READY'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const status=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(status.API_URL,'http://127.0.0.1:54321');
 const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,'Content-Type':'application/json'};
-const deadline=Date.now()+15000;let ready=false;
+const deadline=Date.now()+15000;let ready=false,attempts=0,last=null;
 while(Date.now()<deadline&&!ready){
+ attempts++;
  try{
   const marker=await fetch(status.API_URL+'/rest/v1/rpc/fixture_operations_schema_ready_v1',{method:'POST',headers,body:'{}',signal:AbortSignal.timeout(1000)});const acknowledgment=await marker.json();
   const clock=await fetch(status.API_URL+'/rest/v1/rpc/get_public_tournament_clock_summary',{method:'POST',headers,body:JSON.stringify({p_tournament_id:'a3000000-0000-4000-8000-000000000001'}),signal:AbortSignal.timeout(1000)});await clock.arrayBuffer();
   const denied=await fetch(status.API_URL+'/rest/v1/rpc/get_tracker_manual_finish_receipt_v1',{method:'POST',headers,body:JSON.stringify({p_intent:{}}),signal:AbortSignal.timeout(1000)});const denial=await denied.json();
-  ready=marker.status===200&&acknowledgment==='operations-complete-schema-v1'&&clock.status===200&&denied.status===403&&denial.code==='42501';
- }catch{/* Startup readiness only; never classify a load failure as cancellation. */}
+  // PostgREST maps insufficient privilege to401 for anon and403 for an
+  // authenticated caller. Both must retain PostgreSQL's exact42501 denial;
+  // a missing/schema-stale route, a generic401, or a successful call is unsafe.
+  last={markerStatus:marker.status,markerAcknowledged:acknowledgment==='operations-complete-schema-v1',clockStatus:clock.status,privateStatus:denied.status,privateCode:/^(42501|PGRST202)$/.test(denial.code)?denial.code:'other'};
+  ready=marker.status===200&&last.markerAcknowledged&&clock.status===200&&[401,403].includes(denied.status)&&denial.code==='42501';
+ }catch{last={transportFailed:true};/* Startup only; not a load failure exclusion. */}
  if(!ready)await new Promise(resolve=>setTimeout(resolve,250));
 }
+writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_HTTP_READINESS',ready,attempts,last,qualification:false,productionChanged:false},null,2));
 assert.ok(ready,'Current public read and denied private Finish receipt routes must be schema-ready before admission');
 CURRENT_SCHEMA_HTTP_READY
     schema_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
