@@ -1632,7 +1632,7 @@ PAID_ASSET_FIXTURE
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(r.sha,process.argv[3]);assert.equal(r.kind,'REAL_AUTH_FLOOR_BUST_REENTRY_EDGE_AND_CANONICAL_CASH_SEATING');
-assert.equal(r.phase,'latency-failed');assert.equal(r.graded,20);assert.equal(r.warmup,0);assert.equal(r.qualification,false);assert.equal(r.rows.length,20);
+assert.equal(r.phase,'latency-failed');assert.equal(r.failure,null);assert.equal(r.graded,20);assert.equal(r.warmup,0);assert.equal(r.qualification,false);assert.equal(r.rows.length,20);
 assert.deepEqual(r.rows.map(x=>x.actor),Array.from({length:20},(_,i)=>i));
 const keys=['bustMs','bustRetryMs','registrationMs','registrationRetryMs','paymentMs','paymentRetryMs','independentReadMs'];
 for(const key of keys){const values=r.rows.map(x=>x[key]);assert.ok(values.every(x=>typeof x==='number'&&Number.isFinite(x)&&x>=0));values.sort((a,b)=>a-b);assert.equal(r.distributions[key].samples,20);assert.equal(r.distributions[key].p95Ms,values[18]);assert.equal(r.distributions[key].maxMs,values[19]);}
