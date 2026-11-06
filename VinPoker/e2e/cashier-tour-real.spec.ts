@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {availableParallelism,cpus,totalmem} from 'node:os';
 import {createClient} from '@supabase/supabase-js';
 import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '../src/lib/financeSummaryRead';
@@ -1293,10 +1294,10 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
 
 test('current Floor deferred move reserves and cancels without joining an active hand',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED!=='1','Isolated stage after existing operational conservation proofs');test.setTimeout(120_000);
- let failedRpc:{name:string;status:number;code:string;classification:string}|null=null;
+ let failedRpc:{name:string;status:number;code:string;messageSha256:string|null;classification:string}|null=null;
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};
- const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();if(!response.ok){const code=typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified';failedRpc={name,status:response.status,code,classification:code==='42883'?'missing_function':code==='42703'?'missing_column':code==='42P01'?'missing_relation':code==='42501'?'permission':code.startsWith('23')?'integrity':'other'};}expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();if(!response.ok){const code=typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified';failedRpc={name,status:response.status,code,messageSha256:typeof data?.message==='string'?createHash('sha256').update(data.message).digest('hex'):null,classification:code==='42883'?'missing_function':code==='42703'?'missing_column':code==='42P01'?'missing_relation':code==='42501'?'permission':code.startsWith('23')?'integrity':'other'};}expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
  type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
  type Table={tournament_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
  const roster=async()=>{const r=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(r.data)).toBe(true);return r.data as Table[];};
