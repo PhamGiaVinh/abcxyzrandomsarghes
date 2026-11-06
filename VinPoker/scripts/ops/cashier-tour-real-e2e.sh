@@ -11,6 +11,11 @@ reentry_transport_probe="${LOCAL_REENTRY_TRANSPORT_PROBE:-0}"
 reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
+operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
+if [[ "$operations_rest_pool" != 10 && "$operations_rest_pool" != 20 ]] ||
+   [[ "$operations_rest_pool" == 20 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 1000 ) ]]; then
+  echo 'Pool comparison requires explicit isolated1000 operational mode' >&2;exit 1
+fi
 case "$audience_model" in selected-table|grid-detail-stress) ;; *) echo 'Unsupported isolated audience model' >&2;exit 1;; esac
 case "$schema_mode" in
   pre03) ;;
@@ -1573,6 +1578,10 @@ while(Date.now()<deadline&&!ready){
 writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_HTTP_READINESS',ready,attempts,last,qualification:false,productionChanged:false},null,2));
 assert.ok(ready,'Current public read and denied private Finish receipt routes must be schema-ready before admission');
 CURRENT_SCHEMA_HTTP_READY
+    if [[ "$audience_count" == 1000 ]]; then
+      LOCAL_OPERATIONS_REST_POOL="$operations_rest_pool" node "$repo_root/scripts/ops/operations-postgrest-pool.mjs" \
+        "$db_container" "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-postgrest-pool-http.json"
+    fi
     schema_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
     [[ "$schema_before" =~ ^[0-9a-f]{32}$ ]]
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'UPDATE ops_load_fixture_v1.schema_fence SET frozen=true,admission_at=clock_timestamp() WHERE singleton;'

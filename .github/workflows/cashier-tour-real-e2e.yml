@@ -11,6 +11,8 @@ on:
       - "VinPoker/scripts/ops/operations-audience.mjs"
       - "VinPoker/scripts/ops/operations-db-pressure.mjs"
       - "VinPoker/scripts/ops/operations-db-pressure.sql"
+      - "VinPoker/scripts/ops/isolated-postgrest-pool.mjs"
+      - "VinPoker/scripts/ops/operations-postgrest-pool.mjs"
       - "VinPoker/scripts/ops/operations-rpc-profile.sql"
       - "VinPoker/scripts/ops/operations-audience-scope.mjs"
       - "VinPoker/scripts/ops/operations-audience-readiness.test.mjs"
@@ -92,6 +94,12 @@ on:
         type: choice
         options: ['failure-injection', 'healthy']
         default: 'failure-injection'
+
+      operations_rest_pool:
+        description: Isolated1000-viewer pool comparison;fixed resources,no hosted change
+        type: choice
+        options: ['10', '20']
+        default: '10'
 
 permissions:
   actions: read
@@ -192,6 +200,7 @@ jobs:
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
           LOCAL_REENTRY_FAULT_MODE: ${{ inputs.reentry_fault_mode || 'failure-injection' }}
+          LOCAL_OPERATIONS_REST_POOL: ${{ inputs.operations_rest_pool || '10' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier runtime latency evidence

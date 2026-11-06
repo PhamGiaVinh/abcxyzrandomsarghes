@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 import { loadPackage } from './tracker-hud-20261104-release.mjs';
+import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
@@ -88,11 +89,11 @@ test('selected-table hidden hub omits ordinary hand snapshots but retains scope 
  assert.deepEqual(selectedAudienceSections({reason:'status',components:['tables','ranking','payout']}),[]);
 });
 
-function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0',reentry='0',faultMode='failure-injection') {
+function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0',reentry='0',faultMode='failure-injection',pool='10') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
-  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, LOCAL_REENTRY_TRANSPORT_PROBE:reentry, LOCAL_REENTRY_FAULT_MODE:faultMode, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, LOCAL_REENTRY_TRANSPORT_PROBE:reentry, LOCAL_REENTRY_FAULT_MODE:faultMode, LOCAL_OPERATIONS_REST_POOL:pool, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`,`LOCAL_REENTRY_TRANSPORT_PROBE=${reentry}`,`LOCAL_REENTRY_FAULT_MODE=${faultMode}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`,`LOCAL_REENTRY_TRANSPORT_PROBE=${reentry}`,`LOCAL_REENTRY_FAULT_MODE=${faultMode}`,`LOCAL_OPERATIONS_REST_POOL=${pool}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -460,4 +461,10 @@ test('healthy reentry load is explicit;fault injection remains capped and other 
  const noCandidate=rejectedPreflight('current','1','1','0','10','0','healthy');assert.equal(noCandidate.status,1);assert.match(noCandidate.stderr,/healthy mode requires the candidate/);
  const fullHealthy=rejectedPreflight('current','1','1','0','1000','1','healthy');assert.equal(fullHealthy.status,1);assert.match(fullHealthy.stderr,/Verified schema-only baseline artifact is required/);
  const fullFault=rejectedPreflight('current','1','1','0','1000','1','failure-injection');assert.equal(fullFault.status,1);assert.match(fullFault.stderr,/fault injection is capped at10viewers/);
+});
+
+test('pool comparison refuses foreign containers and invalid workload before Docker',async()=>{
+ for(const args of [['supabase_rest_production','supabase_network_production',20],['supabase_rest_cashier-e2e-abc','other',20],['supabase_rest_cashier-e2e-abc','supabase_network_cashier-e2e-abc',30]])await assert.rejects(configureIsolatedPostgrestPool(...args));
+ for(const [mode,rt,ops,audience,pool] of [['pre03','0','0','0','20'],['current','1','1','10','20'],['current','1','1','1000','30']]){const result=rejectedPreflight(mode,rt,ops,'0',audience,'0','failure-injection',pool);assert.notEqual(result.status,0);assert.match(result.stderr,/Pool comparison requires/);}
+ const valid=rejectedPreflight('current','1','1','0','1000','1','healthy','20');assert.notEqual(valid.status,0);assert.doesNotMatch(valid.stderr,/Pool comparison requires/);
 });
