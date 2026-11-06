@@ -650,12 +650,17 @@ test('canonical clock start reaches an already-open anonymous clock screen',asyn
  const tourId='ac300000-0000-4000-8000-000000000001';
  const context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL});
  const viewer=await context.newPage();let phase='initial-public-read',ackMs:number|undefined,visibleMs:number|undefined,independentRunning=false;
+ let realtimeJoined=false;
+ viewer.on('websocket',socket=>socket.on('framereceived',frame=>{try{
+  const wire=JSON.parse(String(frame.payload)),event=Array.isArray(wire)?wire[3]:wire.event,topic=Array.isArray(wire)?wire[2]:wire.topic,payload=Array.isArray(wire)?wire[4]:wire.payload;
+  if(event==='phx_reply'&&topic==='realtime:public:tournament-viewer-v2:'+tourId&&payload?.status==='ok')realtimeJoined=true;
+ }catch{ /* No raw frames or credentials are retained. */ }}));
  const controls:{action:string;warmup:boolean;ackMs:number;writeToVisibleMs:number}[]=[];
  const grouped=()=>['pause','resume'].map(action=>{const values=controls.filter(row=>row.action===action&&!row.warmup).map(row=>row.writeToVisibleMs).sort((a,b)=>a-b);return {action,samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};});
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-clock-ui-http.json'),JSON.stringify({
   kind:'CANONICAL_CLOCK_RPC_START_TO_ANONYMOUS_PUBLIC_SCREEN',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,actors:1,anonymousObservers:1,startSamples:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
-  limitations:'One start plus3warmup and20graded canonical pause/resume pairs through real HTTP on one continuously open anonymous screen. Start is a single observation,not p95. Public screen retains its existing15s polling;20s per transition is an observation timeout,not a newly approved latency target. No refresh/reload,Edge wrapper,next-level/automatic-break screen or mixed1000spectator claim. Separate control test covers CAS concurrency.',
+  phase,ackMs,writeToVisibleMs:visibleMs,independentRunning,realtimeJoined,actors:1,anonymousObservers:1,startSamples:1,controlWarmupPairs:3,controlGradedPairs:20,controls,grouped:grouped(),qualification:false,
+  limitations:'One start plus3warmup and20graded canonical pause/resume pairs through real HTTP on one continuously open anonymous screen. Start is a single observation,not p95. Realtime join is observed separately;join alone does not prove which signal caused each render.20s per transition is an observation timeout,not a newly approved latency target. No refresh/reload,Edge wrapper,next-level/automatic-break screen or mixed1000spectator claim. Separate control test covers CAS concurrency.',
  },null,2));
  const rpc=async(name:string,args:unknown)=>{
   const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
