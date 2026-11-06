@@ -934,7 +934,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}"
   # These operational stages share committed fixtures. A failed prerequisite
   # must fail the run immediately, not produce misleading downstream failures.
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results --max-failures=1)
@@ -958,6 +958,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_ACTION_FINISH_ENABLED="$manual_action_finish_enabled" \
+  --env LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED="$recorded_action_finish_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1496,4 +1497,12 @@ MANUAL_ACTION_ACTORS
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
   if [[ "$action_finish_state" != '21|105|65|0' ]]; then echo "Manual action Finish conservation failed ($action_finish_state)" >&2; exit 1; fi
   echo 'MANUAL_ACTION_FINISH_PROOF:21completed three-player hands;105exact actions;65seat snapshots;zero active hands'
+  run_browser_proof '' '' 'recorded actions enforce budget and merge once through canonical Finish' '' '' '' '' '' '' '' '' 1
+  recorded_finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9023 AND status='completed'),
+    (SELECT count(*) FROM public.hand_actions a JOIN public.tournament_hands h ON h.id=a.hand_id WHERE h.tournament_id='a3000000-0000-4000-8000-000000000001' AND h.hand_number=9023),
+    (SELECT count(*) FROM floor_private.tracker_hand_seat_snapshots193),
+    (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
+  if [[ "$recorded_finish_state" != '1|5|68|0' ]]; then echo "Recorded action Finish conservation failed ($recorded_finish_state)" >&2; exit 1; fi
+  echo 'RECORDED_ACTION_FINISH_PROOF:one completed hand;five stable actions;one first action after20contenders;68snapshots;zero active hands'
 fi
