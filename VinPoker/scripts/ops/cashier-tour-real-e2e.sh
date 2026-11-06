@@ -973,8 +973,14 @@ echo "REFUND_BROWSER_PROOF: Tour B waiting-seat refund paid once, registration c
 if [[ "$schema_mode" == current ]]; then
   # Separate stage: preserve the earlier baseline/refund/partial-payment proof,
   # then restore the exact current allocator with its original dependency guards.
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    <"$repo_root/supabase/migrations/20270128000113_cashier_canonical_paid_seating_v1.sql"
+  for paid_migration in \
+    20270128000113_cashier_canonical_paid_seating_v1.sql \
+    20270128000114_cashier_canonical_reentry_seating_v1.sql \
+    20270128000117_cashier_correction_alert_seating_fence_v1.sql \
+    20270128000139_cashier_paid_stack_projection_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$paid_migration"
+  done
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAID_SEATING_PREFLIGHT'
 DO $$ BEGIN
  IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_registration_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'f1f8edbbeb1da8b2d883f6322eafdbfd'
@@ -988,7 +994,7 @@ SELECT ('ac700000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  'a2000000-0000-4000-8000-000000000001','Full cash seating TEST '||n,22+n,'tournament','inactive','available'
 FROM generate_series(1,3) n;
 PAID_SEATING_PREFLIGHT
-  echo "PAID_SEATING_SCHEMA_PROOF: exact113 original guards; two production body fingerprints; three new empty TEST assets only"
+  echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/117/139 original guards; two production body fingerprints; three new empty TEST assets only"
   docker run --rm --network "container:$app_container" \
     --volume "$repo_root:/app:ro" --workdir /app \
     --volume "$repo_root/output/operations-latency:/latency" \
@@ -1017,7 +1023,8 @@ PAID_SEATING_PREFLIGHT
       (SELECT count(*) FROM public.tournament_entries e JOIN registrations r ON r.id=e.registration_id),
       (SELECT count(*) FROM seats),(SELECT sum(chip_count) FROM seats),
       (SELECT count(*) FROM seats s JOIN public.tournament_tables t ON t.id=s.tournament_table_id AND t.table_session_id=s.table_session_id JOIN public.table_sessions ts ON ts.id=s.table_session_id AND ts.closed_at IS NULL AND ts.game_table_id=coalesce(t.game_table_id,t.table_id) WHERE ts.tournament_id=s.tournament_id),
-      (SELECT count(*) FROM public.seat_draw_receipts d JOIN registrations r ON r.id=d.registration_id WHERE d.status IN ('issued','printed'));")"
-  if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
-  echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
+      (SELECT count(*) FROM public.seat_draw_receipts d JOIN registrations r ON r.id=d.registration_id WHERE d.status IN ('issued','printed')),
+      (SELECT count(*) FROM public.tournament_chip_counts c JOIN public.tournament_entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number JOIN registrations r ON r.id=e.registration_id WHERE c.chip_count=20000);")"
+  if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
+  echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets/stack projections;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
 fi
