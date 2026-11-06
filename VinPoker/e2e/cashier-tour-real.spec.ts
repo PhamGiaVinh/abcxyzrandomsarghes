@@ -1105,3 +1105,40 @@ test('current Cashier full payment commits canonical seats through real HTTP',as
   expect(rows).toHaveLength(20);expect(distribution('ackMs').p95Ms).toBeLessThanOrEqual(1000);expect(distribution('retryMs').p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+test('current Floor bust and player reentry preserve separate paid entry generations',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_REENTRY_ENABLED!=='1','Third isolated stage after full seated-payment proof');test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number};
+ type Table={session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
+ const roster=async()=>{const {data}=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(data)).toBe(true);return data as Table[];};
+ const location=async(player:string)=>{const tables=await roster(),table=tables.find(t=>t.seats.some(s=>s.player_id===player));expect(table).toBeTruthy();return {table:table!,seat:table!.seats.find(s=>s.player_id===player)!};};
+ const rows:{actor:number;bustMs:number;bustRetryMs:number;registrationMs:number;registrationRetryMs:number;paymentMs:number;paymentRetryMs:number;independentReadMs:number}[]=[];let phase='authorization';
+ const dist=(key:keyof Omit<typeof rows[number],'actor'>)=>{const values=rows.map(r=>r[key]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-bust-reentry-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_BUST_REENTRY_EDGE_AND_CANONICAL_CASH_SEATING',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,graded:20,warmup:0,rows,distributions:Object.fromEntries(['bustMs','bustRetryMs','registrationMs','registrationRetryMs','paymentMs','paymentRetryMs','independentReadMs'].map(key=>[key,dist(key as keyof Omit<typeof rows[number],'actor'>)])),qualification:false,limitations:'Twenty serial synthetic players with real Auth. Owner performs canonical manual-mode bust with explicit positive-chip override,then each player requests the actual reentry Edge and each cashier pays its immutable server price. Owner reads baseline382 roster for placement/revision;its body is not the current production roster projection. Bust/reentry/confirmation/allocator bodies are production-hash pinned. No tracker-mode zero-chip bust,browser latency,concurrent distinct-player seating or mixed1000-viewer capacity claim.'},null,2));
+ const reenter=async(actor:number)=>{const started=performance.now(),response=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',headers:headers(staff[actor].token),body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok).toBe(true);expect(data.success).toBe(true);expect(data.reentry).toBe(true);expect(Number(data.total_pay)).toBe(6600000);expect(data.free_rake_applied).toBe(false);return {data,ms:performance.now()-started};};
+ try{
+  const denied=await fetch(api+'/rest/v1/rpc/cashier_create_app_reentry_v1',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({p_tournament_id:tour,p_player_id:staff[1].userId}),signal:AbortSignal.timeout(5000)});expect(denied.status).toBe(403);
+  const unauthenticated=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',headers:{apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});expect(unauthenticated.status).toBe(401);
+  phase='serial';
+  for(let actor=0;actor<staff.length;actor++){
+   const before=await location(staff[actor].userId);expect(before.table.control_mode).toBe('manual');expect(before.seat.entry_no).toBe(1);expect(before.seat.chip_count).toBe(20000);
+   const intent={p_entry_id:before.seat.entry_id,p_expected_revision:before.table.session_revision,p_expected_control_epoch:before.table.control_epoch,p_expected_chip_count:20000,p_request_id:crypto.randomUUID(),p_reason:'floor_v3_operator_bust'};
+   if(actor===0){const stale=await rpc(owner,'floor_bust_player_v3',{...intent,p_expected_revision:intent.p_expected_revision+1,p_request_id:crypto.randomUUID()});expect(stale.data.error).toBe('STALE_STATE');}
+   const busted=await rpc(owner,'floor_bust_player_v3',intent);expect(busted.data.ok).toBe(true);expect(busted.data.manual_nonzero_chip_override).toBe(true);expect(busted.data.payout_applied).toBe(false);
+   const bustRetry=await rpc(owner,'floor_bust_player_v3',intent);expect(bustRetry.data).toEqual(busted.data);
+   expect((await roster()).flatMap(t=>t.seats).some(s=>s.player_id===staff[actor].userId)).toBe(false);
+   const registration=await reenter(actor),retryRegistration=await reenter(actor);expect(registration.data.already_registered).toBe(false);expect(retryRegistration.data.already_registered).toBe(true);expect(retryRegistration.data.registration_id).toBe(registration.data.registration_id);expect(retryRegistration.data.reference_code).toBe(registration.data.reference_code);
+   const payment={actor_id:staff[actor].userId,club_id:club,tournament_id:tour,registration_id:registration.data.registration_id,amount:registration.data.total_pay,request_id:crypto.randomUUID()};
+   const paid=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(paid.data.status).toBe('recorded');expect(paid.data.result.payment_state).toBe('paid');expect(paid.data.result.seating_state).toBe('seated');
+   const paymentRetry=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(paymentRetry.data).toEqual(paid.data);
+   const started=performance.now(),after=await location(staff[actor].userId);expect(after.seat.entry_id).not.toBe(before.seat.entry_id);expect(after.seat.entry_no).toBe(2);expect(after.seat.chip_count).toBe(20000);
+   rows.push({actor,bustMs:busted.ms,bustRetryMs:bustRetry.ms,registrationMs:registration.ms,registrationRetryMs:retryRegistration.ms,paymentMs:paid.ms,paymentRetryMs:paymentRetry.ms,independentReadMs:performance.now()-started});report();
+  }
+  expect(rows).toHaveLength(20);for(const key of ['bustMs','registrationMs','paymentMs'] as const)expect(dist(key).p95Ms).toBeLessThanOrEqual(1000);
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});

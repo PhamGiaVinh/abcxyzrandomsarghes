@@ -626,6 +626,7 @@ cp -R "$repo_root/supabase/functions/tournament-register" supabase/functions/tou
 cp -R "$repo_root/supabase/functions/sepay-reconcile" supabase/functions/sepay-reconcile
 if [[ "$schema_mode" == current ]]; then
   cp -R "$repo_root/supabase/functions/checkout-dealer" supabase/functions/checkout-dealer
+  cp -R "$repo_root/supabase/functions/tournament-reentry" supabase/functions/tournament-reentry
 fi
 
 api_url="$(jq -er '.API_URL' "$test_root/isolated-status.json")"
@@ -912,6 +913,10 @@ mkdir -p "$repo_root/output/operations-latency"
 # Share the app's already-isolated network namespace so the real browser uses
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
+run_browser_proof() {
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}"
+  local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
+  if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm --network "container:$app_container" \
   --volume "$repo_root:/app:ro" --workdir /app \
   --volume "$repo_root/output/operations-latency:/latency" \
@@ -919,6 +924,8 @@ docker run --rm --network "container:$app_container" \
   --volume "$test_root/dealer-fixture.json:/fixtures/dealer-fixture.json:ro" \
   --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
   --env LOCAL_OPERATIONS_CHECKIN_ENABLED="$checkin_fixture_enabled" \
+  --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED="$paid_enabled" \
+  --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -933,7 +940,9 @@ docker run --rm --network "container:$app_container" \
   --env LOCAL_REFUND_REGISTRATION_ID="$refund_registration_id" \
   --env LOCAL_REFUND_REFERENCE_CODE="$refund_reference_code" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
-  npx playwright test e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results
+  npx playwright test "${test_args[@]}"
+}
+run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
 if [[ "$schema_mode" == current ]]; then
   checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
@@ -992,8 +1001,10 @@ PAID_PRIVATE_SOURCE
   for paid_migration in \
     20270128000113_cashier_canonical_paid_seating_v1.sql \
     20270128000114_cashier_canonical_reentry_seating_v1.sql \
+    20270128000115_cashier_server_priced_reentry_v1.sql \
     20270128000117_cashier_correction_alert_seating_fence_v1.sql \
-    20270128000139_cashier_paid_stack_projection_v1.sql; do
+    20270128000139_cashier_paid_stack_projection_v1.sql \
+    20270128000233_cashier_reentry_closed_registration_guard_v1.sql; do
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/migrations/$paid_migration"
   done
@@ -1003,32 +1014,23 @@ DO $$ BEGIN
  OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='floor_private.pick_cashier_canonical_seat_v1(uuid,text)'::regprocedure)<>'5917c0a1566cc7f63966cf5db4997ff5'
  OR has_function_privilege('authenticated','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
  OR has_function_privilege('anon','floor_private.pick_cashier_canonical_seat_v1(uuid,text)','EXECUTE')
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.cashier_create_app_reentry_v1(uuid,uuid)'::regprocedure)<>'8c1fed4cdecbccde55c7f8ba5aa7b169'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public._assign_reentry_seat(uuid,uuid,uuid,uuid,uuid,text,integer)'::regprocedure)<>'e9fe638ef857c549b69283326a91dcd9'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_bust_player_v3(uuid,bigint,bigint,integer,uuid,text)'::regprocedure)<>'5e0a933c3abf478b159de9c621b53001'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.confirm_reentry_and_assign_seat(uuid,uuid,text)'::regprocedure)<>'be049df28a3fcbaf969494aee86efb7a'
+ OR has_function_privilege('authenticated','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
+ OR has_function_privilege('anon','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
+ OR NOT has_function_privilege('service_role','public.cashier_create_app_reentry_v1(uuid,uuid)','EXECUTE')
  THEN RAISE EXCEPTION 'isolated_paid_seating_production_contract_mismatch';END IF;
 END $$;
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 SELECT ('ac700000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  'a2000000-0000-4000-8000-000000000001','Full cash seating TEST '||n,22+n,'tournament','inactive','available'
 FROM generate_series(1,3) n;
+NOTIFY pgrst,'reload schema';
 PAID_SEATING_PREFLIGHT
-  echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/117/139 original guards; two production body fingerprints; three new empty TEST assets only"
-  docker run --rm --network "container:$app_container" \
-    --volume "$repo_root:/app:ro" --workdir /app \
-    --volume "$repo_root/output/operations-latency:/latency" \
-    --volume "$test_root/staff-private.json:/fixtures/staff-private.json:ro" \
-    --env LOCAL_OPERATIONS_STAFF_FILE=/fixtures/staff-private.json \
-    --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED=1 \
-    --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
-    --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
-    --env PLAYWRIGHT_BASE_URL='http://localhost:8080' \
-    --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
-    --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
-    --env LOCAL_OWNER_EMAIL="$owner_email" \
-    --env LOCAL_OWNER_PASSWORD="$owner_password" \
-    --env LOCAL_SUPABASE_STORAGE_KEY="$storage_key" \
-    --env LOCAL_REFUND_REGISTRATION_ID="$refund_registration_id" \
-    --env LOCAL_REFUND_REFERENCE_CODE="$refund_reference_code" \
-    mcr.microsoft.com/playwright:v1.60.0-noble \
-    npx playwright test e2e/cashier-tour-real.spec.ts --grep 'current Cashier full payment commits canonical seats' --output=/tmp/cashier-paid-playwright-results
+  echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/115/117/139/233 original guards; six production body fingerprints; three new empty TEST assets only"
+  run_browser_proof 1 '' 'current Cashier full payment commits canonical seats'
   paid_seating_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
     "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
       AND r.player_id IN (SELECT user_id FROM public.club_cashiers WHERE club_id='a2000000-0000-4000-8000-000000000001' AND user_id<>'$owner_id'::uuid)),
@@ -1043,4 +1045,22 @@ PAID_SEATING_PREFLIGHT
       (SELECT count(*) FROM public.tournament_chip_counts c JOIN public.tournament_entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number JOIN registrations r ON r.id=e.registration_id WHERE c.chip_count=20000);")"
   if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
   echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets/stack projections;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
+  run_browser_proof '' 1 'current Floor bust and player reentry preserve separate paid entry generations'
+  reentry_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
+      AND r.player_id IN (SELECT user_id FROM public.club_cashiers WHERE club_id='a2000000-0000-4000-8000-000000000001' AND user_id<>'$owner_id'::uuid)),
+     entries AS (SELECT e.* FROM public.tournament_entries e JOIN registrations r ON r.id=e.registration_id)
+     SELECT (SELECT count(*) FROM registrations WHERE status='confirmed' AND cashier_paid_at IS NOT NULL),
+      (SELECT count(*) FROM registrations r JOIN entries e ON e.id=r.source_entry_id WHERE e.entry_no=1 AND e.status='busted' AND r.price_snapshot->>'source_entry_id'=e.id::text AND (r.price_snapshot->>'total_pay')::bigint=6600000),
+      (SELECT count(*) FROM entries WHERE entry_no=1 AND status='busted' AND current_stack=0),
+      (SELECT count(*) FROM entries WHERE entry_no=2 AND status='seated' AND current_stack=20000),
+      (SELECT count(*) FROM public.tournament_seats s JOIN entries e ON e.id=s.entry_id WHERE s.is_active AND e.entry_no=2 AND s.chip_count=20000),
+      (SELECT count(*) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT sum(m.applied_amount) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT count(*) FROM public.seat_draw_receipts d JOIN registrations r ON r.id=d.registration_id WHERE d.status IN ('issued','printed')),
+      (SELECT count(*) FROM public.tournament_chip_counts c JOIN entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number WHERE c.chip_count=20000),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='floor_bust_player_v3'),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='cashier_cash_buyin_v2');")"
+  if [[ "$reentry_state" != '40|20|20|20|20|64|264000000|40|40|20|65' ]]; then echo "Reentry generation/money/receipt conservation failed ($reentry_state)" >&2; exit 1; fi
+  echo "REENTRY_COMMIT_PROOF:20immutable paid source registrations/busted entries plus20new paid entry generations;20active seats;40tickets/projections;64cash movements/264000000TEST units;20bust/65cash receipts;no duplicate retries"
 fi
