@@ -1540,7 +1540,7 @@ END $$;
 INSERT INTO public.club_settings(club_id,telegram_chat_id) VALUES('a2000000-0000-4000-8000-000000000001','-1000000000001')
  ON CONFLICT(club_id) DO UPDATE SET telegram_chat_id=excluded.telegram_chat_id;
 INSERT INTO public.dealers(id,club_id,full_name,status,telegram_username,telegram_user_id)
-SELECT md5('http-notification-dealer-'||n)::uuid,'a2000000-0000-4000-8000-000000000001','Notification TEST <'||n||'> & Dealer','active','notify_test_'||n,(9900000000000+n)::text
+SELECT md5('http-notification-dealer-'||n)::uuid,'a2000000-0000-4000-8000-000000000001','Notification TEST <'||n||'> & Dealer','active','notify_test_'||n,9900000000000+n
 FROM generate_series(1,22) n;
 COMMIT;
 TELEGRAM_FIXTURE
