@@ -70,11 +70,11 @@ test('selected-table hidden hub omits ordinary hand snapshots but retains scope 
  assert.deepEqual(selectedAudienceSections({reason:'status',components:['tables','ranking','payout']}),[]);
 });
 
-function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0',reentry='0') {
+function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0',reentry='0',faultMode='failure-injection') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
-  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, LOCAL_REENTRY_TRANSPORT_PROBE:reentry, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, LOCAL_REENTRY_TRANSPORT_PROBE:reentry, LOCAL_REENTRY_FAULT_MODE:faultMode, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`,`LOCAL_REENTRY_TRANSPORT_PROBE=${reentry}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`,`LOCAL_OPERATIONS_AUDIENCE=${audience}`,`LOCAL_REENTRY_TRANSPORT_PROBE=${reentry}`,`LOCAL_REENTRY_FAULT_MODE=${faultMode}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -434,4 +434,12 @@ test('pending reentry transport is explicit,current-only and capped before alloc
  const paid=script.slice(script.indexOf('install_current_paid_schema() {'),script.indexOf('install_current_revenue_schema() {'));
  assert.ok(paid.indexOf('PAID_SEATING_SCHEMA_PROOF')<paid.indexOf('20261107013500_cashier_app_reentry_transport_v1.sql'));
  assert.match(paid,/pendingReentryTransportApplied=true/);
+});
+
+
+test('healthy reentry load is explicit;fault injection remains capped and other mode is rejected',()=>{
+ const invalid=rejectedPreflight('current','1','1','0','10','1','other');assert.equal(invalid.status,1);assert.match(invalid.stderr,/Unsupported isolated reentry fault mode/);
+ const noCandidate=rejectedPreflight('current','1','1','0','10','0','healthy');assert.equal(noCandidate.status,1);assert.match(noCandidate.stderr,/healthy mode requires the candidate/);
+ const fullHealthy=rejectedPreflight('current','1','1','0','1000','1','healthy');assert.equal(fullHealthy.status,1);assert.match(fullHealthy.stderr,/Verified schema-only baseline artifact is required/);
+ const fullFault=rejectedPreflight('current','1','1','0','1000','1','failure-injection');assert.equal(fullFault.status,1);assert.match(fullFault.stderr,/fault injection is capped at10viewers/);
 });

@@ -8,6 +8,7 @@ realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
 clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 reentry_transport_probe="${LOCAL_REENTRY_TRANSPORT_PROBE:-0}"
+reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
 case "$audience_model" in selected-table|grid-detail-stress) ;; *) echo 'Unsupported isolated audience model' >&2;exit 1;; esac
@@ -30,8 +31,9 @@ if [[ "$operations_candidate_probe" != 0 && "$operations_candidate_probe" != 1 ]
   echo 'Candidate operations probe requires current isolated Realtime mode and excludes clock-only mode' >&2; exit 1
 fi
 case "$audience_count" in 0|10|1000) ;; *) echo 'Unsupported isolated operational audience' >&2;exit 1;; esac
-if [[ "$reentry_transport_probe" != 0 && "$reentry_transport_probe" != 1 ]] || [[ "$reentry_transport_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$audience_count" == 1000 ) ]]; then
-  echo 'Pending reentry transport requires current candidate operations with at most10viewers' >&2;exit 1
+case "$reentry_fault_mode" in failure-injection|healthy) ;; *) echo 'Unsupported isolated reentry fault mode' >&2;exit 1;; esac
+if [[ "$reentry_transport_probe" != 0 && "$reentry_transport_probe" != 1 ]] || [[ "$reentry_transport_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || ( "$audience_count" == 1000 && "$reentry_fault_mode" != healthy ) ) ]] || [[ "$reentry_transport_probe" == 0 && "$reentry_fault_mode" != failure-injection ]]; then
+  echo 'Pending reentry transport requires current candidate operations;fault injection is capped at10viewers and healthy mode requires the candidate' >&2;exit 1
 fi
 if [[ "$audience_count" != 0 && "$operations_candidate_probe" != 1 ]]; then
   echo 'Operational audience requires explicit full candidate operations mode' >&2;exit 1
@@ -1133,9 +1135,14 @@ PAID_SEATING_PREFLIGHT
   if [[ "$reentry_transport_probe" == 1 ]]; then
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/pending-migrations/20261107013500_cashier_app_reentry_transport_v1.sql"
-    { printf "SET vinpoker.isolated_reentry_transport='current-composite-v1';\n";
-      cat "$repo_root/supabase/pending-tests/reentry_transport_notification_fault.sql"; } |
-      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    if [[ "$reentry_fault_mode" == failure-injection ]]; then
+      { printf "SET vinpoker.isolated_reentry_transport='current-composite-v1';\n";
+        cat "$repo_root/supabase/pending-tests/reentry_transport_notification_fault.sql"; } |
+        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    else
+      docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+        "DO \$\$ BEGIN IF to_regnamespace('ops_reentry_transport_probe_v1') IS NOT NULL THEN RAISE EXCEPTION 'healthy_reentry_must_not_have_fault_fixture';END IF;END \$\$;"
+    fi
     node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'REENTRY_TRANSPORT_APPLIED_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(report.pendingReentryTransportMigrations,1);
@@ -1286,6 +1293,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED="$paid_enabled" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_REENTRY_TRANSPORT_PROBE="$reentry_transport_probe" \
+  --env LOCAL_REENTRY_FAULT_MODE="$reentry_fault_mode" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
@@ -1451,9 +1459,9 @@ CLOCK_BROADCAST_BOOTSTRAP
     echo 'CLOCK_CANDIDATE_PROOF:exact31 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
     exit 0
   fi
-  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" <<'OPERATIONS_PACKAGE_APPLIED'
+  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" <<'OPERATIONS_PACKAGE_APPLIED'
 import {writeFileSync} from 'node:fs';
-writeFileSync(process.argv[2],JSON.stringify({kind:process.argv[4]==='1'?'BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME':'EXACT31_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:31,pendingReentryTransportMigrations:process.argv[4]==='1'?1:0,pendingReentryTransportApplied:false,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. Optional pending transport is additional to base31,not in its release manifest. No mixed1000spectator capacity claim.'},null,2));
+writeFileSync(process.argv[2],JSON.stringify({kind:process.argv[4]==='1'?'BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME':'EXACT31_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:31,pendingReentryTransportMigrations:process.argv[4]==='1'?1:0,pendingReentryTransportApplied:false,reentryFaultMode:process.argv[4]==='1'?process.argv[5]:null,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. Optional pending transport is additional to base31,not in its release manifest. No mixed1000spectator capacity claim.'},null,2));
 OPERATIONS_PACKAGE_APPLIED
   if [[ "$audience_count" != 0 ]]; then
     # Only the fresh isolated runtime is configured; hosted quotas stay intact.
@@ -1641,7 +1649,7 @@ PAID_ASSET_FIXTURE
       (SELECT count(*) FROM public.tournament_chip_counts c JOIN public.tournament_entries e ON e.tournament_id=c.tournament_id AND e.player_id=c.player_id AND e.entry_no=c.entry_number JOIN registrations r ON r.id=e.registration_id WHERE c.chip_count=20000);")"
   if [[ "$paid_seating_state" != '20|44|132000000|20|20|400000|20|20|20' ]]; then echo "Full cash canonical seating committed-state conservation failed ($paid_seating_state)" >&2; exit 1; fi
   echo "PAID_SEATING_COMMIT_PROOF:20confirmed registrations/entries/canonical seats/tickets/stack projections;44cash movements/132000000TEST units;400000starting chips;exact retries did not duplicate"
-  if [[ "$reentry_transport_probe" == 1 ]]; then
+  if [[ "$reentry_transport_probe" == 1 && "$reentry_fault_mode" == failure-injection ]]; then
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REENTRY_BANK_AMBIGUITY_SETUP'
 BEGIN;
 DO $$ BEGIN
@@ -1732,7 +1740,7 @@ REENTRY_LATENCY_ONLY_FAILURE
       (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='cashier_cash_buyin_v2');")"
   if [[ "$reentry_state" != '40|20|20|20|20|64|264000000|40|40|20|65' ]]; then echo "Reentry generation/money/receipt conservation failed ($reentry_state)" >&2; exit 1; fi
   echo "REENTRY_COMMIT_PROOF:20immutable paid source registrations/busted entries plus20new paid entry generations;20active seats;40tickets/projections;64cash movements/264000000TEST units;20bust/65cash receipts;no duplicate retries"
-  if [[ "$reentry_transport_probe" == 1 ]]; then
+  if [[ "$reentry_transport_probe" == 1 && "$reentry_fault_mode" == failure-injection ]]; then
     notification_fault_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
       "SELECT CASE WHEN is_called THEN last_value ELSE 0 END,
        (SELECT count(*) FROM public.notifications WHERE data->>'reentry'='true' AND data->>'tournament_id'='a3000000-0000-4000-8000-000000000001')
@@ -1745,6 +1753,17 @@ writeFileSync(process.argv[2],JSON.stringify({kind:'REAL_COMPOSITE_REENTRY_NOTIF
  concurrentCreationRequests:20,concurrentCreated:1,qualification:false,productionChanged:false,
  limitations:'Immediate AFTER INSERT exception only;not statement timeout,connection termination,bank ambiguity or closed-buy race proof.'},null,2));
 REENTRY_OPTIONAL_NOTIFICATION_PROOF
+  elif [[ "$reentry_transport_probe" == 1 ]]; then
+    healthy_notifications="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+      "SELECT count(*),count(DISTINCT user_id) FROM public.notifications WHERE data->>'reentry'='true' AND data->>'tournament_id'='a3000000-0000-4000-8000-000000000001';")"
+    [[ "$healthy_notifications" == '20|20' ]]
+    node --input-type=module - "$repo_root/output/operations-latency/reentry-transport-healthy-notifications-http.json" "$source_sha" <<'REENTRY_HEALTHY_NOTIFICATION_PROOF'
+import {writeFileSync} from 'node:fs';
+writeFileSync(process.argv[2],JSON.stringify({kind:'REAL_COMPOSITE_REENTRY_HEALTHY_NOTIFICATIONS',sha:process.argv[3],
+ faultInjection:false,committedNotifications:20,distinctRecipients:20,canonicalReentriesPaidAndSeated:20,
+ concurrentCreationRequests:20,concurrentCreated:1,qualification:false,productionChanged:false,
+ limitations:'Healthy in-app notification inserts only;not Telegram delivery,full operational load qualification or connection-termination recovery proof.'},null,2));
+REENTRY_HEALTHY_NOTIFICATION_PROOF
   fi
   if [[ "$current_schema_prepared" != 1 ]]; then install_current_revenue_schema; fi
   run_browser_proof '' '' 'current owner rake closes once and exports the immutable event-day snapshot' 1

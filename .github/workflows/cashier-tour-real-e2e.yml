@@ -82,9 +82,15 @@ on:
         default: 'selected-table'
 
       reentry_transport_probe:
-        description: Pending composite reentry RPC/Edge with notification fault;isolated current operational mode only
+        description: Pending composite reentry RPC/Edge;isolated current operational mode only
         type: boolean
         default: false
+
+      reentry_fault_mode:
+        description: Inject notification faults at10viewers or measure healthy candidate operations
+        type: choice
+        options: ['failure-injection', 'healthy']
+        default: 'failure-injection'
 
 permissions:
   actions: read
@@ -184,6 +190,7 @@ jobs:
           LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
+          LOCAL_REENTRY_FAULT_MODE: ${{ inputs.reentry_fault_mode || 'failure-injection' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier runtime latency evidence
