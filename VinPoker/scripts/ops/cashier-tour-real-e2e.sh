@@ -916,7 +916,7 @@ mkdir -p "$repo_root/output/operations-latency"
 # loopback, a secure context with native crypto APIs. No browser security flags,
 # crypto stubs, published host ports or external network access are needed.
 run_browser_proof() {
-  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}"
+  local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}"
   local -a test_args=(e2e/cashier-tour-real.spec.ts --output=/tmp/cashier-playwright-results)
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm --network "container:$app_container" \
@@ -929,6 +929,7 @@ docker run --rm --network "container:$app_container" \
   --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED="$paid_enabled" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
+  --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
   --env LOCAL_OPERATIONS_DEALER_FILE=/fixtures/dealer-fixture.json \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
@@ -1125,4 +1126,61 @@ DO $$ BEGIN
 END $$;
 REVENUE_IMMUTABILITY
   echo "REVENUE_COMMIT_PROOF:one immutable event-day closure snapshot;41paid buys/21unique players;24600000rake/270600000collected TEST units;server reentry closed;actual browser CSV verified"
+  # Restore the exact existing movement dependency chain only after the earlier
+  # committed conservation proofs. Original migration preconditions remain intact.
+  node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/clock-pre32-fixture.sql" --restore-clock-pre32
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$test_root/clock-pre32-fixture.sql"
+  for move_migration in \
+    20270128000032_tournament_seat_display_preservation_v1.sql \
+    20270128000033_tournament_seat_move_tuple_v1.sql \
+    20270128000034_floor_move_wrapper_receipt_v1.sql \
+    20270128000038_floor_break_lowest_number_policy_v1.sql \
+    20270128000039_floor_break_ticket_audit_v1.sql \
+    20270128000040_floor_break_balanced_plan_v1.sql \
+    20270128000041_floor_deferred_move_ticket_audit_v1.sql \
+    20270128000042_floor_canonical_move_ticket_integrity_v1.sql \
+    20270128000043_floor_move_exact_intent_v1.sql \
+    20270128000048_floor_move_or_queue_exact_intent_v1.sql \
+    20270128000215_multiday_canonical_seat_relocation_v1.sql; do
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/$move_migration"
+  done
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'MOVE_PARITY'
+DO $$ DECLARE e record;p pg_proc%ROWTYPE;BEGIN
+ FOR e IN SELECT * FROM (VALUES
+  ('public.move_player_seat_v2(uuid,uuid,integer,bigint,bigint,uuid)','ff4dfb830a158cc916a520891841c80c'),
+  ('public.move_player_seat_v3(uuid,uuid,integer,bigint,bigint,uuid)','57c67989cf157f1e5245a2c8fc366396'),
+  ('public.move_player_seat_v4(uuid,uuid,uuid,uuid,uuid,integer,bigint,bigint,bigint,bigint,text,uuid)','737256dbd19cec9d74faadf598b9e328'),
+  ('public.move_player_seat_v5(uuid,uuid,uuid,uuid,uuid,integer,bigint,bigint,bigint,bigint,text,uuid)','b610100979aaedd16d076728a382ed92'),
+  ('public.floor_queue_tracker_move_v1(uuid,uuid,integer,bigint,bigint,uuid)','00efba7f6c95125121233f5bf6dc9f48')
+ ) v(signature,digest) LOOP
+  SELECT * INTO STRICT p FROM pg_proc WHERE oid=e.signature::regprocedure;
+  IF md5(replace(p.prosrc,chr(13),''))<>e.digest OR p.proowner<>'postgres'::regrole
+   OR NOT p.prosecdef OR p.provolatile<>'v' OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
+   OR has_function_privilege('anon',p.oid,'EXECUTE') OR has_function_privilege('service_role',p.oid,'EXECUTE')
+   OR NOT has_function_privilege('authenticated',p.oid,'EXECUTE')
+  THEN RAISE EXCEPTION 'isolated_exact_move_production_contract_mismatch: %',e.signature;END IF;
+ END LOOP;
+END $$;
+NOTIFY pgrst,'reload schema';
+MOVE_PARITY
+  run_browser_proof '' '' 'current Floor exact movement conserves paid chips and retries through HTTP' '' 1
+  movement_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
+      AND r.player_id IN (SELECT user_id FROM public.club_cashiers WHERE club_id='a2000000-0000-4000-8000-000000000001' AND user_id<>'$owner_id'::uuid)),
+     entries AS (SELECT e.* FROM public.tournament_entries e JOIN registrations r ON r.id=e.registration_id)
+     SELECT (SELECT count(*) FROM registrations WHERE status='confirmed' AND cashier_paid_at IS NOT NULL),
+      (SELECT count(*) FROM entries WHERE entry_no=1 AND status='busted' AND current_stack=0),
+      (SELECT count(*) FROM entries WHERE entry_no=2 AND status='seated' AND current_stack=20000),
+      (SELECT count(*) FROM public.tournament_seats s JOIN entries e ON e.id=s.entry_id WHERE s.is_active AND e.entry_no=2 AND s.chip_count=20000),
+      (SELECT sum(s.chip_count) FROM public.tournament_seats s JOIN entries e ON e.id=s.entry_id WHERE s.is_active),
+      (SELECT count(*) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT sum(m.applied_amount) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT count(*) FROM public.seat_draw_receipts d JOIN registrations r ON r.id=d.registration_id),
+      (SELECT count(*) FROM public.seat_assignment_history h JOIN entries e ON e.id=h.entry_id WHERE h.reason='isolated exact-move latency TEST'),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='move_player_seat_v5'),
+      (SELECT count(*) FROM public.floor_pending_tracker_moves WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='pending');")"
+  if [[ "$movement_state" != '40|20|20|20|400000|64|264000000|61|21|21|0' ]]; then echo "Exact movement committed chip/money/ticket/receipt conservation failed ($movement_state)" >&2; exit 1; fi
+  echo "EXACT_MOVE_COMMIT_PROOF:21committed moves/21tickets/history/intent receipts;20active paid entry2 seats/400000chips;40paid registrations/64movements/264000000TEST units unchanged;no pending reservations or duplicate retries"
 fi

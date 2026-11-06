@@ -1143,6 +1143,43 @@ test('current Floor bust and player reentry preserve separate paid entry generat
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('current Floor exact movement conserves paid chips and retries through HTTP',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_EXACT_MOVE_ENABLED!=='1','Fifth isolated stage after revenue conservation');test.setTimeout(120_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
+ type Table={tournament_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;control_mode:string;seats:Seat[]};
+ const roster=async()=>{const result=await rpc(owner,'get_floor_tournament_table_roster_v3',{p_tournament_id:tour});expect(Array.isArray(result.data)).toBe(true);return result.data as Table[];};
+ const intentFor=async(player:string)=>{
+  const tables=await roster(),source=tables.find(t=>t.seats.some(s=>s.player_id===player));expect(source).toBeTruthy();
+  const seat=source!.seats.find(s=>s.player_id===player)!;expect(seat.entry_no).toBe(2);expect(seat.chip_count).toBe(20000);expect(source!.control_mode).toBe('manual');
+  const destination=tables.find(t=>t.tournament_table_id!==source!.tournament_table_id&&t.control_mode==='manual'&&t.seats.length<9);expect(destination).toBeTruthy();
+  const target=Array.from({length:9},(_,n)=>n+1).find(n=>!destination!.seats.some(s=>s.seat_number===n));expect(target).toBeTruthy();
+  return {p_entry_id:seat.entry_id,p_from_tournament_table_id:source!.tournament_table_id,p_from_table_session_id:source!.table_session_id,p_to_tournament_table_id:destination!.tournament_table_id,p_to_table_session_id:destination!.table_session_id,p_to_seat_number:target!,p_expected_source_revision:source!.session_revision,p_expected_destination_revision:destination!.session_revision,p_expected_source_epoch:source!.control_epoch,p_expected_destination_epoch:destination!.control_epoch,p_reason:'isolated exact-move latency TEST',p_request_id:crypto.randomUUID()};
+ };
+ const rows:{ackMs:number;retryMs:number;independentReadMs:number}[]=[];let phase='authorization';let race:unknown=null;
+ const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-exact-move-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_EXACT_MOVE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,graded:20,warmup:0,rows,distributions:Object.fromEntries(['ackMs','retryMs','independentReadMs'].map(key=>[key,dist(rows.map(row=>row[key as keyof typeof row]))])),race,qualification:false,limitations:'Twenty serial moves of distinct paid entry2 players by20authorized cashier actors;manual-mode empty target seats in disposable9-max fixtures. Actual current v2/v3/v4/v5/queue writer bodies are production-hash pinned. Placement/independent owner reads use captured roster plus exact32 display patch,not the full current production reader. One21st move has20same-key concurrent requests from actor0. No browser move latency,active-hand deferred move,redraw,multiday-final runtime or mixed1000-viewer claim.'},null,2));
+ try{
+  // This identity is created only inside the isolated harness, and owns a
+  // different fixture club. Cashiers of this tour are legitimately operators.
+  const otherLogin=await fetch(api+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({email:'other-owner-latency@test.invalid',password:'OtherOwnerLatencyFixture-2026!'}),signal:AbortSignal.timeout(5000)});expect(otherLogin.ok).toBe(true);const otherSession=await otherLogin.json();expect(typeof otherSession.access_token).toBe('string');
+  const initial=await intentFor(staff[0].userId);expect((await rpc(otherSession.access_token,'move_player_seat_v5',initial)).data.error).toBe('actor_not_allowed');
+  expect((await rpc(owner,'move_player_seat_v5',{...initial,p_expected_source_epoch:initial.p_expected_source_epoch+1,p_request_id:crypto.randomUUID()})).data.error).toBe('STALE_CONTROL_EPOCH');
+  expect((await rpc(owner,'move_player_seat_v5',{...initial,p_expected_source_revision:initial.p_expected_source_revision+1,p_request_id:crypto.randomUUID()})).data.error).toBe('STALE_STATE');
+  phase='serial';
+  for(const identity of staff){
+   const intent=await intentFor(identity.userId),first=await rpc(identity.token,'move_player_seat_v5',intent);expect(first.data.ok).toBe(true);expect(first.data.reason).toBe(intent.p_reason);
+   const retry=await rpc(identity.token,'move_player_seat_v5',intent);expect(retry.data).toEqual(first.data);
+   const started=performance.now(),tables=await roster(),seats=tables.flatMap(t=>t.seats.filter(s=>s.entry_id===intent.p_entry_id).map(s=>({table:t,seat:s})));expect(seats).toHaveLength(1);expect(seats[0].table.tournament_table_id).toBe(intent.p_to_tournament_table_id);expect(seats[0].table.table_session_id).toBe(intent.p_to_table_session_id);expect(seats[0].seat.seat_number).toBe(intent.p_to_seat_number);expect(seats[0].seat.chip_count).toBe(20000);expect(seats[0].seat.entry_no).toBe(2);
+   rows.push({ackMs:first.ms,retryMs:retry.ms,independentReadMs:performance.now()-started});report();
+   expect((await rpc(identity.token,'move_player_seat_v5',{...intent,p_reason:intent.p_reason+' changed'})).data.error).toBe('IDEMPOTENCY_CONFLICT');
+  }
+  phase='same-key-race';const intent=await intentFor(staff[0].userId),results=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'move_player_seat_v5',intent)));for(const result of results){expect(result.data.ok).toBe(true);expect(result.data).toEqual(results[0].data);}race={requests:20,identicalResults:true,latency:dist(results.map(r=>r.ms))};
+  expect(rows).toHaveLength(20);expect(dist(rows.map(row=>row.ackMs)).p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
 test('current owner rake closes once and exports the immutable event-day snapshot',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_BUY_CLOSE_ENABLED!=='1','Fourth isolated stage after reentry conservation');test.setTimeout(120_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';

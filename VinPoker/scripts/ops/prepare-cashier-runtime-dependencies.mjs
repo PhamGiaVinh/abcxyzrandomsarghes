@@ -6,6 +6,8 @@ import { isAbsolute } from 'node:path';
 // Exact missing private dependencies, not a migration replay or permissive stub.
 const output = process.argv[2];
 assert.ok(output && isAbsolute(output), 'absolute disposable output required');
+const restoreClockPre32 = process.argv[3] === '--restore-clock-pre32';
+assert.ok(process.argv.length === 3 || (process.argv.length === 4 && restoreClockPre32), 'unsupported dependency mode');
 const sources = [
   readFileSync(new URL('../../supabase/pending-migrations/20260924165219_centerpoint_tournament_ops_release_v1.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('../../supabase/pending-migrations/20260924065041_tv_layout_editor_v1.sql', import.meta.url), 'utf8'),
@@ -58,5 +60,35 @@ for (const signature of ['tournament_entry_display_v1(uuid,uuid,uuid,integer)', 
   statements.push(`ALTER FUNCTION floor_private.${signature} OWNER TO postgres;`, `REVOKE ALL ON FUNCTION floor_private.${signature} FROM PUBLIC, anon, authenticated, service_role;`);
 }
 statements.push('SET check_function_bodies = true;');
+if (restoreClockPre32) {
+  // The startup fixture restores only two private readers from31/32. Before
+  // replaying complete32, reverse that exact fixture-only partial restoration.
+  // No public writer/source rows, grants or original migration guard change.
+  const restore = ["BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s';",
+    `DO $$ DECLARE e record;p pg_proc%ROWTYPE;BEGIN
+      FOR e IN SELECT * FROM (VALUES
+       ('floor_private.tournament_participation_v1(uuid)','b9624adaa8d7bb35713917486c40fe67'),
+       ('floor_private.tournament_entry_display_v1(uuid,uuid,uuid,integer)','1fa4fcae06f56774b40913b83a6b239a')
+      ) v(signature,digest) LOOP
+       SELECT * INTO STRICT p FROM pg_proc WHERE oid=e.signature::regprocedure;
+       IF md5(replace(p.prosrc,chr(13),''))<>e.digest OR p.proowner<>'postgres'::regrole
+        OR NOT p.prosecdef OR p.provolatile<>'s' OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
+        OR has_function_privilege('anon',p.oid,'EXECUTE') OR has_function_privilege('authenticated',p.oid,'EXECUTE')
+        OR has_function_privilege('service_role',p.oid,'EXECUTE')
+       THEN RAISE EXCEPTION 'isolated_partial_clock_restoration_drift: %',e.signature;END IF;
+      END LOOP;
+      IF to_regprocedure('floor_private.preserve_tournament_seat_display_v1()') IS NOT NULL
+       OR EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_seats'::regclass AND tgname='trg_tournament_seat_display_preserve_v1')
+      THEN RAISE EXCEPTION 'isolated_complete_display_migration_already_present';END IF;
+     END $$;`,
+    participation[0],
+    'DROP FUNCTION floor_private.tournament_entry_display_v1(uuid,uuid,uuid,integer) RESTRICT;',
+    `DO $$ BEGIN IF md5(replace((SELECT prosrc FROM pg_proc WHERE oid='floor_private.tournament_participation_v1(uuid)'::regprocedure),chr(13),''))<>'995b184cdb355082b73af4a75521c7ae'
+      THEN RAISE EXCEPTION 'isolated_pre32_participation_restore_failed';END IF;END $$;`,
+    'COMMIT;'];
+  writeFileSync(output, restore.join('\n') + '\n', { mode: 0o600 });
+  console.log('EXACT_PARTIAL_CLOCK_FIXTURE_REVERSAL_PREPARED');
+} else {
 writeFileSync(output, statements.join('\n') + '\n', { mode: 0o600 });
 console.log('EXACT_CASHIER_PRIVATE_RUNTIME_DEPENDENCIES_PREPARED');
+}
