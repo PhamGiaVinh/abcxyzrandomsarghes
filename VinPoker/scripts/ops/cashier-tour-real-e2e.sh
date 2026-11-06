@@ -1174,7 +1174,7 @@ install_current_action_schema() {
   # Restore their original guarded migrations before qualifying supplied actions.
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v install_phase="${1:-stage}" <<'ACTION_GUARD_PREFLIGHT'
 SELECT set_config('vinpoker.isolated_action_install', :'install_phase',false);
-DO $ BEGIN
+DO $$ BEGIN
  IF current_user<>'postgres' OR NOT EXISTS(SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id=t.club_id
   WHERE t.id='a3000000-0000-4000-8000-000000000001' AND t.name='Cashier Edge TEST Tour'
    AND c.id='a2000000-0000-4000-8000-000000000001' AND c.name='Cashier Edge TEST')
