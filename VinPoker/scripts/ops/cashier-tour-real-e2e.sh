@@ -530,6 +530,19 @@ REPORT_PREFLIGHT
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     <"$repo_root/supabase/migrations/20270128000289_dealer_checkout_atomic_v1.sql"
   echo "CHECKOUT_SCHEMA_PROOF: exact289 with original dependency/collision guards; disposable current runtime only"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    <"$repo_root/supabase/migrations/20270128000112_cashier_cash_intent_receipts_v1.sql"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CASH_INTENT_PARITY'
+DO $$ BEGIN
+ IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.cashier_record_cash_buyin_v1(uuid,bigint,uuid)'::regprocedure)<>'96a76df15097db2e6186763497e5420c'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.resolve_cashier_cash_buyin_intent_v1(jsonb,text)'::regprocedure)<>'563ea4b337a1b3762a82a75ddce68901'
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='floor_private.cashier_cash_existing_intent_v1(uuid,uuid,uuid,uuid,bigint,uuid)'::regprocedure)<>'65eb0f8a93dcf03c4238be8af03b2768'
+ OR has_function_privilege('anon','public.resolve_cashier_cash_buyin_intent_v1(jsonb,text)','EXECUTE')
+ OR NOT has_function_privilege('authenticated','public.resolve_cashier_cash_buyin_intent_v1(jsonb,text)','EXECUTE')
+ THEN RAISE EXCEPTION 'isolated_cash_intent_production_contract_mismatch';END IF;
+END $$;
+CASH_INTENT_PARITY
+  echo "CASH_INTENT_SCHEMA_PROOF: exact112 original guards and three read-only production body fingerprints; partial-payment contract only, not modern seating"
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHECKIN_PREFLIGHT'
 DO $$ BEGIN
  IF to_regprocedure('public.operator_check_in_dealer_v1(uuid,uuid,uuid,uuid)') IS NOT NULL
@@ -930,6 +943,16 @@ if [[ "$schema_mode" == current ]]; then
       (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in');")"
   if [[ "$checkin_state" != "$checkin_dealer_count|$((checkin_dealer_count + 1))|0|1" ]]; then echo "Check-in committed-state or tenant-denial postcondition failed ($checkin_state)" >&2; exit 1; fi
   echo "CHECKIN_COMMIT_PROOF:${checkin_dealer_count}staff attendances/receipts plus1other-tenant seeded attendance/receipt; exact retries did not duplicate; denied-write dealer unchanged"
+  cash_intent_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+    "WITH registrations AS (SELECT r.* FROM public.tournament_registrations r WHERE r.tournament_id='a3000000-0000-4000-8000-000000000001'
+      AND r.player_id IN (SELECT user_id FROM public.club_cashiers WHERE club_id='a2000000-0000-4000-8000-000000000001' AND user_id<>'$owner_id'::uuid))
+     SELECT (SELECT count(*) FROM registrations),(SELECT bool_and(status='pending' AND cashier_paid_at IS NULL) FROM registrations),
+      (SELECT count(*) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT sum(m.applied_amount) FROM public.cashier_buyin_movements m JOIN registrations r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin'),
+      (SELECT count(*) FROM public.tournament_entries e JOIN registrations r ON r.id=e.registration_id),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='cashier_cash_buyin_v2');")"
+  if [[ "$cash_intent_state" != '20|t|24|24000|0|25' ]]; then echo "Cashier partial intent committed-state conservation failed ($cash_intent_state)" >&2; exit 1; fi
+  echo "CASH_INTENT_COMMIT_PROOF:20server-priced pending registrations;24cash movements/24000TEST units;25recorded/cancelled receipts;no entries or paid markers"
 fi
 
 refund_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c \

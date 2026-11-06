@@ -1019,3 +1019,61 @@ test('twenty distinct Floor actors sustain the four-reader reconciliation cadenc
   if(cleanupFailures)phase='cleanup-failed';report();expect(cleanupFailures).toBe(0);
  }
 });
+
+test('current Cashier partial-cash intent HTTP, duplicate recovery and real browser journal',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated contract only');test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
+ const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
+ const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
+ const registrations:string[]=[],rows:{warmup:boolean;actor:number;ackMs:number;retryMs:number;independentReadMs:number}[]=[];
+ const totals=Array(20).fill(0) as number[];let phase='register',uiMs:number|null=null,race:unknown=null;
+ const distribution=(field:'ackMs'|'retryMs'|'independentReadMs')=>{const values=rows.filter(r=>!r.warmup).map(r=>r[field]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-cash-intent-partial-http.json'),JSON.stringify({
+  kind:'REAL_AUTH_CURRENT_CASHIER_PARTIAL_INTENT_HTTP_AND_BROWSER_JOURNAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,warmup:2,graded:20,rows,
+  distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),independentRead:distribution('independentReadMs')},ui:{samples:uiMs===null?0:1,clickToVerifiedRowMs:uiMs},race,
+  qualification:false,limitations:'Actual112contract matches three read-only production function-body fingerprints. Server-priced registrations use the actual registration Edge. Twenty serial graded partial payments from distinct Auth cashiers;two warmups pay the first two registrations once more. One real browser journal payment,not20UI samples. Duplicate contenders may return busy and then recover by the same immutable intent. No full payment,seating,re-entry,undo,prize,close-buy,export or mixed1000-viewer capacity claim.',
+ },null,2));
+ const worklist=async()=>{const result=(await rpc(owner,'cashier_tour_worklist_v1',{p_club_id:club,p_tournament_id:tour,p_query:'',p_bucket:'all',p_page:0,p_limit:50})).data;expect(result.ok).toBe(true);expect(Array.isArray(result.rows)).toBe(true);return result.rows as {id:string;received:number;status:string;total_pay:number}[];};
+ const verify=async(actor:number)=>{const row=(await worklist()).find(r=>r.id===registrations[actor]);expect(row).toBeTruthy();expect(Number(row!.received)).toBe(totals[actor]);expect(Number(row!.total_pay)).toBe(6600000);expect(row!.status).toBe('pending');};
+ const intent=(actor:number)=>({actor_id:staff[actor].userId,club_id:club,tournament_id:tour,registration_id:registrations[actor],amount:1000,request_id:crypto.randomUUID()});
+ try{
+  for(const identity of staff){
+   const response=await fetch(api+'/functions/v1/tournament-register',{method:'POST',headers:headers(identity.token),body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});
+   const result=await response.json();expect(response.ok).toBe(true);expect(result.success).toBe(true);expect(Number(result.total_pay)).toBe(6600000);expect(result.registration_id).toMatch(/^[a-f0-9-]{36}$/);registrations.push(result.registration_id);
+  }
+  expect(new Set(registrations).size).toBe(20);
+  const shiftResponse=await fetch(api+'/rest/v1/cashier_till_shifts?select=id&club_id=eq.'+club+'&closed_at=is.null',{headers:headers(owner),signal:AbortSignal.timeout(5000)});
+  expect(shiftResponse.ok).toBe(true);expect(await shiftResponse.json()).toEqual([{id:'a5000000-0000-4000-8000-000000000001'}]);
+  phase='serial';
+  for(let iteration=0;iteration<22;iteration++){
+   const actor=iteration<2?iteration:iteration-2,payment=intent(actor);
+   const first=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});
+   expect(first.data.ok).toBe(true);expect(first.data.status).toBe('recorded');expect(first.data.result.payment_state).toBe('partial');totals[actor]+=1000;expect(Number(first.data.result.received)).toBe(totals[actor]);
+   const retry=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(retry.data).toEqual(first.data);
+   const readStarted=performance.now();await verify(actor);rows.push({warmup:iteration<2,actor,ackMs:first.ms,retryMs:retry.ms,independentReadMs:performance.now()-readStarted});report();
+  }
+  phase='duplicate-race';const raced=intent(0);
+  const responses=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:raced,p_action:'record'})));
+  expect(responses.some(r=>r.data.status==='recorded')).toBe(true);
+  for(const reply of responses)expect(reply.data.status==='recorded'||reply.data.error==='cash_intent_busy').toBe(true);
+  const settled=(await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:raced,p_action:'read'})).data;expect(settled.status).toBe('recorded');
+  for(const reply of responses.filter(r=>r.data.status==='recorded'))expect(reply.data).toEqual(settled);
+  const recovered=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:raced,p_action:'read'})));
+  for(const reply of recovered)expect(reply.data).toEqual(settled);totals[0]+=1000;await verify(0);
+  race={requests:20,initialRecorded:responses.filter(r=>r.data.status==='recorded').length,initialBusy:responses.filter(r=>r.data.error==='cash_intent_busy').length,recoveredIdentical:20,independentMoneyDelta:1000};
+  const otherActor=(await rpc(staff[1].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:raced,p_action:'record'})).data;expect(otherActor.error).toBe('actor_not_allowed');
+  const otherClub=(await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:{...raced,club_id:'ad200000-0000-4000-8000-000000000002'},p_action:'record'})).data;expect(otherClub.error).toBe('actor_not_allowed');
+  const cancelledIntent=intent(0),cancelled=(await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:cancelledIntent,p_action:'cancel'})).data;expect(cancelled.status).toBe('cancelled');
+  expect((await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:cancelledIntent,p_action:'record'})).data).toEqual(cancelled);await verify(0);
+  phase='browser-journal';await page.setViewportSize({width:1280,height:900});await page.goto('/ops/cashier/tour?club='+club);
+  await page.getByRole('button',{name:/^Cashier Edge TEST Tour ·/}).first().click();await page.getByRole('button',{name:/^Chờ tại quầy/}).click();
+  const participant=()=>page.getByRole('button',{name:/^Cashier latency TEST 1\b/});await participant().click();
+  await page.getByLabel('Nhận tiền mặt (VND)',{exact:true}).fill('1000');const button=page.getByRole('button',{name:'Ghi nhận tiền mặt',exact:true});await expect(button).toBeEnabled();
+  const paymentResponse=page.waitForResponse(r=>r.url().endsWith('/rpc/resolve_cashier_cash_buyin_intent_v1')&&r.request().postDataJSON()?.p_action==='record');
+  const started=performance.now();await button.click();const response=await paymentResponse,result=await response.json();expect(response.ok()).toBe(true);expect(result.status).toBe('recorded');expect(result.intent.actor_id).not.toBe(staff[0].userId);expect(result.intent.registration_id).toBe(registrations[0]);
+  totals[0]+=1000;await expect(participant()).toContainText('Đã xác minh 4.000 VND');uiMs=performance.now()-started;await verify(0);expect(uiMs).toBeLessThanOrEqual(3000);
+  expect(rows.filter(row=>!row.warmup)).toHaveLength(20);expect(distribution('ackMs').p95Ms).toBeLessThanOrEqual(1000);expect(distribution('retryMs').p95Ms).toBeLessThanOrEqual(1000);
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
