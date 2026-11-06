@@ -10,11 +10,11 @@ import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
-function rejectedPreflight(mode,realtime='0') {
+function rejectedPreflight(mode,realtime='0',operations='0',clock='0') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
-  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
+  const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };
   if (process.platform === 'win32') {
-    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
+    return spawnSync('wsl', ['-d', 'PokerVision-P16-4C-Eval', '--', 'env', `CASHIER_SCHEMA_MODE=${mode}`,`LOCAL_OPERATIONS_REALTIME=${realtime}`,`LOCAL_OPERATIONS_CANDIDATE_PROBE=${operations}`,`LOCAL_CLOCK_CANDIDATE_PROBE=${clock}`, 'SCHEMA_ARTIFACT_DIRECTORY=/missing-cashier-schema', 'bash', '-s'], { encoding: 'utf8', input: script.replaceAll('\r\n', '\n') });
   }
   return spawnSync('bash', [filename], { encoding: 'utf8', env });
 }
@@ -127,4 +127,25 @@ test('both paths retain money/refund and network/secret/cron guards', () => {
     assert.ok(script.includes(marker), marker);
   }
   assert.ok(script.indexOf('Unsupported Cashier schema mode') < script.indexOf('test_root='));
+});
+
+test('candidate operations mode rejects unsafe or ambiguous combinations before allocating resources',()=>{
+  for(const [mode,realtime,operations,clock]of [['pre03','0','1','0'],['current','0','1','0'],['current','1','invalid','0'],['current','1','1','1']]){
+    const result=rejectedPreflight(mode,realtime,operations,clock);
+    assert.equal(result.status,1);assert.match(result.stderr,/Candidate operations probe requires current isolated Realtime mode and excludes clock-only mode/);
+  }
+  const valid=rejectedPreflight('current','1','1','0');
+  assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
+});
+
+test('shared flusher accepts exactly one candidate mode and retains disposable target guard',()=>{
+  const filename=fileURLToPath(new URL('./clock-candidate-broadcast.mjs',import.meta.url));
+  for(const [clock,operations]of [['0','0'],['1','1'],['invalid','0']]){
+    const result=spawnSync(process.execPath,[filename],{encoding:'utf8',env:{...process.env,LOCAL_CLOCK_CANDIDATE_PROBE:clock,LOCAL_OPERATIONS_CANDIDATE_PROBE:operations,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_CLOCK_CANDIDATE_STATUS:'/invalid-target'}});
+    assert.notEqual(result.status,0);assert.match(result.stderr,/Exactly one candidate probe mode is required/);
+  }
+  for(const [clock,operations]of [['1','0'],['0','1']]){
+    const result=spawnSync(process.execPath,[filename],{encoding:'utf8',env:{...process.env,LOCAL_CLOCK_CANDIDATE_PROBE:clock,LOCAL_OPERATIONS_CANDIDATE_PROBE:operations,CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_CLOCK_CANDIDATE_STATUS:'/invalid-target'}});
+    assert.notEqual(result.status,0);assert.match(result.stderr,/cashier-e2e-/);assert.doesNotMatch(result.stderr,/Exactly one candidate probe mode is required/);
+  }
 });

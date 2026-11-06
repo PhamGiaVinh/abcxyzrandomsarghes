@@ -6,6 +6,7 @@ schema_dir="${SCHEMA_ARTIFACT_DIRECTORY:-}"
 schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
 realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
 clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
+operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 case "$schema_mode" in
   pre03) ;;
   current)
@@ -20,6 +21,9 @@ if [[ "$realtime_mode" != 0 && "$realtime_mode" != 1 ]] || [[ "$realtime_mode" =
 fi
 if [[ "$clock_candidate_probe" != 0 && "$clock_candidate_probe" != 1 ]] || [[ "$clock_candidate_probe" == 1 && ( "$schema_mode" != current || "$realtime_mode" != 1 ) ]]; then
   echo 'Candidate clock probe requires explicit current isolated Realtime mode' >&2; exit 1
+fi
+if [[ "$operations_candidate_probe" != 0 && "$operations_candidate_probe" != 1 ]] || [[ "$operations_candidate_probe" == 1 && ( "$schema_mode" != current || "$realtime_mode" != 1 || "$clock_candidate_probe" != 0 ) ]]; then
+  echo 'Candidate operations probe requires current isolated Realtime mode and excludes clock-only mode' >&2; exit 1
 fi
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
@@ -57,7 +61,7 @@ ephemeral_containers=()
 cleanup() {
   local exit_code=$?
   if [[ -n "${clock_flush_pid:-}" ]]; then kill "$clock_flush_pid" 2>/dev/null || true; wait "$clock_flush_pid" 2>/dev/null || true; fi
-  if [[ "$exit_code" != 0 && "$clock_candidate_probe" == 1 && -n "${db_container:-}" ]]; then
+  if [[ "$exit_code" != 0 && ( "$clock_candidate_probe" == 1 || "$operations_candidate_probe" == 1 ) && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
     # Failure-only fixed TEST scope, counts and booleans. No payloads, message
     # bodies, schema definitions, actor data or credentials leave this runtime.
@@ -1073,7 +1077,23 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test "${test_args[@]}"
 }
-if [[ "$clock_candidate_probe" == 1 ]]; then
+finish_candidate_broadcast() {
+  kill -TERM "$clock_flush_pid"
+  wait "$clock_flush_pid"
+  clock_flush_pid=''
+  node --input-type=module - "$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" "$repo_root/output/operations-latency/clock-candidate-broadcast-bootstrap-http.json" <<'CLOCK_FLUSH_POSTCHECK'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(report.phase,'stopped');assert.equal(report.failures,0);
+assert.ok(report.completed>0);assert.ok(report.sent>0);
+const bootstrap=JSON.parse(readFileSync(process.argv[3],'utf8'));
+assert.equal(bootstrap.kind,'OWNED_CLOCK_REAL_BROADCAST_PUBLICATION_BOOTSTRAP');
+assert.equal(typeof bootstrap.before.publication_exists,'boolean');assert.equal(typeof bootstrap.before.messages_published,'boolean');
+assert.equal(bootstrap.messagesPublishedAfter,true);assert.equal(bootstrap.productionChanged,false);assert.equal(bootstrap.quotaChanged,false);
+CLOCK_FLUSH_POSTCHECK
+}
+if [[ "$clock_candidate_probe" == 1 || "$operations_candidate_probe" == 1 ]]; then
   # This is a separate integration probe, never historical proof or32case PASS.
   # All source guards and checksums remain intact; no hand/HUD read activation.
   node --input-type=module - "$repo_root" >"$test_root/clock-candidate-migrations.list" <<'CANDIDATE_PATHS'
@@ -1150,23 +1170,17 @@ CLOCK_BROADCAST_BOOTSTRAP
   LOCAL_CLOCK_CANDIDATE_REPORT="$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" \
     node "$repo_root/scripts/ops/clock-candidate-broadcast.mjs" &
   clock_flush_pid=$!
-  run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
-  kill -TERM "$clock_flush_pid"
-  wait "$clock_flush_pid"
-  clock_flush_pid=''
-  node --input-type=module - "$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" "$repo_root/output/operations-latency/clock-candidate-broadcast-bootstrap-http.json" <<'CLOCK_FLUSH_POSTCHECK'
-import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
-assert.equal(report.phase,'stopped');assert.equal(report.failures,0);
-assert.ok(report.completed>0);assert.ok(report.sent>0);
-const bootstrap=JSON.parse(readFileSync(process.argv[3],'utf8'));
-assert.equal(bootstrap.kind,'OWNED_CLOCK_REAL_BROADCAST_PUBLICATION_BOOTSTRAP');
-assert.equal(typeof bootstrap.before.publication_exists,'boolean');assert.equal(typeof bootstrap.before.messages_published,'boolean');
-assert.equal(bootstrap.messagesPublishedAfter,true);assert.equal(bootstrap.productionChanged,false);assert.equal(bootstrap.quotaChanged,false);
-CLOCK_FLUSH_POSTCHECK
-  echo 'CLOCK_CANDIDATE_PROOF:exact29 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
-  exit 0
+  if [[ "$clock_candidate_probe" == 1 ]]; then
+    run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
+    finish_candidate_broadcast
+    echo 'CLOCK_CANDIDATE_PROOF:exact29 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
+    exit 0
+  fi
+  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" <<'OPERATIONS_PACKAGE_APPLIED'
+import {writeFileSync} from 'node:fs';
+writeFileSync(process.argv[2],JSON.stringify({kind:'EXACT29_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:29,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. No mixed1000spectator capacity claim.'},null,2));
+OPERATIONS_PACKAGE_APPLIED
+
 fi
 run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
@@ -1723,4 +1737,15 @@ TELEGRAM_FIXTURE
     echo 'TELEGRAM_SYNTHETIC_PROOF:22canonical checkouts;20graded group/DM pairs;single-send20contender race;provider-failure retains checkout'
     run_browser_proof '' '' 'owner Intelligence reads match confirmed registration identities over real HTTP' '' '' '' '' '' '' '' '' '' '' 1
   fi
+fi
+
+if [[ "$operations_candidate_probe" == 1 ]]; then
+  finish_candidate_broadcast
+  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(report.phase,'package-applied');assert.equal(report.migrations,29);
+report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on exact29candidate. HUD reads/worker remain OFF; no mixed1000spectator capacity or hosted cron claim.';
+writeFileSync(process.argv[2],JSON.stringify(report,null,2));
+OPERATIONS_PACKAGE_FINISHED
 fi

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {loadPackage,MANIFEST_HASH} from './tracker-hud-20261104-release.mjs';
 
-assert.equal(process.env.LOCAL_CLOCK_CANDIDATE_PROBE,'1');
+const modes=[process.env.LOCAL_CLOCK_CANDIDATE_PROBE??'0',process.env.LOCAL_OPERATIONS_CANDIDATE_PROBE??'0'];
+assert.ok(modes.every(value=>value==='0'||value==='1')&&modes.filter(value=>value==='1').length===1,'Exactly one candidate probe mode is required');
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
 const source=process.env.LOCAL_CLOCK_CANDIDATE_STATUS,reportPath=process.env.LOCAL_CLOCK_CANDIDATE_REPORT;
@@ -15,7 +16,7 @@ assert.ok(status.SERVICE_ROLE_KEY.length>32);
 const pkg=loadPackage();
 let stopped=false,completed=0,sent=0,failures=0,phase='starting';
 const recentFlushes=[];
-const report=()=>writeFileSync(reportPath,JSON.stringify({kind:'ISOLATED_CANONICAL_CLOCK_REAL_HTTP_BROADCAST_FLUSH_ONLY',phase,manifestSha256:MANIFEST_HASH,migrations:pkg.entries.map(e=>({version:e.version,sha256:e.sha256})),fixturePredecessors:['20261103131615_payout_publication_after_cashier','20270128000299_participation_bagged_read_classification_v1'],completed,sent,failures,recentFlushes,qualification:false,productionChanged:false,limitations:'Host loop calls the unmodified service-only Broadcast flush RPC every1s. The stale retained capture is advanced through already-live payout and bagged reader migrations with exact private reader dependencies;not multi-day payout qualification. Not the Edge projector/cron/hand worker lifecycle,HUDreadactivation,backfill,32caseoperational suite or1000spectator capacity. No response bodies,frames,credentials or source definitions retained.'},null,2));
+const report=()=>writeFileSync(reportPath,JSON.stringify({kind:'ISOLATED_CANONICAL_CLOCK_REAL_HTTP_BROADCAST_FLUSH_ONLY',phase,probeMode:modes[0]==='1'?'clock-only':'operations',manifestSha256:MANIFEST_HASH,migrations:pkg.entries.map(e=>({version:e.version,sha256:e.sha256})),fixturePredecessors:['20261103131615_payout_publication_after_cashier','20270128000299_participation_bagged_read_classification_v1'],completed,sent,failures,recentFlushes,qualification:false,productionChanged:false,limitations:'Host loop calls the unmodified service-only Broadcast flush RPC every1s. The stale retained capture is advanced through already-live payout and bagged reader migrations with exact private reader dependencies;not multi-day payout qualification. Not the Edge projector/cron/hand worker lifecycle,HUDreadactivation,backfill,32caseoperational suite or1000spectator capacity. No response bodies,frames,credentials or source definitions retained.'},null,2));
 process.on('SIGTERM',()=>{stopped=true;});
 report();
 while(!stopped){

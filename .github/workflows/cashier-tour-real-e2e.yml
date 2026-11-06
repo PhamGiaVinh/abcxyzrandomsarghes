@@ -45,6 +45,11 @@ on:
         type: boolean
         default: false
 
+      operations_candidate_probe:
+        description: Full isolated operational stages against exact29candidate; not mixed1000spectator proof
+        type: boolean
+        default: false
+
 permissions:
   actions: read
   contents: read
@@ -138,6 +143,7 @@ jobs:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
           LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
+          LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier HTTP latency evidence
