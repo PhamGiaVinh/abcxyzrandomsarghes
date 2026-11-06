@@ -442,7 +442,7 @@ for(const scenario of ['concentrated','distributed','overview']){
       await until(()=>rpc('fixture_scale_hand_ready_v1',{p_hand_id:completed},true),15000,'projection_timeout');
       const endToEndMs=Date.now()-written,probe=readyProbeTimes.get(completed);
       assert.ok(probe&&probe.observedAt>=written,'Invalid fixture readiness clock');
-      workerProbeDiagnostics.push({scenario,endToEndMs,serverReadyUpperBoundMs:probe.observedAt-written,firstReadyReadMs:probe.readMs});
+      workerProbeDiagnostics.push({scenario,handId:completed,sourceWrittenAt:written,readyObservedAt:probe.observedAt,returnedAt:Date.now(),endToEndMs,serverReadyUpperBoundMs:probe.observedAt-written,firstReadyReadMs:probe.readMs});
       stats.projection.push(endToEndMs);
      }catch{error('projection_timeout');}finally{readyProbeTimes.delete(completed);}})());
      number++;step=0;hand=null;
