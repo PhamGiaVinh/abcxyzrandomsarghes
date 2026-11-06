@@ -232,6 +232,13 @@ export function observeAudienceSubscriptions(client,onStatus){
 
 // Bounded diagnostics for selected-table admission. No identifiers, payloads,
 // arbitrary errors or source values leave this helper; readiness is unchanged.
+const detailEvents=new Set(['selection','visibility','invalidate','request','dispatch','clock-commit','fenced','accepted','rejected']);
+export function recordAudienceDetailEvent(state,event,now=Date.now()){
+ if(!detailEvents.has(event))throw Error('Unknown detail diagnostic event');
+ const trace=state.detailTrace??=[];
+ trace.push({event,at:now,epoch:state.epoch??0,clockReady:state.clockReady===true,full:state.lastDetailFull===true});
+ if(trace.length>12)trace.shift();
+}
 export function audienceSelectionReadiness(clients,selection,now=Date.now()){
  if(!selection)return null;
  const counts={missing:0,offline:0,tableNotReady:0,clockNotReady:0,wrongTable:0,wrongSession:0,inFlight:0};
@@ -246,7 +253,8 @@ export function audienceSelectionReadiness(clients,selection,now=Date.now()){
   if(samples.length<20)samples.push({index,...flags,
    lastRequestAgeMs:c.detailStartedAt==null?null:Math.max(0,now-c.detailStartedAt),
    started:c.detailStarted??0,accepted:c.detailAccepted??0,fenced:c.detailFenced??0,rejected:c.detailRejected??0,
-   lastDetailFull:c.lastDetailFull===true,fullReads:c.detailFullReads??0,clockCommits:c.clockCommits??0,clockInvalidations:c.clockInvalidations??0});
+   lastDetailFull:c.lastDetailFull===true,fullReads:c.detailFullReads??0,clockCommits:c.clockCommits??0,clockInvalidations:c.clockInvalidations??0,
+   trace:(c.detailTrace??[]).map(({event,at,epoch,clockReady,full})=>({event,ageMs:Math.max(0,now-at),epoch,clockReady,full}))});
  }
  return {counts,samples};
 }

@@ -10,7 +10,7 @@ import {createClient} from '@supabase/supabase-js';
 import {settleScopedFeltRead} from '../../tests/publicHud/scale.delivery.mjs';
 import {createAudienceGenerationEvidence} from './operations-audience-generation.mjs';
 import {createOperationalHandDeliveryEvidence,validateHandDeliverySelection,readHandDeliveryJournal} from './operations-audience-hand-delivery.mjs';
-import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness,recordAudienceDetailEvent} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -151,7 +151,7 @@ const readBridge=()=>{
   for(const state of clients){
    state.epoch++;state.controller?.abort();state.detailController?.abort();
    state.tableId=next.tableId;state.ready=false;state.clockReady=false;state.observedSession=null;state.revision=null;
-   state.detailFull=true;state.detailCoordinator.request();
+   recordAudienceDetailEvent(state,'selection');state.detailFull=true;recordAudienceDetailEvent(state,'request');state.detailCoordinator.request();
   }
  }
  const journal=bridgeRoot+'/operations-hand-receipts.jsonl';
@@ -255,7 +255,7 @@ try{
    const controller=new AbortController(),timeout=AbortSignal.timeout(5000),signal=AbortSignal.any([controller.signal,timeout]);
    state.detailController=controller;const epoch=state.epoch,tableEpoch=loaded.observer.publicReadEpoch(client,tour,'tables');
    const full=state.detailFull||!state.clockReady;state.detailFull=false;
-   state.lastDetailFull=full;state.detailFullReads=(state.detailFullReads??0)+(full?1:0);
+   state.lastDetailFull=full;state.detailFullReads=(state.detailFullReads??0)+(full?1:0);recordAudienceDetailEvent(state,'dispatch');
    const started=Date.now();let physicalFailure=false;
    state.detailStartedAt=started;state.detailInFlight=true;state.detailStarted=(state.detailStarted??0)+1;
    // The table reader owns its physical5s deadline. Do not pass the clock's
@@ -286,11 +286,11 @@ try{
    track(tableRead.catch(()=>{}));track(clockRead.catch(()=>{}));
    const current=reply=>epoch===state.epoch&&loaded.observer.publicReadEpochIsCurrent(client,tour,'tables',tableEpoch)&&reply.data?.access==='public';
    try{
-    const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;state.clockCommits=(state.clockCommits??0)+1;});
-    if(stopping||!current(reply)){state.detailFenced=(state.detailFenced??0)+1;return;}
+    const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;state.clockCommits=(state.clockCommits??0)+1;recordAudienceDetailEvent(state,'clock-commit');});
+    if(stopping||!current(reply)){state.detailFenced=(state.detailFenced??0)+1;recordAudienceDetailEvent(state,'fenced');return;}
     assert.equal(reply.data.tableId,state.tableId);assert.match(reply.data.sourceGeneration,/^\d+$/);
     state.ready=true;state.observedSession=reply.data.tableSessionId;
-    state.detailAccepted=(state.detailAccepted??0)+1;
+    state.detailAccepted=(state.detailAccepted??0)+1;recordAudienceDetailEvent(state,'accepted');
     // Consumer visibility requires both the table and any full clock read,
     // plus current scope/epoch fences. Transport completion alone is earlier.
     handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now());
@@ -300,12 +300,12 @@ try{
     }
     state.observation.reportResult(true);
    }catch(cause){
-    state.detailRejected=(state.detailRejected??0)+1;
+    state.detailRejected=(state.detailRejected??0)+1;recordAudienceDetailEvent(state,'rejected');
     if(!physicalFailure){fail('spectator_detail_contract');diagnostic('spectator_detail_contract',cause);}
     state.observation.reportResult(false);
    }finally{state.detailInFlight=false;controller.abort();}
   })())):null;
-  state.clockCoordinator=selected?{request(){state.detailFull=true;state.detailCoordinator.request();},stop(){}}:loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
+  state.clockCoordinator=selected?{request(){state.detailFull=true;recordAudienceDetailEvent(state,'request');state.detailCoordinator.request();},stop(){}}:loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
    if(stopping)return;
    const started=Date.now(),epoch=loaded.observer.publicReadEpoch(client,tour,'clock');
    const controller=new AbortController(),timeout=AbortSignal.timeout(5000);state.clockController=controller;
@@ -336,7 +336,7 @@ try{
      else if(event.components.includes('visibility'))state.known={};
      else delete state.known.tables;
     }else{state.known={};state.dirty.add('tables');}
-    state.detailController?.abort();if(event.components.includes('visibility')){state.clockReady=false;state.clockInvalidations=(state.clockInvalidations??0)+1;}
+    state.detailController?.abort();if(event.components.includes('visibility')){state.clockReady=false;state.clockInvalidations=(state.clockInvalidations??0)+1;}recordAudienceDetailEvent(state,event.components.includes('visibility')?'visibility':'invalidate');
    }
    const clockSignal=audienceClockSignal(event);
    if(clockSignal.invalidate)state.clockController?.abort();
@@ -344,7 +344,7 @@ try{
    else for(const c of event.components)if(['tables','ranking','payout'].includes(c))state.dirty.add(c);
    if(event.components.includes('visibility'))for(const c of ['tables','ranking','payout'])state.dirty.add(c);
    if(state.dirty.size)state.coordinator.request();
-   if(selected&&event.components.some(c=>['tables','hand_visibility','visibility'].includes(c)))state.detailCoordinator.request();
+   if(selected&&event.components.some(c=>['tables','hand_visibility','visibility'].includes(c))){recordAudienceDetailEvent(state,'request');state.detailCoordinator.request();}
    if(clockSignal.reload)state.clockCoordinator.request();
   });
   state.coordinator.request();state.clockCoordinator.request();
