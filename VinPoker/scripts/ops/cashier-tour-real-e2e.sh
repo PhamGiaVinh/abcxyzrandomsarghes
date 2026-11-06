@@ -1113,6 +1113,39 @@ CLOCK_CANDIDATE_PREFLIGHT
   candidate_flags="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT enabled,worker_enabled,backfill_complete FROM tracker_analytics_v1.config WHERE singleton;')"
   [[ "$candidate_flags" == 'f|f|f' ]]
   docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
+  # Match the existing scale harness: initialize actual DB Broadcast publication
+  # before subscribers race lazy tenant setup. Record the observed prior state.
+  # This changes only the owned fresh fixture, not production or tenant quotas.
+  docker exec -i "$db_container" sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -X -Atq -v ON_ERROR_STOP=1 -U supabase_admin -d postgres' \
+    >"$repo_root/output/operations-latency/clock-candidate-broadcast-bootstrap-http.json" <<'CLOCK_BROADCAST_BOOTSTRAP'
+BEGIN;
+SET LOCAL lock_timeout='5s';
+SET LOCAL statement_timeout='10s';
+CREATE TEMP TABLE clock_broadcast_before AS
+ SELECT EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime_messages_publication') publication_exists,
+ EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid
+  WHERE p.pubname='supabase_realtime_messages_publication' AND r.prrelid='realtime.messages'::regclass) messages_published;
+DO $$ BEGIN
+ IF current_database()<>'postgres'
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='ac300000-0000-4000-8000-000000000001' AND name='Operations clock TEST')
+ OR EXISTS(SELECT 1 FROM tracker_analytics_v1.config WHERE enabled OR worker_enabled OR backfill_complete)
+ OR position('fixture_messages' IN pg_get_functiondef('realtime.send(jsonb,text,text,boolean)'::regprocedure))<>0
+ THEN RAISE EXCEPTION 'clock_broadcast_requires_owned_real_fixture';END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime_messages_publication') THEN
+  CREATE PUBLICATION supabase_realtime_messages_publication FOR TABLE realtime.messages;
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid
+  WHERE p.pubname='supabase_realtime_messages_publication' AND r.prrelid='realtime.messages'::regclass)
+ THEN RAISE EXCEPTION 'clock_broadcast_publication_not_ready';END IF;
+END $$;
+COMMIT;
+SELECT jsonb_build_object('kind','OWNED_CLOCK_REAL_BROADCAST_PUBLICATION_BOOTSTRAP',
+ 'observedAt',clock_timestamp(),'before',(SELECT to_jsonb(b) FROM clock_broadcast_before b),
+ 'messagesPublishedAfter',EXISTS(SELECT 1 FROM pg_publication_rel r JOIN pg_publication p ON p.oid=r.prpubid
+  WHERE p.pubname='supabase_realtime_messages_publication' AND r.prrelid='realtime.messages'::regclass),
+ 'productionChanged',false,'quotaChanged',false,'qualification',false);
+CLOCK_BROADCAST_BOOTSTRAP
   LOCAL_CLOCK_CANDIDATE_STATUS="$test_root/isolated-status.json" \
   LOCAL_CLOCK_CANDIDATE_REPORT="$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" \
     node "$repo_root/scripts/ops/clock-candidate-broadcast.mjs" &
@@ -1121,12 +1154,16 @@ CLOCK_CANDIDATE_PREFLIGHT
   kill -TERM "$clock_flush_pid"
   wait "$clock_flush_pid"
   clock_flush_pid=''
-  node --input-type=module - "$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" <<'CLOCK_FLUSH_POSTCHECK'
+  node --input-type=module - "$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" "$repo_root/output/operations-latency/clock-candidate-broadcast-bootstrap-http.json" <<'CLOCK_FLUSH_POSTCHECK'
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(report.phase,'stopped');assert.equal(report.failures,0);
 assert.ok(report.completed>0);assert.ok(report.sent>0);
+const bootstrap=JSON.parse(readFileSync(process.argv[3],'utf8'));
+assert.equal(bootstrap.kind,'OWNED_CLOCK_REAL_BROADCAST_PUBLICATION_BOOTSTRAP');
+assert.equal(typeof bootstrap.before.publication_exists,'boolean');assert.equal(typeof bootstrap.before.messages_published,'boolean');
+assert.equal(bootstrap.messagesPublishedAfter,true);assert.equal(bootstrap.productionChanged,false);assert.equal(bootstrap.quotaChanged,false);
 CLOCK_FLUSH_POSTCHECK
   echo 'CLOCK_CANDIDATE_PROOF:exact29 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
   exit 0
