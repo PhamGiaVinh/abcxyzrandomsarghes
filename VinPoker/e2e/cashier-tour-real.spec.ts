@@ -1210,13 +1210,15 @@ test('pending reentry transport rejects ambiguous payment account before creatio
  const response=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',
   headers:{apikey:anon,Authorization:`Bearer ${staff[0].token}`,'Content-Type':'application/json'},
   body:JSON.stringify({tournament_id:'a3000000-0000-4000-8000-000000000001'}),signal:AbortSignal.timeout(5000)});
- const body=await response.json();expect(response.status).toBe(503);
- expect(body).toEqual({error:'SePay master account is not exclusive to this club'});
+ const body=await response.json();
+ const expectedError='SePay master account is not exclusive to this club';
+ const errorKind=body?.error===expectedError?'ambiguous_master_account':body?.error==='entry_not_reenterable'?'entry_not_reenterable':body?.error==='CLB chưa cấu hình tài khoản nhận tiền.'?'missing_legacy_bank':body?.error==='Tournament has no club'?'tour_missing_club':'other';
  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-reentry-bank-ambiguity-http.json'),JSON.stringify({
   kind:'REAL_AUTH_COMPOSITE_REENTRY_BANK_AMBIGUITY_DENIAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  phase:'denied',httpStatus:response.status,elapsedMs:performance.now()-started,qualification:false,
+  phase:response.status===503&&body?.error===expectedError?'denied':'unexpected-response',httpStatus:response.status,errorKind,elapsedMs:performance.now()-started,qualification:false,
   limitations:'Ambiguous active bank fixture only;source and money preservation require the separate native before/after check. Not bank-outage,closed-buy race or1000-viewer proof.',
  },null,2));
+ expect(response.status).toBe(503);expect(body).toEqual({error:expectedError});
 });
 
 test('current Floor bust and player reentry preserve separate paid entry generations',async({page})=>{

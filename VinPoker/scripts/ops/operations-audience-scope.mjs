@@ -245,7 +245,8 @@ export function audienceSelectionReadiness(clients,selection,now=Date.now()){
   counts.missing++;for(const key of Object.keys(flags))if(flags[key])counts[key]++;
   if(samples.length<20)samples.push({index,...flags,
    lastRequestAgeMs:c.detailStartedAt==null?null:Math.max(0,now-c.detailStartedAt),
-   started:c.detailStarted??0,accepted:c.detailAccepted??0,fenced:c.detailFenced??0,rejected:c.detailRejected??0});
+   started:c.detailStarted??0,accepted:c.detailAccepted??0,fenced:c.detailFenced??0,rejected:c.detailRejected??0,
+   lastDetailFull:c.lastDetailFull===true,fullReads:c.detailFullReads??0,clockCommits:c.clockCommits??0,clockInvalidations:c.clockInvalidations??0});
  }
  return {counts,samples};
 }

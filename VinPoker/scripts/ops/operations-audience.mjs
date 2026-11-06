@@ -255,6 +255,7 @@ try{
    const controller=new AbortController(),timeout=AbortSignal.timeout(5000),signal=AbortSignal.any([controller.signal,timeout]);
    state.detailController=controller;const epoch=state.epoch,tableEpoch=loaded.observer.publicReadEpoch(client,tour,'tables');
    const full=state.detailFull||!state.clockReady;state.detailFull=false;
+   state.lastDetailFull=full;state.detailFullReads=(state.detailFullReads??0)+(full?1:0);
    const started=Date.now();let physicalFailure=false;
    state.detailStartedAt=started;state.detailInFlight=true;state.detailStarted=(state.detailStarted??0)+1;
    // The table reader owns its physical5s deadline. Do not pass the clock's
@@ -285,7 +286,7 @@ try{
    track(tableRead.catch(()=>{}));track(clockRead.catch(()=>{}));
    const current=reply=>epoch===state.epoch&&loaded.observer.publicReadEpochIsCurrent(client,tour,'tables',tableEpoch)&&reply.data?.access==='public';
    try{
-    const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;});
+    const reply=await settleScopedFeltRead(tableRead,clockRead,current,()=>{state.clockReady=true;state.clockCommits=(state.clockCommits??0)+1;});
     if(stopping||!current(reply)){state.detailFenced=(state.detailFenced??0)+1;return;}
     assert.equal(reply.data.tableId,state.tableId);assert.match(reply.data.sourceGeneration,/^\d+$/);
     state.ready=true;state.observedSession=reply.data.tableSessionId;
@@ -335,7 +336,7 @@ try{
      else if(event.components.includes('visibility'))state.known={};
      else delete state.known.tables;
     }else{state.known={};state.dirty.add('tables');}
-    state.detailController?.abort();if(event.components.includes('visibility'))state.clockReady=false;
+    state.detailController?.abort();if(event.components.includes('visibility')){state.clockReady=false;state.clockInvalidations=(state.clockInvalidations??0)+1;}
    }
    const clockSignal=audienceClockSignal(event);
    if(clockSignal.invalidate)state.clockController?.abort();

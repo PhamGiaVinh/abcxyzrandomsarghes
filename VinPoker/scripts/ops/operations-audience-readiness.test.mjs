@@ -13,9 +13,9 @@ test('no selection reports unknown; all five actual readiness conditions must ho
 });
 test('diagnostics distinguish an unfinished request, fencing and rejected reads without arbitrary state',()=>{
  const report=audienceSelectionReadiness([{...ready,ready:false,detailStartedAt:100,detailInFlight:true,
-  detailStarted:4,detailAccepted:1,detailFenced:2,detailRejected:1,secret:'never-copy',error:Error('never-copy')}],selection,120);
+  detailStarted:4,detailAccepted:1,detailFenced:2,detailRejected:1,lastDetailFull:true,detailFullReads:3,clockCommits:1,clockInvalidations:2,secret:'never-copy',error:Error('never-copy')}],selection,120);
  assert.deepEqual(report.samples,[{index:0,offline:false,tableNotReady:true,clockNotReady:false,wrongTable:false,wrongSession:false,
-  inFlight:true,lastRequestAgeMs:20,started:4,accepted:1,fenced:2,rejected:1}]);
+  inFlight:true,lastRequestAgeMs:20,started:4,accepted:1,fenced:2,rejected:1,lastDetailFull:true,fullReads:3,clockCommits:1,clockInvalidations:2}]);
  assert.doesNotMatch(JSON.stringify(report),/private-|never-copy|old-session/);
 });
 test('1000 incomplete viewers retain counts but at most20 numeric-index samples',()=>{
