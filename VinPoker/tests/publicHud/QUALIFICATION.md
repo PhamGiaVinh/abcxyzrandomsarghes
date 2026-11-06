@@ -583,3 +583,29 @@ can miss short blocking windows;use server observedAt,not client receipt time.
 Queue age relative to restoration is not an exact restoration cohort when an
 existing job is re-enqueued. A300s diagnostic is not two1800s qualification and
 does not change any historical failed verdict.
+# Visibility restoration required-work cohort (2026-11-06)
+
+Forward migration `20261106025221` replaces the tournament-wide pending-hand
+wait with private required-work rows for each visibility generation. A hand
+completed after restoration enumeration does not keep the barrier alive.
+Registration occurs in the enqueue transaction and only when a hand job exists;
+new in-progress hands skipped by enqueue never create immortal required work.
+Only successful fenced publication/subtraction retires a hand's required rows.
+The separate player withdrawal block remains authoritative for source changes.
+
+Apply requires prepared reads and worker dispatch disabled, exclusive config/job
+locks and no outstanding lease tokens (including expired tokens). Pending work
+already behind a visibility cursor is conservatively registered by current source
+or old contribution ownership. No source-hand FK can erase subtraction work.
+The guarded reverse restores the exact previous two functions with reads/worker
+off and empty work; it retains the private derived table. A subsequent forward
+apply intentionally rejects that catalog until reviewed recovery is prepared.
+Normal runtime rollback still disables prepared reads before stopping workers.
+
+Native real-PostgreSQL tests cover later unrelated hands, draft hide/restore,
+enqueue no-ops, stale publication, transaction rollback, moves/deletes, an actual
+two-session visibility/source-versus-publisher race, existing cursor upgrade and
+independent withdrawal blocks. The 202-hand checkpoint test compares every
+contribution against the independent source classifier. These are correctness
+evidence, not the 1,000-viewer/1M-hand latency qualification. Re-run paired writer
+overhead and both full 30-minute scenarios on the resulting SHA before release.

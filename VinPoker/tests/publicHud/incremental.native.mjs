@@ -11,6 +11,7 @@ import {loadClassifier,createShadow,shadowSql} from '../../scripts/ops/tracker-h
 if(process.argv.includes('--initialize'))initialize();
 if(process.argv.includes('--enqueue-coalescing'))sql(readFileSync('supabase/migrations/20261104003100_public_hud_enqueue_write_coalescing.sql','utf8'));
 if(process.argv.includes('--initialize'))sql(readFileSync('supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql','utf8'));
+if(process.argv.includes('--initialize'))sql(readFileSync('supabase/migrations/20261106025221_public_hud_visibility_required_work.sql','utf8'));
 const directory=await mkdtemp(path.join(os.tmpdir(),'vinpoker-hud-native-'));
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(directory,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
 const {processPublicHudJobs}=await import(pathToFileURL(path.join(directory,'worker.mjs')));

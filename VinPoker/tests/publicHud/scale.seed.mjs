@@ -84,6 +84,7 @@ sql(readFileSync('supabase/migrations/20261104003000_public_hud_identity_members
 sql(readFileSync('supabase/migrations/20261104003100_public_hud_enqueue_write_coalescing.sql','utf8'));
 sql(readFileSync('supabase/migrations/20261105203358_spectator_compact_generation_lookup.sql','utf8'));
 sql(readFileSync('supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql','utf8'));
+sql(readFileSync('supabase/migrations/20261106025221_public_hud_visibility_required_work.sql','utf8'));
 const incrementalWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();
 if(process.env.PUBLIC_HUD_SCALE_SEED_REPORT)writeFileSync(path.join(path.dirname(process.env.PUBLIC_HUD_SCALE_SEED_REPORT),'writer-nested-plans.json'),JSON.stringify(diagnoseFixtureWriter(),null,2));
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(temp,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});

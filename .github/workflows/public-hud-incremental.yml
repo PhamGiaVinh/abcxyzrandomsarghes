@@ -131,6 +131,10 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_catalog_ci node tests/publicHud/visibilityRestoreCatalog.native.mjs --initialize
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_batch_ci
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_batch_ci node tests/publicHud/visibilityRestoreBatch.native.mjs --initialize
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_work_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_work_ci node tests/publicHud/visibilityWork.native.mjs --initialize
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_work_upgrade_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_work_upgrade_ci node tests/publicHud/visibilityWorkBootstrap.native.mjs --initialize
       - name: Read-only full source shadow and corruption detection
         run: |
           node --test scripts/ops/tracker-hud-shadow.test.mjs

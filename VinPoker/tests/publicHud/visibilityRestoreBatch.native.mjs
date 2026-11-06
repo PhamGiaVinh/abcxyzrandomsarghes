@@ -6,7 +6,7 @@ import {loadClassifier,createShadow,shadowSql} from '../../scripts/ops/tracker-h
 
 if(process.argv.includes('--initialize')){
  initialize();
- for(const file of ['20261104003100_public_hud_enqueue_write_coalescing.sql','20261106010000_public_hud_visibility_restore_reclassification.sql'])
+ for(const file of ['20261104003100_public_hud_enqueue_write_coalescing.sql','20261106010000_public_hud_visibility_restore_reclassification.sql','20261106025221_public_hud_visibility_required_work.sql'])
   sql(readFileSync('supabase/migrations/'+file,'utf8'));
 }
 const compiled=await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});
