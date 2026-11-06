@@ -103,21 +103,28 @@ if (restoreClockPre32) {
     `DO $$ BEGIN IF md5(replace((SELECT prosrc FROM pg_proc WHERE oid='floor_private.tournament_participation_v1(uuid)'::regprocedure),chr(13),''))<>'995b184cdb355082b73af4a75521c7ae'
       THEN RAISE EXCEPTION 'isolated_pre32_participation_restore_failed';END IF;END $$;`,
     ...rosterDependencies,
-    // The capture normalizes one CRLF function body. Original29 pins its raw
-    // pg_get_functiondef, so restore those exact source bytes before replay.
+    // Some local restore transports normalize the captured CRLF body. Original29
+    // pins its raw definition; preserve or restore those exact bytes before replay.
     // Require both normalized semantic identity and the original raw digest.
     `DO $$ DECLARE p pg_proc%ROWTYPE;d text;restored text;BEGIN
       SELECT * INTO STRICT p FROM pg_proc WHERE oid='floor_private.floor_apply_tracker_moves_after_hand_v1()'::regprocedure;
-      IF md5(p.prosrc)<>'8c1ebd7a420afbe687b7fc271147a1d7' OR p.proowner<>'postgres'::regrole
+      IF md5(replace(p.prosrc,chr(13),''))<>'8c1ebd7a420afbe687b7fc271147a1d7' OR p.proowner<>'postgres'::regrole
        OR NOT p.prosecdef OR p.provolatile<>'v' OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
        OR has_function_privilege('anon',p.oid,'EXECUTE') OR has_function_privilege('authenticated',p.oid,'EXECUTE')
        OR has_function_privilege('service_role',p.oid,'EXECUTE')
       THEN RAISE EXCEPTION 'isolated_deferred_consumer_capture_drift';END IF;
       d:=pg_get_functiondef(p.oid);
-      restored:=replace(d,p.prosrc,replace(p.prosrc,chr(10),chr(13)||chr(10)));
+      IF md5(d)='ed7983412e3eca2d7a0554441be78cb2' THEN
+       -- Linux restores retain the capture's exact CRLF body already.
+       restored:=d;
+      ELSE
+       IF md5(d)<>'f3752a7203b642ae2a6108a586c12e77' OR md5(p.prosrc)<>'8c1ebd7a420afbe687b7fc271147a1d7'
+       THEN RAISE EXCEPTION 'isolated_deferred_consumer_unknown_encoding';END IF;
+       restored:=replace(d,p.prosrc,replace(p.prosrc,chr(10),chr(13)||chr(10)));
+      END IF;
       IF md5(restored)<>'ed7983412e3eca2d7a0554441be78cb2'
       THEN RAISE EXCEPTION 'isolated_deferred_consumer_original_bytes_mismatch';END IF;
-      EXECUTE restored;
+      IF restored IS DISTINCT FROM d THEN EXECUTE restored;END IF;
       IF md5(pg_get_functiondef(p.oid))<>'ed7983412e3eca2d7a0554441be78cb2'
        OR (SELECT proacl FROM pg_proc WHERE oid=p.oid) IS DISTINCT FROM p.proacl
       THEN RAISE EXCEPTION 'isolated_deferred_consumer_restoration_failed';END IF;
