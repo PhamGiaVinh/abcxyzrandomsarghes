@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import {existsSync,writeFileSync} from 'node:fs';
 import {sql,jsonSql} from '../publicHud/nativeDb.mjs';
-const db='vinpoker_hud_test_showdown_20261107b';
-assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,db);
+const db=process.env.PUBLIC_HUD_LOCAL_DATABASE;
+assert.ok(['vinpoker_hud_test_showdown_20261107a','vinpoker_hud_test_showdown_20261107b'].includes(db));
 assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'||inet_server_port();"),db+'|127.0.0.1|55441');
-assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-owned-showdown-20261107b');
+assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-owned-showdown-20261107'+db.at(-1));
 assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname IN('pg_net','pg_cron'));"),'f');
 const output=process.env.NATIVE_FINAL_HAND_REPORT;
 assert.match(output??'',/^D:\/Quy-trinh-hud-scale-evidence\/showdown-final-hand-[a-z0-9-]+\.json$/);
@@ -25,6 +25,7 @@ save();
 try{
  assert.equal(sql("SELECT count(*) FROM public.tournament_hands WHERE tournament_id="+q(tour)+" AND hand_number=880003;"),'0','One-shot continuation; preserve completed attempts');
  const pre=jsonSql("SELECT jsonb_agg(chip_count ORDER BY chip_count) FROM public.tournament_seats WHERE tournament_id="+q(tour)+" AND is_active;");assert.deepEqual(pre,[100,200,59700]);
+ if(db.endsWith('a'))assert.equal(sql("SELECT count(*) FROM public.club_settings WHERE club_id='de780002-0000-4000-8000-000000000001' AND player_history_enabled;"),'1','History-enabled continuation requires explicit fixture configuration before the hand');
  const table=jsonSql("SELECT jsonb_build_object('id',t.id,'session',s.id,'epoch',s.control_epoch) FROM public.tournament_tables t JOIN public.table_sessions s ON s.id=t.table_session_id WHERE t.tournament_id="+q(tour)+" AND t.status='active' AND s.closed_at IS NULL;");assert.ok(table?.id);
  report.phase='start';save();
  rpc('start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:table.id,p_table_session_id:table.session,p_control_epoch:table.epoch,p_hand_number:880003,p_hand_time:new Date().toISOString(),p_created_by:owner,p_button_seat:1});
