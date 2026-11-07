@@ -1540,6 +1540,9 @@ CLOSE_PRIZE_CANDIDATE_PATH
     node "$repo_root/scripts/ops/prepare-prize-close-runtime-dependencies.mjs" "$test_root/prize-close-dependencies.sql"
     { printf '%s\n' "SET vinpoker.isolated_prize_close='current-full34-only';"; cat "$test_root/prize-close-dependencies.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    node "$repo_root/scripts/ops/prepare-manual-cards-runtime-dependencies.mjs" "$test_root/manual-cards-dependencies.sql"
+    { printf '%s\n' "SET vinpoker.isolated_manual_cards='current-http-showdown-only';"; cat "$test_root/manual-cards-dependencies.sql"; } |
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
   fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" "$correction_undo_probe" <<'OPERATIONS_PACKAGE_APPLIED'
@@ -2447,6 +2450,10 @@ DO $$ BEGIN
 END $$;
 INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
 VALUES('a3000000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST','registering','registering',now(),6000000,600000,0,false,0,0);
+INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
+VALUES('ac720001-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000005',1,100,200,0,20,false);
+UPDATE public.tournaments SET current_level=1,current_level_id='ac720001-0000-4000-8000-000000000001'
+WHERE id='a3000000-0000-4000-8000-000000000005';
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 VALUES('ac720000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST',94,'tournament','inactive','available');
 INSERT INTO public.club_settings(club_id,player_history_enabled) VALUES('a2000000-0000-4000-8000-000000000001',true)
@@ -2464,5 +2471,6 @@ PRIZE_CLOSE_FRESH_FIXTURE
   node --input-type=module - "$repo_root/output/operations-latency/cashier-http-prize-close-http.json" "$source_sha" <<'FINAL_PRIZE_CLOSE_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);assert.equal(r.paidRows,1);assert.equal(r.prizeTotal,18000000);assert.equal(r.reconcileDelta,0);assert.equal(r.qualification,false);
+assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000,20100]},{number:880002,pots:[59700,200],endings:[100,200,59700]},{number:880003,pots:[300,200],endings:[0,0,60000]}]);
 FINAL_PRIZE_CLOSE_RECEIPT
 fi
