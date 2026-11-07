@@ -9820,6 +9820,216 @@
       "filename": "20261102112426_staff_checkout_before_inactive_v1.sql",
       "sha256": "2b9a3fc094e562b149155c8145e8c71621d3f2975695b453c108a305a8cc7ce4",
       "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261104001500",
+      "filename": "20261104001500_public_hud_incremental_projection.sql",
+      "sha256": "23e5050d921adbe50f3739f3d6285c5defc69b4df606757f98d1a67277405771",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001600",
+      "filename": "20261104001600_public_hud_worker_rpc.sql",
+      "sha256": "96d41633e0dec3748c9f8d0a58ae591436af1965c2dc5c6d5ec8b08beb2f2398",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001700",
+      "filename": "20261104001700_public_hud_metadata_backfill.sql",
+      "sha256": "be1a386dd7e7318da5ecbc4558c117c8aed02ba851fa356893e6adfeda7ddd18",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001800",
+      "filename": "20261104001800_public_hud_read_contract.sql",
+      "sha256": "2b8af10ab68bc5f88eec2b885e4861d7d03a4e1c37d1d7f5d465bbb533388bc7",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001900",
+      "filename": "20261104001900_public_spectator_compact_generations.sql",
+      "sha256": "f49a87fa2a3bad952993d6703cce3cc6951d1281e20a1d87072415e2beffb6a3",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002000",
+      "filename": "20261104002000_public_hud_dispatch_health.sql",
+      "sha256": "283d9d6dc63b541f2ef704ca4c916c4ebf97485e826dc183b464c559f8071ba2",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002100",
+      "filename": "20261104002100_public_current_hand_bounded.sql",
+      "sha256": "ba66dccf215d578425a7cc52f891cf646ddc1f43d0a07946ae980b2444ec6d8d",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002200",
+      "filename": "20261104002200_public_tracker_read_plan_reuse.sql",
+      "sha256": "b9f59c22a9004aa888f88c45523e8f55f204f6345ae46a9131212fb5aa137eae",
+      "reason": "Tracker public read plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002300",
+      "filename": "20261104002300_tracker_participation_read_plan_reuse.sql",
+      "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
+      "reason": "Tracker canonical participation plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002400",
+      "filename": "20261104002400_public_hud_history_ordered_page.sql",
+      "sha256": "ebdee90872c0f14baeda9bad6404ebf9093d16aeec975bd5b263f215c347170a",
+      "reason": "Tracker ordered HUD history page; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002500",
+      "filename": "20261104002500_public_clock_read_plan_reuse.sql",
+      "sha256": "9293856d227d8675737a6930bb7d35755a3f0b4a1332aca6a9641e2892daf240",
+      "reason": "Tracker public clock plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002600",
+      "filename": "20261104002600_public_hud_summary_batch.sql",
+      "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
+      "reason": "Tracker bounded public HUD snapshot batch; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002700",
+      "filename": "20261104002700_public_current_table_prepared_reads.sql",
+      "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
+      "reason": "Tracker prepared public current-table reads; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002800",
+      "filename": "20261104002800_public_hud_identity_ordered_lookup.sql",
+      "sha256": "30b558d20c8afd0857fcd661b396c7b46a18825f5ca220738a99bebed125241a",
+      "reason": "Tracker ordered private HUD identity lookup; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002900",
+      "filename": "20261104002900_public_hud_identity_membership_lookup.sql",
+      "sha256": "31a1db41893bff8f01a8a0f2870754441121231ae74f4fe19c6df87fe229fe22",
+      "reason": "Tracker primary-key membership lookup preserving public HUD identity scope; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003000",
+      "filename": "20261104003000_public_hud_identity_membership_keyset.sql",
+      "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
+      "reason": "Tracker keyset membership lookup preserving invalid-parent gates; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003100",
+      "filename": "20261104003100_public_hud_enqueue_write_coalescing.sql",
+      "sha256": "1c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b",
+      "reason": "Tracker coalesced derived HUD enqueue writes preserving withdrawal and lease fencing; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003200",
+      "filename": "20261104003200_public_clock_counts_only.sql",
+      "sha256": "e6152212aa102d02aee1675f129c22a058b20c528e45414371bc6bbc1bfeddc2",
+      "reason": "Tracker scoped public clock counts-only projection preserving canonical counters, public visibility and ACL; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003300",
+      "filename": "20261104003300_public_hud_null_proof_short_circuit.sql",
+      "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
+      "reason": "Tracker missing-proof numeric validation short circuit preserving unknown stack, JSON validation and ACL; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003400",
+      "filename": "20261104003400_public_hud_result_withdrawal_scope.sql",
+      "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
+      "reason": "Profile result withdrawal retains global HUD access invalidation without reloading unrelated tournament components; hand and tournament withdrawal remain unchanged. Exact package approval required."
+    },
+    {
+      "version": "20261105044028",
+      "filename": "20261105044028_public_hud_hand_withdrawal_scope.sql",
+      "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
+      "reason": "Scoped hand withdrawal preserves immediate HUD/live/replay clearing and old-client full visibility while avoiding unrelated metadata reload. Exact package approval required."
+    },
+    {
+      "version": "20261105072714",
+      "filename": "20261105072714_public_hud_history_amounts_materialized.sql",
+      "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
+      "reason": "Materialize four validated settlement amounts once per bounded history row. Preserves source, proof, pagination, unknown stacks and ACL. Exact package approval required."
+    },
+    {
+      "version": "20261105200303",
+      "filename": "20261105200303_public_hud_history_unverified_seed_short_circuit.sql",
+      "sha256": "6c44386dd744d4d8d8d56841f9e73cf483ff94834beed0eb8aa156813fb58d92",
+      "reason": "Skip redundant starting-stack lookup only without a verified outcome. Preserves raw membership, proof validation, unknown values and pagination. Exact package approval required."
+    },
+    {
+      "version": "20261105203358",
+      "filename": "20261105203358_spectator_compact_generation_lookup.sql",
+      "sha256": "e50c41cfb36d5ec82bdfcafac9e9be68dabe9f76a5c5c47df1ec333956ecebe6",
+      "reason": "Private partial index for compact component generations while retaining historical markers. Preserves writer, fencing, source, RLS and ACL. Exact package approval required."
+    },
+    {
+      "version": "20261105213000",
+      "filename": "20261105213000_public_hud_claim_source_batch.sql",
+      "sha256": "453fbcb692d45f2c7a35d45a3e13fd79fe0aa15cf64dbcba29fe083afcff139d",
+      "reason": "Service-only canonical claim plus source batching. Preserves limits, lease and publication fences. Exact package approval required before production apply."
+    },
+    {
+      "version": "20261106010000",
+      "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
+      "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
+      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved26-migration package is required before production apply."
+    },
+    {
+      "version": "20261106025221",
+      "filename": "20261106025221_public_hud_visibility_required_work.sql",
+      "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
+      "reason": "Private visibility-generation required-work tracking with fenced completion, resumable pending-cursor upgrade and disabled-reader/worker/no-lease apply guards. Exact owner-approved27-migration package required before production apply."
+    },
+    {
+      "version": "20261106105930",
+      "filename": "20261106105930_public_clock_numeric_buy_in.sql",
+      "sha256": "29c7132c6d1690114fb467d19727ba3e5e752da63dff114f67132f8b67603711",
+      "reason": "Read-only numeric buy-in coercion restores the canonical SQL clock output contract on production bigint source columns. Preserves source, clock rules, owner/ACL and visibility. Exact owner-approved28-migration package required before production apply."
+    },
+    {
+      "version": "20261106111519",
+      "filename": "20261106111519_public_hud_visibility_work_wakeup.sql",
+      "sha256": "8aa0c2a11fd69abfc412c87481b167578bf4b659cb38e7c4611d0793670b73aa",
+      "reason": "Successful fenced child publication may accelerate only its unleased matching-generation visibility parent through SKIP LOCKED. Busy parents retain existing retries; source/counters/barriers/leases are unchanged. Exact owner-approved29-migration package required."
+    },
+    {
+      "version": "20261106144208",
+      "filename": "20261106144208_public_spectator_source_lease_outcome.sql",
+      "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
+      "reason": "Exact stale-lease receipt after existing service authorization; no source payload or authority for old workers. Keeps publication fencing. Requires quiesced spectator worker, no active leases and exact owner-approved30-migration package before production apply."
+    },
+    {
+      "version": "20261106184814",
+      "filename": "20261106184814_public_table_clock_read_bundle.sql",
+      "sha256": "4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057",
+      "reason": "Fresh public table and clock canonical getters in one STABLE invoker statement; preserves denial precedence and existing authorization. No source mutation. Requires exact owner-approved31-migration package before production apply."
+    },
+    {
+      "version": "20261107013500",
+      "filename": "20261107013500_cashier_app_reentry_transport_v1.sql",
+      "sha256": "092302c8cbdc82ee93a969470aa027fc86cd886a27b65be2980a09c1fb043373",
+      "reason": "Service-only invoker transport composes canonical app reentry,validated bank snapshot and optional notification in one transaction. SQL bytes match isolated healthy/fault tests. Additional migration32 is outside the HUD31 manifest;requires exact owner-approved supplemental manifest,verified base31 receipts,fresh recovery and object/ACL postchecks before production apply."
+    },
+    {
+      "version": "20261107045330",
+      "filename": "20261107045330_tracker_correction_hand_lock_order_v1.sql",
+      "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
+      "reason": "Exact captured correction context serializes callers per hand before existing row locks. Native same-key and distinct-key20-session races and denial/boundary/recovery checks passed. Outside HUD31 and reentry32 manifests;requires separately pinned final release approval,fresh recovery,and paused/drained correction writers before production apply."
+    },
+    {
+      "version": "20261107093000",
+      "filename": "20261107093000_tournament_close_paid_prize_source_v1.sql",
+      "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
+      "reason": "Supplement34 corrects only new close/readiness paid-prize totals;preserves immutable close reports,payments,metadata and ACLs. Native canonical single/multi-place journeys,tenant/status exclusions,both row-lock race orderings and late ACL-drift rollback passed. Requires exact separately pinned supplemental package approval,fresh recovery,all33 prior atomic receipts and full34 activation checks before production apply."
+    },
+    {
+      "version": "20261107151500",
+      "filename": "20261107151500_public_hud_dispatch_project_url_v1.sql",
+      "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
+      "reason": "Supplement35 reuses the existing spectator canonical-project URL fallback after managed-role GUC activation failed42501. Preserves source,jobs,ACLs and role policy. Native SQL-sink dispatch/denials/drift/rollback passed;exact full35 restore/activation and final production package approval remain required."
     }
   ],
   "floorActiveAllowlist": [

@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Clock3, Radio, Trophy, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { FEATURES } from "@/lib/featureFlags";
+import { observePublicTournament, publicReadEpoch, publicReadEpochIsCurrent } from "@/components/cashier/tournament-live/viewer-hub/publicTournamentRealtime";
+import { registerPublicTournamentRead } from "@/components/cashier/tournament-live/viewer-hub/publicSnapshotCoordinator";
+import { sharePublicTournamentRead } from "@/components/cashier/tournament-live/viewer-hub/sharedPublicTournamentRead";
 import { fmtCompact } from "@/components/cashier/tournament-live/viewer-hub/hubDerive";
 import type { PublicClockSummary, TournamentResultView } from "@/components/cashier/tournament-live/viewer-hub/viewerTypes";
 
@@ -10,9 +14,10 @@ type RpcError = { message: string; code?: string };
 type RpcResult = { data: unknown; error: RpcError | null };
 type PublicClockState = PublicClockSummary & { remainingSeconds?: number | null; isRunning?: boolean | null };
 
-function callPublicRpc(name: string, args: Record<string, unknown>): PromiseLike<RpcResult> {
-  const rpc = supabase.rpc as unknown as (rpcName: string, rpcArgs: Record<string, unknown>) => PromiseLike<RpcResult>;
-  return rpc.call(supabase, name, args);
+function callPublicRpc(name: string, args: Record<string, unknown>, signal?: AbortSignal): PromiseLike<RpcResult> {
+  const rpc = supabase.rpc as unknown as (rpcName: string, rpcArgs: Record<string, unknown>) => PromiseLike<RpcResult> & {abortSignal(signal: AbortSignal): PromiseLike<RpcResult>};
+  const response = rpc.call(supabase, name, args);
+  return signal ? response.abortSignal(signal) : response;
 }
 
 async function boundedPublicRead(response: PromiseLike<RpcResult>): Promise<RpcResult> {
@@ -81,6 +86,15 @@ export default function PublicTournamentClock() {
   return <ScopedPublicTournamentClock key={tournamentId ?? 'missing'} />;
 }
 
+function PublicClockCountdown({clock}: {clock: PublicClockState}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <div className="tracker-num my-2 text-[clamp(5rem,20vw,14rem)] font-black leading-[0.88] tracking-[-0.08em] tabular-nums text-foreground drop-shadow-[0_0_38px_hsl(var(--viewer-neon)_/_0.12)]">{formatCountdown(clock, now)}</div>;
+}
+
 function ScopedPublicTournamentClock() {
   const { tournamentId } = useParams();
   const [searchParams] = useSearchParams();
@@ -90,18 +104,19 @@ function ScopedPublicTournamentClock() {
   const [resultsUnavailable, setResultsUnavailable] = useState(false);
   const [resultsPending, setResultsPending] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!tournamentId) return;
     let active = true;
     let inFlight = false;
     let failed = false;
+    const realtime = FEATURES.publicSpectatorRealtimeV2;
+    type Section = 'clock' | 'payout';
+    const dirty = new Set<Section>(['clock','payout']);
+    let controller = new AbortController(), scopeEpoch = 0;
+    const coordinators = new Map<Section,ReturnType<typeof registerPublicTournamentRead>>();
+    const requestDirty = () => { for(const section of dirty)coordinators.get(section)?.request(); };
+    let observation: ReturnType<typeof observePublicTournament> | null = null;
     if (import.meta.env.DEV && searchParams.get("preview") === "mock") {
       setClock({ id: tournamentId, name: "Midnight Sakura Championship", status: "running", startsAt: null, guarantee: 3_000_000_000, buyIn: 12_000_000, playersRemaining: 23, currentLevel: 18, smallBlind: 100_000, bigBlind: 200_000, bigBlindAnte: 200_000, levelEndsAt: new Date(Date.now() + 9 * 60_000 + 25_000).toISOString(), nextSmallBlind: 150_000, nextBigBlind: 300_000, nextBigBlindAnte: 300_000, entries: 188, averageStack: 8_170_000 });
       setResults([
@@ -111,22 +126,50 @@ function ScopedPublicTournamentClock() {
       ]);
       return () => { active = false; };
     }
-    const load = async () => {
-      if (inFlight) return;
+    const load = async (section?: Section) => {
+      if (!realtime && inFlight) return;
+      const sections = section ? dirty.has(section) ? [section] : [] : ['clock','payout'] as Section[];
+      if (!sections.length) return;
+      for(const selected of sections)dirty.delete(selected);
+      const requestScope = scopeEpoch;
+      const epochs = {clock:publicReadEpoch(supabase,tournamentId,'clock'),payout:publicReadEpoch(supabase,tournamentId,'payout')};
+      const visibilityEpoch = publicReadEpoch(supabase,tournamentId,'visibility');
+      const requestController = new AbortController();
+      const scopeSignal = controller.signal, signal = requestController.signal;
+      const abortRequest = () => requestController.abort();
+      scopeSignal.addEventListener('abort',abortRequest,{once:true});
+      const read = async (section: Section): Promise<RpcResult | null> => {
+        if (!sections.includes(section)) return null;
+        const name = section === 'clock' ? 'get_public_tournament_clock_summary' : 'get_public_tournament_results';
+        try {
+          return await boundedPublicRead(realtime
+            ? sharePublicTournamentRead(supabase,JSON.stringify(['public-clock',tournamentId,section,epochs[section],visibilityEpoch]),signal,
+              signal => callPublicRpc(name,{p_tournament_id:tournamentId},signal))
+            : callPublicRpc(name,{p_tournament_id:tournamentId}));
+        } catch { if(realtime)requestController.abort();return {data:null,error:{message:'public_clock_read_unavailable'}}; }
+      };
       inFlight = true;
       try {
       const [clockResult, resultRows] = await Promise.all([
-        boundedPublicRead(callPublicRpc("get_public_tournament_clock_summary", { p_tournament_id: tournamentId })),
-        boundedPublicRead(callPublicRpc("get_public_tournament_results", { p_tournament_id: tournamentId })),
+        read('clock'), read('payout'),
       ]);
-      if (!active) return;
+      if (!active || requestScope !== scopeEpoch) return;
+      failed = false;
+      const current = (section: Section) => {
+        if (!realtime || publicReadEpochIsCurrent(supabase,tournamentId,section,epochs[section])) return true;
+        dirty.add(section);coordinators.get(section)?.request();return false;
+      };
+      if (clockResult && current('clock')) {
       const candidate = readRpcRow(clockResult.data);
       const row = candidate && String(candidate.id ?? candidate.tournament_id) === tournamentId ? candidate : null;
+      failed = !!clockResult.error || !row;
+      setUnavailable(failed);
+      setClock(!clockResult.error && row ? mapClock(row) : null);
+      }
+      if (resultRows && current('payout')) {
       const pending = /\bpublic_payout_pending\b/.test(resultRows.error?.message ?? '');
       const payoutFailed = !pending && (!!resultRows.error || !Array.isArray(resultRows.data));
-      failed = !!clockResult.error || !row || payoutFailed;
-      setUnavailable(!!clockResult.error || !row);
-      setClock(row ? mapClock(row) : null);
+      failed = failed || payoutFailed;
       setResultsUnavailable(payoutFailed);
       setResultsPending(pending);
       const rows = !resultRows.error && Array.isArray(resultRows.data) ? resultRows.data as RpcRow[] : [];
@@ -137,16 +180,37 @@ function ScopedPublicTournamentClock() {
         avatarUrl: nullableText(item.avatar_url),
         status: item.result_status === "official" || item.result_status === "provisional" ? item.result_status : "open",
       })));
+      }
+      observation?.reportResult(!failed);
       } catch {
-        if (!active) return;
+        if (!active || requestScope !== scopeEpoch) return;
         setUnavailable(true);
         failed = true;
         setClock(null);
         setResults([]);
         setResultsUnavailable(true);
         setResultsPending(false);
-      } finally { inFlight = false; }
+      } finally { scopeSignal.removeEventListener('abort',abortRequest);inFlight = false; }
     };
+    if (realtime) {
+      for(const section of ['clock','payout'] as const)coordinators.set(section,registerPublicTournamentRead(supabase,tournamentId,()=>load(section)));
+      observation = observePublicTournament(supabase,tournamentId,event => {
+        if (event.reason === 'status') return;
+        const withdrawal = event.reason === 'changed' && event.components.includes('visibility');
+        if (event.invalidatePending || withdrawal) {
+          scopeEpoch++;controller.abort();controller=new AbortController();
+          dirty.add('clock');dirty.add('payout');
+          if (withdrawal) {
+            setClock(null);setResults([]);setUnavailable(false);setResultsPending(false);setResultsUnavailable(false);
+          }
+        }
+        for (const section of ['clock','payout'] as const) if (event.components.includes(section)) dirty.add(section);
+        if (event.components.includes('ranking')) dirty.add('clock');
+        requestDirty();
+      });
+      requestDirty();
+      return () => { active=false;controller.abort();for(const slot of coordinators.values())slot.stop();observation?.unsubscribe(); };
+    }
     void load();
     const poll = window.setInterval(() => {
       if (!failed && document.visibilityState === 'visible' && navigator.onLine) void load();
@@ -154,7 +218,6 @@ function ScopedPublicTournamentClock() {
     return () => { active = false; window.clearInterval(poll); };
   }, [searchParams, tournamentId, attempt]);
 
-  const countdown = useMemo(() => formatCountdown(clock, now), [clock, now]);
   const terminal = !!clock && ['completed', 'finished', 'cancelled'].includes(clock.status);
   const statusLabel = clock?.status === 'completed' || clock?.status === 'finished' ? 'Đã kết thúc'
     : clock?.status === 'cancelled' ? 'Đã hủy'
@@ -173,7 +236,7 @@ function ScopedPublicTournamentClock() {
           <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[hsl(var(--poker-gold))]">Level {clock.currentLevel ?? "--"}</p>
           <h1 className="mx-auto mt-2 max-w-5xl text-2xl font-black tracking-[-0.04em] sm:text-4xl xl:text-5xl">{clock.name}</h1>
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">{terminal ? 'Đồng hồ đã dừng' : 'Level kết thúc trong'}</p>
-          <div className="tracker-num my-2 text-[clamp(5rem,20vw,14rem)] font-black leading-[0.88] tracking-[-0.08em] tabular-nums text-foreground drop-shadow-[0_0_38px_hsl(var(--viewer-neon)_/_0.12)]">{countdown}</div>
+          <PublicClockCountdown clock={clock} />
           <div className="mx-auto mt-5 grid w-full max-w-5xl grid-cols-3 overflow-hidden rounded-2xl border border-border/55 bg-card/55 backdrop-blur-xl">
             <div className="p-3 sm:p-5"><div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">SB</div><div className="tracker-num mt-1 text-lg font-black sm:text-3xl">{fmtCompact(clock.smallBlind)}</div></div>
             <div className="border-x border-border/45 p-3 sm:p-5"><div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">BB</div><div className="tracker-num mt-1 text-lg font-black text-[hsl(var(--viewer-neon))] sm:text-3xl">{fmtCompact(clock.bigBlind)}</div></div>

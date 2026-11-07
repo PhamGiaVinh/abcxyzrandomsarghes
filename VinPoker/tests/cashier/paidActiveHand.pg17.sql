@@ -80,7 +80,7 @@ BEGIN
   DECLARE action_player record; action_revision bigint; inserted_revision bigint;
    action_key text:='paid-action-endpoint-'||gen_random_uuid(); action_reply jsonb;
    action_id uuid; undo_key uuid:=gen_random_uuid(); undo_reply jsonb; undone_revision bigint;
-   test_dealer uuid:=gen_random_uuid(); test_attendance uuid:=gen_random_uuid(); projection_before jsonb; projection_after jsonb;
+   test_dealer uuid:=gen_random_uuid(); test_attendance uuid:=gen_random_uuid(); test_shift uuid:=gen_random_uuid(); projection_before jsonb; projection_after jsonb;
    card_key text:='paid-manual-card-'||gen_random_uuid(); card_payload jsonb; card_expected jsonb;
    card_reply jsonb; card_receipt jsonb; card_revision bigint;
   BEGIN
@@ -124,7 +124,10 @@ BEGIN
      OR EXISTS(SELECT 1 FROM public.tracker_correction_operations WHERE hand_id=hand) THEN RAISE EXCEPTION 'paid_undo_denial_delta';END IF;
     -- Explicit isolated control-plane fixture, not dealer check-in/assignment proof.
     INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES(test_dealer,original.club_id,actor,'Paid undo TEST','active');
-    INSERT INTO public.dealer_attendance(id,dealer_id,current_state,status) VALUES(test_attendance,test_dealer,'assigned','checked_in');
+    INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
+     VALUES(test_shift,original.club_id,'Paid undo TEST','00:00','23:59:59.999999');
+    INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,check_in_time,current_state,status)
+     VALUES(test_attendance,test_dealer,test_shift,(statement_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,statement_timestamp(),'assigned','checked_in');
     INSERT INTO public.dealer_assignments(dealer_id,attendance_id,table_id,table_session_id,club_id,assigned_at,status)
      SELECT test_dealer,test_attendance,game_table_id,dest.table_session_id,original.club_id,now(),'assigned' FROM public.tournament_tables WHERE id=dest.id;
     PERFORM set_config('role','authenticated',true);
@@ -198,6 +201,7 @@ BEGIN
     OR EXISTS(SELECT 1 FROM public.tracker_correction_operations WHERE hand_id=hand)
     OR EXISTS(SELECT 1 FROM public.dealers WHERE id=test_dealer)
     OR EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id=test_attendance)
+    OR EXISTS(SELECT 1 FROM public.dealer_shifts WHERE id=test_shift)
     OR EXISTS(SELECT 1 FROM floor_private.tracker_manual_card_receipts_v1 WHERE actor_id=actor AND request_key=card_key)
     OR EXISTS(SELECT 1 FROM public.tracker_correction_uat_scopes WHERE tournament_id=original.tournament_id AND user_id=actor)
     THEN RAISE EXCEPTION 'paid_action_probe_not_rolled_back';END IF;

@@ -6,7 +6,14 @@ import { FEATURES } from "@/lib/featureFlags";
 
 const fixture = vi.hoisted(() => ({
   actor: "owner-a",
-  supabase: { rpc: vi.fn() },
+  supabase: {
+    rpc: vi.fn(),
+    channel: vi.fn(() => {
+      const channel = { on: vi.fn(() => channel), subscribe: vi.fn(() => channel) };
+      return channel;
+    }),
+    removeChannel: vi.fn(async () => "ok"),
+  },
   successToast: vi.fn(),
   errorToast: vi.fn(),
   moveDialog: vi.fn(),

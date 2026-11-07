@@ -28,6 +28,7 @@ else{
  const ident=v=>(assert.match(v,/^[a-z_]+$/),v);
  const rpcNames=new Set(['count_available_dealers','end_breaks_on_demand','upsert_rotation_plan','lock_rotation_slot','cancel_rotation_slot','worker_clear_legacy_preassignment_v1','worker_adopt_legacy_preassignment_v1','get_dealer_operational_tables_v1','try_acquire_club_lock_fenced','release_club_lock_if_owner','refresh_dealer_pool_summary','get_dealer_pool_snapshot','detect_stuck_breaks','end_expired_breaks','get_escalation_config','reconcile_dealer_states','extend_club_lock_lease','club_local_date','advance_dealer_shortage_alert_incident','complete_dealer_shortage_alert_notification','calculate_dynamic_swing_duration','worker_execute_pre_assigned_swing','worker_execute_rotation_slot_v1','complete_rotation_slot']);
  rpcNames.add('claim_process_swing_dispatch');rpcNames.add('finish_process_swing_dispatch');rpcNames.add('release_club_lock');
+ rpcNames.add('get_dealer_pool_eligible_attendance_v1');
  function project(row,spec){if(row===null)return null;const fields=[];let depth=0,start=0;
   for(let i=0;i<spec.length;i++){if(spec[i]==='(')depth++;if(spec[i]===')')depth--;if(spec[i]===','&&depth===0){fields.push(spec.slice(start,i).trim());start=i+1;}}fields.push(spec.slice(start).trim());
   const out={};for(const item of fields){if(item==='*')return row;const open=item.indexOf('('),raw=open<0?item:item.slice(0,open),key=raw.split('!')[0].trim();assert.match(key,/^[a-z_]+$/);assert.ok(Object.hasOwn(row,key),'unknown projected field '+key);
@@ -53,7 +54,7 @@ else{
    successorLease=JSON.parse(await sql(service+`SELECT public.try_acquire_club_lock_fenced('${fixture.club}',120,'native-successor');`));assert.equal(successorLease.acquired,true);assert.notEqual(successorLease.lock_token,args.p_lock_token);
   }
   try{const params=Object.entries(args??{}).map(([k,v])=>ident(k)+'=>'+(k==='p_rows'||v!==null&&typeof v==='object'&&!Array.isArray(v)?quote(JSON.stringify(v))+'::jsonb':Array.isArray(v)?quote('{'+v.join(',')+'}')+'::uuid[]':quote(v)+(k==='p_severity'?'::smallint':''))).join(',');
-   const query=['end_breaks_on_demand','get_dealer_operational_tables_v1','detect_stuck_breaks','end_expired_breaks','get_escalation_config'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
+   const query=name==='get_dealer_pool_eligible_attendance_v1'?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM (SELECT * FROM public.${name}(${params})) r;`:['end_breaks_on_demand','get_dealer_operational_tables_v1','detect_stuck_breaks','end_expired_breaks','get_escalation_config'].includes(name)?`SELECT coalesce(jsonb_agg(to_jsonb(r)),'[]') FROM public.${name}(${params}) r;`:`SELECT coalesce(to_jsonb(public.${name}(${params})),'null'::jsonb);`;
    const data=JSON.parse(await sql(service+query));
    rpcResponses.push({name,data});
    if(name==='try_acquire_club_lock_fenced'&&fixture.lockFault==='missing-token')return {data:{...data,lock_token:null},error:null};

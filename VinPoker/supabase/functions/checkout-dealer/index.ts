@@ -87,6 +87,7 @@ function checkoutCore(value: unknown, attendanceId: string, clubId: string): Che
 
 async function processOneCheckout(
   admin: Pick<ReturnType<typeof createClient>, "from" | "rpc">,
+  automaticAdmin: Pick<ReturnType<typeof createClient>, "from" | "rpc">,
   botToken: string,
   uid: string,
   attendanceId: string,
@@ -242,20 +243,20 @@ async function processOneCheckout(
     try {
       // Checkout does not waive the replacement dealer's existing rest policy.
       // Notification availability must not decide whether an eligible table is staffed.
-      const dealer = await pickNextDealer(admin, clubId, {
+      const dealer = await pickNextDealer(automaticAdmin, clubId, {
         currentTableId: needsReplacementTableId,
       });
       if (dealer) {
         // Compute swing_due_at from swing_config (table_type-aware fallback chain)
         let swingMinutes: number | null = null;
-        const { data: tableInfo } = (await admin
+        const { data: tableInfo } = (await automaticAdmin
           .from("game_tables")
           .select("table_type")
           .eq("id", needsReplacementTableId)
           .maybeSingle()) as unknown as { data: TableTypeRow | null };
 
         if (tableInfo?.table_type) {
-          const { data: swingConfig } = (await admin
+          const { data: swingConfig } = (await automaticAdmin
             .from("swing_config")
             .select("swing_duration_minutes")
             .eq("club_id", clubId)
@@ -265,7 +266,7 @@ async function processOneCheckout(
         }
 
         if (swingMinutes == null) {
-          const { data: fallbackConfig } = (await admin
+          const { data: fallbackConfig } = (await automaticAdmin
             .from("swing_config")
             .select("swing_duration_minutes")
             .eq("club_id", clubId)
@@ -278,7 +279,7 @@ async function processOneCheckout(
           Date.now() + (swingMinutes ?? 45) * 60_000
         ).toISOString();
 
-        const { data: assignResult, error: assignErr } = (await admin.rpc(
+        const { data: assignResult, error: assignErr } = (await automaticAdmin.rpc(
           "worker_assign_dealer_to_session_v1",
           {
             p_club_id: clubId,
@@ -358,6 +359,9 @@ Deno.serve(async (req) => {
     if (authResult instanceof Response) return authResult;
     const uid = authResult.uid;
     const admin = createClient(supabaseUrl, serviceKey, { global: { headers: manualDealerIntentHeaders(uid) } });
+    // Automatic replacement is a consequence of checkout, not an operator's
+    // explicit assignment override. Keep automatic OFF/rest guards at commit.
+    const automaticAdmin = createClient(supabaseUrl, serviceKey);
 
     const body = await req.json();
     const mode = body.mode === "stale_cleanup" ? "stale_cleanup" : "normal";
@@ -422,7 +426,7 @@ Deno.serve(async (req) => {
       CHECKOUT_BATCH_CONCURRENCY,
       async (id: string) => {
         try {
-          return await processOneCheckout(admin, botToken, uid, id);
+          return await processOneCheckout(admin, automaticAdmin, botToken, uid, id);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown error";
           console.error(`[checkout-dealer] unhandled item failure attendance=${id}: ${message}`);

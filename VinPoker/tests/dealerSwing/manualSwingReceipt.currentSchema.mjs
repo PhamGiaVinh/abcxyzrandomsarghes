@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');
 assert.equal(process.env.PGPORT,'55441');
 assert.equal(process.env.PGUSER,'postgres');
-assert.ok(['vinpoker_ops_swing100_ci','vinpoker_ops_swing100_qualified'].includes(process.env.PGDATABASE));
+assert.ok(['vinpoker_ops_swing100_ci','vinpoker_ops_swing100_qualified','vinpoker_ops_swing100_20261105'].includes(process.env.PGDATABASE));
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS']) assert.ok(!process.env[key]);
 function sql(input,ok=true){const r=spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8'});
  if(ok)assert.equal(r.status,0,r.stderr);else assert.notEqual(r.status,0);

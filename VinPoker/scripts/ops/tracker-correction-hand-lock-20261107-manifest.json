@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "kind": "tracker-correction-hand-lock-supplement",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "productionApplied": false,
+  "baseManifest": {
+    "path": "scripts/ops/tracker-hud-20261104-manifest.json",
+    "sha256": "13616e361af1c8552a23cccd7c109224d0e42076bbc669261b34a6a3c24955d6",
+    "migrations": 31
+  },
+  "reentryManifest": {
+    "path": "scripts/ops/tracker-hud-reentry-20261107-manifest.json",
+    "sha256": "d0470bcef03ba4ba9dd330856aa8dc36472712d6e733c82e6987c87914c93856",
+    "order": 32
+  },
+  "migrations": [
+    {
+      "order": 33,
+      "version": "20261107045330",
+      "name": "tracker_correction_hand_lock_order_v1",
+      "path": "supabase/migrations/20261107045330_tracker_correction_hand_lock_order_v1.sql",
+      "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
+      "action": "APPLY"
+    }
+  ],
+  "precheck": {
+    "signature": "public._tracker_correction_uat_context(uuid,uuid,uuid,text)",
+    "owner": "postgres",
+    "securityInvoker": false,
+    "volatile": "v",
+    "searchPath": [
+      "search_path=\"\""
+    ],
+    "executeRoles": [
+      "postgres"
+    ],
+    "bodyMd5": "2e3c0d73bce278f80a8983d3a425f206"
+  },
+  "postcheck": {
+    "signature": "public._tracker_correction_uat_context(uuid,uuid,uuid,text)",
+    "owner": "postgres",
+    "securityInvoker": false,
+    "volatile": "v",
+    "searchPath": [
+      "search_path=\"\""
+    ],
+    "executeRoles": [
+      "postgres"
+    ],
+    "bodyMd5": "6fbc46ed8c9b7712a4546480a07385ae"
+  },
+  "recovery": {
+    "path": "scripts/ops/tracker-correction-hand-lock-20261107-rollback.sql",
+    "sha256": "01655b78bdb9be675bc5776ea6a76980818ef5d17b40609f0a32f57954686561",
+    "preservesSourceData": true,
+    "requiresPausedDrainedCorrectionWriters": true
+  },
+  "scope": "Additional migration33 after exact base31 and reentry32 receipts. One final approval must include all three manifests and five changed Edges. Pause and drain correction calls before apply or rollback; preserve source and audit."
+}

@@ -99,7 +99,8 @@ const voiceBoard=process.argv.includes('--voice-board')||voiceHoles;
 assert.ok(!(fixtureOnly&&voiceBoard));
 assert.ok(!manualFinish94Fixture||(fixtureOnly&&!authority70&&!undo),'Finish94 lock fixture only seeds its dedicated isolated database');
 assert.ok(!(undo&&(fixtureOnly||voiceBoard)));
-assert.equal(process.env.PGDATABASE,authority70?manual75Database:undo?'vinpoker_ops_undo_generation_20261011':fixtureOnly?(manualFinish94Fixture?'vinpoker_ops_finish94_ci':'vinpoker_ops_card56_overlap_20261011'):'vinpoker_ops_card56_20261011');
+const manualFinish94Database=process.env.PGDATABASE==='vinpoker_ops_history98_runtime_20261105'?'vinpoker_ops_history98_runtime_20261105':'vinpoker_ops_finish94_ci';
+assert.equal(process.env.PGDATABASE,authority70?manual75Database:undo?'vinpoker_ops_undo_generation_20261011':fixtureOnly?(manualFinish94Fixture?manualFinish94Database:'vinpoker_ops_card56_overlap_20261011'):'vinpoker_ops_card56_20261011');
 // Reuse existing Voice identities/session fixture, with real schema-required
 // club names. No helper replacement, trigger disable, or role elevation.
 const fixture=readFileSync('tests/trackerVoice/disposableDb.integration.sql','utf8');

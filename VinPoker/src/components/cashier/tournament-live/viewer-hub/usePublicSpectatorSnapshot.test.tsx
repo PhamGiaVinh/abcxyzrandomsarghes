@@ -9,7 +9,7 @@ const { rpc, removeChannel, channel } = vi.hoisted(() => {
 });
 
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
-  const client = { rpc, channel: () => channel, removeChannel };
+  const client = { rpc:(...args:unknown[])=>({abortSignal:()=>rpc(...args)}), channel: () => channel, removeChannel };
   return { useSupabaseClient: () => client };
 });
 
@@ -17,9 +17,120 @@ afterEach(() => {
   cleanup();
   rpc.mockReset();
   removeChannel.mockClear();
+  channel.on.mockClear();
+  channel.subscribe.mockClear();
+  vi.restoreAllMocks();
+  channel.on.mockReturnThis();channel.subscribe.mockReturnThis();
+  vi.useRealTimers();
 });
 
 describe("public spectator table scope", () => {
+  it('checks access/catalog metadata behind a selected table and reloads visible sections on return',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
+    const tournamentId='metadata-only-parent';
+    rpc.mockImplementation((_name,args)=>Promise.resolve({data:{ok:true,access:'public',tournamentId,sections:args.p_sections.length?{tables:{revision:'1',catalog:[],items:[]}}:{}},error:null}));
+    const {result,rerender}=renderHook(({hidden})=>usePublicSpectatorSnapshot(tournamentId,true,[],!hidden,hidden),{initialProps:{hidden:true}});
+    await act(async()=>{});
+    expect(rpc).toHaveBeenCalledTimes(1);expect(rpc.mock.calls[0][1].p_sections).toEqual(['tables']);
+    expect(result.current.snapshot?.access).toBe('public');expect(result.current.loading).toBe(false);
+    const changed=()=>channel.on.mock.calls.filter(c=>c[1].event==='changed').at(-1)![2];
+    await act(async()=>{changed()({payload:{tournamentId,components:['tables','ranking','payout']}});await vi.advanceTimersByTimeAsync(2000);});
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{rerender({hidden:false});});
+    expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables','ranking','payout']);
+    await act(async()=>{rerender({hidden:true});});
+    expect(rpc.mock.calls[2][1].p_sections).toEqual(['tables']);
+    rpc.mockResolvedValueOnce({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    await act(async()=>{changed()({payload:{tournamentId,components:['visibility']}});});
+    expect(result.current.snapshot).toBeNull();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+    expect(result.current.snapshot?.access).toBe('revoked');expect(rpc.mock.calls[3][1].p_sections).toEqual(['tables']);
+  });
+  it('hand withdrawal clears table details while keeping ranking and payout without reloading them',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
+    const tournamentId='hand-withdrawal-components';
+    const sections={tables:{revision:'1',catalog:[],items:[{tableId:'table',hand:{id:'private-hand'}}]},ranking:{revision:'1',items:[]},payout:{revision:'1',items:[]}};
+    rpc.mockResolvedValueOnce({data:{ok:true,access:'public',tournamentId,sections},error:null})
+      .mockResolvedValue({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision:'2',catalog:[],items:[]}}},error:null});
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await act(async()=>{});
+    const ranking=result.current.snapshot?.sections.ranking,payout=result.current.snapshot?.sections.payout;
+    const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['visibility'],handVisibilityOnly:true}});});
+    expect(result.current.snapshot?.sections.tables?.items).toEqual([]);
+    expect(result.current.snapshot?.sections.ranking).toBe(ranking);expect(result.current.snapshot?.sections.payout).toBe(payout);
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1750);});
+    expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
+  });
+  it('coalesces continuous table hints without reloading ranking or payout',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);
+    vi.useFakeTimers();const tournamentId='coalesced-tables';
+    rpc.mockResolvedValue({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision:'1',catalog:[],items:[]}}},error:null});
+    renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await act(async()=>{});expect(rpc).toHaveBeenCalledTimes(1);
+    const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(1000);});
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{changed({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(749);});
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+    expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
+  });
+  it('clears withdrawal immediately while its access read is coalesced',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);
+    vi.useFakeTimers();const tournamentId='withdrawal-before-read';
+    rpc.mockResolvedValueOnce({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision:'1',catalog:[],items:[]}}},error:null})
+      .mockResolvedValueOnce({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await act(async()=>{});expect(result.current.snapshot?.access).toBe('public');
+    const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['visibility']}});});
+    expect(result.current.snapshot).toBeNull();expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1749);});
+    expect(result.current.snapshot).toBeNull();expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+    expect(result.current.snapshot?.access).toBe('revoked');expect(rpc).toHaveBeenCalledTimes(2);
+  });
+  it('pauses hidden table invalidations, reloads on return, and still handles withdrawal while paused',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.99);
+    vi.useFakeTimers();const tournamentId='hidden-hub';
+    rpc.mockResolvedValue({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision:'1',catalog:[],items:[]}}},error:null});
+    const {result,rerender}=renderHook(({live})=>usePublicSpectatorSnapshot(tournamentId,true,[],live),{initialProps:{live:false}});
+    await act(async()=>{});expect(rpc).toHaveBeenCalledTimes(1);
+    const changed=()=>channel.on.mock.calls.at(-1)![2];
+    await act(async()=>{changed()({payload:{tournamentId,components:['tables']}});await vi.advanceTimersByTimeAsync(2001);});
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await act(async()=>{rerender({live:true});});expect(rpc).toHaveBeenCalledTimes(2);
+    await act(async()=>{rerender({live:false});});expect(rpc).toHaveBeenCalledTimes(3);
+    rpc.mockResolvedValueOnce({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    await act(async()=>{changed()({payload:{tournamentId,components:['visibility']}});await vi.advanceTimersByTimeAsync(2200);});
+    expect(result.current.snapshot?.access).toBe('revoked');expect(rpc).toHaveBeenCalledTimes(4);
+  });
+  it('rechecks access after reconnect without reusing a held pre-disconnect snapshot',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.99);
+    const tournamentId='reconnect-scope';let finish!:(value:unknown)=>void;
+    rpc.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;})).mockResolvedValue({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(1));
+    const status=channel.subscribe.mock.calls.at(-1)![0];
+    act(()=>{status('SUBSCRIBED');status('CHANNEL_ERROR');status('SUBSCRIBED');});
+    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:3000});
+    expect(rpc).toHaveBeenCalledTimes(2);expect(rpc.mock.calls[1][1].p_sections).toEqual(['tables']);
+    await act(async()=>{finish({data:{ok:true,access:'public',tournamentId,sections:{}},error:null});});
+    expect(result.current.snapshot?.access).toBe('revoked');
+  });
+  it.each([[false,false],[false,true],[true,false],[true,true]])('does not restore a withdrawn snapshot from a late reply; hand-only=%s metadata-only=%s',async(handVisibilityOnly,metadataOnly)=>{
+    const tournamentId='5a51bec5-4da0-4dd9-861a-cc4e7678478c';
+    let finish!:(value:unknown)=>void;
+    rpc.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;})).mockResolvedValue({data:{ok:true,access:'revoked',tournamentId,sections:{}},error:null});
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true,[],!metadataOnly,metadataOnly));
+    await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(1));
+    const changed=channel.on.mock.calls.find(c=>c[1].event==='changed')![2];
+    act(()=>changed({payload:{tournamentId,components:['visibility'],revisions:{visibility:'2'},handVisibilityOnly}}));
+    await waitFor(()=>expect(result.current.snapshot?.access).toBe('revoked'),{timeout:3000});
+    await act(async()=>{finish({data:{ok:true,access:'public',tournamentId,sections:{}},error:null});});
+    expect(result.current.snapshot?.access).toBe('revoked');
+  });
   it("keeps the catalog visible while loading details for the visible tables", async () => {
     const tournamentId = "5a51bec5-4da0-4dd9-861a-cc4e7678478c";
     const tableId = "1ceaeb99-fecd-4ff2-9451-964399f954d0";

@@ -1,9 +1,10 @@
 import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
 import type {CashPaymentIntent} from '@/lib/cashPaymentIntent';
-const h=vi.hoisted(()=>({actor:'',club:'',tour:'',registration:'',reference:'',beforeRecord:false,dropRecord:false,dropCancel:false,
+const h=vi.hoisted(()=>({adapterRequest:undefined as unknown as <T>(run:()=>Promise<T>,signal?:AbortSignal)=>Promise<T>&{abortSignal(next:AbortSignal):Promise<T>},actor:'',club:'',tour:'',registration:'',reference:'',beforeRecord:false,dropRecord:false,dropCancel:false,
   errors:[] as string[],calls:[] as Array<{name:string;args:Record<string,unknown>;data:unknown}>,
   rpc:undefined as unknown as (name:string,args:Record<string,unknown>)=>Promise<{data:unknown;error:unknown}>,
   read:undefined as unknown as (table:string,columns:string,filters:string[],single:boolean,limit:number)=>Promise<{data:unknown;error:unknown}>}));
@@ -19,12 +20,23 @@ const rpcTypes:Record<string,Record<string,string>>={
  cashier_tour_issues_v1:{p_club_id:'uuid',p_tournament_id:'uuid'},cashier_shift_summary_v1:{p_shift_id:'uuid'},
 };
 vi.mock('@/integrations/supabase/SupabaseClientContext',()=>{
- const client={rpc:(name:string,args:Record<string,unknown>)=>h.rpc(name,args),from:(table:string)=>{
-  let columns='',filters:string[]=[];const query={select:(s:string)=>{columns=s;return query;},
+ // Model the abortable SDK read shape while keeping the real SQL seam. An
+ // aborted scope cannot launch a deferred read or deliver a stale response.
+ const request=<T,>(run:()=>Promise<T>,initialSignal?:AbortSignal)=>{
+  let signal=initialSignal;
+  const check=()=>{if(signal?.aborted)throw new DOMException('Read aborted','AbortError');};
+  const result=Promise.resolve().then(()=>{check();return run();}).then(value=>{check();return value;});
+  return Object.assign(result,{abortSignal(next:AbortSignal){signal=next;return result;}});
+ };
+ h.adapterRequest=request;
+ const client={rpc:(name:string,args:Record<string,unknown>)=>request(()=>h.rpc(name,args)),from:(table:string)=>{
+  let columns='',filters:string[]=[],signal:AbortSignal|undefined;const query={select:(s:string)=>{columns=s;return query;},
    eq:(k:string,v:unknown)=>{if(!/^[a-z_]+$/.test(k))throw Error('bad column');filters.push(`${k}=${quote(v)}`);return query;},
    is:(k:string,v:unknown)=>{if(!/^[a-z_]+$/.test(k)||v!==null)throw Error('bad is');filters.push(`${k} IS NULL`);return query;},
    not:(k:string,op:string,v:unknown)=>{if(!/^[a-z_]+$/.test(k)||op!=='is'||v!==null)throw Error('bad not');filters.push(`${k} IS NOT NULL`);return query;},
-   order:()=>query,limit:(n:number)=>h.read(table,columns,filters,false,n),maybeSingle:()=>h.read(table,columns,filters,true,2)};return query;
+   order:()=>query,abortSignal:(next:AbortSignal)=>{signal=next;return query;},
+   limit:(n:number)=>request(()=>h.read(table,columns,filters,false,n),signal),
+   maybeSingle:()=>request(()=>h.read(table,columns,filters,true,2),signal)};return query;
  }};return {useSupabaseClient:()=>client};
 });
 const session={access_token:'TEST-only-native-cash-session'};
@@ -34,6 +46,22 @@ vi.mock('@/ops/workspace/OpsWorkspaceProvider',()=>({useOpsWorkspace:()=>({selec
 vi.mock('@/lib/featureFlags',async original=>({...await original<typeof import('@/lib/featureFlags')>(),OPS_TOUR_CASHIER_ENABLED:true}));
 vi.mock('@/components/tournament/seat/SeatReceiptDialog',()=>({SeatReceiptDialog:()=>null}));
 import TourCashierWorkbench from '@/pages/ops/TourCashierWorkbench';
+describe('native cashier abortable transport seam',()=>{
+ it('does not launch a read for an already aborted scope',async()=>{
+  const controller=new AbortController();controller.abort();const run=vi.fn().mockResolvedValue({data:'stale'});
+  await expect(h.adapterRequest(run,controller.signal)).rejects.toMatchObject({name:'AbortError'});expect(run).not.toHaveBeenCalled();
+ });
+ it('rejects a response arriving after the read scope was aborted',async()=>{
+  const controller=new AbortController();let release!:(value:unknown)=>void;
+  const result=h.adapterRequest(()=>new Promise(resolve=>{release=resolve;}),controller.signal);
+  await Promise.resolve();controller.abort();release({data:'stale'});
+  await expect(result).rejects.toMatchObject({name:'AbortError'});
+ });
+ it('executes one uncancelled request for multiple observers',async()=>{
+  const run=vi.fn().mockResolvedValue({data:'one result'}),result=h.adapterRequest(run);
+  await expect(Promise.all([result,result])).resolves.toEqual([{data:'one result'},{data:'one result'}]);expect(run).toHaveBeenCalledOnce();
+ });
+});
 const journal=()=>JSON.parse(localStorage.getItem(`vp:cash-payment:v1:${h.actor}:${h.club}`)!);
 const money=()=>JSON.parse(sql(`SELECT jsonb_build_object('ids',coalesce(jsonb_agg(id ORDER BY id),'[]'),'amount',coalesce(sum(amount),0)) FROM public.cashier_buyin_movements WHERE registration_id='${h.registration}';`));
 async function pay(amount=10000){fireEvent.click(await screen.findByRole('button',{name:new RegExp(h.reference)}));fireEvent.change(screen.getByRole('textbox',{name:'Nhận tiền mặt (VND)'}),{target:{value:String(amount)}});await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Ghi nhận tiền mặt'}));});}
@@ -80,31 +108,31 @@ describe.skipIf(!enabled)('Cashier rendered UI with actual112 PostgreSQL receipt
  });
  afterEach(()=>{cleanup();expect(h.errors).toEqual([]);});
  it('recovers a lost committed partial payment after remount with one immutable movement',async()=>{
-  h.dropRecord=true;const view=render(<TourCashierWorkbench/>);await pay();
+  h.dropRecord=true;const view=render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay();
   await screen.findByText(/Chưa xác minh được khoản thu trước/);const intent=journal().intent as CashPaymentIntent,committed=money();
   expect(committed.amount).toBe(10000);expect(committed.ids).toHaveLength(1);expect(journal().state).toBe('pending');
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'})).toBeEnabled());view.unmount();render(<TourCashierWorkbench/>);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'})).toBeEnabled());view.unmount();render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button',{name:'Kiểm tra khoản thu trước'}));
   await screen.findByText(/Đã xác minh khoản thu 10.000 VND/);expect(journal().state).toBe('settled');expect(money()).toEqual(committed);
   const attempts=h.calls.filter(c=>c.name==='resolve_cashier_cash_buyin_intent_v1');expect(attempts.map(c=>c.args.p_action)).toEqual(['record','read']);for(const call of attempts)expect(call.args.p_intent).toEqual(intent);
  });
  it('cancels a never-received request and fences both legacy and exact delayed writers',async()=>{
-  h.beforeRecord=true;render(<TourCashierWorkbench/>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);const intent=journal().intent as CashPaymentIntent;
+  h.beforeRecord=true;render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);const intent=journal().intent as CashPaymentIntent;
   await waitFor(()=>expect(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'}));
   await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);expect(money()).toEqual({ids:[],amount:0});expect(journal().state).toBe('settled');
   const legacy=JSON.parse(sql(auth()+`SELECT public.cashier_record_cash_buyin_v1('${h.registration}',10000,'${intent.request_id}');`));expect(legacy.error).toBe('cash_intent_cancelled');
   h.beforeRecord=false;const late=await h.rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:intent,p_action:'record'});expect((late.data as {status:string}).status).toBe('cancelled');expect(money()).toEqual({ids:[],amount:0});
  });
  it('recovers a lost cancellation receipt by reading, not by issuing a new payment',async()=>{
-  h.beforeRecord=true;h.dropCancel=true;const view=render(<TourCashierWorkbench/>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);
+  h.beforeRecord=true;h.dropCancel=true;const view=render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay();await screen.findByText(/Chưa xác minh được khoản thu trước/);
   await waitFor(()=>expect(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Đóng yêu cầu chưa ghi nhận'}));
   await screen.findByText(/Chưa xác minh được khoản thu trước/);await waitFor(()=>expect(screen.getByRole('button',{name:'Kiểm tra khoản thu trước'})).toBeEnabled());expect(journal().state).toBe('pending');
-  view.unmount();render(<TourCashierWorkbench/>);fireEvent.click(await screen.findByRole('button',{name:'Kiểm tra khoản thu trước'}));await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);
+  view.unmount();render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);fireEvent.click(await screen.findByRole('button',{name:'Kiểm tra khoản thu trước'}));await screen.findByText(/Đã đóng yêu cầu chưa ghi nhận/);
   expect(money()).toEqual({ids:[],amount:0});expect(journal().state).toBe('settled');
   expect(h.calls.filter(c=>c.name==='resolve_cashier_cash_buyin_intent_v1').map(c=>c.args.p_action)).toEqual(['record','cancel','read']);
  });
  it('keeps a fully paid registration waiting when there is no operational table',async()=>{
-  render(<TourCashierWorkbench/>);await pay(100000);await screen.findByText(/Đã xác minh khoản thu 100.000 VND/);
+  render(<MemoryRouter><TourCashierWorkbench/></MemoryRouter>);await pay(100000);await screen.findByText(/Đã xác minh khoản thu 100.000 VND/);
   expect(money().amount).toBe(100000);expect(money().ids).toHaveLength(1);expect(journal().state).toBe('settled');
   const call=h.calls.find(c=>c.name==='resolve_cashier_cash_buyin_intent_v1')!;
   expect(call.data).toMatchObject({ok:true,status:'recorded',result:{ok:true,payment_state:'paid',seating_state:'waiting'}});

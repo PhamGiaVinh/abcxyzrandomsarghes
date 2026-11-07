@@ -1,10 +1,23 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Tournament } from "@/types/tournament";
-const state = vi.hoisted(() => ({ roster: vi.fn(), entries: vi.fn(), restorable: vi.fn(), moves: vi.fn(), redraw: vi.fn() }));
-const client = { rpc: vi.fn() };
+const state = vi.hoisted(() => ({ roster: vi.fn(), entries: vi.fn(), restorable: vi.fn(), moves: vi.fn(), redraw: vi.fn(), close: vi.fn() }));
+type LiveChannel = { changes: { table: string; filter: string; read: () => void }[]; status?: (value: string) => void; ready?: (value: { extension: string; status: string }) => void;
+  on: (kind: string, filter: { table: string; filter: string }, read: () => void) => LiveChannel;
+  subscribe: (status: (value: string) => void) => LiveChannel };
+const live = vi.hoisted(() => ({ channels: [] as LiveChannel[] }));
+const broadcasts = vi.hoisted(() => ({ entries: [] as { tournamentId: string; receive: (event: { reason: string; components: string[] }) => void; unsubscribe: ReturnType<typeof vi.fn> }[] }));
+vi.mock("../viewer-hub/publicTournamentRealtime", () => ({ observePublicTournament: vi.fn((_client, tournamentId, receive) => {
+  const entry = { tournamentId, receive, unsubscribe: vi.fn() }; broadcasts.entries.push(entry);return { unsubscribe: entry.unsubscribe };
+}) }));
+const client = { rpc: vi.fn(), removeChannel: vi.fn(async () => "ok"), channel: vi.fn(() => {
+  const channel: LiveChannel = { changes: [],
+    on(kind, filter, read) { if (kind === "system") channel.ready = read as unknown as LiveChannel["ready"]; else channel.changes.push({ ...filter, read }); return channel; },
+    subscribe(status) { channel.status = status; return channel; } };
+  live.channels.push(channel); return channel;
+}) };
 const v3 = { enabled: true, redrawSeatLockEnabled: true, getTournamentTableRoster: state.roster,
-  getSeatableEntries: state.entries, getRestorableEntries: state.restorable, getPendingTrackerMoves: state.moves };
+  getSeatableEntries: state.entries, getRestorableEntries: state.restorable, getPendingTrackerMoves: state.moves, closeTournamentTable: state.close };
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
 vi.mock("@/lib/floorTableControlV3", () => ({ createFloorTableControlV3Client: () => v3 }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { floorRedrawSeatLockV1: true, floorTableControlV3: false } }));
@@ -18,8 +31,9 @@ vi.mock("../MovePlayerDialog", () => ({ MovePlayerDialog: () => null }));
 import { FloorTableMapPanelV3 } from "../FloorTableMapPanelV3";
 import { FloorTableMapPanel } from "../FloorTableMapPanel";
 const tour = (status: string) => ({ id: "tour", name: "TEST", status } as Tournament);
-beforeEach(() => { for (const method of Object.values(state)) method.mockReset().mockResolvedValue({ ok: true, data: [] }); });
-afterEach(cleanup);
+beforeEach(() => { for (const method of Object.values(state)) method.mockReset().mockResolvedValue({ ok: true, data: [] });
+  live.channels.length = 0; broadcasts.entries.length = 0; client.channel.mockClear(); client.removeChannel.mockClear(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it("passes the shell identity to redraw and retires an open dialog when the session changes", async () => {
   const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
   fireEvent.click(await screen.findByRole("button", { name: "Mở bàn" }));
@@ -66,4 +80,202 @@ it("keeps unexpected active sessions visible for inspection without write contro
   render(<FloorTableMapPanelV3 tournament={tour("completed")} actorId="floor" refreshTrigger={0} />);
   await screen.findByRole("alert");expect(screen.getByText(/Bàn 3 · TEST table/)).toBeInTheDocument();
   expect(screen.getAllByRole("button")).toHaveLength(1);
+});
+
+const table = (number: number) => ({ tournamentTableId: `table-${number}`, gameTableId: `asset-${number}`,
+  tableNumber: number, tableName: `TEST table ${number}`, tableSessionId: `session-${number}`, sessionRevision: 1,
+  controlEpoch: 1, controlMode: "manual", tournamentTableStatus: "active", sessionClosedAt: null,
+  activeDealerAssignmentId: null, seats: [], seatLocks: [], maxSeats: 9 });
+it("observes the scoped source tables and coalesces changes into a fresh roster", async () => {
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  await screen.findByText(/Chưa có bàn đang hoạt động/);
+  expect(live.channels).toHaveLength(1);
+  const channel = live.channels[0];
+  expect(channel.changes.map(change => change.table)).toEqual(["table_sessions", "tournament_tables", "tournament_seats", "tournament_chip_counts", "tournament_entries"]);
+  expect(channel.changes.every(change => change.filter === "tournament_id=eq.tour")).toBe(true);
+  state.roster.mockResolvedValue({ ok: true, data: [table(2)] });
+  act(() => { channel.changes[0].read(); channel.changes[1].read(); channel.changes[2].read(); });
+  expect(screen.getByText("Đang tải danh sách bàn…")).toBeInTheDocument();
+  expect(state.roster).toHaveBeenCalledTimes(1);
+  await screen.findByRole("button", { name: /Bàn 2, 0\/9 ghế/ });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+});
+it("publishes same-scope snapshots while keeping newer hints fenced", async () => {
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
+  await screen.findByText(/Chưa có bàn đang hoạt động/);
+  let finish!: (value: unknown) => void;
+  state.roster.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const change = live.channels[0].changes[0].read;
+  act(change); await waitFor(() => expect(state.roster).toHaveBeenCalledTimes(2));
+  state.roster.mockResolvedValue({ ok: true, data: [table(3)] });
+  await act(async () => { change(); finish({ ok: true, data: [table(2)] }); });
+  expect(screen.getByRole("button", { name: /Bàn 2, 0\/9 ghế/ })).toBeInTheDocument();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
+  await screen.findByRole("button", { name: /Bàn 3, 0\/9 ghế/ });
+  expect(state.roster).toHaveBeenCalledTimes(3);
+});
+it("retires old actor/session callbacks and removes the old channel", async () => {
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  await screen.findByText(/Chưa có bàn đang hoạt động/);const old = live.channels[0];
+  view.rerender(<FloorTableMapPanelV3 tournament={{ ...tour("live"), id: "other-tour" }} actorId="other-floor" sessionEpoch={2} refreshTrigger={0} />);
+  await waitFor(() => expect(state.roster).toHaveBeenLastCalledWith("other-tour"));
+  const calls = state.roster.mock.calls.length;
+  act(() => { old.changes[0].read(); old.status?.("SUBSCRIBED"); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve,250)); });
+  expect(state.roster).toHaveBeenCalledTimes(calls);expect(client.removeChannel).toHaveBeenCalledWith(old);
+});
+it("does not request hidden-tab changes until the tab becomes visible", async () => {
+  const visibility = vi.spyOn(document, "visibilityState", "get");
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
+  await screen.findByText(/Chưa có bàn đang hoạt động/);
+  visibility.mockReturnValue("hidden");
+  act(() => { live.channels[0].changes[0].read(); document.dispatchEvent(new Event("visibilitychange")); });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve,250)); });
+  expect(state.roster).toHaveBeenCalledTimes(1);
+  visibility.mockReturnValue("visible");state.roster.mockResolvedValue({ ok: true, data: [table(4)] });
+  act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+  await screen.findByRole("button", { name: /Bàn 4, 0\/9 ghế/ });
+});
+it("reconciles missing source changes even when a partial channel reports healthy", async () => {
+  vi.useFakeTimers();
+  await act(async () => { render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />); });
+  expect(state.roster).toHaveBeenCalledTimes(1);
+  await act(async () => { live.channels[0].status?.("SUBSCRIBED"); live.channels[0].ready?.({ extension: "postgres_changes", status: "ok" }); await vi.advanceTimersByTimeAsync(200); });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  // No CDC hint arrives for the new table: another published source's system
+  // acknowledgement must not suppress authorized snapshot reconciliation.
+  state.roster.mockResolvedValue({ ok: true, data: [table(7)] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_799); });expect(state.roster).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });expect(state.roster).toHaveBeenCalledTimes(3);
+  expect(screen.getByText("TEST table 7", {exact:false})).toBeInTheDocument();
+});
+
+it("uses component publication hints without waiting for the incomplete CDC fallback", async () => {
+  vi.useFakeTimers();
+  await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0}/>);});
+  expect(state.roster).toHaveBeenCalledTimes(1);expect(broadcasts.entries[0].tournamentId).toBe("tour");
+  state.roster.mockResolvedValue({ok:true,data:[table(9)]});
+  act(()=>{for(let i=0;i<10;i++)broadcasts.entries[0].receive({reason:"changed",components:["tables"]});});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","true");
+  await act(async()=>{await vi.advanceTimersByTimeAsync(199);});expect(state.roster).toHaveBeenCalledTimes(1);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(1);});expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("TEST table 9",{exact:false})).toBeInTheDocument();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  act(()=>broadcasts.entries[0].receive({reason:"changed",components:["clock","payout"]}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(200);});expect(state.roster).toHaveBeenCalledTimes(2);
+});
+
+it("retires publication listeners on actor scope change and ignores late old callbacks", async () => {
+  vi.useFakeTimers();let view:ReturnType<typeof render>;
+  await act(async()=>{view=render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-a" sessionEpoch={1} refreshTrigger={0}/>);});
+  const old=broadcasts.entries[0];
+  await act(async()=>{view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-b" sessionEpoch={2} refreshTrigger={0}/>);});
+  expect(old.unsubscribe).toHaveBeenCalledTimes(1);const count=state.roster.mock.calls.length;
+  act(()=>old.receive({reason:"changed",components:["visibility"]}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(200);});expect(state.roster).toHaveBeenCalledTimes(count);
+  state.roster.mockResolvedValue({ok:true,data:[table(10)]});
+  act(()=>broadcasts.entries[1].receive({reason:"changed",components:["hand_visibility"]}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(200);});expect(state.roster).toHaveBeenCalledTimes(count+1);
+  expect(screen.getByText("TEST table 10",{exact:false})).toBeInTheDocument();
+});
+it("does not poll a hidden staff screen while source coverage is incomplete", async () => {
+  vi.useFakeTimers();const visibility=vi.spyOn(document,"visibilityState","get");
+  await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0}/>);});
+  visibility.mockReturnValue("hidden");
+  await act(async()=>{live.channels[0].ready?.({extension:"postgres_changes",status:"ok"});await vi.advanceTimersByTimeAsync(10_000);});
+  expect(state.roster).toHaveBeenCalledTimes(1);
+  visibility.mockReturnValue("visible");state.roster.mockResolvedValue({ok:true,data:[table(8)]});
+  await act(async()=>{document.dispatchEvent(new Event("visibilitychange"));await vi.advanceTimersByTimeAsync(200);});
+  expect(screen.getByText("TEST table 8",{exact:false})).toBeInTheDocument();
+});
+it("keeps the last roster visible while retiring its action context", async () => {
+  state.roster.mockResolvedValue({ ok: true, data: [table(2)] });
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
+  await screen.findByRole("button", { name: /Bàn 2, 0\/9 ghế/ });
+  act(() => { live.channels[0].changes[0].read(); });
+  expect(screen.getByRole("button", { name: /Bàn 2, 0\/9 ghế/ })).toBeInTheDocument();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
+  await waitFor(() => expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "false"));
+});
+
+it("renders the authorized roster before slow action lists while writes stay fenced", async () => {
+  let finish!: (value: {ok:true;data:[]}) => void;
+  state.entries.mockReturnValue(new Promise(resolve => {finish=resolve;}));
+  state.roster.mockResolvedValue({ok:true,data:[table(12)]});
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0}/>);
+  await screen.findByRole("button",{name:/Bàn 12, 0\/9 ghế/});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","true");
+  const refresh=screen.getByRole("button",{name:"Làm mới"});expect(refresh).toBeDisabled();
+  expect(state.entries).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button",{name:/Bàn 12, 0\/9 ghế/}));
+  expect(screen.queryByRole("button",{name:"Đóng bàn trống"})).not.toBeInTheDocument();
+  expect(state.close).not.toHaveBeenCalled();
+  await act(async()=>{finish({ok:true,data:[]});});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  expect(refresh).toBeEnabled();
+  expect(await screen.findByRole("button",{name:"Đóng bàn trống"})).toBeEnabled();
+});
+
+it("does not display a late roster from the previous actor while its action list is pending", async () => {
+  let finishRoster!: (value:{ok:true;data:ReturnType<typeof table>[]})=>void;
+  let finishEntries!: (value:{ok:true;data:[]})=>void;
+  state.roster.mockReturnValueOnce(new Promise(resolve=>{finishRoster=resolve;})).mockResolvedValue({ok:true,data:[table(14)]});
+  state.entries.mockReturnValueOnce(new Promise(resolve=>{finishEntries=resolve;})).mockResolvedValue({ok:true,data:[]});
+  const view=render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-a" sessionEpoch={1} refreshTrigger={0}/>);
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor-b" sessionEpoch={2} refreshTrigger={0}/>);
+  await screen.findByRole("button",{name:/Bàn 14, 0\/9 ghế/});
+  await act(async()=>{finishRoster({ok:true,data:[table(13)]});finishEntries({ok:true,data:[]});});
+  expect(screen.queryByRole("button",{name:/Bàn 13, 0\/9 ghế/})).not.toBeInTheDocument();
+  expect(screen.getByRole("button",{name:/Bàn 14, 0\/9 ghế/})).toBeInTheDocument();
+});
+
+it("fences an already-open action sheet during a silent fallback with a slow action list", async () => {
+  vi.useFakeTimers();
+  state.roster.mockResolvedValue({ok:true,data:[table(15)]});
+  await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0}/>);});
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:/Bàn 15, 0\/9 ghế/}));});
+  expect(screen.getByRole("button",{name:"Đóng bàn trống"})).toBeEnabled();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  let finish!: (value:{ok:true;data:[]})=>void;
+  state.entries.mockReturnValueOnce(new Promise(resolve=>{finish=resolve;}));
+  await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","true");
+  fireEvent.click(screen.getByRole("button",{name:"Đóng bàn trống"}));
+  expect(screen.queryByRole("button",{name:"Xác nhận đóng bàn"})).not.toBeInTheDocument();
+  expect(state.close).not.toHaveBeenCalled();
+  await act(async()=>{finish({ok:true,data:[]});});
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy","false");
+  expect(screen.getByRole("button",{name:"Xác nhận đóng bàn"})).toBeEnabled();
+});
+
+it("advances snapshots under sustained hints while keeping writes fenced", async () => {
+  vi.useFakeTimers();
+  await act(async () => { render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />); });
+  let number = 1;
+  state.roster.mockImplementation(() => new Promise(resolve => {
+    const snapshot = table(++number);
+    setTimeout(() => resolve({ ok: true, data: [snapshot] }), 300);
+  }));
+  const hints = setInterval(live.channels[0].changes[0].read, 50);
+  await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+  expect(screen.getByText("TEST table 2", { exact: false })).toBeInTheDocument();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(screen.getByText("TEST table 3", { exact: false })).toBeInTheDocument();
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
+  clearInterval(hints);
+  // Let the final hinted read settle before the separate2s fallback starts.
+  await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "false");
+});
+
+it("verifies again when PostgreSQL becomes ready after channel join", async () => {
+  vi.useFakeTimers();
+  await act(async () => { render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />); });
+  await act(async () => { live.channels[0].status?.("SUBSCRIBED"); await vi.advanceTimersByTimeAsync(200); });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  state.roster.mockResolvedValue({ ok: true, data: [table(5)] });
+  await act(async () => { live.channels[0].ready?.({ extension: "postgres_changes", status: "ok" }); await vi.advanceTimersByTimeAsync(200); });
+  expect(state.roster).toHaveBeenCalledTimes(3);
+  expect(screen.getByText("TEST table 5", { exact: false })).toBeInTheDocument();
 });

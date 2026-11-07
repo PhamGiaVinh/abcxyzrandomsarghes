@@ -5,18 +5,53 @@ on:
     paths:
       - ".github/workflows/cashier-tour-real-e2e.yml"
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
+      - "VinPoker/scripts/ops/clock-candidate-broadcast.mjs"
+      - "VinPoker/scripts/ops/prepare-clock-payout-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-prize-close-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-manual-cards-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs"
+      - "VinPoker/scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
+      - "VinPoker/scripts/ops/operations-audience.mjs"
+      - "VinPoker/scripts/ops/operations-db-pressure.mjs"
+      - "VinPoker/scripts/ops/operations-db-pressure.sql"
+      - "VinPoker/scripts/ops/isolated-postgrest-pool.mjs"
+      - "VinPoker/scripts/ops/operations-postgrest-pool.mjs"
+      - "VinPoker/scripts/ops/operations-rpc-profile.sql"
+      - "VinPoker/scripts/ops/operations-audience-scope.mjs"
+      - "VinPoker/scripts/ops/operations-audience-readiness.test.mjs"
+      - "VinPoker/scripts/ops/operations-audience-generation.mjs"
+      - "VinPoker/scripts/ops/operations-audience-generation.test.mjs"
+      - "VinPoker/scripts/ops/operations-audience-hand-delivery.mjs"
+      - "VinPoker/scripts/ops/operations-audience-hand-delivery.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-tour-revenue-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-dealer-replacement-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-staff-salary-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-tracker-start-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-tracker-finish-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-operations-public-hud.mjs"
+      - "VinPoker/scripts/ops/operations-hud-control.mjs"
+      - "VinPoker/scripts/ops/operations-hud-control.test.mjs"
+      - "VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql"
       - "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
       - "VinPoker/supabase/pending-tests/cashier_tour_edge_fixture.sql"
+      - "VinPoker/supabase/pending-tests/tournament-reentry-transport.ts"
+      - "VinPoker/supabase/pending-tests/reentry_transport_notification_fault.sql"
+      - "VinPoker/supabase/pending-tests/reentry_transport_timeout_rollback.sql"
+      - "VinPoker/tests/cashier/reentryTransportCandidate.test.mjs"
+      - "VinPoker/tests/cashier/reentryDisconnect.native.mjs"
       - "VinPoker/supabase/pending-tests/fake-sepay-server.mjs"
       - "VinPoker/supabase/pending-tests/static-preview-server.mjs"
       - "VinPoker/supabase/functions/tournament-register/**"
+      - "VinPoker/supabase/functions/tournament-historical-settlement/**"
       - "VinPoker/supabase/functions/sepay-reconcile/**"
       - "VinPoker/supabase/migrations/20270115000003_cashier_tour_money_v1.sql"
+      - "VinPoker/supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql"
+      - "VinPoker/supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql"
       - "VinPoker/supabase/migration-archive/remote-history/recovered-source/20270115000011_cashier_refund_without_floor_clearance.sql"
       - "VinPoker/supabase/pending-tests/cashier_tour_money_v1.sql"
       - "VinPoker/supabase/pending-tests/cashier_tour_real_refund_fixture.sql"
@@ -28,6 +63,63 @@ on:
         type: choice
         options: [pre03, current]
         default: pre03
+      ops_realtime:
+        description: Contemporary isolated check-in WebSocket observation (not historical proof)
+        type: boolean
+        default: false
+      clock_candidate_probe:
+        description: Isolated canonical clock UI against exact31candidate migrations and real Broadcast flush RPC only
+        type: boolean
+        default: false
+
+      operations_candidate_probe:
+        description: Full isolated operational stages against exact31candidate; not mixed1000spectator proof
+        type: boolean
+        default: false
+
+      operations_audience:
+        description: Isolated anonymous HTTP/WS viewers during full candidate operational suite
+        type: choice
+        options: ['0', '10', '1000']
+        default: '0'
+
+      operations_audience_model:
+        description: Selected-table product composition or retained combined grid+detail stress
+        type: choice
+        options: ['selected-table', 'grid-detail-stress']
+        default: 'selected-table'
+
+      reentry_transport_probe:
+        description: Pending composite reentry RPC/Edge;isolated current operational mode only
+        type: boolean
+        default: false
+
+      correction_undo_probe:
+        description: Isolated current31+32+33 Auth HTTP Undo and retry proof
+        type: boolean
+        default: false
+
+      redraw_probe:
+        description: Final isolated Auth HTTP seat-lock and redraw conservation probe
+        type: boolean
+        default: false
+
+      prize_close_probe:
+        description: Isolated full34 Floor/Cashier paid-prize HTTP journey after audience drain
+        type: boolean
+        default: false
+
+      reentry_fault_mode:
+        description: Inject notification faults at10viewers or measure healthy candidate operations
+        type: choice
+        options: ['failure-injection', 'healthy']
+        default: 'failure-injection'
+
+      operations_rest_pool:
+        description: Isolated1000-viewer pool comparison;fixed resources,no hosted change
+        type: choice
+        options: ['10', '20']
+        default: '10'
 
 permissions:
   actions: read
@@ -74,7 +166,10 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test scripts/ops/cashier-schema-mode.test.mjs
+          node --test scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs scripts/ops/cashier-schema-mode.test.mjs scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
+          node --test scripts/ops/telegram-test-sink.test.mjs
+          node --test tests/cashier/reentryTransportCandidate.test.mjs
+          node --test supabase/pending-tests/fake-sepay-server.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker
         env:
@@ -114,9 +209,32 @@ jobs:
           node scripts/deploy/validate-live-public-schema-artifact.mjs \
             --artifact-directory "${RUNNER_TEMP}/cashier-schema"
           echo "Schema baseline: owner capture run $capture_id (pre-Cashier-03)"
-      - name: Isolate empty local Supabase before any application migration
+      - name: Run isolated backend, browser and operational checks
         working-directory: VinPoker
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
+          LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
+          LOCAL_OPERATIONS_AUDIENCE: ${{ inputs.operations_audience || '0' }}
+          LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
+          LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
+          LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
+          LOCAL_CORRECTION_UNDO_PROBE: ${{ inputs.correction_undo_probe && '1' || '0' }}
+          LOCAL_OPERATIONS_PRIZE_CLOSE_PROBE: ${{ inputs.prize_close_probe && '1' || '0' }}
+          LOCAL_OPERATIONS_REDRAW_PROBE: ${{ inputs.redraw_probe && '1' || '0' }}
+          LOCAL_REENTRY_FAULT_MODE: ${{ inputs.reentry_fault_mode || 'failure-injection' }}
+          LOCAL_OPERATIONS_REST_POOL: ${{ inputs.operations_rest_pool || '10' }}
+          LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
+      - name: Sanitized Cashier runtime latency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cashier-http-latency-${{ github.sha }}
+          path: |
+            VinPoker/output/operations-latency/*-http.json
+            VinPoker/output/operations-latency/reentry-transport-notification-timeout-native.json
+            VinPoker/output/operations-latency/reentry-transport-disconnect-native.json
+            VinPoker/output/operations-latency/reentry-bank-ambiguity-native-conservation.json
+          if-no-files-found: ignore
+          retention-days: 7
