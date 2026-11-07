@@ -1670,8 +1670,11 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
  const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};
  let phase='source',navigationToReadyMs:number|null=null,anonymousHttpReads=0,pageErrorCount=0;
+ const replayHttp:Record<string,{statuses:Record<string,number>;sqlStates:Record<string,number>;aborted:number;otherFailures:number}>={};
+ const diagnosticReads:Promise<void>[]=[];
+ let replayPage:Page|undefined,uiState:Record<string,boolean|number>|null=null;
  const evidence={sourceHandVerified:false,anonymousHandVerified:false,crossTourDenied:false,actualBrowserRpc:false,sliderAdvanced:false,sliderRewound:false,anonymousStorage:true};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-replay-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PUBLIC_REPLAY_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,anonymousHttpReads,pageErrorCount,navigationToReadyMs,samples:navigationToReadyMs===null?0:1,qualification:false,limitations:'One real anonymous Chromium replay through public HTTP for the preceding canonical five-action fold hand. No route interception/dev fixtures/derived-HUD activation. Verifies source identity,table/tour scoping and action scrubbing. One navigation is not p95 or1000DOM capacity. Does not qualify showdown,sidepots,HUD freeze or history-dot navigation.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-replay-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PUBLIC_REPLAY_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,anonymousHttpReads,pageErrorCount,navigationToReadyMs,replayHttp,uiState,samples:navigationToReadyMs===null?0:1,qualification:false,limitations:'One real anonymous Chromium replay through public HTTP for the preceding canonical five-action fold hand. No route interception/dev fixtures/derived-HUD activation. Verifies source identity,table/tour scoping and action scrubbing. One navigation is not p95 or1000DOM capacity. Does not qualify showdown,sidepots,HUD freeze or history-dot navigation. Diagnostics retain only known RPC names,HTTP status/SQLSTATE counters and fixed UI booleans/counts;no DOM text,payloads,URLs or credentials.'},null,2));
  let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  try{
  const response=await fetch(api+'/rest/v1/tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023',{headers,signal:AbortSignal.timeout(5000)});
@@ -1688,7 +1691,11 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
   const denied=await publicRead('a3000000-0000-4000-8000-000000000099');
   expect(denied?.id??null).not.toBe(hand.id);expect(denied?.actions??[]).toHaveLength(0);expect(denied?.players??[]).toHaveLength(0);evidence.crossTourDenied=true;
   context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:1366,height:900}});
-  const viewer=await context.newPage();viewer.on('pageerror',()=>pageErrorCount++);
+  const viewer=await context.newPage();replayPage=viewer;viewer.on('pageerror',()=>pageErrorCount++);
+  const knownRpc=(url:string)=>{const name=new URL(url).pathname.split('/').at(-1)??'';return ['get_public_tournament_table_hand_v2','get_public_tournament_hand_v2','get_public_tournament_table_history_v2','get_public_tournament_hand_catalog_v2','get_public_tournament_settlement','get_public_tournament_viewer_snapshot_v2','get_public_tournament_table_clock_v1'].includes(name)?name:null;};
+  const bucket=(name:string)=>replayHttp[name]??(replayHttp[name]={statuses:{},sqlStates:{},aborted:0,otherFailures:0});
+  viewer.on('response',response=>{const name=knownRpc(response.url());if(!name)return;const row=bucket(name),status=String(response.status());row.statuses[status]=(row.statuses[status]??0)+1;if(!response.ok()&&diagnosticReads.length<100)diagnosticReads.push((async()=>{try{const value=await response.json(),code=typeof value?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(value.code)?value.code:'unknown';row.sqlStates[code]=(row.sqlStates[code]??0)+1;}catch{row.sqlStates.nonJson=(row.sqlStates.nonJson??0)+1;}})());});
+  viewer.on('requestfailed',request=>{const name=knownRpc(request.url());if(!name)return;const row=bucket(name);if(request.failure()?.errorText==='net::ERR_ABORTED')row.aborted++;else row.otherFailures++;});
   const publicResponse=viewer.waitForResponse(response=>{
    if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;
    const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_hand_id===hand.id;
@@ -1704,8 +1711,8 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
   await rail.getByTitle('Tiến 1 bước',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','1');evidence.sliderAdvanced=true;
   await rail.getByTitle('Về đầu',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','0');evidence.sliderRewound=true;
   const storage=await context.storageState();evidence.anonymousStorage=!storage.origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(evidence.anonymousStorage).toBe(true);expect(pageErrorCount).toBe(0);
-  phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}finally{await context?.close();}
+  await Promise.allSettled(diagnosticReads);phase='passed';report();
+ }catch(error){phase+='-failed';if(replayPage&&!replayPage.isClosed()){try{uiState=await replayPage.evaluate(()=>{const text=document.body.textContent??'';return {rail:!!document.querySelector('[data-testid="replay-action-rail"]'),rptShell:!!document.querySelector('[data-testid="viewer-rpt-shell"]'),selectCount:document.querySelectorAll('select').length,queryError:text.includes('Không thể truy vấn hand.'),targetLoading:text.includes('Đang tìm hand từ đường dẫn'),notFound:text.includes('Không tìm thấy hand'),listError:text.includes('Không tải được lịch sử hand'),replayDataError:text.includes('Không thể tải dữ liệu replay'),withdrawn:text.includes('Giải này không còn được công khai'),watchClose:!!document.querySelector('[aria-label="Đóng trình xem"]')};});}catch{uiState={inspectionFailed:true};}}await Promise.allSettled(diagnosticReads);report();throw error;}finally{await context?.close();}
 });
 
 test('anonymous prepared HUD reads canonical operational history and replay',async({page,browser})=>{
