@@ -2,10 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL,RESTORE_OWNER_CONTEXT_SQL,sqlFailureMetadata} from './tracker-hud-full34-isolated.mjs';
+import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL,RESTORE_OWNER_CONTEXT_SQL,sqlFailureMetadata,isolatedWorkerSecretSql} from './tracker-hud-full34-isolated.mjs';
 import {execFileSync} from 'node:child_process';
 const env={GITHUB_ACTIONS:'true',GITHUB_RUN_ID:'123',GITHUB_WORKSPACE:resolve('/fixture/workspace'),RUNNER_TEMP:resolve('/fixture/temp'),HUD_FULL34_ISOLATION_VERIFIED:'egress-blocked-cron-off'};
 const candidate=resolve(env.GITHUB_WORKSPACE,'candidate/VinPoker'),report=resolve(env.RUNNER_TEMP,'hud-full34-rehearsal.json'),container='a'.repeat(64);
+test('isolated worker credentials replace only two named fixtures without decrypting hosted secrets',()=>{
+ for(const name of ['PUBLIC_HUD_WORKER_SECRET','PUBLIC_SPECTATOR_WORKER_SECRET']){
+  const text=isolatedWorkerSecretSql(name,'a'.repeat(64));
+  for(const guard of ["current_database()<>'postgres'","current_user<>'postgres'","current_setting('cron.launch_active_jobs')<>'off'",'enabled FROM tracker_analytics_v1.config',`DELETE FROM vault.secrets WHERE name='${name}'`,'vault.create_secret','BEGIN;','COMMIT;'])assert.ok(text.includes(guard),guard);
+  assert.doesNotMatch(text,/update_secret|decrypted_secrets|TRUNCATE|CASCADE|GRANT|ALTER ROLE/i);
+ }
+ assert.throws(()=>isolatedWorkerSecretSql('ANOTHER_SECRET','a'.repeat(64)));
+ assert.throws(()=>isolatedWorkerSecretSql('PUBLIC_HUD_WORKER_SECRET',"';SELECT 1;"));
+});
 test('full35 rehearsal loads supplemental dispatcher and retains close-function postchecks',()=>{
  const source=readFileSync('scripts/ops/tracker-hud-full34-isolated.mjs','utf8');
  for(const text of ['loadDispatchPackage(candidate)','assert.equal(entries.length,35)','pkg.closeManifest.postchecks','validateDispatcherObjects(report.dispatcherObjects,[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck])','ISOLATED_FULL35_SQL_BACKFILL_REHEARSAL_NOT_PRODUCTION_RELEASE',"report.stage='close-postchecks'","report.stage='dispatcher-postchecks'"])assert.ok(source.includes(text),text);
