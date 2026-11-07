@@ -269,6 +269,16 @@ test('shared flusher accepts exactly one candidate mode and retains disposable t
   }
 });
 
+test('mixed audience starts its HTTP flusher after disposable PostgREST recreation and readiness',()=>{
+  const pool=script.indexOf('LOCAL_OPERATIONS_REST_POOL="$operations_rest_pool" node');
+  const frozen=script.indexOf('\nSCHEMA_FROZEN_RECEIPT\n',pool);
+  const start=script.indexOf('\n    start_candidate_broadcast\n',frozen);
+  const audience=script.indexOf('    audience_pid=$!',start);
+  assert.ok(pool>0&&frozen>pool&&start>frozen&&audience>start);
+  assert.match(script,/if \[\[ "\$clock_candidate_probe" == 1 \|\| "\$audience_count" == 0 \]\]; then\n    start_candidate_broadcast\n  fi/);
+  assert.match(script,/assert\.equal\(report\.phase,'stopped'\);assert\.equal\(report\.failures,0\)/);
+});
+
 test('mixed audience cannot run outside exact candidate or exceed bounded load',()=>{
   const unsupported=rejectedPreflight('current','1','1','0','1001');assert.equal(unsupported.status,1);assert.match(unsupported.stderr,/Unsupported isolated operational audience/);
   const unscoped=rejectedPreflight('current','1','0','0','10');assert.equal(unscoped.status,1);assert.match(unscoped.stderr,/requires explicit full candidate operations mode/);

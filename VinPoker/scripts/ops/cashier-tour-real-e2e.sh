@@ -1371,6 +1371,13 @@ prepare_current_movement_schema() {
       <"$repo_root/supabase/migrations/$move_migration"
   done
 }
+start_candidate_broadcast() {
+  [[ -z "${clock_flush_pid:-}" ]]
+  LOCAL_CLOCK_CANDIDATE_STATUS="$test_root/isolated-status.json" \
+  LOCAL_CLOCK_CANDIDATE_REPORT="$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" \
+    node "$repo_root/scripts/ops/clock-candidate-broadcast.mjs" &
+  clock_flush_pid=$!
+}
 finish_candidate_broadcast() {
   kill -TERM "$clock_flush_pid"
   wait "$clock_flush_pid"
@@ -1473,10 +1480,9 @@ SELECT jsonb_build_object('kind','OWNED_CLOCK_REAL_BROADCAST_PUBLICATION_BOOTSTR
   WHERE p.pubname='supabase_realtime_messages_publication' AND r.prrelid='realtime.messages'::regclass),
  'productionChanged',false,'quotaChanged',false,'qualification',false);
 CLOCK_BROADCAST_BOOTSTRAP
-  LOCAL_CLOCK_CANDIDATE_STATUS="$test_root/isolated-status.json" \
-  LOCAL_CLOCK_CANDIDATE_REPORT="$repo_root/output/operations-latency/clock-candidate-broadcast-http.json" \
-    node "$repo_root/scripts/ops/clock-candidate-broadcast.mjs" &
-  clock_flush_pid=$!
+  if [[ "$clock_candidate_probe" == 1 || "$audience_count" == 0 ]]; then
+    start_candidate_broadcast
+  fi
   if [[ "$clock_candidate_probe" == 1 ]]; then
     run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
     finish_candidate_broadcast
@@ -1590,6 +1596,10 @@ CURRENT_SCHEMA_HTTP_READY
 import assert from 'node:assert/strict';import {writeFileSync} from 'node:fs';
 assert.match(process.argv[2],/^[a-f0-9]{32}$/);writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_COMPLETE_SCHEMA_BEFORE_CONTINUOUS_AUDIENCE',phase:'frozen-before-admission',before:process.argv[2],after:null,unchanged:null,ddlGuardEnabled:true,schemaCacheAcknowledged:true,cacheProbeScope:'New constant-only fixture signature on the single owned PostgREST instance;not product behavior or latency evidence',qualification:false,productionChanged:false},null,2));
 SCHEMA_FROZEN_RECEIPT
+    # The pool experiment can recreate PostgREST. Start its HTTP worker only
+    # after all fixture DDL, pool startup/readiness and the catalog freeze,
+    # before admitting viewers or measuring any operational writes.
+    start_candidate_broadcast
     if [[ "$audience_count" == 1000 ]]; then
       LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" node "$repo_root/scripts/ops/operations-db-pressure.mjs" "$db_container" \
         "$repo_root/output/operations-latency/operations-db-pressure-http.json" >"$test_root/db-pressure-private.log" 2>&1 &
