@@ -2,6 +2,8 @@
 set -euo pipefail
 
 artifact_dir="${1:-}"
+rehearsal_mode="${2:-}"
+[[ -z "$rehearsal_mode" || "$rehearsal_mode" == '--hud-full34-rehearsal' ]] || exit 64
 if [[ -z "$artifact_dir" ]]; then
   echo "Encrypted recovery artifact directory is required" >&2
   exit 64
@@ -299,3 +301,9 @@ echo "ROLE_METADATA_RESTORED=PASS"
 echo "VERIFIED_ANON_FUNCTIONS_PRESERVED=PASS"
 echo "RESTORE_NETWORK_EGRESS=BLOCKED"
 echo "RESTORED_CRON_JOBS=DISABLED"
+
+if [[ "$rehearsal_mode" == '--hud-full34-rehearsal' ]]; then
+  HUD_FULL34_ISOLATION_VERIFIED='egress-blocked-cron-off' node \
+    "$(dirname -- "$0")/tracker-hud-full34-isolated.mjs" "$db_container" \
+    "$GITHUB_WORKSPACE/candidate/VinPoker" "$RUNNER_TEMP/hud-full34-rehearsal.json"
+fi
