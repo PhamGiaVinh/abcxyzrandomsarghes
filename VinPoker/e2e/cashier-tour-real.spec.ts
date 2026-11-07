@@ -327,14 +327,17 @@ test('Floor and Dealer Swing authenticated HTTP read latency after check-in',asy
  },null,2));
  for(const operation of operations)for(const concurrency of [1,5,20]){
   const cardinalities=new Set<number>();
+  const failures:{status:number;code:string|null;elapsedMs:number}[]=[];
   const read=async()=>{
    const started=performance.now();
    const response=await fetch(`${api}/rest/v1/rpc/${operation.rpc}`,{
     method:'POST',headers:{apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
     body:JSON.stringify(operation.args),signal:AbortSignal.timeout(5000),
    });
-   const payload=await response.json(),elapsed=performance.now()-started;
+   const payload=await response.json().catch(()=>null),elapsed=performance.now()-started;
+   if(!response.ok)failures.push({status:response.status,code:typeof payload?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(payload.code)?payload.code:null,elapsedMs:elapsed});
    expect(response.ok,operation.rpc).toBe(true);
+   expect(payload,'HTTP response must contain valid JSON').not.toBeNull();
    if(operation.shape==='alerts'){
     expect(payload.ok).toBe(true);expect(payload.error).toBeUndefined();expect(Array.isArray(payload.alerts)).toBe(true);
     cardinalities.add(payload.alerts.length);
@@ -352,7 +355,8 @@ test('Floor and Dealer Swing authenticated HTTP read latency after check-in',asy
   };
   const batch=async(count:number)=>{
    let cursor=0;const samples:number[]=[];
-   await Promise.all(Array.from({length:Math.min(concurrency,count)},async()=>{while(cursor<count){cursor++;samples.push(await read());}}));
+   const workers=await Promise.allSettled(Array.from({length:Math.min(concurrency,count)},async()=>{while(cursor<count){cursor++;samples.push(await read());}}));
+   const failed=workers.find(worker=>worker.status==='rejected');if(failed?.status==='rejected')throw failed.reason;
    expect(samples).toHaveLength(count);return samples;
   };
   try{
@@ -362,7 +366,7 @@ test('Floor and Dealer Swing authenticated HTTP read latency after check-in',asy
    report();
   }catch(error){
    // Retain completed phases without leaking response bodies, tokens or claims.
-   results.push({rpc:operation.rpc,concurrency,status:'failed'});report();throw error;
+   results.push({rpc:operation.rpc,concurrency,status:'failed',failures});report();throw error;
   }
  }
 });
