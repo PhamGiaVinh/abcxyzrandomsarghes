@@ -7,7 +7,7 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import {createHash,randomBytes} from 'node:crypto';
 import {createInterface} from 'node:readline';
 
-export const CANDIDATE='e152f4597c3b1acaad9a7a045b23cbc6a579f130';
+export const CANDIDATE='37baa8ba8eafc38cf4938bd638d23fbf6d278a2c';
 export const BACKUP_RUN='42373584563';
 export const SOURCE_ACTION_TABLE='public.hand_actions';
 export const PAUSE_RESTORED_DISPATCHER_SQL="SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';";
