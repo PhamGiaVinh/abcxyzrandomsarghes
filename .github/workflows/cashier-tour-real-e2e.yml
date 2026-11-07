@@ -7,6 +7,8 @@ on:
       - "VinPoker/scripts/ops/cashier-tour-real-e2e.sh"
       - "VinPoker/scripts/ops/clock-candidate-broadcast.mjs"
       - "VinPoker/scripts/ops/prepare-clock-payout-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-prize-close-runtime-dependencies.mjs"
+      - "VinPoker/scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/scripts/ops/operations-audience.mjs"
       - "VinPoker/scripts/ops/operations-db-pressure.mjs"
@@ -162,7 +164,7 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test scripts/ops/cashier-schema-mode.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
+          node --test scripts/ops/cashier-schema-mode.test.mjs scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
           node --test tests/cashier/reentryTransportCandidate.test.mjs
           node --test supabase/pending-tests/fake-sepay-server.test.mjs

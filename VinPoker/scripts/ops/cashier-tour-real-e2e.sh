@@ -1534,6 +1534,9 @@ CORRECTION_OWNED_PREFLIGHT
 import {pathToFileURL} from 'node:url';import {resolve} from 'node:path';
 const root=process.argv[2],{loadClosePackage}=await import(pathToFileURL(resolve(root,'scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs')));console.log(resolve(root,loadClosePackage(root).entry.path));
 CLOSE_PRIZE_CANDIDATE_PATH
+    node "$repo_root/scripts/ops/prepare-prize-close-runtime-dependencies.mjs" "$test_root/prize-close-dependencies.sql"
+    { printf '%s\n' "SET vinpoker.isolated_prize_close='current-full34-only';"; cat "$test_root/prize-close-dependencies.sql"; } |
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
   fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" "$correction_undo_probe" <<'OPERATIONS_PACKAGE_APPLIED'
