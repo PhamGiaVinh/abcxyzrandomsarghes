@@ -15,6 +15,20 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('Undo HTTP probe rejects incomplete or historical scope before any stack access',()=>{
+ const base={CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_CLOCK_CANDIDATE_PROBE:'0',LOCAL_REENTRY_TRANSPORT_PROBE:'1',LOCAL_REENTRY_FAULT_MODE:'healthy',LOCAL_CORRECTION_UNDO_PROBE:'1',LOCAL_OPERATIONS_AUDIENCE:'0',LOCAL_OPERATIONS_AUDIENCE_MODEL:'selected-table',LOCAL_OPERATIONS_REST_POOL:'10',SCHEMA_ARTIFACT_DIRECTORY:'/missing-undo-probe-fixture'};
+ const run=(patch={})=>{
+  const assignments=Object.entries({...base,...patch}).map(([k,v])=>k+'='+v);
+  return spawnSync(process.platform==='win32'?'wsl':'env',process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env',...assignments,'bash','-s']:[...assignments,'bash','-s'],{input:script,encoding:'utf8',timeout:10000});
+ };
+ for(const patch of [{LOCAL_CORRECTION_UNDO_PROBE:'2'},{LOCAL_REENTRY_TRANSPORT_PROBE:'0',LOCAL_REENTRY_FAULT_MODE:'failure-injection'},{LOCAL_REENTRY_FAULT_MODE:'failure-injection'}]){
+  const r=run(patch);assert.equal(r.status,1);assert.match(r.stderr,/Correction Undo probe requires current isolated full operations and healthy reentry candidate/);
+ }
+ const valid=run();assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
+ const historical=run({CASHIER_SCHEMA_MODE:'pre03',LOCAL_OPERATIONS_REALTIME:'0',LOCAL_OPERATIONS_CANDIDATE_PROBE:'0',LOCAL_REENTRY_TRANSPORT_PROBE:'0',LOCAL_REENTRY_FAULT_MODE:'failure-injection'});
+ assert.equal(historical.status,1);assert.match(historical.stderr,/Correction Undo probe requires current isolated full operations/);
+});
+
 test('isolated historical Edge graph requires the unchanged canonical hand-state core',async(t)=>{
  const {build}=await import('esbuild');
  const root=mkdtempSync(join(tmpdir(),'cashier-historical-graph-'));

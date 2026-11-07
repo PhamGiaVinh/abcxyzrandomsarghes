@@ -8,6 +8,7 @@ realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
 clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 reentry_transport_probe="${LOCAL_REENTRY_TRANSPORT_PROBE:-0}"
+correction_undo_probe="${LOCAL_CORRECTION_UNDO_PROBE:-0}"
 reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
@@ -42,6 +43,9 @@ if [[ "$reentry_transport_probe" != 0 && "$reentry_transport_probe" != 1 ]] || [
 fi
 if [[ "$audience_count" != 0 && "$operations_candidate_probe" != 1 ]]; then
   echo 'Operational audience requires explicit full candidate operations mode' >&2;exit 1
+fi
+if [[ "$correction_undo_probe" != 0 && "$correction_undo_probe" != 1 ]] || [[ "$correction_undo_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$reentry_transport_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
+  echo 'Correction Undo probe requires current isolated full operations and healthy reentry candidate' >&2;exit 1
 fi
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
@@ -1315,6 +1319,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_PAID_SEATING_ENABLED="$paid_enabled" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_REENTRY_TRANSPORT_PROBE="$reentry_transport_probe" \
+  --env LOCAL_CORRECTION_UNDO_PROBE="$correction_undo_probe" \
   --env LOCAL_REENTRY_FAULT_MODE="$reentry_fault_mode" \
   --env LOCAL_REENTRY_BANK_PROBE_STAGE="${LOCAL_REENTRY_BANK_PROBE_STAGE:-0}" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
@@ -1489,9 +1494,28 @@ CLOCK_BROADCAST_BOOTSTRAP
     echo 'CLOCK_CANDIDATE_PROOF:exact31 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
     exit 0
   fi
-  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" <<'OPERATIONS_PACKAGE_APPLIED'
+  if [[ "$correction_undo_probe" == 1 ]]; then
+    node --input-type=module - "$repo_root" >"$test_root/correction-candidate-path" <<'CORRECTION_CANDIDATE_PATH'
+import {pathToFileURL} from 'node:url';
+const {loadCorrectionPackage}=await import(pathToFileURL(process.argv[2]+'/scripts/ops/tracker-hud-20261104-release.mjs').href);
+console.log(loadCorrectionPackage(process.argv[2]).entry.path);
+CORRECTION_CANDIDATE_PATH
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CORRECTION_OWNED_PREFLIGHT'
+DO $$ BEGIN
+ IF current_database()<>'postgres'
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST Tour')
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.undo_tracker_last_action_v1(uuid,uuid,uuid,uuid,bigint,uuid)'::regprocedure) IS DISTINCT FROM '60291b40aab10a1deccbe2aae1195215'
+ THEN RAISE EXCEPTION 'correction_probe_requires_owned_current_fixture';END IF;
+END $$;
+CORRECTION_OWNED_PREFLIGHT
+    correction_path="$(cat "$test_root/correction-candidate-path")"
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$repo_root/$correction_path"
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
+  fi
+  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" "$correction_undo_probe" <<'OPERATIONS_PACKAGE_APPLIED'
 import {writeFileSync} from 'node:fs';
-writeFileSync(process.argv[2],JSON.stringify({kind:process.argv[4]==='1'?'BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME':'EXACT31_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:31,pendingReentryTransportMigrations:process.argv[4]==='1'?1:0,pendingReentryTransportApplied:false,reentryFaultMode:process.argv[4]==='1'?process.argv[5]:null,hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. Optional pending transport is additional to base31,not in its release manifest. No mixed1000spectator capacity claim.'},null,2));
+writeFileSync(process.argv[2],JSON.stringify({kind:process.argv[4]==='1'?'BASE31_PLUS_PENDING_REENTRY_TRANSPORT_RUNTIME':'EXACT31_CANDIDATE_OPERATIONAL_RUNTIME',sha:process.argv[3],phase:'package-applied',migrations:31,pendingReentryTransportMigrations:process.argv[4]==='1'?1:0,pendingReentryTransportApplied:false,reentryFaultMode:process.argv[4]==='1'?process.argv[5]:null,correctionUndoProbe:process.argv[6]==='1',correctionMigrationApplied:process.argv[6]==='1',hudReads:false,hudWorker:false,backfillComplete:false,mixedSpectators:0,qualification:false,productionChanged:false,limitations:'Full operational stages follow; applied is not passed. Optional transports/correction are additional to base31,not in its release manifest. No mixed1000spectator capacity claim.'},null,2));
 OPERATIONS_PACKAGE_APPLIED
   if [[ "$audience_count" != 0 ]]; then
     # Only the fresh isolated runtime is configured; hosted quotas stay intact.
@@ -2126,6 +2150,27 @@ MANUAL_FINISH_LATENCY_ONLY_FAILURE
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND status='in_progress');")"
   if [[ "$action_finish_state" != '21|105|65|0' ]]; then echo "Manual action Finish conservation failed ($action_finish_state)" >&2; exit 1; fi
   echo 'MANUAL_ACTION_FINISH_PROOF:21completed three-player hands;105exact actions;65seat snapshots;zero active hands'
+  if [[ "$correction_undo_probe" == 1 ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CORRECTION_TEST_SCOPE'
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST Tour')
+ OR EXISTS(SELECT 1 FROM public.tracker_correction_uat_scopes WHERE tournament_id='a3000000-0000-4000-8000-000000000001')
+ THEN RAISE EXCEPTION 'correction_test_scope_preimage_drift';END IF;
+END $$;
+INSERT INTO public.tracker_correction_uat_scopes(club_id,tournament_id,tournament_table_id,user_id,capability,enabled,expires_at)
+SELECT t.club_id,tt.tournament_id,tt.id,actor.id,'undo_open_hand',true,now()+interval '10 minutes'
+FROM public.tournament_tables tt JOIN public.tournaments t ON t.id=tt.tournament_id CROSS JOIN auth.users actor
+WHERE tt.tournament_id='a3000000-0000-4000-8000-000000000001' AND actor.email='cashier-latency-1@test.invalid'
+ AND (SELECT count(*) FROM public.tournament_seats s WHERE s.tournament_table_id=tt.id AND s.is_active)=3
+ AND EXISTS(SELECT 1 FROM public.tournament_seats s JOIN auth.users p ON p.id=s.player_id WHERE s.tournament_table_id=tt.id AND s.is_active AND p.email='cashier-latency-3@test.invalid');
+DO $$ BEGIN
+ IF (SELECT count(*) FROM public.tracker_correction_uat_scopes WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND capability='undo_open_hand' AND enabled AND expires_at>now())<>1
+ THEN RAISE EXCEPTION 'correction_test_scope_requires_exact_actor_table';END IF;
+END $$;
+COMMIT;
+CORRECTION_TEST_SCOPE
+  fi
   run_browser_proof '' '' 'recorded actions enforce budget and merge once through canonical Finish|owner historical preview verifies the canonical recorded hand over real HTTP|anonymous public replay reads the recorded hand through actual HTTP' '' '' '' '' '' '' '' '' 1
   recorded_finish_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
     (SELECT count(*) FROM public.tournament_hands WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND hand_number=9023 AND status='completed'),

@@ -1596,6 +1596,13 @@ test('recorded actions enforce budget and merge once through canonical Finish',a
  test.skip(process.env.LOCAL_OPERATIONS_RECORDED_ACTION_FINISH_ENABLED!=='1','Current action guards after supplied-action Finish proof');test.setTimeout(120_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),actor=staff[0],other=staff[1],api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};let phase='setup',failure:unknown=null,evidence:unknown=null;const timings:Record<string,unknown>={};
+ const undoEnabled=process.env.LOCAL_CORRECTION_UNDO_PROBE==='1';
+ const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
+ const undoRows:{ackMs:number;retryMs:number;independentReadMs:number}[]=[];
+ let undoPhase='not-started',undoRace:{contenders:number;mutations:number;duplicates:number;stale:number}|null=null;
+ const undoErrors:Record<string,number>={};
+ const rememberUndoError=(data:{ok?:boolean;error?:unknown})=>{if(data.ok===true)return;const code=typeof data.error==='string'&&['uat_capability_disabled','stale_tracker_context','stale_source_revision','last_action_changed','actor_not_allowed','dealer_assignment_not_unique','tracker_lock_not_owned','invalid_request','request_key_conflict','undo_boundary_blind','undo_boundary_board'].includes(data.error)?data.error:'unclassified';undoErrors[code]=(undoErrors[code]??0)+1;};
+ const undoReport=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-correction-undo-http.json'),JSON.stringify({kind:'REAL_AUTH_CAPTURED_UNDO_WITH_CORRECTION33_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase:undoPhase,actors:1,graded:undoRows.length,rows:undoRows,race:undoRace,applicationDenials:undoErrors,distributions:Object.fromEntries((['ackMs','retryMs','independentReadMs'] as const).map(k=>[k,dist(undoRows.map(r=>r[k]))])),qualification:false,productionChanged:false,limitations:'One real Auth Tracker actor,20 serial Undo intents,20same-key HTTP contenders and exact writer retries on one paid three-player hand. HTTP concurrency does not prove20overlapping PostgreSQL sessions;separate native barrier test does. No UI/receipt-reader/cancellation or production capacity claim. Finish conservation follows in the parent test.'},null,2));
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-recorded-action-finish-http.json'),JSON.stringify({kind:'REAL_AUTH_RECORDED_ACTION_BUDGET_DECIDED_AND_FINISH_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,timings,evidence,qualification:false,limitations:'One three-player hand through current record_action RPC then exact Finish wrapper,real Auth/HTTP/current budget189 and decided301 guards. Tests budget before/after commitments,negative amount,actor/lock binding,20same-key first-action contenders,decided denial and idempotent action replay,omitted-action Finish rejection and no reinsertion of5existing action IDs. Not ordinary action p95,Edge/browser/Realtime,showdown/multiplepots,mixed1000viewer or production capacity.'},null,2));
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{...headers,Authorization:`Bearer ${token}`},body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok)failure={name,status:response.status,code:typeof data?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(data.code)?data.code:'unclassified',messageSha256:typeof data?.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at};};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
@@ -1616,6 +1623,44 @@ test('recorded actions enforce budget and merge once through canonical Finish',a
   phase='remaining-actions';const actionWrites:number[]=[];for(let n=1;n<supplied.length;n++){
    if(n===3){const before=await readActions(),beforeHand=await readHand();expect((await rpc(actor.token,'record_action',args({...supplied[0],action_type:'bet',action_order:4,action_amount:bb.starting_stack-399}))).data.error).toBe('tracker_action_stack_exceeded');expect(await readActions()).toEqual(before);expect(await readHand()).toEqual(beforeHand);}
    const request=args(supplied[n]),written=await rpc(actor.token,'record_action',request);expect(written.data).toMatchObject({status:'success',duplicate:false});actionWrites.push(written.ms);const beforeRetry=await readHand(),retry=await rpc(actor.token,'record_action',request);expect(retry.data).toMatchObject({status:'success',duplicate:true,action_id:written.data.action_id});expect(await readHand()).toEqual(beforeRetry);
+   if(n===3&&undoEnabled){
+    undoPhase='boundary-denials';undoReport();
+    const intent=(actionId:string,revision:number,key=crypto.randomUUID())=>({p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,p_hand_id:handId,p_expected_action_id:actionId,p_expected_source_revision:revision,p_idempotency_key:key});
+    const originalActions=await readActions(),originalHand=await readHand();
+    const originalIntent=intent(written.data.action_id,originalHand.source_revision);
+    expect((await rpc(other.token,'undo_tracker_last_action_v1',originalIntent)).data.error).toBe('uat_capability_disabled');
+    expect((await rpc(actor.token,'undo_tracker_last_action_v1',{...originalIntent,p_tournament_id:'00000000-0000-4000-8000-000000000001'})).data.error).toBe('stale_tracker_context');
+    expect((await rpc(actor.token,'undo_tracker_last_action_v1',{...originalIntent,p_expected_source_revision:originalHand.source_revision+1})).data.error).toBe('stale_source_revision');
+    expect(await readActions()).toEqual(originalActions);expect(await readHand()).toEqual(originalHand);
+    undoPhase='same-key-race';undoReport();
+    const raced=await Promise.all(Array.from({length:20},()=>rpc(actor.token,'undo_tracker_last_action_v1',originalIntent)));
+    const mutations=raced.filter(r=>r.data.ok===true&&r.data.duplicate===false);
+    for(const r of raced)rememberUndoError(r.data);
+    undoRace={contenders:20,mutations:mutations.length,duplicates:raced.filter(r=>r.data.duplicate===true).length,stale:raced.filter(r=>r.data.ok!==true).length};
+    undoReport();expect(mutations).toHaveLength(1);
+    for(const r of raced)expect(r.data.ok===true||['stale_source_revision','last_action_changed'].includes(r.data.error)).toBe(true);
+    const receipt=mutations[0].data;
+    const recovered=await Promise.all(Array.from({length:20},()=>rpc(actor.token,'undo_tracker_last_action_v1',originalIntent)));
+    for(const r of recovered)expect(r.data).toEqual({...receipt,duplicate:true});
+    expect((await readActions()).map(({id,...a}:{id:string})=>a)).toEqual(supplied.slice(0,3));
+    const afterRace=await readHand();expect(afterRace.source_revision).toBeGreaterThan(originalHand.source_revision);
+    expect((await rpc(actor.token,'undo_tracker_last_action_v1',{...originalIntent,p_expected_source_revision:originalIntent.p_expected_source_revision+1})).data.error).toBe('request_key_conflict');
+    expect(await readHand()).toEqual(afterRace);
+    undoPhase='graded';undoReport();
+    for(let sample=0;sample<20;sample++){
+     const restored=await rpc(actor.token,'record_action',args(supplied[n]));expect(restored.data.status).toBe('success');
+     const current=await readHand(),undoIntent=intent(restored.data.action_id,current.source_revision);
+     const undone=await rpc(actor.token,'undo_tracker_last_action_v1',undoIntent);rememberUndoError(undone.data);expect(undone.data).toMatchObject({ok:true,duplicate:false});
+     expect(undone.data.undone_action_id).toBe(restored.data.action_id);
+     const replay=await rpc(actor.token,'undo_tracker_last_action_v1',undoIntent);expect(replay.data).toEqual({...undone.data,duplicate:true});
+     const at=performance.now(),actions=await readActions(),after=await readHand();
+     expect(actions.map(({id,...a}:{id:string})=>a)).toEqual(supplied.slice(0,3));
+     expect(after.source_revision).toBe(undone.data.source_revision);expect(after.status).toBe('in_progress');
+     undoRows.push({ackMs:undone.ms,retryMs:replay.ms,independentReadMs:performance.now()-at});undoReport();
+    }
+    expect((await rpc(actor.token,'record_action',args(supplied[n]))).data.status).toBe('success');
+    undoPhase='awaiting-finish-conservation';undoReport();
+   }
   }timings.remainingActionWriteMs=actionWrites;
   const recorded=await readActions();expect(recorded).toHaveLength(5);expect(recorded.map(({id,...a}:{id:string})=>a)).toEqual(supplied);phase='decided-fence';const decidedHand=await readHand();expect((await rpc(actor.token,'record_action',args({...supplied[0],action_type:'check',action_order:6,action_amount:0}))).data.error).toBe('tracker_hand_already_decided');expect((await rpc(actor.token,'record_action',firstArgs)).data).toMatchObject({status:'success',duplicate:true,action_id:contenders[0].data.action_id});expect(await readActions()).toEqual(recorded);expect(await readHand()).toEqual(decidedHand);
   const payload={players:frozen.map(p=>({...p,ending_stack:p.starting_stack+(p.player_id===sb.player_id?-100:p.player_id===bb.player_id?100:0),is_eliminated:false,side_pots:[],hole_cards:[]})),actions:supplied,community_cards:[],side_pots:[{amount:200,eligible_player_ids:[bb.player_id]}],hand_time:hand.hand_time,pot_size:200};
@@ -1623,8 +1668,10 @@ test('recorded actions enforce budget and merge once through canonical Finish',a
   phase='finish-merge';const omitted=payload.actions.filter(a=>!(a.action_type==='fold'&&a.player_id!==sb.player_id));expect(omitted).toHaveLength(4);expect((await rpc(actor.token,'record_tracker_manual_hand_v1',{p_intent:{...intent,request_id:crypto.randomUUID(),payload:{...payload,actions:omitted}}})).data.error).toBe('action_conflict');expect(await readHand()).toEqual(decidedHand);expect(await readActions()).toEqual(recorded);
   const committed=await rpc(actor.token,'record_tracker_manual_hand_v1',{p_intent:intent});expect(committed.data.ok).toBe(true);timings.finishMs=committed.ms;expect((await rpc(actor.token,'record_tracker_manual_hand_v1',{p_intent:intent})).data).toEqual(committed.data);expect((await rpc(actor.token,'get_tracker_manual_finish_receipt_v1',{p_intent:intent})).data).toEqual(committed.data);expect(await readActions()).toEqual(recorded);expect((await readHand()).status).toBe('completed');expect(await readPlayers()).toEqual(payload.players.map(({is_eliminated,side_pots,hole_cards,...p})=>p));
   expect((await rpc(actor.token,'record_action',args({...supplied[0],action_type:'check',action_order:6,action_amount:0}))).data.error).toBe('Hand is not in progress');expect(await readActions()).toEqual(recorded);const paid=(await roster()).flatMap(t=>t.seats).filter(p=>staff.some(s=>s.userId===p.player_id));expect(paid).toHaveLength(20);expect(paid.reduce((n,p)=>n+p.chip_count,0)).toBe(400000);for(const p of payload.players)expect(paid.find(s=>s.player_id===p.player_id)!.chip_count).toBe(p.ending_stack);
-  evidence={sameKeyRequests:20,firstWrites:1,duplicateReplies:19,stableActionRows:5,stableActionIds:true,overStackDenials:2,negativeAmountDenials:1,decidedHandDenied:true,decidedActionReplaySucceeded:true,omittedActionFinishDenied:true,exactFinishReplayAndReceipt:true,paidPlayerChips:400000};phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}
+  evidence={sameKeyRequests:20,firstWrites:1,duplicateReplies:19,stableActionRows:5,stableActionIds:true,overStackDenials:2,negativeAmountDenials:1,decidedHandDenied:true,decidedActionReplaySucceeded:true,omittedActionFinishDenied:true,exactFinishReplayAndReceipt:true,paidPlayerChips:400000};
+  if(undoEnabled){expect(undoRows).toHaveLength(20);for(const k of ['ackMs','retryMs','independentReadMs'] as const)expect(dist(undoRows.map(r=>r[k])).p95Ms,k).toBeLessThanOrEqual(1000);undoPhase='passed';undoReport();}
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();if(undoEnabled){undoPhase+='-failed';undoReport();}throw error;}
 });
 
 test('owner historical preview verifies the canonical recorded hand over real HTTP',async({page})=>{
