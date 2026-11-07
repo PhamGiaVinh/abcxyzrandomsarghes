@@ -8,5 +8,8 @@ import "https://esm.sh/@supabase/supabase-js@2.45.0";
 // Existing Dealer shared-module type imports use this exact specifier. Warm
 // its graph before outbound isolation too; production handler source is intact.
 import "https://esm.sh/@supabase/supabase-js@2";
+// Exact unchanged compute-payouts imports for the isolated prize-close probe.
+import "https://esm.sh/@supabase/supabase-js@2.39.7";
+import "https://deno.land/std@0.177.0/http/server.ts";
 
 Deno.serve(() => new Response(null, { status: 204 }));

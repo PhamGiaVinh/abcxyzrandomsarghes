@@ -2119,3 +2119,46 @@ test('current owner rake closes once and exports the immutable event-day snapsho
   expect(dist(liveReads).p95Ms).toBeLessThanOrEqual(1000);expect(dist(finalReads).p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
+
+
+test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
+ const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';
+ const headers={apikey:anon,Authorization:'Bearer '+owner,'Content-Type':'application/json'};
+ let phase='setup',failure:{operation:string;httpStatus:number;code:string|null;messageSha256:string|null}|null=null,paidRows=0,prizeTotal=0,reconcileDelta:number|null=null;
+ const timings:{operation:string;ms:number}[]=[];
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,timings,qualification:false,productionChanged:false,limits:'Fresh3-entry TEST tour after audience drain. Actual GoTrue owner/staff and PostgREST/unchanged compute-payouts Edge. Manual Floor busts,not Tracker cards/Finish or prize-button UI. Four same-key payment HTTP calls;not load qualification or complete full34 ledger/activation proof.'},null,2));
+ const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
+  const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
+  timings.push({operation,ms:performance.now()-at});
+  if(!response.ok||data.ok===false||data.success===false){failure={operation,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null,messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};report();}
+  expect(response.ok,operation).toBe(true);expect(data.ok,operation).not.toBe(false);expect(data.success,operation).not.toBe(false);return data;
+ };
+ const rpc=(name:string,args:Record<string,unknown>,custom=headers)=>request(name,'/rest/v1/rpc/'+name,args,custom);
+ type Seat={entry_id:string;chip_count:number;player_id:string};type Table={tournament_table_id:string;session_revision:number;control_epoch:number;seats:Seat[]};
+ const roster=async()=>await rpc(floorRosterRpc,{p_tournament_id:tour}) as Table[];
+ try{
+  report();const opened={p_tournament_id:tour,p_game_table_id:'ac720000-0000-4000-8000-000000000001',p_control_mode:'manual',p_request_id:crypto.randomUUID()};expect((await rpc('floor_open_tournament_table_v3',opened)).ok).toBe(true);
+  phase='register-and-pay';report();
+  for(const actor of staff){const actorHeaders={...headers,Authorization:'Bearer '+actor.token},registered=await request('tournament-register','/functions/v1/tournament-register',{tournament_id:tour},actorHeaders);expect(registered.success).toBe(true);expect(Number(registered.total_pay)).toBe(6600000);
+   const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registered.registration_id,amount:6600000,request_id:crypto.randomUUID()},args={p_intent:intent,p_action:'record'};
+   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
+  }
+  const before=await roster();expect(before).toHaveLength(1);expect(before[0].seats).toHaveLength(3);expect(before[0].seats.reduce((n,s)=>n+s.chip_count,0)).toBe(60000);
+  phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};
+  const run=await rpc('prepare_payout_snapshot',prepare);expect(run.status).toBe('prepared');expect(run.entries_snapshot).toBe(3);expect(run.prize_pool_snapshot).toBe(18000000);
+  const computed=await request('compute-payouts','/functions/v1/compute-payouts',{mode:'official',run_id:run.run_id});expect(computed.applied.status).toBe('applied');expect(computed.result.rows).toHaveLength(1);expect(computed.result.rows[0].amount).toBe(18000000);expect((await rpc('prepare_payout_snapshot',prepare)).run_id).toBe(run.run_id);
+  phase='manual-floor-results';report();
+  for(let n=0;n<2;n++){const t=(await roster())[0],seat=t.seats[0];const intent={p_entry_id:seat.entry_id,p_expected_revision:t.session_revision,p_expected_control_epoch:t.control_epoch,p_expected_chip_count:seat.chip_count,p_request_id:crypto.randomUUID(),p_reason:'isolated manual Floor elimination'};const busted=await rpc('floor_bust_player_v3',intent);expect(busted.ok).toBe(true);expect(await rpc('floor_bust_player_v3',intent)).toEqual(busted);}
+  const unpaid=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(unpaid.prize_total).toBe(0);
+  const recipients=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});expect(recipients.places).toHaveLength(1);const place=recipients.places[0];expect(place.finishedPlace).toBe(1);expect(place.prizeAmount).toBe(18000000);expect(place.isPaid).toBe(false);
+  phase='concurrent-prize-payment';report();const payment={p_tournament_id:tour,p_finished_place:1,p_method:'cash',p_expected_token:place.confirmationToken,p_request_id:crypto.randomUUID()};
+  const paid=await Promise.all(Array.from({length:4},()=>rpc('record_tournament_prize_payment_v2',payment)));for(const value of paid)expect(value).toEqual(paid[0]);expect(paid[0].ok).toBe(true);expect(paid[0].prize_amount).toBe(18000000);const receipt=await rpc('get_tournament_prize_payment_receipt_v2',{p_request_id:payment.p_request_id});expect(receipt.found).toBe(true);expect(receipt.result).toEqual(paid[0]);
+  const afterPayment=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});expect(afterPayment.paidCount).toBe(1);expect(afterPayment.paidTotal).toBe(18000000);paidRows=afterPayment.paidCount;
+  phase='release-and-close';report();const t=(await roster())[0];expect(t.seats).toHaveLength(1);const winner=t.seats[0],free={p_entry_id:winner.entry_id,p_expected_revision:t.session_revision,p_expected_control_epoch:t.control_epoch,p_expected_chip_count:winner.chip_count,p_request_id:crypto.randomUUID(),p_reason:'isolated final winner Free Sit'};const freed=await rpc('floor_free_sit_player_v1',free);expect(freed.ok).toBe(true);expect(freed.stack_preserved).toBe(20000);expect(await rpc('floor_free_sit_player_v1',free)).toEqual(freed);
+  const empty=(await roster())[0],closeTable={p_tournament_table_id:empty.tournament_table_id,p_expected_revision:empty.session_revision,p_request_id:crypto.randomUUID()};expect((await rpc('close_tournament_table_v4',closeTable)).closed).toBe(true);
+  const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
+  const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
+  const retry=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated close recovery'});expect(retry.outcome).toBe('already_closed');expect(retry.report_id).toBe(closed.report_id);expect(failure).toBeNull();phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});

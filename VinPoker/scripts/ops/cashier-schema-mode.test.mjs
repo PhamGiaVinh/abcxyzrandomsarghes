@@ -565,3 +565,16 @@ test('bank ambiguity executes only after its dedicated fixture stage,not the ini
  assert.ok(stage<script.indexOf('REENTRY_BANK_AMBIGUITY_RECOVERY'));
  assert.equal(script.split('LOCAL_REENTRY_BANK_PROBE_STAGE=1').length-1,1);
 });
+
+
+test('prize-close HTTP probe requires full current33 and retains its bounded final receipt',()=>{
+ const env={CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_CLOCK_CANDIDATE_PROBE:'0',LOCAL_REENTRY_TRANSPORT_PROBE:'1',LOCAL_REENTRY_FAULT_MODE:'healthy',LOCAL_CORRECTION_UNDO_PROBE:'1',LOCAL_OPERATIONS_PRIZE_CLOSE_PROBE:'1',LOCAL_OPERATIONS_REDRAW_PROBE:'0',LOCAL_OPERATIONS_AUDIENCE:'0',LOCAL_OPERATIONS_AUDIENCE_MODEL:'selected-table',LOCAL_OPERATIONS_REST_POOL:'10',SCHEMA_ARTIFACT_DIRECTORY:'/missing-prize-close-fixture'};
+ const run=patch=>{const args=Object.entries({...env,...patch}).map(([k,v])=>k+'='+v);return spawnSync(process.platform==='win32'?'wsl':'env',process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env',...args,'bash','-s']:[...args,'bash','-s'],{input:script,encoding:'utf8',timeout:10000});};
+ for(const patch of [{LOCAL_OPERATIONS_PRIZE_CLOSE_PROBE:'invalid'},{LOCAL_CORRECTION_UNDO_PROBE:'0'}]){const r=run(patch);assert.equal(r.status,1);assert.match(r.stderr,/PRIZE_CLOSE_PROBE_REQUIRES_CURRENT_FULL33_OPERATIONS/);}
+ const valid=run({});assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
+ assert.ok(script.indexOf("[functions.compute-payouts]")<script.indexOf('supabase start --exclude'));
+ assert.ok(script.indexOf("CLOSE_PRIZE_CANDIDATE_PATH")>script.indexOf('CORRECTION_OWNED_PREFLIGHT'));
+ assert.ok(script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')>script.indexOf('PREPARED_HUD_FINAL_RECEIPT'));
+ assert.ok(posix.matchesGlob('VinPoker/output/operations-latency/cashier-http-prize-close-http.json','VinPoker/output/operations-latency/*-http.json'));
+ const e2e=readFileSync(new URL('../../e2e/cashier-tour-real.spec.ts',import.meta.url),'utf8');assert.ok(e2e.includes('LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED'));assert.ok(e2e.includes("prizeTotal=closed.prize_total"));
+});

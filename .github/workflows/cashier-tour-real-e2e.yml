@@ -100,6 +100,11 @@ on:
         type: boolean
         default: false
 
+      prize_close_probe:
+        description: Isolated full34 Floor/Cashier paid-prize HTTP journey after audience drain
+        type: boolean
+        default: false
+
       reentry_fault_mode:
         description: Inject notification faults at10viewers or measure healthy candidate operations
         type: choice
@@ -211,6 +216,7 @@ jobs:
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
           LOCAL_CORRECTION_UNDO_PROBE: ${{ inputs.correction_undo_probe && '1' || '0' }}
+          LOCAL_OPERATIONS_PRIZE_CLOSE_PROBE: ${{ inputs.prize_close_probe && '1' || '0' }}
           LOCAL_OPERATIONS_REDRAW_PROBE: ${{ inputs.redraw_probe && '1' || '0' }}
           LOCAL_REENTRY_FAULT_MODE: ${{ inputs.reentry_fault_mode || 'failure-injection' }}
           LOCAL_OPERATIONS_REST_POOL: ${{ inputs.operations_rest_pool || '10' }}

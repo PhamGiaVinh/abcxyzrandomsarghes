@@ -10,6 +10,7 @@ operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 reentry_transport_probe="${LOCAL_REENTRY_TRANSPORT_PROBE:-0}"
 correction_undo_probe="${LOCAL_CORRECTION_UNDO_PROBE:-0}"
 redraw_probe="${LOCAL_OPERATIONS_REDRAW_PROBE:-0}"
+prize_close_probe="${LOCAL_OPERATIONS_PRIZE_CLOSE_PROBE:-0}"
 reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
@@ -47,6 +48,9 @@ if [[ "$audience_count" != 0 && "$operations_candidate_probe" != 1 ]]; then
 fi
 if [[ "$correction_undo_probe" != 0 && "$correction_undo_probe" != 1 ]] || [[ "$correction_undo_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$reentry_transport_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Correction Undo probe requires current isolated full operations and healthy reentry candidate' >&2;exit 1
+fi
+if [[ "$prize_close_probe" != 0 && "$prize_close_probe" != 1 ]] || [[ "$prize_close_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$correction_undo_probe" != 1 ) ]]; then
+  echo "PRIZE_CLOSE_PROBE_REQUIRES_CURRENT_FULL33_OPERATIONS" >&2; exit 1
 fi
 if [[ "$redraw_probe" != 0 && "$redraw_probe" != 1 ]] || [[ "$redraw_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 ) ]]; then
   echo 'Redraw probe requires current isolated full operations' >&2;exit 1
@@ -315,6 +319,9 @@ printf '%s\n' \
   'verify_jwt = true' >>supabase/config.toml
 if [[ "$operations_candidate_probe" == 1 ]]; then
   printf '%s\n' '[functions.tournament-historical-settlement]' 'verify_jwt = true' >>supabase/config.toml
+fi
+if [[ "$prize_close_probe" == 1 ]]; then
+  printf '%s\n' '[functions.compute-payouts]' 'verify_jwt = true' >>supabase/config.toml
 fi
 printf '%s\n' \
   'SEPAY_RECONCILE_SECRET=cashier-edge-reconcile-test' \
@@ -771,6 +778,9 @@ if [[ "$schema_mode" == current ]]; then
   cp -R "$repo_root/supabase/functions/checkout-dealer" supabase/functions/checkout-dealer
   cp -R "$repo_root/supabase/functions/tournament-reentry" supabase/functions/tournament-reentry
   if [[ "$operations_candidate_probe" == 1 ]]; then
+    if [[ "$prize_close_probe" == 1 ]]; then
+      cp -R "$repo_root/supabase/functions/compute-payouts" supabase/functions/compute-payouts
+    fi
     cp -R "$repo_root/supabase/functions/tournament-historical-settlement" supabase/functions/tournament-historical-settlement
     # Local CLI may mount functions without src. Bundle the unchanged handler
     # and its canonical pure core into this disposable entry, as for HUD workers.
@@ -1324,6 +1334,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_REENTRY_TRANSPORT_PROBE="$reentry_transport_probe" \
   --env LOCAL_CORRECTION_UNDO_PROBE="$correction_undo_probe" \
+  --env LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED="${LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED:-0}" \
   --env LOCAL_OPERATIONS_REDRAW_ENABLED="${LOCAL_OPERATIONS_REDRAW_ENABLED:-0}" \
   --env LOCAL_REENTRY_FAULT_MODE="$reentry_fault_mode" \
   --env LOCAL_REENTRY_BANK_PROBE_STAGE="${LOCAL_REENTRY_BANK_PROBE_STAGE:-0}" \
@@ -1517,6 +1528,13 @@ CORRECTION_OWNED_PREFLIGHT
     correction_path="$(cat "$test_root/correction-candidate-path")"
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$repo_root/$correction_path"
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
+  fi
+  if [[ "$prize_close_probe" == 1 ]]; then
+    node --input-type=module - "$repo_root" >"$test_root/close-prize-candidate-path" <<'CLOSE_PRIZE_CANDIDATE_PATH'
+import {pathToFileURL} from 'node:url';import {resolve} from 'node:path';
+const root=process.argv[2],{loadClosePackage}=await import(pathToFileURL(resolve(root,'scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs')));console.log(resolve(root,loadClosePackage(root).entry.path));
+CLOSE_PRIZE_CANDIDATE_PATH
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
   fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" "$correction_undo_probe" <<'OPERATIONS_PACKAGE_APPLIED'
 import {writeFileSync} from 'node:fs';
@@ -2406,4 +2424,39 @@ const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);
 assert.equal(r.locks.length,20);assert.equal(r.redraws.length,20);assert.equal(r.qualification,false);assert.equal(r.legacyOrphanDenied,true);
 FINAL_REDRAW_RECEIPT
+fi
+
+
+if [[ "$prize_close_probe" == 1 ]]; then
+  prize_history_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT coalesce((SELECT player_history_enabled::text FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001'),'missing');")"
+  [[ "$prize_history_before" == true || "$prize_history_before" == false || "$prize_history_before" == missing ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PRIZE_CLOSE_FRESH_FIXTURE'
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE frozen)
+ OR EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000005')
+ OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number=94)
+ THEN RAISE EXCEPTION 'prize_close_fresh_fixture_scope_required';END IF;
+END $$;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
+VALUES('a3000000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST','registering','registering',now(),6000000,600000,0,false,0,0);
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+VALUES('ac720000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST',94,'tournament','inactive','available');
+INSERT INTO public.club_settings(club_id,player_history_enabled) VALUES('a2000000-0000-4000-8000-000000000001',true)
+ON CONFLICT(club_id) DO UPDATE SET player_history_enabled=true;
+COMMIT;
+PRIZE_CLOSE_FRESH_FIXTURE
+  prize_close_status=0
+  LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED=1 run_browser_proof '' '' 'final current Floor Cashier prizes close over real Auth HTTP' || prize_close_status=$?
+  if [[ "$prize_history_before" == missing ]]; then
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DELETE FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001';"
+  else
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "UPDATE public.club_settings SET player_history_enabled=$prize_history_before WHERE club_id='a2000000-0000-4000-8000-000000000001';"
+  fi
+  [[ "$prize_close_status" == 0 ]]
+  node --input-type=module - "$repo_root/output/operations-latency/cashier-http-prize-close-http.json" "$source_sha" <<'FINAL_PRIZE_CLOSE_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);assert.equal(r.paidRows,1);assert.equal(r.prizeTotal,18000000);assert.equal(r.reconcileDelta,0);assert.equal(r.qualification,false);
+FINAL_PRIZE_CLOSE_RECEIPT
 fi
