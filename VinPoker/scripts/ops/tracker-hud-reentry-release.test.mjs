@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {loadReentryPackage,validateReentryState,validateReentryPostcheck,atomicQuery,validateRecovery,PROJECT} from './tracker-hud-20261104-release.mjs';
+import {loadReentryPackage,loadCorrectionPackage,validateCorrectionState,validateCorrectionMaintenance,validateReentryState,validateReentryPostcheck,atomicQuery,validateRecovery,PROJECT} from './tracker-hud-20261104-release.mjs';
 
 const pkg=loadReentryPackage();
 const state=()=>({baseline:{rows:pkg.base.manifest.baselineLedgerRows,fingerprint:pkg.base.manifest.baselineLedgerFingerprint,applied:31,spectatorPaused:true},receiptsMatch:true,supplementAbsent:true,objectAbsent:true});
@@ -24,4 +24,16 @@ test('recovery must be fresh, verified and private',()=>{
  const now=Date.now(),good={projectRef:PROJECT,producerExit:0,fullArchiveStreamReadbackExit:0,bytes:1,sha256:'a'.repeat(64),privateStorage:'private',restoreProcedure:'documented',interveningWritesAssessed:true,snapshotStart:new Date(now).toISOString()};
  assert.doesNotThrow(()=>validateRecovery(good,now));
  for(const patch of [{snapshotStart:new Date(now-3600001).toISOString()},{fullArchiveStreamReadbackExit:1},{interveningWritesAssessed:false}])assert.throws(()=>validateRecovery({...good,...patch},now));
+});
+test('correction pins full32 prefix and exact original context',()=>{
+ const p=loadCorrectionPackage();assert.equal(p.base.entries.length,32);assert.equal(p.entry.order,33);
+ const good={baseline:{rows:p.base.manifest.baselineLedgerRows,fingerprint:p.base.manifest.baselineLedgerFingerprint,applied:32,spectatorPaused:true},receiptsMatch:true,supplementAbsent:true,activeCorrectionCalls:0,activityVisible:true,object:{...p.manifest.precheck,grantOptions:0}};
+ assert.doesNotThrow(()=>validateCorrectionState(good,p.base,p.manifest));
+ for(const patch of [{receiptsMatch:false},{supplementAbsent:false},{activityVisible:false},{activeCorrectionCalls:1},{object:{...good.object,bodyMd5:p.manifest.postcheck.bodyMd5}},{baseline:{...good.baseline,applied:31}}])assert.throws(()=>validateCorrectionState({...good,...patch},p.base,p.manifest));
+ assert.equal((atomicQuery(p.entry,p.base).match(/cardinality\(statements\)=1/g)??[]).length,32);
+});
+test('correction maintenance must match SHA and current pause/drain evidence',()=>{
+ const now=Date.now(),sha='a'.repeat(40),good={projectRef:PROJECT,sourceSha:sha,acceptNewCorrectionCalls:false,correctionPauseVerified:true,inFlightCalls:0,pauseEvidenceSha256:'b'.repeat(64),resumeProcedure:'reviewed resumption',observedAt:new Date(now).toISOString()};
+ assert.doesNotThrow(()=>validateCorrectionMaintenance(good,sha,now));
+ for(const patch of [{sourceSha:'c'.repeat(40)},{acceptNewCorrectionCalls:true},{correctionPauseVerified:false},{inFlightCalls:1},{pauseEvidenceSha256:'invalid'},{observedAt:new Date(now-300001).toISOString()},{resumeProcedure:''}])assert.throws(()=>validateCorrectionMaintenance({...good,...patch},sha,now));
 });
