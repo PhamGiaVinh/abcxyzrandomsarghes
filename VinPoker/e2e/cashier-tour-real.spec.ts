@@ -1672,9 +1672,10 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
  let phase='source',navigationToReadyMs:number|null=null,anonymousHttpReads=0,pageErrorCount=0;
  const replayHttp:Record<string,{statuses:Record<string,number>;sqlStates:Record<string,number>;aborted:number;otherFailures:number}>={};
  const diagnosticReads:Promise<void>[]=[];
+ const navigationSamplesMs:number[]=[];
  let replayPage:Page|undefined,uiState:Record<string,boolean|number>|null=null;
  const evidence={sourceHandVerified:false,anonymousHandVerified:false,crossTourDenied:false,actualBrowserRpc:false,sliderAdvanced:false,sliderRewound:false,anonymousStorage:true};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-replay-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PUBLIC_REPLAY_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,anonymousHttpReads,pageErrorCount,navigationToReadyMs,replayHttp,uiState,samples:navigationToReadyMs===null?0:1,qualification:false,limitations:'One real anonymous Chromium replay through public HTTP for the preceding canonical five-action fold hand. No route interception/dev fixtures/derived-HUD activation. Verifies source identity,table/tour scoping and action scrubbing. One navigation is not p95 or1000DOM capacity. Does not qualify showdown,sidepots,HUD freeze or history-dot navigation. Diagnostics retain only known RPC names,HTTP status/SQLSTATE counters and fixed UI booleans/counts;no DOM text,payloads,URLs or credentials.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-replay-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PUBLIC_REPLAY_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,anonymousHttpReads,pageErrorCount,navigationToReadyMs,navigationSamplesMs,replayHttp,uiState,samples:navigationSamplesMs.length,requiredNavigations:5,qualification:false,limitations:'Five sequential real anonymous Chromium navigations through public HTTP for the preceding canonical five-action fold hand. No route interception/dev fixtures/derived-HUD activation. Verifies source identity,table/tour scoping and action scrubbing. Five navigations are a bounded repeatability probe,not p95 or1000DOM capacity. Does not qualify showdown,sidepots,HUD freeze or history-dot navigation. Diagnostics retain only known RPC names,HTTP status/SQLSTATE counters and fixed UI booleans/counts;no DOM text,payloads,URLs or credentials.'},null,2));
  let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  try{
  const response=await fetch(api+'/rest/v1/tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023',{headers,signal:AbortSignal.timeout(5000)});
@@ -1705,11 +1706,28 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
   phase='browser';const at=performance.now();
   await viewer.goto('/live/'+tour+'?handId='+hand.id+'&tableId='+hand.tournament_table_id+'&tab=hands');
   const actual=await publicResponse;expect(actual.ok()).toBe(true);verify(await actual.json());evidence.actualBrowserRpc=true;
-  const rail=viewer.getByTestId('replay-action-rail');await expect(rail).toBeVisible();navigationToReadyMs=performance.now()-at;
+  const rail=viewer.getByTestId('replay-action-rail');await expect(rail).toBeVisible();navigationToReadyMs=performance.now()-at;navigationSamplesMs.push(navigationToReadyMs);
   const slider=rail.getByRole('slider',{name:'Tua lại ván'});await expect(slider).toHaveAttribute('aria-valuemax','5');
   await rail.getByTitle('Về đầu',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','0');
   await rail.getByTitle('Tiến 1 bước',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','1');evidence.sliderAdvanced=true;
   await rail.getByTitle('Về đầu',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','0');evidence.sliderRewound=true;
+  // Independent document loads under the same operational audience. No retry:
+  // the first failed scoped response or missing rail fails the entire test.
+  for(let iteration=1;iteration<5;iteration++){
+   phase='browser-reload-'+iteration;
+   const response=viewer.waitForResponse(response=>{
+    if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;
+    const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_hand_id===hand.id;
+   },{timeout:10000});void response.catch(()=>{});
+   const started=performance.now();await viewer.reload();
+   const actual=await response;expect(actual.ok()).toBe(true);verify(await actual.json());
+   await expect(rail).toBeVisible();await expect(slider).toHaveAttribute('aria-valuemax','5');
+   navigationSamplesMs.push(performance.now()-started);
+   await rail.getByTitle('Về đầu',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','0');
+   await rail.getByTitle('Tiến 1 bước',{exact:true}).click();await expect(slider).toHaveAttribute('aria-valuenow','1');
+  }
+  expect(navigationSamplesMs).toHaveLength(5);
+
   const storage=await context.storageState();evidence.anonymousStorage=!storage.origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(evidence.anonymousStorage).toBe(true);expect(pageErrorCount).toBe(0);
   await Promise.allSettled(diagnosticReads);phase='passed';report();
  }catch(error){phase+='-failed';if(replayPage&&!replayPage.isClosed()){try{uiState=await replayPage.evaluate(()=>{const text=document.body.textContent??'';return {rail:!!document.querySelector('[data-testid="replay-action-rail"]'),rptShell:!!document.querySelector('[data-testid="viewer-rpt-shell"]'),selectCount:document.querySelectorAll('select').length,queryError:text.includes('Không thể truy vấn hand.'),targetLoading:text.includes('Đang tìm hand từ đường dẫn'),notFound:text.includes('Không tìm thấy hand'),listError:text.includes('Không tải được lịch sử hand'),replayDataError:text.includes('Không thể tải dữ liệu replay'),withdrawn:text.includes('Giải này không còn được công khai'),watchClose:!!document.querySelector('[aria-label="Đóng trình xem"]')};});}catch{uiState={inspectionFailed:true};}}await Promise.allSettled(diagnosticReads);report();throw error;}finally{await context?.close();}
