@@ -2358,7 +2358,37 @@ DO \$\$ BEGIN
 END \$\$;
 COMMIT;
 REDRAW_RELEASE_RESTORE
-  [[ "$redraw_browser_status" == 0 ]] || exit "$redraw_browser_status"
+  if [[ "$redraw_browser_status" != 0 ]]; then
+    # Preserve only cardinalities of the exact plan joins, never profile/seat
+    # payloads. A scalar exception alone cannot identify which binding failed.
+    docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/cashier-http-floor-redraw-diagnostic.json" <<'REDRAW_JOIN_DIAGNOSTIC'
+WITH active AS (
+ SELECT * FROM public.tournament_seats WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND is_active
+), entries AS (
+ SELECT s.*,e.player_id AS entry_player_id FROM active s JOIN public.tournament_entries e ON e.id=s.entry_id AND e.tournament_id=s.tournament_id
+), tables AS (
+ SELECT s.*,tt.game_table_id FROM entries s JOIN public.tournament_tables tt ON tt.id=s.tournament_table_id AND tt.status='active'
+), sessions AS (
+ SELECT s.* FROM tables s JOIN public.table_sessions ts ON ts.id=s.table_session_id AND ts.closed_at IS NULL
+), assets AS (
+ SELECT s.* FROM sessions s JOIN public.game_tables gt ON gt.id=s.game_table_id
+), profiles AS (
+ SELECT s.id FROM assets s LEFT JOIN public.profiles p ON p.user_id=s.entry_player_id
+)
+SELECT jsonb_build_object('kind','READ_ONLY_REDRAW_PLAN_JOIN_CARDINALITIES',
+ 'activeSeats',(SELECT count(*) FROM active),'entryJoined',(SELECT count(*) FROM entries),
+ 'tableJoined',(SELECT count(*) FROM tables),'sessionJoined',(SELECT count(*) FROM sessions),
+ 'assetJoined',(SELECT count(*) FROM assets),'profileJoined',(SELECT count(*) FROM profiles),
+ 'distinctProfileJoinedSeats',(SELECT count(DISTINCT id) FROM profiles),
+ 'nullSeatSession',(SELECT count(*) FROM active WHERE table_session_id IS NULL),
+ 'seatSessionMismatch',(SELECT count(*) FROM active s JOIN public.tournament_tables tt ON tt.id=s.tournament_table_id WHERE s.table_session_id IS DISTINCT FROM tt.table_session_id),
+ 'openLocks',(SELECT count(*) FROM public.table_session_seat_locks WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND unlocked_at IS NULL),
+ 'planBodyMd5',(SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_plan_tournament_redraw_v1(uuid,integer,uuid[],uuid)'::regprocedure),
+ 'productionChanged',false);
+REDRAW_JOIN_DIAGNOSTIC
+    exit "$redraw_browser_status"
+  fi
   node --input-type=module - "$repo_root/output/operations-latency/cashier-http-floor-redraw-http.json" "$source_sha" <<'FINAL_REDRAW_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
