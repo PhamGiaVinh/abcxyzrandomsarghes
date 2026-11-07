@@ -1,4 +1,4 @@
-name: Tracker HUD full34 isolated restored-backup rehearsal
+name: Tracker HUD full35 isolated restored-backup rehearsal
 on:
   pull_request:
     paths:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 8fd86933596d5755ae0293204fb4e794e40c286c
+          ref: 37baa8ba8eafc38cf4938bd638d23fbf6d278a2c
           path: candidate
       - working-directory: VinPoker
         run: |
@@ -64,7 +64,7 @@ jobs:
       - name: Checkout immutable candidate separately
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 8fd86933596d5755ae0293204fb4e794e40c286c
+          ref: 37baa8ba8eafc38cf4938bd638d23fbf6d278a2c
           path: candidate
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:

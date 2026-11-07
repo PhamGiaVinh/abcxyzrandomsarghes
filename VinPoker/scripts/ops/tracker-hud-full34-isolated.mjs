@@ -7,7 +7,7 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import {createHash,randomBytes} from 'node:crypto';
 import {createInterface} from 'node:readline';
 
-export const CANDIDATE='8fd86933596d5755ae0293204fb4e794e40c286c';
+export const CANDIDATE='37baa8ba8eafc38cf4938bd638d23fbf6d278a2c';
 export const BACKUP_RUN='42373584563';
 export const SOURCE_ACTION_TABLE='public.hand_actions';
 export const PAUSE_RESTORED_DISPATCHER_SQL="SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';";
@@ -45,7 +45,7 @@ export async function rehearse(container,candidate,output){
  assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:candidate,encoding:'utf8'}).trim(),CANDIDATE);
  assert.equal(execFileSync('git',['status','--porcelain'],{cwd:candidate,encoding:'utf8'}).trim(),'');
  assert.equal(execFileSync('docker',['inspect',container,'--format','{{.Name}}'],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim(),'/supabase_db_postgres');
- const report={kind:'ISOLATED_FULL34_SQL_BACKFILL_REHEARSAL_NOT_PRODUCTION_RELEASE',candidateSha:CANDIDATE,backupRun:BACKUP_RUN,
+ const report={kind:'ISOLATED_FULL35_SQL_BACKFILL_REHEARSAL_NOT_PRODUCTION_RELEASE',candidateSha:CANDIDATE,backupRun:BACKUP_RUN,
   stage:'preflight',complete:false,passed:false,committed:[],activation:[],productionChanged:false,
   limitations:'Cron execution disabled and outbound blocked. SQL transitions and native worker only; not Edge dispatch, HTTP delivery, production capacity, historical pre03 proof or release approval.'};
  const save=()=>writeFileSync(output,JSON.stringify(report,null,2)+'\n');save();
@@ -59,10 +59,11 @@ export async function rehearse(container,candidate,output){
   assert.deepEqual(identity,{db:'postgres',user:'postgres',superuser:false,cron:'off'});
   report.rolePolicy=json("SELECT jsonb_build_object('privilegedRole',current_setting('supautils.privileged_role',true),'reservedRoles',current_setting('supautils.reserved_roles',true),'privilegedRoleMembership',CASE WHEN to_regrole(current_setting('supautils.privileged_role',true)) IS NULL THEN false ELSE pg_has_role(current_user,to_regrole(current_setting('supautils.privileged_role',true)),'MEMBER') END);");save();
   report.stage='preflight-package';save();
-  const {loadClosePackage,validateCloseObjects,closeObjectsSql}=await module('scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs');
+  const {validateCloseObjects,closeObjectsSql}=await module('scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs');
+  const {loadDispatchPackage,validateDispatcherObjects,dispatcherObjectsSql}=await module('scripts/ops/tracker-hud-dispatch-url-20261107-release.mjs');
   const {atomicQuery,stateSql,validateState}=await module('scripts/ops/tracker-hud-20261104-release.mjs');
   const {buildActivationSql}=await module('scripts/ops/tracker-hud-activation-20261107.mjs');
-  const pkg=loadClosePackage(candidate),entries=[...pkg.base.entries,pkg.entry];assert.equal(entries.length,34);
+  const pkg=loadDispatchPackage(candidate),entries=[...pkg.base.entries,pkg.entry];assert.equal(entries.length,35);
   // Pausing the restored dispatcher changes this disposable clone only.
   report.stage='preflight-pause';save();
   query(PAUSE_RESTORED_DISPATCHER_SQL);
@@ -90,7 +91,8 @@ export async function rehearse(container,candidate,output){
    report.committed.push({version:entry.version,sha256:entry.sha256});save();
   }
   delete report.attempting;
-  validateCloseObjects(json(closeObjectsSql()),pkg.manifest.postchecks);
+  validateCloseObjects(json(closeObjectsSql()),pkg.closeManifest.postchecks);
+  validateDispatcherObjects(json(dispatcherObjectsSql()),[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck]);
   const activationContext=phase=>`SET vinpoker.approved_project_ref='orlesggcjamwuknxwcpk';SET vinpoker.approved_source_sha='${CANDIDATE}';SET vinpoker.approved_activation_phase='${phase}';`;
   report.stage='configure-url';save();query(activationContext('configure-url')+buildActivationSql('configure-url',CANDIDATE));report.activation.push('configure-url');save();
   // Replace only the two disposable worker credentials before configuring jobs.
@@ -134,5 +136,5 @@ export async function rehearse(container,candidate,output){
  }catch{report.stage+='-failed';report.complete=false;report.passed=false;save();throw Error('Isolated rehearsal failed; inspect metadata receipt, no production action permitted');}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- rehearse(...process.argv.slice(2)).then(()=>console.log('HUD_FULL34_ISOLATED_REHEARSAL=PASS')).catch(()=>{console.error('HUD_FULL34_ISOLATED_REHEARSAL=FAIL; raw source and diagnostics withheld');process.exitCode=1;});
+ rehearse(...process.argv.slice(2)).then(()=>console.log('HUD_FULL35_ISOLATED_REHEARSAL=PASS')).catch(()=>{console.error('HUD_FULL35_ISOLATED_REHEARSAL=FAIL; raw source and diagnostics withheld');process.exitCode=1;});
 }
