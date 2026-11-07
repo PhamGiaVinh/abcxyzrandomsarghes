@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync,writeFileSync,appendFileSync,renameSync,existsSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {createServer} from 'node:http';
 import {availableParallelism,cpus,totalmem} from 'node:os';
 import {createClient} from '@supabase/supabase-js';
 import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '../src/lib/financeSummaryRead';
@@ -1236,9 +1237,38 @@ test('current Floor bust and player reentry preserve separate paid entry generat
  const location=async(player:string)=>{const tables=await roster(),table=tables.find(t=>t.seats.some(s=>s.player_id===player));expect(table).toBeTruthy();return {table:table!,seat:table!.seats.find(s=>s.player_id===player)!};};
  const rows:{actor:number;bustMs:number;bustRetryMs:number;registrationMs:number;registrationRetryMs:number;paymentMs:number;paymentRetryMs:number;independentReadMs:number;registrationTiming:ReturnType<typeof reentryServerTiming>;registrationRetryTiming:ReturnType<typeof reentryServerTiming>}[]=[];let phase='authorization';
  const transportCandidate=process.env.LOCAL_REENTRY_TRANSPORT_PROBE==='1',reentryFaultMode=transportCandidate?(process.env.LOCAL_REENTRY_FAULT_MODE??'failure-injection'):null;let concurrentCreation:Record<string,number>|null=null;
+ const responseLoss={enabled:transportCandidate&&reentryFaultMode==='failure-injection',upstreamCommitted:false,clientDisconnected:false,socketDroppedAfterCommit:false,sameRegistrationRecovered:false,sourceEntryPreserved:false,elapsedMs:null as number|null};
  const dist=(key:'bustMs'|'bustRetryMs'|'registrationMs'|'registrationRetryMs'|'paymentMs'|'paymentRetryMs'|'independentReadMs')=>{const values=rows.map(r=>r[key]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-bust-reentry-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_BUST_REENTRY_EDGE_AND_CANONICAL_CASH_SEATING',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,transportCandidate,reentryFaultMode,concurrentCreation,rosterRpc:floorRosterRpc,graded:20,warmup:0,rows,distributions:Object.fromEntries(['bustMs','bustRetryMs','registrationMs','registrationRetryMs','paymentMs','paymentRetryMs','independentReadMs'].map(key=>[key,dist(key as 'bustMs'|'bustRetryMs'|'registrationMs'|'registrationRetryMs'|'paymentMs'|'paymentRetryMs'|'independentReadMs')])),qualification:false,limitations:'Twenty synthetic players with real Auth;the optional transport candidate adds one20-request same-player creation race. Notification mode is reported separately. Owner performs canonical manual-mode bust with explicit positive-chip override,then each player requests the actual reentry Edge and each cashier pays its immutable server price. Placement/revision observations use the reported roster RPC;full candidate uses canonicalV6,separate retained-schema mode uses capturedV3. Bust/reentry/confirmation/allocator bodies are production-hash pinned. No tracker-mode zero-chip bust,browser latency,concurrent distinct-player seating or mixed1000-viewer capacity claim.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-bust-reentry-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_BUST_REENTRY_EDGE_AND_CANONICAL_CASH_SEATING',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,transportCandidate,reentryFaultMode,concurrentCreation,responseLoss,rosterRpc:floorRosterRpc,graded:20,warmup:0,rows,distributions:Object.fromEntries(['bustMs','bustRetryMs','registrationMs','registrationRetryMs','paymentMs','paymentRetryMs','independentReadMs'].map(key=>[key,dist(key as 'bustMs'|'bustRetryMs'|'registrationMs'|'registrationRetryMs'|'paymentMs'|'paymentRetryMs'|'independentReadMs')])),qualification:false,limitations:'Twenty synthetic players with real Auth;the optional transport candidate adds one20-request same-player creation race. Notification mode is reported separately. Owner performs canonical manual-mode bust with explicit positive-chip override,then each player requests the actual reentry Edge and each cashier pays its immutable server price. Placement/revision observations use the reported roster RPC;full candidate uses canonicalV6,separate retained-schema mode uses capturedV3. Bust/reentry/confirmation/allocator bodies are production-hash pinned. No tracker-mode zero-chip bust,browser latency,concurrent distinct-player seating or mixed1000-viewer capacity claim.'},null,2));
  const reenter=async(actor:number)=>{const started=performance.now(),startedAt=Date.now();let status:number|undefined;try{const response=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',headers:headers(staff[actor].token),body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});status=response.status;const data=await response.json();expect(response.ok).toBe(true);expect(data.success).toBe(true);expect(data.reentry).toBe(true);expect(Number(data.total_pay)).toBe(6600000);expect(data.free_rake_applied).toBe(false);return {data,ms:performance.now()-started,timing:reentryServerTiming(response.headers.get('server-timing'))};}catch(cause){failure={operation:'tournament-reentry',actorIndex:actor,startedAt,finishedAt:Date.now(),...audienceFailure(cause,status)};throw cause;}};
+ const loseCommittedResponse=async(actor:number,sourceEntry:string)=>{
+  expect(responseLoss.enabled).toBe(true);expect(api).toBe('http://cashier-api:8000');
+  let requests=0,upstreamFailed=false,committed:{registration_id:string;reference_code:string}|null=null;
+  const server=createServer(async(request,response)=>{
+   try{
+    expect(++requests).toBe(1);expect(request.method).toBe('POST');expect(request.url).toBe('/drop-once');
+    expect(request.headers.authorization).toBe('Bearer '+staff[actor].token);expect(request.headers.apikey).toBe(anon);
+    const chunks:Buffer[]=[];let bytes=0;for await(const chunk of request){bytes+=chunk.length;expect(bytes).toBeLessThanOrEqual(4096);chunks.push(Buffer.from(chunk));}
+    expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual({tournament_id:tour});
+    const upstream=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',headers:headers(staff[actor].token),body:JSON.stringify({tournament_id:tour}),redirect:'error',signal:AbortSignal.timeout(5000)});
+    expect(upstream.ok).toBe(true);const data=await upstream.json();expect(data).toMatchObject({success:true,reentry:true,already_registered:false});expect(Number(data.total_pay)).toBe(6600000);
+    expect(typeof data.registration_id).toBe('string');expect(typeof data.reference_code).toBe('string');committed={registration_id:data.registration_id,reference_code:data.reference_code};
+   }catch{upstreamFailed=true;}finally{responseLoss.socketDroppedAfterCommit=committed!==null&&!upstreamFailed;response.destroy();}
+  });
+  const started=performance.now();
+  try{
+   await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+   const address=server.address();if(!address||typeof address==='string')throw Error('isolated_loss_listener_required');
+   try{const unexpected=await fetch('http://127.0.0.1:'+address.port+'/drop-once',{method:'POST',headers:headers(staff[actor].token),body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(7000)});await unexpected.arrayBuffer();}
+   catch(cause){responseLoss.clientDisconnected=audienceFailure(cause).kind==='connection_lost';}
+   expect(responseLoss.clientDisconnected).toBe(true);expect(responseLoss.socketDroppedAfterCommit).toBe(true);expect(upstreamFailed).toBe(false);expect(requests).toBe(1);expect(committed).not.toBeNull();
+   // Verify the committed pending row independently before any client retry.
+   const read=await fetch(api+'/rest/v1/tournament_registrations?select=id,status,source_entry_id&tournament_id=eq.'+tour+'&player_id=eq.'+staff[actor].userId+'&source_entry_id=eq.'+sourceEntry,{headers:headers(owner),signal:AbortSignal.timeout(5000)});
+   expect(read.ok).toBe(true);expect(await read.json()).toEqual([{id:committed!.registration_id,status:'pending',source_entry_id:sourceEntry}]);responseLoss.upstreamCommitted=true;responseLoss.sourceEntryPreserved=true;
+   const recovered=await reenter(actor);expect(recovered.data.already_registered).toBe(true);expect(recovered.data.registration_id).toBe(committed!.registration_id);expect(recovered.data.reference_code).toBe(committed!.reference_code);responseLoss.sameRegistrationRecovered=true;responseLoss.elapsedMs=performance.now()-started;
+   return recovered;
+  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+ };
  try{
   const denied=await fetch(api+'/rest/v1/rpc/cashier_create_app_reentry_v1',{method:'POST',headers:headers(staff[0].token),body:JSON.stringify({p_tournament_id:tour,p_player_id:staff[1].userId}),signal:AbortSignal.timeout(5000)});expect(denied.status).toBe(403);
   const unauthenticated=await fetch(api+'/functions/v1/tournament-reentry',{method:'POST',headers:{apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});expect(unauthenticated.status).toBe(401);
@@ -1264,8 +1294,9 @@ test('current Floor bust and player reentry preserve separate paid entry generat
     for(const result of contenders)expect(result.data.breakdown).toEqual(contenders[0].data.breakdown);
     registration=contenders.find(r=>r.data.already_registered===false)!;
     concurrentCreation={requests:20,created:1,recovered:19};
-   }else registration=await reenter(actor);
-   const retryRegistration=await reenter(actor);expect(registration.data.already_registered).toBe(false);expect(retryRegistration.data.already_registered).toBe(true);expect(retryRegistration.data.registration_id).toBe(registration.data.registration_id);expect(retryRegistration.data.reference_code).toBe(registration.data.reference_code);
+   }else if(responseLoss.enabled&&actor===1)registration=await loseCommittedResponse(actor,before.seat.entry_id);
+   else registration=await reenter(actor);
+   const retryRegistration=await reenter(actor);expect(registration.data.already_registered).toBe(responseLoss.enabled&&actor===1);expect(retryRegistration.data.already_registered).toBe(true);expect(retryRegistration.data.registration_id).toBe(registration.data.registration_id);expect(retryRegistration.data.reference_code).toBe(registration.data.reference_code);
    const payment={actor_id:staff[actor].userId,club_id:club,tournament_id:tour,registration_id:registration.data.registration_id,amount:registration.data.total_pay,request_id:crypto.randomUUID()};
    const paid=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(paid.data.status).toBe('recorded');expect(paid.data.result.payment_state).toBe('paid');expect(paid.data.result.seating_state).toBe('seated');
    const paymentRetry=await rpc(staff[actor].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:payment,p_action:'record'});expect(paymentRetry.data).toEqual(paid.data);
@@ -1273,6 +1304,7 @@ test('current Floor bust and player reentry preserve separate paid entry generat
    rows.push({actor,bustMs:busted.ms,bustRetryMs:bustRetry.ms,registrationMs:registration.ms,registrationRetryMs:retryRegistration.ms,paymentMs:paid.ms,paymentRetryMs:paymentRetry.ms,independentReadMs:performance.now()-started,registrationTiming:registration.timing,registrationRetryTiming:retryRegistration.timing});report();
   }
   expect(rows).toHaveLength(20);
+  if(responseLoss.enabled){expect(responseLoss.upstreamCommitted&&responseLoss.clientDisconnected&&responseLoss.socketDroppedAfterCommit&&responseLoss.sameRegistrationRecovered&&responseLoss.sourceEntryPreserved).toBe(true);writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-reentry-response-loss-http.json'),JSON.stringify({kind:'REAL_EDGE_HTTP_COMMITTED_REENTRY_RESPONSE_LOSS_AND_RETRY',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,...responseLoss,qualification:false,productionChanged:false,limitations:'Fault10only:one loopback HTTP proxy consumes an actual verified-player Edge committed200 then destroys the client socket without returning the body. Independent owner read proves pending creation before retry;client retry supplies payment data. Existing20paid/seated and money/notification conservation gates still apply. Fault actor1registration timing is recovery HTTP,not first-response success. Not mid-query connection termination,closed-buy race or1000capacity.'},null,2));}
   const failedLatencyGates=(['bustMs','registrationMs','paymentMs'] as const).filter(key=>dist(key).p95Ms!>1000);
   if(failedLatencyGates.length){phase='latency-failed';report();throw Error('OPERATIONAL_REENTRY_LATENCY_GATE_FAILED');}
   phase='passed';report();
