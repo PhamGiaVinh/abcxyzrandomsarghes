@@ -1720,7 +1720,7 @@ writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_REENTRY_BANK_DENIAL
  browserReceipt:'cashier-http-reentry-bank-ambiguity-http.json',nativeSourceUnchanged:true,fixtureBankRestored:true,
  qualification:false,productionChanged:false},null,2),{mode:0o600,flag:'wx'});
 REENTRY_BANK_AMBIGUITY_RECEIPT
-    node tests/cashier/reentryDisconnect.native.mjs "$db_container" \
+    node "$repo_root/tests/cashier/reentryDisconnect.native.mjs" "$db_container" \
       "$repo_root/output/operations-latency/reentry-transport-disconnect-native.json" "$source_sha"
     docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/pending-tests/reentry_transport_timeout_rollback.sql" >"$test_root/reentry-timeout-native.log"
