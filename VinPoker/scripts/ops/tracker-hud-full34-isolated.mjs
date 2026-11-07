@@ -10,6 +10,7 @@ import {createInterface} from 'node:readline';
 export const CANDIDATE='8fd86933596d5755ae0293204fb4e794e40c286c';
 export const BACKUP_RUN='42373584563';
 export const SOURCE_ACTION_TABLE='public.hand_actions';
+export const PAUSE_RESTORED_DISPATCHER_SQL="SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';";
 export function validateInvocation(container,candidate,report,env=process.env){
  assert.equal(env.GITHUB_ACTIONS,'true');assert.match(env.GITHUB_RUN_ID??'',/^\d+$/);
  assert.match(container??'',/^[a-f0-9]{12,64}$/);
@@ -32,17 +33,21 @@ export async function rehearse(container,candidate,output){
  const json=sql=>JSON.parse(query(sql));
  const module=path=>import(pathToFileURL(resolve(candidate,path)).href);
  try{
+  report.stage='preflight-identity';save();
   const identity=json("SELECT json_build_object('db',current_database(),'user',current_user,'superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),'cron',current_setting('cron.launch_active_jobs'));");
   assert.deepEqual(identity,{db:'postgres',user:'postgres',superuser:false,cron:'off'});
+  report.stage='preflight-package';save();
   const {loadClosePackage,validateCloseObjects,closeObjectsSql}=await module('scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs');
   const {atomicQuery,stateSql,validateState}=await module('scripts/ops/tracker-hud-20261104-release.mjs');
   const {buildActivationSql}=await module('scripts/ops/tracker-hud-activation-20261107.mjs');
   const pkg=loadClosePackage(candidate),entries=[...pkg.base.entries,pkg.entry];assert.equal(entries.length,34);
   // Pausing the restored dispatcher changes this disposable clone only.
-  query("UPDATE cron.job SET active=false WHERE jobname='public-spectator-v2-dispatch';");
+  report.stage='preflight-pause';save();
+  query(PAUSE_RESTORED_DISPATCHER_SQL);
+  report.stage='preflight-ledger';save();
   validateState(json(stateSql(entries)),pkg.base);
   const sourceSql=`SELECT json_build_object('hands',(SELECT count(*) FROM public.tournament_hands),'actions',(SELECT count(*) FROM ${SOURCE_ACTION_TABLE}),'payments',(SELECT md5(coalesce(string_agg(md5(to_jsonb(p)::text),'' ORDER BY p.id),'')) FROM public.tournament_prize_payments p));`;
-  const sourceBefore=json(sourceSql);
+  report.stage='preflight-source-integrity';save();const sourceBefore=json(sourceSql);
   report.stage='apply';save();
   for(const entry of entries){
    query(atomicQuery(entry,{...pkg.base,entries}));
