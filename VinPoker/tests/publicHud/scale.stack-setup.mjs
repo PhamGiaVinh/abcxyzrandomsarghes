@@ -15,7 +15,7 @@ sql(`CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS pg_ne
   OR p_url!~'^http://supabase_kong_hud-scale-[a-z0-9-]+:8000$' THEN RAISE EXCEPTION 'fixture_scope_required'; END IF;
  PERFORM vault.create_secret(p_hud,'PUBLIC_HUD_WORKER_SECRET');PERFORM vault.create_secret(p_spectator,'PUBLIC_SPECTATOR_WORKER_SECRET');
  EXECUTE format('ALTER DATABASE postgres SET app.supabase_url=%L',p_url);
- PERFORM cron.schedule('public-hud-v1-dispatch','1 second','SELECT public.dispatch_public_hud_projection_v1()');
+ PERFORM cron.schedule('public-hud-projection-v1-dispatch','1 second','SELECT public.dispatch_public_hud_projection_v1()');
  PERFORM cron.schedule('public-spectator-v2-dispatch','1 second','SELECT public.dispatch_public_spectator_projection_v2()');RETURN true;
  END $$;
  REVOKE ALL ON FUNCTION public.fixture_provision_hud_workers_v1(text,text,text) FROM PUBLIC,anon,authenticated;
@@ -42,4 +42,13 @@ if(!response.ok){
  const permission=typeof value.message==='string'?value.message.match(/^permission denied for (schema|table|function|database) ([a-z0-9_.]+)/):null;
  throw Error(`Isolated worker provisioning failed (${response.status}, code ${/^[A-Z0-9]{5}$/.test(value.code)?value.code:'unknown'}${permission?', '+permission[0]:''}); remaining response withheld`);
 }
-console.log(JSON.stringify({phase:'real-edge-cron-realtime-ready',project,limits:{localConnections:2000,localEventsPerSecond:20000},productionChanged:false}));
+// Qualify the actual administrator-installed schedules under the same HUD name
+// used by the release postcheck and rollback. Do not emit credentials/commands.
+const scheduleReady=sql(`SELECT count(*)=2 AND bool_and(active AND schedule='1 second' AND
+ command=CASE jobname WHEN 'public-hud-projection-v1-dispatch' THEN 'SELECT public.dispatch_public_hud_projection_v1()'
+ ELSE 'SELECT public.dispatch_public_spectator_projection_v2()' END)
+ AND count(*) FILTER(WHERE jobname='public-hud-projection-v1-dispatch')=1
+ AND count(*) FILTER(WHERE jobname='public-spectator-v2-dispatch')=1
+ FROM cron.job WHERE jobname IN('public-hud-projection-v1-dispatch','public-spectator-v2-dispatch','public-hud-v1-dispatch');`)==='t';
+if(!scheduleReady)throw Error('Isolated worker schedule identity/cadence differs from release contract');
+console.log(JSON.stringify({phase:'real-edge-cron-realtime-ready',project,scheduleReady,limits:{localConnections:2000,localEventsPerSecond:20000},productionChanged:false}));

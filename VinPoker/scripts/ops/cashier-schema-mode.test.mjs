@@ -15,6 +15,16 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('real-stack worker uses the HUD schedule addressed by release postcheck and rollback',()=>{
+ const setup=readFileSync(new URL('../../tests/publicHud/scale.stack-setup.mjs',import.meta.url),'utf8');
+ const rollback=readFileSync(new URL('./tracker-hud-20261104-rollback-stop.sql',import.meta.url),'utf8');
+ const postcheck=readFileSync(new URL('./tracker-hud-20261104-postcheck.sql',import.meta.url),'utf8');
+ const name=rollback.match(/WHERE jobname='([^']+)'/)?.[1];assert.equal(name,'public-hud-projection-v1-dispatch');
+ assert.ok(setup.includes("cron.schedule('"+name+"','1 second','SELECT public.dispatch_public_hud_projection_v1()')"));
+ assert.ok(postcheck.includes(name));assert.match(setup,/if\(!scheduleReady\)throw Error/);
+ assert.ok(setup.includes("count(*)=2 AND bool_and(active AND schedule='1 second'"));
+});
+
 test('redraw probe refuses historical/incomplete modes before allocating a stack',()=>{
  const base={CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_CLOCK_CANDIDATE_PROBE:'0',LOCAL_REENTRY_TRANSPORT_PROBE:'0',LOCAL_REENTRY_FAULT_MODE:'failure-injection',LOCAL_CORRECTION_UNDO_PROBE:'0',LOCAL_OPERATIONS_REDRAW_PROBE:'1',LOCAL_OPERATIONS_AUDIENCE:'0',LOCAL_OPERATIONS_AUDIENCE_MODEL:'selected-table',LOCAL_OPERATIONS_REST_POOL:'10',SCHEMA_ARTIFACT_DIRECTORY:'/missing-redraw-probe-fixture'};
  const run=(patch={})=>{const args=Object.entries({...base,...patch}).map(([k,v])=>k+'='+v);return spawnSync(process.platform==='win32'?'wsl':'env',process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env',...args,'bash','-s']:[...args,'bash','-s'],{input:script,encoding:'utf8',timeout:10000});};
