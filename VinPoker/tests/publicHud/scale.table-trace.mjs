@@ -1,5 +1,17 @@
 import {classifyTableReadFailure} from './scale.failures.mjs';
 
+// Short isolated overview diagnostics only; never retain source payloads or IDs.
+export function overviewGenerationSample(value){
+ if(!['source','hint','accepted','discarded'].includes(value.kind)||
+  !Number.isInteger(value.scopeIndex)||value.scopeIndex<1||value.scopeIndex>20||
+  typeof value.generation!=='string'||!/^\d{1,20}$/.test(value.generation)||
+  !Number.isSafeInteger(value.at)||value.at<0)return null;
+ const sample={kind:value.kind,scopeIndex:value.scopeIndex,generation:value.generation,at:value.at};
+ for(const key of ['startedAt','publishedAt','requestEpoch','currentEpoch'])if(Number.isSafeInteger(value[key])&&value[key]>=0)sample[key]=value[key];
+ if(typeof value.deferred==='boolean')sample.deferred=value.deferred;
+ return sample;
+}
+
 // Fixed timing/boolean fields only. Never serialize errors, request bodies,
 // headers, credentials, SQL, messages or the synthetic player's identity.
 export function tableFailureSample({scenario,viewer,cause,transport,sourceEpoch,currentEpoch,online,reconnecting,eventLoopMaxMs,startedAt,finishedAt}){

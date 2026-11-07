@@ -12,7 +12,7 @@ import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
-import {tableFailureSample} from './scale.table-trace.mjs';
+import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
 import {audienceSocketDiagnostic} from '../../scripts/ops/operations-audience-scope.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
@@ -32,6 +32,8 @@ const amendmentKinds=['correct','void','restore','verify','revoke','reverify','r
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),amendReadyProbeTimes=new Map(),workerProbeDiagnostics=[];
 const coveringHintDiagnostics=new Map();
+const overviewGenerationTrace={enabled:targetDuration===30,limit:6000,dropped:0,events:[]};
+const recordOverviewGeneration=value=>{if(!overviewGenerationTrace.enabled)return;const sample=overviewGenerationSample(value);if(!sample)return;if(overviewGenerationTrace.events.length>=overviewGenerationTrace.limit){overviewGenerationTrace.dropped++;return;}overviewGenerationTrace.events.push(sample);};
 const hudFailureSamples=[],hudReadinessFailureSamples=[],tableFailureSamples=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},tableFailureKinds={},requestAccounting={},observationOrder=0;
@@ -147,7 +149,7 @@ const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
@@ -216,6 +218,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   }}});
   const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,hudController:null,hudActive:false,verifyAfterRead:false,hudCompletedEpoch:0,accessReconnect:0,verifiedAccessReconnect:0,table,tour};clients.push(state);
   const tableHints=[];
+  const traceSnapshot=(kind,freshness,extra={})=>{if(!overview||i>=tourCount||!overviewGenerationTrace.enabled)return;try{recordOverviewGeneration({kind,scopeIndex:n,generation:JSON.parse(freshness?.projectedSourceRevision).generation,at:Date.now(),publishedAt:Date.parse(freshness.publishedAt),startedAt:state.snapshotLast,...extra});}catch{/* Missing freshness remains unknown. */}};
   // A Broadcast/read can finish before the writer's HTTP acknowledgement.
   // Credit its actual observation time once its source write is registered.
   const credit=(field,observation,predicate,measure,count)=>{
@@ -264,12 +267,13 @@ for(const scenario of ['concentrated','distributed','overview']){
     assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
     for(const section of requested){
      if((section!=='tables'||overview)&&requestEpochs[section]!==componentEpochs[section]){
+      if(section==='tables')traceSnapshot('discarded',value.sections[section]?.freshness,{requestEpoch:requestEpochs[section],currentEpoch:componentEpochs[section]});
       delete value.sections[section];state.supersededSnapshotSections=(state.supersededSnapshotSections??0)+1;void snapshot([section]);continue;
      }
      assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;
     }
     const tables=value.sections.tables;
-    if(tables){state.snapshotObservation={value:tables.freshness,startedAt:state.snapshotLast,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
+    if(tables){traceSnapshot('accepted',tables.freshness);state.snapshotObservation={value:tables.freshness,startedAt:state.snapshotLast,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
    }catch(cause){if(!cause.intentionalHudCancellation)error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
    finally{controller.abort();state.snapshotBusy=false;}
   };
@@ -440,7 +444,8 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(components.includes('tables')){
     const generation=message.payload.revisions?.tables;
     if(typeof generation==='string'&&/^\d+$/.test(generation)){
-     tableHints.push({generation,at:Date.now()});if(tableHints.length>128)tableHints.shift();
+     const receivedAt=Date.now();tableHints.push({generation,at:receivedAt});if(tableHints.length>128)tableHints.shift();
+     if(overview&&i<tourCount)recordOverviewGeneration({kind:'hint',scopeIndex:n,generation,at:receivedAt});
     }
    }
    if(message.payload.handVisibilityOnly===true&&components.includes('visibility')){
@@ -499,6 +504,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    try{
     const value=await rpc('fixture_scale_step_once_v1',{p_operation:operation,p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
     const event={handId:value.handId,number,step,at:Date.parse(value.sourceWrittenAt),generation:value.generation,generationDeferred:value.generationDeferred};
+    if(overview)recordOverviewGeneration({kind:'source',scopeIndex:n,generation:event.generation,at:event.at,deferred:event.generationDeferred});
     hand=value.handId;stats.sourceWrites++;const ackOrder=++observationOrder;
     // The intent is committed and acknowledged. Advance independently of
     // delivery checks so an invariant failure cannot replay a source action.

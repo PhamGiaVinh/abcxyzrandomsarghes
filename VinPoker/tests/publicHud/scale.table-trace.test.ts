@@ -1,5 +1,14 @@
 import {describe,it,expect} from 'vitest';
-import {tableFailureSample} from './scale.table-trace.mjs';
+import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
+
+it('retains only numeric fixture generation clocks without payloads or identities',()=>{
+ const input={kind:'accepted',scopeIndex:20,generation:'123',at:100,startedAt:80,publishedAt:70,requestEpoch:2,currentEpoch:3,
+  playerId:'private',tournamentId:'private',token:'private',payload:{cards:'private'}};
+ expect(overviewGenerationSample(input)).toEqual({kind:'accepted',scopeIndex:20,generation:'123',at:100,startedAt:80,publishedAt:70,requestEpoch:2,currentEpoch:3});
+ expect(JSON.stringify(overviewGenerationSample(input))).not.toContain('private');
+ for(const invalid of [{scopeIndex:0},{scopeIndex:21},{generation:'private'},{generation:'1'.repeat(21)},{at:NaN},{kind:'private'}])expect(overviewGenerationSample({...input,...invalid})).toBeNull();
+ expect(overviewGenerationSample({...input,kind:'source',deferred:true,publishedAt:NaN})).toEqual({kind:'source',scopeIndex:20,generation:'123',at:100,startedAt:80,requestEpoch:2,currentEpoch:3,deferred:true});
+});
 
 describe('bounded table failure timing provenance',()=>{
  it('retains transport and scope clocks without serializing error/request data',()=>{
