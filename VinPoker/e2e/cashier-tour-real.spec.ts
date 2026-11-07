@@ -16,19 +16,41 @@ const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6'
 
 test('final current Floor seat locks and redraw conserve every paid entry over HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_REDRAW_ENABLED!=='1','Explicit final isolated redraw stage only');test.setTimeout(180_000);
- const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000004',legacyTour='a3000000-0000-4000-8000-000000000001',club='a2000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};
  type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
  type Table={tournament_table_id:string;game_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;seat_locks:{seat_number:number}[];seats:Seat[]};
- let phase='setup',failure:{operation:string;httpStatus:number;code:string;reason:string;messageSha256:string|null}|null=null;
+ let phase='setup',legacyOrphanDenied=false,failure:{operation:string;httpStatus:number;code:string;reason:string;messageSha256:string|null}|null=null;
  const locks:{lockMs:number;unlockMs:number;readMs:number}[]=[],redraws:{planMs:number;applyMs:number;retryMs:number;continueMs:number;readMs:number}[]=[];
  const dist=(values:number[])=>{const v=[...values].sort((a,b)=>a-b);return {samples:v.length,p95Ms:v.length===20?v[18]:null,maxMs:v.at(-1)??null};};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_LOCK_REDRAW_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,locks,redraws,distributions:{locks:Object.fromEntries(['lockMs','unlockMs','readMs'].map(k=>[k,dist(locks.map(r=>r[k as keyof typeof r]))])),redraws:Object.fromEntries(['planMs','applyMs','retryMs','continueMs','readMs'].map(k=>[k,dist(redraws.map(r=>r[k as keyof typeof r]))]))},qualification:false,productionChanged:false,limitations:'Final disposable stage after prior audience/HUD proofs and audience drain. One owner Auth actor;20lock/unlock pairs and20sequential redraws of the same20paid entries. Canonical captured writers and exact retries;not20independent tournaments,simultaneous staff writers,UI/Realtime latency,receipt-reader support or mixed1000spectator redraw proof.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_LOCK_REDRAW_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,legacyOrphanDenied,fixtureScope:'Fresh dedicated TEST tournament with20 real Auth registrations and canonical paid seats;legacy fixture unchanged',failure,locks,redraws,distributions:{locks:Object.fromEntries(['lockMs','unlockMs','readMs'].map(k=>[k,dist(locks.map(r=>r[k as keyof typeof r]))])),redraws:Object.fromEntries(['planMs','applyMs','retryMs','continueMs','readMs'].map(k=>[k,dist(redraws.map(r=>r[k as keyof typeof r]))]))},qualification:false,productionChanged:false,limitations:'Final disposable stage after prior audience/HUD proofs and audience drain. One owner Auth actor;20lock/unlock pairs and20sequential redraws of20new canonical paid entries. Earlier malformed legacy fixture must remain rejected and unchanged. Canonical captured writers and exact retries;not20independent tournaments,simultaneous staff writers,UI/Realtime latency,receipt-reader support or mixed1000spectator redraw proof.'},null,2));
  const rpc=async(name:string,args:Record<string,unknown>)=>{const at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok||data.ok===false)failure={operation:name,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:'application_denial',reason:data.message==='CENTERPOINT_TOURNAMENT_OPS_RELEASE_CLOSED'?'release_closed':'unclassified',messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at};};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})).data as Table[];
  const identity=(tables:Table[])=>tables.flatMap(t=>t.seats.map(s=>({entry:s.entry_id,player:s.player_id,entryNo:s.entry_no,chips:s.chip_count}))).sort((a,b)=>a.entry.localeCompare(b.entry));
  try{
+  // Preserve the malformed legacy fixture and its rejection. The valid path
+  // gets fresh registrations/payments, never a repaired or filtered seat set.
+  phase='legacy-orphan-denial';report();
+  const legacyTables=(await rpc(floorRosterRpc,{p_tournament_id:legacyTour})).data as Table[];
+  const legacyPath='tournament_seats?select=id,entry_id,tournament_table_id,table_session_id,seat_number,chip_count,is_active&tournament_id=eq.'+legacyTour+'&order=id';
+  const legacyBefore=await read(legacyPath);expect(legacyBefore.filter((seat:{is_active:boolean})=>seat.is_active)).toHaveLength(21);expect(legacyBefore.filter((seat:{is_active:boolean;tournament_table_id:string|null;table_session_id:string|null})=>seat.is_active&&(!seat.tournament_table_id||!seat.table_session_id))).toHaveLength(1);
+  const denied=await fetch(api+'/rest/v1/rpc/floor_plan_tournament_redraw_v1',{method:'POST',headers,body:JSON.stringify({p_tournament_id:legacyTour,p_target_max_seats:9,p_game_table_ids:legacyTables.slice(0,3).map(t=>t.game_table_id),p_request_id:crypto.randomUUID()}),signal:AbortSignal.timeout(5000)});
+  const denial=await denied.json();expect(denied.status).toBe(400);expect(denial.code).toBe('P0001');expect(denial.message).toBe('redraw_plan_incomplete');
+  expect(await read(legacyPath)).toEqual(legacyBefore);legacyOrphanDenied=true;
+  phase='fresh-canonical-paid-fixture';report();
+  for(let n=1;n<=3;n++){
+   const intent={p_tournament_id:tour,p_game_table_id:'ac710000-0000-4000-8000-'+String(n).padStart(12,'0'),p_control_mode:'manual',p_request_id:crypto.randomUUID()};
+   const opened=await rpc('floor_open_tournament_table_v3',intent);expect(opened.data.ok).toBe(true);expect((await rpc('floor_open_tournament_table_v3',intent)).data).toEqual(opened.data);
+  }
+  for(const actor of staff){
+   const actorHeaders={...headers,Authorization:'Bearer '+actor.token};
+   const registered=await fetch(api+'/functions/v1/tournament-register',{method:'POST',headers:actorHeaders,body:JSON.stringify({tournament_id:tour}),signal:AbortSignal.timeout(5000)});
+   const registration=await registered.json();expect(registered.ok).toBe(true);expect(registration.success).toBe(true);expect(Number(registration.total_pay)).toBe(6600000);
+   const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
+   const pay=async()=>{const response=await fetch(api+'/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',{method:'POST',headers:actorHeaders,body:JSON.stringify({p_intent:intent,p_action:'record'}),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
+   const paid=await pay();expect(paid).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});expect(await pay()).toEqual(paid);
+  }
   const before=await roster(),frozen=identity(before);expect(frozen).toHaveLength(20);expect(new Set(frozen.map(s=>s.entry)).size).toBe(20);expect(frozen.reduce((n,s)=>n+s.chips,0)).toBe(400000);
   expect(await read('tournament_hands?select=id&tournament_id=eq.'+tour+'&status=eq.in_progress')).toHaveLength(0);
   phase='seat-locks';report();
@@ -55,7 +77,7 @@ test('final current Floor seat locks and redraw conserve every paid entry over H
    expect((await rpc('get_public_tournament_redraw_v1',{p_tournament_id:tour})).data.batch_id).toBeNull();
    redraws.push({planMs:planned.ms,applyMs:applied.ms,retryMs:retry.ms,continueMs:continued.ms,readMs});report();
   }
-  expect(identity(await roster())).toEqual(frozen);expect(locks).toHaveLength(20);expect(redraws).toHaveLength(20);expect(failure).toBeNull();
+  expect(await read(legacyPath)).toEqual(legacyBefore);expect(legacyOrphanDenied).toBe(true);expect(identity(await roster())).toEqual(frozen);expect(locks).toHaveLength(20);expect(redraws).toHaveLength(20);expect(failure).toBeNull();
   for(const values of [locks.map(r=>r.lockMs),locks.map(r=>r.unlockMs),redraws.map(r=>r.planMs),redraws.map(r=>r.applyMs),redraws.map(r=>r.continueMs)])expect(dist(values).p95Ms).toBeLessThanOrEqual(1000);
   phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}

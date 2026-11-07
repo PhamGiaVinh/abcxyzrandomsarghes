@@ -2338,6 +2338,17 @@ END $$;
 INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
 VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
 ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
+-- Separate the legacy Cashier compatibility fixture from modern redraw.
+-- Entries/payment/seats are created by canonical HTTP below,never copied.
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000004')
+ OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number BETWEEN 91 AND 93)
+ THEN RAISE EXCEPTION 'redraw_fresh_fixture_collision';END IF;
+END $$;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
+VALUES('a3000000-0000-4000-8000-000000000004','a2000000-0000-4000-8000-000000000001','Canonical redraw TEST','registering','registering',now(),6000000,600000,0,false,0,0);
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4000-8000-000000000001','Canonical redraw TEST '||n,90+n,'tournament','inactive','available' FROM generate_series(1,3)n;
 COMMIT;
 REDRAW_RELEASE_FIXTURE
   redraw_browser_status=0
@@ -2364,7 +2375,7 @@ REDRAW_RELEASE_RESTORE
     docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
       >"$repo_root/output/operations-latency/cashier-http-floor-redraw-diagnostic-http.json" <<'REDRAW_JOIN_DIAGNOSTIC'
 WITH active AS (
- SELECT * FROM public.tournament_seats WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND is_active
+ SELECT * FROM public.tournament_seats WHERE tournament_id='a3000000-0000-4000-8000-000000000004' AND is_active
 ), entries AS (
  SELECT s.*,e.player_id AS entry_player_id FROM active s JOIN public.tournament_entries e ON e.id=s.entry_id AND e.tournament_id=s.tournament_id
 ), tables AS (
@@ -2383,7 +2394,7 @@ SELECT jsonb_build_object('kind','READ_ONLY_REDRAW_PLAN_JOIN_CARDINALITIES',
  'distinctProfileJoinedSeats',(SELECT count(DISTINCT id) FROM profiles),
  'nullSeatSession',(SELECT count(*) FROM active WHERE table_session_id IS NULL),
  'seatSessionMismatch',(SELECT count(*) FROM active s JOIN public.tournament_tables tt ON tt.id=s.tournament_table_id WHERE s.table_session_id IS DISTINCT FROM tt.table_session_id),
- 'openLocks',(SELECT count(*) FROM public.table_session_seat_locks WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND unlocked_at IS NULL),
+ 'openLocks',(SELECT count(*) FROM public.table_session_seat_locks WHERE tournament_id='a3000000-0000-4000-8000-000000000004' AND unlocked_at IS NULL),
  'planBodyMd5',(SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_plan_tournament_redraw_v1(uuid,integer,uuid[],uuid)'::regprocedure),
  'productionChanged',false);
 REDRAW_JOIN_DIAGNOSTIC
@@ -2393,6 +2404,6 @@ REDRAW_JOIN_DIAGNOSTIC
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);
-assert.equal(r.locks.length,20);assert.equal(r.redraws.length,20);assert.equal(r.qualification,false);
+assert.equal(r.locks.length,20);assert.equal(r.redraws.length,20);assert.equal(r.qualification,false);assert.equal(r.legacyOrphanDenied,true);
 FINAL_REDRAW_RECEIPT
 fi
