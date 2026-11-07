@@ -62,9 +62,10 @@ Deno.serve(async (req) => {
         .not("api_token_vault_key", "is", null).maybeSingle());
       if (config.error) return j({ error: "Payment configuration unavailable" }, 503);
       if (config.data) {
-        if (!config.data.master_account_number) return j({ error: "SePay master account missing" }, 503);
+        const masterAccountNumber = config.data.master_account_number;
+        if (!masterAccountNumber) return j({ error: "SePay master account missing" }, 503);
         const accounts = await timed('configuration', () => admin.from("platform_bank_accounts").select(`${columns},club_id`)
-          .eq("is_active", true).eq("account_number", config.data.master_account_number));
+          .eq("is_active", true).eq("account_number", masterAccountNumber));
         if (accounts.error) return j({ error: "Club bank account unavailable" }, 503);
         if (accounts.data?.length !== 1 || accounts.data[0].club_id !== tour.club_id) {
           return j({ error: "SePay master account is not exclusive to this club" }, 503);
