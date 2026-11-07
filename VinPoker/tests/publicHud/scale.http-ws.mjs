@@ -32,8 +32,9 @@ const amendmentKinds=['correct','void','restore','verify','revoke','reverify','r
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),amendReadyProbeTimes=new Map(),workerProbeDiagnostics=[];
 const coveringHintDiagnostics=new Map();
+const overviewFaultEpochs=new Map();
 const overviewGenerationTrace={enabled:targetDuration===30,limit:6000,dropped:0,events:[]};
-const recordOverviewGeneration=value=>{if(!overviewGenerationTrace.enabled)return;const sample=overviewGenerationSample(value);if(!sample)return;if(overviewGenerationTrace.events.length>=overviewGenerationTrace.limit){overviewGenerationTrace.dropped++;return;}overviewGenerationTrace.events.push(sample);};
+const recordOverviewGeneration=value=>{if(!overviewGenerationTrace.enabled)return;const sample=overviewGenerationSample({...value,faultEpoch:overviewFaultEpochs.get(value.scopeIndex)??0});if(!sample)return;if(overviewGenerationTrace.events.length>=overviewGenerationTrace.limit){overviewGenerationTrace.dropped++;return;}overviewGenerationTrace.events.push(sample);};
 const hudFailureSamples=[],hudReadinessFailureSamples=[],tableFailureSamples=[];
 let stopping=false;
 let phases={},transportTimings={},rpcOutcomes={},runtimeFailures={},hudFailureKinds={},tableFailureKinds={},requestAccounting={},observationOrder=0;
@@ -187,7 +188,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  let expectedDeliveries=0,excludedForPlannedFault=0,missedDeliveries=0,minHealthyOnline=viewers,healthySocketMs=0,healthyWallMs=0,coverageAt=0,unexpectedDisconnects=0;
  let snapshotExpected=0,snapshotExcluded=0,snapshotMissed=0;
  const realtimeDiagnostics={events:{},unexpectedSamples:[]};
- const suspendDeliveries=(onlyTour)=>{for(const c of clients)if(!onlyTour||c.tour===onlyTour){excludedForPlannedFault+=c.expected.length;c.expected=[];snapshotExcluded+=c.snapshotExpected.length;c.snapshotExpected=[];}};
+ const suspendDeliveries=(onlyTour)=>{if(overview)for(let n=1;n<=tourCount;n++)if(!onlyTour||onlyTour===uuid('10000000',n))overviewFaultEpochs.set(n,(overviewFaultEpochs.get(n)??0)+1);for(const c of clients)if(!onlyTour||c.tour===onlyTour){excludedForPlannedFault+=c.expected.length;c.expected=[];snapshotExcluded+=c.snapshotExpected.length;c.snapshotExpected=[];}};
  const expireDeliveries=()=>{for(const c of clients){for(const [field,measure] of [['expected','realtime'],['snapshotExpected','snapshot']]){const remaining=[];for(const e of c[field]){if(Date.now()-e.at>10000){if(field==='expected')missedDeliveries++;else snapshotMissed++;stats[measure].push(Date.now()-e.at);}else remaining.push(e);}c[field]=remaining;}}};
  const health=[];
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
@@ -218,7 +219,7 @@ for(const scenario of ['concentrated','distributed','overview']){
   }}});
   const state={client,online:false,accessOnline:false,accessJoined:false,tableStatus:'INITIAL',accessStatus:'INITIAL',joined:false,reconnected:0,revocations:0,deliverySamples:0,snapshotSamples:0,expected:[],snapshotExpected:[],snapshotBusy:false,snapshotDirty:new Set(),known:{},snapshotLast:0,busy:false,pending:false,lastRead:0,nextVerify:Infinity,lastHud:0,failures:0,frozen:null,hudEpoch:0,hudController:null,hudActive:false,verifyAfterRead:false,hudCompletedEpoch:0,accessReconnect:0,verifiedAccessReconnect:0,table,tour};clients.push(state);
   const tableHints=[];
-  const traceSnapshot=(kind,freshness,extra={})=>{if(!overview||i>=tourCount||!overviewGenerationTrace.enabled)return;try{recordOverviewGeneration({kind,scopeIndex:n,generation:JSON.parse(freshness?.projectedSourceRevision).generation,at:Date.now(),publishedAt:Date.parse(freshness.publishedAt),startedAt:state.snapshotLast,...extra});}catch{/* Missing freshness remains unknown. */}};
+  const traceSnapshot=(kind,freshness,extra={})=>{if(!overview||i>=tourCount||!overviewGenerationTrace.enabled)return;try{recordOverviewGeneration({kind,scopeIndex:n,generation:JSON.parse(freshness?.projectedSourceRevision).generation,at:Date.now(),publishedAt:Date.parse(freshness.publishedAt),startedAt:state.snapshotLast,healthy:healthy(),...extra});}catch{/* Missing freshness remains unknown. */}};
   // A Broadcast/read can finish before the writer's HTTP acknowledgement.
   // Credit its actual observation time once its source write is registered.
   const credit=(field,observation,predicate,measure,count)=>{
@@ -445,7 +446,7 @@ for(const scenario of ['concentrated','distributed','overview']){
     const generation=message.payload.revisions?.tables;
     if(typeof generation==='string'&&/^\d+$/.test(generation)){
      const receivedAt=Date.now();tableHints.push({generation,at:receivedAt});if(tableHints.length>128)tableHints.shift();
-     if(overview&&i<tourCount)recordOverviewGeneration({kind:'hint',scopeIndex:n,generation,at:receivedAt});
+     if(overview&&i<tourCount)recordOverviewGeneration({kind:'hint',scopeIndex:n,generation,at:receivedAt,healthy:healthy()});
     }
    }
    if(message.payload.handVisibilityOnly===true&&components.includes('visibility')){
@@ -504,7 +505,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    try{
     const value=await rpc('fixture_scale_step_once_v1',{p_operation:operation,p_tournament_id:uuid('10000000',n),p_number:number,p_step:step,p_hand_id:hand},true);
     const event={handId:value.handId,number,step,at:Date.parse(value.sourceWrittenAt),generation:value.generation,generationDeferred:value.generationDeferred};
-    if(overview)recordOverviewGeneration({kind:'source',scopeIndex:n,generation:event.generation,at:event.at,deferred:event.generationDeferred});
+    if(overview)recordOverviewGeneration({kind:'source',scopeIndex:n,generation:event.generation,at:event.at,deferred:event.generationDeferred,healthy:!reconnecting&&(!revoking||n!==20)});
     hand=value.handId;stats.sourceWrites++;const ackOrder=++observationOrder;
     // The intent is committed and acknowledged. Advance independently of
     // delivery checks so an invariant failure cannot replay a source action.

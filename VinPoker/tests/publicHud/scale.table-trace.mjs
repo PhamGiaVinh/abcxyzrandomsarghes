@@ -7,8 +7,8 @@ export function overviewGenerationSample(value){
   typeof value.generation!=='string'||!/^\d{1,20}$/.test(value.generation)||
   !Number.isSafeInteger(value.at)||value.at<0)return null;
  const sample={kind:value.kind,scopeIndex:value.scopeIndex,generation:value.generation,at:value.at};
- for(const key of ['startedAt','publishedAt','requestEpoch','currentEpoch'])if(Number.isSafeInteger(value[key])&&value[key]>=0)sample[key]=value[key];
- if(typeof value.deferred==='boolean')sample.deferred=value.deferred;
+ for(const key of ['startedAt','publishedAt','requestEpoch','currentEpoch','faultEpoch'])if(Number.isSafeInteger(value[key])&&value[key]>=0)sample[key]=value[key];
+ for(const key of ['deferred','healthy'])if(typeof value[key]==='boolean')sample[key]=value[key];
  return sample;
 }
 

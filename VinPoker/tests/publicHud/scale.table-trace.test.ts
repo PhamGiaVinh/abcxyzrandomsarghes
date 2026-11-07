@@ -8,6 +8,9 @@ it('retains only numeric fixture generation clocks without payloads or identitie
  expect(JSON.stringify(overviewGenerationSample(input))).not.toContain('private');
  for(const invalid of [{scopeIndex:0},{scopeIndex:21},{generation:'private'},{generation:'1'.repeat(21)},{at:NaN},{kind:'private'}])expect(overviewGenerationSample({...input,...invalid})).toBeNull();
  expect(overviewGenerationSample({...input,kind:'source',deferred:true,publishedAt:NaN})).toEqual({kind:'source',scopeIndex:20,generation:'123',at:100,startedAt:80,requestEpoch:2,currentEpoch:3,deferred:true});
+ expect(overviewGenerationSample({...input,healthy:false,faultEpoch:2})).toMatchObject({healthy:false,faultEpoch:2});
+ expect(overviewGenerationSample({...input,healthy:'private',faultEpoch:-1})).not.toHaveProperty('faultEpoch');
+ expect(overviewGenerationSample({...input,healthy:'private',faultEpoch:-1})).not.toHaveProperty('healthy');
 });
 
 describe('bounded table failure timing provenance',()=>{
