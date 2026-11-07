@@ -11,6 +11,18 @@ export const CANDIDATE='9a33c22894f250e9704726e14ff2c09cdf53af7e';
 export const BACKUP_RUN='42373584563';
 export const SOURCE_ACTION_TABLE='public.hand_actions';
 export const PAUSE_RESTORED_DISPATCHER_SQL="SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';";
+export function isolatedWorkerSecretSql(name,secret){
+ assert.ok(['PUBLIC_HUD_WORKER_SECRET','PUBLIC_SPECTATOR_WORKER_SECRET'].includes(name));
+ assert.match(secret,/^[a-f0-9]{64}$/);
+ return `BEGIN;DO $local_secret$ BEGIN
+ IF current_database()<>'postgres' OR current_user<>'postgres'
+ OR current_setting('cron.launch_active_jobs')<>'off'
+ OR (SELECT enabled FROM tracker_analytics_v1.config WHERE singleton) IS DISTINCT FROM false
+ THEN RAISE EXCEPTION 'isolated_secret_fixture_context_differs';END IF;
+ DELETE FROM vault.secrets WHERE name='${name}';
+ PERFORM vault.create_secret('${secret}','${name}');
+ END $local_secret$;COMMIT;`;
+}
 export const RESTORE_OWNER_CONTEXT_SQL=`BEGIN;
 LOCK TABLE supabase_migrations.schema_migrations IN SHARE MODE;
 DO $owner_context$ BEGIN
@@ -102,9 +114,12 @@ export async function rehearse(container,candidate,output){
   report.stage='configure-url';save();query(activationContext('configure-url')+buildActivationSql('configure-url',CANDIDATE));report.activation.push('configure-url');save();
   // Replace only the two disposable worker credentials before configuring jobs.
   // Cron remains disabled throughout; never invoke a production URL.
+  // Re-create instead of decrypting/updating ciphertext bound to the hosted Vault key.
+  report.stage='provision-isolated-worker-secrets';
+  report.vaultContext={kind:'SYNTHETIC_LOCAL_WORKER_CREDENTIALS_NOT_RESTORED_PRODUCTION_SECRETS',recreated:0,productionVaultDecryptabilityCertified:false};save();
   for(const name of ['PUBLIC_HUD_WORKER_SECRET','PUBLIC_SPECTATOR_WORKER_SECRET']){
    const secret=randomBytes(32).toString('hex');
-   query(`DO $local_secret$ DECLARE target uuid;BEGIN SELECT id INTO target FROM vault.secrets WHERE name='${name}';IF FOUND THEN PERFORM vault.update_secret(target,'${secret}');ELSE PERFORM vault.create_secret('${secret}','${name}');END IF;END $local_secret$;`);
+   query(isolatedWorkerSecretSql(name,secret));report.vaultContext.recreated++;save();
   }
   report.stage='start-workers';save();query(activationContext('start-workers')+buildActivationSql('start-workers',CANDIDATE));report.activation.push('start-workers');save();
   const {build}=await import(pathToFileURL(resolve(candidate,'node_modules/esbuild/lib/main.js')).href);
