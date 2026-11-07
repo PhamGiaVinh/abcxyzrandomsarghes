@@ -10012,6 +10012,12 @@
       "filename": "20261107013500_cashier_app_reentry_transport_v1.sql",
       "sha256": "092302c8cbdc82ee93a969470aa027fc86cd886a27b65be2980a09c1fb043373",
       "reason": "Service-only invoker transport composes canonical app reentry,validated bank snapshot and optional notification in one transaction. SQL bytes match isolated healthy/fault tests. Additional migration32 is outside the HUD31 manifest;requires exact owner-approved supplemental manifest,verified base31 receipts,fresh recovery and object/ACL postchecks before production apply."
+    },
+    {
+      "version": "20261107045330",
+      "filename": "20261107045330_tracker_correction_hand_lock_order_v1.sql",
+      "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
+      "reason": "Exact captured correction context serializes callers per hand before existing row locks. Native same-key and distinct-key20-session races and denial/boundary/recovery checks passed. Outside HUD31 and reentry32 manifests;requires separately pinned final release approval,fresh recovery,and paused/drained correction writers before production apply."
     }
   ],
   "floorActiveAllowlist": [

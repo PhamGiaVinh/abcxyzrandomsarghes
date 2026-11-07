@@ -4,14 +4,20 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {scanMigrationSource} from '../../scripts/ops/ops-1359-release-gate.mjs';
 
 assert.equal(process.platform,'win32');
 const database='vinpoker_hud_test_current_undo_20261107a';
 const reportPath=process.env.UNDO_CAPTURED_CURRENT_REPORT;
 assert.match(reportPath??'',/^D:\/Quy-trinh-hud-scale-evidence\/undo-captured-current-[A-Za-z0-9-]+\.json$/);
+const lockFix=process.env.UNDO_CAPTURED_LOCK_FIX==='1';
 const read=name=>readFileSync(new URL(name,import.meta.url),'utf8').replaceAll('\r','');
 const digest=(value,algorithm='md5')=>createHash(algorithm).update(value).digest('hex');
 const source=read('../../supabase/migrations/20270115000016_tracker_correction_uat_release2.sql');
+const lockSource=lockFix?read('../../supabase/migrations/20261107045330_tracker_correction_hand_lock_order_v1.sql'):'';
+const lockFrame=lockFix?scanMigrationSource(lockSource):null;
+if(lockFix)assert.equal(lockFrame.mode,'outer-transaction');
+const lockBody=lockFix?lockSource.slice(lockFrame.insertAfterBegin,lockFrame.insertBeforeCommit):'';
 const definition=source.match(/CREATE OR REPLACE FUNCTION public\.undo_tracker_last_action_v1\([\s\S]*?AS (\$[A-Za-z0-9_]*\$)([\s\S]*?)\1;/);
 assert.ok(definition);
 assert.equal(digest(definition[2]),'60291b40aab10a1deccbe2aae1195215');
@@ -105,7 +111,7 @@ const snapshot=`SELECT jsonb_build_array(${['tournament_hands','hand_players','h
 // fingerprints of every source/authorization/audit relation touched by this test.
 once(" ASSERT (SELECT count(*)=7 AND sum(chip_count)=180000 FROM public.tournament_seats WHERE tournament_id='c367013a-3ed3-48af-ad48-3915acadc50e' AND is_active);",'');
 once(" ASSERT EXISTS(SELECT 1 FROM public.dealer_attendance WHERE id='592a1d69-3e2c-4a07-aa7a-8a77a7907f5f' AND shift_date='2026-10-20' AND current_state='available' AND check_out_time IS NULL);",'');
-once('BEGIN;\nSET LOCAL lock_timeout',`BEGIN;\n${guard}\n${definition[0]}\n${boardDefinition}\nDO $pin$ BEGIN
+once('BEGIN;\nSET LOCAL lock_timeout',`BEGIN;\n${guard}\n${definition[0]}\n${boardDefinition}\n${lockBody}\nDO $pin$ BEGIN
  ASSERT (SELECT md5(replace(prosrc,chr(13),''))='60291b40aab10a1deccbe2aae1195215' FROM pg_proc WHERE oid='${signatures[0][0]}'::regprocedure);
  ASSERT (SELECT md5(replace(prosrc,chr(13),''))='64734d09453c95918299ca3f6e3cc339' FROM pg_proc WHERE oid='${signatures[3][0]}'::regprocedure);
 END $pin$;\nSET LOCAL lock_timeout`);
@@ -117,6 +123,7 @@ const started=performance.now();
 const result=spawnSync('wsl',['-d','PokerVision-P16-4C-Eval','--','psql','-X','-Atq','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose','-h','127.0.0.1','-p','55441','-U','postgres','-d',database],{input:fixture,encoding:'utf8',timeout:60000,maxBuffer:1048576,windowsHide:true});
 const passed=result.status===0&&result.stdout.trim()==='CAPTURED_CURRENT_UNDO_NATIVE_ROLLBACK_PASS';
 const report={kind:'CAPTURED_PRODUCTION_UNDO_NATIVE_ISOLATED_ROLLBACK',passed,
+ lockFix,contextTestBodyMd5:lockFix?'6fbc46ed8c9b7712a4546480a07385ae':signatures[1][1],
  bodyMd5:digest(definition[2]),contextBodyMd5:signatures[1][1],legacyDeleteBodyMd5:signatures[2][1],
  capturedBoardBodyMd5:digest(boards[0][2]),
  elapsedMs:performance.now()-started,exitCode:result.status,
