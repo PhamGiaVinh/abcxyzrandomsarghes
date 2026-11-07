@@ -14,7 +14,7 @@
       "version": "20261107093000",
       "name": "tournament_close_paid_prize_source_v1",
       "path": "supabase/migrations/20261107093000_tournament_close_paid_prize_source_v1.sql",
-      "sha256": "19e72a9e3351bf32f27822cc5d587e923e1ac43e40f0937d16cc659e2fb4de46",
+      "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
       "action": "APPLY"
     }
   ],
@@ -51,7 +51,7 @@
   ],
   "recovery": {
     "path": "scripts/ops/tournament-close-paid-prize-20261107-rollback.sql",
-    "sha256": "33356e3e01bfc11d1f761d76cbef19dc5a55c0fb111b999a51db86f7bc704fe6",
+    "sha256": "038979d703f57c0a21247ac9c39a24e73c16f56b26ecd5b2b5b2d72a4c49a42b",
     "preservesSourceData": true,
     "preservesExistingCloseReports": true
   },

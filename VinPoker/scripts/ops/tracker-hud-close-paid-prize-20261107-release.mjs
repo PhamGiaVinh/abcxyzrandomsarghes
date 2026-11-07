@@ -6,7 +6,7 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {canonicalSqlText} from './ops-1359-release-gate.mjs';
 import {loadCorrectionPackage,stateSql,validateState,atomicQuery,validateRecovery,PROJECT,CORRECTION_MANIFEST_HASH} from './tracker-hud-20261104-release.mjs';
-export const CLOSE_MANIFEST_HASH='574930c0b96369ae288ca11b0a766d001d4c6fa30f7a2a769a71d2ad75d3159e';
+export const CLOSE_MANIFEST_HASH='f2fa61c8b91f4351bfe4a93673202237a611f9208cfc41e5b5bdd0262caa7420';
 const ROOT=fileURLToPath(new URL('../..',import.meta.url));
 const sha=s=>createHash('sha256').update(canonicalSqlText(s)).digest('hex');
 export function loadClosePackage(root=ROOT){

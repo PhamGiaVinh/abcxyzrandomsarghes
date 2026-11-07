@@ -30,6 +30,15 @@ BEGIN
   IF pg_catalog.pg_get_userbyid((SELECT proowner FROM pg_catalog.pg_proc WHERE oid=target))<>'postgres'
    OR NOT (SELECT prosecdef FROM pg_catalog.pg_proc WHERE oid=target)
   THEN RAISE EXCEPTION 'close_paid_prize_security_drift'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM pg_catalog.pg_proc p WHERE p.oid=target
+   AND p.provolatile=CASE WHEN r.signature='public.close_tournament(uuid,text)' THEN 'v'::"char" ELSE 's'::"char" END
+   AND p.proconfig=CASE WHEN r.signature='public.close_tournament(uuid,text)' THEN ARRAY['search_path=public']::text[] ELSE ARRAY['search_path=""']::text[] END
+   AND (SELECT array_agg(pg_catalog.pg_get_userbyid(a.grantee)::text ORDER BY pg_catalog.pg_get_userbyid(a.grantee)::text)
+        FROM pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) a WHERE a.privilege_type='EXECUTE')=
+       CASE WHEN r.signature='public.close_tournament(uuid,text)' THEN ARRAY['authenticated','postgres','service_role']::text[] ELSE ARRAY['authenticated','postgres']::text[] END
+   AND NOT EXISTS(SELECT 1 FROM pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
+                  WHERE a.grantee=0 OR a.is_grantable OR a.grantor<>p.proowner))
+  THEN RAISE EXCEPTION 'close_paid_prize_exact_metadata_drift'; END IF;
   expected:=replace(definition,r.old_query,r.new_query);
   EXECUTE expected;
   IF replace(pg_catalog.pg_get_functiondef(target),chr(13),'')<>expected
