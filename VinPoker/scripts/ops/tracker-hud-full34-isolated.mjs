@@ -11,6 +11,12 @@ export const CANDIDATE='8fd86933596d5755ae0293204fb4e794e40c286c';
 export const BACKUP_RUN='42373584563';
 export const SOURCE_ACTION_TABLE='public.hand_actions';
 export const PAUSE_RESTORED_DISPATCHER_SQL="SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';";
+export function sqlFailureMetadata(stderr,exitCode){
+ const text=String(stderr??'');
+ return {exitCode:Number.isInteger(exitCode)?exitCode:null,
+  sqlState:text.match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]??null,
+  inputLine:Number(text.match(/psql:<stdin>:(\d+):\s+ERROR:/)?.[1])||null};
+}
 export function validateInvocation(container,candidate,report,env=process.env){
  assert.equal(env.GITHUB_ACTIONS,'true');assert.match(env.GITHUB_RUN_ID??'',/^\d+$/);
  assert.match(container??'',/^[a-f0-9]{12,64}$/);
@@ -28,8 +34,8 @@ export async function rehearse(container,candidate,output){
   stage:'preflight',complete:false,passed:false,committed:[],activation:[],productionChanged:false,
   limitations:'Cron execution disabled and outbound blocked. SQL transitions and native worker only; not Edge dispatch, HTTP delivery, production capacity, historical pre03 proof or release approval.'};
  const save=()=>writeFileSync(output,JSON.stringify(report,null,2)+'\n');save();
- const args=['exec','-i',container,'psql','-h','/var/run/postgresql','-X','-qAt','-w','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres'];
- function query(sql){const r=spawnSync('docker',args,{input:sql,encoding:'utf8',maxBuffer:16*1024*1024,stdio:['pipe','pipe','pipe']});if(r.error||r.status!==0)throw Error('Isolated SQL failed; raw diagnostics withheld');return r.stdout.trim();}
+ const args=['exec','-i',container,'psql','-h','/var/run/postgresql','-X','-qAt','-w','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose','-U','postgres','-d','postgres','-f','-'];
+ function query(sql){const r=spawnSync('docker',args,{input:sql,encoding:'utf8',maxBuffer:16*1024*1024,stdio:['pipe','pipe','pipe']});if(r.error||r.status!==0){report.sqlFailure=sqlFailureMetadata(r.stderr,r.status);save();throw Error('Isolated SQL failed; raw diagnostics withheld');}return r.stdout.trim();}
  const json=sql=>JSON.parse(query(sql));
  const module=path=>import(pathToFileURL(resolve(candidate,path)).href);
  try{
@@ -50,11 +56,13 @@ export async function rehearse(container,candidate,output){
   report.stage='preflight-source-integrity';save();const sourceBefore=json(sourceSql);
   report.stage='apply';save();
   for(const entry of entries){
+   report.attempting={order:entry.order,version:entry.version};save();
    query(atomicQuery(entry,{...pkg.base,entries}));
    const receipt=json(`SELECT json_build_object('name',name,'hash',encode(extensions.digest(convert_to(statements[1],'UTF8'),'sha256'),'hex'),'statements',cardinality(statements)) FROM supabase_migrations.schema_migrations WHERE version='${entry.version}';`);
    assert.deepEqual(receipt,{name:entry.name,hash:entry.sha256,statements:1});
    report.committed.push({version:entry.version,sha256:entry.sha256});save();
   }
+  delete report.attempting;
   validateCloseObjects(json(closeObjectsSql()),pkg.manifest.postchecks);
   const activationContext=phase=>`SET vinpoker.approved_project_ref='orlesggcjamwuknxwcpk';SET vinpoker.approved_source_sha='${CANDIDATE}';SET vinpoker.approved_activation_phase='${phase}';`;
   report.stage='configure-url';save();query(activationContext('configure-url')+buildActivationSql('configure-url',CANDIDATE));report.activation.push('configure-url');save();
