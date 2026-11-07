@@ -16,6 +16,7 @@ REVOKE ALL ON SCHEMA ops_reentry_transport_probe_v1 FROM PUBLIC,anon,authenticat
 -- attempt even when its inserted notification and subtransaction are rolled back.
 CREATE SEQUENCE ops_reentry_transport_probe_v1.notification_attempts;
 CREATE SEQUENCE ops_reentry_transport_probe_v1.notification_timeout_attempts;
+CREATE SEQUENCE ops_reentry_transport_probe_v1.notification_disconnect_attempts;
 CREATE TABLE ops_reentry_transport_probe_v1.timeout_mode(singleton boolean PRIMARY KEY CHECK(singleton),enabled boolean NOT NULL);
 ALTER TABLE ops_reentry_transport_probe_v1.timeout_mode ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON ops_reentry_transport_probe_v1.timeout_mode FROM PUBLIC,anon,authenticated,service_role;
@@ -37,6 +38,11 @@ RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  IF NEW.type='registration_confirmed' AND NEW.data->>'reentry'='true'
   AND NEW.data->>'tournament_id'='a3000000-0000-4000-8000-000000000001' THEN
+  IF current_setting('application_name')='vinpoker-reentry-disconnect-probe' THEN
+   PERFORM nextval('ops_reentry_transport_probe_v1.notification_disconnect_attempts');
+   PERFORM pg_sleep(10);
+   RAISE EXCEPTION 'ISOLATED_DISCONNECT_DID_NOT_FIRE';
+  END IF;
   IF (SELECT enabled FROM ops_reentry_transport_probe_v1.timeout_mode WHERE singleton) THEN
    PERFORM nextval('ops_reentry_transport_probe_v1.notification_timeout_attempts');
    PERFORM pg_sleep(5);

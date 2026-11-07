@@ -39,6 +39,7 @@ on:
       - "VinPoker/supabase/pending-tests/reentry_transport_notification_fault.sql"
       - "VinPoker/supabase/pending-tests/reentry_transport_timeout_rollback.sql"
       - "VinPoker/tests/cashier/reentryTransportCandidate.test.mjs"
+      - "VinPoker/tests/cashier/reentryDisconnect.native.mjs"
       - "VinPoker/supabase/pending-tests/fake-sepay-server.mjs"
       - "VinPoker/supabase/pending-tests/static-preview-server.mjs"
       - "VinPoker/supabase/functions/tournament-register/**"
@@ -211,6 +212,7 @@ jobs:
           path: |
             VinPoker/output/operations-latency/*-http.json
             VinPoker/output/operations-latency/reentry-transport-notification-timeout-native.json
+            VinPoker/output/operations-latency/reentry-transport-disconnect-native.json
             VinPoker/output/operations-latency/reentry-bank-ambiguity-native-conservation.json
           if-no-files-found: ignore
           retention-days: 7
