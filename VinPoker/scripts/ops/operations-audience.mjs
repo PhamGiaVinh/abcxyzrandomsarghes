@@ -10,7 +10,7 @@ import {createClient} from '@supabase/supabase-js';
 import {settleScopedFeltRead} from '../../tests/publicHud/scale.delivery.mjs';
 import {createAudienceGenerationEvidence} from './operations-audience-generation.mjs';
 import {createOperationalHandDeliveryEvidence,validateHandDeliverySelection,readHandDeliveryJournal} from './operations-audience-hand-delivery.mjs';
-import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,selectedAudienceSections,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness,recordAudienceDetailEvent} from './operations-audience-scope.mjs';
+import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,selectedAudienceMetadata,audienceFailure,audienceFileLimits,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions,audienceSelectionReadiness,recordAudienceDetailEvent} from './operations-audience-scope.mjs';
 
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
@@ -190,11 +190,11 @@ try{
     if(readyAt)fail('unexpected_realtime_status');
    }
   });
-  const state={client,online:false,ready:false,clockReady:false,changes:0,known:{},dirty:new Set(['tables','ranking','payout']),catalog:[],tableId:null,revision:null,epoch:0,controller:null,detailFull:true,detailController:null};
+  const state={client,online:false,ready:false,clockReady:false,changes:0,known:{},dirty:new Set(selected?['tables']:['tables','ranking','payout']),metadataPending:selected,catalog:[],tableId:null,revision:null,epoch:0,controller:null,detailFull:true,detailController:null};
   clients.push(state);
   const refresh=async()=>{
-   if(stopping||!state.dirty.size)return;
-   const sections=[...state.dirty];state.dirty.clear();const epoch=state.epoch;
+   if(stopping||(!state.dirty.size&&!state.metadataPending))return;
+   const sections=selected?['tables']:[...state.dirty];state.dirty.clear();state.metadataPending=false;const epoch=state.epoch;
    const epochs=Object.fromEntries(sections.map(s=>[s,loaded.observer.publicReadEpoch(client,tour,s)]));
    const controller=new AbortController(),timeout=AbortSignal.timeout(5000);state.controller=controller;
    let requestType='snapshot';
@@ -208,7 +208,7 @@ try{
     if(response.status!==200)throw Object.assign(Error('AUDIENCE_HTTP_ERROR'),{audienceHttpStatus:response.status});
     const data=await response.json();
     observeTiming('snapshot',response.headers);
-    if(epoch!==state.epoch||stopping){for(const s of sections)state.dirty.add(s);return;}
+    if(epoch!==state.epoch||stopping){for(const s of sections)state.dirty.add(s);if(selected)state.metadataPending=true;return;}
     assert.equal(data.ok,true);assert.equal(data.access,'public');assert.equal(data.tournamentId,tour);
     timings.snapshot.push(Date.now()-start);
     for(const section of sections){
@@ -243,10 +243,10 @@ try{
     state.observation.reportResult(true);
    }catch(cause){
     const cancelled=ownedAudienceCancellation(cause,controller,timeout,requestType==='table'?'table':'http');
-    if(cancelled)for(const s of sections)state.dirty.add(s);
+    if(cancelled){for(const s of sections)state.dirty.add(s);if(selected)state.metadataPending=true;}
     else {fail('spectator_'+requestType+'_read');diagnostic('spectator_'+requestType,cause,cause?.audienceHttpStatus??cause?.publicTableHttpStatus);state.observation.reportResult(false);}
    }finally{
-    if(!stopping&&state.dirty.size)state.coordinator.request();
+    if(!stopping&&(state.dirty.size||state.metadataPending))state.coordinator.request();
    }
   };
   state.coordinator=loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track(refresh()));
@@ -341,10 +341,10 @@ try{
    }
    const clockSignal=audienceClockSignal(event);
    if(clockSignal.invalidate)state.clockController?.abort();
-   if(selected){for(const c of selectedAudienceSections(event))state.dirty.add(c);}
+   if(selected){if(selectedAudienceMetadata(event))state.metadataPending=true;}
    else for(const c of event.components)if(['tables','ranking','payout'].includes(c))state.dirty.add(c);
-   if(event.components.includes('visibility'))for(const c of ['tables','ranking','payout'])state.dirty.add(c);
-   if(state.dirty.size)state.coordinator.request();
+   if(!selected&&event.components.includes('visibility'))for(const c of ['tables','ranking','payout'])state.dirty.add(c);
+   if(state.dirty.size||state.metadataPending)state.coordinator.request();
    if(selected&&event.components.some(c=>['tables','hand_visibility','visibility'].includes(c))){recordAudienceDetailEvent(state,'request');state.detailCoordinator.request();}
    if(clockSignal.reload)state.clockCoordinator.request();
   });

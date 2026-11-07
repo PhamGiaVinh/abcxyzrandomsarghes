@@ -11,6 +11,7 @@ export function usePublicSpectatorSnapshot(
   enabled: boolean,
   requestedTableIds: readonly string[] = [],
   liveTableUpdates = true,
+  metadataOnly = false,
 ) {
   const supabase = useSupabaseClient();
   const [snapshot, setSnapshot] = useState<PublicSpectatorSnapshot | null>(null);
@@ -61,15 +62,15 @@ export function usePublicSpectatorSnapshot(
     let coordinator: ReturnType<typeof registerPublicTournamentRead> | null = null;
     let observation:ReturnType<typeof observePublicTournament>|null=null;
     let controller=new AbortController(),epoch=0;
-    const dirty=new Set<PublicSnapshotSection>(['tables','ranking','payout']);
+    const dirty=new Set<PublicSnapshotSection>(metadataOnly?['tables']:['tables','ranking','payout']);
 
     const refresh = async () => {
       const requestEpoch=epoch;controller=new AbortController();
-      const sections=[...dirty];dirty.clear();if(!sections.length)return;
+      const sections:PublicSnapshotSection[]=metadataOnly?['tables']:[...dirty];dirty.clear();if(!sections.length)return;
       const epochs=Object.fromEntries(sections.map(s=>[s,publicReadEpoch(supabase,tournamentId,s)]));
       const args={
         p_tournament_id: tournamentId,
-        p_table_ids: tableIds,
+        p_table_ids: metadataOnly?[]:tableIds,
         p_sections: sections,
         p_known_revisions: trustedRevisions.current,
       };
@@ -122,6 +123,13 @@ export function usePublicSpectatorSnapshot(
         epoch++;controller.abort();delete trustedRevisions.current.tables;
         setSnapshot(previous=>previous?{...previous,sections:{...previous.sections,tables:previous.sections.tables?{...previous.sections.tables,items:[],removed:[],unchanged:false}:undefined}}:previous);
       }
+      if(metadataOnly){
+        // The parent hub is hidden behind the table viewer. Retain access
+        // verification/reconnect fences and the visible header's table catalog,
+        // without reading invisible ranking/payout or any table hand details.
+        if(event.reason!=='changed'||event.invalidatePending||event.components.includes('visibility')||event.components.includes('hand_visibility'))coordinator?.request();
+        return;
+      }
       for(const section of ['tables','ranking','payout'] as const){
         if(section==='tables'&&!liveTableUpdates&&event.reason==='changed'&&!event.components.includes('visibility'))continue;
         if(event.components.includes(section)||event.components.includes('visibility'))dirty.add(section);
@@ -135,7 +143,7 @@ export function usePublicSpectatorSnapshot(
       coordinator?.stop();
       controller.abort();observation?.unsubscribe();
     };
-  }, [enabled, tournamentId, tableKey, tableIds, supabase, liveTableUpdates]);
+  }, [enabled, tournamentId, tableKey, tableIds, supabase, liveTableUpdates, metadataOnly]);
 
   const currentScope = trustedClient.current === supabase && snapshot?.tournamentId === tournamentId;
   return { snapshot: currentScope ? snapshot : null, loading, networkError };

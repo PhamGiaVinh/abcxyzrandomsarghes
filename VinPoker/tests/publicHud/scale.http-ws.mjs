@@ -256,11 +256,11 @@ for(const scenario of ['concentrated','distributed','overview']){
   const componentEpochs={tables:0,ranking:0,payout:0,clock:0};
   Object.assign(state,{fullRead:true,clockReady:false,clockPending:false,clockBusy:false,clockPhysicalReads:0,bundledClockPhysicalReads:0,clockScopedReads:0,supersededClockReads:0});
   const refreshSnapshot=async()=>{
-   state.snapshotPending=false;if(!state.snapshotDirty.size)return;
+   state.snapshotPending=false;if(!state.snapshotDirty.size&&!state.snapshotMetadataPending)return;
    state.snapshotBusy=true;const epoch=pageEpoch,controller=new AbortController();state.snapshotController=controller;
    try{
     if(epoch!==pageEpoch)return;
-    const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotLast=Date.now();
+    const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotMetadataPending=false;state.snapshotLast=Date.now();
     const requestEpochs=Object.fromEntries(requested.map(section=>[section,componentEpochs[section]??0]));
     const requestOrder=++observationOrder;
     const value=await post('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:overview?[table]:[],p_sections:requested,p_known_revisions:state.known},false,'other',controller.signal);
@@ -280,8 +280,11 @@ for(const scenario of ['concentrated','distributed','overview']){
   };
   const snapshotCoordinator=registerPublicTournamentRead(client,tour,()=>{const promise=refreshSnapshot();track(promise);return promise;});
   const snapshot=async(sections=['tables'])=>{
+   // A selected-table viewer keeps the hidden parent's access/catalog checks.
+   // Overview still reads and grades its visible sections unchanged.
+   if(!overview){sections=['tables'];state.snapshotMetadataPending=true;}
    for(const section of sections)state.snapshotDirty.add(section);
-   if(state.snapshotDirty.size&&Date.now()<end+10000){state.snapshotPending=true;snapshotCoordinator.request();}
+   if((state.snapshotDirty.size||state.snapshotMetadataPending)&&Date.now()<end+10000){state.snapshotPending=true;snapshotCoordinator.request();}
   };
   state.snapshot=snapshot;
   const readClock=async(controller,epoch,clockEpoch)=>{
@@ -458,7 +461,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    if(components.includes('visibility')){clockScopeEpoch++;state.clockReady=false;state.clockController?.abort();}
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
    if(components.includes('visibility')){state.known={};verifyPage();}
-   else {if(components.includes('hand_visibility'))delete state.known.tables;const sections=components.filter(c=>['tables','ranking','payout'].includes(c)&&(c!=='tables'||overview));if(sections.length)track(snapshot(sections));if(components.includes('clock')||components.includes('ranking'))track(clock());}
+   else {if(components.includes('hand_visibility'))delete state.known.tables;const sections=components.filter(c=>['tables','ranking','payout'].includes(c));if(overview&&sections.length)track(snapshot(sections));if(!overview&&components.includes('hand_visibility'))track(snapshot([]));if(components.includes('clock')||components.includes('ranking'))track(clock());}
   }).subscribe(s=>{
    const epoch=++pageEpoch;state.tableStatus=s;state.online=s==='SUBSCRIBED';scheduleVerify();
    if(!state.online&&started&&Date.now()<end&&!reconnecting)unexpectedDisconnects++;

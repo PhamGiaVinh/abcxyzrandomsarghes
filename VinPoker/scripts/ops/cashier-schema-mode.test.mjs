@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {selectedAudienceSections,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics,reentryServerTiming} from './operations-audience-scope.mjs';
+import {selectedAudienceMetadata,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics,reentryServerTiming} from './operations-audience-scope.mjs';
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
@@ -79,16 +79,13 @@ test('operational HUD worker bundles from a foreign working directory without a 
  assert.equal(result.status,0);assert.deepEqual(JSON.parse(result.stdout),{kind:'OPERATIONAL_HUD_WORKER_SOURCE_BUNDLE_ONLY',bundled:true});
 });
 
-test('selected-table hidden hub omits ordinary hand snapshots but retains scope and metadata checks',()=>{
- assert.deepEqual(selectedAudienceSections({reason:'changed',components:['tables']}),[]);
- assert.deepEqual(selectedAudienceSections({reason:'changed',components:['hand_visibility','tables']}),[]);
- assert.deepEqual(selectedAudienceSections({reason:'changed',components:['ranking','tables']}),['ranking']);
- assert.deepEqual(selectedAudienceSections({reason:'changed',components:['payout','clock']}),['payout']);
- assert.deepEqual(selectedAudienceSections({reason:'changed',components:['visibility']}),['tables','ranking','payout']);
- assert.deepEqual(selectedAudienceSections({reason:'verify',components:['tables']}),['tables']);
- assert.deepEqual(selectedAudienceSections({reason:'status',components:['tables','ranking','payout']}),[]);
+test('selected-table hidden hub retains only access checks and scope fences',()=>{
+ for(const components of [['tables'],['ranking','tables'],['payout','clock']])assert.equal(selectedAudienceMetadata({reason:'changed',components}),false);
+ for(const components of [['visibility'],['hand_visibility','tables']])assert.equal(selectedAudienceMetadata({reason:'changed',components}),true);
+ assert.equal(selectedAudienceMetadata({reason:'verify',components:['tables']}),true);
+ assert.equal(selectedAudienceMetadata({reason:'changed',components:['tables'],invalidatePending:true}),true);
+ assert.equal(selectedAudienceMetadata({reason:'status',components:['tables','ranking','payout']}),false);
 });
-
 function rejectedPreflight(mode,realtime='0',operations='0',clock='0',audience='0',reentry='0',faultMode='failure-injection',pool='10') {
   const filename = fileURLToPath(new URL('./cashier-tour-real-e2e.sh', import.meta.url));
   const env = { ...process.env, CASHIER_SCHEMA_MODE: mode, LOCAL_OPERATIONS_REALTIME:realtime, LOCAL_OPERATIONS_CANDIDATE_PROBE:operations, LOCAL_CLOCK_CANDIDATE_PROBE:clock, LOCAL_OPERATIONS_AUDIENCE:audience, LOCAL_REENTRY_TRANSPORT_PROBE:reentry, LOCAL_REENTRY_FAULT_MODE:faultMode, LOCAL_OPERATIONS_REST_POOL:pool, SCHEMA_ARTIFACT_DIRECTORY: '/missing-cashier-schema' };

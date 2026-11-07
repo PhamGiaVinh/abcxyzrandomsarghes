@@ -35,7 +35,7 @@ describe("table history opens inside one selected table", () => {
     expect(screen.getByRole("tab", { name: "Bàn LIVE" })).toHaveAttribute("aria-selected", "true");
     fireEvent.click(within(screen.getByRole("article", { name: "Bàn 2" })).getByRole("button", { name: "Lịch sử" }));
     expect(screen.getByTestId("viewer")).toHaveTextContent("table-2:history");
-    expect(snapshotReads).toHaveBeenLastCalledWith('tour',true,[],false);
+    expect(snapshotReads).toHaveBeenLastCalledWith('tour',true,[],false,true);
     fireEvent.click(screen.getByRole('button',{name:'Quay lại'}));
     expect(snapshotReads.mock.calls.at(-1)![3]).toBe(true);
   });

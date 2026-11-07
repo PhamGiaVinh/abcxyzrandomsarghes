@@ -112,6 +112,7 @@ function LiveHubContent({
     realtimeEnabled,
     realtimeEnabled ? watchingTable?[]:visibleTableIds : tables.map((table) => table.tableId),
     !watchingTable,
+    watchingTable,
   );
   const realtimeTables = publicSnapshot?.access === "public"
     ? (publicSnapshot.sections.tables?.catalog ?? []).map((table) => ({ tableId: table.tableId, name: table.name, playerCount: table.playerCount }))
