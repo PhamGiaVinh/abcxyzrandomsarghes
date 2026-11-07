@@ -10018,6 +10018,12 @@
       "filename": "20261107045330_tracker_correction_hand_lock_order_v1.sql",
       "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
       "reason": "Exact captured correction context serializes callers per hand before existing row locks. Native same-key and distinct-key20-session races and denial/boundary/recovery checks passed. Outside HUD31 and reentry32 manifests;requires separately pinned final release approval,fresh recovery,and paused/drained correction writers before production apply."
+    },
+    {
+      "version": "20261107093000",
+      "filename": "20261107093000_tournament_close_paid_prize_source_v1.sql",
+      "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
+      "reason": "Supplement34 corrects only new close/readiness paid-prize totals;preserves immutable close reports,payments,metadata and ACLs. Native canonical single/multi-place journeys,tenant/status exclusions,both row-lock race orderings and late ACL-drift rollback passed. Requires exact separately pinned supplemental package approval,fresh recovery,all33 prior atomic receipts and full34 activation checks before production apply."
     }
   ],
   "floorActiveAllowlist": [
