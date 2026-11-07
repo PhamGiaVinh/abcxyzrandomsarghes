@@ -2,10 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL} from './tracker-hud-full34-isolated.mjs';
+import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL,sqlFailureMetadata} from './tracker-hud-full34-isolated.mjs';
 import {execFileSync} from 'node:child_process';
 const env={GITHUB_ACTIONS:'true',GITHUB_RUN_ID:'123',GITHUB_WORKSPACE:resolve('/fixture/workspace'),RUNNER_TEMP:resolve('/fixture/temp'),HUD_FULL34_ISOLATION_VERIFIED:'egress-blocked-cron-off'};
 const candidate=resolve(env.GITHUB_WORKSPACE,'candidate/VinPoker'),report=resolve(env.RUNNER_TEMP,'hud-full34-rehearsal.json'),container='a'.repeat(64);
+test('SQL failure diagnostics retain only numeric status, SQLSTATE and source line',()=>{
+ const raw='psql:<stdin>:37: ERROR:  42501: permission denied\nDETAIL: private player and token values\nCONTEXT: SQL source';
+ assert.deepEqual(sqlFailureMetadata(raw,3),{exitCode:3,sqlState:'42501',inputLine:37});
+ assert.deepEqual(sqlFailureMetadata('connection failed: private-host',null),{exitCode:null,sqlState:null,inputLine:null});
+ assert.doesNotMatch(JSON.stringify(sqlFailureMetadata(raw,3)),/private|player|token|CONTEXT|SQL source/);
+});
 test('dispatcher pause uses the existing cron API available to non-superuser postgres',()=>{
  assert.equal(PAUSE_RESTORED_DISPATCHER_SQL,"SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';");
  const source=readFileSync('scripts/ops/tracker-hud-full34-isolated.mjs','utf8');
