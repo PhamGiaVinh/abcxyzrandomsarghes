@@ -2,6 +2,8 @@
 set -euo pipefail
 
 artifact_dir="${1:-}"
+rehearsal_mode="${2:-}"
+[[ -z "$rehearsal_mode" || "$rehearsal_mode" == '--hud-full34-rehearsal' ]] || exit 64
 if [[ -z "$artifact_dir" ]]; then
   echo "Encrypted recovery artifact directory is required" >&2
   exit 64
@@ -74,6 +76,17 @@ done
   echo "Decrypted recovery member checksum failed" >&2
   exit 1
 }
+database_context_verified=false
+if grep -Fxq 'database_context_version=1' "$payload_root/metadata.txt"; then
+  test -s "$payload_root/database-context.json"
+  grep -Eq '^[a-f0-9]{64}  database-context.json$' "$payload_root/manifest.sha256"
+  context_helper="$(cd -- "$(dirname -- "$0")" && pwd)/recovery-database-context.mjs"
+  node "$context_helper" restore-sql "$payload_root/database-context.json" "$test_root/restore-database-context.sql" 2>"$test_root/database-context-prepare.log" || {
+    echo "Encrypted database context is unsupported; raw metadata withheld" >&2; exit 1;
+  }
+elif grep -q '^database_context_version=' "$payload_root/metadata.txt"; then
+  echo "Unknown database context receipt version" >&2; exit 1
+fi
 grep -q '^dump_format=single_pg_dump_custom_archive_with_shared_exported_snapshot$' "$payload_root/metadata.txt" || {
   echo "Recovery receipt does not prove one shared MVCC snapshot" >&2
   exit 1
@@ -239,6 +252,15 @@ if [[ "$(docker exec "$db_container" sh -ceu \
   exit 1
 fi
 
+if [[ -f "$test_root/restore-database-context.sql" ]]; then
+  docker exec -i "$db_container" sh -ceu \
+    'exec env PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -X -q -v ON_ERROR_STOP=1 -U supabase_admin -d postgres' \
+    <"$test_root/restore-database-context.sql" >"$test_root/database-context-restore.log" 2>&1 || {
+    echo "Database owner/effective ACL recovery failed; raw output withheld" >&2; exit 1;
+  }
+  database_context_verified=true
+fi
+
 python3 - "$payload_root/table-counts.tsv" "$test_root/verify-counts.sql" <<'PY'
 import sys
 
@@ -296,6 +318,16 @@ echo "ACTUAL_ISOLATED_POSTGRES_RESTORE=PASS"
 echo "SNAPSHOT_APPLICATION_TABLE_COUNTS=PASS"
 echo "FLOOR_TRACKER_SCHEMA_AND_MIGRATION_HISTORY=PASS"
 echo "ROLE_METADATA_RESTORED=PASS"
+echo "SNAPSHOT_DATABASE_CONTEXT_VERIFIED=$database_context_verified"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'database_context_verified=%s\n' "$database_context_verified" >>"$GITHUB_OUTPUT"
+fi
 echo "VERIFIED_ANON_FUNCTIONS_PRESERVED=PASS"
 echo "RESTORE_NETWORK_EGRESS=BLOCKED"
 echo "RESTORED_CRON_JOBS=DISABLED"
+
+if [[ "$rehearsal_mode" == '--hud-full34-rehearsal' ]]; then
+  HUD_FULL34_ISOLATION_VERIFIED='egress-blocked-cron-off' node \
+    "$(dirname -- "$0")/tracker-hud-full34-isolated.mjs" "$db_container" \
+    "$GITHUB_WORKSPACE/candidate/VinPoker" "$RUNNER_TEMP/hud-full34-rehearsal.json"
+fi

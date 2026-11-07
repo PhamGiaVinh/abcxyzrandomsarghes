@@ -1,0 +1,101 @@
+name: Tracker HUD full35 isolated restored-backup rehearsal
+on:
+  pull_request:
+    paths:
+      - .github/workflows/tracker-hud-full34-isolated.yml
+      - VinPoker/scripts/ops/tracker-hud-full34-isolated.mjs
+      - VinPoker/scripts/ops/tracker-hud-full34-isolated.test.mjs
+      - VinPoker/scripts/ops/tracker-hud-restore-owner-context-20261107.json
+      - VinPoker/scripts/ops/verify-floor-v3-recovery.sh
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact reviewed main SHA of this isolated workflow
+        required: true
+        type: string
+      owner_ack:
+        description: ISOLATED_FULL34_BACKUP_42373584563
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: tracker-hud-full34-isolated
+  cancel-in-progress: false
+jobs:
+  source-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 9a33c22894f250e9704726e14ff2c09cdf53af7e
+          path: candidate
+      - working-directory: VinPoker
+        run: |
+          bash -n scripts/ops/verify-floor-v3-recovery.sh
+          node --check scripts/ops/tracker-hud-full34-isolated.mjs
+          node --test scripts/ops/tracker-hud-full34-isolated.test.mjs scripts/ops/floor-v3-recovery-workflow.test.mjs
+  rehearsal:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: source-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: dealer-swing-production-critical
+    steps:
+      - name: Require exact owner-approved orchestration source
+        env:
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          OWNER_ACK: ${{ inputs.owner_ack }}
+        run: |
+          set -euo pipefail
+          test "$INITIAL_ACTOR" = "$REPOSITORY_OWNER"
+          test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          test "$OWNER_ACK" = ISOLATED_FULL34_BACKUP_42373584563
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.target_sha }}
+      - name: Checkout immutable candidate separately
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 9a33c22894f250e9704726e14ff2c09cdf53af7e
+          path: candidate
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Install local test tools
+        run: |
+          set -euo pipefail
+          npm ci --prefix candidate/VinPoker --ignore-scripts --no-audit --no-fund
+          npm install --global supabase@2.117.0
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends age
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          run-id: 42373584563
+          github-token: ${{ github.token }}
+          name: floor-v3-encrypted-database-recovery-42373584563
+          path: ${{ runner.temp }}/hud-full34-ciphertext
+      - name: Pin exact ciphertext then restore and rehearse locally
+        working-directory: VinPoker
+        env:
+          FLOOR_BACKUP_AGE_IDENTITY: ${{ secrets.CASHIER_BACKUP_AGE_IDENTITY }}
+        run: |
+          set -euo pipefail
+          echo '3c9caf25231582967c0bc0bef61eba7da65565aeea09d292017bc900e8c4610e  floor-v3-recovery-42373584563.tar.gz.age' |
+            (cd "$RUNNER_TEMP/hud-full34-ciphertext" && sha256sum --check --status)
+          bash scripts/ops/verify-floor-v3-recovery.sh "$RUNNER_TEMP/hud-full34-ciphertext" --hud-full34-rehearsal
+      - name: Upload metadata-only rehearsal result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hud-full34-isolated-rehearsal-${{ github.run_id }}
+          path: ${{ runner.temp }}/hud-full34-rehearsal.json
+          if-no-files-found: warn
+          retention-days: 30
