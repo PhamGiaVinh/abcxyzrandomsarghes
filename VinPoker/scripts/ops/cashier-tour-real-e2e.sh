@@ -2168,6 +2168,39 @@ DO $$ BEGIN
  IF (SELECT count(*) FROM public.tracker_correction_uat_scopes WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND capability='undo_open_hand' AND enabled AND expires_at>now())<>1
  THEN RAISE EXCEPTION 'correction_test_scope_requires_exact_actor_table';END IF;
 END $$;
+DO $$ DECLARE
+ scope_row public.tracker_correction_uat_scopes%ROWTYPE;
+ owner_actor uuid;physical uuid;session_id uuid;dealer uuid:=gen_random_uuid();shift uuid:=gen_random_uuid();attendance uuid;answer jsonb;
+BEGIN
+ SELECT * INTO STRICT scope_row FROM public.tracker_correction_uat_scopes
+ WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND capability='undo_open_hand' AND enabled;
+ SELECT c.owner_id,tt.game_table_id,tt.table_session_id INTO STRICT owner_actor,physical,session_id
+ FROM public.tournament_tables tt JOIN public.clubs c ON c.id=scope_row.club_id WHERE tt.id=scope_row.tournament_table_id;
+ IF EXISTS(SELECT 1 FROM public.dealers WHERE club_id=scope_row.club_id AND user_id=scope_row.user_id)
+ OR EXISTS(SELECT 1 FROM public.dealer_assignments WHERE table_id=physical AND released_at IS NULL AND status IN('assigned','on_break','pre_assigned','reserved'))
+ THEN RAISE EXCEPTION 'correction_dealer_fixture_requires_unused_identity_and_session';END IF;
+ INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES(dealer,scope_row.club_id,scope_row.user_id,'Undo HTTP TEST dealer','active');
+ INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES(shift,scope_row.club_id,'Undo HTTP TEST shift','00:00','23:59');
+ PERFORM set_config('request.jwt.claim.sub',owner_actor::text,true);
+ PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',owner_actor)::text,true);
+ PERFORM set_config('role','authenticated',true);
+ answer:=public.operator_check_in_dealer_v1(dealer,scope_row.club_id,shift,gen_random_uuid());
+ IF answer->>'ok' IS DISTINCT FROM 'true' OR answer->>'outcome' IS DISTINCT FROM 'checked_in' THEN RAISE EXCEPTION 'correction_canonical_checkin_failed';END IF;
+ PERFORM set_config('role','none',true);
+ SELECT id INTO STRICT attendance FROM public.dealer_attendance WHERE dealer_id=dealer AND check_out_time IS NULL;
+ PERFORM set_config('request.headers',jsonb_build_object('x-vinpoker-dealer-intent','manual','x-vinpoker-dealer-actor',owner_actor)::text,true);
+ PERFORM set_config('request.jwt.claim.role','service_role',true);
+ PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
+ PERFORM set_config('role','service_role',true);
+ answer:=public.worker_assign_dealer_to_session_v1(scope_row.club_id,physical,session_id,attendance,statement_timestamp()+interval '45 minutes','undo-http-fixture:'||dealer::text);
+ IF answer->>'outcome' IS DISTINCT FROM 'ok' THEN RAISE EXCEPTION 'correction_canonical_assignment_failed';END IF;
+ PERFORM set_config('role','none',true);
+ IF (SELECT count(*) FROM public.dealers d JOIN public.dealer_assignments a ON a.dealer_id=d.id JOIN public.dealer_attendance att ON att.id=a.attendance_id
+  WHERE d.user_id=scope_row.user_id AND d.club_id=scope_row.club_id AND a.table_id=physical AND a.table_session_id=session_id
+   AND a.status='assigned' AND a.released_at IS NULL AND att.status IN('checked_in','overtime') AND att.check_out_time IS NULL)<>1
+ THEN RAISE EXCEPTION 'correction_exact_dealer_assignment_required';END IF;
+END $$;
 COMMIT;
 CORRECTION_TEST_SCOPE
   fi
