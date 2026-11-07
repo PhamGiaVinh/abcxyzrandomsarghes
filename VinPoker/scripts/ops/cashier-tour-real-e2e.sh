@@ -2323,7 +2323,42 @@ fi
 # audience/HUD source assertion. It has its own scope and never inherits their
 # mixed-spectator claim.
 if [[ "$redraw_probe" == 1 ]]; then
-  LOCAL_OPERATIONS_REDRAW_ENABLED=1 run_browser_proof '' '' 'final current Floor seat locks and redraw conserve every paid entry over HTTP'
+  # Exact captured redraw writers retain their operational release gate. Save
+  # its private preimage, enable only this disposable club, and restore it even
+  # when the browser fails. This does not replace any actor/tenant checks.
+  redraw_release_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT encode(convert_to(coalesce((SELECT to_jsonb(r)::text FROM public.centerpoint_tournament_ops_release r WHERE id),'null'),'UTF8'),'hex');")"
+  [[ "$redraw_release_before" =~ ^[a-f0-9]+$ ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REDRAW_RELEASE_FIXTURE'
+BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE frozen)
+ THEN RAISE EXCEPTION 'redraw_release_fixture_scope_required';END IF;
+END $$;
+INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
+VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
+COMMIT;
+REDRAW_RELEASE_FIXTURE
+  redraw_browser_status=0
+  LOCAL_OPERATIONS_REDRAW_ENABLED=1 run_browser_proof '' '' 'final current Floor seat locks and redraw conserve every paid entry over HTTP' || redraw_browser_status=$?
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<REDRAW_RELEASE_RESTORE
+BEGIN;
+DO \$\$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.centerpoint_tournament_ops_release WHERE id AND enabled AND allowed_club_ids=ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+ THEN RAISE EXCEPTION 'redraw_release_fixture_restore_drift';END IF;
+END \$\$;
+DELETE FROM public.centerpoint_tournament_ops_release WHERE id;
+INSERT INTO public.centerpoint_tournament_ops_release
+SELECT r.* FROM jsonb_populate_record(NULL::public.centerpoint_tournament_ops_release,NULLIF(convert_from(decode('$redraw_release_before','hex'),'UTF8')::jsonb,'null'::jsonb)) r
+WHERE convert_from(decode('$redraw_release_before','hex'),'UTF8')::jsonb<>'null'::jsonb;
+DO \$\$ BEGIN
+ IF encode(convert_to(coalesce((SELECT to_jsonb(r)::text FROM public.centerpoint_tournament_ops_release r WHERE id),'null'),'UTF8'),'hex')<>'$redraw_release_before'
+ THEN RAISE EXCEPTION 'redraw_release_fixture_preimage_not_restored';END IF;
+END \$\$;
+COMMIT;
+REDRAW_RELEASE_RESTORE
+  [[ "$redraw_browser_status" == 0 ]] || exit "$redraw_browser_status"
   node --input-type=module - "$repo_root/output/operations-latency/cashier-http-floor-redraw-http.json" "$source_sha" <<'FINAL_REDRAW_RECEIPT'
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
