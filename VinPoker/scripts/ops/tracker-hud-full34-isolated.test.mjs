@@ -15,9 +15,14 @@ test('owner-context adjustment requires exact restored ledger, local admin and n
 });
 test('SQL failure diagnostics retain only numeric status, SQLSTATE and source line',()=>{
  const raw='psql:<stdin>:37: ERROR:  42501: permission denied\nDETAIL: private player and token values\nCONTEXT: SQL source';
- assert.deepEqual(sqlFailureMetadata(raw,3),{exitCode:3,sqlState:'42501',inputLine:37});
- assert.deepEqual(sqlFailureMetadata('connection failed: private-host',null),{exitCode:null,sqlState:null,inputLine:null});
+ assert.deepEqual(sqlFailureMetadata(raw,3),{exitCode:3,sqlState:'42501',inputLine:37,reason:'unclassified'});
+ assert.deepEqual(sqlFailureMetadata('connection failed: private-host',null),{exitCode:null,sqlState:null,inputLine:null,reason:'unclassified'});
  assert.doesNotMatch(JSON.stringify(sqlFailureMetadata(raw,3)),/private|player|token|CONTEXT|SQL source/);
+});
+test('permission reasons expose fixed categories rather than server messages',()=>{
+ assert.equal(sqlFailureMetadata('ERROR: 42501: "postgres" is a reserved role, private diagnostic',3).reason,'postgres-role-reserved');
+ assert.equal(sqlFailureMetadata('ERROR: 42501: permission denied to set parameter "app.supabase_url"; private context',3).reason,'url-parameter-set-denied');
+ assert.doesNotMatch(JSON.stringify(sqlFailureMetadata('ERROR: 42501: permission denied for private object',3)),/private object/);
 });
 test('dispatcher pause uses the existing cron API available to non-superuser postgres',()=>{
  assert.equal(PAUSE_RESTORED_DISPATCHER_SQL,"SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';");

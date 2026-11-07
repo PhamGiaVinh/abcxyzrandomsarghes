@@ -28,7 +28,9 @@ export function sqlFailureMetadata(stderr,exitCode){
  const text=String(stderr??'');
  return {exitCode:Number.isInteger(exitCode)?exitCode:null,
   sqlState:text.match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]??null,
-  inputLine:Number(text.match(/psql:<stdin>:(\d+):\s+ERROR:/)?.[1])||null};
+  inputLine:Number(text.match(/psql:<stdin>:(\d+):\s+ERROR:/)?.[1])||null,
+  reason:text.includes('reserved role')&&text.includes('"postgres"')?'postgres-role-reserved':
+   text.includes('permission denied to set parameter "app.supabase_url"')?'url-parameter-set-denied':'unclassified'};
 }
 export function validateInvocation(container,candidate,report,env=process.env){
  assert.equal(env.GITHUB_ACTIONS,'true');assert.match(env.GITHUB_RUN_ID??'',/^\d+$/);
@@ -55,6 +57,7 @@ export async function rehearse(container,candidate,output){
   report.stage='preflight-identity';save();
   const identity=json("SELECT json_build_object('db',current_database(),'user',current_user,'superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),'cron',current_setting('cron.launch_active_jobs'));");
   assert.deepEqual(identity,{db:'postgres',user:'postgres',superuser:false,cron:'off'});
+  report.rolePolicy=json("SELECT jsonb_build_object('privilegedRole',current_setting('supautils.privileged_role',true),'reservedRoles',current_setting('supautils.reserved_roles',true),'privilegedRoleMembership',CASE WHEN to_regrole(current_setting('supautils.privileged_role',true)) IS NULL THEN false ELSE pg_has_role(current_user,to_regrole(current_setting('supautils.privileged_role',true)),'MEMBER') END);");save();
   report.stage='preflight-package';save();
   const {loadClosePackage,validateCloseObjects,closeObjectsSql}=await module('scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs');
   const {atomicQuery,stateSql,validateState}=await module('scripts/ops/tracker-hud-20261104-release.mjs');
