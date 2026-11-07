@@ -189,6 +189,17 @@ SQL
   exit 1
 }
 test -s "$payload_root/table-counts.tsv"
+context_helper="$(cd -- "$(dirname -- "$0")" && pwd)/recovery-database-context.mjs"
+node "$context_helper" capture-sql >"$work_root/database-context-capture.sql"
+docker run --rm -i --network host \
+  --env PGHOST --env PGPORT --env PGUSER --env PGDATABASE --env PGPASSWORD --env PGSSLMODE --env PGAPPNAME \
+  "$postgres_image" psql -X -qAt -v ON_ERROR_STOP=1 -v snapshot="$snapshot_id" \
+  <"$work_root/database-context-capture.sql" >"$payload_root/database-context.json" 2>"$work_root/database-context.log" || {
+  echo "Snapshot database context capture failed; raw output withheld" >&2; exit 1;
+}
+node "$context_helper" restore-sql "$payload_root/database-context.json" "$work_root/database-context-validation.sql" 2>"$work_root/database-context-validation.log" || {
+  echo "Snapshot database context is unsupported; raw metadata withheld" >&2; exit 1;
+}
 if ! awk -F '\t' 'NF == 3 { seen[$1 "." $2]=1 } END { exit !(seen["public.tournaments"] && seen["public.tournament_tables"] && seen["public.tournament_seats"] && seen["public.tournament_entries"] && seen["public.tournament_hands"] && seen["public.game_tables"] && seen["supabase_migrations.schema_migrations"]) }' "$payload_root/table-counts.tsv"; then
   echo "Snapshot is missing a required Floor/Tracker table receipt" >&2
   exit 1
@@ -241,6 +252,8 @@ database_scope=full PostgreSQL database; every pg_dump-managed schema and object
 row_count_receipt_tables=public.tournaments,public.tournament_tables,public.tournament_seats,public.tournament_entries,public.tournament_hands,public.game_tables,supabase_migrations.schema_migrations
 dump_format=single_pg_dump_custom_archive_with_shared_exported_snapshot
 roles=pg_dumpall_roles_only_without_passwords; captured separately from MVCC snapshot
+database_context_version=1
+database_context_scope=database owner and effective ACL; shared exported snapshot; encrypted payload only
 credential_exception_project_ref=$project_ref
 credential_exception_functions=public.fn_dispatch_push()
 credential_exception_token_sha256=$verified_anon_key_sha256
@@ -250,7 +263,7 @@ exclusions=PostgreSQL system catalogs; Supabase Storage API object bytes; projec
 EOF
 (
   cd "$payload_root"
-  sha256sum database.dump roles-no-passwords.sql table-counts.tsv archive-list.txt metadata.txt >manifest.sha256
+  sha256sum database.dump roles-no-passwords.sql table-counts.tsv database-context.json archive-list.txt metadata.txt >manifest.sha256
 )
 tar -czf "$archive_path" -C "$work_root" payload
 age --recipient "$age_recipient" --output "$ciphertext_path" "$archive_path"

@@ -8,6 +8,8 @@ on:
       - VinPoker/scripts/ops/check-floor-v3-anon-exception.mjs
       - VinPoker/scripts/ops/verify-floor-v3-recovery.sh
       - VinPoker/scripts/ops/floor-v3-recovery-workflow.test.mjs
+      - VinPoker/scripts/ops/recovery-database-context.mjs
+      - VinPoker/scripts/ops/recovery-database-context.test.mjs
   workflow_dispatch:
     inputs:
       target_sha:
@@ -37,6 +39,15 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     steps:
       - name: Checkout reviewed source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -48,7 +59,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/ops/create-floor-v3-recovery.sh
           bash -n scripts/ops/verify-floor-v3-recovery.sh
-          node --test scripts/ops/floor-v3-recovery-workflow.test.mjs
+          RECOVERY_CONTEXT_NATIVE=1 PGPASSWORD=postgres node --test scripts/ops/floor-v3-recovery-workflow.test.mjs scripts/ops/recovery-database-context.test.mjs
 
   validate-owner-dispatch:
     name: Require owner dispatch on exact main revision
@@ -223,6 +234,7 @@ jobs:
           path: ${{ runner.temp }}/floor-v3-artifact
 
       - name: Verify stored key and actual isolated restore
+        id: verify_restore
         working-directory: VinPoker
         shell: bash
         env:
@@ -268,10 +280,11 @@ jobs:
           SNAPSHOT_AT: ${{ needs.backup.outputs.snapshot_at }}
           SOURCE_SHA: ${{ inputs.target_sha }}
           CIPHERTEXT_SHA256: ${{ needs.backup.outputs.ciphertext_sha256 }}
+          DATABASE_CONTEXT_VERIFIED: ${{ steps.verify_restore.outputs.database_context_verified }}
         run: |
           set -euo pipefail
-          jq -n --arg sourceSha "$SOURCE_SHA" --arg snapshotAt "$SNAPSHOT_AT" --arg ciphertextSha256 "$CIPHERTEXT_SHA256" \
-            '{schemaVersion:1,kind:"vinpoker-restore-verification",sourceSha:$sourceSha,snapshotAt:$snapshotAt,ciphertextSha256:$ciphertextSha256,isolatedRestore:"PASS",tableCountMatch:"PASS",productionMutation:false}' \
+          jq -n --arg sourceSha "$SOURCE_SHA" --arg snapshotAt "$SNAPSHOT_AT" --arg ciphertextSha256 "$CIPHERTEXT_SHA256" --argjson databaseContextVerified "$DATABASE_CONTEXT_VERIFIED" \
+            '{schemaVersion:1,kind:"vinpoker-restore-verification",sourceSha:$sourceSha,snapshotAt:$snapshotAt,ciphertextSha256:$ciphertextSha256,isolatedRestore:"PASS",tableCountMatch:"PASS",databaseOwnerAndEffectiveAclMatch:$databaseContextVerified,hostedVaultKeyRecoveryCertified:false,productionMutation:false}' \
             >"$RUNNER_TEMP/recovery-verification.json"
 
       - name: Upload metadata-only restore verification receipt
