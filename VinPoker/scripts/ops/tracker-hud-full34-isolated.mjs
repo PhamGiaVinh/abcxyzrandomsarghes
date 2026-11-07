@@ -91,8 +91,13 @@ export async function rehearse(container,candidate,output){
    report.committed.push({version:entry.version,sha256:entry.sha256});save();
   }
   delete report.attempting;
+  report.stage='close-postchecks';save();
   validateCloseObjects(json(closeObjectsSql()),pkg.closeManifest.postchecks);
-  validateDispatcherObjects(json(dispatcherObjectsSql()),[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck]);
+  report.stage='dispatcher-postchecks';save();
+  // This query returns fixed function signatures, hashes and ACL metadata only.
+  // Never include pg_get_functiondef or SQL exception contexts in artifacts.
+  report.dispatcherObjects=json(dispatcherObjectsSql());save();
+  validateDispatcherObjects(report.dispatcherObjects,[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck]);
   const activationContext=phase=>`SET vinpoker.approved_project_ref='orlesggcjamwuknxwcpk';SET vinpoker.approved_source_sha='${CANDIDATE}';SET vinpoker.approved_activation_phase='${phase}';`;
   report.stage='configure-url';save();query(activationContext('configure-url')+buildActivationSql('configure-url',CANDIDATE));report.activation.push('configure-url');save();
   // Replace only the two disposable worker credentials before configuring jobs.

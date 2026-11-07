@@ -8,7 +8,7 @@ const env={GITHUB_ACTIONS:'true',GITHUB_RUN_ID:'123',GITHUB_WORKSPACE:resolve('/
 const candidate=resolve(env.GITHUB_WORKSPACE,'candidate/VinPoker'),report=resolve(env.RUNNER_TEMP,'hud-full34-rehearsal.json'),container='a'.repeat(64);
 test('full35 rehearsal loads supplemental dispatcher and retains close-function postchecks',()=>{
  const source=readFileSync('scripts/ops/tracker-hud-full34-isolated.mjs','utf8');
- for(const text of ['loadDispatchPackage(candidate)','assert.equal(entries.length,35)','pkg.closeManifest.postchecks','validateDispatcherObjects(json(dispatcherObjectsSql()),[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck])','ISOLATED_FULL35_SQL_BACKFILL_REHEARSAL_NOT_PRODUCTION_RELEASE'])assert.ok(source.includes(text),text);
+ for(const text of ['loadDispatchPackage(candidate)','assert.equal(entries.length,35)','pkg.closeManifest.postchecks','validateDispatcherObjects(report.dispatcherObjects,[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck])','ISOLATED_FULL35_SQL_BACKFILL_REHEARSAL_NOT_PRODUCTION_RELEASE',"report.stage='close-postchecks'","report.stage='dispatcher-postchecks'"])assert.ok(source.includes(text),text);
  assert.doesNotMatch(source,/loadClosePackage\(candidate\)|entries.length,34/);
 });
 test('owner-context adjustment requires exact restored ledger, local admin and nonsuperuser target',()=>{
