@@ -9,7 +9,8 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {PROJECT,MANIFEST_HASH,REENTRY_MANIFEST_HASH,CORRECTION_MANIFEST_HASH} from './tracker-hud-20261104-release.mjs';
 
-import {loadClosePackage,CLOSE_MANIFEST_HASH} from './tracker-hud-close-paid-prize-20261107-release.mjs';
+import {CLOSE_MANIFEST_HASH} from './tracker-hud-close-paid-prize-20261107-release.mjs';
+import {loadDispatchPackage,DISPATCH_URL_MANIFEST_HASH} from './tracker-hud-dispatch-url-20261107-release.mjs';
 
 const phases=['configure-url','start-workers','enable-reads'];
 const url='https://'+PROJECT+'.supabase.co';
@@ -17,14 +18,14 @@ const spectatorJob="jobname='public-spectator-v2-dispatch' AND username='postgre
 const hudJob="jobname='public-hud-projection-v1-dispatch' AND username='postgres' AND database=current_database() AND schedule='1 second' AND command='SELECT public.dispatch_public_hud_projection_v1()'";
 export function buildActivationSql(phase,sourceSha){
  assert.ok(phases.includes(phase),'Unknown activation phase');assert.match(sourceSha??'',/^[a-f0-9]{40}$/,'Exact reviewed SHA required');
- const pkg=loadClosePackage(),entries=[...pkg.base.entries,pkg.entry],baseline=pkg.base.manifest;
- assert.equal(entries.length,34);
+ const pkg=loadDispatchPackage(),entries=[...pkg.base.entries,pkg.entry],baseline=pkg.base.manifest;
+ assert.equal(entries.length,35);
  const versions=entries.map(e=>"'"+e.version+"'").join(',');
  const receipts=entries.map(e=>`IF NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='${e.version}' AND name='${e.name}' AND cardinality(statements)=1 AND encode(extensions.digest(convert_to(statements[1],'UTF8'),'sha256'),'hex')='${e.sha256}') THEN RAISE EXCEPTION 'activation_prior_receipt_differs';END IF;`).join('\n');
  const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
  const supplements=['tracker-hud-reentry-20261107-manifest.json','tracker-correction-hand-lock-20261107-manifest.json'].map(name=>JSON.parse(readFileSync(resolve(root,'scripts/ops',name),'utf8')));
  let postimages=supplements.map(({postcheck:p})=>`IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('${p.signature}') AND md5(replace(prosrc,chr(13),''))='${p.bodyMd5}' AND pg_get_userbyid(proowner)='postgres' AND prosecdef=${!p.securityInvoker} AND provolatile='v' AND proconfig=ARRAY['search_path=""']::text[] AND NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('authenticated',oid,'EXECUTE') AND (SELECT array_agg(DISTINCT r.rolname ORDER BY r.rolname) FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a JOIN pg_roles r ON r.oid=a.grantee WHERE a.privilege_type='EXECUTE')=ARRAY[${p.executeRoles.map(r=>"'"+r+"'").join(',')}]::name[] AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a WHERE a.is_grantable)) THEN RAISE EXCEPTION 'activation_supplement_object_differs';END IF;`).join('\n');
- postimages+='\n'+pkg.manifest.postchecks.map(p=>`IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('${p.signature}') AND md5(replace(pg_get_functiondef(oid),chr(13),''))='${p.definitionMd5}' AND pg_get_userbyid(proowner)='${p.owner}' AND prosecdef=${p.securityDefiner} AND provolatile='${p.volatile}' AND proconfig=ARRAY[${p.searchPath.map(v=>"'"+v+"'").join(',')}]::text[] AND (SELECT array_agg(DISTINCT r.rolname ORDER BY r.rolname) FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a JOIN pg_roles r ON r.oid=a.grantee WHERE a.privilege_type='EXECUTE')=ARRAY[${[...p.executeRoles].sort().map(v=>"'"+v+"'").join(',')}]::name[] AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a WHERE a.is_grantable OR a.grantee=0)) THEN RAISE EXCEPTION 'activation_close_object_differs';END IF;`).join('\n');
+ postimages+='\n'+[...pkg.closeManifest.postchecks,pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck].map(p=>`IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('${p.signature}') AND md5(replace(pg_get_functiondef(oid),chr(13),''))='${p.definitionMd5}' AND pg_get_userbyid(proowner)='${p.owner}' AND prosecdef=${p.securityDefiner} AND provolatile='${p.volatile}' AND proconfig=ARRAY[${p.searchPath.map(v=>"'"+v+"'").join(',')}]::text[] AND (SELECT array_agg(DISTINCT r.rolname ORDER BY r.rolname) FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a JOIN pg_roles r ON r.oid=a.grantee WHERE a.privilege_type='EXECUTE')=ARRAY[${[...p.executeRoles].sort().map(v=>"'"+v+"'").join(',')}]::name[] AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(proacl,acldefault('f',proowner))) a WHERE a.is_grantable OR a.grantee=0)) THEN RAISE EXCEPTION 'activation_package_object_differs';END IF;`).join('\n');
  const common=`BEGIN;
 SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='30s';
 DO $activation_context$ BEGIN
@@ -36,11 +37,12 @@ DO $activation_context$ BEGIN
 END $activation_context$;
 LOCK TABLE supabase_migrations.schema_migrations IN SHARE MODE;
 DO $activation_package$ BEGIN
- IF (SELECT count(*) FROM supabase_migrations.schema_migrations)<>${baseline.baselineLedgerRows+34}
+ IF (SELECT count(*) FROM supabase_migrations.schema_migrations)<>${baseline.baselineLedgerRows+35}
  OR (SELECT md5(string_agg(version||':'||coalesce(name,'')||':'||md5(coalesce(array_to_string(statements,E'\\n'),'')),E'\\n' ORDER BY version)) FROM supabase_migrations.schema_migrations WHERE version NOT IN(${versions}))<>'${baseline.baselineLedgerFingerprint}'
  THEN RAISE EXCEPTION 'activation_baseline_differs';END IF;
  ${receipts}
  ${postimages}
+ IF coalesce(nullif(current_setting('app.supabase_url',true),''),'${url}')<>'${url}' THEN RAISE EXCEPTION 'activation_project_target_differs';END IF;
  PERFORM 1 FROM tracker_analytics_v1.config WHERE singleton AND NOT enabled FOR UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'activation_read_preimage_differs';END IF;
 END $activation_package$;
@@ -54,12 +56,11 @@ END $activation_package$;
  OR EXISTS(SELECT 1 FROM pg_db_role_setting s CROSS JOIN LATERAL unnest(s.setconfig) x WHERE s.setrole='postgres'::regrole AND s.setdatabase=(SELECT oid FROM pg_database WHERE datname='postgres') AND x LIKE 'app.supabase_url=%' AND x<>'app.supabase_url=${url}')
  THEN RAISE EXCEPTION 'activation_url_preimage_differs';END IF;
 END $configure$;
-ALTER ROLE postgres IN DATABASE postgres SET app.supabase_url='${url}';
--- Reconnect before start-workers so cron and the verifier inherit this setting.
+-- Both exact dispatcher definitions use the canonical project when no setting
+-- exists. Never alter a managed role or custom GUC merely to activate workers.
 `;
  if(phase==='start-workers')body=`DO $workers$ DECLARE target bigint;BEGIN
- IF current_setting('app.supabase_url',true) IS DISTINCT FROM '${url}'
- OR EXISTS(SELECT 1 FROM tracker_analytics_v1.config WHERE worker_enabled OR backfill_complete)
+ IF EXISTS(SELECT 1 FROM tracker_analytics_v1.config WHERE worker_enabled OR backfill_complete)
  OR EXISTS(SELECT 1 FROM cron.job WHERE jobname IN('public-hud-projection-v1-dispatch','public-hud-v1-dispatch'))
  OR (SELECT count(*) FROM cron.job WHERE jobname='public-spectator-v2-dispatch')<>1
  OR (SELECT count(*) FROM cron.job WHERE ${spectatorJob} AND NOT active)<>1
@@ -76,7 +77,6 @@ END $workers$;
 `;
  if(phase==='enable-reads')body=`DO $reads$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.config WHERE singleton AND worker_enabled AND backfill_complete AND NOT enabled)
- OR current_setting('app.supabase_url',true) IS DISTINCT FROM '${url}'
  OR (SELECT count(*) FROM cron.job WHERE (${hudJob} OR ${spectatorJob}) AND active)<>2
  OR (SELECT count(*) FROM cron.job WHERE jobname IN('public-hud-projection-v1-dispatch','public-spectator-v2-dispatch','public-hud-v1-dispatch'))<>2
  OR EXISTS(SELECT 1 FROM tracker_analytics_v1.jobs)
@@ -99,6 +99,6 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const [directory,sourceSha]=process.argv.slice(2);assert.ok(directory&&isAbsolute(directory),'Absolute private evidence directory required');
  const artifacts=phases.map(phase=>{const text=buildActivationSql(phase,sourceSha);return {phase,text,file:'hud-'+phase+'.sql',sha256:createHash('sha256').update(text).digest('hex')};});
  mkdirSync(directory,{recursive:true});for(const a of artifacts)writeFileSync(resolve(directory,a.file),a.text,{flag:'wx'});
- const manifest={kind:'PREPARED_ACTIVATION_SQL_NOT_APPLY_OR_APPROVAL',sourceSha,projectRef:PROJECT,manifestHashes:[MANIFEST_HASH,REENTRY_MANIFEST_HASH,CORRECTION_MANIFEST_HASH,CLOSE_MANIFEST_HASH],artifacts:artifacts.map(({text,...a})=>a),requires:'Controlled exact project connection;fresh recovery/object/Edge evidence;private secret provisioning;verified shadow;exact final approval',productionChanged:false};
+ const manifest={kind:'PREPARED_ACTIVATION_SQL_NOT_APPLY_OR_APPROVAL',sourceSha,projectRef:PROJECT,manifestHashes:[MANIFEST_HASH,REENTRY_MANIFEST_HASH,CORRECTION_MANIFEST_HASH,CLOSE_MANIFEST_HASH,DISPATCH_URL_MANIFEST_HASH],artifacts:artifacts.map(({text,...a})=>a),requires:'Controlled exact project connection;fresh recovery/object/Edge evidence;private secret provisioning;verified shadow;exact final approval',productionChanged:false};
  writeFileSync(resolve(directory,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(manifest));
 }

@@ -10024,6 +10024,12 @@
       "filename": "20261107093000_tournament_close_paid_prize_source_v1.sql",
       "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
       "reason": "Supplement34 corrects only new close/readiness paid-prize totals;preserves immutable close reports,payments,metadata and ACLs. Native canonical single/multi-place journeys,tenant/status exclusions,both row-lock race orderings and late ACL-drift rollback passed. Requires exact separately pinned supplemental package approval,fresh recovery,all33 prior atomic receipts and full34 activation checks before production apply."
+    },
+    {
+      "version": "20261107151500",
+      "filename": "20261107151500_public_hud_dispatch_project_url_v1.sql",
+      "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
+      "reason": "Supplement35 reuses the existing spectator canonical-project URL fallback after managed-role GUC activation failed42501. Preserves source,jobs,ACLs and role policy. Native SQL-sink dispatch/denials/drift/rollback passed;exact full35 restore/activation and final production package approval remain required."
     }
   ],
   "floorActiveAllowlist": [

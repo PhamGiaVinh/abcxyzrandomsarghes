@@ -8,6 +8,9 @@ on:
       - 'VinPoker/scripts/ops/tracker-hud-20261104-release.mjs'
       - 'VinPoker/scripts/ops/tracker-hud-reentry-*'
       - 'VinPoker/scripts/ops/tracker-hud-activation-*'
+      - 'VinPoker/scripts/ops/tracker-hud-dispatch-url-*'
+      - 'VinPoker/scripts/ops/public-hud-dispatch-project-url-*'
+      - 'VinPoker/supabase/migrations/20261107151500_public_hud_dispatch_project_url_v1.sql'
       - 'VinPoker/scripts/ops/tracker-correction-hand-lock-*'
       - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
       - 'VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql'
@@ -158,7 +161,18 @@ jobs:
       - name: Exact twenty-six-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Supplemental Cashier and correction release guards
-        run: node --test scripts/ops/tracker-hud-reentry-release.test.mjs scripts/ops/tracker-hud-activation-20261107.test.mjs
+        run: node --test scripts/ops/tracker-hud-reentry-release.test.mjs scripts/ops/tracker-hud-activation-20261107.test.mjs scripts/ops/tracker-hud-dispatch-url-20261107-release.test.mjs
+      - name: Dispatcher fallback, actor denials and exact rollback with SQL request sink
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_dispatch_url_20261107a
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_dispatch_url_20261107a PUBLIC_HUD_DISPATCH_URL_REPORT="$RUNNER_TEMP/dispatch-url-native.json" node tests/publicHud/dispatchUrl.native.mjs --initialize
+      - name: Sanitized dispatcher native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-dispatch-url-${{ github.sha }}
+          path: ${{ runner.temp }}/dispatch-url-native.json
+          retention-days: 7
       - name: Batched claim/source visibility and publication fences
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_claim_source_ci

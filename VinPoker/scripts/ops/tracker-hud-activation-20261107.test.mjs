@@ -7,20 +7,23 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {buildActivationSql} from './tracker-hud-activation-20261107.mjs';
-import {loadClosePackage} from './tracker-hud-close-paid-prize-20261107-release.mjs';
+import {loadDispatchPackage} from './tracker-hud-dispatch-url-20261107-release.mjs';
 const sha='a'.repeat(40),phases=['configure-url','start-workers','enable-reads'];
 test('activation generator refuses ambiguous phase or SHA before producing SQL',()=>{
  for(const phase of ['apply','enable-reads;SELECT 1',''])assert.throws(()=>buildActivationSql(phase,sha));
  for(const value of ['',sha+'0',"';SELECT 1",sha.toUpperCase()])assert.throws(()=>buildActivationSql('configure-url',value));
 });
-test('every phase checks exact full34 receipts and supplemental ACLs before mutation',()=>{
- const p=loadClosePackage(),entries=[...p.base.entries,p.entry];
- for(const phase of phases){const s=buildActivationSql(phase,sha);assert.equal(s.match(/activation_prior_receipt_differs/g).length,34);for(const e of entries){assert.ok(s.includes(e.sha256));assert.ok(s.includes("version='"+e.version+"'"));}
-  assert.ok(s.includes(p.base.manifest.baselineLedgerFingerprint));assert.ok(s.includes('<>797'));
+test('every phase checks exact full35 receipts and supplemental ACLs before mutation',()=>{
+ const p=loadDispatchPackage(),entries=[...p.base.entries,p.entry];
+ for(const phase of phases){const s=buildActivationSql(phase,sha);assert.equal(s.match(/activation_prior_receipt_differs/g).length,35);for(const e of entries){assert.ok(s.includes(e.sha256));assert.ok(s.includes("version='"+e.version+"'"));}
+  assert.ok(s.includes(p.base.manifest.baselineLedgerFingerprint));assert.ok(s.includes('<>798'));
   assert.ok(s.indexOf('activation_context_not_approved')<s.indexOf('LOCK TABLE'));assert.ok(s.indexOf('activation_supplement_object_differs')<s.indexOf('END $activation_package$'));
-  assert.ok(s.includes('activation_close_object_differs'));for(const c of p.manifest.postchecks)assert.ok(s.includes(c.definitionMd5));assert.ok(s.includes('a.is_grantable'));assert.ok(s.includes('array_agg(DISTINCT r.rolname'));
+  assert.ok(s.includes('activation_package_object_differs'));for(const c of [...p.closeManifest.postchecks,p.manifest.postcheck,p.manifest.spectatorPostcheck])assert.ok(s.includes(c.definitionMd5));assert.ok(s.includes('a.is_grantable'));assert.ok(s.includes('array_agg(DISTINCT r.rolname'));
   assert.doesNotMatch(s,/UPDATE public\.|DELETE FROM|INSERT INTO public\.|GRANT |TRUNCATE|schema_migrations\s+SET/i);
  }
+});
+test('URL activation verifies canonical fallback and rejects another target without altering managed role settings',()=>{
+ for(const phase of phases){const s=buildActivationSql(phase,sha);assert.ok(s.includes('activation_project_target_differs'));assert.ok(s.includes("coalesce(nullif(current_setting('app.supabase_url',true),''),'https://orlesggcjamwuknxwcpk.supabase.co')"));assert.doesNotMatch(s,/ALTER ROLE|ALTER DATABASE|GRANT SET|set_config\(/i);}
 });
 test('worker start preserves disabled reads and cutover requires completed work plus shadow',()=>{
  const w=buildActivationSql('start-workers',sha),r=buildActivationSql('enable-reads',sha);
