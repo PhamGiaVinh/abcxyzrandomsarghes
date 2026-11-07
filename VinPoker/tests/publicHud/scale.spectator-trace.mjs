@@ -8,7 +8,14 @@ export async function processPublicSpectatorJobs(client,deadline){
  return originalProcessPublicSpectatorJobs({rpc:async(name,args)=>{
   const startedAt=Date.now();let outcome='error';
   try{const reply=await client.rpc(name,args);outcome=reply.error?'error':name==='publish_public_spectator_projection_v2'?(reply.data===true?'published':'fenced'):'ok';return reply;}
-  finally{try{console.log(${JSON.stringify(marker)}+JSON.stringify({batch,rpc:name,component:args.p_component??null,startedAt,endedAt:Date.now(),outcome}));}catch{/* Telemetry cannot replace a business RPC result. */}}
+  finally{try{
+   const match=/^10000000-0000-4000-8000-([0-9a-f]{12})$/.exec(args.p_tournament_id??'');
+   const index=match?parseInt(match[1],16):0;
+   const scopeIndex=index>=1&&index<=20?index:null;
+   const value=args.p_source_vector?.generation;
+   const generation=scopeIndex!==null&&typeof value==='string'&&/^[0-9]{1,20}$/.test(value)?value:null;
+   console.log(${JSON.stringify(marker)}+JSON.stringify({batch,rpc:name,component:args.p_component??null,startedAt,endedAt:Date.now(),outcome,scopeIndex,generation}));
+  }catch{/* Telemetry cannot replace a business RPC result. */}}
  }},deadline);
 }
 `;
@@ -20,7 +27,12 @@ export function parseSpectatorTrace(log){
   const at=line.indexOf(marker);if(at<0)continue;
   try{const row=JSON.parse(line.slice(at+marker.length).trim());
    if(!allowed.has(row.rpc)||!/^[a-f0-9-]{36}$/.test(row.batch)||!['tables','ranking','payout','visibility',null].includes(row.component)||!['ok','error','published','fenced'].includes(row.outcome)||!Number.isSafeInteger(row.startedAt)||!Number.isSafeInteger(row.endedAt)||row.endedAt<row.startedAt)continue;
-   events.push({batch:row.batch,rpc:row.rpc,component:row.component,startedAt:row.startedAt,endedAt:row.endedAt,outcome:row.outcome});
+   const event={batch:row.batch,rpc:row.rpc,component:row.component,startedAt:row.startedAt,endedAt:row.endedAt,outcome:row.outcome};
+   if(Number.isInteger(row.scopeIndex)&&row.scopeIndex>=1&&row.scopeIndex<=20){
+    event.scopeIndex=row.scopeIndex;
+    if(typeof row.generation==='string'&&/^[0-9]{1,20}$/.test(row.generation))event.generation=row.generation;
+   }
+   events.push(event);
   }catch{/* Raw runtime logs never enter the artifact. */}
  }
  return events;

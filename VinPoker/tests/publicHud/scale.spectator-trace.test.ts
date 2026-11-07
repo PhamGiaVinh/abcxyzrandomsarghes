@@ -9,6 +9,30 @@ it('rejects reversed timing and invalid components',()=>{
  expect(parseSpectatorTrace('VINPOKER_SPECTATOR_RPC_TRACE '+JSON.stringify({...event,endedAt:1}))).toEqual([]);
  expect(parseSpectatorTrace('VINPOKER_SPECTATOR_RPC_TRACE '+JSON.stringify({...event,component:'private'}))).toEqual([]);
 });
+it('retains only bounded fixture scope and numeric generation correlation',()=>{
+ const parse=(extra:Record<string,unknown>)=>parseSpectatorTrace('VINPOKER_SPECTATOR_RPC_TRACE '+JSON.stringify({...event,...extra}));
+ expect(parse({scopeIndex:20,generation:'123',tournament_id:'private'})).toEqual([{...event,scopeIndex:20,generation:'123'}]);
+ for(const scopeIndex of [0,21,1.5,'1',null])expect(parse({scopeIndex,generation:'123'})).toEqual([event]);
+ for(const generation of ['private','-1','1.2','1'.repeat(21),123])expect(parse({scopeIndex:1,generation})).toEqual([{...event,scopeIndex:1}]);
+});
+it('correlates only the fixed synthetic tournament namespace without exporting identifiers',async()=>{
+ const source='export async function processPublicSpectatorJobs(client,deadline){return client.rpc("publish_public_spectator_projection_v2",deadline);}';
+ const worker=await import(/* @vite-ignore */ 'data:text/javascript,'+encodeURIComponent(instrumentSpectatorWorker(source)));
+ const log=vi.spyOn(console,'log').mockImplementation(()=>{});
+ try{
+  const rpc=vi.fn().mockResolvedValue({data:true,error:null});
+  const args={p_tournament_id:'10000000-0000-4000-8000-000000000014',p_component:'tables',p_source_vector:{generation:'456',secret:'never export'},p_fencing_token:'never export'};
+  await worker.processPublicSpectatorJobs({rpc},args);
+  expect(rpc).toHaveBeenLastCalledWith('publish_public_spectator_projection_v2',args);
+  expect(parseSpectatorTrace(log.mock.calls.flat().join('\n'))[0]).toMatchObject({scopeIndex:20,generation:'456'});
+  expect(log.mock.calls.flat().join('')).not.toContain('never export');
+  expect(log.mock.calls.flat().join('')).not.toContain(args.p_tournament_id);
+  log.mockClear();
+  await worker.processPublicSpectatorJobs({rpc},{...args,p_tournament_id:'private'});
+  const parsed=parseSpectatorTrace(log.mock.calls.flat().join('\n'))[0];
+  expect(parsed).not.toHaveProperty('scopeIndex');expect(parsed).not.toHaveProperty('generation');
+ }finally{log.mockRestore();}
+});
 it('preserves RPC arguments, return identity and thrown errors',async()=>{
  const source='export async function processPublicSpectatorJobs(client,deadline){return client.rpc("publish_public_spectator_projection_v2",{p_component:"tables",deadline});}';
  const worker=await import(/* @vite-ignore */ 'data:text/javascript,'+encodeURIComponent(instrumentSpectatorWorker(source)));
