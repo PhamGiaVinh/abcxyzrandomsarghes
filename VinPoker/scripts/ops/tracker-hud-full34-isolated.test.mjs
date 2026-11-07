@@ -6,6 +6,11 @@ import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTOR
 import {execFileSync} from 'node:child_process';
 const env={GITHUB_ACTIONS:'true',GITHUB_RUN_ID:'123',GITHUB_WORKSPACE:resolve('/fixture/workspace'),RUNNER_TEMP:resolve('/fixture/temp'),HUD_FULL34_ISOLATION_VERIFIED:'egress-blocked-cron-off'};
 const candidate=resolve(env.GITHUB_WORKSPACE,'candidate/VinPoker'),report=resolve(env.RUNNER_TEMP,'hud-full34-rehearsal.json'),container='a'.repeat(64);
+test('full35 rehearsal loads supplemental dispatcher and retains close-function postchecks',()=>{
+ const source=readFileSync('scripts/ops/tracker-hud-full34-isolated.mjs','utf8');
+ for(const text of ['loadDispatchPackage(candidate)','assert.equal(entries.length,35)','pkg.closeManifest.postchecks','validateDispatcherObjects(json(dispatcherObjectsSql()),[pkg.manifest.postcheck,pkg.manifest.spectatorPostcheck])','ISOLATED_FULL35_SQL_BACKFILL_REHEARSAL_NOT_PRODUCTION_RELEASE'])assert.ok(source.includes(text),text);
+ assert.doesNotMatch(source,/loadClosePackage\(candidate\)|entries.length,34/);
+});
 test('owner-context adjustment requires exact restored ledger, local admin and nonsuperuser target',()=>{
  for(const text of ["current_database()<>'postgres'","current_user<>'supabase_admin'","current_setting('cron.launch_active_jobs')<>'off'","rolname='postgres') IS DISTINCT FROM false",'<>763','5bb5e2d79aca9b2d17be60931a2248ef','ALTER DATABASE postgres OWNER TO postgres;'])assert.ok(RESTORE_OWNER_CONTEXT_SQL.includes(text),text);
  assert.ok(RESTORE_OWNER_CONTEXT_SQL.indexOf('isolated_owner_context_preimage_differs')<RESTORE_OWNER_CONTEXT_SQL.indexOf('ALTER DATABASE'));
