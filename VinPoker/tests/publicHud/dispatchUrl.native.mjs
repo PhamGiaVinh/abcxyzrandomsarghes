@@ -6,7 +6,13 @@ import {initialize,sql,jsonSql,service} from './nativeDb.mjs';
 const db='vinpoker_hud_test_dispatch_url_20261107a';
 assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,db);
 const port=process.platform==='win32'?'55441':(process.env.PUBLIC_HUD_LOCAL_PORT??'5432');
-assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'||inet_server_port();"),db+'|127.0.0.1|'+port);
+assert.equal(sql("SELECT current_database()||'|'||inet_server_port();"),db+'|'+port);
+if(process.platform==='win32')assert.equal(sql('SELECT host(inet_server_addr());'),'127.0.0.1');
+else{
+ assert.equal(process.env.GITHUB_ACTIONS,'true');
+ // nativeDb connects only through127.0.0.1; the CI Docker service reports its bridge address.
+ assert.equal(sql("SELECT inet_server_addr() <<= inet '172.16.0.0/12' OR inet_server_addr() = inet '127.0.0.1';"),'t');
+}
 if(process.argv.includes('--initialize')){
  assert.equal(process.env.GITHUB_ACTIONS,'true');
  assert.equal(sql("SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname NOT IN('public','information_schema');"),'0');
