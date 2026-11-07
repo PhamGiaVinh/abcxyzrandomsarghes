@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {computePayouts} from '../../supabase/functions/_shared/payoutEngine.ts';
 import {sql,jsonSql} from '../publicHud/nativeDb.mjs';
 const db=process.env.PUBLIC_HUD_LOCAL_DATABASE,tour='de780003-0000-4000-8000-000000000001',owner='de780000-0000-4000-8000-000000000001';
-assert.ok(['vinpoker_hud_test_showdown_20261107a','vinpoker_hud_test_showdown_20261107b'].includes(db));
+assert.ok(['vinpoker_hud_test_showdown_20261107a','vinpoker_hud_test_showdown_20261107b','vinpoker_hud_test_showdown_20261107c'].includes(db));
 assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'||inet_server_port();"),db+'|127.0.0.1|55441');
 assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-owned-showdown-20261107'+db.at(-1));
 assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname IN('pg_net','pg_cron'));"),'f');
