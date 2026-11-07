@@ -2362,7 +2362,7 @@ REDRAW_RELEASE_RESTORE
     # Preserve only cardinalities of the exact plan joins, never profile/seat
     # payloads. A scalar exception alone cannot identify which binding failed.
     docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      >"$repo_root/output/operations-latency/cashier-http-floor-redraw-diagnostic.json" <<'REDRAW_JOIN_DIAGNOSTIC'
+      >"$repo_root/output/operations-latency/cashier-http-floor-redraw-diagnostic-http.json" <<'REDRAW_JOIN_DIAGNOSTIC'
 WITH active AS (
  SELECT * FROM public.tournament_seats WHERE tournament_id='a3000000-0000-4000-8000-000000000001' AND is_active
 ), entries AS (

@@ -5,7 +5,7 @@ import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,audien
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
@@ -14,6 +14,13 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
+
+test('redraw join diagnosis survives the actual workflow artifact filter',()=>{
+ const output=script.match(/output\/operations-latency\/(cashier-http-floor-redraw-diagnostic[^"\s]*)/)?.[1];
+ assert.ok(output,'Expected bounded scalar redraw diagnostic');
+ const patterns=[...workflow.matchAll(/^\s+(VinPoker\/output\/operations-latency\/[^\s]+)$/gm)].map(m=>m[1]);
+ assert.ok(patterns.some(pattern=>posix.matchesGlob('VinPoker/output/operations-latency/'+output,pattern)),'Diagnostic must be retained by actual upload filter');
+});
 
 test('real-stack rollback refuses foreign scope and remote API before any database call',()=>{
  const dir=mkdtempSync(join(tmpdir(),'hud-rollback-guard-'));const status=join(dir,'status.env');
