@@ -23,10 +23,14 @@ assert.equal(owned,'t','Owned pre-admission database required');
 const receipt=await configureIsolatedPostgrestPool('supabase_rest_'+project,'supabase_network_'+project,pool);
 const status=JSON.parse(readFileSync(statusPath,'utf8'));assert.equal(status.API_URL,'http://127.0.0.1:54321');
 assert.ok(typeof status.ANON_KEY==='string'&&status.ANON_KEY.length>32,'Anonymous readiness key missing');
-let ready=false;const deadline=Date.now()+15000;
+let ready=false;const startedAt=Date.now(),deadline=startedAt+15000;
+const startup={attempts:0,httpStatusCounts:{},transportFailures:0,ready:false,elapsedMs:0};
 while(Date.now()<deadline&&!ready){
- try{const response=await fetch(status.API_URL+'/rest/v1/',{headers:{apikey:status.ANON_KEY,Authorization:'Bearer '+status.ANON_KEY},signal:AbortSignal.timeout(1000)});ready=response.ok;await response.body?.cancel();}catch{/* Startup only; no credentials exported. */}
+ startup.attempts++;
+ try{const response=await fetch(status.API_URL+'/rest/v1/',{headers:{apikey:status.ANON_KEY,Authorization:'Bearer '+status.ANON_KEY},signal:AbortSignal.timeout(1000)});startup.httpStatusCounts[response.status]=(startup.httpStatusCounts[response.status]??0)+1;ready=response.ok;await response.body?.cancel();}catch{startup.transportFailures++;/* No credentials, response bodies or raw errors exported. */}
  if(!ready)await new Promise(resolve=>setTimeout(resolve,250));
 }
+startup.ready=ready;startup.elapsedMs=Date.now()-startedAt;
+// Retain failed startup evidence as well; this is never audience/latency proof.
+writeFileSync(reportPath,JSON.stringify({...receipt,startup,qualification:false,productionChanged:false},null,2));
 assert.ok(ready,'Isolated PostgREST schema startup failed');
-writeFileSync(reportPath,JSON.stringify({...receipt,qualification:false,productionChanged:false},null,2));
