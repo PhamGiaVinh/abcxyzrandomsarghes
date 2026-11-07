@@ -1,0 +1,13 @@
+{
+  "kind": "SEPARATE_READ_ONLY_OWNER_CONTEXT_NOT_BACKUP_METADATA",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "observedDate": "2026-11-07",
+  "database": "postgres",
+  "observedOwner": "postgres",
+  "observedPostgresCreatePrivilege": true,
+  "originalRestoreOwner": "supabase_admin",
+  "backupRun": "42373584563",
+  "baselineLedgerRows": 763,
+  "baselineLedgerFingerprint": "5bb5e2d79aca9b2d17be60931a2248ef",
+  "scope": "Correct only the disposable rehearsal database owner. This metadata was observed after the backup snapshot and does not certify snapshot ownership/ACL fidelity. No production write or role grant."
+}
