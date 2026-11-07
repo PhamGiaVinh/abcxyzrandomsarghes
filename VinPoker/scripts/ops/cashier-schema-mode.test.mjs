@@ -15,6 +15,14 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('handover fixture cannot consume the independent salary actor',()=>{
+ const selection=script.slice(script.indexOf("SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id"),script.indexOf('ORDER BY c.user_id LIMIT 1;'));
+ assert.match(selection,/c\.user_id=\(SELECT id FROM auth\.users WHERE email='cashier-latency-19@test\.invalid'\)/);
+ assert.match(selection,/NOT EXISTS\(SELECT 1 FROM public\.clubs owned WHERE owned\.owner_id=c\.user_id\)/);
+ assert.match(script,/IF \(SELECT count\(\*\) FROM auth\.users WHERE email='cashier-latency-20@test\.invalid'\)<>1/);
+ assert.match(script,/RAISE EXCEPTION 'salary_fixture_requires_independent_unowned_actor'/);
+});
+
 test('redraw join diagnosis survives the actual workflow artifact filter',()=>{
  const output=script.match(/output\/operations-latency\/(cashier-http-floor-redraw-diagnostic[^"\s]*)/)?.[1];
  assert.ok(output,'Expected bounded scalar redraw diagnostic');

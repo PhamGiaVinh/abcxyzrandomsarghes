@@ -913,6 +913,9 @@ END $$;
 INSERT INTO public.clubs(id,owner_id,name,region,status)
 SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id,'Handover latency TEST','HCM','approved'
 FROM public.club_dealer_controls c WHERE c.club_id='a2000000-0000-4000-8000-000000000001'
+-- Reserve actor20 for the independent salary owner below. UUID ordering is
+-- random across Auth runs and must not consume that actor for this club.
+AND c.user_id=(SELECT id FROM auth.users WHERE email='cashier-latency-19@test.invalid')
 AND NOT EXISTS(SELECT 1 FROM public.clubs owned WHERE owned.owner_id=c.user_id)
 ORDER BY c.user_id LIMIT 1;
 INSERT INTO public.club_dealer_controls(club_id,user_id,granted_by)
