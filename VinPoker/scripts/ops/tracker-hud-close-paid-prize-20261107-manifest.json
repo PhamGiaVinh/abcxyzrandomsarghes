@@ -28,6 +28,10 @@
         "postgres",
         "authenticated",
         "service_role"
+      ],
+      "volatile": "v",
+      "searchPath": [
+        "search_path=public"
       ]
     },
     {
@@ -38,6 +42,10 @@
       "executeRoles": [
         "postgres",
         "authenticated"
+      ],
+      "volatile": "s",
+      "searchPath": [
+        "search_path=\"\""
       ]
     }
   ],
@@ -48,5 +56,40 @@
     "preservesExistingCloseReports": true
   },
   "releaseReady": false,
-  "scope": "Candidate supplemental migration34, separate from HUD-only31 manifest. Final package approval must include this added money-reporting scope. Controlled apply/activation prefix integration and independent review still pending."
+  "scope": "Candidate supplemental migration34, separate from HUD-only31 manifest. Final package approval must include this added money-reporting scope. Controlled apply/activation prefix integration and independent review still pending.",
+  "priorManifest": {
+    "path": "scripts/ops/tracker-correction-hand-lock-20261107-manifest.json",
+    "sha256": "f4f0599614d980ae7b00e42ed513d147339e3d64bc656252f75a87800e8f88db"
+  },
+  "prechecks": [
+    {
+      "signature": "public.close_tournament(uuid,text)",
+      "definitionMd5": "5b007d2e26b9e735db6c88fb58034982",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "executeRoles": [
+        "postgres",
+        "authenticated",
+        "service_role"
+      ],
+      "volatile": "v",
+      "searchPath": [
+        "search_path=public"
+      ]
+    },
+    {
+      "signature": "public.get_tournament_close_readiness_v1(uuid)",
+      "definitionMd5": "65827eda8c019bfa88d585251152f640",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "executeRoles": [
+        "postgres",
+        "authenticated"
+      ],
+      "volatile": "s",
+      "searchPath": [
+        "search_path=\"\""
+      ]
+    }
+  ]
 }
