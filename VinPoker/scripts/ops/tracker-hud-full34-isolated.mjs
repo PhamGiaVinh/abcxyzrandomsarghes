@@ -1,7 +1,7 @@
 // Isolated SQL/backfill rehearsal only. Never connects using production credentials.
 import assert from 'node:assert/strict';
 import {spawnSync,spawn,execFileSync} from 'node:child_process';
-import {writeFileSync,existsSync} from 'node:fs';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {resolve,isAbsolute} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {createHash,randomBytes} from 'node:crypto';
@@ -11,6 +11,19 @@ export const CANDIDATE='8fd86933596d5755ae0293204fb4e794e40c286c';
 export const BACKUP_RUN='42373584563';
 export const SOURCE_ACTION_TABLE='public.hand_actions';
 export const PAUSE_RESTORED_DISPATCHER_SQL="SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';";
+export const RESTORE_OWNER_CONTEXT_SQL=`BEGIN;
+LOCK TABLE supabase_migrations.schema_migrations IN SHARE MODE;
+DO $owner_context$ BEGIN
+ IF current_database()<>'postgres' OR current_user<>'supabase_admin'
+ OR current_setting('cron.launch_active_jobs')<>'off'
+ OR (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database())<>'supabase_admin'
+ OR (SELECT rolsuper FROM pg_roles WHERE rolname='postgres') IS DISTINCT FROM false
+ OR (SELECT count(*) FROM supabase_migrations.schema_migrations)<>763
+ OR (SELECT md5(string_agg(version||':'||coalesce(name,'')||':'||md5(coalesce(array_to_string(statements,chr(10)),'')),chr(10) ORDER BY version)) FROM supabase_migrations.schema_migrations)<>'5bb5e2d79aca9b2d17be60931a2248ef'
+ THEN RAISE EXCEPTION 'isolated_owner_context_preimage_differs';END IF;
+END $owner_context$;
+ALTER DATABASE postgres OWNER TO postgres;
+COMMIT;`;
 export function sqlFailureMetadata(stderr,exitCode){
  const text=String(stderr??'');
  return {exitCode:Number.isInteger(exitCode)?exitCode:null,
@@ -52,6 +65,17 @@ export async function rehearse(container,candidate,output){
   query(PAUSE_RESTORED_DISPATCHER_SQL);
   report.stage='preflight-ledger';save();
   validateState(json(stateSql(entries)),pkg.base);
+  report.stage='preflight-owner-context';save();
+  const ownerEvidence=JSON.parse(readFileSync(new URL('./tracker-hud-restore-owner-context-20261107.json',import.meta.url),'utf8'));
+  assert.equal(ownerEvidence.kind,'SEPARATE_READ_ONLY_OWNER_CONTEXT_NOT_BACKUP_METADATA');
+  assert.equal(ownerEvidence.observedOwner,'postgres');assert.equal(ownerEvidence.backupRun,BACKUP_RUN);
+  assert.equal(ownerEvidence.baselineLedgerRows,pkg.base.manifest.baselineLedgerRows);
+  assert.equal(ownerEvidence.baselineLedgerFingerprint,pkg.base.manifest.baselineLedgerFingerprint);
+  const admin=spawnSync('docker',['exec','-i',container,'sh','-ceu','exec env PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -X -qAt -w -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U supabase_admin -d postgres -f -'],{input:RESTORE_OWNER_CONTEXT_SQL,encoding:'utf8',stdio:['pipe','pipe','pipe']});
+  if(admin.error||admin.status!==0){report.sqlFailure=sqlFailureMetadata(admin.stderr,admin.status);save();throw Error('Isolated owner-context restoration failed');}
+  const ownerAfter=json("SELECT json_build_object('owner',pg_get_userbyid(datdba),'canCreate',has_database_privilege('postgres',datname,'CREATE'),'superuser',(SELECT rolsuper FROM pg_roles WHERE rolname='postgres')) FROM pg_database WHERE datname=current_database();");
+  assert.deepEqual(ownerAfter,{owner:'postgres',canCreate:true,superuser:false});
+  report.ownerContext={kind:ownerEvidence.kind,observedDate:ownerEvidence.observedDate,ownerRestored:'postgres',postgresRemainsNonsuperuser:true,source:'separate post-snapshot read-only observation',snapshotOwnershipAndAclFidelityCertified:false};save();
   const sourceSql=`SELECT json_build_object('hands',(SELECT count(*) FROM public.tournament_hands),'actions',(SELECT count(*) FROM ${SOURCE_ACTION_TABLE}),'payments',(SELECT md5(coalesce(string_agg(md5(to_jsonb(p)::text),'' ORDER BY p.id),'')) FROM public.tournament_prize_payments p));`;
   report.stage='preflight-source-integrity';save();const sourceBefore=json(sourceSql);
   report.stage='apply';save();

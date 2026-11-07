@@ -5,6 +5,7 @@ on:
       - .github/workflows/tracker-hud-full34-isolated.yml
       - VinPoker/scripts/ops/tracker-hud-full34-isolated.mjs
       - VinPoker/scripts/ops/tracker-hud-full34-isolated.test.mjs
+      - VinPoker/scripts/ops/tracker-hud-restore-owner-context-20261107.json
       - VinPoker/scripts/ops/verify-floor-v3-recovery.sh
   workflow_dispatch:
     inputs:

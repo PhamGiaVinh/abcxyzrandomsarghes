@@ -2,10 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL,sqlFailureMetadata} from './tracker-hud-full34-isolated.mjs';
+import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL,RESTORE_OWNER_CONTEXT_SQL,sqlFailureMetadata} from './tracker-hud-full34-isolated.mjs';
 import {execFileSync} from 'node:child_process';
 const env={GITHUB_ACTIONS:'true',GITHUB_RUN_ID:'123',GITHUB_WORKSPACE:resolve('/fixture/workspace'),RUNNER_TEMP:resolve('/fixture/temp'),HUD_FULL34_ISOLATION_VERIFIED:'egress-blocked-cron-off'};
 const candidate=resolve(env.GITHUB_WORKSPACE,'candidate/VinPoker'),report=resolve(env.RUNNER_TEMP,'hud-full34-rehearsal.json'),container='a'.repeat(64);
+test('owner-context adjustment requires exact restored ledger, local admin and nonsuperuser target',()=>{
+ for(const text of ["current_database()<>'postgres'","current_user<>'supabase_admin'","current_setting('cron.launch_active_jobs')<>'off'","rolname='postgres') IS DISTINCT FROM false",'<>763','5bb5e2d79aca9b2d17be60931a2248ef','ALTER DATABASE postgres OWNER TO postgres;'])assert.ok(RESTORE_OWNER_CONTEXT_SQL.includes(text),text);
+ assert.ok(RESTORE_OWNER_CONTEXT_SQL.indexOf('isolated_owner_context_preimage_differs')<RESTORE_OWNER_CONTEXT_SQL.indexOf('ALTER DATABASE'));
+ assert.doesNotMatch(RESTORE_OWNER_CONTEXT_SQL,/GRANT|ALTER ROLE/);
+ const receipt=JSON.parse(readFileSync('scripts/ops/tracker-hud-restore-owner-context-20261107.json','utf8'));
+ assert.equal(receipt.kind,'SEPARATE_READ_ONLY_OWNER_CONTEXT_NOT_BACKUP_METADATA');assert.match(receipt.scope,/after the backup snapshot/);
+});
 test('SQL failure diagnostics retain only numeric status, SQLSTATE and source line',()=>{
  const raw='psql:<stdin>:37: ERROR:  42501: permission denied\nDETAIL: private player and token values\nCONTEXT: SQL source';
  assert.deepEqual(sqlFailureMetadata(raw,3),{exitCode:3,sqlState:'42501',inputLine:37});
