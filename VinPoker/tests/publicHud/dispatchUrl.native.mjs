@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {initialize,sql,jsonSql,service} from './nativeDb.mjs';
+import {loadDispatchPackage} from '../../scripts/ops/tracker-hud-dispatch-url-20261107-release.mjs';
 const db='vinpoker_hud_test_dispatch_url_20261107a';
 assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,db);
 const port=process.platform==='win32'?'55441':(process.env.PUBLIC_HUD_LOCAL_PORT??'5432');
@@ -36,6 +37,19 @@ const state=()=>sql("SELECT md5(pg_get_functiondef(oid)||coalesce(proacl::text,'
 const original=state();
 const source=()=>sql("SELECT md5(jsonb_build_object('hands',(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM public.tournament_hands h),'actions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.hand_actions a),'results',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.player_results r))::text);");
 const sourceBefore=source();
+// Derive the spectator postimage from the actual pinned migration rewrite.
+// Activation must expect the compact-generation dispatcher, not its old baseline.
+const spectatorSource=readFileSync('supabase/pending-migrations/20270115000000_public_spectator_realtime_v2.sql','utf8');
+const spectatorStart=spectatorSource.indexOf('CREATE OR REPLACE FUNCTION public.dispatch_public_spectator_projection_v2()');
+assert.ok(spectatorStart>=0);
+const spectatorEnd=spectatorSource.indexOf('END; $$;',spectatorStart);assert.ok(spectatorEnd>spectatorStart);
+const compactDispatch=readFileSync('supabase/migrations/20261104001900_public_spectator_compact_generations.sql','utf8').split('DO $dispatch$')[1].split('END $dispatch$;')[0];
+const marker=compactDispatch.match(/marker:='[^']*';/)[0];
+const rewrite=compactDispatch.match(/EXECUTE replace\(body,marker,'[^']*'\);/)[0];
+const spectatorHash=sql('BEGIN;'+spectatorSource.slice(spectatorStart,spectatorEnd+'END; $$;'.length)+
+ "DO $proof$ DECLARE body text;marker text;BEGIN SELECT pg_get_functiondef('public.dispatch_public_spectator_projection_v2()'::regprocedure) INTO body;"+marker+rewrite+
+ "END $proof$;SELECT md5(replace(pg_get_functiondef('public.dispatch_public_spectator_projection_v2()'::regprocedure),chr(13),''));ROLLBACK;",{captureFailure:true});
+assert.equal(spectatorHash,loadDispatchPackage().manifest.spectatorPostcheck.definitionMd5);
 sql(`CREATE SCHEMA vault;CREATE TABLE vault.decrypted_secrets(name text PRIMARY KEY,decrypted_secret text);
 CREATE SCHEMA net;CREATE TABLE public.fixture_hud_http_calls(id bigserial PRIMARY KEY,url text,headers jsonb,body jsonb,timeout_ms integer);
 CREATE FUNCTION net.http_post(url text,body jsonb DEFAULT '{}'::jsonb,params jsonb DEFAULT '{}'::jsonb,headers jsonb DEFAULT '{}'::jsonb,timeout_milliseconds integer DEFAULT 1000) RETURNS bigint LANGUAGE plpgsql AS $$ DECLARE target bigint;BEGIN INSERT INTO public.fixture_hud_http_calls(url,headers,body,timeout_ms) VALUES(url,headers,body,timeout_milliseconds) RETURNING id INTO target;RETURN target;END $$;

@@ -47,7 +47,7 @@
   },
   "spectatorPostcheck": {
     "signature": "public.dispatch_public_spectator_projection_v2()",
-    "definitionMd5": "6197c05a6983eeb841b01a88ac8ceff1",
+    "definitionMd5": "cf705ee6551a85a61724228ede8f7945",
     "owner": "postgres",
     "securityDefiner": true,
     "volatile": "v",

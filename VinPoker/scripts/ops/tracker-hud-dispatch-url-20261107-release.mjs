@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {canonicalSqlText} from './ops-1359-release-gate.mjs';
 import {loadClosePackage,CLOSE_MANIFEST_HASH} from './tracker-hud-close-paid-prize-20261107-release.mjs';
 import {stateSql,validateState,atomicQuery,validateRecovery,PROJECT} from './tracker-hud-20261104-release.mjs';
-export const DISPATCH_URL_MANIFEST_HASH='4c4c603a165f3241764848bbd11005b9c1ebdcbfcaa52af4163d1ac45fdb51b8';
+export const DISPATCH_URL_MANIFEST_HASH='31506ae312978692fe057e2027f27b283bb4ad94365a98a96896df64607c3f9e';
 const ROOT=fileURLToPath(new URL('../..',import.meta.url));
 const sha=text=>createHash('sha256').update(canonicalSqlText(text)).digest('hex');
 export function loadDispatchPackage(root=ROOT){
