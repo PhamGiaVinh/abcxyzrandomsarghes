@@ -2472,5 +2472,6 @@ PRIZE_CLOSE_FRESH_FIXTURE
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);assert.equal(r.paidRows,1);assert.equal(r.prizeTotal,18000000);assert.equal(r.reconcileDelta,0);assert.equal(r.qualification,false);
 assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000,20100]},{number:880002,pots:[59700,200],endings:[100,200,59700]},{number:880003,pots:[300,200],endings:[0,0,60000]}]);
+assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpaid:true,confirmed:true,paidVisible:true});
 FINAL_PRIZE_CLOSE_RECEIPT
 fi
