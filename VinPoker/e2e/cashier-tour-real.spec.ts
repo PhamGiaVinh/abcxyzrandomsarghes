@@ -14,6 +14,53 @@ import {audienceServerTiming,reentryServerTiming,audienceFailure} from '../scrip
 const currentFloorRosterV6=process.env.LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED==='1';
 const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3';
 
+test('final current Floor seat locks and redraw conserve every paid entry over HTTP',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_REDRAW_ENABLED!=='1','Explicit final isolated redraw stage only');test.setTimeout(180_000);
+ const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
+ const headers={apikey:anon,Authorization:`Bearer ${owner}`,'Content-Type':'application/json'};
+ type Seat={entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number};
+ type Table={tournament_table_id:string;game_table_id:string;table_session_id:string;session_revision:number;control_epoch:number;seat_locks:{seat_number:number}[];seats:Seat[]};
+ let phase='setup',failure:{operation:string;httpStatus:number;code:string}|null=null;
+ const locks:{lockMs:number;unlockMs:number;readMs:number}[]=[],redraws:{planMs:number;applyMs:number;retryMs:number;continueMs:number;readMs:number}[]=[];
+ const dist=(values:number[])=>{const v=[...values].sort((a,b)=>a-b);return {samples:v.length,p95Ms:v.length===20?v[18]:null,maxMs:v.at(-1)??null};};
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_LOCK_REDRAW_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,locks,redraws,distributions:{locks:Object.fromEntries(['lockMs','unlockMs','readMs'].map(k=>[k,dist(locks.map(r=>r[k as keyof typeof r]))])),redraws:Object.fromEntries(['planMs','applyMs','retryMs','continueMs','readMs'].map(k=>[k,dist(redraws.map(r=>r[k as keyof typeof r]))]))},qualification:false,productionChanged:false,limitations:'Final disposable stage after prior audience/HUD proofs and audience drain. One owner Auth actor;20lock/unlock pairs and20sequential redraws of the same20paid entries. Canonical captured writers and exact retries;not20independent tournaments,simultaneous staff writers,UI/Realtime latency,receipt-reader support or mixed1000spectator redraw proof.'},null,2));
+ const rpc=async(name:string,args:Record<string,unknown>)=>{const at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok||data.ok===false)failure={operation:name,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:'application_denial'};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at};};
+ const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
+ const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})).data as Table[];
+ const identity=(tables:Table[])=>tables.flatMap(t=>t.seats.map(s=>({entry:s.entry_id,player:s.player_id,entryNo:s.entry_no,chips:s.chip_count}))).sort((a,b)=>a.entry.localeCompare(b.entry));
+ try{
+  const before=await roster(),frozen=identity(before);expect(frozen).toHaveLength(20);expect(new Set(frozen.map(s=>s.entry)).size).toBe(20);expect(frozen.reduce((n,s)=>n+s.chips,0)).toBe(400000);
+  expect(await read('tournament_hands?select=id&tournament_id=eq.'+tour+'&status=eq.in_progress')).toHaveLength(0);
+  phase='seat-locks';report();
+  for(let n=0;n<20;n++){
+   const tables=await roster(),target=tables.find(t=>t.seats.length<9)!;expect(target).toBeTruthy();const seat=Array.from({length:9},(_,i)=>i+1).find(i=>!target.seats.some(s=>s.seat_number===i))!;
+   const intent={p_tournament_table_id:target.tournament_table_id,p_seat_number:seat,p_locked:true,p_reason:'isolated final lock TEST',p_expected_revision:target.session_revision,p_request_id:crypto.randomUUID()};
+   const locked=await rpc('floor_set_table_seat_lock_v1',intent);expect(locked.data).toMatchObject({ok:true,locked:true,seat_number:seat});expect((await rpc('floor_set_table_seat_lock_v1',intent)).data).toEqual(locked.data);
+   const at=performance.now(),rows=(await roster()).find(t=>t.table_session_id===target.table_session_id)!.seat_locks.filter(s=>s.seat_number===seat);expect(rows).toHaveLength(1);
+   const readMs=performance.now()-at;expect(identity(await roster())).toEqual(frozen);
+   const unlockIntent={...intent,p_locked:false,p_expected_revision:locked.data.revision,p_request_id:crypto.randomUUID()};const unlocked=await rpc('floor_set_table_seat_lock_v1',unlockIntent);expect(unlocked.data).toMatchObject({ok:true,locked:false});expect((await rpc('floor_set_table_seat_lock_v1',unlockIntent)).data).toEqual(unlocked.data);
+   expect((await roster()).find(t=>t.table_session_id===target.table_session_id)!.seat_locks.filter(s=>s.seat_number===seat)).toHaveLength(0);
+   locks.push({lockMs:locked.ms,unlockMs:unlocked.ms,readMs});report();
+  }
+  phase='redraws';report();
+  for(let n=0;n<20;n++){
+   const physical=(await roster()).sort((a,b)=>a.tournament_table_id.localeCompare(b.tournament_table_id));expect(physical.length).toBeGreaterThanOrEqual(3);
+   const planIntent={p_tournament_id:tour,p_target_max_seats:9,p_game_table_ids:physical.slice(0,3).map(t=>t.game_table_id),p_request_id:crypto.randomUUID()};
+   const planned=await rpc('floor_plan_tournament_redraw_v1',planIntent);expect(planned.data).toMatchObject({ok:true,status:'planned',player_count:20});expect((await rpc('floor_plan_tournament_redraw_v1',planIntent)).data).toEqual(planned.data);
+   const applyIntent={p_batch_id:planned.data.batch_id,p_request_id:crypto.randomUUID()},applied=await rpc('floor_apply_tournament_redraw_v1',applyIntent);expect(applied.data).toMatchObject({ok:true,status:'applied',player_count:20});
+   const retry=await rpc('floor_apply_tournament_redraw_v1',applyIntent);expect(retry.data).toEqual(applied.data);
+   const at=performance.now(),after=await roster();expect(identity(after)).toEqual(frozen);expect(after.filter(t=>t.seats.length>0)).toHaveLength(3);const readMs=performance.now()-at;
+   const hold=await rpc('get_public_tournament_redraw_v1',{p_tournament_id:tour});expect(hold.data.batch_id).toBe(planned.data.batch_id);expect(hold.data.redraw_revision).toBeGreaterThan(0);
+   const continuedIntent={p_batch_id:planned.data.batch_id,p_expected_redraw_revision:hold.data.redraw_revision,p_request_id:crypto.randomUUID()},continued=await rpc('floor_continue_tournament_redraw_v1',continuedIntent);expect(continued.data.ok).toBe(true);expect(typeof continued.data.clock_resumed).toBe('boolean');expect((await rpc('floor_continue_tournament_redraw_v1',continuedIntent)).data).toEqual(continued.data);
+   expect((await rpc('get_public_tournament_redraw_v1',{p_tournament_id:tour})).data.batch_id).toBeNull();
+   redraws.push({planMs:planned.ms,applyMs:applied.ms,retryMs:retry.ms,continueMs:continued.ms,readMs});report();
+  }
+  expect(identity(await roster())).toEqual(frozen);expect(locks).toHaveLength(20);expect(redraws).toHaveLength(20);expect(failure).toBeNull();
+  for(const values of [locks.map(r=>r.lockMs),locks.map(r=>r.unlockMs),redraws.map(r=>r.planMs),redraws.map(r=>r.applyMs),redraws.map(r=>r.continueMs)])expect(dist(values).p95Ms).toBeLessThanOrEqual(1000);
+  phase='passed';report();
+ }catch(error){phase+='-failed';report();throw error;}
+});
+
 const required = [
   "LOCAL_SUPABASE_URL",
   "LOCAL_SUPABASE_ANON_KEY",

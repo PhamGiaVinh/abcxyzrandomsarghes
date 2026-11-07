@@ -9,6 +9,7 @@ clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 reentry_transport_probe="${LOCAL_REENTRY_TRANSPORT_PROBE:-0}"
 correction_undo_probe="${LOCAL_CORRECTION_UNDO_PROBE:-0}"
+redraw_probe="${LOCAL_OPERATIONS_REDRAW_PROBE:-0}"
 reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
@@ -46,6 +47,9 @@ if [[ "$audience_count" != 0 && "$operations_candidate_probe" != 1 ]]; then
 fi
 if [[ "$correction_undo_probe" != 0 && "$correction_undo_probe" != 1 ]] || [[ "$correction_undo_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$reentry_transport_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Correction Undo probe requires current isolated full operations and healthy reentry candidate' >&2;exit 1
+fi
+if [[ "$redraw_probe" != 0 && "$redraw_probe" != 1 ]] || [[ "$redraw_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 ) ]]; then
+  echo 'Redraw probe requires current isolated full operations' >&2;exit 1
 fi
 if [[ -z "$schema_dir" || ! -f "$schema_dir/live-public-schema.sql" ||
       ! -f "$schema_dir/live-public-schema.sha256" ]]; then
@@ -1320,6 +1324,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_REENTRY_ENABLED="$reentry_enabled" \
   --env LOCAL_REENTRY_TRANSPORT_PROBE="$reentry_transport_probe" \
   --env LOCAL_CORRECTION_UNDO_PROBE="$correction_undo_probe" \
+  --env LOCAL_OPERATIONS_REDRAW_ENABLED="${LOCAL_OPERATIONS_REDRAW_ENABLED:-0}" \
   --env LOCAL_REENTRY_FAULT_MODE="$reentry_fault_mode" \
   --env LOCAL_REENTRY_BANK_PROBE_STAGE="${LOCAL_REENTRY_BANK_PROBE_STAGE:-0}" \
   --env LOCAL_OPERATIONS_BUY_CLOSE_ENABLED="$buy_close_enabled" \
@@ -2311,4 +2316,18 @@ pkg.limitations='Configured operations finished before audience drain and unchan
 writeFileSync(root+'/operations-candidate-package-http.json',JSON.stringify(pkg,null,2));
 PREPARED_HUD_FINAL_RECEIPT
   fi
+fi
+
+
+# The opt-in redraw mutates the final disposable roster only after every prior
+# audience/HUD source assertion. It has its own scope and never inherits their
+# mixed-spectator claim.
+if [[ "$redraw_probe" == 1 ]]; then
+  LOCAL_OPERATIONS_REDRAW_ENABLED=1 run_browser_proof '' '' 'final current Floor seat locks and redraw conserve every paid entry over HTTP'
+  node --input-type=module - "$repo_root/output/operations-latency/cashier-http-floor-redraw-http.json" "$source_sha" <<'FINAL_REDRAW_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);
+assert.equal(r.locks.length,20);assert.equal(r.redraws.length,20);assert.equal(r.qualification,false);
+FINAL_REDRAW_RECEIPT
 fi

@@ -95,6 +95,11 @@ on:
         type: boolean
         default: false
 
+      redraw_probe:
+        description: Final isolated Auth HTTP seat-lock and redraw conservation probe
+        type: boolean
+        default: false
+
       reentry_fault_mode:
         description: Inject notification faults at10viewers or measure healthy candidate operations
         type: choice
@@ -206,6 +211,7 @@ jobs:
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
           LOCAL_REENTRY_TRANSPORT_PROBE: ${{ inputs.reentry_transport_probe && '1' || '0' }}
           LOCAL_CORRECTION_UNDO_PROBE: ${{ inputs.correction_undo_probe && '1' || '0' }}
+          LOCAL_OPERATIONS_REDRAW_PROBE: ${{ inputs.redraw_probe && '1' || '0' }}
           LOCAL_REENTRY_FAULT_MODE: ${{ inputs.reentry_fault_mode || 'failure-injection' }}
           LOCAL_OPERATIONS_REST_POOL: ${{ inputs.operations_rest_pool || '10' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
