@@ -104,7 +104,7 @@ test("only encrypted ciphertext is uploaded and restore is isolated with egress 
   assert.doesNotMatch(restore, /SUPABASE_DB_PASSWORD|supabase link|supabase db push/);
 });
 
-test("encrypted-backup exception accepts only the remaining exact pinned fingerprint", () => {
+test("encrypted-backup exception accepts no tokens or the exact legacy fingerprint", () => {
   const validRows = [
     `public.fn_dispatch_push()\t${verifiedAnonFingerprint}`,
   ].join("\n");
@@ -120,7 +120,6 @@ test("encrypted-backup exception accepts only the remaining exact pinned fingerp
     validRows.replace(verifiedAnonFingerprint, "f".repeat(64)),
     `${validRows}\npublic.notify_dealer_ready_v2()\t${verifiedAnonFingerprint}`,
     validRows.replace("public.fn_dispatch_push()", "public.fn_dispatch_push(integer)"),
-    "",
     validRows.replace("public.fn_dispatch_push()", "public.fn_dispatch_push()\npublic.fn_dispatch_push()"),
   ]) {
     assert.equal(validateAnonExceptionRows(invalidRows, verifiedAnonFingerprint), false);
@@ -131,4 +130,14 @@ test("encrypted-backup exception accepts only the remaining exact pinned fingerp
     assert.equal(invalidCli.status, 1);
     assert.doesNotMatch(invalidCli.stderr, /eyJ[A-Za-z0-9_-]+\./);
   }
+});
+
+test("token-free catalogs pass without relaxing rejection of unapproved tokens", () => {
+  for (const input of ["", "\n"]) {
+    assert.equal(validateAnonExceptionRows(input, verifiedAnonFingerprint), true);
+    const cli = spawnSync(process.execPath, [resolve(scriptDirectory, "check-floor-v3-anon-exception.mjs"), verifiedAnonFingerprint], {input, encoding: "utf8"});
+    assert.equal(cli.status, 0, cli.stderr);
+  }
+  assert.equal(validateAnonExceptionRows("", ""), false);
+  assert.equal(validateAnonExceptionRows(`public.unapproved()\t${verifiedAnonFingerprint}`, verifiedAnonFingerprint), false);
 });

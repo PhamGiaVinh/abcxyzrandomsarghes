@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 export function validateAnonExceptionRows(input, expectedSha256) {
   if (!/^[0-9a-f]{64}$/.test(expectedSha256)) return false;
+  // A successful catalog scan can find no embedded tokens after cleanup.
+  // The shell caller retains pipefail, so a failed scan cannot qualify here.
+  if (input.trimEnd() === "") return true;
   const expectedRows = [
     "public.fn_dispatch_push()\t" + expectedSha256,
   ].sort().join("\n");
