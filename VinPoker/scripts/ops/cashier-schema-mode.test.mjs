@@ -23,6 +23,10 @@ test('real-stack worker uses the HUD schedule addressed by release postcheck and
  assert.ok(setup.includes("cron.schedule('"+name+"','1 second','SELECT public.dispatch_public_hud_projection_v1()')"));
  assert.ok(postcheck.includes(name));assert.match(setup,/if\(!scheduleReady\)throw Error/);
  assert.ok(setup.includes("count(*)=2 AND bool_and(active AND schedule='1 second'"));
+ const privateProvisioning=setup.slice(setup.indexOf('CREATE FUNCTION public.fixture_provision_hud_workers_v1'),setup.indexOf('END $$;'));
+ assert.ok(!privateProvisioning.includes('cron.schedule'));
+ assert.ok(setup.includes("if(sql('SELECT current_user;')!=='postgres')"));
+ assert.ok(setup.includes("username='postgres' AND"));
 });
 
 test('redraw probe refuses historical/incomplete modes before allocating a stack',()=>{
