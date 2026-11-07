@@ -2,10 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE} from './tracker-hud-full34-isolated.mjs';
+import {validateInvocation,CANDIDATE,BACKUP_RUN,SOURCE_ACTION_TABLE,PAUSE_RESTORED_DISPATCHER_SQL} from './tracker-hud-full34-isolated.mjs';
 import {execFileSync} from 'node:child_process';
 const env={GITHUB_ACTIONS:'true',GITHUB_RUN_ID:'123',GITHUB_WORKSPACE:resolve('/fixture/workspace'),RUNNER_TEMP:resolve('/fixture/temp'),HUD_FULL34_ISOLATION_VERIFIED:'egress-blocked-cron-off'};
 const candidate=resolve(env.GITHUB_WORKSPACE,'candidate/VinPoker'),report=resolve(env.RUNNER_TEMP,'hud-full34-rehearsal.json'),container='a'.repeat(64);
+test('dispatcher pause uses the existing cron API available to non-superuser postgres',()=>{
+ assert.equal(PAUSE_RESTORED_DISPATCHER_SQL,"SELECT cron.alter_job(jobid,active:=false) FROM cron.job WHERE jobname='public-spectator-v2-dispatch';");
+ const source=readFileSync('scripts/ops/tracker-hud-full34-isolated.mjs','utf8');
+ assert.doesNotMatch(source,/UPDATE\s+cron\.job|ALTER ROLE.*SUPERUSER|GRANT.*cron\.job/i);
+});
 test('source integrity query matches the pinned candidate action-table contract',()=>{
  const root=process.env.HUD_REHEARSAL_TEST_CANDIDATE_ROOT??resolve('../candidate/VinPoker');
  assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),CANDIDATE);
