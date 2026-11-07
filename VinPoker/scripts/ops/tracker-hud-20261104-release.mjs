@@ -8,6 +8,7 @@ import {canonicalSqlText,buildAtomicMigrationQuery} from './ops-1359-release-gat
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export const PROJECT='orlesggcjamwuknxwcpk';
 export const MANIFEST_HASH='13616e361af1c8552a23cccd7c109224d0e42076bbc669261b34a6a3c24955d6';
+export const REENTRY_MANIFEST_HASH='d0470bcef03ba4ba9dd330856aa8dc36472712d6e733c82e6987c87914c93856';
 const sha=s=>createHash('sha256').update(canonicalSqlText(s)).digest('hex');
 export function loadPackage(root=ROOT){
  const raw=readFileSync(resolve(root,'scripts/ops/tracker-hud-20261104-manifest.json'),'utf8');
@@ -20,6 +21,37 @@ export function loadPackage(root=ROOT){
   return {...e,sql};
  });
  return {manifest,entries};
+}
+export function loadReentryPackage(root=ROOT){
+ const base=loadPackage(root);
+ const raw=readFileSync(resolve(root,'scripts/ops/tracker-hud-reentry-20261107-manifest.json'),'utf8');
+ if(sha(raw)!==REENTRY_MANIFEST_HASH)throw Error('Reviewed supplement manifest hash differs');
+ const manifest=JSON.parse(raw),entry=manifest.migrations[0];
+ if(manifest.projectRef!==PROJECT||manifest.baseManifest.sha256!==MANIFEST_HASH||manifest.migrations.length!==1||entry.order!==32||entry.version!=='20261107013500')throw Error('Supplement scope differs');
+ const sql=canonicalSqlText(readFileSync(resolve(root,entry.path),'utf8'));
+ if(sha(sql)!==entry.sha256||sha(readFileSync(resolve(root,manifest.recovery.path),'utf8'))!==manifest.recovery.sha256)throw Error('Supplement source or recovery checksum differs');
+ return {base,manifest,entry:{...entry,sql}};
+}
+const receiptMatch=e=>`version='${e.version}' AND name='${e.name}' AND cardinality(statements)=1 AND encode(extensions.digest(convert_to(statements[1],'UTF8'),'sha256'),'hex')='${e.sha256}'`;
+export function reentryStateSql(pkg){
+ return `SELECT json_build_object('baseline',(${stateSql().trim().replace(/;$/,'').replace(')::text',')')}),
+ 'receiptsMatch',(${pkg.entries.map(e=>`EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE ${receiptMatch(e)})`).join(' AND ')}),
+ 'supplementAbsent',NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261107013500' OR name='cashier_app_reentry_transport_v1'),
+ 'objectAbsent',to_regprocedure('public.cashier_app_reentry_transport_v1(uuid,uuid)') IS NULL)::text;`;
+}
+export function validateReentryState(row,pkg){
+ validateState({...row.baseline,applied:0},pkg);
+ if(Number(row.baseline.applied)!==31||row.receiptsMatch!==true||row.supplementAbsent!==true||row.objectAbsent!==true)throw Error('Supplement requires all31 exact receipts and absent supplement; no automatic resume');
+}
+export function reentryPostcheckSql(){return `SELECT json_build_object('bodyMd5',md5(replace(p.prosrc,chr(13),'')),'owner',pg_get_userbyid(p.proowner),
+ 'securityInvoker',NOT p.prosecdef,'volatile',p.provolatile,'searchPath',p.proconfig,
+ 'executeRoles',(SELECT json_agg(role_name ORDER BY role_name) FROM (SELECT CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END role_name FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a WHERE a.privilege_type='EXECUTE') roles),
+ 'grantOptions',(SELECT count(*) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a WHERE a.is_grantable))::text
+ FROM pg_proc p WHERE p.oid=to_regprocedure('public.cashier_app_reentry_transport_v1(uuid,uuid)');`;}
+export function validateReentryPostcheck(row,manifest){
+ const expected=manifest.postcheck;
+ for(const key of ['bodyMd5','owner','securityInvoker','volatile','searchPath','executeRoles'])if(JSON.stringify(row?.[key])!==JSON.stringify(expected[key]))throw Error('Supplement object postcheck differs: '+key);
+ if(Number(row?.grantOptions)!==0)throw Error('Supplement unexpected grant option');
 }
 const fingerprint=`md5(string_agg(version||':'||coalesce(name,'')||':'||md5(coalesce(array_to_string(statements,E'\\n'),'')),E'\\n' ORDER BY version))`;
 export function stateSql(){return `SELECT json_build_object('rows',count(*),'fingerprint',${fingerprint},
@@ -36,7 +68,7 @@ export function atomicQuery(entry,pkg){
  const offset=query.indexOf(seam)+seam.length;
  if(offset<seam.length||query.indexOf(seam)!==query.lastIndexOf(seam))throw Error('Atomic builder framing differs');
  const expectedRows=pkg.manifest.baselineLedgerRows+entry.order-1;
- const prefixGuards=pkg.entries.filter(e=>e.order<entry.order).map(e=>`IF NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='${e.version}' AND name='${e.name}' AND encode(extensions.digest(convert_to(statements[1],'UTF8'),'sha256'),'hex')='${e.sha256}') THEN RAISE EXCEPTION 'HUD release prior receipt differs';END IF;`).join('\n');
+ const prefixGuards=pkg.entries.filter(e=>e.order<entry.order).map(e=>`IF NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE ${receiptMatch(e)}) THEN RAISE EXCEPTION 'HUD release prior receipt differs';END IF;`).join('\n');
  const guard=`LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;
  DO $hud_release_guard$ BEGIN
  IF (SELECT count(*) FROM supabase_migrations.schema_migrations)<>${expectedRows}
@@ -59,28 +91,32 @@ function query(sql){
  return p.stdout.trim();
 }
 function run(){
- const mode=process.argv[2];if(!['plan','apply'].includes(mode))throw Error('Usage: tracker-hud-20261104-release.mjs plan|apply');
- const pkg=loadPackage();
+ const mode=process.argv[2];if(!['plan','apply','plan-reentry','apply-reentry'].includes(mode))throw Error('Usage: tracker-hud-20261104-release.mjs plan|apply|plan-reentry|apply-reentry');
+ const supplement=mode.endsWith('-reentry')?loadReentryPackage():null;
+ const pkg=supplement?.base??loadPackage();
  if(process.env.PGHOST!==`db.${PROJECT}.supabase.co`||process.env.PGPORT!=='5432'||process.env.PGUSER!=='postgres'||process.env.PGDATABASE!=='postgres'||process.env.PGSSLMODE!=='require'||!process.env.PGPASSWORD)throw Error('Exact private production connection required');
- validateState(JSON.parse(query(stateSql())),pkg);
- if(mode==='plan'){console.log(JSON.stringify({mode,manifestHash:MANIFEST_HASH,migrations:31}));return;}
- if(process.env.CONFIRM_TRACKER_HUD_APPLY!=='APPLY_31_'+MANIFEST_HASH)throw Error('Exact owner-approved package confirmation absent');
+ if(supplement)validateReentryState(JSON.parse(query(reentryStateSql(pkg))),pkg);
+ else validateState(JSON.parse(query(stateSql())),pkg);
+ if(mode.startsWith('plan')){console.log(JSON.stringify({mode,manifestHash:MANIFEST_HASH,supplementManifestHash:supplement?REENTRY_MANIFEST_HASH:undefined,migrations:supplement?1:31}));return;}
+ const confirmation=supplement?'APPLY_32_'+MANIFEST_HASH+'_'+REENTRY_MANIFEST_HASH:'APPLY_31_'+MANIFEST_HASH;
+ if(process.env.CONFIRM_TRACKER_HUD_APPLY!==confirmation)throw Error('Exact owner-approved package confirmation absent');
  const sourceSha=execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim();
  if(!/^[a-f0-9]{40}$/.test(process.env.TRACKER_HUD_APPROVED_SHA??'')||sourceSha!==process.env.TRACKER_HUD_APPROVED_SHA||execFileSync('git',['status','--porcelain'],{cwd:ROOT,encoding:'utf8'}).trim())throw Error('Clean exact approved source required');
  validateRecovery(JSON.parse(readFileSync(process.env.TRACKER_HUD_RECOVERY_RECEIPT,'utf8')));
  const reportPath=process.env.TRACKER_HUD_APPLY_REPORT;if(!reportPath)throw Error('Durable nonsecret receipt path required');
- const report={project:PROJECT,sourceSha,manifestHash:MANIFEST_HASH,status:'RUNNING',committed:[]};
+ const report={project:PROJECT,sourceSha,manifestHash:MANIFEST_HASH,supplementManifestHash:supplement?REENTRY_MANIFEST_HASH:undefined,status:'RUNNING',committed:[]};
  writeFileSync(reportPath,JSON.stringify(report,null,2),{flag:'wx'});
- for(const e of pkg.entries){
+ for(const e of supplement?[supplement.entry]:pkg.entries){
   try{
    query(atomicQuery(e,pkg));
-   const receipt=JSON.parse(query(`SELECT json_build_object('name',name,'hash',encode(extensions.digest(convert_to(statements[1],'UTF8'),'sha256'),'hex'))::text FROM supabase_migrations.schema_migrations WHERE version='${e.version}';`));
-   if(receipt.name!==e.name||receipt.hash!==e.sha256)throw Error('Exact receipt postcheck differs');
+   const receipt=JSON.parse(query(`SELECT json_build_object('name',name,'statements',cardinality(statements),'hash',encode(extensions.digest(convert_to(statements[1],'UTF8'),'sha256'),'hex'))::text FROM supabase_migrations.schema_migrations WHERE version='${e.version}';`));
+   if(receipt.name!==e.name||receipt.hash!==e.sha256||receipt.statements!==1)throw Error('Exact receipt postcheck differs');
+   if(supplement)validateReentryPostcheck(JSON.parse(query(reentryPostcheckSql())),supplement.manifest);
    report.committed.push({version:e.version,name:e.name,sha256:e.sha256});writeFileSync(reportPath,JSON.stringify(report,null,2));
   }catch{
    report.status='STOPPED_PARTIAL_OR_UNCONFIRMED_NO_RETRY';report.stoppedAt=e.version;writeFileSync(reportPath,JSON.stringify(report,null,2));throw Error('STOP at '+e.version+'; review exact receipts before any further action');
   }
  }
- report.status='THIRTY_ONE_ATOMIC_RECEIPTS_VERIFIED_OBJECT_POSTCHECK_STILL_REQUIRED';writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(report.status);
+ report.status=supplement?'SUPPLEMENT_ATOMIC_RECEIPT_AND_OBJECT_VERIFIED_EDGE_DEPLOY_STILL_REQUIRED':'THIRTY_ONE_ATOMIC_RECEIPTS_VERIFIED_OBJECT_POSTCHECK_STILL_REQUIRED';writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(report.status);
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{run();}catch(e){console.error(e.message);process.exitCode=1;}}

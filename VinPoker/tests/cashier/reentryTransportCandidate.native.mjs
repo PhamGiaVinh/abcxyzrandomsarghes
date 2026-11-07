@@ -8,8 +8,8 @@ assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,'vinpoker_hud_test_reentry_tr
 assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'||inet_server_port()||'|'||current_setting('server_version_num')::int/10000;"),
  'vinpoker_hud_test_reentry_transport_20261107a|127.0.0.1|55441|17');
 assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname IN('pg_net','pg_cron'));"),'f');
-const migration=readFileSync(new URL('../../supabase/pending-migrations/20261107013500_cashier_app_reentry_transport_v1.sql',import.meta.url),'utf8');
-const recovery=readFileSync(new URL('../../supabase/pending-migrations/recovery/20261107013500_cashier_app_reentry_transport_v1.rollback.sql',import.meta.url),'utf8');
+const migration=readFileSync(new URL('../../supabase/migrations/20261107013500_cashier_app_reentry_transport_v1.sql',import.meta.url),'utf8');
+const recovery=readFileSync(new URL('../../scripts/ops/cashier-app-reentry-20261107-rollback.sql',import.meta.url),'utf8');
 const signature='public.cashier_app_reentry_transport_v1(uuid,uuid)';
 const state=()=>sql(`SELECT jsonb_build_object('canonical',md5(pg_get_functiondef('public.cashier_create_app_reentry_v1(uuid,uuid)'::regprocedure)),
  'registrations',(SELECT count(*) FROM public.tournament_registrations),

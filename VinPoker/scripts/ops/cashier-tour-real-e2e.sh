@@ -1156,7 +1156,7 @@ PAID_SEATING_PREFLIGHT
   echo "PAID_SEATING_SCHEMA_PROOF: exact113/114/115/117/139/233 original guards; six production body fingerprints"
   if [[ "$reentry_transport_probe" == 1 ]]; then
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-      <"$repo_root/supabase/pending-migrations/20261107013500_cashier_app_reentry_transport_v1.sql"
+      <"$repo_root/supabase/migrations/20261107013500_cashier_app_reentry_transport_v1.sql"
     if [[ "$reentry_fault_mode" == failure-injection ]]; then
       { printf "SET vinpoker.isolated_reentry_transport='current-composite-v1';\n";
         cat "$repo_root/supabase/pending-tests/reentry_transport_notification_fault.sql"; } |

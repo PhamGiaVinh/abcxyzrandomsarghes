@@ -5,6 +5,8 @@ on:
       - '.github/workflows/public-hud-incremental.yml'
       - 'VinPoker/tests/publicHud/**'
       - 'VinPoker/scripts/ops/tracker-hud-shadow*'
+      - 'VinPoker/scripts/ops/tracker-hud-20261104-release.mjs'
+      - 'VinPoker/scripts/ops/tracker-hud-reentry-*'
       - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
       - 'VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql'
       - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
@@ -153,6 +155,8 @@ jobs:
           retention-days: 7
       - name: Exact twenty-six-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
+      - name: Supplemental Cashier release package and receipt guards
+        run: node --test scripts/ops/tracker-hud-reentry-release.test.mjs
       - name: Batched claim/source visibility and publication fences
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_claim_source_ci
