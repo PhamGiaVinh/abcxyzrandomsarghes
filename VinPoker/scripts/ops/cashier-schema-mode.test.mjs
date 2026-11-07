@@ -15,6 +15,17 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('real-stack rollback refuses foreign scope and remote API before any database call',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'hud-rollback-guard-'));const status=join(dir,'status.env');
+ writeFileSync(status,'API_URL=https://example.invalid\nANON_KEY=synthetic-public-key\n');
+ const entry=fileURLToPath(new URL('../../tests/publicHud/scale.rollback-runtime.mjs',import.meta.url));
+ const env={...process.env,PUBLIC_HUD_STACK_PROJECT:'hud-scale-guard',PUBLIC_HUD_ISOLATED_STACK:'vinpoker-hud-scale',PUBLIC_HUD_LOCAL_DATABASE:'postgres',PUBLIC_HUD_LOCAL_PORT:'54322',PUBLIC_HUD_STATUS_FILE:status};
+ for(const patch of [{PUBLIC_HUD_STACK_PROJECT:'production'},{PUBLIC_HUD_LOCAL_PORT:'5432'},{}]){const r=spawnSync(process.execPath,[entry],{env:{...env,...patch},encoding:'utf8',timeout:5000});assert.notEqual(r.status,0);assert.match(r.stderr,/Disposable|example\.invalid/);}
+ const stack=readFileSync(new URL('../../tests/publicHud/scale.stack.sh',import.meta.url),'utf8');
+ assert.ok(stack.indexOf('node tests/publicHud/scale.rollback-runtime.mjs')>stack.indexOf('node tests/publicHud/scale.http-ws.mjs'));
+ rmSync(dir,{recursive:true,force:true});
+});
+
 test('real-stack worker uses the HUD schedule addressed by release postcheck and rollback',()=>{
  const setup=readFileSync(new URL('../../tests/publicHud/scale.stack-setup.mjs',import.meta.url),'utf8');
  const rollback=readFileSync(new URL('./tracker-hud-20261104-rollback-stop.sql',import.meta.url),'utf8');

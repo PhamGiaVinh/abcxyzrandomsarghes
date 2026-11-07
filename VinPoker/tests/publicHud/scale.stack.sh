@@ -124,4 +124,5 @@ if [[ "${PUBLIC_HUD_CLOCK_UI_PROBE:-0}" == 1 ]]; then
 fi
 ulimit -n 16384
 node tests/publicHud/scale.http-ws.mjs
+node tests/publicHud/scale.rollback-runtime.mjs
 docker stats --no-stream --format '{{json .}}' >output/hud-scale/container-resources.jsonl
