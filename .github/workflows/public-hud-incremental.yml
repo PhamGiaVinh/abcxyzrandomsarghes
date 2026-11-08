@@ -152,6 +152,7 @@ jobs:
           mkdir -p output
           psql -h 127.0.0.1 -U postgres -d "$PUBLIC_HUD_LOCAL_DATABASE" -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE vinpoker_hud_test_ci IS 'vinpoker-hud-shadow-isolated-ci';"
           PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE="$PUBLIC_HUD_LOCAL_DATABASE" TRACKER_HUD_SHADOW_REPORT=output/hud-shadow-ci.json node scripts/ops/tracker-hud-shadow.mjs
+          HUD_SHADOW_MANAGEMENT_NATIVE=1 node --test scripts/ops/tracker-hud-shadow-management.test.mjs
       - name: Sanitized read-only shadow certificate
         if: always()
         uses: actions/upload-artifact@v4
