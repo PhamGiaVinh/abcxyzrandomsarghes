@@ -217,7 +217,9 @@ jobs:
           # Current PR qualification includes cross-actor UI delivery assertions.
           # Exercise the real Realtime service for their healthy-connection SLO.
           LOCAL_OPERATIONS_REALTIME: ${{ ((github.event_name == 'pull_request' && steps.schema-mode.outputs.mode == 'current') || inputs.ops_realtime) && '1' || '0' }}
-          LOCAL_OPERATIONS_AUDIENCE: ${{ inputs.operations_audience || '0' }}
+          # The full final stages require the real admission/schema-freeze
+          # protocol. Ten viewers are a smoke profile, never1000 qualification.
+          LOCAL_OPERATIONS_AUDIENCE: ${{ (github.event_name == 'pull_request' && steps.schema-mode.outputs.mode == 'current') && '10' || inputs.operations_audience || '0' }}
           LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
           # Current PRs render the candidate frontend, so qualify its matching
           # isolated backend and all operational stages rather than old RPCs.
