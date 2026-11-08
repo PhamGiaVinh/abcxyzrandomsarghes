@@ -158,10 +158,6 @@ const SuperAdmin = () => {
   const load = async () => {
     if (!initialLoaded) setBusy(true);
     try {
-      try {
-        await supabase.rpc("auto_soft_delete_old_tournaments");
-      } catch (e) { console.error("auto-soft-delete tournaments failed", e); }
-
       const [clubsRes, toursRes, regsRes] = await Promise.all([
         supabase.from("clubs").select("*").order("created_at", { ascending: false }),
         supabase.from("tournaments").select("*, club:clubs(name)").is("deleted_at", null).order("start_time", { ascending: false }),
