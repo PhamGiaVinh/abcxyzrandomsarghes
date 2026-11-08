@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       owner_ack:
-        description: ISOLATED_FULL34_BACKUP_42373584563
+        description: ISOLATED_FULL35_BACKUP_42388834421
         required: true
         type: string
 permissions:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 9a33c22894f250e9704726e14ff2c09cdf53af7e
+          ref: e14b4ceac1e53b3c246134d74f0dbb47b3adc695
           path: candidate
       - working-directory: VinPoker
         run: |
@@ -57,14 +57,14 @@ jobs:
           test "$INITIAL_ACTOR" = "$REPOSITORY_OWNER"
           test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"
           test "$TARGET_SHA" = "$GITHUB_SHA"
-          test "$OWNER_ACK" = ISOLATED_FULL34_BACKUP_42373584563
+          test "$OWNER_ACK" = ISOLATED_FULL35_BACKUP_42388834421
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.target_sha }}
       - name: Checkout immutable candidate separately
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 9a33c22894f250e9704726e14ff2c09cdf53af7e
+          ref: e14b4ceac1e53b3c246134d74f0dbb47b3adc695
           path: candidate
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -78,9 +78,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends age
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          run-id: 42373584563
+          run-id: 42388834421
           github-token: ${{ github.token }}
-          name: floor-v3-encrypted-database-recovery-42373584563
+          name: floor-v3-encrypted-database-recovery-42388834421
           path: ${{ runner.temp }}/hud-full34-ciphertext
       - name: Pin exact ciphertext then restore and rehearse locally
         working-directory: VinPoker
@@ -88,7 +88,7 @@ jobs:
           FLOOR_BACKUP_AGE_IDENTITY: ${{ secrets.CASHIER_BACKUP_AGE_IDENTITY }}
         run: |
           set -euo pipefail
-          echo '3c9caf25231582967c0bc0bef61eba7da65565aeea09d292017bc900e8c4610e  floor-v3-recovery-42373584563.tar.gz.age' |
+          echo '51e46c474ff6910d4a53e1cbec1ee78cbdec6a5add3961326e6b911d03276f5d  floor-v3-recovery-42388834421.tar.gz.age' |
             (cd "$RUNNER_TEMP/hud-full34-ciphertext" && sha256sum --check --status)
           bash scripts/ops/verify-floor-v3-recovery.sh "$RUNNER_TEMP/hud-full34-ciphertext" --hud-full34-rehearsal
       - name: Upload metadata-only rehearsal result

@@ -327,7 +327,7 @@ echo "RESTORE_NETWORK_EGRESS=BLOCKED"
 echo "RESTORED_CRON_JOBS=DISABLED"
 
 if [[ "$rehearsal_mode" == '--hud-full34-rehearsal' ]]; then
-  HUD_FULL34_ISOLATION_VERIFIED='egress-blocked-cron-off' node \
+  HUD_FULL34_ISOLATION_VERIFIED='egress-blocked-cron-off' HUD_FULL34_DATABASE_CONTEXT_VERIFIED="$database_context_verified" node \
     "$(dirname -- "$0")/tracker-hud-full34-isolated.mjs" "$db_container" \
     "$GITHUB_WORKSPACE/candidate/VinPoker" "$RUNNER_TEMP/hud-full34-rehearsal.json"
 fi
