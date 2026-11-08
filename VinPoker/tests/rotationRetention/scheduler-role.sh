@@ -11,8 +11,15 @@ SQL
 PGUSER=rotation_bootstrap psql -X -v ON_ERROR_STOP=1 <<'SQL'
 ALTER ROLE postgres RENAME TO rotation_test_admin;
 CREATE ROLE postgres LOGIN NOSUPERUSER PASSWORD 'test';
-REASSIGN OWNED BY rotation_test_admin TO postgres;
+-- Do not REASSIGN OWNED on OID10: it also owns protected system objects.
+-- Transfer only this fixture's operational objects; leave the extension admin.
+ALTER TABLE public.clubs OWNER TO postgres;
+ALTER TABLE public.dealer_rotation_schedule OWNER TO postgres;
+ALTER FUNCTION public.cleanup_dealer_rotation_schedule(uuid,integer) OWNER TO postgres;
+ALTER FUNCTION public.cleanup_next_dealer_rotation_schedule(integer) OWNER TO postgres;
 GRANT USAGE ON SCHEMA cron TO postgres;
+GRANT SELECT ON cron.job,cron.job_run_details TO postgres;
+GRANT EXECUTE ON FUNCTION cron.schedule_in_database(text,text,text,text,text,boolean),cron.unschedule(bigint) TO postgres;
 SQL
 failure="$(mktemp)"
 trap 'rm -f "$failure"' EXIT
