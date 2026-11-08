@@ -1683,6 +1683,9 @@ SCHEMA_FROZEN_RECEIPT
     [[ "$audience_ready" == true ]]
   fi
 fi
+# Validate the fresh46-attendance fixture before the first browser handover.
+# Later checkout stages intentionally make those attendances ineligible.
+if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
 run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
 if [[ "$schema_mode" == current ]]; then
@@ -1939,7 +1942,6 @@ MOVE_PARITY
       (SELECT count(*) FROM public.dealer_assignments WHERE club_id='ad500000-0000-4000-8000-000000000001' AND status='assigned' AND released_at IS NULL);")"
   if [[ "$active_checkout_state" != '21|21|21|21|2' ]]; then echo "Active checkout committed-state conservation failed ($active_checkout_state)" >&2; exit 1; fi
   echo "ACTIVE_CHECKOUT_COMMIT_PROOF:21active dealers checked out once;21released replacement-needed assignments/receipts/audits;worked minutes preserved;2other assigned tables unchanged"
-  if [[ "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'REPLACEMENT_FIXTURE'
 BEGIN;
 INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
