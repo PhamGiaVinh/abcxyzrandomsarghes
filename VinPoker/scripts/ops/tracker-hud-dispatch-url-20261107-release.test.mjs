@@ -9,7 +9,7 @@ test('supplement35 preserves exact34 prefix and atomic receipt guards',()=>{
  const q=atomicQuery(pkg.entry,pkg.base);assert.ok(q.includes('<>797'));assert.ok(q.includes('LOCK TABLE supabase_migrations.schema_migrations'));assert.ok(q.includes('$ops1359_receipt$'+pkg.entry.sql+'$ops1359_receipt$'));
  for(const entry of pkg.base.entries)assert.ok(q.includes(entry.sha256));
  assert.ok(dispatchStateSql(pkg).includes("version='20261107151500'"));
- assert.equal(pkg.manifest.releaseReady,false);
+ assert.equal(pkg.manifest.releaseReady,true);
 });
 test('dispatcher supplement rejects partial/drifted/unpaused state and ambiguous resume',()=>{
  validateDispatchState(good(),pkg);

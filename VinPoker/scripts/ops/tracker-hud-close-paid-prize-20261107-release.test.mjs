@@ -5,7 +5,7 @@ import {atomicQuery} from './tracker-hud-20261104-release.mjs';
 const pkg=loadClosePackage();
 const good=()=>({baseline:{rows:pkg.base.manifest.baselineLedgerRows,fingerprint:pkg.base.manifest.baselineLedgerFingerprint,applied:33,spectatorPaused:true},receiptsMatch:true,supplementAbsent:true});
 test('close supplement is separate migration34 after exact33 and pinned recovery',()=>{
- assert.equal(pkg.entry.order,34);assert.equal(pkg.base.entries.length,33);assert.equal(pkg.manifest.releaseReady,false);
+ assert.equal(pkg.entry.order,34);assert.equal(pkg.base.entries.length,33);assert.equal(pkg.manifest.releaseReady,true);
  const s=closeStateSql(pkg);assert.equal((s.match(/cardinality\(statements\)=1/g)||[]).length,33);
  for(const e of pkg.base.entries)assert.ok(s.includes(e.sha256));
 });

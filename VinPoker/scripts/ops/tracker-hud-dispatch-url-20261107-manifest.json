@@ -5,7 +5,7 @@
   "productionApplied": false,
   "priorManifest": {
     "path": "scripts/ops/tracker-hud-close-paid-prize-20261107-manifest.json",
-    "sha256": "f2fa61c8b91f4351bfe4a93673202237a611f9208cfc41e5b5bdd0262caa7420"
+    "sha256": "e4d9141c380a97ada81806bad0723314cbb450dcb15938cde2b796cb991522a1"
   },
   "migrations": [
     {
@@ -64,6 +64,6 @@
     "sha256": "38cf1b457ceda3c3410a69f8cc13f90bd9d490402add2ddddf74e4884339c3c6",
     "preservesSourceData": true
   },
-  "releaseReady": false,
-  "scope": "Supplement35 fixes observed managed-role URL configuration failure using the existing spectator canonical-project fallback. No role setting/grant or activation. Native fixture passed; full35 restore/activation and final approval still required."
+  "releaseReady": true,
+  "scope": "Frozen supplement35 in the owner-requested production Tracker package. Exact SQL/recovery unchanged; full35 restore42390747260,real dispatch42387540239,integrated browser42455669194 and native42455668994 passed. Live recovery,object/Edge preimages,credential parity and activation guards remain mandatory."
 }

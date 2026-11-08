@@ -55,8 +55,8 @@
     "preservesSourceData": true,
     "preservesExistingCloseReports": true
   },
-  "releaseReady": false,
-  "scope": "Candidate supplemental migration34, separate from HUD-only31 manifest. Final package approval must include this added money-reporting scope. Controlled apply/activation prefix integration and independent review still pending.",
+  "releaseReady": true,
+  "scope": "Frozen supplement34 in the owner-requested production Tracker package; exact SQL and recovery unchanged. Full35 isolated restore/backfill/shadow42390747260 and integrated browser42455669194/native42455668994 passed. Live backup,preimages,admission drain and explicit execution context remain mandatory.",
   "priorManifest": {
     "path": "scripts/ops/tracker-correction-hand-lock-20261107-manifest.json",
     "sha256": "f4f0599614d980ae7b00e42ed513d147339e3d64bc656252f75a87800e8f88db"
