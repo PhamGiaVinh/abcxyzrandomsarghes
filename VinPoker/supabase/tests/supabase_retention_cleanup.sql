@@ -74,6 +74,11 @@ VALUES
   ('d1000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000001', 2, now() - interval '1 year', 'executing',  'd3000000-0000-4000-8000-000000000003', 'retention-test'),
   ('d1000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000001', 3, now(),                    'superseded', 'd3000000-0000-4000-8000-000000000003', 'retention-test');
 
+-- Drain the three oldest terminal statuses first. A bounded implementation may
+-- process only one status per invocation; a short batch does not mean no work.
+SELECT public.cleanup_dealer_rotation_schedule('d1000000-0000-4000-8000-000000000001',1)
+FROM generate_series(1,3);
+
 CREATE TEMP TABLE rotation_cleanup_result AS
 SELECT public.cleanup_dealer_rotation_schedule(
   'd1000000-0000-4000-8000-000000000001',

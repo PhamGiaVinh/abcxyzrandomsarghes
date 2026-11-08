@@ -1,0 +1,60 @@
+name: Rotation retention isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000326_bounded_rotation_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000327_schedule_rotation_retention.sql'
+      - 'VinPoker/supabase/tests/supabase_retention_cleanup.sql'
+      - 'VinPoker/tests/rotationRetention/**'
+      - '.github/workflows/rotation-retention-db.yml'
+  workflow_dispatch:
+jobs:
+  rotation-retention-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: test
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Enable real pg_cron inside disposable PostgreSQL only
+        run: |
+          docker exec -u root '${{ job.services.postgres.id }}' sh -c 'apt-get update -qq && apt-get install -y --no-install-recommends postgresql-17-cron'
+          docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
+          shared_preload_libraries='pg_cron'
+          cron.database_name='postgres'
+          cron.use_background_workers=on
+          CONF
+          docker restart '${{ job.services.postgres.id }}'
+          for i in {1..30}; do pg_isready -h localhost -U postgres && break; sleep 1; done
+          psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_cron;'
+      - name: Apply deployed predecessor and bounded candidate
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -f VinPoker/tests/rotationRetention/prepare.sql \
+            -f VinPoker/supabase/migrations/20270103000003_retention_cleanup_functions.sql \
+            -f VinPoker/supabase/migrations/20270128000326_bounded_rotation_retention.sql \
+            -f VinPoker/supabase/tests/supabase_retention_cleanup.sql
+      - name: Exercise actual cleanup on one million synthetic rows
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/rotationRetention/scale.sql
+      - name: Check concurrent cleanup and locked operational rows
+        run: bash VinPoker/tests/rotationRetention/concurrency.sh
+      - name: Assert actual nested cleanup plans avoid full history scans
+        run: |
+          docker logs '${{ job.services.postgres.id }}' > "$RUNNER_TEMP/rotation-retention-plans.log" 2>&1
+          python3 VinPoker/tests/rotationRetention/verify-plans.py "$RUNNER_TEMP/rotation-retention-plans.log"
+      - name: Verify real pg_cron executes the exact retention command
+        run: |
+          psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000327_schedule_rotation_retention.sql
+          bash VinPoker/tests/rotationRetention/scheduler.sh
