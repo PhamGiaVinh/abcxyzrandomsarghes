@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Disposable PostgreSQL only: retain a separate bootstrap admin, then reproduce
-# hosted postgres (non-superuser) rather than qualifying scheduling as superuser.
+# Disposable PostgreSQL only: bootstrap role OID10 cannot lose SUPERUSER. Rename
+# it from another admin session, then create hosted-like postgres as a new role.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 old="$root/supabase/migration-archive/historical-never-replay/20270128000327_schedule_rotation_retention.sql"
 candidate="$root/supabase/migrations/20270128000328_schedule_rotation_retention_current_role.sql"
 psql -X -v ON_ERROR_STOP=1 <<'SQL'
-CREATE ROLE rotation_test_admin LOGIN SUPERUSER PASSWORD 'test';
+CREATE ROLE rotation_bootstrap LOGIN SUPERUSER PASSWORD 'test';
+SQL
+PGUSER=rotation_bootstrap psql -X -v ON_ERROR_STOP=1 <<'SQL'
+ALTER ROLE postgres RENAME TO rotation_test_admin;
+CREATE ROLE postgres LOGIN NOSUPERUSER PASSWORD 'test';
+REASSIGN OWNED BY rotation_test_admin TO postgres;
 GRANT USAGE ON SCHEMA cron TO postgres;
-ALTER ROLE postgres NOSUPERUSER;
 SQL
 failure="$(mktemp)"
 trap 'rm -f "$failure"' EXIT
