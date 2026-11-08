@@ -214,7 +214,9 @@ jobs:
         env:
           SCHEMA_ARTIFACT_DIRECTORY: ${{ runner.temp }}/cashier-schema
           CASHIER_SCHEMA_MODE: ${{ steps.schema-mode.outputs.mode }}
-          LOCAL_OPERATIONS_REALTIME: ${{ inputs.ops_realtime && '1' || '0' }}
+          # Current PR qualification includes cross-actor UI delivery assertions.
+          # Exercise the real Realtime service for their healthy-connection SLO.
+          LOCAL_OPERATIONS_REALTIME: ${{ ((github.event_name == 'pull_request' && steps.schema-mode.outputs.mode == 'current') || inputs.ops_realtime) && '1' || '0' }}
           LOCAL_OPERATIONS_AUDIENCE: ${{ inputs.operations_audience || '0' }}
           LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ inputs.operations_candidate_probe && '1' || '0' }}
