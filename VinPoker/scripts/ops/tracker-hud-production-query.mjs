@@ -27,15 +27,23 @@ export function scalarRows(rows){
   return value===null?'':String(value);
  }).join('\n').trim();
 }
+export function managementWireSql(sql){
+ assert.ok(typeof sql==='string'&&sql.trim(),'SQL required');
+ const identity="DO $hud_transport_identity$ BEGIN IF current_user<>'postgres' OR current_database()<>'postgres' THEN RAISE EXCEPTION 'production_transport_identity_differs';END IF;END $hud_transport_identity$;\n";
+ // PostgreSQL requires transaction isolation to be set before the first query.
+ // The administrative shadow starts with this exact read-only transaction.
+ const readOnlyStart='BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;';
+ return sql.startsWith(readOnlyStart+'\n')
+  ?readOnlyStart+'\n'+identity+sql.slice(readOnlyStart.length+1)
+  :identity+sql;
+}
 export async function managementQuery(sql,env=process.env,request=fetch){
  assert.equal(validateProductionConnection(env),'management');
- assert.ok(typeof sql==='string'&&sql.trim(),'SQL required');
  // The identity check and caller SQL share one server request. Never redirect
  // credentials, accept an arbitrary endpoint, retry or print server contexts.
- const identity="DO $hud_transport_identity$ BEGIN IF current_user<>'postgres' OR current_database()<>'postgres' THEN RAISE EXCEPTION 'production_transport_identity_differs';END IF;END $hud_transport_identity$;\n";
  const response=await request(`https://api.supabase.com/v1/projects/${PROJECT}/database/query`,{
   method:'POST',redirect:'error',headers:{Authorization:'Bearer '+env.SUPABASE_ACCESS_TOKEN,'Content-Type':'application/json'},
-  body:JSON.stringify({query:identity+sql}),signal:AbortSignal.timeout(150000)
+  body:JSON.stringify({query:managementWireSql(sql)}),signal:AbortSignal.timeout(150000)
  });
  assert.ok(response.ok,'Private database command failed; no automatic retry');
  return scalarRows(await response.json());

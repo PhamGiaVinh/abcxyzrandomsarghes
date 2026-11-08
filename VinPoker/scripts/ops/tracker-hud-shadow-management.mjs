@@ -1,7 +1,7 @@
 // Bounded administrative certification only; never a public HUD request.
 import assert from 'node:assert/strict';
 import {shadowSql,createShadow,loadClassifier} from './tracker-hud-shadow.mjs';
-import {productionQuery,validateProductionConnection} from './tracker-hud-production-query.mjs';
+import {productionQuery,validateProductionConnection,managementWireSql} from './tracker-hud-production-query.mjs';
 import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -46,7 +46,8 @@ export async function certifyManagementShadow(){
  }
  const report=shadow.finish();
  report.sourceSha=sourceSha;
- report.transportSqlSha256=createHash('sha256').update(sql).digest('hex');
+ report.transportSqlSha256=createHash('sha256').update(managementWireSql(sql)).digest('hex');
+ report.canonicalManagementSqlSha256=createHash('sha256').update(sql).digest('hex');
  report.transport='bounded-full-scope-management-api';return report;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

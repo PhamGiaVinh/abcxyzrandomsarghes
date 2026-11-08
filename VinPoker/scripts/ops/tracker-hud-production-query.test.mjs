@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {validateProductionConnection,scalarRows,managementQuery} from './tracker-hud-production-query.mjs';
+import {validateProductionConnection,scalarRows,managementQuery,managementWireSql} from './tracker-hud-production-query.mjs';
 const env={TRACKER_HUD_TRANSPORT:'management',SUPABASE_PROJECT_REF:'orlesggcjamwuknxwcpk',SUPABASE_ACCESS_TOKEN:'private-test-credential'};
 test('production transport requires exact explicit project and credential',()=>{
  assert.equal(validateProductionConnection(env),'management');
@@ -13,6 +13,12 @@ test('production transport requires exact explicit project and credential',()=>{
 test('management results preserve exact scalar JSON and reject ambiguous shapes',()=>{
  assert.equal(scalarRows([{json_build_object:'{"a":true}'}]),'{"a":true}');assert.equal(scalarRows([]),'');
  for(const rows of [null,{},[null],[[]],[{a:1,b:2}],[{a:{secret:'never'}}]])assert.throws(()=>scalarRows(rows));
+});
+test('read-only snapshot keeps isolation before the identity query',()=>{
+ const sql=managementWireSql('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nSELECT 1;\nROLLBACK;');
+ assert.match(sql,/^BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nDO \$hud_transport_identity\$/);
+ assert.ok(sql.indexOf('production_transport_identity_differs')<sql.indexOf('SELECT 1;'));
+ assert.ok(sql.endsWith('SELECT 1;\nROLLBACK;'));
 });
 test('management requests bind endpoint and server identity without redirect or retry',async()=>{
  let calls=0;const request=async(url,options)=>{calls++;assert.equal(url,'https://api.supabase.com/v1/projects/orlesggcjamwuknxwcpk/database/query');assert.equal(options.redirect,'error');assert.equal(options.headers.Authorization,'Bearer private-test-credential');const q=JSON.parse(options.body).query;assert.match(q,/current_user<>'postgres'/);assert.match(q,/current_database\(\)<>'postgres'/);assert.ok(q.endsWith('SELECT 1;'));return {ok:true,json:async()=>[{value:'1'}]};};
