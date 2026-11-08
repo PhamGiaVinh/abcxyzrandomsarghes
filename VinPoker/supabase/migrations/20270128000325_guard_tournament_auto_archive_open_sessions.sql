@@ -9,15 +9,27 @@ BEGIN;
 
 DO $guard$
 BEGIN
-  IF to_regprocedure('public.auto_soft_delete_old_tournaments()') IS NULL THEN
-    RAISE EXCEPTION 'auto_soft_delete_old_tournaments missing';
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+    WHERE p.oid=to_regprocedure('public.auto_soft_delete_old_tournaments()')
+      AND md5(replace(p.prosrc,chr(13),''))='567d5bfbcd37b450e39787355404d849'
+      AND r.rolname='postgres' AND p.prosecdef
+      AND p.proconfig=ARRAY['search_path=public']::text[]
+  ) THEN
+    RAISE EXCEPTION 'auto_soft_delete_old_tournaments source drift';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM cron.job
     WHERE jobname = 'auto-soft-delete-old-tournaments'
       AND username = 'postgres' AND active
+      AND btrim(command) = 'SELECT public.auto_soft_delete_old_tournaments();'
   ) THEN
     RAISE EXCEPTION 'auto-soft-delete-old-tournaments cron drift';
+  END IF;
+  IF has_function_privilege('anon','public.auto_soft_delete_old_tournaments()','EXECUTE')
+    OR NOT has_function_privilege('authenticated','public.auto_soft_delete_old_tournaments()','EXECUTE')
+    OR NOT has_function_privilege('service_role','public.auto_soft_delete_old_tournaments()','EXECUTE') THEN
+    RAISE EXCEPTION 'auto_soft_delete_old_tournaments ACL drift';
   END IF;
 END $guard$;
 
@@ -34,7 +46,7 @@ BEGIN
     UPDATE public.tournaments t
     SET deleted_at = now(), updated_at = now()
     WHERE t.deleted_at IS NULL
-      AND t.status IN ('completed', 'finished', 'cancelled')
+      AND t.status IN ('completed', 'cancelled')
       AND t.start_time IS NOT NULL
       AND t.start_time < now() - interval '24 hours'
       AND NOT EXISTS (
