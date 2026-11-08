@@ -137,7 +137,8 @@ async function resolveBankAccount(masterAccount: string, token: string): Promise
     if (typeof pg.has_more !== "boolean") throw new Error("sepay_account_payload_invalid");
     const hasMore = pg.has_more || (typeof pg.current_page === "number" && typeof pg.last_page === "number" && pg.current_page < pg.last_page);
     if (!hasMore) {
-      if (matches.size !== 1) throw new Error("sepay_account_not_unique");
+      if (matches.size === 0) throw new Error("sepay_account_not_found");
+      if (matches.size > 1) throw new Error("sepay_account_multiple_matches");
       return [...matches][0];
     }
     if (page === MAX_PAGES) throw new Error("sepay_account_page_limit");
@@ -362,7 +363,7 @@ Deno.serve(async (req) => {
       const detail = (e as Error)?.message ?? "";
       const msg = ["no_master_account_number", "cashier_gate_read_failed", "token_read_failed",
         "no_api_token", "sepay_api_invalid_payload", "sepay_api_page_limit", "sepay_account_payload_invalid",
-        "sepay_account_not_unique", "sepay_account_page_limit", "sepay_transaction_account_mismatch",
+        "sepay_account_not_found", "sepay_account_multiple_matches", "sepay_account_page_limit", "sepay_transaction_account_mismatch",
         "sepay_pull_claim_failed", "sepay_pull_claim_invalid", "sepay_api_invalid_pagination", "sepay_pull_checkpoint_unverified",
         "sepay_api_window_changed",
         "ingest_failed", "worklist_failed", "worklist_invalid"].includes(detail)
