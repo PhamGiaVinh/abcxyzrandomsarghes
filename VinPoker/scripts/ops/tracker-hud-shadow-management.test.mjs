@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {managementShadowSql} from './tracker-hud-shadow-management.mjs';
+import {managementWireSql} from './tracker-hud-production-query.mjs';
 import {shadowSql,createShadow,loadClassifier} from './tracker-hud-shadow.mjs';
 
 test('management shadow preserves all six canonical phases in one read-only snapshot',()=>{
@@ -10,6 +11,9 @@ test('management shadow preserves all six canonical phases in one read-only snap
  assert.equal((sql.match(/shadow_phase_\d\(value\) AS/g)||[]).length,6);
  assert.doesNotMatch(sql,/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/);
  assert.ok(sql.indexOf('full_shadow_requires_direct_streaming_transport')<sql.indexOf('WITH shadow_phase_0'));
+ const wire=managementWireSql(sql);
+ assert.match(wire,/^BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\nDO \$hud_transport_identity\$/);
+ assert.equal((wire.match(/shadow_phase_\d\(value\) AS/g)||[]).length,6);
 });
 test('management envelope matches the original complete stream on real PostgreSQL', {skip:process.env.HUD_SHADOW_MANAGEMENT_NATIVE!=='1'},async()=>{
  assert.equal(process.env.GITHUB_ACTIONS,'true');const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;assert.match(database??'',/^vinpoker_hud_test_[a-z0-9_]+$/);assert.equal(process.env.PGPASSWORD,'postgres');
