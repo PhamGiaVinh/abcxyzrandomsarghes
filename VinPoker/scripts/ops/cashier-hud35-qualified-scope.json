@@ -373,7 +373,7 @@
     },
     {
       "path": "VinPoker/scripts/ops/cashier-tour-real-e2e.sh",
-      "sha256": "0fe6fe44c46ae69facc5290882ddd2a4eb765c76d09aeea81647968f1c6ce965"
+      "sha256": "bbf63a3fa1588861c6a6bfe41172c1e221b7afed58d84cdae6ffdf1847a3e2bd"
     },
     {
       "path": "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs",
@@ -441,13 +441,13 @@
     }
   ],
   "runtimeInputs": {
-    "candidateSha": "e14b4ceac1e53b3c246134d74f0dbb47b3adc695",
+    "candidateSha": "8f400a386b3ca740c14b550808638a7f81e92914",
     "kind": "REVIEWED_INPUT_PINS_RUNTIME_STILL_REQUIRED",
-    "qualification": "Input hashes only; no claim that e14 Cashier browser E2E has passed. The unchanged real current-mode E2E remains mandatory."
+    "qualification": "Reviewed input pins include test-only stage-order correction8f400a386;real current-mode E2E still required. SQL qualification remains the unchanged e14 package."
   },
   "integratedWorkflow": {
     "path": ".github/workflows/cashier-tour-real-e2e.yml",
-    "sha256": "2a1814ff3f6a86abb0166ba87db8b1a6aa7e2baa953dded20abfe56bfbbc03ff",
-    "recipe": "LF-normalized git merge-file --union of implementation/base ea3844085ecfd34b7b21ba19160317e57db4637d/candidate e14b4ceac1e53b3c246134d74f0dbb47b3adc695; remove standalone cashier-schema-mode node test because candidate combined test command already runs it. Preserve all operational inputs and checks."
+    "sha256": "67c0e03fd9f49b2b98536bb19abc0b443decdc992ce17f212b17c52156b40263",
+    "recipe": "LF git merge-file --union implementation/baseea3844085ecfd34b7b21ba19160317e57db4637d/candidatee14b4ceac1e53b3c246134d74f0dbb47b3adc695, remove standalone implementation node-test command because candidate commands already run both tests. Preserve all candidate operational checks."
   }
 }

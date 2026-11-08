@@ -122,8 +122,8 @@ writeFileSync(mergePaths[0], workflow.replace(/\r\n?/g, '\n'));
 writeFileSync(mergePaths[1], sourceGit('show', `${baseline}:${workflowPath}`).replace(/\r\n?/g, '\n'));
 writeFileSync(mergePaths[2], sourceGit('show', `${policy.scope.candidateSha}:${workflowPath}`).replace(/\r\n?/g, '\n'));
 const integratedWorkflow = git('merge-file', '-p', '--union', ...mergePaths)
-  .replace('          node --test scripts/ops/cashier-schema-mode.test.mjs\n', '');
-git('read-tree', policy.scope.candidateSha);
+  .replace('          node --test scripts/ops/cashier-schema-mode.test.mjs supabase/pending-tests/fake-sepay-server.test.mjs\n', '');
+git('read-tree', policy.runtimeInputs.candidateSha);
 for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {
   setBlob(path, readFileSync(join(sourceRoot, path)));
 }

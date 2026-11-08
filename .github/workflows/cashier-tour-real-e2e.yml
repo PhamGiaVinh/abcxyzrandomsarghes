@@ -15,6 +15,7 @@ on:
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
       - "VinPoker/supabase/pending-tests/cashier_tour_edge_fixture.sql"
       - "VinPoker/supabase/pending-tests/fake-sepay-server.mjs"
+      - "VinPoker/supabase/pending-tests/fake-sepay-server.test.mjs"
       - "VinPoker/supabase/pending-tests/static-preview-server.mjs"
       - "VinPoker/supabase/functions/tournament-register/**"
       - "VinPoker/supabase/functions/sepay-reconcile/**"
@@ -86,9 +87,9 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           # Immutable source objects for the real Git-tree mutation fixtures.
           # Keep tests reproducible after the candidate branch is removed.
-          git cat-file -e 'e14b4ceac1e53b3c246134d74f0dbb47b3adc695^{commit}' ||
-            git fetch --no-tags origin e14b4ceac1e53b3c246134d74f0dbb47b3adc695
-          node --test scripts/ops/cashier-schema-mode.test.mjs
+          git cat-file -e '8f400a386b3ca740c14b550808638a7f81e92914^{commit}' ||
+            git fetch --no-tags origin 8f400a386b3ca740c14b550808638a7f81e92914
+          node --test scripts/ops/cashier-schema-mode.test.mjs supabase/pending-tests/fake-sepay-server.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker
         env:
