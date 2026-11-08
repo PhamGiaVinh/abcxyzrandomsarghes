@@ -1,0 +1,40 @@
+// Owned history-enabled final-hand continuation: payment concurrency and close.
+import assert from 'node:assert/strict';
+import {existsSync,writeFileSync} from 'node:fs';
+import {sql,sqlAsync,jsonSql} from '../publicHud/nativeDb.mjs';
+const db=process.env.PUBLIC_HUD_LOCAL_DATABASE,tour='de780003-0000-4000-8000-000000000001',owner='de780000-0000-4000-8000-000000000001';
+assert.ok(['vinpoker_hud_test_showdown_20261107a','vinpoker_hud_test_showdown_20261107c','vinpoker_hud_test_showdown_20261107d'].includes(db));
+assert.equal(sql("SELECT current_database()||'|'||host(inet_server_addr())||'|'||inet_server_port();"),db+'|127.0.0.1|55441');
+assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-owned-showdown-20261107'+db.at(-1));
+assert.equal(sql("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname IN('pg_net','pg_cron'));"),'f');
+const output=process.env.NATIVE_PRIZE_CLOSE_REPORT;
+assert.match(output??'',/^D:\/Quy-trinh-hud-scale-evidence\/showdown-prize-close-[a-z0-9-]+\.json$/);assert.equal(existsSync(output),false);
+const q=v=>"'"+String(v).replaceAll("'","''")+"'",val=v=>typeof v==='object'?q(JSON.stringify(v))+'::jsonb':typeof v==='number'?String(v):q(v);
+const report={phase:'preflight',passed:false,productionChanged:false,limits:'Owned native PostgreSQL roles/RLS and RPCs, simulated JWT GUC. Four concurrent real DB sessions, not GoTrue/AuthHTTP, Edge, browser, Telegram or 1000 staff writers.'};
+const save=()=>writeFileSync(output,JSON.stringify(report,null,2)+'\n');
+const query=(name,args)=>{assert.match(name,/^[a-z][a-z0-9_]+$/);const params=Object.entries(args).map(([k,v])=>{assert.match(k,/^p_[a-z0-9_]+$/);return k+'=>'+val(v);}).join(',');return 'BEGIN;SET LOCAL statement_timeout=\'15s\';SET LOCAL request.jwt.claim.sub='+q(owner)+';SET LOCAL request.jwt.claims='+q(JSON.stringify({sub:owner,role:'authenticated'}))+';SET LOCAL ROLE authenticated;SELECT public.'+name+'('+params+');COMMIT;';};
+const rpc=(name,args)=>{report.lastRpc=name;save();return JSON.parse(sql(query(name,args),{captureFailure:true}));};
+const ok=r=>{assert.equal(r.ok,true,'Canonical RPC must accept');return r;};
+save();try{
+ assert.equal(sql('SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='+q(tour)+';'),'0','One-shot scenario: preserve paid history');
+ assert.equal(sql('SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='+q(tour)+';'),'0');
+ const ranks=jsonSql('SELECT jsonb_agg(finished_place ORDER BY finished_place) FROM public.tournament_entries WHERE tournament_id='+q(tour)+';');assert.deepEqual(ranks,[1,2,3]);
+ const recipients=rpc('get_tournament_payout_recipients',{p_tournament_id:tour});const places=db.endsWith('d')?2:1;assert.equal(recipients.places.length,places);const place=recipients.places[0];assert.equal(place.prizeAmount,db.endsWith('d')?11400000:18000000);assert.equal(place.isPaid,false);
+ const unpaid=rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});assert.equal(unpaid.prize_total,0);assert.equal(unpaid.reconcile_delta,18000000);
+ const payment={p_tournament_id:tour,p_finished_place:1,p_method:'cash',p_expected_token:place.confirmationToken,p_request_id:'de780013-0000-4000-8000-000000000001'};
+ report.phase='payment-concurrent';save();const responses=await Promise.all(Array.from({length:4},()=>sqlAsync(query('record_tournament_prize_payment_v2',payment)).then(JSON.parse)));for(const response of responses){ok(response);assert.deepEqual(response,responses[0]);}assert.equal(responses[0].prize_amount,place.prizeAmount);
+ const recovery=rpc('get_tournament_prize_payment_receipt_v2',{p_request_id:payment.p_request_id});assert.equal(recovery.found,true);assert.deepEqual(recovery.result,responses[0]);assert.equal(rpc('record_tournament_prize_payment_v2',{...payment,p_method:'bank'}).error,'request_payload_conflict');
+ const partial=rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});assert.equal(partial.prize_total,place.prizeAmount);assert.equal(partial.reconcile_delta,18000000-place.prizeAmount);
+ for(const other of recipients.places.slice(1)){const intent={...payment,p_finished_place:other.finishedPlace,p_expected_token:other.confirmationToken,p_request_id:'de780013-0000-4000-8000-'+String(other.finishedPlace).padStart(12,'0')};const result=ok(rpc('record_tournament_prize_payment_v2',intent));assert.equal(result.prize_amount,other.prizeAmount);assert.deepEqual(rpc('record_tournament_prize_payment_v2',intent),result);}
+ const paid=rpc('get_tournament_payout_recipients',{p_tournament_id:tour});assert.equal(paid.paidCount,places);assert.equal(paid.paidTotal,18000000);assert.equal(paid.places[0].isPaid,true);
+ assert.equal(sql('SELECT count(*) FROM public.tournament_prize_payments WHERE tournament_id='+q(tour)+" AND status='paid';"),String(places));report.payment={sessions:4,paidRows:places,amount:18000000,receiptRecovery:true,changedPayloadRejected:true};
+ const state=()=>jsonSql('SELECT jsonb_build_object(\'entry\',s.entry_id,\'table\',t.id,\'session\',x.id,\'revision\',x.revision,\'epoch\',x.control_epoch) FROM public.tournament_seats s JOIN public.tournament_tables t ON t.id=s.tournament_table_id JOIN public.table_sessions x ON x.id=t.table_session_id WHERE s.tournament_id='+q(tour)+' AND s.is_active;');
+ report.phase='free-sit';save();const before=state(),freeIntent={p_entry_id:before.entry,p_expected_revision:before.revision,p_expected_control_epoch:before.epoch,p_expected_chip_count:60000,p_request_id:'de780011-0000-4000-8000-000000000001',p_reason:'isolated final winner free sit'};const free=ok(rpc('floor_free_sit_player_v1',freeIntent));assert.equal(free.stack_preserved,60000);ok(rpc('floor_free_sit_player_v1',freeIntent));
+ report.phase='close-table';save();const revision=Number(sql('SELECT revision FROM public.table_sessions WHERE id='+q(before.session)+';'));const tableIntent={p_tournament_table_id:before.table,p_expected_revision:revision,p_request_id:'de780012-0000-4000-8000-000000000001'};assert.equal(ok(rpc('close_tournament_table_v4',tableIntent)).closed,true);ok(rpc('close_tournament_table_v4',tableIntent));
+ report.phase='close-tour';save();const close=ok(rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated full tour prize acceptance'}));assert.equal(close.outcome,'closed');const retry=ok(rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated exact close recovery'}));assert.equal(retry.outcome,'already_closed');assert.equal(retry.report_id,close.report_id);
+ const final=jsonSql('SELECT jsonb_build_object(\'reports\',(SELECT count(*) FROM public.tournament_close_report WHERE tournament_id='+q(tour)+"),'activeSeats',(SELECT count(*) FROM public.tournament_seats WHERE tournament_id="+q(tour)+" AND is_active),'openSessions',(SELECT count(*) FROM public.table_sessions x JOIN public.tournament_tables t ON t.table_session_id=x.id WHERE t.tournament_id="+q(tour)+" AND x.closed_at IS NULL),'places',(SELECT jsonb_agg(finished_place ORDER BY finished_place) FROM public.tournament_entries WHERE tournament_id="+q(tour)+"),'paid',(SELECT sum(prize_amount) FROM public.tournament_prize_payments WHERE tournament_id="+q(tour)+" AND status='paid'));");assert.deepEqual(final,{reports:1,activeSeats:0,openSessions:0,places:[1,2,3],paid:18000000});report.final=final;report.close={reconciled:close.reconciled,prizeTotal:close.prize_total,cashIn:close.cash_in_total,clubRevenue:close.club_revenue,delta:close.reconcile_delta};
+ assert.equal(report.close.prizeTotal,18000000,'Close report must include the canonical paid prize');
+ assert.equal(report.close.delta,0,'All collected buy-in funds were paid as prizes');
+ assert.equal(report.close.reconciled,true);
+ report.phase='native-prize-close-passed';report.passed=true;save();console.log(JSON.stringify(report));
+}catch(error){report.failedPhase=report.phase;report.phase='failed';report.passed=false;report.assertionCode=error.code??null;report.sqlstate=String(error.stderr??'').match(/ERROR:\s+([A-Z0-9]{5}):/)?.[1]??null;save();console.log(JSON.stringify(report));process.exitCode=1;}

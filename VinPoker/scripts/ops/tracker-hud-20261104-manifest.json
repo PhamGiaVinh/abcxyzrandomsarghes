@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "kind": "vinpoker-tracker-hud-thirty-one-migrations",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "baselineLedgerRows": 763,
+  "baselineLedgerFingerprint": "5bb5e2d79aca9b2d17be60931a2248ef",
+  "productionApplied": false,
+  "migrations": [
+    {
+      "order": 1,
+      "version": "20261104001500",
+      "name": "public_hud_incremental_projection",
+      "path": "supabase/migrations/20261104001500_public_hud_incremental_projection.sql",
+      "sha256": "23e5050d921adbe50f3739f3d6285c5defc69b4df606757f98d1a67277405771",
+      "action": "APPLY"
+    },
+    {
+      "order": 2,
+      "version": "20261104001600",
+      "name": "public_hud_worker_rpc",
+      "path": "supabase/migrations/20261104001600_public_hud_worker_rpc.sql",
+      "sha256": "96d41633e0dec3748c9f8d0a58ae591436af1965c2dc5c6d5ec8b08beb2f2398",
+      "action": "APPLY"
+    },
+    {
+      "order": 3,
+      "version": "20261104001700",
+      "name": "public_hud_metadata_backfill",
+      "path": "supabase/migrations/20261104001700_public_hud_metadata_backfill.sql",
+      "sha256": "be1a386dd7e7318da5ecbc4558c117c8aed02ba851fa356893e6adfeda7ddd18",
+      "action": "APPLY"
+    },
+    {
+      "order": 4,
+      "version": "20261104001800",
+      "name": "public_hud_read_contract",
+      "path": "supabase/migrations/20261104001800_public_hud_read_contract.sql",
+      "sha256": "2b8af10ab68bc5f88eec2b885e4861d7d03a4e1c37d1d7f5d465bbb533388bc7",
+      "action": "APPLY"
+    },
+    {
+      "order": 5,
+      "version": "20261104001900",
+      "name": "public_spectator_compact_generations",
+      "path": "supabase/migrations/20261104001900_public_spectator_compact_generations.sql",
+      "sha256": "f49a87fa2a3bad952993d6703cce3cc6951d1281e20a1d87072415e2beffb6a3",
+      "action": "APPLY"
+    },
+    {
+      "order": 6,
+      "version": "20261104002000",
+      "name": "public_hud_dispatch_health",
+      "path": "supabase/migrations/20261104002000_public_hud_dispatch_health.sql",
+      "sha256": "283d9d6dc63b541f2ef704ca4c916c4ebf97485e826dc183b464c559f8071ba2",
+      "action": "APPLY"
+    },
+    {
+      "order": 7,
+      "version": "20261104002100",
+      "name": "public_current_hand_bounded",
+      "path": "supabase/migrations/20261104002100_public_current_hand_bounded.sql",
+      "sha256": "ba66dccf215d578425a7cc52f891cf646ddc1f43d0a07946ae980b2444ec6d8d",
+      "action": "APPLY"
+    },
+    {
+      "order": 8,
+      "version": "20261104002200",
+      "name": "public_tracker_read_plan_reuse",
+      "path": "supabase/migrations/20261104002200_public_tracker_read_plan_reuse.sql",
+      "sha256": "b9f59c22a9004aa888f88c45523e8f55f204f6345ae46a9131212fb5aa137eae",
+      "action": "APPLY"
+    },
+    {
+      "order": 9,
+      "version": "20261104002300",
+      "name": "tracker_participation_read_plan_reuse",
+      "path": "supabase/migrations/20261104002300_tracker_participation_read_plan_reuse.sql",
+      "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
+      "action": "APPLY"
+    },
+    {
+      "order": 10,
+      "version": "20261104002400",
+      "name": "public_hud_history_ordered_page",
+      "path": "supabase/migrations/20261104002400_public_hud_history_ordered_page.sql",
+      "sha256": "ebdee90872c0f14baeda9bad6404ebf9093d16aeec975bd5b263f215c347170a",
+      "action": "APPLY"
+    },
+    {
+      "order": 11,
+      "version": "20261104002500",
+      "name": "public_clock_read_plan_reuse",
+      "path": "supabase/migrations/20261104002500_public_clock_read_plan_reuse.sql",
+      "sha256": "9293856d227d8675737a6930bb7d35755a3f0b4a1332aca6a9641e2892daf240",
+      "action": "APPLY"
+    },
+    {
+      "order": 12,
+      "version": "20261104002600",
+      "name": "public_hud_summary_batch",
+      "path": "supabase/migrations/20261104002600_public_hud_summary_batch.sql",
+      "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
+      "action": "APPLY"
+    },
+    {
+      "order": 13,
+      "version": "20261104002700",
+      "name": "public_current_table_prepared_reads",
+      "path": "supabase/migrations/20261104002700_public_current_table_prepared_reads.sql",
+      "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
+      "action": "APPLY"
+    },
+    {
+      "order": 14,
+      "version": "20261104002800",
+      "name": "public_hud_identity_ordered_lookup",
+      "path": "supabase/migrations/20261104002800_public_hud_identity_ordered_lookup.sql",
+      "sha256": "30b558d20c8afd0857fcd661b396c7b46a18825f5ca220738a99bebed125241a",
+      "action": "APPLY"
+    },
+    {
+      "order": 15,
+      "version": "20261104002900",
+      "name": "public_hud_identity_membership_lookup",
+      "path": "supabase/migrations/20261104002900_public_hud_identity_membership_lookup.sql",
+      "sha256": "31a1db41893bff8f01a8a0f2870754441121231ae74f4fe19c6df87fe229fe22",
+      "action": "APPLY"
+    },
+    {
+      "order": 16,
+      "version": "20261104003000",
+      "name": "public_hud_identity_membership_keyset",
+      "path": "supabase/migrations/20261104003000_public_hud_identity_membership_keyset.sql",
+      "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
+      "action": "APPLY"
+    },
+    {
+      "order": 17,
+      "version": "20261104003100",
+      "name": "public_hud_enqueue_write_coalescing",
+      "path": "supabase/migrations/20261104003100_public_hud_enqueue_write_coalescing.sql",
+      "sha256": "1c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b",
+      "action": "APPLY"
+    },
+    {
+      "order": 18,
+      "version": "20261104003200",
+      "name": "public_clock_counts_only",
+      "path": "supabase/migrations/20261104003200_public_clock_counts_only.sql",
+      "sha256": "e6152212aa102d02aee1675f129c22a058b20c528e45414371bc6bbc1bfeddc2",
+      "action": "APPLY"
+    },
+    {
+      "order": 19,
+      "version": "20261104003300",
+      "name": "public_hud_null_proof_short_circuit",
+      "path": "supabase/migrations/20261104003300_public_hud_null_proof_short_circuit.sql",
+      "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
+      "action": "APPLY"
+    },
+    {
+      "order": 20,
+      "version": "20261104003400",
+      "name": "public_hud_result_withdrawal_scope",
+      "path": "supabase/migrations/20261104003400_public_hud_result_withdrawal_scope.sql",
+      "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
+      "action": "APPLY"
+    },
+    {
+      "order": 21,
+      "version": "20261105044028",
+      "name": "public_hud_hand_withdrawal_scope",
+      "path": "supabase/migrations/20261105044028_public_hud_hand_withdrawal_scope.sql",
+      "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
+      "action": "APPLY"
+    },
+    {
+      "order": 22,
+      "version": "20261105072714",
+      "name": "public_hud_history_amounts_materialized",
+      "path": "supabase/migrations/20261105072714_public_hud_history_amounts_materialized.sql",
+      "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
+      "action": "APPLY"
+    },
+    {
+      "order": 23,
+      "version": "20261105200303",
+      "name": "public_hud_history_unverified_seed_short_circuit",
+      "path": "supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql",
+      "sha256": "6c44386dd744d4d8d8d56841f9e73cf483ff94834beed0eb8aa156813fb58d92",
+      "action": "APPLY"
+    },
+    {
+      "order": 24,
+      "version": "20261105203358",
+      "name": "spectator_compact_generation_lookup",
+      "path": "supabase/migrations/20261105203358_spectator_compact_generation_lookup.sql",
+      "sha256": "e50c41cfb36d5ec82bdfcafac9e9be68dabe9f76a5c5c47df1ec333956ecebe6",
+      "action": "APPLY"
+    },
+    {
+      "order": 25,
+      "version": "20261105213000",
+      "name": "public_hud_claim_source_batch",
+      "path": "supabase/migrations/20261105213000_public_hud_claim_source_batch.sql",
+      "sha256": "453fbcb692d45f2c7a35d45a3e13fd79fe0aa15cf64dbcba29fe083afcff139d",
+      "action": "APPLY"
+    },
+    {
+      "order": 26,
+      "version": "20261106010000",
+      "name": "public_hud_visibility_restore_reclassification",
+      "path": "supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql",
+      "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
+      "action": "APPLY"
+    },
+    {
+      "order": 27,
+      "version": "20261106025221",
+      "name": "public_hud_visibility_required_work",
+      "path": "supabase/migrations/20261106025221_public_hud_visibility_required_work.sql",
+      "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
+      "action": "APPLY"
+    },
+    {
+      "order": 28,
+      "version": "20261106105930",
+      "name": "public_clock_numeric_buy_in",
+      "path": "supabase/migrations/20261106105930_public_clock_numeric_buy_in.sql",
+      "sha256": "29c7132c6d1690114fb467d19727ba3e5e752da63dff114f67132f8b67603711",
+      "action": "APPLY"
+    },
+    {
+      "order": 29,
+      "version": "20261106111519",
+      "name": "public_hud_visibility_work_wakeup",
+      "path": "supabase/migrations/20261106111519_public_hud_visibility_work_wakeup.sql",
+      "sha256": "8aa0c2a11fd69abfc412c87481b167578bf4b659cb38e7c4611d0793670b73aa",
+      "action": "APPLY"
+    },
+    {
+      "order": 30,
+      "version": "20261106144208",
+      "name": "public_spectator_source_lease_outcome",
+      "path": "supabase/migrations/20261106144208_public_spectator_source_lease_outcome.sql",
+      "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
+      "action": "APPLY"
+    },
+    {
+      "order": 31,
+      "version": "20261106184814",
+      "name": "public_table_clock_read_bundle",
+      "path": "supabase/migrations/20261106184814_public_table_clock_read_bundle.sql",
+      "sha256": "4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057",
+      "action": "APPLY"
+    }
+  ]
+}

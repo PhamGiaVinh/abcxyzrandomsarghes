@@ -1,0 +1,230 @@
+name: Public HUD incremental PostgreSQL
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/public-hud-incremental.yml'
+      - 'VinPoker/tests/publicHud/**'
+      - 'VinPoker/scripts/ops/tracker-hud-shadow*'
+      - 'VinPoker/scripts/ops/tracker-hud-20261104-release.mjs'
+      - 'VinPoker/scripts/ops/tracker-hud-production-query*'
+      - 'VinPoker/scripts/ops/tracker-hud-reentry-*'
+      - 'VinPoker/scripts/ops/tracker-hud-activation-*'
+      - 'VinPoker/scripts/ops/tracker-hud-dispatch-url-*'
+      - 'VinPoker/scripts/ops/public-hud-dispatch-project-url-*'
+      - 'VinPoker/supabase/migrations/20261107151500_public_hud_dispatch_project_url_v1.sql'
+      - 'VinPoker/scripts/ops/tracker-correction-hand-lock-*'
+      - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
+      - 'VinPoker/supabase/pending-tests/operations_schema_freeze_fixture.sql'
+      - 'VinPoker/supabase/functions/_shared/publicHudContribution.ts'
+      - 'VinPoker/supabase/functions/public-hud-projector-v1/**'
+      - 'VinPoker/supabase/functions/public-player-hud/**'
+      - 'VinPoker/supabase/migrations/2026110400*.sql'
+      - 'VinPoker/supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql'
+      - 'VinPoker/supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql'
+      - 'VinPoker/supabase/migrations/20261105203358_spectator_compact_generation_lookup.sql'
+      - 'VinPoker/supabase/migrations/20261105213000_public_hud_claim_source_batch.sql'
+      - 'VinPoker/scripts/ops/tracker-hud-visibility-restore-reverse.sql'
+      - 'VinPoker/src/lib/preparedPublicPlayerHud*'
+      - 'VinPoker/src/lib/publicHudTransport*'
+      - 'VinPoker/src/lib/publicHudRevalidation*'
+      - 'VinPoker/src/components/tracker/PublicPlayerHud*'
+      - 'VinPoker/src/components/cashier/tournament-live/**'
+      - 'VinPoker/supabase/functions/public-spectator-projector-v2/**'
+  workflow_dispatch:
+    inputs:
+      real_stack:
+        description: 'Isolated real HTTP/WebSocket run'
+        type: choice
+        options: ['off', 'smoke', 'qualification']
+        default: 'off'
+      writer_control:
+        description: 'Diagnostic marginal marker pairs on a separately seeded native DB; not qualification'
+        type: choice
+        options: ['off', '10000', '1000000']
+        default: 'off'
+permissions:
+  contents: read
+jobs:
+  writer-control:
+    if: github.event_name == 'workflow_dispatch' && inputs.writer_control != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vinpoker_hud_test_pair_${{ github.run_id }}_${{ github.run_attempt }}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_pair_${{ github.run_id }}_${{ github.run_attempt }}
+      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.writer_control }}
+      PUBLIC_HUD_SCALE_SEED_REPORT: output/hud-writer-control/seed.json
+      PUBLIC_HUD_SCALE_READ_REPORT: output/hud-writer-control/native-read.json
+      PUBLIC_HUD_WRITER_CONTROL: isolated-native-only
+      PUBLIC_HUD_WRITER_OBSERVER_CANONICAL: pre019
+      PUBLIC_HUD_WRITER_CONTROL_REPORT: output/hud-writer-control/matched-pairs.json
+      PGPASSWORD: postgres
+      NODE_OPTIONS: --max-old-space-size=4096
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Seed one isolated physical fixture and run every paired measurement
+        run: |
+          mkdir -p output/hud-writer-control
+          node tests/publicHud/scale.seed.mjs
+          node tests/publicHud/writer-control.native.mjs
+          node tests/publicHud/writer-evidence.native.mjs
+      - name: Sanitized native diagnostic evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-writer-control-${{ github.sha }}
+          path: VinPoker/output/hud-writer-control/
+          retention-days: 7
+  real-stack:
+    if: github.event_name == 'workflow_dispatch' && inputs.real_stack != 'off'
+    uses: ./.github/workflows/public-hud-scale.yml
+    with:
+      qualification: ${{ inputs.real_stack == 'qualification' }}
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vinpoker_hud_test_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_ci
+      PGPASSWORD: postgres
+      NODE_OPTIONS: --max-old-space-size=6144
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check public HUD and both worker entrypoints
+        run: deno check supabase/functions/public-player-hud/index.ts supabase/functions/public-hud-projector-v1/index.ts supabase/functions/public-spectator-projector-v2/index.ts
+      - name: Native HTTP load transport cancellation and response integrity
+        run: node --test tests/publicHud/scale.http.native.mjs
+      - name: Native PostgreSQL trigger, lease, backfill and public read contracts
+        run: node tests/publicHud/incremental.native.mjs --initialize --enqueue-coalescing
+      - name: Visibility restore catalog, guarded reverse and batch checkpoint races
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_catalog_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_catalog_ci node tests/publicHud/visibilityRestoreCatalog.native.mjs --initialize
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_batch_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_batch_ci node tests/publicHud/visibilityRestoreBatch.native.mjs --initialize
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_work_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_work_ci node tests/publicHud/visibilityWork.native.mjs --initialize
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_visibility_work_upgrade_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_visibility_work_upgrade_ci node tests/publicHud/visibilityWorkBootstrap.native.mjs --initialize
+      - name: Read-only full source shadow and corruption detection
+        run: |
+          node --test scripts/ops/tracker-hud-shadow.test.mjs
+          node tests/publicHud/shadow.native.mjs
+          mkdir -p output
+          psql -h 127.0.0.1 -U postgres -d "$PUBLIC_HUD_LOCAL_DATABASE" -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE vinpoker_hud_test_ci IS 'vinpoker-hud-shadow-isolated-ci';"
+          PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE="$PUBLIC_HUD_LOCAL_DATABASE" TRACKER_HUD_SHADOW_REPORT=output/hud-shadow-ci.json node scripts/ops/tracker-hud-shadow.mjs
+          HUD_SHADOW_MANAGEMENT_NATIVE=1 node --test scripts/ops/tracker-hud-shadow-management.test.mjs
+      - name: Sanitized read-only shadow certificate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-shadow-${{ github.sha }}
+          path: VinPoker/output/hud-shadow-ci.json
+          retention-days: 7
+      - name: Exact twenty-six-migration release guards and atomic receipts
+        run: node tests/publicHud/release.native.mjs
+      - name: Supplemental Cashier and correction release guards
+        run: HUD_RELEASE_QUERY_NATIVE=1 node --test scripts/ops/tracker-hud-production-query.test.mjs scripts/ops/tracker-hud-reentry-release.test.mjs scripts/ops/tracker-hud-activation-20261107.test.mjs scripts/ops/tracker-hud-dispatch-url-20261107-release.test.mjs
+      - name: Dispatcher fallback, actor denials and exact rollback with SQL request sink
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_dispatch_url_20261107a
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_dispatch_url_20261107a PUBLIC_HUD_DISPATCH_URL_REPORT="$RUNNER_TEMP/dispatch-url-native.json" node tests/publicHud/dispatchUrl.native.mjs --initialize
+      - name: Sanitized dispatcher native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-dispatch-url-${{ github.sha }}
+          path: ${{ runner.temp }}/dispatch-url-native.json
+          retention-days: 7
+      - name: Batched claim/source visibility and publication fences
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_claim_source_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_claim_source_ci node tests/publicHud/claim-source.native.mjs --initialize
+      - name: Compact generations, concurrent writers and durable revocation
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_generation_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_generation_ci node tests/publicHud/spectator-generation.native.mjs --initialize
+      - name: Classifier, aggregate API and frozen HUD behavior
+        run: npx --no-install vitest run tests/publicHud src/lib/preparedPublicPlayerHud.test.ts src/lib/publicHudTransport.test.ts src/lib/publicTableTransport.test.ts src/lib/publicHudRevalidation.test.ts src/components/PublicPaidWinnings.test.tsx src/components/tracker/PublicPlayerHud.test.tsx src/components/cashier/tournament-live/LiveTrackerCountdown.test.tsx src/components/cashier/tournament-live/viewer-hub src/components/cashier/tournament-live/TournamentLiveView.replayLoading.test.tsx src/components/cashier/tournament-live/TournamentLiveView.replayAsyncBoundary.test.tsx --maxWorkers=1
+      - name: Ordered history page, source gates and exact public JSON
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_history_plans_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci PUBLIC_HUD_SCALE_HANDS=10000 node tests/publicHud/scale.seed.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/compact-generation-index.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/enqueue-writes.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/enqueue-writes.recovery.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/source-writes.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-plans.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-amounts.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/history-seed.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-membership.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-keyset.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-lookup.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/scale.amendments.native.mjs
+      - name: Read plan reuse, scope isolation and exact recovery
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_read_plans_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/read-plans.native.mjs --initialize
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-read-plan.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-counts.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/clock-numeric.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/summary-batch.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/current-table-prepared.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/table-clock-bundle.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/null-proof.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/result-withdrawal.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/hand-withdrawal.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_read_plans_ci node tests/publicHud/visibility-wake.native.mjs --already-applied
+      - name: Spectator source lease race and exact recovery
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_spectator_source_lease_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_spectator_source_lease_ci node tests/publicHud/spectator-source-lease.native.mjs --initialize
+      - name: Typecheck application
+        run: npx --no-install tsc -p tsconfig.app.json --noEmit
+      - name: Continuous audience rejects schema changes
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_schema_fence_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_schema_fence_ci node tests/publicHud/operations.schema-freeze.native.mjs --initialize
+      - name: Handover fixture satisfies current operating-day guards
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_handover_fixture_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_handover_fixture_ci node tests/publicHud/operations.handover-fixture.native.mjs --initialize

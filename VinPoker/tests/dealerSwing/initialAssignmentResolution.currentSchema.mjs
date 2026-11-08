@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {randomUUID} from 'node:crypto';import {spawn,spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');
-assert.ok(['vinpoker_ops_initial102_ci','vinpoker_ops_initial102_qualified'].includes(process.env.PGDATABASE));for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
+assert.ok(['vinpoker_ops_initial102_ci','vinpoker_ops_initial102_qualified','vinpoker_ops_initial102_20261105'].includes(process.env.PGDATABASE));for(const k of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[k]);
 function sql(input,ok=true,expectedError){const r=spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input,encoding:'utf8'});if(ok)assert.equal(r.status,0,r.stderr);else {assert.notEqual(r.status,0);if(expectedError)assert.ok(r.stderr.includes(expectedError),r.stderr);}return r.stdout.trim();}
 const dir=sql('SHOW data_directory');assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');
 const signature='public.resolve_dealer_initial_assignment_intent_v1(uuid,uuid,uuid,uuid,uuid,uuid)';

@@ -112,13 +112,15 @@ if(process.env.VINPOKER_NATIVE_VOICE_RUNTIME==='1')test('paid active-hand Voice 
  const payload=JSON.parse(sql(`BEGIN;
  CREATE TEMP TABLE native_voice_payloads(k text,v jsonb);GRANT SELECT,INSERT ON native_voice_payloads TO authenticated;
  SET LOCAL request.jwt.claim.sub='${f.actor}';SET LOCAL request.jwt.claims='{"role":"authenticated","sub":"${f.actor}"}';
- DO $$ DECLARE r jsonb;s record;d uuid:=gen_random_uuid();a uuid:=gen_random_uuid();BEGIN
+ DO $$ DECLARE r jsonb;s record;d uuid:=gen_random_uuid();a uuid:=gen_random_uuid();shift uuid:=gen_random_uuid();BEGIN
  SELECT * INTO STRICT s FROM public.table_sessions WHERE id='${table.table_session_id}';
  r:=public.floor_request_table_control_mode_v4('${table.id}',s.id,'tracker',s.revision,s.control_epoch,gen_random_uuid());
  IF r->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'native_voice_mode_failed: %',r;END IF;
  INSERT INTO public.app_settings(key,value) VALUES('tracker_voice_global_enabled','true'::jsonb) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
  INSERT INTO public.dealers(id,club_id,user_id,full_name,status) VALUES(d,'${f.club}',NULL,'Native Voice Telegram TEST','active');
- INSERT INTO public.dealer_attendance(id,dealer_id,current_state,status) VALUES(a,d,'assigned','checked_in');
+ INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time) VALUES(shift,'${f.club}','Native Voice TEST','00:00','23:59:59.999999');
+ INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,check_in_time,current_state,status)
+ VALUES(a,d,shift,(statement_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,statement_timestamp(),'assigned','checked_in');
  INSERT INTO public.dealer_assignments(dealer_id,attendance_id,table_id,table_session_id,club_id,assigned_at,status)
  VALUES(d,a,'${table.game_table_id}',s.id,'${f.club}',now(),'assigned');
  INSERT INTO public.tracker_voice_configs(club_id,tournament_id,tournament_table_id,physical_table_id,table_session_id,control_epoch,enabled,configured_mode)

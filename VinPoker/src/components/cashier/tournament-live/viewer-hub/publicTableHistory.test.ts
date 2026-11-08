@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { parsePublicTableCurrentResponse, parsePublicTableHistoryPage,parsePublicParticipationSummary } from "./publicTableHistory";
+import { parsePublicTableCurrentResponse, parsePublicTableHistoryPage,parsePublicParticipationSummary,parsePublicClockSummary } from "./publicTableHistory";
+
+describe('public clock aggregate boundary',()=>{
+  const row={tournament_id:'tour',is_running:true,remaining_seconds:720,current_level:19,small_blind:1750,big_blind:3500,big_blind_ante:450};
+  it('uses the same public projection for running, paused and unconfigured clocks',()=>{
+    expect(parsePublicClockSummary([row],'tour')).toEqual({is_running:true,remaining_seconds:720,current_level:19,small_blind:1750,big_blind:3500,ante:450});
+    expect(parsePublicClockSummary([{...row,is_running:false,remaining_seconds:0}],'tour')).toMatchObject({is_running:false,remaining_seconds:0});
+    expect(parsePublicClockSummary([{...row,is_running:false,remaining_seconds:null,current_level:null,small_blind:null,big_blind:null,big_blind_ante:null}],'tour')).toMatchObject({is_running:false,remaining_seconds:0,current_level:null});
+    expect(parsePublicClockSummary([{...row,status:'break'}],'tour')).toMatchObject({is_running:true,remaining_seconds:720});
+    expect(parsePublicClockSummary([{...row,status:'scheduled',is_running:false,remaining_seconds:null}],'tour')).toMatchObject({is_running:false,current_level:19,small_blind:1750,big_blind:3500});
+  });
+  it('rejects another scope, withdrawn/duplicate rows and malformed clock values',()=>{
+    for(const value of [null,[],[row,row],[{...row,tournament_id:'other'}],[{...row,is_running:'true'}],
+      [{...row,remaining_seconds:null}],[{...row,remaining_seconds:1.5}],[{...row,current_level:-1}],
+      [{...row,big_blind:Infinity}],[{...row,big_blind_ante:undefined}]])expect(parsePublicClockSummary(value,'tour')).toBeNull();
+  });
+});
 
 describe('public participation aggregate boundary',()=>{
   const row={tournament_id:'tour',players_remaining:3,average_stack:20000};

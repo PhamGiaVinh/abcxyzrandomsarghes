@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "kind": "tracker-hud-close-paid-prize-supplement",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "productionApplied": false,
+  "baseManifest": {
+    "path": "scripts/ops/tracker-hud-20261104-manifest.json",
+    "sha256": "13616e361af1c8552a23cccd7c109224d0e42076bbc669261b34a6a3c24955d6",
+    "migrations": 31
+  },
+  "migrations": [
+    {
+      "order": 34,
+      "version": "20261107093000",
+      "name": "tournament_close_paid_prize_source_v1",
+      "path": "supabase/migrations/20261107093000_tournament_close_paid_prize_source_v1.sql",
+      "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
+      "action": "APPLY"
+    }
+  ],
+  "postchecks": [
+    {
+      "signature": "public.close_tournament(uuid,text)",
+      "definitionMd5": "ec7a85d3aa0484eaff6e46c448426119",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "executeRoles": [
+        "postgres",
+        "authenticated",
+        "service_role"
+      ],
+      "volatile": "v",
+      "searchPath": [
+        "search_path=public"
+      ]
+    },
+    {
+      "signature": "public.get_tournament_close_readiness_v1(uuid)",
+      "definitionMd5": "c1b47fb0f52ceeba7b4b12ba597fbc9a",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "executeRoles": [
+        "postgres",
+        "authenticated"
+      ],
+      "volatile": "s",
+      "searchPath": [
+        "search_path=\"\""
+      ]
+    }
+  ],
+  "recovery": {
+    "path": "scripts/ops/tournament-close-paid-prize-20261107-rollback.sql",
+    "sha256": "038979d703f57c0a21247ac9c39a24e73c16f56b26ecd5b2b5b2d72a4c49a42b",
+    "preservesSourceData": true,
+    "preservesExistingCloseReports": true
+  },
+  "releaseReady": true,
+  "scope": "Frozen supplement34 in the owner-requested production Tracker package; exact SQL and recovery unchanged. Full35 isolated restore/backfill/shadow42390747260 and integrated browser42455669194/native42455668994 passed. Live backup,preimages,admission drain and explicit execution context remain mandatory.",
+  "priorManifest": {
+    "path": "scripts/ops/tracker-correction-hand-lock-20261107-manifest.json",
+    "sha256": "f4f0599614d980ae7b00e42ed513d147339e3d64bc656252f75a87800e8f88db"
+  },
+  "prechecks": [
+    {
+      "signature": "public.close_tournament(uuid,text)",
+      "definitionMd5": "5b007d2e26b9e735db6c88fb58034982",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "executeRoles": [
+        "postgres",
+        "authenticated",
+        "service_role"
+      ],
+      "volatile": "v",
+      "searchPath": [
+        "search_path=public"
+      ]
+    },
+    {
+      "signature": "public.get_tournament_close_readiness_v1(uuid)",
+      "definitionMd5": "65827eda8c019bfa88d585251152f640",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "executeRoles": [
+        "postgres",
+        "authenticated"
+      ],
+      "volatile": "s",
+      "searchPath": [
+        "search_path=\"\""
+      ]
+    }
+  ]
+}

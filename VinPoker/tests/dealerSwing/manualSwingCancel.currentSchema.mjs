@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawn,spawnSync} from 'node:child_process';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGPORT,'55441');assert.equal(process.env.PGUSER,'postgres');
-assert.ok(['vinpoker_ops_swing101_ci','vinpoker_ops_swing101_qualified','vinpoker_ops_swing101_final'].includes(process.env.PGDATABASE));
+assert.ok(['vinpoker_ops_swing101_ci','vinpoker_ops_swing101_qualified','vinpoker_ops_swing101_final','vinpoker_ops_swing101_20261105'].includes(process.env.PGDATABASE));
 for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
 function sql(query,ok=true){const r=spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:query,encoding:'utf8'});if(ok)assert.equal(r.status,0,r.stderr);else assert.notEqual(r.status,0);return r.stdout.trim();}
 const dir=sql('SHOW data_directory');assert.ok(dir==='/tmp/vinpoker-sol-local-20261016-0e79a729/data'||process.env.GITHUB_ACTIONS==='true'&&dir==='/var/lib/postgresql/data');

@@ -29,7 +29,7 @@ function harness(options={}){
   {serve:cb=>handler=cb,env:{get:()=> 'TEST_ONLY'}},()=>client,fetch,async req=>({ok:true,data:await req.json()}),z);
  return {calls,async run(){const response=await handler(new Request('https://test.invalid/tournament-reentry',{method:'POST',
   headers:{Authorization:'Bearer TEST_ONLY','Content-Type':'application/json'},body:JSON.stringify({tournament_id:'tour-verified',player_id:'forged-player',total_pay:1})}));
-  return {status:response.status,body:await response.json()};}};
+  return {status:response.status,body:await response.json(),serverTiming:response.headers.get('server-timing')};}};
 }
 test('uses verified player and persisted snapshot, not request price or current tournament price',async()=>{
  const h=harness(),r=await h.run();assert.equal(r.status,200);assert.equal(r.body.total_pay,103000);
@@ -86,4 +86,17 @@ for(const table of ['cashier_tour_settings','club_payment_config'])test(`${table
 test('configured SePay without a master account denies before creating re-entry',async()=>{
  const h=harness({cashierEnabled:true,paymentConfig:{master_account_number:null}}),r=await h.run();
  assert.equal(r.status,503);assert.equal(h.calls.some(c=>c.name||c.insert),false);
+});
+
+
+test('fixed timing phases preserve request-local counts and omit payment/identity values',async()=>{
+ const h=harness({cashierEnabled:true,registration:{already_registered:false}});
+ for(let n=0;n<2;n++){
+  const r=await h.run();assert.equal(r.status,200);
+  const metrics=r.serverTiming.split(', ').map(x=>x.match(/^reentry_(auth|tour|configuration|registration|notification|total);dur=([0-9]+\.[0-9]{3})(?:;desc="([1-9][0-9]*)")?$/));
+  assert.ok(metrics.every(Boolean));
+  assert.deepEqual(metrics.map(x=>[x[1],x[3]??null]),[['auth','1'],['tour','1'],['configuration','2'],['registration','1'],['notification','1'],['total',null]]);
+  assert.doesNotMatch(r.serverTiming,/verified-player|club-test|TEST|reg-stored|103000|MASTER/);
+ }
+ const denied=await harness({authStatus:401}).run();assert.equal(denied.status,401);assert.match(denied.serverTiming,/reentry_auth;/);assert.doesNotMatch(denied.serverTiming,/reentry_tour;|reentry_registration;/);
 });

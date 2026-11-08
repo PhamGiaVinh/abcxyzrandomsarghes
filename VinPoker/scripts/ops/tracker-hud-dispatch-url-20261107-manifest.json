@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "kind": "tracker-hud-dispatch-url-supplement",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "productionApplied": false,
+  "priorManifest": {
+    "path": "scripts/ops/tracker-hud-close-paid-prize-20261107-manifest.json",
+    "sha256": "e4d9141c380a97ada81806bad0723314cbb450dcb15938cde2b796cb991522a1"
+  },
+  "migrations": [
+    {
+      "order": 35,
+      "version": "20261107151500",
+      "name": "public_hud_dispatch_project_url_v1",
+      "path": "supabase/migrations/20261107151500_public_hud_dispatch_project_url_v1.sql",
+      "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
+      "action": "APPLY"
+    }
+  ],
+  "precheck": {
+    "signature": "public.dispatch_public_hud_projection_v1()",
+    "definitionMd5": "77a5d7ba1d22d52512f487f2a1e17d7e",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "volatile": "v",
+    "searchPath": [
+      "search_path=\"\""
+    ],
+    "executeRoles": [
+      "postgres",
+      "service_role"
+    ]
+  },
+  "postcheck": {
+    "signature": "public.dispatch_public_hud_projection_v1()",
+    "definitionMd5": "3806846a2f98caa07272e80775b4384a",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "volatile": "v",
+    "searchPath": [
+      "search_path=\"\""
+    ],
+    "executeRoles": [
+      "postgres",
+      "service_role"
+    ]
+  },
+  "spectatorPostcheck": {
+    "signature": "public.dispatch_public_spectator_projection_v2()",
+    "definitionMd5": "cf705ee6551a85a61724228ede8f7945",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "volatile": "v",
+    "searchPath": [
+      "search_path=\"\""
+    ],
+    "executeRoles": [
+      "postgres",
+      "service_role"
+    ]
+  },
+  "recovery": {
+    "path": "scripts/ops/public-hud-dispatch-project-url-20261107-rollback.sql",
+    "sha256": "38cf1b457ceda3c3410a69f8cc13f90bd9d490402add2ddddf74e4884339c3c6",
+    "preservesSourceData": true
+  },
+  "releaseReady": true,
+  "scope": "Frozen supplement35 in the owner-requested production Tracker package. Exact SQL/recovery unchanged; full35 restore42390747260,real dispatch42387540239,integrated browser42455669194 and native42455668994 passed. Live recovery,object/Edge preimages,credential parity and activation guards remain mandatory."
+}

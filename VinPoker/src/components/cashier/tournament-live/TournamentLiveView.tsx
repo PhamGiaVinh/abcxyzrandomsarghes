@@ -16,6 +16,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { parseTournamentParticipation, parseParticipationSummary } from "@/lib/tournamentParticipation";
 import { TdAiAssistantPanel } from "@/components/td-ai/TdAiAssistantPanel";
 import { TrackerVisualStyles } from "./PokerVisuals";
+import {LiveTrackerCountdown} from './LiveTrackerCountdown';
+import {observePublicTournament,publicReadEpoch,publicReadEpochIsCurrent,reportPublicTournamentRead} from './viewer-hub/publicTournamentRealtime';
+import {sharePublicTournamentRead} from './viewer-hub/sharedPublicTournamentRead';
 import { useTrackerRunoutSounds } from "@/lib/tracker-poker/useTrackerRunoutSounds";
 import { markPokerSoundGesture, playPokerLiveSound, stopTrackerPokerSounds, type PokerLiveSound } from "@/lib/pokerLiveSound";
 import {
@@ -71,9 +74,10 @@ import { loadLatestLiveHand } from "./loadLatestLiveHand";
 import { resolveViewerIdentity } from "./viewer-hub/viewerIdentity";
 import { resolveReplayCandidates, type ReplayTarget, type ReplayTargetState } from "./viewer-hub/replayTarget";
 import { deriveReplayHeaderMetadata } from "./viewer-hub/replayMetadata";
-import { PublicSnapshotCoordinator } from "./viewer-hub/publicSnapshotCoordinator";
-import { parsePublicTableCurrentResponse,parsePublicParticipationSummary } from "./viewer-hub/publicTableHistory";
+import { PublicSnapshotCoordinator, registerPublicTournamentRead } from "./viewer-hub/publicSnapshotCoordinator";
+import { parsePublicTableCurrentResponse,parsePublicParticipationSummary,parsePublicClockSummary } from "./viewer-hub/publicTableHistory";
 import { loadPublicCurrentTable } from "./viewer-hub/loadPublicCurrentTable";
+import {readPublicTableRequest} from '@/lib/publicTableTransport';
 import { TableHistoryPanel } from "./viewer-hub/TableHistoryPanel";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 
@@ -243,8 +247,7 @@ function TournamentLiveViewContent({
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const liveTableScope = selectedTableIdOverride ?? selectedTableId;
   const [tableNames, setTableNames] = useState<Record<string, string>>({});
-  const [localRemaining, setLocalRemaining] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
+  const [countdown,setCountdown]=useState({remaining:0,running:false,receivedAt:0});
   const [soundMuted, setSoundMuted] = useState(() => {
     try {
       return localStorage.getItem(SOUND_MUTE_KEY) === "1";
@@ -268,6 +271,9 @@ function TournamentLiveViewContent({
   const [replayMotionEpoch, setReplayMotionEpoch] = useState(0);
   const [replaySelectedPotIndex, setReplaySelectedPotIndex] = useState(0);
   const [replayTargetState, setReplayTargetState] = useState<ReplayTargetState>({ kind: "idle" });
+  const replayResolveCancelRef=useRef<(()=>void)|null>(null);
+  const replayAccessEpochRef=useRef(0);
+  const replayAccessEpoch=replayAccessEpochRef.current;
   const [replayResolveAttempt,setReplayResolveAttempt]=useState(0);
   // Snapshot of the LIVE table the moment replay was entered. The live machinery
   // keeps advancing in the background while the felt is frozen on the replay frame;
@@ -281,7 +287,9 @@ function TournamentLiveViewContent({
   const readScope = `${user?.id ?? "anonymous"}:${tournamentId}:${liveTableScope ?? ""}:${spectator}`;
   const readScopeRef = useRef(readScope);
   readScopeRef.current = readScope;
-  const liveReadRef=useRef<{scope:string;controller:AbortController;promise:Promise<void>}|null>(null);
+  const liveReadRef=useRef<{scope:string;controller:AbortController;promise:Promise<void>;full:boolean}|null>(null);
+  const publicSummaryRef=useRef<{scope:string;data:unknown}|null>(null);
+  const initialReadFailedRef=useRef(false);
   const initialLoadedRef = useRef(false);
   const pollingRef = useRef<number | null>(null);
   const zeroRefetchDoneRef = useRef(false);
@@ -325,41 +333,75 @@ function TournamentLiveViewContent({
     if (source !== "playback") setReplayMotionEpoch((current) => current + 1);
   }, []);
 
-  const loadAllData = useCallback(():Promise<void> => {
+  const loadAllData = useCallback((tableOnly=false):Promise<void> => {
     if (readScopeRef.current !== readScope) return Promise.resolve();
     const existing=liveReadRef.current;
-    if(existing?.scope===readScope&&!existing.controller.signal.aborted)return existing.promise;
+    if(existing?.scope===readScope&&!existing.controller.signal.aborted&&(existing.full||tableOnly))return existing.promise;
     existing?.controller.abort();
     const controller=new AbortController();
-    const owned={scope:readScope,controller,promise:Promise.resolve()};
+    const owned={scope:readScope,controller,promise:Promise.resolve(),full:!tableOnly};
     liveReadRef.current=owned;
     const execute=async()=>{
     const seq = ++requestSeqRef.current;
     const currentRequest = () => !controller.signal.aborted&&seq === requestSeqRef.current && readScopeRef.current === readScope;
-    const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>supabase.rpc(name as never,args as never).abortSignal(controller.signal);
+    const readRpc=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>{
+      const epoch=publicReadEpoch(supabase,tournamentId,'tables');
+      const bundled=name==='get_public_tournament_table_clock_v1';
+      return spectator&&name.startsWith('get_public_')?sharePublicTournamentRead(supabase,JSON.stringify([name,args,readScope,epoch]),controller.signal,signal=>name==='get_public_tournament_table_live_or_last_hand_v2'||bundled
+        ?readPublicTableRequest(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,String(args.p_tournament_id),String(args.p_tournament_table_id),signal,fetch,bundled?'table-clock':'table')
+        :supabase.rpc(name as never,args as never).abortSignal(signal)).then(reply=>{
+        reportPublicTournamentRead(supabase,tournamentId,!reply.error);
+        const tableData=bundled?(reply.data as {table?:unknown})?.table:reply.data;
+        if(!reply.error&&(name==='get_public_tournament_table_live_or_last_hand_v2'||bundled)&&(tableData as {access?:string})?.access==='public'&&
+          !publicReadEpochIsCurrent(supabase,tournamentId,'tables',epoch))throw Error('public_snapshot_superseded');
+        return reply;
+      })
+      :supabase.rpc(name as never,args as never).abortSignal(controller.signal);
+    };
     const usePublicCurrentHand = spectator && FEATURES.publicSpectatorRealtimeV2;
+    const cachedSummary=tableOnly&&usePublicCurrentHand&&publicSummaryRef.current?.scope===readScope?publicSummaryRef.current.data:null;
     try {
     await observeTrackerContextRead((async()=>{
+    // A full selected-table refresh reads both canonical getters in one fresh
+    // database snapshot. Never reuse a table payload to skip its access check.
+    const bundle=usePublicCurrentHand&&!cachedSummary&&liveTableScope
+      ?Promise.resolve(readRpc('get_public_tournament_table_clock_v1',{p_tournament_id:tournamentId,p_tournament_table_id:liveTableScope})).then(reply=>{
+        if(reply.error)return {table:{data:null,error:reply.error},clock:{data:null,error:reply.error}};
+        const value=reply.data as {table?:unknown;clock?:unknown}|null;
+        if(!value||typeof value.table!=='object'||value.table===null||!Array.isArray(value.clock))throw Error('invalid_public_table_clock_bundle');
+        return {table:{data:value.table,error:null},clock:{data:value.clock,error:null}};
+      }):null;
     const [currentHandRes, seatsRes, handsRes, clockRes, tournamentRes] = await Promise.all([
       usePublicCurrentHand
-        ? loadPublicCurrentTable(async(name, args) => await readRpc(name,args), tournamentId, liveTableScope, FEATURES.publicSpectatorLastHandHistory)
+        ? loadPublicCurrentTable(async(name, args) => bundle?(await bundle).table:await readRpc(name,args), tournamentId, liveTableScope, FEATURES.publicSpectatorLastHandHistory)
         : Promise.resolve({ data: null, error: null }),
       usePublicCurrentHand ? Promise.resolve({ data: null, error: null }) : readRpc(
         "get_tournament_participation_v1", { p_tournament_id: tournamentId }),
       usePublicCurrentHand ? Promise.resolve({ data: [], error: null }) : loadLatestLiveHand(tournamentId, liveTableScope).abortSignal(controller.signal),
-      readRpc("get_tournament_clock", { p_tournament_id: tournamentId }),
+      usePublicCurrentHand||cachedSummary?Promise.resolve({data:null,error:null}):readRpc("get_tournament_clock", { p_tournament_id: tournamentId }),
       usePublicCurrentHand
-        ? readRpc(
+        ? cachedSummary?Promise.resolve({data:cachedSummary,error:null}):bundle?bundle.then(value=>value.clock):readRpc(
           "get_public_tournament_clock_summary",{p_tournament_id:tournamentId})
         : readRpc("get_tournament_participation_counts_v1", { p_tournament_id: tournamentId }),
     ]);
 
     if (!currentRequest()) return;
 
-    // Two-tier error handling: clock RPC errors are non-fatal (clock may be unconfigured).
+      const currentResponse = usePublicCurrentHand ? parsePublicTableCurrentResponse(currentHandRes.data) : null;
+      if(usePublicCurrentHand&&!currentHandRes.error&&currentResponse?.access==='revoked'){
+        // A successful access denial is authoritative even after a previously
+        // loaded hand. A transport failure may retain the last frame; denial may not.
+        requestSeqRef.current++;initialReadFailedRef.current=true;initialLoadedRef.current=false;publicSummaryRef.current=null;
+        setSeats([]);setCommunityCards([]);setActions([]);setPotSize(0);setHandId(null);setHandNumber(null);
+        setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
+        setHistoryReplayTarget(null);setToActId(null);setTableDisplayState(null);setMode('live');
+        setFatalError('Bàn này không còn được công khai.');setLoading(false);return;
+      }
+    // An unrelated failed read must not mask a successful access denial above.
     const coreError = currentHandRes.error || seatsRes.error || handsRes.error || tournamentRes.error;
     if (coreError) {
       if (!initialLoadedRef.current) {
+        initialReadFailedRef.current=true;
         setFatalError(coreError.message);
         setLoading(false);
       } else {
@@ -367,10 +409,9 @@ function TournamentLiveViewContent({
       }
       return;
     }
-
-    const currentResponse = usePublicCurrentHand ? parsePublicTableCurrentResponse(currentHandRes.data) : null;
-    if (usePublicCurrentHand && (!currentResponse || currentResponse.access === "revoked")) {
+      if (usePublicCurrentHand && !currentResponse) {
       if (!initialLoadedRef.current) {
+        initialReadFailedRef.current=true;
         setFatalError("Bàn này không còn được công khai.");
         setLoading(false);
       } else {
@@ -388,11 +429,14 @@ function TournamentLiveViewContent({
     let seatRows: any[] = [];
     let participationSummary: ReturnType<typeof parseParticipationSummary> | null = null;
     const publicParticipationSummary=usePublicCurrentHand?parsePublicParticipationSummary(tournamentRes.data,tournamentId):null;
+    const publicClock=usePublicCurrentHand?parsePublicClockSummary(tournamentRes.data,tournamentId):null;
     if(usePublicCurrentHand&&!publicParticipationSummary){
-      if(!initialLoadedRef.current){setFatalError("Không xác minh được số người chơi và stack trung bình.");setLoading(false);}
+      if(!initialLoadedRef.current){initialReadFailedRef.current=true;setFatalError("Không xác minh được số người chơi và stack trung bình.");setLoading(false);}
       else setSoftErrorAt(new Date());
       return;
     }
+    if(usePublicCurrentHand&&!publicClock)throw Error('Không xác minh được đồng hồ giải công khai.');
+    if(usePublicCurrentHand&&publicParticipationSummary)publicSummaryRef.current={scope:readScope,data:tournamentRes.data};
     if (!usePublicCurrentHand) {
       try {
         const projection = parseTournamentParticipation(seatsRes.data, tournamentId);
@@ -400,6 +444,7 @@ function TournamentLiveViewContent({
         seatRows = projection.seats.filter((seat) => seat.participation_status === "seated");
       } catch (error) {
         if (!initialLoadedRef.current) {
+          initialReadFailedRef.current=true;
           setFatalError(error instanceof Error ? error.message : "invalid_participation_response");
           setLoading(false);
         } else setSoftErrorAt(new Date());
@@ -811,7 +856,11 @@ function TournamentLiveViewContent({
     setTableDisplayState(currentState);
     setTableSessionId(currentResponse?.tableSessionId ?? null);
 
-    if (clockRes.data && !clockRes.error) {
+    if(usePublicCurrentHand&&!cachedSummary&&publicClock){
+      setClockData(publicClock);
+      setCountdown({remaining:publicClock.remaining_seconds,running:publicClock.is_running,receivedAt:Date.now()});
+      if(publicClock.remaining_seconds>0)zeroRefetchDoneRef.current=false;
+    } else if (clockRes.data && !clockRes.error) {
       const c = clockRes.data as any;
       setClockData({
         is_running: c.is_running || false,
@@ -821,8 +870,7 @@ function TournamentLiveViewContent({
         big_blind: c.current_level?.big_blind || 0,
         ante: c.current_level?.ante || 0,
       });
-      setLocalRemaining(c.remaining_seconds || 0);
-      setIsRunning(c.is_running || false);
+      setCountdown({remaining:c.remaining_seconds||0,running:c.is_running||false,receivedAt:Date.now()});
       if ((c.remaining_seconds || 0) > 0) zeroRefetchDoneRef.current = false;
     }
 
@@ -835,14 +883,17 @@ function TournamentLiveViewContent({
     }
 
     initialLoadedRef.current = true;
-    setFatalError(null);
+    initialReadFailedRef.current=false;setFatalError(null);
     setSoftErrorAt(null);
     setLastUpdatedAt(new Date());
     setLoading(false);
     })());
     } catch (failure: unknown) {
       if (!currentRequest()) return;
+      if(failure instanceof Error&&failure.message==='public_snapshot_superseded')return;
+      if(usePublicCurrentHand)reportPublicTournamentRead(supabase,tournamentId,false);
       if (!initialLoadedRef.current) {
+        initialReadFailedRef.current=true;
         setFatalError(failure instanceof Error ? failure.message==='tracker_context_read_timeout'?'Chưa tải được dữ liệu bàn trong thời gian chờ. Hãy thử lại.':failure.message : "Không tải được dữ liệu live tracker.");
         setLoading(false);
       } else {
@@ -868,17 +919,13 @@ function TournamentLiveViewContent({
     }, POLL_INTERVAL_MS);
   }, [loadAllData]);
 
-  // Live Action Engine MVP (flag-gated, frontend-only): while a hand is in
-  // progress, fast-poll so spectators see each recorded action in near-real-time
-  // — `record_action` only writes `hand_actions`, which fires no
-  // `tournament_hands` realtime event, so the default path refreshes only when
-  // the hand is finalised. Reuses loadAllData (requestSeqRef guard intact).
-  // Never runs in replay mode or when the flag is off → zero behaviour change.
+  // Legacy spectator fallback only. Broadcast V2 covers hand/action/player
+  // source changes and owns healthy/offline verification in the shared hub.
   useEffect(() => {
     // VIEWER-ONLY: `spectator` gate keeps the operator's polling cadence unchanged even
     // with the flag ON. Visibility-aware: a backgrounded tab skips the tick, so it stops
     // hitting the DB every 2.5s while not being watched.
-    if (!FEATURES.liveActionEngine || !spectator) return;
+    if (!FEATURES.liveActionEngine || !spectator || FEATURES.publicSpectatorRealtimeV2) return;
     if (!tournamentId || mode !== "live" || !handInProgress) return;
     const id = window.setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
@@ -895,6 +942,7 @@ function TournamentLiveViewContent({
     if (!tournamentId) return;
     requestSeqRef.current += 1;
     initialLoadedRef.current = false;
+    initialReadFailedRef.current=false;
     zeroRefetchDoneRef.current = false;
     setSeats([]);
     setHandId(null);
@@ -944,6 +992,29 @@ function TournamentLiveViewContent({
 
     setRealtimeStatus("connecting");
     const publicV2 = spectator && FEATURES.publicSpectatorRealtimeV2;
+    if(publicV2){
+      let full=false;
+      const coordinator=registerPublicTournamentRead(supabase,tournamentId,async()=>{if(initialReadFailedRef.current)return;const requestedFull=full;full=false;await loadAllData(!requestedFull);});
+      const observation=observePublicTournament(supabase,tournamentId,event=>{
+        if(event.reason==='status'){setRealtimeStatus(event.online?'online':'offline');return;}
+        if(event.invalidatePending){requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;}
+        if(event.reason==='changed'&&event.components.some(c=>c==='visibility'||c==='hand_visibility')){
+          replayAccessEpochRef.current++;
+          replayResolveCancelRef.current?.();
+          setReplayTargetState(previous=>previous.kind==='idle'?previous:{kind:'query_error'});
+          requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;
+          if(event.components.includes('visibility')){initialLoadedRef.current=false;publicSummaryRef.current=null;}
+          initialReadFailedRef.current=false;
+          setSeats([]);setCommunityCards([]);setActions([]);setPotSize(0);setHandId(null);setHandNumber(null);
+          setLiveCompletedHand(null);setLiveBaseline(null);setReplayHand(null);setReplayHandId(null);setReplayFrameState(null);
+          setHistoryReplayTarget(null);setMode('live');setLoading(true);setFatalError(null);
+        }
+        const needsFull=event.components.some(c=>['visibility','clock','ranking'].includes(c));
+        if(!needsFull&&!event.components.includes('tables'))return;
+        full=full||needsFull;coordinator.request();
+      });
+      return()=>{coordinator.stop();observation.unsubscribe();stopPolling();};
+    }
     const publicCoordinator = publicV2 ? new PublicSnapshotCoordinator(loadAllData, 1_000) : null;
     const channel = supabase.channel(publicV2 ? `public:tournament-viewer-v2:${tournamentId}` : `live-view:${tournamentId}`, publicV2 ? { config: { private: false } } : undefined);
     if (publicV2) {
@@ -1015,21 +1086,13 @@ function TournamentLiveViewContent({
     };
   }, [tournamentId, handId, mode, spectator, loadAllData]);
 
-  useEffect(() => {
-    if (!isRunning || localRemaining <= 0) return;
-    const interval = setInterval(() => {
-      setLocalRemaining((prev) => (prev <= 1 ? 0 : prev - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isRunning, localRemaining > 0]);
-
   // Debounced refetch when the level clock hits 0 — once per zero crossing.
-  useEffect(() => {
-    if (isRunning && localRemaining <= 0 && initialLoadedRef.current && !zeroRefetchDoneRef.current) {
+  const onClockZero=useCallback(() => {
+    if (initialLoadedRef.current && !zeroRefetchDoneRef.current) {
       zeroRefetchDoneRef.current = true;
       loadAllData();
     }
-  }, [isRunning, localRemaining, loadAllData]);
+  }, [loadAllData]);
 
   // Action sounds + (liveTableFx) chip-push. Sounds fire on count increments after
   // first load (unchanged behavior); the chip-push is VISUAL so it is NOT gated by
@@ -1553,6 +1616,8 @@ function TournamentLiveViewContent({
     setReplayMotionEpoch((epoch) => epoch + 1);
     setReplayTargetState({ kind: "loading" });
     const controller=new AbortController();
+    const cancel=()=>{cancelled=true;controller.abort();};
+    replayResolveCancelRef.current=cancel;
     const publicRead=(name:string,args:Record<string,unknown>):PromiseLike<PostgrestSingleResponse<unknown>>=>supabase.rpc(name as never,args as never).abortSignal(controller.signal);
     const resolve = async () => {
       const publicReplay = spectator && FEATURES.publicSpectatorRealtimeV2;
@@ -1639,7 +1704,7 @@ function TournamentLiveViewContent({
     void observeTrackerContextRead(resolve()).catch(()=>{
       if(!cancelled){cancelled=true;setReplayTargetState({kind:"query_error"});}
     }).finally(()=>controller.abort());
-    return () => { cancelled = true;controller.abort(); };
+    return () => { cancel();if(replayResolveCancelRef.current===cancel)replayResolveCancelRef.current=null; };
   }, [requestedReplayTarget, spectator, tournamentId,replayResolveAttempt]);
 
   useEffect(() => {
@@ -1751,6 +1816,8 @@ function TournamentLiveViewContent({
           size="sm"
           variant="outline"
           onClick={() => {
+            initialReadFailedRef.current=false;
+            liveReadRef.current?.controller.abort();liveReadRef.current=null;requestSeqRef.current++;
             setFatalError(null);
             setLoading(true);
             loadAllData();
@@ -1947,7 +2014,7 @@ function TournamentLiveViewContent({
           {!isReplay && tableDisplayState === "live" && clockData && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 text-amber-400 rounded-md text-sm font-mono font-bold border border-amber-500/20">
               <Clock className="w-4 h-4" />
-              {formatTime(Math.max(0, localRemaining))}
+              <LiveTrackerCountdown {...countdown} onZero={onClockZero}/>
             </span>
           )}
           {!isReplay && tableDisplayState === "live" && clockData?.current_level && (
@@ -2089,6 +2156,7 @@ function TournamentLiveViewContent({
             onSelectReplayTarget={onReplayTargetChange}
             onRetryReplayTarget={()=>setReplayResolveAttempt(attempt=>attempt+1)}
             onLoadStart={(id) => {
+              if(replayAccessEpoch!==replayAccessEpochRef.current)return;
               setReplayHandId(id);
               setReplayHand(null);
               setReplayFrameState(null);
@@ -2099,6 +2167,7 @@ function TournamentLiveViewContent({
               setReplayMotionEpoch((current) => current + 1);
             }}
             onSelectHand={(id, h) => {
+              if(replayAccessEpoch!==replayAccessEpochRef.current)return;
               if (requestedReplayTarget && (replayTargetState.kind !== "resolved" || replayTargetState.handId !== id)) return;
               setReplayHandId(id);
               setReplayHand(h);

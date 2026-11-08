@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "tracker-hud-cashier-reentry-supplement",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "productionApplied": false,
+  "baseManifest": {
+    "path": "scripts/ops/tracker-hud-20261104-manifest.json",
+    "sha256": "13616e361af1c8552a23cccd7c109224d0e42076bbc669261b34a6a3c24955d6",
+    "migrations": 31
+  },
+  "migrations": [
+    {
+      "order": 32,
+      "version": "20261107013500",
+      "name": "cashier_app_reentry_transport_v1",
+      "path": "supabase/migrations/20261107013500_cashier_app_reentry_transport_v1.sql",
+      "sha256": "092302c8cbdc82ee93a969470aa027fc86cd886a27b65be2980a09c1fb043373",
+      "action": "APPLY"
+    }
+  ],
+  "postcheck": {
+    "signature": "public.cashier_app_reentry_transport_v1(uuid,uuid)",
+    "bodyMd5": "c4c92942cd29a910afaa266c0ea29ce6",
+    "owner": "postgres",
+    "securityInvoker": true,
+    "volatile": "v",
+    "searchPath": [
+      "search_path=\"\""
+    ],
+    "executeRoles": [
+      "postgres",
+      "service_role"
+    ]
+  },
+  "recovery": {
+    "path": "scripts/ops/cashier-app-reentry-20261107-rollback.sql",
+    "sha256": "79165b6e64a7a94bb282b9a04dbf25c2bb1d08d0d431c73450d57d05d79cd6b9",
+    "edgeFirst": "tournament-reentry",
+    "preservesSourceData": true
+  },
+  "scope": "Additional migration32 after exact base31 receipts;not part of the isolated HUD-only manifest. One final approval must include both manifests and five Edges."
+}

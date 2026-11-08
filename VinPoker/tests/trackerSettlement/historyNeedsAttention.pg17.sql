@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$ BEGIN
- IF current_database() NOT IN ('vinpoker_ops_finish97_ci','vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback') OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
+ IF current_database() NOT IN ('vinpoker_ops_finish97_ci','vinpoker_ops_history98_ci','vinpoker_ops_history98_rollback','vinpoker_ops_history98_runtime_20261105') OR inet_server_addr() IS DISTINCT FROM '127.0.0.1'::inet
  OR current_setting('server_version_num')::int NOT BETWEEN 170000 AND 179999 THEN
  RAISE EXCEPTION 'isolated_history_attention_fixture_required'; END IF;
 END $$;

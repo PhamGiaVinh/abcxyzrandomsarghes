@@ -1,0 +1,31 @@
+-- Preserve the exact membership predicate while looking up candidate hands by
+-- primary key. OFFSET 0 prevents flattening into a merge join that scans earlier
+-- history before a sparse player's first matching hand. No new source index.
+-- Rollback: tests/publicHud/identity-membership.forward-rollback.sql.
+BEGIN;
+DO $$ BEGIN
+ IF md5(replace(pg_get_functiondef('tracker_analytics_v1.public_context(uuid,uuid)'::regprocedure),chr(13),''))<>'7c9682eba221897c6f956899ce72fdc1' THEN RAISE EXCEPTION 'HUD identity membership preimage differs';END IF;
+END $$;
+CREATE OR REPLACE FUNCTION tracker_analytics_v1.public_context(p_tournament uuid,p_player uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SET search_path='' AS $$
+DECLARE ranking jsonb; identity jsonb;
+BEGIN
+  -- Same public tournament gate as the existing viewer snapshot. An operator
+  -- bearer never widens this projection's anonymous/public scope.
+  IF NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id=p_tournament AND deleted_at IS NULL) THEN RETURN NULL; END IF;
+  SELECT p.payload INTO ranking FROM spectator_projection_v2.publications p
+    WHERE p.tournament_id=p_tournament AND p.component='ranking';
+  SELECT r INTO identity FROM jsonb_array_elements(coalesce(ranking->'items','[]'::jsonb)) r WHERE r->>'playerId'=p_player::text LIMIT 1;
+  IF identity IS NULL THEN
+    IF NOT EXISTS(SELECT 1 FROM public.hand_players hp CROSS JOIN LATERAL (
+      SELECT 1 FROM public.tournament_hands h WHERE h.id=hp.hand_id AND h.tournament_id=hp.tournament_id OFFSET 0
+    ) matched
+      WHERE hp.player_id=p_player AND hp.tournament_id=p_tournament) THEN RETURN NULL; END IF;
+    SELECT jsonb_build_object('name',hp.player_name,'avatarUrl',hp.avatar_url) INTO identity
+      FROM tracker_analytics_v1.hand_contributions c JOIN public.hand_players hp ON hp.hand_id=c.hand_id AND hp.player_id=c.player_id
+      WHERE c.player_id=p_player AND c.tournament_id=p_tournament
+      ORDER BY c.played_at DESC NULLS LAST,c.hand_id DESC LIMIT 1;
+  END IF;
+  RETURN jsonb_build_object('name',coalesce(identity->>'name','Người chơi'),'avatarUrl',identity->'avatarUrl');
+END $$;
+COMMIT;

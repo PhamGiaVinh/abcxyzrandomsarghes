@@ -1,0 +1,124 @@
+name: Public HUD isolated real HTTP and WebSocket load
+on:
+  workflow_call:
+    inputs:
+      qualification:
+        type: boolean
+        default: false
+      history_scale:
+        type: string
+        default: '100'
+      edge_parallelism:
+        type: string
+        default: '16'
+      edge_policy:
+        type: string
+        default: 'per_worker'
+      rest_pool:
+        type: string
+        default: '10'
+  pull_request:
+    paths:
+      - '.github/workflows/public-hud-scale.yml'
+      - 'VinPoker/tests/publicHud/scale*'
+      - 'VinPoker/scripts/ops/isolated-postgrest-pool.mjs'
+      - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
+  workflow_dispatch:
+    inputs:
+      writer_method:
+        description: 'Prospective completed-hand marking benchmark; old runs unchanged'
+        type: choice
+        options: ['startup', 'canonical-hand-observers-paired-v1']
+        default: 'startup'
+      qualification:
+        description: '1000 viewers/1M hands: two 30min felt scenarios plus 30s grid'
+        type: boolean
+        default: false
+      connection_probe:
+        description: 'Diagnostic 1000 viewers/small history: three 30-second scenarios'
+        type: boolean
+        default: false
+      diagnostic_seconds:
+        description: 'Nonqualifying felt duration; full qualification always remains1800seconds'
+        type: choice
+        options: ['30', '300']
+        default: '30'
+      clock_ui_probe:
+        description: 'One real anonymous Chromium clock/source/broadcast probe before audience load'
+        type: boolean
+        default: false
+      history_scale:
+        description: 'Nonqualifying history growth comparison; qualification always uses 1M'
+        type: choice
+        options: ['100', '10000', '100000', '1000000']
+        default: '100'
+      hud_transport:
+        description: 'Product RPC reader, or short nonqualifying comparison transports'
+        type: choice
+        options: ['product_rpc', 'edge', 'direct_rpc']
+        default: 'product_rpc'
+      edge_parallelism:
+        description: 'Isolated per-function worker pool; recorded, not a hosted quota'
+        type: choice
+        options: ['16', '8', '64']
+        default: '16'
+      edge_policy:
+        description: 'Official isolated runtime supervision; unchanged CPU/wall caps'
+        type: choice
+        options: ['per_worker', 'per_request']
+        default: 'per_worker'
+      rest_pool:
+        description: 'Isolated PostgREST pool comparison; no hosted setting change'
+        type: choice
+        options: ['10', '20']
+        default: '10'
+permissions:
+  contents: read
+concurrency:
+  group: public-hud-scale-${{ github.ref }}-${{ inputs.qualification && 'qualification' || inputs.connection_probe && 'connection-probe' || inputs.history_scale || '100' }}
+  cancel-in-progress: false
+jobs:
+  real-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    defaults:
+      run:
+        working-directory: VinPoker
+    env:
+      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
+      PUBLIC_HUD_WRITER_QUALIFICATION_METHOD: ${{ inputs.writer_method || 'startup' }}
+      PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
+      PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || inputs.diagnostic_seconds || '30' }}
+      PUBLIC_HUD_SCALE_TRANSPORT: ${{ inputs.hud_transport || 'product_rpc' }}
+      PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
+      PUBLIC_HUD_SCALE_EDGE_POLICY: ${{ inputs.edge_policy || 'per_worker' }}
+      PUBLIC_HUD_SCALE_REST_POOL: ${{ inputs.rest_pool || '10' }}
+      PUBLIC_HUD_CLOCK_UI_PROBE: ${{ inputs.clock_ui_probe && '1' || '0' }}
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Reject diagnostic transport for full qualification
+        if: inputs.hud_transport != '' && inputs.hud_transport != 'product_rpc' && inputs.qualification
+        run: exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.101.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test tests/publicHud/scale.write.diagnostic.test.mjs
+      - name: Install real clock probe browser
+        if: inputs.clock_ui_probe
+        run: npx playwright install --with-deps chromium
+      - name: Real isolated PostgreSQL, cron, Edge HTTP and Realtime WebSockets
+        run: bash tests/publicHud/scale.stack.sh
+      - name: Sanitized qualification evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-real-stack-${{ github.sha }}
+          path: VinPoker/output/hud-scale/
+          retention-days: 7
