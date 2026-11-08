@@ -9816,6 +9816,18 @@
       "domain": "tournament-auto-archive-guard-20261108"
     },
     {
+      "version": "20270128000326",
+      "filename": "20270128000326_bounded_rotation_retention.sql",
+      "sha256": "9f39ad7f1bbfa7d5cccb91a9ef962cd082dac7863fb8cdc99ab5e7aa8aa8a7ac",
+      "domain": "rotation-retention-20261108"
+    },
+    {
+      "version": "20270128000327",
+      "filename": "20270128000327_schedule_rotation_retention.sql",
+      "sha256": "5dc13254640dedb3d356eed91c25ec44296ab0d1fcb6885fb2e9000da8ed7924",
+      "domain": "rotation-retention-20261108"
+    },
+    {
       "version": "20261102092616",
       "filename": "20261102092616_staff_inactive_ft_earned_days_v1.sql",
       "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
