@@ -23,9 +23,10 @@ END $test$;
 
 UPDATE public.table_sessions SET closed_at=now() WHERE id=2;
 DO $test$
+DECLARE archived integer;
 BEGIN
-  IF public.auto_soft_delete_old_tournaments() <> 1
-    OR (SELECT deleted_at FROM public.tournaments WHERE id=4) IS NULL THEN
+  archived := public.auto_soft_delete_old_tournaments();
+  IF archived <> 1 OR (SELECT deleted_at FROM public.tournaments WHERE id=4) IS NULL THEN
     RAISE EXCEPTION 'terminal tour not archived after last table closes';
   END IF;
 END $test$;
