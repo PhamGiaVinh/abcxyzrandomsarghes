@@ -1,0 +1,36 @@
+name: Tournament auto-archive isolated DB
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000325_guard_tournament_auto_archive_open_sessions.sql'
+      - 'VinPoker/tests/tournamentArchive/**'
+      - '.github/workflows/tournament-auto-archive-db.yml'
+  workflow_dispatch:
+jobs:
+  archive-db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: test
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migration and assert archive policy in disposable PostgreSQL
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -f VinPoker/tests/tournamentArchive/prepare.sql \
+            -f VinPoker/supabase/migrations/20270128000325_guard_tournament_auto_archive_open_sessions.sql \
+            -f VinPoker/tests/tournamentArchive/assert.sql

@@ -9810,6 +9810,12 @@
       "domain": "all-fixes-backend-20261103"
     },
     {
+      "version": "20270128000325",
+      "filename": "20270128000325_guard_tournament_auto_archive_open_sessions.sql",
+      "sha256": "38dadeaa7cc15e5026110bfbc8e1f15ce8e8743f27c9d14a0d375b3ed77eddfe",
+      "domain": "tournament-auto-archive-guard-20261108"
+    },
+    {
       "version": "20261102092616",
       "filename": "20261102092616_staff_inactive_ft_earned_days_v1.sql",
       "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
