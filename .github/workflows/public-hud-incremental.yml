@@ -6,6 +6,7 @@ on:
       - 'VinPoker/tests/publicHud/**'
       - 'VinPoker/scripts/ops/tracker-hud-shadow*'
       - 'VinPoker/scripts/ops/tracker-hud-20261104-release.mjs'
+      - 'VinPoker/scripts/ops/tracker-hud-production-query*'
       - 'VinPoker/scripts/ops/tracker-hud-reentry-*'
       - 'VinPoker/scripts/ops/tracker-hud-activation-*'
       - 'VinPoker/scripts/ops/tracker-hud-dispatch-url-*'
@@ -161,7 +162,7 @@ jobs:
       - name: Exact twenty-six-migration release guards and atomic receipts
         run: node tests/publicHud/release.native.mjs
       - name: Supplemental Cashier and correction release guards
-        run: node --test scripts/ops/tracker-hud-reentry-release.test.mjs scripts/ops/tracker-hud-activation-20261107.test.mjs scripts/ops/tracker-hud-dispatch-url-20261107-release.test.mjs
+        run: HUD_RELEASE_QUERY_NATIVE=1 node --test scripts/ops/tracker-hud-production-query.test.mjs scripts/ops/tracker-hud-reentry-release.test.mjs scripts/ops/tracker-hud-activation-20261107.test.mjs scripts/ops/tracker-hud-dispatch-url-20261107-release.test.mjs
       - name: Dispatcher fallback, actor denials and exact rollback with SQL request sink
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_dispatch_url_20261107a

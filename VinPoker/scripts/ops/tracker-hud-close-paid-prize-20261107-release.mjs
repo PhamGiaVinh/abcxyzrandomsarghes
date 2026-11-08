@@ -1,7 +1,8 @@
+import {productionQuery as query,validateProductionConnection} from './tracker-hud-production-query.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {execFileSync,spawnSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {canonicalSqlText} from './ops-1359-release-gate.mjs';
@@ -38,10 +39,10 @@ export function validateCloseState(row,pkg){
  validateState({...row.baseline,applied:0},pkg.base);
  assert.equal(Number(row.baseline.applied),33,'All33 exact prior receipts required');assert.equal(row.receiptsMatch,true);assert.equal(row.supplementAbsent,true,'No automatic resume');
 }
-function query(sql){const p=spawnSync(process.env.PSQL_BIN||'psql',['-X','-qAt','-w','-v','ON_ERROR_STOP=1','-f','-'],{input:sql,encoding:'utf8',maxBuffer:1024*1024});if(p.error||p.status!==0)throw Error('Private database command failed; no automatic retry');return p.stdout.trim();}
+
 function run(){
  const mode=process.argv[2];assert.ok(['plan','apply'].includes(mode),'Use plan or apply');const pkg=loadClosePackage();
- assert.equal(process.env.PGHOST,'db.'+PROJECT+'.supabase.co');assert.equal(process.env.PGPORT,'5432');assert.equal(process.env.PGUSER,'postgres');assert.equal(process.env.PGDATABASE,'postgres');assert.equal(process.env.PGSSLMODE,'require');assert.ok(process.env.PGPASSWORD,'Private connection required');
+ validateProductionConnection();
  validateCloseState(JSON.parse(query(closeStateSql(pkg))),pkg);validateCloseObjects(JSON.parse(query(closeObjectsSql())),pkg.manifest.prechecks);
  if(mode==='plan'){console.log(JSON.stringify({project:PROJECT,manifestHash:CLOSE_MANIFEST_HASH,priorReceipts:33,migrations:1,productionChanged:false}));return;}
  assert.equal(pkg.manifest.releaseReady,true,'Final qualification and package freeze remain pending');

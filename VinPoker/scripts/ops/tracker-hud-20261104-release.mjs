@@ -1,6 +1,7 @@
+import {productionQuery as query,validateProductionConnection} from './tracker-hud-production-query.mjs';
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
-import {execFileSync,spawnSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {canonicalSqlText,buildAtomicMigrationQuery} from './ops-1359-release-gate.mjs';
@@ -124,17 +125,13 @@ export function validateCorrectionMaintenance(r,sourceSha,now=Date.now()){
  if(r.projectRef!==PROJECT||r.sourceSha!==sourceSha||r.acceptNewCorrectionCalls!==false||r.correctionPauseVerified!==true||r.inFlightCalls!==0||!/^[a-f0-9]{64}$/.test(r.pauseEvidenceSha256??'')||!r.resumeProcedure)throw Error('Verified paused and drained correction maintenance receipt required');
  const age=now-Date.parse(r.observedAt);if(!Number.isFinite(age)||age<0||age>300000)throw Error('Correction maintenance observation older than five minutes');
 }
-function query(sql){
- const p=spawnSync(process.env.PSQL_BIN||'psql',['-X','-qAt','-w','-v','ON_ERROR_STOP=1','-f','-'],{input:sql,encoding:'utf8',maxBuffer:1024*1024});
- if(p.error||p.status!==0)throw Error('Database command failed; inspect stderr privately, no automatic retry');
- return p.stdout.trim();
-}
+
 function run(){
  const mode=process.argv[2];if(!['plan','apply','plan-reentry','apply-reentry','plan-correction','apply-correction'].includes(mode))throw Error('Usage: tracker-hud-20261104-release.mjs plan|apply|plan-reentry|apply-reentry|plan-correction|apply-correction');
  const correction=mode.endsWith('-correction');
  const supplement=correction?loadCorrectionPackage():mode.endsWith('-reentry')?loadReentryPackage():null;
  const pkg=supplement?.base??loadPackage();
- if(process.env.PGHOST!==`db.${PROJECT}.supabase.co`||process.env.PGPORT!=='5432'||process.env.PGUSER!=='postgres'||process.env.PGDATABASE!=='postgres'||process.env.PGSSLMODE!=='require'||!process.env.PGPASSWORD)throw Error('Exact private production connection required');
+ validateProductionConnection();
  if(correction)validateCorrectionState(JSON.parse(query(correctionStateSql(pkg))),pkg,supplement.manifest);
  else if(supplement)validateReentryState(JSON.parse(query(reentryStateSql(pkg))),pkg);
  else validateState(JSON.parse(query(stateSql())),pkg);
