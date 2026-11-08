@@ -441,13 +441,13 @@
     }
   ],
   "runtimeInputs": {
-    "candidateSha": "705c91c000a23340fc7a76d9aadfcc77e52840cc",
+    "candidateSha": "26d829241c1da649eae4ec37aaff398ab00a5173",
     "kind": "REVIEWED_INPUT_PINS_RUNTIME_STILL_REQUIRED",
-    "qualification": "Reviewed test-only input pins: fresh dealer preflight before mutations and real Realtime/full matching candidate backend for current PR delivery assertions. Actual E2E required;35SQL receipt remains e14 unchanged."
+    "qualification": "Reviewed test-only input pins: fresh dealer preflight before mutations, real Realtime/full matching candidate backend and10viewer admission/schema-freeze smoke profile. Actual E2E required; not1000capacity evidence. SQL receipt remains e14 unchanged."
   },
   "integratedWorkflow": {
     "path": ".github/workflows/cashier-tour-real-e2e.yml",
-    "sha256": "3a100920b3cd3dfa9a4d4e3b56337a4035c1de12a0f138c419b20a4de52e43cd",
-    "recipe": "LF git merge-file --union implementation/baseea3844085ecfd34b7b21ba19160317e57db4637d/runtime candidate705c91c000a23340fc7a76d9aadfcc77e52840cc;remove standalone implementation node-test line because candidate commands cover both tests. Preserve all operational checks, real Realtime and matching full backend for current PRs."
+    "sha256": "de4c6c4983e9b91bafb1357bebd5a409509819fee6c14a79e8c7adf00519b53d",
+    "recipe": "LF git merge-file --union implementation/baseea3844085ecfd34b7b21ba19160317e57db4637d/runtime candidate26d829241c1da649eae4ec37aaff398ab00a5173;remove standalone implementation node-test line because candidate commands cover both tests. Preserve all operational checks, real Realtime/full backend and10viewer smoke admission for current PRs."
   }
 }

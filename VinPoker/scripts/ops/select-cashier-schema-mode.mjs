@@ -60,7 +60,7 @@ export function qualifiedHud35(files, { repo, base, head }) {
   const workflowHash = canonicalHash(blob(head, workflowPath));
   assert.ok(workflowHash === canonicalHash(blob(base, workflowPath)) || workflowHash === policy.integratedWorkflow.sha256,
     'PR changes trusted guard: workflow must match base or exact reviewed integration');
-  assert.equal(policy.runtimeInputs.candidateSha, '705c91c000a23340fc7a76d9aadfcc77e52840cc');
+  assert.equal(policy.runtimeInputs.candidateSha, '26d829241c1da649eae4ec37aaff398ab00a5173');
   assert.equal(policy.runtimeInputs.kind, 'REVIEWED_INPUT_PINS_RUNTIME_STILL_REQUIRED');
   assert.ok(policy.runtimeFiles.length > 0, 'Qualified runtime inputs required');
   for (const file of policy.runtimeFiles) {
