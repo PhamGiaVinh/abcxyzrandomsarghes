@@ -1,11 +1,11 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { join, resolve } from 'node:path';
+import { spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
+import { selectCashierSchemaMode, qualifiedHud35 } from './select-cashier-schema-mode.mjs';
 
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
@@ -81,7 +81,136 @@ test('historical mode remains default and requires original baseline', () => {
   assert.ok(workflow.includes('capture_id=35982674365'));
   assert.ok(script.includes('"$schema_mode" == pre03 && "$baseline_state" != \'t|t\''));
   assert.ok(workflow.includes('gh api --paginate --slurp'));
-  assert.ok(workflow.includes('node VinPoker/scripts/ops/select-cashier-schema-mode.mjs'));
+  assert.ok(workflow.includes('git show "$BASE_SHA:VinPoker/scripts/ops/select-cashier-schema-mode.mjs"'));
+  assert.ok(workflow.includes('node "$trusted_selector" "$GITHUB_WORKSPACE" "$BASE_SHA" "$HEAD_SHA"'));
+  assert.ok(workflow.includes('fetch-depth: 0'));
+});
+
+// Real committed Git trees, using the actual qualified PR1600 SQL and receipt.
+// Full-history checkout is mandatory in CI; no network or production access.
+const sourceRoot = fileURLToPath(new URL('../../../', import.meta.url));
+const fixtureRoot = mkdtempSync(join(tmpdir(), 'cashier-qualified-tree-'));
+after(() => rmSync(fixtureRoot, { recursive: true, force: true }));
+const git = (...args) => execFileSync('git', ['-C', fixtureRoot, ...args], { encoding: 'utf8' });
+const sourceGit = (...args) => execFileSync('git', ['-C', sourceRoot, ...args], { encoding: 'utf8' });
+git('init', '--quiet');
+git('config', 'user.name', 'Isolated CI fixture');
+git('config', 'user.email', 'ci@example.invalid');
+const common = sourceGit('rev-parse', '--git-common-dir').trim();
+writeFileSync(join(fixtureRoot, '.git', 'objects', 'info', 'alternates'), resolve(sourceRoot, common, 'objects').replaceAll('\\', '/') + '\n');
+const policyFile = 'VinPoker/scripts/ops/cashier-hud35-qualified-scope.json';
+const receiptFile = 'VinPoker/scripts/ops/fixtures/cashier-ci-hud35-qualified-receipt-20261107.json';
+const policy = JSON.parse(readFileSync(join(sourceRoot, policyFile)));
+const baseline = 'ea3844085ecfd34b7b21ba19160317e57db4637d';
+function setBlob(path, bytes, mode = '100644') {
+  const oid = execFileSync('git', ['-C', fixtureRoot, 'hash-object', '-w', '--stdin'], { input: bytes, encoding: 'utf8' }).trim();
+  git('update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`);
+}
+function commitTree(parent) {
+  return git('commit-tree', git('write-tree').trim(), ...(parent ? ['-p', parent] : []), '-m', 'isolated test').trim();
+}
+git('read-tree', baseline);
+for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {
+  setBlob(path, readFileSync(join(sourceRoot, path)));
+}
+const trustedBase = commitTree(baseline);
+// Preserve the Tracker branch's extra operational inputs/checks when integrating
+// the trusted-base selector. Only this exact combined workflow may differ.
+const workflowPath = '.github/workflows/cashier-tour-real-e2e.yml';
+const mergePaths = ['ours.yml', 'base.yml', 'candidate.yml'].map(name => join(fixtureRoot, name));
+writeFileSync(mergePaths[0], workflow.replace(/\r\n?/g, '\n'));
+writeFileSync(mergePaths[1], sourceGit('show', `${baseline}:${workflowPath}`).replace(/\r\n?/g, '\n'));
+writeFileSync(mergePaths[2], sourceGit('show', `${policy.runtimeInputs.candidateSha}:${workflowPath}`).replace(/\r\n?/g, '\n'));
+const integratedWorkflow = git('merge-file', '-p', '--union', ...mergePaths)
+  .replace('          node --test scripts/ops/cashier-schema-mode.test.mjs supabase/pending-tests/fake-sepay-server.test.mjs\n', '');
+git('read-tree', policy.runtimeInputs.candidateSha);
+for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {
+  setBlob(path, readFileSync(join(sourceRoot, path)));
+}
+setBlob(workflowPath, integratedWorkflow);
+const qualifiedHead = commitTree(trustedBase);
+function pagesFor(head, base = trustedBase) {
+  const fields = git('diff', '--no-renames', '--name-status', '-z', base, head).split('\0');
+  fields.pop();
+  const files = [];
+  for (let i = 0; i < fields.length; i += 2) files.push({ filename: fields[i + 1], status: { A: 'added', M: 'modified', D: 'removed' }[fields[i]] });
+  return [files];
+}
+const context = { repo: fixtureRoot, base: trustedBase, head: qualifiedHead };
+function mutation(change) {
+  git('read-tree', qualifiedHead);
+  change();
+  const head = commitTree(trustedBase);
+  return { head, files: pagesFor(head).flat(), context: { ...context, head } };
+}
+test('complete actual qualified35 package selects current with committed provenance', () => {
+  assert.equal(qualifiedHud35(pagesFor(qualifiedHead).flat(), context), true);
+  assert.equal(selectCashierSchemaMode(pagesFor(qualifiedHead), context), 'current');
+});
+test('unknown, partial, altered SQL, symlinks, catalog and historical changes reject qualification', () => {
+  const first = policy.scope.newSqlFiles[0].path;
+  const historical = 'VinPoker/supabase/migrations/20270115000003_cashier_tour_money_v1.sql';
+  for (const change of [
+    () => setBlob('VinPoker/supabase/migrations/unknown.sql', 'SELECT 1;'),
+    () => git('update-index', '--force-remove', first),
+    () => setBlob(first, sourceGit('show', `${policy.scope.candidateSha}:${first}`) + '\n-- changed'),
+    () => setBlob(first, 'target.sql', '120000'),
+    () => setBlob(policy.scope.catalogMetadata.path, '{}'),
+    () => setBlob(historical, '-- altered historical writer'),
+    () => git('update-index', '--force-remove', historical),
+    () => { git('update-index', '--force-remove', first); setBlob('VinPoker/supabase/migrations/renamed.sql', 'SELECT 1;'); },
+  ]) {
+    const m = mutation(change);
+    assert.throws(() => qualifiedHud35(m.files, m.context));
+  }
+});
+test('head cannot rewrite policy, proof, validator or workflow to exempt itself', () => {
+  for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {
+    const m = mutation(() => setBlob(path, '{}'));
+    assert.throws(() => qualifiedHud35(m.files, m.context), /trusted guard/);
+  }
+});
+test('runtime runner, browser test and executable fixtures cannot be weakened', () => {
+  for (const path of ['VinPoker/scripts/ops/cashier-tour-real-e2e.sh', 'VinPoker/e2e/cashier-tour-real.spec.ts', 'VinPoker/playwright.config.ts', 'VinPoker/supabase/pending-tests/fake-sepay-server.mjs']) {
+    const m = mutation(() => setBlob(path, '// no-op'));
+    assert.throws(() => qualifiedHud35(m.files, m.context), /Runtime guard drift/);
+  }
+});
+test('wrong base/head, omitted API paths, duplicate paths, unsupported status and renames fail closed', () => {
+  const files = pagesFor(qualifiedHead).flat();
+  assert.throws(() => qualifiedHud35(files, { ...context, head: trustedBase }), /tree diff/);
+  assert.throws(() => qualifiedHud35(files, { ...context, base: 'main;echo unsafe' }), /Exact base/);
+  assert.throws(() => qualifiedHud35(files.slice(1), context), /tree diff/);
+  assert.throws(() => selectCashierSchemaMode([[{ filename: 'VinPoker/src/stale.ts', status: 'modified' }]], context), /tree diff/);
+  assert.throws(() => selectCashierSchemaMode([[...files, files[0]]], context), /Duplicate/);
+  assert.throws(() => qualifiedHud35(files.map((f, i) => i ? f : { ...f, status: 'copied' }), context), /tree diff/);
+  const renamed = files.map(f => f.filename === policy.scope.newSqlFiles[0].path ? { ...f, previous_filename: 'old.sql' } : f);
+  assert.throws(() => qualifiedHud35(renamed, context), /Renames/);
+});
+test('missing, failed or wrong-origin trusted proof and checksum drift are rejected', () => {
+  for (const change of [
+    p => { delete p.proof; },
+    p => { p.proof.conclusion = 'failure'; },
+    p => { p.proof.actor = 'untrusted'; },
+    p => { p.proof.workflowId = 1; },
+    p => { p.proof.receiptSha256 = '0'.repeat(64); },
+    p => { p.runtimeInputs.kind = 'NATIVE_TEST_MASQUERADING_AS_BROWSER_PROOF'; },
+  ]) {
+    const altered = structuredClone(policy);
+    change(altered);
+    git('read-tree', trustedBase);
+    setBlob(policyFile, JSON.stringify(altered));
+    const base = commitTree(trustedBase);
+    git('read-tree', qualifiedHead);
+    setBlob(policyFile, JSON.stringify(altered));
+    const head = commitTree(base);
+    assert.throws(() => qualifiedHud35(pagesFor(head, base).flat(), { repo: fixtureRoot, base, head }));
+  }
+});
+test('line ending normalization alone preserves qualified SQL', () => {
+  const path = policy.scope.newSqlFiles[0].path;
+  const m = mutation(() => setBlob(path, sourceGit('show', `${policy.scope.candidateSha}:${path}`).replace(/\r\n?/g, '\n').replaceAll('\n', '\r\n')));
+  assert.equal(qualifiedHud35(m.files, m.context), true);
 });
 
 test('migration changes and rename out require historical proof across pages', () => {
