@@ -8,6 +8,8 @@ on:
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
       - "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs"
       - "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
+      - "VinPoker/scripts/ops/cashier-hud35-qualified-scope.json"
+      - "VinPoker/scripts/ops/fixtures/cashier-ci-hud35-qualified-receipt-20261107.json"
       - "VinPoker/e2e/cashier-tour-real.spec.ts"
       - "VinPoker/supabase/pending-tests/edge-dependency-cache/**"
       - "VinPoker/supabase/pending-tests/cashier-tour-edge-*.mjs"
@@ -40,6 +42,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Select the proof required by the changed source
         id: schema-mode
         env:
@@ -47,14 +51,20 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REQUESTED_MODE: ${{ inputs.schema_mode || 'pre03' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           mode="$REQUESTED_MODE"
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            # Runtime changes need the retained-schema real backend test.
-            # Migration changes still require the original historical baseline.
+            # Execute the protected-base validator, never the PR's own exemption.
+            # Unknown/altered SQL retains historical proof. Exact qualified HUD35
+            # still runs the unchanged current-schema real Cashier E2E below.
+            [[ "$BASE_SHA" =~ ^[a-f0-9]{40}$ && "$HEAD_SHA" =~ ^[a-f0-9]{40}$ ]]
+            trusted_selector="$RUNNER_TEMP/select-cashier-schema-mode.mjs"
+            git show "$BASE_SHA:VinPoker/scripts/ops/select-cashier-schema-mode.mjs" > "$trusted_selector"
             mode="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" |
-              node VinPoker/scripts/ops/select-cashier-schema-mode.mjs)"
+              node "$trusted_selector" "$GITHUB_WORKSPACE" "$BASE_SHA" "$HEAD_SHA")"
           fi
           case "$mode" in pre03|current) ;; *) exit 1 ;; esac
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
@@ -74,6 +84,10 @@ jobs:
           supabase start --help | grep -q -- '--network-id'
           supabase start --help | grep -q -- '--exclude'
           npm ci --ignore-scripts --no-audit --no-fund
+          # Immutable source objects for the real Git-tree mutation fixtures.
+          # Keep tests reproducible after the candidate branch is removed.
+          git cat-file -e 'e14b4ceac1e53b3c246134d74f0dbb47b3adc695^{commit}' ||
+            git fetch --no-tags origin e14b4ceac1e53b3c246134d74f0dbb47b3adc695
           node --test scripts/ops/cashier-schema-mode.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker

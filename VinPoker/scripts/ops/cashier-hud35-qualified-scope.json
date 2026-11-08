@@ -1,0 +1,453 @@
+{
+  "schemaVersion": 1,
+  "scope": {
+    "candidateSha": "e14b4ceac1e53b3c246134d74f0dbb47b3adc695",
+    "pr": 1600,
+    "completePackageRequired": true,
+    "normalization": "CRLF or CR to LF only; retain all other bytes",
+    "newSqlFiles": [
+      {
+        "order": 1,
+        "version": "20261104001500",
+        "name": "public_hud_incremental_projection",
+        "path": "VinPoker/supabase/migrations/20261104001500_public_hud_incremental_projection.sql",
+        "sha256": "23e5050d921adbe50f3739f3d6285c5defc69b4df606757f98d1a67277405771",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 2,
+        "version": "20261104001600",
+        "name": "public_hud_worker_rpc",
+        "path": "VinPoker/supabase/migrations/20261104001600_public_hud_worker_rpc.sql",
+        "sha256": "96d41633e0dec3748c9f8d0a58ae591436af1965c2dc5c6d5ec8b08beb2f2398",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 3,
+        "version": "20261104001700",
+        "name": "public_hud_metadata_backfill",
+        "path": "VinPoker/supabase/migrations/20261104001700_public_hud_metadata_backfill.sql",
+        "sha256": "be1a386dd7e7318da5ecbc4558c117c8aed02ba851fa356893e6adfeda7ddd18",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 4,
+        "version": "20261104001800",
+        "name": "public_hud_read_contract",
+        "path": "VinPoker/supabase/migrations/20261104001800_public_hud_read_contract.sql",
+        "sha256": "2b8af10ab68bc5f88eec2b885e4861d7d03a4e1c37d1d7f5d465bbb533388bc7",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 5,
+        "version": "20261104001900",
+        "name": "public_spectator_compact_generations",
+        "path": "VinPoker/supabase/migrations/20261104001900_public_spectator_compact_generations.sql",
+        "sha256": "f49a87fa2a3bad952993d6703cce3cc6951d1281e20a1d87072415e2beffb6a3",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 6,
+        "version": "20261104002000",
+        "name": "public_hud_dispatch_health",
+        "path": "VinPoker/supabase/migrations/20261104002000_public_hud_dispatch_health.sql",
+        "sha256": "283d9d6dc63b541f2ef704ca4c916c4ebf97485e826dc183b464c559f8071ba2",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 7,
+        "version": "20261104002100",
+        "name": "public_current_hand_bounded",
+        "path": "VinPoker/supabase/migrations/20261104002100_public_current_hand_bounded.sql",
+        "sha256": "ba66dccf215d578425a7cc52f891cf646ddc1f43d0a07946ae980b2444ec6d8d",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 8,
+        "version": "20261104002200",
+        "name": "public_tracker_read_plan_reuse",
+        "path": "VinPoker/supabase/migrations/20261104002200_public_tracker_read_plan_reuse.sql",
+        "sha256": "b9f59c22a9004aa888f88c45523e8f55f204f6345ae46a9131212fb5aa137eae",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 9,
+        "version": "20261104002300",
+        "name": "tracker_participation_read_plan_reuse",
+        "path": "VinPoker/supabase/migrations/20261104002300_tracker_participation_read_plan_reuse.sql",
+        "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 10,
+        "version": "20261104002400",
+        "name": "public_hud_history_ordered_page",
+        "path": "VinPoker/supabase/migrations/20261104002400_public_hud_history_ordered_page.sql",
+        "sha256": "ebdee90872c0f14baeda9bad6404ebf9093d16aeec975bd5b263f215c347170a",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 11,
+        "version": "20261104002500",
+        "name": "public_clock_read_plan_reuse",
+        "path": "VinPoker/supabase/migrations/20261104002500_public_clock_read_plan_reuse.sql",
+        "sha256": "9293856d227d8675737a6930bb7d35755a3f0b4a1332aca6a9641e2892daf240",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 12,
+        "version": "20261104002600",
+        "name": "public_hud_summary_batch",
+        "path": "VinPoker/supabase/migrations/20261104002600_public_hud_summary_batch.sql",
+        "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 13,
+        "version": "20261104002700",
+        "name": "public_current_table_prepared_reads",
+        "path": "VinPoker/supabase/migrations/20261104002700_public_current_table_prepared_reads.sql",
+        "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 14,
+        "version": "20261104002800",
+        "name": "public_hud_identity_ordered_lookup",
+        "path": "VinPoker/supabase/migrations/20261104002800_public_hud_identity_ordered_lookup.sql",
+        "sha256": "30b558d20c8afd0857fcd661b396c7b46a18825f5ca220738a99bebed125241a",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 15,
+        "version": "20261104002900",
+        "name": "public_hud_identity_membership_lookup",
+        "path": "VinPoker/supabase/migrations/20261104002900_public_hud_identity_membership_lookup.sql",
+        "sha256": "31a1db41893bff8f01a8a0f2870754441121231ae74f4fe19c6df87fe229fe22",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 16,
+        "version": "20261104003000",
+        "name": "public_hud_identity_membership_keyset",
+        "path": "VinPoker/supabase/migrations/20261104003000_public_hud_identity_membership_keyset.sql",
+        "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 17,
+        "version": "20261104003100",
+        "name": "public_hud_enqueue_write_coalescing",
+        "path": "VinPoker/supabase/migrations/20261104003100_public_hud_enqueue_write_coalescing.sql",
+        "sha256": "1c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 18,
+        "version": "20261104003200",
+        "name": "public_clock_counts_only",
+        "path": "VinPoker/supabase/migrations/20261104003200_public_clock_counts_only.sql",
+        "sha256": "e6152212aa102d02aee1675f129c22a058b20c528e45414371bc6bbc1bfeddc2",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 19,
+        "version": "20261104003300",
+        "name": "public_hud_null_proof_short_circuit",
+        "path": "VinPoker/supabase/migrations/20261104003300_public_hud_null_proof_short_circuit.sql",
+        "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 20,
+        "version": "20261104003400",
+        "name": "public_hud_result_withdrawal_scope",
+        "path": "VinPoker/supabase/migrations/20261104003400_public_hud_result_withdrawal_scope.sql",
+        "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 21,
+        "version": "20261105044028",
+        "name": "public_hud_hand_withdrawal_scope",
+        "path": "VinPoker/supabase/migrations/20261105044028_public_hud_hand_withdrawal_scope.sql",
+        "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 22,
+        "version": "20261105072714",
+        "name": "public_hud_history_amounts_materialized",
+        "path": "VinPoker/supabase/migrations/20261105072714_public_hud_history_amounts_materialized.sql",
+        "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 23,
+        "version": "20261105200303",
+        "name": "public_hud_history_unverified_seed_short_circuit",
+        "path": "VinPoker/supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql",
+        "sha256": "6c44386dd744d4d8d8d56841f9e73cf483ff94834beed0eb8aa156813fb58d92",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 24,
+        "version": "20261105203358",
+        "name": "spectator_compact_generation_lookup",
+        "path": "VinPoker/supabase/migrations/20261105203358_spectator_compact_generation_lookup.sql",
+        "sha256": "e50c41cfb36d5ec82bdfcafac9e9be68dabe9f76a5c5c47df1ec333956ecebe6",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 25,
+        "version": "20261105213000",
+        "name": "public_hud_claim_source_batch",
+        "path": "VinPoker/supabase/migrations/20261105213000_public_hud_claim_source_batch.sql",
+        "sha256": "453fbcb692d45f2c7a35d45a3e13fd79fe0aa15cf64dbcba29fe083afcff139d",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 26,
+        "version": "20261106010000",
+        "name": "public_hud_visibility_restore_reclassification",
+        "path": "VinPoker/supabase/migrations/20261106010000_public_hud_visibility_restore_reclassification.sql",
+        "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 27,
+        "version": "20261106025221",
+        "name": "public_hud_visibility_required_work",
+        "path": "VinPoker/supabase/migrations/20261106025221_public_hud_visibility_required_work.sql",
+        "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 28,
+        "version": "20261106105930",
+        "name": "public_clock_numeric_buy_in",
+        "path": "VinPoker/supabase/migrations/20261106105930_public_clock_numeric_buy_in.sql",
+        "sha256": "29c7132c6d1690114fb467d19727ba3e5e752da63dff114f67132f8b67603711",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 29,
+        "version": "20261106111519",
+        "name": "public_hud_visibility_work_wakeup",
+        "path": "VinPoker/supabase/migrations/20261106111519_public_hud_visibility_work_wakeup.sql",
+        "sha256": "8aa0c2a11fd69abfc412c87481b167578bf4b659cb38e7c4611d0793670b73aa",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 30,
+        "version": "20261106144208",
+        "name": "public_spectator_source_lease_outcome",
+        "path": "VinPoker/supabase/migrations/20261106144208_public_spectator_source_lease_outcome.sql",
+        "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 31,
+        "version": "20261106184814",
+        "name": "public_table_clock_read_bundle",
+        "path": "VinPoker/supabase/migrations/20261106184814_public_table_clock_read_bundle.sql",
+        "sha256": "4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 32,
+        "version": "20261107013500",
+        "name": "cashier_app_reentry_transport_v1",
+        "path": "VinPoker/supabase/migrations/20261107013500_cashier_app_reentry_transport_v1.sql",
+        "sha256": "092302c8cbdc82ee93a969470aa027fc86cd886a27b65be2980a09c1fb043373",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 33,
+        "version": "20261107045330",
+        "name": "tracker_correction_hand_lock_order_v1",
+        "path": "VinPoker/supabase/migrations/20261107045330_tracker_correction_hand_lock_order_v1.sql",
+        "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 34,
+        "version": "20261107093000",
+        "name": "tournament_close_paid_prize_source_v1",
+        "path": "VinPoker/supabase/migrations/20261107093000_tournament_close_paid_prize_source_v1.sql",
+        "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
+        "action": "APPLY",
+        "status": "added"
+      },
+      {
+        "order": 35,
+        "version": "20261107151500",
+        "name": "public_hud_dispatch_project_url_v1",
+        "path": "VinPoker/supabase/migrations/20261107151500_public_hud_dispatch_project_url_v1.sql",
+        "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
+        "action": "APPLY",
+        "status": "added"
+      }
+    ],
+    "catalogMetadata": {
+      "path": "VinPoker/supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json",
+      "status": "modified",
+      "baseSha256": "dd96fb465bc804c65662babf00f08b737456e1b750bf3a3031630551d9331499",
+      "headSha256": "96581ed121ef7d87a0f798a9ad3a9e836dd335a59d1952f6bd7259077b3f57f3"
+    }
+  },
+  "proof": {
+    "kind": "APPROVED_BASE_RECEIPT_REQUIRED_NOT_CURRENT_SCHEMA_AS_HISTORICAL_PROOF",
+    "receiptPath": "VinPoker/scripts/ops/fixtures/cashier-ci-hud35-qualified-receipt-20261107.json",
+    "receiptSha256": "4105af2d4f69021ed632227f33719985045508371bef302041334e642904e145",
+    "run": 42390747260,
+    "attempt": 1,
+    "repository": "PhamGiaVinh/abcxyzrandomsarghes",
+    "workflowId": 410345048,
+    "orchestrationSha": "ea3844085ecfd34b7b21ba19160317e57db4637d",
+    "actor": "PhamGiaVinh",
+    "event": "workflow_dispatch",
+    "branch": "main",
+    "conclusion": "success",
+    "artifact": {
+      "id": 13581521958,
+      "name": "hud-full34-isolated-rehearsal-42390747260",
+      "sha256": "cef4f896950da8e7f32ed14e5aaee930352926a00e212d80ea2674ea89aaee8e"
+    },
+    "source": "Stored metadata-only receipt downloaded and verified while original artifact was available; approved protected-base policy and receipt must be immutable to the PR under test.",
+    "limits": "Cron execution disabled and outbound blocked. SQL transitions and native worker only; not Edge dispatch, HTTP delivery, production capacity, historical pre03 proof or release approval."
+  },
+  "runtimeFiles": [
+    {
+      "path": "VinPoker/e2e/cashier-tour-real.spec.ts",
+      "sha256": "99475ccf11818808cb0192c08f799419321cc172126ed2bdb584514eea9cfcc0"
+    },
+    {
+      "path": "VinPoker/package-lock.json",
+      "sha256": "eec016799cbe39a9bd48962189e94c91c1e32d71eb522469658b57f4c42ecc72"
+    },
+    {
+      "path": "VinPoker/package.json",
+      "sha256": "14155ea8b615cfcb5fb5ef8460055c25d98b860f6dd695e25cc9fbe28663a3c2"
+    },
+    {
+      "path": "VinPoker/playwright.config.ts",
+      "sha256": "63113d467562b1858f277ff228e0e7354bedbe29980c2030629028dfe13a0e53"
+    },
+    {
+      "path": "VinPoker/scripts/deploy/validate-live-public-schema-artifact.mjs",
+      "sha256": "91f2e91be9027fdce2c9b33a223e37e419cf1842ada22e4ff7866eeee59250af"
+    },
+    {
+      "path": "VinPoker/scripts/ops/cashier-tour-real-e2e.sh",
+      "sha256": "0fe6fe44c46ae69facc5290882ddd2a4eb765c76d09aeea81647968f1c6ce965"
+    },
+    {
+      "path": "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs",
+      "sha256": "d336230b84884a226803243eca76b70b71641a085f0f6f875d0c52e237002322"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier-tour-edge-register.mjs",
+      "sha256": "b9003dfa7b2718a7f2a46d35bac48e5bc352c310c5c14d1ee450d844ccdc69ce"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_assert.sql",
+      "sha256": "c91ab9b38b3e3ccab1c52060d8c1ca3124c12fe28acaeb0784f3866e6bedf0b6"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_bank.sql",
+      "sha256": "e00feabaed7ed1d965448fbc228908e87eb8d572bda6a230dc42c8522df533ba"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_cash.sql",
+      "sha256": "35a2984309c4adc84e1f9c2ec8307bee25815a14ac94242474308083f7b908bf"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_seed.sql",
+      "sha256": "6bba0c5bf185caf7556f3226ea4e25618141141afe6cb0439c9e8df966cddbec"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_disposable_baseline.sql",
+      "sha256": "ede85f8801f1e0996d49a8d33f71f8fe6cc2bcc1d3535433c81a8716df72ceef"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_edge_fixture.sql",
+      "sha256": "5f899cc2a609cc1503303ae7d389c8faf0e5b3c0e4476d437ddbc46fbd535d1d"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_load_assert.sql",
+      "sha256": "4f264684d124beb1235b4a38c749f5aeb805c10c091f3a095bc547364dd29191"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_load_cash.sql",
+      "sha256": "a9dd8aef732f91c507ea5ff1f19500634d78a4e4605b7804ef65cde0ad7ff192"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_load_register.sql",
+      "sha256": "3db3e95b8c8ea5437840823e3343956612fddeb1add08ee3e95e1e0627c28bb3"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_money_v1.sql",
+      "sha256": "393eab3be08fe9ec25f532ede4d3e3feb7986ebbd355dcf5d29b406981374bc1"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_real_refund_fixture.sql",
+      "sha256": "97a83d00276c330bb53da82942279abbe537caff81e8e24d176264e09db4346d"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/edge-dependency-cache/index.ts",
+      "sha256": "182653dbd0d5aab7239d67b5b9ff5fd909d5494513bff1886460c543ba8e602a"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/fake-sepay-server.mjs",
+      "sha256": "822a0c4384dee572ae2fa908b67cca61594e135a04bb94da2a72512465db89c5"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/static-preview-server.mjs",
+      "sha256": "975e0bfd1911af08435e588531995caaf958e1327920acb6a53063e52f328100"
+    }
+  ],
+  "runtimeInputs": {
+    "candidateSha": "e14b4ceac1e53b3c246134d74f0dbb47b3adc695",
+    "kind": "REVIEWED_INPUT_PINS_RUNTIME_STILL_REQUIRED",
+    "qualification": "Input hashes only; no claim that e14 Cashier browser E2E has passed. The unchanged real current-mode E2E remains mandatory."
+  },
+  "integratedWorkflow": {
+    "path": ".github/workflows/cashier-tour-real-e2e.yml",
+    "sha256": "2a1814ff3f6a86abb0166ba87db8b1a6aa7e2baa953dded20abfe56bfbbc03ff",
+    "recipe": "LF-normalized git merge-file --union of implementation/base ea3844085ecfd34b7b21ba19160317e57db4637d/candidate e14b4ceac1e53b3c246134d74f0dbb47b3adc695; remove standalone cashier-schema-mode node test because candidate combined test command already runs it. Preserve all operational inputs and checks."
+  }
+}
