@@ -87,8 +87,8 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           # Immutable source objects for the real Git-tree mutation fixtures.
           # Keep tests reproducible after the candidate branch is removed.
-          git cat-file -e '8f400a386b3ca740c14b550808638a7f81e92914^{commit}' ||
-            git fetch --no-tags origin 8f400a386b3ca740c14b550808638a7f81e92914
+          git cat-file -e 'aea30a96dda4a6e02113b9de2ca3fb204522c0a2^{commit}' ||
+            git fetch --no-tags origin aea30a96dda4a6e02113b9de2ca3fb204522c0a2
           node --test scripts/ops/cashier-schema-mode.test.mjs supabase/pending-tests/fake-sepay-server.test.mjs
       - name: Download latest owner-captured schema-only baseline
         working-directory: VinPoker

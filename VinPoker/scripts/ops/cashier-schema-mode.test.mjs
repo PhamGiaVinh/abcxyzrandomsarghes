@@ -120,7 +120,7 @@ const workflowPath = '.github/workflows/cashier-tour-real-e2e.yml';
 const mergePaths = ['ours.yml', 'base.yml', 'candidate.yml'].map(name => join(fixtureRoot, name));
 writeFileSync(mergePaths[0], workflow.replace(/\r\n?/g, '\n'));
 writeFileSync(mergePaths[1], sourceGit('show', `${baseline}:${workflowPath}`).replace(/\r\n?/g, '\n'));
-writeFileSync(mergePaths[2], sourceGit('show', `${policy.scope.candidateSha}:${workflowPath}`).replace(/\r\n?/g, '\n'));
+writeFileSync(mergePaths[2], sourceGit('show', `${policy.runtimeInputs.candidateSha}:${workflowPath}`).replace(/\r\n?/g, '\n'));
 const integratedWorkflow = git('merge-file', '-p', '--union', ...mergePaths)
   .replace('          node --test scripts/ops/cashier-schema-mode.test.mjs supabase/pending-tests/fake-sepay-server.test.mjs\n', '');
 git('read-tree', policy.runtimeInputs.candidateSha);
