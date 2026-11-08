@@ -38,6 +38,7 @@ BEGIN
   RETURN cnt;
 END;
 $$;
+REVOKE ALL ON FUNCTION public.auto_soft_delete_old_tournaments() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.auto_soft_delete_old_tournaments()
   TO authenticated, service_role;
 
