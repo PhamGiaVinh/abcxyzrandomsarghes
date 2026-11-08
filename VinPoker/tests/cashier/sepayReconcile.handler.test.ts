@@ -160,7 +160,7 @@ describe('actual SePay reconcile handler outcomes (mock I/O)',()=>{
    {id:'51100000-0000-4000-8000-000000000001',account_number:'TEST_ACCOUNT',active:true},
    {id:'51100000-0000-4000-8000-000000000002',account_number:'TEST_ACCOUNT',active:true},
   ]});
-  expect(body.ok).toBe(false);expect(body.results[0].error).toBe('sepay_account_not_unique');
+  expect(body.ok).toBe(false);expect(body.results[0].error).toBe('sepay_account_multiple_matches');
   expect(rpc.mock.calls.some(([name])=>name==='sepay_ingest_verified_transactions')).toBe(false);
  });
  it.each([
@@ -169,7 +169,7 @@ describe('actual SePay reconcile handler outcomes (mock I/O)',()=>{
   {accountRows:[]},
  ])('does not use an inactive, inexact search match or absent account',async({accountRows})=>{
   const {body,providerUrls}=await run({accountRows});
-  expect(body.ok).toBe(false);expect(body.results[0].error).toBe('sepay_account_not_unique');
+  expect(body.ok).toBe(false);expect(body.results[0].error).toBe('sepay_account_not_found');
   expect(providerUrls.some(url=>new URL(url).pathname==='/v2/transactions')).toBe(false);
  });
  it('rejects an invalid provider bank UUID',async()=>{
