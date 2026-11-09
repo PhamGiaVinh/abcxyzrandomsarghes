@@ -20,5 +20,12 @@ done
 test "$status" = succeeded
 # A cron "1 row" receipt is not a deletion count. Verify persisted, private
 # invocation telemetry was committed by the actual scheduled function call.
-test "$(psql -X -qAt -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM retention_private.cron_history_checkpoint WHERE last_started_at IS NOT NULL AND updated_at>=now()-interval '\''2 minutes'\'' AND last_deleted<=last_inspected AND total_deleted<=total_inspected;')" = 1
+test "$(psql -X -qAt -v ON_ERROR_STOP=1 -v probe="$probe" <<'SQL'
+SELECT count(*) FROM retention_private.cron_history_checkpoint c
+JOIN LATERAL(SELECT start_time FROM cron.job_run_details
+ WHERE jobid=:probe AND status='succeeded' ORDER BY runid DESC LIMIT 1) r ON true
+WHERE c.last_started_at>=r.start_time AND c.updated_at>=c.last_started_at
+ AND c.last_deleted<=c.last_inspected AND c.total_deleted<=c.total_inspected;
+SQL
+)" = 1
 echo CRON_RETENTION_REAL_SCHEDULER_PASS
