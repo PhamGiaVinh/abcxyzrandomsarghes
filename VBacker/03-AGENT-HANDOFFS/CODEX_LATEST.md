@@ -1,4 +1,8 @@
-## 2026-11-09 — HUD repeated-open browser measurement
+## 2026-11-09 — HUD chronology fix and repeated-open browser measurement
+
+PR1621 additionally fixes a production-observed reversed stack graph: prepared history is newest-first; chart now reverses a copy once, shared with the existing chronological list. No chip/source/API/write changes. TEST replay Test7 previously drew hand7 stack0 toward hand1 stack2M as a gain. Regression reproduced before fix;23 HUD/chart unit tests and scoped HUD TypeScript pass. Full-app TypeScript exceeded local Node2GB heap; not a PASS. Final build/CI/release pending. Existing replay opens the real public HUD read-only successfully; Chrome adapter remains unavailable, so no production Chrome p95 claim.
+
+Test-only parent d34965b: isolated run42634575244 SUCCESS,17HUD checks,pageErrors0;first summary/history509/562ms;20graded reopen p95 summary115/history127ms. These are browser-visible upper bounds after audience drain, not1,000HUD windows or production measurements.
 
 PR1620 is LIVE: approved77af286af72eb21b083518efaf8fa5be6aecc434, squash0a06c5e94c9d5ec693da72bfd2f9c5e3dca5a6be; migration328 applied through linked versioned CLI. Fresh encrypted backup+actual isolated restore42620632557 PASS. Scheduler job56 active under postgres,5min,5000 cap. First tick20:23:04+07 succeeded453.575ms,1old cancelled row. Source/active schedules preserved. Evidence rotation1620-release-state.json under D:/Quy-trinh-hud-scale-evidence; prior partial1619 note below is superseded.
 

@@ -5,8 +5,27 @@ import type {PublicPlayerHand} from '@/lib/publicPlayerHud';
 afterEach(cleanup);
 const T='12ea401a-9790-4c3f-8aed-818cd1d5eddd';
 const hand=(id:string,table:string|null,stack:number|null):PublicPlayerHand=>({handId:id,tableId:table,tableSessionId:null,handNumber:1,playedAt:null,endingStack:stack,netDelta:stack===null?null:0});
+it('plots newest-first API pages from oldest to newest without reversing losses into gains',()=>{
+  const newestFirst=[
+    {...hand('7','table',0),handNumber:7},
+    {...hand('6','table',1600000),handNumber:6},
+    {...hand('5','table',null),handNumber:5},
+    {...hand('3','table',2000000),handNumber:3},
+    {...hand('2','table',2000000),handNumber:2},
+    {...hand('1','table',2000000),handNumber:1},
+  ];
+  const original=[...newestFirst];
+  render(<PlayerHandHistory tournamentId={T} hands={newestFirst}/>);
+  const dots=screen.getAllByRole('link',{name:/^Replay hand/});
+  expect(dots.map(dot=>dot.getAttribute('aria-label')?.match(/#(\d+)/)?.[1])).toEqual(['1','2','3','6','7']);
+  expect(dots[1].querySelector('span')).toHaveClass('text-yellow-400');
+  expect(dots[3].querySelector('span')).toHaveClass('text-muted-foreground');
+  expect(dots[4].querySelector('span')).toHaveClass('text-red-400');
+  expect(Number.parseFloat(dots[4].style.top)).toBeGreaterThan(Number.parseFloat(dots[3].style.top));
+  expect(newestFirst).toEqual(original);
+});
 it('opens the exact hand and table even when hand numbers repeat across tables',()=>{
-  render(<PlayerHandHistory tournamentId={T} hands={[hand('first','table-a',100),hand('second','table-b',0)]}/>);
+  render(<PlayerHandHistory tournamentId={T} hands={[hand('second','table-b',0),hand('first','table-a',100)]}/>);
   const dots=screen.getAllByRole('link',{name:/^Replay hand/});
   expect(dots).toHaveLength(2);
   for(const [i,h] of [['first','table-a'],['second','table-b']].entries()) {
@@ -17,7 +36,7 @@ it('opens the exact hand and table even when hand numbers repeat across tables',
   }
 });
 it('connects known points with a solid neutral line across missing proof without fabricating dots',()=>{
-  const {container}=render(<PlayerHandHistory tournamentId={T} hands={[hand('a','table',10),hand('b','table',null),hand('c','table',20)]}/>);
+  const {container}=render(<PlayerHandHistory tournamentId={T} hands={[hand('c','table',20),hand('b','table',null),hand('a','table',10)]}/>);
   expect(screen.getAllByRole('link',{name:/^Replay hand/})).toHaveLength(2);
   expect(screen.getAllByRole('link',{name:/^Mở replay hand/})).toHaveLength(3);
   expect(screen.getByText('Stack chưa xác minh')).toBeInTheDocument();
@@ -37,7 +56,7 @@ it('explains an empty player history',()=>{
 
 it('plots ten verified hands flat for unchanged stacks and up/down for chip changes',()=>{
   const stacks=[100,100,100,130,110,110,150,140,140,160];
-  render(<PlayerHandHistory tournamentId={T} hands={stacks.map((stack,i)=>({...hand(`hand-${i+1}`,'table',stack),handNumber:i+1}))}/>);
+  render(<PlayerHandHistory tournamentId={T} hands={stacks.map((stack,i)=>({...hand(`hand-${i+1}`,'table',stack),handNumber:i+1})).reverse()}/>);
   const dots=screen.getAllByRole('link',{name:/^Replay hand/});
   const top=(i:number)=>Number.parseFloat(dots[i].style.top);
   expect(top(0)).toBe(top(1));expect(top(1)).toBe(top(2));
@@ -48,4 +67,14 @@ it('plots ten verified hands flat for unchanged stacks and up/down for chip chan
   expect(dots[4].querySelector('span')).toHaveClass('text-red-400');
   expect(screen.getByText('↗ Tăng chip')).toBeInTheDocument();
   expect(screen.getByText(/fold vẫn có thể mất chip/)).toBeInTheDocument();
+});
+it('preserves API chronology when hand numbering restarts on another table',()=>{
+  render(<PlayerHandHistory tournamentId={T} hands={[
+    {...hand('later','table-b',90),handNumber:1,playedAt:'2026-11-09T12:01:00Z'},
+    {...hand('earlier','table-a',100),handNumber:20,playedAt:'2026-11-09T12:00:00Z'},
+  ]}/>);
+  const dots=screen.getAllByRole('link',{name:/^Replay hand/});
+  expect(dots[0]).toHaveAttribute('aria-label','Replay hand #20, stack 100');
+  expect(dots[1]).toHaveAttribute('aria-label','Replay hand #1, stack 90');
+  expect(dots[1].querySelector('span')).toHaveClass('text-red-400');
 });
