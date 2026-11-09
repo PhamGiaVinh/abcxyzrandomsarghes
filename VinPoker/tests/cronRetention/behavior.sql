@@ -14,7 +14,9 @@ INSERT INTO cron.job_run_details(runid,status,start_time,end_time) VALUES
 DO $$DECLARE r jsonb; BEGIN
  r:=public.cleanup_cron_job_run_details(2);
  IF (r->>'inspected')::int<>2 OR (r->>'deleted')::int<>2
-    OR (SELECT scan_after FROM retention_private.cron_history_checkpoint)<>2 THEN
+    OR NOT EXISTS(SELECT 1 FROM retention_private.cron_history_checkpoint
+       WHERE scan_after=2 AND last_inspected=2 AND last_deleted=2
+         AND total_inspected=2 AND total_deleted=2 AND last_started_at IS NOT NULL) THEN
    RAISE EXCEPTION 'first bounded page mismatch %',r; END IF;
  -- A completion before the next page is eligible on that page.
  UPDATE cron.job_run_details SET status='succeeded',end_time=now() WHERE runid=3;
@@ -59,6 +61,7 @@ DO $$BEGIN
    IF SQLERRM<>'synthetic worker failure' THEN RAISE; END IF;
  END;
  IF (SELECT scan_after FROM retention_private.cron_history_checkpoint)<>0
+    OR (SELECT total_deleted FROM retention_private.cron_history_checkpoint)<>0
     OR NOT EXISTS(SELECT 1 FROM cron.job_run_details WHERE runid=1) THEN
    RAISE EXCEPTION 'failed worker advanced checkpoint or source'; END IF;
 END$$;

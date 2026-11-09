@@ -38,6 +38,12 @@ CREATE TABLE retention_private.cron_history_checkpoint(
   scan_after bigint NOT NULL DEFAULT 0 CHECK(scan_after>=0),
   sweep_ceiling bigint CHECK(sweep_ceiling>=0),
   completed_sweeps bigint NOT NULL DEFAULT 0,
+  total_inspected bigint NOT NULL DEFAULT 0,
+  total_deleted bigint NOT NULL DEFAULT 0,
+  last_inspected integer NOT NULL DEFAULT 0,
+  last_deleted integer NOT NULL DEFAULT 0,
+  last_work_ms numeric NOT NULL DEFAULT 0,
+  last_started_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 ALTER TABLE retention_private.cron_history_checkpoint ENABLE ROW LEVEL SECURITY;
@@ -100,6 +106,10 @@ BEGIN
     scan_after=CASE WHEN v_complete THEN 0 ELSE v_after END,
     sweep_ceiling=CASE WHEN v_complete THEN NULL ELSE v_ceiling END,
     completed_sweeps=completed_sweeps+CASE WHEN v_complete THEN 1 ELSE 0 END,
+    total_inspected=total_inspected+v_inspected,total_deleted=total_deleted+v_deleted,
+    last_inspected=v_inspected,last_deleted=v_deleted,
+    last_work_ms=extract(epoch FROM(clock_timestamp()-v_started))*1000,
+    last_started_at=v_started,
     updated_at=clock_timestamp() WHERE singleton;
   RETURN jsonb_build_object('outcome',CASE WHEN v_deleted>0 THEN 'ok' ELSE 'deferred' END,
     'deleted',v_deleted,'inspected',v_inspected,'batch_cap',v_limit,

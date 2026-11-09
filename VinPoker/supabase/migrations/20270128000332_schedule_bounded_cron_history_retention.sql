@@ -12,7 +12,7 @@ BEGIN
    RAISE EXCEPTION 'cron_history_scheduler_already_exists'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_proc
       WHERE oid=to_regprocedure('public.cleanup_cron_job_run_details(integer)')
-      AND md5(replace(prosrc,chr(13),''))='da8c72fa3893a816d0aaf3346bbdfda4'
+      AND md5(replace(prosrc,chr(13),''))='d6496dba38d2ac1644bc967d2923d2f2'
       AND proowner='postgres'::regrole AND prosecdef
       AND proconfig=ARRAY['search_path=""'])
     OR has_function_privilege('anon','public.cleanup_cron_job_run_details(integer)','EXECUTE')

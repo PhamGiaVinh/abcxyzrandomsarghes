@@ -18,5 +18,7 @@ for i in {1..90}; do
   sleep 1
 done
 test "$status" = succeeded
+# A cron "1 row" receipt is not a deletion count. Verify persisted, private
+# invocation telemetry was committed by the actual scheduled function call.
+test "$(psql -X -qAt -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM retention_private.cron_history_checkpoint WHERE last_started_at IS NOT NULL AND updated_at>=now()-interval '\''2 minutes'\'' AND last_deleted<=last_inspected AND total_deleted<=total_inspected;')" = 1
 echo CRON_RETENTION_REAL_SCHEDULER_PASS
-
