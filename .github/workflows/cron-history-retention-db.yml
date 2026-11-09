@@ -41,7 +41,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_cron;'
       - name: Match hosted non-owner and non-superuser capabilities
         run: |
-          psql -X -v ON_ERROR_STOP=1 -c "CREATE ROLE postgres LOGIN NOSUPERUSER PASSWORD 'test';"
+          # Matches READ-ONLY observed hosted postgres: NOSUPERUSER,BYPASSRLS.
+          # No production role grant/change is part of this candidate.
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';"
           psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/prepare.sql
       - name: Apply exact predecessor and candidate under hosted-like actor
         run: |
@@ -56,6 +58,8 @@ jobs:
             -f VinPoker/tests/cronRetention/budget.sql 2>&1 | tee "$RUNNER_TEMP/cron-retention-plans.log"
           python3 VinPoker/tests/cronRetention/verify-plans.py "$RUNNER_TEMP/cron-retention-plans.log"
       - name: Verify concurrent workers and skipped rows survive the next sweep
-        run: bash VinPoker/tests/cronRetention/concurrency.sh
+        run: |
+          bash VinPoker/tests/cronRetention/concurrency.sh
+          bash VinPoker/tests/cronRetention/update-race.sh
       - name: Rehearse source recovery without rewinding source data
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/rollback.sql

@@ -3,6 +3,12 @@ BEGIN;
 DO $guard$
 BEGIN
   IF current_user <> 'postgres' THEN RAISE EXCEPTION 'cron_retention_wrong_actor'; END IF;
+  -- Hosted maintenance actor already has BYPASSRLS. Do not grant it here.
+  -- Without that existing capability, pg_cron's username RLS would make a
+  -- global checkpoint incomplete and could turn MAX/page probes into long scans.
+  IF NOT (SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user) THEN
+    RAISE EXCEPTION 'cron_retention_requires_existing_global_visibility';
+  END IF;
   IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc
       WHERE oid='public.cleanup_cron_job_run_details(integer)'::regprocedure)
       IS DISTINCT FROM 'ef9742555b7557160676b3463c50e9f8' THEN
