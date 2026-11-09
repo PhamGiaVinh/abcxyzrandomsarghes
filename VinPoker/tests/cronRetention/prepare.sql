@@ -17,5 +17,8 @@ ALTER TABLE cron.job_run_details OWNER TO cron_history_owner;
 GRANT USAGE ON SCHEMA cron TO postgres;
 GRANT SELECT,UPDATE,DELETE ON cron.job_run_details TO postgres;
 GRANT SELECT ON cron.job TO postgres;
+-- Existing hosted scheduling capability; never grant this in production SQL.
+GRANT EXECUTE ON FUNCTION cron.schedule_in_database(text,text,text,text,text,boolean),
+ cron.schedule(text,text,text),cron.unschedule(bigint) TO postgres;
 GRANT CREATE ON SCHEMA public TO postgres;
 GRANT CREATE ON DATABASE :DBNAME TO postgres;
