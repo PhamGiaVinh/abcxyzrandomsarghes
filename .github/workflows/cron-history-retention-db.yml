@@ -1,0 +1,61 @@
+name: Cron history retention isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000331_bounded_cron_history_retention.sql'
+      - 'VinPoker/tests/cronRetention/**'
+      - '.github/workflows/cron-history-retention-db.yml'
+  workflow_dispatch:
+jobs:
+  cron-history-retention-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cron_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cron_test_admin -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: cron_test_admin
+      PGPASSWORD: test
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install real pg_cron in the disposable service only
+        run: |
+          docker exec -u root '${{ job.services.postgres.id }}' sh -c 'apt-get update -qq && apt-get install -y --no-install-recommends postgresql-17-cron'
+          docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
+          shared_preload_libraries='pg_cron'
+          cron.database_name='postgres'
+          cron.launch_active_jobs=off
+          CONF
+          docker restart '${{ job.services.postgres.id }}'
+          for i in {1..30}; do pg_isready -h localhost -U cron_test_admin -d postgres && break; sleep 1; done
+          psql -X -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_cron;'
+      - name: Match hosted non-owner and non-superuser capabilities
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE ROLE postgres LOGIN NOSUPERUSER PASSWORD 'test';"
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/prepare.sql
+      - name: Apply exact predecessor and candidate under hosted-like actor
+        run: |
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270103000003_retention_cleanup_functions.sql
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/capture.sql
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000331_bounded_cron_history_retention.sql
+      - name: Verify policy, bounded million-row reads and cooperative budget
+        run: |
+          psql -X -v ON_ERROR_STOP=1 \
+            -f VinPoker/tests/cronRetention/behavior.sql \
+            -f VinPoker/tests/cronRetention/scale.sql \
+            -f VinPoker/tests/cronRetention/budget.sql 2>&1 | tee "$RUNNER_TEMP/cron-retention-plans.log"
+          python3 VinPoker/tests/cronRetention/verify-plans.py "$RUNNER_TEMP/cron-retention-plans.log"
+      - name: Verify concurrent workers and skipped rows survive the next sweep
+        run: bash VinPoker/tests/cronRetention/concurrency.sh
+      - name: Rehearse source recovery without rewinding source data
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/rollback.sql
