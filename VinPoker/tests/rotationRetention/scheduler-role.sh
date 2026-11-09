@@ -17,6 +17,9 @@ ALTER TABLE public.clubs OWNER TO postgres;
 ALTER TABLE public.dealer_rotation_schedule OWNER TO postgres;
 ALTER FUNCTION public.cleanup_dealer_rotation_schedule(uuid,integer) OWNER TO postgres;
 ALTER FUNCTION public.cleanup_next_dealer_rotation_schedule(integer) OWNER TO postgres;
+-- Hosted postgres can replace its public functions; match that namespace
+-- capability after replacing bootstrap OID10 with this non-superuser role.
+GRANT CREATE ON SCHEMA public TO postgres;
 GRANT USAGE ON SCHEMA cron TO postgres;
 GRANT SELECT ON cron.job,cron.job_run_details TO postgres;
 GRANT EXECUTE ON FUNCTION cron.schedule_in_database(text,text,text,text,text,boolean),cron.unschedule(bigint) TO postgres;
