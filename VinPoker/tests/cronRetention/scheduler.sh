@@ -14,6 +14,13 @@ fi
 sql="SET lock_timeout='1s'; SET statement_timeout='10s'; SELECT public.$fn(5000);"
 PGUSER=postgres psql -X -v ON_ERROR_STOP=1 \
  -f "VinPoker/supabase/migrations/$migration"
+# Migration postchecks already verified the real schedule/actor/command. Remove
+# that disposable schedule before the one-minute probe so both cannot fire at
+# the same minute and turn a correct advisory-lock busy response into a flaky
+# telemetry assertion. Production scheduling is never changed by this script.
+PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -v job="$job" <<'SQL'
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname=:'job';
+SQL
 probe="$(PGUSER=postgres psql -X -qAt -v ON_ERROR_STOP=1 -v command="$sql" <<'SQL'
 SELECT cron.schedule('cron-history-ci-probe','* * * * *',:'command');
 SQL
