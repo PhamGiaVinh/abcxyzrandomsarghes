@@ -4,6 +4,7 @@ on:
     paths:
       - 'VinPoker/supabase/migrations/20270128000326_bounded_rotation_retention.sql'
       - 'VinPoker/supabase/migrations/20270128000328_schedule_rotation_retention_current_role.sql'
+      - 'VinPoker/supabase/migrations/20270128000329_time_budget_rotation_retention.sql'
       - 'VinPoker/supabase/migration-archive/historical-never-replay/20270128000327_schedule_rotation_retention.sql'
       - 'VinPoker/supabase/tests/supabase_retention_cleanup.sql'
       - 'VinPoker/tests/rotationRetention/**'
@@ -60,3 +61,14 @@ jobs:
       - name: Verify real pg_cron executes the exact retention command
         run: |
           bash VinPoker/tests/rotationRetention/scheduler.sh
+      - name: Apply cooperative budget after the predecessor scheduler is stopped
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/rotationRetention/capture-predecessor.sql -f VinPoker/supabase/migrations/20270128000329_time_budget_rotation_retention.sql
+      - name: Verify real slow-work progress and million-row budget plans
+        run: |
+          PGUSER=rotation_test_admin psql -v ON_ERROR_STOP=1 -f VinPoker/tests/rotationRetention/budget.sql -f VinPoker/tests/rotationRetention/budget-scale.sql
+          ROTATION_RETENTION_BUDGET_ENABLED=1 bash VinPoker/tests/rotationRetention/concurrency.sh
+          PGUSER=rotation_test_admin bash VinPoker/tests/rotationRetention/update-race.sh
+          docker logs '${{ job.services.postgres.id }}' > "$RUNNER_TEMP/rotation-retention-budget-plans.log" 2>&1
+          python3 VinPoker/tests/rotationRetention/verify-plans.py "$RUNNER_TEMP/rotation-retention-budget-plans.log"
+      - name: Verify source-only recovery preserves predecessor owner and effective grants
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/rotationRetention/rollback.sql
