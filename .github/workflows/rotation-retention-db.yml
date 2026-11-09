@@ -3,7 +3,8 @@ on:
   pull_request:
     paths:
       - 'VinPoker/supabase/migrations/20270128000326_bounded_rotation_retention.sql'
-      - 'VinPoker/supabase/migrations/20270128000327_schedule_rotation_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000328_schedule_rotation_retention_current_role.sql'
+      - 'VinPoker/supabase/migration-archive/historical-never-replay/20270128000327_schedule_rotation_retention.sql'
       - 'VinPoker/supabase/tests/supabase_retention_cleanup.sql'
       - 'VinPoker/tests/rotationRetention/**'
       - '.github/workflows/rotation-retention-db.yml'
@@ -54,7 +55,8 @@ jobs:
         run: |
           docker logs '${{ job.services.postgres.id }}' > "$RUNNER_TEMP/rotation-retention-plans.log" 2>&1
           python3 VinPoker/tests/rotationRetention/verify-plans.py "$RUNNER_TEMP/rotation-retention-plans.log"
+      - name: Verify scheduler under production-like non-superuser role
+        run: bash VinPoker/tests/rotationRetention/scheduler-role.sh
       - name: Verify real pg_cron executes the exact retention command
         run: |
-          psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000327_schedule_rotation_retention.sql
           bash VinPoker/tests/rotationRetention/scheduler.sh

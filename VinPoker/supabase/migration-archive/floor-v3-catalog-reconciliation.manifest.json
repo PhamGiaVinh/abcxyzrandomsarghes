@@ -7602,6 +7602,26 @@
       "ledgerVersionPresent": false,
       "originalPath": "supabase/migrations/20270128000197_notification_push_outbox_v1.sql",
       "lineageEvidence": "COMPLETE_BACKUP_BASELINE_REPLAY_AND_READ_ONLY_LITERAL_DIFF_REVIEW_20261103"
+    },
+    {
+      "version": "20270128000327",
+      "filename": "20270128000327_schedule_rotation_retention.sql",
+      "sha256": "5dc13254640dedb3d356eed91c25ec44296ab0d1fcb6885fb2e9000da8ed7924",
+      "domain": "rotation-retention-20261108",
+      "classification": "NEVER_APPLIED / SUPERSEDED",
+      "sourceOnly": true,
+      "superseded": true,
+      "unapplied": true,
+      "hasData": false,
+      "aliasVersions": [],
+      "reason": "PR1619 migration327 rolled back on hosted non-superuser postgres: explicit pg_cron username requires superuser even for self. Preserve exact source; replacement328 uses guarded current role. No327 ledger receipt may be fabricated.",
+      "sourceOnlyEvidence": true,
+      "supersededEvidence": true,
+      "bucket": "historical-never-replay",
+      "archivePath": "supabase/migration-archive/historical-never-replay/20270128000327_schedule_rotation_retention.sql",
+      "ledgerVersionPresent": false,
+      "originalPath": "supabase/migrations/20270128000327_schedule_rotation_retention.sql",
+      "lineageEvidence": "PRODUCTION_PARTIAL_APPLY_20261108_326_PRESENT_327_ABSENT_JOB_ABSENT"
     }
   ],
   "pendingSources": [
@@ -9822,12 +9842,6 @@
       "domain": "rotation-retention-20261108"
     },
     {
-      "version": "20270128000327",
-      "filename": "20270128000327_schedule_rotation_retention.sql",
-      "sha256": "5dc13254640dedb3d356eed91c25ec44296ab0d1fcb6885fb2e9000da8ed7924",
-      "domain": "rotation-retention-20261108"
-    },
-    {
       "version": "20261102092616",
       "filename": "20261102092616_staff_inactive_ft_earned_days_v1.sql",
       "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
@@ -10048,6 +10062,12 @@
       "filename": "20261107151500_public_hud_dispatch_project_url_v1.sql",
       "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
       "reason": "Supplement35 reuses the existing spectator canonical-project URL fallback after managed-role GUC activation failed42501. Preserves source,jobs,ACLs and role policy. Native SQL-sink dispatch/denials/drift/rollback passed;exact full35 restore/activation and final production package approval remain required."
+    },
+    {
+      "version": "20270128000328",
+      "filename": "20270128000328_schedule_rotation_retention_current_role.sql",
+      "sha256": "f9b648dad6722562f23272faa72e2dc18363ce2a313e44b4935734846ae11309",
+      "domain": "rotation-retention-cron-role-20261108"
     }
   ],
   "floorActiveAllowlist": [
@@ -10138,9 +10158,9 @@
     }
   ],
   "counts": {
-    "historicalSources": 266,
+    "historicalSources": 267,
     "remoteEquivalent": 9,
-    "superseded": 32,
+    "superseded": 33,
     "neverReplay": 221,
     "legacyUnappliedNotForReplay": 4,
     "remoteHistoryReceipts": 66,
