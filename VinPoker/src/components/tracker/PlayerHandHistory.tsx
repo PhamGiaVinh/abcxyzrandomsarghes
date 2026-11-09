@@ -13,7 +13,10 @@ export function PlayerHandHistory({tournamentId,hands}:{tournamentId:string;hand
   const maximum=Math.max(1,...hands.map(h=>h.endingStack??0));
   const x=(i:number)=>64+i*48;
   const y=(value:number)=>180-value/maximum*150;
-  const points=hands.flatMap((hand,index)=>hand.endingStack===null?[]:[{hand,index}]);
+  // The paginated public reader returns newest first. Chart and list share its
+  // reverse order; hand numbers can repeat/reset after moving between tables.
+  const chronologicalHands=[...hands].reverse();
+  const points=chronologicalHands.flatMap((hand,index)=>hand.endingStack===null?[]:[{hand,index}]);
   const toneAt=(i:number)=>{
     const previous=points[i-1],current=points[i];
     if(!previous)return 'text-yellow-400';
@@ -43,7 +46,7 @@ export function PlayerHandHistory({tournamentId,hands}:{tournamentId:string;hand
     </div>
     <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Chú giải biến động stack"><span className="text-emerald-400">↗ Tăng chip</span><span className="text-red-400">↘ Giảm chip</span><span className="text-yellow-400">→ Không đổi / điểm đầu</span></p>
     {missing>0&&<p className="mt-2 text-xs text-muted-foreground">{missing} hand chưa có stack xác minh. Nét xám liền chỉ nối hai mốc đã biết, không khẳng định chip giữ nguyên hoặc đã thay đổi thế nào ở các hand thiếu dữ liệu. Không tạo điểm stack giả.</p>}
-    <ol className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">{[...hands].reverse().map(hand=>{
+    <ol className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">{chronologicalHands.map(hand=>{
       const href=publicHandReplayHref(tournamentId,hand);
       const content=<><span><span className="font-semibold">Hand #{hand.handNumber}</span><span className="mt-1 block text-xs text-muted-foreground">{hand.playedAt ? new Date(hand.playedAt).toLocaleString('vi-VN') : 'Chưa có thời điểm'}</span></span><span className="text-right font-mono text-xs"><span className={hand.netDelta===null?'text-muted-foreground':hand.netDelta<0?'text-red-400':hand.netDelta>0?'text-emerald-400':'text-yellow-400'}>{hand.netDelta===null?'—':`${hand.netDelta>0?'+':''}${formatChips(hand.netDelta)}`}</span><span className="mt-1 block text-muted-foreground">{hand.endingStack===null?'Stack chưa xác minh':`${formatChips(hand.endingStack)} chip`}</span></span></>;
       return <li key={hand.handId}><a href={href} aria-label={`Mở replay hand #${hand.handNumber}`} className="flex min-h-14 items-center justify-between gap-3 rounded px-1 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{content}</a></li>;
