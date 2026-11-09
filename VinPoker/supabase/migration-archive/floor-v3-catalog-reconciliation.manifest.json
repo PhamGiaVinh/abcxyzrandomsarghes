@@ -10074,6 +10074,12 @@
       "filename": "20270128000329_time_budget_rotation_retention.sql",
       "sha256": "ba23b6b21aac9fde3ce24d14a26eec7062c33d16e61ae19167bddcfb7f675c4f",
       "domain": "rotation-retention-time-budget-20261109"
+    },
+    {
+      "version": "20270128000330",
+      "filename": "20270128000330_schedule_budgeted_rotation_retention.sql",
+      "sha256": "ba56419ff69ffadfda0dfba1ff8dd36e896855933184d3acc79ce2d982185bb7",
+      "domain": "rotation-retention-budgeted-canary-20261109"
     }
   ],
   "floorActiveAllowlist": [
