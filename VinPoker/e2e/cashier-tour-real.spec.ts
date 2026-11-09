@@ -1857,8 +1857,13 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
  let phase='source',pageErrors=0,summaryReads=0,historyReads=0,historyCount=0,unknownStacks=0,observedHands:number|null=null,revision:string|null=null,revocationFrames=0,visibilityFrames=0,sourceToReadyMs:number|null=null;
  let failureKind:string|null=null,teardown='pending';const tableUi={catalogCount:0,targetIndex:-1,snapshotReads:0,lastStatus:0,lastAccess:'unknown',targetItem:false};
  const settlementEvidence={receipt:false,sourcePreserved:false,workerRevision:false,frozen:false,reopenedDot:false,readyMs:null as number|null};
+ const hudOpenSamples:{iteration:number;kind:'first-open'|'reopen';warmup:boolean;summaryVisibleMs:number|null;historyVisibleMs:number|null;status:'pending'|'passed'}[]=[];
+ const hudOpenDistribution=(field:'summaryVisibleMs'|'historyVisibleMs')=>{
+  const values=hudOpenSamples.filter(row=>row.kind==='reopen'&&!row.warmup&&row.status==='passed').map(row=>row[field]).filter((value):value is number=>value!==null).sort((a,b)=>a-b);
+  return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};
+ };
  const checks={canonicalTourStart:false,actualTableOpen:false,actualSeatClick:false,anonymousSummary:false,independentHistory:false,help:false,idleNoPolling:false,tourReplayLink:false,actualReplayRpc:false,anonymousStorage:false,canonicalNewHand:false,frozenDuringNewHand:false,reopenNewRevision:false,revocationBroadcast:false,revocationCleared:false,definitiveDenials:false,restored:false};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,failureKind,teardown,tableUi,observedHands,revision,historyCount,unknownStacks,summaryReads,historyReads,settlementEvidence,pageErrors,revocationFrames,visibilityFrames,sourceToReadyMs,qualification:false,limitations:'One anonymous Chromium HUD with canonical start/Finish,new-source frozen HUD,reopen,actual Broadcast and definitive API withdrawal/restore. Host private controls mutate only fixed TEST tour deleted_at through real triggers;not operator withdrawal authorization/UI proof. Original shadow runs before reads and after worker drain. Settlement-only9023proof uses owner Edge and canonical receipt;source hand/player/action and current-seat hashes must remain unchanged. No cross-tour aggregation,all-chart-shapes,production Edge/cron or1000capacity proof. No routes/responses intercepted.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,failureKind,teardown,tableUi,observedHands,revision,historyCount,unknownStacks,summaryReads,historyReads,settlementEvidence,pageErrors,revocationFrames,visibilityFrames,sourceToReadyMs,hudOpenLatency:{warmups:2,graded:20,summaryBudgetMs:1000,rows:hudOpenSamples,summaryVisible:hudOpenDistribution('summaryVisibleMs'),historyVisible:hudOpenDistribution('historyVisibleMs'),scope:'Node monotonic seat-click to Playwright-visible counters/history upper bounds;fresh requests each open;first-open separate;no retries;not paint timing,production,concurrent browsers or1M-hand proof'},qualification:false,limitations:'One anonymous Chromium HUD with canonical start/Finish,new-source frozen HUD,reopen,actual Broadcast and definitive API withdrawal/restore. Host private controls mutate only fixed TEST tour deleted_at through real triggers;not operator withdrawal authorization/UI proof. Original shadow runs before reads and after worker drain. Settlement-only9023proof uses owner Edge and canonical receipt;source hand/player/action and current-seat hashes must remain unchanged. No cross-tour aggregation,all-chart-shapes,production Edge/cron or1000capacity proof. No routes/responses intercepted.'},null,2));
  let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  try{
   const hands=await read('tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023');expect(hands).toHaveLength(1);const hand=hands[0];expect(hand.status).toBe('completed');
@@ -1894,15 +1899,35 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   const seat=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(seat).toBeVisible({timeout:15000});
   const responseFor=(name:string)=>viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/'+name))return false;const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_player_id===player;},{timeout:10000});
   const summaryResponse=responseFor('get_public_player_hud_summary_v1'),historyResponse=responseFor('get_public_player_hud_history_v1');void summaryResponse.catch(()=>{});void historyResponse.catch(()=>{});
-  await seat.click();checks.actualSeatClick=true;phase='hud';
+  const firstHudOpen={iteration:0,kind:'first-open' as const,warmup:false,summaryVisibleMs:null as number|null,historyVisibleMs:null as number|null,status:'pending' as 'pending'|'passed'};hudOpenSamples.push(firstHudOpen);
+  const firstHudOpenAt=performance.now();await seat.click();checks.actualSeatClick=true;phase='hud';
   const actualSummary=await summaryResponse;expect(actualSummary.ok()).toBe(true);const summary=await actualSummary.json();expect(summary.access).toBe('public');expect(summary.coverageComplete).toBe(true);expect(summary.playerId).toBe(player);expect(summary.tournamentId).toBe(tour);
   observedHands=summary.counters.handsObserved;revision=summary.revision;expect(observedHands).toBeGreaterThanOrEqual(21);checks.anonymousSummary=true;
   const dialog=viewer.getByRole('dialog').filter({has:viewer.getByRole('button',{name:'Giải thích HANDS',exact:true})});
   await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(observedHands!.toLocaleString('vi-VN'));await expect(dialog.getByText(/Bản thống kê lúc mở/)).toBeVisible();
+  firstHudOpen.summaryVisibleMs=performance.now()-firstHudOpenAt;
   const actualHistory=await historyResponse;expect(actualHistory.ok()).toBe(true);const history=await actualHistory.json();expect(history.tournamentId).toBe(tour);expect(history.playerId).toBe(player);expect(Array.isArray(history.handHistory)).toBe(true);expect(history.handHistory.length).toBeLessThanOrEqual(50);
   expect(history.handHistory.every((row:{handId:string})=>sourceIds.has(row.handId))).toBe(true);expect(history.handHistory.some((row:{handId:string})=>row.handId===hand.id)).toBe(true);historyCount=history.handHistory.length;unknownStacks=history.handHistory.filter((row:{endingStack:number|null})=>row.endingStack===null).length;checks.independentHistory=true;
   const region=dialog.getByRole('region',{name:'Lịch sử hand của người chơi'}),link=region.getByRole('link',{name:'Mở replay hand #9023',exact:true});await expect(link).toBeVisible();const href=new URL((await link.getAttribute('href'))!,process.env.PLAYWRIGHT_BASE_URL);expect(href.pathname).toBe('/live/'+tour);expect(href.searchParams.get('handId')).toBe(hand.id);expect(href.searchParams.get('tableId')).toBe(hand.tournament_table_id);checks.tourReplayLink=true;
   const current=history.handHistory.find((row:{handId:string})=>row.handId===hand.id);if(current.endingStack===null){await expect(region.getByRole('link',{name:/^Replay hand #9023,/})).toHaveCount(0);await expect(link.getByText('Stack chưa xác minh')).toBeVisible();}
+  firstHudOpen.historyVisibleMs=performance.now()-firstHudOpenAt;firstHudOpen.status='passed';
+  // Measure actual repeated seat clicks and rendered counters, not the later
+  // source-to-ready worker probe. No response interception or failed-open retry.
+  // Keep first-open and two warmups as raw samples outside the20graded reopens.
+  phase='hud-open-latency';
+  for(let iteration=0;iteration<22;iteration++){
+   await dialog.getByRole('button',{name:'Close',exact:true}).click();await expect(dialog).toBeHidden();
+   const freshSummary=responseFor('get_public_player_hud_summary_v1'),freshHistory=responseFor('get_public_player_hud_history_v1');void freshSummary.catch(()=>{});void freshHistory.catch(()=>{});
+   const row={iteration,kind:'reopen' as const,warmup:iteration<2,summaryVisibleMs:null as number|null,historyVisibleMs:null as number|null,status:'pending' as 'pending'|'passed'};hudOpenSamples.push(row);
+   const openedAt=performance.now();await seat.click();
+   const summaryResponse=await freshSummary;expect(summaryResponse.ok()).toBe(true);const value=await summaryResponse.json();expect(value).toMatchObject({access:'public',tournamentId:tour,playerId:player,revision});
+   await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(observedHands!.toLocaleString('vi-VN'));await expect(dialog.getByText(/Bản thống kê lúc mở/)).toBeVisible();
+   row.summaryVisibleMs=performance.now()-openedAt;
+   const historyResponse=await freshHistory;expect(historyResponse.ok()).toBe(true);const historyValue=await historyResponse.json();expect(historyValue).toMatchObject({access:'public',tournamentId:tour,playerId:player});expect(historyValue.handHistory.every((item:{handId:string})=>sourceIds.has(item.handId))).toBe(true);
+   await expect(link).toBeVisible();row.historyVisibleMs=performance.now()-openedAt;row.status='passed';report();
+  }
+  expect(hudOpenDistribution('summaryVisibleMs').samples).toBe(20);expect(hudOpenDistribution('historyVisibleMs').samples).toBe(20);
+  expect(hudOpenDistribution('summaryVisibleMs').p95Ms).toBeLessThanOrEqual(1000);
   await dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).click();const help=viewer.getByRole('dialog',{name:'Giải thích chỉ số HUD'});await expect(help).toBeVisible();await help.getByRole('button',{name:'Close',exact:true}).click();checks.help=true;
   // Allow the one initial access-subscription verification, then observe an
   // actual idle window. This does not simulate a source revision change.
