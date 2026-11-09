@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'VinPoker/supabase/migrations/20270128000331_bounded_cron_history_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000332_schedule_bounded_cron_history_retention.sql'
       - 'VinPoker/tests/cronRetention/**'
       - '.github/workflows/cron-history-retention-db.yml'
   workflow_dispatch:
@@ -34,7 +35,7 @@ jobs:
           docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
           shared_preload_libraries='pg_cron'
           cron.database_name='postgres'
-          cron.launch_active_jobs=off
+          cron.use_background_workers=on
           CONF
           docker restart '${{ job.services.postgres.id }}'
           for i in {1..30}; do pg_isready -h localhost -U cron_test_admin -d postgres && break; sleep 1; done
@@ -61,5 +62,7 @@ jobs:
         run: |
           bash VinPoker/tests/cronRetention/concurrency.sh
           bash VinPoker/tests/cronRetention/update-race.sh
-      - name: Rehearse source recovery without rewinding source data
+      - name: Verify the approved-shape command with actual pg_cron execution
+        run: bash VinPoker/tests/cronRetention/scheduler.sh
+      - name: Rehearse source recovery after scheduler removal
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/rollback.sql

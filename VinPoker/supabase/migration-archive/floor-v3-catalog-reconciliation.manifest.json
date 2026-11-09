@@ -10085,6 +10085,11 @@
       "version": "20270128000331",
       "filename": "20270128000331_bounded_cron_history_retention.sql",
       "sha256": "1a4252b917dc400131353a0bc6f7c570aad294b53fb0200663d11e42ac682d2c"
+    },
+    {
+      "version": "20270128000332",
+      "filename": "20270128000332_schedule_bounded_cron_history_retention.sql",
+      "sha256": "96a387e12ae8373db160516ef55e05ce755e0e5fdceba1eb3e031e16953aea48"
     }
   ],
   "floorActiveAllowlist": [
