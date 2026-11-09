@@ -10090,6 +10090,16 @@
       "version": "20270128000332",
       "filename": "20270128000332_schedule_bounded_cron_history_retention.sql",
       "sha256": "0c339d2823c7d2c8b04315ac609adb114808246dfb8398af207c053a7758a924"
+    },
+    {
+      "version": "20270128000333",
+      "filename": "20270128000333_checkpoint_rotation_retention.sql",
+      "sha256": "d58eee4513002fdd9c2f3163501ed77fa55895da819a92a2873f8fcf72dd93da"
+    },
+    {
+      "version": "20270128000334",
+      "filename": "20270128000334_schedule_checkpoint_rotation_retention.sql",
+      "sha256": "9db6208444f21c7bf6316059b870ad756e66e52496a0ec724d882d82696b4851"
     }
   ],
   "floorActiveAllowlist": [

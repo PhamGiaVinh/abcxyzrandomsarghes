@@ -1,6 +1,19 @@
 -- Isolated rehearsal of a forward rollback: preserve the cron source table.
 BEGIN;
 DO $$DECLARE old record; BEGIN
+ IF to_regclass('public.rotation_retention_predecessor') IS NOT NULL THEN
+   SELECT * INTO STRICT old FROM public.rotation_retention_predecessor;
+   EXECUTE old.definition;
+   IF NOT EXISTS(SELECT 1 FROM pg_proc
+     WHERE oid='public.cleanup_next_dealer_rotation_schedule(integer)'::regprocedure
+       AND md5(replace(prosrc,chr(13),''))=old.source_md5
+       AND proacl IS NOT DISTINCT FROM old.proacl AND proconfig IS NOT DISTINCT FROM old.proconfig
+       AND proowner=old.proowner AND prosecdef=old.prosecdef) THEN
+     RAISE EXCEPTION 'rotation recovery mismatch'; END IF;
+   DROP TABLE retention_private.rotation_checkpoint;
+ END IF;
+END$$;
+DO $$DECLARE old record; BEGIN
  SELECT * INTO STRICT old FROM public.cron_retention_predecessor;
  EXECUTE old.definition;
  IF NOT EXISTS(SELECT 1 FROM pg_proc

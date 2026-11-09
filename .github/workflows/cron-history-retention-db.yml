@@ -4,6 +4,8 @@ on:
     paths:
       - 'VinPoker/supabase/migrations/20270128000331_bounded_cron_history_retention.sql'
       - 'VinPoker/supabase/migrations/20270128000332_schedule_bounded_cron_history_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000333_checkpoint_rotation_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000334_schedule_checkpoint_rotation_retention.sql'
       - 'VinPoker/tests/cronRetention/**'
       - '.github/workflows/cron-history-retention-db.yml'
   workflow_dispatch:
@@ -64,5 +66,23 @@ jobs:
           bash VinPoker/tests/cronRetention/update-race.sh
       - name: Verify the approved-shape command with actual pg_cron execution
         run: bash VinPoker/tests/cronRetention/scheduler.sh
+      - name: Apply observed rotation predecessor and checkpoint dispatcher
+        run: |
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -v retention_roles_exist=1 \
+            -f VinPoker/tests/rotationRetention/prepare.sql \
+            -f VinPoker/supabase/migrations/20270128000326_bounded_rotation_retention.sql \
+            -f VinPoker/supabase/migrations/20270128000329_time_budget_rotation_retention.sql
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE TABLE public.rotation_retention_predecessor AS SELECT pg_get_functiondef(oid) AS definition,md5(replace(prosrc,chr(13),'')) AS source_md5,proacl,proconfig,proowner,prosecdef FROM pg_proc WHERE oid='public.cleanup_next_dealer_rotation_schedule(integer)'::regprocedure;"
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000333_checkpoint_rotation_retention.sql
+      - name: Verify rotation checkpoint on million rows and concurrent work
+        run: |
+          psql -X -v ON_ERROR_STOP=1 \
+            -f VinPoker/tests/cronRetention/rotation-behavior.sql \
+            -f VinPoker/tests/cronRetention/rotation-scale.sql 2>&1 | tee "$RUNNER_TEMP/rotation-checkpoint-plans.log"
+          python3 VinPoker/tests/cronRetention/verify-plans.py "$RUNNER_TEMP/rotation-checkpoint-plans.log" --rotation
+          bash VinPoker/tests/cronRetention/rotation-concurrency.sh
+          ROTATION_RETENTION_CHECKPOINT_ENABLED=1 bash VinPoker/tests/rotationRetention/update-race.sh
+      - name: Verify actual rotation checkpoint scheduler
+        run: ROTATION_RETENTION_CHECKPOINT_ENABLED=1 bash VinPoker/tests/cronRetention/scheduler.sh
       - name: Rehearse source recovery after scheduler removal
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/rollback.sql

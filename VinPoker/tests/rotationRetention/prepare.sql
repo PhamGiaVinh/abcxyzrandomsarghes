@@ -1,6 +1,9 @@
+\if :{?retention_roles_exist}
+\else
 CREATE ROLE anon;
 CREATE ROLE authenticated;
 CREATE ROLE service_role;
+\endif
 CREATE TABLE public.clubs(id uuid PRIMARY KEY,name text,region text,status text);
 CREATE TABLE public.game_tables(id uuid PRIMARY KEY,club_id uuid REFERENCES public.clubs,table_name text,status text);
 CREATE TABLE public.dealer_rotation_schedule(
