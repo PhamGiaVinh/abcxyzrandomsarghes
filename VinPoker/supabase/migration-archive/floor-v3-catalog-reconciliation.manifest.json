@@ -10100,6 +10100,16 @@
       "version": "20270128000334",
       "filename": "20270128000334_schedule_checkpoint_rotation_retention.sql",
       "sha256": "9db6208444f21c7bf6316059b870ad756e66e52496a0ec724d882d82696b4851"
+    },
+    {
+      "version": "20270128000335",
+      "filename": "20270128000335_bounded_diagnostic_log_retention.sql",
+      "sha256": "0eeec38cf04a36f3d57ea5ac6bf816ef1bbdff3ef889da35ffa64b8065541781"
+    },
+    {
+      "version": "20270128000336",
+      "filename": "20270128000336_schedule_bounded_diagnostic_log_retention.sql",
+      "sha256": "c0493718159534cdfc58058b71fbac3945c6838335d01c145773632cb98ffc77"
     }
   ],
   "floorActiveAllowlist": [

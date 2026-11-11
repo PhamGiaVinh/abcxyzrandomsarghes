@@ -1,0 +1,71 @@
+name: Diagnostic retention isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000335_bounded_diagnostic_log_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000336_schedule_bounded_diagnostic_log_retention.sql'
+      - 'VinPoker/tests/diagnosticRetention/**'
+      - '.github/workflows/diagnostic-retention-db.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic-retention-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cron_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cron_test_admin -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: cron_test_admin
+      PGPASSWORD: test
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install real pg_cron on disposable service
+        run: |
+          docker exec -u root '${{ job.services.postgres.id }}' sh -c 'apt-get update -qq && apt-get install -y --no-install-recommends postgresql-17-cron'
+          docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
+          shared_preload_libraries='pg_cron'
+          cron.database_name='postgres'
+          cron.use_background_workers=on
+          CONF
+          docker restart '${{ job.services.postgres.id }}'
+          for i in {1..30}; do pg_isready -h localhost -U cron_test_admin -d postgres && break; sleep 1; done
+          psql -X -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_cron;'
+      - name: Match hosted actor without changing any production role
+        run: |
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';
+          CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+          GRANT CREATE ON DATABASE postgres TO postgres;
+          GRANT USAGE,CREATE ON SCHEMA public TO postgres;
+          GRANT USAGE ON SCHEMA cron TO postgres;
+          GRANT SELECT ON cron.job,cron.job_run_details TO postgres;
+          GRANT EXECUTE ON FUNCTION cron.schedule(text,text,text),cron.alter_job(bigint,text,text,text,text,boolean),cron.unschedule(bigint) TO postgres;
+          SQL
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/diagnosticRetention/prepare.sql
+      - name: Reject wrong apply actor and apply source as hosted actor
+        run: |
+          if psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000335_bounded_diagnostic_log_retention.sql > "$RUNNER_TEMP/diagnostic-wrong-actor.log" 2>&1; then exit 1; fi
+          grep -q diagnostic_retention_wrong_actor "$RUNNER_TEMP/diagnostic-wrong-actor.log"
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000335_bounded_diagnostic_log_retention.sql
+      - name: Behavior, actual actor boundary and full million-row sweep
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -c 'SET ROLE postgres;' -f VinPoker/tests/diagnosticRetention/behavior.sql
+          psql -X -v ON_ERROR_STOP=1 -c 'SET ROLE postgres;' -f VinPoker/tests/diagnosticRetention/scale.sql
+      - name: Actual cancellation, retry, skipped rows and concurrent workers
+        run: |
+          PGUSER=postgres bash VinPoker/tests/diagnosticRetention/timeout.sh
+          PGUSER=postgres bash VinPoker/tests/diagnosticRetention/concurrency.sh
+      - name: Activation drift gates, job-only rollback and three actual scheduled ticks
+        run: bash VinPoker/tests/diagnosticRetention/scheduler.sh
