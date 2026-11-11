@@ -48,6 +48,8 @@ jobs:
         run: bash VinPoker/tests/dealerBackupObservation/concurrency.sh
       - name: Response committed during fallback does not become a false timeout
         run: python3 VinPoker/tests/dealerBackupObservation/snapshotRace.py
+      - name: Actual caller timings before and after disposable dead-index cleanup
+        run: python3 VinPoker/tests/dealerBackupObservation/bloatTiming.py
       - name: Sanitized fixture timings only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
