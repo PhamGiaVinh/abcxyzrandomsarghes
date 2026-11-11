@@ -7651,18 +7651,18 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
-    {
-      "domain": "player-financial-reports-v1",
-      "filename": "20261103153245_player_financial_reports_v1.sql",
-      "sha256": "89d10dd1b5b38433bfd1c2afba04b753cdfca17c57e662f1a3a8ddf4083d20fc",
-      "version": "20261103153245"
-    },
-    {
-      "domain": "payout-publication-after-cashier-v1",
-      "filename": "20261103131615_payout_publication_after_cashier.sql",
-      "sha256": "cd6f4c4264da7e4ca18bd2e45115cb7beadc2029ceaedbb5b10dcb810d9c069f",
-      "version": "20261103131615"
-    },
+{
+  "domain": "player-financial-reports-v1",
+  "filename": "20261103153245_player_financial_reports_v1.sql",
+  "sha256": "89d10dd1b5b38433bfd1c2afba04b753cdfca17c57e662f1a3a8ddf4083d20fc",
+  "version": "20261103153245"
+},
+{
+  "domain": "payout-publication-after-cashier-v1",
+  "filename": "20261103131615_payout_publication_after_cashier.sql",
+  "sha256": "cd6f4c4264da7e4ca18bd2e45115cb7beadc2029ceaedbb5b10dcb810d9c069f",
+  "version": "20261103131615"
+},
     {
       "version": "20270128000301",
       "filename": "20270128000301_tracker_decided_hand_action_guard_v1.sql",
