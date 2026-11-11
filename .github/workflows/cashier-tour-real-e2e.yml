@@ -108,7 +108,7 @@ on:
         default: false
 
       prize_close_probe:
-        description: Isolated full34 Floor/Cashier paid-prize HTTP journey after audience drain
+        description: Isolated full34 Floor/Cashier paid-prize HTTP journey before configured audience drain
         type: boolean
         default: false
 

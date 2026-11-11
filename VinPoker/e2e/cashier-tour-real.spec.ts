@@ -1850,7 +1850,7 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
 });
 
 test('anonymous prepared HUD reads canonical operational history and replay',async({page,browser})=>{
- test.skip(process.env.LOCAL_OPERATIONS_HUD_BROWSER_ENABLED!=='1','Requires actual backfill and independent raw-source shadow after load stops');test.setTimeout(120_000);
+ test.skip(process.env.LOCAL_OPERATIONS_HUD_BROWSER_ENABLED!=='1','Requires actual backfill and independent raw-source shadow');test.setTimeout(process.env.LOCAL_OPERATIONS_HUD_LOAD_BARRIER==='1'?600_000:120_000);
  const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
@@ -1978,6 +1978,16 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   settlementEvidence.sourcePreserved=true;await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(reopenedSummary.counters.handsObserved.toLocaleString('vi-VN'));expect({summary:summaryReads,history:historyReads}).toEqual(readsBeforeProof);await expect(region.getByRole('link',{name:/^Replay hand #9023,/})).toHaveCount(0);settlementEvidence.frozen=true;
   await dialog.getByRole('button',{name:'Close',exact:true}).click();const verifiedSummaryResponse=responseFor('get_public_player_hud_summary_v1'),verifiedHistoryResponse=responseFor('get_public_player_hud_history_v1');void verifiedSummaryResponse.catch(()=>{});void verifiedHistoryResponse.catch(()=>{});await seat.click();
   expect((await (await verifiedSummaryResponse).json()).revision).toBe(settledSummary.revision);expect((await (await verifiedHistoryResponse).json()).handHistory.find((row:{handId:string})=>row.handId===hand.id).endingStack).toBe(rawPlayer.ending_stack);await expect(region.getByRole('link',{name:/^Replay hand #9023,/})).toBeVisible();settlementEvidence.reopenedDot=true;
+  if(process.env.LOCAL_OPERATIONS_HUD_LOAD_BARRIER==='1'){
+   // Keep the HUD browser and public source alive through the other loaded
+   // operations. Withdrawal is intentionally tested only after audience drain.
+   phase='loaded-replay';const loadedReplay=await context.newPage();
+   try{const response=loadedReplay.waitForResponse(value=>new URL(value.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2')&&value.request().postDataJSON()?.p_hand_id===hand.id,{timeout:15000});void response.catch(()=>{});await loadedReplay.goto(href.toString());const actual=await response;expect(actual.ok()).toBe(true);expect((await actual.json()).id).toBe(hand.id);await expect(loadedReplay.getByTestId('replay-action-rail')).toBeVisible();checks.actualReplayRpc=true;}finally{await loadedReplay.close();}
+   phase='loaded-phase-passed-awaiting-drain';report();
+   const root=process.env.LOCAL_OPERATIONS_HUD_CONTROL!,nonce=process.env.LOCAL_OPERATIONS_HUD_CONTROL_NONCE!;expect(root).toBe('/fixtures/hud-control');
+   writeFileSync(root+'/requests/loaded-ready.json',JSON.stringify({sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce,loaded:true}));
+   await expect.poll(()=>{const file=root+'/receipts/audience-drained.json';if(!existsSync(file))return false;const r=JSON.parse(readFileSync(file,'utf8'));return r.sha===process.env.LOCAL_OPERATIONS_SOURCE_SHA&&r.nonce===nonce&&r.drained===true;},{timeout:480000,intervals:[250,500]}).toBe(true);
+  }
   phase='withdrawal';const control=process.env.LOCAL_OPERATIONS_HUD_CONTROL!,nonce=process.env.LOCAL_OPERATIONS_HUD_CONTROL_NONCE!;expect(control).toBe('/fixtures/hud-control');
   const command=async(action:'withdraw'|'restore')=>{const request={sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce,requestId:crypto.randomUUID(),action};writeFileSync(control+'/requests/request.next',JSON.stringify(request));renameSync(control+'/requests/request.next',control+'/requests/request.json');await expect.poll(()=>{const file=control+'/receipts/receipt.json';if(!existsSync(file))return false;const receipt=JSON.parse(readFileSync(file,'utf8'));return receipt.requestId===request.requestId&&receipt.sha===request.sha&&receipt.nonce===nonce&&receipt.action===action&&receipt.applied===true&&Number.isFinite(receipt.sourceWrittenAt);},{timeout:5000,intervals:[100,250]}).toBe(true);};
   const broadcasts=revocationFrames+visibilityFrames;await command('withdraw');await expect.poll(()=>revocationFrames+visibilityFrames,{timeout:5000}).toBeGreaterThan(broadcasts);checks.revocationBroadcast=true;
