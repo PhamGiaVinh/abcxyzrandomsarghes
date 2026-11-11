@@ -1,11 +1,15 @@
 // Read-only, disposable-fixture observer. Never export SQL text or parameters.
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 
 const tags=new Set(['cashier','hud','spectator','other']);
+export function validateContainerIdentity(id,name){
+ assert.match(id??'',/^[a-f0-9]{12,64}$/);
+ assert.match(name??'',/^\/supabase_db_cashier-e2e-[A-Za-z0-9_-]+$/);
+}
 export function sanitizeLockSample(row){
  assert.ok(row&&Array.isArray(row.waits));
  assert.ok(Number.isFinite(Date.parse(row.at)));
@@ -22,7 +26,9 @@ SELECT jsonb_build_object('at',clock_timestamp(),'waits',coalesce((SELECT jsonb_
 
 async function main(){
  const [container,file,sha]=process.argv.slice(2);
- assert.match(container??'',/^supabase_db_cashier-e2e-[A-Za-z0-9_-]+$/);
+ assert.match(container??'',/^[a-f0-9]{12,64}$/);
+ const inspected=spawnSync('docker',['inspect',container,'--format','{{.Name}}'],{encoding:'utf8'});
+ assert.equal(inspected.status,0);validateContainerIdentity(container,inspected.stdout.trim());
  assert.match(sha??'',/^[a-f0-9]{40}$/);assert.ok(file?.endsWith('-http.json'));
  const child=spawn('docker',['exec','-i',container,'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres'],{stdio:['pipe','pipe','pipe']});
  let stderrBytes=0,stopping=false;child.stderr.on('data',b=>stderrBytes+=b.length);
