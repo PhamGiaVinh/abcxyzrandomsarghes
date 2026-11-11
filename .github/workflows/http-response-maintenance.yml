@@ -74,6 +74,9 @@ jobs:
         env:
           PGUSER: postgres
         run: bash VinPoker/scripts/ops/maintain-http-response.sh --fixture
+      - name: Application role default remains unchanged
+        run: |
+          test "$(PGUSER=postgres psql -X -qAt -v ON_ERROR_STOP=1 -c 'SHOW statement_timeout')" = 2min
       - name: Sanitized maintenance fixture receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -8,6 +8,10 @@ script=root/'scripts/ops/maintain-http-response.sh'
 original=sql("SELECT pg_get_functiondef('public.run_dealer_ready_backup_cron_v1()'::regprocedure);")
 stamp=sql("SELECT coalesce(last_vacuum::text,'none') FROM pg_stat_all_tables WHERE relid='net._http_response'::regclass;")
 cases=[]
+# Mirror a pooler that retains the role default despite startup PGOPTIONS.
+# The maintenance connection must explicitly SET its own budgets; the role
+# default must remain unchanged after both rejected and successful operations.
+sql("ALTER ROLE postgres SET statement_timeout='2min';")
 def denied(name,env=None):
  e=dict(os.environ,PGUSER='postgres');e.update(env or {})
  result=subprocess.run(['bash',str(script),'--fixture'],env=e,capture_output=True,text=True)
