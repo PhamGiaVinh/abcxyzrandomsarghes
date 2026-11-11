@@ -42,8 +42,12 @@ echo 'COMMIT;'
 holder=$!
 for i in {1..100}; do grep -q GATE_READY "$work/gate.log" && break; sleep 0.02; done
 grep -q GATE_READY "$work/gate.log"
+cleanup_sql="SELECT public.cleanup_dealer_rotation_schedule('e5000000-0000-4000-8000-000000000001',5);"
+if [[ "${ROTATION_RETENTION_CHECKPOINT_ENABLED:-0}" = 1 ]]; then
+  cleanup_sql='SELECT public.cleanup_next_dealer_rotation_schedule(5);'
+fi
 PGAPPNAME=rotation-budget-race-cleanup psql -X -qAt -v ON_ERROR_STOP=1 \
- -c "SELECT public.cleanup_dealer_rotation_schedule('e5000000-0000-4000-8000-000000000001',5);" >"$work/result" &
+ -c "$cleanup_sql" >"$work/result" &
 cleaner=$!
 ready=0
 for i in {1..100}; do

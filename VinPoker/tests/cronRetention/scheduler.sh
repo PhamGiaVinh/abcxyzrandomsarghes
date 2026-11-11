@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Exercise the exact installed command through real pg_cron as hosted postgres.
+set -euo pipefail
+fn=cleanup_cron_job_run_details
+job=retention-cron-history
+checkpoint=retention_private.cron_history_checkpoint
+migration=20270128000332_schedule_bounded_cron_history_retention.sql
+if [[ "${ROTATION_RETENTION_CHECKPOINT_ENABLED:-0}" = 1 ]]; then
+  fn=cleanup_next_dealer_rotation_schedule
+  job=retention-rotation-schedule
+  checkpoint=retention_private.rotation_checkpoint
+  migration=20270128000334_schedule_checkpoint_rotation_retention.sql
+fi
+sql="SET lock_timeout='1s'; SET statement_timeout='10s'; SELECT public.$fn(5000);"
+PGUSER=postgres psql -X -v ON_ERROR_STOP=1 \
+ -f "VinPoker/supabase/migrations/$migration"
+# Migration postchecks already verified the real schedule/actor/command. Remove
+# that disposable schedule before the one-minute probe so both cannot fire at
+# the same minute and turn a correct advisory-lock busy response into a flaky
+# telemetry assertion. Production scheduling is never changed by this script.
+PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -v job="$job" <<'SQL'
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname=:'job';
+SQL
+probe="$(PGUSER=postgres psql -X -qAt -v ON_ERROR_STOP=1 -v command="$sql" <<'SQL'
+SELECT cron.schedule('cron-history-ci-probe','* * * * *',:'command');
+SQL
+)"
+[[ "$probe" =~ ^[0-9]+$ ]]
+trap 'PGUSER=postgres psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT cron.unschedule($probe); SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname='"'"'$job'"'"';"' EXIT
+status=''
+for i in {1..90}; do
+  status="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT status FROM cron.job_run_details WHERE jobid=$probe ORDER BY runid DESC LIMIT 1;")"
+  [[ "$status" = succeeded ]] && break
+  if [[ "$status" = failed ]]; then echo CRON_RETENTION_REAL_SCHEDULER_FAILED >&2; exit 1; fi
+  sleep 1
+done
+test "$status" = succeeded
+# A cron "1 row" receipt is not a deletion count. Verify persisted, private
+# invocation telemetry was committed by the actual scheduled function call.
+test "$(psql -X -qAt -v ON_ERROR_STOP=1 -v probe="$probe" -v checkpoint="$checkpoint" <<'SQL'
+SELECT count(*) FROM :checkpoint c
+JOIN LATERAL(SELECT start_time FROM cron.job_run_details
+ WHERE jobid=:probe AND status='succeeded' ORDER BY runid DESC LIMIT 1) r ON true
+WHERE c.last_started_at>=r.start_time AND c.updated_at>=c.last_started_at
+ AND c.last_deleted<=c.last_inspected AND c.total_deleted<=c.total_inspected;
+SQL
+)" = 1
+echo CRON_RETENTION_REAL_SCHEDULER_PASS

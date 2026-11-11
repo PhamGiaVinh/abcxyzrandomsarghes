@@ -1,0 +1,88 @@
+name: Cron history retention isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000331_bounded_cron_history_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000332_schedule_bounded_cron_history_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000333_checkpoint_rotation_retention.sql'
+      - 'VinPoker/supabase/migrations/20270128000334_schedule_checkpoint_rotation_retention.sql'
+      - 'VinPoker/tests/cronRetention/**'
+      - '.github/workflows/cron-history-retention-db.yml'
+  workflow_dispatch:
+jobs:
+  cron-history-retention-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cron_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cron_test_admin -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: cron_test_admin
+      PGPASSWORD: test
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install real pg_cron in the disposable service only
+        run: |
+          docker exec -u root '${{ job.services.postgres.id }}' sh -c 'apt-get update -qq && apt-get install -y --no-install-recommends postgresql-17-cron'
+          docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
+          shared_preload_libraries='pg_cron'
+          cron.database_name='postgres'
+          cron.use_background_workers=on
+          CONF
+          docker restart '${{ job.services.postgres.id }}'
+          for i in {1..30}; do pg_isready -h localhost -U cron_test_admin -d postgres && break; sleep 1; done
+          psql -X -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION pg_cron;'
+      - name: Match hosted non-owner and non-superuser capabilities
+        run: |
+          # Matches READ-ONLY observed hosted postgres: NOSUPERUSER,BYPASSRLS.
+          # No production role grant/change is part of this candidate.
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';"
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/prepare.sql
+      - name: Apply exact predecessor and candidate under hosted-like actor
+        run: |
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270103000003_retention_cleanup_functions.sql
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/capture.sql
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000331_bounded_cron_history_retention.sql
+      - name: Verify policy, bounded million-row reads and cooperative budget
+        run: |
+          psql -X -v ON_ERROR_STOP=1 \
+            -f VinPoker/tests/cronRetention/behavior.sql \
+            -f VinPoker/tests/cronRetention/scale.sql \
+            -f VinPoker/tests/cronRetention/budget.sql 2>&1 | tee "$RUNNER_TEMP/cron-retention-plans.log"
+          python3 VinPoker/tests/cronRetention/verify-plans.py "$RUNNER_TEMP/cron-retention-plans.log"
+      - name: Verify concurrent workers and skipped rows survive the next sweep
+        run: |
+          bash VinPoker/tests/cronRetention/concurrency.sh
+          bash VinPoker/tests/cronRetention/update-race.sh
+      - name: Verify the approved-shape command with actual pg_cron execution
+        run: bash VinPoker/tests/cronRetention/scheduler.sh
+      - name: Apply observed rotation predecessor and checkpoint dispatcher
+        run: |
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -v retention_roles_exist=1 \
+            -f VinPoker/tests/rotationRetention/prepare.sql \
+            -f VinPoker/supabase/migrations/20270128000326_bounded_rotation_retention.sql \
+            -f VinPoker/supabase/migrations/20270128000329_time_budget_rotation_retention.sql
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE TABLE public.rotation_retention_predecessor AS SELECT pg_get_functiondef(oid) AS definition,md5(replace(prosrc,chr(13),'')) AS source_md5,proacl,proconfig,proowner,prosecdef FROM pg_proc WHERE oid='public.cleanup_next_dealer_rotation_schedule(integer)'::regprocedure;"
+          PGUSER=postgres psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000333_checkpoint_rotation_retention.sql
+      - name: Verify rotation checkpoint on million rows and concurrent work
+        run: |
+          psql -X -v ON_ERROR_STOP=1 \
+            -f VinPoker/tests/cronRetention/rotation-behavior.sql \
+            -f VinPoker/tests/cronRetention/rotation-scale.sql 2>&1 | tee "$RUNNER_TEMP/rotation-checkpoint-plans.log"
+          python3 VinPoker/tests/cronRetention/verify-plans.py "$RUNNER_TEMP/rotation-checkpoint-plans.log" --rotation
+          bash VinPoker/tests/cronRetention/rotation-concurrency.sh
+          ROTATION_RETENTION_CHECKPOINT_ENABLED=1 bash VinPoker/tests/rotationRetention/update-race.sh
+      - name: Verify actual rotation checkpoint scheduler
+        run: ROTATION_RETENTION_CHECKPOINT_ENABLED=1 bash VinPoker/tests/cronRetention/scheduler.sh
+      - name: Rehearse source recovery after scheduler removal
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/cronRetention/rollback.sql
