@@ -1,5 +1,5 @@
 """Disposable native maintenance rejection cases; no production credentials."""
-import os,subprocess,pathlib,json
+import os,subprocess,pathlib,json,tempfile
 assert os.environ.get('PGDATABASE','').startswith('vinpoker_backup_observation_test_')
 root=pathlib.Path(__file__).resolve().parents[2]
 args=['psql','-X','-qAt','-v','ON_ERROR_STOP=1']
@@ -18,6 +18,17 @@ def denied(name,env=None):
  assert result.returncode!=0,name
  assert sql("SELECT coalesce(last_vacuum::text,'none') FROM pg_stat_all_tables WHERE relid='net._http_response'::regclass;")==stamp,name
  cases.append({'case':name,'rejectedBeforeVacuum':True})
+fixed_script=script
+with tempfile.TemporaryDirectory() as temp:
+ old_script=pathlib.Path(temp)/'old-maintenance.sh'
+ text=script.read_text()
+ start=text.index('query() {')
+ end=text.index('\npreflight=',start)
+ old_script.write_text(text[:start]+'''query() { "${psql_cmd[@]}" -X -qAt -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate 2>"$work/diagnostics.log"; }'''+text[end:])
+ script=old_script
+ denied('pooler-ignores-startup-options-old-preflight-rejected')
+ script=fixed_script
+
 denied('nonlocal-fixture-host',{'PGHOST':'example.invalid'})
 denied('wrong-actor',{'PGUSER':'anon'})
 holder=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
