@@ -10120,6 +10120,11 @@
       "version": "20270128000338",
       "filename": "20270128000338_process_swing_observer_indexable_window.sql",
       "sha256": "ddb37f9cb363aa38835aeb9be0b7a87d8411b39268944680723fbda3a77a8eab"
+    },
+    {
+      "version": "20270128000339",
+      "filename": "20270128000339_dealer_backup_response_snapshot_recheck.sql",
+      "sha256": "40ef61fa1ab56d59ea63512ddbf93aa05978649fade2c555a8d6795eb00695dc"
     }
   ],
   "floorActiveAllowlist": [

@@ -36,6 +36,31 @@ INSERT INTO public.dealer_ready_backup_cron_runs(request_id,requested_at,result_
  SELECT n+300000,now()-interval '1 day','success' FROM generate_series(1,45000)n;
 ANALYZE net._http_response;ANALYZE public.dealer_ready_backup_cron_runs;""")
 sql(migration,'postgres')
+sql("""DO $$DECLARE d text;BEGIN
+ SELECT pg_get_functiondef('public.run_dealer_ready_backup_cron_v1()'::regprocedure) INTO d;
+ EXECUTE replace(d,'public.run_dealer_ready_backup_cron_v1()','public.backup_observer_test_337()');
+END$$;""",'postgres')
+snapshot_migration=(root/'supabase/migrations/20270128000339_dealer_backup_response_snapshot_recheck.sql').read_text()
+old_migration=migration;migration=snapshot_migration
+if wrong_actor_tested:
+ rejects('backup_snapshot_wrong_actor')
+sql("ALTER FUNCTION public.run_dealer_ready_backup_cron_v1() SET search_path='public';",'postgres')
+rejects('query returned no rows','postgres')
+sql("ALTER FUNCTION public.run_dealer_ready_backup_cron_v1() SET search_path='';GRANT EXECUTE ON FUNCTION public.run_dealer_ready_backup_cron_v1() TO anon;",'postgres')
+rejects('backup_snapshot_acl_drift','postgres')
+sql("REVOKE EXECUTE ON FUNCTION public.run_dealer_ready_backup_cron_v1() FROM anon;",'postgres')
+saved_definition=sql("SELECT pg_get_functiondef('public.run_dealer_ready_backup_cron_v1()'::regprocedure);")
+sql(saved_definition.replace('BEGIN','BEGIN\n-- test-only predecessor drift',1),'postgres')
+rejects('query returned no rows','postgres')
+sql(saved_definition,'postgres')
+sql('ALTER FUNCTION public.run_dealer_ready_backup_cron_v1() OWNER TO anon;')
+rejects('query returned no rows','postgres')
+sql('ALTER FUNCTION public.run_dealer_ready_backup_cron_v1() OWNER TO postgres;')
+# Changing owners changes the implicit owner ACL; restore the original explicit
+# grants before testing the real migration, without expanding browser access.
+sql('REVOKE ALL ON FUNCTION public.run_dealer_ready_backup_cron_v1() FROM anon; GRANT EXECUTE ON FUNCTION public.run_dealer_ready_backup_cron_v1() TO service_role;','postgres')
+migration=old_migration
+sql(snapshot_migration,'postgres')
 after=json.loads(sql("SELECT jsonb_build_object('acl',proacl,'owner',proowner,'definer',prosecdef,'config',proconfig) FROM pg_proc WHERE oid='public.run_dealer_ready_backup_cron_v1()'::regprocedure;"))
 assert before==after,'Caller boundary or metadata changed'
 
@@ -45,13 +70,16 @@ cases=[('no-pending',None,'1 second','ok',True),('recent-success',99999,'1 secon
  ('enqueue-exception',99999,'1 second','error',True),('enqueue-null',99999,'1 second','null',True),
  ('null-request-id',None,'3 minutes','ok',True),('http-failure',99999,'1 second','ok',True),
  ('response-timeout',99999,'1 second','ok',True),('null-response-status',99999,'1 second','ok',True),
- ('null-response-timeout',99999,'1 second','ok',True)]
+ ('null-response-timeout',99999,'1 second','ok',True),
+ ('null-created',99999,'1 second','ok',True),('negative-infinity-created',99999,'1 second','ok',True),('positive-infinity-created',99999,'1 second','ok',True)]
 results=[]
 for name,request,age,mode,secret in cases:
  status={'http-failure':'500','null-response-status':'NULL'}.get(name,'200')
  timed_out={'response-timeout':'true','null-response-timeout':'NULL'}.get(name,'false')
+ created={'null-created':'NULL','negative-infinity-created':"'-infinity'::timestamptz",'positive-infinity-created':"'infinity'::timestamptz"}.get(name,"now()-interval '100 milliseconds'")
  query="""BEGIN;
- UPDATE net._http_response SET created=now()-interval '100 milliseconds',status_code="""+status+",timed_out="+timed_out+" WHERE id=99999;"+"""
+ ALTER TABLE net._http_response ALTER COLUMN created DROP NOT NULL;
+ UPDATE net._http_response SET created="""+created+",status_code="+status+",timed_out="+timed_out+" WHERE id=99999;"+"""
  UPDATE net.observation_test_mode SET mode='"""+mode+"';"+("DELETE FROM vault.decrypted_secrets;" if not secret else '')+"""
  """+('' if name=='no-pending' else "INSERT INTO public.dealer_ready_backup_cron_runs(request_id,requested_at,result_state) VALUES("+('NULL' if request is None else str(request))+",now()-interval '"+age+"','pending');")+"""
  CREATE TEMP TABLE original_max ON COMMIT DROP AS SELECT coalesce(max(id),0) AS id FROM public.dealer_ready_backup_cron_runs;
