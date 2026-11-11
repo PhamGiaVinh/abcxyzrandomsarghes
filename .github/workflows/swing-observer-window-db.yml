@@ -1,0 +1,55 @@
+name: Swing observer response window isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000338_process_swing_observer_indexable_window.sql'
+      - 'VinPoker/tests/swingObserverWindow/**'
+      - '.github/workflows/swing-observer-window-db.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  swing-observer-window-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: observer_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: vinpoker_swing_observer_test_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U observer_test_admin -d vinpoker_swing_observer_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: observer_test_admin
+      PGPASSWORD: test
+      PGDATABASE: vinpoker_swing_observer_test_ci
+      EXPECT_MANAGED_NO_CREATE: '1'
+      SWING_OBSERVER_REPORT: ${{ github.workspace }}/runtime.json
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Isolated actor capabilities
+        run: |
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';
+          CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;
+          GRANT USAGE,CREATE ON SCHEMA public TO postgres;
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/swingObserverWindow/prepare.sql
+      - name: Actual old and new observer with large response fixture
+        run: python3 VinPoker/tests/swingObserverWindow/runtime.py
+      - name: Real skip locked, retry and actor boundaries
+        run: bash VinPoker/tests/swingObserverWindow/concurrency.sh
+      - name: Actual wall-clock boundary transition under a held table lock
+        run: bash VinPoker/tests/swingObserverWindow/boundary.sh
+      - name: Sanitized SQL fixture report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: swing-observer-runtime-${{ github.sha }}
+          path: runtime.json
+          retention-days: 7
