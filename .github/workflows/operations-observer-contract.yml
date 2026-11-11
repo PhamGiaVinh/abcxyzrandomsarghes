@@ -39,6 +39,9 @@ jobs:
           CREATE TABLE public.tournament_registrations(id uuid,tournament_id uuid,player_id uuid,status text,cashier_seating_error text);
           INSERT INTO public.tournament_registrations VALUES('a1000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000004','a1000000-0000-4000-8000-000000000002','pending','seating_exception');
           CREATE TABLE public.probe_writes(n integer);
+          CREATE TABLE public.observer_lock_row(id integer PRIMARY KEY,n integer);
+          INSERT INTO public.observer_lock_row VALUES(1,0);
+          CREATE FUNCTION public.resolve_cashier_cash_buyin_intent_v1() RETURNS integer LANGUAGE plpgsql AS $$BEGIN PERFORM 1 FROM public.observer_lock_row WHERE id=1 FOR UPDATE;RETURN 1;END$$;
           CREATE FUNCTION public.cashier_try_seat_paid_v1(uuid,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$BEGIN INSERT INTO public.probe_writes VALUES(1);RETURN jsonb_build_object('seating_state','seated');END$$;
           SQL
           mkdir -p "$RUNNER_TEMP/observer-contract"
@@ -52,11 +55,20 @@ jobs:
             sleep .25
           done
           test "$ready" = true
-          sleep .25
+          docker exec -e PGAPPNAME=observer_fixture_holder -i "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c 'BEGIN;UPDATE public.observer_lock_row SET n=1 WHERE id=1;SELECT pg_sleep(2);ROLLBACK;' >/dev/null &
+          holder=$!
+          held=false
+          for i in {1..20}; do
+            if test "$(docker exec "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='observer_fixture_holder' AND wait_event='PgSleep')")" = t; then held=true;break;fi
+            sleep .05
+          done
+          test "$held" = true
+          docker exec -i "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c 'SELECT public.resolve_cashier_cash_buyin_intent_v1();' >/dev/null
+          wait "$holder"
           kill -TERM "$observer"
           wait "$observer"
           trap - EXIT
-          node -e 'const a=require(process.argv[1]);require("assert/strict").equal(a.phase,"stopped");require("assert/strict").ok(a.samples>0)' "$RUNNER_TEMP/observer-contract/native-http.json"
+          node -e 'const a=require(process.argv[1]),assert=require("assert/strict");assert.equal(a.phase,"stopped");assert.ok(a.samples>0);assert.ok(a.waitSamples>0);assert.ok(a.waits.some(s=>s.waits.some(w=>w.tag==="cashier"&&w.blockers.length>0)))' "$RUNNER_TEMP/observer-contract/native-http.json"
           node --input-type=module - "$RUNNER_TEMP/observer-contract/probe.sql" <<'JS'
           import{readFileSync,writeFileSync}from'node:fs';
           const text=readFileSync('VinPoker/scripts/ops/cashier-tour-real-e2e.sh','utf8').replace(/\r\n/g,'\n');
