@@ -19,14 +19,14 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      TEST_DB_CONTAINER: ${{ job.services.postgres.id }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Metadata sanitization and native session contract
+        env:
+          TEST_DB_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           set -euo pipefail
           node --test VinPoker/scripts/ops/operations-lock-diagnostics.test.mjs
