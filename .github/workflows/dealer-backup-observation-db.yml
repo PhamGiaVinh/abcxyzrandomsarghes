@@ -1,0 +1,54 @@
+name: Dealer backup observation isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000337_dealer_backup_indexed_response_observation.sql'
+      - 'VinPoker/tests/dealerBackupObservation/**'
+      - '.github/workflows/dealer-backup-observation-db.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dealer-backup-observation-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: observer_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: vinpoker_backup_observation_test_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U observer_test_admin -d vinpoker_backup_observation_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: observer_test_admin
+      PGPASSWORD: test
+      PGDATABASE: vinpoker_backup_observation_test_ci
+      EXPECT_MANAGED_NO_CREATE: '1'
+      BACKUP_OBSERVER_REPORT: ${{ github.workspace }}/VinPoker/output/backup-observer/runtime.json
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Hosted-shaped owner and read-only managed-schema capability
+        run: |
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';
+          CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;
+          GRANT CREATE ON DATABASE vinpoker_backup_observation_test_ci TO postgres;
+          GRANT USAGE,CREATE ON SCHEMA public TO postgres;
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/dealerBackupObservation/prepare.sql
+      - name: Actual old/new caller equivalence with synthetic transport and large response history
+        run: python3 VinPoker/tests/dealerBackupObservation/runtime.py
+      - name: Real lock/recheck race and anonymous caller rejection
+        run: bash VinPoker/tests/dealerBackupObservation/concurrency.sh
+      - name: Sanitized fixture timings only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backup-observer-runtime-${{ github.sha }}
+          path: VinPoker/output/backup-observer/runtime.json
+          retention-days: 7
