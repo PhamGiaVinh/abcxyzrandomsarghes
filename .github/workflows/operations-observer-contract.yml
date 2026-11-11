@@ -1,0 +1,96 @@
+name: Operational observer native contract
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/operations-observer-contract.yml'
+      - 'VinPoker/scripts/ops/operations-lock-diagnostics*'
+      - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
+permissions:
+  contents: read
+jobs:
+  native-observer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Metadata sanitization and native session contract
+        env:
+          TEST_DB_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          node --test VinPoker/scripts/ops/operations-lock-diagnostics.test.mjs
+          docker rename "$TEST_DB_CONTAINER" supabase_db_cashier-e2e-observer-contract
+          docker exec -i "$TEST_DB_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres <<'SQL'
+          COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';
+          CREATE SCHEMA ops_load_fixture_v1;
+          CREATE TABLE ops_load_fixture_v1.schema_fence(singleton boolean,frozen boolean,admission_at timestamptz);
+          INSERT INTO ops_load_fixture_v1.schema_fence VALUES(true,true,now());
+          CREATE TABLE public.tournament_registrations(id uuid,tournament_id uuid,player_id uuid,status text,cashier_seating_error text);
+          INSERT INTO public.tournament_registrations VALUES('a1000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000004','a1000000-0000-4000-8000-000000000002','pending','seating_exception');
+          CREATE TABLE public.probe_writes(n integer);
+          CREATE TABLE public.observer_lock_row(id integer PRIMARY KEY,n integer);
+          INSERT INTO public.observer_lock_row VALUES(1,0);
+          CREATE FUNCTION public.resolve_cashier_cash_buyin_intent_v1() RETURNS integer LANGUAGE plpgsql AS $$BEGIN PERFORM 1 FROM public.observer_lock_row WHERE id=1 FOR UPDATE;RETURN 1;END$$;
+          CREATE FUNCTION public.cashier_try_seat_paid_v1(uuid,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$BEGIN INSERT INTO public.probe_writes VALUES(1);RETURN jsonb_build_object('seating_state','seated');END$$;
+          SQL
+          mkdir -p "$RUNNER_TEMP/observer-contract"
+          node VinPoker/scripts/ops/operations-lock-diagnostics.mjs "$TEST_DB_CONTAINER" "$RUNNER_TEMP/observer-contract/native-http.json" "$GITHUB_SHA" &
+          observer=$!
+          trap 'kill -TERM "$observer" 2>/dev/null || true' EXIT
+          ready=false
+          for i in {1..20}; do
+            kill -0 "$observer"
+            if node -e 'try{process.exit(JSON.parse(require("fs").readFileSync(process.argv[1])).phase==="ready"?0:1)}catch{process.exit(1)}' "$RUNNER_TEMP/observer-contract/native-http.json"; then ready=true;break;fi
+            sleep .25
+          done
+          test "$ready" = true
+          docker exec -e PGAPPNAME=observer_fixture_holder -i "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c 'BEGIN;UPDATE public.observer_lock_row SET n=1 WHERE id=1;SELECT pg_sleep(2);ROLLBACK;' >/dev/null &
+          holder=$!
+          held=false
+          for i in {1..20}; do
+            if test "$(docker exec "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='observer_fixture_holder' AND wait_event='PgSleep')")" = t; then held=true;break;fi
+            sleep .05
+          done
+          test "$held" = true
+          docker exec -i "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c 'SELECT public.resolve_cashier_cash_buyin_intent_v1();' >/dev/null
+          wait "$holder"
+          kill -TERM "$observer"
+          wait "$observer"
+          trap - EXIT
+          node -e 'const a=require(process.argv[1]),assert=require("assert/strict");assert.equal(a.phase,"stopped");assert.ok(a.samples>0);assert.ok(a.waitSamples>0);assert.ok(a.waits.some(s=>s.waits.some(w=>w.tag==="cashier"&&w.blockers.length>0)))' "$RUNNER_TEMP/observer-contract/native-http.json"
+          node --input-type=module - "$RUNNER_TEMP/observer-contract/probe.sql" <<'JS'
+          import{readFileSync,writeFileSync}from'node:fs';
+          const text=readFileSync('VinPoker/scripts/ops/cashier-tour-real-e2e.sh','utf8').replace(/\r\n/g,'\n');
+          const match=text.match(/<<'REDRAW_ROLLBACK_PROBE' \|\| true\n([\s\S]*?)\nREDRAW_ROLLBACK_PROBE/);if(!match)throw Error('Exact probe source missing');writeFileSync(process.argv[2],match[1]+'\n');
+          JS
+          docker exec -i "$TEST_DB_CONTAINER" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres <"$RUNNER_TEMP/observer-contract/probe.sql" >"$RUNNER_TEMP/observer-contract/success-http.json"
+          test "$(docker exec "$TEST_DB_CONTAINER" psql -X -qAt -U postgres -c 'SELECT count(*) FROM public.probe_writes')" = 0
+          docker exec -i "$TEST_DB_CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U postgres <<'SQL'
+          CREATE OR REPLACE FUNCTION public.cashier_try_seat_paid_v1(uuid,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'private diagnostic value' USING ERRCODE='23514',CONSTRAINT='fixture_check',TABLE='probe_writes';END$$;
+          SQL
+          docker exec -i "$TEST_DB_CONTAINER" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres <"$RUNNER_TEMP/observer-contract/probe.sql" >"$RUNNER_TEMP/observer-contract/exception-http.json"
+          node --input-type=module - "$RUNNER_TEMP/observer-contract" <<'JS'
+          import assert from'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';const root=process.argv[2];
+          const success=JSON.parse(readFileSync(root+'/success-http.json')),failure=JSON.parse(readFileSync(root+'/exception-http.json'));
+          assert.equal(success.seated,true);assert.equal(success.exception,false);assert.equal(success.allWritesRolledBack,true);
+          assert.equal(failure.exception,true);assert.equal(failure.sqlstate,'23514');assert.equal(failure.constraint,'fixture_check');assert.ok(failure.frames.length>0);assert.equal(failure.originalSqlstateProven,false);assert.equal(JSON.stringify(failure).includes('private diagnostic value'),false);
+          writeFileSync(root+'/contract-http.json',JSON.stringify({kind:'ACTUAL_NATIVE_OBSERVER_AND_ROLLBACK_PROBE_CONTRACT_ONLY',passed:true,writeRollbackVerified:true,exceptionMetadataVerified:true,productCashierProven:false,productionChanged:false}));
+          JS
+      - name: Sanitized observer contract evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: operations-observer-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/observer-contract/*-http.json
+          if-no-files-found: warn

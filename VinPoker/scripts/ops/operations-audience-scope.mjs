@@ -103,6 +103,7 @@ export function audienceFailure(cause,status){
  const httpStatus=Number.isInteger(status)&&status>=400&&status<=599?status:null;
  let kind='unknown';
  if(['EMFILE','ENFILE'].includes(code))kind='file_descriptor_limit';
+ else if(['worker_deadline','deadline_exceeded','generation_absorb_failed','broadcast_flush_failed','claim_failed'].includes(cause?.message))kind=cause.message;
  else if(cause?.name==='TimeoutError')kind='deadline';
  else if(code==='UND_ERR_CONNECT_TIMEOUT')kind='connect_timeout';
  else if(code==='UND_ERR_HEADERS_TIMEOUT')kind='headers_timeout';

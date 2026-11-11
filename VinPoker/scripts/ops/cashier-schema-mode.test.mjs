@@ -545,6 +545,10 @@ test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP w
   assert.deepEqual(audienceFailure({code:'PGRST003',message:'private'},504),{kind:'http_error',httpStatus:504,serverCode:'PGRST003'});
   assert.deepEqual(audienceFailure({code:'TOKEN',message:'private',Authorization:'private'},'500'),{kind:'unknown',httpStatus:null,serverCode:null});
   assert.equal(audienceFailure({code:'42501'},403).serverCode,'42501');
+  for(const message of ['worker_deadline','deadline_exceeded','generation_absorb_failed','broadcast_flush_failed','claim_failed']){
+   assert.deepEqual(audienceFailure(Error(message)),{kind:message,httpStatus:null,serverCode:null});
+   assert.equal(audienceFailure(Error(message+' private SQL/token')).kind,'unknown');
+  }
 });
 
 test('worker diagnostics preserve exact known lease rejection without exporting arbitrary RPC or error text',()=>{
@@ -711,7 +715,10 @@ test('prize-close HTTP probe requires full current33 and retains its bounded fin
  const valid=run({});assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
  assert.ok(script.indexOf("[functions.compute-payouts]")<script.indexOf('supabase start --exclude'));
  assert.ok(script.indexOf("CLOSE_PRIZE_CANDIDATE_PATH")>script.indexOf('CORRECTION_OWNED_PREFLIGHT'));
- assert.ok(script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')>script.indexOf('PREPARED_HUD_FINAL_RECEIPT'));
+ assert.ok(script.indexOf('hud_projector_pid=$!')<script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE'));
+ assert.ok(script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')<script.indexOf('kill -TERM "$audience_pid"'));
+ assert.ok(script.indexOf('kill -TERM "$audience_pid"')<script.indexOf('HUD_DRAIN_BARRIER'));
+ assert.ok(script.indexOf('HUD_DRAIN_BARRIER')<script.indexOf('PREPARED_HUD_FINAL_RECEIPT'));
  assert.ok(posix.matchesGlob('VinPoker/output/operations-latency/cashier-http-prize-close-http.json','VinPoker/output/operations-latency/*-http.json'));
  const e2e=readFileSync(new URL('../../e2e/cashier-tour-real.spec.ts',import.meta.url),'utf8');assert.ok(e2e.includes('LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED'));assert.ok(e2e.includes("prizeTotal=closed.prize_total"));
 });

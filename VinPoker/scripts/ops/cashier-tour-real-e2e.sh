@@ -90,6 +90,8 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ -n "${payment_lock_sampler_pid:-}" ]]; then kill -TERM "$payment_lock_sampler_pid" 2>/dev/null || true;wait "$payment_lock_sampler_pid" 2>/dev/null || true;fi
+  if [[ -n "${hud_browser_pid:-}" ]]; then docker rm -f "$network-hud-browser" >/dev/null 2>&1 || true;wait "$hud_browser_pid" 2>/dev/null || true;fi
   if [[ -n "${hud_projector_pid:-}" ]]; then kill -TERM "$hud_projector_pid" 2>/dev/null || true;wait "$hud_projector_pid" 2>/dev/null || true;fi
   if [[ -n "${audience_pid:-}" ]]; then kill "$audience_pid" 2>/dev/null || true;wait "$audience_pid" 2>/dev/null || true;fi
   if [[ -n "${db_pressure_pid:-}" ]]; then kill -TERM "$db_pressure_pid" 2>/dev/null || true;wait "$db_pressure_pid" 2>/dev/null || true;fi
@@ -1314,6 +1316,18 @@ NOTIFY pgrst,'reload schema';
 ACTION_GUARD_POSTCHECK
 }
 
+loaded_phase_checkpoint() {
+  if [[ "$operations_candidate_probe" != 1 || "$audience_count" == 0 ]]; then return; fi
+  kill -0 "$audience_pid"
+  node --input-type=module - "$repo_root/output/operations-latency/operations-audience-http.json" "$repo_root/output/operations-latency/operations-loaded-phases-http.json" "$1" "$source_sha" "$audience_count" <<'LOADED_PHASE_CHECKPOINT'
+import assert from'node:assert/strict';import{readFileSync,writeFileSync,existsSync}from'node:fs';
+const a=JSON.parse(readFileSync(process.argv[2],'utf8')),file=process.argv[3],count=Number(process.argv[6]);
+assert.equal(a.sha,process.argv[5]);assert.equal(a.phase,'ready');assert.equal(a.viewers,count);assert.equal(a.connected,count);assert.equal(a.initialReady,count);assert.equal(Object.keys(a.errors).length,0);
+const r=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):{kind:'LIVE_AUDIENCE_OPERATIONAL_PHASE_BOUNDARIES',sha:a.sha,checkpoints:[],qualification:false,limitations:'Readiness at boundaries plus final continuous audience receipt;one Chromium operator/HUD,not1000DOMs. Redraw/prize use separate TEST tours sharing the loaded database.'};
+assert.equal(r.sha,a.sha);r.checkpoints.push({phase:process.argv[4],at:new Date().toISOString(),audienceActiveMs:a.activeDurationMs,viewers:a.viewers,connected:a.connected,initialReady:a.initialReady});writeFileSync(file,JSON.stringify(r,null,2));
+LOADED_PHASE_CHECKPOINT
+}
+
 run_browser_proof() {
   local paid_enabled="${1:-}" reentry_enabled="${2:-}" selector="${3:-}" buy_close_enabled="${4:-}" move_enabled="${5:-}" active_checkout_enabled="${6:-}" replacement_enabled="${7:-}" staff_salary_enabled="${8:-}" deferred_move_enabled="${9:-}" manual_finish_enabled="${10:-}" manual_action_finish_enabled="${11:-}" recorded_action_finish_enabled="${12:-}" telegram_sink_enabled="${13:-}" intelligence_enabled="${14:-}" hud_browser_enabled="${15:-}"
   # These operational stages share committed fixtures. A failed prerequisite
@@ -1322,6 +1336,7 @@ run_browser_proof() {
   local -a container_args=()
   if [[ "$replacement_enabled" == rest-race || "$replacement_enabled" == off-race ]]; then container_args+=(--name "$race_browser_container"); fi
   if [[ "$hud_browser_enabled" == 1 ]]; then
+    container_args+=(--name "$network-hud-browser")
     container_args+=(--volume "$test_root/hud-control/requests:/fixtures/hud-control/requests" --volume "$test_root/hud-control/receipts:/fixtures/hud-control/receipts:ro")
   fi
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
@@ -1354,6 +1369,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_TELEGRAM_SINK_ENABLED="$telegram_sink_enabled" \
   --env LOCAL_OPERATIONS_INTELLIGENCE_ENABLED="$intelligence_enabled" \
   --env LOCAL_OPERATIONS_HUD_BROWSER_ENABLED="$hud_browser_enabled" \
+  --env LOCAL_OPERATIONS_HUD_LOAD_BARRIER="${LOCAL_OPERATIONS_HUD_LOAD_BARRIER:-0}" \
   --env LOCAL_OPERATIONS_HUD_CONTROL=/fixtures/hud-control \
   --env LOCAL_OPERATIONS_HUD_CONTROL_NONCE="${hud_control_nonce:-}" \
   --env LOCAL_OPERATIONS_REALTIME="$realtime_mode" \
@@ -2274,29 +2290,6 @@ TELEGRAM_FIXTURE
 fi
 
 if [[ "$operations_candidate_probe" == 1 ]]; then
-  if [[ "$audience_count" != 0 ]]; then
-    kill -TERM "$audience_pid"
-    wait "$audience_pid"
-    audience_pid=''
-    if [[ -n "${db_pressure_pid:-}" ]]; then
-      kill -TERM "$db_pressure_pid"
-      wait "$db_pressure_pid"
-      db_pressure_pid=''
-    fi
-    node --input-type=module - "$repo_root/output/operations-latency/operations-audience-http.json" "$audience_count" <<'AUDIENCE_FINAL_RECEIPT'
-import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
-assert.equal(report.phase,'passed');assert.equal(report.viewers,Number(process.argv[3]));assert.ok(Object.values(report.checks).every(value=>value===true));
-AUDIENCE_FINAL_RECEIPT
-    schema_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT ops_load_fixture_v1.catalog_fingerprint()
-      WHERE EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
-      AND EXISTS(SELECT 1 FROM pg_event_trigger WHERE evtname='ops_load_schema_frozen' AND evtenabled='O');")"
-    node --input-type=module - "$schema_after" "$repo_root/output/operations-latency/operations-schema-freeze-http.json" <<'SCHEMA_UNCHANGED_RECEIPT'
-import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
-const report=JSON.parse(readFileSync(process.argv[3],'utf8'));assert.match(process.argv[2],/^[a-f0-9]{32}$/);report.after=process.argv[2];report.unchanged=report.before===report.after;report.phase=report.unchanged?'unchanged-through-audience':'catalog-drift';writeFileSync(process.argv[3],JSON.stringify(report,null,2));assert.equal(report.unchanged,true,'Catalog/ACL/source contracts changed during continuous audience');
-SCHEMA_UNCHANGED_RECEIPT
-  fi
-  finish_candidate_broadcast
   if [[ "$manual_finish_latency_failed" == 1 ]]; then
     echo 'Operational latency qualification FAILED:manual Finish1s gate;later measurements do not erase it' >&2
     exit 1
@@ -2305,17 +2298,9 @@ SCHEMA_UNCHANGED_RECEIPT
     echo 'Operational latency qualification FAILED:reentry1s gate;later measurements do not erase it' >&2
     exit 1
   fi
-  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
-import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
-const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
-assert.equal(report.phase,'package-applied');assert.equal(report.migrations,31);
-if(report.pendingReentryTransportMigrations===1)assert.equal(report.pendingReentryTransportApplied,true);
-report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on base31candidate'+(report.pendingReentryTransportMigrations===1?' plus pending reentry transport':'')+'. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
-writeFileSync(process.argv[2],JSON.stringify(report,null,2));
-OPERATIONS_PACKAGE_FINISHED
   if [[ "$audience_count" != 0 ]]; then
-    # Load qualification has already stopped and its receipt/catalog were
-    # checked. Certify this small operational source before isolated HUD reads.
+    # Prepare before prize introduces separate-tour hands. The loaded HUD
+    # pauses before withdrawal so active spectators keep their public scope.
     mkdir -p "$test_root/hud-control/requests" "$test_root/hud-control/receipts"
     hud_control_nonce="$(node -e 'console.log(require("node:crypto").randomUUID())')"
     LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" LOCAL_OPERATIONS_HUD_CONTROL_NONCE="$hud_control_nonce" node "$repo_root/scripts/ops/prepare-operations-public-hud.mjs" \
@@ -2328,30 +2313,24 @@ OPERATIONS_PACKAGE_FINISHED
       sleep 1
     done
     [[ "$hud_prepared" == true ]]
-    run_browser_proof '' '' 'anonymous prepared HUD reads canonical operational history and replay' '' '' '' '' '' '' '' '' '' '' '' 1
-    kill -TERM "$hud_projector_pid"
-    wait "$hud_projector_pid"
-    hud_projector_pid=''
-    node --input-type=module - "$repo_root/output/operations-latency" <<'PREPARED_HUD_FINAL_RECEIPT'
-import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
-const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf8'));
-const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
-assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(backfill.finalShadow.passed,true);assert.equal(backfill.controls.uniqueApplied,2);assert.equal(backfill.controls.complete,true);assert.equal(browser.phase,'passed');
-assert.equal(backfill.spectatorReady,true);assert.equal(backfill.spectatorFailed,0);
-assert.ok(Object.values(browser.checks).every(value=>value===true));
-const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
-pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';
-pkg.limitations='Configured operations finished before audience drain and unchanged catalog check. Afterwards,actual fixture backfill/raw shadow enabled isolated HUD reads for one anonymous browser test. Separate reports define scope;not full1Mhand/load qualification,full HUD lifecycle or hosted cron proof.';
-writeFileSync(root+'/operations-candidate-package-http.json',JSON.stringify(pkg,null,2));
-PREPARED_HUD_FINAL_RECEIPT
+    loaded_phase_checkpoint hud-start
+    LOCAL_OPERATIONS_HUD_LOAD_BARRIER=1 run_browser_proof '' '' 'anonymous prepared HUD reads canonical operational history and replay' '' '' '' '' '' '' '' '' '' '' '' 1 &
+    hud_browser_pid=$!
+    hud_loaded=false
+    for ((hud_wait=0;hud_wait<180;hud_wait++)); do
+      if ! kill -0 "$hud_browser_pid" 2>/dev/null; then echo 'HUD browser stopped before loaded boundary' >&2;wait "$hud_browser_pid";exit 1;fi
+      if node -e 'try{const r=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(r.sha===process.argv[2]&&r.nonce===process.argv[3]&&r.loaded===true?0:1)}catch{process.exit(1)}' "$test_root/hud-control/requests/loaded-ready.json" "$source_sha" "$hud_control_nonce"; then hud_loaded=true;break;fi
+      sleep 1
+    done
+    [[ "$hud_loaded" == true ]]
+    loaded_phase_checkpoint hud-loaded
   fi
 fi
 
-
-# The opt-in redraw mutates the final disposable roster only after every prior
-# audience/HUD source assertion. It has its own scope and never inherits their
-# mixed-spectator claim.
+# Redraw/prize use separate disposable tours under the same database load.
+# Their reports retain that scope; they are not the tour watched by the audience.
 if [[ "$redraw_probe" == 1 ]]; then
+  loaded_phase_checkpoint redraw-start
   # Exact captured redraw writers retain their operational release gate. Save
   # its private preimage, enable only this disposable club, and restore it even
   # when the browser fails. This does not replace any actor/tenant checks.
@@ -2380,8 +2359,61 @@ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,sta
 SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4000-8000-000000000001','Canonical redraw TEST '||n,90+n,'tournament','inactive','available' FROM generate_series(1,3)n;
 COMMIT;
 REDRAW_RELEASE_FIXTURE
+  if [[ "$audience_count" == 10 ]]; then
+    node --test "$repo_root/scripts/ops/operations-lock-diagnostics.test.mjs"
+    node "$repo_root/scripts/ops/operations-lock-diagnostics.mjs" "$db_container" "$repo_root/output/operations-latency/redraw-original-payment-locks-http.json" "$source_sha" >"$test_root/payment-lock-observer-private.log" 2>&1 &
+    payment_lock_sampler_pid=$!
+    lock_observer_ready=false
+    for _ in {1..30}; do
+      if ! kill -0 "$payment_lock_sampler_pid" 2>/dev/null; then wait "$payment_lock_sampler_pid";exit 1;fi
+      if node -e 'try{process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).phase==="ready"?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/redraw-original-payment-locks-http.json"; then lock_observer_ready=true;break;fi
+      sleep 1
+    done
+    [[ "$lock_observer_ready" == true ]]
+  fi
   redraw_browser_status=0
   LOCAL_OPERATIONS_REDRAW_ENABLED=1 run_browser_proof '' '' 'final current Floor seat locks and redraw conserve every paid entry over HTTP' || redraw_browser_status=$?
+  if [[ -n "${payment_lock_sampler_pid:-}" ]]; then
+    kill -TERM "$payment_lock_sampler_pid"
+    wait "$payment_lock_sampler_pid"
+    payment_lock_sampler_pid=''
+  fi
+  if [[ "$redraw_browser_status" != 0 ]]; then
+    # A separate, rollback-only diagnostic invocation may recover or fail with
+    # a different timing. It never changes the original failed test result.
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/redraw-postfailure-rollback-probe-http.json" <<'REDRAW_ROLLBACK_PROBE' || true
+BEGIN;
+SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='5s';
+DO $probe$
+DECLARE r public.tournament_registrations%ROWTYPE;v jsonb;code text;constraint_name text;table_name text;message text;context text;frames jsonb;
+BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen)
+ THEN RAISE EXCEPTION 'rollback_probe_requires_owned_disposable';END IF;
+ SELECT * INTO r FROM public.tournament_registrations WHERE tournament_id='a3000000-0000-4000-8000-000000000004'
+ AND status='pending' AND cashier_seating_error='seating_exception' ORDER BY id LIMIT 1;
+ IF r.id IS NULL THEN v:=jsonb_build_object('invoked',false);
+ ELSE
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',r.player_id,'role','authenticated')::text,true);
+  BEGIN
+   v:=public.cashier_try_seat_paid_v1(r.id,r.player_id);
+   v:=jsonb_build_object('invoked',true,'exception',false,'seated',v->>'seating_state'='seated');
+  EXCEPTION WHEN OTHERS THEN
+   GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,constraint_name=CONSTRAINT_NAME,table_name=TABLE_NAME,message=MESSAGE_TEXT,context=PG_EXCEPTION_CONTEXT;
+   SELECT coalesce(jsonb_agg(jsonb_build_object('function',m[1],'line',m[2]::integer)),'[]'::jsonb) INTO frames
+   FROM regexp_matches(context,'PL/pgSQL function ([a-zA-Z0-9_.]+)\([^)]*\) line ([0-9]+)','g') m;
+   v:=jsonb_build_object('invoked',true,'exception',true,'sqlstate',code,
+    'constraint',CASE WHEN constraint_name ~ '^[a-zA-Z0-9_]{1,128}$' THEN constraint_name END,
+    'table',CASE WHEN table_name ~ '^[a-zA-Z0-9_]{1,128}$' THEN table_name END,'messageMd5',md5(message),'frames',frames);
+  END;
+ END IF;
+ PERFORM set_config('vinpoker.rollback_probe_result',(v||jsonb_build_object('kind','SEPARATE_POSTFAILURE_ROLLBACK_DIAGNOSTIC','originalSqlstateProven',false,'qualification',false,'productionChanged',false,'allWritesRolledBack',true))::text,true);
+END $probe$;
+SELECT current_setting('vinpoker.rollback_probe_result');
+ROLLBACK;
+REDRAW_ROLLBACK_PROBE
+  fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<REDRAW_RELEASE_RESTORE
 BEGIN;
 DO \$\$ BEGIN
@@ -2425,6 +2457,7 @@ SELECT jsonb_build_object('kind','READ_ONLY_REDRAW_PLAN_JOIN_CARDINALITIES',
  'seatSessionMismatch',(SELECT count(*) FROM active s JOIN public.tournament_tables tt ON tt.id=s.tournament_table_id WHERE s.table_session_id IS DISTINCT FROM tt.table_session_id),
  'openLocks',(SELECT count(*) FROM public.table_session_seat_locks WHERE tournament_id='a3000000-0000-4000-8000-000000000004' AND unlocked_at IS NULL),
  'planBodyMd5',(SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_plan_tournament_redraw_v1(uuid,integer,uuid[],uuid)'::regprocedure),
+ 'databaseDeadlocks',(SELECT deadlocks FROM pg_stat_database WHERE datname=current_database()),
  'productionChanged',false);
 REDRAW_JOIN_DIAGNOSTIC
     exit "$redraw_browser_status"
@@ -2438,7 +2471,9 @@ FINAL_REDRAW_RECEIPT
 fi
 
 
+if [[ "$redraw_probe" == 1 ]]; then loaded_phase_checkpoint redraw-end; fi
 if [[ "$prize_close_probe" == 1 ]]; then
+  loaded_phase_checkpoint prize-start
   prize_history_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT coalesce((SELECT player_history_enabled::text FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001'),'missing');")"
   [[ "$prize_history_before" == true || "$prize_history_before" == false || "$prize_history_before" == missing ]]
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PRIZE_CLOSE_FRESH_FIXTURE'
@@ -2476,4 +2511,63 @@ const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,proc
 assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000,20100]},{number:880002,pots:[59700,200],endings:[100,200,59700]},{number:880003,pots:[300,200],endings:[0,0,60000]}]);
 assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpaid:true,confirmed:true,paidVisible:true});
 FINAL_PRIZE_CLOSE_RECEIPT
+fi
+
+
+if [[ "$prize_close_probe" == 1 ]]; then loaded_phase_checkpoint prize-end; fi
+if [[ "$operations_candidate_probe" == 1 ]]; then
+  loaded_phase_checkpoint before-drain
+  if [[ "$audience_count" != 0 ]]; then
+    kill -TERM "$audience_pid"
+    wait "$audience_pid"
+    audience_pid=''
+    if [[ -n "${db_pressure_pid:-}" ]]; then
+      kill -TERM "$db_pressure_pid"
+      wait "$db_pressure_pid"
+      db_pressure_pid=''
+    fi
+    node --input-type=module - "$repo_root/output/operations-latency/operations-audience-http.json" "$audience_count" <<'AUDIENCE_FINAL_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(report.phase,'passed');assert.equal(report.viewers,Number(process.argv[3]));assert.ok(Object.values(report.checks).every(value=>value===true));
+AUDIENCE_FINAL_RECEIPT
+    schema_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT ops_load_fixture_v1.catalog_fingerprint()
+      WHERE EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+      AND EXISTS(SELECT 1 FROM pg_event_trigger WHERE evtname='ops_load_schema_frozen' AND evtenabled='O');")"
+    node --input-type=module - "$schema_after" "$repo_root/output/operations-latency/operations-schema-freeze-http.json" <<'SCHEMA_UNCHANGED_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[3],'utf8'));assert.match(process.argv[2],/^[a-f0-9]{32}$/);report.after=process.argv[2];report.unchanged=report.before===report.after;report.phase=report.unchanged?'unchanged-through-audience':'catalog-drift';writeFileSync(process.argv[3],JSON.stringify(report,null,2));assert.equal(report.unchanged,true,'Catalog/ACL/source contracts changed during continuous audience');
+SCHEMA_UNCHANGED_RECEIPT
+  fi
+  finish_candidate_broadcast
+  node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" <<'OPERATIONS_PACKAGE_FINISHED'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.equal(report.phase,'package-applied');assert.equal(report.migrations,31);
+if(report.pendingReentryTransportMigrations===1)assert.equal(report.pendingReentryTransportApplied,true);
+report.mixedSpectators=Number(process.env.LOCAL_OPERATIONS_AUDIENCE??0);report.phase='all-operational-stages-passed';report.limitations='All configured operational stages completed on base31candidate'+(report.pendingReentryTransportMigrations===1?' plus pending reentry transport':'')+'. HUD reads/worker remain OFF. Optional mixed audience has its own mandatory report/checks; this is not the1Mhand/full qualification or hosted cron proof.';
+writeFileSync(process.argv[2],JSON.stringify(report,null,2));
+OPERATIONS_PACKAGE_FINISHED
+  if [[ -n "${hud_browser_pid:-}" ]]; then
+    node --input-type=module - "$test_root/hud-control/receipts/audience-drained.json" "$source_sha" "$hud_control_nonce" <<'HUD_DRAIN_BARRIER'
+import{writeFileSync}from'node:fs';writeFileSync(process.argv[2],JSON.stringify({sha:process.argv[3],nonce:process.argv[4],drained:true}));
+HUD_DRAIN_BARRIER
+    wait "$hud_browser_pid"
+    hud_browser_pid=''
+    kill -TERM "$hud_projector_pid"
+    wait "$hud_projector_pid"
+    hud_projector_pid=''
+    node --input-type=module - "$repo_root/output/operations-latency" <<'PREPARED_HUD_FINAL_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
+const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf8'));
+const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
+assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(backfill.finalShadow.passed,true);assert.equal(backfill.controls.uniqueApplied,2);assert.equal(backfill.controls.complete,true);assert.equal(browser.phase,'passed');
+assert.equal(backfill.spectatorReady,true);assert.equal(backfill.spectatorFailed,0);
+assert.ok(Object.values(browser.checks).every(value=>value===true));
+const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
+pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';
+pkg.limitations='HUD read/reopen/settlement phases,redraw and prize ran before audience drain with phase-boundary readiness checks. HUD withdrawal/restore ran after drain. Actual fixture backfill/raw shadow enabled isolated HUD reads for one anonymous browser test. Separate reports define scope;not full1Mhand/load qualification,full HUD lifecycle or hosted cron proof.';
+writeFileSync(root+'/operations-candidate-package-http.json',JSON.stringify(pkg,null,2));
+PREPARED_HUD_FINAL_RECEIPT
+  fi
 fi

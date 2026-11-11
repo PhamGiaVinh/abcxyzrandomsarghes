@@ -66,6 +66,8 @@ const errors={},clients=[],pending=new Set();
 const failureKinds={},failureSamples=[],subscriptionStatuses={},joinFailureKinds={};
 const socketEvents={},socketFailureSamples=[];
 const workerRpcFailures={},workerJobFailures={};
+const lagSpikes=[],workerBoundaryFailures=[];let previousLagTick=Date.now();
+const lagTimer=setInterval(()=>{const at=Date.now(),lagMs=Math.max(0,at-previousLagTick-100);previousLagTick=at;if(lagMs>=250){lagSpikes.push({at,lagMs});if(lagSpikes.length>20)lagSpikes.shift();}},100);lagTimer.unref();
 const requestCounts={snapshot:0,table:0,clock:0},snapshotSectionCounts={tables:0,ranking:0,payout:0};let maxSnapshotTableIds=0;
 const handshakeEvents={},handshakeFailureSamples=[];
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0,oracleReadCalls=0;
@@ -97,7 +99,7 @@ const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  serverTiming:Object.fromEntries(Object.entries(timingParts).map(([name,values])=>[name,dist(values)])),
- generator:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization,scope:'Process-wide including admission;diagnostic only'},
+ generator:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,eventLoopMaxMs:eventLoop.max/1e6,utilization:nodePerformance.eventLoopUtilization(utilizationStart).utilization,lagSpikes,workerBoundaryFailures,scope:'Process-wide including admission;diagnostic only'},
  machine:{logicalCpus:availableParallelism(),cpu:cpus()[0]?.model??null,memoryBytes:totalmem(),node:process.version},
  productionChanged:false,qualification:false,
  limitations:(selected?'Selected-table consumer:catalog-only hidden hub;independent detail with scoped full clock reads. One additional200ms anonymous snapshot oracle supplies clocks only,never viewer data. ':'Combined grid+detail stress;not the selected-table page composition. ')+
@@ -121,8 +123,11 @@ const worker=track((async()=>{
   try{
    const result=await loaded.worker.processPublicSpectatorJobs({rpc:async(name,args)=>{
     const left=deadline-Date.now();if(left<=0)throw Error('worker_deadline');
-    const result=await service.rpc(name,args).abortSignal(AbortSignal.timeout(left));
+    const rpcStartedAt=Date.now();let result;
+    try{result=await service.rpc(name,args).abortSignal(AbortSignal.timeout(left));}
+    catch(cause){if(workerBoundaryFailures.length<20)workerBoundaryFailures.push({at:Date.now(),startedAt:rpcStartedAt,elapsedMs:Date.now()-rpcStartedAt,remainingBudgetAtStartMs:left,...audienceWorkerFailure(name,null),...audienceFailure(cause)});throw cause;}
     if(result.error){
+     if(workerBoundaryFailures.length<20)workerBoundaryFailures.push({at:Date.now(),startedAt:rpcStartedAt,elapsedMs:Date.now()-rpcStartedAt,remainingBudgetAtStartMs:left,...audienceWorkerFailure(name,result.error),...audienceFailure(result.error,result.status)});
      diagnostic('worker_rpc',result.error,result.status);
      const value=audienceWorkerFailure(name,result.error),key=value.operation+':'+value.reason;
      workerRpcFailures[key]=(workerRpcFailures[key]??0)+1;
@@ -134,7 +139,7 @@ const worker=track((async()=>{
     fail('worker_job');const kind=['source_failed','publish_failed','deadline_exceeded'].includes(row.error)?row.error:'unknown';
     workerJobFailures[kind]=(workerJobFailures[kind]??0)+1;
    }
-  }catch(cause){fail('worker_transport');diagnostic('worker_transport',cause);}
+  }catch(cause){if(workerBoundaryFailures.length<20)workerBoundaryFailures.push({operation:'worker_tick',at:Date.now(),startedAt:start,elapsedMs:Date.now()-start,remainingBudgetMs:deadline-Date.now(),...audienceFailure(cause)});fail('worker_transport');diagnostic('worker_transport',cause);}
   await sleep(Math.max(1,1000-(Date.now()-start)));
  }
 })());

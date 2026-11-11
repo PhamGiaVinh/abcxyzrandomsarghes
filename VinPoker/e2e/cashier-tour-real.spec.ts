@@ -10,6 +10,7 @@ import {parseOpsIntelligenceContextV1} from '../src/ops/intelligence/opsIntellig
 import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelligenceTimelineV1';
 import {clockBroadcastSignal,decodeClockWireFrame} from '../tests/publicHud/clockWireDiagnostics';
 import {audienceServerTiming,reentryServerTiming,audienceFailure} from '../scripts/ops/operations-audience-scope.mjs';
+import {classifyPublicHudHand} from '../supabase/functions/_shared/publicHudContribution';
 
 const currentFloorRosterV6=process.env.LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED==='1';
 const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3';
@@ -23,7 +24,7 @@ test('final current Floor seat locks and redraw conserve every paid entry over H
  let phase='setup',legacyOrphanDenied=false,failure:{operation:string;httpStatus:number;code:string;reason:string;messageSha256:string|null}|null=null;
  const locks:{lockMs:number;unlockMs:number;readMs:number}[]=[],redraws:{planMs:number;applyMs:number;retryMs:number;continueMs:number;readMs:number}[]=[];
  const dist=(values:number[])=>{const v=[...values].sort((a,b)=>a-b);return {samples:v.length,p95Ms:v.length===20?v[18]:null,maxMs:v.at(-1)??null};};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_LOCK_REDRAW_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,legacyOrphanDenied,fixtureScope:'Fresh dedicated TEST tournament with20 real Auth registrations and canonical paid seats;legacy fixture unchanged',failure,locks,redraws,distributions:{locks:Object.fromEntries(['lockMs','unlockMs','readMs'].map(k=>[k,dist(locks.map(r=>r[k as keyof typeof r]))])),redraws:Object.fromEntries(['planMs','applyMs','retryMs','continueMs','readMs'].map(k=>[k,dist(redraws.map(r=>r[k as keyof typeof r]))]))},qualification:false,productionChanged:false,limitations:'Final disposable stage after prior audience/HUD proofs and audience drain. One owner Auth actor;20lock/unlock pairs and20sequential redraws of20new canonical paid entries. Earlier malformed legacy fixture must remain rejected and unchanged. Canonical captured writers and exact retries;not20independent tournaments,simultaneous staff writers,UI/Realtime latency,receipt-reader support or mixed1000spectator redraw proof.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-http.json'),JSON.stringify({kind:'REAL_AUTH_CURRENT_FLOOR_LOCK_REDRAW_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,legacyOrphanDenied,fixtureScope:'Fresh dedicated TEST tournament with20 real Auth registrations and canonical paid seats;legacy fixture unchanged',failure,locks,redraws,distributions:{locks:Object.fromEntries(['lockMs','unlockMs','readMs'].map(k=>[k,dist(locks.map(r=>r[k as keyof typeof r]))])),redraws:Object.fromEntries(['planMs','applyMs','retryMs','continueMs','readMs'].map(k=>[k,dist(redraws.map(r=>r[k as keyof typeof r]))]))},qualification:false,productionChanged:false,limitations:'Separate disposable tour while the configured audience watches the main tour;loaded phase receipts prove connection boundaries. One owner Auth actor;20lock/unlock pairs and20sequential redraws of20new canonical paid entries. Earlier malformed legacy fixture must remain rejected and unchanged. Canonical captured writers and exact retries;not20independent tournaments,simultaneous staff writers,UI/Realtime latency,receipt-reader support or mixed1000spectator redraw proof.'},null,2));
  const rpc=async(name:string,args:Record<string,unknown>)=>{const at=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers,body:JSON.stringify(args),signal:AbortSignal.timeout(5000)}),data=await response.json();if(!response.ok||data.ok===false)failure={operation:name,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:'application_denial',reason:data.message==='CENTERPOINT_TOURNAMENT_OPS_RELEASE_CLOSED'?'release_closed':'unclassified',messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};expect(response.ok,name).toBe(true);return {data,ms:performance.now()-at};};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok,path.split('?')[0]).toBe(true);return response.json();};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})).data as Table[];
@@ -49,7 +50,13 @@ test('final current Floor seat locks and redraw conserve every paid entry over H
    const registration=await registered.json();expect(registered.ok).toBe(true);expect(registration.success).toBe(true);expect(Number(registration.total_pay)).toBe(6600000);
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
    const pay=async()=>{const response=await fetch(api+'/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',{method:'POST',headers:actorHeaders,body:JSON.stringify({p_intent:intent,p_action:'record'}),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
-   const paid=await pay();expect(paid).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});expect(await pay()).toEqual(paid);
+   const paymentStartedAt=Date.now(),paid=await pay(),paymentFinishedAt=Date.now();
+   if(paid.result?.seating_state!=='seated'){
+    const safe=(value:unknown)=>typeof value==='string'&&/^[a-zA-Z0-9_]{1,80}$/.test(value)?value:null;
+    const rows=await read('tournament_registrations?select=cashier_seating_error&id=eq.'+registration.registration_id);
+    writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-payment-diagnostic-http.json'),JSON.stringify({kind:'ISOLATED_REDRAW_CANONICAL_PAYMENT_DENIAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,productionChanged:false,paymentStartedAt,paymentFinishedAt,registrationIndex:staff.indexOf(actor),status:safe(paid.status),paymentState:safe(paid.result?.payment_state),seatingState:safe(paid.result?.seating_state),reason:safe(paid.result?.reason),error:safe(paid.result?.error),storedSeatingError:safe(rows[0]?.cashier_seating_error)},null,2));
+   }
+   expect(paid).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});expect(await pay()).toEqual(paid);
   }
   const before=await roster(),frozen=identity(before);expect(frozen).toHaveLength(20);expect(new Set(frozen.map(s=>s.entry)).size).toBe(20);expect(frozen.reduce((n,s)=>n+s.chips,0)).toBe(400000);
   expect(await read('tournament_hands?select=id&tournament_id=eq.'+tour+'&status=eq.in_progress')).toHaveLength(0);
@@ -224,6 +231,10 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   }).catch(()=>{row.gatewayClass='body-unavailable';});
  });
  const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
+ let failedHttp:unknown=null;
+ const completedWrites:{ordinal:number;firstAckMs:number;writeToObservedMs:number;retryAckMs:number}[]=[];
+ const lagSpikes:{at:number;lagMs:number}[]=[];let previousLagTick=Date.now();
+ const lagTimer=setInterval(()=>{const at=Date.now(),lagMs=Math.max(0,at-previousLagTick-100);previousLagTick=at;if(lagMs>=250){lagSpikes.push({at,lagMs});if(lagSpikes.length>20)lagSpikes.shift();}},100);
  try{
  if(realtimeEnabled){
   observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{logger:(kind,message,payload)=>{
@@ -262,13 +273,18 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   observing=true;
  }
  const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
- const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{
-  const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
-  const body=await response.json();expect(response.ok).toBe(true);return body;
+ const requestJson=async(operation:string,path:string,token:string,args?:Record<string,unknown>,context?:{phase:string;ordinal:number})=>{
+  const startedAt=Date.now(),started=performance.now(),signal=AbortSignal.timeout(5000);let stage='headers',status:number|undefined,headersMs:number|undefined,serverTiming:unknown;
+  try{
+   const response=await fetch(api+'/rest/v1/'+path,{method:args?'POST':'GET',headers:headers(token),...(args?{body:JSON.stringify(args)}:{}),signal});
+   status=response.status;headersMs=performance.now()-started;serverTiming=audienceServerTiming(response.headers);stage='body';const body=await response.json();stage='assertion';expect(response.ok).toBe(true);return body;
+  }catch(cause){failedHttp??={operation,...context,stage,startedAt,failedAt:Date.now(),elapsedMs:performance.now()-started,responseStatus:status,headersMs,serverTiming,signalAborted:signal.aborted,...audienceFailure(cause,status)};throw cause;}
  };
- const read=async(token:string,dealerId:string)=>{
-  const response=await fetch(api+'/rest/v1/dealer_attendance?select=id,dealer_id,status,current_state&dealer_id=eq.'+dealerId,{headers:headers(token),signal:AbortSignal.timeout(5000)});
-  const body=await response.json();expect(response.ok).toBe(true);expect(Array.isArray(body)).toBe(true);return body;
+ const rpc=async(token:string,name:string,args:Record<string,unknown>,context?:{phase:string;ordinal:number})=>{
+  return requestJson(name,'rpc/'+name,token,args,context);
+ };
+ const read=async(token:string,dealerId:string,context?:{phase:string;ordinal:number})=>{
+  const body=await requestJson('attendance_read','dealer_attendance?select=id,dealer_id,status,current_state&dealer_id=eq.'+dealerId,token,undefined,context);expect(Array.isArray(body)).toBe(true);return body;
  };
  const denied=await rpc(identities[0].token,'operator_check_in_dealer_v1',{
   p_dealer_id:fixture.otherDealerId,p_club_id:fixture.otherClubId,p_shift_id:fixture.otherShiftId,p_request_id:crypto.randomUUID(),
@@ -313,19 +329,19 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    await page.getByPlaceholder('Tìm dealer...',{exact:true}).fill(uiDealerName!);
    await expect(uiRoster.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
   }
-  const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
+  const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args,{phase:'write_ack',ordinal:index}),ack=performance.now();
   expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
-  const rows=await read(identity.token,dealerId),observed=performance.now();
+  const rows=await read(identity.token,dealerId,{phase:'independent_read',ordinal:index}),observed=performance.now();
   expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({id:receipt.attendance_id,dealer_id:dealerId,status:'checked_in',current_state:'available'});
-  const retryStarted=performance.now(),repeated=await rpc(identity.token,'operator_check_in_dealer_v1',args),retried=performance.now();
+  const retryStarted=performance.now(),repeated=await rpc(identity.token,'operator_check_in_dealer_v1',args,{phase:'same_key_retry',ordinal:index}),retried=performance.now();
   expect(repeated).toEqual(receipt);
   if(index===0){
-   const otherActor=await rpc(identities[1].token,'get_dealer_checkin_receipt_v1',args);
+   const otherActor=await rpc(identities[1].token,'get_dealer_checkin_receipt_v1',args,{phase:'cross_actor_receipt',ordinal:index});
    expect(otherActor).toEqual({ok:true,status:'unknown'});
   }
   let writeToRealtimeMs:number|null=null;
   if(realtimeEnabled){
-   expect(await read(identities[19].token,dealerId),'WebSocket observer must independently have actual RLS read access').toHaveLength(1);
+   expect(await read(identities[19].token,dealerId,{phase:'observer_rls_read',ordinal:index}),'WebSocket observer must independently have actual RLS read access').toHaveLength(1);
    const deadline=started+5000;
    while(!seen.has(dealerId)&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
    expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
@@ -339,6 +355,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
     uiObservations.push({writeToVisibleMs,warmup:index<360+uiWarmup});
    }
   }
+  completedWrites.push({ordinal:index,firstAckMs:ack-started,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted});
   return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
  };
  for(const concurrency of [1,5,20]){
@@ -369,9 +386,9 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   if(realtimeEnabled){
    try{const path=new URL(page.url()).pathname;uiDiagnostics={path,fixtureBody:['/ops/dealer-swing','/dealer-swing'].includes(path)?(await page.locator('body').innerText()).slice(0,2000):null,failedReads:uiFailedReads};}catch{uiDiagnostics={status:'fixture_page_unavailable',failedReads:uiFailedReads};}
   }
-  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,completedUiObservations:uiObservations,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
+  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',failedHttp,completedWrites,lagSpikes,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,completedUiObservations:uiObservations,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
   throw error;
- }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
+ }finally{clearInterval(lagTimer);observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
 
 test('Floor and Dealer Swing authenticated HTTP read latency after check-in',async({page})=>{
@@ -1850,20 +1867,21 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
 });
 
 test('anonymous prepared HUD reads canonical operational history and replay',async({page,browser})=>{
- test.skip(process.env.LOCAL_OPERATIONS_HUD_BROWSER_ENABLED!=='1','Requires actual backfill and independent raw-source shadow after load stops');test.setTimeout(120_000);
+ test.skip(process.env.LOCAL_OPERATIONS_HUD_BROWSER_ENABLED!=='1','Requires actual backfill and independent raw-source shadow');test.setTimeout(process.env.LOCAL_OPERATIONS_HUD_LOAD_BARRIER==='1'?600_000:120_000);
  const owner=await loginOwner(page),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:`Bearer ${owner}`};
  const read=async(path:string)=>{const response=await fetch(api+'/rest/v1/'+path,{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
  let phase='source',pageErrors=0,summaryReads=0,historyReads=0,historyCount=0,unknownStacks=0,observedHands:number|null=null,revision:string|null=null,revocationFrames=0,visibilityFrames=0,sourceToReadyMs:number|null=null;
  let failureKind:string|null=null,teardown='pending';const tableUi={catalogCount:0,targetIndex:-1,snapshotReads:0,lastStatus:0,lastAccess:'unknown',targetItem:false};
  const settlementEvidence={receipt:false,sourcePreserved:false,workerRevision:false,frozen:false,reopenedDot:false,readyMs:null as number|null};
+ const rawAggregateEvidence={expectedRestoredHands:0,mainTourHands:0,otherTourHands:0,historyScoped:false};
  const hudOpenSamples:{iteration:number;kind:'first-open'|'reopen';warmup:boolean;summaryVisibleMs:number|null;historyVisibleMs:number|null;status:'pending'|'passed'}[]=[];
  const hudOpenDistribution=(field:'summaryVisibleMs'|'historyVisibleMs')=>{
   const values=hudOpenSamples.filter(row=>row.kind==='reopen'&&!row.warmup&&row.status==='passed').map(row=>row[field]).filter((value):value is number=>value!==null).sort((a,b)=>a-b);
   return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};
  };
  const checks={canonicalTourStart:false,actualTableOpen:false,actualSeatClick:false,anonymousSummary:false,independentHistory:false,help:false,idleNoPolling:false,tourReplayLink:false,actualReplayRpc:false,anonymousStorage:false,canonicalNewHand:false,frozenDuringNewHand:false,reopenNewRevision:false,revocationBroadcast:false,revocationCleared:false,definitiveDenials:false,restored:false};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,failureKind,teardown,tableUi,observedHands,revision,historyCount,unknownStacks,summaryReads,historyReads,settlementEvidence,pageErrors,revocationFrames,visibilityFrames,sourceToReadyMs,hudOpenLatency:{warmups:2,graded:20,summaryBudgetMs:1000,rows:hudOpenSamples,summaryVisible:hudOpenDistribution('summaryVisibleMs'),historyVisible:hudOpenDistribution('historyVisibleMs'),scope:'Node monotonic seat-click to Playwright-visible counters/history upper bounds;fresh requests each open;first-open separate;no retries;not paint timing,production,concurrent browsers or1M-hand proof'},qualification:false,limitations:'One anonymous Chromium HUD with canonical start/Finish,new-source frozen HUD,reopen,actual Broadcast and definitive API withdrawal/restore. Host private controls mutate only fixed TEST tour deleted_at through real triggers;not operator withdrawal authorization/UI proof. Original shadow runs before reads and after worker drain. Settlement-only9023proof uses owner Edge and canonical receipt;source hand/player/action and current-seat hashes must remain unchanged. No cross-tour aggregation,all-chart-shapes,production Edge/cron or1000capacity proof. No routes/responses intercepted.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-hud-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PREPARED_HUD_CANONICAL_OPERATIONAL_FIXTURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,checks,failureKind,teardown,tableUi,observedHands,revision,historyCount,unknownStacks,summaryReads,historyReads,settlementEvidence,rawAggregateEvidence,pageErrors,revocationFrames,visibilityFrames,sourceToReadyMs,hudOpenLatency:{warmups:2,graded:20,summaryBudgetMs:1000,rows:hudOpenSamples,summaryVisible:hudOpenDistribution('summaryVisibleMs'),historyVisible:hudOpenDistribution('historyVisibleMs'),scope:'Node monotonic seat-click to Playwright-visible counters/history upper bounds;fresh requests each open;first-open separate;no retries;not paint timing,production,concurrent browsers or1M-hand proof'},qualification:false,limitations:'One anonymous Chromium HUD with canonical start/Finish,new-source frozen HUD,reopen,actual Broadcast and definitive API withdrawal/restore. Host private controls mutate only fixed TEST tour deleted_at through real triggers;not operator withdrawal authorization/UI proof. Original shadow runs before reads and after worker drain. Settlement-only9023proof uses owner Edge and canonical receipt;source hand/player/action and current-seat hashes must remain unchanged. No cross-tour aggregation,all-chart-shapes,production Edge/cron or1000capacity proof. No routes/responses intercepted.'},null,2));
  let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  try{
   const hands=await read('tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023');expect(hands).toHaveLength(1);const hand=hands[0];expect(hand.status).toBe('completed');
@@ -1978,6 +1996,31 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   settlementEvidence.sourcePreserved=true;await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(reopenedSummary.counters.handsObserved.toLocaleString('vi-VN'));expect({summary:summaryReads,history:historyReads}).toEqual(readsBeforeProof);await expect(region.getByRole('link',{name:/^Replay hand #9023,/})).toHaveCount(0);settlementEvidence.frozen=true;
   await dialog.getByRole('button',{name:'Close',exact:true}).click();const verifiedSummaryResponse=responseFor('get_public_player_hud_summary_v1'),verifiedHistoryResponse=responseFor('get_public_player_hud_history_v1');void verifiedSummaryResponse.catch(()=>{});void verifiedHistoryResponse.catch(()=>{});await seat.click();
   expect((await (await verifiedSummaryResponse).json()).revision).toBe(settledSummary.revision);expect((await (await verifiedHistoryResponse).json()).handHistory.find((row:{handId:string})=>row.handId===hand.id).endingStack).toBe(rawPlayer.ending_stack);await expect(region.getByRole('link',{name:/^Replay hand #9023,/})).toBeVisible();settlementEvidence.reopenedDot=true;
+  if(process.env.LOCAL_OPERATIONS_HUD_LOAD_BARRIER==='1'){
+   // Keep the HUD browser and public source alive through the other loaded
+   // operations. Withdrawal is intentionally tested only after audience drain.
+   phase='loaded-replay';const loadedReplay=await context.newPage();
+   try{const response=loadedReplay.waitForResponse(value=>new URL(value.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2')&&value.request().postDataJSON()?.p_hand_id===hand.id,{timeout:15000});void response.catch(()=>{});await loadedReplay.goto(href.toString());const actual=await response;expect(actual.ok()).toBe(true);expect((await actual.json()).id).toBe(hand.id);await expect(loadedReplay.getByTestId('replay-action-rail')).toBeVisible();checks.actualReplayRpc=true;}finally{await loadedReplay.close();}
+   phase='loaded-phase-passed-awaiting-drain';report();
+   const root=process.env.LOCAL_OPERATIONS_HUD_CONTROL!,nonce=process.env.LOCAL_OPERATIONS_HUD_CONTROL_NONCE!;expect(root).toBe('/fixtures/hud-control');
+   writeFileSync(root+'/requests/loaded-ready.json',JSON.stringify({sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce,loaded:true}));
+   await expect.poll(()=>{const file=root+'/receipts/audience-drained.json';if(!existsSync(file))return false;const r=JSON.parse(readFileSync(file,'utf8'));return r.sha===process.env.LOCAL_OPERATIONS_SOURCE_SHA&&r.nonce===nonce&&r.drained===true;},{timeout:480000,intervals:[250,500]}).toBe(true);
+  }
+  // Other TEST tours can add hands for these same players during the barrier.
+  // Derive lifetime HANDS from current raw sources with the canonical classifier,
+  // independently of the prepared totals; never constrain lifetime HUD to tour.
+  const ownedPlayers=await read('hand_players?select=hand_id&player_id=eq.'+player),ownedIds=[...new Set(ownedPlayers.map((r:{hand_id:string})=>r.hand_id))];expect(ownedIds.length).toBeLessThanOrEqual(1000);
+  const rawHands=await read('tournament_hands?select=id,tournament_id,status,is_voided,button_seat,community_cards&id=in.('+ownedIds.join(',')+')');
+  const rawTours=await read('tournaments?select=id,deleted_at&id=in.('+[...new Set(rawHands.map((r:{tournament_id:string})=>r.tournament_id))].join(',')+')');
+  let expectedRestoredHands=0;
+  for(const h of rawHands){if(!rawTours.some((t:{id:string;deleted_at:string|null})=>t.id===h.tournament_id&&t.deleted_at===null))continue;
+   const [players,actions]=await Promise.all([read('hand_players?select=player_id,seat_number,starting_stack&hand_id=eq.'+h.id),read('hand_actions?select=player_id,street,action_type,action_amount,action_order&hand_id=eq.'+h.id+'&order=action_order')]);
+   const count=classifyPublicHudHand({handId:h.id,status:h.status,isVoided:h.is_voided??false,buttonSeat:h.button_seat,boardCardCount:Array.isArray(h.community_cards)?h.community_cards.length:0,players,actions,settlement:null}).find(c=>c.playerId===player)?.handsObserved??0;
+   expectedRestoredHands+=count;if(h.tournament_id===tour)rawAggregateEvidence.mainTourHands+=count;else rawAggregateEvidence.otherTourHands+=count;
+  }
+  expect(expectedRestoredHands).toBeGreaterThanOrEqual(observedHands!+1);
+  rawAggregateEvidence.expectedRestoredHands=expectedRestoredHands;
+  await expect.poll(async()=>{const value=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return value.counters?.handsObserved;},{timeout:15000,intervals:[100,250]}).toBe(expectedRestoredHands);
   phase='withdrawal';const control=process.env.LOCAL_OPERATIONS_HUD_CONTROL!,nonce=process.env.LOCAL_OPERATIONS_HUD_CONTROL_NONCE!;expect(control).toBe('/fixtures/hud-control');
   const command=async(action:'withdraw'|'restore')=>{const request={sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce,requestId:crypto.randomUUID(),action};writeFileSync(control+'/requests/request.next',JSON.stringify(request));renameSync(control+'/requests/request.next',control+'/requests/request.json');await expect.poll(()=>{const file=control+'/receipts/receipt.json';if(!existsSync(file))return false;const receipt=JSON.parse(readFileSync(file,'utf8'));return receipt.requestId===request.requestId&&receipt.sha===request.sha&&receipt.nonce===nonce&&receipt.action===action&&receipt.applied===true&&Number.isFinite(receipt.sourceWrittenAt);},{timeout:5000,intervals:[100,250]}).toBe(true);};
   const broadcasts=revocationFrames+visibilityFrames;await command('withdraw');await expect.poll(()=>revocationFrames+visibilityFrames,{timeout:5000}).toBeGreaterThan(broadcasts);checks.revocationBroadcast=true;
@@ -1985,8 +2028,10 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   expect((await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player})).access).toBe('revoked');expect((await rpc(anon,'get_public_player_hud_history_v1',{p_tournament_id:tour,p_player_id:player})).access).toBe('revoked');
   const denied=await rpc(anon,'get_public_tournament_table_hand_v2',{p_tournament_id:tour,p_tournament_table_id:hand.tournament_table_id,p_hand_id:hand.id});expect(denied===null||denied.access==='revoked').toBe(true);expect(denied?.id??null).toBeNull();expect(denied?.actions??[]).toHaveLength(0);checks.definitiveDenials=true;
   await viewer.waitForTimeout(500);await expect(viewer.getByRole('button',{name:'Giải thích HANDS',exact:true})).toHaveCount(0);
-  phase='restore';await command('restore');await expect.poll(async()=>{const value=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return value.counters?.handsObserved;},{timeout:15000,intervals:[100,250]}).toBe(observedHands!+1);
-  await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');await openTable();await seat.click();await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText((observedHands!+1).toLocaleString('vi-VN'));checks.restored=true;
+  phase='restore';await command('restore');await expect.poll(async()=>{const value=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return value.counters?.handsObserved;},{timeout:15000,intervals:[100,250]}).toBe(expectedRestoredHands);
+  const restoredHistory=await rpc(anon,'get_public_player_hud_history_v1',{p_tournament_id:tour,p_player_id:player});expect(restoredHistory.handHistory.every((r:{handId:string})=>rawHands.some((h:{id:string;tournament_id:string})=>h.id===r.handId&&h.tournament_id===tour))).toBe(true);
+  rawAggregateEvidence.historyScoped=true;
+  await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');await openTable();await seat.click();await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(expectedRestoredHands.toLocaleString('vi-VN'));checks.restored=true;
   phase='history-replay';const replay=viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;return response.request().postDataJSON()?.p_hand_id===hand.id;},{timeout:10000});void replay.catch(()=>{});
   await region.getByRole('link',{name:/^Replay hand #9023,/}).click();const actualReplay=await replay;expect(actualReplay.ok()).toBe(true);expect((await actualReplay.json()).id).toBe(hand.id);await expect(viewer.getByTestId('replay-action-rail')).toBeVisible();checks.actualReplayRpc=true;
   checks.anonymousStorage=!(await context.storageState()).origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(checks.anonymousStorage).toBe(true);expect(pageErrors).toBe(0);phase='passed';report();
@@ -2154,7 +2199,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
  const showdownHands:{number:number;pots:number[];endings:number[]}[]=[];
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,timings,qualification:false,productionChanged:false,limits:'Fresh3-entry TEST tour after audience drain. Actual GoTrue owner/staff and PostgREST/unchanged compute-payouts Edge. Three actual Tracker hands:fold,unequal-stack showdown and final elimination;record_action/cards/Finish/retries and independent source/roster reads. Actual Cashier payout UI dialog/cancel/confirm/paid display,then four same-key payment HTTP retries;no full ranking matrix.not load qualification or complete full34 ledger/activation proof.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,timings,qualification:false,productionChanged:false,limits:'Fresh3-entry TEST tour while the configured audience watches the main tour;loaded phase receipts prove connection boundaries. Actual GoTrue owner/staff and PostgREST/unchanged compute-payouts Edge. Three actual Tracker hands:fold,unequal-stack showdown and final elimination;record_action/cards/Finish/retries and independent source/roster reads. Actual Cashier payout UI dialog/cancel/confirm/paid display,then four same-key payment HTTP retries;no full ranking matrix.not load qualification or complete full34 ledger/activation proof.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
