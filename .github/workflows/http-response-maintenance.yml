@@ -69,11 +69,20 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -c 'GRANT MAINTAIN ON net._http_response TO postgres;'
           python3 VinPoker/tests/dealerBackupObservation/runtime.py
       - name: Reject wrong target, actor, capability and source before maintenance
-        run: python3 VinPoker/tests/dealerBackupObservation/maintenanceGuards.py
+        run: |
+          mkdir "$RUNNER_TEMP/pooler-fixture-bin"
+          real_psql="$(command -v psql)"
+          printf '#!/usr/bin/env bash\nunset PGOPTIONS\nexec "%s" "$@"\n' "$real_psql" >"$RUNNER_TEMP/pooler-fixture-bin/psql"
+          chmod 700 "$RUNNER_TEMP/pooler-fixture-bin/psql"
+          echo "$RUNNER_TEMP/pooler-fixture-bin" >> "$GITHUB_PATH"
+          PATH="$RUNNER_TEMP/pooler-fixture-bin:$PATH" python3 VinPoker/tests/dealerBackupObservation/maintenanceGuards.py
       - name: Native maintenance with real source guard and least privilege
         env:
           PGUSER: postgres
         run: bash VinPoker/scripts/ops/maintain-http-response.sh --fixture
+      - name: Application role default remains unchanged
+        run: |
+          test "$(PGUSER=postgres psql -X -qAt -v ON_ERROR_STOP=1 -c 'SHOW statement_timeout')" = 2min
       - name: Sanitized maintenance fixture receipt
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

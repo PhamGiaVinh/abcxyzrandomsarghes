@@ -46,7 +46,12 @@ fi
 # Startup options affect only each maintenance connection, never the role or job.
 export PGOPTIONS='-c lock_timeout=1000 -c statement_timeout=300000'
 export PGAPPNAME="http-response-maintenance-${GITHUB_RUN_ID}"
-query() { "${psql_cmd[@]}" -X -qAt -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate 2>"$work/diagnostics.log"; }
+query() {
+  # Poolers can ignore startup PGOPTIONS. Apply and verify session settings on
+  # the actual connection before its standalone command; never wrap VACUUM in BEGIN.
+  { printf '%s\n' 'SET lock_timeout = 1000;' 'SET statement_timeout = 300000;'; cat; } |
+    "${psql_cmd[@]}" -X -qAt -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate 2>"$work/diagnostics.log"
+}
 preflight="SELECT jsonb_build_object('actor',current_user,'database',current_database(),
  'server_version_num',current_setting('server_version_num')::int,
  'statement_timeout',current_setting('statement_timeout'),'lock_timeout',current_setting('lock_timeout'),
