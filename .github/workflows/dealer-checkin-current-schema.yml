@@ -292,6 +292,7 @@ on:
       - 'VinPoker/tests/dealerSwing/massOpenSessions.pg17.sql'
       - 'VinPoker/tests/dealerSwing/operatorNextIntent.*'
       - 'VinPoker/tests/dealerSwing/closeNextReservation.concurrent.mjs'
+      - 'VinPoker/tests/dealerSwing/scale40.concurrent.mjs'
       - 'VinPoker/scripts/ops/dealer-close79-*.mjs'
       - '.github/workflows/dealer-close79-protected-apply.yml'
       - 'VinPoker/supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql'
@@ -640,6 +641,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
           createdb -T "$PGDATABASE" vinpoker_ops_close79_overlap
           PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_scale40_overlap
+          PGDATABASE=vinpoker_ops_scale40_overlap node tests/dealerSwing/scale40.concurrent.mjs
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
           node tests/dealerSwing/offCommit.currentSchema.mjs
           node tests/dealerSwing/rotationSessionClose.currentSchema.mjs
