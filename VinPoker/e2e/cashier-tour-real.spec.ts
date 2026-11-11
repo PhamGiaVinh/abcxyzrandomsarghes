@@ -10,6 +10,7 @@ import {parseOpsIntelligenceContextV1} from '../src/ops/intelligence/opsIntellig
 import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelligenceTimelineV1';
 import {clockBroadcastSignal,decodeClockWireFrame} from '../tests/publicHud/clockWireDiagnostics';
 import {audienceServerTiming,reentryServerTiming,audienceFailure} from '../scripts/ops/operations-audience-scope.mjs';
+import {classifyPublicHudHand} from '../supabase/functions/_shared/publicHudContribution';
 
 const currentFloorRosterV6=process.env.LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED==='1';
 const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3';
@@ -1988,6 +1989,19 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
    writeFileSync(root+'/requests/loaded-ready.json',JSON.stringify({sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce,loaded:true}));
    await expect.poll(()=>{const file=root+'/receipts/audience-drained.json';if(!existsSync(file))return false;const r=JSON.parse(readFileSync(file,'utf8'));return r.sha===process.env.LOCAL_OPERATIONS_SOURCE_SHA&&r.nonce===nonce&&r.drained===true;},{timeout:480000,intervals:[250,500]}).toBe(true);
   }
+  // Other TEST tours can add hands for these same players during the barrier.
+  // Derive lifetime HANDS from current raw sources with the canonical classifier,
+  // independently of the prepared totals; never constrain lifetime HUD to tour.
+  const ownedPlayers=await read('hand_players?select=hand_id&player_id=eq.'+player),ownedIds=[...new Set(ownedPlayers.map((r:{hand_id:string})=>r.hand_id))];expect(ownedIds.length).toBeLessThanOrEqual(1000);
+  const rawHands=await read('tournament_hands?select=id,tournament_id,status,is_voided,button_seat,community_cards&id=in.('+ownedIds.join(',')+')');
+  const rawTours=await read('tournaments?select=id,deleted_at&id=in.('+[...new Set(rawHands.map((r:{tournament_id:string})=>r.tournament_id))].join(',')+')');
+  let expectedRestoredHands=0;
+  for(const h of rawHands){if(!rawTours.some((t:{id:string;deleted_at:string|null})=>t.id===h.tournament_id&&t.deleted_at===null))continue;
+   const [players,actions]=await Promise.all([read('hand_players?select=player_id,seat_number,starting_stack&hand_id=eq.'+h.id),read('hand_actions?select=player_id,street,action_type,action_amount,action_order&hand_id=eq.'+h.id+'&order=action_order')]);
+   expectedRestoredHands+=classifyPublicHudHand({handId:h.id,status:h.status,isVoided:h.is_voided??false,buttonSeat:h.button_seat,boardCardCount:Array.isArray(h.community_cards)?h.community_cards.length:0,players,actions,settlement:null}).find(c=>c.playerId===player)?.handsObserved??0;
+  }
+  expect(expectedRestoredHands).toBeGreaterThanOrEqual(observedHands!+1);
+  await expect.poll(async()=>{const value=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return value.counters?.handsObserved;},{timeout:15000,intervals:[100,250]}).toBe(expectedRestoredHands);
   phase='withdrawal';const control=process.env.LOCAL_OPERATIONS_HUD_CONTROL!,nonce=process.env.LOCAL_OPERATIONS_HUD_CONTROL_NONCE!;expect(control).toBe('/fixtures/hud-control');
   const command=async(action:'withdraw'|'restore')=>{const request={sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,nonce,requestId:crypto.randomUUID(),action};writeFileSync(control+'/requests/request.next',JSON.stringify(request));renameSync(control+'/requests/request.next',control+'/requests/request.json');await expect.poll(()=>{const file=control+'/receipts/receipt.json';if(!existsSync(file))return false;const receipt=JSON.parse(readFileSync(file,'utf8'));return receipt.requestId===request.requestId&&receipt.sha===request.sha&&receipt.nonce===nonce&&receipt.action===action&&receipt.applied===true&&Number.isFinite(receipt.sourceWrittenAt);},{timeout:5000,intervals:[100,250]}).toBe(true);};
   const broadcasts=revocationFrames+visibilityFrames;await command('withdraw');await expect.poll(()=>revocationFrames+visibilityFrames,{timeout:5000}).toBeGreaterThan(broadcasts);checks.revocationBroadcast=true;
@@ -1995,8 +2009,9 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   expect((await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player})).access).toBe('revoked');expect((await rpc(anon,'get_public_player_hud_history_v1',{p_tournament_id:tour,p_player_id:player})).access).toBe('revoked');
   const denied=await rpc(anon,'get_public_tournament_table_hand_v2',{p_tournament_id:tour,p_tournament_table_id:hand.tournament_table_id,p_hand_id:hand.id});expect(denied===null||denied.access==='revoked').toBe(true);expect(denied?.id??null).toBeNull();expect(denied?.actions??[]).toHaveLength(0);checks.definitiveDenials=true;
   await viewer.waitForTimeout(500);await expect(viewer.getByRole('button',{name:'Giải thích HANDS',exact:true})).toHaveCount(0);
-  phase='restore';await command('restore');await expect.poll(async()=>{const value=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return value.counters?.handsObserved;},{timeout:15000,intervals:[100,250]}).toBe(observedHands!+1);
-  await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');await openTable();await seat.click();await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText((observedHands!+1).toLocaleString('vi-VN'));checks.restored=true;
+  phase='restore';await command('restore');await expect.poll(async()=>{const value=await rpc(anon,'get_public_player_hud_summary_v1',{p_tournament_id:tour,p_player_id:player});return value.counters?.handsObserved;},{timeout:15000,intervals:[100,250]}).toBe(expectedRestoredHands);
+  const restoredHistory=await rpc(anon,'get_public_player_hud_history_v1',{p_tournament_id:tour,p_player_id:player});expect(restoredHistory.handHistory.every((r:{handId:string})=>rawHands.some((h:{id:string;tournament_id:string})=>h.id===r.handId&&h.tournament_id===tour))).toBe(true);
+  await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');await openTable();await seat.click();await expect(dialog.getByRole('button',{name:'Giải thích HANDS',exact:true}).locator('strong')).toHaveText(expectedRestoredHands.toLocaleString('vi-VN'));checks.restored=true;
   phase='history-replay';const replay=viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;return response.request().postDataJSON()?.p_hand_id===hand.id;},{timeout:10000});void replay.catch(()=>{});
   await region.getByRole('link',{name:/^Replay hand #9023,/}).click();const actualReplay=await replay;expect(actualReplay.ok()).toBe(true);expect((await actualReplay.json()).id).toBe(hand.id);await expect(viewer.getByTestId('replay-action-rail')).toBeVisible();checks.actualReplayRpc=true;
   checks.anonymousStorage=!(await context.storageState()).origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(checks.anonymousStorage).toBe(true);expect(pageErrors).toBe(0);phase='passed';report();
