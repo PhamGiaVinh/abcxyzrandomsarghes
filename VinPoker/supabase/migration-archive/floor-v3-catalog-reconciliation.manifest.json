@@ -10115,6 +10115,11 @@
       "version": "20270128000337",
       "filename": "20270128000337_dealer_backup_indexed_response_observation.sql",
       "sha256": "c638e0580ae55d6a6452674247804d506f0ba015f5ed2dd6b415f060e915e269"
+    },
+    {
+      "version": "20270128000338",
+      "filename": "20270128000338_process_swing_observer_indexable_window.sql",
+      "sha256": "ddb37f9cb363aa38835aeb9be0b7a87d8411b39268944680723fbda3a77a8eab"
     }
   ],
   "floorActiveAllowlist": [
