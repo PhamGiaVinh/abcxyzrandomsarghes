@@ -43,10 +43,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install PostgreSQL client
+      - name: Ensure PostgreSQL client is available
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client
+          fi
+          psql --version
 
       - name: Run existing release runner unit tests
         working-directory: VinPoker
