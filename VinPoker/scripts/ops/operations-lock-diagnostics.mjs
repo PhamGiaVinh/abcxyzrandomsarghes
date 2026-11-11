@@ -46,6 +46,6 @@ async function main(){
   }
   report.phase='stopped';
  }catch{report.phase='failed';process.exitCode=1;}
- finally{child.stdin.end();let timer;const result=await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),2000);})]);clearTimeout(timer);if(!result||result.code!==0){report.phase='failed';process.exitCode=1;}save();}
+ finally{child.stdin.end();let timer;const result=await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),2000);})]);clearTimeout(timer);if(!result){report.observerClientForcedStop=true;child.kill('SIGKILL');child.stdin.destroy();child.stdout.destroy();child.stderr.destroy();}if(!result||result.code!==0){report.phase='failed';process.exitCode=1;}save();}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();
