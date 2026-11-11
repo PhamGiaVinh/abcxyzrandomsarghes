@@ -2403,6 +2403,7 @@ SELECT jsonb_build_object('kind','READ_ONLY_REDRAW_PLAN_JOIN_CARDINALITIES',
  'seatSessionMismatch',(SELECT count(*) FROM active s JOIN public.tournament_tables tt ON tt.id=s.tournament_table_id WHERE s.table_session_id IS DISTINCT FROM tt.table_session_id),
  'openLocks',(SELECT count(*) FROM public.table_session_seat_locks WHERE tournament_id='a3000000-0000-4000-8000-000000000004' AND unlocked_at IS NULL),
  'planBodyMd5',(SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.floor_plan_tournament_redraw_v1(uuid,integer,uuid[],uuid)'::regprocedure),
+ 'databaseDeadlocks',(SELECT deadlocks FROM pg_stat_database WHERE datname=current_database()),
  'productionChanged',false);
 REDRAW_JOIN_DIAGNOSTIC
     exit "$redraw_browser_status"

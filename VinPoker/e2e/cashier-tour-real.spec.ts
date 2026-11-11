@@ -50,7 +50,13 @@ test('final current Floor seat locks and redraw conserve every paid entry over H
    const registration=await registered.json();expect(registered.ok).toBe(true);expect(registration.success).toBe(true);expect(Number(registration.total_pay)).toBe(6600000);
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
    const pay=async()=>{const response=await fetch(api+'/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',{method:'POST',headers:actorHeaders,body:JSON.stringify({p_intent:intent,p_action:'record'}),signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
-   const paid=await pay();expect(paid).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});expect(await pay()).toEqual(paid);
+   const paid=await pay();
+   if(paid.result?.seating_state!=='seated'){
+    const safe=(value:unknown)=>typeof value==='string'&&/^[a-zA-Z0-9_]{1,80}$/.test(value)?value:null;
+    const rows=await read('tournament_registrations?select=cashier_seating_error&id=eq.'+registration.registration_id);
+    writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-redraw-payment-diagnostic-http.json'),JSON.stringify({kind:'ISOLATED_REDRAW_CANONICAL_PAYMENT_DENIAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,productionChanged:false,registrationIndex:staff.indexOf(actor),status:safe(paid.status),paymentState:safe(paid.result?.payment_state),seatingState:safe(paid.result?.seating_state),reason:safe(paid.result?.reason),error:safe(paid.result?.error),storedSeatingError:safe(rows[0]?.cashier_seating_error)},null,2));
+   }
+   expect(paid).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});expect(await pay()).toEqual(paid);
   }
   const before=await roster(),frozen=identity(before);expect(frozen).toHaveLength(20);expect(new Set(frozen.map(s=>s.entry)).size).toBe(20);expect(frozen.reduce((n,s)=>n+s.chips,0)).toBe(400000);
   expect(await read('tournament_hands?select=id&tournament_id=eq.'+tour+'&status=eq.in_progress')).toHaveLength(0);
