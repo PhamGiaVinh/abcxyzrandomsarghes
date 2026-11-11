@@ -545,6 +545,10 @@ test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP w
   assert.deepEqual(audienceFailure({code:'PGRST003',message:'private'},504),{kind:'http_error',httpStatus:504,serverCode:'PGRST003'});
   assert.deepEqual(audienceFailure({code:'TOKEN',message:'private',Authorization:'private'},'500'),{kind:'unknown',httpStatus:null,serverCode:null});
   assert.equal(audienceFailure({code:'42501'},403).serverCode,'42501');
+  for(const message of ['worker_deadline','deadline_exceeded','generation_absorb_failed','broadcast_flush_failed','claim_failed']){
+   assert.deepEqual(audienceFailure(Error(message)),{kind:message,httpStatus:null,serverCode:null});
+   assert.equal(audienceFailure(Error(message+' private SQL/token')).kind,'unknown');
+  }
 });
 
 test('worker diagnostics preserve exact known lease rejection without exporting arbitrary RPC or error text',()=>{

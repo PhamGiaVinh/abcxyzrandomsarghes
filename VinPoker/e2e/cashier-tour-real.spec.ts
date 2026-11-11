@@ -231,6 +231,10 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   }).catch(()=>{row.gatewayClass='body-unavailable';});
  });
  const samples:{concurrency:number;graded:number;firstAckMs:number[];independentReadAfterAckMs:number[];writeToObservedMs:number[];retryAckMs:number[];writeToRealtimeMs:number[]}[]=[];
+ let failedHttp:unknown=null;
+ const completedWrites:{ordinal:number;firstAckMs:number;writeToObservedMs:number;retryAckMs:number}[]=[];
+ const lagSpikes:{at:number;lagMs:number}[]=[];let previousLagTick=Date.now();
+ const lagTimer=setInterval(()=>{const at=Date.now(),lagMs=Math.max(0,at-previousLagTick-100);previousLagTick=at;if(lagMs>=250){lagSpikes.push({at,lagMs});if(lagSpikes.length>20)lagSpikes.shift();}},100);
  try{
  if(realtimeEnabled){
   observer=createClient(api,anon,{accessToken:async()=>identities[19].token,auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{logger:(kind,message,payload)=>{
@@ -269,13 +273,18 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   observing=true;
  }
  const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
- const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{
-  const response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});
-  const body=await response.json();expect(response.ok).toBe(true);return body;
+ const requestJson=async(operation:string,path:string,token:string,args?:Record<string,unknown>,context?:{phase:string;ordinal:number})=>{
+  const startedAt=Date.now(),started=performance.now(),signal=AbortSignal.timeout(5000);let stage='headers',status:number|undefined,headersMs:number|undefined,serverTiming:unknown;
+  try{
+   const response=await fetch(api+'/rest/v1/'+path,{method:args?'POST':'GET',headers:headers(token),...(args?{body:JSON.stringify(args)}:{}),signal});
+   status=response.status;headersMs=performance.now()-started;serverTiming=audienceServerTiming(response.headers);stage='body';const body=await response.json();stage='assertion';expect(response.ok).toBe(true);return body;
+  }catch(cause){failedHttp??={operation,...context,stage,startedAt,failedAt:Date.now(),elapsedMs:performance.now()-started,responseStatus:status,headersMs,serverTiming,signalAborted:signal.aborted,...audienceFailure(cause,status)};throw cause;}
  };
- const read=async(token:string,dealerId:string)=>{
-  const response=await fetch(api+'/rest/v1/dealer_attendance?select=id,dealer_id,status,current_state&dealer_id=eq.'+dealerId,{headers:headers(token),signal:AbortSignal.timeout(5000)});
-  const body=await response.json();expect(response.ok).toBe(true);expect(Array.isArray(body)).toBe(true);return body;
+ const rpc=async(token:string,name:string,args:Record<string,unknown>,context?:{phase:string;ordinal:number})=>{
+  return requestJson(name,'rpc/'+name,token,args,context);
+ };
+ const read=async(token:string,dealerId:string,context?:{phase:string;ordinal:number})=>{
+  const body=await requestJson('attendance_read','dealer_attendance?select=id,dealer_id,status,current_state&dealer_id=eq.'+dealerId,token,undefined,context);expect(Array.isArray(body)).toBe(true);return body;
  };
  const denied=await rpc(identities[0].token,'operator_check_in_dealer_v1',{
   p_dealer_id:fixture.otherDealerId,p_club_id:fixture.otherClubId,p_shift_id:fixture.otherShiftId,p_request_id:crypto.randomUUID(),
@@ -320,19 +329,19 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
    await page.getByPlaceholder('Tìm dealer...',{exact:true}).fill(uiDealerName!);
    await expect(uiRoster.getByText(uiDealerName!,{exact:true})).toHaveCount(0);
   }
-  const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args),ack=performance.now();
+  const started=performance.now(),receipt=await rpc(identity.token,'operator_check_in_dealer_v1',args,{phase:'write_ack',ordinal:index}),ack=performance.now();
   expect(receipt.ok).toBe(true);expect(receipt.outcome).toBe('checked_in');
-  const rows=await read(identity.token,dealerId),observed=performance.now();
+  const rows=await read(identity.token,dealerId,{phase:'independent_read',ordinal:index}),observed=performance.now();
   expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({id:receipt.attendance_id,dealer_id:dealerId,status:'checked_in',current_state:'available'});
-  const retryStarted=performance.now(),repeated=await rpc(identity.token,'operator_check_in_dealer_v1',args),retried=performance.now();
+  const retryStarted=performance.now(),repeated=await rpc(identity.token,'operator_check_in_dealer_v1',args,{phase:'same_key_retry',ordinal:index}),retried=performance.now();
   expect(repeated).toEqual(receipt);
   if(index===0){
-   const otherActor=await rpc(identities[1].token,'get_dealer_checkin_receipt_v1',args);
+   const otherActor=await rpc(identities[1].token,'get_dealer_checkin_receipt_v1',args,{phase:'cross_actor_receipt',ordinal:index});
    expect(otherActor).toEqual({ok:true,status:'unknown'});
   }
   let writeToRealtimeMs:number|null=null;
   if(realtimeEnabled){
-   expect(await read(identities[19].token,dealerId),'WebSocket observer must independently have actual RLS read access').toHaveLength(1);
+   expect(await read(identities[19].token,dealerId,{phase:'observer_rls_read',ordinal:index}),'WebSocket observer must independently have actual RLS read access').toHaveLength(1);
    const deadline=started+5000;
    while(!seen.has(dealerId)&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
    expect(seen.has(dealerId),'Every committed check-in must reach the independent authenticated WebSocket observer').toBe(true);
@@ -346,6 +355,7 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
     uiObservations.push({writeToVisibleMs,warmup:index<360+uiWarmup});
    }
   }
+  completedWrites.push({ordinal:index,firstAckMs:ack-started,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted});
   return {firstAckMs:ack-started,independentReadAfterAckMs:observed-ack,writeToObservedMs:observed-started,retryAckMs:retried-retryStarted,writeToRealtimeMs};
  };
  for(const concurrency of [1,5,20]){
@@ -376,9 +386,9 @@ test('real check-in HTTP commit, independent observation, exact retry and tenant
   if(realtimeEnabled){
    try{const path=new URL(page.url()).pathname;uiDiagnostics={path,fixtureBody:['/ops/dealer-swing','/dealer-swing'].includes(path)?(await page.locator('body').innerText()).slice(0,2000):null,failedReads:uiFailedReads};}catch{uiDiagnostics={status:'fixture_page_unavailable',failedReads:uiFailedReads};}
   }
-  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,completedUiObservations:uiObservations,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
+  if(realtimeEnabled)writeFileSync(process.env.LOCAL_OPERATIONS_CHECKIN_REPORT!,JSON.stringify({kind:'CHECKIN_REALTIME_FAILED_DIAGNOSTIC',failedHttp,completedWrites,lagSpikes,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,qualification:false,realtimeStatuses,systemEvents,wireFrames:wireFrames.slice(0,10),wireFrameCount:wireFrames.length,bindingIdTypes:bindingIds.map(id=>typeof id),uniqueEvents:seen.size,duplicateEvents,errors:realtimeErrors,completedScenarios:samples,completedUiObservations:uiObservations,uiDiagnostics,reason:'Actual check-in/observer assertions failed;completed phase samples do not override the failure'},null,2));
   throw error;
- }finally{observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
+ }finally{clearInterval(lagTimer);observing=false;if(observer){await observer.removeAllChannels();await observer.realtime.disconnect();}}
 });
 
 test('Floor and Dealer Swing authenticated HTTP read latency after check-in',async({page})=>{
