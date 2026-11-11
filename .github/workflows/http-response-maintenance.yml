@@ -5,6 +5,7 @@ on:
       - '.github/workflows/http-response-maintenance.yml'
       - 'VinPoker/scripts/ops/maintain-http-response.sh'
       - 'VinPoker/scripts/ops/http-response-maintenance.test.mjs'
+      - 'VinPoker/tests/dealerBackupObservation/**'
   workflow_dispatch:
     inputs:
       target_sha:
