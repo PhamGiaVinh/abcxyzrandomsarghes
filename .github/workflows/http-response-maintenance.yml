@@ -1,0 +1,134 @@
+name: Reviewed native HTTP response maintenance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/http-response-maintenance.yml'
+      - 'VinPoker/scripts/ops/maintain-http-response.sh'
+      - 'VinPoker/scripts/ops/http-response-maintenance.test.mjs'
+      - 'VinPoker/tests/dealerBackupObservation/**'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact reviewed current main SHA
+        required: true
+        type: string
+      recovery_run:
+        description: Successful encrypted recovery and actual isolated restore run
+        required: true
+        type: string
+      owner_ack:
+        description: RUN_REVIEWED_HTTP_RESPONSE_VACUUM
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+concurrency:
+  group: floor-v3-recovery-orlesggcjamwuknxwcpk
+  cancel-in-progress: false
+jobs:
+  isolated-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: maintenance_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: vinpoker_backup_observation_test_maintenance_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U maintenance_test_admin -d vinpoker_backup_observation_test_maintenance_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: maintenance_test_admin
+      PGPASSWORD: test
+      PGDATABASE: vinpoker_backup_observation_test_maintenance_ci
+      EXPECT_MANAGED_NO_CREATE: '1'
+      HTTP_MAINTENANCE_REPORT: ${{ github.workspace }}/VinPoker/output/http-maintenance/maintenance.json
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Source safety contract
+        run: |
+          bash -n VinPoker/scripts/ops/maintain-http-response.sh
+          node --test VinPoker/scripts/ops/http-response-maintenance.test.mjs
+      - name: Nonowner fixture with existing MAINTAIN and no CREATE net
+        run: |
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';
+          CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;
+          GRANT CREATE ON DATABASE vinpoker_backup_observation_test_maintenance_ci TO postgres;
+          GRANT USAGE,CREATE ON SCHEMA public TO postgres;
+          CREATE SCHEMA cron;
+          CREATE TABLE cron.job(jobid bigint,jobname text,schedule text,command text,active boolean,username text,database text);
+          GRANT USAGE ON SCHEMA cron TO postgres;GRANT SELECT ON cron.job TO postgres;
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/dealerBackupObservation/prepare.sql
+          psql -X -v ON_ERROR_STOP=1 -c 'GRANT MAINTAIN ON net._http_response TO postgres;'
+          python3 VinPoker/tests/dealerBackupObservation/runtime.py
+      - name: Reject wrong target, actor, capability and source before maintenance
+        run: python3 VinPoker/tests/dealerBackupObservation/maintenanceGuards.py
+      - name: Native maintenance with real source guard and least privilege
+        env:
+          PGUSER: postgres
+        run: bash VinPoker/scripts/ops/maintain-http-response.sh --fixture
+      - name: Sanitized maintenance fixture receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: http-maintenance-fixture-${{ github.sha }}
+          path: VinPoker/output/http-maintenance/*.json
+          if-no-files-found: warn
+  maintain-reviewed-target:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: isolated-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: dealer-swing-production-critical
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HTTP_MAINTENANCE_REPORT: ${{ github.workspace }}/VinPoker/output/http-maintenance/maintenance.json
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Verify owner authorization, exact source and fresh recovery receipt
+        env:
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          RECOVERY_RUN: ${{ inputs.recovery_run }}
+          OWNER_ACK: ${{ inputs.owner_ack }}
+        run: |
+          set -euo pipefail
+          test "$INITIAL_ACTOR" = "$REPOSITORY_OWNER"
+          test "$TRIGGERING_ACTOR" = "$REPOSITORY_OWNER"
+          test "$OWNER_ACK" = RUN_REVIEWED_HTTP_RESPONSE_VACUUM
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ && "$RECOVERY_RUN" =~ ^[0-9]+$ ]]
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN" >"$RUNNER_TEMP/recovery-run.json"
+          gh run download "$RECOVERY_RUN" --repo "$GITHUB_REPOSITORY" --name "floor-v3-restore-verification-$RECOVERY_RUN" --dir "$RUNNER_TEMP/http-maintenance-recovery"
+          node --input-type=module - "$RUNNER_TEMP/recovery-run.json" "$RUNNER_TEMP/http-maintenance-recovery/recovery-verification.json" <<'JS'
+          import assert from'node:assert/strict';import{readFileSync}from'node:fs';import{execFileSync}from'node:child_process';
+          const run=JSON.parse(readFileSync(process.argv[2])),r=JSON.parse(readFileSync(process.argv[3]));
+          assert.equal(run.path,'.github/workflows/floor-v3-recovery-backup.yml');assert.equal(run.conclusion,'success');assert.equal(run.head_branch,'main');
+          assert.equal(r.kind,'vinpoker-restore-verification');assert.equal(r.sourceSha,run.head_sha);
+          assert.equal(r.isolatedRestore,'PASS');assert.equal(r.tableCountMatch,'PASS');assert.equal(r.databaseOwnerAndEffectiveAclMatch,true);assert.equal(r.productionMutation,false);
+          const age=Date.now()-Date.parse(r.snapshotAt);assert.ok(age>=0&&age<=2*3600*1000,'Recovery snapshot older than2h');
+          execFileSync('git',['merge-base','--is-ancestor',r.sourceSha,process.env.GITHUB_SHA]);
+          JS
+      - name: Exact ordinary maintenance over native PostgreSQL
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: bash VinPoker/scripts/ops/maintain-http-response.sh
+      - name: Sanitized actual maintenance receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: http-maintenance-production-${{ github.run_id }}
+          path: VinPoker/output/http-maintenance/*.json
+          if-no-files-found: warn
