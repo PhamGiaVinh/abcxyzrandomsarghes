@@ -90,6 +90,7 @@ stack_containers=()
 ephemeral_containers=()
 cleanup() {
   local exit_code=$?
+  if [[ -n "${payment_lock_sampler_pid:-}" ]]; then kill -TERM "$payment_lock_sampler_pid" 2>/dev/null || true;wait "$payment_lock_sampler_pid" 2>/dev/null || true;fi
   if [[ -n "${hud_browser_pid:-}" ]]; then docker rm -f "$network-hud-browser" >/dev/null 2>&1 || true;wait "$hud_browser_pid" 2>/dev/null || true;fi
   if [[ -n "${hud_projector_pid:-}" ]]; then kill -TERM "$hud_projector_pid" 2>/dev/null || true;wait "$hud_projector_pid" 2>/dev/null || true;fi
   if [[ -n "${audience_pid:-}" ]]; then kill "$audience_pid" 2>/dev/null || true;wait "$audience_pid" 2>/dev/null || true;fi
@@ -2358,8 +2359,61 @@ INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,sta
 SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4000-8000-000000000001','Canonical redraw TEST '||n,90+n,'tournament','inactive','available' FROM generate_series(1,3)n;
 COMMIT;
 REDRAW_RELEASE_FIXTURE
+  if [[ "$audience_count" == 10 ]]; then
+    node --test "$repo_root/scripts/ops/operations-lock-diagnostics.test.mjs"
+    node "$repo_root/scripts/ops/operations-lock-diagnostics.mjs" "$db_container" "$repo_root/output/operations-latency/redraw-original-payment-locks-http.json" "$source_sha" >"$test_root/payment-lock-observer-private.log" 2>&1 &
+    payment_lock_sampler_pid=$!
+    lock_observer_ready=false
+    for _ in {1..30}; do
+      if ! kill -0 "$payment_lock_sampler_pid" 2>/dev/null; then wait "$payment_lock_sampler_pid";exit 1;fi
+      if node -e 'try{process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).phase==="ready"?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/redraw-original-payment-locks-http.json"; then lock_observer_ready=true;break;fi
+      sleep 1
+    done
+    [[ "$lock_observer_ready" == true ]]
+  fi
   redraw_browser_status=0
   LOCAL_OPERATIONS_REDRAW_ENABLED=1 run_browser_proof '' '' 'final current Floor seat locks and redraw conserve every paid entry over HTTP' || redraw_browser_status=$?
+  if [[ -n "${payment_lock_sampler_pid:-}" ]]; then
+    kill -TERM "$payment_lock_sampler_pid"
+    wait "$payment_lock_sampler_pid"
+    payment_lock_sampler_pid=''
+  fi
+  if [[ "$redraw_browser_status" != 0 ]]; then
+    # A separate, rollback-only diagnostic invocation may recover or fail with
+    # a different timing. It never changes the original failed test result.
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/redraw-postfailure-rollback-probe-http.json" <<'REDRAW_ROLLBACK_PROBE' || true
+BEGIN;
+SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='5s';
+DO $probe$
+DECLARE r public.tournament_registrations%ROWTYPE;v jsonb;code text;constraint_name text;table_name text;message text;context text;frames jsonb;
+BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen)
+ THEN RAISE EXCEPTION 'rollback_probe_requires_owned_disposable';END IF;
+ SELECT * INTO r FROM public.tournament_registrations WHERE tournament_id='a3000000-0000-4000-8000-000000000004'
+ AND status='pending' AND cashier_seating_error='seating_exception' ORDER BY id LIMIT 1;
+ IF r.id IS NULL THEN v:=jsonb_build_object('invoked',false);
+ ELSE
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',r.player_id,'role','authenticated')::text,true);
+  BEGIN
+   v:=public.cashier_try_seat_paid_v1(r.id,r.player_id);
+   v:=jsonb_build_object('invoked',true,'exception',false,'seated',v->>'seating_state'='seated');
+  EXCEPTION WHEN OTHERS THEN
+   GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,constraint_name=CONSTRAINT_NAME,table_name=TABLE_NAME,message=MESSAGE_TEXT,context=PG_EXCEPTION_CONTEXT;
+   SELECT coalesce(jsonb_agg(jsonb_build_object('function',m[1],'line',m[2]::integer)),'[]'::jsonb) INTO frames
+   FROM regexp_matches(context,'PL/pgSQL function ([a-zA-Z0-9_.]+)\([^)]*\) line ([0-9]+)','g') m;
+   v:=jsonb_build_object('invoked',true,'exception',true,'sqlstate',code,
+    'constraint',CASE WHEN constraint_name ~ '^[a-zA-Z0-9_]{1,128}$' THEN constraint_name END,
+    'table',CASE WHEN table_name ~ '^[a-zA-Z0-9_]{1,128}$' THEN table_name END,'messageMd5',md5(message),'frames',frames);
+  END;
+ END IF;
+ PERFORM set_config('vinpoker.rollback_probe_result',(v||jsonb_build_object('kind','SEPARATE_POSTFAILURE_ROLLBACK_DIAGNOSTIC','originalSqlstateProven',false,'qualification',false,'productionChanged',false,'allWritesRolledBack',true))::text,true);
+END $probe$;
+SELECT current_setting('vinpoker.rollback_probe_result');
+ROLLBACK;
+REDRAW_ROLLBACK_PROBE
+  fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<REDRAW_RELEASE_RESTORE
 BEGIN;
 DO \$\$ BEGIN
