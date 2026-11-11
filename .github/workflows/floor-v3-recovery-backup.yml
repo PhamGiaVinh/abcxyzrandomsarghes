@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/floor-v3-recovery-backup.yml
       - VinPoker/scripts/ops/create-floor-v3-recovery.sh
+      - VinPoker/scripts/ops/install-recovery-age.sh
       - VinPoker/scripts/ops/check-floor-v3-anon-exception.mjs
       - VinPoker/scripts/ops/verify-floor-v3-recovery.sh
       - VinPoker/scripts/ops/floor-v3-recovery-workflow.test.mjs
@@ -34,6 +35,27 @@ env:
   ARTIFACT_NAME: floor-v3-encrypted-database-recovery-${{ github.run_id }}
 
 jobs:
+  installer-smoke:
+    name: Verify pinned age installer without recovery credentials
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install verified official artifact and encrypt/decrypt a synthetic canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash VinPoker/scripts/ops/install-recovery-age.sh
+          work="$(mktemp -d)"
+          trap 'rm -rf -- "$work"' EXIT
+          umask 077
+          age-keygen -o "$work/key" 2>/dev/null
+          recipient="$(age-keygen -y "$work/key")"
+          printf 'synthetic-installer-canary\n' > "$work/plain"
+          age -r "$recipient" -o "$work/cipher" "$work/plain"
+          age -d -i "$work/key" -o "$work/restored" "$work/cipher"
+          cmp "$work/plain" "$work/restored"
   source-check:
     name: Validate backup-only workflow and recovery scripts
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
@@ -116,8 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends age
+          bash VinPoker/scripts/ops/install-recovery-age.sh
 
       - name: Stop if another production release workflow is active
         shell: bash
@@ -224,8 +245,7 @@ jobs:
         run: |
           set -euo pipefail
           npm install --global supabase@2.117.0
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends age
+          bash VinPoker/scripts/ops/install-recovery-age.sh
 
       - name: Download persisted ciphertext from the completed backup job
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { validateAnonExceptionRows } from "./check-floor-v3-anon-exception.mjs";
 import { dirname, resolve } from "node:path";
@@ -12,7 +13,40 @@ const workspaceRoot = resolve(appRoot, "..");
 const workflow = readFileSync(resolve(workspaceRoot, ".github/workflows/floor-v3-recovery-backup.yml"), "utf8");
 const backup = readFileSync(resolve(scriptDirectory, "create-floor-v3-recovery.sh"), "utf8");
 const restore = readFileSync(resolve(scriptDirectory, "verify-floor-v3-recovery.sh"), "utf8");
+const ageInstaller = readFileSync(resolve(scriptDirectory, "install-recovery-age.sh"), "utf8");
 const verifiedAnonFingerprint = "7289b818ee2251d46c8cf3fc5a94ce961f936cdc7c94b7979b8b1a0936b286b8";
+
+test("recovery installs its pinned verified age artifact before use without Ubuntu mirrors", () => {
+  assert.match(ageInstaller, /readonly version=1\.2\.1/);
+  assert.match(ageInstaller, /readonly checksum=7df45a6cc87d4da11cc03a539a7470c15b1041ab2b396af088fe9990f7c79d50/);
+  assert.match(ageInstaller, /https:\/\/github\.com\/FiloSottile\/age\/releases\/download\//);
+  assert.ok(ageInstaller.indexOf("sha256sum --check --status") < ageInstaller.indexOf("tar --extract"));
+  assert.ok(ageInstaller.indexOf("tar --extract") < ageInstaller.indexOf("sudo install"));
+  assert.match(ageInstaller, /--connect-timeout 15 --max-time 120/);
+  assert.doesNotMatch(ageInstaller, /SUPABASE_DB_PASSWORD|FLOOR_BACKUP_AGE_IDENTITY/);
+  assert.doesNotMatch(workflow, /apt-get/);
+  assert.equal((workflow.match(/bash VinPoker\/scripts\/ops\/install-recovery-age\.sh/g) ?? []).length, 3);
+  assert.match(workflow, /Verify pinned age installer without recovery credentials/);
+});
+
+test("corrupt downloaded age bytes fail before extraction or privileged installation", { skip: process.platform !== "linux" }, () => {
+  const work = mkdtempSync(resolve(tmpdir(), "recovery-age-reject-"));
+  const marker = resolve(work, "unexpected-execution");
+  try {
+    writeFileSync(resolve(work, "curl"), '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do\n if [ "$1" = --output ]; then printf corrupted > "$2"; exit 0; fi\n shift\ndone\nexit 1\n', { mode: 0o755 });
+    for (const command of ["tar", "sudo"]) {
+      writeFileSync(resolve(work, command), '#!/bin/sh\nprintf unexpected > "$INSTALLER_MARKER"\nexit 99\n', { mode: 0o755 });
+    }
+    const result = spawnSync("bash", [resolve(scriptDirectory, "install-recovery-age.sh")], {
+      env: { ...process.env, PATH: work + ":" + process.env.PATH, INSTALLER_MARKER: marker },
+      encoding: "utf8",
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(existsSync(marker), false, "unverified bytes reached extraction/privileged install");
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+});
 
 test("Floor recovery workflow is manual, owner-bound, protected, and backup-only", () => {
   assert.match(workflow, /workflow_dispatch:/);
