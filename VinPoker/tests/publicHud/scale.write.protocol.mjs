@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 export const sourceGeneration342Profile=Object.freeze({migration:'20270128000342_nonblocking_spectator_source_generation.sql',sqlSha256:'329598b30c0dd07b3832c2309fc7b61b668352926b7c25d35c97db35d8c57c83',bodyMd5:'c1da47ebdf9a70ac414ae3f2ccc4b8c0',definitionMd5:'0d471115d7d14e8f780859f83cd2598c'});
+export const pendingSourceProfile=Object.freeze({migration:'20261112193658_spectator_pending_source_outcome.sql',sqlSha256:'a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221',originalDefinitionMd5:'0557076e4866159dc1095c5257ceb7c6',definitionMd5:'6269d9fc1b2737f30b56a4bcdb42fb79'});
+export function pendingSourceProbeEnabled(env){
+ const flag=env.PUBLIC_HUD_PENDING_SOURCE_PROBE??'0';
+ assert.ok(['0','1'].includes(flag),'Invalid pending source probe');
+ assert.ok(flag!=='1'||env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1','Pending source probe requires generation342');
+ return flag==='1';
+}
 export function validateCanonicalWriterObservers(profile,{sourceGenerationProbe=false}={}){
  assert.equal(typeof sourceGenerationProbe,'boolean');
  const names=['mark_dirty','mark_hand_child_dirty','mark_row_dirty'];

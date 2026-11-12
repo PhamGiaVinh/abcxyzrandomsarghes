@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {writerDiagnosticAdminTarget} from './scale.write.native.mjs';
-import {sourceGeneration342Profile,requireMatchedWriterQualification} from './scale.write.protocol.mjs';
+import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,requireMatchedWriterQualification} from './scale.write.protocol.mjs';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 test('migration342 writer profile is explicit and pins exact migration bytes',()=>{
@@ -9,6 +9,16 @@ test('migration342 writer profile is explicit and pins exact migration bytes',()
  assert.equal(createHash('sha256').update(source.replace(/\r\n?/g,'\n')).digest('hex'),sourceGeneration342Profile.sqlSha256);
  assert.throws(()=>requireMatchedWriterQualification({sourceGenerationCandidate:sourceGeneration342Profile.migration},{sha:'a'.repeat(40)}),/Explicit source generation/);
  assert.throws(()=>requireMatchedWriterQualification({},{sha:'a'.repeat(40)},{sourceGenerationProbe:true}),/Explicit source generation/);
+});
+test('pending source profile pins native-verified SQL and requires explicit generation mode',()=>{
+ const source=readFileSync(new URL('../../supabase/pending-migrations/'+pendingSourceProfile.migration,import.meta.url),'utf8');
+ assert.equal(createHash('sha256').update(source.replace(/\r\n?/g,'\n')).digest('hex'),pendingSourceProfile.sqlSha256);
+ assert.equal(pendingSourceProfile.definitionMd5,'6269d9fc1b2737f30b56a4bcdb42fb79');
+ assert.equal(pendingSourceProbeEnabled({}),false);
+ assert.equal(pendingSourceProbeEnabled({PUBLIC_HUD_PENDING_SOURCE_PROBE:'0'}),false);
+ assert.equal(pendingSourceProbeEnabled({PUBLIC_HUD_PENDING_SOURCE_PROBE:'1',PUBLIC_HUD_SOURCE_GENERATION_PROBE:'1'}),true);
+ for(const env of [{PUBLIC_HUD_PENDING_SOURCE_PROBE:'unknown'},{PUBLIC_HUD_PENDING_SOURCE_PROBE:'1'},
+  {PUBLIC_HUD_PENDING_SOURCE_PROBE:'1',PUBLIC_HUD_SOURCE_GENERATION_PROBE:'0'}])assert.throws(()=>pendingSourceProbeEnabled(env),/pending source|generation342/);
 });
 const env={PUBLIC_HUD_LOCAL_PORT:'54322',PUBLIC_HUD_STACK_PROJECT:'hud-scale-123-1',
  PUBLIC_HUD_LOCAL_DATABASE:'vinpoker_hud_test_pair_123_1',PUBLIC_HUD_ISOLATED_STACK:'',

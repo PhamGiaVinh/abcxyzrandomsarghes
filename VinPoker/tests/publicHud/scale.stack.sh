@@ -5,6 +5,7 @@ repo_root="$(pwd)"
 for forbidden in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD VERCEL_TOKEN; do
   if [[ -n "${!forbidden:-}" ]]; then echo 'Remote credential present in isolated load job' >&2; exit 1; fi
 done
+node --input-type=module -e "import {pendingSourceProbeEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);"
 test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 serve_pid=''

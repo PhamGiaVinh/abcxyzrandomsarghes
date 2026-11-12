@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {sql,jsonSql} from './nativeDb.mjs';
+import {pendingSourceProbeEnabled} from './scale.write.protocol.mjs';
 const sha256=value=>createHash('sha256').update(value).digest('hex');
 export const writerSourceFunctions=()=>{
  // enqueue is called indirectly by hand_changed; direct trigger hashes alone
@@ -19,7 +20,9 @@ export function currentWriterIdentity(){
   sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;'))};
 }
 export function currentWriterCodeIdentity(){
+ const pendingSourceProbe=pendingSourceProbeEnabled(process.env);
  const candidateInputs=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1'?[...inputs,'supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql']:inputs;
+ if(pendingSourceProbe)candidateInputs.push('supabase/pending-migrations/20261112193658_spectator_pending_source_outcome.sql');
  const sha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
  assert.equal(sha,process.env.GITHUB_SHA,'Default checkout must match the current workflow SHA');
  return {sha,
