@@ -17,8 +17,8 @@ audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
 operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
 diagnostic_scope="${LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:-none}"
 case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
-if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 0 || "$correction_undo_probe" != 0 || "$redraw_probe" != 0 || "$prize_close_probe" != 0 ) ]]; then
-  echo 'Targeted diagnostics require isolated current frozen candidate audience without full-suite optional stages' >&2;exit 1
+if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
+  echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
 fi
 if [[ "$operations_rest_pool" != 10 && "$operations_rest_pool" != 20 ]] ||
    [[ "$operations_rest_pool" == 20 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 1000 ) ]]; then
@@ -1778,10 +1778,12 @@ TARGETED_PAYMENT_ASSERT
 import assert from'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';
 const [dir,scope,count,sha,after]=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
 const audience=read('operations-audience-http.json'),fence=read('operations-schema-freeze-http.json'),clock=read('clock-candidate-broadcast-http.json');
+const runtime=read('operations-candidate-package-http.json');
+assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.correctionMigrationApplied,true);
 assert.equal(audience.phase,'passed');assert.equal(audience.viewers,Number(count));assert.ok(Object.values(audience.checks).every(v=>v===true));
 assert.equal(fence.before,after);assert.equal(clock.phase,'stopped');assert.equal(clock.failures,0);
 fence.after=after;fence.unchanged=true;fence.phase='unchanged-through-targeted-audience';writeFileSync(dir+'/operations-schema-freeze-http.json',JSON.stringify(fence,null,2));
-writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),schemaUnchanged:true,audienceContinuous:true,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
+writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
 TARGETED_FINAL_RECEIPT
   exit 0
 fi

@@ -39,6 +39,13 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  assert.match(branch,/assert\.equal\(fence\.before,after\)/);
  assert.match(branch,/assert\.ok\(Object\.values\(audience\.checks\)\.every\(v=>v===true\)\)/);
  assert.match(branch,/TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE/);
+ assert.match(branch,/assert\.equal\(runtime\.pendingReentryTransportApplied,true\)/);
+ assert.match(branch,/assert\.equal\(runtime\.correctionMigrationApplied,true\)/);
+ const guard=script.slice(script.indexOf('case "$diagnostic_scope"'),script.indexOf('if [[ "$operations_rest_pool"'));
+ assert.match(guard,/"\$reentry_transport_probe" != 1/);
+ assert.match(guard,/"\$correction_undo_probe" != 1/);
+ assert.match(guard,/"\$prize_close_probe" != 1/);
+ assert.match(guard,/"\$reentry_fault_mode" != healthy/);
  assert.doesNotMatch(branch,/all-operational-stages-passed/);
  assert.match(branch,/\n  exit 0\nfi$/);
  assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope \|\| 'none'/);
