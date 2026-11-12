@@ -1754,12 +1754,13 @@ TARGETED_PAYMENT_FIXTURE
     [[ "$targeted_observer_ready" == true ]]
     targeted_browser_status=0
     run_browser_proof '' '' 'targeted canonical Cashier payment reproduction across ten fresh tours$' || targeted_browser_status=$?
-    kill -TERM "$payment_lock_sampler_pid"
+    targeted_observer_stop_status=0
+    kill -TERM "$payment_lock_sampler_pid" || targeted_observer_stop_status=$?
     targeted_observer_status=0
     wait "$payment_lock_sampler_pid" || targeted_observer_status=$?
     payment_lock_sampler_pid=''
     if [[ "$targeted_browser_status" != 0 ]];then exit "$targeted_browser_status";fi
-    [[ "$targeted_observer_status" == 0 ]]
+    [[ "$targeted_observer_stop_status" == 0 && "$targeted_observer_status" == 0 ]]
     docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
       >"$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_CONSERVATION'
 WITH tours AS(SELECT id FROM public.tournaments WHERE club_id='a2000000-0000-4000-8000-000000000001' AND name LIKE 'Targeted Cashier payment TEST %'),
@@ -1795,20 +1796,30 @@ TARGETED_PAYMENT_ASSERT
     sleep 1
   done
   [[ "$targeted_minimum_hold" == true ]]
-  kill -TERM "$audience_pid";wait "$audience_pid";audience_pid=''
+  kill -TERM "$audience_pid"
+  targeted_audience_status=0
+  wait "$audience_pid" || targeted_audience_status=$?
+  audience_pid=''
   if [[ -n "${db_pressure_pid:-}" ]];then kill -TERM "$db_pressure_pid";wait "$db_pressure_pid";db_pressure_pid='';fi
   kill -TERM "$clock_flush_pid";wait "$clock_flush_pid";clock_flush_pid=''
   targeted_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
-  node --input-type=module - "$repo_root/output/operations-latency" "$diagnostic_scope" "$audience_count" "$source_sha" "$targeted_after" <<'TARGETED_FINAL_RECEIPT'
+  node --input-type=module - "$repo_root/output/operations-latency" "$diagnostic_scope" "$audience_count" "$source_sha" "$targeted_after" "$targeted_audience_status" <<'TARGETED_FINAL_RECEIPT'
 import assert from'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';
-const [dir,scope,count,sha,after]=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
+const [dir,scope,count,sha,after,audienceExit]=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
 const audience=read('operations-audience-http.json'),fence=read('operations-schema-freeze-http.json'),clock=read('clock-candidate-broadcast-http.json');
 const runtime=read('operations-candidate-package-http.json');
 assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.correctionMigrationApplied,true);
-assert.equal(audience.phase,'passed');assert.equal(audience.viewers,Number(count));assert.ok(Object.values(audience.checks).every(v=>v===true));
+// These selected cases create no completed hands. Preserve the audience's full
+// qualification result unchanged; only its healthy concurrent reads are a
+// prerequisite here. The default full suite still requires every delivery gate.
+assert.ok(['cashier-payment','dealer-checkin'].includes(scope));
+assert.equal(audience.viewers,Number(count));
+for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
+assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');
+assert.equal(Number(audienceExit),audience.phase==='passed'?0:1);
 assert.equal(fence.before,after);assert.equal(clock.phase,'stopped');assert.equal(clock.failures,0);
 fence.after=after;fence.unchanged=true;fence.phase='unchanged-through-targeted-audience';writeFileSync(dir+'/operations-schema-freeze-http.json',JSON.stringify(fence,null,2));
-writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
+writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,fullAudiencePhase:audience.phase,fullAudienceChecks:audience.checks,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran with healthy concurrent audience reads. No hand-delivery qualification: full audience checks are preserved separately. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
 TARGETED_FINAL_RECEIPT
   exit 0
 fi

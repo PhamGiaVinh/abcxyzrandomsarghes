@@ -28,6 +28,19 @@ test('targeted diagnostics refuse invalid scope before any service operation',()
  }
 });
 
+test('targeted observer shutdown preserves browser failure and rejects observer failure',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const start=script.indexOf('    targeted_observer_stop_status=0');
+ const end=script.indexOf('\n    docker exec',start);
+ assert.ok(start>0&&end>start);
+ const stop=script.slice(start,end);
+ for(const [browser,killCode,waitCode,expected] of [[7,1,0,7],[0,1,0,1],[0,0,1,1],[0,0,0,0]]){
+  const setup=`set -e; kill(){ return ${killCode}; }; wait(){ return ${waitCode}; }; targeted_browser_status=${browser}; payment_lock_sampler_pid=999;\n`;
+  const result=spawnSync(bash,['-c',setup+stop],{encoding:'utf8',timeout:5000});
+  assert.equal(result.status,expected,JSON.stringify({browser,killCode,waitCode}));
+ }
+});
+
 test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
  const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
  const end=script.indexOf('\nrun_browser_proof\n',start);
@@ -46,7 +59,8 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  }
  assert.match(branch,/movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000/);
  assert.match(branch,/assert\.equal\(fence\.before,after\)/);
- assert.match(branch,/assert\.ok\(Object\.values\(audience\.checks\)\.every\(v=>v===true\)\)/);
+ assert.match(branch,/for\(const key of \['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'\]\)/);
+ assert.match(branch,/fullAudienceChecks:audience\.checks/);
  assert.match(branch,/TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE/);
  assert.match(branch,/assert\.equal\(runtime\.pendingReentryTransportApplied,true\)/);
  assert.match(branch,/assert\.equal\(runtime\.correctionMigrationApplied,true\)/);
@@ -61,6 +75,31 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  assert.match(branch,/\n  exit 0\nfi$/);
  assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope \|\| 'none'/);
  assert.match(workflow,/name: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope && inputs\.diagnostic_scope != 'none' && format\('targeted-\{0\}', inputs\.diagnostic_scope\) \|\| 'isolated-e2e' \}\}/);
+});
+
+test('targeted receipt preserves failed full delivery qualification and rejects unhealthy audience',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'targeted-receipt-'));
+ t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const marker="<<'TARGETED_FINAL_RECEIPT'\n";
+ const start=script.indexOf(marker)+marker.length;
+ const body=script.slice(start,script.indexOf('\nTARGETED_FINAL_RECEIPT',start));
+ assert.ok(start>=marker.length);
+ const write=(name,value)=>writeFileSync(join(dir,name),JSON.stringify(value));
+ write('operations-schema-freeze-http.json',{before:'catalog'});
+ write('clock-candidate-broadcast-http.json',{phase:'stopped',failures:0});
+ write('operations-candidate-package-http.json',{pendingReentryTransportApplied:true,correctionMigrationApplied:true});
+ const checks={zeroErrors:true,atLeast30Seconds:true,allViewers:true,tableP95Within3Seconds:true,allSawLaterTableRevision:false,tableSpecificSourceDeliveryVerified:false};
+ const run=(patch={},exit='1')=>{
+  write('operations-audience-http.json',{phase:'failed',viewers:1000,checks:{...checks,...patch}});
+  return spawnSync(process.execPath,['--input-type=module','-',dir,'dealer-checkin','1000','a'.repeat(40),'catalog',exit],{input:body,encoding:'utf8',timeout:5000});
+ };
+ assert.equal(run().status,0);
+ const result=JSON.parse(readFileSync(join(dir,'targeted-operations-result-http.json'),'utf8'));
+ assert.equal(result.qualification,false);assert.equal(result.fullAudiencePhase,'failed');
+ assert.deepEqual(result.fullAudienceChecks,checks);
+ assert.equal(JSON.parse(readFileSync(join(dir,'operations-audience-http.json'),'utf8')).phase,'failed');
+ for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.notEqual(run({[key]:false}).status,0,key);
+ assert.notEqual(run({},'137').status,0,'Unexpected audience process exit must fail');
 });
 
 test('handover fixture cannot consume the independent salary actor',()=>{
