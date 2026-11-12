@@ -32,6 +32,61 @@ function fixture(count=8){
 }
 async function settle(){for(let i=0;i<100;i++)await Promise.resolve();}
 
+function startupFixture(){
+ let absorbResolve!:(value:{data:unknown;error:unknown})=>void,flushResolve!:(value:{data:unknown;error:unknown})=>void;
+ let absorbReject!:(error:Error)=>void,flushReject!:(error:Error)=>void;
+ const absorb=new Promise<{data:unknown;error:unknown}>((resolve,reject)=>{absorbResolve=resolve;absorbReject=reject;});
+ const flush=new Promise<{data:unknown;error:unknown}>((resolve,reject)=>{flushResolve=resolve;flushReject=reject;});
+ let flushes=0;
+ const rpc=vi.fn(async(name:string)=>{
+  if(name==='absorb_public_spectator_generations_v2')return absorb;
+  if(name==='flush_public_spectator_broadcast_v2'&&++flushes===1)return flush;
+  return {data:name==='claim_public_spectator_projection_v2'?[]:0,error:null};
+ });
+ return {rpc,absorbResolve,flushResolve,absorbReject,flushReject};
+}
+it.each(['absorb','flush'] as const)('overlaps startup but waits for both commits when %s finishes first',async first=>{
+ const f=startupFixture(),running=processPublicSpectatorJobs(f);
+ await settle();expect(f.rpc.mock.calls.map(([name])=>name)).toEqual(['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2']);
+ if(first==='absorb')f.absorbResolve({data:1,error:null});else f.flushResolve({data:1,error:null});
+ await settle();expect(f.rpc).toHaveBeenCalledTimes(2);
+ if(first==='absorb')f.flushResolve({data:1,error:null});else f.absorbResolve({data:1,error:null});
+ expect((await running).claimed).toBe(0);
+ expect(f.rpc.mock.calls[2][0]).toBe('claim_public_spectator_projection_v2');
+});
+it.each(['absorb','flush'] as const)('drains the other startup RPC after a returned %s error and never claims',async failed=>{
+ const f=startupFixture();let ended=false;
+ const running=processPublicSpectatorJobs(f).catch(error=>{ended=true;return error;});
+ await settle();
+ if(failed==='absorb')f.absorbResolve({data:null,error:{code:'failure'}});else f.flushResolve({data:null,error:{code:'failure'}});
+ await settle();expect(ended).toBe(false);expect(f.rpc).toHaveBeenCalledTimes(2);
+ if(failed==='absorb')f.flushResolve({data:1,error:null});else f.absorbResolve({data:1,error:null});
+ expect((await running).message).toBe(failed==='absorb'?'generation_absorb_failed':'broadcast_flush_failed');
+ expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+it.each(['absorb','flush'] as const)('drains the other startup RPC after a thrown %s error',async failed=>{
+ const f=startupFixture(),cause=Error('transport failure');let ended=false;
+ const running=processPublicSpectatorJobs(f).catch(error=>{ended=true;return error;});
+ await settle();if(failed==='absorb')f.absorbReject(cause);else f.flushReject(cause);
+ await settle();expect(ended).toBe(false);
+ if(failed==='absorb')f.flushResolve({data:1,error:null});else f.absorbResolve({data:1,error:null});
+ expect(await running).toBe(cause);expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+it('preserves absorb error precedence while draining both startup failures',async()=>{
+ const f=startupFixture(),running=processPublicSpectatorJobs(f).catch(error=>error);
+ await settle();f.flushReject(Error('flush failed'));f.absorbResolve({data:null,error:{code:'failure'}});
+ expect((await running).message).toBe('generation_absorb_failed');expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+it('drains startup at deadline and leaves new outbox work for the next dispatch',async()=>{
+ let now=0;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=startupFixture();let ended=false;
+ const running=processPublicSpectatorJobs(f,1000).catch(error=>{ended=true;return error;});
+ await settle();f.flushResolve({data:0,error:null});now=1000;
+ await settle();expect(ended).toBe(false);
+ f.absorbResolve({data:1,error:null});expect((await running).message).toBe('deadline_exceeded');
+ expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+
 it('does not publish or fail a claim explicitly fenced by the source RPC',async()=>{
  const f=fixture(1);
  const original=f.rpc.getMockImplementation()!;

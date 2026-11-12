@@ -78,6 +78,69 @@ assert.ok(candidate.result.results.some(row=>row.key.startsWith(tour)&&!row.publ
 assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${tour}' AND component='visibility' AND claimed_until>clock_timestamp() AND fencing_token IS NOT NULL;`),'1','No-op retains durable claim for next absorption');
 assert.throws(()=>sql(recovery,{captureFailure:true}),/active_lease/);
 await drain();
+// Force the startup flush to finish before absorption starts. Both operations
+// are real independent SQL transactions; the gate only controls their order.
+// Source revocation must already be authoritative, and notifications created
+// later by absorption must survive for final flush or the next dispatcher.
+async function startupOutboxRace(exhaustDeadline){
+ sql(`UPDATE public.tournaments SET deleted_at=NULL WHERE id='${tour}' AND deleted_at IS NOT NULL;`);
+ await processPublicSpectatorJobs(native,Date.now()+20000);
+ const key=++lockSequence;
+ const holder=sqlAsync(`BEGIN;SELECT pg_advisory_xact_lock(hashtextextended('public-gen:${tour}',0));SELECT pg_advisory_xact_lock(${key});SELECT pg_sleep(2);COMMIT;`);
+ try{
+  let ready=false;
+  for(let i=0;i<40;i++){
+   if(sql(`SELECT pg_try_advisory_xact_lock(${key});`)==='f'){ready=true;break;}
+   await new Promise(resolve=>setTimeout(resolve,25));
+  }
+  assert.ok(ready,'Withdrawal source lock must be ready');
+  sql(`SET lock_timeout='250ms';UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${tour}' AND deleted_at IS NULL;`);
+  assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
+ }finally{await holder;}
+ assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='visibility';`),'1');
+ let releaseFlush,absorbStarted=false,firstFlush=true,afterAbsorb=0,fixtureError;
+ const flushed=new Promise(resolve=>{releaseFlush=resolve;});
+ const originalNow=Date.now,deadline=Date.now()+20000;
+ const messagesBefore=Number(sql(`SELECT count(*) FROM realtime.fixture_messages WHERE event='changed' AND payload->>'tournamentId'='${tour}';`));
+ const client={async rpc(name,args){
+  try{
+   if(name==='absorb_public_spectator_generations_v2'){
+    absorbStarted=true;await flushed;
+    const reply=await native.rpc(name,args);
+    afterAbsorb=Number(sql(`SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1 WHERE tournament_id='${tour}' AND component='visibility';`));
+    assert.ok(afterAbsorb>0,'Post-flush absorption notification must remain durable');
+    // Logical budget exhaustion only, not a claim about wall-clock capacity.
+    if(exhaustDeadline)Date.now=()=>deadline;
+    return reply;
+   }
+   if(name==='flush_public_spectator_broadcast_v2'&&firstFlush){
+    firstFlush=false;
+    try{assert.equal(absorbStarted,true);return await native.rpc(name,args);}
+    finally{releaseFlush();}
+   }
+   if(name==='claim_public_spectator_projection_v2')assert.ok(afterAbsorb>0);
+   return await native.rpc(name,args);
+  }catch(error){fixtureError=error;throw error;}
+ }};
+ let result;
+ try{
+  if(exhaustDeadline)await assert.rejects(processPublicSpectatorJobs(client,deadline),/deadline_exceeded/);
+  else result=await processPublicSpectatorJobs(client,deadline);
+ }finally{Date.now=originalNow;}
+ if(fixtureError)throw fixtureError;
+ if(exhaustDeadline){
+  assert.ok(Number(sql(`SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1 WHERE tournament_id='${tour}';`))>0);
+  // Duplicate following workers must drain the same durable work safely.
+  const recovered=await Promise.allSettled([processPublicSpectatorJobs(native,Date.now()+20000),processPublicSpectatorJobs(native,Date.now()+20000)]);
+  assert.ok(recovered.every(value=>value.status==='fulfilled'&&value.value.results.every(row=>!row.error)));
+ }else assert.ok(result.results.some(row=>row.key.startsWith(tour)&&row.published&&!row.error));
+ assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.broadcast_pending_v1 WHERE tournament_id='${tour}';`),'0');
+ assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${tour}';`),'0');
+ assert.ok(Number(sql(`SELECT count(*) FROM realtime.fixture_messages WHERE event='changed' AND payload->>'tournamentId'='${tour}';`))>=messagesBefore+2);
+ assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
+}
+await startupOutboxRace(false);
+await startupOutboxRace(true);
 for(const mutation of [`GRANT EXECUTE ON FUNCTION ${signature} TO anon;`,`ALTER FUNCTION ${signature} VOLATILE;`]){
  assert.throws(()=>sql(`BEGIN;${mutation}${strip(recovery)}ROLLBACK;`,{captureFailure:true}),/metadata_drift/);
 }
@@ -86,4 +149,4 @@ for(const role of ['anon','authenticated'])assert.throws(()=>sql(`SET ROLE ${rol
 assert.throws(()=>sql(`SET request.jwt.claim.role='authenticated';SELECT public.get_public_spectator_projection_source_v2('${tour}','visibility',gen_random_uuid());`,{captureFailure:true}),/forbidden/);
 sql(recovery);assert.equal(hash(),baselineHash);assert.deepEqual(metadata(),before);
 console.log(JSON.stringify({kind:'NATIVE_PENDING_SOURCE_ACTUAL_WORKER_RACE_NOT_HTTP_LOAD',passed:true,baselineHash,candidateHash,
- checks:['baseline-real-source-pending-worker-failure','source-update-commits-during-advisory-lock','candidate-no-payload-no-publish-no-failure','deferred-work-retained','later-worker-absorbs-and-publishes','metadata-preserved','actor-denied','backup-private','repeat-apply-denied','active-lease-recovery-denied','exact-recovery'],productionChanged:false,qualification:false}));
+ checks:['baseline-real-source-pending-worker-failure','source-update-commits-during-advisory-lock','candidate-no-payload-no-publish-no-failure','deferred-work-retained','later-worker-absorbs-and-publishes','parallel-startup-post-flush-absorption-retained','source-withdrawal-immediately-revoked','final-flush-delivers-later-notification','logical-deadline-retains-outbox','following-duplicate-workers-recover','metadata-preserved','actor-denied','backup-private','repeat-apply-denied','active-lease-recovery-denied','exact-recovery'],productionChanged:false,qualification:false}));

@@ -6,9 +6,18 @@ export async function processPublicSpectatorJobs(client:Client,deadline=Date.now
     if(Date.now()>=deadline)throw Error('deadline_exceeded');
     return client.rpc(name,args);
   };
-  if((await call('absorb_public_spectator_generations_v2',{p_limit:100})).error)throw Error('generation_absorb_failed');
   let lastFlushStartedAt=Date.now();
-  if((await call('flush_public_spectator_broadcast_v2',{p_limit:100})).error)throw Error('broadcast_flush_failed');
+  // Existing committed notifications need not wait for deferred generations.
+  // Drain BOTH calls even on failure; no claim may escape an unfinished startup
+  // transaction. Rows queued by absorption remain durable for the final flush.
+  const [absorbed,flushed]=await Promise.allSettled([
+    Promise.resolve().then(()=>call('absorb_public_spectator_generations_v2',{p_limit:100})),
+    Promise.resolve().then(()=>call('flush_public_spectator_broadcast_v2',{p_limit:100})),
+  ]);
+  if(absorbed.status==='rejected')throw absorbed.reason;
+  if(absorbed.value.error)throw Error('generation_absorb_failed');
+  if(flushed.status==='rejected')throw flushed.reason;
+  if(flushed.value.error)throw Error('broadcast_flush_failed');
   const claimed=await call('claim_public_spectator_projection_v2',{p_limit:50});
   if(claimed.error||!Array.isArray(claimed.data))throw Error('claim_failed');
   const jobs=claimed.data as WorkGroup[],results:Array<{key:string;published:boolean;error?:string}>=[];
