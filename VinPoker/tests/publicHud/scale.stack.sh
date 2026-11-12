@@ -84,8 +84,23 @@ PUBLIC_HUD_LOCAL_DATABASE="$claim_database" PUBLIC_HUD_ISOLATED_STACK= \
  PUBLIC_HUD_CLAIM_SOURCE_REPORT="$repo_root/output/hud-scale/claim-source.json" \
  node tests/publicHud/claim-source.native.mjs --initialize
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$claim_database"
+export PUBLIC_HUD_GENERATION_INDEX_REPORT="$repo_root/output/hud-scale/compact-generation-index.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
-PUBLIC_HUD_GENERATION_INDEX_REPORT="$repo_root/output/hud-scale/compact-generation-index.json" node tests/publicHud/compact-generation-index.native.mjs
+if [[ "${PUBLIC_HUD_SOURCE_GENERATION_PROBE:-0}" == 1 ]]; then
+  # The historical migration probe requires its original writer preimage;
+  # candidate seed ran it synchronously before342, with all guards intact.
+  node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.env.PUBLIC_HUD_GENERATION_INDEX_REPORT,'utf8'));
+assert.equal(report.kind,'NATIVE_COMPACT_GENERATION_LOOKUP_INDEX_NOT_WRITER_QUALIFICATION');
+assert.deepEqual(report.checks,['actual-generic-lookup-uses-partial-index','source-generations-unchanged','writer-OID-definition-and-table-owner-ACL-RLS-preserved','duplicate-apply-denied','reverse-absence-and-definition-drift-denied','exact-reverse-and-transactional-original-index-preservation']);
+assert.equal(report.plan.index,'idx_compact_generation_lookup_v1');
+assert.equal(report.productionChanged,false);
+JS
+else
+  node tests/publicHud/compact-generation-index.native.mjs
+fi
 node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-contract.json
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs

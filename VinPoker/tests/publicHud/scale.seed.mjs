@@ -9,6 +9,7 @@ import {measureFixtureWriterTransactions,cleanupCommittedWriterFixture,diagnoseF
 import {nativeWorkerClient} from './nativeRpc.mjs';
 import {createHash} from 'node:crypto';
 import {sourceGeneration342Profile} from './scale.write.protocol.mjs';
+import {execFileSync} from 'node:child_process';
 const count=Number(process.env.PUBLIC_HUD_SCALE_HANDS??'10000');
 if(![100,1000,10000,100000,1000000].includes(count))throw Error('Unsupported synthetic scale');
 const seedKind=process.env.PUBLIC_HUD_SCALE_SEED_KIND??'prebuilt-read';
@@ -109,6 +110,10 @@ let sourceGenerationCandidate;
 if(sourceGenerationProbe){
  const owned=jsonSql(`SELECT jsonb_build_object('database',current_database(),'marker',shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database'));`);
  assert.ok(owned.database==='postgres'&&owned.marker==='vinpoker-hud-scale-disposable'||/^vinpoker_hud_test_pair_[0-9]+_[0-9]+$/.test(owned.database)&&owned.marker==='vinpoker-hud-writer-control-disposable','Generation342 requires owned isolated load/paired database');
+ if(owned.database==='postgres'){
+  assert.ok(process.env.PUBLIC_HUD_GENERATION_INDEX_REPORT?.endsWith('/output/hud-scale/compact-generation-index.json'),'Historical index probe report required before342');
+  execFileSync(process.execPath,['tests/publicHud/compact-generation-index.native.mjs'],{env:process.env,stdio:'inherit'});
+ }
  const migration=readFileSync('supabase/migrations/'+sourceGeneration342Profile.migration,'utf8');
  assert.equal(createHash('sha256').update(migration.replace(/\r\n?/g,'\n')).digest('hex'),sourceGeneration342Profile.sqlSha256);
  // Align this synthetic fixture's private observer ACL with the captured
