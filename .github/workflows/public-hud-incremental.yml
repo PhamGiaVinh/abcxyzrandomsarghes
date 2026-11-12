@@ -217,7 +217,11 @@ jobs:
       - name: Spectator source lease race and exact recovery
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_spectator_source_lease_ci
-          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_spectator_source_lease_ci node tests/publicHud/spectator-source-lease.native.mjs --initialize
+            PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_spectator_source_lease_ci node tests/publicHud/spectator-source-lease.native.mjs --initialize
+      - name: Pending spectator source barrier and real worker recovery
+        run: |
+          createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_spectator_source_pending_ci
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_spectator_source_pending_ci node tests/publicHud/spectator-source-pending.native.mjs
       - name: Typecheck application
         run: npx --no-install tsc -p tsconfig.app.json --noEmit
       - name: Continuous audience rejects schema changes
