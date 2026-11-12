@@ -2,6 +2,9 @@ name: Public HUD isolated real HTTP and WebSocket load
 on:
   workflow_call:
     inputs:
+      source_generation_probe:
+        type: boolean
+        default: false
       qualification:
         type: boolean
         default: false
@@ -25,6 +28,10 @@ on:
       - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
   workflow_dispatch:
     inputs:
+      source_generation_probe:
+        description: 'Explicit isolated migration342 candidate; default historical workload unchanged'
+        type: boolean
+        default: false
       writer_method:
         description: 'Prospective completed-hand marking benchmark; old runs unchanged'
         type: choice
@@ -85,6 +92,7 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      PUBLIC_HUD_SOURCE_GENERATION_PROBE: ${{ inputs.source_generation_probe && '1' || '0' }}
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
       PUBLIC_HUD_WRITER_QUALIFICATION_METHOD: ${{ inputs.writer_method || 'startup' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}

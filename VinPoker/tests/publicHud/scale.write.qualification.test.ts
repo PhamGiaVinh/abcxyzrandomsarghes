@@ -6,13 +6,14 @@ vi.mock('node:fs',async importOriginal=>{
  return {...actual,readFileSync,default:{...actual,readFileSync}};
 });
 vi.mock('./scale.write.identity.mjs',()=>({currentWriterCodeIdentity:()=>mocked.code}));
-vi.mock('./scale.write.protocol.mjs',()=>({requireMatchedWriterQualification:(report,expected)=>mocked.grade(report,expected)}));
+vi.mock('./scale.write.protocol.mjs',()=>({requireMatchedWriterQualification:(report,expected,options)=>mocked.grade(report,expected,options)}));
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 const rawPath='output/hud-scale/writer-matched-observers.json';
 const receiptPath=rawPath+'.qualified.json';
 const expected=()=>({...mocked.code,runId:'123',runAttempt:'2',database:'vinpoker_hud_test_pair_123_2',sourceHands:1000000});
 beforeEach(()=>{
  vi.stubEnv('GITHUB_RUN_ID','123');vi.stubEnv('GITHUB_RUN_ATTEMPT','2');vi.stubEnv('PUBLIC_HUD_SCALE_HANDS','1000000');
+ vi.stubEnv('PUBLIC_HUD_SOURCE_GENERATION_PROBE','0');
  mocked.files.clear();mocked.files.set(rawPath,{identity:expected()});
  mocked.grade.mockReset().mockImplementation((report,identity)=>{
   expect(report.identity).toEqual(identity);
@@ -22,7 +23,19 @@ beforeEach(()=>{
 });
 it('supplies independently rebuilt identity and returns recomputed grade',()=>{
  expect(readMatchedWriterQualification(1000000).identity).toEqual(expected());
- expect(mocked.grade).toHaveBeenCalledWith(mocked.files.get(rawPath),expected());
+ expect(mocked.grade).toHaveBeenCalledWith(mocked.files.get(rawPath),expected(),{sourceGenerationProbe:false});
+});
+it('binds migration342 receipt to the independently selected source version',()=>{
+ vi.stubEnv('PUBLIC_HUD_SOURCE_GENERATION_PROBE','1');
+ const candidate={migration:'pinned342'};
+ const receipt=mocked.files.get(receiptPath);receipt.sourceGenerationCandidate=candidate;
+ mocked.grade.mockImplementation((report,identity,options)=>{
+  expect(options).toEqual({sourceGenerationProbe:true});
+  return {method:receipt.method,identity,statistics:receipt.statistics,scope:receipt.scope,sourceGenerationCandidate:candidate};
+ });
+ expect(readMatchedWriterQualification(1000000).sourceGenerationCandidate).toEqual(candidate);
+ receipt.sourceGenerationCandidate={migration:'foreign'};
+ expect(()=>readMatchedWriterQualification(1000000)).toThrow();
 });
 it.each([rawPath,receiptPath])('rejects absent evidence %s',path=>{mocked.files.delete(path);expect(()=>readMatchedWriterQualification(1000000)).toThrow();});
 it.each(['method','identity','statistics','scope','kind','fullLoadQualification'])('rejects mismatched receipt %s',key=>{

@@ -19,10 +19,11 @@ export function currentWriterIdentity(){
   sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;'))};
 }
 export function currentWriterCodeIdentity(){
+ const candidateInputs=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1'?[...inputs,'supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql']:inputs;
  const sha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
  assert.equal(sha,process.env.GITHUB_SHA,'Default checkout must match the current workflow SHA');
  return {sha,
   manifestSha256:sha256(readFileSync('scripts/ops/tracker-hud-20261104-manifest.json')),
-  fixtureInputsSha256:sha256(JSON.stringify(inputs.map(file=>[file,sha256(readFileSync(file))]))),
+  fixtureInputsSha256:sha256(JSON.stringify(candidateInputs.map(file=>[file,sha256(readFileSync(file))]))),
   sourceFunctionsSha256:sha256(JSON.stringify(writerSourceFunctions()))};
 }

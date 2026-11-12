@@ -1,6 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {writerDiagnosticAdminTarget} from './scale.write.native.mjs';
+import {sourceGeneration342Profile,requireMatchedWriterQualification} from './scale.write.protocol.mjs';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+test('migration342 writer profile is explicit and pins exact migration bytes',()=>{
+ const source=readFileSync(new URL('../../supabase/migrations/'+sourceGeneration342Profile.migration,import.meta.url),'utf8');
+ assert.equal(createHash('sha256').update(source.replace(/\r\n?/g,'\n')).digest('hex'),sourceGeneration342Profile.sqlSha256);
+ assert.throws(()=>requireMatchedWriterQualification({sourceGenerationCandidate:sourceGeneration342Profile.migration},{sha:'a'.repeat(40)}),/Explicit source generation/);
+ assert.throws(()=>requireMatchedWriterQualification({},{sha:'a'.repeat(40)},{sourceGenerationProbe:true}),/Explicit source generation/);
+});
 const env={PUBLIC_HUD_LOCAL_PORT:'54322',PUBLIC_HUD_STACK_PROJECT:'hud-scale-123-1',
  PUBLIC_HUD_LOCAL_DATABASE:'vinpoker_hud_test_pair_123_1',PUBLIC_HUD_ISOLATED_STACK:'',
  PUBLIC_HUD_WRITER_DIAGNOSTIC:'isolated-comparison-admin'};

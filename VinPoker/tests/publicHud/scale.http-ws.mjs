@@ -10,6 +10,7 @@ import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead,coveringT
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
+import {sourceGeneration342Profile} from './scale.write.protocol.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
@@ -26,6 +27,14 @@ if(!Number.isInteger(viewers)||viewers<1||viewers>1000||targetDuration<30||targe
 const hudTransport=process.env.PUBLIC_HUD_SCALE_TRANSPORT??'product_rpc';
 if(!['product_rpc','edge','direct_rpc'].includes(hudTransport)||hudTransport!=='product_rpc'&&targetDuration!==30)throw Error('Comparison transport is a short diagnostic only');
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+assert.ok(['0','1'].includes(process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE??'0'));
+const sourceGenerationProbe=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1';
+if(sourceGenerationProbe){
+ const seeded=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).sourceGenerationCandidate;
+ for(const [key,value] of Object.entries(sourceGeneration342Profile))assert.equal(seeded?.[key],value,'Main audience fixture must contain the pinned342candidate');
+ const {stdout}=await run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',"SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),'definitionMd5',md5(replace(pg_get_functiondef(oid),chr(13),''))) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure;"],{env:{...process.env,PGPASSWORD:'postgres'}});
+ const actual=JSON.parse(stdout);assert.equal(actual.bodyMd5,sourceGeneration342Profile.bodyMd5);assert.equal(actual.definitionMd5,sourceGeneration342Profile.definitionMd5);
+}
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
@@ -150,7 +159,7 @@ const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
