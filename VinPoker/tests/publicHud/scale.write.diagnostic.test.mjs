@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {writerDiagnosticAdminTarget} from './scale.write.native.mjs';
-import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,requireMatchedWriterQualification} from './scale.write.protocol.mjs';
+import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,requireMatchedWriterQualification,writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 test('migration342 writer profile is explicit and pins exact migration bytes',()=>{
@@ -23,6 +23,14 @@ test('pending source profile pins native-verified SQL and requires explicit gene
 const env={PUBLIC_HUD_LOCAL_PORT:'54322',PUBLIC_HUD_STACK_PROJECT:'hud-scale-123-1',
  PUBLIC_HUD_LOCAL_DATABASE:'vinpoker_hud_test_pair_123_1',PUBLIC_HUD_ISOLATED_STACK:'',
  PUBLIC_HUD_WRITER_DIAGNOSTIC:'isolated-comparison-admin'};
+
+test('writer wait observation is explicit and cannot become a qualification receipt',()=>{
+ assert.equal(writerWaitDiagnosticEnabled({}),false);
+ const enabled={PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:'1',PUBLIC_HUD_WRITER_QUALIFICATION_METHOD:'startup',PUBLIC_HUD_SCALE_SECONDS:'30'};
+ assert.equal(writerWaitDiagnosticEnabled(enabled),true);
+ for(const changes of [{PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:'yes'},{PUBLIC_HUD_WRITER_QUALIFICATION_METHOD:'canonical-hand-observers-paired-v1'},{PUBLIC_HUD_SCALE_SECONDS:'1800'}])assert.throws(()=>writerWaitDiagnosticEnabled({...enabled,...changes}));
+ assert.throws(()=>requireMatchedWriterQualification({pairs:[{measurements:{incremental:{waitDiagnostic:{}}}}]},{}),/Instrumented writer observation cannot qualify/);
+});
 test('comparison instrumentation binds explicit mode,project and exact disposable database',()=>{
  assert.deepEqual(writerDiagnosticAdminTarget(env),{project:'hud-scale-123-1',database:'vinpoker_hud_test_pair_123_1',marker:'vinpoker-hud-writer-control-disposable'});
  for(const change of [{PUBLIC_HUD_LOCAL_PORT:'5432'},{PUBLIC_HUD_LOCAL_DATABASE:'postgres'},

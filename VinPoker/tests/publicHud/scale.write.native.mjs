@@ -20,7 +20,7 @@ export function measureFixtureWriterTransactions({commit=false,orderedTransactio
  const pressureAfter=writerPressureSnapshot();
  if(samples.length!==200||samples.some(n=>!Number.isFinite(n)))throw Error('Invalid pgbench fixture samples');
  if(orderedTransactions&&(measured.transactions.length!==220||measured.transactions.filter(t=>!t.warmup).length!==200))throw Error('Invalid ordered writer samples');
- return {p50Ms:samples[99],p95Ms:samples[189],maxMs:samples.at(-1),samples:samples.length,...(orderedTransactions?{configuration,orderedTransactions:measured.transactions}:{}),transaction:`BEGIN/source writer/${ending}; one transaction per sample`,pressureBefore,pressureAfter};
+ return {p50Ms:samples[99],p95Ms:samples[189],maxMs:samples.at(-1),samples:samples.length,...(orderedTransactions?{configuration,orderedTransactions:measured.transactions,...(measured.waitDiagnostic?{waitDiagnostic:measured.waitDiagnostic}:{})}:{}),transaction:`BEGIN/source writer/${ending}; one transaction per sample`,pressureBefore,pressureAfter};
 }
 // Separate observer sessions surround both benchmarks symmetrically. No reset,
 // forced checkpoint or waiting for quiet: graded transaction samples stay intact.

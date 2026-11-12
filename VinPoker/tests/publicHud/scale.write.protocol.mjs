@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 export const sourceGeneration342Profile=Object.freeze({migration:'20270128000342_nonblocking_spectator_source_generation.sql',sqlSha256:'329598b30c0dd07b3832c2309fc7b61b668352926b7c25d35c97db35d8c57c83',bodyMd5:'c1da47ebdf9a70ac414ae3f2ccc4b8c0',definitionMd5:'0d471115d7d14e8f780859f83cd2598c'});
 export const pendingSourceProfile=Object.freeze({migration:'20270128000343_spectator_pending_source_outcome.sql',sqlSha256:'a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221',originalDefinitionMd5:'0557076e4866159dc1095c5257ceb7c6',definitionMd5:'6269d9fc1b2737f30b56a4bcdb42fb79'});
+export function writerWaitDiagnosticEnabled(env){
+ const flag=env.PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC??'0';
+ assert.ok(['0','1'].includes(flag),'Invalid writer wait diagnostic');
+ if(flag==='1'){
+  assert.equal(env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD,'startup','Writer wait observation is not qualification');
+  assert.equal(env.PUBLIC_HUD_SCALE_SECONDS,'30','Writer wait observation requires diagnostic duration');
+ }
+ return flag==='1';
+}
 export function pendingSourceProbeEnabled(env){
  const flag=env.PUBLIC_HUD_PENDING_SOURCE_PROBE??'0';
  assert.ok(['0','1'].includes(flag),'Invalid pending source probe');
@@ -20,6 +29,7 @@ export function validateCanonicalWriterObservers(profile,{sourceGenerationProbe=
 }
 // Explicit opt-in only: historical diagnostic runs never become qualification.
 export function requireMatchedWriterQualification(report,expectedIdentity,{sourceGenerationProbe=false}={}){
+ assert.ok(!report?.pairs?.some(pair=>Object.values(pair.measurements??{}).some(arm=>'waitDiagnostic' in arm)),'Instrumented writer observation cannot qualify');
  assert.equal(report?.sourceGenerationCandidate??null,sourceGenerationProbe?sourceGeneration342Profile.migration:null,'Explicit source generation profile must match');
  validateCanonicalWriterObservers(report?.observerProfile,{sourceGenerationProbe});
  const statistics=validateMatchedWriterEvidence(report,expectedIdentity);

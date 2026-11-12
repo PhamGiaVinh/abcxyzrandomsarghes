@@ -5,7 +5,7 @@ repo_root="$(pwd)"
 for forbidden in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD VERCEL_TOKEN; do
   if [[ -n "${!forbidden:-}" ]]; then echo 'Remote credential present in isolated load job' >&2; exit 1; fi
 done
-node --input-type=module -e "import {pendingSourceProbeEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);"
+node --input-type=module -e "import {pendingSourceProbeEnabled,writerWaitDiagnosticEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);"
 test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 serve_pid=''
@@ -70,6 +70,10 @@ psql -h 127.0.0.1 -p 54322 -U postgres -d "$comparison_database" -w -X -qAt -v O
  -c "COMMENT ON DATABASE \"$comparison_database\" IS 'vinpoker-hud-writer-control-disposable';" >/dev/null
 PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_DIAGNOSTIC=isolated-comparison-admin PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
  node tests/publicHud/scale.seed.mjs >output/hud-scale/writer-isolated-seed.log 2>&1
+if [[ "${PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:-0}" == '1' ]]; then
+ PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= \
+  node tests/publicHud/writer-wait-observer.native.mjs
+fi
 PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_CONTROL=isolated-native-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
  PUBLIC_HUD_WRITER_CONTROL_REPORT="$repo_root/output/hud-scale/writer-matched-observers.json" \
   node tests/publicHud/writer-control.native.mjs >output/hud-scale/writer-matched-observers.log 2>&1
@@ -79,6 +83,12 @@ if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
   node tests/publicHud/writer-evidence.native.mjs >output/hud-scale/writer-evidence-validation.log 2>&1
 fi
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+if [[ "${PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:-0}" == '1' ]]; then
+ # All original pair statistics and failures remain in the diagnostic receipt.
+ # Do not admit viewers or manufacture an HTTP/qualification result.
+ echo 'Writer-only wait observation complete; no audience or qualification.'
+ exit 0
+fi
 claim_database="vinpoker_hud_test_claim_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"
 createdb -h 127.0.0.1 -p 54322 -U postgres "$claim_database"
 PUBLIC_HUD_LOCAL_DATABASE="$claim_database" PUBLIC_HUD_ISOLATED_STACK= \

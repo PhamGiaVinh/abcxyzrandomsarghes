@@ -31,6 +31,10 @@ on:
       - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
   workflow_dispatch:
     inputs:
+      writer_wait_diagnostic:
+        description: 'Read-only wait/host-pressure observation; writer-only, never qualification'
+        type: boolean
+        default: false
       pending_source_probe:
         description: 'Explicit isolated pending-source outcome; requires source_generation_probe'
         type: boolean
@@ -99,6 +103,7 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC: ${{ inputs.writer_wait_diagnostic && '1' || '0' }}
       PUBLIC_HUD_PENDING_SOURCE_PROBE: ${{ inputs.pending_source_probe && '1' || '0' }}
       PUBLIC_HUD_SOURCE_GENERATION_PROBE: ${{ inputs.source_generation_probe && '1' || '0' }}
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
@@ -126,6 +131,7 @@ jobs:
           version: 2.101.0
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --test tests/publicHud/scale.write.diagnostic.test.mjs
+      - run: python3 tests/publicHud/writer.wait.observer.test.py
       - name: Install real clock probe browser
         if: inputs.clock_ui_probe
         run: npx playwright install --with-deps chromium
