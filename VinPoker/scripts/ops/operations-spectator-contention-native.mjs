@@ -42,6 +42,8 @@ sql(`DO $$ BEGIN
  ALTER TABLE spectator_projection_v2.entity_markers ADD COLUMN source_txid xid8;
  CREATE TABLE spectator_projection_v2.deferred_generations_v1(tournament_id uuid,component text,source_txid xid8 DEFAULT pg_current_xact_id(),changed_at timestamptz DEFAULT clock_timestamp(),PRIMARY KEY(tournament_id,component,source_txid));
  ${mark}\n${claim}
+ REVOKE ALL ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+ GRANT EXECUTE ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) TO service_role;
  INSERT INTO public.tournaments VALUES('a3000000-0000-4000-8000-000000000004');
  SELECT spectator_projection_v2.mark_dirty('a3000000-0000-4000-8000-000000000004','tables','generation','component');`);
 const report={kind:'ACTUAL_SOURCE_MARK_DIRTY_AND_CLAIM_NATIVE_CONTENTION_COMPONENT_ONLY',phase:'running',sourceSha256:{mark:createHash('sha256').update(mark).digest('hex'),claim:createHash('sha256').update(claim).digest('hex')},cases:[],qualification:false,productionChanged:false,limits:'Exact source mark_dirty and claim functions on PostgreSQL with minimal canonical projection tables and synthetic auth context. Not full captured schema, actual publisher, original caught SQLSTATE, money conservation or production proof.'};
@@ -51,9 +53,12 @@ const probe=String.raw`BEGIN;SET LOCAL lock_timeout='250ms';SET LOCAL statement_
  BEGIN PERFORM spectator_projection_v2.mark_dirty('a3000000-0000-4000-8000-000000000004','tables','generation','component');
  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,ctx=PG_EXCEPTION_CONTEXT;
  SELECT coalesce(jsonb_agg(jsonb_build_object('function',m[1],'line',m[2]::integer)),'[]') INTO frames FROM regexp_matches(ctx,'PL/pgSQL function ([a-zA-Z0-9_.]+)\([^)]*\) line ([0-9]+)','g')m;
- END;PERFORM set_config('test.contention_result',jsonb_build_object('sqlstate',code,'frames',frames)::text,true);END $probe$;
+ END;PERFORM set_config('test.contention_result',jsonb_build_object('sqlstate',code,'frames',frames,
+ 'deferred',(SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE source_txid=pg_current_xact_id()))::text,true);END $probe$;
  SELECT current_setting('test.contention_result');ROLLBACK;`;
 try{
+ for(const version of ['baseline','candidate']){
+ if(version==='candidate')sql(source('migrations/20270128000342_nonblocking_spectator_source_generation.sql'));
  for(const mode of ['uncontended','claim','marker']){
   let child,exit,lines;
   try{
@@ -66,16 +71,25 @@ try{
     let timer;try{const ready=await Promise.race([lines.next(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Native blocker readiness expired')),3000);})]);assert.equal(ready.done,false);assert.equal(ready.value,'1');}finally{clearTimeout(timer);}
    }
    const start=performance.now(),value=JSON.parse(sql(probe));
-   report.cases.push({mode,...value,elapsedMs:performance.now()-start});
-   assert.equal(value.sqlstate,mode==='uncontended'?'00000':'55P03');
-   if(mode!=='uncontended')assert.ok(value.frames.some(f=>f.function.includes('mark_dirty')));
+   report.cases.push({version,mode,...value,elapsedMs:performance.now()-start});
+   assert.equal(value.sqlstate,version==='candidate'||mode==='uncontended'?'00000':'55P03');
+   assert.equal(value.deferred,version==='candidate'&&mode!=='uncontended'?1:0);
+   if(version==='baseline'&&mode!=='uncontended')assert.ok(value.frames.some(f=>f.function.includes('mark_dirty')));
   }finally{
    if(child){child.stdin.end('ROLLBACK;\n');let timer;try{const code=await Promise.race([exit,new Promise(resolve=>{timer=setTimeout(()=>resolve(-1),3000);})]);if(code===-1)child.kill();assert.equal(code,0,'Native blocker rollback failed');}finally{clearTimeout(timer);}}
   }
  }
+ }
  assert.equal(sql("SELECT source_revision FROM spectator_projection_v2.entity_markers"),'1');
  assert.equal(sql('SELECT attempts FROM spectator_projection_v2.work_groups'),'0');
  assert.equal(sql('SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1'),'0');
+ assert.equal(sql("SELECT original_body_md5 FROM spectator_projection_v2.source_nonblocking_original_v1"),'76e70967db6247ba01fc6d1e9f8355e9');
+ const candidateDefinition=sql("SELECT pg_get_functiondef('spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure)");
+ sql("DO $$ BEGIN EXECUTE (SELECT definition FROM spectator_projection_v2.source_nonblocking_original_v1);END $$;");
+ assert.equal(sql("SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure"),'76e70967db6247ba01fc6d1e9f8355e9');
+ sql(candidateDefinition);
+ assert.equal(sql("SELECT md5(replace(prosrc,chr(13),''))=(SELECT candidate_body_md5 FROM spectator_projection_v2.source_nonblocking_original_v1) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure"),'t');
+ report.nativeForwardRestoreVerified=true;
  report.phase='passed';report.allProbeWritesRolledBack=true;
 }catch(error){report.phase='failed';throw error;}
 finally{writeFileSync(file,JSON.stringify(report,null,2));}

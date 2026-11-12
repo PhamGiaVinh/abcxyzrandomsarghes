@@ -6,6 +6,7 @@ on:
       - 'VinPoker/scripts/ops/operations-lock-diagnostics*'
       - 'VinPoker/scripts/ops/operations-spectator-contention-native.mjs'
       - 'VinPoker/supabase/migrations/20261104001900_public_spectator_compact_generations.sql'
+      - 'VinPoker/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql'
       - 'VinPoker/supabase/pending-migrations/20270115000000_public_spectator_realtime_v2.sql'
       - 'VinPoker/supabase/pending-migrations/20270115000001_public_spectator_live_display.sql'
       - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
