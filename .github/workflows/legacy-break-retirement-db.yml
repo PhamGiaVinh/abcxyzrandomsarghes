@@ -2,7 +2,7 @@ name: Legacy break retirement isolated PostgreSQL
 on:
   pull_request:
     paths:
-      - 'VinPoker/supabase/migrations/20270128000340_retire_failing_legacy_break_enforcement.sql'
+      - 'VinPoker/supabase/migrations/20270128000341_retire_legacy_break_bounded_preflight.sql'
       - 'VinPoker/tests/legacyBreakRetirement/**'
       - '.github/workflows/legacy-break-retirement-db.yml'
   workflow_dispatch:
@@ -45,7 +45,8 @@ jobs:
           CREATE EXTENSION pg_cron;
           CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';
           GRANT USAGE ON SCHEMA cron TO postgres;
-          GRANT SELECT ON cron.job,cron.job_run_details TO postgres;
+          GRANT SELECT ON cron.job TO postgres;
+          REVOKE ALL ON cron.job_run_details FROM PUBLIC,postgres;
           GRANT EXECUTE ON FUNCTION cron.schedule(text,text,text),cron.alter_job(bigint,text,text,text,text,boolean) TO postgres;
           SQL
           psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/legacyBreakRetirement/prepare.sql
@@ -55,6 +56,7 @@ jobs:
         run: |
           psql -X -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET cron.launch_active_jobs=on"
           psql -X -v ON_ERROR_STOP=1 -c "SELECT pg_reload_conf()"
+          python3 VinPoker/tests/legacyBreakRetirement/backgroundBusy.py
           python3 - <<'PY'
           import time
           # Cross a real original five-minute boundary after successful retirement.

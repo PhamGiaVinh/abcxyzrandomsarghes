@@ -2531,6 +2531,25 @@
   ],
   "historicalSources": [
     {
+      "version": "20270128000340",
+      "filename": "20270128000340_retire_failing_legacy_break_enforcement.sql",
+      "classification": "NEVER_APPLIED / SUPERSEDED",
+      "sourceOnly": false,
+      "superseded": true,
+      "unapplied": true,
+      "hasData": false,
+      "aliasVersions": [],
+      "reason": "Read-only production preflight timed out scanning managed cron history; replace with bounded current-backend guard in341",
+      "sourceOnlyEvidence": false,
+      "supersededEvidence": true,
+      "bucket": "never-apply",
+      "archivePath": "supabase/migration-archive/never-apply/20270128000340_retire_failing_legacy_break_enforcement.sql",
+      "sha256": "6f85ccfec0db32a76662d7db961a1adac0dd61cf660091e5cad781b3a29db4bf",
+      "ledgerVersionPresent": false,
+      "originalPath": "supabase/migrations/20270128000340_retire_failing_legacy_break_enforcement.sql",
+      "lineageEvidence": "Read-only live ledger2026-11-12 confirms340/341 absent; no production apply issued, no ledger repair; exact original hash preserved"
+    },
+    {
       "version": "20270115000005",
       "filename": "20270115000005_floor_roster_actions_repair.sql",
       "classification": "VERSION_COLLISION_REISSUED",
@@ -10127,9 +10146,9 @@
       "sha256": "40ef61fa1ab56d59ea63512ddbf93aa05978649fade2c555a8d6795eb00695dc"
     },
     {
-      "version": "20270128000340",
-      "filename": "20270128000340_retire_failing_legacy_break_enforcement.sql",
-      "sha256": "6f85ccfec0db32a76662d7db961a1adac0dd61cf660091e5cad781b3a29db4bf"
+      "version": "20270128000341",
+      "filename": "20270128000341_retire_legacy_break_bounded_preflight.sql",
+      "sha256": "60fe5c20f4c2ef06c079bc572778df50212b4bafecf4846b52a888f8cd407572"
     }
   ],
   "floorActiveAllowlist": [
@@ -10220,9 +10239,9 @@
     }
   ],
   "counts": {
-    "historicalSources": 267,
+    "historicalSources": 268,
     "remoteEquivalent": 9,
-    "superseded": 33,
+    "superseded": 34,
     "neverReplay": 221,
     "legacyUnappliedNotForReplay": 4,
     "remoteHistoryReceipts": 66,
