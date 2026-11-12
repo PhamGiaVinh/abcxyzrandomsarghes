@@ -32,7 +32,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install real pg_cron with launcher disabled in disposable service
         run: |
-          docker exec -u root '${{ job.services.postgres.id }}' sh -c 'apt-get update -qq && apt-get install -y --no-install-recommends postgresql-17-cron'
+          # Pin the same official package used by passing run43245425876.
+          # Current apt candidate+3 requires PG>17.12 while this PG17 image is17.11.
+          # dpkg still enforces dependencies; never force-install/upgrade the server.
+          curl --fail --location --proto '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 \
+            --output "$RUNNER_TEMP/pg-cron.deb" \
+            'https://apt.postgresql.org/pub/repos/apt/pool/main/p/pg-cron/postgresql-17-cron_1.6.8-1.pgdg13+2_amd64.deb'
+          printf '%s  %s\n' '0f20f77168d6df7875c9f951857d09d5940e1dd2c8cd5f547479ce85eb2e99f6' "$RUNNER_TEMP/pg-cron.deb" | sha256sum --check -
+          docker cp "$RUNNER_TEMP/pg-cron.deb" '${{ job.services.postgres.id }}:/tmp/pg-cron.deb'
+          docker exec -u root '${{ job.services.postgres.id }}' dpkg --install /tmp/pg-cron.deb
           docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
           shared_preload_libraries='pg_cron'
           cron.database_name='postgres'
