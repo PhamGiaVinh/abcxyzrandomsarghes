@@ -24,9 +24,7 @@ describe("PublicSnapshotCoordinator", () => {
       coordinators.forEach(c=>c.request());await vi.advanceTimersByTimeAsync(0);
       for(let tick=0;tick<32;tick++){await vi.advanceTimersByTimeAsync(250);revision++;coordinators.forEach(c=>c.request());}
       const sustained=starts.filter(row=>row.at<=8000);
-      // Shorter dispatch latency allows more reads; actual HTTP/DB capacity
-      // remains a separate loaded gate, not a claim from these fake timers.
-      expect(sustained.length).toBeLessThan(6500);
+      expect(sustained.length).toBeLessThan(5600);
       expect(sustained.filter(row=>row.at===0)).toHaveLength(1000);
       // Deterministic scheduling coverage, not a production traffic bound:
       // retained client offsets spread successive waves into more windows.
@@ -37,7 +35,7 @@ describe("PublicSnapshotCoordinator", () => {
       for(let viewer=0;viewer<1000;viewer++){
         const times=sustained.filter(row=>row.viewer===viewer).map(row=>row.at);
         expect(times.length).toBeGreaterThanOrEqual(5);
-        expect(times.slice(1).every((time,index)=>time-times[index]>=1250&&time-times[index]<1750)).toBe(true);
+        expect(times.slice(1).every((time,index)=>time-times[index]>=1500&&time-times[index]<2000)).toBe(true);
       }
       await vi.advanceTimersByTimeAsync(2000);expect(seen.every(value=>value===revision)).toBe(true);
     }finally{coordinators.forEach(c=>c.stop());random.mockRestore();vi.useRealTimers();}
@@ -58,7 +56,7 @@ describe("PublicSnapshotCoordinator", () => {
       coordinators.forEach(c=>c.stop());
     }finally{random.mockRestore();vi.useRealTimers();}
   });
-  it('spreads the hint policy across 100ms windows within its1.75s dispatch budget',async()=>{
+  it('spreads the production hint policy across 100ms windows within its2s dispatch budget',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random');
     try{
       const starts:number[]=[],base=Date.now();
@@ -73,7 +71,7 @@ describe("PublicSnapshotCoordinator", () => {
       hinted.forEach(t=>{const window=Math.floor(t/100);windows.set(window,(windows.get(window)??0)+1);});
       expect(hinted).toHaveLength(1000);
       expect(Math.max(...windows.values())).toBeLessThanOrEqual(200);
-      expect(Math.max(...hinted)).toBeLessThan(1750);
+      expect(Math.max(...hinted)).toBeLessThan(2000);
       coordinators.forEach(c=>c.stop());
     }finally{random.mockRestore();vi.useRealTimers();}
   });
@@ -85,8 +83,8 @@ describe("PublicSnapshotCoordinator", () => {
       coordinator.request();await vi.advanceTimersByTimeAsync(0);
       for(let second=1;second<=10;second++){await vi.advanceTimersByTimeAsync(1000);coordinator.request();}
       await vi.advanceTimersByTimeAsync(500);
-      expect(starts).toEqual([0,1250,2500,3750,5000,6250,7500,8750,10000]);
-      coordinator.stop();await vi.advanceTimersByTimeAsync(5000);expect(starts).toHaveLength(9);
+      expect(starts).toEqual([0,1500,3000,4500,6000,7500,9000,10500]);
+      coordinator.stop();await vi.advanceTimersByTimeAsync(5000);expect(starts).toHaveLength(8);
     }finally{random.mockRestore();vi.useRealTimers();}
   });
   it('serializes a held read and cancels its jittered trailing hint on stop',async()=>{
@@ -202,7 +200,7 @@ describe('shared tournament read scheduling', () => {
       expect(a).toHaveBeenCalledTimes(1); expect(b).toHaveBeenCalledTimes(1);
       first.request(); second.request(); first.request();
       expect(vi.getTimerCount()).toBe(1);
-      await vi.advanceTimersByTimeAsync(1499); expect(a).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1749); expect(a).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1); expect(a).toHaveBeenCalledTimes(2); expect(b).toHaveBeenCalledTimes(2);
     } finally {first.stop();second.stop();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
   });

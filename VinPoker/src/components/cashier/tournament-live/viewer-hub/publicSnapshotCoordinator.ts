@@ -3,10 +3,10 @@ import type { PublicSnapshotSection } from "./publicSnapshotTypes";
 // Keep source writes independent while coalescing spectator HTTP bursts.
 // First/scope reads stay immediate; loaded delivery must still meet the3s gate.
 // Spread hint dispatch over500ms instead of launching1,000 readers together.
-// The combined dispatch delay stays below1.75s. The1.25s
+// The combined dispatch delay stays below2s. The1.5s
 // minimum coalesces continuous source hints to reduce HTTP/DB contention;
 // actual loaded source-to-display delivery must still pass the3s gate.
-export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 1_250;
+export const PUBLIC_SPECTATOR_READ_INTERVAL_MS = 1_500;
 export const PUBLIC_SPECTATOR_HINT_JITTER_MS = 500;
 
 export interface SnapshotRequest {
@@ -41,7 +41,7 @@ export class PublicSnapshotCoordinator {
     const intervalWait = Math.max(0, this.minIntervalMs - elapsed);
     // Retain the viewer's spread during sustained traffic too. A shared fixed
     // interval re-forms request waves and competes with HUD withdrawal checks.
-    // Ready readers keep a1.25–1.75s interval; a slow in-flight reader still owns
+    // Ready readers keep a1.5–2s interval; a slow in-flight reader still owns
     // its slot. Duplicate hints never move an already scheduled deadline and
     // initial scope reads stay immediate.
     const wait = this.lastStartedAt === null ? 0 : intervalWait + this.hintDelayMs;
