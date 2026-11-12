@@ -42,7 +42,7 @@ sql("BEGIN; SET ROLE postgres; " + body + " ROLLBACK;")
 unchanged()
 sql("CREATE TABLE public.fixture_job_preimage AS SELECT * FROM cron.job")
 sql(migration, actor="postgres")
-assert sql("SELECT NOT active AND (to_jsonb(j)-'active')=(to_jsonb(b)-'active') FROM cron.job j JOIN public.fixture_job_preimage b USING(jobid) WHERE j.jobid=22") == "t"
+assert sql("SELECT NOT j.active AND (to_jsonb(j)-'active')=(to_jsonb(b)-'active') FROM cron.job j JOIN public.fixture_job_preimage b USING(jobid) WHERE j.jobid=22") == "t"
 assert sql("SELECT to_jsonb(j)=to_jsonb(b) FROM cron.job j JOIN public.fixture_job_preimage b USING(jobid) WHERE j.jobid=23") == "t"
 sql(migration, actor="postgres", error="legacy_break_retirement_catalog_drift")
 print("PASS: exact retirement, actor, eight catalog drifts, credential, busy, rollback, retry, sentinel preservation")
