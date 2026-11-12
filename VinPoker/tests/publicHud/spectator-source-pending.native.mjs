@@ -24,7 +24,7 @@ const native=createNativeWorkerClient(),tour='10000000-0000-4000-8000-0000000000
 sql(`INSERT INTO public.tournaments(id) VALUES('${tour}');`);
 let lockSequence=343000;
 async function pendingRace(){
- let raced=false,publishes=0,failures=0,sourceReply;
+ let raced=false,publishes=0,failures=0,sourceReply,fixtureFailure;
  const result=await processPublicSpectatorJobs({async rpc(name,args){
   const target=args.p_tournament_id===tour&&args.p_component==='visibility';
   if(name==='get_public_spectator_projection_source_v2'&&target&&!raced){
@@ -39,15 +39,18 @@ async function pendingRace(){
      await new Promise(resolve=>setTimeout(resolve,25));
     }
     assert.ok(ready,'Separate source-lock holder must be ready');
-    sql(`SET lock_timeout='250ms';UPDATE public.tournaments SET id=id WHERE id='${tour}';`);
+    sql(`SET lock_timeout='250ms';UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${tour}' AND deleted_at IS NULL;`);
     assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='visibility';`),'1');
     sourceReply=await native.rpc(name,args);return sourceReply;
-   }finally{await holder;}
+   }catch(error){fixtureFailure=error;throw error;}finally{await holder;}
   }
   if(target&&name==='publish_public_spectator_projection_v2')publishes++;
   if(target&&name==='fail_public_spectator_projection_v2')failures++;
   return native.rpc(name,args);
  }},Date.now()+20000);
+ // The production worker catches job failures. Fixture/setup assertions must
+ // still surface directly, rather than masquerading as the expected DB error.
+ if(fixtureFailure)throw fixtureFailure;
  assert.equal(raced,true);
  assert.equal(publishes,0,'No publication may cross a pending source barrier');
  assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='visibility';`),'1');
@@ -67,7 +70,7 @@ await drain();
 assert.throws(()=>sql(`BEGIN;SET ROLE service_role;${migration}ROLLBACK;`,{captureFailure:true}),/permission denied|preimage_or_lease_drift/);
 sql(migration);const candidateHash=hash();assert.notEqual(candidateHash,baselineHash);assert.deepEqual(metadata(),before);
 assert.throws(()=>sql(migration,{captureFailure:true}),/preimage_or_lease_drift/);
-sql(`UPDATE public.tournaments SET id=id WHERE id='${tour}';`);
+sql(`UPDATE public.tournaments SET deleted_at=NULL WHERE id='${tour}' AND deleted_at IS NOT NULL;`);
 const candidate=await pendingRace();
 assert.deepEqual(candidate.sourceReply,{data:{fenced:true},error:null});
 assert.equal(candidate.failures,0);
