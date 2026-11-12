@@ -11,10 +11,11 @@ assert.match(container??'',/^[a-f0-9]{12,64}$/);
 const inspected=spawnSync('docker',['inspect',container,'--format','{{.Name}}'],{encoding:'utf8'});
 assert.equal(inspected.status,0);validateContainerIdentity(container,inspected.stdout.trim());
 assert.ok(file?.endsWith('-http.json'));
-const args=['exec','-i',container,'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres'];
+const args=['exec','-i',container,'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=sqlstate','-U','postgres'];
 const sql=(query,database='spectator_contention_contract')=>{
  const r=spawnSync('docker',[...args,'-d',database],{input:query,encoding:'utf8',timeout:10000});
- assert.equal(r.status,0,'Owned native component SQL failed');return r.stdout.trim();
+ const state=r.stderr?.match(/ERROR:\s+([0-9A-Z]{5})/)?.[1]??'unclassified';
+ assert.equal(r.status,0,'Owned native component SQL failed: '+state);return r.stdout.trim();
 };
 assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='postgres'",'postgres'),'vinpoker-operational-schema-fence-disposable');
 assert.equal(sql("SELECT count(*) FROM pg_database WHERE datname='spectator_contention_contract'",'postgres'),'0');
@@ -75,4 +76,5 @@ try{
  assert.equal(sql('SELECT attempts FROM spectator_projection_v2.work_groups'),'0');
  assert.equal(sql('SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1'),'0');
  report.phase='passed';report.allProbeWritesRolledBack=true;
-}finally{writeFileSync(file,JSON.stringify(report,null,2));}
+}catch(error){report.phase='failed';throw error;}
+finally{writeFileSync(file,JSON.stringify(report,null,2));}
