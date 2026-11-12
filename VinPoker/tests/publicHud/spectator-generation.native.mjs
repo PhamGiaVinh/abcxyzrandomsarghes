@@ -51,6 +51,57 @@ assert.equal(deferred.sections.ranking.freshness.state,'updating');
 await holder;
 assert.equal(jsonSql(`${service} SELECT to_jsonb(public.absorb_public_spectator_generations_v2(100));`),1);
 assert.equal(jsonSql(`${service} SELECT to_jsonb(public.absorb_public_spectator_generations_v2(100));`),0);
+// Candidate342 integration against the existing native projection fixture.
+// realtime.send remains a recording stub: this proves SQL/fencing, not WS latency.
+sql(`REVOKE ALL ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+ GRANT EXECUTE ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) TO service_role;`);
+sql(readFileSync('supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql','utf8'));
+for(const actor of ['anon','authenticated','service_role']){
+ assert.equal(sql(`SELECT has_table_privilege('${actor}','spectator_projection_v2.source_nonblocking_original_v1','SELECT');`),'f');
+}
+assert.equal(sql("SELECT relrowsecurity FROM pg_class WHERE oid='spectator_projection_v2.source_nonblocking_original_v1'::regclass;"),'t');
+const generation=component=>jsonSql(`SELECT jsonb_build_object('generation',source_revision::text) FROM spectator_projection_v2.entity_markers WHERE tournament_id='${tour}' AND component='${component}' AND entity_key='generation';`);
+const holdPublisher=async(component,key)=>{
+ sql(`UPDATE spectator_projection_v2.work_groups SET fencing_token='${lease}',claimed_until=clock_timestamp()+interval '15 seconds' WHERE tournament_id='${tour}' AND component='${component}';`);
+ const vector=JSON.stringify(generation(component));
+ const running=sqlAsync(`BEGIN;${service}
+ DO $$ BEGIN IF public.publish_public_spectator_projection_v2('${tour}','${component}','component','${lease}','${vector}','{"items":[],"removed":[]}'::jsonb) IS NOT TRUE THEN RAISE EXCEPTION 'native_publisher_not_committed';END IF;END $$;
+ SELECT pg_advisory_xact_lock(${key});SELECT pg_sleep(2);COMMIT;`);
+ let ready=false;
+ for(let i=0;i<40;i++){
+  if(sql(`SELECT pg_try_advisory_xact_lock(${key});`)==='f'){ready=true;break;}
+  await new Promise(resolve=>setTimeout(resolve,25));
+ }
+ assert.ok(ready,'Actual publisher must hold its row locks before the source write');
+ return {running};
+};
+const publishing=await holdPublisher('tables',342001);
+await sqlAsync(`BEGIN;SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='500ms';
+ SELECT spectator_projection_v2.mark_dirty('${tour}','tables','source-one');
+ SELECT spectator_projection_v2.mark_dirty('${tour}','tables','source-two');COMMIT;`);
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='tables';`),'1');
+await publishing.running;
+// Even after the older publisher commits a matching vector, the durable
+// deferred row must prevent anonymous readers treating it as current.
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).sections.tables.freshness.state,'updating');
+assert.equal(jsonSql(`${service} SELECT to_jsonb(public.absorb_public_spectator_generations_v2(100));`),1);
+assert.equal(jsonSql(`${service} SELECT to_jsonb(public.absorb_public_spectator_generations_v2(100));`),0);
+const latestVector=generation('tables');
+assert.equal(commit(latestVector),false,'Old lease cannot publish the absorbed generation');
+claim();assert.equal(commit(latestVector),true);
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).sections.tables.freshness.state,'current');
+// Withdrawal and restoration must remain authoritative while the actual
+// visibility publisher holds derived locks. Each source transaction commits.
+sql(`SELECT spectator_projection_v2.mark_dirty('${tour}','visibility','visibility-seed');`);
+const visibilityPublishing=await holdPublisher('visibility',342002);
+await sqlAsync(`SET lock_timeout='250ms';SET statement_timeout='500ms';UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${tour}';`);
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
+await sqlAsync(`SET lock_timeout='250ms';SET statement_timeout='500ms';UPDATE public.tournaments SET deleted_at=NULL WHERE id='${tour}';`);
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['visibility'],'{}');`).access,'public');
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='visibility';`),'2');
+await visibilityPublishing.running;
+assert.equal(jsonSql(`${service} SELECT to_jsonb(public.absorb_public_spectator_generations_v2(100));`),2);
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}';`),'0');
 sql(`UPDATE public.tournaments SET deleted_at=now() WHERE id='${tour}';`);
 assert.equal(jsonSql(`SET ROLE anon; SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
 // Clock/outbox-only dispatch must wake without any projection work remaining.
@@ -80,4 +131,4 @@ const jobsBefore=sql('SELECT count(*) FROM tracker_analytics_v1.jobs;');
 sql(`INSERT INTO public.tournaments(id) VALUES('${tour}');INSERT INTO public.tournament_hands(id,tournament_id) VALUES('20000000-0000-4000-8000-000000000099','${tour}');`);
 assert.equal(sql('SELECT count(*) FROM tracker_analytics_v1.jobs;'),jobsBefore);
 console.log(JSON.stringify({kind:'NATIVE_DEFAULT_HUD_ROLLBACK',passed:true,checks:['read-disable-before-revocation','flush-required-before-stop','hud-cron-off','matching-spectator-cron-retained','five-observers-disabled','source-writes-continue-without-new-hud-jobs']}));
-console.log(JSON.stringify({kind:'NATIVE_POSTGRESQL_GENERATION_OUTBOX_NOT_WEBSOCKET',passed:true,checks:['bounded-generation','bounded-dirty-ids','fencing','durable-coalescing','component-broadcast','global-hud-revocation','flush-idempotency','payout-mask-preserved','nonblocking-concurrent-source-writes','deferred-freshness','deferred-absorption','clock-only-dispatch','hard-delete','visibility','worker-grants']}));
+console.log(JSON.stringify({kind:'NATIVE_POSTGRESQL_GENERATION_OUTBOX_NOT_WEBSOCKET',passed:true,checks:['bounded-generation','bounded-dirty-ids','fencing','durable-coalescing','component-broadcast','global-hud-revocation','flush-idempotency','payout-mask-preserved','nonblocking-concurrent-source-writes','deferred-freshness','deferred-absorption','342-publisher-held-source-commit','342-deferred-coalescing','342-committed-freshness-fence','342-stale-lease-rejection','342-withdraw-restore-under-publisher-lock','342-private-backup-acl','clock-only-dispatch','hard-delete','visibility','worker-grants']}));
