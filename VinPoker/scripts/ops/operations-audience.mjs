@@ -87,7 +87,7 @@ const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,
 const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,workloadModel,
  generationEvidence:selected?generationEvidence.report():null,oracleReadCalls,
- handDelivery:selected?handEvidence.report():null,
+ handDelivery:selected?handEvidence.report({diagnostics:phase==='passed'||phase==='failed'}):null,
  selectionNonce:handSelection?.nonce??null,
  selectionReady:selected&&handSelection?clients.filter(c=>c.online&&c.ready&&c.clockReady&&c.observedSession===handSelection.sessionId&&c.tableId===handSelection.tableId).length:0,
  selectionReadiness:selected?audienceSelectionReadiness(clients,handSelection):null,
@@ -262,11 +262,13 @@ try{
    const full=state.detailFull||!state.clockReady;state.detailFull=false;
    state.lastDetailFull=full;state.detailFullReads=(state.detailFullReads??0)+(full?1:0);recordAudienceDetailEvent(state,'dispatch');
    const started=Date.now();let physicalFailure=false;
+   const readTiming={pendingAt:state.detailDispatchedPendingAt??started,dispatchAt:started,headersAt:null,bodyReadyAt:null};
    state.detailStartedAt=started;state.detailInFlight=true;state.detailStarted=(state.detailStarted??0)+1;
    // The table reader owns its physical5s deadline. Do not pass the clock's
    // timeout as a caller signal and misclassify a real table deadline as cancel.
-   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,async(url,init)=>{requestCounts.table++;const response=await fetch(url,init);observeTiming(full?'table-clock':'table',response.headers);return response;},full?'table-clock':'table');
+   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,async(url,init)=>{requestCounts.table++;const response=await fetch(url,init);readTiming.headersAt=Date.now();observeTiming(full?'table-clock':'table',response.headers);return response;},full?'table-clock':'table');
    const tableRead=physicalRead.then(reply=>{
+    readTiming.bodyReadyAt=Date.now();
     if(full){assert.ok(reply.data?.table&&Array.isArray(reply.data.clock),'Canonical table-clock bundle required');reply={...reply,data:reply.data.table};}
     timings.table.push(Date.now()-started);return reply;
    }).catch(cause=>{
@@ -298,7 +300,7 @@ try{
     state.detailAccepted=(state.detailAccepted??0)+1;recordAudienceDetailEvent(state,'accepted');
     // Consumer visibility requires both the table and any full clock read,
     // plus current scope/epoch fences. Transport completion alone is earlier.
-    handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now());
+    handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now(),readTiming);
     if(state.revision!==reply.data.sourceGeneration){
      if(readyAt&&state.revision!==null){state.changes++;generationEvidence.record(i,reply.data.sourceGeneration,Date.now());}
      state.revision=reply.data.sourceGeneration;

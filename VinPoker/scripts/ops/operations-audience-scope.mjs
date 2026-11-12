@@ -238,6 +238,10 @@ export function observeAudienceSubscriptions(client,onStatus){
 const detailEvents=new Set(['selection','visibility','invalidate','request','dispatch','clock-commit','fenced','accepted','rejected']);
 export function recordAudienceDetailEvent(state,event,now=Date.now()){
  if(!detailEvents.has(event))throw Error('Unknown detail diagnostic event');
+ // Observational only: preserve the first coalesced request, never move timers.
+ if(['selection','visibility','invalidate'].includes(event))state.detailPendingAt=undefined;
+ if(event==='request'&&state.detailPendingAt===undefined)state.detailPendingAt=now;
+ if(event==='dispatch'){state.detailDispatchedPendingAt=state.detailPendingAt??now;state.detailPendingAt=undefined;}
  const trace=state.detailTrace??=[];
  trace.push({event,at:now,epoch:state.epoch??0,clockReady:state.clockReady===true,full:state.lastDetailFull===true});
  if(trace.length>12)trace.shift();
