@@ -66,20 +66,6 @@ initialize({seedHistoricalSource(){
 },afterSourceTriggers(){baselineWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();}});
 sql(readFileSync('supabase/migrations/20261104001900_public_spectator_compact_generations.sql','utf8'));
 sql(readFileSync('supabase/migrations/20261104002100_public_current_hand_bounded.sql','utf8'));
-let sourceGenerationCandidate;
-if(sourceGenerationProbe){
- const owned=jsonSql(`SELECT jsonb_build_object('database',current_database(),'marker',shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database'));`);
- assert.ok(owned.database==='postgres'&&owned.marker==='vinpoker-hud-scale-disposable'||/^vinpoker_hud_test_pair_[0-9]+_[0-9]+$/.test(owned.database)&&owned.marker==='vinpoker-hud-writer-control-disposable','Generation342 requires owned isolated load/paired database');
- const migration=readFileSync('supabase/migrations/'+sourceGeneration342Profile.migration,'utf8');
- assert.equal(createHash('sha256').update(migration.replace(/\r\n?/g,'\n')).digest('hex'),sourceGeneration342Profile.sqlSha256);
- // Align this synthetic fixture's private observer ACL with the captured
- // production contract. No RLS or business actor checks are bypassed.
- sql(`REVOKE ALL ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) FROM PUBLIC,anon,authenticated,service_role;GRANT EXECUTE ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) TO service_role;`);
- sql(migration);
- const actual=jsonSql(`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),'definitionMd5',md5(replace(pg_get_functiondef(oid),chr(13),''))) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure;`);
- assert.equal(actual.bodyMd5,sourceGeneration342Profile.bodyMd5);assert.equal(actual.definitionMd5,sourceGeneration342Profile.definitionMd5);
- sourceGenerationCandidate={...sourceGeneration342Profile,ownedDatabase:owned.database,productionChanged:false};
-}
 console.log(JSON.stringify({phase:'source-ready',hands:count,elapsedMs:Date.now()-start}));
 const vectors=template.map(c=>`('${c.playerId}'::uuid,ARRAY[${c.numerators}],ARRAY[${c.denominators}],ARRAY[${c.missingProof}])`).join(',');
 if(!rawBackfill){
@@ -118,6 +104,21 @@ sql(readFileSync('supabase/migrations/20261106144208_public_spectator_source_lea
 // Exercise the release dispatcher through actual local cron/pg_net/Edge too.
 // The isolated stack supplies its local URL; missing-setting fallback is qualified separately.
 sql(readFileSync('supabase/migrations/20261107151500_public_hud_dispatch_project_url_v1.sql','utf8'));
+// Apply342 after all guarded historical prerequisites, before measured live writes.
+let sourceGenerationCandidate;
+if(sourceGenerationProbe){
+ const owned=jsonSql(`SELECT jsonb_build_object('database',current_database(),'marker',shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database'));`);
+ assert.ok(owned.database==='postgres'&&owned.marker==='vinpoker-hud-scale-disposable'||/^vinpoker_hud_test_pair_[0-9]+_[0-9]+$/.test(owned.database)&&owned.marker==='vinpoker-hud-writer-control-disposable','Generation342 requires owned isolated load/paired database');
+ const migration=readFileSync('supabase/migrations/'+sourceGeneration342Profile.migration,'utf8');
+ assert.equal(createHash('sha256').update(migration.replace(/\r\n?/g,'\n')).digest('hex'),sourceGeneration342Profile.sqlSha256);
+ // Align this synthetic fixture's private observer ACL with the captured
+ // production contract. No RLS or business actor checks are bypassed.
+ sql(`REVOKE ALL ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) FROM PUBLIC,anon,authenticated,service_role;GRANT EXECUTE ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) TO service_role;`);
+ sql(migration);
+ const actual=jsonSql(`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),'definitionMd5',md5(replace(pg_get_functiondef(oid),chr(13),''))) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure;`);
+ assert.equal(actual.bodyMd5,sourceGeneration342Profile.bodyMd5);assert.equal(actual.definitionMd5,sourceGeneration342Profile.definitionMd5);
+ sourceGenerationCandidate={...sourceGeneration342Profile,ownedDatabase:owned.database,productionChanged:false};
+}
 const incrementalWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();
 if(process.env.PUBLIC_HUD_SCALE_SEED_REPORT)writeFileSync(path.join(path.dirname(process.env.PUBLIC_HUD_SCALE_SEED_REPORT),'writer-nested-plans.json'),JSON.stringify(diagnoseFixtureWriter(),null,2));
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:path.join(temp,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
