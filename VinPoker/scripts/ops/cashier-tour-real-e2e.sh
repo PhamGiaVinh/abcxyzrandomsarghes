@@ -1667,14 +1667,14 @@ AUDIENCE_REALTIME_RECEIPT
       if [[ "$pending_source_probe" == 1 ]]; then
         # Same owned, unadmitted fixture. Never alter the default/342-only path.
         docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-          <"$repo_root/supabase/migrations/20261112193658_spectator_pending_source_outcome.sql"
+          <"$repo_root/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql"
         docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DO \$\$ BEGIN
          IF NOT EXISTS(SELECT 1 FROM spectator_projection_v2.source_pending_original_v1 s
           WHERE s.original_definition_hash='0557076e4866159dc1095c5257ceb7c6'
           AND md5(replace(pg_get_functiondef(s.signature::regprocedure),chr(13),''))=s.candidate_definition_hash)
          THEN RAISE EXCEPTION 'source_pending_candidate_runtime_drift';END IF;END \$\$;
          SELECT jsonb_build_object('kind','ISOLATED_PENDING_SOURCE_FENCED_CANDIDATE','qualification',false,'productionChanged',false,
-          'migration','20261112193658_spectator_pending_source_outcome.sql',
+          'migration','20270128000343_spectator_pending_source_outcome.sql',
           'originalDefinitionMd5',original_definition_hash,'candidateDefinitionMd5',candidate_definition_hash)
          FROM spectator_projection_v2.source_pending_original_v1;" \
           >"$repo_root/output/operations-latency/operations-source-pending-candidate-http.json"

@@ -22,7 +22,7 @@ export function currentWriterIdentity(){
 export function currentWriterCodeIdentity(){
  const pendingSourceProbe=pendingSourceProbeEnabled(process.env);
  const candidateInputs=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1'?[...inputs,'supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql']:inputs;
- if(pendingSourceProbe)candidateInputs.push('supabase/migrations/20261112193658_spectator_pending_source_outcome.sql');
+ if(pendingSourceProbe)candidateInputs.push('supabase/migrations/20270128000343_spectator_pending_source_outcome.sql');
  const sha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
  assert.equal(sha,process.env.GITHUB_SHA,'Default checkout must match the current workflow SHA');
  return {sha,
