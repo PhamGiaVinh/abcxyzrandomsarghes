@@ -16,6 +16,11 @@ audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
 operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
 diagnostic_scope="${LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:-none}"
+source_generation_probe="${LOCAL_SOURCE_GENERATION_PROBE:-0}"
+if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
+   [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
+  echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
+fi
 case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
 if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
   echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
@@ -1640,6 +1645,21 @@ AUDIENCE_REALTIME_RECEIPT
     { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
       cat "$repo_root/supabase/pending-tests/operations_schema_freeze_fixture.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    if [[ "$source_generation_probe" == 1 ]]; then
+      # Only this owned disposable stack, before admission and catalog freeze.
+      docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DO \$\$ BEGIN
+       IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+       OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND NOT frozen AND admission_at IS NULL)
+       THEN RAISE EXCEPTION 'generation342_requires_owned_unadmitted_fixture';END IF;END \$\$;"
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        <"$repo_root/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql"
+      docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT jsonb_build_object(
+       'kind','ISOLATED_SOURCE_GENERATION_342_CANDIDATE','qualification',false,'productionChanged',false,
+       'migration','20270128000342_nonblocking_spectator_source_generation.sql',
+       'originalBodyMd5',original_body_md5,'candidateBodyMd5',candidate_body_md5)
+       FROM spectator_projection_v2.source_nonblocking_original_v1;" \
+        >"$repo_root/output/operations-latency/operations-source-generation-candidate-http.json"
+    fi
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
     node --input-type=module - "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-schema-readiness-http.json" <<'CURRENT_SCHEMA_HTTP_READY'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
@@ -1803,11 +1823,13 @@ TARGETED_PAYMENT_ASSERT
   if [[ -n "${db_pressure_pid:-}" ]];then kill -TERM "$db_pressure_pid";wait "$db_pressure_pid";db_pressure_pid='';fi
   kill -TERM "$clock_flush_pid";wait "$clock_flush_pid";clock_flush_pid=''
   targeted_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
-  node --input-type=module - "$repo_root/output/operations-latency" "$diagnostic_scope" "$audience_count" "$source_sha" "$targeted_after" "$targeted_audience_status" <<'TARGETED_FINAL_RECEIPT'
+  node --input-type=module - "$repo_root/output/operations-latency" "$diagnostic_scope" "$audience_count" "$source_sha" "$targeted_after" "$targeted_audience_status" "$source_generation_probe" <<'TARGETED_FINAL_RECEIPT'
 import assert from'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';
-const [dir,scope,count,sha,after,audienceExit]=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
+const [dir,scope,count,sha,after,audienceExit,sourceGenerationProbe='0']=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
 const audience=read('operations-audience-http.json'),fence=read('operations-schema-freeze-http.json'),clock=read('clock-candidate-broadcast-http.json');
 const runtime=read('operations-candidate-package-http.json');
+const sourceGenerationCandidate=sourceGenerationProbe==='1'?read('operations-source-generation-candidate-http.json'):null;
+if(sourceGenerationCandidate){assert.equal(sourceGenerationCandidate.kind,'ISOLATED_SOURCE_GENERATION_342_CANDIDATE');assert.match(sourceGenerationCandidate.candidateBodyMd5,/^[a-f0-9]{32}$/);}
 assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.correctionMigrationApplied,true);
 // These selected cases create no completed hands. Preserve the audience's full
 // qualification result unchanged; only its healthy concurrent reads are a
@@ -1819,7 +1841,7 @@ assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'p
 assert.equal(Number(audienceExit),audience.phase==='passed'?0:1);
 assert.equal(fence.before,after);assert.equal(clock.phase,'stopped');assert.equal(clock.failures,0);
 fence.after=after;fence.unchanged=true;fence.phase='unchanged-through-targeted-audience';writeFileSync(dir+'/operations-schema-freeze-http.json',JSON.stringify(fence,null,2));
-writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,fullAudiencePhase:audience.phase,fullAudienceChecks:audience.checks,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran with healthy concurrent audience reads. No hand-delivery qualification: full audience checks are preserved separately. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
+writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,sourceGenerationCandidate,fullAudiencePhase:audience.phase,fullAudienceChecks:audience.checks,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran with healthy concurrent audience reads. No hand-delivery qualification: full audience checks are preserved separately. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
 TARGETED_FINAL_RECEIPT
   exit 0
 fi

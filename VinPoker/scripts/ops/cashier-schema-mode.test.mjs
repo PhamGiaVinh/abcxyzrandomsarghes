@@ -41,6 +41,21 @@ test('targeted observer shutdown preserves browser failure and rejects observer 
  }
 });
 
+test('targeted source generation candidate refuses unsafe modes and applies only before admission',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [{LOCAL_SOURCE_GENERATION_PROBE:'bad'},{LOCAL_SOURCE_GENERATION_PROBE:'1'},
+  {LOCAL_SOURCE_GENERATION_PROBE:'1',CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_AUDIENCE:'10'}]){
+  const r=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/Source generation candidate requires/);
+ }
+ const apply=script.indexOf('<"$repo_root/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql"');
+ assert.ok(apply>script.indexOf('operations_schema_freeze_fixture.sql'));
+ assert.ok(apply<script.indexOf("UPDATE ops_load_fixture_v1.schema_fence SET frozen=true"));
+ assert.match(script,/generation342_requires_owned_unadmitted_fixture/);
+ assert.match(script,/sourceGenerationCandidate,fullAudiencePhase/);
+});
+
 test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
  const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
  const end=script.indexOf('\nrun_browser_proof\n',start);
