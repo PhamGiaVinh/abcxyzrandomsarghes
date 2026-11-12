@@ -45,7 +45,8 @@ sql(`DO $$ BEGIN
  INSERT INTO public.tournaments VALUES('a3000000-0000-4000-8000-000000000004');
  SELECT spectator_projection_v2.mark_dirty('a3000000-0000-4000-8000-000000000004','tables','generation','component');`);
 const report={kind:'ACTUAL_SOURCE_MARK_DIRTY_AND_CLAIM_NATIVE_CONTENTION_COMPONENT_ONLY',phase:'running',sourceSha256:{mark:createHash('sha256').update(mark).digest('hex'),claim:createHash('sha256').update(claim).digest('hex')},cases:[],qualification:false,productionChanged:false,limits:'Exact source mark_dirty and claim functions on PostgreSQL with minimal canonical projection tables and synthetic auth context. Not full captured schema, actual publisher, original caught SQLSTATE, money conservation or production proof.'};
-const probe=`BEGIN;SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='2s';
+// Preserve PostgreSQL regex escapes when sending the exception-frame query.
+const probe=String.raw`BEGIN;SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='2s';
  DO $probe$ DECLARE code text:='00000';ctx text;frames jsonb:='[]';BEGIN
  BEGIN PERFORM spectator_projection_v2.mark_dirty('a3000000-0000-4000-8000-000000000004','tables','generation','component');
  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,ctx=PG_EXCEPTION_CONTEXT;
