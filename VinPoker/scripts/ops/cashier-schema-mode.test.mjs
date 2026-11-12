@@ -654,6 +654,8 @@ test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP w
 });
 
 test('worker diagnostics preserve exact known lease rejection without exporting arbitrary RPC or error text',()=>{
+ assert.deepEqual(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'source_pending'}),{operation:'get_public_spectator_projection_source_v2',reason:'source_pending'});
+ assert.equal(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'source_pending private SQL'}).reason,'unknown');
  assert.deepEqual(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'lease_expired'}),{operation:'get_public_spectator_projection_source_v2',reason:'lease_expired'});
  assert.deepEqual(audienceWorkerFailure('private_rpc',{message:'private SQL and token'}),{operation:'unknown',reason:'unknown'});
  assert.equal(audienceWorkerFailure('claim_public_spectator_projection_v2',{message:'lease_expired private'}).reason,'unknown');

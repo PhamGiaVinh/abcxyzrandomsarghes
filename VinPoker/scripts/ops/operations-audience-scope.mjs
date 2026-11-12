@@ -135,7 +135,7 @@ export function audienceGatewayConfig(text,{allowImplicitLimits=false}={}){
 
 export function audienceWorkerFailure(name,error){
  const operations=['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2','claim_public_spectator_projection_v2','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'];
- const reasons=['lease_expired','forbidden','invalid_limit'];
+ const reasons=['lease_expired','source_pending','forbidden','invalid_limit'];
  return {operation:operations.includes(name)?name:'unknown',reason:reasons.includes(error?.message)?error.message:'unknown'};
 }
 
