@@ -1718,7 +1718,9 @@ DO $$ BEGIN
  OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
  OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
  OR EXISTS(SELECT 1 FROM public.tournaments WHERE id BETWEEN 'a3000000-0000-4000-8000-000000000004' AND 'a3000000-0000-4000-8000-000000000013')
- OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number BETWEEN 91 AND 120)
+ OR EXISTS(SELECT 1 FROM public.game_tables WHERE id::text LIKE 'ac710000-0000-4000-8000-%')
+ OR (SELECT count(*) FROM generate_series(1,100) n WHERE NOT EXISTS(
+   SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n))<30
  THEN RAISE EXCEPTION 'targeted_payment_requires_empty_owned_fixture'; END IF;
 END $$;
 INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
@@ -1728,10 +1730,15 @@ INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy
 SELECT ('a3000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  'a2000000-0000-4000-8000-000000000001','Targeted Cashier payment TEST '||n,
  'registering','registering',now(),6000000,600000,0,false,0,0 FROM generate_series(4,13)n;
+WITH slots AS(
+ SELECT n table_number FROM generate_series(1,100)n
+ WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
+ ORDER BY n LIMIT 30
+), numbered AS(SELECT row_number() OVER(ORDER BY table_number) n,table_number FROM slots)
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  'a2000000-0000-4000-8000-000000000001','Targeted Cashier payment TEST '||n,
- 90+n,'tournament','inactive','available' FROM generate_series(1,30)n;
+ table_number,'tournament','inactive','available' FROM numbered;
 COMMIT;
 TARGETED_PAYMENT_FIXTURE
     run_browser_proof '' '' '^targeted canonical Cashier payment reproduction across ten fresh tours$'
