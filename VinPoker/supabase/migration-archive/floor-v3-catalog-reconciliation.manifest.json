@@ -10154,6 +10154,11 @@
       "version": "20270128000342",
       "filename": "20270128000342_nonblocking_spectator_source_generation.sql",
       "sha256": "329598b30c0dd07b3832c2309fc7b61b668352926b7c25d35c97db35d8c57c83"
+    },
+    {
+      "version": "20261112193658",
+      "filename": "20261112193658_spectator_pending_source_outcome.sql",
+      "sha256": "a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221"
     }
   ],
   "floorActiveAllowlist": [

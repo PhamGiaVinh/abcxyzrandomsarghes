@@ -125,7 +125,7 @@ if(sourceGenerationProbe){
  assert.equal(actual.bodyMd5,sourceGeneration342Profile.bodyMd5);assert.equal(actual.definitionMd5,sourceGeneration342Profile.definitionMd5);
  sourceGenerationCandidate={...sourceGeneration342Profile,ownedDatabase:owned.database,productionChanged:false};
  if(pendingSourceProbe){
-  const pending=readFileSync('supabase/pending-migrations/'+pendingSourceProfile.migration,'utf8');
+  const pending=readFileSync('supabase/migrations/'+pendingSourceProfile.migration,'utf8');
   assert.equal(createHash('sha256').update(pending.replace(/\r\n?/g,'\n')).digest('hex'),pendingSourceProfile.sqlSha256);
   sql(pending);
   const actual=jsonSql(`SELECT jsonb_build_object('originalDefinitionMd5',original_definition_hash,

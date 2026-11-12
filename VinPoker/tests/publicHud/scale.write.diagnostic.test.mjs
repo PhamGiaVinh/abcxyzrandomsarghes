@@ -11,7 +11,7 @@ test('migration342 writer profile is explicit and pins exact migration bytes',()
  assert.throws(()=>requireMatchedWriterQualification({},{sha:'a'.repeat(40)},{sourceGenerationProbe:true}),/Explicit source generation/);
 });
 test('pending source profile pins native-verified SQL and requires explicit generation mode',()=>{
- const source=readFileSync(new URL('../../supabase/pending-migrations/'+pendingSourceProfile.migration,import.meta.url),'utf8');
+ const source=readFileSync(new URL('../../supabase/migrations/'+pendingSourceProfile.migration,import.meta.url),'utf8');
  assert.equal(createHash('sha256').update(source.replace(/\r\n?/g,'\n')).digest('hex'),pendingSourceProfile.sqlSha256);
  assert.equal(pendingSourceProfile.definitionMd5,'6269d9fc1b2737f30b56a4bcdb42fb79');
  assert.equal(pendingSourceProbeEnabled({}),false);

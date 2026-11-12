@@ -11,7 +11,7 @@ const original=readFileSync('supabase/pending-migrations/20270115000000_public_s
 for(const [begin,end] of [['CREATE OR REPLACE FUNCTION public.claim_public_spectator_projection_v2','CREATE OR REPLACE FUNCTION public.get_public_spectator_projection_source_v2'],
  ['CREATE OR REPLACE FUNCTION public.fail_public_spectator_projection_v2','CREATE OR REPLACE FUNCTION public.get_public_tournament_viewer_snapshot_v2']])sql(original.slice(original.indexOf(begin),original.indexOf(end)));
 sql(readFileSync('supabase/migrations/20261106144208_public_spectator_source_lease_outcome.sql','utf8'));
-const migration=readFileSync('supabase/pending-migrations/20261112193658_spectator_pending_source_outcome.sql','utf8');
+const migration=readFileSync('supabase/migrations/20261112193658_spectator_pending_source_outcome.sql','utf8');
 const recovery=readFileSync('tests/publicHud/spectator-source-pending.forward-rollback.sql','utf8');
 const strip=s=>s.replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
 const signature='public.get_public_spectator_projection_source_v2(uuid,text,uuid)';
