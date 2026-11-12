@@ -97,7 +97,7 @@ const visibilityPublishing=await holdPublisher('visibility',342002);
 await sqlAsync(`SET lock_timeout='250ms';SET statement_timeout='500ms';UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${tour}';`);
 assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
 await sqlAsync(`SET lock_timeout='250ms';SET statement_timeout='500ms';UPDATE public.tournaments SET deleted_at=NULL WHERE id='${tour}';`);
-assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['visibility'],'{}');`).access,'public');
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'public');
 assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='visibility';`),'2');
 await visibilityPublishing.running;
 assert.equal(jsonSql(`${service} SELECT to_jsonb(public.absorb_public_spectator_generations_v2(100));`),2);
