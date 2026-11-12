@@ -15,6 +15,11 @@ reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
 operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
+diagnostic_scope="${LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:-none}"
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 0 || "$correction_undo_probe" != 0 || "$redraw_probe" != 0 || "$prize_close_probe" != 0 ) ]]; then
+  echo 'Targeted diagnostics require isolated current frozen candidate audience without full-suite optional stages' >&2;exit 1
+fi
 if [[ "$operations_rest_pool" != 10 && "$operations_rest_pool" != 20 ]] ||
    [[ "$operations_rest_pool" == 20 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 1000 ) ]]; then
   echo 'Pool comparison requires explicit isolated1000 operational mode' >&2;exit 1
@@ -1379,6 +1384,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
   --env LOCAL_OPERATIONS_AUDIENCE="$audience_count" \
   --env LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
+  --env LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE="$diagnostic_scope" \
   --env PLAYWRIGHT_BASE_URL='http://localhost:8080' \
   --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
@@ -1702,6 +1708,83 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+if [[ "$diagnostic_scope" != none ]]; then
+  loaded_phase_checkpoint "targeted-$diagnostic_scope-start"
+  if [[ "$diagnostic_scope" == cashier-payment ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'TARGETED_PAYMENT_FIXTURE'
+BEGIN;
+DO $$ BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR EXISTS(SELECT 1 FROM public.tournaments WHERE id BETWEEN 'a3000000-0000-4000-8000-000000000004' AND 'a3000000-0000-4000-8000-000000000013')
+ OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number BETWEEN 91 AND 120)
+ THEN RAISE EXCEPTION 'targeted_payment_requires_empty_owned_fixture'; END IF;
+END $$;
+INSERT INTO public.feature_flags(id,enabled,allowed_club_ids)
+VALUES('centerpoint_tournament_ops_release_v1',true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
+SELECT ('a3000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+ 'a2000000-0000-4000-8000-000000000001','Targeted Cashier payment TEST '||n,
+ 'registering','registering',now(),6000000,600000,0,false,0,0 FROM generate_series(4,13)n;
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+ 'a2000000-0000-4000-8000-000000000001','Targeted Cashier payment TEST '||n,
+ 90+n,'tournament','inactive','available' FROM generate_series(1,30)n;
+COMMIT;
+TARGETED_PAYMENT_FIXTURE
+    run_browser_proof '' '' '^targeted canonical Cashier payment reproduction across ten fresh tours$'
+    docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_CONSERVATION'
+WITH tours AS(SELECT id FROM public.tournaments WHERE club_id='a2000000-0000-4000-8000-000000000001' AND name LIKE 'Targeted Cashier payment TEST %'),
+ regs AS(SELECT r.* FROM public.tournament_registrations r JOIN tours t ON t.id=r.tournament_id),
+ moves AS(SELECT m.* FROM public.cashier_buyin_movements m JOIN regs r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin')
+SELECT jsonb_build_object('kind','TARGETED_PAYMENT_CANONICAL_CONSERVATION','qualification',false,
+ 'tours',(SELECT count(*) FROM tours),'registrations',(SELECT count(*) FROM regs),
+ 'confirmedPaid',(SELECT count(*) FROM regs WHERE status='confirmed' AND cashier_paid_at IS NOT NULL),
+ 'movements',(SELECT count(*) FROM moves),'cash',(SELECT sum(applied_amount) FROM moves),
+ 'entries',(SELECT count(*) FROM public.tournament_entries e JOIN tours t ON t.id=e.tournament_id),
+ 'activeSeats',(SELECT count(*) FROM public.tournament_seats s JOIN tours t ON t.id=s.tournament_id WHERE s.is_active),
+ 'seatedChips',(SELECT sum(s.chip_count) FROM public.tournament_seats s JOIN tours t ON t.id=s.tournament_id WHERE s.is_active));
+TARGETED_PAYMENT_CONSERVATION
+    node --input-type=module - "$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_ASSERT'
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+for(const [k,v]of Object.entries({tours:10,registrations:200,confirmedPaid:200,movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000}))assert.equal(r[k],v,k);
+TARGETED_PAYMENT_ASSERT
+  else
+    run_browser_proof '' '' '^real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
+    targeted_checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+      (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='a2000000-0000-4000-8000-000000000001' AND a.status='checked_in' AND a.current_state='available'),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='operator_check_in_dealer_v1'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000002'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in');")"
+    [[ "$targeted_checkin_state" == "$checkin_dealer_count|$((checkin_dealer_count + 1))|0|1" ]]
+  fi
+  loaded_phase_checkpoint "targeted-$diagnostic_scope-end"
+  targeted_minimum_hold=false
+  for _ in {1..35};do
+    kill -0 "$audience_pid"
+    if node -e 'const a=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(a.phase==="ready"&&a.activeDurationMs>=30000?0:1)' "$repo_root/output/operations-latency/operations-audience-http.json";then targeted_minimum_hold=true;break;fi
+    sleep 1
+  done
+  [[ "$targeted_minimum_hold" == true ]]
+  kill -TERM "$audience_pid";wait "$audience_pid";audience_pid=''
+  if [[ -n "${db_pressure_pid:-}" ]];then kill -TERM "$db_pressure_pid";wait "$db_pressure_pid";db_pressure_pid='';fi
+  kill -TERM "$clock_flush_pid";wait "$clock_flush_pid";clock_flush_pid=''
+  targeted_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
+  node --input-type=module - "$repo_root/output/operations-latency" "$diagnostic_scope" "$audience_count" "$source_sha" "$targeted_after" <<'TARGETED_FINAL_RECEIPT'
+import assert from'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';
+const [dir,scope,count,sha,after]=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
+const audience=read('operations-audience-http.json'),fence=read('operations-schema-freeze-http.json'),clock=read('clock-candidate-broadcast-http.json');
+assert.equal(audience.phase,'passed');assert.equal(audience.viewers,Number(count));assert.ok(Object.values(audience.checks).every(v=>v===true));
+assert.equal(fence.before,after);assert.equal(clock.phase,'stopped');assert.equal(clock.failures,0);
+fence.after=after;fence.unchanged=true;fence.phase='unchanged-through-targeted-audience';writeFileSync(dir+'/operations-schema-freeze-http.json',JSON.stringify(fence,null,2));
+writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),schemaUnchanged:true,audienceContinuous:true,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
+TARGETED_FINAL_RECEIPT
+  exit 0
+fi
 run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
 if [[ "$schema_mode" == current ]]; then

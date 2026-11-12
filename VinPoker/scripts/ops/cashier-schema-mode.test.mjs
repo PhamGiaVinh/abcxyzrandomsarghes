@@ -15,6 +15,35 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('targeted diagnostics refuse invalid scope before any service operation',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [
+  {LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'other'},
+  {LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'cashier-payment',CASHIER_SCHEMA_MODE:'pre03'},
+  {LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'dealer-checkin',CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_AUDIENCE:'0'},
+ ]){
+  const r=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/Unknown targeted diagnostic|Targeted diagnostics require/);
+ }
+});
+
+test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
+ const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
+ const end=script.indexOf('\nrun_browser_proof\n',start);
+ assert.ok(start>0&&end>start);
+ const branch=script.slice(start,end);
+ assert.match(branch,/targeted canonical Cashier payment reproduction across ten fresh tours/);
+ assert.match(branch,/real check-in HTTP commit, independent observation, exact retry and tenant boundary/);
+ assert.match(branch,/movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000/);
+ assert.match(branch,/assert\.equal\(fence\.before,after\)/);
+ assert.match(branch,/assert\.ok\(Object\.values\(audience\.checks\)\.every\(v=>v===true\)\)/);
+ assert.match(branch,/TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE/);
+ assert.doesNotMatch(branch,/all-operational-stages-passed/);
+ assert.match(branch,/\n  exit 0\nfi$/);
+ assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope \|\| 'none'/);
+});
+
 test('handover fixture cannot consume the independent salary actor',()=>{
  const selection=script.slice(script.indexOf("SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id"),script.indexOf('ORDER BY c.user_id LIMIT 1;'));
  assert.match(selection,/c\.user_id=\(SELECT id FROM auth\.users WHERE email='cashier-latency-19@test\.invalid'\)/);
@@ -716,8 +745,13 @@ test('prize-close HTTP probe requires full current33 and retains its bounded fin
  assert.ok(script.indexOf("[functions.compute-payouts]")<script.indexOf('supabase start --exclude'));
  assert.ok(script.indexOf("CLOSE_PRIZE_CANDIDATE_PATH")>script.indexOf('CORRECTION_OWNED_PREFLIGHT'));
  assert.ok(script.indexOf('hud_projector_pid=$!')<script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE'));
- assert.ok(script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')<script.indexOf('kill -TERM "$audience_pid"'));
- assert.ok(script.indexOf('kill -TERM "$audience_pid"')<script.indexOf('HUD_DRAIN_BARRIER'));
+ // The manual targeted mode exits before the default full stages. Its own
+ // drain is not the full-suite prize/HUD drain checked here.
+ const fullStart=script.indexOf('\nrun_browser_proof\n');
+ assert.ok(fullStart>script.lastIndexOf('TARGETED_FINAL_RECEIPT'));
+ const fullStages=script.slice(fullStart);
+ assert.ok(fullStages.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')<fullStages.indexOf('kill -TERM "$audience_pid"'));
+ assert.ok(fullStages.indexOf('kill -TERM "$audience_pid"')<fullStages.indexOf('HUD_DRAIN_BARRIER'));
  assert.ok(script.indexOf('HUD_DRAIN_BARRIER')<script.indexOf('PREPARED_HUD_FINAL_RECEIPT'));
  assert.ok(posix.matchesGlob('VinPoker/output/operations-latency/cashier-http-prize-close-http.json','VinPoker/output/operations-latency/*-http.json'));
  const e2e=readFileSync(new URL('../../e2e/cashier-tour-real.spec.ts',import.meta.url),'utf8');assert.ok(e2e.includes('LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED'));assert.ok(e2e.includes("prizeTotal=closed.prize_total"));

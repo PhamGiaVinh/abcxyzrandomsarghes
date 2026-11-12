@@ -61,6 +61,11 @@ on:
       - "VinPoker/src/pages/ops/TourCashierWorkbench.tsx"
   workflow_dispatch:
     inputs:
+      diagnostic_scope:
+        description: Target only unresolved payment or check-in failure; never full acceptance
+        type: choice
+        options: [none, cashier-payment, dealer-checkin]
+        default: none
       schema_mode:
         description: Historical pre03 migration proof or contemporary runtime proof
         type: choice
@@ -246,6 +251,7 @@ jobs:
           LOCAL_REENTRY_FAULT_MODE: ${{ (github.event_name == 'pull_request' && steps.schema-mode.outputs.mode == 'current') && 'healthy' || inputs.reentry_fault_mode || 'failure-injection' }}
           LOCAL_OPERATIONS_REST_POOL: ${{ inputs.operations_rest_pool || '10' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
+          LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope || 'none' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier runtime latency evidence
         if: always()

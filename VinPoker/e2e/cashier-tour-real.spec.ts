@@ -15,6 +15,59 @@ import {classifyPublicHudHand} from '../supabase/functions/_shared/publicHudCont
 const currentFloorRosterV6=process.env.LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED==='1';
 const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3';
 
+test('targeted canonical Cashier payment reproduction across ten fresh tours',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE!=='cashier-payment','Explicit isolated reproduction only');
+ test.setTimeout(900_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='a2000000-0000-4000-8000-000000000001';
+ expect(staff).toHaveLength(20);
+ const payments:{round:number;actorIndex:number;ms:number;paymentState:string|null;seatingState:string|null;reason:string|null}[]=[];
+ let phase='opening',completedTours=0,failedHttp:unknown=null;
+ const safe=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_]{1,80}$/.test(v)?v:null;
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-targeted-payment-http.json'),JSON.stringify({
+  kind:'TARGETED_CANONICAL_PAYMENT_REPRODUCTION_NOT_FULL_ACCEPTANCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  phase,completedTours,viewers:Number(process.env.LOCAL_OPERATIONS_AUDIENCE),payments,failedHttp,
+  qualification:false,productionChanged:false,
+  limits:'Ten fresh TEST tours/200canonical payments with unchanged5s HTTP budgets and exact retries. Separate tours share the audience database. Not historical root-cause proof, full operations acceptance, or hosted capacity.'
+ },null,2));
+ const request=async(path:string,token:string,args:Record<string,unknown>,round:number,actorIndex:number)=>{
+  const at=performance.now(),startedAt=Date.now(),signal=AbortSignal.timeout(5000);let stage='headers',status:number|undefined,headersMs:number|undefined,responseCode:string|undefined,serverTiming:unknown;
+  try{
+   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(args),signal});
+   status=response.status;headersMs=performance.now()-at;serverTiming=audienceServerTiming(response.headers);stage='body';const data=await response.json();
+   responseCode=typeof data?.code==='string'&&/^(?:PGRST\d{3}|[0-9A-Z]{5})$/.test(data.code)?data.code:undefined;stage='assertion';expect(response.ok).toBe(true);
+   return {data,ms:performance.now()-at};
+  }catch(error){
+   failedHttp={path,round,actorIndex,stage,status,headersMs,responseCode,serverTiming,startedAt,failedAt:Date.now(),elapsedMs:performance.now()-at,signalAborted:signal.aborted,...audienceFailure(error,status)};
+   throw error;
+  }
+ };
+ try{
+  for(let round=0;round<10;round++){
+   const tour='a3000000-0000-4000-8000-'+String(4+round).padStart(12,'0');
+   phase='opening';report();
+   for(let n=1;n<=3;n++){
+    const intent={p_tournament_id:tour,p_game_table_id:'ac710000-0000-4000-8000-'+String(round*3+n).padStart(12,'0'),p_control_mode:'manual',p_request_id:crypto.randomUUID()};
+    const opened=await request('/rest/v1/rpc/floor_open_tournament_table_v3',owner,intent,round,-1);
+    expect(opened.data.ok).toBe(true);
+    expect((await request('/rest/v1/rpc/floor_open_tournament_table_v3',owner,intent,round,-1)).data).toEqual(opened.data);
+   }
+   phase='canonical-payment';report();
+   for(const [actorIndex,actor] of staff.entries()){
+    const registration=(await request('/functions/v1/tournament-register',actor.token,{tournament_id:tour},round,actorIndex)).data;
+    expect(registration.success).toBe(true);expect(Number(registration.total_pay)).toBe(6600000);
+    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
+    const paid=await request('/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',actor.token,{p_intent:intent,p_action:'record'},round,actorIndex);
+    payments.push({round,actorIndex,ms:paid.ms,paymentState:safe(paid.data.result?.payment_state),seatingState:safe(paid.data.result?.seating_state),reason:safe(paid.data.result?.reason)});report();
+    expect(paid.data).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});
+    expect((await request('/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',actor.token,{p_intent:intent,p_action:'record'},round,actorIndex)).data).toEqual(paid.data);
+   }
+   completedTours++;report();
+  }
+  phase='passed';
+ }finally{report();}
+});
+
 test('final current Floor seat locks and redraw conserve every paid entry over HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_REDRAW_ENABLED!=='1','Explicit final isolated redraw stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000004',legacyTour='a3000000-0000-4000-8000-000000000001',club='a2000000-0000-4000-8000-000000000001';
