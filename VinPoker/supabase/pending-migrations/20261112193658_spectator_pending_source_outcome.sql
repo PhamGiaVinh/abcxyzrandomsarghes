@@ -33,6 +33,7 @@ BEGIN
  EXECUTE changed;
  IF (SELECT to_jsonb(p)-'prosrc' FROM pg_proc p WHERE oid=target) IS DISTINCT FROM metadata
  THEN RAISE EXCEPTION 'source_pending_outcome_metadata_drift';END IF;
- INSERT INTO spectator_projection_v2.source_pending_original_v1 VALUES(target::text,original,md5(original),md5(changed));
+ INSERT INTO spectator_projection_v2.source_pending_original_v1 VALUES(
+  'public.get_public_spectator_projection_source_v2(uuid,text,uuid)',original,md5(original),md5(changed));
 END $rewrite$;
 COMMIT;
