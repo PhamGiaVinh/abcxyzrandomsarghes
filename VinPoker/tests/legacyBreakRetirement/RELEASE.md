@@ -19,6 +19,9 @@ replace its apply allowlist entry with341, preserve provenance; no ledger repair
 341 observes only current pg_stat_activity backends, rejecting any same-actor/
 database cron worker or pg_cron client in every state, including idle/NULL;
 only launcher/currentpreflight excluded. Unrelated busy cron may safely block.
+Upstream pg_cron1.6.8 registers worker backend_type as pg_cron, while its process
+name is pg_cron worker. The actual backgroundworker test distinguishes these;
+the guard matches backend_type=pg_cron, not the process name.
 Production read-only EXPLAIN of the predicate took0.527ms, not a capacity proof.
 No managed-table index or role changes; lock1s/statement10s unchanged.
 

@@ -33,7 +33,7 @@ BEGIN
    WHERE a.pid<>pg_catalog.pg_backend_pid()
    AND a.datname=before_job.database AND a.usename=before_job.username
    AND a.backend_type IS DISTINCT FROM 'pg_cron launcher'
-   AND (a.backend_type='pg_cron worker' OR a.application_name LIKE 'pg_cron%')) THEN
+   AND (a.backend_type='pg_cron' OR a.application_name LIKE 'pg_cron%')) THEN
    RAISE EXCEPTION 'legacy_break_retirement_job_busy';
  END IF;
  PERFORM cron.alter_job(22,active:=false);

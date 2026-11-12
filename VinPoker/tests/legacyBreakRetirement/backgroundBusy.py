@@ -17,11 +17,14 @@ def sql(source, actor="cron_test_admin", error=None):
 assert sql("SELECT NOT active FROM cron.job WHERE jobid=22") == "t"
 sql("SELECT cron.alter_job(23,command:='SELECT pg_sleep(4);')")
 for _ in range(200):
-    if sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE backend_type='pg_cron worker' AND usename='postgres' AND datname='postgres')") == "t":
+    if sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE backend_type='pg_cron' AND usename='postgres' AND datname='postgres')") == "t":
         break
     time.sleep(0.05)
 else:
-    raise AssertionError("real pg_cron worker not observed")
+    raise AssertionError("real pg_cron worker not observed: " + sql(
+        "SELECT jsonb_agg(jsonb_build_object('application',application_name,"
+        "'backend_type',backend_type,'state',state)) FROM pg_stat_activity "
+        "WHERE backend_type LIKE 'pg_cron%' OR application_name LIKE 'pg_cron%'"))
 
 root = pathlib.Path(__file__).resolve().parents[2]
 source = (root / "supabase/migrations/20270128000341_retire_legacy_break_bounded_preflight.sql").read_text()
