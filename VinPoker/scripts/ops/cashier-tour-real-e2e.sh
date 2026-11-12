@@ -1741,7 +1741,7 @@ SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  table_number,'tournament','inactive','available' FROM numbered;
 COMMIT;
 TARGETED_PAYMENT_FIXTURE
-    run_browser_proof '' '' '^targeted canonical Cashier payment reproduction across ten fresh tours$'
+    run_browser_proof '' '' 'targeted canonical Cashier payment reproduction across ten fresh tours$'
     docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
       >"$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_CONSERVATION'
 WITH tours AS(SELECT id FROM public.tournaments WHERE club_id='a2000000-0000-4000-8000-000000000001' AND name LIKE 'Targeted Cashier payment TEST %'),
@@ -1761,7 +1761,7 @@ const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
 for(const [k,v]of Object.entries({tours:10,registrations:200,confirmedPaid:200,movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000}))assert.equal(r[k],v,k);
 TARGETED_PAYMENT_ASSERT
   else
-    run_browser_proof '' '' '^real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
+    run_browser_proof '' '' 'real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
     targeted_checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
       (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='a2000000-0000-4000-8000-000000000001' AND a.status='checked_in' AND a.current_state='available'),
       (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='operator_check_in_dealer_v1'),

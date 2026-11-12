@@ -35,6 +35,12 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  const branch=script.slice(start,end);
  assert.match(branch,/targeted canonical Cashier payment reproduction across ten fresh tours/);
  assert.match(branch,/real check-in HTTP commit, independent observation, exact retry and tenant boundary/);
+ const targetedSelectors=[...branch.matchAll(/run_browser_proof '' '' '([^']+)'/g)].map(m=>m[1]);
+ assert.equal(targetedSelectors.length,2);
+ for(const selector of targetedSelectors){
+  const title=selector.replace(/\$$/,'');
+  assert.ok(new RegExp(selector).test('chromium e2e/cashier-tour-real.spec.ts '+title),'Playwright grep includes project/file prefixes');
+ }
  assert.match(branch,/movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000/);
  assert.match(branch,/assert\.equal\(fence\.before,after\)/);
  assert.match(branch,/assert\.ok\(Object\.values\(audience\.checks\)\.every\(v=>v===true\)\)/);
