@@ -10125,6 +10125,11 @@
       "version": "20270128000339",
       "filename": "20270128000339_dealer_backup_response_snapshot_recheck.sql",
       "sha256": "40ef61fa1ab56d59ea63512ddbf93aa05978649fade2c555a8d6795eb00695dc"
+    },
+    {
+      "version": "20270128000340",
+      "filename": "20270128000340_retire_failing_legacy_break_enforcement.sql",
+      "sha256": "6f85ccfec0db32a76662d7db961a1adac0dd61cf660091e5cad781b3a29db4bf"
     }
   ],
   "floorActiveAllowlist": [

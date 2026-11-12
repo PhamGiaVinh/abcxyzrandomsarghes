@@ -1,0 +1,71 @@
+name: Legacy break retirement isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000340_retire_failing_legacy_break_enforcement.sql'
+      - 'VinPoker/tests/legacyBreakRetirement/**'
+      - '.github/workflows/legacy-break-retirement-db.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legacy-break-retirement-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cron_test_admin
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cron_test_admin -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: cron_test_admin
+      PGPASSWORD: test
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install real pg_cron with launcher disabled in disposable service
+        run: |
+          docker exec -u root '${{ job.services.postgres.id }}' sh -c 'apt-get update -qq && apt-get install -y --no-install-recommends postgresql-17-cron'
+          docker exec -i -u postgres '${{ job.services.postgres.id }}' sh -c 'cat >> "$PGDATA/postgresql.conf"' <<'CONF'
+          shared_preload_libraries='pg_cron'
+          cron.database_name='postgres'
+          cron.use_background_workers=on
+          cron.launch_active_jobs=off
+          CONF
+          docker restart '${{ job.services.postgres.id }}'
+          for i in {1..30}; do pg_isready -h localhost -U cron_test_admin -d postgres && break; sleep 1; done
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION pg_cron;
+          CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS PASSWORD 'test';
+          GRANT USAGE ON SCHEMA cron TO postgres;
+          GRANT SELECT ON cron.job,cron.job_run_details TO postgres;
+          GRANT EXECUTE ON FUNCTION cron.schedule(text,text,text),cron.alter_job(bigint,text,text,text,text,boolean) TO postgres;
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/legacyBreakRetirement/prepare.sql
+      - name: Actual hosted actor, catalog drift, busy, retry and rollback
+        run: python3 VinPoker/tests/legacyBreakRetirement/behavior.py
+      - name: Retired five-minute job never launches while sentinel runs
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET cron.launch_active_jobs=on"
+          psql -X -v ON_ERROR_STOP=1 -c "SELECT pg_reload_conf()"
+          python3 - <<'PY'
+          import time
+          # Cross a real original five-minute boundary after successful retirement.
+          time.sleep(300 - time.time() % 300 + 4)
+          PY
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM cron.job_run_details WHERE jobid=22)
+            OR NOT EXISTS (SELECT 1 FROM cron.job_run_details WHERE jobid=23 AND status='succeeded')
+            OR EXISTS (SELECT 1 FROM cron.job_run_details WHERE jobid=23 AND status='failed')
+            THEN RAISE EXCEPTION 'scheduled_retirement_failed'; END IF;
+          END $$;
+          SELECT 'PASS: original five-minute boundary skipped; real sentinel succeeded';
+          SQL
