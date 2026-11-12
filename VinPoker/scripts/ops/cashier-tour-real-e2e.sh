@@ -1721,8 +1721,8 @@ DO $$ BEGIN
  OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number BETWEEN 91 AND 120)
  THEN RAISE EXCEPTION 'targeted_payment_requires_empty_owned_fixture'; END IF;
 END $$;
-INSERT INTO public.feature_flags(id,enabled,allowed_club_ids)
-VALUES('centerpoint_tournament_ops_release_v1',true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
+VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
 ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
 INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
 SELECT ('a3000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,

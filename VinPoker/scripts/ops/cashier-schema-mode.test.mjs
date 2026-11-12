@@ -46,6 +46,8 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  assert.match(guard,/"\$correction_undo_probe" != 1/);
  assert.match(guard,/"\$prize_close_probe" != 1/);
  assert.match(guard,/"\$reentry_fault_mode" != healthy/);
+ const gates=[...script.matchAll(/INSERT INTO public\.centerpoint_tournament_ops_release\(id,enabled,allowed_club_ids\)[\s\S]+?ON CONFLICT\(id\) DO UPDATE SET enabled=excluded\.enabled,allowed_club_ids=excluded\.allowed_club_ids;/g)].map(m=>m[0].replace(/\r/g,''));
+ assert.equal(gates.length,2);assert.equal(gates[0],gates[1],'Targeted fixture must use the existing canonical release gate, not a parallel flag');
  assert.doesNotMatch(branch,/all-operational-stages-passed/);
  assert.match(branch,/\n  exit 0\nfi$/);
  assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope \|\| 'none'/);
