@@ -31,6 +31,7 @@ const extract=(text,header)=>{
 };
 const mark=extract(compact,'CREATE OR REPLACE FUNCTION spectator_projection_v2.mark_dirty(');
 const claim=extract(live,'CREATE OR REPLACE FUNCTION public.claim_public_spectator_projection_v2(');
+const candidateMigration=source('migrations/20270128000342_nonblocking_spectator_source_generation.sql');
 const schema=base.slice(base.indexOf('CREATE SCHEMA'),base.indexOf('CREATE OR REPLACE FUNCTION spectator_projection_v2.mark_dirty('));
 sql(`DO $$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon;END IF;
@@ -47,6 +48,11 @@ sql(`DO $$ BEGIN
  INSERT INTO public.tournaments VALUES('a3000000-0000-4000-8000-000000000004');
  SELECT spectator_projection_v2.mark_dirty('a3000000-0000-4000-8000-000000000004','tables','generation','component');`);
 const report={kind:'ACTUAL_SOURCE_MARK_DIRTY_AND_CLAIM_NATIVE_CONTENTION_COMPONENT_ONLY',phase:'running',sourceSha256:{mark:createHash('sha256').update(mark).digest('hex'),claim:createHash('sha256').update(claim).digest('hex')},cases:[],qualification:false,productionChanged:false,limits:'Exact source mark_dirty and claim functions on PostgreSQL with minimal canonical projection tables and synthetic auth context. Not full captured schema, actual publisher, original caught SQLSTATE, money conservation or production proof.'};
+const rejectCandidate=prefix=>{
+ const r=spawnSync('docker',[...args,'-d','spectator_contention_contract'],{input:prefix+candidateMigration,encoding:'utf8',timeout:10000});
+ assert.notEqual(r.status,0,'Unsafe candidate apply must be rejected');
+ assert.match(r.stderr,/ERROR:\s+P0001/,'Exact migration preimage guard must reject');
+};
 // Preserve PostgreSQL regex escapes when sending the exception-frame query.
 const probe=String.raw`BEGIN;SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='2s';
  DO $probe$ DECLARE code text:='00000';ctx text;frames jsonb:='[]';BEGIN
@@ -57,8 +63,15 @@ const probe=String.raw`BEGIN;SET LOCAL lock_timeout='250ms';SET LOCAL statement_
  'deferred',(SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE source_txid=pg_current_xact_id()))::text,true);END $probe$;
  SELECT current_setting('test.contention_result');ROLLBACK;`;
 try{
+ rejectCandidate('SET ROLE service_role;\n');
+ assert.equal(sql("SELECT to_regclass('spectator_projection_v2.source_nonblocking_original_v1') IS NULL"),'t');
+ sql(mark.replace('DECLARE generation bigint;','DECLARE generation bigint; -- native preimage drift\n'));
+ rejectCandidate('');
+ assert.equal(sql("SELECT to_regclass('spectator_projection_v2.source_nonblocking_original_v1') IS NULL"),'t');
+ sql(mark);
+ report.actorAndPreimageGuardsVerified=true;
  for(const version of ['baseline','candidate']){
- if(version==='candidate')sql(source('migrations/20270128000342_nonblocking_spectator_source_generation.sql'));
+ if(version==='candidate')sql(candidateMigration);
  for(const mode of ['uncontended','claim','marker']){
   let child,exit,lines;
   try{
@@ -84,6 +97,9 @@ try{
  assert.equal(sql('SELECT attempts FROM spectator_projection_v2.work_groups'),'0');
  assert.equal(sql('SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1'),'0');
  assert.equal(sql("SELECT original_body_md5 FROM spectator_projection_v2.source_nonblocking_original_v1"),'76e70967db6247ba01fc6d1e9f8355e9');
+ rejectCandidate('');
+ assert.equal(sql("SELECT md5(replace(prosrc,chr(13),''))=(SELECT candidate_body_md5 FROM spectator_projection_v2.source_nonblocking_original_v1) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure"),'t');
+ report.repeatApplyRejectedWithoutMutation=true;
  const candidateDefinition=sql("SELECT pg_get_functiondef('spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure)");
  sql("DO $$ BEGIN EXECUTE (SELECT definition FROM spectator_projection_v2.source_nonblocking_original_v1);END $$;");
  assert.equal(sql("SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure"),'76e70967db6247ba01fc6d1e9f8355e9');
