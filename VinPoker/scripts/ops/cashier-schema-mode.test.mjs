@@ -51,6 +51,7 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  assert.doesNotMatch(branch,/all-operational-stages-passed/);
  assert.match(branch,/\n  exit 0\nfi$/);
  assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope \|\| 'none'/);
+ assert.match(workflow,/name: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope && inputs\.diagnostic_scope != 'none' && format\('targeted-\{0\}', inputs\.diagnostic_scope\) \|\| 'isolated-e2e' \}\}/);
 });
 
 test('handover fixture cannot consume the independent salary actor',()=>{
