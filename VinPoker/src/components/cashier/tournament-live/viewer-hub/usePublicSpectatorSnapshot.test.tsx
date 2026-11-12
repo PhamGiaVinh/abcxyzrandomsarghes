@@ -25,6 +25,61 @@ afterEach(() => {
 });
 
 describe("public spectator table scope", () => {
+  it('uses a current reply covering in-flight hints without another HTTP read',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
+    const tournamentId='covered-in-flight';let release!:(reply:unknown)=>void;
+    const reply=(revision:string,generation:string)=>({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision,catalog:[],items:[],unchanged:false,freshness:{state:'current',projectedSourceRevision:JSON.stringify({generation})}}}},error:null});
+    rpc.mockResolvedValueOnce(reply('base','1')).mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));
+    await act(async()=>{});
+    await act(async()=>{channel.subscribe.mock.calls[0][0]('SUBSCRIBED');});
+    const changed=channel.on.mock.calls.find(call=>call[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'2'}}});await vi.advanceTimersByTimeAsync(1750);});
+    expect(rpc).toHaveBeenCalledTimes(2);
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'3'}}});release(reply('covered','3'));});
+    expect(result.current.snapshot?.sections.tables?.revision).toBe('covered');
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+  it.each(['unknown-hint','older-generation','updating'])('keeps strict invalidation for %s',async mode=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
+    const tournamentId=`strict-${mode}`;let release!:(reply:unknown)=>void;
+    const reply=(revision:string,generation:string,state='current')=>({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision,catalog:[],items:[],unchanged:false,freshness:{state,projectedSourceRevision:JSON.stringify({generation})}}}},error:null});
+    rpc.mockResolvedValueOnce(reply('base','1')).mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));await act(async()=>{});
+    const changed=channel.on.mock.calls.find(call=>call[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'2'}}});await vi.advanceTimersByTimeAsync(1750);});
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:mode==='unknown-hint'?{}:{tables:'3'}}});release(reply('unproven',mode==='older-generation'?'2':'3',mode==='updating'?'updating':'current'));});
+    expect(result.current.snapshot?.sections.tables?.revision).toBe('base');
+  });
+  it('keeps the remaining shared-read caller fenced after another consumer leaves',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
+    const tournamentId='covered-shared-consumers';let release!:(reply:unknown)=>void;
+    const reply=(revision:string,generation:string)=>({data:{ok:true,access:'public',tournamentId,sections:{tables:{revision,catalog:[],items:[],unchanged:false,freshness:{state:'current',projectedSourceRevision:JSON.stringify({generation})}}}},error:null});
+    rpc.mockResolvedValueOnce(reply('base','1')).mockResolvedValueOnce(reply('base','1')).mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+    const first=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));await act(async()=>{});
+    const second=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));await act(async()=>{});
+    await act(async()=>{channel.subscribe.mock.calls[0][0]('SUBSCRIBED');});
+    const changed=channel.on.mock.calls.find(call=>call[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'2'}}});await vi.advanceTimersByTimeAsync(1750);});
+    expect(rpc).toHaveBeenCalledTimes(3);
+    second.unmount();
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'3'}}});release(reply('covered','3'));});
+    expect(first.result.current.snapshot?.sections.tables?.revision).toBe('covered');
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+    expect(rpc).toHaveBeenCalledTimes(3);
+  });
+  it('does not let generation coverage override a visibility withdrawal',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
+    const tournamentId='covered-but-withdrawn';let release!:(reply:unknown)=>void;
+    const reply={data:{ok:true,access:'public',tournamentId,sections:{tables:{revision:'base',catalog:[],items:[],unchanged:false,freshness:{state:'current',projectedSourceRevision:'{"generation":"3"}'}}}},error:null};
+    rpc.mockResolvedValueOnce(reply).mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+    const {result}=renderHook(()=>usePublicSpectatorSnapshot(tournamentId,true));await act(async()=>{});
+    const changed=channel.on.mock.calls.find(call=>call[1].event==='changed')![2];
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'2'}}});await vi.advanceTimersByTimeAsync(1750);});
+    await act(async()=>{changed({payload:{tournamentId,components:['tables'],revisions:{tables:'3'}}});changed({payload:{tournamentId,components:['visibility']}});release(reply);});
+    expect(result.current.snapshot).toBeNull();
+  });
   it('checks access/catalog metadata behind a selected table and reloads visible sections on return',async()=>{
     vi.spyOn(Math,'random').mockReturnValue(.5);vi.useFakeTimers();
     const tournamentId='metadata-only-parent';

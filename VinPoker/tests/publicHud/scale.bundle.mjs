@@ -13,6 +13,7 @@ for(const name of ['public-player-hud','public-hud-projector-v1','public-spectat
 }
 // Run the browser's real request coordinator in the HTTP/WS generator too.
 await build({entryPoints:['src/components/cashier/tournament-live/viewer-hub/publicSnapshotCoordinator.ts'],outfile:'.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs',bundle:true,format:'esm',platform:'node',target:'node24',logLevel:'silent'});
+await build({entryPoints:['src/components/cashier/tournament-live/viewer-hub/publicSnapshotRequestFence.ts'],outfile:'.local-data/hud-scale-runtime/publicSnapshotRequestFence.mjs',bundle:true,format:'esm',platform:'node',target:'node24',logLevel:'silent'});
 await build({entryPoints:['src/lib/publicHudTransport.ts'],outfile:'.local-data/hud-scale-runtime/publicHudTransport.mjs',bundle:true,format:'esm',platform:'node',target:'node24',logLevel:'silent'});
 await build({entryPoints:['src/lib/publicTableTransport.ts'],outfile:'.local-data/hud-scale-runtime/publicTableTransport.mjs',bundle:true,format:'esm',platform:'node',target:'node24',logLevel:'silent'});
 await build({entryPoints:['src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'],outfile:'.local-data/hud-scale-runtime/publicTableHistory.mjs',bundle:true,format:'esm',platform:'node',target:'node24',logLevel:'silent'});

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { registerPublicTournamentRead, normalizeVisibleTableIds } from "./publicSnapshotCoordinator";
 import type { PublicSnapshotSection, PublicSpectatorSnapshot } from "./publicSnapshotTypes";
-import {observePublicTournament,publicReadEpoch,publicReadEpochIsCurrent} from './publicTournamentRealtime';
+import {observePublicTournament,publicReadEpoch} from './publicTournamentRealtime';
+import {PublicSnapshotRequestFence} from './publicSnapshotRequestFence';
 import {sharePublicTournamentRead} from './sharedPublicTournamentRead';
 
 
@@ -62,12 +63,14 @@ export function usePublicSpectatorSnapshot(
     let coordinator: ReturnType<typeof registerPublicTournamentRead> | null = null;
     let observation:ReturnType<typeof observePublicTournament>|null=null;
     let controller=new AbortController(),epoch=0;
+    let requestFence:PublicSnapshotRequestFence|null=null;
     const dirty=new Set<PublicSnapshotSection>(metadataOnly?['tables']:['tables','ranking','payout']);
 
     const refresh = async () => {
       const requestEpoch=epoch;controller=new AbortController();
       const sections:PublicSnapshotSection[]=metadataOnly?['tables']:[...dirty];dirty.clear();if(!sections.length)return;
       const epochs=Object.fromEntries(sections.map(s=>[s,publicReadEpoch(supabase,tournamentId,s)]));
+      const fence=new PublicSnapshotRequestFence(epochs);requestFence=fence;
       const args={
         p_tournament_id: tournamentId,
         p_table_ids: metadataOnly?[]:tableIds,
@@ -77,6 +80,7 @@ export function usePublicSpectatorSnapshot(
       let reply:{data:unknown;error:unknown};
       try{reply=await sharePublicTournamentRead(supabase,JSON.stringify(['snapshot',args,epochs]),controller.signal,signal=>supabase.rpc('get_public_tournament_viewer_snapshot_v2' as never,args as never).abortSignal(signal));}
       catch{reply={data:null,error:true};}
+      if(requestFence===fence)requestFence=null;
       const {data,error}=reply;
       if (!active||requestEpoch!==epoch) return;
       if (error || !data) {
@@ -91,8 +95,11 @@ export function usePublicSpectatorSnapshot(
       }
       const next = {...incoming,sections:{...incoming.sections}};
       if(next.access==='public'&&next.ok){
-        for(const section of sections)if((section!=='tables'||liveTableUpdates)&&!publicReadEpochIsCurrent(supabase,tournamentId,section,epochs[section])){
-          delete next.sections[section];dirty.add(section);coordinator?.request();
+        for(const section of sections)if(section!=='tables'||liveTableUpdates){
+          const currentEpoch=publicReadEpoch(supabase,tournamentId,section);
+          if(!fence.accepts(section,currentEpoch,next.sections[section])){
+            delete next.sections[section];dirty.add(section);coordinator?.request();
+          }else if(currentEpoch!==epochs[section])dirty.delete(section);
         }
         if(!Object.keys(next.sections).length)return;
       }
@@ -117,6 +124,10 @@ export function usePublicSpectatorSnapshot(
     coordinator = registerPublicTournamentRead(supabase, tournamentId, refresh);
     observation=observePublicTournament(supabase,tournamentId,event=>{
       if(event.reason==='status')return;
+      if(event.invalidatePending||(event.reason==='changed'&&event.components.some(component=>component==='visibility'||component==='hand_visibility')))requestFence?.invalidate();
+      else if(event.reason==='changed')for(const section of ['tables','ranking','payout'] as const){
+        if(event.components.includes(section))requestFence?.record(section,publicReadEpoch(supabase,tournamentId,section),event.revisions[section]);
+      }
       if(event.invalidatePending){epoch++;controller.abort();trustedRevisions.current={};dirty.clear();}
       if(event.reason==='changed'&&event.components.includes('visibility')){epoch++;controller.abort();trustedRevisions.current={};setSnapshot(null);}
       if(event.reason==='changed'&&event.components.includes('hand_visibility')){

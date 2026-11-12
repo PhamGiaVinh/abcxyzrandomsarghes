@@ -16,6 +16,7 @@ import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} fro
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
 import {audienceSocketDiagnostic} from '../../scripts/ops/operations-audience-scope.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
+import {PublicSnapshotRequestFence} from '../../.local-data/hud-scale-runtime/publicSnapshotRequestFence.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 import {parsePublicClockSummary} from '../../.local-data/hud-scale-runtime/publicTableHistory.mjs';
 import {readPublicHudRequest,revalidatePublicHudRead,PUBLIC_HUD_REVALIDATION_WINDOW_MS} from '../../.local-data/hud-scale-runtime/publicHudTransport.mjs';
@@ -278,21 +279,23 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(epoch!==pageEpoch)return;
     const requested=[...state.snapshotDirty];state.snapshotDirty.clear();state.snapshotMetadataPending=false;state.snapshotLast=Date.now();
     const requestEpochs=Object.fromEntries(requested.map(section=>[section,componentEpochs[section]??0]));
+    const fence=new PublicSnapshotRequestFence(requestEpochs);state.snapshotFence=fence;
     const requestOrder=++observationOrder;
     const value=await post('/rest/v1/rpc/get_public_tournament_viewer_snapshot_v2',{p_tournament_id:tour,p_table_ids:overview?[table]:[],p_sections:requested,p_known_revisions:state.known},false,'other',controller.signal);
     if(epoch!==pageEpoch)return;
     assert.equal(value.tournamentId,tour);if(revoking&&tour===uuid('10000000',20)&&value.access==='revoked'){state.known={};return;}assert.equal(value.access,'public');assert.equal(value.ok,true);
     for(const section of requested){
-     if((section!=='tables'||overview)&&requestEpochs[section]!==componentEpochs[section]){
+     if((section!=='tables'||overview)&&!fence.accepts(section,componentEpochs[section],value.sections[section])){
       if(section==='tables')traceSnapshot('discarded',value.sections[section]?.freshness,{requestEpoch:requestEpochs[section],currentEpoch:componentEpochs[section]});
       delete value.sections[section];state.supersededSnapshotSections=(state.supersededSnapshotSections??0)+1;void snapshot([section]);continue;
      }
+     if((section!=='tables'||overview)&&requestEpochs[section]!==componentEpochs[section])state.snapshotDirty.delete(section);
      assert.ok(value.sections[section]?.freshness);state.known[section]=value.sections[section].revision;
     }
     const tables=value.sections.tables;
     if(tables){traceSnapshot('accepted',tables.freshness);state.snapshotObservation={value:tables.freshness,startedAt:state.snapshotLast,at:Date.now(),healthy:healthy(),requestOrder};state.credit();}
    }catch(cause){if(!cause.intentionalHudCancellation)error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
-   finally{controller.abort();state.snapshotBusy=false;}
+   finally{controller.abort();state.snapshotBusy=false;state.snapshotFence=null;}
   };
   const snapshotCoordinator=registerPublicTournamentRead(client,tour,()=>{const promise=refreshSnapshot();track(promise);return promise;});
   const snapshot=async(sections=['tables'])=>{
@@ -473,6 +476,8 @@ for(const scenario of ['concentrated','distributed','overview']){
     if(!components.includes('tables'))components.push('tables');
    }
    for(const component of ['tables','ranking','payout','clock'])if(components.includes(component))componentEpochs[component]++;
+   if(components.some(component=>component==='visibility'||component==='hand_visibility'))state.snapshotFence?.invalidate();
+   else for(const section of ['tables','ranking','payout'])if(components.includes(section))state.snapshotFence?.record(section,componentEpochs[section],message.payload.revisions?.[section]);
    if(components.some(c=>c==='visibility'||c==='hand_visibility')){pageEpoch++;state.tableController?.abort();state.snapshotController?.abort();state.handObservation=null;state.snapshotObservation=null;}
    if(components.includes('visibility')){clockScopeEpoch++;state.clockReady=false;state.clockController?.abort();}
    if(components.some(c=>['tables','visibility','clock','ranking'].includes(c)))track(read());
