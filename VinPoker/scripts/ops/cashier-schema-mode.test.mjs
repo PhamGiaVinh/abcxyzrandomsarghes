@@ -37,6 +37,9 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  assert.match(branch,/real check-in HTTP commit, independent observation, exact retry and tenant boundary/);
  const targetedSelectors=[...branch.matchAll(/run_browser_proof '' '' '([^']+)'/g)].map(m=>m[1]);
  assert.equal(targetedSelectors.length,2);
+ assert.ok(branch.indexOf('targeted-payment-locks-http.json')<branch.indexOf("run_browser_proof '' '' 'targeted canonical"));
+ assert.ok(branch.indexOf('if [[ "$targeted_browser_status" != 0 ]];then exit "$targeted_browser_status";fi')<branch.indexOf('TARGETED_PAYMENT_CONSERVATION'));
+ assert.match(branch,/wait "\$payment_lock_sampler_pid" \|\| targeted_observer_status=\$\?/);
  for(const selector of targetedSelectors){
   const title=selector.replace(/\$$/,'');
   assert.ok(new RegExp(selector).test('chromium e2e/cashier-tour-real.spec.ts '+title),'Playwright grep includes project/file prefixes');

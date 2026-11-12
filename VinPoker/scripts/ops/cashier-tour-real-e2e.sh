@@ -1741,7 +1741,25 @@ SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  table_number,'tournament','inactive','available' FROM numbered;
 COMMIT;
 TARGETED_PAYMENT_FIXTURE
-    run_browser_proof '' '' 'targeted canonical Cashier payment reproduction across ten fresh tours$'
+    # Original requests only: observe lock waits without changing source functions,
+    # budgets or actor claims. Preserve a browser failure before any conservation gate.
+    node "$repo_root/scripts/ops/operations-lock-diagnostics.mjs" "$db_container" "$repo_root/output/operations-latency/targeted-payment-locks-http.json" "$source_sha" >"$test_root/targeted-payment-lock-observer-private.log" 2>&1 &
+    payment_lock_sampler_pid=$!
+    targeted_observer_ready=false
+    for _ in {1..30};do
+      if ! kill -0 "$payment_lock_sampler_pid" 2>/dev/null;then wait "$payment_lock_sampler_pid";exit 1;fi
+      if node -e 'try{process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).phase==="ready"?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/targeted-payment-locks-http.json";then targeted_observer_ready=true;break;fi
+      sleep 1
+    done
+    [[ "$targeted_observer_ready" == true ]]
+    targeted_browser_status=0
+    run_browser_proof '' '' 'targeted canonical Cashier payment reproduction across ten fresh tours$' || targeted_browser_status=$?
+    kill -TERM "$payment_lock_sampler_pid"
+    targeted_observer_status=0
+    wait "$payment_lock_sampler_pid" || targeted_observer_status=$?
+    payment_lock_sampler_pid=''
+    if [[ "$targeted_browser_status" != 0 ]];then exit "$targeted_browser_status";fi
+    [[ "$targeted_observer_status" == 0 ]]
     docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
       >"$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_CONSERVATION'
 WITH tours AS(SELECT id FROM public.tournaments WHERE club_id='a2000000-0000-4000-8000-000000000001' AND name LIKE 'Targeted Cashier payment TEST %'),
