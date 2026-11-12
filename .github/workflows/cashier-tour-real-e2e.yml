@@ -61,6 +61,10 @@ on:
       - "VinPoker/src/pages/ops/TourCashierWorkbench.tsx"
   workflow_dispatch:
     inputs:
+      pending_source_probe:
+        description: Isolated pending-source fenced outcome; requires full source_generation_probe
+        type: boolean
+        default: false
       source_generation_probe:
         description: Isolated migration342 worker-row contention candidate; never production apply
         type: boolean
@@ -259,6 +263,7 @@ jobs:
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
           LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope || 'none' }}
           LOCAL_SOURCE_GENERATION_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.source_generation_probe && '1' || '0' }}
+          LOCAL_PENDING_SOURCE_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.pending_source_probe && '1' || '0' }}
         run: bash scripts/ops/cashier-tour-real-e2e.sh
       - name: Sanitized Cashier runtime latency evidence
         if: always()

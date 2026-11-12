@@ -17,6 +17,11 @@ audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
 operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
 diagnostic_scope="${LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:-none}"
 source_generation_probe="${LOCAL_SOURCE_GENERATION_PROBE:-0}"
+pending_source_probe="${LOCAL_PENDING_SOURCE_PROBE:-0}"
+if [[ "$pending_source_probe" != 0 && "$pending_source_probe" != 1 ]] ||
+   [[ "$pending_source_probe" == 1 && ( "$source_generation_probe" != 1 || "$diagnostic_scope" != none ) ]]; then
+  echo 'Pending source candidate requires isolated full source-generation probe' >&2;exit 1
+fi
 if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
    [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
@@ -1659,6 +1664,21 @@ AUDIENCE_REALTIME_RECEIPT
        'originalBodyMd5',original_body_md5,'candidateBodyMd5',candidate_body_md5)
        FROM spectator_projection_v2.source_nonblocking_original_v1;" \
         >"$repo_root/output/operations-latency/operations-source-generation-candidate-http.json"
+      if [[ "$pending_source_probe" == 1 ]]; then
+        # Same owned, unadmitted fixture. Never alter the default/342-only path.
+        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+          <"$repo_root/supabase/pending-migrations/20261112193658_spectator_pending_source_outcome.sql"
+        docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DO \$\$ BEGIN
+         IF NOT EXISTS(SELECT 1 FROM spectator_projection_v2.source_pending_original_v1 s
+          WHERE s.original_definition_hash='0557076e4866159dc1095c5257ceb7c6'
+          AND md5(replace(pg_get_functiondef(s.signature::regprocedure),chr(13),''))=s.candidate_definition_hash)
+         THEN RAISE EXCEPTION 'source_pending_candidate_runtime_drift';END IF;END \$\$;
+         SELECT jsonb_build_object('kind','ISOLATED_PENDING_SOURCE_FENCED_CANDIDATE','qualification',false,'productionChanged',false,
+          'migration','20261112193658_spectator_pending_source_outcome.sql',
+          'originalDefinitionMd5',original_definition_hash,'candidateDefinitionMd5',candidate_definition_hash)
+         FROM spectator_projection_v2.source_pending_original_v1;" \
+          >"$repo_root/output/operations-latency/operations-source-pending-candidate-http.json"
+      fi
     fi
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
     node --input-type=module - "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-schema-readiness-http.json" <<'CURRENT_SCHEMA_HTTP_READY'

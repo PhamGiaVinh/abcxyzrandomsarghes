@@ -56,6 +56,20 @@ test('targeted source generation candidate refuses unsafe modes and applies only
  assert.match(script,/sourceGenerationCandidate,fullAudiencePhase/);
 });
 
+test('pending source candidate refuses partial scopes before services and precedes schema freeze',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [{LOCAL_PENDING_SOURCE_PROBE:'invalid'},{LOCAL_PENDING_SOURCE_PROBE:'1'},
+  {LOCAL_PENDING_SOURCE_PROBE:'1',LOCAL_SOURCE_GENERATION_PROBE:'1',LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'cashier-payment'}]){
+  const result=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(result.status,0);assert.match(result.stderr,/Pending source candidate requires/);
+ }
+ const apply=script.indexOf('<"$repo_root/supabase/pending-migrations/20261112193658_spectator_pending_source_outcome.sql"');
+ assert.ok(apply>script.indexOf('<"$repo_root/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql"'));
+ assert.ok(apply<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
+ assert.match(workflow,/LOCAL_PENDING_SOURCE_PROBE:.*inputs.pending_source_probe/);
+});
+
 test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
  const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
  const end=script.indexOf('\nrun_browser_proof\n',start);
