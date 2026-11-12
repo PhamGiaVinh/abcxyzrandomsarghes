@@ -4,6 +4,10 @@ on:
     paths:
       - '.github/workflows/operations-observer-contract.yml'
       - 'VinPoker/scripts/ops/operations-lock-diagnostics*'
+      - 'VinPoker/scripts/ops/operations-spectator-contention-native.mjs'
+      - 'VinPoker/supabase/migrations/20261104001900_public_spectator_compact_generations.sql'
+      - 'VinPoker/supabase/pending-migrations/20270115000000_public_spectator_realtime_v2.sql'
+      - 'VinPoker/supabase/pending-migrations/20270115000001_public_spectator_live_display.sql'
       - 'VinPoker/scripts/ops/cashier-tour-real-e2e.sh'
 permissions:
   contents: read
@@ -87,6 +91,10 @@ jobs:
           assert.equal(failure.exception,true);assert.equal(failure.sqlstate,'23514');assert.equal(failure.constraint,'fixture_check');assert.ok(failure.frames.length>0);assert.equal(failure.originalSqlstateProven,false);assert.equal(JSON.stringify(failure).includes('private diagnostic value'),false);
           writeFileSync(root+'/contract-http.json',JSON.stringify({kind:'ACTUAL_NATIVE_OBSERVER_AND_ROLLBACK_PROBE_CONTRACT_ONLY',passed:true,writeRollbackVerified:true,exceptionMetadataVerified:true,productCashierProven:false,productionChanged:false}));
           JS
+      - name: Actual source generation and claim contention component proof
+        env:
+          TEST_DB_CONTAINER: ${{ job.services.postgres.id }}
+        run: node VinPoker/scripts/ops/operations-spectator-contention-native.mjs "$TEST_DB_CONTAINER" "$RUNNER_TEMP/observer-contract/spectator-contention-http.json"
       - name: Sanitized observer contract evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
