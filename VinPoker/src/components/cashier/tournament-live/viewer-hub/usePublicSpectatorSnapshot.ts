@@ -121,7 +121,7 @@ export function usePublicSpectatorSnapshot(
       setLoading(false);
     };
 
-    coordinator = registerPublicTournamentRead(supabase, tournamentId, refresh);
+    coordinator = registerPublicTournamentRead(supabase, tournamentId, refresh, !metadataOnly && liveTableUpdates);
     observation=observePublicTournament(supabase,tournamentId,event=>{
       if(event.reason==='status')return;
       if(event.invalidatePending||(event.reason==='changed'&&event.components.some(component=>component==='visibility'||component==='hand_visibility')))requestFence?.invalidate();

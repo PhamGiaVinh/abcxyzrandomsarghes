@@ -15,7 +15,7 @@ import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRe
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
 import {audienceSocketDiagnostic} from '../../scripts/ops/operations-audience-scope.mjs';
-import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
+import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_OVERVIEW_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
 import {PublicSnapshotRequestFence} from '../../.local-data/hud-scale-runtime/publicSnapshotRequestFence.mjs';
 import {readPublicTableRequest} from '../../.local-data/hud-scale-runtime/publicTableTransport.mjs';
 import {parsePublicClockSummary} from '../../.local-data/hud-scale-runtime/publicTableHistory.mjs';
@@ -297,7 +297,7 @@ for(const scenario of ['concentrated','distributed','overview']){
    }catch(cause){if(!cause.intentionalHudCancellation)error(reconnecting||!state.online?'offline_snapshot_read':'healthy_snapshot_read');}
    finally{controller.abort();state.snapshotBusy=false;state.snapshotFence=null;}
   };
-  const snapshotCoordinator=registerPublicTournamentRead(client,tour,()=>{const promise=refreshSnapshot();track(promise);return promise;});
+  const snapshotCoordinator=registerPublicTournamentRead(client,tour,()=>{const promise=refreshSnapshot();track(promise);return promise;},overview);
   const snapshot=async(sections=['tables'])=>{
    // A selected-table viewer keeps the hidden parent's access/catalog checks.
    // Overview still reads and grades its visible sections unchanged.
@@ -691,7 +691,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  report.currentTableReader={source:'production-readPublicTableRequest',transport:'postgrest/get_public_tournament_table_clock_v1(full),get_public_tournament_table_live_or_last_hand_v2(table-only)',anonymousAuthority:true,preQueryAdmissionMs:0,responseCache:false,requestTimeoutMs:5000,sourceHintEpochFence:true,supersededReads:clients.reduce((n,c)=>n+(c.supersededTableReads??0),0)};save('running');
  report.snapshotEpochFence={perComponent:true,hiddenHubIgnoresNormalTableHints:!overview,supersededSections:clients.reduce((n,c)=>n+(c.supersededSnapshotSections??0),0)};save('running');
  report.realtimeDiagnostics=realtimeDiagnostics;save('running');
- report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
+ report.watchedReadCoordinator={source:'production-registerPublicTournamentRead',minIntervalMs:PUBLIC_SPECTATOR_READ_INTERVAL_MS,overviewMinIntervalMs:PUBLIC_SPECTATOR_OVERVIEW_READ_INTERVAL_MS,hintJitterMs:PUBLIC_SPECTATOR_HINT_JITTER_MS,snapshotUsesSameCoordinator:true,snapshotUsesSameImplementation:true,pendingAtGrading:clients.filter(c=>c.pending||c.busy||c.snapshotPending||c.snapshotBusy).length};report.requestDispatch=dispatchReport();save('running');
  report.watchedDeliveryTiming={samples:sample('tableRead').length,sourceToReadStartP95Ms:percentile(sample('sourceToReadStart'),.95),readToObservationP95Ms:percentile(sample('tableRead'),.95),readsStartedBeforeSource:sample('sourceToReadStart').filter(ms=>ms<0).length,perDeliveryIdentity:'sourceToReadStart + readToObservation = gradedRealtime',independentPercentilesAreNotAdditive:true};save('running');
  report.watchedCoveringHintTiming={...(coveringHintDiagnostics.get(scenario)??createCoveringHintDiagnostics()).summary(),scope:'Diagnostic only: earliest retained covering numeric table hint received after source timestamp and before chosen observation; at most128 hints/viewer. Deferred sources and missing hints remain unmatched. Exact integer-ms histograms; same-clock signed intervals; independent percentiles are not additive. Production epoch fences and all grades unchanged.'};save('running');
  if(overview){report.overviewCoveringHintTiming=report.watchedCoveringHintTiming;delete report.watchedCoveringHintTiming;save('running');}
