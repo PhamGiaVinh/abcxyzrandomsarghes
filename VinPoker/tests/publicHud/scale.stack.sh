@@ -137,6 +137,9 @@ PUBLIC_HUD_AMENDMENT_NATIVE_REPORT="$repo_root/output/hud-scale/amendment-native
 node tests/publicHud/scale.sources.native.mjs
 PUBLIC_HUD_VISIBILITY_WAKE_REPORT="$repo_root/output/hud-scale/visibility-wake.json" node tests/publicHud/visibility-wake.native.mjs --already-applied
 node tests/publicHud/scale.sql-profile.mjs
+if [[ "${PUBLIC_HUD_SCALE_VIEWERS:-10}" == 1000 && "${PUBLIC_HUD_SCALE_SECONDS:-30}" == 30 ]]; then
+  node tests/publicHud/history-current-profile.native.mjs
+fi
 supabase functions serve --workdir "$test_root" --env-file "$test_root/workers.env" --no-verify-jwt >"$test_root/serve.log" 2>&1 &
 serve_pid=$!
 node tests/publicHud/scale.edge-runtime.mjs capture "$test_root" "$project_id"
