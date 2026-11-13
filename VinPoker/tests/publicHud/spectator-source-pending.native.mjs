@@ -147,6 +147,38 @@ for(const mutation of [`GRANT EXECUTE ON FUNCTION ${signature} TO anon;`,`ALTER 
 for(const role of ['anon','authenticated','service_role'])assert.throws(()=>sql(`SET ROLE ${role};SELECT * FROM spectator_projection_v2.source_pending_original_v1;`,{captureFailure:true}),/permission denied/);
 for(const role of ['anon','authenticated'])assert.throws(()=>sql(`SET ROLE ${role};SELECT public.get_public_spectator_projection_source_v2('${tour}','visibility',gen_random_uuid());`,{captureFailure:true}),/permission denied/);
 assert.throws(()=>sql(`SET request.jwt.claim.role='authenticated';SELECT public.get_public_spectator_projection_source_v2('${tour}','visibility',gen_random_uuid());`,{captureFailure:true}),/forbidden/);
+// Additive bounded source batch candidate; worker remains on the original API
+// until native contracts and the separate wave/deadline tests are established.
+const batchSignature='public.get_public_spectator_projection_sources_v2(jsonb)';
+const batchMigration=readFileSync('supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql','utf8');
+const batchReverse=readFileSync('tests/publicHud/spectator-source-batch.rollback.sql','utf8');
+sql(batchMigration);
+assert.throws(()=>sql(batchMigration,{captureFailure:true}),/preimage_drift/);
+const batchProof=jsonSql(`BEGIN;
+ INSERT INTO public.tournaments(id) VALUES('10000000-0000-4000-8000-000000000091'),('10000000-0000-4000-8000-000000000092');
+ SET LOCAL request.jwt.claim.role='service_role';
+ CREATE TEMP TABLE batch_claims AS WITH claimed AS MATERIALIZED (SELECT public.claim_public_spectator_projection_v2(6) jobs)
+ SELECT jsonb_agg(jsonb_build_object('tournament_id',item->'tournament_id','component',item->'component','fencing_token',item->'fencing_token')) jobs
+ FROM claimed CROSS JOIN LATERAL jsonb_array_elements(claimed.jobs) item;
+ GRANT SELECT ON batch_claims TO service_role;
+ SET LOCAL ROLE service_role;
+ SELECT jsonb_build_object('count',(SELECT jsonb_array_length(jobs) FROM batch_claims),
+ 'equal',(SELECT public.get_public_spectator_projection_sources_v2(jobs)=(SELECT jsonb_agg(item||jsonb_build_object('source',public.get_public_spectator_projection_source_v2((item->>'tournament_id')::uuid,item->>'component',(item->>'fencing_token')::uuid))) FROM jsonb_array_elements(jobs) item) FROM batch_claims),
+ 'wrongTokenFenced',(SELECT public.get_public_spectator_projection_sources_v2(jsonb_build_array((jobs->0)||jsonb_build_object('fencing_token',gen_random_uuid())))->0->'source'='{"fenced":true}'::jsonb FROM batch_claims));
+ ROLLBACK;`);
+assert.equal(batchProof.count,6);assert.equal(batchProof.equal,true);assert.equal(batchProof.wrongTokenFenced,true);
+const validJob={tournament_id:tour,component:'visibility',fencing_token:'00000000-0000-4000-8000-000000000001'};
+for(const invalid of [null,{},[],Array(7).fill(validJob),[validJob,validJob],[{...validJob,extra:true}],
+ [{...validJob,tournament_id:'bad'}],[{...validJob,fencing_token:null}],[{...validJob,component:'clock'}]]){
+ const encoded=JSON.stringify(invalid).replaceAll("'","''");
+ assert.throws(()=>sql(`${service}SELECT ${batchSignature.replace('(jsonb)',`('${encoded}'::jsonb)`)};`,{captureFailure:true}),/invalid_source_batch|duplicate_source_batch_job/);
+}
+for(const role of ['anon','authenticated'])assert.throws(()=>sql(`SET ROLE ${role};SELECT public.get_public_spectator_projection_sources_v2('[]');`,{captureFailure:true}),/permission denied/);
+for(const role of ['authenticated',''])assert.throws(()=>sql(`SET request.jwt.claim.role='${role}';SELECT public.get_public_spectator_projection_sources_v2('[]');`,{captureFailure:true}),/forbidden/);
+assert.throws(()=>sql(`BEGIN;GRANT EXECUTE ON FUNCTION ${batchSignature} TO anon;${strip(batchReverse)}ROLLBACK;`,{captureFailure:true}),/rollback_drift/);
+sql(batchReverse);assert.equal(sql(`SELECT to_regprocedure('${batchSignature}') IS NULL;`),'t');
+assert.equal(hash(),candidateHash);assert.deepEqual(metadata(),before);
+console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
 sql(recovery);assert.equal(hash(),baselineHash);assert.deepEqual(metadata(),before);
 console.log(JSON.stringify({kind:'NATIVE_PENDING_SOURCE_ACTUAL_WORKER_RACE_NOT_HTTP_LOAD',passed:true,baselineHash,candidateHash,
  checks:['baseline-real-source-pending-worker-failure','source-update-commits-during-advisory-lock','candidate-no-payload-no-publish-no-failure','deferred-work-retained','later-worker-absorbs-and-publishes','parallel-startup-post-flush-absorption-retained','source-withdrawal-immediately-revoked','final-flush-delivers-later-notification','logical-deadline-retains-outbox','following-duplicate-workers-recover','metadata-preserved','actor-denied','backup-private','repeat-apply-denied','active-lease-recovery-denied','exact-recovery'],productionChanged:false,qualification:false}));
