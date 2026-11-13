@@ -25,7 +25,7 @@ jobs:
       PGPORT: 5432
       PGUSER: postgres
       PGDATABASE: vinpoker_ops_floor345
-      SCHEMA_ARTIFACT_SHA256: 2a805213f452e83fb01e66726dba3fad22f90675cf03c1e1142a1fc3f09f7d0f
+      SCHEMA_ARTIFACT_SHA256: 7ba648e780efd87058cbb99d37620d590cc2c20780fa01658eb3335a4ff52f37
       SCHEMA_ARTIFACT_DIR: /tmp/floor345-fresh-schema
     steps:
       - uses: actions/checkout@v4
@@ -46,9 +46,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api repos/$GITHUB_REPOSITORY/actions/runs/43463982023 > "$RUNNER_TEMP/capture.json"
-          gh api repos/$GITHUB_REPOSITORY/actions/artifacts/14058760605 > "$RUNNER_TEMP/artifact.json"
-          gh run download 43463982023 --repo "$GITHUB_REPOSITORY" --name live-public-schema --dir "$SCHEMA_ARTIFACT_DIR"
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/43467417184 > "$RUNNER_TEMP/capture.json"
+          gh api repos/$GITHUB_REPOSITORY/actions/artifacts/14059323223 > "$RUNNER_TEMP/artifact.json"
+          gh run download 43467417184 --repo "$GITHUB_REPOSITORY" --name live-public-schema --dir "$SCHEMA_ARTIFACT_DIR"
           node controls/VinPoker/scripts/ops/floor345-fresh-baseline.mjs "$RUNNER_TEMP/capture.json" "$RUNNER_TEMP/artifact.json" "$SCHEMA_ARTIFACT_DIR" candidate/VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql
       - name: Restore actual current schema in empty isolated PostgreSQL only
         working-directory: controls/VinPoker
