@@ -191,6 +191,47 @@ describe("normalizeVisibleTableIds", () => {
 
 
 describe('shared tournament read scheduling', () => {
+  it.each(['hidden','removed','rejected'] as const)('preserves %s boundaries after a default in-flight section changes scheduling',async(boundary)=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5),visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible'),log=vi.spyOn(console,'error').mockImplementation(()=>{});
+    let release!:()=>void,reject!:(cause:Error)=>void;const held=new Promise<void>((resolve,no)=>{release=resolve;reject=no;});
+    let calls=0;const read=vi.fn(async()=>{calls++;if(calls===1)await held;});
+    const client={},detail=registerPublicTournamentRead(client,'transition-'+boundary,read),metadata=registerPublicTournamentRead(client,'transition-'+boundary,async()=>{});
+    try{
+      detail.request();metadata.request();await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);detail.request();metadata.request();await vi.advanceTimersByTimeAsync(1200);
+      if(boundary==='hidden')visibility.mockReturnValue('hidden');if(boundary==='removed')detail.stop();
+      if(boundary==='rejected')reject(new Error('held read failed'));else release();await vi.advanceTimersByTimeAsync(0);
+      expect(read).toHaveBeenCalledTimes(boundary==='rejected'?2:1);
+      if(boundary==='hidden'){visibility.mockReturnValue('visible');document.dispatchEvent(new Event('visibilitychange'));await vi.advanceTimersByTimeAsync(0);expect(read).toHaveBeenCalledTimes(2);}
+      if(boundary==='rejected')expect(log).toHaveBeenCalledTimes(1);
+      if(boundary==='removed'){await vi.advanceTimersByTimeAsync(3000);expect(read).toHaveBeenCalledTimes(1);}
+    }finally{detail.stop();metadata.stop();release();await Promise.resolve();log.mockRestore();visibility.mockRestore();random.mockRestore();vi.useRealTimers();}
+  });
+  it('keeps the original interval and jitter when a queued table completes before its own deadline',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
+    const base=Date.now(),starts:number[]=[];let release!:()=>void;
+    const held=new Promise<void>(resolve=>{release=resolve;});
+    const client={},detail=registerPublicTournamentRead(client,'early-table',async()=>{starts.push(Date.now()-base);if(starts.length===1)await held;}),metadata=registerPublicTournamentRead(client,'early-table',async()=>{});
+    try{
+      detail.request();metadata.request();await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);detail.request();metadata.request();
+      await vi.advanceTimersByTimeAsync(200);release();await vi.advanceTimersByTimeAsync(549);
+      expect(starts).toEqual([0]);await vi.advanceTimersByTimeAsync(1);expect(starts).toEqual([0,1750]);
+    }finally{detail.stop();metadata.stop();release();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
+  });
+  it('does not charge an already eligible table a new interval after an unrelated metadata wave',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
+    const base=Date.now(),starts:number[]=[];let release!:()=>void;
+    const held=new Promise<void>(resolve=>{release=resolve;});
+    const client={},detail=registerPublicTournamentRead(client,'owed-table',async()=>{starts.push(Date.now()-base);if(starts.length===1)await held;}),metadata=registerPublicTournamentRead(client,'owed-table',async()=>{});
+    try{
+      detail.request();metadata.request();await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);detail.request();metadata.request();
+      await vi.advanceTimersByTimeAsync(750);expect(starts).toEqual([0]);
+      await vi.advanceTimersByTimeAsync(450);release();await vi.advanceTimersByTimeAsync(0);
+      expect(starts).toEqual([0,2200]);
+    }finally{detail.stop();metadata.stop();release();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
+  });
   it('shares one hint deadline while first scope reads remain immediate', async () => {
     vi.useFakeTimers(); const random=vi.spyOn(Math,'random').mockReturnValue(.5);
     const client={}, a=vi.fn().mockResolvedValue(undefined), b=vi.fn().mockResolvedValue(undefined);

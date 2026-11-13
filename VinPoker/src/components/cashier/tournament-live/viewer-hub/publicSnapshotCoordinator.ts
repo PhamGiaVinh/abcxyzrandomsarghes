@@ -87,7 +87,7 @@ export class PublicSnapshotCoordinator {
 
 type PublicReadRegistration = { request(): void; stop(): void };
 type ReadSlot = { refresh: () => Promise<void>; pending: boolean; running: boolean; first: boolean; active: boolean; interval: number; lastStart: number | null; due: number | null };
-type ReadGroup = { slots: Set<ReadSlot>; scheduler: PublicSnapshotCoordinator; launch(slot: ReadSlot): void; schedule(mixedOnly?: boolean): void; enableOverview(): void; dispose(): void };
+type ReadGroup = { slots: Set<ReadSlot>; scheduler: PublicSnapshotCoordinator; launch(slot: ReadSlot): void; schedule(mixedOnly?: boolean): void; enableSectionScheduling(): void; dispose(): void };
 const tournamentReads = new WeakMap<object, Map<string, ReadGroup>>();
 
 // One dispatch clock per client/tournament. Consumers retain their own request
@@ -102,9 +102,9 @@ export function registerPublicTournamentRead(client: object, tournamentId: strin
     let timer: ReturnType<typeof setTimeout> | null = null;
     let jitter: number | null = null;
     const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
-    // Default-only groups retain the existing shared dispatch clock. An
-    // overview opts this group into per-section eligibility with one timer;
-    // it must not accelerate clock/metadata reads in the same tournament.
+    // Groups start with the shared dispatch clock. An overview or a queued
+    // in-flight section opts into per-section eligibility with one timer;
+    // neither changes the interval of clock/metadata reads in this tournament.
     // Keep issued per-section deadlines until the group is disposed, including
     // when navigating away from overview with a surviving clock consumer.
     const schedule = (mixedOnly = false) => {
@@ -144,7 +144,7 @@ export function registerPublicTournamentRead(client: object, tournamentId: strin
     }, PUBLIC_SPECTATOR_READ_INTERVAL_MS, PUBLIC_SPECTATOR_HINT_JITTER_MS);
     const onVisible = () => { if (!hidden() && [...slots].some(slot => slot.pending)) schedule(); };
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
-    group = { slots, scheduler, launch, schedule, enableOverview() {
+    group = { slots, scheduler, launch, schedule, enableSectionScheduling() {
       if (mixed) return;
       mixed = true;
       jitter = scheduler.hintDelayMs;
@@ -167,13 +167,17 @@ export function registerPublicTournamentRead(client: object, tournamentId: strin
     // a steady-state dispatch already scheduled.
   }
   const current = group;
-  if (overview) current.enableOverview();
+  if (overview) current.enableSectionScheduling();
   const slot: ReadSlot = { refresh, pending: false, running: false, first: true, active: true, interval: overview ? PUBLIC_SPECTATOR_OVERVIEW_READ_INTERVAL_MS : PUBLIC_SPECTATOR_READ_INTERVAL_MS, lastStart: null, due: null };
   current.slots.add(slot);
   return {
     request() {
       if (!slot.active) return;
       slot.pending = true;
+      // An in-flight section keeps its own owed deadline. Another section's
+      // shared dispatch must not charge it a fresh interval when it finishes.
+      // Existing per-section scheduling retains each interval and viewer jitter.
+      if (slot.running) current.enableSectionScheduling();
       if (slot.first) current.launch(slot);
       else current.schedule(slot.running);
     },
