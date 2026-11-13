@@ -136,8 +136,8 @@ BEGIN
  PERFORM public.floor_table_v3_assert(r->>'error'='seat_identity_changed','stale player identity');
  r:=fast_bust_test.invoke(jsonb_set(c,'{epoch}','2'));
  PERFORM public.floor_table_v3_assert(r->>'error'='table_session_mismatch','control epoch fence');
- INSERT INTO public.tournament_hands(tournament_id,table_id,tournament_table_id,table_session_id,status)
- VALUES((c->>'tour')::uuid,(c->>'table')::uuid,(c->>'table')::uuid,(c->>'session')::uuid,'in_progress');
+ INSERT INTO public.tournament_hands(tournament_id,table_id,tournament_table_id,table_session_id,status,hand_number)
+ VALUES((c->>'tour')::uuid,(c->>'table')::uuid,(c->>'table')::uuid,(c->>'session')::uuid,'in_progress',1);
  r:=fast_bust_test.invoke(c);
  PERFORM public.floor_table_v3_assert(r->>'error'='player_in_active_hand','running hand never forced');
  UPDATE public.tournament_hands SET status='completed' WHERE tournament_id=(c->>'tour')::uuid;
