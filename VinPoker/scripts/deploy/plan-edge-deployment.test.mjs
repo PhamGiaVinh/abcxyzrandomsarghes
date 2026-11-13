@@ -655,11 +655,16 @@ test("target commit outside main is rejected", () => {
 });
 
 test("pre-922 rollback target can be planned with current control-plane", () => {
-  const currentMain = execFileSync("git", ["-C", repositoryRoot, "rev-parse", "origin/main"], { encoding: "utf8" }).trim();
+  // Pin this four-dealer rollback fixture; unrelated functions already run
+  // the historical target. Moving main must not invent another deployment.
+  const currentMain = "6a281d99e29eeb539827c10f429131eacdabf119";
+  const rollbackSha = "1fdc210d4ae1689091e0ad874c559592b0ecd690";
+  const dealerTargets = new Set(["process-swing", "mass-assign", "checkout-dealer", "assign-dealer"]);
   const baselines = {
     frontend: { sha: currentMain, source: "github_deployment_receipt" },
     functions: Object.fromEntries(Object.keys(manifest.functions).map((name) => [name, {
-      sha: name === "tournament-live-clock" ? PRE_FLOOR_CLOCK_BRIDGE_RECEIPT_SHA : currentMain,
+      sha: name === "tournament-live-clock" ? PRE_FLOOR_CLOCK_BRIDGE_RECEIPT_SHA
+        : dealerTargets.has(name) ? currentMain : rollbackSha,
       source: "github_deployment_receipt",
     }])),
   };
@@ -700,5 +705,12 @@ test("pre-922 rollback target can be planned with current control-plane", () => 
   });
   assert.equal(result.frontend, true);
   assert.deepEqual(result.criticalFunctions, ["assign-dealer", "checkout-dealer", "mass-assign", "process-swing"]);
+  // The positive fixture must not weaken the real lookup dependency gate.
+  diffs.functions["cashier-lookup-player"].changed = true;
+  assert.throws(() => buildDeploymentPlan({
+    event: "workflow_dispatch", componentDiffs: diffs,
+    selected: [...dealerTargets], deployFrontend: true, manifest,
+    targetSha: rollbackSha, contractSelection: LEGACY_SELECTION,
+  }), /cashier-lookup-player/);
   assert.equal(result.contractProfile, "dealer_swing_legacy");
 });
