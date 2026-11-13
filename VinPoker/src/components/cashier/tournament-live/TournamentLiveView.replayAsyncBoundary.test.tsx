@@ -27,6 +27,56 @@ vi.mock('./LiveFelt',()=>({LiveFelt:({toActId}:{toActId?:string|null})=> <div da
 // deliberately mock child completion and cannot cover this async boundary.
 beforeEach(()=>vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}}));
 afterEach(()=>{cleanup();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;statuses.length=0;vi.unstubAllGlobals();});
+it.each(['waiting','closed','inactive'])('opens an explicitly scoped replay on a %s table while the unrelated live catalog is not prepared',async state=>{
+ const payload={id:'hand',tableId:'table',handNumber:32,status:'completed',buttonSeat:1,board:[],pot:300,smallBlind:100,bigBlind:200,ante:0,
+  players:[{playerId:'p1',seatNumber:1,name:'PLAYER1',startingStack:1000,endingStack:null,holeCards:[]},{playerId:'p2',seatNumber:2,name:'PLAYER2',startingStack:1000,endingStack:null,holeCards:[]}],
+  actions:[{id:'sb',playerId:'p1',street:'preflop',actionType:'post_sb',amount:100,order:1},{id:'bb',playerId:'p2',street:'preflop',actionType:'post_bb',amount:200,order:2},{id:'fold',playerId:'p1',street:'preflop',actionType:'fold',amount:0,order:3}]};
+ rpc.mockImplementation(async(name:string)=>({error:null,data:
+  name==='get_public_tournament_table_hand_v2'?payload:
+  name==='get_public_tournament_settlement'?null:
+  name==='get_public_tournament_table_history_v2'?{access:'public',items:[],nextCursor:null}:
+  name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:2,average_stack:1000}]:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state,tableId:'table',tableSessionId:'session',hand:null}:
+  name==='get_public_tournament_viewer_snapshot_v2'?{ok:true,access:'preparing',tournamentId:'tour',sections:{}}:null}));
+ // LiveHub supplies a replay target, with no independent live-table override.
+ render(<TournamentLiveView tournamentId="tour" spectator initialReplayTarget={target}/>);
+ const rail=await screen.findByTestId('replay-action-rail');expect(rail).toBeVisible();
+ const slider=screen.getByRole('slider',{name:'Tua lại ván'});expect(slider).toHaveAttribute('aria-valuemax','3');
+ fireEvent.click(screen.getByTitle('Tiến 1 bước',{exact:true}));await waitFor(()=>expect(slider).toHaveAttribute('aria-valuenow','1'));
+});
+it('retains an authoritative access denial on the replay target table',async()=>{
+ rpc.mockImplementation(async(name:string)=>({error:null,data:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'revoked'}:
+  name==='get_public_tournament_table_hand_v2'?{id:'hand',tableId:'table',handNumber:32,status:'completed'}:
+  name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:2,average_stack:1000}]:null}));
+ render(<TournamentLiveView tournamentId="tour" spectator initialReplayTarget={target}/>);
+ expect(await screen.findByText('Bàn này không còn được công khai.')).toBeInTheDocument();
+ expect(screen.queryByTestId('replay-action-rail')).not.toBeInTheDocument();
+ expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
+});
+it('keeps a new replay table when the old target response arrives late',async()=>{
+ let finishOld!:(value:unknown)=>void;const heldOld=new Promise(resolve=>{finishOld=resolve;});
+ const next={handId:'hand-next',tableId:'table-next',handNumber:33};
+ const payload={id:next.handId,tableId:next.tableId,handNumber:33,status:'completed',buttonSeat:1,board:[],pot:300,smallBlind:100,bigBlind:200,ante:0,
+  players:[{playerId:'p1',seatNumber:1,name:'PLAYER1',startingStack:1000,endingStack:null,holeCards:[]},{playerId:'p2',seatNumber:2,name:'PLAYER2',startingStack:1000,endingStack:null,holeCards:[]}],
+  actions:[{id:'sb',playerId:'p1',street:'preflop',actionType:'post_sb',amount:100,order:1},{id:'bb',playerId:'p2',street:'preflop',actionType:'post_bb',amount:200,order:2},{id:'fold',playerId:'p1',street:'preflop',actionType:'fold',amount:0,order:3}]};
+ rpc.mockImplementation((name:string,args:Record<string,unknown>)=>{
+  if(name==='get_public_tournament_table_hand_v2'&&args.p_hand_id==='hand')return heldOld;
+  return Promise.resolve({error:null,data:
+   name==='get_public_tournament_table_hand_v2'?payload:
+   name==='get_public_tournament_table_history_v2'?{access:'public',items:[],nextCursor:null}:
+   name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:2,average_stack:1000}]:
+   name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state:'closed',tableId:args.p_tournament_table_id,tableSessionId:'session',hand:null}:null});
+ });
+ const view=render(<TournamentLiveView tournamentId="tour" spectator initialReplayTarget={target}/>);
+ await waitFor(()=>expect(signals).toHaveLength(1));const oldSignal=signals[0];
+ view.rerender(<TournamentLiveView tournamentId="tour" spectator initialReplayTarget={next}/>);
+ await screen.findByTestId('replay-action-rail');expect(screen.getByText('Hand #33')).toBeInTheDocument();
+ expect(oldSignal.aborted).toBe(true);
+ await act(async()=>{finishOld({error:null,data:{...payload,id:'hand',tableId:'table',handNumber:32}});});
+ expect(screen.getByTestId('replay-action-rail')).toBeVisible();expect(screen.getByText('Hand #33')).toBeInTheDocument();
+ expect(screen.queryByText('Hand #32')).not.toBeInTheDocument();
+});
 it.each(['hand-first','settlement-first'] as const)('finishes exact replay across a table hint with %s responses',async(order)=>{
  let finishHand!:(value:unknown)=>void,finishSettlement!:(value:unknown)=>void;
  const heldHand=new Promise(resolve=>{finishHand=resolve;}),heldSettlement=new Promise(resolve=>{finishSettlement=resolve;});

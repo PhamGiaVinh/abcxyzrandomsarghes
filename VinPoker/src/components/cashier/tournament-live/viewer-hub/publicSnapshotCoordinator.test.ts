@@ -191,6 +191,47 @@ describe("normalizeVisibleTableIds", () => {
 
 
 describe('shared tournament read scheduling', () => {
+  it.each(['hidden','removed','rejected'] as const)('preserves %s boundaries after a default in-flight section changes scheduling',async(boundary)=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5),visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible'),log=vi.spyOn(console,'error').mockImplementation(()=>{});
+    let release!:()=>void,reject!:(cause:Error)=>void;const held=new Promise<void>((resolve,no)=>{release=resolve;reject=no;});
+    let calls=0;const read=vi.fn(async()=>{calls++;if(calls===1)await held;});
+    const client={},detail=registerPublicTournamentRead(client,'transition-'+boundary,read),metadata=registerPublicTournamentRead(client,'transition-'+boundary,async()=>{});
+    try{
+      detail.request();metadata.request();await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);detail.request();metadata.request();await vi.advanceTimersByTimeAsync(1200);
+      if(boundary==='hidden')visibility.mockReturnValue('hidden');if(boundary==='removed')detail.stop();
+      if(boundary==='rejected')reject(new Error('held read failed'));else release();await vi.advanceTimersByTimeAsync(0);
+      expect(read).toHaveBeenCalledTimes(boundary==='rejected'?2:1);
+      if(boundary==='hidden'){visibility.mockReturnValue('visible');document.dispatchEvent(new Event('visibilitychange'));await vi.advanceTimersByTimeAsync(0);expect(read).toHaveBeenCalledTimes(2);}
+      if(boundary==='rejected')expect(log).toHaveBeenCalledTimes(1);
+      if(boundary==='removed'){await vi.advanceTimersByTimeAsync(3000);expect(read).toHaveBeenCalledTimes(1);}
+    }finally{detail.stop();metadata.stop();release();await Promise.resolve();log.mockRestore();visibility.mockRestore();random.mockRestore();vi.useRealTimers();}
+  });
+  it('keeps the original interval and jitter when a queued table completes before its own deadline',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
+    const base=Date.now(),starts:number[]=[];let release!:()=>void;
+    const held=new Promise<void>(resolve=>{release=resolve;});
+    const client={},detail=registerPublicTournamentRead(client,'early-table',async()=>{starts.push(Date.now()-base);if(starts.length===1)await held;}),metadata=registerPublicTournamentRead(client,'early-table',async()=>{});
+    try{
+      detail.request();metadata.request();await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);detail.request();metadata.request();
+      await vi.advanceTimersByTimeAsync(200);release();await vi.advanceTimersByTimeAsync(549);
+      expect(starts).toEqual([0]);await vi.advanceTimersByTimeAsync(1);expect(starts).toEqual([0,1750]);
+    }finally{detail.stop();metadata.stop();release();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
+  });
+  it('does not charge an already eligible table a new interval after an unrelated metadata wave',async()=>{
+    vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
+    const base=Date.now(),starts:number[]=[];let release!:()=>void;
+    const held=new Promise<void>(resolve=>{release=resolve;});
+    const client={},detail=registerPublicTournamentRead(client,'owed-table',async()=>{starts.push(Date.now()-base);if(starts.length===1)await held;}),metadata=registerPublicTournamentRead(client,'owed-table',async()=>{});
+    try{
+      detail.request();metadata.request();await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1000);detail.request();metadata.request();
+      await vi.advanceTimersByTimeAsync(750);expect(starts).toEqual([0]);
+      await vi.advanceTimersByTimeAsync(450);release();await vi.advanceTimersByTimeAsync(0);
+      expect(starts).toEqual([0,2200]);
+    }finally{detail.stop();metadata.stop();release();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
+  });
   it('shares one hint deadline while first scope reads remain immediate', async () => {
     vi.useFakeTimers(); const random=vi.spyOn(Math,'random').mockReturnValue(.5);
     const client={}, a=vi.fn().mockResolvedValue(undefined), b=vi.fn().mockResolvedValue(undefined);
@@ -252,5 +293,126 @@ describe('registration cleanup before dispatch',()=>{
     const read=vi.fn().mockResolvedValue(undefined),registration=registerPublicTournamentRead({},'tour',read);
     try{registration.request();visibility.mockReturnValue('hidden');await vi.advanceTimersByTimeAsync(3000);expect(read).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);visibility.mockReturnValue('visible');document.dispatchEvent(new Event('visibilitychange'));await vi.advanceTimersByTimeAsync(2000);expect(read).toHaveBeenCalledTimes(1);}
     finally{registration.stop();await Promise.resolve();visibility.mockRestore();vi.useRealTimers();}
+  });
+});
+
+describe('overview section eligibility', () => {
+  it('keeps one fixed timer with independent overview and clock deadlines', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(.5);
+    const client = {}, overview = vi.fn().mockResolvedValue(undefined), clock = vi.fn().mockResolvedValue(undefined);
+    const a = registerPublicTournamentRead(client, 'mixed', overview, true), b = registerPublicTournamentRead(client, 'mixed', clock);
+    try {
+      a.request(); b.request(); await vi.advanceTimersByTimeAsync(0);
+      a.request(); b.request();
+      await vi.advanceTimersByTimeAsync(500); a.request(); b.request();
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(749); expect(overview).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1); expect(overview).toHaveBeenCalledTimes(2); expect(clock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(500); expect(clock).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(5000); expect(overview).toHaveBeenCalledTimes(2);
+    } finally { a.stop(); b.stop(); await Promise.resolve(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('serves only one owed read on completion without blocking a clock', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
+    const read = vi.fn().mockImplementationOnce(() => held).mockResolvedValue(undefined), clock = vi.fn().mockResolvedValue(undefined);
+    const client = {}, a = registerPublicTournamentRead(client, 'owed', read, true), b = registerPublicTournamentRead(client, 'owed', clock);
+    try {
+      a.request(); b.request(); await vi.advanceTimersByTimeAsync(0);
+      for (let i = 0; i < 100; i++) a.request(); b.request();
+      await vi.advanceTimersByTimeAsync(2500); expect(read).toHaveBeenCalledTimes(1); expect(clock).toHaveBeenCalledTimes(2);
+      release(); await vi.advanceTimersByTimeAsync(0); expect(read).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(5000); expect(read).toHaveBeenCalledTimes(2);
+    } finally { release(); a.stop(); b.stop(); await Promise.resolve(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('preserves a pending deadline when an overview joins a default group', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const client = {}, clock = vi.fn().mockResolvedValue(undefined), overview = vi.fn().mockResolvedValue(undefined);
+    const b = registerPublicTournamentRead(client, 'transition', clock);
+    let a: ReturnType<typeof registerPublicTournamentRead> | undefined;
+    try {
+      b.request(); await vi.advanceTimersByTimeAsync(0); b.request(); await vi.advanceTimersByTimeAsync(500);
+      a = registerPublicTournamentRead(client, 'transition', overview, true); a.request(); await vi.advanceTimersByTimeAsync(0);
+      expect(overview).toHaveBeenCalledTimes(1); expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(999); expect(clock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1); expect(clock).toHaveBeenCalledTimes(2);
+      a.stop(); b.request(); await vi.advanceTimersByTimeAsync(1499); expect(clock).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1); expect(clock).toHaveBeenCalledTimes(3);
+    } finally { a?.stop(); b.stop(); await Promise.resolve(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('pauses hidden dispatch and cancels removed sections', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const read = vi.fn().mockResolvedValue(undefined), a = registerPublicTournamentRead({}, 'hidden', read, true);
+    try {
+      a.request(); await vi.advanceTimersByTimeAsync(0); a.request(); visibility.mockReturnValue('hidden');
+      await vi.advanceTimersByTimeAsync(2000); expect(read).toHaveBeenCalledTimes(1);
+      visibility.mockReturnValue('visible'); document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0); expect(read).toHaveBeenCalledTimes(2);
+      a.request(); a.stop(); await vi.advanceTimersByTimeAsync(5000); expect(read).toHaveBeenCalledTimes(2);
+    } finally { a.stop(); await Promise.resolve(); visibility.mockRestore(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('does not repay jitter when overview joins near an existing deadline', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(.5);
+    const client = {}, clock = vi.fn().mockResolvedValue(undefined);
+    const b = registerPublicTournamentRead(client, 'near-deadline', clock);
+    let a: ReturnType<typeof registerPublicTournamentRead> | undefined;
+    try {
+      b.request(); await vi.advanceTimersByTimeAsync(1000); b.request();
+      await vi.advanceTimersByTimeAsync(700);
+      a = registerPublicTournamentRead(client, 'near-deadline', async () => {}, true); a.request();
+      await vi.advanceTimersByTimeAsync(49); expect(clock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1); expect(clock).toHaveBeenCalledTimes(2);
+    } finally { a?.stop(); b.stop(); await Promise.resolve(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('releases a rejected overview and serves one pending read without blocking metadata', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let reject!: (error: Error) => void;
+    const held = new Promise<void>((_, fail) => { reject = fail; });
+    const read = vi.fn().mockImplementationOnce(() => held).mockResolvedValue(undefined), metadata = vi.fn().mockResolvedValue(undefined);
+    const client = {}, a = registerPublicTournamentRead(client, 'rejection', read, true), b = registerPublicTournamentRead(client, 'rejection', metadata);
+    try {
+      a.request(); b.request(); await vi.advanceTimersByTimeAsync(0); a.request(); b.request();
+      await vi.advanceTimersByTimeAsync(2000); expect(metadata).toHaveBeenCalledTimes(2);
+      reject(new Error('failed read')); await vi.advanceTimersByTimeAsync(0);
+      expect(log).toHaveBeenCalledTimes(1); expect(read).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(5000); expect(read).toHaveBeenCalledTimes(2);
+    } finally { a.stop(); b.stop(); await Promise.resolve(); log.mockRestore(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('does not start a mixed read if hidden between launch and its microtask', async () => {
+    vi.useFakeTimers(); const random = vi.spyOn(Math, 'random').mockReturnValue(.5);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const read = vi.fn().mockResolvedValue(undefined), a = registerPublicTournamentRead({}, 'microtask', read, true);
+    try {
+      a.request(); visibility.mockReturnValue('hidden'); await vi.advanceTimersByTimeAsync(3000);
+      expect(read).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0);
+      visibility.mockReturnValue('visible'); document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(1250); expect(read).toHaveBeenCalledTimes(1);
+    } finally { a.stop(); await Promise.resolve(); visibility.mockRestore(); random.mockRestore(); vi.useRealTimers(); }
+  });
+  it('coalesces 1000 mixed-viewer hint storms without accelerating clocks', async () => {
+    vi.useFakeTimers(); let sample = 0; const random = vi.spyOn(Math, 'random').mockImplementation(() => ((sample++ % 500) / 500));
+    const starts: number[] = [], clocks: number[] = [], registrations: ReturnType<typeof registerPublicTournamentRead>[] = [];
+    try {
+      for (let i = 0; i < 1000; i++) {
+        const client = {};
+        registrations.push(registerPublicTournamentRead(client, 'storm', async () => { starts.push(Date.now()); }, true));
+        registrations.push(registerPublicTournamentRead(client, 'storm', async () => { clocks.push(Date.now()); }));
+      }
+      registrations.forEach(r => r.request()); await vi.advanceTimersByTimeAsync(0);
+      const initial = Date.now();
+      for (let i = 0; i < 10; i++) { registrations.forEach(r => r.request()); await vi.advanceTimersByTimeAsync(50); }
+      expect(vi.getTimerCount()).toBe(1000);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(starts).toHaveLength(2000); expect(clocks).toHaveLength(2000);
+      expect(Math.min(...starts.slice(1000)) - initial).toBeGreaterThanOrEqual(1000);
+      expect(Math.max(...starts.slice(1000)) - initial).toBeLessThan(1500);
+      expect(Math.min(...clocks.slice(1000)) - initial).toBeGreaterThanOrEqual(1500);
+      const buckets = new Map<number, number>();
+      starts.slice(1000).forEach(t => buckets.set(t, (buckets.get(t) ?? 0) + 1));
+      expect(Math.max(...buckets.values())).toBeLessThanOrEqual(4);
+      await vi.advanceTimersByTimeAsync(5000); expect(starts).toHaveLength(2000); expect(clocks).toHaveLength(2000);
+    } finally { registrations.forEach(r => r.stop()); await Promise.resolve(); random.mockRestore(); vi.useRealTimers(); }
   });
 });
