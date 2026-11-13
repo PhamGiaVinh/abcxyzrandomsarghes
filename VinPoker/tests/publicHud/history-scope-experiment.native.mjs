@@ -1,6 +1,9 @@
 // Transactional disposable-fixture experiment. Never an apply/release runner.
 import assert from 'node:assert/strict';
-import {writeFileSync} from 'node:fs';
+import {writeFileSync,mkdtempSync,readdirSync,readFileSync,rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join as pathJoin} from 'node:path';
 import {sql} from './nativeDb.mjs';
 const jsonSql=query=>{
  try{return JSON.parse(sql('\\set VERBOSITY sqlstate\n'+query,{captureFailure:true}));}
@@ -11,6 +14,8 @@ assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,'vinpoker_hud_test_history_pl
 assert.equal(process.env.PUBLIC_HUD_LOCAL_PORT,'5432');
 assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-hud-history-profile-isolated-ci');
 const signature='public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)';
+const metadata=()=>jsonSql(`SELECT jsonb_build_object('oid',oid,'owner',proowner,'acl',proacl,'config',proconfig,'stable',provolatile,'definer',prosecdef) FROM pg_proc WHERE oid='${signature}'::regprocedure;`);
+const originalMetadata=metadata();
 const original=sql(`SELECT replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),'');`);
 assert.equal(sql(`SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));`),'4f8894bc8dd9114663ace03f9b3225e3');
 const marker='WITH page AS MATERIALIZED (';
@@ -101,6 +106,46 @@ for(const [name,change,cursor,scope] of cases){
  if(measured){timings.push({case:name,samples:result.timings});plans.push({case:name,variants:result.plans.map(row=>({variant:row.variant,plan:cleanPlan(row.payload[0])}))});}
 }
 assert.equal(sql(`SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));`),'4f8894bc8dd9114663ace03f9b3225e3');
+// Native history-only contention probe. It does not exercise HTTP, WebSocket,
+// spectator writers or the million-hand capacity workload.
+const concurrent=[];
+let concurrencyFailure=null;
+assert.equal(process.platform,'linux','Concurrent probe requires the isolated Linux fixture');
+const directory=mkdtempSync(pathJoin(tmpdir(),'hud-history-scope-'));
+const pgEnvironment={...process.env,PGHOST:'127.0.0.1',PGPORT:'5432',PGUSER:'postgres',PGDATABASE:process.env.PUBLIC_HUD_LOCAL_DATABASE};
+for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGSYSCONFDIR','PGOPTIONS'])delete pgEnvironment[key];
+try{
+ const script=pathJoin(directory,'history.sql');
+ writeFileSync(script,`BEGIN READ ONLY;SET LOCAL statement_timeout='5s';SET LOCAL ROLE anon;SELECT ${call()};COMMIT;`);
+ for(const [index,variant] of ['baseline-before','candidate-first','candidate-second','baseline-after'].entries()){
+  sql((variant.startsWith('baseline')?original:candidate)+';');
+  const prefix=pathJoin(directory,'arm'+index);
+  const arm={variant,clients:10,threads:2,transactionsPerClient:110,warmupPerClient:10,status:'running',samples:[]};concurrent.push(arm);
+  let processFailed=false;
+  try{execFileSync('pgbench',['-n','-M','prepared','-c','10','-j','2','-t','110','-f',script,'-l','--log-prefix='+prefix],{
+   stdio:'pipe',maxBuffer:1024*1024,timeout:60000,
+   env:pgEnvironment,
+  });}catch{processFailed=true;}
+  const seen=new Map(),samples=arm.samples;
+  for(const file of readdirSync(directory).filter(file=>file.startsWith('arm'+index+'.'))){
+   for(const line of readFileSync(pathJoin(directory,file),'utf8').trim().split('\n')){
+    const fields=line.trim().split(/\s+/),client=Number(fields[0]),ms=Number(fields[2])/1000;
+    assert.ok(Number.isInteger(client)&&client>=0&&client<10&&Number.isFinite(ms)&&ms>=0,'Bounded pgbench sample required');
+    const position=seen.get(client)??0;seen.set(client,position+1);samples.push({client,ms,warmup:position<10});
+   }
+  }
+  if(processFailed)throw Error('Isolated native history pgbench failed; raw diagnostics withheld');
+  assert.equal(samples.length,1100);assert.equal(seen.size,10);assert.ok([...seen.values()].every(count=>count===110));
+  arm.status='completed';
+ }
+}catch{
+ concurrencyFailure='Bounded native history contention probe failed; no capacity inference';
+ if(concurrent.length)concurrent.at(-1).status='failed';
+}finally{
+ try{sql(original+';');assert.equal(sql(`SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));`),'4f8894bc8dd9114663ace03f9b3225e3');assert.deepEqual(metadata(),originalMetadata);}
+ finally{rmSync(directory,{recursive:true,force:true});}
+}
 writeFileSync('output/hud-scale/history-scope-experiment.json',JSON.stringify({kind:'TRANSACTIONAL_HISTORY_SCOPE_EXPERIMENT_NOT_CAPACITY',
- qualification:false,productionChanged:false,baselineHash:'4f8894bc8dd9114663ace03f9b3225e3',checks:cases.map(row=>row[0]),timings,plans,
- scope:'Each fixture transaction rolls back. Anonymous function ABBA arms each warm up3 calls then measure30. Extracted statement EXPLAIN uses literal scope/cursor and a scalar config subquery, not the cached PL/pgSQL parameter plan; only loop/buffer attribution, not exact runtime nested planning. Exports only allowlisted plan counters. Neither native timings nor plans establish HTTP capacity.'},null,2));
+ qualification:false,productionChanged:false,concurrencyFailure,metadataRestored:true,baselineHash:'4f8894bc8dd9114663ace03f9b3225e3',checks:cases.map(row=>row[0]),timings,plans,concurrent,
+ scope:'Parity fixture transactions roll back. Anonymous function ABBA arms warm up3 calls then measure30. History-only direct PostgreSQL concurrency uses10 clients/2threads, first page only,110 transactions/client with first10 separately flagged warmup,60s process bound per arm. Function replacements between contention arms are committed only in disposable fixture, original hash/metadata restored before report. This is not HTTP/PostgREST queue reproduction. Extracted statement EXPLAIN uses literal scope/cursor and scalar config subquery, not cached PL/pgSQL plan; only loop/buffer attribution. Neither timings nor plans establish capacity.'},null,2));
+if(concurrencyFailure)throw Error(concurrencyFailure);
