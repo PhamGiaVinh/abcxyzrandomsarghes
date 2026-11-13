@@ -21,7 +21,8 @@ const metadata=JSON.parse(sql(`SELECT jsonb_build_object('definitionMd5',md5(rep
 assert.ok(metadata.stable&&metadata.definer&&metadata.numericStrict,'Current history contract differs');
 let report;
 try{
- report=JSON.parse(sql(`BEGIN READ ONLY;
+ report=JSON.parse(sql(`\\set VERBOSITY sqlstate
+ BEGIN READ ONLY;
  SET LOCAL statement_timeout='30s';SET LOCAL track_functions='all';SET LOCAL ROLE anon;
  DO $profile$ DECLARE value jsonb;initial jsonb;cursor_time timestamptz;cursor_hand uuid;
  started timestamptz;samples jsonb:='[]';mode text;sample_ms numeric; BEGIN
@@ -47,7 +48,12 @@ try{
    FROM pg_stat_xact_user_functions WHERE funcid IN ('${signature}'::regprocedure,
     'tracker_analytics_v1.safe_integer(jsonb)'::regprocedure,'tracker_analytics_v1.public_context(uuid,uuid)'::regprocedure)));
  ROLLBACK;`,{captureFailure:true}));
-}catch{throw Error('Read-only current history profiling failed; raw SQL diagnostics withheld');}
+}catch(reason){
+ const state=/ERROR:\s+([0-9A-Z]{5})\b/.exec(String(reason?.stderr??''))?.[1]??'UNKNOWN';
+ writeFileSync('output/hud-scale/history-current-profile.json',JSON.stringify({kind:'READ_ONLY_FINAL_SEEDED_HISTORY_FUNCTION_ATTRIBUTION',
+  status:'failed',sqlstate:state,qualification:false,productionChanged:false,metadata},null,2));
+ throw Error('Read-only current history profiling failed (SQLSTATE '+state+'); raw SQL diagnostics withheld');
+}
 assert.equal(report.samples.length,60);
 assert.ok(report.functions.some(row=>row.name==='get_public_player_hud_history_v1'&&row.calls>=61),'Function timing unavailable');
 writeFileSync('output/hud-scale/history-current-profile.json',JSON.stringify({kind:'READ_ONLY_FINAL_SEEDED_HISTORY_FUNCTION_ATTRIBUTION',nativeFixture,
