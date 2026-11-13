@@ -35,9 +35,12 @@ test("campaign applies use owner authorization without native reviewer capabilit
   }
 });
 
-test("owner-approved critical release does not require a paid reviewer gate", () => {
+test("owner-approved critical and frontend releases verify the existing reviewer gate", () => {
   const gate = workflow.slice(workflow.indexOf("  validate-critical-environment:"), workflow.indexOf("  deploy-critical-edge:"));
-  assert.doesNotMatch(gate, /required_reviewers|gh api/);
+  assert.match(gate, /gh api.*environments\/dealer-swing-production-critical/);
+  assert.match(gate, /required_reviewers/);
+  assert.match(gate, /length > 0/);
+  assert.match(gate, /needs\.plan\.outputs\.frontend == 'true'/);
   const script = gate.match(/node --input-type=module <<'NODE'\r?\n([\s\S]*?)\r?\n\s*NODE/);
   assert.ok(script, "owner authorization must execute before critical deployment");
   const valid = { RELEASE_EVENT: "workflow_dispatch", RELEASE_REF: "refs/heads/main", INITIAL_ACTOR: "owner", TRIGGERING_ACTOR: "owner", REPOSITORY_OWNER: "owner" };
