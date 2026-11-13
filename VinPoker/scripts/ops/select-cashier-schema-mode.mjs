@@ -8,6 +8,8 @@ import { createHash } from 'node:crypto';
 const policyPath = 'VinPoker/scripts/ops/cashier-hud35-qualified-scope.json';
 const selectorPath = 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs';
 const receiptPath = 'VinPoker/scripts/ops/fixtures/cashier-ci-hud35-qualified-receipt-20261107.json';
+const sourcePackagePolicy = 'VinPoker/scripts/ops/cashier-source342-344-qualified-scope.json';
+const sourcePackageReceipt = 'VinPoker/scripts/ops/fixtures/cashier-source342-344-runtime-receipt.json';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const canonicalHash = bytes => hash(bytes.toString('utf8').replace(/\r\n?/g, '\n'));
 const sha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
@@ -115,6 +117,66 @@ export function qualifiedHud35(files, { repo, base, head }) {
 const prefixes = ['VinPoker/supabase/migrations/', 'VinPoker/supabase/migration-archive/', 'VinPoker/supabase/pending-migrations/'];
 const isMigrationPath = path => typeof path === 'string' && prefixes.some(prefix => path.startsWith(prefix));
 
+export function qualifiedSource342(files, context) {
+  const { diffBase } = verifyTreeDiff(files, context);
+  // This bounded manifest contains source files, not database dumps. Avoid
+  // allocating the historical reader's 16MiB buffer for every pinned blob.
+  const git = (...args) => execFileSync('git', ['-C', context.repo, ...args], { maxBuffer: 2 * 1024 * 1024 });
+  const { base, head } = context;
+  const blob = (revision, path) => {
+    const entry = git('ls-tree', revision, '--', path).toString();
+    assert.match(entry, /^100644 blob [a-f0-9]{40}\t/, `Regular tracked file required: ${path}`);
+    return git('show', `${revision}:${path}`);
+  };
+  for (const path of [sourcePackagePolicy, sourcePackageReceipt, policyPath, receiptPath, selectorPath,
+    'VinPoker/scripts/ops/cashier-source-package-evidence.mjs',
+    'VinPoker/scripts/ops/cashier-source-package.test.mjs',
+    '.github/workflows/cashier-tour-real-e2e.yml']) {
+    assert.ok(blob(head, path).equals(blob(base, path)), `PR changes trusted guard: ${path}`);
+  }
+  const policy = JSON.parse(blob(base, sourcePackagePolicy));
+  assert.equal(policy.schemaVersion, 1);
+  assert.equal(policy.kind, 'EXACT_SOURCE342_344_CURRENT_RUNTIME_EXCEPTION');
+  const proof = policy.proof;
+  assert.equal(proof.run, 43383314661);
+  assert.equal(proof.sourceSha, 'bea2c224a87722d7fa674d835224c304bc6bc757');
+  assert.equal(proof.workflowId, 360553822);
+  assert.equal(proof.actor, 'PhamGiaVinh');
+  assert.equal(proof.event, 'workflow_dispatch');
+  assert.equal(proof.conclusion, 'success');
+  assert.equal(proof.artifact.id, 14018845047);
+  assert.equal(proof.artifact.sha256, '075cc1341c72942d885e3935e0a74091505d41e114c52752f85dfb69b97a8ed7');
+  assert.equal(proof.receiptPath, sourcePackageReceipt);
+  assert.equal(proof.receiptSha256, '0c4fe1f61d65d3b759e18f6b240de4a4fa8359124e649da9465d0edbb3fa1635');
+  assert.equal(canonicalHash(blob(base, sourcePackageReceipt)), proof.receiptSha256);
+  const receipt = JSON.parse(blob(base, sourcePackageReceipt));
+  for (const key of ['run', 'sourceSha', 'workflowId', 'actor', 'event', 'conclusion', 'artifact']) {
+    assert.deepEqual(receipt[key], proof[key], `Evidence mismatch: ${key}`);
+  }
+  const migrations = files.filter(f => isMigrationPath(f.filename) || isMigrationPath(f.previous_filename));
+  assert.equal(policy.migrationScope.length, 4);
+  assert.equal(new Set(policy.migrationScope.map(f => f.path)).size, 4);
+  assert.equal(migrations.length, 4, 'Complete exact source package required');
+  const status = { A: 'added', M: 'modified' };
+  for (const expected of policy.migrationScope) {
+    const actual = migrations.find(f => f.filename === expected.path);
+    assert.ok(actual && actual.previous_filename === undefined, 'Exact package path required');
+    assert.equal(actual.status, status[expected.status]);
+    assert.equal(canonicalHash(blob(head, expected.path)), expected.headSha256, 'SQL/catalog drift');
+    if (expected.status === 'A') {
+      assert.equal(git('ls-tree', diffBase, '--', expected.path).length, 0, 'SQL must be new');
+    } else {
+      assert.equal(expected.status, 'M');
+      assert.equal(canonicalHash(blob(diffBase, expected.path)), expected.baseSha256, 'Catalog preimage drift');
+    }
+  }
+  assert.ok(policy.runtimeFiles.length > 0, 'Runtime pins required');
+  for (const file of policy.runtimeFiles) {
+    assert.equal(canonicalHash(blob(head, file.path)), file.sha256, `Runtime guard drift: ${file.path}`);
+  }
+  return true;
+}
+
 export function selectCashierSchemaMode(pages, context) {
   assert.ok(Array.isArray(pages) && pages.length > 0, 'PR file pages required');
   assert.ok(pages.every(Array.isArray), 'PR file pages malformed');
@@ -137,6 +199,8 @@ export function selectCashierSchemaMode(pages, context) {
   // A stale response cannot hide a migration in the actual head.
   if (context) verifyTreeDiff(files, context);
   if (historical && context) {
+    try { if (qualifiedSource342(files, context)) return 'current-source342'; }
+    catch (error) { console.error(`Exact source342 package rejected: ${error.message}`); }
     // Rejection preserves the original historical requirement, never a PASS.
     try { if (qualifiedHud35(files, context)) return 'current'; }
     catch (error) { console.error(`Qualified HUD35 rejected; historical proof required: ${error.message}`); }
