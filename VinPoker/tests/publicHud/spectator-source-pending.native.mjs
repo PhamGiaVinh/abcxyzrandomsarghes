@@ -197,6 +197,33 @@ for(const characters of [530000,300000]){
  else{assert.ok(measured.individualCount>0);assert.ok(measured.sourceCount>0);}
  budgetProof.push({characters,...measured});
 }
+// Exact transport boundary through the actual canonical getter. All updates
+// remain inside one fixture transaction: this proves byte budgeting, not source
+// invalidation/claim concurrency (covered by the committed races below).
+const boundaryProof=jsonSql(`BEGIN;SET LOCAL request.jwt.claim.role='service_role';
+ CREATE TEMP TABLE boundary_samples(delta integer,sourceBytes integer,batchBytes integer,individual boolean);
+ DO $boundary$ DECLARE t uuid:=gen_random_uuid();tab uuid:=gen_random_uuid();jobs jsonb;item jsonb;source jsonb;batch jsonb;base integer;d integer;actual integer;
+ BEGIN
+  INSERT INTO public.tournaments(id) VALUES(t);
+  INSERT INTO public.tournament_tables(id,tournament_id,table_name) VALUES(tab,t,'');
+  PERFORM spectator_projection_v2.mark_dirty(t,'tables','generation','component');
+  SELECT jsonb_agg(jsonb_build_object('tournament_id',x->'tournament_id','component',x->'component','fencing_token',x->'fencing_token')) INTO jobs
+  FROM jsonb_array_elements(public.claim_public_spectator_projection_v2(50)) x WHERE x->>'tournament_id'=t::text AND x->>'component'='tables';
+  IF jsonb_array_length(jobs) IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'boundary_claim_missing';END IF;
+  item:=jobs->0;
+  source:=public.get_public_spectator_projection_source_v2(t,'tables',(item->>'fencing_token')::uuid);
+  base:=octet_length(convert_to(jsonb_build_array(item||jsonb_build_object('source',source))::text,'UTF8'));
+  FOREACH d IN ARRAY ARRAY[-1,0,1] LOOP
+   UPDATE public.tournament_tables SET table_name=repeat('a',1040384-base+d) WHERE id=tab;
+   source:=public.get_public_spectator_projection_source_v2(t,'tables',(item->>'fencing_token')::uuid);
+   actual:=octet_length(convert_to(jsonb_build_array(item||jsonb_build_object('source',source))::text,'UTF8'));
+   batch:=public.get_public_spectator_projection_sources_v2(jobs);
+   INSERT INTO boundary_samples VALUES(d,actual,octet_length(convert_to(batch::text,'UTF8')),coalesce(batch->0->'requiresIndividual'='true'::jsonb,false));
+  END LOOP;
+ END $boundary$;
+ SELECT jsonb_agg(to_jsonb(s) ORDER BY delta) FROM boundary_samples s;ROLLBACK;`);
+assert.equal(boundaryProof.length,3);
+for(const row of boundaryProof){assert.equal(row.sourcebytes,1040384+row.delta);assert.ok(row.batchbytes<=1048576);assert.equal(row.individual,row.delta===1);}
 const validJob={tournament_id:tour,component:'visibility',fencing_token:'00000000-0000-4000-8000-000000000001'};
 for(const invalid of [null,{},[],Array(7).fill(validJob),[validJob,validJob],[{...validJob,extra:true}],
  [{...validJob,tournament_id:'bad'}],[{...validJob,fencing_token:null}],[{...validJob,component:'clock'}]]){
@@ -269,10 +296,51 @@ sql(`UPDATE public.tournaments SET deleted_at=NULL WHERE id='${largeTour}';SELEC
 const restoredIndividual=await processPublicSpectatorJobs(native,Date.now()+20000,'batch');
 assert.ok(restoredIndividual.results.every(row=>row.published&&!row.error));
 assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${largeTour}';`),'0');
+// Deliberately malformed source in this disposable fixture exercises a real
+// canonical SQL exception; no replacement/stub source getter is installed.
+const errorTour='10000000-0000-4000-8000-000000000098',errorTable='50000000-0000-4000-8000-000000000098',errorSession='60000000-0000-4000-8000-000000000098',errorHand='20000000-0000-4000-8000-000000000098';
+sql(`INSERT INTO public.tournaments(id) VALUES('${errorTour}');INSERT INTO public.table_sessions(id) VALUES('${errorSession}');
+ INSERT INTO public.tournament_tables(id,tournament_id,table_session_id) VALUES('${errorTable}','${errorTour}','${errorSession}');
+ INSERT INTO public.tournament_hands(id,tournament_id,tournament_table_id,table_session_id,status,community_cards)
+ VALUES('${errorHand}','${errorTour}','${errorTable}','${errorSession}','in_progress','{}');
+ SELECT spectator_projection_v2.mark_dirty('${errorTour}','tables','generation','component');`);
+let isolatedSqlError,unexpectedIndividualReads=0;
+const errorClient={async rpc(name,args){
+ if(name==='get_public_spectator_projection_source_v2')unexpectedIndividualReads++;
+ const reply=await native.rpc(name,args);
+ if(name==='get_public_spectator_projection_sources_v2')isolatedSqlError=reply.data?.find(item=>item.tournament_id===errorTour&&item.component==='tables');
+ return reply;
+}};
+const isolatedResult=await processPublicSpectatorJobs(errorClient,Date.now()+20000,'batch');
+assert.equal(isolatedResult.processed,2);assert.equal(unexpectedIndividualReads,0);
+assert.equal(isolatedSqlError.error,'source_failed');assert.equal(isolatedSqlError.sqlstate,'22023');
+assert.deepEqual(Object.keys(isolatedSqlError).sort(),['component','error','fencing_token','sqlstate','tournament_id']);
+assert.equal(isolatedResult.results.find(row=>row.key.startsWith(errorTour+':tables:'))?.error,'source_failed');
+assert.equal(isolatedResult.results.find(row=>row.key.startsWith(errorTour+':visibility:'))?.published,true);
+sql(`UPDATE public.tournament_hands SET community_cards='[]' WHERE id='${errorHand}';SELECT spectator_projection_v2.mark_dirty('${errorTour}','tables','generation','component');`);
+const repairedSource=await processPublicSpectatorJobs(native,Date.now()+20000,'batch');
+assert.equal(repairedSource.processed,1);assert.ok(repairedSource.results[0].published&&!repairedSource.results[0].error);
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${errorTour}';`),'0');
+const editedTour='10000000-0000-4000-8000-000000000099';
+sql(`INSERT INTO public.tournaments(id) VALUES('${editedTour}');`);
+let editedAfterRead=false;
+const editClient={async rpc(name,args){
+ const reply=await native.rpc(name,args);
+ if(name==='get_public_spectator_projection_sources_v2'&&!editedAfterRead&&reply.data?.some(item=>item.tournament_id===editedTour&&item.source?.sourceVector)){
+  sql(`UPDATE public.tournaments SET status='final_table' WHERE id='${editedTour}';`);editedAfterRead=true;
+ }
+ return reply;
+}};
+const editedSource=await processPublicSpectatorJobs(editClient,Date.now()+20000,'batch');
+assert.equal(editedAfterRead,true);assert.equal(editedSource.processed,1);assert.equal(editedSource.results[0].published,false);assert.equal(editedSource.results[0].error,undefined);
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.publications WHERE tournament_id='${editedTour}';`),'0');
+const editedRecovery=await processPublicSpectatorJobs(native,Date.now()+20000,'batch');
+assert.equal(editedRecovery.processed,1);assert.equal(editedRecovery.results[0].published,true);
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${editedTour}';`),'0');
 assert.throws(()=>sql(`BEGIN;GRANT EXECUTE ON FUNCTION ${batchSignature} TO anon;${strip(batchReverse)}ROLLBACK;`,{captureFailure:true}),/rollback_drift/);
 sql(batchReverse);assert.equal(sql(`SELECT to_regprocedure('${batchSignature}') IS NULL;`),'t');
 assert.equal(hash(),candidateHash);assert.deepEqual(metadata(),before);
-console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,budgetProof,batchWaveSizes,allFourComponents:true,batchPendingSourceFenced:true,batchWithdrawalImmediatelyRevoked:true,followingBatchWorkerRecovers:true,competingWorkers:2,uniqueCompetingJobs:56,individualSourceUntruncated:true,withdrawalBeforeIndividualPublicAccessRevoked:true,staleVisibilityPublicationRejected:true,individualRestorationRecovers:true,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
+console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,budgetProof,boundaryProof,batchWaveSizes,allFourComponents:true,batchPendingSourceFenced:true,batchWithdrawalImmediatelyRevoked:true,followingBatchWorkerRecovers:true,competingWorkers:2,uniqueCompetingJobs:56,individualSourceUntruncated:true,withdrawalBeforeIndividualPublicAccessRevoked:true,staleVisibilityPublicationRejected:true,individualRestorationRecovers:true,canonicalSqlErrorIsolated:true,sqlErrorNeverFallsBack:true,repairedSourceRecovers:true,postReadSourceEditFenced:true,postEditWorkerRecovers:true,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
 sql(recovery);assert.equal(hash(),baselineHash);assert.deepEqual(metadata(),before);
 console.log(JSON.stringify({kind:'NATIVE_PENDING_SOURCE_ACTUAL_WORKER_RACE_NOT_HTTP_LOAD',passed:true,baselineHash,candidateHash,
  checks:['baseline-real-source-pending-worker-failure','source-update-commits-during-advisory-lock','candidate-no-payload-no-publish-no-failure','deferred-work-retained','later-worker-absorbs-and-publishes','parallel-startup-post-flush-absorption-retained','source-withdrawal-immediately-revoked','final-flush-delivers-later-notification','logical-deadline-retains-outbox','following-duplicate-workers-recover','metadata-preserved','actor-denied','backup-private','repeat-apply-denied','active-lease-recovery-denied','exact-recovery'],productionChanged:false,qualification:false}));
