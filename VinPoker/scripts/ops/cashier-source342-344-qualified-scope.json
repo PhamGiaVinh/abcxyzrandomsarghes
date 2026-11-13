@@ -53,6 +53,10 @@
       "sha256": "91f2e91be9027fdce2c9b33a223e37e419cf1842ada22e4ff7866eeee59250af"
     },
     {
+      "path": "VinPoker/scripts/ops/cashier-schema-mode.test.mjs",
+      "sha256": "e1b8558a547cf272ffb872a33814998ddc6a68bec17a20ed933f15ef6dc8616d"
+    },
+    {
       "path": "VinPoker/scripts/ops/cashier-tour-real-e2e.sh",
       "sha256": "0c2c90a397d67dd5fe648025bd0166bcaf9fbac539130047b1bb18ddae24db32"
     },

@@ -131,7 +131,6 @@ export function qualifiedSource342(files, context) {
   for (const path of [sourcePackagePolicy, sourcePackageReceipt, policyPath, receiptPath, selectorPath,
     'VinPoker/scripts/ops/cashier-source-package-evidence.mjs',
     'VinPoker/scripts/ops/cashier-source-package.test.mjs',
-    'VinPoker/scripts/ops/cashier-schema-mode.test.mjs',
     '.github/workflows/cashier-tour-real-e2e.yml']) {
     assert.ok(blob(head, path).equals(blob(base, path)), `PR changes trusted guard: ${path}`);
   }

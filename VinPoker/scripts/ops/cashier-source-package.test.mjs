@@ -22,7 +22,6 @@ const policyPath = root + 'cashier-source342-344-qualified-scope.json';
 const receiptPath = root + 'fixtures/cashier-source342-344-runtime-receipt.json';
 const policy = JSON.parse(readFileSync(join(source, policyPath)));
 const guards = [policyPath, receiptPath, root + 'select-cashier-schema-mode.mjs',
-  root + 'cashier-schema-mode.test.mjs',
   root + 'cashier-source-package-evidence.mjs', root + 'cashier-source-package.test.mjs',
   '.github/workflows/cashier-tour-real-e2e.yml'];
 function set(path, bytes, mode = '100644') {
@@ -37,6 +36,21 @@ for (const path of guards) set(path, readFileSync(join(source, path)));
 const base = commit(baseline);
 git('read-tree', candidate);
 for (const path of guards) set(path, readFileSync(join(source, path)));
+// Preserve the candidate's additional operational safety cases when it inherits
+// the policy fixture correction; do not overwrite them with the older base test.
+const legacyTest = root + 'cashier-schema-mode.test.mjs';
+let mergedTest = original('show', `${candidate}:${legacyTest}`);
+const fixtureStart = mergedTest.indexOf("// Preserve the Tracker branch's extra operational inputs/checks when integrating");
+const fixtureEnd = mergedTest.indexOf("git('read-tree', policy.runtimeInputs.candidateSha);", fixtureStart);
+assert.ok(fixtureStart >= 0 && fixtureEnd > fixtureStart);
+mergedTest = mergedTest.slice(0, fixtureStart)
+  + '// Model an unchanged protected-base workflow. New policy steps must not be\n'
+  + '// union-merged into the historical integration fixture and self-approved.\n'
+  + mergedTest.slice(fixtureEnd);
+mergedTest = mergedTest.replace('setBlob(workflowPath, integratedWorkflow);\n', '')
+  .replaceAll('setBlob(path, readFileSync(join(sourceRoot, path)));',
+    "setBlob(path, path === receiptFile ? sourceGit('show', `HEAD:${path}`) : readFileSync(join(sourceRoot, path)));");
+set(legacyTest, mergedTest);
 const head = commit(base);
 function pages(h = head, b = base) {
   const fields = git('diff', '--no-renames', '--name-status', '-z', b, h).split('\0'); fields.pop();
@@ -77,8 +91,11 @@ test('head cannot self-approve policy, receipt, selector, workflow or evidence c
   }
 });
 test('runtime drift and incomplete or stale API pages reject the exception', () => {
-  const m = mutation(() => set(policy.runtimeFiles[0].path, '// changed'));
-  assert.throws(() => qualifiedSource342(m.pages.flat(), m.context), /Runtime guard drift/);
+  for (const path of [policy.runtimeFiles[0].path, legacyTest]) {
+    const m = mutation(() => set(path, '// changed'));
+    assert.throws(() => qualifiedSource342(m.pages.flat(), m.context), /Runtime guard drift/);
+    assert.equal(selectCashierSchemaMode(m.pages, m.context), 'pre03');
+  }
   assert.throws(() => selectCashierSchemaMode([pages()[0].slice(1)], { repo, base, head }), /tree diff/);
   assert.throws(() => selectCashierSchemaMode([[...pages()[0], pages()[0][0]]], { repo, base, head }), /Duplicate/);
   assert.throws(() => selectCashierSchemaMode(pages(), { repo, base, head: base }), /tree diff/);
