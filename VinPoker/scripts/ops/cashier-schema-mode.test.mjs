@@ -150,6 +150,31 @@ test('batch SQL identity check resolves repository files from a foreign working 
  assert.equal(metadata.status,0,metadata.stderr);
 });
 
+test('loaded audience worker forwards batch mode and counts only ready-phase batch calls',async()=>{
+ const audience=readFileSync(new URL('./operations-audience.mjs',import.meta.url),'utf8');
+ const start=audience.indexOf('const result=await loaded.worker.processPublicSpectatorJobs(');
+ const end=audience.indexOf('workerCalls++;',start);assert.ok(start>0&&end>start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const run=new AsyncFunction('assert','loaded','service','deadline','spectatorSourceMode','phase','stopping',
+  'let sourceBatchModeVerified=false,sourceBatchRpcCalls=0,servingSourceBatchRpcCalls=0;'+audience.slice(start,end)+
+  'return {sourceBatchModeVerified,sourceBatchRpcCalls,servingSourceBatchRpcCalls};');
+ for(const mode of ['single','batch'])for(const [phase,stopping]of [['starting',false],['ready',false],['ready',true]]){
+  const loaded={worker:{processPublicSpectatorJobs:async(wrapper,deadline,actualMode)=>{
+   assert.equal(actualMode,mode);assert.ok(deadline>Date.now());
+   await wrapper.rpc(mode==='batch'?'get_public_spectator_projection_sources_v2':'get_public_spectator_projection_source_v2',{});
+   return {sourceMode:actualMode};
+  }}};
+  const service={rpc:()=>({abortSignal:signal=>{assert.ok(signal instanceof AbortSignal);return Promise.resolve({data:[],error:null});}})};
+  const value=await run(assert,loaded,service,Date.now()+5000,mode,phase,stopping);
+  assert.equal(value.sourceBatchModeVerified,true);assert.equal(value.sourceBatchRpcCalls,mode==='batch'?1:0);
+  assert.equal(value.servingSourceBatchRpcCalls,mode==='batch'&&phase==='ready'&&!stopping?1:0);
+ }
+ await assert.rejects(run(assert,{worker:{processPublicSpectatorJobs:async()=>({sourceMode:'single'})}},{},Date.now()+5000,'batch','ready',false),/Actual audience worker source mode/);
+ const profile=readFileSync(new URL('./operations-rpc-profile.sql',import.meta.url),'utf8');
+ assert.match(profile,/WHEN strpos\(query,'get_public_spectator_projection_sources_v2'\)>0 THEN 'get_public_spectator_projection_sources_v2'/);
+ assert.match(audience,/sourceBatchModeAndServingUsage:sourceBatchModeVerified&&sourceBatchRpcCalls>0&&servingSourceBatchRpcCalls>0/);
+});
+
 test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
  const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
  const end=script.indexOf('\nrun_browser_proof\n',start);

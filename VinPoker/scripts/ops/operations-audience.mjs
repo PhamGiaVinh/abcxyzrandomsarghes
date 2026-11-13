@@ -16,6 +16,13 @@ assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
 assert.equal(process.env.LOCAL_OPERATIONS_CANDIDATE_PROBE,'1');
 assert.equal(process.env.LOCAL_CLOCK_CANDIDATE_PROBE??'0','0');
+const sourceBatchFlag=process.env.LOCAL_SOURCE_BATCH_PROBE??'0';
+assert.ok(['0','1'].includes(sourceBatchFlag),'Invalid audience source batch mode');
+if(sourceBatchFlag==='1'){
+ assert.equal(process.env.LOCAL_PENDING_SOURCE_PROBE,'1');assert.equal(process.env.LOCAL_SOURCE_GENERATION_PROBE,'1');
+ assert.equal(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE??'none','none');
+}
+const spectatorSourceMode=sourceBatchFlag==='1'?'batch':'single';
 const viewers=Number(process.env.LOCAL_OPERATIONS_AUDIENCE);
 assert.ok([10,1000].includes(viewers),'Explicit bounded isolated audience required');
 const workloadModel=process.env.LOCAL_OPERATIONS_AUDIENCE_MODEL??'grid-detail-stress';
@@ -71,6 +78,7 @@ const lagTimer=setInterval(()=>{const at=Date.now(),lagMs=Math.max(0,at-previous
 const requestCounts={snapshot:0,table:0,clock:0},snapshotSectionCounts={tables:0,ranking:0,payout:0};let maxSnapshotTableIds=0;
 const handshakeEvents={},handshakeFailureSamples=[];
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0,oracleReadCalls=0;
+let sourceBatchModeVerified=false,sourceBatchRpcCalls=0,servingSourceBatchRpcCalls=0;
 const stopHandshakeDiagnostics=observeAudienceHandshake(status.API_URL,value=>{
  if(stopping)return;
  const key=[value.event,value.httpStatus??'none',value.kind??'none'].join(':');handshakeEvents[key]=(handshakeEvents[key]??0)+1;
@@ -95,7 +103,7 @@ const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  requestCounts,snapshotSectionCounts,maxSnapshotTableIds,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
- readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
+ readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,spectatorSourceMode,sourceBatchModeVerified,sourceBatchRpcCalls,servingSourceBatchRpcCalls,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  serverTiming:Object.fromEntries(Object.entries(timingParts).map(([name,values])=>[name,dist(values)])),
@@ -123,6 +131,7 @@ const worker=track((async()=>{
   try{
    const result=await loaded.worker.processPublicSpectatorJobs({rpc:async(name,args)=>{
     const left=deadline-Date.now();if(left<=0)throw Error('worker_deadline');
+    if(name==='get_public_spectator_projection_sources_v2'){sourceBatchRpcCalls++;if(phase==='ready'&&!stopping)servingSourceBatchRpcCalls++;}
     const rpcStartedAt=Date.now();let result;
     try{result=await service.rpc(name,args).abortSignal(AbortSignal.timeout(left));}
     catch(cause){if(workerBoundaryFailures.length<20)workerBoundaryFailures.push({at:Date.now(),startedAt:rpcStartedAt,elapsedMs:Date.now()-rpcStartedAt,remainingBudgetAtStartMs:left,...audienceWorkerFailure(name,null),...audienceFailure(cause)});throw cause;}
@@ -133,7 +142,8 @@ const worker=track((async()=>{
      workerRpcFailures[key]=(workerRpcFailures[key]??0)+1;
     }
     return result;
-   }},deadline);
+   }},deadline,spectatorSourceMode);
+   assert.equal(result.sourceMode,spectatorSourceMode,'Actual audience worker source mode');sourceBatchModeVerified=true;
    workerCalls++;workerPublished+=result.results.filter(r=>r.published).length;
    for(const row of result.results)if(row.error){
     fail('worker_job');const kind=['source_failed','publish_failed','deadline_exceeded'].includes(row.error)?row.error:'unknown';
@@ -364,6 +374,7 @@ try{
  while(!stopping&&!clients.every(c=>c.online&&c.ready&&c.clockReady)&&Date.now()-start<90000)await sleep(100);
  assert.equal(clients.length,viewers);assert.ok(clients.every(c=>c.online&&c.ready&&c.clockReady),'Audience did not become ready');
  assert.equal(Object.keys(errors).length,0,'Audience startup errors');
+ if(sourceBatchFlag==='1'){assert.equal(sourceBatchModeVerified,true);assert.ok(sourceBatchRpcCalls>0,'Actual batch source RPC required before audience admission');}
  readyAt=Date.now();phase='ready';report();
  while(!stopping)await sleep(100);
 }catch(cause){fail('audience_lifecycle');diagnostic('audience_lifecycle',cause);stopping=true;process.exitCode=1;}
@@ -377,6 +388,7 @@ finally{
  await Promise.all(clients.map(async({client})=>{await client.removeAllChannels();client.realtime.disconnect();}));
  await worker;await oracle;await Promise.allSettled([...pending]);if(selected)await captureGeneration();
  checks={zeroErrors:Object.keys(errors).length===0,atLeast30Seconds:readyAt!==null&&endedAt-readyAt>=30000,allViewers:clients.length===viewers&&connectedAtStop===viewers,
+  ...(sourceBatchFlag==='1'?{sourceBatchModeAndServingUsage:sourceBatchModeVerified&&sourceBatchRpcCalls>0&&servingSourceBatchRpcCalls>0}:{}),
   allSawLaterTableRevision:clients.every(c=>c.ready&&c.changes>0),tableP95Within3Seconds:timings.table.length>=viewers&&dist(timings.table).p95Ms<=3000,
   ...(selected?{
    markerToScopedDetailP95Within3Seconds:timings.markerToScopedDetail.length>=viewers&&dist(timings.markerToScopedDetail).p95Ms<=3000,
