@@ -19,7 +19,7 @@ for(const patch of [{id:1},{name:'other'},{digest:'sha256:'+'0'.repeat(64)},{exp
  test(`rejects unqualified artifact ${JSON.stringify(patch)}`,()=>assert.throws(()=>validateCapture(run,{...artifact,...patch})));
 }
 test('only the reviewed canonical SQL bytes qualify; never historical migration replay',()=>{
- const bytes=execFileSync('git',['show',`${policy.candidateSha}:${policy.migration.path}`]);
+ const bytes=execFileSync('git',['-C',process.env.FLOOR345_CANDIDATE_REPO||'.','show',`${policy.candidateSha}:${policy.migration.path}`]);
  assert.equal(validateSource(bytes),true);
  assert.throws(()=>validateSource(Buffer.concat([bytes,Buffer.from('\n-- drift')])));
 });
