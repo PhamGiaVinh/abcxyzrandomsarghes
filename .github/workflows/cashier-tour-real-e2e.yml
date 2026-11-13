@@ -12,6 +12,8 @@ on:
       - "VinPoker/scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs"
       - "VinPoker/scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs"
       - "VinPoker/scripts/ops/cashier-schema-mode.test.mjs"
+      - "VinPoker/scripts/ops/cashier-worklist-diagnostic.mjs"
+      - "VinPoker/scripts/ops/cashier-worklist-diagnostic.test.mjs"
       - "VinPoker/scripts/ops/operations-audience.mjs"
       - "VinPoker/scripts/ops/operations-db-pressure.mjs"
       - "VinPoker/scripts/ops/operations-db-pressure.sql"
@@ -200,7 +202,7 @@ jobs:
           # Keep tests reproducible after the candidate branch is removed.
           git cat-file -e '26d829241c1da649eae4ec37aaff398ab00a5173^{commit}' ||
             git fetch --no-tags origin 26d829241c1da649eae4ec37aaff398ab00a5173
-          node --test scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs scripts/ops/cashier-schema-mode.test.mjs scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
+          node --test scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs scripts/ops/cashier-schema-mode.test.mjs scripts/ops/cashier-worklist-diagnostic.test.mjs scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
           node --test tests/cashier/reentryTransportCandidate.test.mjs
           node --test supabase/pending-tests/fake-sepay-server.test.mjs
