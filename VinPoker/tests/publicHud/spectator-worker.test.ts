@@ -53,6 +53,66 @@ it('uses bounded source waves and preserves exact publish identities',async()=>{
  expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toHaveLength(0);
  for(const job of f.jobs)expect(f.rpc).toHaveBeenCalledWith('publish_public_spectator_projection_v2',expect.objectContaining({p_tournament_id:job.tournament_id,p_fencing_token:job.fencing_token}));
 });
+it('prefetches only one source wave while retaining six publish lanes',async()=>{
+ const f=batchWorkerFixture(20),original=f.rpc.getMockImplementation()!;
+ const releases:Array<()=>void>=[];let active=0,maxActive=0,sourceCalls=0;
+ f.rpc.mockImplementation(async(name,args)=>{
+  if(name==='get_public_spectator_projection_sources_v2')sourceCalls++;
+  if(name==='publish_public_spectator_projection_v2'){
+   active++;maxActive=Math.max(maxActive,active);
+   await new Promise<void>(resolve=>releases.push(resolve));active--;
+  }
+  return original(name,args);
+ });
+ const running=processPublicSpectatorJobs(f,Date.now()+5000,'batch');await settle();
+ const firstReadAhead=sourceCalls,firstActive=active;
+ for(let i=0;i<4;i++){for(const release of releases.splice(0))release();await settle();}
+ const result=await running;
+ expect(firstReadAhead).toBe(2);expect(firstActive).toBe(6);
+ expect(sourceCalls).toBe(4);expect(maxActive).toBe(6);expect(result.processed).toBe(20);
+ expect(result.results.every(row=>row.published)).toBe(true);
+});
+it.each(['throw','malformed'] as const)('drains a %s prefetched wave without publishing it or escaping rejection',async kind=>{
+ const f=batchWorkerFixture(14),original=f.rpc.getMockImplementation()!;
+ const releases:Array<()=>void>=[];let reads=0;
+ f.rpc.mockImplementation(async(name,args)=>{
+  if(name==='get_public_spectator_projection_sources_v2'&&++reads===2){
+   if(kind==='throw')throw Error('transport failed');
+   return {data:[],error:null};
+  }
+  if(name==='publish_public_spectator_projection_v2'&&releases.length<6&&reads<=2)
+   await new Promise<void>(resolve=>releases.push(resolve));
+  return original(name,args);
+ });
+ let ended=false;const running=processPublicSpectatorJobs(f,Date.now()+5000,'batch').then(value=>{ended=true;return value;});
+ await settle();expect(reads).toBe(2);expect(ended).toBe(false);
+ for(const release of releases)release();
+ const result=await running;
+ expect(result.processed).toBe(14);expect(result.results.filter(row=>row.published)).toHaveLength(8);
+ expect(result.results.filter(row=>row.error)).toHaveLength(6);
+ expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toHaveLength(0);
+});
+it('drains a held read ahead at deadline without starting later publications or another wave',async()=>{
+ let now=100;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=batchWorkerFixture(20),original=f.rpc.getMockImplementation()!;
+ let reads=0,releaseSource!:(value:{data:unknown;error:unknown})=>void;
+ const releases:Array<()=>void>=[];
+ f.rpc.mockImplementation(async(name,args)=>{
+  if(name==='get_public_spectator_projection_sources_v2'&&++reads===2)
+   return new Promise(resolve=>{releaseSource=resolve;});
+  if(name==='publish_public_spectator_projection_v2')await new Promise<void>(resolve=>releases.push(resolve));
+  return original(name,args);
+ });
+ let ended=false;const running=processPublicSpectatorJobs(f,200,'batch').then(value=>{ended=true;return value;});
+ await settle();expect(reads).toBe(2);expect(releases).toHaveLength(6);
+ now=200;for(const release of releases)release();await settle();
+ expect(ended).toBe(false);const calls=f.rpc.mock.calls.length;
+ releaseSource({data:f.jobs.slice(6,12).map(({group_key,...job})=>({...job,source:batchSource(job)})),error:null});
+ const result=await running;
+ expect(f.rpc).toHaveBeenCalledTimes(calls);expect(reads).toBe(2);
+ expect(result.processed).toBe(12);expect(result.results.filter(row=>row.published)).toHaveLength(6);
+ expect(result.results.filter(row=>row.error==='deadline_exceeded')).toHaveLength(6);
+});
 it('reads individually only for the exact size-budget marker, retaining source errors',async()=>{
  const f=batchWorkerFixture();f.setResponse(items=>[{...items[0],requiresIndividual:true},{...items[1],error:'source_failed',sqlstate:'42501'}]);
  const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');

@@ -337,6 +337,47 @@ assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.publications WHER
 const editedRecovery=await processPublicSpectatorJobs(native,Date.now()+20000,'batch');
 assert.equal(editedRecovery.processed,1);assert.equal(editedRecovery.results[0].published,true);
 assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${editedTour}';`),'0');
+// Hold actual first-wave publications while the next canonical SQL snapshot is
+// read. Edit/withdraw a prefetched source before releasing those publications.
+for(const [kind,offset] of [['edit',201],['withdraw',301]]){
+ const tours=Array.from({length:8},(_,i)=>`10000000-0000-4000-8000-${String(offset+i).padStart(12,'0')}`);
+ sql(`INSERT INTO public.tournaments(id) VALUES ${tours.map(id=>`('${id}')`).join(',')};`);
+ let reads=0,heldPublishes=0,target,release,fixtureFailure;
+ const held=new Promise(resolve=>{release=resolve;});let firstWave=new Set();
+ const holdTimer=setTimeout(()=>{fixtureFailure=Error('prefetch_hold_timeout');release();},10000);
+ const prefetchClient={async rpc(name,args){
+  if(name==='publish_public_spectator_projection_v2'&&firstWave.has(args.p_tournament_id)){
+   heldPublishes++;await held;
+  }
+  const reply=await native.rpc(name,args);
+  if(name==='get_public_spectator_projection_sources_v2'){
+   reads++;
+   if(reads===1)firstWave=new Set(args.p_jobs.map(job=>job.tournament_id));
+   if(reads===2){
+    try{
+     assert.equal(heldPublishes,6);target=args.p_jobs[0].tournament_id;
+     assert.ok(reply.data.some(row=>row.tournament_id===target&&row.source?.sourceVector));
+     sql(kind==='edit'?`UPDATE public.tournaments SET status='final_table' WHERE id='${target}';`:
+      `UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${target}';`);
+     if(kind==='withdraw')assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${target}','{}',ARRAY['tables'],'{}');`).access,'revoked');
+    }catch(error){fixtureFailure=error;throw error;}finally{release();}
+   }
+  }
+  return reply;
+ }};
+ let prefetched;
+ try{prefetched=await processPublicSpectatorJobs(prefetchClient,Date.now()+20000,'batch');}
+ finally{clearTimeout(holdTimer);release();}
+ if(fixtureFailure)throw fixtureFailure;
+ assert.equal(reads,2);assert.equal(prefetched.processed,8);
+ assert.equal(prefetched.results.find(row=>row.key.startsWith(target+':visibility:'))?.published,false);
+ assert.equal(prefetched.results.find(row=>row.key.startsWith(target+':visibility:'))?.error,undefined);
+ assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.publications WHERE tournament_id='${target}';`),'0');
+ if(kind==='withdraw')sql(`UPDATE public.tournaments SET deleted_at=NULL WHERE id='${target}';`);
+ const recovered=await processPublicSpectatorJobs(native,Date.now()+20000,'batch');
+ assert.ok(recovered.results.some(row=>row.key.startsWith(target+':visibility:')&&row.published&&!row.error));
+ assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id=ANY(ARRAY[${tours.map(id=>`'${id}'`).join(',')}]::uuid[]);`),'0');
+}
 assert.throws(()=>sql(`BEGIN;GRANT EXECUTE ON FUNCTION ${batchSignature} TO anon;${strip(batchReverse)}ROLLBACK;`,{captureFailure:true}),/rollback_drift/);
 sql(batchReverse);assert.equal(sql(`SELECT to_regprocedure('${batchSignature}') IS NULL;`),'t');
 assert.equal(hash(),candidateHash);assert.deepEqual(metadata(),before);

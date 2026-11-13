@@ -66,22 +66,33 @@ export async function processPublicSpectatorJobs(client:Client,deadline=Date.now
     }
   }
   if(sourceMode==='batch'){
-    // Isolated opt-in only: a wave waits for all source reads. This head-of-line
-    // tradeoff needs real workload evidence before enabling it in the entrypoint.
-    while(cursor<jobs.length&&Date.now()<deadline){
-      const wave=jobs.slice(cursor,cursor+6);cursor+=wave.length;
-      let receipts:ReturnType<typeof decodeSourceBatch>;
+    const nextWave=()=>{
+      if(Date.now()>=deadline)return [];
+      const wave=jobs.slice(cursor,cursor+6);cursor+=wave.length;return wave;
+    };
+    const readWave=async(wave:WorkGroup[]):Promise<{receipts:ReturnType<typeof decodeSourceBatch>}|{reason:unknown}> => {
       try{
         const reply=await call('get_public_spectator_projection_sources_v2',{p_jobs:wave.map(({tournament_id,component,fencing_token})=>({tournament_id,component,fencing_token}))});
         if(reply.error)throw Error('source_batch_failed');
-        receipts=decodeSourceBatch(wave,reply.data);
-      }catch(reason){await Promise.all(wave.map(job=>fail(job,reason)));continue;}
-      await Promise.all(wave.map((job,index)=>process(job,()=>{
-        const receipt=receipts[index];
+        return {receipts:decodeSourceBatch(wave,reply.data)};
+      }catch(reason){return {reason};}
+    };
+    // Keep six publication lanes and at most one bounded source read ahead.
+    // Drain it even at the deadline; no RPC or rejection may escape this call.
+    let wave=nextWave(),pending=wave.length?readWave(wave):null;
+    while(pending){
+      const reply=await pending;
+      const processing='reason' in reply?Promise.all(wave.map(job=>fail(job,reply.reason))):
+      Promise.all(wave.map((job,index)=>process(job,()=>{
+        const receipt=reply.receipts[index];
         if('requiresIndividual' in receipt)return single(job);
         if('error' in receipt)return Promise.resolve({data:null,error:receipt.error});
         return Promise.resolve({data:receipt.source,error:null});
       })));
+      const upcoming=nextWave();
+      const readAhead=upcoming.length?readWave(upcoming):null;
+      await processing;
+      wave=upcoming;pending=readAhead;
     }
   }else await Promise.all(Array.from({length:Math.min(6,jobs.length)},()=>run()));
   await earlyFlush;
