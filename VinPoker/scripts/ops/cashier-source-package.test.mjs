@@ -69,7 +69,11 @@ test('unknown SQL, missing/renamed/symlink SQL, catalog drift and historical edi
 test('head cannot self-approve policy, receipt, selector, workflow or evidence checks', () => {
   for (const path of [...guards, root + 'cashier-hud35-qualified-scope.json', root + 'fixtures/cashier-ci-hud35-qualified-receipt-20261107.json']) {
     const m = mutation(() => set(path, '{}'));
-    assert.throws(() => qualifiedSource342(m.pages.flat(), m.context), /trusted guard/);
+    assert.throws(() => qualifiedSource342(m.pages.flat(), m.context), error => {
+      assert.match(error.message, /trusted guard/);
+      assert.ok(error.message.length < 250, 'Do not render large source-buffer diffs');
+      return true;
+    });
   }
 });
 test('runtime drift and incomplete or stale API pages reject the exception', () => {

@@ -133,7 +133,7 @@ export function qualifiedSource342(files, context) {
     'VinPoker/scripts/ops/cashier-source-package.test.mjs',
     'VinPoker/scripts/ops/cashier-schema-mode.test.mjs',
     '.github/workflows/cashier-tour-real-e2e.yml']) {
-    assert.deepEqual(blob(head, path), blob(base, path), `PR changes trusted guard: ${path}`);
+    assert.ok(blob(head, path).equals(blob(base, path)), `PR changes trusted guard: ${path}`);
   }
   const policy = JSON.parse(blob(base, sourcePackagePolicy));
   assert.equal(policy.schemaVersion, 1);

@@ -154,7 +154,9 @@ jobs:
   isolated-e2e:
     # A manual diagnostic PASS must never satisfy the full-suite required check.
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope && inputs.diagnostic_scope != 'none' && format('targeted-{0}', inputs.diagnostic_scope) || 'isolated-e2e' }}
-    runs-on: ubuntu-latest
+    # Playwright1.60 is pinned in package-lock; Ubuntu24.04 is supported.
+    # The existing Tracker browser CI already verified this runner combination.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
