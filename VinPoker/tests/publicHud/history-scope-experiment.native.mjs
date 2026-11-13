@@ -50,31 +50,57 @@ for(const kind of ['verified','malformed-pots','wrong-revision','duplicate-parti
  DELETE FROM tracker_analytics_v1.job_players WHERE kind='hand' AND entity_id='${hand}';`;
  cases.push([kind,change]);
 }
-const timings=[];
+const timings=[],plans=[];
+const cleanPlan=node=>Object.fromEntries(Object.entries(node).filter(([key])=>[
+ 'Node Type','Relation Name','Index Name','Actual Startup Time','Actual Total Time','Actual Rows','Actual Loops',
+ 'Shared Hit Blocks','Shared Read Blocks','Shared Dirtied Blocks','Shared Written Blocks','Temp Read Blocks','Temp Written Blocks',
+ 'Planning Time','Execution Time','Plans','Plan'].includes(key)).map(([key,value])=>[key,
+ Array.isArray(value)?value.map(cleanPlan):value&&typeof value==='object'?cleanPlan(value):value]));
 for(const [name,change,cursor,scope] of cases){
  const excluded=['hard-block','wrong-contribution-tour','wrong-source-tour','void','incomplete','missing-participant','invalid-prefix'].includes(name);
  const unknown=['malformed-pots','wrong-revision','duplicate-participant','status-change'].includes(name);
  const measured=['first','next','verified','invalid-prefix'].includes(name);
- const measure=label=>!measured?'':`DO $measure$ DECLARE started timestamptz;BEGIN FOR i IN 1..30 LOOP
+ const measure=label=>!measured?'':`DO $measure$ DECLARE started timestamptz;BEGIN
+ FOR i IN 1..3 LOOP PERFORM ${call(cursor,scope)};END LOOP;
+ FOR i IN 1..30 LOOP
  started:=clock_timestamp();PERFORM ${call(cursor,scope)};
  INSERT INTO scope_timing VALUES('${label}',extract(epoch FROM clock_timestamp()-started)*1000);
  END LOOP;END $measure$;`;
+ const explain=(definition,label)=>{
+  if(!measured)return '';
+  const start=definition.indexOf('WITH '),end=definition.indexOf('INTO rows FROM amounts;');
+  assert.ok(start>0&&end>start,'Exact history statement boundaries required');
+  let query=definition.slice(start,end)+'FROM amounts';
+  query=query.replaceAll('cfg.version',"(SELECT version FROM tracker_analytics_v1.config WHERE singleton)");
+  const bindings={p_tournament_id:quote(scope??tour)+'::uuid',p_player_id:quote(player)+'::uuid',
+   p_after_time:quote(cursor?.playedAt??null)+'::timestamptz',p_after_hand:quote(cursor?.handId??null)+'::uuid'};
+  query=query.replace(/\bp_(?:tournament_id|player_id|after_time|after_hand)\b/g,key=>bindings[key]);
+  return `DO $explain$ DECLARE plan jsonb;BEGIN EXECUTE ${quote('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+query)} INTO plan;
+   INSERT INTO scope_plans VALUES('${label}',plan);END $explain$;`;
+ };
  const result=jsonSql(`BEGIN;SET LOCAL statement_timeout='15s';${change}
  CREATE TEMP TABLE scope_expected(payload jsonb);GRANT SELECT,INSERT ON scope_expected TO anon;
  CREATE TEMP TABLE scope_timing(variant text,ms numeric);GRANT SELECT,INSERT ON scope_timing TO anon;
+ CREATE TEMP TABLE scope_plans(variant text,payload jsonb);GRANT SELECT ON scope_plans TO anon;
+ CREATE TEMP TABLE scope_result(payload jsonb);GRANT SELECT,INSERT ON scope_result TO anon;
+ ${explain(original,'baseline')}
  SET LOCAL ROLE anon;INSERT INTO scope_expected SELECT ${call(cursor,scope)};RESET ROLE;
  SET LOCAL ROLE anon;${measure('baseline-before')}RESET ROLE;
  ${candidate};
- SET LOCAL ROLE anon;${measure('candidate')}
- SELECT jsonb_build_object('equal',(SELECT payload FROM scope_expected) IS NOT DISTINCT FROM ${call(cursor,scope)},
+ ${explain(candidate,'candidate')}
+ SET LOCAL ROLE anon;${measure('candidate-first')}${measure('candidate-second')}
+ INSERT INTO scope_result SELECT jsonb_build_object('equal',(SELECT payload FROM scope_expected) IS NOT DISTINCT FROM ${call(cursor,scope)},
  'verifiedExpected',CASE WHEN '${name}'='verified' THEN EXISTS(SELECT 1 FROM scope_expected e CROSS JOIN LATERAL jsonb_array_elements(e.payload->'handHistory') row WHERE row->>'handId'='${hand}' AND row->'endingStack'='1200'::jsonb) ELSE true END,
  'boundaryExpected',${excluded?`NOT EXISTS(SELECT 1 FROM scope_expected e CROSS JOIN LATERAL jsonb_array_elements(e.payload->'handHistory') row WHERE row->>'handId'='${hand}')`:unknown?`EXISTS(SELECT 1 FROM scope_expected e CROSS JOIN LATERAL jsonb_array_elements(e.payload->'handHistory') row WHERE row->>'handId'='${hand}' AND row->'endingStack'='null'::jsonb AND row->'netDelta'='null'::jsonb)`:'true'},
- 'timings',(SELECT coalesce(jsonb_agg(to_jsonb(t)),'[]') FROM scope_timing t));ROLLBACK;`);
+ 'timings',(SELECT coalesce(jsonb_agg(to_jsonb(t)),'[]') FROM scope_timing t),
+ 'plans',(SELECT coalesce(jsonb_agg(to_jsonb(t)),'[]') FROM scope_plans t));
+ RESET ROLE;${original};SET LOCAL ROLE anon;${measure('baseline-after')}
+ SELECT payload||jsonb_build_object('timings',(SELECT coalesce(jsonb_agg(to_jsonb(t)),'[]') FROM scope_timing t)) FROM scope_result;ROLLBACK;`);
  assert.equal(result.equal,true,'History scope parity: '+name);assert.equal(result.verifiedExpected,true,'Verified fixture must exercise known stack');
  assert.equal(result.boundaryExpected,true,'History scope boundary: '+name);
- if(measured)timings.push({case:name,samples:result.timings});
+ if(measured){timings.push({case:name,samples:result.timings});plans.push({case:name,variants:result.plans.map(row=>({variant:row.variant,plan:cleanPlan(row.payload[0])}))});}
 }
 assert.equal(sql(`SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));`),'4f8894bc8dd9114663ace03f9b3225e3');
 writeFileSync('output/hud-scale/history-scope-experiment.json',JSON.stringify({kind:'TRANSACTIONAL_HISTORY_SCOPE_EXPERIMENT_NOT_CAPACITY',
- qualification:false,productionChanged:false,baselineHash:'4f8894bc8dd9114663ace03f9b3225e3',checks:cases.map(row=>row[0]),timings,
- scope:'Only fixture transactions replace the function; each transaction rolls back. Native AB timing includes first executions, is order-sensitive, and is not HTTP capacity or a qualification.'},null,2));
+ qualification:false,productionChanged:false,baselineHash:'4f8894bc8dd9114663ace03f9b3225e3',checks:cases.map(row=>row[0]),timings,plans,
+ scope:'Each fixture transaction rolls back. Anonymous function ABBA arms each warm up3 calls then measure30. Extracted statement EXPLAIN uses literal scope/cursor and a scalar config subquery, not the cached PL/pgSQL parameter plan; only loop/buffer attribution, not exact runtime nested planning. Exports only allowlisted plan counters. Neither native timings nor plans establish HTTP capacity.'},null,2));
