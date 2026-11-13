@@ -38,6 +38,9 @@ test('writer wait observation is explicit and cannot become a qualification rece
  assert.equal(writerWaitDiagnosticEnabled({}),false);
  const enabled={PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:'1',PUBLIC_HUD_WRITER_QUALIFICATION_METHOD:'startup',PUBLIC_HUD_SCALE_SECONDS:'30'};
  assert.equal(writerWaitDiagnosticEnabled(enabled),true);
+ assert.equal(writerWaitDiagnosticEnabled({...enabled,PUBLIC_HUD_WRITER_READER_SMOKE:'1'}),true);
+ assert.throws(()=>writerWaitDiagnosticEnabled({PUBLIC_HUD_WRITER_READER_SMOKE:'1'}));
+ assert.throws(()=>writerWaitDiagnosticEnabled({...enabled,PUBLIC_HUD_WRITER_READER_SMOKE:'unknown'}));
  for(const changes of [{PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:'yes'},{PUBLIC_HUD_WRITER_QUALIFICATION_METHOD:'canonical-hand-observers-paired-v1'},{PUBLIC_HUD_SCALE_SECONDS:'1800'}])assert.throws(()=>writerWaitDiagnosticEnabled({...enabled,...changes}));
  assert.throws(()=>requireMatchedWriterQualification({pairs:[{measurements:{incremental:{waitDiagnostic:{}}}}]},{}),/Instrumented writer observation cannot qualify/);
 });

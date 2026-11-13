@@ -51,7 +51,7 @@ def start_container_ring(root):
     # One persistent owned-container reader. EOF stops it; no background shell,
     # Docker exec per tick, environment/config/log read or business SQL.
     script = """while IFS= read -r tick; do
-      printf 'BEGIN %s\\n' "$(date +%s.%N)"
+      printf 'BEGIN %s\\n' "$tick"
       for file in cpu.stat cpu.pressure io.pressure; do
         printf '%s\\n' "$file"
         head -c 1024 "/sys/fs/cgroup/$file" 2>/dev/null
@@ -67,7 +67,7 @@ def start_container_ring(root):
             for _ in range(150):
                 if stop.is_set():
                     break
-                process.stdin.write("tick\n")
+                process.stdin.write(format(time.time(), ".9f") + "\n")
                 process.stdin.flush()
                 if stop.wait(.2):
                     break
@@ -104,9 +104,20 @@ def finish_container_ring(ring, root):
     ring["output"].close()
     path = root / "container-ring.txt"
     oversized = path.stat().st_size > 1048576
-    samples, invalid = parse_container_ring("" if oversized else path.read_text())
+    captured = "" if oversized else path.read_text()
+    samples, invalid = parse_container_ring(captured)
+    blocks = captured.split("BEGIN ")[1:]
+    formats = {"records": len(blocks),
+               "numericTimestamp": sum(bool(re.fullmatch(r"[0-9]+\.[0-9]+", block.splitlines()[0]))
+                                       for block in blocks if block.splitlines()),
+               "closedRecord": sum(block.splitlines()[-1:] == ["END"] for block in blocks)}
+    reasons = {"badTimestamp": formats["records"] - formats["numericTimestamp"],
+               "incompleteFrame": formats["records"] - formats["closedRecord"],
+               "invalidRecordOrFields": invalid}
     return {"intervalMs": 200, "maxSamples": 150, "samples": samples, "invalid": invalid,
             "oversized": oversized, "forcedStop": forced, "exitCode": ring["process"].returncode,
+            "formatCounts": formats, "timestampScope": "host tick dispatch before sequential container reads",
+            "parseReasons": reasons,
             "readyBeforeArm": ring["readyBeforeArm"],
             "available": ring["readyBeforeArm"] and bool(samples) and not invalid and not oversized and not forced
                          and not ring["errors"] and ring["process"].returncode == 0,

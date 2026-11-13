@@ -60,6 +60,9 @@ class ObserverSafety(unittest.TestCase):
                 command = launch.call_args.args[0]
                 self.assertEqual(command[:6], ["docker", "exec", "-i", "supabase_db_hud-scale-1-1", "sh", "-c"])
                 self.assertIn('head -c 1024 "/sys/fs/cgroup/$file"', command[6])
+                self.assertNotIn("date ", command[6])
+                if process.stdin.write.called:
+                    self.assertRegex(process.stdin.write.call_args.args[0], r"^[0-9]+\.[0-9]{9}\n$")
                 scope["finish_container_ring"](ring, pathlib.Path(directory))
 
     def test_container_identity_and_marker_are_checked_before_counter_reads(self):

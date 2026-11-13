@@ -11,6 +11,9 @@ export function sourceBatchProbeEnabled(env){
 }
 export function writerWaitDiagnosticEnabled(env){
  const flag=env.PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC??'0';
+ const reader=env.PUBLIC_HUD_WRITER_READER_SMOKE??'0';
+ assert.ok(['0','1'].includes(reader),'Invalid writer reader smoke');
+ assert.ok(reader!=='1'||flag==='1','Reader smoke requires writer wait diagnostic');
  assert.ok(['0','1'].includes(flag),'Invalid writer wait diagnostic');
  if(flag==='1'){
   assert.equal(env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD,'startup','Writer wait observation is not qualification');

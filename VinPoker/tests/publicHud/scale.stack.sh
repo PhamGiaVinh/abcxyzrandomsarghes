@@ -70,12 +70,17 @@ comparison_database="vinpoker_hud_test_pair_${GITHUB_RUN_ID:-local}_${GITHUB_RUN
 createdb -h 127.0.0.1 -p 54322 -U postgres --template=template0 "$comparison_database"
 psql -h 127.0.0.1 -p 54322 -U postgres -d "$comparison_database" -w -X -qAt -v ON_ERROR_STOP=1 \
  -c "COMMENT ON DATABASE \"$comparison_database\" IS 'vinpoker-hud-writer-control-disposable';" >/dev/null
-PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_DIAGNOSTIC=isolated-comparison-admin PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
- node tests/publicHud/scale.seed.mjs >output/hud-scale/writer-isolated-seed.log 2>&1
 if [[ "${PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:-0}" == '1' ]]; then
  PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= \
   node tests/publicHud/writer-wait-observer.native.mjs
 fi
+if [[ "${PUBLIC_HUD_WRITER_READER_SMOKE:-0}" == '1' ]]; then
+ dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+ echo 'Reader lifecycle smoke only; no fixture seed, writer arms, audience or qualification.'
+ exit 0
+fi
+PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_DIAGNOSTIC=isolated-comparison-admin PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
+ node tests/publicHud/scale.seed.mjs >output/hud-scale/writer-isolated-seed.log 2>&1
 PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_CONTROL=isolated-native-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
  PUBLIC_HUD_WRITER_CONTROL_REPORT="$repo_root/output/hud-scale/writer-matched-observers.json" \
   node tests/publicHud/writer-control.native.mjs >output/hud-scale/writer-matched-observers.log 2>&1

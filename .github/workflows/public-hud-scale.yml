@@ -42,6 +42,10 @@ on:
         description: 'Read-only wait/host-pressure observation; writer-only, never qualification'
         type: boolean
         default: false
+      writer_reader_smoke:
+        description: 'Reader lifecycle only before fixture seed; requires writer_wait_diagnostic, never qualification'
+        type: boolean
+        default: false
       pending_source_probe:
         description: 'Explicit isolated pending-source outcome; requires source_generation_probe'
         type: boolean
@@ -112,6 +116,7 @@ jobs:
     env:
       PUBLIC_HUD_SOURCE_BATCH_PROBE: ${{ inputs.source_batch_probe && '1' || '0' }}
       PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC: ${{ inputs.writer_wait_diagnostic && '1' || '0' }}
+      PUBLIC_HUD_WRITER_READER_SMOKE: ${{ inputs.writer_reader_smoke && '1' || '0' }}
       PUBLIC_HUD_PENDING_SOURCE_PROBE: ${{ inputs.pending_source_probe && '1' || '0' }}
       PUBLIC_HUD_SOURCE_GENERATION_PROBE: ${{ inputs.source_generation_probe && '1' || '0' }}
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
