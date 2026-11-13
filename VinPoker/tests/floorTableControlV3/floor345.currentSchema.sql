@@ -12,9 +12,12 @@ BEGIN
  PERFORM set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',false);
  INSERT INTO public.tournaments(id,club_id,name,status,live_status) VALUES
  (t,'00000000-0000-0000-0000-000000000010','TEST Floor345','active','playing');
- INSERT INTO public.game_tables(id,club_id,table_name,table_number,operational_status,table_type) VALUES
- (g,'00000000-0000-0000-0000-000000000010','TEST fast bust',
-  (SELECT coalesce(max(table_number),0)+1 FROM public.game_tables WHERE club_id='00000000-0000-0000-0000-000000000010'),'available','tournament');
+ -- Actual club creation initializes its 100-table inventory. Use an unused real row.
+ SELECT gt.id INTO STRICT g FROM public.game_tables gt
+ WHERE gt.club_id='00000000-0000-0000-0000-000000000010'
+ AND gt.operational_status='available'
+ AND NOT EXISTS(SELECT 1 FROM public.tournament_tables tt WHERE tt.game_table_id=gt.id)
+ ORDER BY gt.table_number LIMIT 1;
  opened:=public.floor_open_tournament_table_v3(t,g,mode,gen_random_uuid());
  PERFORM public.floor_table_v3_assert(opened->>'ok'='true','fixture table opens: '||opened::text);
  tt:=(opened->>'tournament_table_id')::uuid; sess:=(opened->>'table_session_id')::uuid;
