@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "kind": "EXACT_SOURCE342_344_CURRENT_RUNTIME_EXCEPTION",
+  "historicalCoverage": "pre03 upgrade remains unproved; owner approved exact contemporary-runtime alternative",
+  "migrationScope": [
+    {
+      "path": "VinPoker/supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json",
+      "status": "M",
+      "headSha256": "bb99bed40fac9d8579537dbe1d94fe29d95e5d80a7b7f3869ed709a0bb5c4ef8",
+      "baseSha256": "9cbe8466f6d37d5fecb96208fb11f6603043fdcd5317b6a18f5f40d89e5c69af"
+    },
+    {
+      "path": "VinPoker/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql",
+      "status": "A",
+      "headSha256": "329598b30c0dd07b3832c2309fc7b61b668352926b7c25d35c97db35d8c57c83",
+      "operationalEvidencePath": "VinPoker/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql",
+      "canonicalBytesMatchOperationalEvidence": true
+    },
+    {
+      "path": "VinPoker/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql",
+      "status": "A",
+      "headSha256": "a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221",
+      "operationalEvidencePath": "VinPoker/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql",
+      "canonicalBytesMatchOperationalEvidence": true
+    },
+    {
+      "path": "VinPoker/supabase/migrations/20270128000344_spectator_bounded_source_batch.sql",
+      "status": "A",
+      "headSha256": "f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba",
+      "operationalEvidencePath": "VinPoker/supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql",
+      "canonicalBytesMatchOperationalEvidence": true
+    }
+  ],
+  "runtimeFiles": [
+    {
+      "path": "VinPoker/e2e/cashier-tour-real.spec.ts",
+      "sha256": "1e8fa60817ea3bde6cc6ccd67fb4890b9a91a8708687f75a044e3d406b5ade94"
+    },
+    {
+      "path": "VinPoker/package-lock.json",
+      "sha256": "eec016799cbe39a9bd48962189e94c91c1e32d71eb522469658b57f4c42ecc72"
+    },
+    {
+      "path": "VinPoker/package.json",
+      "sha256": "14155ea8b615cfcb5fb5ef8460055c25d98b860f6dd695e25cc9fbe28663a3c2"
+    },
+    {
+      "path": "VinPoker/playwright.config.ts",
+      "sha256": "63113d467562b1858f277ff228e0e7354bedbe29980c2030629028dfe13a0e53"
+    },
+    {
+      "path": "VinPoker/scripts/deploy/validate-live-public-schema-artifact.mjs",
+      "sha256": "91f2e91be9027fdce2c9b33a223e37e419cf1842ada22e4ff7866eeee59250af"
+    },
+    {
+      "path": "VinPoker/scripts/ops/cashier-tour-real-e2e.sh",
+      "sha256": "0c2c90a397d67dd5fe648025bd0166bcaf9fbac539130047b1bb18ddae24db32"
+    },
+    {
+      "path": "VinPoker/scripts/ops/cashier-worklist-diagnostic.mjs",
+      "sha256": "5e3557efa0ac6e8754ce830fae7aeebb9aab991ea40e35b97bdeb53dcdca9af8"
+    },
+    {
+      "path": "VinPoker/scripts/ops/cashier-worklist-diagnostic.test.mjs",
+      "sha256": "be767379aca8622b86cab8b4c49975558c2a96f5a17822906a693c13c04ff6a1"
+    },
+    {
+      "path": "VinPoker/scripts/ops/isolated-postgrest-pool.mjs",
+      "sha256": "e36960c97c551c5c806b97cdb31169bde74adafc45ba243139a5e14377a5a97b"
+    },
+    {
+      "path": "VinPoker/scripts/ops/isolated-startup-diagnostic.test.mjs",
+      "sha256": "96e8542499749d70bf2dd9cd0ffcb476d54dbda4aeb013d97e526b41b85e780a"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-audience-hand-delivery.mjs",
+      "sha256": "c7febe9eaebd088348a75dba5cfda2692187bbdb3523221debb3cd0108670a81"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-audience-hand-delivery.test.mjs",
+      "sha256": "066eadaabefa6a71f21a0ab20c5f1e2700ed9ce0521767d8077d5e1e25c6cae1"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-audience-readiness.test.mjs",
+      "sha256": "addc3812aa51307e3b952cf7bcfcd9f2461f559a207c2684de3af366ea74d444"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-audience-scope.mjs",
+      "sha256": "b3f63fcab23115a8b5f0cfaa1517f3b51185d8e446801342c538ade7afc8b8e8"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-audience.mjs",
+      "sha256": "e2b75245a8b2e80db3803ddcbb7b388f57c20e35acda3ca6313f82dff880dc1f"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-postgrest-pool.mjs",
+      "sha256": "b4eeaa35410141e3270caaf5f92de2a444de27f8445f4ca3105c73b3acb5487f"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-rpc-profile.sql",
+      "sha256": "15cefcfcb8acfc5bfa4fbe3aaf2a0bd1436e688842f88f892da2bb927023857c"
+    },
+    {
+      "path": "VinPoker/scripts/ops/operations-spectator-contention-native.mjs",
+      "sha256": "9e3767c5264668537172e0385588720b321f6898d3060c91f11b8596f5d792e5"
+    },
+    {
+      "path": "VinPoker/scripts/ops/prepare-cashier-runtime-dependencies.mjs",
+      "sha256": "d336230b84884a226803243eca76b70b71641a085f0f6f875d0c52e237002322"
+    },
+    {
+      "path": "VinPoker/scripts/ops/prepare-operations-public-hud.mjs",
+      "sha256": "0d7af8a6ea5a1cfa847eeaa9e37019f0d6dc22c4870dd6d7db9ffca15552ae63"
+    },
+    {
+      "path": "VinPoker/scripts/ops/public-replay-diagnostic.mjs",
+      "sha256": "485a9e5375906c156b0461959b71f9efd8aa7ca9fdaa4ec59f6c55b7aa363ab1"
+    },
+    {
+      "path": "VinPoker/scripts/ops/public-replay-diagnostic.test.mjs",
+      "sha256": "75b5d980ea4e90ce442da380bd91486466ae89488427912865c29bdd2a805a3c"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/TournamentLiveView.replayAsyncBoundary.test.tsx",
+      "sha256": "5e8d36d1477d9f9f52f39f3175c3972f577fc687a211a3340cbc49536382d838"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/TournamentLiveView.tsx",
+      "sha256": "20165b8948ddd1c70e70085a989485ff9d1723fddf946a31e13cd7f91d020fba"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotCoordinator.test.ts",
+      "sha256": "4ae345deaac848228c44f6f01aa1dda4076a5df4418eb02a6aa5534838dffe92"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotCoordinator.ts",
+      "sha256": "684b2d4c7f516f4a6be5c88a4585d430280467c00b94f86819b63b0105db6c62"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotRequestFence.test.ts",
+      "sha256": "a96712a4cf6564bc44473d33616db1700b1fcc832852919dcfc13e21a040b773"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotRequestFence.ts",
+      "sha256": "a44bd62bdd95112780078d99f9223bfbd6958857579f97a1a8962a9cbf3ddf2e"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/viewer-hub/usePublicSpectatorSnapshot.test.tsx",
+      "sha256": "2589463d71fb4575db8566a549b925c6c7ed27da6726f2d976b687fcfb75ffcf"
+    },
+    {
+      "path": "VinPoker/src/components/cashier/tournament-live/viewer-hub/usePublicSpectatorSnapshot.ts",
+      "sha256": "484aef2ba0b1be133c92fc0f24d86ea09dbf93c8e6ebce011e74693756702e1c"
+    },
+    {
+      "path": "VinPoker/supabase/functions/public-spectator-projector-v2/index.ts",
+      "sha256": "85a128d9dcd45c0b4229fe9ad79c2bfb95bdc7f4c95ca672a264cc51c0e05281"
+    },
+    {
+      "path": "VinPoker/supabase/functions/public-spectator-projector-v2/sourceBatch.ts",
+      "sha256": "405e7e06e3864c804dc264d9109a6acd6c3d84985178c035a04a5bff70fed2f1"
+    },
+    {
+      "path": "VinPoker/supabase/functions/public-spectator-projector-v2/worker.ts",
+      "sha256": "e5c44144abca7ca7ca8fd73dc307a9e77c1b45d765cdb3b7cfe666899795d82c"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier-tour-edge-register.mjs",
+      "sha256": "b9003dfa7b2718a7f2a46d35bac48e5bc352c310c5c14d1ee450d844ccdc69ce"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_assert.sql",
+      "sha256": "c91ab9b38b3e3ccab1c52060d8c1ca3124c12fe28acaeb0784f3866e6bedf0b6"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_bank.sql",
+      "sha256": "e00feabaed7ed1d965448fbc228908e87eb8d572bda6a230dc42c8522df533ba"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_cash.sql",
+      "sha256": "35a2984309c4adc84e1f9c2ec8307bee25815a14ac94242474308083f7b908bf"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_concurrency_seed.sql",
+      "sha256": "6bba0c5bf185caf7556f3226ea4e25618141141afe6cb0439c9e8df966cddbec"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_disposable_baseline.sql",
+      "sha256": "ede85f8801f1e0996d49a8d33f71f8fe6cc2bcc1d3535433c81a8716df72ceef"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_edge_fixture.sql",
+      "sha256": "5f899cc2a609cc1503303ae7d389c8faf0e5b3c0e4476d437ddbc46fbd535d1d"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_load_assert.sql",
+      "sha256": "4f264684d124beb1235b4a38c749f5aeb805c10c091f3a095bc547364dd29191"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_load_cash.sql",
+      "sha256": "a9dd8aef732f91c507ea5ff1f19500634d78a4e4605b7804ef65cde0ad7ff192"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_load_register.sql",
+      "sha256": "3db3e95b8c8ea5437840823e3343956612fddeb1add08ee3e95e1e0627c28bb3"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_money_v1.sql",
+      "sha256": "393eab3be08fe9ec25f532ede4d3e3feb7986ebbd355dcf5d29b406981374bc1"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/cashier_tour_real_refund_fixture.sql",
+      "sha256": "97a83d00276c330bb53da82942279abbe537caff81e8e24d176264e09db4346d"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/edge-dependency-cache/index.ts",
+      "sha256": "182653dbd0d5aab7239d67b5b9ff5fd909d5494513bff1886460c543ba8e602a"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/fake-sepay-server.mjs",
+      "sha256": "822a0c4384dee572ae2fa908b67cca61594e135a04bb94da2a72512465db89c5"
+    },
+    {
+      "path": "VinPoker/supabase/pending-tests/static-preview-server.mjs",
+      "sha256": "975e0bfd1911af08435e588531995caaf958e1327920acb6a53063e52f328100"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/history-current-profile.native.mjs",
+      "sha256": "93ab3b8486f1b8f854105b39fc308de11a36779d944f9a3312e813cc7750874f"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/history-scope-experiment.native.mjs",
+      "sha256": "670fd2d8b2150bc315c2488f3b58bad95afd0d662f11c85a620b8fc55f8664d2"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/nativeDb.mjs",
+      "sha256": "d6b4f8dccc964d358e48244590ac7637636990c253da737c315baa5939a9dda4"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/nativeRpc.mjs",
+      "sha256": "070de892664e2bdbec55ac0afd5282ee03f617cfc89aed807ed2ba83c803ce2c"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.bundle.mjs",
+      "sha256": "f154e5b7fd8ef8a38e8fb469e31fda7e9276b164920951ed7a6d19974f0da7da"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.edge-runtime.mjs",
+      "sha256": "ea3f5881c5a2e60a8337e2433b9c28af4c85cb53b1ea7d1e9b898c3cf6e5aea1"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.http-ws.mjs",
+      "sha256": "272944f39c01bee4425cdb2da0d7e4636fa79885ced4f1fe79c581a001c13f9a"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.postgrest-metrics.mjs",
+      "sha256": "ec4693029d44d668646e1e7a242c38bd4d31d07a15fac7b4c5965577638c2efa"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.postgrest-metrics.test.mjs",
+      "sha256": "c970634471a0d0874a1f206debbb8c461cc246ae10e021af7502442a45e285ed"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.postgrest.mjs",
+      "sha256": "eb3bc8e6c6677912becf5d7c50a965b831c5c1ca5caad5ddb9a94230fca01101"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.seed.mjs",
+      "sha256": "eeb3b59ec2453b432cb3bdad5045563a4408ce34a12939876112906cf2973fbe"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.spectator-trace.mjs",
+      "sha256": "adec73948a2b7b8600b53c975e5c8ca99794c123ca1297a96ab9893fc216dbf6"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.spectator-trace.test.ts",
+      "sha256": "45eee4b2b16d48e7639083e46396328d0c1fda3be87d1c73fbad901459915c6b"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.sql-profile.mjs",
+      "sha256": "08174431a1cd2f1bddb5b201b1371f1dbb87b2bf4fd4f0fab45519f4919e142a"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.stack-setup.mjs",
+      "sha256": "43a7626e96ce162f074ea23990c6b54200069547a234c807a6f5ca2f6af92e7d"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.stack.sh",
+      "sha256": "160f52443a792841277a630544f59f88929cdb1c47374e389b6b530b566947ff"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.write.diagnostic.test.mjs",
+      "sha256": "43829b721a4a0185b3287a01efdbe99e4874582379b985bd76922400d02fb054"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.write.identity.mjs",
+      "sha256": "9aa32afe1b8a58e030989bd447df31409c98e1c8d0f8e2309731a6f0bb649a6d"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.write.native.mjs",
+      "sha256": "1d4781b8a485d8cdcc28fa14afe8e85ae848c26dcde70e5a5f049e9c92a4fb3c"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.write.protocol.mjs",
+      "sha256": "cdd8d2be5ff4d3854e166e4539bf0c27d5364b96dfb466f2a33c22e2ebaae81d"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.write.qualification.mjs",
+      "sha256": "e7ddcef211df2c9be2b298bbffa4ebd175d018a8b56c6492faeb0b7dafb90e45"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/scale.write.qualification.test.ts",
+      "sha256": "cca157feeb518552221e7aa11b1ffce7fdb303d9fa1114ad00a915c880c399a9"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/spectator-generation.native.mjs",
+      "sha256": "c23eda70b1dbd52cc00dd0cdfb220712695eb960448ebe3acfc9a8d4cec702c5"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/spectator-source-batch.rollback.sql",
+      "sha256": "69416f1479647b5f69a3465ffcb7d446fcedbd325de09db6158660cfc0adacdd"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/spectator-source-pending.forward-rollback.sql",
+      "sha256": "4093107008119901e9de7c0265afb06b5f9764ba2de2a0de2085c9516ee8781e"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/spectator-source-pending.native.mjs",
+      "sha256": "ee195d29b3d4140a4d7b2880eeb3f87f25b3c10d6e5c1387c246ddd04e553ff3"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/spectator-worker.test.ts",
+      "sha256": "52791a44ead385f2b3fa5267ff54fa46b17ef59d29ba1415eda570a320d2c0ce"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/writer-control.native.mjs",
+      "sha256": "0393fc07717121b38fc460ecd528ef54b85fe6f0ac3f4e3d9e479d6a1b09eb85"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/writer-evidence.native.mjs",
+      "sha256": "0a40f4321929538db09e6086e5bdd886e228b6833e061c54d81b327659edf89c"
+    },
+    {
+      "path": "VinPoker/tests/publicHud/writer-wait-observer.native.mjs",
+      "sha256": "d4c946268deaf4a0ed51179786207cc9286063734728919164122b6e526da063"
+    }
+  ],
+  "proof": {
+    "run": 43383314661,
+    "sourceSha": "bea2c224a87722d7fa674d835224c304bc6bc757",
+    "workflowId": 360553822,
+    "actor": "PhamGiaVinh",
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "artifact": {
+      "id": 14018845047,
+      "sha256": "075cc1341c72942d885e3935e0a74091505d41e114c52752f85dfb69b97a8ed7"
+    },
+    "receiptPath": "VinPoker/scripts/ops/fixtures/cashier-source342-344-runtime-receipt.json",
+    "receiptSha256": "0c4fe1f61d65d3b759e18f6b240de4a4fa8359124e649da9465d0edbb3fa1635"
+  }
+}

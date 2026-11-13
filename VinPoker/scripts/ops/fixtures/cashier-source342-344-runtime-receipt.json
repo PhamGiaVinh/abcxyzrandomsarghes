@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "kind": "REVIEWED_OPERATIONAL_EVIDENCE_NOT_HISTORICAL_OR_SCALE_QUALIFICATION",
+  "run": 43383314661,
+  "attempt": 1,
+  "sourceSha": "bea2c224a87722d7fa674d835224c304bc6bc757",
+  "workflowId": 360553822,
+  "actor": "PhamGiaVinh",
+  "event": "workflow_dispatch",
+  "conclusion": "success",
+  "artifact": {
+    "id": 14018845047,
+    "sha256": "075cc1341c72942d885e3935e0a74091505d41e114c52752f85dfb69b97a8ed7"
+  },
+  "receipts": [
+    {
+      "file": "operations-source-generation-candidate-http.json",
+      "sha256": "6c608ca9e622ba0c0f784b8b7301dcdaa4e73883c9915de7199145776ca54121",
+      "receipt": {
+        "kind": "ISOLATED_SOURCE_GENERATION_342_CANDIDATE",
+        "migration": "20270128000342_nonblocking_spectator_source_generation.sql",
+        "qualification": false,
+        "originalBodyMd5": "76e70967db6247ba01fc6d1e9f8355e9",
+        "candidateBodyMd5": "c1da47ebdf9a70ac414ae3f2ccc4b8c0",
+        "productionChanged": false
+      }
+    },
+    {
+      "file": "operations-source-pending-candidate-http.json",
+      "sha256": "e6cf4d2483830705f3f1ce4a566628e3f3b13631585e3edfd575c222c2f285c7",
+      "receipt": {
+        "kind": "ISOLATED_PENDING_SOURCE_FENCED_CANDIDATE",
+        "migration": "20270128000343_spectator_pending_source_outcome.sql",
+        "qualification": false,
+        "productionChanged": false,
+        "originalDefinitionMd5": "0557076e4866159dc1095c5257ceb7c6",
+        "candidateDefinitionMd5": "6269d9fc1b2737f30b56a4bcdb42fb79"
+      }
+    },
+    {
+      "file": "operations-source-batch-candidate-http.json",
+      "sha256": "190c26a886b4a8f0e2c34f49e55fb09d9f8c168d656925e77e8034389079d01c",
+      "receipt": {
+        "kind": "ISOLATED_OPERATIONAL_SOURCE_BATCH_CANDIDATE",
+        "migration": "20270128000344_spectator_bounded_source_batch.sql",
+        "sqlSha256": "f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba",
+        "bodyMd5": "4f3b48343181275c73c002c0591f3318",
+        "metadata": true,
+        "qualification": false,
+        "productionChanged": false
+      }
+    }
+  ],
+  "limit": "Configured operational runtime only; not historical migration proof or two1800s scale qualification."
+}

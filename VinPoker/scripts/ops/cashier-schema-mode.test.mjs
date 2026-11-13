@@ -255,23 +255,15 @@ function commitTree(parent) {
 }
 git('read-tree', baseline);
 for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {
-  setBlob(path, readFileSync(join(sourceRoot, path)));
+  setBlob(path, path === receiptFile ? sourceGit('show', `HEAD:${path}`) : readFileSync(join(sourceRoot, path)));
 }
 const trustedBase = commitTree(baseline);
-// Preserve the Tracker branch's extra operational inputs/checks when integrating
-// the trusted-base selector. Only this exact combined workflow may differ.
-const workflowPath = '.github/workflows/cashier-tour-real-e2e.yml';
-const mergePaths = ['ours.yml', 'base.yml', 'candidate.yml'].map(name => join(fixtureRoot, name));
-writeFileSync(mergePaths[0], workflow.replace(/\r\n?/g, '\n'));
-writeFileSync(mergePaths[1], sourceGit('show', `${baseline}:${workflowPath}`).replace(/\r\n?/g, '\n'));
-writeFileSync(mergePaths[2], sourceGit('show', `${policy.runtimeInputs.candidateSha}:${workflowPath}`).replace(/\r\n?/g, '\n'));
-const integratedWorkflow = git('merge-file', '-p', '--union', ...mergePaths)
-  .replace('          node --test scripts/ops/cashier-schema-mode.test.mjs supabase/pending-tests/fake-sepay-server.test.mjs\n', '');
+// Model an unchanged protected-base workflow. New policy steps must not be
+// union-merged into the historical integration fixture and self-approved.
 git('read-tree', policy.runtimeInputs.candidateSha);
 for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {
-  setBlob(path, readFileSync(join(sourceRoot, path)));
+  setBlob(path, path === receiptFile ? sourceGit('show', `HEAD:${path}`) : readFileSync(join(sourceRoot, path)));
 }
-setBlob(workflowPath, integratedWorkflow);
 const qualifiedHead = commitTree(trustedBase);
 function pagesFor(head, base = trustedBase) {
   const fields = git('diff', '--no-renames', '--name-status', '-z', base, head).split('\0');
