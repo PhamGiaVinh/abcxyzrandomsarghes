@@ -8,7 +8,7 @@ DO $guard$ BEGIN
   AND proowner='postgres'::regrole AND prosecdef AND provolatile='s'
   AND proconfig=ARRAY['search_path=""']::text[]
   AND proacl::text='{postgres=X/postgres,service_role=X/postgres}'
-  AND md5(replace(prosrc,chr(13),''))='af1bdef840f91b8cf467a76cb622622a')
+  AND md5(replace(prosrc,chr(13),''))='4f3b48343181275c73c002c0591f3318')
  THEN RAISE EXCEPTION 'spectator_source_batch_rollback_drift';END IF;
 END $guard$;
 DROP FUNCTION public.get_public_spectator_projection_sources_v2(jsonb);

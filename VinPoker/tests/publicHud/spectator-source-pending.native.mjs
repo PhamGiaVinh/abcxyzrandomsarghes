@@ -155,7 +155,7 @@ const batchReverse=readFileSync('tests/publicHud/spectator-source-batch.rollback
 sql(batchMigration);
 assert.throws(()=>sql(batchMigration,{captureFailure:true}),/preimage_drift/);
 const batchProof=jsonSql(`BEGIN;
- INSERT INTO public.tournaments(id) VALUES('10000000-0000-4000-8000-000000000091'),('10000000-0000-4000-8000-000000000092');
+ INSERT INTO public.tournaments(id) SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid FROM generate_series(91,96) i;
  SET LOCAL request.jwt.claim.role='service_role';
  CREATE TEMP TABLE batch_claims AS WITH claimed AS MATERIALIZED (SELECT public.claim_public_spectator_projection_v2(6) jobs)
  SELECT jsonb_agg(jsonb_build_object('tournament_id',item->'tournament_id','component',item->'component','fencing_token',item->'fencing_token')) jobs
@@ -167,6 +167,30 @@ const batchProof=jsonSql(`BEGIN;
  'wrongTokenFenced',(SELECT public.get_public_spectator_projection_sources_v2(jsonb_build_array((jobs->0)||jsonb_build_object('fencing_token',gen_random_uuid())))->0->'source'='{"fenced":true}'::jsonb FROM batch_claims));
  ROLLBACK;`);
 assert.equal(batchProof.count,6);assert.equal(batchProof.equal,true);assert.equal(batchProof.wrongTokenFenced,true);
+const budgetProof=[];
+for(const characters of [530000,300000]){
+ const measured=jsonSql(`BEGIN;
+ CREATE TEMP TABLE large_scopes AS SELECT gen_random_uuid() id FROM generate_series(1,6);
+ INSERT INTO public.tournaments(id) SELECT id FROM large_scopes;
+ INSERT INTO public.tournament_tables(id,tournament_id,table_name) SELECT gen_random_uuid(),id,repeat('é',${characters}) FROM large_scopes;
+ SELECT spectator_projection_v2.mark_dirty(id,'tables','generation','component') FROM large_scopes;
+ SET LOCAL request.jwt.claim.role='service_role';
+ CREATE TEMP TABLE large_claims AS WITH claimed AS MATERIALIZED (SELECT public.claim_public_spectator_projection_v2(50) jobs)
+ SELECT jsonb_agg(jsonb_build_object('tournament_id',item->'tournament_id','component',item->'component','fencing_token',item->'fencing_token')) jobs
+ FROM claimed CROSS JOIN LATERAL jsonb_array_elements(claimed.jobs) item WHERE item->>'component'='tables';
+ GRANT SELECT ON large_claims TO service_role;SET LOCAL ROLE service_role;
+ WITH reads AS MATERIALIZED (SELECT jobs,public.get_public_spectator_projection_sources_v2(jobs) batch FROM large_claims)
+ SELECT jsonb_build_object('count',jsonb_array_length(jobs),'batchBytes',octet_length(convert_to(batch::text,'UTF8')),
+ 'individualCount',(SELECT count(*) FROM jsonb_array_elements(batch) item WHERE item->'requiresIndividual'='true'::jsonb),
+ 'sourceCount',(SELECT count(*) FROM jsonb_array_elements(batch) item WHERE item ? 'source'),
+ 'singleBytes',octet_length(convert_to(public.get_public_spectator_projection_source_v2((jobs->0->>'tournament_id')::uuid,'tables',(jobs->0->>'fencing_token')::uuid)::text,'UTF8')))
+ FROM reads;ROLLBACK;`);
+ assert.equal(measured.count,6);assert.ok(measured.batchBytes<=1048576);assert.ok(measured.singleBytes>characters*2);
+ assert.equal(measured.sourceCount+measured.individualCount,6,'Budget fixtures must not hide source errors');
+ if(characters===530000)assert.equal(measured.individualCount,6);
+ else{assert.ok(measured.individualCount>0);assert.ok(measured.sourceCount>0);}
+ budgetProof.push({characters,...measured});
+}
 const validJob={tournament_id:tour,component:'visibility',fencing_token:'00000000-0000-4000-8000-000000000001'};
 for(const invalid of [null,{},[],Array(7).fill(validJob),[validJob,validJob],[{...validJob,extra:true}],
  [{...validJob,tournament_id:'bad'}],[{...validJob,fencing_token:null}],[{...validJob,component:'clock'}]]){
@@ -178,7 +202,7 @@ for(const role of ['authenticated',''])assert.throws(()=>sql(`SET request.jwt.cl
 assert.throws(()=>sql(`BEGIN;GRANT EXECUTE ON FUNCTION ${batchSignature} TO anon;${strip(batchReverse)}ROLLBACK;`,{captureFailure:true}),/rollback_drift/);
 sql(batchReverse);assert.equal(sql(`SELECT to_regprocedure('${batchSignature}') IS NULL;`),'t');
 assert.equal(hash(),candidateHash);assert.deepEqual(metadata(),before);
-console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
+console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,budgetProof,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
 sql(recovery);assert.equal(hash(),baselineHash);assert.deepEqual(metadata(),before);
 console.log(JSON.stringify({kind:'NATIVE_PENDING_SOURCE_ACTUAL_WORKER_RACE_NOT_HTTP_LOAD',passed:true,baselineHash,candidateHash,
  checks:['baseline-real-source-pending-worker-failure','source-update-commits-during-advisory-lock','candidate-no-payload-no-publish-no-failure','deferred-work-retained','later-worker-absorbs-and-publishes','parallel-startup-post-flush-absorption-retained','source-withdrawal-immediately-revoked','final-flush-delivers-later-notification','logical-deadline-retains-outbox','following-duplicate-workers-recover','metadata-preserved','actor-denied','backup-private','repeat-apply-denied','active-lease-recovery-denied','exact-recovery'],productionChanged:false,qualification:false}));
