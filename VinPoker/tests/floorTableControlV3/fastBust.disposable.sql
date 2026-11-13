@@ -27,7 +27,7 @@ BEGIN
  (g,'00000000-0000-0000-0000-000000000010','TEST fast bust',
   (SELECT coalesce(max(table_number),0)+1 FROM public.game_tables WHERE club_id='00000000-0000-0000-0000-000000000010'),'available');
  opened:=public.floor_open_tournament_table_v3(t,g,mode,gen_random_uuid());
- PERFORM public.floor_table_v3_assert(opened->>'ok'='true','fixture table opens: '||opened);
+ PERFORM public.floor_table_v3_assert(opened->>'ok'='true','fixture table opens: '||opened::text);
  tt:=(opened->>'tournament_table_id')::uuid; sess:=(opened->>'table_session_id')::uuid;
  IF entry_kind<>'missing' THEN
   INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,status,current_stack)
@@ -69,8 +69,8 @@ BEGIN
  SET LOCAL ROLE authenticated;
  r:=public.get_floor_tournament_table_roster_v7((c->>'tour')::uuid);
  RESET ROLE;
- PERFORM public.floor_table_v3_assert(r#>>'{0,seats,0,seat_id}'=c->>'seat'
-  AND r#>>'{0,seats,0,seat_entry_id}'=c->>'entry','authorized roster carries exact row identity');
+ PERFORM public.floor_table_v3_assert((r#>>'{0,seats,0,seat_id}')=(c->>'seat')
+  AND (r#>>'{0,seats,0,seat_entry_id}')=(c->>'entry'),'authorized roster carries exact row identity');
  SELECT revision INTO old_revision FROM public.table_sessions WHERE id=(c->>'session')::uuid;
  -- Changes to unrelated roster revision no longer stale this exact-seat intent.
  UPDATE public.table_sessions SET revision=revision+10 WHERE id=(c->>'session')::uuid;

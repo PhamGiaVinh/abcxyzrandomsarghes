@@ -1,6 +1,7 @@
 -- Source-only. Apply only as a reviewed production package with a recovery point.
 -- Existing bust, result, payment and hand-history contracts remain unchanged.
 -- Rollback: revoke these two new RPC grants and restore the previous frontend.
+BEGIN;
 
 CREATE FUNCTION public.get_floor_tournament_table_roster_v7(p_tournament_id uuid)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
@@ -166,3 +167,4 @@ REVOKE ALL ON FUNCTION public.get_floor_tournament_table_roster_v7(uuid) FROM PU
 REVOKE ALL ON FUNCTION public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_floor_tournament_table_roster_v7(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text) TO authenticated;
+COMMIT;

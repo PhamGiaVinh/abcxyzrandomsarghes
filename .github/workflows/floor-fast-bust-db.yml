@@ -4,6 +4,11 @@ on:
     paths:
       - 'VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql'
       - 'VinPoker/tests/floorTableControlV3/fastBust*'
+      - 'VinPoker/src/lib/floorFastBust.test.ts'
+      - 'VinPoker/src/lib/floorTableControlV3.ts'
+      - 'VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/__tests__/FloorTableMapPanelV3.closed.test.tsx'
+      - 'VinPoker/src/components/ops/shared/FloorSeatRoster.tsx'
       - '.github/workflows/floor-fast-bust-db.yml'
 jobs:
   frontend:
