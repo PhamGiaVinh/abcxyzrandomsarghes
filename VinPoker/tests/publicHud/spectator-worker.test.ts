@@ -32,6 +32,35 @@ function fixture(count=8){
 }
 async function settle(){for(let i=0;i<100;i++)await Promise.resolve();}
 
+it('bounds job concurrency at six and finishes claimed work once without overlapping each job',async()=>{
+ const jobs=Array.from({length:21},(_,i)=>({tournament_id:'tour-'+i,component:'tables',group_key:'component',fencing_token:'token-'+i}));
+ let active=0,maxActive=0,started=0;
+ const releases:Array<()=>void>=[],published=new Set<string>(),sourceReady=new Set<string>();
+ const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
+  if(name==='claim_public_spectator_projection_v2')return {data:jobs,error:null};
+  if(name==='get_public_spectator_projection_source_v2'){
+   active++;started++;maxActive=Math.max(maxActive,active);
+   await new Promise<void>(resolve=>releases.push(resolve));
+   sourceReady.add(String(args.p_tournament_id));
+   return {data:{sourceVector:{generation:'1'},payload:{items:[]}},error:null};
+  }
+  if(name==='publish_public_spectator_projection_v2'){
+   const key=String(args.p_tournament_id);expect(sourceReady.has(key)).toBe(true);expect(published.has(key)).toBe(false);
+   published.add(key);active--;return {data:true,error:null};
+  }
+  return {data:0,error:null};
+ });
+ const running=processPublicSpectatorJobs({rpc});await settle();
+ expect(started).toBe(6);expect(active).toBe(6);
+ for(let wave=0;wave<jobs.length&&published.size<jobs.length;wave++){
+  for(const release of releases.splice(0))release();await settle();
+ }
+ expect(published.size).toBe(jobs.length);
+ const result=await running;
+ expect(maxActive).toBe(6);expect(active).toBe(0);expect(result.processed).toBe(21);
+ expect(result.results.every(row=>row.published&&!row.error)).toBe(true);
+});
+
 function startupFixture(){
  let absorbResolve!:(value:{data:unknown;error:unknown})=>void,flushResolve!:(value:{data:unknown;error:unknown})=>void;
  let absorbReject!:(error:Error)=>void,flushReject!:(error:Error)=>void;
