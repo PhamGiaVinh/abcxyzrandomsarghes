@@ -80,7 +80,11 @@ export function executeMigration(pkg,transport,report=()=>{}){
   report(`STOP345 receipt=${observed}; no automatic retry`);
   throw Error('Floor345 apply outcome requires review');
  }
- const receipt=transport.json(receiptSql(item));
+ let receipt;
+ try{receipt=transport.json(receiptSql(item));}catch{
+  report('STOP345 receipt=unavailable; commit status unknown; no automatic retry');
+  throw Error('Floor345 post-write receipt unavailable; review outcome');
+ }
  assert.ok(receipt.count===1&&receipt.exact===true,'Floor345 receipt differs; stop');
  report("COMMITTED_EXACT "+item.version+" "+item.hash);
  const post=transport.json(postcheckSql(pkg));

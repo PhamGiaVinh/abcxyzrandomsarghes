@@ -40,6 +40,12 @@ test('bad post-receipt or ACL cannot report success',()=>{
   const reports=[];assert.throws(()=>executeMigration(pkg,{json:()=>rows.shift(),execute:()=>{}},s=>reports.push(s)));assert.ok(!reports.includes('FLOOR345_OBJECT_POSTCHECK_PASS')); if(reports.length)assert.match(reports[0],/^COMMITTED_EXACT /);
  }
 });
+test('post-write receipt outage explicitly reports unknown commit without retry',()=>{
+ let reads=0,writes=0;const reports=[];
+ assert.throws(()=>executeMigration(pkg,{json:()=>{if(reads++===0)return ready;throw Error('offline');},execute:()=>writes++},s=>reports.push(s)),/receipt unavailable/);
+ assert.equal(writes,1);assert.equal(reads,2);
+ assert.match(reports[0],/receipt=unavailable; commit status unknown; no automatic retry/);
+});
 function context(){
  const source='a'.repeat(40),controller='b'.repeat(40),owner='PhamGiaVinh';
  return {env:{RELEASE_SHA:source,SOURCE_CHECKOUT_SHA:source,GITHUB_SHA:controller,SOURCE_PR_BASE_SHA:controller,
