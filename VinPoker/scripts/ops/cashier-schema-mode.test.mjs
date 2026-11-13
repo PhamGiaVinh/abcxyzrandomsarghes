@@ -135,6 +135,21 @@ test('batch audience admission requires both actual selected mode and batch RPC 
  }
 });
 
+test('batch SQL identity check resolves repository files from a foreign working directory',()=>{
+ const marker="<<'BATCH_SOURCE_HASH'\n";
+ const start=script.indexOf(marker)+marker.length;assert.ok(start>=marker.length);
+ const code=script.slice(start,script.indexOf('\nBATCH_SOURCE_HASH',start));
+ const root=fileURLToPath(new URL('../../',import.meta.url));
+ const result=spawnSync(process.execPath,['--input-type=module','-',root],{cwd:tmpdir(),input:code,encoding:'utf8',timeout:5000});
+ assert.equal(result.status,0,result.stderr);
+ const metadataMarker="<<'BATCH_SOURCE_METADATA'\n";
+ const metadataStart=script.indexOf(metadataMarker)+metadataMarker.length;assert.ok(metadataStart>=metadataMarker.length);
+ const imports=script.slice(metadataStart,script.indexOf('const query=',metadataStart));
+ const metadata=spawnSync(process.execPath,['--input-type=module','-','owned-container','unused-report.json',root],{
+  cwd:tmpdir(),input:imports+"\nassert.equal(sourceBatchProfile.sqlSha256,'f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba');",encoding:'utf8',timeout:5000});
+ assert.equal(metadata.status,0,metadata.stderr);
+});
+
 test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
  const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
  const end=script.indexOf('\nrun_browser_proof\n',start);

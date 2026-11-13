@@ -1684,17 +1684,17 @@ AUDIENCE_REALTIME_RECEIPT
          FROM spectator_projection_v2.source_pending_original_v1;" \
           >"$repo_root/output/operations-latency/operations-source-pending-candidate-http.json"
         if [[ "$source_batch_probe" == 1 ]]; then
-          node --input-type=module <<'BATCH_SOURCE_HASH'
-import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
-import {sourceBatchProfile} from './tests/publicHud/scale.write.protocol.mjs';
-const sql=readFileSync('supabase/pending-migrations/'+sourceBatchProfile.migration,'utf8');
+          node --input-type=module - "$repo_root" <<'BATCH_SOURCE_HASH'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';import {pathToFileURL} from 'node:url';
+const root=process.argv[2];const {sourceBatchProfile}=await import(pathToFileURL(root+'/tests/publicHud/scale.write.protocol.mjs'));
+const sql=readFileSync(root+'/supabase/pending-migrations/'+sourceBatchProfile.migration,'utf8');
 assert.equal(createHash('sha256').update(sql.replace(/\r\n?/g,'\n')).digest('hex'),sourceBatchProfile.sqlSha256);
 BATCH_SOURCE_HASH
           docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
             <"$repo_root/supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql"
-          node --input-type=module - "$db_container" "$repo_root/output/operations-latency/operations-source-batch-candidate-http.json" <<'BATCH_SOURCE_METADATA'
-import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {writeFileSync} from 'node:fs';
-import {sourceBatchProfile} from './tests/publicHud/scale.write.protocol.mjs';
+          node --input-type=module - "$db_container" "$repo_root/output/operations-latency/operations-source-batch-candidate-http.json" "$repo_root" <<'BATCH_SOURCE_METADATA'
+import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {writeFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';
+const {sourceBatchProfile}=await import(pathToFileURL(process.argv[4]+'/tests/publicHud/scale.write.protocol.mjs'));
 const query=`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),
  'metadata',proowner='postgres'::regrole AND prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=""']::text[]
  AND proacl::text='{postgres=X/postgres,service_role=X/postgres}')
