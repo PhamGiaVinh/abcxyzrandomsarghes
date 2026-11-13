@@ -133,7 +133,7 @@ jobs:
             echo "- Workflow run ID: \`${GITHUB_RUN_ID}\`"
             echo "- Schema SHA-256: \`$schema_sha\`"
             echo "- Project fingerprint: \`$project_fingerprint\`"
-            echo "- schema_names=public,storage,floor_private,private,spectator_projection_v2"
+            echo "- schema_names=public,storage,floor_private,private,spectator_projection_v2,tracker_analytics_v1"
             echo "- schema_only=true"
             echo "- schema_artifact_sanitized=true"
             echo "- data_rows_captured=false"
