@@ -42,7 +42,15 @@ test('new protected-base legacy gates cannot be overwritten by an old integratio
 
  test('proposed routing preserves every existing legacy runtime step',()=>{
  const old=readFileSync(new URL('../../../.github/workflows/dealer-checkin-current-schema.yml',import.meta.url),'utf8').replace(/\r\n/g,'\n');
- const next=readFileSync(new URL('./floor345-runtime-integration.yml',import.meta.url),'utf8');
+ const next=readFileSync(new URL('./floor345-runtime-integration.yml',import.meta.url),'utf8').replace(/\r\n/g,'\n');
+ // After the reviewed integration lands, both files are intentionally identical.
+ // The exact-scope selector independently pins the original protected preimage.
+ if(old===next){
+  const policy=JSON.parse(readFileSync(new URL('./floor345-runtime-scope.json',import.meta.url)));
+  assert.equal(hash(next),policy.integrationWorkflow.sha256);
+  assert.match(next,/test "\$FLOOR345_RESULT" = success/);
+  return;
+ }
  const oldBody=old.split('jobs:\n  runtime:\n')[1];
  const marker="  legacy-runtime:\n    needs: select-floor345\n    if: needs.select-floor345.outputs.mode != 'floor345'\n";
  assert.ok(oldBody&&next.includes(marker));assert.equal(next.split(marker)[1],oldBody);
