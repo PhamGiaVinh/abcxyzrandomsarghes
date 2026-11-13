@@ -9,6 +9,59 @@ exec(compile(pathlib.Path(__file__).with_name("writer.wait.observer.py").read_te
 
 
 class ObserverSafety(unittest.TestCase):
+    def test_during_arm_parser_accepts_only_fixed_numeric_counters_and_complete_samples(self):
+        sample = "BEGIN 123.456\ncpu.stat\nusage_usec 9\nuser_usec 6\nsystem_usec 3\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\ncpu.pressure\nsome avg10=0.00 avg60=0.00 avg300=0.00 total=10\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=9\nio.pressure\nsome avg10=0.00 avg60=0.00 avg300=0.00 total=21\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=20\nEND\n"
+        rows, invalid = scope["parse_container_ring"](sample)
+        self.assertEqual(invalid, 0)
+        self.assertEqual(rows[0]["epochSeconds"], 123.456)
+        rows, invalid = scope["parse_container_ring"](sample.replace("usage_usec 9", "private_secret token"))
+        self.assertGreater(invalid, 0)
+        self.assertNotIn("private_secret", str(rows))
+        self.assertGreater(scope["parse_container_ring"](sample.replace("END\n", ""))[1], 0)
+        rows, invalid = scope["parse_container_ring"](sample * 151)
+        self.assertEqual(len(rows), 150)
+        self.assertEqual(invalid, 1)
+        for malformed in (sample.replace("user_usec 6\n", ""), sample.replace("usage_usec 9", "usage_usec 9\nusage_usec 10"), sample.replace("cpu.stat\n", "cpu.stat\ncpu.stat\n")):
+            self.assertGreater(scope["parse_container_ring"](malformed)[1], 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "container-ring.txt").write_text(sample)
+            ring = {"process": Mock(returncode=0), "output": Mock(), "stop": Mock(),
+                    "thread": Mock(), "errors": [], "readyBeforeArm": False}
+            ring["thread"].is_alive.return_value = False
+            result = scope["finish_container_ring"](ring, root)
+            self.assertEqual(len(result["samples"]), 1)
+            self.assertFalse(result["available"], "Late-only samples must not imply a during-arm observation")
+
+    def test_during_arm_reader_stops_feed_and_drains_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "container-ring.txt").write_text("")
+            process = Mock(returncode=0)
+            ring = {"process": process, "output": Mock(), "stop": Mock(), "thread": Mock(), "errors": [], "readyBeforeArm": False}
+            ring["thread"].is_alive.return_value = False
+            result = scope["finish_container_ring"](ring, root)
+            ring["stop"].set.assert_called_once()
+            ring["thread"].join.assert_called_once_with(timeout=1)
+            process.wait.assert_called_once_with(timeout=3)
+            ring["output"].close.assert_called_once()
+            self.assertFalse(result["available"])
+
+    def test_during_arm_reader_uses_one_fixed_command_and_closes_stdin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process = Mock(returncode=0)
+            with patch.dict(scope, {"database_container_target": lambda: "supabase_db_hud-scale-1-1"}), patch.object(scope["subprocess"], "Popen", return_value=process) as launch:
+                ring = scope["start_container_ring"](pathlib.Path(directory))
+                ring["stop"].set()
+                ring["thread"].join(timeout=1)
+                self.assertFalse(ring["thread"].is_alive())
+                process.stdin.close.assert_called_once()
+                self.assertEqual(launch.call_count, 1)
+                command = launch.call_args.args[0]
+                self.assertEqual(command[:6], ["docker", "exec", "-i", "supabase_db_hud-scale-1-1", "sh", "-c"])
+                self.assertIn('head -c 1024 "/sys/fs/cgroup/$file"', command[6])
+                scope["finish_container_ring"](ring, pathlib.Path(directory))
+
     def test_container_identity_and_marker_are_checked_before_counter_reads(self):
         env = {"PGHOST": "127.0.0.1", "PGPORT": "54322",
                "PGDATABASE": "vinpoker_hud_test_pair_1_1", "PUBLIC_HUD_STACK_PROJECT": "hud-scale-2-1"}

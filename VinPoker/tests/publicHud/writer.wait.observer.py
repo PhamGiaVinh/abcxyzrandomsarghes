@@ -8,9 +8,7 @@ import threading
 import time
 
 
-def database_container_snapshot():
-    # Fixed read-only cgroup counters, never Docker inspect/env/log output.
-    started_at = time.time()
+def database_container_target():
     project = os.environ.get("PUBLIC_HUD_STACK_PROJECT", "")
     match = re.fullmatch(r"hud-scale-([a-z0-9]+)-([a-z0-9]+)", project)
     database = os.environ.get("PGDATABASE", "")
@@ -24,6 +22,13 @@ def database_container_snapshot():
                             capture_output=True, text=True, check=True, timeout=5).stdout.strip()
     if marker != "vinpoker-hud-writer-control-disposable":
         raise RuntimeError("writer_container_disposable_marker_required")
+    return container
+
+
+def database_container_snapshot():
+    # Fixed read-only cgroup counters, never Docker inspect/env/log output.
+    started_at = time.time()
+    container = database_container_target()
     values = {}
     for name in ("cpu.stat", "cpu.pressure", "io.pressure", "io.stat", "memory.pressure"):
         try:
@@ -38,6 +43,106 @@ def database_container_snapshot():
             "durationMs": (finished_at - started_at) * 1000,
             "scope": "owned-database-container-cgroup",
             "available": all(value is not None for value in values.values()), "values": values}
+
+
+def start_container_ring(root):
+    container = database_container_target()
+    output = (root / "container-ring.txt").open("w")
+    # One persistent owned-container reader. EOF stops it; no background shell,
+    # Docker exec per tick, environment/config/log read or business SQL.
+    script = """while IFS= read -r tick; do
+      printf 'BEGIN %s\\n' "$(date +%s.%N)"
+      for file in cpu.stat cpu.pressure io.pressure; do
+        printf '%s\\n' "$file"
+        head -c 1024 "/sys/fs/cgroup/$file" 2>/dev/null
+      done
+      printf 'END\\n'
+    done"""
+    process = subprocess.Popen(["docker", "exec", "-i", container, "sh", "-c", script],
+                               stdin=subprocess.PIPE, stdout=output, stderr=subprocess.DEVNULL, text=True)
+    stop = threading.Event()
+    errors = []
+    def feed():
+        try:
+            for _ in range(150):
+                if stop.is_set():
+                    break
+                process.stdin.write("tick\n")
+                process.stdin.flush()
+                if stop.wait(.2):
+                    break
+        except (OSError, ValueError):
+            errors.append("container_reader_unavailable")
+        finally:
+            process.stdin.close()
+    thread = threading.Thread(target=feed, daemon=True)
+    thread.start()
+    deadline, ready = time.monotonic() + 2, False
+    while time.monotonic() < deadline and process.poll() is None:
+        try:
+            rows, invalid = parse_container_ring((root / "container-ring.txt").read_text())
+            ready = bool(rows) and not invalid
+        except OSError:
+            ready = False
+        if ready:
+            break
+        time.sleep(.01)
+    return {"process": process, "output": output, "stop": stop, "thread": thread,
+            "errors": errors, "readyBeforeArm": ready}
+
+
+def finish_container_ring(ring, root):
+    ring["stop"].set()
+    ring["thread"].join(timeout=1)
+    forced = ring["thread"].is_alive()
+    try:
+        ring["process"].wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        forced = True
+        ring["process"].kill()
+        ring["process"].wait(timeout=3)
+    ring["output"].close()
+    path = root / "container-ring.txt"
+    oversized = path.stat().st_size > 1048576
+    samples, invalid = parse_container_ring("" if oversized else path.read_text())
+    return {"intervalMs": 200, "maxSamples": 150, "samples": samples, "invalid": invalid,
+            "oversized": oversized, "forcedStop": forced, "exitCode": ring["process"].returncode,
+            "readyBeforeArm": ring["readyBeforeArm"],
+            "available": ring["readyBeforeArm"] and bool(samples) and not invalid and not oversized and not forced
+                         and not ring["errors"] and ring["process"].returncode == 0,
+            "limits": "Sequential fixed-file reads; instrumentation can perturb latency; not qualification"}
+
+
+def parse_container_ring(text):
+    samples = []
+    invalid = 0
+    for block in text.split("BEGIN ")[1:]:
+        lines = block.splitlines()
+        if not lines or not re.fullmatch(r"[0-9]+\.[0-9]+", lines[0]) or lines[-1:] != ["END"]:
+            invalid += 1
+            continue
+        values, current = {}, None
+        for line in lines[1:-1]:
+            if line in ("cpu.stat", "cpu.pressure", "io.pressure"):
+                if line in values:
+                    invalid += 1
+                current = line
+                values[current] = []
+            elif (current == "cpu.stat" and re.fullmatch(r"(?:usage_usec|user_usec|system_usec|nice_usec|core_sched\.force_idle_usec|nr_periods|nr_throttled|throttled_usec|nr_bursts|burst_usec) [0-9]+", line)
+                  or current in ("cpu.pressure", "io.pressure") and re.fullmatch(r"(?:some|full) avg10=[0-9]+\.[0-9]+ avg60=[0-9]+\.[0-9]+ avg300=[0-9]+\.[0-9]+ total=[0-9]+", line)):
+                values[current].append(line)
+            else:
+                invalid += 1
+        required_cpu = {"usage_usec", "user_usec", "system_usec", "nr_periods", "nr_throttled", "throttled_usec"}
+        cpu_keys = [line.split()[0] for line in values.get("cpu.stat", [])]
+        pressures_complete = all(sorted(line.split()[0] for line in values.get(name, [])) == ["full", "some"]
+                                 for name in ("cpu.pressure", "io.pressure"))
+        if (len(values) != 3 or not required_cpu.issubset(cpu_keys) or len(cpu_keys) != len(set(cpu_keys))
+                or not pressures_complete or len(samples) >= 150):
+            invalid += 1
+            continue
+        samples.append({"epochSeconds": float(lines[0]), "values": values})
+    return samples, invalid
 
 
 def kernel_snapshot():
@@ -102,7 +207,20 @@ def start_writer_observer(root):
         if ready:
             break
         time.sleep(.01)
+    try:
+        ring = start_container_ring(root)
+    except Exception:
+        timer.cancel()
+        sampler.terminate()
+        try:
+            sampler.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            sampler.kill()
+            sampler.wait()
+        output.close()
+        raise
     return {"process": sampler, "output": output, "timer": timer, "ready": ready,
+            "containerRing": ring,
             "before": kernel_snapshot(), "containerBefore": container_before}
 
 
@@ -129,6 +247,7 @@ def finish_writer_observer(observer, root):
         sampler.kill()
         sampler.wait()
     observer["output"].close()
+    ring = finish_container_ring(observer["containerRing"], root) if "containerRing" in observer else None
     path = root / "writer-waits.jsonl"
     rows = []
     parse_failures = 0
@@ -152,8 +271,9 @@ def finish_writer_observer(observer, root):
             "samples": rows[:600], "before": observer["before"],
             "after": after,
             "databaseContainer": {"before": observer.get("containerBefore"),
+                                  "during": ring,
                                   "after": database_container_snapshot() if "containerBefore" in observer else None,
-                                  "resolution": "arm-boundaries-only-not-per-transaction",
+                                  "resolution": "before-after sequential snapshots; during ring nominal200ms with pre-arm handshake",
                                   "limits": "Sequential reads; counter resets/restarts must be excluded before interpreting deltas",
                                   "samplingCanPerturbLatency": True},
             "backendScope": "reserved-pgbench-application-in-owned-database"}
