@@ -575,11 +575,14 @@ test("pre-922 rollback runs planning, source quality and target-aware contract p
       "process-swing",
     ]);
 
-    const currentMain = execFileSync("git", ["-C", repositoryRoot, "rev-parse", "origin/main"], { encoding: "utf8" }).trim();
+    // Immutable four-dealer rollback fixture, matching the planner test.
+    const currentMain = "6a281d99e29eeb539827c10f429131eacdabf119";
+    const dealerTargets = new Set(CRITICAL_TARGETS.split(","));
     const baselines = {
       frontend: { sha: currentMain, source: "github_deployment_receipt" },
       functions: Object.fromEntries(Object.keys(manifest.functions).map((name) => [name, {
-        sha: name === "tournament-live-clock" ? PRE_FLOOR_CLOCK_BRIDGE_RECEIPT_SHA : currentMain,
+        sha: name === "tournament-live-clock" ? PRE_FLOOR_CLOCK_BRIDGE_RECEIPT_SHA
+          : dealerTargets.has(name) ? currentMain : PRE_922_SHA,
         source: "github_deployment_receipt",
       }])),
     };
