@@ -4,6 +4,8 @@ on:
     paths:
       - '.github/workflows/floor345-fresh-schema.yml'
       - 'VinPoker/scripts/ops/floor345-fresh-baseline*'
+      - 'VinPoker/scripts/ops/select-floor345-runtime*'
+      - 'VinPoker/scripts/ops/floor345-runtime-*'
       - 'VinPoker/tests/floorTableControlV3/floor345.currentSchema*'
 permissions: {actions: read, contents: read}
 jobs:
@@ -40,7 +42,7 @@ jobs:
         working-directory: controls/VinPoker
         env:
           FLOOR345_CANDIDATE_REPO: ../../candidate
-        run: node --test scripts/ops/floor345-fresh-baseline.test.mjs
+        run: node --test scripts/ops/floor345-fresh-baseline.test.mjs scripts/ops/select-floor345-runtime.test.mjs
       - name: Download owner-approved fresh schema with immutable provenance
         env:
           GH_TOKEN: ${{ github.token }}
