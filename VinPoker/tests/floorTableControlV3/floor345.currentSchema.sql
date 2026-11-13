@@ -3,6 +3,13 @@
 CREATE FUNCTION public.floor_table_v3_assert(p_condition boolean,p_message text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN IF p_condition IS DISTINCT FROM true THEN RAISE EXCEPTION 'Floor345 assertion failed: %',p_message; END IF; END $$;
 INSERT INTO auth.users(id) VALUES('00000000-0000-0000-0000-000000000001'),('00000000-0000-0000-0000-000000000003');
 INSERT INTO public.clubs(id,owner_id,name,region,bot_enabled) VALUES('00000000-0000-0000-0000-000000000010','00000000-0000-0000-0000-000000000001','TEST Floor345','TEST',false);
+-- The schema-only restore intentionally contains no release configuration rows.
+-- Configure only this isolated fixture club through the real release table.
+SELECT public.floor_table_v3_assert(NOT centerpoint_private.tournament_ops_release_allowed_v1('00000000-0000-0000-0000-000000000010'),'unconfigured club is release-closed');
+INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
+VALUES(true,true,ARRAY['00000000-0000-0000-0000-000000000010'::uuid]);
+SELECT public.floor_table_v3_assert(centerpoint_private.tournament_ops_release_allowed_v1('00000000-0000-0000-0000-000000000010'),'fixture club explicitly released');
+SELECT public.floor_table_v3_assert(NOT centerpoint_private.tournament_ops_release_allowed_v1('00000000-0000-0000-0000-000000000011'),'other club remains release-closed');
 CREATE SCHEMA fast_bust_test;
 CREATE FUNCTION fast_bust_test.seed(mode text DEFAULT 'manual', entry_kind text DEFAULT 'valid')
 RETURNS jsonb LANGUAGE plpgsql AS $$
