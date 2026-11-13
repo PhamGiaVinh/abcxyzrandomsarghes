@@ -11,7 +11,7 @@ import {createLocalHttpTransport} from './scale.http.mjs';
 import {readBoundedMetrics,parsePostgrestServerTiming} from './scale.postgrest-metrics.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
-import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled} from './scale.write.protocol.mjs';
+import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled} from './scale.write.protocol.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
@@ -36,6 +36,7 @@ const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 assert.ok(['0','1'].includes(process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE??'0'));
 const sourceGenerationProbe=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1';
 const pendingSourceProbe=pendingSourceProbeEnabled(process.env);
+const sourceBatchProbe=sourceBatchProbeEnabled(process.env);
 if(sourceGenerationProbe){
  const seeded=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).sourceGenerationCandidate;
  for(const [key,value] of Object.entries(sourceGeneration342Profile))assert.equal(seeded?.[key],value,'Main audience fixture must contain the pinned342candidate');
@@ -48,6 +49,16 @@ if(pendingSourceProbe){
  const {stdout}=await run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',"SELECT md5(replace(pg_get_functiondef('public.get_public_spectator_projection_source_v2(uuid,text,uuid)'::regprocedure),chr(13),''));"],{env:{...process.env,PGPASSWORD:'postgres'}});
  assert.equal(stdout.trim(),pendingSourceProfile.definitionMd5,'Actual audience source function must match native-verified candidate');
 }else assert.equal(pendingSeed,undefined,'Pending source candidate requires explicit opt-in');
+const batchSeed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).sourceBatchCandidate;
+let sourceBatchCallsAtStart=0,sourceBatchStatsAtStart=null;
+if(sourceBatchProbe){
+ for(const [key,value] of Object.entries(sourceBatchProfile))assert.equal(batchSeed?.[key],value,'Audience fixture must contain the pinned source-batch candidate');
+ assert.equal(JSON.parse(readFileSync('output/hud-scale/source-batch-mode.json','utf8')).actualModeVerified,true);
+ const {stdout}=await run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',"SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='public.get_public_spectator_projection_sources_v2(jsonb)'::regprocedure;"],{env:{...process.env,PGPASSWORD:'postgres'}});
+ assert.equal(stdout.trim(),sourceBatchProfile.bodyMd5);
+ const counted=await run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',"SELECT jsonb_build_object('calls',coalesce((SELECT calls FROM spectator_projection_v2.fixture_rpc_profile WHERE rpc='get_public_spectator_projection_sources_v2'),0),'statsInfo',(SELECT to_jsonb(v) FROM spectator_projection_v2.fixture_rpc_profile_info v));"],{env:{...process.env,PGPASSWORD:'postgres'}});
+ const snapshot=JSON.parse(counted.stdout.trim());sourceBatchCallsAtStart=Number(snapshot.calls);sourceBatchStatsAtStart=snapshot.statsInfo;assert.ok(Number.isSafeInteger(sourceBatchCallsAtStart)&&sourceBatchStatsAtStart);
+}else assert.equal(batchSeed,undefined,'Source batch candidate requires explicit opt-in');
 const httpTransport=createLocalHttpTransport();process.on('exit',()=>httpTransport.close());
 const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0')}`;
 const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
@@ -176,7 +187,7 @@ const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),...(pendingSourceProbe?{pendingSourceCandidate:pendingSourceProfile}:{}),qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),...(pendingSourceProbe?{pendingSourceCandidate:pendingSourceProfile}:{}),...(sourceBatchProbe?{sourceBatchCandidate:sourceBatchProfile}:{}),qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
@@ -749,5 +760,10 @@ if(viewers===1000&&targetDuration===1800){
  assert.equal(seed.handsPerPlayer,1_000_000);
  if(writerMethod==='canonical-hand-observers-paired-v1')writerQualification=readMatchedWriterQualification(seed.handsPerPlayer);
  else assert.ok(seed.writer.p95OverheadPercent<=10,'Fixture source transaction marking overhead > 10%');
+}
+if(sourceBatchProbe){
+ const {stdout}=await run('psql',['-h','127.0.0.1','-p','54322','-U','postgres','-d','postgres','-w','-X','-qAt','-c',"SELECT jsonb_build_object('calls',coalesce((SELECT calls FROM spectator_projection_v2.fixture_rpc_profile WHERE rpc='get_public_spectator_projection_sources_v2'),0),'statsInfo',(SELECT to_jsonb(v) FROM spectator_projection_v2.fixture_rpc_profile_info v));"],{env:{...process.env,PGPASSWORD:'postgres'}});
+ const snapshot=JSON.parse(stdout.trim()),calls=Number(snapshot.calls);assert.deepEqual(snapshot.statsInfo,sourceBatchStatsAtStart,'Batch usage counter epoch/deallocation changed');assert.ok(Number.isSafeInteger(calls)&&calls>sourceBatchCallsAtStart,'Audience must actually exercise the batch RPC');
+ writeFileSync('output/hud-scale/source-batch-usage.json',JSON.stringify({sourceMode:'batch',before:sourceBatchCallsAtStart,after:calls,observedAdditionalCalls:calls-sourceBatchCallsAtStart,statsInfo:snapshot.statsInfo,scope:"Presence during the workload, not per-scenario or per-job attribution",productionChanged:false},null,2));
 }
 assert.equal(reports.length,3);save('passed');

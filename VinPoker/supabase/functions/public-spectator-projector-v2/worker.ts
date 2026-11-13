@@ -86,5 +86,5 @@ export async function processPublicSpectatorJobs(client:Client,deadline=Date.now
   }else await Promise.all(Array.from({length:Math.min(6,jobs.length)},()=>run()));
   await earlyFlush;
   if(Date.now()<deadline)try{await call('flush_public_spectator_broadcast_v2',{p_limit:100});}catch{/* Outbox remains for next dispatch. */}
-  return {claimed:jobs.length,processed:results.length,results};
+  return {claimed:jobs.length,processed:results.length,results,sourceMode};
 }

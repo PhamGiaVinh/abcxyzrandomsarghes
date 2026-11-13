@@ -8,7 +8,7 @@ import {initialize,sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions,cleanupCommittedWriterFixture,diagnoseFixtureWriter} from './scale.write.native.mjs';
 import {nativeWorkerClient} from './nativeRpc.mjs';
 import {createHash} from 'node:crypto';
-import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled} from './scale.write.protocol.mjs';
+import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled} from './scale.write.protocol.mjs';
 import {execFileSync} from 'node:child_process';
 const count=Number(process.env.PUBLIC_HUD_SCALE_HANDS??'10000');
 if(![100,1000,10000,100000,1000000].includes(count))throw Error('Unsupported synthetic scale');
@@ -18,6 +18,7 @@ const rawBackfill=seedKind==='raw-backfill';
 assert.ok(['0','1'].includes(process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE??'0'));
 const sourceGenerationProbe=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1';
 const pendingSourceProbe=pendingSourceProbeEnabled(process.env);
+const sourceBatchProbe=sourceBatchProbeEnabled(process.env);
 assert.ok(!sourceGenerationProbe||!rawBackfill,'Generation342 workload does not rerun raw backfill');
 const temp=mkdtempSync(path.join(tmpdir(),'hud-scale-classifier-'));
 await build({entryPoints:['supabase/functions/_shared/publicHudContribution.ts'],outfile:path.join(temp,'classifier.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
@@ -107,7 +108,7 @@ sql(readFileSync('supabase/migrations/20261106144208_public_spectator_source_lea
 // The isolated stack supplies its local URL; missing-setting fallback is qualified separately.
 sql(readFileSync('supabase/migrations/20261107151500_public_hud_dispatch_project_url_v1.sql','utf8'));
 // Apply342 after all guarded historical prerequisites, before measured live writes.
-let sourceGenerationCandidate,pendingSourceCandidate;
+let sourceGenerationCandidate,pendingSourceCandidate,sourceBatchCandidate;
 if(sourceGenerationProbe){
  const owned=jsonSql(`SELECT jsonb_build_object('database',current_database(),'marker',shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database'));`);
  assert.ok(owned.database==='postgres'&&owned.marker==='vinpoker-hud-scale-disposable'||/^vinpoker_hud_test_pair_[0-9]+_[0-9]+$/.test(owned.database)&&owned.marker==='vinpoker-hud-writer-control-disposable','Generation342 requires owned isolated load/paired database');
@@ -134,6 +135,16 @@ if(sourceGenerationProbe){
   assert.equal(actual.originalDefinitionMd5,pendingSourceProfile.originalDefinitionMd5);
   assert.equal(actual.definitionMd5,pendingSourceProfile.definitionMd5);
   pendingSourceCandidate={...pendingSourceProfile,ownedDatabase:owned.database,productionChanged:false};
+  if(sourceBatchProbe){
+   const batch=readFileSync('supabase/pending-migrations/'+sourceBatchProfile.migration,'utf8');
+   assert.equal(createHash('sha256').update(batch.replace(/\r\n?/g,'\n')).digest('hex'),sourceBatchProfile.sqlSha256);
+   sql(batch);
+   const actual=jsonSql(`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),
+    'metadata',proowner='postgres'::regrole AND prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=""']::text[] AND proacl::text='{postgres=X/postgres,service_role=X/postgres}')
+    FROM pg_proc WHERE oid='public.get_public_spectator_projection_sources_v2(jsonb)'::regprocedure;`);
+   assert.equal(actual.bodyMd5,sourceBatchProfile.bodyMd5);assert.equal(actual.metadata,true);
+   sourceBatchCandidate={...sourceBatchProfile,ownedDatabase:owned.database,productionChanged:false};
+  }
  }
 }
 const incrementalWriter=measureFixtureWriterTransactions({commit:true});cleanupCommittedWriterFixture();
@@ -167,6 +178,7 @@ sql("UPDATE tracker_analytics_v1.config SET backfill_started_at=clock_timestamp(
 const report={kind:'SYNTHETIC_PREBUILT_READ_FIXTURE_NOT_MILLION_HAND_BACKFILL_PROOF',handsPerPlayer:count,players:2,tournaments:20,
  ...(sourceGenerationCandidate?{sourceGenerationCandidate}:{}),
  ...(pendingSourceCandidate?{pendingSourceCandidate}:{}),
+ ...(sourceBatchCandidate?{sourceBatchCandidate}:{}),
  seedMs:Date.now()-start,node:process.version,platform:process.platform,cpus:cpus().length,memoryBytes:totalmem(),postgres:sql('SHOW server_version;'),
  databaseBytes:Number(sql('SELECT pg_database_size(current_database());')),sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;')),
  writer:{kind:'NATIVE_FIXTURE_SOURCE_TRANSACTION_NOT_FLOOR_AUTH_E2E',baseline:baselineWriter,incremental:incrementalWriter,p95OverheadPercent:(incrementalWriter.p95Ms/baselineWriter.p95Ms-1)*100}};

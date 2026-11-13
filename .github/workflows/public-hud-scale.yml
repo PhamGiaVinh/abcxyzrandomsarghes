@@ -2,6 +2,9 @@ name: Public HUD isolated real HTTP and WebSocket load
 on:
   workflow_call:
     inputs:
+      source_batch_probe:
+        type: boolean
+        default: false
       pending_source_probe:
         type: boolean
         default: false
@@ -31,6 +34,10 @@ on:
       - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
   workflow_dispatch:
     inputs:
+      source_batch_probe:
+        description: 'Explicit isolated pending344/source-batch mode; requires pending_source_probe'
+        type: boolean
+        default: false
       writer_wait_diagnostic:
         description: 'Read-only wait/host-pressure observation; writer-only, never qualification'
         type: boolean
@@ -103,6 +110,7 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      PUBLIC_HUD_SOURCE_BATCH_PROBE: ${{ inputs.source_batch_probe && '1' || '0' }}
       PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC: ${{ inputs.writer_wait_diagnostic && '1' || '0' }}
       PUBLIC_HUD_PENDING_SOURCE_PROBE: ${{ inputs.pending_source_probe && '1' || '0' }}
       PUBLIC_HUD_SOURCE_GENERATION_PROBE: ${{ inputs.source_generation_probe && '1' || '0' }}

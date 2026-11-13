@@ -1,9 +1,19 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {writerDiagnosticAdminTarget} from './scale.write.native.mjs';
-import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,requireMatchedWriterQualification,writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
+import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled,requireMatchedWriterQualification,writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+test('source batch load probe is explicit, requires343 and pins pending SQL bytes',()=>{
+ const source=readFileSync(new URL('../../supabase/pending-migrations/'+sourceBatchProfile.migration,import.meta.url),'utf8').replace(/\r\n?/g,'\n');
+ assert.equal(createHash('sha256').update(source).digest('hex'),sourceBatchProfile.sqlSha256);
+ const body=source.split('$source_batch$');assert.equal(body.length,3);
+ assert.equal(createHash('md5').update(body[1]).digest('hex'),sourceBatchProfile.bodyMd5);
+ assert.equal(sourceBatchProbeEnabled({}),false);
+ const enabled={PUBLIC_HUD_SOURCE_BATCH_PROBE:'1',PUBLIC_HUD_PENDING_SOURCE_PROBE:'1',PUBLIC_HUD_SOURCE_GENERATION_PROBE:'1'};
+ assert.equal(sourceBatchProbeEnabled(enabled),true);
+ for(const change of [{PUBLIC_HUD_SOURCE_BATCH_PROBE:'yes'},{PUBLIC_HUD_PENDING_SOURCE_PROBE:'0'},{PUBLIC_HUD_SOURCE_GENERATION_PROBE:'0'}])assert.throws(()=>sourceBatchProbeEnabled({...enabled,...change}));
+});
 test('migration342 writer profile is explicit and pins exact migration bytes',()=>{
  const source=readFileSync(new URL('../../supabase/migrations/'+sourceGeneration342Profile.migration,import.meta.url),'utf8');
  assert.equal(createHash('sha256').update(source.replace(/\r\n?/g,'\n')).digest('hex'),sourceGeneration342Profile.sqlSha256);

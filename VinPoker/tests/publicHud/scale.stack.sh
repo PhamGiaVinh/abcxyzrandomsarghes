@@ -5,7 +5,7 @@ repo_root="$(pwd)"
 for forbidden in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD VERCEL_TOKEN; do
   if [[ -n "${!forbidden:-}" ]]; then echo 'Remote credential present in isolated load job' >&2; exit 1; fi
 done
-node --input-type=module -e "import {pendingSourceProbeEnabled,writerWaitDiagnosticEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);"
+node --input-type=module -e "import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,writerWaitDiagnosticEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);sourceBatchProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);"
 node --test tests/publicHud/scale.postgrest-metrics.test.mjs
 test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -45,6 +45,7 @@ for fn in public-player-hud public-hud-projector-v1 public-spectator-projector-v
 done
 printf 'PUBLIC_HUD_WORKER_SECRET=%s\nPUBLIC_SPECTATOR_WORKER_SECRET=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >"$test_root/workers.env"
 printf 'PUBLIC_HUD_ISOLATE_DIAGNOSTICS=isolated-hud-runtime-diagnostics-v1\n' >>"$test_root/workers.env"
+printf 'PUBLIC_SPECTATOR_SOURCE_BATCH=%s\n' "${PUBLIC_HUD_SOURCE_BATCH_PROBE:-0}" >>"$test_root/workers.env"
 exclude='imgproxy,logflare,mailpit,postgres-meta,storage-api,studio,supavisor,vector'
 supabase start --workdir "$test_root" --exclude "$exclude" >"$test_root/start.log" 2>&1
 docker inspect "supabase_db_$project_id" >/dev/null
