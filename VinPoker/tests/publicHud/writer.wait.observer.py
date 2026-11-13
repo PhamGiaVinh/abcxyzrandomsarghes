@@ -62,13 +62,38 @@ def start_container_ring(root):
                                stdin=subprocess.PIPE, stdout=output, stderr=subprocess.DEVNULL, text=True)
     stop = threading.Event()
     errors = []
+    receipts = {}
     def feed():
+        deadline = time.monotonic() + 30
         try:
             for _ in range(150):
-                if stop.is_set():
+                if stop.is_set() or time.monotonic() >= deadline:
                     break
-                process.stdin.write(format(time.time(), ".9f") + "\n")
+                tick = format(time.time(), ".9f")
+                process.stdin.write(tick + "\n")
                 process.stdin.flush()
+                # Acknowledge the complete matching frame before sending another
+                # tick. Receipt time is an upper bound on read completion, not
+                # the exact kernel sampling time. No queued-tick inference.
+                frame_deadline = min(deadline, time.monotonic() + 2)
+                complete = False
+                while time.monotonic() < frame_deadline:
+                    path = root / "container-ring.txt"
+                    if path.stat().st_size > 1048576:
+                        errors.append("container_frame_oversized")
+                        break
+                    rows, invalid = parse_container_ring(path.read_text())
+                    if rows and not invalid and rows[-1]["epochSeconds"] == float(tick):
+                        receipts[float(tick)] = time.time()
+                        complete = True
+                        break
+                    # Drain still sleeps after stop is set; Event.wait would
+                    # return immediately and turn this into a busy loop.
+                    time.sleep(.01)
+                if not complete:
+                    if not stop.is_set():
+                        errors.append("container_frame_completion_unavailable")
+                    break
                 if stop.wait(.2):
                     break
         except (OSError, ValueError):
@@ -88,12 +113,12 @@ def start_container_ring(root):
             break
         time.sleep(.01)
     return {"process": process, "output": output, "stop": stop, "thread": thread,
-            "errors": errors, "readyBeforeArm": ready}
+            "errors": errors, "readyBeforeArm": ready, "receipts": receipts}
 
 
 def finish_container_ring(ring, root):
     ring["stop"].set()
-    ring["thread"].join(timeout=1)
+    ring["thread"].join(timeout=3)
     forced = ring["thread"].is_alive()
     try:
         ring["process"].wait(timeout=3)
@@ -106,6 +131,13 @@ def finish_container_ring(ring, root):
     oversized = path.stat().st_size > 1048576
     captured = "" if oversized else path.read_text()
     samples, invalid = parse_container_ring(captured)
+    for sample in samples:
+        sample["receivedEpochSeconds"] = ring.get("receipts", {}).get(sample["epochSeconds"])
+        sample["dispatchToReceiptMs"] = ((sample["receivedEpochSeconds"] - sample["epochSeconds"]) * 1000
+                                         if sample["receivedEpochSeconds"] is not None else None)
+    missing_receipts = sum(sample["receivedEpochSeconds"] is None for sample in samples)
+    invalid_receipts = sum(sample["receivedEpochSeconds"] is not None
+                           and sample["receivedEpochSeconds"] < sample["epochSeconds"] for sample in samples)
     blocks = captured.split("BEGIN ")[1:]
     formats = {"records": len(blocks),
                "numericTimestamp": sum(bool(re.fullmatch(r"[0-9]+\.[0-9]+", block.splitlines()[0]))
@@ -116,11 +148,12 @@ def finish_container_ring(ring, root):
                "invalidRecordOrFields": invalid}
     return {"intervalMs": 200, "maxSamples": 150, "samples": samples, "invalid": invalid,
             "oversized": oversized, "forcedStop": forced, "exitCode": ring["process"].returncode,
-            "formatCounts": formats, "timestampScope": "host tick dispatch before sequential container reads",
+            "formatCounts": formats, "missingReceipts": missing_receipts, "invalidReceipts": invalid_receipts,
+            "timestampScope": "host dispatch to observed complete-frame receipt brackets sequential reads",
             "parseReasons": reasons,
             "readyBeforeArm": ring["readyBeforeArm"],
             "available": ring["readyBeforeArm"] and bool(samples) and not invalid and not oversized and not forced
-                         and not ring["errors"] and ring["process"].returncode == 0,
+                         and not missing_receipts and not invalid_receipts and not ring["errors"] and ring["process"].returncode == 0,
             "limits": "Sequential fixed-file reads; instrumentation can perturb latency; not qualification"}
 
 
