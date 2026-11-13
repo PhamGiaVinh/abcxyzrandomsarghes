@@ -83,7 +83,7 @@ test('batch source candidate rejects partial scopes and installs before catalog 
  assert.ok(apply<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
  assert.match(workflow,/LOCAL_SOURCE_BATCH_PROBE:.*github\.event_name == 'workflow_dispatch'.*inputs.source_batch_probe/);
  assert.match(script,/assert\.equal\(actual.bodyMd5,sourceBatchProfile.bodyMd5\)/);
- assert.match(script,/assert\.ok\(backfill.sourceBatchRpcCalls>0/);
+ assert.match(script,/assert\.equal\(audience.checks.sourceBatchModeAndServingUsage,true/);
 });
 
 test('operational worker forwards selected source mode and rejects a mismatched runtime mode',async()=>{
@@ -114,23 +114,28 @@ test('operational worker forwards selected source mode and rejects a mismatched 
  await assert.rejects(run(async()=>({sourceMode:'single',processed:0,results:[]}),{},assert,{},'batch'),/Actual operational worker source mode/);
 });
 
-test('batch audience admission requires both actual selected mode and batch RPC usage',t=>{
- const line=script.split('\n').find(row=>row.includes('const batch=process.argv[2]'));
+test('batch HUD admission permits an idle worker only with same-run serving audience batch proof',t=>{
+ const line=script.split('\n').find(row=>row.includes('let batch=true;'));
  assert.ok(line);
  const code=line.slice(line.indexOf("node -e '")+9,line.indexOf("' \"$repo_root"));
  const dir=mkdtempSync(join(tmpdir(),'ops-batch-admission-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
- const file=join(dir,'report.json');
- const ready={phase:'serving',readsEnabled:true,shadow:{passed:true},spectatorReady:true,spectatorFailed:0};
- for(const [flag,patch,expected] of [
-  ['0',{},0],['1',{},1],
-  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:true,sourceBatchRpcCalls:0},1],
-  ['1',{spectatorSourceMode:'single',sourceBatchModeVerified:true,sourceBatchRpcCalls:1},1],
-  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:false,sourceBatchRpcCalls:1},1],
-  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:true,sourceBatchRpcCalls:1},0],
-  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:true,sourceBatchRpcCalls:1,spectatorFailed:1},1],
+ const file=join(dir,'report.json'),audienceFile=join(dir,'audience.json');
+ const ready={sha:'same-head',phase:'serving',readsEnabled:true,shadow:{passed:true},spectatorReady:true,spectatorFailed:0};
+ const mode={spectatorSourceMode:'batch',sourceBatchModeVerified:true};
+ const audience={sha:'same-head',phase:'ready',...mode,servingSourceBatchRpcCalls:1};
+ for(const [flag,patch,audiencePatch,expected] of [
+  ['0',{},null,0],['1',{},audience,1],
+  ['1',{...mode,sourceBatchRpcCalls:0},audience,0],
+  ['1',{...mode,sourceBatchRpcCalls:0},{...audience,servingSourceBatchRpcCalls:0},1],
+  ['1',mode,{...audience,sha:'old-head'},1],['1',mode,{...audience,phase:'failed'},1],
+  ['1',mode,{...audience,spectatorSourceMode:'single'},1],
+  ['1',{...mode,spectatorSourceMode:'single'},audience,1],
+  ['1',{...mode,sourceBatchModeVerified:false},audience,1],
+  ['1',{...mode,spectatorFailed:1},audience,1],
  ]){
   writeFileSync(file,JSON.stringify({...ready,...patch}));
-  const result=spawnSync(process.execPath,['-e',code,file,flag],{encoding:'utf8',timeout:5000});
+  writeFileSync(audienceFile,JSON.stringify(audiencePatch));
+  const result=spawnSync(process.execPath,['-e',code,file,flag,audienceFile],{encoding:'utf8',timeout:5000});
   assert.equal(result.status,expected,result.stderr);
  }
 });

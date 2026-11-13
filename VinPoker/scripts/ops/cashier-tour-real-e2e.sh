@@ -2498,7 +2498,7 @@ if [[ "$operations_candidate_probe" == 1 ]]; then
     hud_prepared=false
     for ((hud_wait=0;hud_wait<130;hud_wait++)); do
       if ! kill -0 "$hud_projector_pid" 2>/dev/null; then echo 'Isolated HUD preparation stopped before readiness' >&2;wait "$hud_projector_pid";exit 1;fi
-      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));const batch=process.argv[2]!=="1"||v.spectatorSourceMode==="batch"&&v.sourceBatchModeVerified===true&&v.sourceBatchRpcCalls>0;process.exit(batch&&v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json" "$source_batch_probe"; then hud_prepared=true;break;fi
+      if node -e 'try{const fs=require("node:fs"),v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));let batch=true;if(process.argv[2]==="1"){const a=JSON.parse(fs.readFileSync(process.argv[3],"utf8"));batch=v.spectatorSourceMode==="batch"&&v.sourceBatchModeVerified===true&&a.sha===v.sha&&a.phase==="ready"&&a.spectatorSourceMode==="batch"&&a.sourceBatchModeVerified===true&&a.servingSourceBatchRpcCalls>0;}process.exit(batch&&v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json" "$source_batch_probe" "$repo_root/output/operations-latency/operations-audience-http.json"; then hud_prepared=true;break;fi
       sleep 1
     done
     [[ "$hud_prepared" == true ]]
@@ -2754,8 +2754,9 @@ assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);
 assert.equal(backfill.spectatorReady,true);assert.equal(backfill.spectatorFailed,0);
 if(process.env.LOCAL_SOURCE_BATCH_PROBE==='1'){
  assert.equal(backfill.spectatorSourceMode,'batch');assert.equal(backfill.sourceBatchModeVerified,true);
- assert.ok(backfill.sourceBatchRpcCalls>0,'Actual operational worker must invoke batch RPC');
- assert.ok(backfill.servingSourceBatchRpcCalls>0,'Batch RPC must also run after preparation and before worker stop');
+ const audience=read('operations-audience-http.json');
+ assert.equal(audience.sha,backfill.sha);assert.equal(audience.phase,'passed');
+ assert.equal(audience.checks.sourceBatchModeAndServingUsage,true,'Actual shared-queue audience worker must prove serving batch RPC usage');
 }
 assert.ok(Object.values(browser.checks).every(value=>value===true));
 const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
