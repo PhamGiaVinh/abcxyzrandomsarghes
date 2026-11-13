@@ -2,9 +2,17 @@
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
 import {sql} from './nativeDb.mjs';
-assert.equal(process.env.PUBLIC_HUD_ISOLATED_STACK,'vinpoker-hud-scale');
-assert.equal(process.env.PUBLIC_HUD_LOCAL_PORT,'54322');
-assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-hud-scale-disposable');
+const nativeFixture=process.env.PUBLIC_HUD_HISTORY_PROFILE_FIXTURE==='history-plans-ci';
+if(nativeFixture){
+ assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,'vinpoker_hud_test_history_plans_ci');
+ assert.equal(process.env.PUBLIC_HUD_LOCAL_PORT,'5432');
+ assert.equal(process.env.PUBLIC_HUD_ISOLATED_STACK,undefined);
+}else{
+ assert.equal(process.env.PUBLIC_HUD_ISOLATED_STACK,'vinpoker-hud-scale');
+ assert.equal(process.env.PUBLIC_HUD_LOCAL_PORT,'54322');
+}
+assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),
+ nativeFixture?'vinpoker-hud-history-profile-isolated-ci':'vinpoker-hud-scale-disposable');
 const signature='public.get_public_player_hud_history_v1(uuid,uuid,timestamptz,uuid)';
 const metadata=JSON.parse(sql(`SELECT jsonb_build_object('definitionMd5',md5(replace(pg_get_functiondef(p.oid),chr(13),'')),
  'config',p.proconfig,'stable',p.provolatile='s','definer',p.prosecdef,
@@ -42,5 +50,5 @@ try{
 }catch{throw Error('Read-only current history profiling failed; raw SQL diagnostics withheld');}
 assert.equal(report.samples.length,60);
 assert.ok(report.functions.some(row=>row.name==='get_public_player_hud_history_v1'&&row.calls>=61),'Function timing unavailable');
-writeFileSync('output/hud-scale/history-current-profile.json',JSON.stringify({kind:'READ_ONLY_FINAL_SEEDED_HISTORY_FUNCTION_ATTRIBUTION',
+writeFileSync('output/hud-scale/history-current-profile.json',JSON.stringify({kind:'READ_ONLY_FINAL_SEEDED_HISTORY_FUNCTION_ATTRIBUTION',nativeFixture,
  qualification:false,productionChanged:false,metadata,...report,scope:'Single native session with track_functions enabled. Includes one initial cursor read; not HTTP concurrency or production latency.'},null,2));

@@ -200,6 +200,21 @@ jobs:
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-keyset.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/identity-lookup.native.mjs
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci node tests/publicHud/scale.amendments.native.mjs
+      - name: Supplemental read-only final history attribution
+        run: |
+          psql -h 127.0.0.1 -U postgres -d vinpoker_hud_test_history_plans_ci -v ON_ERROR_STOP=1 -c "COMMENT ON DATABASE vinpoker_hud_test_history_plans_ci IS 'vinpoker-hud-history-profile-isolated-ci';"
+          psql -h 127.0.0.1 -U postgres -d vinpoker_hud_test_history_plans_ci -v ON_ERROR_STOP=1 -f supabase/migrations/20261105072714_public_hud_history_amounts_materialized.sql
+          psql -h 127.0.0.1 -U postgres -d vinpoker_hud_test_history_plans_ci -v ON_ERROR_STOP=1 -f supabase/migrations/20261104003300_public_hud_null_proof_short_circuit.sql
+          psql -h 127.0.0.1 -U postgres -d vinpoker_hud_test_history_plans_ci -v ON_ERROR_STOP=1 -f supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql
+          mkdir -p output/hud-scale
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci PUBLIC_HUD_LOCAL_PORT=5432 PUBLIC_HUD_HISTORY_PROFILE_FIXTURE=history-plans-ci node tests/publicHud/history-current-profile.native.mjs
+      - name: Sanitized final history attribution only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-hud-history-profile-${{ github.sha }}
+          path: VinPoker/output/hud-scale/history-current-profile.json
+          retention-days: 7
       - name: Read plan reuse, scope isolation and exact recovery
         run: |
           createdb -h 127.0.0.1 -U postgres vinpoker_hud_test_read_plans_ci
