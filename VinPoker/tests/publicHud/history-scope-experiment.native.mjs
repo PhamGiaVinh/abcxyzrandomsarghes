@@ -1,7 +1,12 @@
 // Transactional disposable-fixture experiment. Never an apply/release runner.
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
-import {sql,jsonSql} from './nativeDb.mjs';
+import {sql} from './nativeDb.mjs';
+const jsonSql=query=>{
+ try{return JSON.parse(sql('\\set VERBOSITY sqlstate\n'+query,{captureFailure:true}));}
+ catch(reason){const state=/ERROR:\s+([0-9A-Z]{5})\b/.exec(String(reason?.stderr??''))?.[1]??'UNKNOWN';
+  throw Error('History scope experiment failed (SQLSTATE '+state+'); raw SQL diagnostics withheld');}
+};
 assert.equal(process.env.PUBLIC_HUD_LOCAL_DATABASE,'vinpoker_hud_test_history_plans_ci');
 assert.equal(process.env.PUBLIC_HUD_LOCAL_PORT,'5432');
 assert.equal(sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database();"),'vinpoker-hud-history-profile-isolated-ci');
@@ -59,7 +64,7 @@ for(const [name,change,cursor,scope] of cases){
  CREATE TEMP TABLE scope_timing(variant text,ms numeric);GRANT SELECT,INSERT ON scope_timing TO anon;
  SET LOCAL ROLE anon;INSERT INTO scope_expected SELECT ${call(cursor,scope)};RESET ROLE;
  SET LOCAL ROLE anon;${measure('baseline-before')}RESET ROLE;
- ${candidate}
+ ${candidate};
  SET LOCAL ROLE anon;${measure('candidate')}
  SELECT jsonb_build_object('equal',(SELECT payload FROM scope_expected) IS NOT DISTINCT FROM ${call(cursor,scope)},
  'verifiedExpected',CASE WHEN '${name}'='verified' THEN EXISTS(SELECT 1 FROM scope_expected e CROSS JOIN LATERAL jsonb_array_elements(e.payload->'handHistory') row WHERE row->>'handId'='${hand}' AND row->'endingStack'='1200'::jsonb) ELSE true END,
