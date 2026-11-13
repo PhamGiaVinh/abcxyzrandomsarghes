@@ -25,9 +25,21 @@ export function qualifyFloor345({repo,base,head,pr}){
  assert.ok(policy.guards.includes(policyPath)&&policy.guards.includes(selectorPath));
  for(const path of policy.guards)assert.ok(blob(base,path).equals(blob(head,path)),'PR changes its trusted proof or validator');
  const mergeBase=git('merge-base',base,head).toString().trim();assert.match(mergeBase,/^[a-f0-9]{40}$/);
+ assert.match(policy.integrationWorkflow.preimageSha256,/^[a-f0-9]{64}$/);
+ for(const rev of [base,mergeBase])assert.equal(hash(blob(rev,policy.integrationWorkflow.path)),policy.integrationWorkflow.preimageSha256,'Retained runtime preimage drift');
  const raw=git('diff','--no-renames','--name-status','-z',mergeBase,head).toString().split('\0');
  assert.equal(raw.pop(),'');assert.equal(raw.length%2,0);
  const expected=new Map(policy.files.map(f=>[f.path,f]));assert.equal(expected.size,policy.files.length);
+ for(const file of policy.files){
+  if(file.status==='M'){
+   assert.match(file.preimageSha256,/^[a-f0-9]{64}$/);
+   assert.equal(hash(blob(base,file.path)),file.preimageSha256,'Protected baseline source drift');
+   assert.equal(hash(blob(mergeBase,file.path)),file.preimageSha256,'Merge-base source drift');
+  }else{
+   assert.equal(file.status,'A');
+   for(const rev of [base,mergeBase])assert.equal(git('ls-tree','-r',rev,'--',file.path).length,0,'Added source already exists in baseline');
+  }
+ }
  const seen=new Set();let integration=false;
  for(let i=0;i<raw.length;i+=2){
   const [status,path]=[raw[i],raw[i+1]];

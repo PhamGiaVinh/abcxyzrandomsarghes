@@ -74,3 +74,13 @@ test('version race between reads and extra live closure files stop before fronte
  const bad=structuredClone(r);mutate(bad);assert.throws(()=>validateTypeOnlyTargets(bad,read));
  }
  });
+
+test('fresh predeploy verification repeats erased-target hash proof before downloading',()=>{
+ const state=fixture();const clone=structuredClone(state.policy);
+ const target='VinPoker/erased-types.ts';
+ clone.functions[0].typeOnlyTargets=[{path:target,targetRawSha256:hash(Buffer.from('reviewed type source')),incomingEdges:[]}];
+ const dest=join(state.targetRoot,target);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,'changed type source');
+ let downloaded=false;const runCli=args=>{if(args[1]==='download')downloaded=true;return state.runCli(args);};
+ assert.throws(()=>verifyLiveObservations({...state,policy:clone,runCli}),/Erased target source drift/);
+ assert.equal(downloaded,false);
+});

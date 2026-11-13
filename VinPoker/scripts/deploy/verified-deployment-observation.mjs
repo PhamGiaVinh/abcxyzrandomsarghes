@@ -95,6 +95,7 @@ export function verifyLiveObservations({policy,names,targetRoot,runCli}){
  const evidence=[];
  for(const name of names){
   const rule=policy.functions.find(f=>f.name===name);assert.ok(rule,'Unreviewed observed component');verifyMetadata(rule,before);
+  validateTypeOnlyTargets(rule,path=>readFileSync(filePath(targetRoot,path)));
   const root=mkdtempSync(join(tmpdir(),'vinpoker-observed-'));
   runCli(['functions','download',name,'--project-ref',policy.project,'--use-api','--workdir',root]);
   assert.deepEqual(downloadFiles(root),rule.files.map(f=>f.path).sort(),'Live closure file-set drift');

@@ -1,5 +1,6 @@
 name: Floor345 fresh production-schema qualification
 on:
+  workflow_call:
   pull_request:
     paths:
       - '.github/workflows/floor345-fresh-schema.yml'
