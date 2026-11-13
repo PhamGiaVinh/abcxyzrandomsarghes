@@ -56,7 +56,10 @@ jobs:
       - name: Apply ONLY exact migration345 in the isolated database
         run: |
           set -euo pipefail
-          test "$(psql -X -qAt -c "SELECT inet_server_addr()='127.0.0.1'::inet AND current_database()='vinpoker_ops_floor345' AND current_user='postgres' AND to_regprocedure('public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text)') IS NULL;")" = t
+          test "$PGHOST" = 127.0.0.1
+          test "$PGPORT" = 5432
+          test "$PGDATABASE" = vinpoker_ops_floor345
+          test "$(psql -X -qAt -c "SELECT current_database()='vinpoker_ops_floor345' AND current_user='postgres' AND to_regprocedure('public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text)') IS NULL;")" = t
           psql -X -v ON_ERROR_STOP=1 -f candidate/VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql
       - name: Actual v6 classifier and canonical writer with authenticated callers
         working-directory: controls/VinPoker
