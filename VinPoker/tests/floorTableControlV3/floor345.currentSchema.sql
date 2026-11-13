@@ -90,7 +90,7 @@ BEGIN
  PERFORM public.floor_table_v3_assert((SELECT status='seated' AND current_stack=2222 FROM public.tournament_entries WHERE id=other),'other player entry untouched');
 
  c:=fast_bust_test.seed('tracker');
- INSERT INTO public.tournament_chip_counts VALUES((c->>'tour')::uuid,(c->>'player')::uuid,1,777,now());
+ INSERT INTO public.tournament_chip_counts(tournament_id,player_id,entry_number,chip_count,updated_at) VALUES((c->>'tour')::uuid,(c->>'player')::uuid,1,777,now());
  r:=fast_bust_test.invoke(c);
  PERFORM public.floor_table_v3_assert(r->>'outcome'='busted' AND r#>>'{before,tracker_chip_count}'='777' AND r#>>'{before,seat_chip_count}'='1000','tracker correction audited');
  PERFORM public.floor_table_v3_assert((SELECT chip_count=0 FROM public.tournament_chip_counts WHERE tournament_id=(c->>'tour')::uuid),'tracker counter cleared');
