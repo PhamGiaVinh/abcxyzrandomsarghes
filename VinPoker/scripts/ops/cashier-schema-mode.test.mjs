@@ -70,6 +70,71 @@ test('pending source candidate refuses partial scopes before services and preced
  assert.match(workflow,/LOCAL_PENDING_SOURCE_PROBE:.*inputs.pending_source_probe/);
 });
 
+test('batch source candidate rejects partial scopes and installs before catalog admission',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [{LOCAL_SOURCE_BATCH_PROBE:'invalid'},{LOCAL_SOURCE_BATCH_PROBE:'1'},
+  {LOCAL_SOURCE_BATCH_PROBE:'1',LOCAL_PENDING_SOURCE_PROBE:'1',LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'cashier-payment'}]){
+  const result=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(result.status,0);assert.match(result.stderr,/Source batch candidate requires/);
+ }
+ const apply=script.indexOf('<"$repo_root/supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql"');
+ assert.ok(apply>script.indexOf('<"$repo_root/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql"'));
+ assert.ok(apply<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
+ assert.match(workflow,/LOCAL_SOURCE_BATCH_PROBE:.*github\.event_name == 'workflow_dispatch'.*inputs.source_batch_probe/);
+ assert.match(script,/assert\.equal\(actual.bodyMd5,sourceBatchProfile.bodyMd5\)/);
+ assert.match(script,/assert\.ok\(backfill.sourceBatchRpcCalls>0/);
+});
+
+test('operational worker forwards selected source mode and rejects a mismatched runtime mode',async()=>{
+ const preparation=readFileSync(new URL('./prepare-operations-public-hud.mjs',import.meta.url),'utf8');
+ const start=preparation.indexOf('const spectatorWork=async()=>{');
+ const end=preparation.indexOf('\ntry{',start);
+ assert.ok(start>0&&end>start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const run=new AsyncFunction('processPublicSpectatorJobs','client','assert','report','spectatorSourceMode','stopping',preparation.slice(start,end)+'\nawait spectatorWork();return report;');
+ for(const mode of ['single','batch']){
+  const calls=[];
+  const client={rpc:(name,args)=>({abortSignal:signal=>{calls.push({name,args,signal});return Promise.resolve({data:[],error:null});}})};
+  const worker=async(wrapper,deadline,actualMode)=>{
+   assert.equal(actualMode,mode);assert.ok(deadline>Date.now());
+   await wrapper.rpc(mode==='batch'?'get_public_spectator_projection_sources_v2':'get_public_spectator_projection_source_v2',{p_jobs:[]});
+   return {sourceMode:mode,processed:1,results:[{}]};
+  };
+  const report=await run(worker,client,assert,{phase:'serving',spectatorProcessed:0,spectatorFailed:0},mode,false);
+  assert.equal(report.spectatorSourceMode,mode);assert.equal(report.sourceBatchModeVerified,true);
+  assert.equal(report.sourceBatchRpcCalls,mode==='batch'?1:0);assert.equal(calls.length,1);
+  assert.equal(report.servingSourceBatchRpcCalls,mode==='batch'?1:0);
+  assert.ok(calls[0].signal instanceof AbortSignal);
+  for(const [phase,stopping] of [['prepared',false],['serving',true]]){
+   const excluded=await run(worker,client,assert,{phase,spectatorProcessed:0,spectatorFailed:0},mode,stopping);
+   assert.equal(excluded.servingSourceBatchRpcCalls,0,'Preparation and final drain are excluded from serving usage');
+  }
+ }
+ await assert.rejects(run(async()=>({sourceMode:'single',processed:0,results:[]}),{},assert,{},'batch'),/Actual operational worker source mode/);
+});
+
+test('batch audience admission requires both actual selected mode and batch RPC usage',t=>{
+ const line=script.split('\n').find(row=>row.includes('const batch=process.argv[2]'));
+ assert.ok(line);
+ const code=line.slice(line.indexOf("node -e '")+9,line.indexOf("' \"$repo_root"));
+ const dir=mkdtempSync(join(tmpdir(),'ops-batch-admission-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const file=join(dir,'report.json');
+ const ready={phase:'serving',readsEnabled:true,shadow:{passed:true},spectatorReady:true,spectatorFailed:0};
+ for(const [flag,patch,expected] of [
+  ['0',{},0],['1',{},1],
+  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:true,sourceBatchRpcCalls:0},1],
+  ['1',{spectatorSourceMode:'single',sourceBatchModeVerified:true,sourceBatchRpcCalls:1},1],
+  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:false,sourceBatchRpcCalls:1},1],
+  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:true,sourceBatchRpcCalls:1},0],
+  ['1',{spectatorSourceMode:'batch',sourceBatchModeVerified:true,sourceBatchRpcCalls:1,spectatorFailed:1},1],
+ ]){
+  writeFileSync(file,JSON.stringify({...ready,...patch}));
+  const result=spawnSync(process.execPath,['-e',code,file,flag],{encoding:'utf8',timeout:5000});
+  assert.equal(result.status,expected,result.stderr);
+ }
+});
+
 test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
  const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
  const end=script.indexOf('\nrun_browser_proof\n',start);

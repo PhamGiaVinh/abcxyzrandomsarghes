@@ -18,6 +18,11 @@ operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
 diagnostic_scope="${LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:-none}"
 source_generation_probe="${LOCAL_SOURCE_GENERATION_PROBE:-0}"
 pending_source_probe="${LOCAL_PENDING_SOURCE_PROBE:-0}"
+source_batch_probe="${LOCAL_SOURCE_BATCH_PROBE:-0}"
+if [[ "$source_batch_probe" != 0 && "$source_batch_probe" != 1 ]] ||
+   [[ "$source_batch_probe" == 1 && ( "$pending_source_probe" != 1 || "$diagnostic_scope" != none ) ]]; then
+  echo 'Source batch candidate requires isolated full pending-source probe' >&2;exit 1
+fi
 if [[ "$pending_source_probe" != 0 && "$pending_source_probe" != 1 ]] ||
    [[ "$pending_source_probe" == 1 && ( "$source_generation_probe" != 1 || "$diagnostic_scope" != none ) ]]; then
   echo 'Pending source candidate requires isolated full source-generation probe' >&2;exit 1
@@ -1678,6 +1683,27 @@ AUDIENCE_REALTIME_RECEIPT
           'originalDefinitionMd5',original_definition_hash,'candidateDefinitionMd5',candidate_definition_hash)
          FROM spectator_projection_v2.source_pending_original_v1;" \
           >"$repo_root/output/operations-latency/operations-source-pending-candidate-http.json"
+        if [[ "$source_batch_probe" == 1 ]]; then
+          node --input-type=module <<'BATCH_SOURCE_HASH'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+import {sourceBatchProfile} from './tests/publicHud/scale.write.protocol.mjs';
+const sql=readFileSync('supabase/pending-migrations/'+sourceBatchProfile.migration,'utf8');
+assert.equal(createHash('sha256').update(sql.replace(/\r\n?/g,'\n')).digest('hex'),sourceBatchProfile.sqlSha256);
+BATCH_SOURCE_HASH
+          docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            <"$repo_root/supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql"
+          node --input-type=module - "$db_container" "$repo_root/output/operations-latency/operations-source-batch-candidate-http.json" <<'BATCH_SOURCE_METADATA'
+import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {writeFileSync} from 'node:fs';
+import {sourceBatchProfile} from './tests/publicHud/scale.write.protocol.mjs';
+const query=`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),
+ 'metadata',proowner='postgres'::regrole AND prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=""']::text[]
+ AND proacl::text='{postgres=X/postgres,service_role=X/postgres}')
+ FROM pg_proc WHERE oid='public.get_public_spectator_projection_sources_v2(jsonb)'::regprocedure;`;
+const actual=JSON.parse(execFileSync('docker',['exec',process.argv[2],'psql','-X','-Atq','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres','-c',query],{encoding:'utf8'}));
+assert.equal(actual.bodyMd5,sourceBatchProfile.bodyMd5);assert.equal(actual.metadata,true);
+writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_OPERATIONAL_SOURCE_BATCH_CANDIDATE',...sourceBatchProfile,...actual,qualification:false,productionChanged:false},null,2));
+BATCH_SOURCE_METADATA
+        fi
       fi
     fi
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
@@ -2472,7 +2498,7 @@ if [[ "$operations_candidate_probe" == 1 ]]; then
     hud_prepared=false
     for ((hud_wait=0;hud_wait<130;hud_wait++)); do
       if ! kill -0 "$hud_projector_pid" 2>/dev/null; then echo 'Isolated HUD preparation stopped before readiness' >&2;wait "$hud_projector_pid";exit 1;fi
-      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json"; then hud_prepared=true;break;fi
+      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));const batch=process.argv[2]!=="1"||v.spectatorSourceMode==="batch"&&v.sourceBatchModeVerified===true&&v.sourceBatchRpcCalls>0;process.exit(batch&&v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json" "$source_batch_probe"; then hud_prepared=true;break;fi
       sleep 1
     done
     [[ "$hud_prepared" == true ]]
@@ -2726,6 +2752,11 @@ const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf
 const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
 assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(backfill.finalShadow.passed,true);assert.equal(backfill.controls.uniqueApplied,2);assert.equal(backfill.controls.complete,true);assert.equal(browser.phase,'passed');
 assert.equal(backfill.spectatorReady,true);assert.equal(backfill.spectatorFailed,0);
+if(process.env.LOCAL_SOURCE_BATCH_PROBE==='1'){
+ assert.equal(backfill.spectatorSourceMode,'batch');assert.equal(backfill.sourceBatchModeVerified,true);
+ assert.ok(backfill.sourceBatchRpcCalls>0,'Actual operational worker must invoke batch RPC');
+ assert.ok(backfill.servingSourceBatchRpcCalls>0,'Batch RPC must also run after preparation and before worker stop');
+}
 assert.ok(Object.values(browser.checks).every(value=>value===true));
 const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
 pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';
