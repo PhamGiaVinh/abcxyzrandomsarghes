@@ -435,7 +435,7 @@ function ScopedFloorTableMapPanelV3({
             : v3.fastBustEnabled ? "Thiếu hồ sơ dự giải. Có thể giải phóng ghế này; hệ thống không tự tạo hồ sơ hay ghi một lượt bust mới."
               : "Đang có người trên server nhưng thiếu hồ sơ dự giải. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."}</p>
           <p className="mt-2 break-all font-mono text-xs text-muted-foreground">Mã người chơi: {seat.playerId}</p>
-          {v3.fastBustEnabled && <Button className="mt-3 min-h-12 w-full" variant="destructive"
+          {v3.fastBustEnabled && <Button data-ops-action="floor.player.open_bust" className="mt-3 min-h-12 w-full" variant="destructive"
             disabled={busy || !actorId || !seat.seatId}
             onClick={() => { setPendingActionScope(selectedSessionScope); setPendingBustSeat(seat); }}>
             <UserRoundX className="mr-2 h-4 w-4" /> Loại / giải phóng ghế
