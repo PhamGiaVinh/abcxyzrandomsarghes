@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { qualifiedSource342, selectCashierSchemaMode } from './select-cashier-schema-mode.mjs';
-import { validateSourcePackageEvidence } from './cashier-source-package-evidence.mjs';
+import { validateSourcePackageEvidence, validatePolicyBootstrapScope, policyBootstrapFiles } from './cashier-source-package-evidence.mjs';
 
 const source = fileURLToPath(new URL('../../../', import.meta.url));
 const repo = mkdtempSync(join(tmpdir(), 'cashier-exact-source-'));
@@ -132,5 +132,36 @@ test('exact package workflow enables all three probes and requires runtime recei
   for (const name of ['SOURCE_GENERATION', 'PENDING_SOURCE', 'SOURCE_BATCH']) {
     assert.match(workflow, new RegExp(`LOCAL_${name}_PROBE:.*outputs.package == 'source342'`));
   }
-  assert.ok(workflow.includes('node scripts/ops/cashier-source-package-evidence.mjs output/operations-latency'));
+  assert.ok(workflow.includes('node scripts/ops/cashier-source-package-evidence.mjs "$runtime_root/output/operations-latency"'));
+});
+
+test('policy bootstrap admits only the exact policy-only PR and rejects unknown SQL or historical mode', () => {
+  const context = { repository: 'PhamGiaVinh/abcxyzrandomsarghes', number: 1635, mode: 'current', sourcePackage: 'none' };
+  assert.equal(validatePolicyBootstrapScope(policyBootstrapFiles, context), true);
+  for (const patch of [{ repository: 'other/repo' }, { number: 1634 }, { mode: 'pre03' }, { sourcePackage: 'source342' }]) {
+    assert.throws(() => validatePolicyBootstrapScope(policyBootstrapFiles, { ...context, ...patch }));
+  }
+  for (const files of [policyBootstrapFiles.slice(1), [...policyBootstrapFiles, policyBootstrapFiles[0]],
+    [...policyBootstrapFiles, ['VinPoker/supabase/migrations/unknown.sql', 'A']],
+    policyBootstrapFiles.map((f, i) => i ? f : [f[0], 'D'])]) {
+    assert.throws(() => validatePolicyBootstrapScope(files, context));
+  }
+});
+
+test('policy bootstrap CLI validates real committed diff before creating any runtime fixture', () => {
+  git('read-tree', baseline);
+  for (const path of guards) set(path, readFileSync(join(source, path)));
+  set(legacyTest, readFileSync(join(source, legacyTest)));
+  const policyHead = commit(baseline);
+  const args = [join(source, root, 'cashier-source-package-evidence.mjs'), '--bootstrap-scope',
+    'PhamGiaVinh/abcxyzrandomsarghes', '1635', 'current', 'none', baseline, policyHead];
+  const output = execFileSync(process.execPath, args, { cwd: repo, encoding: 'utf8' });
+  assert.match(output, /Exact policy-only integration fixture permitted/);
+  set('VinPoker/supabase/migrations/unknown.sql', 'select 1;');
+  const changed = commit(policyHead);
+  assert.throws(() => execFileSync(process.execPath, [...args.slice(0, -1), changed], { cwd: repo, stdio: 'pipe' }));
+  const workflow = readFileSync(join(source, '.github/workflows/cashier-tour-real-e2e.yml'), 'utf8');
+  assert.match(workflow, /POLICY_INTEGRATION_PR:.*pull_request.number == 1635/);
+  assert.ok(workflow.indexOf('--bootstrap-scope') < workflow.indexOf('git worktree add --detach'));
+  assert.ok(workflow.includes('"runtimeSha":"c69bce72ca98332ac4740808b05db01bf7bed398"'));
 });

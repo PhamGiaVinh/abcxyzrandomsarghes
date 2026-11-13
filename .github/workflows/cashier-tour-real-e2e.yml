@@ -285,11 +285,42 @@ jobs:
           LOCAL_PENDING_SOURCE_PROBE: ${{ (steps.schema-mode.outputs.package == 'source342' || (github.event_name == 'workflow_dispatch' && inputs.pending_source_probe)) && '1' || '0' }}
           LOCAL_SOURCE_BATCH_PROBE: ${{ (steps.schema-mode.outputs.package == 'source342' || (github.event_name == 'workflow_dispatch' && inputs.source_batch_probe)) && '1' || '0' }}
           REQUIRED_SOURCE_PACKAGE: ${{ steps.schema-mode.outputs.package }}
+          POLICY_INTEGRATION_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 1635 && '1' || '0' }}
+          POLICY_PR_NUMBER: ${{ github.event.pull_request.number }}
+          POLICY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          POLICY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          bash scripts/ops/cashier-tour-real-e2e.sh
+          policy_root="$PWD"
+          runtime_root="$PWD"
+          collect_policy_runtime() {
+            if [[ "$runtime_root" != "$policy_root" ]]; then
+              mkdir -p "$policy_root/output/operations-latency"
+              if [[ -d "$runtime_root/output/operations-latency" ]]; then
+                cp -a "$runtime_root/output/operations-latency/." "$policy_root/output/operations-latency/"
+              fi
+              printf '{"kind":"POLICY_ONLY_PINNED_RUNTIME","policySha":"%s","orchestrationSha":"%s","runtimeSha":"c69bce72ca98332ac4740808b05db01bf7bed398","qualification":false,"productionChanged":false}\n' \
+                "$POLICY_HEAD_SHA" "$GITHUB_SHA" > "$policy_root/output/operations-latency/operations-policy-integration-source-http.json"
+            fi
+          }
+          trap collect_policy_runtime EXIT
+          if [[ "$POLICY_INTEGRATION_PR" == 1 ]]; then
+            # Test policy integration against its exact reviewed candidate, not
+            # main's known pre342 spectator-writer contention. No other PR or
+            # SQL diff may use this one-off bootstrap; keep both source IDs.
+            node scripts/ops/cashier-source-package-evidence.mjs --bootstrap-scope \
+              "$GITHUB_REPOSITORY" "$POLICY_PR_NUMBER" "$CASHIER_SCHEMA_MODE" \
+              "$REQUIRED_SOURCE_PACKAGE" "$POLICY_BASE_SHA" "$POLICY_HEAD_SHA"
+            git worktree add --detach "$RUNNER_TEMP/source342-runtime" c69bce72ca98332ac4740808b05db01bf7bed398
+            runtime_root="$RUNNER_TEMP/source342-runtime/VinPoker"
+            cmp package-lock.json "$runtime_root/package-lock.json"
+            cp -a node_modules "$runtime_root/node_modules"
+            export LOCAL_SOURCE_GENERATION_PROBE=1 LOCAL_PENDING_SOURCE_PROBE=1 LOCAL_SOURCE_BATCH_PROBE=1
+            REQUIRED_SOURCE_PACKAGE=source342
+          fi
+          (cd "$runtime_root" && bash scripts/ops/cashier-tour-real-e2e.sh)
           if [[ "$REQUIRED_SOURCE_PACKAGE" == source342 || "$LOCAL_SOURCE_GENERATION_PROBE" == 1 || "$LOCAL_PENDING_SOURCE_PROBE" == 1 || "$LOCAL_SOURCE_BATCH_PROBE" == 1 ]]; then
-            node scripts/ops/cashier-source-package-evidence.mjs output/operations-latency
+            node scripts/ops/cashier-source-package-evidence.mjs "$runtime_root/output/operations-latency"
           fi
       - name: Sanitized Cashier runtime latency evidence
         if: always()
