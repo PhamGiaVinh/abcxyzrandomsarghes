@@ -941,6 +941,8 @@ export const FEATURES = {
    * verified migration application and authenticated UAT.
    */
   floorFreeSitV1: true,
+  // New RPC/roster contract; stays dark until the reviewed DB + frontend release.
+  floorFastBustV1: false,
   // Server-reserved Tracker destination seats apply only after the active hand
   // ends. Deploy this bundle only after the Floor DB, Edge and queue ACL gates.
   floorDeferredTrackerMoveV1: true,

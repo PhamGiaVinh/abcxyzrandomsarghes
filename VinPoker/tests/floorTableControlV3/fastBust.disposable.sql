@@ -1,0 +1,164 @@
+\set ON_ERROR_STOP on
+-- Disposable PG17 only. Bootstrap real legacy writers; no cloud credentials.
+\ir disposableDb.serverContract.sql
+-- Current production column; the older base fixture predates clock-hold UI.
+ALTER TABLE public.table_sessions ADD COLUMN IF NOT EXISTS redraw_hold_batch_id uuid;
+
+-- The base fixture stops at roster v4. This test-only shape adapter exercises
+-- v7 identity enrichment, not the production v6 participation classifier.
+CREATE FUNCTION public.get_floor_tournament_table_roster_v6(uuid)
+RETURNS TABLE(tournament_id uuid,tournament_table_id uuid,game_table_id uuid,
+ table_number integer,table_name text,table_session_id uuid,session_revision bigint,
+ control_mode text,control_epoch bigint,max_seats integer,tournament_table_status text,
+ session_closed_at timestamptz,active_dealer_assignment_id uuid,seat_locks jsonb,seats jsonb)
+LANGUAGE sql AS $$ SELECT * FROM public.get_floor_tournament_table_roster_v4($1) $$;
+\ir ../../supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql
+
+CREATE SCHEMA fast_bust_test;
+CREATE FUNCTION fast_bust_test.seed(mode text DEFAULT 'manual', entry_kind text DEFAULT 'valid')
+RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE t uuid:=gen_random_uuid(); g uuid:=gen_random_uuid(); p uuid:=gen_random_uuid();
+ e uuid:=gen_random_uuid(); s uuid:=gen_random_uuid(); opened jsonb; tt uuid; sess uuid;
+BEGIN
+ PERFORM set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',false);
+ INSERT INTO public.tournaments(id,club_id,status,live_status) VALUES
+ (t,'00000000-0000-0000-0000-000000000010','active','playing');
+ INSERT INTO public.game_tables(id,club_id,table_name,table_number,operational_status) VALUES
+ (g,'00000000-0000-0000-0000-000000000010','TEST fast bust',
+  (SELECT coalesce(max(table_number),0)+1 FROM public.game_tables WHERE club_id='00000000-0000-0000-0000-000000000010'),'available');
+ opened:=public.floor_open_tournament_table_v3(t,g,mode,gen_random_uuid());
+ PERFORM public.floor_table_v3_assert(opened->>'ok'='true','fixture table opens: '||opened);
+ tt:=(opened->>'tournament_table_id')::uuid; sess:=(opened->>'table_session_id')::uuid;
+ IF entry_kind<>'missing' THEN
+  INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,status,current_stack)
+  VALUES(e,t,p,1,'seated',1000);
+ ELSE e:=NULL; END IF;
+ INSERT INTO public.tournament_seats(id,tournament_id,player_id,entry_number,table_id,
+  tournament_table_id,table_session_id,seat_number,chip_count,entry_id,is_active,status)
+ VALUES(s,t,p,1,tt,tt,sess,1,1000,e,true,'active');
+ RETURN jsonb_build_object('tour',t,'table',tt,'session',sess,'seat',s,'player',p,'entry',e,'number',1,'epoch',1);
+END $$;
+
+-- SET ROLE is inside the invoker helper solely to grade the actual RPC as the
+-- browser role. Fixture preparation and assertions remain session-admin work.
+CREATE FUNCTION fast_bust_test.invoke(c jsonb, request uuid DEFAULT gen_random_uuid(),
+ reason text DEFAULT 'TEST Floor confirmed out') RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE r jsonb;
+BEGIN
+ SET LOCAL ROLE authenticated;
+ IF current_user<>'authenticated' THEN RAISE EXCEPTION 'ungraded caller'; END IF;
+ r:=public.floor_operator_bust_seat_v1((c->>'tour')::uuid,(c->>'table')::uuid,
+ (c->>'session')::uuid,(c->>'seat')::uuid,(c->>'player')::uuid,(c->>'number')::integer,
+ (c->>'entry')::uuid,(c->>'epoch')::bigint,request,reason);
+ RESET ROLE;
+ RETURN r;
+END $$;
+
+CREATE FUNCTION fast_bust_test.disturb_chip_update() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF current_setting('fast_bust_test.disturb_seat',true)=NEW.id::text AND NEW.chip_count=0 THEN NEW.chip_count:=5; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER test_disturb_chip_update BEFORE UPDATE OF chip_count ON public.tournament_seats
+ FOR EACH ROW EXECUTE FUNCTION fast_bust_test.disturb_chip_update();
+
+DO $$
+DECLARE c jsonb; r jsonb; again jsonb; req uuid; old_revision bigint; other uuid;
+BEGIN
+ c:=fast_bust_test.seed(); req:=gen_random_uuid();
+ SET LOCAL ROLE authenticated;
+ r:=public.get_floor_tournament_table_roster_v7((c->>'tour')::uuid);
+ RESET ROLE;
+ PERFORM public.floor_table_v3_assert(r#>>'{0,seats,0,seat_id}'=c->>'seat'
+  AND r#>>'{0,seats,0,seat_entry_id}'=c->>'entry','authorized roster carries exact row identity');
+ SELECT revision INTO old_revision FROM public.table_sessions WHERE id=(c->>'session')::uuid;
+ -- Changes to unrelated roster revision no longer stale this exact-seat intent.
+ UPDATE public.table_sessions SET revision=revision+10 WHERE id=(c->>'session')::uuid;
+ r:=fast_bust_test.invoke(c,req); again:=fast_bust_test.invoke(c,req);
+ PERFORM public.floor_table_v3_assert(r->>'outcome'='busted' AND r=again,'canonical bust + retry');
+ PERFORM public.floor_table_v3_assert((SELECT status='busted' AND current_stack=0 FROM public.tournament_entries WHERE id=(c->>'entry')::uuid),'canonical entry transition');
+ PERFORM public.floor_table_v3_assert((SELECT revision=old_revision+11 FROM public.table_sessions WHERE id=(c->>'session')::uuid),'one effective revision');
+ PERFORM public.floor_table_v3_assert((fast_bust_test.invoke(c,req,'different intent')->>'error')='IDEMPOTENCY_CONFLICT','conflicting retry');
+ PERFORM public.floor_table_v3_assert((fast_bust_test.invoke(c)->>'error')='seat_identity_changed','fresh duplicate fenced');
+
+ c:=fast_bust_test.seed('manual','missing');
+ r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'outcome'='orphan_seat_released' AND r->>'payout_applied'='false','orphan cleanup distinct');
+ PERFORM public.floor_table_v3_assert((SELECT count(*)=0 FROM public.tournament_entries WHERE tournament_id=(c->>'tour')::uuid),'no fabricated registration');
+ PERFORM public.floor_table_v3_assert((SELECT status='cancelled' AND NOT is_active AND chip_count=1000 FROM public.tournament_seats WHERE id=(c->>'seat')::uuid),'orphan cleanup preserves historical chips');
+ r:=public.close_tournament_table_v3((c->>'table')::uuid,(r->>'revision')::bigint,gen_random_uuid());
+ PERFORM public.floor_table_v3_assert(r->>'ok'='true','empty table closes after orphan cleanup');
+
+ c:=fast_bust_test.seed(); other:=gen_random_uuid();
+ INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,status,current_stack)
+ VALUES(other,(c->>'tour')::uuid,gen_random_uuid(),1,'seated',2222);
+ UPDATE public.tournament_seats SET entry_id=other WHERE id=(c->>'seat')::uuid;
+ c:=jsonb_set(c,'{entry}',to_jsonb(other)); r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'outcome'='orphan_seat_released','mismatched entry cleanup');
+ PERFORM public.floor_table_v3_assert((SELECT status='seated' AND current_stack=2222 FROM public.tournament_entries WHERE id=other),'other player entry untouched');
+
+ c:=fast_bust_test.seed('tracker');
+ INSERT INTO public.tournament_chip_counts VALUES((c->>'tour')::uuid,(c->>'player')::uuid,1,777,now());
+ r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'outcome'='busted' AND r#>>'{before,tracker_chip_count}'='777' AND r#>>'{before,seat_chip_count}'='1000','tracker correction audited');
+ PERFORM public.floor_table_v3_assert((SELECT chip_count=0 FROM public.tournament_chip_counts WHERE tournament_id=(c->>'tour')::uuid),'tracker counter cleared');
+ c:=fast_bust_test.seed('tracker'); r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'outcome'='busted','missing tracker counter supported');
+
+ c:=fast_bust_test.seed('tracker'); req:=gen_random_uuid();
+ PERFORM floor_private.floor_table_v3_save_receipt(auth.uid(),'floor_bust_player_v3',req,'conflict','{"ok":true}'::jsonb);
+ r:=fast_bust_test.invoke(c,req);
+ PERFORM public.floor_table_v3_assert(r->>'error'='IDEMPOTENCY_CONFLICT','canonical rejection retained');
+ PERFORM public.floor_table_v3_assert((SELECT chip_count=1000 AND is_active FROM public.tournament_seats WHERE id=(c->>'seat')::uuid),'failed bust rolls back seat correction');
+ PERFORM public.floor_table_v3_assert(NOT EXISTS(SELECT 1 FROM public.tournament_chip_counts WHERE tournament_id=(c->>'tour')::uuid),'failed bust rolls back inserted counter');
+ PERFORM public.floor_table_v3_assert(NOT EXISTS(SELECT 1 FROM public.table_operation_receipts WHERE request_id=req AND operation_type='floor_operator_bust_seat_v1'),'no success receipt for failed bust');
+
+ c:=fast_bust_test.seed('tracker');
+ PERFORM set_config('fast_bust_test.disturb_seat',c->>'seat',false);
+ r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'error'='STALE_STATE','canonical business failure after correction');
+ PERFORM public.floor_table_v3_assert((SELECT chip_count=1000 AND is_active FROM public.tournament_seats WHERE id=(c->>'seat')::uuid),'subtransaction rolls back correction');
+ PERFORM public.floor_table_v3_assert(NOT EXISTS(SELECT 1 FROM public.tournament_chip_counts WHERE tournament_id=(c->>'tour')::uuid),'subtransaction rolls back counter insert');
+ PERFORM set_config('fast_bust_test.disturb_seat','',false);
+
+ c:=fast_bust_test.seed();
+ UPDATE public.table_sessions SET redraw_hold_batch_id=gen_random_uuid() WHERE id=(c->>'session')::uuid;
+ r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'error'='redraw_in_progress','hold fence');
+ UPDATE public.table_sessions SET redraw_hold_batch_id=NULL WHERE id=(c->>'session')::uuid;
+ r:=fast_bust_test.invoke(jsonb_set(c,'{seat}',to_jsonb(gen_random_uuid())));
+ PERFORM public.floor_table_v3_assert(r->>'error'='seat_identity_changed','stale seat ID');
+ r:=fast_bust_test.invoke(jsonb_set(c,'{player}',to_jsonb(gen_random_uuid())));
+ PERFORM public.floor_table_v3_assert(r->>'error'='seat_identity_changed','stale player identity');
+ r:=fast_bust_test.invoke(jsonb_set(c,'{epoch}','2'));
+ PERFORM public.floor_table_v3_assert(r->>'error'='table_session_mismatch','control epoch fence');
+ INSERT INTO public.tournament_hands(tournament_id,table_id,tournament_table_id,table_session_id,status)
+ VALUES((c->>'tour')::uuid,(c->>'table')::uuid,(c->>'table')::uuid,(c->>'session')::uuid,'in_progress');
+ r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'error'='player_in_active_hand','running hand never forced');
+ UPDATE public.tournament_hands SET status='completed' WHERE tournament_id=(c->>'tour')::uuid;
+ PERFORM set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',false);
+ r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'error'='actor_not_allowed','cross tenant denied');
+ PERFORM set_config('request.jwt.claim.sub','',false); r:=fast_bust_test.invoke(c);
+ PERFORM public.floor_table_v3_assert(r->>'error'='invalid_request','no actor denied');
+ PERFORM public.floor_table_v3_assert(NOT has_function_privilege('anon','public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text)','EXECUTE'),'anon ACL');
+ PERFORM public.floor_table_v3_assert(NOT has_function_privilege('service_role','public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text)','EXECUTE'),'service role ACL');
+END $$;
+
+SELECT 'FLOOR_FAST_BUST_NATIVE_CASES_PASS' AS result;
+
+CREATE TABLE fast_bust_test.cases(name text PRIMARY KEY, context jsonb NOT NULL);
+DO $$
+DECLARE c jsonb; p uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); s uuid:=gen_random_uuid();
+BEGIN
+ c:=fast_bust_test.seed('tracker');
+ INSERT INTO fast_bust_test.cases VALUES('first',c),('same',c);
+ INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,status,current_stack)
+ VALUES(e,(c->>'tour')::uuid,p,1,'seated',1000);
+ INSERT INTO public.tournament_seats(id,tournament_id,player_id,entry_number,table_id,tournament_table_id,
+ table_session_id,seat_number,chip_count,entry_id,is_active,status)
+ VALUES(s,(c->>'tour')::uuid,p,1,(c->>'table')::uuid,(c->>'table')::uuid,(c->>'session')::uuid,2,1000,e,true,'active');
+ INSERT INTO fast_bust_test.cases VALUES('second',c||jsonb_build_object('seat',s,'entry',e,'player',p,'number',2));
+ c:=fast_bust_test.seed('tracker'); INSERT INTO fast_bust_test.cases VALUES('double',c);
+END $$;

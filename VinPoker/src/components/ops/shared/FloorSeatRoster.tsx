@@ -9,6 +9,7 @@ import {
 export function FloorSeatRoster({
   seats,
   onSeatTap,
+  onDataIssueSeatTap,
   onEmptySeatTap,
   maxSeats = 9,
   seatLocks = [],
@@ -17,6 +18,7 @@ export function FloorSeatRoster({
 }: {
   seats: readonly FloorRosterSeat[];
   onSeatTap?: (seatNumber: number) => void;
+  onDataIssueSeatTap?: (seatNumber: number) => void;
   onEmptySeatTap?: (seatNumber: number) => void;
   maxSeats?: 8 | 9;
   seatLocks?: readonly FloorRosterSeatLock[];
@@ -67,7 +69,7 @@ export function FloorSeatRoster({
           const seatLock = lockBySeat.get(seatNumber);
           const dataIssue = seat?.integrityStatus === "missing_entry" || seat?.integrityStatus === "invalid_participation";
           const interactive = seat
-            ? Boolean(onSeatTap) && !dataIssue
+            ? dataIssue ? Boolean(onDataIssueSeatTap) : Boolean(onSeatTap)
             : seatLock
               ? Boolean(onLockedSeatTap)
               : Boolean(onEmptySeatTap);
@@ -79,7 +81,10 @@ export function FloorSeatRoster({
               data-testid={`floor-seat-row-${seatNumber}`}
               disabled={!interactive || hasIntegrityIssue}
               onClick={() => {
-                if (seat) onSeatTap?.(seatNumber);
+                if (seat) {
+                  if (dataIssue) onDataIssueSeatTap?.(seatNumber);
+                  else onSeatTap?.(seatNumber);
+                }
                 else if (seatLock) onLockedSeatTap?.(seatNumber);
                 else onEmptySeatTap?.(seatNumber);
               }}
@@ -122,7 +127,7 @@ export function FloorSeatRoster({
                       </span>
                     )}
                   </span>
-                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">{dataIssue ? "Khóa thao tác" : "Đang ngồi"}</span>
+                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">{dataIssue ? onDataIssueSeatTap ? "Xử lý ghế" : "Khóa thao tác" : "Đang ngồi"}</span>
                 </>
               ) : seatLock ? (
                 <>
