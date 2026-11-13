@@ -506,3 +506,16 @@ test("readiness ACL repair apply is manual, protected, source-pinned, and cannot
     false,
   );
 });
+
+ test('normalized source observations require a fresh live check immediately before frontend mutation',()=>{
+  assert.match(workflow,/--verified-observations true/);
+  const guard=workflow.indexOf('- name: Recheck observed live closures before frontend deployment');
+  const build=workflow.indexOf('- name: Build exact frontend source');
+  const deploy=workflow.indexOf('- name: Deploy prebuilt bundle to Vercel');
+  assert.ok(build>=0&&guard>build&&deploy>guard);
+  const gate=workflow.slice(guard,deploy);
+  assert.match(gate,/needs\.plan\.outputs\.observed_for_frontend != '\[\]'/);
+  assert.match(gate,/verified-deployment-observation\.mjs/);
+  assert.match(gate,/SUPABASE_ACCESS_TOKEN/);
+  assert.doesNotMatch(gate,/continue-on-error|recordSuccessfulReceipt|deployment-receipts\.mjs record|VERCEL_TOKEN/);
+ });

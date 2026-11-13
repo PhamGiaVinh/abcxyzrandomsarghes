@@ -1,0 +1,1345 @@
+{
+  "kind": "NORMALIZED_SOURCE_OBSERVATIONS_NOT_DEPLOYMENT_RECEIPTS",
+  "sourceCommit": "unknown",
+  "project": "orlesggcjamwuknxwcpk",
+  "frontends": [
+    {
+      "referenceSha": "6a281d99e29eeb539827c10f429131eacdabf119",
+      "fingerprint": "af4d498e581c0bd00fc69903e59d310ccaa8d5e27225fb04e2bbc55d2f5a988b"
+    },
+    {
+      "referenceSha": "8a9be1958c4d76326ddf6bbb344c1d36aa667178",
+      "fingerprint": "c17dec704db0d1e8181992db9542fd495c3d888e2f9c2d1b256a040e601cf856"
+    }
+  ],
+  "functions": [
+    {
+      "name": "assign-dealer",
+      "version": 146,
+      "verifyJwt": false,
+      "ezbrSha256": "3cc1ed481a8d97131a303cb7bc4d876120b8c4eb3c303713b9257f28837f78df",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/assign-dealer/index.ts",
+          "liveRawSha256": "3a61d6377376ea50fa5f0028bc800689accdf61daaf2a5d0c359fd934a8881c2",
+          "targetRawSha256": "4351a81091418bdc699b998b8935205ae9baf26869871e1fbb2a4e9c495d94c6",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealer-utils.ts",
+          "liveRawSha256": "32186edd3d4c05952b45c185a7dcae717f183cfa40c8beb8c3598ae5d34755bf",
+          "targetRawSha256": "ffad66bce1de395a04a0964e3f99c360f7815779e239f67e5aee727c364d3058",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pickNextDealer.ts",
+          "liveRawSha256": "7973682e5f23886220eb692c3405d9cea06112a9b6a17455085ab49439fcfbdc",
+          "targetRawSha256": "c58cb49431d4dbefeb0b35022cd25d3320d0412ea89ec1b1f456db0fbeeb9dba",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateBreaks.ts",
+          "liveRawSha256": "2da775c05c24c565f3ada5e9bccbccc20793fdb0c30b861be66f8b86d06c1bad",
+          "targetRawSha256": "d724a8f4e8437218a9b1e880cb24c9caed876df0655fe6d2047e8323f1cbd448",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/postgrestError.ts",
+          "liveRawSha256": "35fc7b4e5c3706067cfe0a1365fe1e21fddb41e026be2610695cc52b9504991e",
+          "targetRawSha256": "29e2b6ce652bc2a339a8f4bb4148e718cff743b549fe03459a7275853116dc05",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerPoolEligibility.ts",
+          "liveRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "targetRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateSnapshotTelemetry.ts",
+          "liveRawSha256": "cac3e6083059e30d15b2f982917fda40a29187146ba05cecf4908f1b97dd42a2",
+          "targetRawSha256": "06ec2a0d8233aef35fc889fbb43a5bd5b49c0e8130e5fca608d8c08538ee1161",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/checkoutSafety.ts",
+          "liveRawSha256": "3b6f698a1314e8b604e1fed32dd13299aefa73f87afb7afbeb0efddb72066d3a",
+          "targetRawSha256": "c2b44c220ae61fc6af60fadd8bf31fde5cd3383787afe5ca4d9c438bfe92dac4",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/featureTableGate.ts",
+          "liveRawSha256": "2cbeca2e513af303743cef29b8b222f5588bbf7d6d54d5293c2b708d768062ee",
+          "targetRawSha256": "329dd7c6581ac17b7681e5e10b94c280251ee9241480ab40bb23550f4d869393",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/swingPolicy.ts",
+          "liveRawSha256": "6806935e9779a1233c0dfa783c1215f8f1ddead524e6f38473287ce36ca91f6c",
+          "targetRawSha256": "31d8f308af051a816895dac9169ad7ab6ce460e1496504a383422aa117a8ff1e",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/fillEmptyTables.ts",
+          "liveRawSha256": "20c547bd5290c06ee6a57fedf4ddb0439f5baa085e1d75a5d4e500c52e1d3588",
+          "targetRawSha256": "b7c2fb702a735856005c0158cf30f548bd1b88a5eb05a2ea8fb64e87555687a3",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/openTableGrace.ts",
+          "liveRawSha256": "ccb250d6669dee9251c092519254e7d7edbf9290e275e53b67134f41ccf840ff",
+          "targetRawSha256": "8b99ab5eac9611a82b42c80fdf5524d47466ab237e131ba79958f6da14caf574",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerOperationalTables.ts",
+          "liveRawSha256": "70a41a2d51f5fe4da7aa2aa5f8df7061462b97bb09f1f517562c0e38d4b88716",
+          "targetRawSha256": "3d9edaca27f4c88e6efd1785be79abc71cbfcff3faaf8d75c6569389da8f88c6",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/evaluateBreakNeed.ts",
+          "liveRawSha256": "cc12216b4a4f24311edc1f999659b7662e61df84d9e40de42190235c90d116bc",
+          "targetRawSha256": "bb3b652e8cecc4826207abcddb2f354666f96e26ee330fb27b308e6f3f22eb31",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/computeSwingDuration.ts",
+          "liveRawSha256": "9fa787897701a38c7db0312636d22fc71c563a88e95e20dc757e1801b2cbc030",
+          "targetRawSha256": "11605e0292bb4582b99b03a74dfdf43df49c78484a4fd2c55041c7d6b6980829",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+          "liveRawSha256": "979c974b347878bb2997542e8ec5bebe4dbfb7e59671191b33a7071756d3db1b",
+          "targetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/telegram.ts",
+          "liveRawSha256": "81b682579729b6a357ae3e02df6cb0303c3570bbf18586dce397a1819396cb0f",
+          "targetRawSha256": "b2f6a661da0f987aec013c387b9a61e64451a34193cbdf38b9164d7438df7371",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/staking-common.ts",
+          "liveRawSha256": "9102d6b3afd7e02c9c7c1ccef53f92a4d9621f95e8b111db77cf87ddec35fd62",
+          "targetRawSha256": "2bfebf9ca02eb84f476d223bce229c11cc65bb8e1882faf74d7bb3d897f35fb4",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/retry.ts",
+          "liveRawSha256": "2a8d6d1094ff3ea603cc8af8ff5d1fba97da98ce44852b5ae82004aa36a94aaf",
+          "targetRawSha256": "0fa9bf4763e370ad28dc09af1eb4fb7b7cf31662cc021b1bae9fb9fd8be2cd99",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerMutationIntent.ts",
+          "liveRawSha256": "162145074cf1bcdbf87ecf85bc98aae131bed93efb85ee5d4469f5ec17bb919d",
+          "targetRawSha256": "dbe373173ad497e4774ca00a015ed5bf6df62e02fb0aced2d7e9e68eeca9f32a",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/internal-trigger-auth.ts",
+          "liveRawSha256": "bf919d792929ef7c33f352eea9159168d3dc95d2080a70a44f34e4d31b659ed2",
+          "targetRawSha256": "6e69bb684a66556e22522908e48d63e28feddd224a2806a143a4c3f1060184f1",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": [
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationTypes.ts",
+          "targetRawSha256": "4b19f06cbd8535ccae2d4ba171fec1a07e5c2d5d15d3d55bc8b1846f4b8c6787",
+          "reason": "All reviewed incoming runtime-closure edges are explicit TypeScript import type; excluded from deployed runtime bundle",
+          "incomingEdges": [
+            {
+              "importer": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+              "statement": "import type {\n  RotationTable,\n  RotationCandidate,\n  RotationPair,\n  RotationResult,\n  RotationTier,\n  MissedTableReason,\n  ScoreCandidateInput,\n  DealerTier,\n  RotationPlan,\n  RotationPlanCandidate,\n  RotationPlanOptions,\n  RotationPlanRow,\n  RotationPlanTable,\n} from \"./rotationTypes.ts\";",
+              "importerTargetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cashier-lookup-player",
+      "version": 53,
+      "verifyJwt": true,
+      "ezbrSha256": "75c022b0fbbb3c49aa8605bc137a8c45882af571cdd33aa7fa3f3eb74c2ab181",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/cashier-lookup-player/index.ts",
+          "liveRawSha256": "2fdd8433ea2927df8e8bfcbfcb815439774f8c969cc7b8a18f7be8b646665972",
+          "targetRawSha256": "6fa70bd57acdd6b16e04ce180b760f51a1ba5dd512b79d133dccef1ae9fd0e79",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/vendor/tslib-2.8.1.mjs",
+          "liveRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "targetRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/retry.ts",
+          "liveRawSha256": "2a8d6d1094ff3ea603cc8af8ff5d1fba97da98ce44852b5ae82004aa36a94aaf",
+          "targetRawSha256": "0fa9bf4763e370ad28dc09af1eb4fb7b7cf31662cc021b1bae9fb9fd8be2cd99",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/validate.ts",
+          "liveRawSha256": "3ba8be4511388dc95af382b0a4d8c2077e759395d36f14892139c8722e6ed4c3",
+          "targetRawSha256": "d894e187b72b5e197c703a61887e06c8e6632ae9fd4bc0499f1e05099c4e5ce0",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": []
+    },
+    {
+      "name": "checkout-dealer",
+      "version": 99,
+      "verifyJwt": true,
+      "ezbrSha256": "4df5f6919a2434f8510e727d1507cf9bf4f3302f4b04047b8607a06d94eb84ea",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/checkout-dealer/index.ts",
+          "liveRawSha256": "4d987499d89cb0e6d47314b3da18f103dae2eed0917a3e5812faaa537dfec2be",
+          "targetRawSha256": "4d987499d89cb0e6d47314b3da18f103dae2eed0917a3e5812faaa537dfec2be",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerMutationIntent.ts",
+          "liveRawSha256": "dbe373173ad497e4774ca00a015ed5bf6df62e02fb0aced2d7e9e68eeca9f32a",
+          "targetRawSha256": "dbe373173ad497e4774ca00a015ed5bf6df62e02fb0aced2d7e9e68eeca9f32a",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/internal-trigger-auth.ts",
+          "liveRawSha256": "6e69bb684a66556e22522908e48d63e28feddd224a2806a143a4c3f1060184f1",
+          "targetRawSha256": "6e69bb684a66556e22522908e48d63e28feddd224a2806a143a4c3f1060184f1",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealer-utils.ts",
+          "liveRawSha256": "ffad66bce1de395a04a0964e3f99c360f7815779e239f67e5aee727c364d3058",
+          "targetRawSha256": "ffad66bce1de395a04a0964e3f99c360f7815779e239f67e5aee727c364d3058",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pickNextDealer.ts",
+          "liveRawSha256": "c58cb49431d4dbefeb0b35022cd25d3320d0412ea89ec1b1f456db0fbeeb9dba",
+          "targetRawSha256": "c58cb49431d4dbefeb0b35022cd25d3320d0412ea89ec1b1f456db0fbeeb9dba",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateBreaks.ts",
+          "liveRawSha256": "d724a8f4e8437218a9b1e880cb24c9caed876df0655fe6d2047e8323f1cbd448",
+          "targetRawSha256": "d724a8f4e8437218a9b1e880cb24c9caed876df0655fe6d2047e8323f1cbd448",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/postgrestError.ts",
+          "liveRawSha256": "29e2b6ce652bc2a339a8f4bb4148e718cff743b549fe03459a7275853116dc05",
+          "targetRawSha256": "29e2b6ce652bc2a339a8f4bb4148e718cff743b549fe03459a7275853116dc05",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerPoolEligibility.ts",
+          "liveRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "targetRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateSnapshotTelemetry.ts",
+          "liveRawSha256": "06ec2a0d8233aef35fc889fbb43a5bd5b49c0e8130e5fca608d8c08538ee1161",
+          "targetRawSha256": "06ec2a0d8233aef35fc889fbb43a5bd5b49c0e8130e5fca608d8c08538ee1161",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/checkoutSafety.ts",
+          "liveRawSha256": "c2b44c220ae61fc6af60fadd8bf31fde5cd3383787afe5ca4d9c438bfe92dac4",
+          "targetRawSha256": "c2b44c220ae61fc6af60fadd8bf31fde5cd3383787afe5ca4d9c438bfe92dac4",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/featureTableGate.ts",
+          "liveRawSha256": "329dd7c6581ac17b7681e5e10b94c280251ee9241480ab40bb23550f4d869393",
+          "targetRawSha256": "329dd7c6581ac17b7681e5e10b94c280251ee9241480ab40bb23550f4d869393",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/swingPolicy.ts",
+          "liveRawSha256": "31d8f308af051a816895dac9169ad7ab6ce460e1496504a383422aa117a8ff1e",
+          "targetRawSha256": "31d8f308af051a816895dac9169ad7ab6ce460e1496504a383422aa117a8ff1e",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/fillEmptyTables.ts",
+          "liveRawSha256": "b7c2fb702a735856005c0158cf30f548bd1b88a5eb05a2ea8fb64e87555687a3",
+          "targetRawSha256": "b7c2fb702a735856005c0158cf30f548bd1b88a5eb05a2ea8fb64e87555687a3",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/openTableGrace.ts",
+          "liveRawSha256": "8b99ab5eac9611a82b42c80fdf5524d47466ab237e131ba79958f6da14caf574",
+          "targetRawSha256": "8b99ab5eac9611a82b42c80fdf5524d47466ab237e131ba79958f6da14caf574",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerOperationalTables.ts",
+          "liveRawSha256": "3d9edaca27f4c88e6efd1785be79abc71cbfcff3faaf8d75c6569389da8f88c6",
+          "targetRawSha256": "3d9edaca27f4c88e6efd1785be79abc71cbfcff3faaf8d75c6569389da8f88c6",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/evaluateBreakNeed.ts",
+          "liveRawSha256": "bb3b652e8cecc4826207abcddb2f354666f96e26ee330fb27b308e6f3f22eb31",
+          "targetRawSha256": "bb3b652e8cecc4826207abcddb2f354666f96e26ee330fb27b308e6f3f22eb31",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/computeSwingDuration.ts",
+          "liveRawSha256": "11605e0292bb4582b99b03a74dfdf43df49c78484a4fd2c55041c7d6b6980829",
+          "targetRawSha256": "11605e0292bb4582b99b03a74dfdf43df49c78484a4fd2c55041c7d6b6980829",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+          "liveRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71",
+          "targetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/telegram.ts",
+          "liveRawSha256": "b2f6a661da0f987aec013c387b9a61e64451a34193cbdf38b9164d7438df7371",
+          "targetRawSha256": "b2f6a661da0f987aec013c387b9a61e64451a34193cbdf38b9164d7438df7371",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/staking-common.ts",
+          "liveRawSha256": "2bfebf9ca02eb84f476d223bce229c11cc65bb8e1882faf74d7bb3d897f35fb4",
+          "targetRawSha256": "2bfebf9ca02eb84f476d223bce229c11cc65bb8e1882faf74d7bb3d897f35fb4",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/retry.ts",
+          "liveRawSha256": "0fa9bf4763e370ad28dc09af1eb4fb7b7cf31662cc021b1bae9fb9fd8be2cd99",
+          "targetRawSha256": "0fa9bf4763e370ad28dc09af1eb4fb7b7cf31662cc021b1bae9fb9fd8be2cd99",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/mapWithConcurrency.ts",
+          "liveRawSha256": "01c90e2656d628f9d50e8287df075761aed9bdbcab605b4bdf93e05980cbdd77",
+          "targetRawSha256": "01c90e2656d628f9d50e8287df075761aed9bdbcab605b4bdf93e05980cbdd77",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": [
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationTypes.ts",
+          "targetRawSha256": "4b19f06cbd8535ccae2d4ba171fec1a07e5c2d5d15d3d55bc8b1846f4b8c6787",
+          "reason": "All reviewed incoming runtime-closure edges are explicit TypeScript import type; excluded from deployed runtime bundle",
+          "incomingEdges": [
+            {
+              "importer": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+              "statement": "import type {\n  RotationTable,\n  RotationCandidate,\n  RotationPair,\n  RotationResult,\n  RotationTier,\n  MissedTableReason,\n  ScoreCandidateInput,\n  DealerTier,\n  RotationPlan,\n  RotationPlanCandidate,\n  RotationPlanOptions,\n  RotationPlanRow,\n  RotationPlanTable,\n} from \"./rotationTypes.ts\";",
+              "importerTargetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mass-assign",
+      "version": 110,
+      "verifyJwt": true,
+      "ezbrSha256": "0ca510bf504f4439d30e65a480afd02fd5159bb9cf22b4179eb85dca56e57f17",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/mass-assign/index.ts",
+          "liveRawSha256": "3cf219e7554a87efa8bca9026e0c1354329755a5ade2a70176eebab84e009003",
+          "targetRawSha256": "c0d24a53ae5272561a3902a707e2c428c6f35aaa136511614d608f14289bc10e",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealer-utils.ts",
+          "liveRawSha256": "32186edd3d4c05952b45c185a7dcae717f183cfa40c8beb8c3598ae5d34755bf",
+          "targetRawSha256": "ffad66bce1de395a04a0964e3f99c360f7815779e239f67e5aee727c364d3058",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pickNextDealer.ts",
+          "liveRawSha256": "7973682e5f23886220eb692c3405d9cea06112a9b6a17455085ab49439fcfbdc",
+          "targetRawSha256": "c58cb49431d4dbefeb0b35022cd25d3320d0412ea89ec1b1f456db0fbeeb9dba",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateBreaks.ts",
+          "liveRawSha256": "2da775c05c24c565f3ada5e9bccbccc20793fdb0c30b861be66f8b86d06c1bad",
+          "targetRawSha256": "d724a8f4e8437218a9b1e880cb24c9caed876df0655fe6d2047e8323f1cbd448",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/postgrestError.ts",
+          "liveRawSha256": "35fc7b4e5c3706067cfe0a1365fe1e21fddb41e026be2610695cc52b9504991e",
+          "targetRawSha256": "29e2b6ce652bc2a339a8f4bb4148e718cff743b549fe03459a7275853116dc05",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerPoolEligibility.ts",
+          "liveRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "targetRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateSnapshotTelemetry.ts",
+          "liveRawSha256": "cac3e6083059e30d15b2f982917fda40a29187146ba05cecf4908f1b97dd42a2",
+          "targetRawSha256": "06ec2a0d8233aef35fc889fbb43a5bd5b49c0e8130e5fca608d8c08538ee1161",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/checkoutSafety.ts",
+          "liveRawSha256": "3b6f698a1314e8b604e1fed32dd13299aefa73f87afb7afbeb0efddb72066d3a",
+          "targetRawSha256": "c2b44c220ae61fc6af60fadd8bf31fde5cd3383787afe5ca4d9c438bfe92dac4",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/featureTableGate.ts",
+          "liveRawSha256": "2cbeca2e513af303743cef29b8b222f5588bbf7d6d54d5293c2b708d768062ee",
+          "targetRawSha256": "329dd7c6581ac17b7681e5e10b94c280251ee9241480ab40bb23550f4d869393",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/swingPolicy.ts",
+          "liveRawSha256": "6806935e9779a1233c0dfa783c1215f8f1ddead524e6f38473287ce36ca91f6c",
+          "targetRawSha256": "31d8f308af051a816895dac9169ad7ab6ce460e1496504a383422aa117a8ff1e",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/fillEmptyTables.ts",
+          "liveRawSha256": "20c547bd5290c06ee6a57fedf4ddb0439f5baa085e1d75a5d4e500c52e1d3588",
+          "targetRawSha256": "b7c2fb702a735856005c0158cf30f548bd1b88a5eb05a2ea8fb64e87555687a3",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/openTableGrace.ts",
+          "liveRawSha256": "ccb250d6669dee9251c092519254e7d7edbf9290e275e53b67134f41ccf840ff",
+          "targetRawSha256": "8b99ab5eac9611a82b42c80fdf5524d47466ab237e131ba79958f6da14caf574",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerOperationalTables.ts",
+          "liveRawSha256": "70a41a2d51f5fe4da7aa2aa5f8df7061462b97bb09f1f517562c0e38d4b88716",
+          "targetRawSha256": "3d9edaca27f4c88e6efd1785be79abc71cbfcff3faaf8d75c6569389da8f88c6",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/evaluateBreakNeed.ts",
+          "liveRawSha256": "cc12216b4a4f24311edc1f999659b7662e61df84d9e40de42190235c90d116bc",
+          "targetRawSha256": "bb3b652e8cecc4826207abcddb2f354666f96e26ee330fb27b308e6f3f22eb31",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/computeSwingDuration.ts",
+          "liveRawSha256": "9fa787897701a38c7db0312636d22fc71c563a88e95e20dc757e1801b2cbc030",
+          "targetRawSha256": "11605e0292bb4582b99b03a74dfdf43df49c78484a4fd2c55041c7d6b6980829",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+          "liveRawSha256": "979c974b347878bb2997542e8ec5bebe4dbfb7e59671191b33a7071756d3db1b",
+          "targetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/telegram.ts",
+          "liveRawSha256": "81b682579729b6a357ae3e02df6cb0303c3570bbf18586dce397a1819396cb0f",
+          "targetRawSha256": "b2f6a661da0f987aec013c387b9a61e64451a34193cbdf38b9164d7438df7371",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/idempotency.ts",
+          "liveRawSha256": "9d4c43833a7125bcc905afc7e753910b2df8429aefb0412327d8a076f8f948a0",
+          "targetRawSha256": "b0cf0349949c17ba5a562d64a29eae674f694edd22a312fb5608b9c7fcd6b5b0",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/staking-common.ts",
+          "liveRawSha256": "9102d6b3afd7e02c9c7c1ccef53f92a4d9621f95e8b111db77cf87ddec35fd62",
+          "targetRawSha256": "2bfebf9ca02eb84f476d223bce229c11cc65bb8e1882faf74d7bb3d897f35fb4",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/retry.ts",
+          "liveRawSha256": "2a8d6d1094ff3ea603cc8af8ff5d1fba97da98ce44852b5ae82004aa36a94aaf",
+          "targetRawSha256": "0fa9bf4763e370ad28dc09af1eb4fb7b7cf31662cc021b1bae9fb9fd8be2cd99",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerMutationIntent.ts",
+          "liveRawSha256": "162145074cf1bcdbf87ecf85bc98aae131bed93efb85ee5d4469f5ec17bb919d",
+          "targetRawSha256": "dbe373173ad497e4774ca00a015ed5bf6df62e02fb0aced2d7e9e68eeca9f32a",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/internal-trigger-auth.ts",
+          "liveRawSha256": "bf919d792929ef7c33f352eea9159168d3dc95d2080a70a44f34e4d31b659ed2",
+          "targetRawSha256": "6e69bb684a66556e22522908e48d63e28feddd224a2806a143a4c3f1060184f1",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/fillOpenOperation.ts",
+          "liveRawSha256": "24503c06e487db4fd07e0ab86ab8b5e07bd6aaad52753481aece4fff883389d7",
+          "targetRawSha256": "d57e856ce5266b2a22127e3b365a16d77d95ac8322ca67c7a9d425ac5c40a7a3",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/mass-assign/failureContract.ts",
+          "liveRawSha256": "d94c1960608c0bcc55fb76f4ea16fbb2e61e5657ab1e76f3dc052d32d0e9cbbd",
+          "targetRawSha256": "c8a866b15213b76fd855463bbb72cf692375099d1185afd9a009375441399c03",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": [
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationTypes.ts",
+          "targetRawSha256": "4b19f06cbd8535ccae2d4ba171fec1a07e5c2d5d15d3d55bc8b1846f4b8c6787",
+          "reason": "All reviewed incoming runtime-closure edges are explicit TypeScript import type; excluded from deployed runtime bundle",
+          "incomingEdges": [
+            {
+              "importer": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+              "statement": "import type {\n  RotationTable,\n  RotationCandidate,\n  RotationPair,\n  RotationResult,\n  RotationTier,\n  MissedTableReason,\n  ScoreCandidateInput,\n  DealerTier,\n  RotationPlan,\n  RotationPlanCandidate,\n  RotationPlanOptions,\n  RotationPlanRow,\n  RotationPlanTable,\n} from \"./rotationTypes.ts\";",
+              "importerTargetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ops-club-accounts",
+      "version": 18,
+      "verifyJwt": true,
+      "ezbrSha256": "b70aa3f9e48d066a154d888c36b77d15895471d2ebf5b5f7ab67618c849f7710",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/ops-club-accounts/index.ts",
+          "liveRawSha256": "20b2d10e15278e1b64d830b1c9d7e4117651130fc1b69134dc8b5841558001e4",
+          "targetRawSha256": "331158245d641b9141273ff989202e58a3bfc1fa9041fd0d7f1f715326ee546d",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/vendor/tslib-2.8.1.mjs",
+          "liveRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "targetRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/staking-common.ts",
+          "liveRawSha256": "9102d6b3afd7e02c9c7c1ccef53f92a4d9621f95e8b111db77cf87ddec35fd62",
+          "targetRawSha256": "2bfebf9ca02eb84f476d223bce229c11cc65bb8e1882faf74d7bb3d897f35fb4",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/retry.ts",
+          "liveRawSha256": "2a8d6d1094ff3ea603cc8af8ff5d1fba97da98ce44852b5ae82004aa36a94aaf",
+          "targetRawSha256": "0fa9bf4763e370ad28dc09af1eb4fb7b7cf31662cc021b1bae9fb9fd8be2cd99",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": []
+    },
+    {
+      "name": "process-swing",
+      "version": 377,
+      "verifyJwt": false,
+      "ezbrSha256": "197bd5e3fb4b7e06a5bd169804a54124f0a440815ac2ba362d0c12994cd8e056",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/process-swing/index.ts",
+          "liveRawSha256": "92e81e7e9dfdbdf40f5d7a58d95f67fcfa052d9490ea4776093018bbd479cce9",
+          "targetRawSha256": "af8c183275247d6dc922e6a55b46959d4a2246f51191187b02ce89a6bd5eff5e",
+          "comparison": "one-target-leading-bom-and-crlf",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/vendor/tslib-2.8.1.mjs",
+          "liveRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "targetRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealer-utils.ts",
+          "liveRawSha256": "32186edd3d4c05952b45c185a7dcae717f183cfa40c8beb8c3598ae5d34755bf",
+          "targetRawSha256": "ffad66bce1de395a04a0964e3f99c360f7815779e239f67e5aee727c364d3058",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pickNextDealer.ts",
+          "liveRawSha256": "7973682e5f23886220eb692c3405d9cea06112a9b6a17455085ab49439fcfbdc",
+          "targetRawSha256": "c58cb49431d4dbefeb0b35022cd25d3320d0412ea89ec1b1f456db0fbeeb9dba",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateBreaks.ts",
+          "liveRawSha256": "2da775c05c24c565f3ada5e9bccbccc20793fdb0c30b861be66f8b86d06c1bad",
+          "targetRawSha256": "d724a8f4e8437218a9b1e880cb24c9caed876df0655fe6d2047e8323f1cbd448",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/postgrestError.ts",
+          "liveRawSha256": "35fc7b4e5c3706067cfe0a1365fe1e21fddb41e026be2610695cc52b9504991e",
+          "targetRawSha256": "29e2b6ce652bc2a339a8f4bb4148e718cff743b549fe03459a7275853116dc05",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerPoolEligibility.ts",
+          "liveRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "targetRawSha256": "c30e2f0ab60d529bd4ea282329a160c5ab702af5070c5a2917fdb862ccb6931e",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/candidateSnapshotTelemetry.ts",
+          "liveRawSha256": "cac3e6083059e30d15b2f982917fda40a29187146ba05cecf4908f1b97dd42a2",
+          "targetRawSha256": "06ec2a0d8233aef35fc889fbb43a5bd5b49c0e8130e5fca608d8c08538ee1161",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/checkoutSafety.ts",
+          "liveRawSha256": "3b6f698a1314e8b604e1fed32dd13299aefa73f87afb7afbeb0efddb72066d3a",
+          "targetRawSha256": "c2b44c220ae61fc6af60fadd8bf31fde5cd3383787afe5ca4d9c438bfe92dac4",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/featureTableGate.ts",
+          "liveRawSha256": "2cbeca2e513af303743cef29b8b222f5588bbf7d6d54d5293c2b708d768062ee",
+          "targetRawSha256": "329dd7c6581ac17b7681e5e10b94c280251ee9241480ab40bb23550f4d869393",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/swingPolicy.ts",
+          "liveRawSha256": "6806935e9779a1233c0dfa783c1215f8f1ddead524e6f38473287ce36ca91f6c",
+          "targetRawSha256": "31d8f308af051a816895dac9169ad7ab6ce460e1496504a383422aa117a8ff1e",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/fillEmptyTables.ts",
+          "liveRawSha256": "20c547bd5290c06ee6a57fedf4ddb0439f5baa085e1d75a5d4e500c52e1d3588",
+          "targetRawSha256": "b7c2fb702a735856005c0158cf30f548bd1b88a5eb05a2ea8fb64e87555687a3",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/openTableGrace.ts",
+          "liveRawSha256": "ccb250d6669dee9251c092519254e7d7edbf9290e275e53b67134f41ccf840ff",
+          "targetRawSha256": "8b99ab5eac9611a82b42c80fdf5524d47466ab237e131ba79958f6da14caf574",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerOperationalTables.ts",
+          "liveRawSha256": "70a41a2d51f5fe4da7aa2aa5f8df7061462b97bb09f1f517562c0e38d4b88716",
+          "targetRawSha256": "3d9edaca27f4c88e6efd1785be79abc71cbfcff3faaf8d75c6569389da8f88c6",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/evaluateBreakNeed.ts",
+          "liveRawSha256": "cc12216b4a4f24311edc1f999659b7662e61df84d9e40de42190235c90d116bc",
+          "targetRawSha256": "bb3b652e8cecc4826207abcddb2f354666f96e26ee330fb27b308e6f3f22eb31",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/computeSwingDuration.ts",
+          "liveRawSha256": "9fa787897701a38c7db0312636d22fc71c563a88e95e20dc757e1801b2cbc030",
+          "targetRawSha256": "11605e0292bb4582b99b03a74dfdf43df49c78484a4fd2c55041c7d6b6980829",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationSolver.ts",
+          "liveRawSha256": "979c974b347878bb2997542e8ec5bebe4dbfb7e59671191b33a7071756d3db1b",
+          "targetRawSha256": "44449b67cf77c27be73465c51d152e33448af8e154842314bdabc77716b15b71",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/lockTimeout.ts",
+          "liveRawSha256": "d1b35f1cd2c04304a05b7c00912959a693667a184bc4d8101d1870afe28b6a2e",
+          "targetRawSha256": "4e7f024b7bbed1d91561455995c5bf313163292940d4e936663abb694ee8e65d",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/internal-trigger-auth.ts",
+          "liveRawSha256": "bf919d792929ef7c33f352eea9159168d3dc95d2080a70a44f34e4d31b659ed2",
+          "targetRawSha256": "6e69bb684a66556e22522908e48d63e28feddd224a2806a143a4c3f1060184f1",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/telegram.ts",
+          "liveRawSha256": "81b682579729b6a357ae3e02df6cb0303c3570bbf18586dce397a1819396cb0f",
+          "targetRawSha256": "b2f6a661da0f987aec013c387b9a61e64451a34193cbdf38b9164d7438df7371",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/telegramNotifier.ts",
+          "liveRawSha256": "6d88cf8653d572e6838b4686463a87b5cadbaef51664a981f669627bf46d29b8",
+          "targetRawSha256": "4b7d7dbc79548de18d2a86ad62c42a2b826583995ca3e23a7203c6d9f61e08cf",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/calculateBatchSwingDuration.ts",
+          "liveRawSha256": "15bfc38d5b44348baf2d4c720a7deb77ac50e72eec8dae99c6e27e93095e65f6",
+          "targetRawSha256": "64ebfa38d22236c160fd1492db5c6bdd4bcd390bea80277147121c07eeee0525",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/passes/pass2-pre-assign.ts",
+          "liveRawSha256": "3a9ac2ec601cfc7d637f5e68e59077aeb366253940ea2114bf73fe099fd7b875",
+          "targetRawSha256": "ae6813b367712ad5d727e7ec7bb929187f11bcf4dac81d241e57b620634c5bde",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/preAssignTelegram.ts",
+          "liveRawSha256": "4730524edd6c6b9c29876862a8e9f4647ea871eab4c6e90210466874bf67a5bd",
+          "targetRawSha256": "098e83cdf1e85feb10faf5b048842c3a593f03423406b3262a016ab23c5b644c",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/passes/passS2-empty-table-preassign.ts",
+          "liveRawSha256": "68842b4a5bf81a70248d7bbff90898f680f264dcedf37808f04ea020593a2b57",
+          "targetRawSha256": "72b6abc945ee025b4700e889dbbb2219f69e45f074147cde50dcf77a3aa29c53",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/passes/pass2.5-initial-assign.ts",
+          "liveRawSha256": "5b7245986f5190af7081c58c847c0ccd779e964cf12c97b7417620fcf99994bf",
+          "targetRawSha256": "36134df19910da60420f3ea874507db9b7fa540b90b732bd86294e939e4b92cb",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner.ts",
+          "liveRawSha256": "f25ddcda685552816ee97325bedef43c8e14bd9bc66c0eb0b43df48dd1b5efef",
+          "targetRawSha256": "d006acabdc0ca016166864defc61c2f97c8720a40426b65ad256afca6f6e26f7",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/rotationTypes.ts",
+          "liveRawSha256": "7ac1cc1ba7e3313116ed2582d8d4e874a4b321e4cc9faea54e587d8a29f223bc",
+          "targetRawSha256": "4b19f06cbd8535ccae2d4ba171fec1a07e5c2d5d15d3d55bc8b1846f4b8c6787",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/passes/pass3-post-swing-assign.ts",
+          "liveRawSha256": "a0e552b278d31e59d4436ea9da2d5f367f4bea440595b5bcc5e00662686d20a5",
+          "targetRawSha256": "7613850ae9211eb615579df4ed5db57b1f411b1c0bdb094444db9aece2e61faa",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/passes/passR-rotation-planner.ts",
+          "liveRawSha256": "9bf3e4ff0b54ff14da7f37cfa81eccda757a219874a5648395383c0f0457d3e1",
+          "targetRawSha256": "dbae5e08d7258e09a377ebb6acc9aeae9680c42923b4c7c3f9eaee978a4886a5",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/diagnostics.ts",
+          "liveRawSha256": "759bc6dbbdd0008ee82929b0acace6311972a61a161dcda28a0c71eea735967f",
+          "targetRawSha256": "6972a86287097a1b34f1f4a9eccb73236dc98357f60fe314e1917225d6e39f46",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/mealBreakService.ts",
+          "liveRawSha256": "6dda0ceb598ba2718fddce9c09f4000766cff8f4167729ff621404fff88592a2",
+          "targetRawSha256": "ce6a909a2ecadfbcba470f5ba3a97220818e6e611561cf187169bf39f007d24f",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/preAssignState.ts",
+          "liveRawSha256": "667d0353176800e7c095d34d7cafa9aca614044a4e7f8ed9c587ce958e3dfab0",
+          "targetRawSha256": "9cc371a0a261f5caad2d49dfad6004da1242c0b7282425c6ff503dc0f293c0b5",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/requestScope.ts",
+          "liveRawSha256": "27c97c482aa8270d7d5b28e992f4a73a56654ec80a03278ed39ff01126a403df",
+          "targetRawSha256": "038f87c04c5a4e7ee693bffe7ec25495cb27a38a8f93c1e7279b12411d04badd",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/dispatchContext.ts",
+          "liveRawSha256": "4a08b824dfa4ce1849561c8a0832b21e5e667baa4854010a92edfea871a95d69",
+          "targetRawSha256": "463c766f7a190498be285acaef969ee0f7820cee9fd5a9bbbf9b37b4bb2f446f",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/preAssignPreflight.ts",
+          "liveRawSha256": "e8206f4a31fa282596f462bd5a1eac8861006de2155cb3c217227e921d85806f",
+          "targetRawSha256": "1474b2437572a3552a40ccf7394c2a526171a7a1ca7eb0d7bb5f8003959c3a56",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/executionSafety.ts",
+          "liveRawSha256": "512d4477a239814362bbbc32f0aab63139aa4e1633d6e7027c314a0108056d3c",
+          "targetRawSha256": "e3bfecad56a25cceba1ed04965d02247c4750880eab563e0b7a205dcaebc1eb1",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/shortageAlert.ts",
+          "liveRawSha256": "4feb0e605439d23f928a910a41f01b6cdc41833c0c9cee4c3f47dc5a8ce54b4e",
+          "targetRawSha256": "ef45d7a65da20178f0783eac70e16429b0add5168fab4d05357a3ec4eccf4d22",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/dealerMutationIntent.ts",
+          "liveRawSha256": "162145074cf1bcdbf87ecf85bc98aae131bed93efb85ee5d4469f5ec17bb919d",
+          "targetRawSha256": "dbe373173ad497e4774ca00a015ed5bf6df62e02fb0aced2d7e9e68eeca9f32a",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/process-swing/pass3SessionFence.ts",
+          "liveRawSha256": "49d160c065cdc1283b707202e8acc9e1074b48d1cd11b2a1eaefaa3f612d0cc2",
+          "targetRawSha256": "35b673c0e1e3309a163b1ee61103ff82d3a74803413e2e9bc0a1fc49dbe96c7e",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": []
+    },
+    {
+      "name": "tournament-live-update",
+      "version": 73,
+      "verifyJwt": true,
+      "ezbrSha256": "c39657b83c317cc724807a9295f288182eb88978ef3e2b2553d934a563d7b383",
+      "files": [
+        {
+          "path": "VinPoker/supabase/functions/tournament-live-update/index.ts",
+          "liveRawSha256": "1788b00d7675edaf1c346b8cc3bee5f3298cfb79ffc02e0e7089dc7a49e7cb88",
+          "targetRawSha256": "1516d0caca36eeb7e12c4ba2dba4f1dbfb8fa312e5879e9aae2189c81815e9cc",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/vendor/tslib-2.8.1.mjs",
+          "liveRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "targetRawSha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerEngine/index.ts",
+          "liveRawSha256": "689df4c49e3fc664fd439d2cf07cbb7673e51f165df4288eb30e4a5c3709db6a",
+          "targetRawSha256": "56c2c5a2083cc5596d69a7106f8bd843cf6cd84e86dcb892804e32e446f8459b",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerEngine/types.ts",
+          "liveRawSha256": "8a6b7b7b2072f903a890bc576c34d43fba9a6003ed9a3e40f45cd7ea7055496c",
+          "targetRawSha256": "b5dfd154c4098e6f3a49734f9b50c3fb971ccf958959aa2f18c226bad3ef8537",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerEngine/handState.ts",
+          "liveRawSha256": "9234653ad451e6ff1907e0fc51c03e98f5b742227230adddd90651b911450b6e",
+          "targetRawSha256": "b161a2cc75ead8e1b1e37f3e165e88ac0aece92228077dce316bb52cc1293655",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/tracker-poker/handStateCore.ts",
+          "liveRawSha256": "8a5646441779955055612cdd33caf9ca71c03c07c6737f28187e29b2c1798e97",
+          "targetRawSha256": "de51b02dac7cd329c6768bc9510fc7bb09c3c31fd49d46f6eb9b1cd811c728ae",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerEngine/validateAction.ts",
+          "liveRawSha256": "dde1e612607dcc5a910603da57cb0504303df3dd65888f04e06c0e67c0167b5d",
+          "targetRawSha256": "b9c89d3adba880e5b3c63ab2f4cb136978b96bbe6a38cd18f8e07bd14fe6acfd",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerEngine/potEngine.ts",
+          "liveRawSha256": "437a308e6d0bd6658eade09e7aac8095690154a7ed0fb78a0191eec72f641899",
+          "targetRawSha256": "9ddd51b4ad237961b52ab6b00b634b661f5ffb6cb3f89a4eaf1405277ab86648",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/canonicalRequest.ts",
+          "liveRawSha256": "4ce878eb0c7ace501b77eb85a70ded32a3c1ec8657eeee842f674e6d22176fa2",
+          "targetRawSha256": "73250d6c8d00d6cf56f115c0af66a3a1cf04b0fbf36de24a62baf18cb01e2b68",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/intentRouter.ts",
+          "liveRawSha256": "52c3c850f39de89e74c083cd17ab225ac72b56199b03f9f2cde338532142d36e",
+          "targetRawSha256": "1361157cec28f5b01495a82c9becbc6c9d316e0c0afb4798425f4d79c4e85cad",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/parserCore.ts",
+          "liveRawSha256": "56a9b3327637c7cd8a40e4fa7b951da3a74c9f99f3bc29c2d373922d31d23978",
+          "targetRawSha256": "70eee7cbb98c79c2cab0243e8c2bc4548fe2ba2dc7f547c4b587366aed7a959b",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/transcriptHardener.ts",
+          "liveRawSha256": "c3fc901533982f9e795e1847986a80a7c387ec43105726433b18a638f6a2c0db",
+          "targetRawSha256": "16b0e7a98e112cc93d63ed2c75ceb2dfa234defeb7c2cad93e79f45275970172",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/boardParser.ts",
+          "liveRawSha256": "63528bb3b44358dad2a9fbff7a0e0dcad84b9e8bc6e6842032920d11bbc1d239",
+          "targetRawSha256": "65b579f75090303afcafcc42b26244f12d4a51661416c301e8a9892c168d1058",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/cardLexicon.ts",
+          "liveRawSha256": "d9a5ff6c429a1d025a734269cac8e2db76e572b37fa293b1471ac389a354f169",
+          "targetRawSha256": "2361ed5fb6f9e60e835f833da4019138409ccbe38e58286d1bc2e7aaa02c026b",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/holeCardsParser.ts",
+          "liveRawSha256": "13fe7de0b18fdf9c94910192f8c9464f483ac1635763d792d62a4749676b40eb",
+          "targetRawSha256": "1dac7f812d42acffb5bced5ce06335571e65f07aa6552ca30cb9bef8bf6c9903",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/finishParser.ts",
+          "liveRawSha256": "92d2d64f1cfb546f92e6b7d0490ab9cc1aab7936c62655899530902b10e99bbb",
+          "targetRawSha256": "1d7aa4903b157b44b6d0e0a83604b4015445b4dcc5ffed2bbdf31d18262bd0ce",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerSettlement/finishAssist.ts",
+          "liveRawSha256": "1e1f45e8f566e1cd636326418ae5a7bb6f31af00793fe66a73166d1649c3b0df",
+          "targetRawSha256": "afe3a53e966066bd6afc6acdc687f1e6011f35d9db1fba00c9e034dadbe1c45a",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/trackerSettlement/outcomeV1.ts",
+          "liveRawSha256": "3456133cb0de507f8bda20fff9c58ecdb3db2d45f1e435878118f717eb3a9aef",
+          "targetRawSha256": "9824df1c75a6a290ab2355cfbe9ca1209ae6b57ce5aa695a7cae77eee6f56af3",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pokerEngine/evaluate.ts",
+          "liveRawSha256": "ff48a21eec71916c238fe7c25070bb3df9c9c7626993d8862912eb62a3dcd5d5",
+          "targetRawSha256": "49059bde5570736b519834aad28ac7a5ee0d1688c76f9a73f12f1456f3981f87",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pokerEngine/deck.ts",
+          "liveRawSha256": "e45329d1dd94da58f6dda018d89392ccd8cdc56269142f0423de357c634ca528",
+          "targetRawSha256": "14de0dd4433d6eb80ff3e4a3cc54eee4f3da1f7d7be827ff1cbc6bc63f84a971",
+          "comparison": "crlf-only",
+          "liveHasCrlf": true,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerManualFinish.ts",
+          "liveRawSha256": "8926248f9aa37c080143963822257be77048c01385fe2ff70b8b3adb5e271ee7",
+          "targetRawSha256": "8926248f9aa37c080143963822257be77048c01385fe2ff70b8b3adb5e271ee7",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/src/lib/trackerUndoReceipt.ts",
+          "liveRawSha256": "fd86f534cb35ae97c4a5f0fdaff8b55ef5a0c17f84dde3112e378692148e0e99",
+          "targetRawSha256": "fd86f534cb35ae97c4a5f0fdaff8b55ef5a0c17f84dde3112e378692148e0e99",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        },
+        {
+          "path": "VinPoker/deno.json",
+          "liveRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "targetRawSha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0",
+          "comparison": "exact",
+          "liveHasCrlf": false,
+          "targetHasCrlf": false
+        }
+      ],
+      "importMap": true,
+      "typeOnlyTargets": [
+        {
+          "path": "VinPoker/src/components/cashier/tournament-live/handinput/trackerWorkflow.ts",
+          "targetRawSha256": "b020374809b1763b208e3f437c582323967f7dce492dd390b5f6d4d089195754",
+          "reason": "All reviewed incoming runtime-closure edges are explicit TypeScript import type; excluded from deployed runtime bundle",
+          "incomingEdges": [
+            {
+              "importer": "VinPoker/src/lib/trackerVoice/canonicalRequest.ts",
+              "statement": "import type { TrackerWorkflowState, WorkflowStreet } from \"../../components/cashier/tournament-live/handinput/trackerWorkflow.ts\";",
+              "importerTargetRawSha256": "73250d6c8d00d6cf56f115c0af66a3a1cf04b0fbf36de24a62baf18cb01e2b68"
+            },
+            {
+              "importer": "VinPoker/src/lib/trackerVoice/intentRouter.ts",
+              "statement": "import type { TrackerWorkflowState } from \"../../components/cashier/tournament-live/handinput/trackerWorkflow.ts\";",
+              "importerTargetRawSha256": "1361157cec28f5b01495a82c9becbc6c9d316e0c0afb4798425f4d79c4e85cad"
+            }
+          ]
+        },
+        {
+          "path": "VinPoker/src/lib/trackerVoice/types.ts",
+          "targetRawSha256": "f2b57a7112cc43f434df51a0bc8a858ace9f206c7b8e8b6e835de785854a7a79",
+          "reason": "All reviewed incoming runtime-closure edges are explicit TypeScript import type; excluded from deployed runtime bundle",
+          "incomingEdges": [
+            {
+              "importer": "VinPoker/src/lib/trackerVoice/intentRouter.ts",
+              "statement": "import type { ParsedVoiceBoardCommand, ParsedVoiceFinishCommand, ParsedVoiceHoleCardsCommand } from \"./types.ts\";",
+              "importerTargetRawSha256": "1361157cec28f5b01495a82c9becbc6c9d316e0c0afb4798425f4d79c4e85cad"
+            },
+            {
+              "importer": "VinPoker/src/lib/trackerVoice/boardParser.ts",
+              "statement": "import type { ParsedVoiceBoardCommand } from \"./types.ts\";",
+              "importerTargetRawSha256": "65b579f75090303afcafcc42b26244f12d4a51661416c301e8a9892c168d1058"
+            },
+            {
+              "importer": "VinPoker/src/lib/trackerVoice/holeCardsParser.ts",
+              "statement": "import type { ParsedVoiceHoleCardsCommand } from \"./types.ts\";",
+              "importerTargetRawSha256": "1dac7f812d42acffb5bced5ce06335571e65f07aa6552ca30cb9bef8bf6c9903"
+            },
+            {
+              "importer": "VinPoker/src/lib/trackerVoice/finishParser.ts",
+              "statement": "import type { ParsedVoiceFinishCommand } from \"./types.ts\";",
+              "importerTargetRawSha256": "1d7aa4903b157b44b6d0e0a83604b4015445b4dcc5ffed2bbdf31d18262bd0ce"
+            }
+          ]
+        },
+        {
+          "path": "VinPoker/supabase/functions/_shared/pokerEngine/types.ts",
+          "targetRawSha256": "4ec82506dd866471af43d9202f9efb65bdfa9bcd6c54437aa31b475a976d81c9",
+          "reason": "All reviewed incoming runtime-closure edges are explicit TypeScript import type; excluded from deployed runtime bundle",
+          "incomingEdges": [
+            {
+              "importer": "VinPoker/supabase/functions/_shared/trackerSettlement/finishAssist.ts",
+              "statement": "import type { Card } from \"../pokerEngine/types.ts\";",
+              "importerTargetRawSha256": "afe3a53e966066bd6afc6acdc687f1e6011f35d9db1fba00c9e034dadbe1c45a"
+            },
+            {
+              "importer": "VinPoker/supabase/functions/_shared/pokerEngine/evaluate.ts",
+              "statement": "import type { Card } from './types.ts';",
+              "importerTargetRawSha256": "49059bde5570736b519834aad28ac7a5ee0d1688c76f9a73f12f1456f3981f87"
+            },
+            {
+              "importer": "VinPoker/supabase/functions/_shared/pokerEngine/deck.ts",
+              "statement": "import type { Card, Rank, Suit } from './types.ts';",
+              "importerTargetRawSha256": "14de0dd4433d6eb80ff3e4a3cc54eee4f3da1f7d7be827ff1cbc6bc63f84a971"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

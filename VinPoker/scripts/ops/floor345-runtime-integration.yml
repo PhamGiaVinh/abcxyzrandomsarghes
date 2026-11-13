@@ -1,0 +1,1510 @@
+name: Operations current schema runtime
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000083_shift_payroll_return_type_v1.sql'
+      - 'VinPoker/tests/dealerSwing/shiftPayrollReturnType*'
+      - 'VinPoker/supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql'
+      - 'VinPoker/tests/dealerSwing/payrollReadAuthority*'
+      - 'VinPoker/supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000085_cashier_club_scope_authority_v1.sql'
+      - 'VinPoker/tests/cashier/authority84_85.currentSchema.sql'
+      - 'VinPoker/tests/cashier/cashPaymentIdentity*'
+      - 'VinPoker/src/lib/cashPaymentIntent*'
+      - 'VinPoker/src/pages/ops/TourCashierWorkbench*'
+      - 'VinPoker/supabase/migrations/20270128000112_cashier_cash_intent_receipts_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000113_cashier_canonical_paid_seating_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000114_cashier_canonical_reentry_seating_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000115_cashier_server_priced_reentry_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000116_floor_restore_pending_reentry_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000117_cashier_correction_alert_seating_fence_v1.sql'
+      - 'VinPoker/supabase/functions/tournament-reentry/**'
+      - 'VinPoker/tests/cashier/paidJourney*'
+      - 'VinPoker/tests/cashier/paidSeatingClose*'
+      - 'VinPoker/tests/cashier/paidDeferredCancel.concurrent.mjs'
+      - 'VinPoker/tests/cashier/paidSeatLocks*'
+      - 'VinPoker/tests/cashier/paidActiveHand*'
+      - 'VinPoker/tests/cashier/reentry*'
+      - 'VinPoker/tests/cashier/restoreReentry*'
+      - 'VinPoker/tests/cashier/restoreHistoryOrder.native.mjs'
+      - 'VinPoker/tests/cashier/officialResultsClose.native.mjs'
+      - 'VinPoker/src/lib/feltLifecycleReadiness*'
+      - 'VinPoker/src/components/cashier/tournament-live/CloseReportDialog.readiness.test.tsx'
+      - 'VinPoker/tests/cashier/seatingMigrations*'
+      - 'VinPoker/tests/cashier/canonicalPaidSeating*'
+      - 'VinPoker/tests/cashier/cashPaymentRecovery*'
+      - 'VinPoker/tests/cashier/paidTourRoster.native.mjs'
+      - 'VinPoker/tests/cashier/operationReadLatency.native.mjs'
+      - 'VinPoker/tests/cashier/operationWriteLatency.native.mjs'
+      - 'VinPoker/tests/cashier/paidMemberHistory.native.mjs'
+      - 'VinPoker/tests/dealerSwing/paidTourInitialAssign.native.mjs'
+      - 'VinPoker/tests/trackerVoice/paidTourHand.native.mjs'
+      - 'VinPoker/tests/trackerSettlement/paidHistoryWorker*'
+      - 'VinPoker/tests/trackerSettlement/paidCorrectionEdge*'
+      - 'VinPoker/tests/trackerSettlement/paidCorrectionOverlap*'
+      - 'VinPoker/tests/trackerSettlement/paidCorrectionRecovery*'
+      - 'VinPoker/tests/trackerSettlement/paidTvPublish*'
+      - 'VinPoker/tests/trackerVoice/runtimeApiPayload.test.mjs'
+      - 'VinPoker/tests/trackerVoice/paidFinishCommit.native.mjs'
+      - 'VinPoker/tests/chipOps/paidColorUpCommit.native.mjs'
+      - 'VinPoker/src/lib/trackerVoice/api.ts'
+      - 'VinPoker/tests/trackerSettlement/tvReleaseGate.bootstrap.mjs'
+      - 'VinPoker/tests/trackerSettlement/tvStorage.bootstrap.mjs'
+      - 'VinPoker/supabase/pending-migrations/20260924065041_tv_layout_editor_v1.sql'
+      - 'VinPoker/supabase/pending-migrations/20260924165219_centerpoint_tournament_ops_release_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/correctionResolution118*'
+      - 'VinPoker/src/lib/tracker-poker/correctionCommitIntent*'
+      - 'VinPoker/tests/trackerPoker/correctionCommitIntent*'
+      - 'VinPoker/tests/trackerPoker/correctionNoChipChange*'
+      - 'VinPoker/src/components/cashier/tournament-live/useCorrectionCommitRecovery*'
+      - 'VinPoker/src/components/cashier/tournament-live/HandHistoryWorkspace.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/HandEditPanel.tsx'
+      - 'VinPoker/supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000121_tracker_voice_finish_receipt_resolution_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000122_floor_restore_provisional_history_order_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000123_tournament_close_official_results_v1.sql'
+      - 'VinPoker/supabase/functions/tournament-live-resettle-commit/**'
+      - 'VinPoker/supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql'
+      - 'VinPoker/tests/tournamentConfig/**'
+      - 'VinPoker/supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql'
+      - 'VinPoker/scripts/ops/tournament-create91-*'
+      - '.github/workflows/tournament-create91-protected-apply.yml'
+      - 'VinPoker/tests/floorTableControlV3/tournamentCreate91*'
+      - 'VinPoker/src/lib/tournamentCreate*'
+      - 'VinPoker/src/components/floor/TournamentManagerShared*'
+      - 'VinPoker/scripts/ops/series-reorder92-*'
+      - '.github/workflows/series-reorder92-protected-apply.yml'
+      - 'VinPoker/supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql'
+      - 'VinPoker/tests/clubSchedules/**'
+      - 'VinPoker/src/pages/ops/OpsTournaments*'
+      - 'VinPoker/src/hooks/useTournaments*'
+      - 'VinPoker/supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql'
+      - 'VinPoker/tests/dealerSwing/rotationPersistSessionFence*'
+      - 'VinPoker/src/lib/tournamentConfigSave*'
+      - 'VinPoker/src/lib/sessionReadEpoch.ts'
+      - 'VinPoker/src/pages/TournamentConfigPage*'
+      - 'VinPoker/src/components/ops/shared/FloorTableControlMode.tsx'
+      - 'VinPoker/src/components/ops/shared/FloorTableControlMode.test.tsx'
+      - 'VinPoker/tests/dealerSwing/tournamentConfigSave*'
+      - 'VinPoker/tests/dealerSwing/manualSwingLifecycle.test.tsx'
+      - 'VinPoker/tests/dealerSwing/manualAssignLifecycle.test.tsx'
+      - 'VinPoker/src/components/cashier/dealer-swing/ManualAssignmentRecovery*'
+      - 'VinPoker/src/lib/dealerInitialAssignmentIntent.ts'
+      - 'VinPoker/tests/dealerSwing/assignDealerReceiptEdgeHandler.mjs'
+      - 'VinPoker/tests/dealerSwing/manualSwingRecovery.native.test.tsx'
+      - 'VinPoker/src/components/cashier/dealer-swing/useManualSwingRecovery.ts'
+      - 'VinPoker/src/lib/dealerManualSwingIntent.ts'
+      - 'VinPoker/supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql'
+      - 'VinPoker/scripts/ops/clock-level89-*'
+      - '.github/workflows/clock-level89-protected-apply.yml'
+      - 'VinPoker/src/pages/ops/OpsTournaments*'
+      - 'VinPoker/src/hooks/useTournaments*'
+      - 'VinPoker/supabase/migrations/20270128000089_clock_start_level_readiness_v1.sql'
+      - 'VinPoker/tests/floorProduction/clockLevelReadiness*'
+      - 'VinPoker/supabase/migrations/20270128000090_public_clock_projection_v1.sql'
+      - 'VinPoker/tests/floorProduction/publicClockProjection*'
+      - '.github/workflows/dealer-checkin-current-schema.yml'
+      - 'VinPoker/supabase/functions/process-swing/passes/pass1.5-rotation-planner*'
+      - 'VinPoker/supabase/functions/process-swing/plannerDispatchOutcome.test.ts'
+      - 'VinPoker/supabase/functions/_shared/__tests__/rotationSolver.test.ts'
+      - 'VinPoker/supabase/migrations/20270128000066_floor_manual_seat_session_fence_v1.sql'
+      - 'VinPoker/tests/floorProduction/manualSeatSessionFence*'
+      - 'VinPoker/tests/floorProduction/manualEntryRestore*'
+      - 'VinPoker/supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000093_floor_legacy_restore_exact_session_required_v1.sql'
+      - 'VinPoker/scripts/ops/floor-manual-68-*'
+      - 'VinPoker/scripts/ops/chip-issuance-69-*'
+      - 'VinPoker/scripts/ops/tracker-voice-70-71-*'
+      - 'VinPoker/scripts/ops/tracker-voice-72-*'
+      - '.github/workflows/tracker-voice-72-protected-apply.yml'
+      - '.github/workflows/tracker-voice-72-73-protected-apply.yml'
+      - '.github/workflows/tracker-voice-70-71-protected-apply.yml'
+      - '.github/workflows/chip-issuance-69-protected-apply.yml'
+      - '.github/workflows/floor-manual-68-protected-apply.yml'
+      - 'VinPoker/scripts/ops/floor-manual-67-*'
+      - '.github/workflows/floor-manual-67-protected-apply.yml'
+      - '.github/workflows/floor-manual-66-protected-apply.yml'
+      - 'VinPoker/scripts/ops/floor-manual-66-*'
+      - 'VinPoker/src/lib/floorManualPlayerIntent*'
+      - 'VinPoker/src/components/cashier/tournament-live/AddPlayerDialog*'
+      - '.github/workflows/tracker-void-59-protected-apply.yml'
+      - 'VinPoker/scripts/ops/tracker-void-59-*'
+      - 'VinPoker/scripts/ops/tracker-reentry-60-*'
+      - '.github/workflows/tracker-reentry-60-protected-apply.yml'
+      - '.github/workflows/tracker-card-56-protected-apply.yml'
+      - 'VinPoker/scripts/ops/tracker-card-56-*'
+      - 'VinPoker/supabase/migrations/20270128000056_tracker_card_batch_integrity_v1.sql'
+      - 'VinPoker/tests/trackerVoice/cardBatchIntegrity*'
+      - 'VinPoker/supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000098_tracker_public_history_attention_state_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/historyNeedsAttention.pg17.sql'
+      - 'VinPoker/tests/trackerSettlement/manualFinishModeBoundary.pg17.sql'
+      - 'VinPoker/tests/floorProduction/scopedFinishMoveCancel.concurrent.mjs'
+      - 'VinPoker/supabase/functions/tournament-historical-settlement/index.ts'
+      - 'VinPoker/tests/trackerSettlement/historicalAuthEdgeHandler.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.scope.test.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/HistoricalSettlementBatchControl.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/HistoricalSettlementBatchControl.scope.test.tsx'
+      - 'VinPoker/src/lib/tracker-poker/historicalSettlementBatch.ts'
+      - 'VinPoker/src/lib/tracker-poker/historicalCommitIntent.ts'
+      - 'VinPoker/tests/trackerPoker/historicalCommitIntent.test.ts'
+      - 'VinPoker/src/lib/tracker-poker/recordedHandDisplayOutcome.ts'
+      - 'VinPoker/tests/trackerSettlement/recordedHandDisplayOutcome.test.ts'
+      - 'VinPoker/tests/trackerSettlement/recordedHandDisplayOutcome.journal.test.ts'
+      - 'VinPoker/supabase/migrations/20270128000099_tracker_historical_intent_resolution_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.pg17.sql'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.concurrent.mjs'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.migrationRollback.mjs'
+      - 'VinPoker/tests/trackerSettlement/historicalIntentResolution.verified.concurrent.mjs'
+      - 'VinPoker/supabase/migrations/20270128000100_dealer_manual_swing_receipt_v1.sql'
+      - 'VinPoker/tests/dealerSwing/manualSwingReceipt.*'
+      - 'VinPoker/supabase/migrations/20270128000101_dealer_manual_swing_cancel_actor_v1.sql'
+      - 'VinPoker/tests/dealerSwing/manualSwingCancel.currentSchema.mjs'
+      - 'VinPoker/supabase/migrations/20270128000102_dealer_initial_intent_resolution_v1.sql'
+      - 'VinPoker/tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs'
+      - 'VinPoker/tests/dealerSwing/initialAssignmentRecovery.native.test.tsx'
+      - 'VinPoker/tests/dealerSwing/readyWorkerAssignmentSelection.mjs'
+      - 'VinPoker/tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql'
+      - 'VinPoker/tests/dealerSwing/readyWorkerCapacity.native.mjs'
+      - 'VinPoker/supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000105_dealer_legacy_adoption_atomic_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql'
+      - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.test.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx'
+      - 'VinPoker/tests/trackerSettlement/tvPublishResponse.types.mjs'
+      - 'VinPoker/tests/tracker/historicalSettlementDisplayCapability.test.ts'
+      - 'VinPoker/tests/trackerSettlement/historyAttention.migrationRollback.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicTableHistory.ts'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/publicSnapshotTypes.ts'
+      - 'VinPoker/src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.tsx'
+      - 'VinPoker/tests/trackerSettlement/manualFinishCancellation.pg17.sql'
+      - 'VinPoker/tests/trackerSettlement/manualFinishCancellation.migrationRollback.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/handinput/HandInputConsole.pendingFinish.test.tsx'
+      - 'VinPoker/tests/trackerSettlement/recordHandEpochIntent*'
+      - 'VinPoker/tests/trackerSettlement/recordHandLockAuthority*'
+      - 'VinPoker/tests/trackerSettlement/manualFinishIntent*'
+      - 'VinPoker/src/lib/trackerManualFinish.ts'
+      - 'VinPoker/tests/trackerVoice/manualFinish95EdgeHandler.mjs'
+      - 'VinPoker/src/components/cashier/tournament-live/handinput/useStandaloneHandInput.ts'
+      - 'VinPoker/tests/tracker/manualFinishIntent.callback.test.mjs'
+      - 'VinPoker/tests/trackerVoice/assignment72.*'
+      - 'VinPoker/tests/trackerVoice/assignment73.*'
+      - 'VinPoker/supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql'
+      - 'VinPoker/tests/trackerSettlement/publicHandVisibility74*.sql'
+      - 'VinPoker/scripts/ops/tracker-public-74*.mjs'
+      - '.github/workflows/tracker-public-74-protected-apply.yml'
+      - '.github/workflows/tracker-manual-75-protected-apply.yml'
+      - 'VinPoker/scripts/ops/tracker-manual-75-*'
+      - 'VinPoker/scripts/ops/tracker-reads-76-77-*'
+      - 'VinPoker/docs/runbooks/TRACKER_READS_76_77_COMPENSATION_SOURCE.sql'
+      - '.github/workflows/tracker-reads-76-77-protected-apply.yml'
+      - 'VinPoker/supabase/migrations/20270128000075_tracker_manual_cards_receipts_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql'
+      - 'VinPoker/tests/trackerVoice/manual75*'
+      - 'VinPoker/tests/trackerVoice/manual76*'
+      - 'VinPoker/supabase/migrations/20270128000077_tracker_roster_scoped_read_v2.sql'
+      - 'VinPoker/tests/trackerVoice/manualCardAuthority.prototype*'
+      - 'VinPoker/src/components/cashier/tournament-live/handinput/manualCardIntent.ts'
+      - 'VinPoker/docs/runbooks/TRACKER_MANUAL_75_COMPENSATION_SOURCE.sql'
+      - 'VinPoker/tests/trackerVoice/floorAuthority.*'
+      - 'VinPoker/tests/trackerVoice/sharedBoardAuthority.boundaries.sql'
+      - 'VinPoker/tests/trackerVoice/identity28.localQualification.sql'
+      - 'VinPoker/docs/runbooks/TRACKER_VOICE_7*_COMPENSATION_SOURCE.sql'
+      - 'VinPoker/tests/trackerCorrectionRelease2/undoGeneration.currentSchema.sql'
+      - 'VinPoker/tests/trackerVoice/cardBoardIntegrity*'
+      - 'VinPoker/supabase/migrations/20270128000057_dealer_pt_policy_tenant_integrity_v1.sql'
+      - 'VinPoker/tests/dealerSwing/accrualTenant*'
+      - 'VinPoker/supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000059_tracker_completed_void_integrity_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000060_tracker_legacy_reentry_retirement_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql'
+      - 'VinPoker/tests/floorProduction/legacyStackIntegrity.pg17.sql'
+      - 'VinPoker/tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql'
+      - 'VinPoker/tests/floorProduction/legacyReentryRetirement.pg17.sql'
+      - 'VinPoker/tests/floorProduction/legacyReentryCanonicalSnapshot.pg17.sql'
+      - 'VinPoker/tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql'
+      - 'VinPoker/tests/trackerSettlement/completedVoidProjection*'
+      - 'VinPoker/tests/trackerSettlement/historyAtomicRecovery*'
+      - 'VinPoker/tests/trackerSettlement/handIdentityRevision*'
+      - 'VinPoker/tests/trackerSettlement/handIdentityChainRange*'
+      - 'VinPoker/tests/trackerSettlement/handIdentityCanonicalLock*'
+      - 'VinPoker/tests/trackerSettlement/handIdentityReparent*'
+      - 'VinPoker/tests/trackerSettlement/handIdentityPublication*'
+      - 'VinPoker/scripts/ops/tracker-history-58-*'
+      - 'VinPoker/tests/trackerSettlement/handTournamentRevision*'
+      - 'VinPoker/tests/trackerSettlement/orphanCleanupRevision*'
+      - 'VinPoker/scripts/ops/dealer-policy-57-*'
+      - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
+      - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.currentSchema.sql'
+      - 'VinPoker/tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs'
+      - 'VinPoker/scripts/ops/physical-asset-63-65-*'
+      - 'VinPoker/supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000065_floor_physical_asset_authority_commit_fence_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql'
+      - 'VinPoker/tests/dealerSwing/checkin*'
+      - 'VinPoker/supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql'
+      - 'VinPoker/tests/dealerSwing/scopedStop.*'
+      - 'VinPoker/scripts/ops/dealer-stop-64-*'
+      - '.github/workflows/dealer-stop-64-protected-apply.yml'
+      - 'VinPoker/src/components/cashier/dealer-swing/DealerSwingStopControl*'
+      - 'VinPoker/supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql'
+      - 'VinPoker/scripts/ops/dealer-checkin-51-*'
+      - 'VinPoker/scripts/ops/restore-chip-52-53-*'
+      - '.github/workflows/restore-chip-52-53-protected-apply.yml'
+      - 'VinPoker/supabase/migrations/20270128000052_floor_restore_receipt_reconciliation_v1.sql'
+      - 'VinPoker/src/components/chip-ops/ColorUpTab*'
+      - 'VinPoker/src/components/cashier/tournament-live/RestoreBustDialog*'
+      - 'VinPoker/scripts/ops/fixtures/dealer-checkin-14-ledger.json'
+      - '.github/workflows/dealer-checkin-51-protected-apply.yml'
+      - 'VinPoker/src/components/cashier/DealerSwingTab.tsx'
+      - 'VinPoker/supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql'
+      - 'VinPoker/tests/chipOps/colorUpCurrentSchema.pg17.sql'
+      - 'VinPoker/tests/chipOps/issuance*'
+      - 'VinPoker/supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql'
+      - 'VinPoker/tests/chipOps/colorUpIntegrity.pg17.test.mjs'
+      - 'VinPoker/tests/chipOps/colorUpReceipt.pg17.sql'
+      - 'VinPoker/supabase/migrations/20270128000053_chip_color_up_receipt_reconciliation_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000054_restore_pending_cancellation_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000055_chip_pending_cancellation_v1.sql'
+      - 'VinPoker/tests/chipOps/colorUpCancellation*'
+      - 'VinPoker/supabase/migrations/20270128000017_dealer_operational_inventory_exact_session_v1.sql'
+      - 'VinPoker/tests/dealerSwing/operationalInventory*'
+      - 'VinPoker/tests/dealerSwing/closedSessionAttendance.currentSchema.mjs'
+      - 'VinPoker/supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql'
+      - 'VinPoker/tests/dealerSwing/massOpenSessions.pg17.sql'
+      - 'VinPoker/tests/dealerSwing/operatorNextIntent.*'
+      - 'VinPoker/tests/dealerSwing/closeNextReservation.concurrent.mjs'
+      - 'VinPoker/scripts/ops/dealer-close79-*.mjs'
+      - '.github/workflows/dealer-close79-protected-apply.yml'
+      - 'VinPoker/supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql'
+      - 'VinPoker/supabase/functions/run-dealer-ready-backup/**'
+      - 'VinPoker/supabase/functions/process-swing-on-dealer-ready/**'
+      - 'VinPoker/supabase/functions/process-swing/index.ts'
+      - 'VinPoker/supabase/functions/process-swing/executionSafety*'
+      - 'VinPoker/supabase/functions/_shared/internal-trigger-auth.ts'
+      - 'VinPoker/supabase/functions/_shared/__tests__/backupServiceAuth.test.ts'
+      - 'VinPoker/supabase/migrations/20270128000020_dealer_ready_backup_private_cron_v1.sql'
+      - 'VinPoker/tests/dealerSwing/backupCron*.sql'
+      - 'VinPoker/supabase/migrations/20270128000021_dealer_ready_private_trigger_v1.sql'
+      - 'VinPoker/tests/dealerSwing/readyTrigger*.sql'
+      - 'VinPoker/supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql'
+      - 'VinPoker/tests/dealerSwing/offCommit*'
+      - 'VinPoker/tests/dealerSwing/rotationSessionClose.currentSchema.mjs'
+      - 'VinPoker/tests/dealerSwing/emptyReservation*'
+      - 'VinPoker/supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql'
+      - 'VinPoker/supabase/functions/process-swing/passes/passS2-empty-table-preassign*'
+      - 'VinPoker/supabase/functions/tournament-historical-settlement-worker/**'
+      - 'VinPoker/supabase/functions/tournament-historical-settlement-dispatcher/**'
+      - 'VinPoker/supabase/functions/_shared/trackerSettlement/historyWorkerPolicy.ts'
+      - 'VinPoker/tests/trackerSettlement/scopedClaim*'
+      - 'VinPoker/tests/trackerSettlement/historyWorkerPolicy.test.ts'
+      - 'VinPoker/tests/trackerSettlement/historicalDisplayMigration.contract.test.ts'
+      - 'VinPoker/deno.lock'
+      - 'VinPoker/supabase/migrations/20270128000024_tracker_history_scoped_canary_claim_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000025_dealer_automatic_rest_history_fence_v1.sql'
+      - 'VinPoker/tests/dealerSwing/restHistory*'
+      - 'VinPoker/supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql'
+      - 'VinPoker/tests/floorProduction/openSessionNames.pg17.sql'
+      - 'VinPoker/supabase/migrations/20270128000029_floor_deferred_break_intent_v1.sql'
+      - 'VinPoker/tests/floorProduction/deferredMoveIntent*'
+      - 'VinPoker/tests/floorProduction/tableModeRequest.concurrent.mjs'
+      - 'VinPoker/supabase/migrations/20270128000030_tracker_roster_intent_fence_v1.sql'
+      - 'VinPoker/tests/floorProduction/trackerRoster*'
+      - 'VinPoker/supabase/migrations/20270128000031_tournament_participation_current_scope_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000032_tournament_seat_display_preservation_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000033_tournament_seat_move_tuple_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql'
+      - '.github/workflows/floor-roster-62-protected-apply.yml'
+      - 'VinPoker/scripts/ops/floor-roster-62-release-plan.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-release-plan.test.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-protected-apply.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-protected-apply.test.mjs'
+      - 'VinPoker/scripts/ops/floor-roster-62-atomic-pg.test.mjs'
+      - 'VinPoker/supabase/migrations/20270128000036_floor_manual_entry_roundtrip_v1.sql'
+      - 'VinPoker/tests/floorProduction/manualEntryRollback.currentSchema.mjs'
+      - 'VinPoker/tests/floorProduction/assignParticipation.pg17.sql'
+      - 'VinPoker/tests/floorProduction/assignIntegrityRollback.currentSchema.mjs'
+      - 'VinPoker/tests/floorProduction/participationTv.concurrent.mjs'
+      - 'VinPoker/tests/floorProduction/participationParser.currentSchema.mjs'
+      - 'VinPoker/src/lib/tournamentParticipation.ts'
+      - 'VinPoker/src/lib/tournamentParticipation.test.ts'
+      - 'VinPoker/supabase/migrations/20270128000027_tracker_equal_blinds_contract_v1.sql'
+      - 'VinPoker/tests/floorProduction/equalBlinds.pg17.sql'
+      - 'VinPoker/src/lib/tournament/readBlindLineage.ts'
+      - 'VinPoker/tests/handinput/readHandBlindLevel.test.ts'
+      - 'VinPoker/supabase/functions/_shared/trackerSettlement/historicalDisplayVerification.ts'
+      - 'VinPoker/tests/trackerSettlement/historicalDisplayVerification.test.ts'
+      - 'VinPoker/supabase/functions/_shared/trackerSettlement/historyWorkerAuth*'
+      - 'VinPoker/supabase/functions/_shared/trackerSettlement/historyWorkerHandler.test.ts'
+      - 'VinPoker/supabase/functions/_shared/dealerMutationIntent.ts'
+      - 'VinPoker/supabase/functions/_shared/__tests__/dealerMutationIntent.test.ts'
+      - 'VinPoker/supabase/functions/assign-dealer/**'
+      - 'VinPoker/supabase/functions/mass-assign/**'
+      - 'VinPoker/supabase/functions/checkout-dealer/**'
+      - 'VinPoker/supabase/migrations/2027012800003[7-9]_*.sql'
+      - 'VinPoker/supabase/migrations/2027012800004[0-5]_*.sql'
+      - 'VinPoker/supabase/migrations/20270128000046_dealer_inventory_canonical_table_link_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000047_floor_closed_session_attendance_v1.sql'
+      - 'VinPoker/supabase/migrations/20270128000048_floor_move_or_queue_exact_intent_v1.sql'
+      - 'VinPoker/scripts/ops/floor-48-*'
+      - 'VinPoker/tests/floorProduction/legacySessionLifecycle.pg17.sql'
+      - 'VinPoker/tests/floorProduction/legacyCloseOpen.concurrent.mjs'
+      - 'VinPoker/tests/floorProduction/moveClose.concurrent.mjs'
+      - 'VinPoker/tests/floorProduction/package37_47.readonly-postcheck.sql'
+      - 'VinPoker/scripts/ops/floor-37-47-release-plan.mjs'
+      - 'VinPoker/scripts/ops/floor-37-47-release-plan.test.mjs'
+      - 'VinPoker/scripts/ops/floor-37-47-release-plan.pg17.mjs'
+      - 'VinPoker/scripts/ops/floor-37-47-protected-apply.mjs'
+      - 'VinPoker/scripts/ops/floor-37-47-protected-apply.test.mjs'
+      - 'VinPoker/tests/floorProduction/breakDrawPolicy.pg17.sql'
+      - 'VinPoker/tests/floorProduction/floorPlayerActions.move.test.tsx'
+      - 'VinPoker/tests/floorProduction/opsTables.close.test.tsx'
+      - 'VinPoker/tests/floorProduction/playerActionSheets.render.test.tsx'
+      - 'VinPoker/tests/tracker/*close*'
+      - 'VinPoker/tests/tracker/*move*'
+      - 'VinPoker/tests/tracker/floorPending*'
+      - 'VinPoker/tests/floorTableControlV3/criticalConsistency.contract.test.ts'
+      - 'VinPoker/tests/floorFreeSitV1/rosterActions.interaction.test.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/*Table*'
+      - 'VinPoker/src/components/cashier/tournament-live/MovePlayerDialog.tsx'
+      - 'VinPoker/src/components/ops/shared/FloorPlayerActions.tsx'
+      - 'VinPoker/src/components/ops/shared/PlayerActionSheets.tsx'
+      - 'VinPoker/src/pages/ops/OpsTables.tsx'
+      - 'VinPoker/src/components/tournament/seat/*'
+      - 'VinPoker/src/lib/floorTableControlV3.ts'
+      - 'VinPoker/src/lib/floorPending*'
+permissions: { actions: read, contents: read }
+jobs:
+  select-floor345:
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mode=legacy
+          if git show "$BASE_SHA:VinPoker/scripts/ops/select-floor345-runtime.mjs" > "$RUNNER_TEMP/select-floor345-runtime.mjs"; then
+            mode="$(node "$RUNNER_TEMP/select-floor345-runtime.mjs" "$GITHUB_WORKSPACE" "$BASE_SHA" "$HEAD_SHA" "$PR_NUMBER")"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+  floor345-qualified:
+    needs: select-floor345
+    if: needs.select-floor345.outputs.mode == 'floor345'
+    uses: ./.github/workflows/floor345-fresh-schema.yml
+  runtime:
+    needs: [select-floor345, legacy-runtime, floor345-qualified]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the selected complete runtime proof
+        env:
+          SELECT_RESULT: ${{ needs.select-floor345.result }}
+          MODE: ${{ needs.select-floor345.outputs.mode }}
+          LEGACY_RESULT: ${{ needs.legacy-runtime.result }}
+          FLOOR345_RESULT: ${{ needs.floor345-qualified.result }}
+        run: |
+          set -euo pipefail
+          test "$SELECT_RESULT" = success
+          if [[ "$MODE" == floor345 ]]; then
+            test "$FLOOR345_RESULT" = success
+            test "$LEGACY_RESULT" = skipped
+          else
+            test "$MODE" = legacy
+            test "$LEGACY_RESULT" = success
+            test "$FLOOR345_RESULT" = skipped
+          fi
+  legacy-runtime:
+    needs: select-floor345
+    if: needs.select-floor345.outputs.mode != 'floor345'
+    runs-on: ubuntu-latest
+    # The retained-schema suite now includes full worker/concurrency chains.
+    # Keep every per-case deadline; only allow the complete job to finish.
+    timeout-minutes: 30
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 55441
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_checkin
+      SCHEMA_ARTIFACT_DIR: /tmp/vinpoker-current-schema
+      SCHEMA_ARTIFACT_SHA256: d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - name: Exact Floor package preparation rejects drift (offline only)
+        working-directory: VinPoker
+        run: node --test scripts/ops/floor-37-47-release-plan.test.mjs scripts/ops/floor-37-47-protected-apply.test.mjs scripts/ops/floor-48-release-plan.test.mjs scripts/ops/floor-48-protected-apply.test.mjs
+      - name: Install locked Node types required by the existing Supabase import graph
+        working-directory: VinPoker
+        run: npm ci --ignore-scripts
+      - name: Check-in retry identity and React lifecycle regressions
+        working-directory: VinPoker
+        run: |
+          node --test tests/dealerSwing/checkinHandler.repro.mjs
+          node --test scripts/ops/dealer-checkin-51-protected-apply.test.mjs scripts/ops/dealer-checkin-51-atomic-pg.test.mjs
+          node --test scripts/ops/restore-chip-52-53-release-plan.test.mjs scripts/ops/restore-chip-52-53-protected-apply.test.mjs scripts/ops/restore-chip-52-53-atomic-pg.test.mjs
+          node node_modules/vitest/vitest.mjs run src/components/chip-ops/ColorUpTab.test.tsx src/components/cashier/tournament-live/RestoreBustDialog.test.tsx src/lib/floorTableControlV3.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/pages/TournamentConfigPage.atomicSave.test.tsx src/lib/tournamentConfigSave.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/components/ops/shared/FloorTableControlMode.test.tsx src/lib/floorPendingModeIntent.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/pages/ops/OpsTournamentsRead.test.tsx src/hooks/useTournamentsRead.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/dealerSwing/checkinReactLifecycle.test.tsx tests/dealerSwing/attentionCoverage.test.tsx tests/dealerSwing/floorV3InventoryConvergence.test.ts tests/dealerSwing/closeDealerTablesRpcLineage.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingLifecycle.test.tsx tests/dealerSwing/manualAssignLifecycle.test.tsx src/components/cashier/dealer-swing/ManualAssignmentRecovery.test.tsx --maxWorkers=1 --minWorkers=1
+          node tests/dealerSwing/assignDealerReceiptEdgeHandler.mjs
+          node tests/dealerSwing/readyWorkerAssignmentSelection.mjs
+      - name: Next dealer intent UI and full application qualification
+        working-directory: VinPoker
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_SUPABASE_URL: https://example.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: CI_PLACEHOLDER_ONLY
+        run: |
+          node node_modules/vitest/vitest.mjs run src/lib/dealerNextIntent.test.ts src/components/cashier/ChangePredictedDealerModal.test.tsx src/components/cashier/command-center/AttentionItem.test.tsx src/components/cashier/command-center/AttentionQueue.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/typescript/bin/tsc -b --pretty false
+          npm run build
+      - name: Backup worker rejects unauthenticated privileged execution
+        working-directory: VinPoker
+        run: |
+          deno check supabase/functions/run-dealer-ready-backup/index.ts
+          deno check supabase/functions/process-swing-on-dealer-ready/index.ts
+          deno check supabase/functions/process-swing/index.ts
+          deno check supabase/functions/assign-dealer/index.ts supabase/functions/mass-assign/index.ts supabase/functions/checkout-dealer/index.ts supabase/functions/process-swing-on-dealer-ready/index.ts
+          deno test --allow-env supabase/functions/run-dealer-ready-backup/auth.test.ts supabase/functions/_shared/__tests__/backupServiceAuth.test.ts supabase/functions/process-swing-on-dealer-ready/runtime.test.ts
+          deno test supabase/functions/process-swing/executionSafety.test.ts
+          deno test --allow-read=supabase/functions/process-swing supabase/functions/process-swing/plannerDispatchOutcome.test.ts
+          deno test --allow-read=supabase/functions/process-swing/passes supabase/functions/process-swing/passes/passRLockOutcome.test.ts
+          node node_modules/vitest/vitest.mjs run tests/dealerSwing/preAssignReadErrors.test.ts --maxWorkers=1 --minWorkers=1
+          deno test --allow-env=PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS supabase/functions/process-swing/passes/pass1.5-rotation-planner.test.ts
+          deno test supabase/functions/_shared/__tests__/rotationSolver.test.ts
+          deno test supabase/functions/_shared/__tests__/dealerMutationIntent.test.ts
+          deno test --allow-env supabase/functions/process-swing/passes/passS2-empty-table-preassign.test.ts
+          deno check supabase/functions/tournament-historical-settlement-worker/index.ts
+          deno check supabase/functions/tournament-historical-settlement-dispatcher/index.ts
+          deno test --allow-env supabase/functions/tournament-historical-settlement-worker/runtime.test.ts supabase/functions/tournament-historical-settlement-dispatcher/runtime.test.ts
+          deno test --allow-read supabase/functions/_shared/trackerSettlement/historyWorkerAuth.test.ts supabase/functions/_shared/trackerSettlement/historyWorkerHandler.test.ts
+          # Native PassR deliberately runs with no config/lock and no network.
+          # Warm that exact module graph, not the different deno-check graph.
+          deno cache --no-config --no-lock --node-modules-dir=none tests/dealerSwing/passR.native.mjs supabase/functions/process-swing/index.ts
+          deno run --cached-only --no-config --no-lock --node-modules-dir=none --deny-net --allow-read=./supabase/functions,./tests/dealerSwing --allow-env=PASS15_RPC_TIMEOUT_MS,PASS15_MAX_PAIRS tests/dealerSwing/passR.native.mjs --import-only
+          node node_modules/vitest/vitest.mjs run tests/trackerSettlement/historyWorkerPolicy.test.ts
+          node node_modules/vitest/vitest.mjs run tests/trackerSettlement/historicalDisplayMigration.contract.test.ts
+          node node_modules/vitest/vitest.mjs run tests/handinput/readHandBlindLevel.test.ts tests/trackerSettlement/historicalDisplayVerification.test.ts
+          node node_modules/vitest/vitest.mjs run src/lib/tournamentParticipation.test.ts
+      - name: Download exact recovered Operations snapshot (original bytes and provenance)
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          OPERATIONS_RECOVERY_RUN: '38275767630'
+        run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/37820347781" --jq .head_sha)" = 0463831bb9f8f142d585fd51c1b0633963b2161f
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .workflow_id)" = 322144993
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .event)" = workflow_dispatch
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .actor.login)" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .head_branch)" = main
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN" --jq .head_sha)" = 09cff8a829caf3f514a615b231ab96f4ed238757
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN/artifacts" --jq '[.artifacts[] | select(.name=="reviewed-operations-schema" and .expired==false)] | if length==1 then .[0].id else error("exact recovered schema artifact missing") end')"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/schema.zip"
+          unzip -q "$RUNNER_TEMP/schema.zip" -d "$SCHEMA_ARTIFACT_DIR"
+          provenance_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$OPERATIONS_RECOVERY_RUN/artifacts" --jq '[.artifacts[] | select(.name=="reviewed-operations-schema-provenance" and .expired==false)] | if length==1 then .[0].id else error("exact recovery provenance missing") end')"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$provenance_id/zip" > "$RUNNER_TEMP/schema-provenance.zip"
+          unzip -q "$RUNNER_TEMP/schema-provenance.zip" -d "$RUNNER_TEMP/schema-recovery-provenance"
+          node VinPoker/scripts/deploy/validate-live-public-schema-artifact.mjs \
+            --artifact-directory "$SCHEMA_ARTIFACT_DIR" \
+            --operations-recovery-provenance "$RUNNER_TEMP/schema-recovery-provenance/reviewed-operations-schema.provenance.json" \
+            --recovery-run-id "$OPERATIONS_RECOVERY_RUN"
+      - name: Start isolated PostgreSQL 17 on actual loopback (no bridge address exception)
+        run: |
+          docker run --detach --name vinpoker-current-schema-pg17 --network host \
+            --env POSTGRES_HOST_AUTH_METHOD=trust --env POSTGRES_DB=vinpoker_ops_checkin \
+            postgres:17 -c listen_addresses=127.0.0.1 -c port=55441
+          ready=false
+          for attempt in $(seq 1 30); do
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          test "$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT inet_server_addr()='127.0.0.1'::inet AND current_database()='vinpoker_ops_checkin' AND current_user='postgres' AND current_setting('server_version_num')::int BETWEEN 170000 AND 179999")" = t
+      - name: Floor package atomic ledger and receipt-failure rollback (isolated database)
+        working-directory: VinPoker
+        run: node scripts/ops/floor-37-47-release-plan.pg17.mjs
+      - name: Restore current schema and apply exact new migration
+        working-directory: VinPoker
+        run: |
+          node scripts/ops/restore-schema-test-baseline.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_payroll82_atomic_ci
+          PGDATABASE=vinpoker_ops_payroll82_atomic_ci PAYROLL82_PG_TEST=1 node --test tests/dealerSwing/payrollReadAuthority.atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000082_payroll_legacy_read_club_authority_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/payrollReadAuthority.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_payroll83_atomic_ci
+          PGDATABASE=vinpoker_ops_payroll83_atomic_ci PAYROLL83_PG_TEST=1 node --test tests/dealerSwing/shiftPayrollReturnType.atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000083_shift_payroll_return_type_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/shiftPayrollReturnType.pg17.sql
+          # Real captured schema: no replacement authorization helpers or RLS.
+          createdb -T "$PGDATABASE" vinpoker_ops_authority84_85_ci
+          PGDATABASE=vinpoker_ops_authority84_85_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000084_profiles_anon_public_projection_v1.sql
+          PGDATABASE=vinpoker_ops_authority84_85_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000085_cashier_club_scope_authority_v1.sql
+          PGDATABASE=vinpoker_ops_authority84_85_ci psql -X -v ON_ERROR_STOP=1 -f tests/cashier/authority84_85.currentSchema.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
+          # Exercise the real operational suites with tenant policies active,
+          # not only the small standalone RLS fixture. Never rewrite the captured
+          # policies to satisfy86's strict live-shape precondition.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000086_tournament_table_write_tenant_v1.sql
+          echo TOURNAMENT_TABLE86_APPLIED_TO_RECOVERED_OPERATIONS_SCHEMA
+          createdb -T "$PGDATABASE" vinpoker_ops_tenant86_ci
+          PGDATABASE=vinpoker_ops_tenant86_ci psql -X -v ON_ERROR_STOP=1 -f tests/tournamentConfig/tableWriteScope.currentSchema.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_dealer51_atomic_ci
+          PGDATABASE=vinpoker_ops_dealer51_atomic_ci DEALER51_PG_TEST=1 node --test scripts/ops/dealer-checkin-51-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/checkin.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v receipt_reconciliation_case=true -f tests/dealerSwing/checkin.pg17.sql
+          node tests/dealerSwing/checkin.concurrent.mjs
+      - name: Scoped Swing OFF on exact current schema without helper or RLS doubles
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_stop64_ci
+        run: |
+          set -euo pipefail
+          node --test scripts/ops/dealer-stop-64-release-plan.test.mjs scripts/ops/dealer-stop-64-protected-apply.test.mjs
+          createdb --template=vinpoker_ops_checkin "$PGDATABASE"
+          createdb vinpoker_ops_stop64_atomic_ci
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only "$PGDATABASE" -f /tmp/stop64-atomic-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/stop64-atomic-schema.sql "$RUNNER_TEMP/stop64-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_stop64_atomic_ci psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/stop64-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_stop64_atomic_ci STOP64_PG_TEST=1 node --test scripts/ops/dealer-stop-64-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000064_dealer_swing_scoped_stop_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/scopedStop.currentSchema.sql
+      - name: Physical asset authority and receipts on retained exact schema
+        working-directory: VinPoker
+        run: |
+          node --test scripts/ops/physical-asset-63-65-release-plan.test.mjs scripts/ops/physical-asset-63-65-protected-apply.test.mjs
+          createdb vinpoker_ops_asset63_atomic_ci
+          PGDATABASE=vinpoker_ops_asset63_atomic_ci node scripts/ops/restore-schema-test-baseline.mjs
+          PGDATABASE=vinpoker_ops_asset63_atomic_ci node scripts/ops/physical-asset-63-65-atomic-pg.test.mjs
+          createdb vinpoker_ops_asset63_ci
+          PGDATABASE=vinpoker_ops_asset63_ci node scripts/ops/restore-schema-test-baseline.mjs
+          PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000063_floor_physical_asset_provision_v1.sql
+          PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000065_floor_physical_asset_authority_commit_fence_v1.sql
+          PGDATABASE=vinpoker_ops_asset63_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/physicalAssetProvision.currentSchema.sql
+          test "$(PGDATABASE=vinpoker_ops_asset63_ci psql -X -At -v ON_ERROR_STOP=1 -c 'SELECT (SELECT count(*) FROM public.clubs)+(SELECT count(*) FROM public.game_tables)+(SELECT count(*) FROM public.table_operation_receipts);')" = 0
+          PGDATABASE=vinpoker_ops_asset63_ci node tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs
+          PGDATABASE=vinpoker_ops_asset63_ci node tests/floorTableControlV3/physicalAssetProvision.revocation.currentSchema.mjs --receipt-replay
+      - name: Chip integrity on exact current schema
+        working-directory: VinPoker
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000015_floor_restore_bust_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_restore_chip_atomic
+          PGDATABASE=vinpoker_ops_restore_chip_atomic RESTORE_CHIP_PG_TEST=1 node --test scripts/ops/restore-chip-52-53-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/colorUpCurrentSchema.pg17.sql
+      - name: Issuance69 generation receipts and true overlap on qualified schema
+        working-directory: VinPoker
+        run: |
+          createdb -T "$PGDATABASE" vinpoker_ops_chip69_ci
+          if PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/issuanceRetry.currentSchema.sql >"$RUNNER_TEMP/issuance69-red.log" 2>&1; then
+            echo "Legacy stale retry unexpectedly preserved later count" >&2
+            exit 1
+          fi
+          grep -Fq 'ISSUANCE_STALE_RETRY_OVERWRITES_LATER_COUNT' "$RUNNER_TEMP/issuance69-red.log"
+          PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql
+          PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -v EXACT_ISSUANCE_CASE=1 -f tests/chipOps/colorUpCurrentSchema.pg17.sql
+          for coupling in false true; do
+            PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -v coupling_on="$coupling" -f tests/chipOps/issuanceIntent.currentSchema.sql
+          done
+          PGDATABASE=vinpoker_ops_chip69_ci psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/issuanceIntent.fault.sql
+          PGDATABASE=vinpoker_ops_chip69_ci node tests/chipOps/issuanceIntent.concurrent.mjs
+      - name: Chip concurrency in isolated minimal fixture (not schema parity evidence)
+        working-directory: VinPoker
+        run: |
+          createdb vinpoker_chip_concurrency
+          PGDATABASE=vinpoker_chip_concurrency node --test tests/chipOps/colorUpIntegrity.pg17.test.mjs
+          PGDATABASE=vinpoker_chip_concurrency psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/colorUpReceipt.pg17.sql
+          PGDATABASE=vinpoker_chip_concurrency psql -X -v ON_ERROR_STOP=1 -f tests/chipOps/colorUpCancellation.pg17.sql
+          PGDATABASE=vinpoker_chip_concurrency node tests/chipOps/colorUpCancellation.concurrent.mjs
+      - name: Exact-session dealer inventory and true-overlap assignment
+        working-directory: VinPoker
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000017_dealer_operational_inventory_exact_session_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/operationalInventory.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
+          node tests/dealerSwing/operationalInventory.concurrent.mjs
+          node --test scripts/ops/dealer-rest78-release-plan.test.mjs scripts/ops/dealer-rest78-protected-apply.test.mjs
+          # The recovered public-schema baseline excludes the private migration
+          # ledger. This empty isolated fixture tests atomic receipts only;
+          # production ledger parity must be verified separately before apply.
+          createdb -T "$PGDATABASE" vinpoker_ops_rest78_atomic_ci
+          PGDATABASE=vinpoker_ops_rest78_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          PGDATABASE=vinpoker_ops_rest78_atomic_ci REST78_PG_TEST=1 node --test scripts/ops/dealer-rest78-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_close79_atomic_ci
+          node --test scripts/ops/dealer-close79-release-plan.test.mjs scripts/ops/dealer-close79-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_close79_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          PGDATABASE=vinpoker_ops_close79_atomic_ci CLOSE79_PG_TEST=1 node --test scripts/ops/dealer-close79-atomic-pg.test.mjs
+          # Separate clone starts at old close definition; qualify combined commit.
+          createdb -T "$PGDATABASE" vinpoker_ops_close7981_atomic_ci
+          node --test scripts/ops/dealer-close79-81-release-plan.test.mjs scripts/ops/dealer-close79-81-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_close7981_atomic_ci psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          PGDATABASE=vinpoker_ops_close7981_atomic_ci CLOSE7981_PG_TEST=1 node --test scripts/ops/dealer-close79-81-atomic-pg.test.mjs
+          createdb -T vinpoker_ops_close7981_atomic_ci vinpoker_ops_next80_atomic_ci
+          node --test scripts/ops/dealer-next80-release-plan.test.mjs scripts/ops/dealer-next80-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_next80_atomic_ci NEXT80_PG_TEST=1 node --test scripts/ops/dealer-next80-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000081_dealer_close_forecast_slots_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_next80_ci
+          PGDATABASE=vinpoker_ops_next80_ci node tests/dealerSwing/operatorNextIntent.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_next80_overlap
+          PGDATABASE=vinpoker_ops_next80_overlap node tests/dealerSwing/operatorNextIntent.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/massOpenSessions.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_close79_overlap
+          PGDATABASE=vinpoker_ops_close79_overlap node tests/dealerSwing/closeNextReservation.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
+          node tests/dealerSwing/offCommit.currentSchema.mjs
+          node tests/dealerSwing/rotationSessionClose.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000023_dealer_empty_reservation_exact_session_v2.sql
+          node tests/dealerSwing/emptyReservation.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_reservation_identity
+          PGDATABASE=vinpoker_ops_reservation_identity node tests/dealerSwing/emptyReservation.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000024_tracker_history_scoped_canary_claim_v1.sql
+          node tests/trackerSettlement/scopedClaim.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000025_dealer_automatic_rest_history_fence_v1.sql
+          node tests/dealerSwing/restHistory.currentSchema.mjs
+          node tests/dealerSwing/restHistory.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/openSessionNames.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000088_tournament_config_atomic_save_v1.sql
+          node tests/dealerSwing/tournamentConfigSave.currentSchema.mjs
+          node tests/dealerSwing/tournamentConfigSave.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000089_clock_start_level_readiness_v1.sql
+          node tests/floorProduction/clockLevelReadiness.currentSchema.mjs
+          node tests/floorProduction/clockLevelReadiness.concurrent.mjs
+          node --test scripts/ops/clock-level89-release-plan.test.mjs scripts/ops/clock-level89-protected-apply.test.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_clock89_release_v2
+          node scripts/ops/clock-level89-release-plan.pg17.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_series_reorder
+          node tests/clubSchedules/seriesReorder.repro.pg17.mjs
+          psql -X -v ON_ERROR_STOP=1 -d vinpoker_ops_series_reorder -f supabase/migrations/20270128000092_club_series_reorder_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -d vinpoker_ops_series_reorder -f tests/clubSchedules/seriesReorder.pg17.sql
+          createdb -T vinpoker_ops_series_reorder vinpoker_ops_series_reorder_overlap
+          node tests/clubSchedules/seriesReorder.concurrent.mjs
+          node --test scripts/ops/series-reorder92-release-plan.test.mjs scripts/ops/series-reorder92-protected-apply.test.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_series92_release
+          node scripts/ops/series-reorder92-release-plan.pg17.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000027_tracker_equal_blinds_contract_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/equalBlinds.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000028_tracker_roster_exact_session_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000029_floor_deferred_break_intent_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000030_tracker_roster_intent_fence_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v LATE_PHYSICAL_REQUEST_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v STALE_STACK_FIRST_ARRIVAL_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          node tests/floorProduction/trackerRosterIntent.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000031_tournament_participation_current_scope_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v CLOSED_SESSION_READ_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          node tests/floorProduction/participationTv.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000032_tournament_seat_display_preservation_v1.sql
+          node tests/floorProduction/seatDisplayRollback.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_public_clock90
+          PGDATABASE=vinpoker_public_clock90 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000090_public_clock_projection_v1.sql
+          PGDATABASE=vinpoker_public_clock90 node tests/floorProduction/publicClockProjection.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000033_tournament_seat_move_tuple_v1.sql
+          node tests/floorProduction/seatMoveTupleRollback.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000034_floor_move_wrapper_receipt_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000035_tournament_seat_assign_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000062_floor_roster_participation_integrity_v6.sql
+          node --test scripts/ops/floor-roster-62-release-plan.test.mjs scripts/ops/floor-roster-62-protected-apply.test.mjs
+          createdb vinpoker_ops_roster62_atomic_20261011
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/roster62-atomic-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/roster62-atomic-schema.sql "$RUNNER_TEMP/roster62-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/roster62-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_roster62_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -c 'DROP FUNCTION public.get_floor_tournament_table_roster_v6(uuid);'
+          PGDATABASE=vinpoker_ops_roster62_atomic_20261011 ROSTER62_PG_TEST=1 node --test scripts/ops/floor-roster-62-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/assignParticipation.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v malformed_roster_alias_case=true -f tests/floorProduction/assignParticipation.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v free_sit_roundtrip=true -f tests/floorProduction/assignParticipation.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v seed_chip_projection=true -v projection_stack=20001 -f tests/floorProduction/assignParticipation.pg17.sql
+          node tests/floorProduction/assignIntegrityRollback.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000036_floor_manual_entry_roundtrip_v1.sql
+          node tests/floorProduction/manualEntryRollback.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -v manual_entry=true -v free_sit_roundtrip=true -v locked_seat_case=true -f tests/floorProduction/assignParticipation.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v manual_entry=true -v free_sit_roundtrip=true -v locked_seat_case=true -v table_mode=tracker -f tests/floorProduction/assignParticipation.pg17.sql
+          node tests/floorProduction/participationParser.currentSchema.mjs
+          node tests/floorProduction/moveWrapperReceiptRollback.currentSchema.mjs
+          MOVE_WRAPPER_RECEIPT_CASE=1 ASSIGN_PARTICIPATION_CASE=1 node tests/floorProduction/trackerRosterIntent.concurrent.mjs
+          ASSIGN_PARTICIPATION_CASE=1 MANUAL_ASSIGN_CASE=1 node tests/floorProduction/trackerRosterIntent.concurrent.mjs
+          MANUAL_FREE_SIT_OVERLAP=1 node tests/floorProduction/trackerRosterIntent.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -v MOVE_NAME_CASE=1 -v WRAPPER_RECEIPT_CASE=1 -v CLOSED_SESSION_READ_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v MOVE_NAME_CASE=1 -v CLOSED_SESSION_READ_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v MOVE_NAME_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v MOVE_NAME_CASE=1 -v TRACKER_BREAK_CASE=1 -v REAL_FINISH_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=1 -v REAL_FINISH_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=1 -v CANCEL_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=1 -v STALE_EPOCH_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          node tests/floorProduction/deferredMoveIntent.concurrent.mjs
+          node tests/floorProduction/tableModeRequest.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=1 -v BAD_RECEIPT_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+      - name: Floor session, move, ticket and scoped read on exact forward chain
+        working-directory: VinPoker
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000037_floor_legacy_close_session_fence_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacySessionLifecycle.pg17.sql
+          node tests/floorProduction/legacyCloseOpen.concurrent.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000038_floor_break_lowest_number_policy_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000039_floor_break_ticket_audit_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000040_floor_break_balanced_plan_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000041_floor_deferred_move_ticket_audit_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000042_floor_canonical_move_ticket_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000043_floor_move_exact_intent_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000044_floor_seat_ticket_read_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000045_floor_seat_ticket_select_scope_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000046_dealer_inventory_canonical_table_link_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000047_floor_closed_session_attendance_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/package37_47.readonly-postcheck.sql
+          node tests/dealerSwing/closedSessionAttendance.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -v require_seat_ticket=true -v require_ticket_read=true -f tests/floorProduction/breakDrawPolicy.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v draw_mode=redraw_balanced -v balanced_multi=true -v require_seat_ticket=true -f tests/floorProduction/breakDrawPolicy.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v require_move_ticket=true -v move_check=exact_intent -v require_ticket_read=true -f tests/floorProduction/breakDrawPolicy.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v require_move_ticket=true -v move_check=exact_intent -v move_audit_failure=true -f tests/floorProduction/breakDrawPolicy.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=true -v REAL_FINISH_CASE=true -v SEAT_TICKET_CASE=true -v READ_TICKET_CASE=true -v READ_POLICY_CASE=true -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          node tests/floorProduction/deferredMoveIntent.concurrent.mjs
+          MIXED_MOVE_CASE=1 DEALER_ASSIGN_CLOSE_CASE=1 node tests/floorProduction/moveClose.concurrent.mjs
+          node node_modules/vitest/vitest.mjs run tests/floorProduction/floorPlayerActions.move.test.tsx tests/floorProduction/opsTables.close.test.tsx tests/floorProduction/playerActionSheets.render.test.tsx tests/tracker/closeTableDialog.interaction.test.tsx tests/tracker/movePlayerDialog.interaction.test.tsx tests/tracker/floorPendingCloseIntent.test.ts tests/tracker/floorPendingMoveIntent.test.ts tests/tracker/closeTableResponse.test.ts src/components/tournament/seat/floorSeatTicketCore.test.ts src/components/tournament/seat/SeatReceiptDialog.test.tsx tests/floorTableControlV3/criticalConsistency.contract.test.ts tests/floorFreeSitV1/rosterActions.interaction.test.tsx
+      - name: Exact move or queue48 atomic release and canonical consumer recovery
+        working-directory: VinPoker
+        run: |
+          createdb -T "$PGDATABASE" vinpoker_ops_through47
+          FLOOR48_PG_TEST=1 node --test scripts/ops/floor-48-release-plan.test.mjs scripts/ops/floor-48-protected-apply.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000048_floor_move_or_queue_exact_intent_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=1 -v REAL_FINISH_CASE=1 -v SEAT_TICKET_CASE=1 -v READ_TICKET_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=1 -v QUEUE_REASON_FAILURE_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=1 -v TICKET_FAILURE_CASE=1 -v REAL_FINISH_CASE=1 -v SEAT_TICKET_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=1 -v REAL_FINISH_CASE=1 -v SEAT_TICKET_CASE=1 -v READ_TICKET_CASE=1 -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          EXACT_QUEUE_RECOVERY_CASE=1 node tests/floorProduction/deferredMoveIntent.concurrent.mjs
+          EXACT_MOVE_VERSION=5 MIXED_MOVE_CASE=1 node tests/floorProduction/moveClose.concurrent.mjs
+      - name: OFF-at-commit true-overlap with isolated acquisition fixture (not live worker proof)
+        working-directory: VinPoker
+        run: |
+          createdb vinpoker_ops_off_fence
+          PGDATABASE=vinpoker_ops_off_fence psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/offCommit.fixture.pg17.sql
+          PGDATABASE=vinpoker_ops_off_fence psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
+          PGDATABASE=vinpoker_ops_off_fence psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/offCommit.pg17.sql
+          PGDATABASE=vinpoker_ops_off_fence node tests/dealerSwing/offCommit.concurrent.mjs
+      - name: Card integrity56 on qualified captured schema with real roles and triggers
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_card56_20261011
+        run: |
+          createdb "$PGDATABASE"
+          node scripts/ops/restore-schema-test-baseline.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000013_floor_mode_request_safe_boundary_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000056_tracker_card_batch_integrity_v1.sql
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --voice-holes
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/cardBatchIntegrity.readonly-postcheck.sql
+          createdb --template="$PGDATABASE" vinpoker_ops_card56_overlap_20261011
+          PGDATABASE=vinpoker_ops_card56_overlap_20261011 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --fixture-only
+          PGDATABASE=vinpoker_ops_card56_overlap_20261011 node tests/trackerVoice/cardBatchIntegrity.concurrent.mjs
+          node --test scripts/ops/tracker-card-56-protected-apply.test.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_card56_atomic_20261011
+          PGDATABASE=vinpoker_ops_card56_atomic_20261011 CARD56_PG_TEST=1 node --test scripts/ops/tracker-card-56-atomic-pg.test.mjs
+      - name: Voice70/71 delegated actor, canonical finish, actual overlap and compensation on qualified schema
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_voice_release71_20261014
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_ops_card56_20261011 vinpoker_voice_atomic71_ci
+          PGDATABASE=vinpoker_voice_atomic71_ci VOICE71_PG_TEST=1 node --test scripts/ops/tracker-voice-70-71-atomic-pg.test.mjs
+          createdb --template=vinpoker_ops_card56_20261011 "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000071_tracker_voice_finish_actor_session_fence_v1.sql
+          # Exact deployed28 dependencies are copied only into this empty test
+          # clone; existing historical migrations and frozen baselines stay intact.
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/identity28.localQualification.sql
+          node --test scripts/ops/tracker-voice-70-71-release-plan.test.mjs scripts/ops/tracker-voice-70-71-protected-apply.test.mjs
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-action
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-epoch
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-fence-revoked
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
+          createdb --template="$PGDATABASE" vinpoker_voice_release71_overlap_20261014
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-overlap-fixture
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/floorAuthority.handoffConcurrent.sql
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-reverse-root
+          PGDATABASE=vinpoker_voice_release71_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/floorAuthority.voiceFirstConcurrent.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_package_compensation_ci
+          PGDATABASE=vinpoker_voice_package_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_71_COMPENSATION_SOURCE.sql
+          PGDATABASE=vinpoker_voice_package_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_70_COMPENSATION_SOURCE.sql
+      - name: Voice72 assignment validity, revocation and canonical Swing ordering
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_voice_assignment72_authority_20261014
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_voice_release71_20261014 "$PGDATABASE"
+          node --test scripts/ops/tracker-voice-72-release-plan.test.mjs scripts/ops/tracker-voice-72-protected-apply.test.mjs
+          node --test scripts/ops/tracker-voice-72-73-release-plan.test.mjs scripts/ops/tracker-voice-72-73-protected-apply.test.mjs
+          createdb --template=vinpoker_voice_release71_20261014 vinpoker_voice_atomic72_73_ci
+          PGDATABASE=vinpoker_voice_atomic72_73_ci VOICE72_73_PG_TEST=1 node --test scripts/ops/tracker-voice-72-73-atomic-pg.test.mjs
+          createdb --template=vinpoker_voice_release71_20261014 vinpoker_voice_receipt72_ci
+          PGDATABASE=vinpoker_voice_receipt72_ci VOICE72_RECEIPT_PG_TEST=1 node --test scripts/ops/tracker-voice-72-atomic-pg.test.mjs
+          createdb --template=vinpoker_voice_release71_20261014 vinpoker_voice_atomic72_ci
+          PGDATABASE=vinpoker_voice_atomic72_ci VOICE72_PG_TEST=1 node --test scripts/ops/tracker-voice-70-71-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000072_tracker_voice_assignment_lifecycle_v1.sql
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish
+          for tuple_case in transition checkout checkedout unavailable mismatch club deleted; do
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-fence-attendance --authority-attendance-case="$tuple_case"
+            node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --authority-finish-attendance72 --authority-attendance-case="$tuple_case"
+          done
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_authority_overlap_20261014
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.revokeDuringSessionWait.sql
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.busyLocks.sql
+          PGDATABASE=vinpoker_voice_assignment72_authority_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalSwingFirst.sql
+          # CI exposed the real deferred-COMMIT cycle on pre73 (retained failed
+          # runs38478827493/38479344635). Same regression, forward fix only.
+          createdb --template="$PGDATABASE" vinpoker_voice_swing73_base_20261014
+          # Match the live mode resolver generation; predecessor digest guards
+          # in unchanged49 must pass, never weaken the overlap dependency guard.
+          PGDATABASE=vinpoker_voice_swing73_base_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000049_floor_mode_tombstone_guard_v1.sql
+          PGDATABASE=vinpoker_voice_swing73_base_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql
+          createdb --template=vinpoker_voice_swing73_base_20261014 vinpoker_voice_swing73_voice_first_qualified_20261014
+          PGDATABASE=vinpoker_voice_swing73_voice_first_qualified_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-voice-first72 --authority-lock-order73
+          PGDATABASE=vinpoker_voice_swing73_voice_first_qualified_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalVoiceFirst.sql
+          PGDATABASE=vinpoker_voice_swing73_voice_first_qualified_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment73.replayIntegrity.sql
+          PGDATABASE=vinpoker_voice_swing73_voice_first_qualified_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment73.revokeDuringPhysicalWait.sql
+          createdb --template=vinpoker_voice_swing73_base_20261014 vinpoker_voice_swing73_swing_first_qualified_20261014
+          PGDATABASE=vinpoker_voice_swing73_swing_first_qualified_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-lock-order73
+          PGDATABASE=vinpoker_voice_swing73_swing_first_qualified_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalSwingFirst.sql
+          createdb --template=vinpoker_voice_swing73_base_20261014 vinpoker_voice_swing73_pending_20261014
+          PGDATABASE=vinpoker_voice_swing73_pending_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-voice-first72 --authority-lock-order73 --authority-pending-mode73
+          PGDATABASE=vinpoker_voice_swing73_pending_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalVoiceFirst.sql
+          PGDATABASE=vinpoker_voice_swing73_pending_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment73.replayIntegrity.sql
+          PGDATABASE=vinpoker_voice_swing73_pending_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment73.correctionModeBlocker.sql
+          createdb --template=vinpoker_voice_swing73_base_20261014 vinpoker_voice_swing73_compensation_ci
+          PGDATABASE=vinpoker_voice_swing73_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_73_COMPENSATION_SOURCE.sql
+          PGDATABASE=vinpoker_voice_swing73_compensation_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_close_first_20261014
+          PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-overlap-fixture --authority-close-first72
+          PGDATABASE=vinpoker_voice_assignment72_close_first_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/assignment72.canonicalCloseBlocked.sql
+          createdb --template="$PGDATABASE" vinpoker_voice_assignment72_compensation_ci
+          PGDATABASE=vinpoker_voice_assignment72_compensation_ci psql -X -v ON_ERROR_STOP=1 -f docs/runbooks/TRACKER_VOICE_72_COMPENSATION_SOURCE.sql
+      - name: Manual Finish94 lock authority and Voice compatibility
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_voice_assignment72_authority_20261014 vinpoker_voice_finish94_20261016
+          PGDATABASE=vinpoker_voice_finish94_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql
+          PGDATABASE=vinpoker_voice_finish94_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --manual-finish94
+          PGDATABASE=vinpoker_voice_finish94_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --manual-finish94
+          createdb -T vinpoker_voice_assignment72_authority_20261014 vinpoker_ops_finish94_ci
+          PGDATABASE=vinpoker_ops_finish94_ci node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --fixture-only --manual-finish94-lock-fixture
+          if PGDATABASE=vinpoker_ops_finish94_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/recordHandLockAuthority.pg17.sql >"$RUNNER_TEMP/finish94-red.log" 2>&1; then
+            echo "Expected manual Finish to accept another actor's lock before94" >&2
+            exit 1
+          fi
+          grep -Fq TRACKER_WITHOUT_HAND_LOCK_FINISH_ACCEPTED "$RUNNER_TEMP/finish94-red.log"
+          PGDATABASE=vinpoker_ops_finish94_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000094_tracker_manual_finish_lock_authority_v1.sql
+          PGDATABASE=vinpoker_ops_finish94_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/recordHandLockAuthority.pg17.sql
+          PGDATABASE=vinpoker_ops_finish94_ci node tests/trackerSettlement/recordHandLockAuthority.concurrent.mjs
+      - name: Manual Finish95 exact intent, atomic receipt and epoch overlap
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_finish95_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish94_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishIntent.pg17.sql
+          node tests/trackerSettlement/manualFinishIntent.concurrent.mjs
+          node tests/trackerVoice/manualFinish95EdgeHandler.mjs
+          node tests/trackerSettlement/historicalAuthEdgeHandler.mjs
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/HistoricalSettlementDisplayControl.scope.test.tsx tests/tracker/historicalSettlementDisplayCapability.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/trackerPoker/historicalCommitIntent.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/TvBrandingEditor.test.tsx src/components/cashier/tournament-live/TvBrandingEditor.scope.test.tsx --maxWorkers=1 --minWorkers=1
+          node tests/trackerSettlement/tvPublishResponse.types.mjs
+          node node_modules/vitest/vitest.mjs run tests/trackerSettlement/recordedHandDisplayOutcome.test.ts tests/trackerSettlement/recordedHandDisplayOutcome.journal.test.ts --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/HistoricalSettlementBatchControl.scope.test.tsx tests/trackerPoker/historicalSettlementBatch.test.ts --maxWorkers=1 --minWorkers=1
+          node --test tests/tracker/manualFinishIntent.callback.test.mjs
+      - name: Bare Finish96 retirement preserves scoped manual and Voice consumers
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish95_ci vinpoker_ops_finish96_ci
+          if PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/recordHandEpochIntent.pg17.sql >"$RUNNER_TEMP/finish96-red.log" 2>&1; then
+            echo "Expected bare manual Finish stale-epoch acceptance before96" >&2
+            exit 1
+          fi
+          grep -Fq STALE_CONTROLLER_EPOCH_MANUAL_FINISH_ACCEPTED "$RUNNER_TEMP/finish96-red.log"
+          PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql
+          PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -v LEGACY_FINISH_RETIRED=1 -f tests/trackerSettlement/recordHandEpochIntent.pg17.sql
+          PGDATABASE=vinpoker_ops_finish96_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishIntent.pg17.sql
+          PGDATABASE=vinpoker_ops_finish96_ci node tests/trackerSettlement/manualFinishIntent.concurrent.mjs
+          createdb -T vinpoker_voice_finish94_20261016 vinpoker_voice_finish96_20261016
+          PGDATABASE=vinpoker_voice_finish96_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000095_tracker_manual_finish_intent_receipts_v1.sql
+          PGDATABASE=vinpoker_voice_finish96_20261016 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql
+          PGDATABASE=vinpoker_voice_finish96_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --manual-finish94 --manual-finish-retired96
+          PGDATABASE=vinpoker_voice_finish96_20261016 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --authority-release71 --authority-assignment72 --authority-owner --authority-canonical-start --authority-finish --authority-floor-finish --manual-finish94 --manual-finish-retired96
+      - name: Manual Finish97 cancellation receipt and both-order recovery
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_finish97_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish96_ci "$PGDATABASE"
+          node tests/trackerSettlement/manualFinishCancellation.migrationRollback.mjs --apply-after-rollback
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishCancellation.pg17.sql
+          node tests/trackerSettlement/manualFinishIntent.concurrent.mjs --cancellation
+          node tests/trackerVoice/manualFinish95EdgeHandler.mjs
+          node --test tests/tracker/manualFinishIntent.callback.test.mjs
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/handinput/HandInputConsole.pendingFinish.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Public History98 attention state preserves current verified projection
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_history98_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_finish97_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000026_floor_open_session_name_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyAttention.predecessor.local.sql
+          for dependency in \
+            20270128000029_floor_deferred_break_intent_v1.sql \
+            20270128000030_tracker_roster_intent_fence_v1.sql \
+            20270128000031_tournament_participation_current_scope_v1.sql \
+            20270128000032_tournament_seat_display_preservation_v1.sql \
+            20270128000033_tournament_seat_move_tuple_v1.sql \
+            20270128000034_floor_move_wrapper_receipt_v1.sql \
+            20270128000038_floor_break_lowest_number_policy_v1.sql \
+            20270128000039_floor_break_ticket_audit_v1.sql \
+            20270128000040_floor_break_balanced_plan_v1.sql \
+            20270128000041_floor_deferred_move_ticket_audit_v1.sql \
+            20270128000042_floor_canonical_move_ticket_integrity_v1.sql \
+            20270128000043_floor_move_exact_intent_v1.sql \
+            20270128000044_floor_seat_ticket_read_v1.sql \
+            20270128000045_floor_seat_ticket_select_scope_v1.sql \
+            20270128000048_floor_move_or_queue_exact_intent_v1.sql; do
+            psql -X -v ON_ERROR_STOP=1 -f "supabase/migrations/$dependency"
+          done
+          node tests/trackerSettlement/historyAttention.migrationRollback.mjs --apply-after-rollback
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historyNeedsAttention.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v CORRECTION_CASE=true -f tests/trackerSettlement/manualFinishModeBoundary.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          for failure_case in CANCEL_CASE STALE_EPOCH_CASE TICKET_FAILURE_CASE; do
+            psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -v "$failure_case=true" -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          done
+          createdb -T "$PGDATABASE" vinpoker_ops_finish_move_ci
+          PGDATABASE=vinpoker_ops_finish_move_ci node tests/floorProduction/scopedFinishMoveCancel.concurrent.mjs
+          node node_modules/vitest/vitest.mjs run src/components/cashier/tournament-live/viewer-hub/publicTableHistory.test.ts src/components/cashier/tournament-live/viewer-hub/TableHistoryPanel.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: History99 service-only stale intent resolution under hand lock
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_history99_rollback
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_history98_ci "$PGDATABASE"
+          node tests/trackerSettlement/historicalIntentResolution.migrationRollback.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/historicalIntentResolution.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_history99_ci
+          PGDATABASE=vinpoker_ops_history99_ci node tests/trackerSettlement/historicalIntentResolution.concurrent.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_history99_verified
+          PGDATABASE=vinpoker_ops_history99_verified node tests/trackerSettlement/historicalIntentResolution.verified.concurrent.mjs
+      - name: Manual Swing100 read-only actor and payload receipt recovery
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_swing100_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_history99_rollback "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000017_dealer_operational_inventory_exact_session_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000018_dealer_mass_open_canonical_sessions_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000019_dealer_manual_assignment_receipt_read_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000073_dealer_voice_swing_lock_order_v1.sql
+          node tests/dealerSwing/manualSwingReceipt.currentSchema.mjs
+      - name: Manual Swing101 actor binding and cancel versus writer overlap
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_swing101_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_swing100_ci "$PGDATABASE"
+          node tests/dealerSwing/manualSwingCancel.currentSchema.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_swing101_ui
+          PGDATABASE=vinpoker_ops_swing101_ui VINPOKER_NATIVE_SWING_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/manualSwingRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Initial assignment102 serialized closed-session resolution
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_initial102_ci
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_swing101_ci "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000022_dealer_assignment_off_commit_fence_v1.sql
+          node tests/dealerSwing/initialAssignmentResolution.currentSchema.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyWorkerReleasedHistory.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_initial102_ui
+          PGDATABASE=vinpoker_ops_initial102_ui VINPOKER_NATIVE_INITIAL_UI=1 node node_modules/vitest/vitest.mjs run tests/dealerSwing/initialAssignmentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Ready worker103 and rotation104-110 isolated authority/capacity
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_ready_capacity_ci
+          VINPOKER_NATIVE_READY_CAPACITY: '1'
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_initial102_ci "$PGDATABASE"
+          # The close/cancel overlap exercises the canonical reservation cleanup.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000079_dealer_close_next_reservation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000081_dealer_close_forecast_slots_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000046_dealer_inventory_canonical_table_link_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000047_floor_closed_session_attendance_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000103_dealer_worker_swing_atomic_result_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000105_dealer_legacy_adoption_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000107_dealer_rotation_locked_anchor_fence_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000108_dealer_rotation_completion_service_boundary_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000109_dealer_rotation_schedule_actor_scope_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000110_dealer_rotation_execution_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000111_dealer_dispatch_canonical_open_scope_v1.sql
+          # Exercise the canonical automatic acquisition rest-history fence.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000025_dealer_automatic_rest_history_fence_v1.sql
+          # Empty-search-path worker calls require the canonical qualified audit
+          # trigger from check-in14, including emergency marker release.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000014_dealer_checkin_club_shift_receipt_v1.sql
+          # Current Edge reads operating-day eligibility and acquisition rechecks
+          # it at commit. Install both canonical fences in this worker clone.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000222_dealer_pool_club_operating_day_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000272_dealer_acquisition_operating_day_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000273_dealer_pool_operating_day_read_v1.sql
+          # Cross-module compatibility on the same final candidate, not web acceptance.
+          createdb -T "$PGDATABASE" vinpoker_ops_full111_finish99
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000069_chip_issuance_exact_intent_v1.sql
+          for failure_case in '' TICKET_FAILURE_CASE; do
+            extra=()
+            if [ -n "$failure_case" ]; then extra=(-v "$failure_case=true"); fi
+            PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v EXACT_QUEUE_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true "${extra[@]}" -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          done
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v TRACKER_BREAK_CASE=true -v REAL_FINISH_CASE=true -v SCOPED_FINISH_MODE_CASE=true -v SEAT_TICKET_CASE=true -v READ_TICKET_CASE=true -f tests/floorProduction/deferredMoveIntent.pg17.sql
+          PGDATABASE=vinpoker_ops_full111_finish99 psql -X -v ON_ERROR_STOP=1 -v EXACT_ISSUANCE_CASE=true -f tests/chipOps/colorUpCurrentSchema.pg17.sql
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatcher-due
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --dispatch-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --completion-auth --cancel-auth --lock-auth
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --rotation-auth-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --lock-authority
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --main-dispatch --planner-size=2
+          for fault in missing-token malformed-token wrong-acquired held reclaimed; do
+            node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --planner-size=2 --main-lock-fault="$fault"
+          done
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --execution-negative
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --execution-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --emergency-stale
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --adoption
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --legacy
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --negative
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --anchor-overlap
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --main-execute --main-completion-fault --main-response-loss --planner-size=2
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs --main-worker --planner-shortage --planner-size=40
+          node tests/dealerSwing/readyWorkerCapacity.native.mjs
+      - name: Cash112 exact payment receipt cancellation and legacy overlap
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_cash112_qualified
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_full111_finish99 "$PGDATABASE"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000112_cashier_cash_intent_receipts_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v CASH112_CASE=true -f tests/cashier/cashPaymentIdentity.pg17.sql
+          createdb -T "$PGDATABASE" vinpoker_ops_cash112_overlap
+          PGDATABASE=vinpoker_ops_cash112_overlap node tests/cashier/cashPaymentIdentity.concurrent.mjs
+          node node_modules/vitest/vitest.mjs run src/lib/cashPaymentIntent.test.ts src/pages/ops/TourCashierWorkbenchShift.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Cash113-117 canonical paid seating re-entry and restore races
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_cash115_qualified_c
+        run: |
+          set -euo pipefail
+          createdb -T vinpoker_ops_cash112_qualified "$PGDATABASE"
+          node tests/cashier/seatingMigrations.pg17.mjs
+          # This branch was cloned before the independent restore/chip fixture.
+          # Install the canonical restore chain expected by the116 preimage.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000015_floor_restore_bust_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000052_floor_restore_receipt_reconciliation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000054_restore_pending_cancellation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql
+          node tests/cashier/seatingMigrations.pg17.mjs --only116
+          node tests/cashier/seatingMigrations.pg17.mjs --only117
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000118_tracker_correction_intent_resolution_v1.sql
+          node tests/trackerSettlement/correctionResolution118.migration.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000119_tracker_history_commit_lock_order_v1.sql
+          node tests/trackerSettlement/correctionResolution118.migration.mjs --history119
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000120_tracker_hand_scope_revision_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000121_tracker_voice_finish_receipt_resolution_v1.sql
+          node tests/cashier/seatingMigrations.pg17.mjs --only122
+          node tests/cashier/seatingMigrations.pg17.mjs --only123
+          node node_modules/vitest/vitest.mjs run src/lib/feltLifecycleReadiness.test.ts src/lib/feltLifecycleReadiness.rpcClient.test.ts src/components/cashier/tournament-live/CloseReportDialog.readiness.test.tsx --maxWorkers=1 --minWorkers=1
+          node tests/trackerSettlement/correctionResolution118.migration.mjs --scope120
+          node tests/cashier/paidJourney.runtime.mjs
+          node tests/cashier/paidJourney.runtime.mjs --seat-blockers
+          node tests/cashier/paidJourney.runtime.mjs --active-hand
+          node tests/cashier/paidJourney.runtime.mjs --active-hand --pending-move
+          node tests/cashier/paidJourney.runtime.mjs --active-hand --legacy-correction
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000024_tracker_history_scoped_canary_claim_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000059_tracker_completed_void_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000075_tracker_manual_cards_receipts_v1.sql
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --verified --identity-revision
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --lost-commit-response
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --expired-lease
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correct-during-commit
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-mask-receipt
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap
+          node --experimental-transform-types tests/trackerSettlement/paidHistoryWorker.native.mjs --correction-edge --correction-overlap --history-correction-locks --expect-history-lock-fixed
+          node node_modules/vitest/vitest.mjs run tests/trackerPoker/correctionCommitIntent.test.ts tests/trackerPoker/correctionNoChipChange.render.test.tsx src/components/cashier/tournament-live/useCorrectionCommitRecovery.test.tsx --maxWorkers=1 --minWorkers=1
+          node node_modules/vitest/vitest.mjs run tests/tracker/handEditPanel.validation.render.test.tsx tests/tracker/handEditValidation.test.ts tests/tracker/handEditDiff.test.ts --maxWorkers=1 --minWorkers=1
+          VINPOKER_NATIVE_CORRECTION_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidCorrectionRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
+          # The captured application-schema clone excludes the migration ledger.
+          psql -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);'
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000185_tv_layout_configured_brand_read_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000186_tv_layout_fallback_brand_read_v1.sql
+          node tests/trackerSettlement/tvStorage.bootstrap.mjs
+          VINPOKER_NATIVE_TV_UI=1 node node_modules/vitest/vitest.mjs run tests/trackerSettlement/paidTvPublish.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
+          # Voice handoff uses the same check-in receipt and rest15 operator contracts.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000051_dealer_checkin_receipt_reconciliation_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000078_dealer_next_plan_rest_floor_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000080_dealer_operator_next_intent_v1.sql
+          VINPOKER_NATIVE_VOICE_RUNTIME=1 node tests/trackerVoice/runtimeApiPayload.test.mjs
+          VINPOKER_NATIVE_VOICE_FINISH=1 node tests/trackerVoice/paidFinishCommit.native.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000053_chip_color_up_receipt_reconciliation_v1.sql
+          # Reuse the isolated ledger created above for the TV fixtures.
+          # Exact264 retains its legacy-function hash and ledger-shape guards.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000264_finance_summary_business_dates_v2.sql
+          VINPOKER_NATIVE_OPS_READ_LATENCY_REPORT=output/operations-latency/native-reads.json VINPOKER_NATIVE_OPS_WRITE_LATENCY_REPORT=output/operations-latency/native-writes.json VINPOKER_NATIVE_PAID_TOUR=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_RESTORE_HISTORY=1 node tests/cashier/restoreHistoryOrder.native.mjs
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --existing-places
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --missing-evidence
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --partial-places
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --close-fault
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --overlap
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --finalizer-first
+          VINPOKER_NATIVE_OFFICIAL_CLOSE=1 node tests/cashier/officialResultsClose.native.mjs --close-first
+          VINPOKER_NATIVE_PAID_TOUR=1 VINPOKER_NATIVE_PAID_HISTORY=1 VINPOKER_NATIVE_DEFERRED_BREAK=1 VINPOKER_NATIVE_PAID_REENTRY=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_PAID_TOUR=1 VINPOKER_NATIVE_PAID_HISTORY=1 VINPOKER_NATIVE_DEFERRED_BREAK=1 VINPOKER_NATIVE_PAID_REENTRY=1 VINPOKER_NATIVE_MIXED_BREAK=1 node tests/cashier/paidTourRoster.native.mjs
+          VINPOKER_NATIVE_CHIP_COMMIT=1 node tests/chipOps/paidColorUpCommit.native.mjs
+          VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_COUPLED=1 node tests/chipOps/paidColorUpCommit.native.mjs
+          VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_CHAIN=1 node tests/chipOps/paidColorUpCommit.native.mjs
+          VINPOKER_NATIVE_CHIP_COMMIT=1 VINPOKER_CHIP_COMMIT_COUPLED=1 VINPOKER_CHIP_COMMIT_CHAIN=1 node tests/chipOps/paidColorUpCommit.native.mjs
+          node tests/cashier/paidSeatingClose.concurrent.mjs
+          VINPOKER_NATIVE_DEFERRED_CANCEL=1 node tests/cashier/paidDeferredCancel.concurrent.mjs
+          node tests/cashier/restoreReentry.concurrent.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_reentry115_overlap
+          PGDATABASE=vinpoker_ops_reentry115_overlap node tests/cashier/reentryRegistration.concurrent.mjs
+          createdb -T "$PGDATABASE" vinpoker_ops_cash112_ui
+          PGDATABASE=vinpoker_ops_cash112_ui VINPOKER_NATIVE_CASH_UI=1 node node_modules/vitest/vitest.mjs run tests/cashier/cashPaymentRecovery.native.test.tsx --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=30000
+          node --test tests/cashier/reentryTransport.test.mjs
+          deno check supabase/functions/tournament-reentry/index.ts
+          deno check supabase/functions/tournament-live-resettle-commit/index.ts
+      - name: Sanitized operations read latency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-read-latency-${{ github.sha }}
+          path: VinPoker/output/operations-latency/native-*.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Manual75 full migration rollback and actor-bound payload receipts
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_manual_card75_payload_ci
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_voice_swing73_base_20261014 "$PGDATABASE"
+          node tests/trackerVoice/manual75MigrationRollback.currentSchema.mjs --owned-ci --apply-after-rollback
+          node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --manual-hole-authority --manual-hole-prototype --manual-hole-release75 --manual-hole-release75-payload --manual-hole-release75-ci
+          createdb --template="$PGDATABASE" vinpoker_manual_card75_overlap_20261014
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --authority70 --manual-hole-authority --manual-hole-prototype --manual-hole-release75 --manual-hole-release75-payload --manual-hole-release75-ci --manual75-overlap-fixture
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75CommittedOverlap.pg17.sql
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75ReadContext.baseline.pg17.sql
+          PGDATABASE=vinpoker_manual_card75_overlap_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual76ReadContext.prototype.pg17.sql
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_read_20261014
+          PGDATABASE=vinpoker_manual76_read_20261014 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000076_tracker_hand_input_scoped_read_v1.sql
+          PGDATABASE=vinpoker_manual76_read_20261014 node tests/trackerVoice/manual76ReadContext.currentSchema.mjs
+          createdb --template=vinpoker_manual76_read_20261014 vinpoker_roster77_read_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --canonical77
+          createdb --template=vinpoker_manual76_read_20261014 vinpoker_roster77_race_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --canonical77-race
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual76_rollback_20261014
+          PGDATABASE=vinpoker_manual76_rollback_20261014 node tests/trackerVoice/manual76AtomicRollback.mjs
+          createdb --template=vinpoker_manual_card75_overlap_20261014 vinpoker_manual_card75_compensation_20261014
+          PGDATABASE=vinpoker_manual_card75_compensation_20261014 psql -X -v ON_ERROR_STOP=1 -f tests/trackerVoice/manual75Compensation.pg17.sql
+          node tests/trackerVoice/manual75IntentPolicy.mjs
+          node tests/trackerVoice/manual75EdgeHandler.mjs
+      - name: Public hand visibility74 actor tenant and write compatibility
+        working-directory: VinPoker
+        run: |
+          node --test scripts/ops/tracker-public-74-release-plan.test.mjs scripts/ops/tracker-public-74-protected-apply.test.mjs
+          createdb --template=vinpoker_voice_swing73_pending_20261014 vinpoker_visibility74_atomic_ci
+          PGDATABASE=vinpoker_visibility74_atomic_ci VISIBILITY74_PG_TEST=1 node --test scripts/ops/tracker-public-74-atomic-pg.test.mjs
+          createdb --template=vinpoker_voice_swing73_pending_20261014 vinpoker_visibility74_ci
+          PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.baseline.pg17.sql
+          PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000074_tracker_public_hand_visibility_v1.sql
+          PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.pg17.sql
+          PGDATABASE=vinpoker_visibility74_ci psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/publicHandVisibility74.compensation.pg17.sql
+      - name: Manual75 exact release plan and atomic ledger rollback
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          node --test scripts/ops/tracker-manual-75-release-plan.test.mjs scripts/ops/tracker-manual-75-protected-apply.test.mjs
+          createdb --template=vinpoker_visibility74_atomic_ci vinpoker_manual75_atomic_ci
+          PGDATABASE=vinpoker_manual75_atomic_ci MANUAL75_PG_TEST=1 node --test scripts/ops/tracker-manual-75-atomic-pg.test.mjs
+          node --test scripts/ops/tracker-reads-76-77-release-plan.test.mjs scripts/ops/tracker-reads-76-77-protected-apply.test.mjs
+          createdb --template=vinpoker_manual75_atomic_ci vinpoker_reads76_77_atomic_20261014
+          node tests/trackerVoice/manual76RosterScoped.prototype.mjs --setup-76-77
+          node scripts/ops/tracker-reads-76-77-atomic.pg.mjs
+          createdb --template=vinpoker_reads76_77_atomic_20261014 vinpoker_reads76_77_compensation_20261014
+          node scripts/ops/tracker-reads-76-77-compensation.pg.mjs
+      - name: Dealer policy57 tenant boundary and committed overlap on qualified schema
+        working-directory: VinPoker
+        run: |
+          node --test scripts/ops/dealer-policy-57-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_card56_overlap_20261011 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000057_dealer_pt_policy_tenant_integrity_v1.sql
+          PGDATABASE=vinpoker_ops_card56_overlap_20261011 psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/accrualTenant.pg17.sql
+          PGDATABASE=vinpoker_ops_card56_overlap_20261011 psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/accrualTenant.readonly-postcheck.sql
+          createdb --template=vinpoker_ops_card56_overlap_20261011 vinpoker_ops_policy57_overlap_20261011
+          PGDATABASE=vinpoker_ops_policy57_overlap_20261011 node tests/dealerSwing/accrualTenant.concurrent.mjs
+          createdb --template=vinpoker_ops_card56_overlap_20261011 vinpoker_ops_policy57_atomic_20261011
+          PGDATABASE=vinpoker_ops_policy57_atomic_20261011 POLICY57_PG_TEST=1 node --test scripts/ops/dealer-policy-57-atomic-pg.test.mjs
+      - name: History identity58 revision and queue generation on qualified schema
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_card56_overlap_20261011
+        run: |
+          node --test scripts/ops/tracker-history-58-protected-apply.test.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_identity58_atomic_20261011
+          PGDATABASE=vinpoker_ops_identity58_atomic_20261011 HISTORY58_PG_TEST=1 node --test scripts/ops/tracker-history-58-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handIdentityRevision.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handTournamentRevision.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/orphanCleanupRevision.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handIdentityChainRange.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/handIdentityRevision.readonly-postcheck.sql
+          createdb --template="$PGDATABASE" vinpoker_ops_identity58_overlap_20261011
+          PGDATABASE=vinpoker_ops_identity58_overlap_20261011 node tests/trackerSettlement/handIdentityRevision.concurrent.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_identity58_statement_20261011
+          PGDATABASE=vinpoker_ops_identity58_statement_20261011 node tests/trackerSettlement/handIdentityCanonicalLock.concurrent.mjs --expect-fixed
+          createdb --template="$PGDATABASE" vinpoker_ops_identity58_statement_reparent_20261011
+          PGDATABASE=vinpoker_ops_identity58_statement_reparent_20261011 node tests/trackerSettlement/handIdentityReparent.concurrent.mjs --expect-fixed --statement
+          createdb --template="$PGDATABASE" vinpoker_ops_identity58_history_runtime_20261011
+          PGDATABASE=vinpoker_ops_identity58_history_runtime_20261011 psql -X -v ON_ERROR_STOP=1 -c "UPDATE public.tournament_hands SET status='completed' WHERE id='86000000-0000-4000-8000-000000000001';"
+          PGDATABASE=vinpoker_ops_identity58_history_runtime_20261011 psql -X -v ON_ERROR_STOP=1 -f tests/protectedNineIntegratedUat/history.pg17.sql
+          PGDATABASE=vinpoker_ops_identity58_history_runtime_20261011 node tests/trackerSettlement/handIdentityPublication.concurrent.mjs
+      - name: Completed void projections, scoped denials and committed overlap on qualified schema
+        working-directory: VinPoker
+        env:
+          PGDATABASE: vinpoker_ops_card56_overlap_20261011
+        run: |
+          node --test scripts/ops/tracker-void-59-protected-apply.test.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_void59_atomic_20261011
+          PGDATABASE=vinpoker_ops_void59_atomic_20261011 VOID59_PG_TEST=1 node --test scripts/ops/tracker-void-59-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000059_tracker_completed_void_integrity_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/completedVoidProjection.readonly-postcheck.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/trackerSettlement/completedVoidProjection.pg17.sql
+          for case in test_reentry test_closed_session test_changed_stack test_foreign_actor test_moved_seat test_busted_player test_missing_count test_capacity test_occupied_seat test_payout test_close_report; do
+            psql -X -v ON_ERROR_STOP=1 -v "$case=1" -f tests/trackerSettlement/completedVoidProjection.pg17.sql
+          done
+          psql -X -v ON_ERROR_STOP=1 -v test_busted_player=1 -v test_locked_seat=1 -f tests/trackerSettlement/completedVoidProjection.pg17.sql
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_overlap_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_overlap_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_close_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_close_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --close-session
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_move_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_move_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --move-seat
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_duplicate_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_duplicate_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --duplicate-void
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_move_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_move_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-move
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_move_reverse_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_move_reverse_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-move-void-first
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_close_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_close_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-close
+          createdb --template="$PGDATABASE" vinpoker_ops_completed_void59_floor_close_rev_20261011
+          PGDATABASE=vinpoker_ops_completed_void59_floor_close_rev_20261011 node tests/trackerSettlement/completedVoidProjection.concurrent.mjs --floor-close-void-first
+      - name: Retired Tracker re-entry role and projection regression
+        working-directory: VinPoker
+        env:
+          # The roster suite needs the Floor forward chain installed above.
+          # The card-only clone deliberately lacks floor_private roster helpers.
+          PGDATABASE: vinpoker_ops_checkin
+        run: |
+          node --test scripts/ops/tracker-reentry-60-release-plan.test.mjs scripts/ops/tracker-reentry-60-protected-apply.test.mjs
+          # The overlap DB retains committed race fixtures; atomic proof requires
+          # the schema-only card baseline, as enforced by its empty-data guard.
+          createdb --template=vinpoker_ops_card56_20261011 vinpoker_ops_reentry60_atomic_20261011
+          PGDATABASE=vinpoker_ops_reentry60_atomic_20261011 REENTRY60_PG_TEST=1 node --test scripts/ops/tracker-reentry-60-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyReentryCanonicalSnapshot.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000060_tracker_legacy_reentry_retirement_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v LEGACY_REENTRY_RETIREMENT_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyReentryRetirement.readonly-postcheck.sql
+          node --test scripts/ops/tracker-stack-61-release-plan.test.mjs scripts/ops/tracker-stack-61-protected-apply.test.mjs
+          # Earlier check-in/inventory races commit fixture data in this DB.
+          # Preserve its qualified function/ACL chain, not those fixture rows.
+          set -euo pipefail
+          createdb vinpoker_ops_stack61_atomic_20261011
+          # Use the server's PG17 client; the runner's default pg_dump is PG16.
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/stack61-atomic-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/stack61-atomic-schema.sql "$RUNNER_TEMP/stack61-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_stack61_atomic_20261011 psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/stack61-atomic-schema.sql"
+          PGDATABASE=vinpoker_ops_stack61_atomic_20261011 STACK61_PG_TEST=1 node --test scripts/ops/tracker-stack-61-atomic-pg.test.mjs
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000061_tracker_legacy_stack_retirement_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -v LEGACY_STACK_INTEGRITY_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/legacyStackIntegrity.readonly-postcheck.sql
+          psql -X -v ON_ERROR_STOP=1 -v STALE_STACK_FIRST_ARRIVAL_CASE=1 -f tests/floorProduction/trackerRosterSession.pg17.sql
+          # Active-hand undo: real authenticated RPC, revision/hash and retry fences.
+          # Fresh schema-only DB excludes fixture rows committed by preceding races.
+          createdb vinpoker_ops_undo_generation_20261011
+          # Finish the PG17 dump before copying/restoring it. Docker exec stdout
+          # streaming previously ended midway through GRANT in this clone.
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/undo-generation-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/undo-generation-schema.sql "$RUNNER_TEMP/undo-generation-schema.sql"
+          PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/undo-generation-schema.sql"
+          # identity58 above is qualified on card-overlap, not checkin. Retain
+          # checkin's Floor helpers and install its exact forward identity fence.
+          PGDATABASE=vinpoker_ops_undo_generation_20261011 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000058_tracker_hand_identity_revision_v1.sql
+          PGDATABASE=vinpoker_ops_undo_generation_20261011 node tests/trackerVoice/cardBatchIntegrity.currentSchema.mjs --undo
+          # Real COMMIT with discarded output, then recovery through a new connection.
+          # Synthetic outcome: transaction/lease proof, not verifier or HTTP UAT.
+          createdb --template=vinpoker_ops_undo_generation_20261011 vinpoker_ops_history_atomic_ci
+          PGDATABASE=vinpoker_ops_history_atomic_ci node tests/trackerSettlement/historyAtomicRecovery.currentSchema.mjs --committed-recovery
+      - name: Atomic tournament create91 rollback, actor receipt and overlapping retry
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          createdb --template=vinpoker_ops_checkin vinpoker_ops_tournament_create91
+          node --test scripts/ops/tournament-create91-release-plan.test.mjs scripts/ops/tournament-create91-protected-apply.test.mjs
+          createdb --template=vinpoker_ops_checkin vinpoker_ops_create91_release_v2
+          node scripts/ops/tournament-create91-release-plan.pg17.mjs
+          PGDATABASE=vinpoker_ops_tournament_create91 psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000091_tournament_create_with_levels_atomic_v1.sql
+          PGDATABASE=vinpoker_ops_tournament_create91 psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/tournamentCreate91.pg17.sql
+          createdb --template=vinpoker_ops_tournament_create91 vinpoker_ops_tournament_create91_overlap
+          node tests/floorTableControlV3/tournamentCreate91.concurrent.mjs
+      - name: Manual participant exact-session receipt and rollback integrity on qualified schema
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          node --test tests/floorProduction/manualSeatSessionFence.contract.test.mjs
+          node --test scripts/ops/floor-manual-66-release-plan.test.mjs scripts/ops/floor-manual-66-protected-apply.test.mjs
+          node node_modules/vitest/vitest.mjs run src/lib/floorManualPlayerIntent.test.ts src/components/cashier/tournament-live/AddPlayerDialog.test.tsx --maxWorkers=1 --minWorkers=1
+          createdb vinpoker_ops_floor66_ci
+          docker exec vinpoker-current-schema-pg17 pg_dump -h 127.0.0.1 -p 55441 -U postgres --schema-only vinpoker_ops_checkin -f /tmp/manual66-schema.sql
+          docker cp vinpoker-current-schema-pg17:/tmp/manual66-schema.sql "$RUNNER_TEMP/manual66-schema.sql"
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/manual66-schema.sql"
+          # Prove the existing public legacy seam accepts a locked-seat write.
+          # The only expected failure is this exact behavioral assertion.
+          if PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -v legacy_repro=true -f tests/floorProduction/manualSeatSessionFence.currentSchema.sql >"$RUNNER_TEMP/manual66-red.log" 2>&1; then
+            echo "legacy locked-seat counterexample unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -Fq 'LEGACY_LOCKED_WALKIN_REPRO: locked seat accepted or wrong denial: {"ok": true' "$RUNNER_TEMP/manual66-red.log"
+          createdb --template=vinpoker_ops_floor66_ci vinpoker_ops_floor66_atomic_ci
+          PGDATABASE=vinpoker_ops_floor66_atomic_ci MANUAL66_PG_TEST=1 node --test scripts/ops/floor-manual-66-atomic-pg.test.mjs
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000066_floor_manual_seat_session_fence_v1.sql
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualSeatSessionFence.currentSchema.sql
+          PGDATABASE=vinpoker_ops_floor66_ci node tests/floorProduction/manualSeatSessionFence.concurrent.mjs
+          node --test tests/floorProduction/manualEntryRestore.contract.test.mjs
+          node --test scripts/ops/floor-manual-67-release-plan.test.mjs scripts/ops/floor-manual-67-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_floor66_atomic_ci MANUAL67_PG_TEST=1 node --test scripts/ops/floor-manual-67-atomic-pg.test.mjs
+          node --test scripts/ops/floor-manual-68-release-plan.test.mjs scripts/ops/floor-manual-68-protected-apply.test.mjs
+          PGDATABASE=vinpoker_ops_floor66_atomic_ci MANUAL68_PG_TEST=1 node --test scripts/ops/floor-manual-68-atomic-pg.test.mjs
+          node --test scripts/ops/chip-issuance-69-release-plan.test.mjs scripts/ops/chip-issuance-69-protected-apply.test.mjs
+          createdb -T vinpoker_ops_floor66_atomic_ci vinpoker_ops_chip69_atomic_ci
+          PGDATABASE=vinpoker_ops_chip69_atomic_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000016_chip_color_up_serialized_integrity_v1.sql
+          PGDATABASE=vinpoker_ops_chip69_atomic_ci ISSUANCE69_PG_TEST=1 node --test scripts/ops/chip-issuance-69-atomic-pg.test.mjs
+          if PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql >"$RUNNER_TEMP/manual67-red.log" 2>&1; then
+            echo "manual restore read counterexample unexpectedly passed" >&2
+            exit 1
+          fi
+          grep -Fq 'MANUAL_RESTORABLE_ENTRY_MISSING: canonical manual entry created and busted successfully' "$RUNNER_TEMP/manual67-red.log"
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000067_floor_manual_bust_restore_read_v1.sql
+          if PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql >"$RUNNER_TEMP/manual68-red.log" 2>&1; then
+            echo "Expected old restore writer to fail current-ticket proof" >&2
+            exit 1
+          fi
+          grep -Fq 'manual_restore_current_ticket_unusable' "$RUNNER_TEMP/manual68-red.log"
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000068_floor_restore_canonical_tuple_v1.sql
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql
+          PGDATABASE=vinpoker_ops_floor66_ci node tests/floorProduction/manualEntryRestore.concurrent.mjs
+          PGDATABASE=vinpoker_ops_floor66_ci psql -X -v ON_ERROR_STOP=1 -v registered_entry=true -f tests/floorProduction/manualEntryRestore.currentSchema.sql
+      - name: Legacy bare restore refuses unfenced intent; canonical restore remains usable
+        working-directory: VinPoker
+        run: |
+          createdb -T vinpoker_ops_floor66_ci vinpoker_ops_floor66_legacy93_ci
+          if PGDATABASE=vinpoker_ops_floor66_legacy93_ci psql -X -v ON_ERROR_STOP=1 -v registered_entry=true -v LEGACY_RESTORE_GUARD_CASE=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql >"$RUNNER_TEMP/legacy93-red.log" 2>&1; then
+            echo "Expected legacy unfenced restore regression before migration93" >&2
+            exit 1
+          fi
+          grep -Fq legacy_restore_without_exact_session_accepted "$RUNNER_TEMP/legacy93-red.log"
+          PGDATABASE=vinpoker_ops_floor66_legacy93_ci psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000093_floor_legacy_restore_exact_session_required_v1.sql
+          PGDATABASE=vinpoker_ops_floor66_legacy93_ci psql -X -v ON_ERROR_STOP=1 -v LEGACY_RESTORE_GUARD_CASE=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql
+          PGDATABASE=vinpoker_ops_floor66_legacy93_ci psql -X -v ON_ERROR_STOP=1 -v registered_entry=true -v LEGACY_RESTORE_GUARD_CASE=1 -f tests/floorProduction/manualEntryRestore.currentSchema.sql
+      - name: Private backup cron contract with isolated network doubles (not live scheduler proof)
+        working-directory: VinPoker
+        run: |
+          createdb vinpoker_ops_backup_cron
+          PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/backupCron.fixture.pg17.sql
+          PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000020_dealer_ready_backup_private_cron_v1.sql
+          PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/backupCron.pg17.sql
+          PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyTrigger.fixture.pg17.sql
+          PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000021_dealer_ready_private_trigger_v1.sql
+          PGDATABASE=vinpoker_ops_backup_cron psql -X -v ON_ERROR_STOP=1 -f tests/dealerSwing/readyTrigger.pg17.sql
+      - name: Rotation persistence session fence on restored schema (RED then GREEN)
+        working-directory: VinPoker
+        run: |
+          if node tests/dealerSwing/rotationPersistSessionFence.currentSchema.mjs >"$RUNNER_TEMP/persist87-red.log" 2>&1; then
+            echo "Expected stale rotation persistence regression on baseline" >&2
+            exit 1
+          fi
+          grep -Fq 'invalid table has no prediction' "$RUNNER_TEMP/persist87-red.log"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000087_dealer_rotation_persist_session_fence_v1.sql
+          node tests/dealerSwing/rotationPersistSessionFence.currentSchema.mjs
+          node tests/dealerSwing/rotationPersistSessionFence.concurrent.mjs
