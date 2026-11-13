@@ -62,9 +62,12 @@ export function classifyPreflight(row){
 export function postcheckSql(pkg){
  const m=checkedManifest(pkg);
  return `BEGIN READ ONLY;SET LOCAL statement_timeout='10s';SELECT json_build_object(
- 'functions',COALESCE((SELECT bool_and(COALESCE(p.prosecdef AND has_function_privilege('authenticated',p.oid,'EXECUTE')
+ 'functions',COALESCE((SELECT bool_and(COALESCE(p.prosecdef AND p.proowner=(SELECT oid FROM pg_roles WHERE rolname='postgres')
+ AND p.proconfig=ARRAY['search_path=""']::text[] AND md5(p.prosrc)=e.body_hash
+ AND p.provolatile::text=e.volatility AND p.prolang=(SELECT oid FROM pg_language WHERE lanname=e.language)
+ AND p.prorettype='jsonb'::regtype AND NOT p.proretset AND has_function_privilege('authenticated',p.oid,'EXECUTE')
  AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('service_role',p.oid,'EXECUTE'),false))
- FROM (VALUES ${m.newSignatures.map(s=>`('${s}')`).join(',')}) e(signature)
+ FROM (VALUES ${m.newSignatures.map((s,i)=>`('${s}','${['7bf15252a5730c4bc6d2bf74e366afcb','082bee09a75c80adbf9ae6e2c652216c'][i]}','${i===0?'s':'v'}','${i===0?'sql':'plpgsql'}')`).join(',')}) e(signature,body_hash,volatility,language)
  LEFT JOIN pg_proc p ON p.oid=to_regprocedure(e.signature)),false),
  'baseline',(${sourcePredicate(m)}))::text;COMMIT;`;
 }
@@ -79,9 +82,10 @@ export function executeMigration(pkg,transport,report=()=>{}){
  }
  const receipt=transport.json(receiptSql(item));
  assert.ok(receipt.count===1&&receipt.exact===true,'Floor345 receipt differs; stop');
+ report("COMMITTED_EXACT "+item.version+" "+item.hash);
  const post=transport.json(postcheckSql(pkg));
  assert.ok(post.functions===true&&post.baseline===true,'Floor345 object/ACL postcheck differs; stop');
- report(`COMMITTED_EXACT ${item.version} ${item.hash}`);
+
  report('FLOOR345_OBJECT_POSTCHECK_PASS');
 }
 export function validateApproval(mode,env,receipt,observed){

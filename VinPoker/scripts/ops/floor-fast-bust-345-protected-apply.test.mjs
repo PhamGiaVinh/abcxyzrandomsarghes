@@ -37,7 +37,7 @@ for(const receipt of [{count:1,exact:true},{count:0,exact:false},{count:1,exact:
 }
 test('bad post-receipt or ACL cannot report success',()=>{
  for(const rows of [[ready,{count:0,exact:false}],[ready,{count:1,exact:true},{functions:false,baseline:true}],[ready,{count:1,exact:true},{functions:true,baseline:false}]]){
-  const reports=[];assert.throws(()=>executeMigration(pkg,{json:()=>rows.shift(),execute:()=>{}},s=>reports.push(s)));assert.equal(reports.length,0);
+  const reports=[];assert.throws(()=>executeMigration(pkg,{json:()=>rows.shift(),execute:()=>{}},s=>reports.push(s)));assert.ok(!reports.includes('FLOOR345_OBJECT_POSTCHECK_PASS')); if(reports.length)assert.match(reports[0],/^COMMITTED_EXACT /);
  }
 });
 function context(){

@@ -34,6 +34,20 @@ query(sql);
 const json=s=>JSON.parse(query(s).split('\n').find(x=>x.startsWith('{')));
 assert.deepEqual(json(receiptSql(item)),{count:1,exact:true});
 assert.deepEqual(json(postcheckSql(pkg)),{functions:true,baseline:true});
+const roster='public.get_floor_tournament_table_roster_v7(uuid)';
+for(const mutation of [
+ `ALTER FUNCTION ${roster} OWNER TO anon`,
+ `ALTER FUNCTION ${roster} SET search_path=public`,
+ `ALTER FUNCTION ${roster} VOLATILE`,
+ `CREATE OR REPLACE FUNCTION public.get_floor_tournament_table_roster_v7(p_tournament_id uuid)
+ RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$SELECT NULL::jsonb$$`
+]){
+ query(mutation);
+ assert.equal(json(postcheckSql(pkg)).functions,false,'Metadata/body drift must fail postcheck');
+ query(`ALTER FUNCTION ${roster} OWNER TO postgres;`);
+ query(pkg.sql.replaceAll('CREATE FUNCTION public.','CREATE OR REPLACE FUNCTION public.'));
+ assert.deepEqual(json(postcheckSql(pkg)),{functions:true,baseline:true});
+}
 query(sql,false);
 assert.deepEqual(json(receiptSql(item)),{count:1,exact:true});
 assert.equal(query('SELECT count(*) FROM supabase_migrations.schema_migrations'),'1');
