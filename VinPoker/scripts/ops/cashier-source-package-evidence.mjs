@@ -33,6 +33,7 @@ export function validateSourcePackageEvidence(read) {
     }
   }
   const audience = read('operations-audience-http.json');
+  assert.equal(audience.workloadModel, 'selected-table', 'Scoped-detail evidence requires the selected-table profile');
   assert.equal(audience.phase, 'passed');
   assert.equal(audience.productionChanged, false);
   assert.equal(audience.sourceBatchModeVerified, true);

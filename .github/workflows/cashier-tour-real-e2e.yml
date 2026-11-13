@@ -269,7 +269,7 @@ jobs:
           # The full final stages require the real admission/schema-freeze
           # protocol. Ten viewers are a smoke profile, never1000 qualification.
           LOCAL_OPERATIONS_AUDIENCE: ${{ (github.event_name == 'pull_request' && steps.schema-mode.outputs.mode == 'current') && '10' || inputs.operations_audience || '0' }}
-          LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ inputs.operations_audience_model || 'grid-detail-stress' }}
+          LOCAL_OPERATIONS_AUDIENCE_MODEL: ${{ (steps.schema-mode.outputs.package == 'source342' || (github.event_name == 'pull_request' && github.event.pull_request.number == 1635)) && 'selected-table' || inputs.operations_audience_model || 'grid-detail-stress' }}
           # Current PRs render the candidate frontend, so qualify its matching
           # isolated backend and all operational stages rather than old RPCs.
           LOCAL_OPERATIONS_CANDIDATE_PROBE: ${{ ((github.event_name == 'pull_request' && steps.schema-mode.outputs.mode == 'current') || inputs.operations_candidate_probe) && '1' || '0' }}

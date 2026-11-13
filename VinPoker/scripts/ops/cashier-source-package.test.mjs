@@ -113,7 +113,7 @@ test('wrong-origin evidence in protected policy is rejected', () => {
 test('missing candidate receipt, wrong body/ACL and unserved batch never pass', () => {
   const receipt = JSON.parse(readFileSync(join(source, receiptPath)));
   const fixtures = Object.fromEntries(receipt.receipts.map(r => [r.file, r.receipt]));
-  fixtures['operations-audience-http.json'] = { phase: 'passed', productionChanged: false,
+  fixtures['operations-audience-http.json'] = { workloadModel: 'selected-table', phase: 'passed', productionChanged: false,
     sourceBatchModeVerified: true, servingSourceBatchRpcCalls: 1, checks: Object.fromEntries([
       'zeroErrors', 'atLeast30Seconds', 'allViewers', 'sourceBatchModeAndServingUsage',
       'allSawLaterTableRevision', 'tableP95Within3Seconds', 'markerToScopedDetailP95Within3Seconds',
@@ -124,6 +124,7 @@ test('missing candidate receipt, wrong body/ACL and unserved batch never pass', 
     f => { f[receipt.receipts[1].file].candidateDefinitionMd5 = 'bad'; },
     f => { f[receipt.receipts[2].file].metadata = false; },
     f => { f['operations-audience-http.json'].servingSourceBatchRpcCalls = 0; },
+    f => { f['operations-audience-http.json'].workloadModel = 'grid-detail-stress'; },
     f => { delete f['operations-audience-http.json'].checks.tableSpecificSourceDeliveryVerified; },
   ]) { const f = structuredClone(fixtures); change(f); assert.throws(() => validateSourcePackageEvidence(name => f[name])); }
 });
@@ -133,6 +134,7 @@ test('exact package workflow enables all three probes and requires runtime recei
     assert.match(workflow, new RegExp(`LOCAL_${name}_PROBE:.*outputs.package == 'source342'`));
   }
   assert.ok(workflow.includes('node scripts/ops/cashier-source-package-evidence.mjs "$runtime_root/output/operations-latency"'));
+  assert.match(workflow, /LOCAL_OPERATIONS_AUDIENCE_MODEL:.*outputs.package == 'source342'.*pull_request.number == 1635.*'selected-table'/);
 });
 
 test('policy bootstrap admits only the exact policy-only PR and rejects unknown SQL or historical mode', () => {
