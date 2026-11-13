@@ -43,6 +43,9 @@ try{
  END LOOP;
  PERFORM set_config('app.hud_history_profile',samples::text,true);
  END $profile$;
+ -- Only the measured API calls run as anon. Private function identifiers and
+ -- diagnostic statistics are inspected by the original fixture administrator.
+ RESET ROLE;
  SELECT jsonb_build_object('samples',current_setting('app.hud_history_profile')::jsonb,'functions',
   (SELECT coalesce(jsonb_agg(jsonb_build_object('name',funcname,'calls',calls,'totalMs',total_time,'selfMs',self_time)),'[]')
    FROM pg_stat_xact_user_functions WHERE funcid IN ('${signature}'::regprocedure,
