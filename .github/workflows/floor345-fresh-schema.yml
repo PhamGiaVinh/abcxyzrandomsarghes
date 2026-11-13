@@ -1,0 +1,71 @@
+name: Floor345 fresh production-schema qualification
+on:
+  workflow_call:
+  pull_request:
+    paths:
+      - '.github/workflows/floor345-fresh-schema.yml'
+      - 'VinPoker/scripts/ops/floor345-fresh-baseline*'
+      - 'VinPoker/scripts/ops/select-floor345-runtime*'
+      - 'VinPoker/scripts/ops/floor345-runtime-*'
+      - 'VinPoker/tests/floorTableControlV3/floor345.currentSchema*'
+permissions: {actions: read, contents: read}
+jobs:
+  floor345-fresh-schema:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vinpoker_ops_floor345
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vinpoker_ops_floor345"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_floor345
+      SCHEMA_ARTIFACT_SHA256: 35fc93f15fac55fe63386f06b5da7ea497e5e68aadb5168616c11cca202f66e7
+      SCHEMA_ARTIFACT_DIR: /tmp/floor345-fresh-schema
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: controls}
+      - uses: actions/checkout@v4
+        with:
+          ref: 8a9be1958c4d76326ddf6bbb344c1d36aa667178
+          path: candidate
+      - uses: actions/setup-node@v4
+        with: {node-version: 22}
+      - name: Provenance and exact-source rejection tests
+        working-directory: controls/VinPoker
+        env:
+          FLOOR345_CANDIDATE_REPO: ../../candidate
+        run: node --test scripts/ops/floor345-fresh-baseline.test.mjs scripts/ops/select-floor345-runtime.test.mjs
+      - name: Download owner-approved fresh schema with immutable provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/43471170552 > "$RUNNER_TEMP/capture.json"
+          gh api repos/$GITHUB_REPOSITORY/actions/artifacts/14062030756 > "$RUNNER_TEMP/artifact.json"
+          gh run download 43471170552 --repo "$GITHUB_REPOSITORY" --name live-public-schema --dir "$SCHEMA_ARTIFACT_DIR"
+          node controls/VinPoker/scripts/ops/floor345-fresh-baseline.mjs "$RUNNER_TEMP/capture.json" "$RUNNER_TEMP/artifact.json" "$SCHEMA_ARTIFACT_DIR" candidate/VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql
+      - name: Restore actual current schema in empty isolated PostgreSQL only
+        working-directory: controls/VinPoker
+        run: node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Apply ONLY exact migration345 in the isolated database
+        run: |
+          set -euo pipefail
+          test "$PGHOST" = 127.0.0.1
+          test "$PGPORT" = 5432
+          test "$PGDATABASE" = vinpoker_ops_floor345
+          test "$(psql -X -qAt -c "SELECT current_database()='vinpoker_ops_floor345' AND current_user='postgres' AND to_regprocedure('public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text)') IS NULL;")" = t
+          psql -X -v ON_ERROR_STOP=1 -f candidate/VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql
+      - name: Actual v6 classifier and canonical writer with authenticated callers
+        working-directory: controls/VinPoker
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/floor345.currentSchema.sql
+          bash tests/floorTableControlV3/floor345.currentSchema.concurrent.sh
