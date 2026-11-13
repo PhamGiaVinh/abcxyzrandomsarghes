@@ -2,7 +2,7 @@
 // publication is performed here; all receipts must validate before use.
 export interface SourceBatchJob {tournament_id:string;component:string;fencing_token:string}
 type RecordValue=Record<string,unknown>;
-export type BatchSource={fenced:true}|{sourceVector:Record<string,string>;payload:RecordValue};
+export type BatchSource={fenced:true}|{tournamentId:string;component:string;sourceVector:Record<string,string>;payload:RecordValue};
 export type SourceBatchReceipt={source:BatchSource}|{requiresIndividual:true}|{error:'source_failed';sqlstate:string};
 const record=(value:unknown):value is RecordValue=>typeof value==='object'&&value!==null&&!Array.isArray(value);
 const exact=(value:RecordValue,keys:string[])=>Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
@@ -22,7 +22,7 @@ export function decodeSourceBatch(jobs:SourceBatchJob[],raw:unknown):SourceBatch
  for(const item of raw as unknown[]){
   if(!record(item))invalid();
   const row=item as RecordValue,key=`${row.tournament_id}:${row.component}`,job=expected.get(key);
-  if(!job||row.fencing_token!==job.fencing_token||receipts.has(key))invalid();
+  if(!job||row.fencing_token!==job.fencing_token||receipts.has(key))return invalid();
   if(exact(row,[...base,'requiresIndividual'])&&row.requiresIndividual===true){receipts.set(key,{requiresIndividual:true});continue;}
   if(exact(row,[...base,'error','sqlstate'])&&row.error==='source_failed'&&typeof row.sqlstate==='string'&&/^[0-9A-Z]{5}$/.test(row.sqlstate)){
    receipts.set(key,{error:'source_failed',sqlstate:row.sqlstate});continue;
@@ -30,11 +30,11 @@ export function decodeSourceBatch(jobs:SourceBatchJob[],raw:unknown):SourceBatch
   if(!exact(row,[...base,'source'])||!record(row.source))invalid();
   const source=row.source as RecordValue;
   if(exact(source,['fenced'])&&source.fenced===true){receipts.set(key,{source:{fenced:true}});continue;}
-  if(!exact(source,['sourceVector','payload'])||!record(source.sourceVector)||!record(source.payload))invalid();
+  if(!exact(source,['tournamentId','component','sourceVector','payload'])||source.tournamentId!==job.tournament_id||source.component!==job.component||!record(source.sourceVector)||!record(source.payload))invalid();
   for(const value of Object.values(source.sourceVector as RecordValue)){
    if(typeof value!=='string'||!/^\d{1,19}$/.test(value)||BigInt(value)>9223372036854775807n)invalid();
   }
-  receipts.set(key,{source:source as {sourceVector:Record<string,string>;payload:RecordValue}});
+  receipts.set(key,{source:source as {tournamentId:string;component:string;sourceVector:Record<string,string>;payload:RecordValue}});
  }
  return jobs.map(job=>receipts.get(identity(job))??invalid());
 }

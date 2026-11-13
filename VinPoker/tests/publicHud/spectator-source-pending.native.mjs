@@ -23,11 +23,12 @@ const {processPublicSpectatorJobs}=await import('data:text/javascript;base64,'+B
 const native=createNativeWorkerClient(),tour='10000000-0000-4000-8000-000000000072';
 sql(`INSERT INTO public.tournaments(id) VALUES('${tour}');`);
 let lockSequence=343000;
-async function pendingRace(){
+async function pendingRace(sourceMode='single'){
  let raced=false,publishes=0,failures=0,sourceReply,fixtureFailure;
  const result=await processPublicSpectatorJobs({async rpc(name,args){
   const target=args.p_tournament_id===tour&&args.p_component==='visibility';
-  if(name==='get_public_spectator_projection_source_v2'&&target&&!raced){
+  const batchTarget=name==='get_public_spectator_projection_sources_v2'&&args.p_jobs.some(job=>job.tournament_id===tour&&job.component==='visibility');
+  if(((name==='get_public_spectator_projection_source_v2'&&target)||batchTarget)&&!raced){
    raced=true;const key=++lockSequence;
    // A separate transaction holds the generation advisory lock. A real source
    // UPDATE must commit through the durable deferred path while our claim lives.
@@ -41,13 +42,18 @@ async function pendingRace(){
     assert.ok(ready,'Separate source-lock holder must be ready');
     sql(`SET lock_timeout='250ms';UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${tour}' AND deleted_at IS NULL;`);
     assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}' AND component='visibility';`),'1');
-    sourceReply=await native.rpc(name,args);return sourceReply;
+    const reply=await native.rpc(name,args);
+    if(batchTarget){
+     const item=reply.data?.find(job=>job.tournament_id===tour&&job.component==='visibility');
+     sourceReply={data:item?.source??null,error:reply.error??item?.error??null};
+    }else sourceReply=reply;
+    return reply;
    }catch(error){fixtureFailure=error;throw error;}finally{await holder;}
   }
   if(target&&name==='publish_public_spectator_projection_v2')publishes++;
   if(target&&name==='fail_public_spectator_projection_v2')failures++;
   return native.rpc(name,args);
- }},Date.now()+20000);
+ }},Date.now()+20000,sourceMode);
  // The production worker catches job failures. Fixture/setup assertions must
  // still surface directly, rather than masquerading as the expected DB error.
  if(fixtureFailure)throw fixtureFailure;
@@ -60,8 +66,8 @@ const baseline=await pendingRace();
 assert.match(String(baseline.sourceReply.error),/source_pending/);
 assert.equal(baseline.failures,1);
 assert.ok(baseline.result.results.some(row=>row.key.startsWith(tour)&&row.error==='source_failed'));
-const drain=async()=>{
- const value=await processPublicSpectatorJobs(native,Date.now()+20000);
+const drain=async(sourceMode='single')=>{
+ const value=await processPublicSpectatorJobs(native,Date.now()+20000,sourceMode);
  assert.ok(value.results.some(row=>row.key.startsWith(tour)&&row.published&&!row.error));
  assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1 WHERE tournament_id='${tour}';`),'0');
  assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${tour}';`),'0');
@@ -210,14 +216,63 @@ const batchClient={async rpc(name,args){
  return native.rpc(name,args);
 }};
 const batchWorkerResult=await processPublicSpectatorJobs(batchClient,Date.now()+20000,'batch');
+if(!batchWorkerResult.results.every(row=>row.published&&!row.error))console.log(JSON.stringify({kind:'NATIVE_BATCH_WORKER_FAILURE_COUNTS',
+ processed:batchWorkerResult.processed,published:batchWorkerResult.results.filter(row=>row.published).length,
+ errors:batchWorkerResult.results.reduce((counts,row)=>{const code=row.error??'unpublished';counts[code]=(counts[code]??0)+1;return counts;},{})}));
 assert.equal(batchWorkerResult.processed,8);assert.ok(batchWorkerResult.results.every(row=>row.published&&!row.error));
 assert.deepEqual([...batchComponents].sort(),['payout','ranking','tables','visibility']);
 assert.deepEqual(batchWaveSizes,[6,2]);
 assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id IN ('10000000-0000-4000-8000-000000000093','10000000-0000-4000-8000-000000000094');`),'0');
+sql(`UPDATE public.tournaments SET deleted_at=NULL WHERE id='${tour}' AND deleted_at IS NOT NULL;`);
+const batchPending=await pendingRace('batch');
+assert.deepEqual(batchPending.sourceReply,{data:{fenced:true},error:null});assert.equal(batchPending.failures,0);
+assert.ok(batchPending.result.results.some(row=>row.key.startsWith(tour)&&!row.published&&!row.error));
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${tour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
+await drain('batch');
+sql(`INSERT INTO public.tournaments(id) SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid FROM generate_series(101,114) i;
+ SELECT spectator_projection_v2.mark_dirty(t.id,c,'generation','component') FROM public.tournaments t CROSS JOIN unnest(ARRAY['tables','ranking','payout','visibility']) c
+ WHERE t.id BETWEEN '10000000-0000-4000-8000-000000000101'::uuid AND '10000000-0000-4000-8000-000000000114'::uuid;`);
+const competingSettled=await Promise.allSettled([processPublicSpectatorJobs(native,Date.now()+20000,'batch'),processPublicSpectatorJobs(native,Date.now()+20000,'batch')]);
+const competing=competingSettled.map(value=>{assert.equal(value.status,'fulfilled');return value.value;});
+const competingRows=competing.flatMap(value=>value.results);
+assert.equal(competingRows.length,56);assert.equal(new Set(competingRows.map(row=>row.key)).size,56);
+assert.ok(competingRows.every(row=>row.published&&!row.error));
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id BETWEEN '10000000-0000-4000-8000-000000000101'::uuid AND '10000000-0000-4000-8000-000000000114'::uuid;`),'0');
+const largeTour='10000000-0000-4000-8000-000000000097';
+sql(`INSERT INTO public.tournaments(id) VALUES('${largeTour}');
+ INSERT INTO public.tournament_tables(id,tournament_id,table_name) VALUES(gen_random_uuid(),'${largeTour}',repeat('é',530000));
+ SELECT spectator_projection_v2.mark_dirty('${largeTour}','tables','generation','component');`);
+let individualReads=0;
+const individualClient={async rpc(name,args){if(name==='get_public_spectator_projection_source_v2'&&args.p_tournament_id===largeTour)individualReads++;return native.rpc(name,args);}};
+const largeWorker=await processPublicSpectatorJobs(individualClient,Date.now()+20000,'batch');
+assert.equal(individualReads,1);assert.equal(largeWorker.processed,2);assert.ok(largeWorker.results.every(row=>row.published&&!row.error));
+assert.equal(sql(`SELECT char_length(payload->'items'->0->>'name') FROM spectator_projection_v2.publications WHERE tournament_id='${largeTour}' AND component='tables';`),'530000');
+sql(`SELECT spectator_projection_v2.mark_dirty('${largeTour}',c,'generation','component') FROM unnest(ARRAY['tables','visibility']) c;`);
+let withdrewBeforeIndividual=false;
+const withdrawClient={async rpc(name,args){
+ const reply=await individualClient.rpc(name,args);
+ if(name==='get_public_spectator_projection_sources_v2'&&!withdrewBeforeIndividual&&reply.data?.some(item=>item.tournament_id===largeTour&&item.requiresIndividual===true)){
+  sql(`UPDATE public.tournaments SET deleted_at=clock_timestamp() WHERE id='${largeTour}';`);withdrewBeforeIndividual=true;
+ }
+ return reply;
+}};
+const withdrawnIndividual=await processPublicSpectatorJobs(withdrawClient,Date.now()+20000,'batch');
+assert.equal(withdrewBeforeIndividual,true);assert.equal(individualReads,2);
+assert.equal(withdrawnIndividual.processed,2);
+const withdrawnVisibility=withdrawnIndividual.results.filter(row=>row.key.startsWith(largeTour+':visibility:'));
+assert.equal(withdrawnVisibility.length,1);assert.equal(withdrawnVisibility[0].published,false);
+assert.equal(withdrawnIndividual.results.filter(row=>row.key.startsWith(largeTour+':tables:')).length,1);
+// Internal component publication may advance while hidden. The public scope
+// gate, rather than an invented cross-component fence, must revoke exposure.
+assert.equal(jsonSql(`SET ROLE anon;SELECT public.get_public_tournament_viewer_snapshot_v2('${largeTour}','{}',ARRAY['tables'],'{}');`).access,'revoked');
+sql(`UPDATE public.tournaments SET deleted_at=NULL WHERE id='${largeTour}';SELECT spectator_projection_v2.mark_dirty('${largeTour}','tables','generation','component');`);
+const restoredIndividual=await processPublicSpectatorJobs(native,Date.now()+20000,'batch');
+assert.ok(restoredIndividual.results.every(row=>row.published&&!row.error));
+assert.equal(sql(`SELECT count(*) FROM spectator_projection_v2.work_groups WHERE tournament_id='${largeTour}';`),'0');
 assert.throws(()=>sql(`BEGIN;GRANT EXECUTE ON FUNCTION ${batchSignature} TO anon;${strip(batchReverse)}ROLLBACK;`,{captureFailure:true}),/rollback_drift/);
 sql(batchReverse);assert.equal(sql(`SELECT to_regprocedure('${batchSignature}') IS NULL;`),'t');
 assert.equal(hash(),candidateHash);assert.deepEqual(metadata(),before);
-console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,budgetProof,batchWaveSizes,allFourComponents:true,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
+console.log(JSON.stringify({kind:'NATIVE_SOURCE_BATCH_ENVELOPE_AND_CANONICAL_PARITY',...batchProof,budgetProof,batchWaveSizes,allFourComponents:true,batchPendingSourceFenced:true,batchWithdrawalImmediatelyRevoked:true,followingBatchWorkerRecovers:true,competingWorkers:2,uniqueCompetingJobs:56,individualSourceUntruncated:true,withdrawalBeforeIndividualPublicAccessRevoked:true,staleVisibilityPublicationRejected:true,individualRestorationRecovers:true,actorDenied:true,envelopeDenied:true,repeatDenied:true,exactReverse:true,productionChanged:false,qualification:false}));
 sql(recovery);assert.equal(hash(),baselineHash);assert.deepEqual(metadata(),before);
 console.log(JSON.stringify({kind:'NATIVE_PENDING_SOURCE_ACTUAL_WORKER_RACE_NOT_HTTP_LOAD',passed:true,baselineHash,candidateHash,
  checks:['baseline-real-source-pending-worker-failure','source-update-commits-during-advisory-lock','candidate-no-payload-no-publish-no-failure','deferred-work-retained','later-worker-absorbs-and-publishes','parallel-startup-post-flush-absorption-retained','source-withdrawal-immediately-revoked','final-flush-delivers-later-notification','logical-deadline-retains-outbox','following-duplicate-workers-recover','metadata-preserved','actor-denied','backup-private','repeat-apply-denied','active-lease-recovery-denied','exact-recovery'],productionChanged:false,qualification:false}));
