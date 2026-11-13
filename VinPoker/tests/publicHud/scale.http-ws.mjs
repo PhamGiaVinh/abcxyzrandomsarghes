@@ -8,6 +8,7 @@ import {createClient} from '@supabase/supabase-js';
 import {configureLocalRealtime} from './scale.realtime.mjs';
 import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead,coveringTableHintTiming,createCoveringHintDiagnostics} from './scale.delivery.mjs';
 import {createLocalHttpTransport} from './scale.http.mjs';
+import {readBoundedMetrics,parsePostgrestServerTiming} from './scale.postgrest-metrics.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled} from './scale.write.protocol.mjs';
@@ -24,6 +25,10 @@ const status=parseEnv(readFileSync(process.env.PUBLIC_HUD_STATUS_FILE,'utf8'));
 const project=process.env.PUBLIC_HUD_STACK_PROJECT;
 if(status.API_URL!=='http://127.0.0.1:54321'||!/^hud-scale-[a-z0-9-]+$/.test(project))throw Error('Local isolated stack required');
 const viewers=Number(process.env.PUBLIC_HUD_SCALE_VIEWERS??1000),targetDuration=Number(process.env.PUBLIC_HUD_SCALE_SECONDS??1800);
+const poolDiagnostics=viewers===1000&&targetDuration===30;
+const metricsUrl=poolDiagnostics?readFileSync(process.env.PUBLIC_HUD_STATUS_FILE.replace(/status\.env$/,'postgrest-metrics-url'),'utf8'):null;
+if(metricsUrl&&!/^http:\/\/172\.(?:1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}:3001\/metrics$/.test(metricsUrl))throw Error('Invalid isolated metric endpoint');
+let metricSamples=0,metricInFlight=false;
 if(!Number.isInteger(viewers)||viewers<1||viewers>1000||targetDuration<30||targetDuration>1800)throw Error('Invalid load bounds');
 const hudTransport=process.env.PUBLIC_HUD_SCALE_TRANSPORT??'product_rpc';
 if(!['product_rpc','edge','direct_rpc'].includes(hudTransport)||hudTransport!=='product_rpc'&&targetDuration!==30)throw Error('Comparison transport is a short diagnostic only');
@@ -75,6 +80,10 @@ async function post(path,body,privileged=false,phase='other',callerSignal,trace)
  const timingKey=phase+':'+path;
  const timings=transportTimings[timingKey]??={headers:[],complete:[],upstream:[],proxy:[],application:[],rpc:[],groupSize:[]};
  timings.headers.push(response.headersAt-start);
+ if(poolDiagnostics){
+  const parsed=parsePostgrestServerTiming(response.headers['server-timing']);
+  if(parsed.available)for(const [name,value] of Object.entries(parsed.phases))(timings['postgrest_'+name]??=[]).push(value);
+ }
  const application=/\bhud;dur=([0-9]+(?:\.[0-9]+)?)/.exec(response.headers['server-timing']??'');if(application)timings.application.push(Number(application[1]));
  const rpcTiming=/\bhud_rpc;dur=([0-9]+(?:\.[0-9]+)?);desc="(ok|http|transport|deadline|cancelled)"/.exec(response.headers['server-timing']??'');
  if(rpcTiming){timings.rpc.push(Number(rpcTiming[1]));const key=phase+':'+rpcTiming[2];rpcOutcomes[key]=(rpcOutcomes[key]??0)+1;}
@@ -209,6 +218,15 @@ for(const scenario of ['concentrated','distributed','overview']){
  const expireDeliveries=()=>{for(const c of clients){for(const [field,measure] of [['expected','realtime'],['snapshotExpected','snapshot']]){const remaining=[];for(const e of c[field]){if(Date.now()-e.at>10000){if(field==='expected')missedDeliveries++;else snapshotMissed++;stats[measure].push(Date.now()-e.at);}else remaining.push(e);}c[field]=remaining;}}};
  const health=[];
  const track=promise=>{tasks.add(promise);promise.finally(()=>tasks.delete(promise));};
+ const poolTimer=poolDiagnostics?setInterval(()=>{
+  if(metricInFlight||metricSamples>=6000)return;
+  metricInFlight=true;metricSamples++;const requestedAt=Date.now();
+  track((async()=>{
+   let value;try{value=await readBoundedMetrics(await fetch(metricsUrl,{signal:AbortSignal.timeout(1500)}));}
+   catch{value={available:false,reason:'transport'};}
+   appendFileSync('output/hud-scale/postgrest-metrics.jsonl',JSON.stringify({scenario,requestedAt,at:Date.now(),...value})+'\n');
+  })().finally(()=>{metricInFlight=false;}));
+ },1000):null;
  const resourceTimer=setInterval(()=>{
   // One observer per process, not viewer HUD polling: same anonymous prepared
   // summary via PostgREST distinguishes database/HTTP delay from Edge queuing.
@@ -670,7 +688,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  }
  const drainUntil=Date.now()+10000;
  while(clients.some(c=>c.expected.length||c.snapshotExpected.length)&&Date.now()<drainUntil){expireDeliveries();await sleep(200);}
- expireDeliveries();clearInterval(resourceTimer);
+ expireDeliveries();clearInterval(resourceTimer);if(poolTimer)clearInterval(poolTimer);
  await until(async()=>tasks.size===0&&clients.every(c=>!c.pending&&!c.busy&&!c.snapshotPending&&!c.snapshotBusy&&!c.clockPending&&!c.clockBusy),30000,'Pending transport/timer work did not drain');
  for(const c of clients)c.stopTableReads();
  await Promise.all(clients.map(c=>c.client.removeAllChannels()));

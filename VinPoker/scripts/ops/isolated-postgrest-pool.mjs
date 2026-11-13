@@ -2,20 +2,23 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import http from 'node:http';
-export async function configureIsolatedPostgrestPool(name,expectedNetwork,pool){
+export async function configureIsolatedPostgrestPool(name,expectedNetwork,pool,diagnostics=false){
  assert.match(name??'',/^supabase_rest_(?:hud-scale-(?:[0-9]+|local)-[0-9]+|cashier-e2e-[A-Za-z0-9]+)$/);
  assert.equal(expectedNetwork,name.replace(/^supabase_rest_/,'supabase_network_'));
  assert.ok([10,20].includes(pool));
+ assert.equal(typeof diagnostics,'boolean');
+ if(diagnostics)assert.match(name,/^supabase_rest_hud-scale-(?:[0-9]+|local)-[0-9]+$/);
 function docker(args){try{return execFileSync('docker',args,{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Disposable PostgREST Docker operation failed');}}
 const inspect=()=>JSON.parse(docker(['inspect',name]))[0];
 const original=inspect();assert.equal(original.Name,'/'+name);assert.equal(original.HostConfig.NetworkMode,expectedNetwork);
+if(diagnostics)assert.ok(!Object.entries(original.HostConfig.PortBindings??{}).some(([port,bindings])=>port.split('/')[0]==='3001'&&bindings?.length),'Disposable admin port must not be published');
 assert.match(original.Config.Image,/postgrest(?:\/postgrest)?:v14\.10$/);
 const setting=()=>{
  const body=docker(['exec',name,'postgrest','--dump-config']);
  const value=/^db-pool\s*=\s*(\d+)\s*$/m.exec(body);assert.ok(value,'PostgREST pool configuration missing');return Number(value[1]);
 };
 const before=setting();assert.equal(before,10,'CLI baseline PostgREST pool drift');
-if(pool!==before){
+if(pool!==before||diagnostics){
  const request=(method,path,body)=>new Promise((resolve,reject)=>{
   const payload=body===undefined?undefined:JSON.stringify(body);
   const req=http.request({socketPath:'/var/run/docker.sock',path,method,headers:payload?{'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}:{}},response=>{
@@ -26,6 +29,12 @@ if(pool!==before){
   });req.on('error',()=>reject(Error('Disposable Docker transport failed')));req.end(payload);
  });
  const env=original.Config.Env.filter(value=>!value.startsWith('PGRST_DB_POOL='));env.push(`PGRST_DB_POOL=${pool}`);
+ if(diagnostics){
+  for(const key of ['PGRST_ADMIN_SERVER_PORT','PGRST_ADMIN_SERVER_HOST','PGRST_SERVER_TIMING_ENABLED']){
+   for(let i=env.length-1;i>=0;i--)if(env[i].startsWith(key+'='))env.splice(i,1);
+  }
+  env.push('PGRST_ADMIN_SERVER_PORT=3001','PGRST_ADMIN_SERVER_HOST=0.0.0.0','PGRST_SERVER_TIMING_ENABLED=true');
+ }
  const config={...original.Config,Env:env,HostConfig:original.HostConfig,NetworkingConfig:{EndpointsConfig:{[original.HostConfig.NetworkMode]:{Aliases:[name]}}}};
  assert.equal(inspect().Id,original.Id);await request('DELETE',`/containers/${original.Id}?force=true`);
  const created=await request('POST','/containers/create?name='+encodeURIComponent(name),config);assert.match(created.Id,/^[a-f0-9]{64}$/);
@@ -40,5 +49,5 @@ if(pool!==before){
  assert.equal(setting(),pool);
 }
 
- return {kind:'ISOLATED_POSTGREST_POOL_EXPERIMENT_NOT_HOSTED_CONFIGURATION',image:original.Config.Image,imageId:original.Image,baselinePool:before,pool,onlyPoolChanged:true,resourceCapsUnchanged:true};
+ return {kind:'ISOLATED_POSTGREST_POOL_EXPERIMENT_NOT_HOSTED_CONFIGURATION',image:original.Config.Image,imageId:original.Image,baselinePool:before,pool,onlyPoolChanged:!diagnostics,diagnostics,resourceCapsUnchanged:true};
 }

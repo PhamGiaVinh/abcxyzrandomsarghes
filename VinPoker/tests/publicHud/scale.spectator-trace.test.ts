@@ -61,3 +61,13 @@ it('pairs publications only with later successful flushes in the same batch',()=
 it('keeps empty trace unavailable rather than reporting zero latency',()=>{
  expect(summarizeSpectatorTrace([]).publishAckToNextSuccessfulFlushStart).toEqual({samples:0,p95Ms:null,maxMs:null});
 });
+it('measures observed overlap and claim queue without borrowing another batch claim',()=>{
+ const claim={...event,rpc:'claim_public_spectator_projection_v2',component:null,outcome:'ok',startedAt:0,endedAt:10};
+ const source={...event,rpc:'get_public_spectator_projection_source_v2',outcome:'ok',startedAt:15,endedAt:30};
+ const second='87654321-1234-1234-1234-123456789abc';
+ const value=summarizeSpectatorTrace([claim,source,{...source,batch:second,startedAt:25,endedAt:40}]).workerBatches;
+ expect(value.observed).toBe(2);expect(value.maxObservedOverlappingBatches).toBe(2);
+ expect(value.claimAckToSourceStart).toEqual({samples:1,p95Ms:5,maxMs:5});expect(value.unpairedSources).toBe(1);
+ expect(summarizeSpectatorTrace([claim,source,{...source,batch:second,startedAt:30,endedAt:40}]).workerBatches.maxObservedOverlappingBatches).toBe(1);
+ expect(summarizeSpectatorTrace([]).workerBatches.maxObservedOverlappingBatches).toBeNull();
+});
