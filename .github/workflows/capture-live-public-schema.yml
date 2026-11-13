@@ -99,7 +99,7 @@ jobs:
           # public RPCs depend on private Floor/game-table routines and spectator
           # projection triggers, while Storage supports Payroll PDF validation.
           # This remains schema-only: no rows are captured.
-          supabase db dump --linked --schema public,storage,floor_private,private,spectator_projection_v2 --file "$raw_schema_path"
+          supabase db dump --linked --schema public,storage,floor_private,private,spectator_projection_v2,tracker_analytics_v1 --file "$raw_schema_path"
           node scripts/deploy/sanitize-live-public-schema-artifact.mjs \
             --input "$raw_schema_path" \
             --output "$artifact_dir/live-public-schema.sql"

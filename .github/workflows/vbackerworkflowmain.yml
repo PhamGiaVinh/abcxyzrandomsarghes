@@ -412,12 +412,19 @@ jobs:
 
   validate-critical-environment:
     name: Verify owner-authorized critical release
-    if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.critical_functions != '[]'
+    if: github.event_name == 'workflow_dispatch' && (needs.plan.outputs.critical_functions != '[]' || needs.plan.outputs.frontend == 'true')
     needs:
       - plan
       - target-preflight
     runs-on: ubuntu-latest
     steps:
+      - name: Verify required reviewers remain configured
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          environment="$(gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical")"
+          jq -e '.protection_rules | any(.type == "required_reviewers" and ((.reviewers // []) | length > 0))' <<<"$environment" >/dev/null
       - name: Require owner dispatch of the preflighted release
         shell: bash
         env:
@@ -518,11 +525,13 @@ jobs:
       needs.plan.outputs.frontend == 'true' &&
       needs.control-plane-quality.result == 'success' &&
       needs.target-preflight.result == 'success' &&
+      needs.validate-critical-environment.result == 'success' &&
       (needs.plan.outputs.critical_functions == '[]' || needs.deploy-critical-edge.result == 'success')
     needs:
       - plan
       - control-plane-quality
       - target-preflight
+      - validate-critical-environment
       - deploy-critical-edge
     runs-on: ubuntu-latest
     environment:
