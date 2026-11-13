@@ -1,5 +1,82 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {processPublicSpectatorJobs} from '../../supabase/functions/public-spectator-projector-v2/worker';
+import {decodeSourceBatch} from '../../supabase/functions/public-spectator-projector-v2/sourceBatch';
+
+const batchJobs=[1,2].map(i=>({tournament_id:`10000000-0000-4000-8000-${String(i).padStart(12,'0')}`,component:'tables',fencing_token:`20000000-0000-4000-8000-${String(i).padStart(12,'0')}`}));
+const batchSource=()=>({sourceVector:{generation:'1'},payload:{items:[]}});
+it('matches reordered complete source receipts to the original job order',()=>{
+ const raw=[{...batchJobs[1],requiresIndividual:true},{...batchJobs[0],source:batchSource()}];
+ expect(decodeSourceBatch(batchJobs,raw)).toEqual([{source:batchSource()},{requiresIndividual:true}]);
+});
+it('keeps exact fencing and source errors distinct from individual-read requests',()=>{
+ expect(decodeSourceBatch(batchJobs,[{...batchJobs[0],source:{fenced:true}},{...batchJobs[1],error:'source_failed',sqlstate:'42501'}]))
+  .toEqual([{source:{fenced:true}},{error:'source_failed',sqlstate:'42501'}]);
+});
+it.each([
+ [],[{...batchJobs[0],source:batchSource()}],
+ [{...batchJobs[0],source:batchSource()},{...batchJobs[0],source:batchSource()}],
+ [{...batchJobs[0],source:batchSource()},{...batchJobs[1],fencing_token:batchJobs[0].fencing_token,source:batchSource()}],
+ [{...batchJobs[0],source:batchSource()},{...batchJobs[1],tournament_id:'10000000-0000-4000-8000-000000000099',source:batchSource()}],
+ ...[{fenced:true,extra:true},{fenced:false},{sourceVector:{generation:'-1'},payload:{}},{sourceVector:{generation:'9223372036854775808'},payload:{}},{sourceVector:{generation:'1'},payload:null}]
+  .map(source=>[{...batchJobs[0],source},{...batchJobs[1],source:batchSource()}]),
+ [{...batchJobs[0],requiresIndividual:true,source:batchSource()},{...batchJobs[1],source:batchSource()}],
+ [{...batchJobs[0],error:'other',sqlstate:'42501'},{...batchJobs[1],source:batchSource()}],
+].map(raw=>({raw})))('rejects the entire malformed receipt envelope before any payload use: %#',({raw})=>{
+ expect(()=>decodeSourceBatch(batchJobs,raw)).toThrow('invalid_source_batch_receipt');
+});
+it('counts UTF8 bytes and rejects oversized batch responses',()=>{
+ const raw=[{...batchJobs[0],source:{sourceVector:{generation:'1'},payload:{name:'é'.repeat(530000)}}},{...batchJobs[1],source:batchSource()}];
+ expect(()=>decodeSourceBatch(batchJobs,raw)).toThrow('invalid_source_batch_receipt');
+});
+
+function batchWorkerFixture(count=2){
+ const jobs=Array.from({length:count},(_,i)=>({...batchJobs[0],tournament_id:`10000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,fencing_token:`20000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,group_key:'component'}));
+ let response:(jobs:typeof batchJobs)=>unknown=items=>items.map(job=>({...job,source:batchSource()}));
+ let batchError:unknown=null;
+ const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
+  if(name==='claim_public_spectator_projection_v2')return {data:jobs,error:null};
+  if(name==='get_public_spectator_projection_sources_v2')return {data:response(args.p_jobs as typeof batchJobs),error:batchError};
+  if(name==='get_public_spectator_projection_source_v2')return {data:batchSource(),error:null};
+  if(name==='publish_public_spectator_projection_v2')return {data:true,error:null};
+  return {data:0,error:null};
+ });
+ return {jobs,rpc,setResponse:(value:typeof response)=>{response=value;},setError:(value:unknown)=>{batchError=value;}};
+}
+it('uses bounded source waves and preserves exact publish identities',async()=>{
+ const f=batchWorkerFixture(8);f.setResponse(items=>items.toReversed().map(job=>({...job,source:batchSource()})));
+ const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');
+ expect(result.processed).toBe(8);expect(result.results.every(row=>row.published)).toBe(true);
+ const sources=f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_sources_v2');
+ expect(sources.map(([,args])=>(args.p_jobs as unknown[]).length)).toEqual([6,2]);
+ expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toHaveLength(0);
+ for(const job of f.jobs)expect(f.rpc).toHaveBeenCalledWith('publish_public_spectator_projection_v2',expect.objectContaining({p_tournament_id:job.tournament_id,p_fencing_token:job.fencing_token}));
+});
+it('reads individually only for the exact size-budget marker, retaining source errors',async()=>{
+ const f=batchWorkerFixture();f.setResponse(items=>[{...items[0],requiresIndividual:true},{...items[1],error:'source_failed',sqlstate:'42501'}]);
+ const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');
+ expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toEqual([
+  ['get_public_spectator_projection_source_v2',{p_tournament_id:f.jobs[0].tournament_id,p_component:'tables',p_fencing_token:f.jobs[0].fencing_token}],
+ ]);
+ expect(result.results.filter(row=>row.published)).toHaveLength(1);
+ expect(result.results.find(row=>row.key.startsWith(f.jobs[1].tournament_id))?.error).toBe('source_failed');
+});
+it.each(['transport','missing','wrong-token'] as const)('rejects the whole %s batch before publishing or falling back',async kind=>{
+ const f=batchWorkerFixture();
+ if(kind==='transport')f.setError({code:'XX000'});
+ if(kind==='missing')f.setResponse(items=>[{...items[0],source:batchSource()}]);
+ if(kind==='wrong-token')f.setResponse(items=>items.map(job=>({...job,fencing_token:batchJobs[0].fencing_token,source:batchSource()})));
+ const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');
+ expect(result.processed).toBe(2);expect(result.results.every(row=>!row.published&&row.error)).toBe(true);
+ expect(f.rpc.mock.calls.filter(([name])=>['publish_public_spectator_projection_v2','get_public_spectator_projection_source_v2'].includes(name))).toHaveLength(0);
+ expect(f.rpc.mock.calls.filter(([name])=>name==='fail_public_spectator_projection_v2')).toHaveLength(2);
+});
+it('does not start an individual fallback after the original deadline',async()=>{
+ let now=100;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=batchWorkerFixture();f.setResponse(items=>{now=200;return items.map(job=>({...job,requiresIndividual:true}));});
+ const result=await processPublicSpectatorJobs(f,200,'batch');
+ expect(result.results.every(row=>row.error==='deadline_exceeded')).toBe(true);
+ expect(f.rpc.mock.calls.filter(([name])=>['get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'].includes(name))).toHaveLength(0);
+});
 
 afterEach(()=>vi.restoreAllMocks());
 function fixture(count=8){
