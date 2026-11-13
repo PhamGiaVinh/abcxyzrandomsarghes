@@ -43,6 +43,14 @@ export function isFloorRedrawSeatLockV1Enabled(
     || (flagValue === "production" && environmentValue === "production");
 }
 
+export function isFloorFastBustV1Enabled(
+  flagValue: unknown = import.meta.env.VITE_FLOOR_FAST_BUST_V1,
+  environmentValue: unknown = import.meta.env.VITE_FLOOR_UAT_ENV,
+): boolean {
+  return (flagValue === "preview" && environmentValue === "preview")
+    || (flagValue === "production" && environmentValue === "production");
+}
+
 /**
  * The last-hand/history panel is dark unless the build is marked for the
  * reviewed environment. Exact pairs keep previews isolated while allowing an
@@ -942,7 +950,7 @@ export const FEATURES = {
    */
   floorFreeSitV1: true,
   // New RPC/roster contract; stays dark until the reviewed DB + frontend release.
-  floorFastBustV1: false,
+  floorFastBustV1: isFloorFastBustV1Enabled(),
   // Server-reserved Tracker destination seats apply only after the active hand
   // ends. Deploy this bundle only after the Floor DB, Edge and queue ACL gates.
   floorDeferredTrackerMoveV1: true,

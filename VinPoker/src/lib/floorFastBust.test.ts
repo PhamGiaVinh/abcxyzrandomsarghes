@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFloorTableControlV3Client } from "./floorTableControlV3";
+import { isFloorFastBustV1Enabled } from "./featureFlags";
 
 const intent = { tournamentId: "tour", tournamentTableId: "table", tableSessionId: "session", seatId: "seat",
   playerId: "player", seatNumber: 3, seatEntryId: "entry", expectedControlEpoch: 2,
@@ -8,6 +9,14 @@ const receipt = { ok: true, outcome: "busted", seat_id: "seat", entry_id: "entry
   request_id: "request", revision: 12, payout_applied: false };
 
 describe("exact Floor bust intent", () => {
+  it.each([
+    ["preview", "preview", true], ["production", "production", true],
+    ["preview", "production", false], ["production", "preview", false],
+    ["true", "production", false], [true, "production", false],
+    ["1", "production", false], [undefined, undefined, false],
+  ])("requires the exact rollout pair %s/%s", (flag, environment, expected) => {
+    expect(isFloorFastBustV1Enabled(flag, environment)).toBe(expected);
+  });
   it("stays dark without the explicit rollout", async () => {
     const rpc = vi.fn(); const client = createFloorTableControlV3Client(rpc, { enabled: true, fastBustEnabled: false });
     expect(await client.bustSeatExact(intent)).toEqual({ ok: false, error: "FLOOR_FAST_BUST_DISABLED" });
