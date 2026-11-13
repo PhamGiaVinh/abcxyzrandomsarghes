@@ -2,6 +2,18 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import http from 'node:http';
+// Fixed enums only: never persist Error.message/cause, container config or URLs.
+export function isolatedStartupFailure(error){
+ const codes=new Set(['ECONNREFUSED','ECONNRESET','EHOSTUNREACH','ENETUNREACH','ETIMEDOUT','UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET']);
+ if(error?.name==='TimeoutError'||error?.name==='AbortError')return 'deadline';
+ return codes.has(error?.cause?.code)?error.cause.code:codes.has(error?.code)?error.code:'other';
+}
+export function isolatedStartupState(value){
+ const statuses=new Set(['created','running','paused','restarting','removing','exited','dead']);
+ return {status:statuses.has(value?.Status)?value.Status:'other',running:value?.Running===true,
+  restarting:value?.Restarting===true,oomKilled:value?.OOMKilled===true,
+  exitCode:Number.isSafeInteger(value?.ExitCode)?value.ExitCode:null};
+}
 export async function configureIsolatedPostgrestPool(name,expectedNetwork,pool,diagnostics=false){
  assert.match(name??'',/^supabase_rest_(?:hud-scale-(?:[0-9]+|local)-[0-9]+|cashier-e2e-[A-Za-z0-9]+)$/);
  assert.equal(expectedNetwork,name.replace(/^supabase_rest_/,'supabase_network_'));
