@@ -245,7 +245,7 @@ function TournamentLiveViewContent({
   const [liveCompletedHand, setLiveCompletedHand] = useState<ReplayHand | null>(null);
   const [livePayout, setLivePayout] = useState<ReplayRunoutPresentation | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  const liveTableScope = selectedTableIdOverride ?? selectedTableId;
+  const liveTableScope = selectedTableIdOverride ?? requestedReplayTarget?.tableId ?? selectedTableId;
   const [tableNames, setTableNames] = useState<Record<string, string>>({});
   const [countdown,setCountdown]=useState({remaining:0,running:false,receivedAt:0});
   const [soundMuted, setSoundMuted] = useState(() => {
