@@ -208,12 +208,15 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d vinpoker_hud_test_history_plans_ci -v ON_ERROR_STOP=1 -f supabase/migrations/20261105200303_public_hud_history_unverified_seed_short_circuit.sql
           mkdir -p output/hud-scale
           PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci PUBLIC_HUD_LOCAL_PORT=5432 PUBLIC_HUD_HISTORY_PROFILE_FIXTURE=history-plans-ci node tests/publicHud/history-current-profile.native.mjs
+          PUBLIC_HUD_LOCAL_DATABASE=vinpoker_hud_test_history_plans_ci PUBLIC_HUD_LOCAL_PORT=5432 node tests/publicHud/history-scope-experiment.native.mjs
       - name: Sanitized final history attribution only
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: public-hud-history-profile-${{ github.sha }}
-          path: VinPoker/output/hud-scale/history-current-profile.json
+          path: |
+            VinPoker/output/hud-scale/history-current-profile.json
+            VinPoker/output/hud-scale/history-scope-experiment.json
           retention-days: 7
       - name: Read plan reuse, scope isolation and exact recovery
         run: |
