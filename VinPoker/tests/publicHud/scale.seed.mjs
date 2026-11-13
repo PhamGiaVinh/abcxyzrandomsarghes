@@ -136,7 +136,7 @@ if(sourceGenerationProbe){
   assert.equal(actual.definitionMd5,pendingSourceProfile.definitionMd5);
   pendingSourceCandidate={...pendingSourceProfile,ownedDatabase:owned.database,productionChanged:false};
   if(sourceBatchProbe){
-   const batch=readFileSync('supabase/pending-migrations/'+sourceBatchProfile.migration,'utf8');
+   const batch=readFileSync('supabase/migrations/'+sourceBatchProfile.migration,'utf8');
    assert.equal(createHash('sha256').update(batch.replace(/\r\n?/g,'\n')).digest('hex'),sourceBatchProfile.sqlSha256);
    sql(batch);
    const actual=jsonSql(`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),

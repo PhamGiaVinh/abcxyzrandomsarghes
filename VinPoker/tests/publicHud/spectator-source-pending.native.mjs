@@ -156,7 +156,7 @@ assert.throws(()=>sql(`SET request.jwt.claim.role='authenticated';SELECT public.
 // Additive bounded source batch candidate; worker remains on the original API
 // until native contracts and the separate wave/deadline tests are established.
 const batchSignature='public.get_public_spectator_projection_sources_v2(jsonb)';
-const batchMigration=readFileSync('supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql','utf8');
+const batchMigration=readFileSync('supabase/migrations/20270128000344_spectator_bounded_source_batch.sql','utf8');
 const batchReverse=readFileSync('tests/publicHud/spectator-source-batch.rollback.sql','utf8');
 sql(batchMigration);
 assert.throws(()=>sql(batchMigration,{captureFailure:true}),/preimage_drift/);

@@ -1687,11 +1687,11 @@ AUDIENCE_REALTIME_RECEIPT
           node --input-type=module - "$repo_root" <<'BATCH_SOURCE_HASH'
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';import {pathToFileURL} from 'node:url';
 const root=process.argv[2];const {sourceBatchProfile}=await import(pathToFileURL(root+'/tests/publicHud/scale.write.protocol.mjs'));
-const sql=readFileSync(root+'/supabase/pending-migrations/'+sourceBatchProfile.migration,'utf8');
+const sql=readFileSync(root+'/supabase/migrations/'+sourceBatchProfile.migration,'utf8');
 assert.equal(createHash('sha256').update(sql.replace(/\r\n?/g,'\n')).digest('hex'),sourceBatchProfile.sqlSha256);
 BATCH_SOURCE_HASH
           docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-            <"$repo_root/supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql"
+            <"$repo_root/supabase/migrations/20270128000344_spectator_bounded_source_batch.sql"
           node --input-type=module - "$db_container" "$repo_root/output/operations-latency/operations-source-batch-candidate-http.json" "$repo_root" <<'BATCH_SOURCE_METADATA'
 import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {writeFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';
 const {sourceBatchProfile}=await import(pathToFileURL(process.argv[4]+'/tests/publicHud/scale.write.protocol.mjs'));

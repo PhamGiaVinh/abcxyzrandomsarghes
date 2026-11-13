@@ -4,8 +4,8 @@ import {writerDiagnosticAdminTarget} from './scale.write.native.mjs';
 import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled,requireMatchedWriterQualification,writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-test('source batch load probe is explicit, requires343 and pins pending SQL bytes',()=>{
- const source=readFileSync(new URL('../../supabase/pending-migrations/'+sourceBatchProfile.migration,import.meta.url),'utf8').replace(/\r\n?/g,'\n');
+test('source batch load probe is explicit, requires343 and pins promoted SQL bytes',()=>{
+ const source=readFileSync(new URL('../../supabase/migrations/'+sourceBatchProfile.migration,import.meta.url),'utf8').replace(/\r\n?/g,'\n');
  assert.equal(createHash('sha256').update(source).digest('hex'),sourceBatchProfile.sqlSha256);
  const body=source.split('$source_batch$');assert.equal(body.length,3);
  assert.equal(createHash('md5').update(body[1]).digest('hex'),sourceBatchProfile.bodyMd5);

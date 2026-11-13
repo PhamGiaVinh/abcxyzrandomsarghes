@@ -10159,6 +10159,11 @@
       "version": "20270128000343",
       "filename": "20270128000343_spectator_pending_source_outcome.sql",
       "sha256": "a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221"
+    },
+    {
+      "version": "20270128000344",
+      "filename": "20270128000344_spectator_bounded_source_batch.sql",
+      "sha256": "f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba"
     }
   ],
   "floorActiveAllowlist": [

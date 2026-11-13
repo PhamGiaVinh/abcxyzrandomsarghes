@@ -78,7 +78,7 @@ test('batch source candidate rejects partial scopes and installs before catalog 
   const result=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
   assert.notEqual(result.status,0);assert.match(result.stderr,/Source batch candidate requires/);
  }
- const apply=script.indexOf('<"$repo_root/supabase/pending-migrations/20270128000344_spectator_bounded_source_batch.sql"');
+ const apply=script.indexOf('<"$repo_root/supabase/migrations/20270128000344_spectator_bounded_source_batch.sql"');
  assert.ok(apply>script.indexOf('<"$repo_root/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql"'));
  assert.ok(apply<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
  assert.match(workflow,/LOCAL_SOURCE_BATCH_PROBE:.*github\.event_name == 'workflow_dispatch'.*inputs.source_batch_probe/);
