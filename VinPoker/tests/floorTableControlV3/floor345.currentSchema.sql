@@ -114,10 +114,15 @@ BEGIN
  PERFORM set_config('fast_bust_test.disturb_seat','',false);
 
  c:=fast_bust_test.seed();
- UPDATE public.table_sessions SET redraw_hold_batch_id=gen_random_uuid() WHERE id=(c->>'session')::uuid;
+ WITH held AS (
+  INSERT INTO public.tournament_redraw_batches(tournament_id,target_max_seats,target_game_table_ids,snapshot_fingerprint,planned_by)
+  SELECT (c->>'tour')::uuid,9,ARRAY[game_table_id],'TEST hold fence',auth.uid()
+  FROM public.table_sessions WHERE id=(c->>'session')::uuid RETURNING id,redraw_revision
+ ) UPDATE public.table_sessions SET redraw_hold_batch_id=held.id,redraw_hold_revision=held.redraw_revision,redraw_hold_at=now()
+ FROM held WHERE table_sessions.id=(c->>'session')::uuid;
  r:=fast_bust_test.invoke(c);
  PERFORM public.floor_table_v3_assert(r->>'error'='redraw_in_progress','hold fence');
- UPDATE public.table_sessions SET redraw_hold_batch_id=NULL WHERE id=(c->>'session')::uuid;
+ UPDATE public.table_sessions SET redraw_hold_batch_id=NULL,redraw_hold_revision=NULL,redraw_hold_at=NULL WHERE id=(c->>'session')::uuid;
  r:=fast_bust_test.invoke(jsonb_set(c,'{seat}',to_jsonb(gen_random_uuid())));
  PERFORM public.floor_table_v3_assert(r->>'error'='seat_identity_changed','stale seat ID');
  r:=fast_bust_test.invoke(jsonb_set(c,'{player}',to_jsonb(gen_random_uuid())));
