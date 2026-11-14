@@ -6,6 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {loadPackage} from './spectator342344-release-plan.mjs';
 import {postcheckSql,classifyPostcheck} from './spectator342344-protected-apply.mjs';
 import {receiptSql} from './floor-37-47-protected-apply.mjs';
+import {pauseSql,resumeSql,activeSql,drainSql} from './spectator342344-dispatch-control.mjs';
 
 // TEST ONLY, no hosted connection, copied users, money transactions or dispatch.
 assert.equal(process.env.PGHOST,'127.0.0.1');
@@ -74,3 +75,27 @@ for(const table of ['source_nonblocking_original_v1','source_pending_original_v1
  classifyPostcheck(jsonSql(postcheckSql(pkg,344)));
 }
 console.log('SPECTATOR342344_NATIVE_ATOMIC_ROLLBACK_RECEIPTS_REPLAY_ACL_PASS');
+// The scheduler API below is a recording double. PostgreSQL executes the real
+// guard/row-version/transaction SQL; this is NOT pg_cron or HTTP delivery proof.
+const dispatchStart=original.indexOf('CREATE OR REPLACE FUNCTION public.dispatch_public_spectator_projection_v2()');
+const dispatchEnd=original.indexOf('REVOKE ALL ON FUNCTION public.dispatch_public_spectator_projection_v2()',dispatchStart);
+assert.ok(dispatchStart>=0&&dispatchEnd>dispatchStart);sql(original.slice(dispatchStart,dispatchEnd));
+assert.equal(sql("SELECT md5(pg_get_functiondef('public.dispatch_public_spectator_projection_v2()'::regprocedure));"),'cf705ee6551a85a61724228ede8f7945');
+sql(`CREATE SCHEMA cron;CREATE TABLE cron.job(jobid bigint PRIMARY KEY,jobname text,schedule text,database text,username text,command text,active boolean);
+ INSERT INTO cron.job VALUES(52,'public-spectator-v2-dispatch','1 second','postgres','postgres','SELECT public.dispatch_public_spectator_projection_v2()',true),
+ (55,'public-hud-projection-v1-dispatch','1 second','postgres','postgres','SELECT public.dispatch_public_hud_projection_v1()',true);
+ CREATE FUNCTION cron.alter_job(job_id bigint,active boolean DEFAULT true) RETURNS void LANGUAGE sql AS $$UPDATE cron.job SET active=$2 WHERE jobid=$1$$;
+ CREATE SCHEMA net;CREATE TABLE net.http_request_queue(url text);`);
+assert.equal(jsonSql(activeSql()).exact,true);
+const paused=jsonSql(pauseSql());assert.equal(paused.paused,true);assert.match(paused.pauseXmin,/^\d+$/);
+assert.equal(sql('SELECT active FROM cron.job WHERE jobid=55;'),'t');
+assert.throws(()=>sql(resumeSql('1'),{captureFailure:true}),error=>error.stderr?.includes('dispatcher_pause_ownership_drift'));
+assert.equal(jsonSql(resumeSql(paused.pauseXmin)).resumed,true);
+const owned=jsonSql(pauseSql());
+sql("UPDATE cron.job SET schedule='1 second' WHERE jobid=52;");
+assert.throws(()=>sql(resumeSql(owned.pauseXmin),{captureFailure:true}),error=>error.stderr?.includes('dispatcher_pause_ownership_drift'));
+assert.equal(sql('SELECT active FROM cron.job WHERE jobid=52;'),'f');
+assert.deepEqual(jsonSql(drainSql()),{leaseCount:0,queuedRequests:0,activeCalls:0});
+sql("INSERT INTO net.http_request_queue(url) VALUES('https://orlesggcjamwuknxwcpk.supabase.co/functions/v1/public-spectator-projector-v2');");
+assert.equal(jsonSql(drainSql()).queuedRequests,1);
+console.log('SPECTATOR342344_NATIVE_DISPATCH_GUARDS_WITH_SCHEDULER_DOUBLE_PASS');

@@ -22,17 +22,15 @@ export function validateLedger(rows,manifest,sourceRoot){
  const catalog=JSON.parse(readFileSync(resolve(sourceRoot,'supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json')));
  const key=(version,name)=>JSON.stringify([version,name]);
  const known=new Set(catalog.remoteLedgerVersions.map(x=>key(x.version,x.name)));
- function walk(dir){
-  for(const item of readdirSync(dir,{withFileTypes:true})){
+ // Historical identities come only from the reviewed catalog above. New
+ // filename identities must be active migrations, never pending/test sources.
+ for(const item of readdirSync(resolve(sourceRoot,'supabase/migrations'),{withFileTypes:true})){
    assert.ok(!item.isSymbolicLink(),'Source catalog symlink rejected');
-   if(item.isDirectory())walk(resolve(dir,item.name));
-   else{
+   if(item.isFile()){
     const match=item.name.match(/^(\d{14})_(.+)\.sql$/);
     if(match)known.add(key(match[1],match[2]));
    }
-  }
  }
- walk(resolve(sourceRoot,'supabase'));
  for(const row of rows)assert.ok(known.has(key(row.version,row.name)),'Unmapped live version/name');
  // Catalog-known historical aliases are identity evidence, not recovered
  // original schema or proof that every old statement equals today's source.
